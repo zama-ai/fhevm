@@ -52,7 +52,9 @@ class ProxyTls(unittest.TestCase):
         result = subprocess.run(["/bin/bash", str(SCRIPT)], cwd=ROOT, capture_output=True, text=True, env={
             **os.environ, "PATH": f"{work}:{os.environ['PATH']}", "TLS_TEST_STATE": str(state), "NAMESPACE": "ns",
             "NB_KMS_CORE": "4", "DEPLOY_POLYGON": "false", "OBSERVABILITY": "false", "TAGS_JSON": "{}",
-            "KMS_CONNECTOR_CHART": "chart"})
+            "KMS_CONNECTOR_CHART": "chart", "KEYGEN": "secure",
+            # Each party's KMS tx-sender, its proxy's audience.
+            "WALLETS_JSON": json.dumps([{"party": i, "address": f"0x{i:040x}"} for i in range(1, 5)])})
         return result, json.loads(state.read_text())["calls"], work
 
     def test_a_tls_secret_without_the_ca_is_refused_before_any_release(self):

@@ -438,6 +438,22 @@ pub async fn is_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
         .is_some_and(consensus_is_older_than))
 }
 
+/// Re-read the live consensus version on `conn` and report whether every
+/// version below this binary's has been retired, i.e. this binary's
+/// [`CONSENSUS_PROTOCOL_VERSION`] is not newer than the live one.
+///
+/// This gates destroying what older stacks hold, so unlike [`is_retired`] it
+/// fails closed: a missing `versioning` row answers `false`.
+pub async fn older_versions_are_retired(conn: &mut PgConnection) -> Result<bool, sqlx::Error> {
+    Ok(older_versions_retired_under(
+        live_consensus_version(conn).await?,
+    ))
+}
+
+fn older_versions_retired_under(live: Option<i64>) -> bool {
+    live.is_some_and(|live| !consensus_is_newer_than(live))
+}
+
 /// Re-read the live consensus version on `conn` and fail if this binary is strictly
 /// older (a retired stack). A missing `versioning` row is permissive, mirroring
 /// [`resolve_gcs_mode`]'s default, so a fresh/unseeded DB is not locked out.
@@ -502,7 +518,7 @@ impl<'a> WriteGuard<'a> {
 /// Controls GCS writes after a rollback.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GcsRollbackPolicy {
-    /// Used by raw chain ingestion.
+    /// Continue after rollback, but still honor chain recovery containment.
     Continue,
     /// Used by derived output workers.
     Skip,
@@ -549,6 +565,12 @@ async fn cutover_gate(
         .bind(CUTOVER_LOCK_ID)
         .execute(&mut **tx)
         .await?;
+    if crate::chain_recovery::is_halted_tx(tx).await? {
+        return Ok(Some(GateBlock::Skip));
+    }
+    // Routine host replay is background repair, not evidence of divergence.
+    // An unavailable RPC must not prevent already-admitted work from draining.
+    // Actual contradictions still close the database-wide halt gate above.
     if gcs_mode {
         if rollback_policy == GcsRollbackPolicy::Skip {
             let paused: bool = sqlx::query_scalar(
@@ -616,7 +638,7 @@ pub async fn begin_write_guarded_conn(
 mod tests {
     use super::{
         consensus_is_newer_than, consensus_is_older_than, consensus_matches,
-        format_consensus_epoch, parse_version, versions_equal,
+        format_consensus_epoch, older_versions_retired_under, parse_version, versions_equal,
     };
     use super::{run_stack_version_listener, ListenerPoolClosed, StackMode};
     use crate::STACK_VERSION;
@@ -728,6 +750,18 @@ mod tests {
         assert!(!consensus_is_newer_than(live) && !consensus_is_older_than(live));
         assert!(consensus_is_newer_than(live - 1));
         assert!(consensus_is_older_than(live + 1));
+    }
+
+    #[test]
+    fn older_versions_are_retired_only_once_mine_is_live() {
+        let mine = i64::from(crate::CONSENSUS_PROTOCOL_VERSION);
+        // Shadow: the live fleet is still on an older version.
+        assert!(!older_versions_retired_under(Some(mine - 1)));
+        assert!(older_versions_retired_under(Some(mine)));
+        // Retired myself: everything below me is older still.
+        assert!(older_versions_retired_under(Some(mine + 1)));
+        // Unseeded: destroying on a guess is not allowed.
+        assert!(!older_versions_retired_under(None));
     }
 
     #[test]

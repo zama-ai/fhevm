@@ -11,12 +11,15 @@ import {
   RETRYABLE_BY_CODE,
   USER_DECRYPT_ROUTE,
   type UserDecryptionResponse,
+  audienceOf,
   buildPublicRequest,
   buildUserRequest,
   describeResult,
+  endpointUrls,
   fanOut,
   fanOutUntilSettled,
   isError,
+  post,
   quorum,
 } from '../sdk/connector/connectorHttp';
 import { type KmsSignerSet, verifyPublicDecryptQuorum } from '../sdk/connector/verify';
@@ -96,6 +99,29 @@ describe('Connector HTTP negative', function () {
       mode,
     );
 
+  // The proxy's checks themselves are covered by kms-connector/crates/proxy/tests; this only
+  // checks that each party's proxy is deployed with its own audience.
+  describe('proxy auth', function () {
+    it('test connector endpoint negative a request signed for another party is sender_authentication_failed', async function () {
+      const urls = endpointUrls();
+      if (urls.length < 2) this.skip();
+      const body = buildPublicRequest([(await fixture.getFunction('xPrivate')()) as string]);
+      for (const [i, url] of urls.entries()) {
+        const audience = audienceOf(urls[(i + 1) % urls.length]);
+        const result = await post<PublicDecryptionResponse>(url, PUBLIC_DECRYPT_ROUTE, body, { audience });
+        const where = describeResult(result);
+        expect(result.httpStatus, where).to.equal(401);
+        expect(isError(result.body), where).to.equal(true);
+        if (!isError(result.body)) continue;
+        expect(result.body.code, where).to.equal('sender_authentication_failed');
+        // The recovered signer differs from the allowed one when the audience does.
+        expect(result.body.message, where).to.match(/^auth_unknown_signer/);
+        expect(result.body.retryable, where).to.equal(false);
+        expect(result.body.decryptionId, where).to.equal(undefined);
+      }
+    });
+  });
+
   describe('negative-acl', function () {
     it('test connector endpoint negative public decrypt of a non-publicly-decryptable handle is acl_denied', async function () {
       this.timeout(ASYNC_TIMEOUT_MS);
@@ -143,14 +169,14 @@ describe('Connector HTTP negative', function () {
       expectErrorOnEveryParty(out.results, { status: 403, code: 'user_signature_rejected' });
     });
 
-    it('test connector endpoint negative user decrypt with an expired validity window is user_signature_rejected', async function () {
+    it('test connector endpoint negative user decrypt with an expired validity window is user_decryption_expired', async function () {
       this.timeout(ASYNC_TIMEOUT_MS);
       const body = await userRequest(await aliceContract.xUint8(), {
         startTimestamp: Math.floor(Date.now() / 1000) - 3600,
         durationSeconds: 60,
       });
       const out = await fanOutUntilSettled<UserDecryptionResponse>(USER_DECRYPT_ROUTE, body);
-      expectErrorOnEveryParty(out.results, { status: 403, code: 'user_signature_rejected' });
+      expectErrorOnEveryParty(out.results, { status: 403, code: 'user_decryption_expired' });
     });
 
     it('test connector endpoint negative user decrypt with userAddress inside allowedContracts is unprocessable', async function () {

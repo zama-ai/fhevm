@@ -277,10 +277,11 @@ mod tests {
     use crate::kms_aggregator::config::tests::valid;
     use crate::kms_aggregator::mock::{self, Fixed};
 
-    const ALL_CODES: [ErrorCode; 15] = [
+    const ALL_CODES: [ErrorCode; 17] = [
         ErrorCode::Malformed,
         ErrorCode::UnsupportedAttestationType,
         ErrorCode::SenderAuthenticationFailed,
+        ErrorCode::AuthExpired,
         ErrorCode::RateLimited,
         ErrorCode::Overloaded,
         ErrorCode::AclDenied,
@@ -293,6 +294,7 @@ mod tests {
         ErrorCode::UpstreamTransient,
         ErrorCode::Timeout,
         ErrorCode::Unknown,
+        ErrorCode::UserDecryptionExpired,
     ];
 
     /// Position of `code` in `ALL_CODES`. No `_` arm: a new connector code fails to compile here.
@@ -301,18 +303,20 @@ mod tests {
             ErrorCode::Malformed => 0,
             ErrorCode::UnsupportedAttestationType => 1,
             ErrorCode::SenderAuthenticationFailed => 2,
-            ErrorCode::RateLimited => 3,
-            ErrorCode::Overloaded => 4,
-            ErrorCode::AclDenied => 5,
-            ErrorCode::UserSignatureRejected => 6,
-            ErrorCode::CiphertextNotFound => 7,
-            ErrorCode::CoproConsensusFailed => 8,
-            ErrorCode::KmsContextInvalid => 9,
-            ErrorCode::KmsContextDestroyed => 10,
-            ErrorCode::Unprocessable => 11,
-            ErrorCode::UpstreamTransient => 12,
-            ErrorCode::Timeout => 13,
-            ErrorCode::Unknown => 14,
+            ErrorCode::AuthExpired => 3,
+            ErrorCode::RateLimited => 4,
+            ErrorCode::Overloaded => 5,
+            ErrorCode::AclDenied => 6,
+            ErrorCode::UserSignatureRejected => 7,
+            ErrorCode::CiphertextNotFound => 8,
+            ErrorCode::CoproConsensusFailed => 9,
+            ErrorCode::KmsContextInvalid => 10,
+            ErrorCode::KmsContextDestroyed => 11,
+            ErrorCode::Unprocessable => 12,
+            ErrorCode::UpstreamTransient => 13,
+            ErrorCode::Timeout => 14,
+            ErrorCode::Unknown => 15,
+            ErrorCode::UserDecryptionExpired => 16,
         }
     }
 

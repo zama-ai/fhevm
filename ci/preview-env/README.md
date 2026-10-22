@@ -49,12 +49,15 @@ ci/preview-env/
 │   ├── values-anvil-host-polygon-e2e.yaml   # anvil-node overlay, Polygon host chain (deploy_polygon)
 │   ├── values-host-contracts-e2e.yaml   # contracts overlay, host-contracts
 │   ├── values-host-contracts-polygon-e2e.yaml # contracts overlay, Polygon host-contracts (mirrors ETH ProtocolConfig)
-│   └── values-host-trigger-keygen-e2e.yaml # contracts overlay, real FHE key/CRS gen ceremony
+│   ├── values-host-trigger-keygen-e2e.yaml # contracts overlay, real FHE key/CRS gen ceremony
+│   ├── values-host-define-new-kms-context-e2e.yaml # contracts overlay, same-committee context switch (manual)
+│   └── values-host-define-new-epoch-e2e.yaml # contracts overlay, same-context epoch rotation (manual)
 ├── gateway-chain/
 │   ├── values-anvil-gateway-e2e.yaml         # anvil-node overlay, gateway chain
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
 │   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
-│   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
+│   ├── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
+│   └── values-gateway-update-kms-context-e2e.yaml # contracts overlay, gateway context id bump (manual)
 ├── solana-host/                          # opt-in via deploy_solana; runs after the relayer, before e2e
 │   ├── deploy-preview.sh                 # orchestrates every step below against the existing releases
 │   ├── test_charts.py                    # renders the chart + overlays (charts-helm-checks)
@@ -80,7 +83,8 @@ ci/preview-env/
 │   └── values-postgres-listener-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to the listener's cursor DB
 ├── kms-connector/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
-│   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain to hostChains (deploy_polygon)
+│   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain (deploy_polygon)
+│   ├── values-kms-insecure-keygen-redirect-e2e.yaml # `common` chart overlay: kms-worker -> kms-core redirect, insecure keygen (fhe_keys=default-insecure)
 │   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
 ├── observability/
 │   ├── values-prometheus-e2e.yaml # `common` chart overlay (raw objects): in-namespace Prometheus, endpoints-SD scraping
@@ -304,14 +308,24 @@ The two host chains are the real public testnets, so this is the only preview sh
   the coprocessor tx-senders, `#0` and `#3` are gateway-side and come from the Nitro faucet.
 - **Ceremony timing.** The kms-connector's Ethereum listener pins its reads to the
   *finalized* block, ~14 min behind head on Sepolia, and that is hardcoded in the
-  connector. CPU launches keep **Test** FHE parameters (`params-type=1`). GPU
-  launches (dispatch `enable_gpu` / `--gpu`, including Anvil) switch
-  to production-size **Default** parameters (`params-type=0`) because Test
-  parameters use drift noise reduction, which TFHE 1.6.3's GPU conversion rejects.
-  A four-party Default-parameter DKG is multi-hour work, so GPU launches allow 4 h
-  for keygen and 1 h for CRS generation, with `KEYGEN_TIMEOUT=310m` giving Helm
-  room for both in one pod. CPU testnets stay at 60 m / 40 m waits and 110 m Helm.
-  This GPU path deliberately consumes most of the deploy job's six-hour budget.
+  connector. Dispatch `fhe_keys` / `--fhe-keys` picks the keys (table in
+  `101-preview-env.md`; PR-label runs use the default):
+  - `default-insecure` (the default): production-size **Default**
+    parameters (`params-type=0`), and each kms-worker reaches its core through
+    `kms-insecure-keygen-redirect-<i>` (the docker stack's keygen proxy script), which switches keygen to
+    the KMS insecure keygen (minutes, no DKG). The redirect also sits on every other
+    kms-worker call, decryptions included. The CRS ceremony is the real one; key
+    and CRS took about 6 min on a 4-party Anvil preview, so the 15 m waits and
+    45 m Helm stay; testnets 60 m / 40 m and 110 m Helm.
+  - `default-secure`: Default parameters from the real DKG. A four-party Default
+    DKG is multi-hour work, so it allows 4 h for keygen and 1 h for CRS, with
+    `KEYGEN_TIMEOUT=310m` giving Helm room for both in one pod. It deliberately
+    consumes most of the deploy job's six-hour budget.
+  - `test-secure`: **Test** parameters
+    (`params-type=1`) from the real DKG. Anvil keeps the 15 m waits and 45 m
+    Helm; testnets 60 m / 40 m and 110 m Helm.
+  GPU workers need Default parameters: Test parameters use drift noise reduction,
+  which TFHE 1.6.3's GPU conversion rejects, so `--gpu` refuses `--fhe-keys test-secure`.
   The relayer inherits the same dependency - it seeds `/v2/keyurl` from `getCrsMaterials`
   at the finalized block and exits if the CRS is not visible yet - so `deploy-relayer.sh`
   waits on its rollout before the e2e Workflows start, otherwise every test fails on
@@ -452,16 +466,18 @@ The two out-of-chart inputs the proxy needs are produced at deploy time by
   the preview and deploy it again. The compose path's
   checked-in `test-suite/fhevm/static/config/kms-connector-proxy/tls.crt` is *not*
   reusable here: its SANs are the compose hostnames, and Node rejects a SAN mismatch.
-- **API key**: the fixed test literal `fhevm-e2e-kms-connector-api-key` (same as
-  `.env.test-suite`). The script stores it and its SHA-256 in the Secret
-  `kms-connector-proxy` (`api-key`, `api-key-digest`). The proxies read the digest
-  through the chart's default `kmsConnectorProxy.apiKeyDigest.secret`, and
-  relayer-http reads the key. The test-suite overlays still carry the literal.
+- **FhevmSig auth**: the e2e suite signs with a fixed test key
+  (`KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY` in the test-suite overlays, same as
+  `.env.test-suite`) whose address is `kmsConnectorProxy.allowedSenders` in
+  `values-kms-connector-e2e.yaml`, no Secret. Each party's
+  `kmsConnectorProxy.txSenderAddress` (the request `audience`) is set by the
+  script from the derived KMS tx-sender wallets (`WALLETS_JSON`).
 - **Test-suite wiring**: the script publishes ConfigMap **`kms-connector-http`**
-  (`endpoint-urls` = one https URL per party, `kms-threshold` = MPC `t` from
-  `lib.sh`'s `kms_t`, `ca.crt` = the proxies' CA). The idle Job and the
-  `@fhevm/sdk` + Polygon Argo Workflow overlays `configMapKeyRef` it into
-  `KMS_CONNECTOR_ENDPOINT_URLS`, `KMS_THRESHOLD` and `KMS_CONNECTOR_PROXY_CA`, and
+  (`endpoint-urls` = one https URL per party, `tx-sender-addresses` = each party's
+  audience in the same order, `kms-threshold` = MPC `t` from `lib.sh`'s `kms_t`,
+  `ca.crt` = the proxies' CA). The idle Job and the `@fhevm/sdk` + Polygon Argo
+  Workflow overlays `configMapKeyRef` it into `KMS_CONNECTOR_ENDPOINT_URLS`,
+  `KMS_CONNECTOR_TX_SENDER_ADDRESSES`, `KMS_THRESHOLD` and `KMS_CONNECTOR_PROXY_CA`, and
   their startup script writes the PEM to `NODE_EXTRA_CA_CERTS` (Node only trusts
   extra CAs from a file, and the generic `common` chart gives a one-shot Job no
   ConfigMap volume). Their DAG's last task, `connector-http`, runs the
@@ -495,7 +511,8 @@ Polygon **reuses the ETH-activated KMS key** — there is no second keygen cerem
   `postgres-listener-polygon-<i>`) publishes chain-`80002` events to the **same**
   per-party Redis; the Polygon consumer filters them out by `--chain-id`.
 - The relayer gets a second `host_chains` entry and the kms-connector a second
-  `hostChains` entry (`values-kms-connector-polygon-e2e.yaml`) so host ACL checks cover
+  host chain (`values-kms-connector-polygon-e2e.yaml`, both the chart 2.x
+  `hostChains` map and the chart 1.5.3 flat keys) so host ACL checks cover
   Polygon ciphertexts.
 - Chain `80002` is registered into the shared GatewayConfig by a second
   `addHostChainsToGatewayConfig` call (`values-gateway-add-host-chains-polygon-e2e.yaml`,
@@ -512,6 +529,103 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
 > `true` and it takes the **reduced / read-only** path (the `hcu-block-cap` owner-only
 > and `evm_*` deterministic subtests `this.skip()`). The Polygon run is a multichain
 > routing smoke test; the ETH `staging` run remains the full-coverage one.
+
+## KMS context switch (manual)
+
+A same-committee switch on a namespace that already finished keygen. None of
+these commands are part of `preview-env-deploy`. The host and gateway contract
+Jobs tolerate `karpenter.sh/nodepool=zws-pool`; without that toleration the
+pod stays Pending.
+
+### Replace one party first
+
+`prepare-kms-core-replacement.sh` scales one party to 0 and installs a new
+core under a new release name. The party id stays in `kmsPeers.id` and in
+`peersList[].id`. The second argument is only the release name, the pod name,
+and the vault prefix.
+
+Replacing party 1 with name 5 installs `kms-core-5`, pod `kms-core-5-core-1`,
+and prefixes `PUB-p5` / `PRIV-p5` / `BACKUP-p5`. The chart would still fetch
+that party's CA from `PUB-p1`, so the script points the fetch at `PUB-p5`,
+strips `[[threshold.peers]]`, and starts the server only after that. The boot
+log must show `peers: None`. Connector 1 is then pointed at
+`http://kms-core-5-core-1:50100`. The tx-sender secret stays party 1's key.
+
+```bash
+NAMESPACE=fhevm-ci-<actor>-<id> \
+  bash ci/preview-env/scripts/deploy/prepare-kms-core-replacement.sh 1 5
+```
+
+Every other party stays up. A party that was already replaced counts as up
+when `kms-core-<name>-core-<id>` is Running, even if
+`kms-core-<id>-core-<id>` is scaled to 0. Do not helm-upgrade the new release
+afterwards: that restores the peer list and the old CA fetch. A peer list at
+boot on the new core stores its identity in the current context. The same list
+on the other cores deletes their private context.
+
+### Broadcast the switch
+
+`kms-context-switch.sh` keeps each party id and uses the Running pod
+`kms-core-<name>-core-<id>`. When `<name>` differs from the party id, the CA,
+signer, and storage prefix come from `PUB-p<name>`. Several Running pods for
+one id need `KMS_CORE_NAMES=1=5,4=6`. A party left out of that list is
+discovered from its Running pod.
+
+The two overlays carry the Anvil network, RPC, chain id, and deployer. The
+script overwrites those from the live releases when a testnet preview changed
+them, and appends the committee. It replaces each `KMS_NODE_CA_CERT_<i>` with
+the PEM in that party's public vault (`PUB-p<name>` for a replacement),
+`KMS_SIGNER_ADDRESS_<i>` with the newest `VerfAddress`, the node URL and MPC
+identity with the peer service the TLS certificate names, and
+`KMS_SOFTWARE_VERSION` and `KMS_PCR_VALUES` from a running core. It then
+broadcasts `defineNewKmsContextAndEpoch`, then `updateKmsContext` with the next
+id (the ProtocolConfig allocation counter + 1). This does not wipe KMS storage
+and does not destroy the active context.
+
+```bash
+helm pull oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts --version 0.8.2 --untar
+CONTRACTS_CHART="$PWD/contracts" NAMESPACE=fhevm-ci-<actor>-<id> \
+  bash ci/preview-env/scripts/deploy/kms-context-switch.sh
+```
+
+`CONTRACTS_CHART` defaults to `charts/contracts`. Pull the chart when the
+preview was launched with `contracts_chart_version` set.
+
+The first host deploy registers that same material. `wire-contracts-values.sh`
+reads each party's CA cert from the public vault, the software version from
+`KMS_CORE_TAG`, and the PCR triple from the enclave image labels. A later
+switch replays the previous context, so a namespace whose first context was
+registered with the placeholder certificate cannot be repaired by this
+command. Launch a new preview after that change.
+
+The two Helm jobs return once the transactions are mined. Creation
+confirmations and epoch activation continue on the cores. With the replaced
+party scaled to 0, that party is a silent Set1: the reshare waits out the
+charged rounds (hours at the 300s network timeout) and then completes.
+`Still waiting to receive from party` is not a failure. A dispatch preview
+needs a lifetime that covers the wait. The gateway update rejects an id that
+is not strictly greater than the current one.
+
+## Epoch rotation (manual)
+
+Same context, new epoch, on a namespace that already has an active context.
+`rotate-epoch.sh` copies the live host-contracts network, RPC, and deployer
+onto `values-host-define-new-epoch-e2e.yaml` and broadcasts
+`defineNewEpochForCurrentKmsContext`. It then watches that preview's host
+chain until there is one `EpochActivationConfirmation` per `NUM_KMS_NODES`,
+one `ActivateEpoch`, and `getCurrentKmsContextAndEpoch()` shows the same
+context id with a new epoch id. It does not read KMS core logs. After the
+epoch moves, it runs `./run-tests.sh --no-hardhat-compile -g "test user input uint64"`
+in the idle test-suite pod (user decrypt and public decrypt). Set `DECRYPT_CMD`
+to replace that command.
+
+```bash
+CONTRACTS_CHART="$PWD/contracts" NAMESPACE=fhevm-ci-<actor>-<id> \
+  bash ci/preview-env/scripts/deploy/rotate-epoch.sh
+```
+
+The Job stays installed once it is Complete. The next run uninstalls it
+before broadcasting again.
 
 ## TODO / remaining work
 
@@ -530,9 +644,9 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
   `preview-env --gpu --workers-tag <tag>`, applies `values-coprocessor-gpu-e2e.yaml`
   to `tfhe` / `sns` / `zkproof`, and uses that tag for those workers. The
   `preview-env-gpu` label cannot carry a tag, so GPU deploys are dispatch-only.
-  GPU launches generate Default FHE params. With `preview-env-blue-green` / `--blue-green`
-  as well, that overlay lands on Green (GCS) only; Blue (BCS) stays on the CPU
-  `coprocessor` pool. CPU launches keep Test params.
+  GPU workers need Default FHE params (not `fhe_keys=test-secure`). With
+  `preview-env-blue-green` / `--blue-green` as well, that overlay lands on Green
+  (GCS) only; Blue (BCS) stays on the CPU `coprocessor` pool.
 - ~~Add multichain support~~ — done, see "Multichain: second Polygon host chain
   (`deploy_polygon`)" above (opt-in; ETH + Polygon Amoy sharing one KMS key).
 - ~~Deploy against real public testnets~~ — done, see "Chain modes" above

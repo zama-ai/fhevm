@@ -81,7 +81,7 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
     info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain.
-    // Per attempt: Public → 1 bool; Legacy user → 2 bools;
+    // Per attempt: Public → 1 bool; Legacy user → 1 U256 (invalidation) + 2 bools;
     // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership).
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => {
@@ -96,9 +96,15 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
                 ]
             })
             .collect(),
-        TestEventType::UserDecryption => {
-            vec![true.abi_encode(); 2 * MAX_DECRYPTION_ATTEMPTS as usize]
-        }
+        TestEventType::UserDecryption => (0..MAX_DECRYPTION_ATTEMPTS)
+            .flat_map(|_| {
+                vec![
+                    U256::ZERO.abi_encode(),
+                    true.abi_encode(),
+                    true.abi_encode(),
+                ]
+            })
+            .collect(),
         _ => vec![],
     };
     let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);

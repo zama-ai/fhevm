@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
@@ -85,17 +84,22 @@ describe("env", () => {
     );
     expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).toBe(templateEnvs["test-suite"].KMS_CONNECTOR_API_KEY);
     expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).not.toBe("");
+    expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY).not.toBe("");
+    expect(withEndpoint.componentEnvs["kms-connector"].KMS_CONNECTOR_ALLOWED_SENDERS).not.toBe("");
     expect(withEndpoint.componentEnvs["test-suite"].NODE_EXTRA_CA_CERTS).toBe("/etc/kms-connector/proxy/ca.crt");
     expect(withEndpoint.componentEnvs["test-suite"].KMS_THRESHOLD).toBe("1");
     // The proxy forwards to its own party's endpoint.
     expect(withEndpoint.componentEnvs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-endpoint:8080");
-
-    // The digest the proxies check is the sha256 of the key the e2e suite sends.
-    const digest = createHash("sha256").update(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).digest("hex");
-    expect(withEndpoint.componentEnvs["kms-connector"].KMS_CONNECTOR_API_KEY_DIGEST).toBe(`0x${digest}`);
+    // Each proxy accepts requests signed for its own party's tx-sender, the address the e2e suite signs for.
+    const txSenders = withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_TX_SENDER_ADDRESSES.split(",");
+    expect(txSenders).toHaveLength(4);
+    expect(new Set(txSenders).size).toBe(4);
+    expect(withEndpoint.componentEnvs["kms-connector"].KMS_CONNECTOR_TX_SENDER_ADDRESS).toBe(txSenders[0]);
+    expect(withEndpoint.instanceEnvs["kms-connector.3"].KMS_CONNECTOR_TX_SENDER_ADDRESS).toBe(txSenders[2]);
 
     const gated = await renderEnvMaps({ discovery: undefined }, stackSpecForState(withoutEndpoint), templateEnvs, deriveWallet);
     expect(gated.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe("");
+    expect(gated.componentEnvs["test-suite"].KMS_CONNECTOR_TX_SENDER_ADDRESSES).toBe("");
 
     // Spares (parties beyond committeeSize) hold no key material and are left out of the list.
     const threshold: State = {

@@ -163,16 +163,20 @@ pub async fn insert_solana_block_records(
             &chains,
             &dependent_ops_by_chain,
             dependent_ops_max_per_chain,
+            &[],
         )
         .await?;
-        db.update_dependence_chain(
-            tx,
-            chains,
-            block.block_timestamp,
-            &solana_block_summary(block),
-            &slow_chains,
-        )
-        .await?;
+        let block_summary = solana_block_summary(block);
+        for chain in &chains {
+            db.update_dependence_chain(
+                tx,
+                chain,
+                block.block_timestamp,
+                &block_summary,
+                &slow_chains,
+            )
+            .await?;
+        }
     }
     Ok(SolanaIngestStats {
         tfhe_events: tfhe_logs.len(),
@@ -253,6 +257,8 @@ fn to_log_tfhe(
         // origin bits are derived afterwards by `populate_operand_boundary_masks`,
         // the same walk the EVM ingest path uses.
         operand_boundary_mask: None,
+        // Only pre-upgrade EVM executor handles omit operand origin.
+        has_legacy_operand_origin: false,
         is_executor_minted: true,
         is_fallback_grant: false,
         is_synthetic: false,

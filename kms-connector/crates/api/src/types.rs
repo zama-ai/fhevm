@@ -24,6 +24,10 @@ pub const DECRYPTION_EIP712_DOMAIN: Eip712Domain = Eip712Domain {
     salt: None,
 };
 
+/// The maximum `durationSeconds` of a user decryption's validity window (365 days). Mirrors
+/// `MAX_USER_DECRYPT_DURATION_SECONDS` of the `Decryption` gateway contract.
+pub const MAX_USER_DECRYPTION_DURATION_SECONDS: u64 = 365 * 24 * 60 * 60;
+
 sol! {
     /// `POST v1/public-decrypt` request body: the protocol inputs of a public decryption.
     #[derive(Debug, PartialEq, Serialize, Deserialize)]

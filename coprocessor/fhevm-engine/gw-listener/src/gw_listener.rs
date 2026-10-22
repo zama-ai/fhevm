@@ -637,13 +637,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         // listeners stop, while GCS raw ingestion continues after rollback.
         // `verify_proofs` is not merged, but follows the same write boundary as
         // the other listener tables.
-        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
-            db_pool,
-            self.stack_mode.gcs_mode(),
-            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
-        )
-        .await?
-        .into_tx() else {
+        let Some(mut tx) = begin_gateway_write(db_pool, self.stack_mode.gcs_mode()).await? else {
             info!("Cutover completed — gw-listener skipping verify_proofs insert on retired stack");
             return Ok(());
         };
@@ -798,13 +792,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             .collect::<Vec<_>>();
         let handles = expected_handles.concat();
 
-        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
-            db_pool,
-            self.stack_mode.gcs_mode(),
-            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
-        )
-        .await?
-        .into_tx() else {
+        let Some(mut tx) = begin_gateway_write(db_pool, self.stack_mode.gcs_mode()).await? else {
             info!(
                 zk_proof_id,
                 "Cutover completed — skipping proof replay scheduling"
@@ -902,13 +890,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         response: InputVerification::RejectProofResponse,
     ) -> anyhow::Result<()> {
         let zk_proof_id = response.zkProofId.to::<i64>();
-        let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
-            db_pool,
-            self.stack_mode.gcs_mode(),
-            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
-        )
-        .await?
-        .into_tx() else {
+        let Some(mut tx) = begin_gateway_write(db_pool, self.stack_mode.gcs_mode()).await? else {
             info!(
                 zk_proof_id,
                 "Cutover completed — skipping rejected proof cleanup"
@@ -1135,6 +1117,22 @@ fn window_rewind_cursor(
     }
 }
 
+// A host-history halt is retryable containment, not successful ingestion.
+// Returning an error preserves the durable Gateway cursor for restart/refetch.
+async fn begin_gateway_write(
+    pool: &sqlx::PgPool,
+    gcs_mode: bool,
+) -> anyhow::Result<Option<sqlx::Transaction<'static, sqlx::Postgres>>> {
+    use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
+    match begin_write_guarded(pool, gcs_mode, GcsRollbackPolicy::Continue).await? {
+        WriteGuard::Proceed(tx) => Ok(Some(tx)),
+        WriteGuard::Stop => Ok(None),
+        WriteGuard::Skip => {
+            anyhow::bail!("host history is contained; Gateway ingestion cannot advance")
+        }
+    }
+}
+
 /// Align the scan cursor to the active GCS dry-run window, once per proposal.
 ///
 /// Reads the active window and, when the current cursor would leave a gap at
@@ -1168,13 +1166,7 @@ async fn align_cursor_to_active_window(
     // Same write fence as every other listener write; the latch and the
     // lowered watermark must land atomically, or a crash in between could
     // leave a latched proposal whose window start was never scanned.
-    let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
-        db_pool,
-        true,
-        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
-    )
-    .await?
-    .into_tx() else {
+    let Some(mut tx) = begin_gateway_write(db_pool, true).await? else {
         info!("Cutover completed — gw-listener skipping window alignment on retired stack");
         return Ok(None);
     };
@@ -1306,13 +1298,7 @@ async fn update_listener_progress(
     // Fence the watermark and notification against cutover and schema reset.
     // Retired BCS listeners stop; GCS raw ingestion continues after rollback.
     // This keeps the stored progress aligned with the listener's writes.
-    let Some(mut tx) = fhevm_engine_common::versioning::begin_write_guarded(
-        db_pool,
-        gcs_mode,
-        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
-    )
-    .await?
-    .into_tx() else {
+    let Some(mut tx) = begin_gateway_write(db_pool, gcs_mode).await? else {
         info!("Cutover completed — gw-listener skipping watermark update on retired stack");
         return Ok(());
     };
@@ -1747,5 +1733,221 @@ mod tests {
                 .is_some(),
             "{err:#}"
         );
+    }
+
+    #[tokio::test]
+    async fn host_replay_allows_gateway_progress_but_halt_preserves_cursor() -> anyhow::Result<()> {
+        use fhevm_engine_common::chain_recovery::{
+            begin_replay, record_halt, HistoryMismatch, ListenerSource,
+        };
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+        let conf = ConfigSettings::default();
+        let mut count = 0;
+        begin_replay(&pool, ListenerSource::Host, false, 42, 1, 64).await?;
+        let progress = ListenerProgress {
+            last_processed_block_num: Some(42),
+            earliest_open_ct_commits_block: None,
+        };
+        update_listener_progress(&pool, &conf, false, progress, &mut count).await?;
+        assert_eq!(get_listener_progress(&pool).await?, progress);
+        record_halt(
+            &pool,
+            HistoryMismatch {
+                source: ListenerSource::Host,
+                gcs_mode: false,
+                chain_id: 42,
+                block_number: 1,
+                expected_hash: None,
+                observed_hash: None,
+                reason: "gateway cursor host-halt regression",
+            },
+        )
+        .await?;
+        assert!(begin_gateway_write(&pool, false).await.is_err());
+        let next = ListenerProgress {
+            last_processed_block_num: Some(43),
+            earliest_open_ct_commits_block: None,
+        };
+        assert!(
+            update_listener_progress(&pool, &conf, false, next, &mut count)
+                .await
+                .is_err()
+        );
+        assert_eq!(get_listener_progress(&pool).await?, progress);
+        assert_eq!(count, 1);
+        Ok(())
+    }
+    #[tokio::test]
+    async fn host_halt_defers_auto_revert_without_poisoning_pending_signal() -> anyhow::Result<()> {
+        use fhevm_engine_common::{
+            chain_recovery::{record_halt, HistoryMismatch, ListenerSource},
+            drift_revert,
+        };
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+        let signal = drift_revert::create_revert_signal(&pool, 42, 10)
+            .await?
+            .unwrap();
+        record_halt(
+            &pool,
+            HistoryMismatch {
+                source: ListenerSource::Host,
+                gcs_mode: false,
+                chain_id: 42,
+                block_number: 9,
+                expected_hash: None,
+                observed_hash: None,
+                reason: "test host halt",
+            },
+        )
+        .await?;
+        let config = || drift_revert::RevertRunnerConfig {
+            grace_period: std::time::Duration::ZERO,
+            max_recent_attempts: 3,
+            recent_attempts_window: std::time::Duration::from_secs(60),
+        };
+        let token = tokio_util::sync::CancellationToken::new();
+        for _ in 0..2 {
+            let error =
+                drift_revert::handle_pending_signal_on_startup(&pool, Some(config()), &token)
+                    .await
+                    .expect_err("host containment must precede destructive recovery");
+            assert!(
+                error.to_string().contains("host history is contained"),
+                "{error:#}"
+            );
+            let status: String =
+                sqlx::query_scalar("SELECT status FROM drift_revert_signal WHERE id=$1")
+                    .bind(signal)
+                    .fetch_one(&pool)
+                    .await?;
+            assert_eq!(
+                status, "pending",
+                "deferral must survive restart without a Failed signal"
+            );
+        }
+        // Clear the fixture halt only after the simulated audit; the same
+        // signal must then execute normally without a Failed-to-Pending repair.
+        let (chain, _) = test_harness::db_utils::insert_random_keys_and_host_chain(&pool).await?;
+        sqlx::query("UPDATE drift_revert_signal SET host_chain_id=$1 WHERE id=$2")
+            .bind(chain)
+            .bind(signal)
+            .execute(&pool)
+            .await?;
+        let mut recovery = pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(fhevm_engine_common::versioning::CUTOVER_LOCK_ID)
+            .execute(&mut *recovery)
+            .await?;
+        sqlx::query("UPDATE public.chain_recovery_halts SET resolved_at=NOW(), recovery_note='verified fixture baseline' WHERE resolved_at IS NULL")
+            .execute(&mut *recovery).await?;
+        recovery.commit().await?;
+        drift_revert::handle_pending_signal_on_startup(&pool, Some(config()), &token).await?;
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM drift_revert_signal WHERE id=$1")
+                .bind(signal)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(status, "done");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn missing_containment_migration_defers_revert_until_schema_is_ready(
+    ) -> anyhow::Result<()> {
+        use fhevm_engine_common::drift_revert;
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+        let (chain, _) = test_harness::db_utils::insert_random_keys_and_host_chain(&pool).await?;
+        // Model an existing database whose new migration has not run yet.
+        sqlx::raw_sql("DROP TABLE public.chain_recovery_halts; DROP TABLE public.listener_replay_state; DELETE FROM _sqlx_migrations WHERE version=20261012150000")
+            .execute(&pool).await?;
+        let signal = drift_revert::create_revert_signal(&pool, chain, 10)
+            .await?
+            .unwrap();
+        let config = || drift_revert::RevertRunnerConfig {
+            grace_period: std::time::Duration::ZERO,
+            max_recent_attempts: 3,
+            recent_attempts_window: std::time::Duration::from_secs(60),
+        };
+        let token = tokio_util::sync::CancellationToken::new();
+        for initial_status in ["pending", "reverting"] {
+            sqlx::query("UPDATE drift_revert_signal SET status=$1 WHERE id=$2")
+                .bind(initial_status)
+                .bind(signal)
+                .execute(&pool)
+                .await?;
+            let error =
+                drift_revert::handle_pending_signal_on_startup(&pool, Some(config()), &token)
+                    .await
+                    .expect_err("an unreadable containment gate must block startup");
+            assert!(
+                error
+                    .to_string()
+                    .contains("could not check host history containment"),
+                "{error:#}"
+            );
+            let status: String =
+                sqlx::query_scalar("SELECT status FROM drift_revert_signal WHERE id=$1")
+                    .bind(signal)
+                    .fetch_one(&pool)
+                    .await?;
+            assert_eq!(
+                status, "pending",
+                "no destructive SQL ran; preserve retryability"
+            );
+            assert!(
+                tokio::time::timeout(
+                    std::time::Duration::from_millis(100),
+                    drift_revert::handle_pending_signal_on_startup(&pool, None, &token)
+                )
+                .await
+                .is_err(),
+                "other services must remain blocked while recovery is pending"
+            );
+        }
+        sqlx::migrate!("../db-migration/migrations")
+            .run(&pool)
+            .await?;
+        drift_revert::handle_pending_signal_on_startup(&pool, Some(config()), &token).await?;
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM drift_revert_signal WHERE id=$1")
+                .bind(signal)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(
+            status, "done",
+            "migration completion must allow the same signal to recover"
+        );
+        drift_revert::handle_pending_signal_on_startup(&pool, None, &token).await?;
+
+        // A readable gate must not turn failures in the revert SQL itself
+        // into endlessly retried preflight deferrals. Its parameter check
+        // rejects a host chain that does not exist.
+        let missing_chain: i64 =
+            sqlx::query_scalar("SELECT COALESCE(MAX(chain_id), 0) + 1 FROM host_chains")
+                .fetch_one(&pool)
+                .await?;
+        let invalid = drift_revert::create_revert_signal(&pool, missing_chain, 10)
+            .await?
+            .unwrap();
+        let error = drift_revert::handle_pending_signal_on_startup(&pool, Some(config()), &token)
+            .await
+            .expect_err("failure inside the revert script must remain terminal");
+        assert!(error.to_string().contains("does not exist in host_chains"));
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM drift_revert_signal WHERE id=$1")
+                .bind(invalid)
+                .fetch_one(&pool)
+                .await?;
+        assert!(status.starts_with("failed: "), "{status}");
+        Ok(())
     }
 }

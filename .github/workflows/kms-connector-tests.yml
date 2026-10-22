@@ -24,6 +24,7 @@ jobs:
     outputs:
       # Each output indicates if files in a specific component were modified
       changes-connector: ${{ steps.filter.outputs.connector }}
+      changes-shared-deps: ${{ steps.filter.outputs.shared-deps }}
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
@@ -42,9 +43,6 @@ jobs:
             - kms-connector/Cargo.*
             - gateway-contracts/rust_bindings/**
             - host-contracts/rust_bindings/**
-            - shared/user-decryption-signature/**
-            - shared/request-authorization/**
-            - shared/kms-context/**
             # The solana/ path dependencies of this workspace, direct or transitive, and the shared
             # fixtures its tests load; solana/scripts/check-path-filters.sh fails when one is missing.
             - solana/crates/zama-solana-acl/**
@@ -52,6 +50,46 @@ jobs:
             - solana/crates/zama-solana-permit/**
             - solana/crates/zama-solana-request/**
             - solana/test-fixtures/**
+          # Shared crates are tested on their own (`shared-crates-tests`): only check that the connector still
+          # compiles against them.
+          shared-deps:
+            - shared/ciphertext-attestation/**
+            - shared/fhevm-sig-auth/**
+            - shared/user-decryption-signature/**
+            - shared/request-authorization/**
+            - shared/kms-context/**
+
+  lint-connector:
+    name: kms-connector-tests/lint-connector (bpr)
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-shared-deps == 'true' && needs.check-changes.outputs.changes-connector != 'true' }}
+    timeout-minutes: 30
+    permissions:
+      contents: 'read' # Required to checkout repository code
+    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
+    defaults:
+      run:
+        shell: bash
+        working-directory: './kms-connector'
+
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: true
+          token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+          persist-credentials: 'false'
+
+      - name: Setup Rust
+        uses: ./.github/actions/setup_rust
+        with:
+          toolchain-dir: kms-connector
+
+      - name: Install pinned protoc
+        uses: ./.github/actions/setup-rust-and-protoc
+
+      - name: Linting
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
   test-connector:
     name: kms-connector-tests/test-connector (bpr)
@@ -84,7 +122,6 @@ jobs:
         run: |
           version="$(grep 'channel' "$GH_WORKSPACE/kms-connector/rust-toolchain.toml" | awk -F' = ' '{print $2}' | tr -d '"')"
           echo "RUST_IMAGE_VERSION=$version" >> "$GITHUB_ENV"
-          echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "${GITHUB_ENV}"
 
       - name: Login to GitHub Container Registry
         uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9

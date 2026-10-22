@@ -55,7 +55,7 @@ fn config() -> ConsumerConfig {
         confidential_bridge_address: None,
         database_url: Default::default(),
         database_retry_interval: Duration::from_millis(1),
-        service_name: "kms-finality-test".into(),
+        migrate_from_service_name: None,
         health_port: 0,
         dependence_cache_size: 16,
         dependence_by_connexity: false,
@@ -146,18 +146,40 @@ struct Harness {
 
 impl Harness {
     async fn deliver(&mut self, payload: &BlockPayload) {
-        let ack = ingest_payload(
-            &mut self.db,
-            &config(),
-            &options(),
-            &CHAIN_ID.to_string(),
-            payload,
-            self.store.clone(),
-            &tokio_util::sync::CancellationToken::new(),
-        )
-        .await
-        .unwrap();
-        assert!(matches!(ack, AckDecision::Ack));
+        let mut repair = None;
+        loop {
+            let result = ingest_payload(
+                &mut self.db,
+                &config(),
+                &options(),
+                &CHAIN_ID.to_string(),
+                repair.as_ref().unwrap_or(payload),
+                self.store.clone(),
+                &tokio_util::sync::CancellationToken::new(),
+            )
+            .await;
+            match result {
+                Ok(ack) => {
+                    assert!(matches!(ack, AckDecision::Ack));
+                    if repair.take().is_none() {
+                        return;
+                    }
+                }
+                Err(consumer::HandlerError::Transient(error)) => {
+                    let number = error
+                        .downcast_ref::<crate::database::ingest::HistoryGap>()
+                        .expect(
+                            "only ancestry recovery should defer this fixture",
+                        )
+                        .block_number;
+                    let mut block =
+                        activation(number, BlockFlow::FinalCatchup, false);
+                    block.transactions.clear();
+                    repair = Some(block);
+                }
+                Err(error) => panic!("unexpected consumer error: {error}"),
+            }
+        }
     }
 
     /// Redeliver `payload`, as the broker would, until the activation reaches
@@ -234,11 +256,12 @@ async fn consumer_activates_kms_material_only_on_finalized_blocks() {
         .await;
 
     // An observed fork carries a CRS event, but its finalized sibling is empty.
-    let orphan = activation(200, BlockFlow::Live, true);
+    let mut orphan = activation(200, BlockFlow::Live, true);
+    orphan.block_hash = B256::repeat_byte(55);
     harness.deliver(&orphan).await;
     let mut canonical = orphan;
     canonical.flow = BlockFlow::Final;
-    canonical.block_hash = B256::repeat_byte(55);
+    canonical.block_hash = B256::from(U256::from(200));
     canonical.transactions.clear();
     harness
         .deliver_until(
@@ -288,7 +311,10 @@ async fn consumer_activates_kms_material_only_on_finalized_blocks() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(finalized, 3);
+    assert_eq!(
+        finalized, 101,
+        "backfill recovered the empty 100..=200 links"
+    );
 
     // A drift revert that is not done holds every KMS pass.
     use fhevm_engine_common::drift_revert::{

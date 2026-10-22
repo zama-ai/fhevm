@@ -8,12 +8,13 @@ use connector_utils::types::{
     solana_request::{SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1},
 };
 use kms_connector_api::{
-    AttestationType, ErrorCode, PublicDecryptionRequest, RequestValidity,
-    SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody, SolanaUserDecryptionRequest,
-    UserDecryptionRequest,
+    AttestationType, ErrorCode, MAX_USER_DECRYPTION_DURATION_SECONDS, PublicDecryptionRequest,
+    RequestValidity, SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody,
+    SolanaUserDecryptionRequest, UserDecryptionRequest,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::ops::RangeInclusive;
 use tfhe::FheTypes;
 use thiserror::Error;
 use zama_solana_acl::host_chain::{handle_chain_id, is_solana_host_chain_id};
@@ -21,6 +22,13 @@ use zama_solana_acl::host_chain::{handle_chain_id, is_solana_host_chain_id};
 /// The maximum total bit size of the handles of a single decryption request. Mirrors
 /// `MAX_DECRYPTION_REQUEST_BITS` of the `Decryption` gateway contract.
 const MAX_DECRYPTION_REQUEST_BITS: u64 = 2048;
+
+/// The accepted `requestValidity.startTimestamp` values: must fit in an `i64` (DB storage).
+const START_TIMESTAMP_RANGE: RangeInclusive<u64> = 0..=i64::MAX as u64;
+
+/// The accepted `requestValidity.durationSeconds` values. Mirrors the bounds of the `Decryption`
+/// gateway contract.
+const DURATION_SECONDS_RANGE: RangeInclusive<u64> = 1..=MAX_USER_DECRYPTION_DURATION_SECONDS;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ValidationError {
@@ -38,8 +46,13 @@ pub enum ValidationError {
     UnsupportedChainId(u64),
     #[error("invalid extraData: {0}")]
     InvalidExtraData(String),
-    #[error("requestValidity.{field} is too high: {value}, max is {}", i64::MAX)]
-    RequestValidityOutOfRange { field: &'static str, value: u64 },
+    #[error("requestValidity.{field} is out of range: {value}, expected {min}..={max}")]
+    RequestValidityOutOfRange {
+        field: &'static str,
+        value: u64,
+        min: u64,
+        max: u64,
+    },
     #[error(
         "unsupported attestationType, supported: [{supported}]",
         supported = supported_attestation_types()
@@ -164,12 +177,25 @@ pub fn parse_body<T: DeserializeOwned>(body: Value) -> Result<T, ValidationError
 }
 
 fn validate_request_validity(validity: &RequestValidity) -> Result<(), ValidationError> {
-    for (field, value) in [
-        ("startTimestamp", validity.startTimestamp),
-        ("durationSeconds", validity.durationSeconds),
+    for (field, value, range) in [
+        (
+            "startTimestamp",
+            validity.startTimestamp,
+            START_TIMESTAMP_RANGE,
+        ),
+        (
+            "durationSeconds",
+            validity.durationSeconds,
+            DURATION_SECONDS_RANGE,
+        ),
     ] {
-        if i64::try_from(value).is_err() {
-            return Err(ValidationError::RequestValidityOutOfRange { field, value });
+        if !range.contains(&value) {
+            return Err(ValidationError::RequestValidityOutOfRange {
+                field,
+                value,
+                min: *range.start(),
+                max: *range.end(),
+            });
         }
     }
     Ok(())
@@ -468,28 +494,45 @@ pub(crate) mod tests {
     #[test]
     fn request_validity_out_of_range() {
         let cfg = config();
-        let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
-        request.payload.requestValidity.startTimestamp = i64::MAX as u64;
-        assert_eq!(validate_user_decryption(&request, &cfg), Ok(()));
+        let (start, duration) = (START_TIMESTAMP_RANGE, DURATION_SECONDS_RANGE);
+        let in_range = [
+            ("startTimestamp", *start.start()),
+            ("startTimestamp", *start.end()),
+            ("durationSeconds", *duration.start()),
+            ("durationSeconds", *duration.end()),
+        ];
+        let out_of_range = [
+            ("startTimestamp", *start.end() + 1, &start),
+            ("durationSeconds", *duration.start() - 1, &duration),
+            ("durationSeconds", *duration.end() + 1, &duration),
+        ];
+        let request_with = |field, value| {
+            let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
+            let validity = &mut request.payload.requestValidity;
+            match field {
+                "startTimestamp" => validity.startTimestamp = value,
+                _ => validity.durationSeconds = value,
+            }
+            request
+        };
 
-        request.payload.requestValidity.startTimestamp = i64::MAX as u64 + 1;
-        assert_eq!(
-            validate_user_decryption(&request, &cfg),
-            Err(ValidationError::RequestValidityOutOfRange {
-                field: "startTimestamp",
-                value: i64::MAX as u64 + 1,
-            })
-        );
-
-        request.payload.requestValidity.startTimestamp = 1_770_000_000;
-        request.payload.requestValidity.durationSeconds = u64::MAX;
-        assert_eq!(
-            validate_user_decryption(&request, &cfg),
-            Err(ValidationError::RequestValidityOutOfRange {
-                field: "durationSeconds",
-                value: u64::MAX,
-            })
-        );
+        for (field, value) in in_range {
+            assert_eq!(
+                validate_user_decryption(&request_with(field, value), &cfg),
+                Ok(())
+            );
+        }
+        for (field, value, range) in out_of_range {
+            assert_eq!(
+                validate_user_decryption(&request_with(field, value), &cfg),
+                Err(ValidationError::RequestValidityOutOfRange {
+                    field,
+                    value,
+                    min: *range.start(),
+                    max: *range.end(),
+                })
+            );
+        }
     }
 
     #[test]

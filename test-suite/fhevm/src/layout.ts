@@ -202,6 +202,14 @@ export const PORTS = [
   9001,
 ];
 export const OBJECT_STORE_INTERNAL_URL = `http://object-store:${OBJECT_STORE_PORT}`;
+/**
+ * Per-operator alias for the one object store. Every alias reaches the same
+ * container, so a test blocks one of them on one container to cut that peer's
+ * reads and leave every other read working.
+ */
+export const objectStoreOperatorHost = (index: number) => `object-store-${index}`;
+export const objectStoreOperatorUrl = (index: number) =>
+  `http://${objectStoreOperatorHost(index)}:${OBJECT_STORE_PORT}`;
 export const OBJECT_STORE_EXTERNAL_URL = `http://localhost:${OBJECT_STORE_PORT}`;
 export const KMS_STORAGE_PUBLISHED_URL = `http://minio:${OBJECT_STORE_PORT}`;
 export const POSTGRES_HOST = `db:${POSTGRES_PORT}`;

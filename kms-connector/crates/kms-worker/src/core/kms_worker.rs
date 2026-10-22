@@ -23,6 +23,7 @@ use connector_utils::{
     types::{KmsResponse, ProtocolEvent, ProtocolEventKind, db::RequestSource},
 };
 use fhevm_host_bindings::acl::ACL;
+use futures::FutureExt;
 use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -89,15 +90,18 @@ where
             let response_publisher = self.response_publisher.clone();
             let max_decryption_attempts = self.max_decryption_attempts;
 
-            spawn_with_limit(async move {
-                Self::handle_event(
-                    event_processor,
-                    response_publisher,
-                    event,
-                    max_decryption_attempts,
-                )
-                .await
-            })
+            spawn_with_limit(
+                async move {
+                    Self::handle_event(
+                        event_processor,
+                        response_publisher,
+                        event,
+                        max_decryption_attempts,
+                    )
+                    .await
+                }
+                .boxed(),
+            )
             .await;
         }
     }

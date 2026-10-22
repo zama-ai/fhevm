@@ -77,10 +77,12 @@ Key inputs (all have sensible defaults — you rarely set more than a couple):
   Forces `nb_coprocessor=2` when N=1. The `preview-env-blue-green` PR label
   is the other gate. With `deploy_polygon` (so also with `chain_mode=testnets`)
   the upgrade spans both host chains.
-- `enable_gpu` — GPU workers + Default FHE params (default `false`), including
-  on Anvil. CLI `--gpu`. Dispatch-only: the `preview-env-gpu` label cannot
-  carry a worker tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS
-  stays CPU. CPU Anvil stays on Test params.
+- `enable_gpu` — GPU workers (default `false`), including on Anvil. CLI
+  `--gpu`. Dispatch-only: the `preview-env-gpu` label cannot carry a worker
+  tag. With `enable_blue_green`, Green/GCS is GPU and Blue/BCS stays CPU. GPU
+  workers need Default FHE params, so not with `fhe_keys=test-secure`.
+- `fhe_keys` — `default-insecure` (the default), `default-secure` or
+  `test-secure`. CLI `--fhe-keys`. See "FHE keys" below.
 - `workers_tag` — image tag for tfhe, sns, and zkproof. Required when
   `enable_gpu=true` on a dispatch (CLI `--workers-tag`). Must be empty when
   GPU is off. The `preview-env-gpu` label cannot carry a tag, so a GPU
@@ -188,6 +190,7 @@ helm-install; Actions stays the write path. `--ref` must already be on origin.
 ci/preview-env/preview-env launch --ref <your-branch> --tests
 ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --tests
 ci/preview-env/preview-env launch --ref <your-branch> --gpu --workers-tag fd282b1-cuda12.8-sm70 --testnets --tests
+ci/preview-env/preview-env launch --ref <your-branch> --fhe-keys default-secure --lifetime 12 --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blockchain-dev
 ci/preview-env/preview-env launch --ref <your-branch> --testnets --tests
 ci/preview-env/preview-env launch --ref <your-branch> --blue-green --blockchain-dev --tests
@@ -198,7 +201,7 @@ ci/preview-env/preview-env launch --ref <your-branch> --tests \
 ```
 
 `--blue-green` sends `enable_blue_green=true` and `nb_coprocessor=2`.
-`--gpu` sends `enable_gpu=true` (GPU workers and Default FHE params) and
+`--gpu` sends `enable_gpu=true` (GPU workers) and
 requires `--workers-tag`, the image tag for tfhe, sns, and zkproof. Combine
 with `--testnets` for Sepolia/Amoy, or `--blue-green` for Green-only GPU.
 `--parties 2` without `--blue-green` is two-party consensus only.
@@ -215,6 +218,30 @@ ci/preview-env/preview-env namespace --run-id <run-id>
 ```
 
 ---
+
+## FHE keys
+
+Each preview makes its own FHE keys. `fhe_keys` (CLI `--fhe-keys`) picks the
+parameters and the keygen, as `<params>-<keygen>`:
+
+| `fhe_keys` | Time (4 KMS parties) | Use it for |
+| --- | --- | --- |
+| `default-insecure` (the default) | key in about 6 min | Almost everything: production-size keys, made with a shortcut. |
+| `default-secure` | about 2 h | Production-like runs, and testing the preprocessing and DKG themselves. Set `--lifetime` to cover it. |
+| `test-secure` | tens of minutes | Testing the preprocessing and keygen flow faster (for example key rotation). |
+
+Test parameters with the insecure keygen test neither production-size keys nor
+the real keygen, so that pair is not offered.
+
+- `default` parameters are the production ones. `test` parameters are much
+  smaller, so FHE operations are far cheaper than in production.
+- `insecure`: the KMS insecure keygen, a shortcut where one party makes the key
+  and shares it. Test environments only. The preview runs the docker stack's
+  `kms-insecure-keygen-redirect` in front of each KMS core to use it (see `README.md`).
+- `secure`: the real multi-party preprocessing and DKG, as in production.
+- The CRS is always made by the real ceremony.
+- GPU workers need `default` parameters, so `--gpu` refuses `--fhe-keys test-secure`.
+- PR-label deploys always use the defaults.
 
 ## Connect to your environment
 
@@ -268,14 +295,79 @@ kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost
 - **Without:** the stack is deployed with an idle test-suite Job — run tests
   yourself against the namespace, or re-label with `preview-env-e2e-tests`.
 
-To poke a party's connector proxy by hand (test CA, so `-k`; the API key is the
-fixed test literal `fhevm-e2e-kms-connector-api-key`, stored in the Secret `kms-connector-proxy`
-by `ci/preview-env/scripts/deploy/deploy-kms-connector.sh`):
+To poke a party's connector proxy by hand (test CA, so `-k`). Requests need an
+`Authorization: FhevmSig ...` header (RFC 038, see `fhevmSigHeader` in
+`test-suite/e2e/test/sdk/connector/connectorHttp.ts`), so an unsigned call only proves the
+proxy is up, answering `401` with `auth_missing`:
 
 ```bash
 kubectl port-forward -n <namespace> svc/kms-connector-1-kms-connector-proxy 8443:8443
-curl -sk -H "Authorization: Bearer fhevm-e2e-kms-connector-api-key" https://localhost:8443/v1/version
+curl -sk https://localhost:8443/version
 ```
+
+## KMS context switch
+
+On a preview that already finished keygen, replace one dead party and then
+broadcast a same-committee context switch. Neither command is part of
+`preview-env-deploy`. The contract Jobs tolerate
+`karpenter.sh/nodepool=zws-pool`.
+
+Replace party `<id>` with a new core named `<name>`. The party id stays in
+`kmsPeers.id`. `<name>` is the release, the pod, and the vault prefix only.
+Party 1 with name 5 becomes pod `kms-core-5-core-1` and prefix `PUB-p5`. The
+script points that party's CA fetch at `PUB-p<name>`, strips the peer list so
+the server boots with `peers: None`, and points that party's connector at the
+new pod. Leave every other party running. Do not helm-upgrade the new release
+afterwards.
+
+```bash
+NAMESPACE=<namespace> \
+  bash ci/preview-env/scripts/deploy/prepare-kms-core-replacement.sh 1 5
+```
+
+The switch script keeps each party id and uses the Running pod
+`kms-core-<name>-core-<id>`. A replacement uses the CA, signer, and storage
+prefix from `PUB-p<name>`. Set `KMS_CORE_NAMES=1=5,4=6` when more than one
+Running pod matches a party. It fills the party env from the live contract
+releases, then broadcasts
+`defineNewKmsContextAndEpoch` and bumps the gateway context id to the next
+ProtocolConfig allocation id. It does not wipe KMS key storage and does not
+destroy the active context.
+
+The first host deploy (`wire-contracts-values.sh`) registers that same material
+from the public vault and the enclave image. A switch replays the previous
+context, so a preview whose first context used the placeholder certificate
+needs a new preview rather than another switch.
+
+```bash
+CONTRACTS_CHART="$PWD/contracts" NAMESPACE=<namespace> \
+  bash ci/preview-env/scripts/deploy/kms-context-switch.sh
+```
+
+Run it from a checkout of the ref that deployed the namespace. Pull the
+contracts chart first when the preview pinned `contracts_chart_version`. The
+jobs return when the host and gateway transactions are mined. With the replaced
+party scaled to 0, the reshare then waits out the charged rounds (hours) before
+the new context activates. `Still waiting to receive from party` is expected
+for that whole wait. Extend the dispatch lifetime so the namespace is still
+there when it finishes.
+
+## Epoch rotation
+
+Same context, new epoch. `rotate-epoch.sh` broadcasts
+`defineNewEpochForCurrentKmsContext` with the live host-contracts network and
+deployer, then watches that preview's host chain until every signer has
+confirmed, `ActivateEpoch` is in, and the epoch id has moved. The context id
+stays the same. It then runs the idle test-suite user and public decrypt
+(`test user input uint64`), or `DECRYPT_CMD` when that is set.
+
+```bash
+CONTRACTS_CHART="$PWD/contracts" NAMESPACE=<namespace> \
+  bash ci/preview-env/scripts/deploy/rotate-epoch.sh
+```
+
+The Helm release stays installed with its Job Complete. The next run
+uninstalls it before broadcasting again.
 
 ## Destroy an environment
 

@@ -50,6 +50,7 @@ pub trait DeserializeConfig {
                     .with_list_parse_key("kms_core_endpoints")
                     .with_list_parse_key("supported_chain_ids")
                     .with_list_parse_key("endpoint_addresses")
+                    .with_list_parse_key("allowed_senders")
                     .try_parsing(true),
             );
 

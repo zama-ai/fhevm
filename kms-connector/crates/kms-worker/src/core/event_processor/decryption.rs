@@ -128,11 +128,13 @@ where
     ) -> Result<(), RequestCheckError> {
         info!("Starting ACL check for {} handles...", handles.len());
 
-        let (ct_handle_contract_pairs, delegator_address) =
+        let (ct_handle_contract_pairs, delegator_address, start_timestamp, contracts_chain_id) =
             match delegatedUserDecryptionRequestCall::abi_decode(calldata.as_slice()) {
                 Ok(parsed_calldata) => (
                     parsed_calldata.ctHandleContractPairs,
                     Some(parsed_calldata.delegationAccounts.delegatorAddress),
+                    parsed_calldata.requestValidity.startTimestamp,
+                    parsed_calldata.contractsInfo.chainId,
                 ),
                 Err(e) => {
                     let parsed_calldata = userDecryptionRequestCall::abi_decode(
@@ -148,9 +150,30 @@ where
                             ),
                         )
                     })?;
-                    (parsed_calldata.ctHandleContractPairs, None)
+                    (
+                        parsed_calldata.ctHandleContractPairs,
+                        None,
+                        parsed_calldata.requestValidity.startTimestamp,
+                        parsed_calldata.contractsInfo.chainId,
+                    )
                 }
             };
+
+        let contracts_chain_id = u64::try_from(contracts_chain_id).map_err(|e| {
+            RequestCheckError::irrecoverable(
+                RequestCheckKind::Acl,
+                ErrorCode::Unprocessable,
+                anyhow!("Invalid contracts chain id {contracts_chain_id}: {e}"),
+            )
+        })?;
+        let signature_host_client =
+            self.host_clients.get(&contracts_chain_id).ok_or_else(|| {
+                RequestCheckError::recoverable(
+                    RequestCheckKind::Acl,
+                    ErrorCode::UpstreamTransient,
+                    anyhow!("No ACL contract config found for chain id {contracts_chain_id}"),
+                )
+            })?;
 
         let contracts_map = HashMap::<FixedBytes<32>, Address, DefaultHashBuilder>::from_iter(
             ct_handle_contract_pairs
@@ -159,7 +182,7 @@ where
         );
         let contracts_map_ref = &contracts_map;
 
-        try_join_all(handles.iter().map(|handle| async move {
+        let acl_checks = try_join_all(handles.iter().map(|handle| async move {
             let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
@@ -197,8 +220,16 @@ where
                 )
                 .await
             }
-        }))
-        .await?;
+        }));
+        tokio::try_join!(
+            biased;
+            self.inner_signature_invalidation_check(
+                signature_host_client,
+                user_address,
+                start_timestamp,
+            ),
+            acl_checks,
+        )?;
 
         info!("ACL check passed for {} handles!", handles.len());
         Ok(())
@@ -325,7 +356,7 @@ where
         if now > end {
             return Err(RequestCheckError::irrecoverable(
                 RequestCheckKind::Signature,
-                ErrorCode::UserSignatureRejected,
+                ErrorCode::UserDecryptionExpired,
                 anyhow!(
                     "RFC016 user decryption request validity window expired: now {now} > end {end}"
                 ),
@@ -379,7 +410,7 @@ where
                 payload.signature.as_ref(),
                 self.erc1271_gas_limit,
             ),
-            self.inner_invalidation_check_for_user_decryption_v2(
+            self.inner_signature_invalidation_check(
                 host_client,
                 payload.userAddress,
                 start,
@@ -490,9 +521,9 @@ where
         ))
     }
 
-    /// RFC016 signature invalidation check. Rejects if `startTimestamp < invalidationTs`, meaning
-    /// the user has invalidated all signatures issued before `invalidationTs`.
-    async fn inner_invalidation_check_for_user_decryption_v2(
+    /// Signature invalidation check. Rejects if `startTimestamp < invalidationTs`, meaning the
+    /// user has invalidated all signatures issued before `invalidationTs`.
+    async fn inner_signature_invalidation_check(
         &self,
         host_client: &HostRpcClient<HP>,
         user_address: Address,
@@ -506,7 +537,7 @@ where
                 RequestCheckKind::Signature,
                 ErrorCode::UserSignatureRejected,
                 anyhow!(
-                    "RFC016 signature invalidated: startTimestamp {start_timestamp} < \
+                    "Signature invalidated: startTimestamp {start_timestamp} < \
                      invalidatedBefore {invalidation_ts} for userAddress {user_address}"
                 ),
             ));
@@ -693,7 +724,10 @@ mod tests {
     };
     use fhevm_gateway_bindings::decryption::{
         Decryption::CtHandleContractPair,
-        IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
+        IDecryption::{
+            ContractsInfo, DelegationAccounts, RequestValidity, RequestValiditySeconds,
+            UserDecryptionRequestPayload,
+        },
     };
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
@@ -925,6 +959,7 @@ mod tests {
                 ctHandle: handle,
                 contractAddress: rand_address(),
             }],
+            contractsInfo: contracts_info_for(handle),
             ..Default::default()
         }
         .abi_encode();
@@ -937,6 +972,7 @@ mod tests {
                 user_allowed,
                 contract_allowed,
             } => {
+                asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
                 asserter.push_success(&user_allowed.abi_encode());
                 asserter.push_success(&contract_allowed.abi_encode());
             }
@@ -991,6 +1027,7 @@ mod tests {
                 ctHandle: handle,
                 contractAddress: rand_address(),
             }],
+            contractsInfo: contracts_info_for(handle),
             ..Default::default()
         }
         .abi_encode();
@@ -1000,6 +1037,7 @@ mod tests {
         match mock_response {
             DelegatedUserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
             DelegatedUserDecryptACLMock::Success { is_delegated } => {
+                asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
                 asserter.push_success(&is_delegated.abi_encode());
             }
         }
@@ -1023,6 +1061,115 @@ mod tests {
                     "Expected error message to contain '{expected_msg}', got: {msg}",
                 );
             }
+        }
+    }
+
+    fn contracts_info_for(handle: B256) -> ContractsInfo {
+        ContractsInfo {
+            chainId: U256::from(extract_chain_id_from_handle(&handle).unwrap()),
+            addresses: vec![rand_address()],
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Legacy signature invalidation check. Both paths share the same check: the delegated
+    // case only covers its distinct calldata decoding (`startTimestamp`, `contractsInfo`).
+    // -------------------------------------------------------------------------
+    #[rstest]
+    #[case::direct_not_invalidated(false, InvalidationMock::Zero, ExpectedOutcome::Ok)]
+    #[case::direct_invalidated(false, InvalidationMock::AboveStart, ExpectedOutcome::Irrecoverable)]
+    #[case::direct_boundary_passes(false, InvalidationMock::EqualToStart, ExpectedOutcome::Ok)]
+    #[case::direct_transport_error(
+        false,
+        InvalidationMock::TransportError,
+        ExpectedOutcome::Recoverable
+    )]
+    #[case::delegated_invalidated(
+        true,
+        InvalidationMock::AboveStart,
+        ExpectedOutcome::Irrecoverable
+    )]
+    #[tokio::test]
+    async fn check_ciphertexts_allowed_for_user_decryption_invalidation(
+        #[case] delegated: bool,
+        #[case] mock: InvalidationMock,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let asserter = Asserter::new();
+        let handle = rand_handle();
+        let processor = setup_test_processor(asserter.clone(), handle);
+        let user_address = rand_address();
+
+        let start = U256::from((Utc::now().timestamp() - 3600) as u64);
+        let ct_handle_contract_pairs = vec![CtHandleContractPair {
+            ctHandle: handle,
+            contractAddress: rand_address(),
+        }];
+        let request_validity = RequestValidity {
+            startTimestamp: start,
+            durationDays: U256::from(1),
+        };
+        let calldata = if delegated {
+            delegatedUserDecryptionRequestCall {
+                ctHandleContractPairs: ct_handle_contract_pairs,
+                requestValidity: request_validity,
+                delegationAccounts: DelegationAccounts {
+                    delegatorAddress: rand_address(),
+                    delegateAddress: user_address,
+                },
+                contractsInfo: contracts_info_for(handle),
+                ..Default::default()
+            }
+            .abi_encode()
+        } else {
+            userDecryptionRequestCall {
+                ctHandleContractPairs: ct_handle_contract_pairs,
+                requestValidity: request_validity,
+                contractsInfo: contracts_info_for(handle),
+                userAddress: user_address,
+                ..Default::default()
+            }
+            .abi_encode()
+        };
+
+        let passes = match mock {
+            InvalidationMock::Zero => {
+                asserter.push_success(&U256::ZERO.abi_encode());
+                true
+            }
+            InvalidationMock::AboveStart => {
+                asserter.push_success(&U256::from(u64::MAX).abi_encode());
+                false
+            }
+            InvalidationMock::EqualToStart => {
+                asserter.push_success(&start.abi_encode());
+                true
+            }
+            InvalidationMock::TransportError => {
+                asserter.push_failure_msg("transport error");
+                false
+            }
+        };
+
+        if passes {
+            if delegated {
+                asserter.push_success(&true.abi_encode()); // isHandleDelegatedForUserDecryption
+            } else {
+                asserter.push_success(&true.abi_encode()); // isAllowed(handle, user)
+                asserter.push_success(&true.abi_encode()); // isAllowed(handle, contract)
+            }
+        }
+
+        let result = processor
+            .check_ciphertexts_allowed_for_user_decryption(calldata, &[handle], user_address)
+            .await
+            .map_err(RequestCheckError::record);
+
+        match expected {
+            ExpectedOutcome::Ok => {
+                result.unwrap();
+            }
+            _ => assert_kind(&result, &expected),
         }
     }
 
@@ -1104,6 +1251,15 @@ mod tests {
             .check_user_decryption_request_v2(&request)
             .await
             .map_err(RequestCheckError::record);
+
+        let error = result.as_ref().unwrap_err();
+        if start_offset_secs < 0 {
+            assert_eq!(error.code, ErrorCode::UserDecryptionExpired);
+            assert!(!error.code.retryable());
+        } else {
+            assert_eq!(error.code, ErrorCode::UserSignatureRejected);
+            assert!(error.code.retryable());
+        }
 
         match expected {
             ExpectedOutcome::Ok => {

@@ -55,7 +55,7 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 tracing-chrome = { version = "0.7.2", optional = true }
 prometheus = "0.14"
 clap = { version = "4.5.60", features = ["derive"] }
-rustls = { version = "0.23.36", features = [
+rustls = { version = "0.23.46", features = [
   "aws-lc-rs",
 ], default-features = false }
 # Path dependency to stay up to date and in sync with the shared crate.

@@ -334,8 +334,14 @@ additionalResources:
                     configMapKeyRef:
                       name: kms-connector-http
                       key: endpoint-urls
-                - name: KMS_CONNECTOR_API_KEY
-                  value: "fhevm-e2e-kms-connector-api-key"
+                - name: KMS_CONNECTOR_TX_SENDER_ADDRESSES
+                  valueFrom:
+                    configMapKeyRef:
+                      name: kms-connector-http
+                      key: tx-sender-addresses
+                # FhevmSig test key; its address is kmsConnectorProxy.allowedSenders in values-kms-connector-e2e.yaml.
+                - name: KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY
+                  value: "0xdcd7f0c4990a3df000d45f6eb2728a8cf93f0d16b1f6bdffbe07f5a250250e6c"
                 - name: KMS_THRESHOLD
                   valueFrom:
                     configMapKeyRef:

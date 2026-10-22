@@ -98,7 +98,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
      * It checks that the version is correct, the owner/pauser are set to the expected addresses, and the fhevmExecutor address is correct.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.6.0")));
+        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.7.0")));
         assertEq(acl.owner(), owner);
         assertEq(acl.isPauser(pauser), true);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
@@ -465,6 +465,50 @@ contract ACLTest is HostContractsDeployerTestUtils {
 
         vm.warp(uint256(expirationDate) + 1);
         vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+    }
+
+    /**
+     * @dev A per-contract delegation row is active, with no handle allowed, until the delegator revokes it.
+     */
+    function test_IsDelegatedForUserDecryptionUntilRevoked(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
+
+        vm.assertFalse(acl.isDelegatedForUserDecryption(sender, delegate, contractAddress));
+
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, contractAddress, uint64(block.timestamp + 7 hours));
+        vm.assertTrue(acl.isDelegatedForUserDecryption(sender, delegate, contractAddress));
+
+        vm.roll(block.number + 1);
+        vm.prank(sender);
+        acl.revokeDelegationForUserDecryption(delegate, contractAddress);
+        vm.assertFalse(acl.isDelegatedForUserDecryption(sender, delegate, contractAddress));
+    }
+
+    /**
+     * @dev A wildcard delegation row is active for any contract before the expiration timestamp and inactive at it.
+     */
+    function test_IsDelegatedForUserDecryptionWithWildcardUntilExpiration(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _assumeWildcardTestPreconditions(sender, delegate, contractAddress);
+
+        uint64 expirationDate = uint64(block.timestamp + 7 hours);
+        address wildcardDelegation = acl.WILDCARD_DELEGATION_ADDRESS();
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, wildcardDelegation, expirationDate);
+
+        vm.warp(uint256(expirationDate) - 1);
+        vm.assertTrue(acl.isDelegatedForUserDecryption(sender, delegate, contractAddress));
+
+        vm.warp(expirationDate);
+        vm.assertFalse(acl.isDelegatedForUserDecryption(sender, delegate, contractAddress));
     }
 
     /**

@@ -15,14 +15,15 @@ use host_listener::poller::{run_poller, PollerConfig};
 use test_harness::instance::ImportMode;
 
 mod common;
-use common::{allowed_request, trivial_encrypt_request, RawLog};
+use alloy::sol_types::SolEvent;
+use common::{allowed_request, emit_log_request, RawLog};
+use host_listener::contracts::TfheContract::TrivialEncrypt;
 
 #[tokio::test]
 #[serial(db)]
 async fn poller_state_round_trip() -> Result<(), Box<dyn std::error::Error>> {
     let db_instance =
-        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
-            .await?;
+        test_harness::instance::setup_test_db(ImportMode::None).await?;
     let chain_id = ChainId::try_from(42_u64).unwrap();
 
     let db_url: DatabaseURL = db_instance.db_url.clone();
@@ -54,11 +55,10 @@ enum EventKind {
 
 #[tokio::test]
 #[serial(db)]
-async fn poller_catches_up_to_safe_tip(
+async fn poller_restart_repairs_omitted_acl_events_at_unchanged_safe_tip(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let db_instance =
-        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
-            .await?;
+        test_harness::instance::setup_test_db(ImportMode::None).await?;
     let chain_id = ChainId::try_from(42_u64).unwrap();
 
     let db_url: DatabaseURL = db_instance.db_url.clone();
@@ -102,11 +102,20 @@ async fn poller_catches_up_to_safe_tip(
 
     let mut receipts: Vec<(u64, EventKind)> = Vec::new();
     for i in 0..3u64 {
-        let tfhe_txn_req = trivial_encrypt_request(
+        let mut handle = [0_u8; 32];
+        handle[0] = (i + 1) as u8;
+        handle[21] = 0xff;
+        handle[22..30].copy_from_slice(&42_u64.to_be_bytes());
+        handle[30] = 4;
+        let tfhe_txn_req = emit_log_request(
             &tfhe_contract,
-            signer_address,
-            U256::from(i + 1),
-            4_u8,
+            TrivialEncrypt {
+                caller: signer_address,
+                pt: U256::from(i + 1),
+                toType: 4,
+                result: handle.into(),
+            }
+            .encode_log_data(),
         );
         let tfhe_receipt = provider
             .send_transaction(tfhe_txn_req)
@@ -125,7 +134,7 @@ async fn poller_catches_up_to_safe_tip(
             &acl_contract,
             signer_address,
             signer_address,
-            U256::from(i + 1).into(),
+            handle.into(),
         );
         let acl_receipt = provider
             .send_transaction(acl_txn_req)
@@ -155,8 +164,11 @@ async fn poller_catches_up_to_safe_tip(
     assert!(expected_acl > 0, "no finalized ACL events to ingest");
 
     let config = PollerConfig {
+        replay_window: 64,
         url: http_url,
-        acl_address: *acl_contract.address(),
+        // Model an omitted event family in the initial ingestion filter. The
+        // restart restores the actual contract without changing chain history.
+        acl_address: alloy::primitives::Address::ZERO,
         tfhe_address: *tfhe_contract.address(),
         kms_generation_address: Some(*kms_generation_contract.address()),
         protocol_config_address: Some(alloy::primitives::Address::ZERO),
@@ -169,7 +181,7 @@ async fn poller_catches_up_to_safe_tip(
         service_name: String::new(),
         max_http_retries: 0,
         rpc_compute_units_per_second: 1000,
-        health_port: 18081,
+        health_port: 0,
         seed_start_block: Some(0),
         dependence_cache_size: 10_000,
         dependence_by_connexity: false,
@@ -180,7 +192,7 @@ async fn poller_catches_up_to_safe_tip(
         canonical_protocol_config_chain_id: Some(chain_id.as_u64()),
     };
 
-    let poller_handle = tokio::spawn(run_poller(config));
+    let poller_handle = tokio::spawn(run_poller(config.clone()));
 
     // Wait for the poller to advance to the safe tip.
     let mut attempts = 0;
@@ -232,7 +244,36 @@ async fn poller_catches_up_to_safe_tip(
     .unwrap_or_default();
 
     assert_eq!(computations_count, expected_tfhe);
-    assert_eq!(allowed_count, expected_acl);
+    assert_eq!(allowed_count, 0, "initial ingestion omitted all ACL events");
+    let mut repaired = config;
+    repaired.acl_address = *acl_contract.address();
+    let restart = tokio::spawn(run_poller(repaired));
+    tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            assert!(!restart.is_finished(), "restart must remain live");
+            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM allowed_handles").fetch_one(&pool).await?;
+            let replay_done: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM public.listener_replay_state WHERE chain_id=42 AND NOT pending)")
+                .fetch_one(&pool).await?;
+            if count == expected_acl && replay_done { break; }
+            sleep(Duration::from_millis(50)).await;
+        }
+        Ok::<_,sqlx::Error>(())
+    }).await??;
+    restart.abort();
+    let _ = restart.await;
+    let cursor: i64 = sqlx::query_scalar("SELECT last_caught_up_block FROM host_listener_poller_state WHERE chain_id=42").fetch_one(&pool).await?;
+    assert_eq!(
+        cursor as u64, safe_tip,
+        "repair must not rewind durable progress"
+    );
+    assert!(!fhevm_engine_common::chain_recovery::is_halted(&pool).await?);
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM computations")
+            .fetch_one(&pool)
+            .await?,
+        expected_tfhe,
+        "replay must not duplicate computations"
+    );
     assert_eq!(last_valid_block as u64, safe_tip);
 
     Ok(())

@@ -2,6 +2,9 @@
 //! dependency analysis and database encoding.
 use alloy_primitives::B256 as Handle;
 
+use super::event_operands::{
+    binary_rhs_is_scalar, fhe_mul_div_factor2_is_scalar,
+};
 use crate::contracts::{
     TfheContract as C, TfheContract::TfheContractEvents as E,
 };
@@ -259,7 +262,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheAdd,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheSub(C::FheSub {
@@ -270,7 +276,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheSub,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheMul(C::FheMul {
@@ -281,7 +290,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheMul,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheDiv(C::FheDiv {
@@ -292,7 +304,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheDiv,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheRem(C::FheRem {
@@ -303,7 +318,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheRem,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheBitAnd(C::FheBitAnd {
@@ -314,7 +332,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheBitAnd,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheBitOr(C::FheBitOr {
@@ -325,7 +346,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheBitOr,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheBitXor(C::FheBitXor {
@@ -336,7 +360,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheBitXor,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheShl(C::FheShl {
@@ -347,7 +374,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheShl,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheShr(C::FheShr {
@@ -358,7 +388,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheShr,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheRotl(C::FheRotl {
@@ -369,7 +402,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheRotl,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheRotr(C::FheRotr {
@@ -380,7 +416,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheRotr,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheEq(C::FheEq {
@@ -391,7 +430,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheEq,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheNe(C::FheNe {
@@ -402,7 +444,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheNe,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheGe(C::FheGe {
@@ -413,7 +458,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheGe,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheGt(C::FheGt {
@@ -424,7 +472,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheGt,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheLe(C::FheLe {
@@ -435,7 +486,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheLe,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheLt(C::FheLt {
@@ -446,7 +500,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheLt,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheMin(C::FheMin {
@@ -457,7 +514,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheMin,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::FheMax(C::FheMax {
@@ -468,7 +528,10 @@ impl Computation {
                 ..
             }) => (
                 O::FheMax,
-                vec![H(*lhs), Operand::binary_rhs(*rhs, !scalarByte.is_zero())],
+                vec![
+                    H(*lhs),
+                    Operand::binary_rhs(*rhs, binary_rhs_is_scalar(scalarByte)),
+                ],
                 *result,
             ),
             E::Cast(C::Cast {
@@ -552,7 +615,10 @@ impl Computation {
                 O::FheMulDiv,
                 vec![
                     H(*factor1),
-                    Operand::binary_rhs(*factor2, scalarByte.0[0] & 0b10 != 0),
+                    Operand::binary_rhs(
+                        *factor2,
+                        fhe_mul_div_factor2_is_scalar(scalarByte),
+                    ),
                     P(divisor.to_vec()),
                 ],
                 *result,
@@ -755,6 +821,33 @@ mod tests {
                 bytes
             );
             assert!(computation.is_scalar());
+        }
+    }
+
+    #[test]
+    fn executor_scalar_flag_is_its_low_bit() {
+        let lhs = Handle::repeat_byte(1);
+        let rhs = Handle::repeat_byte(2);
+        for flag in [0x00, 0x01, 0x02, 0x03, 0x80, 0xfe, 0xff] {
+            let event = E::FheAdd(C::FheAdd {
+                caller: Address::ZERO,
+                lhs,
+                rhs,
+                scalarByte: FixedBytes::from([flag]),
+                result: Handle::repeat_byte(3),
+            });
+            let computation = Computation::from_evm(&event).unwrap().unwrap();
+            let scalar = flag & 1 != 0;
+            assert_eq!(
+                computation.is_scalar(),
+                scalar,
+                "scalarByte {flag:#04x}"
+            );
+            assert_eq!(
+                computation.inputs(),
+                if scalar { vec![lhs] } else { vec![lhs, rhs] },
+                "scalarByte {flag:#04x}"
+            );
         }
     }
 

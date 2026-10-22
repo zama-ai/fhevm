@@ -166,6 +166,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// Both caps must stay <= 255 so that every operand's boundary bit fits the
     /// result-handle preimage word even in the value+set _naryOp overload, where
     /// positions run 1..length. The uint8 types enforce this cap at compile time.
+    /// Before increasing either cap, raise the matching limit in host-listener's
+    /// database/event_operands.rs::validate_collection_shape and deploy compatible
+    /// listeners to every operator before upgrading this contract. Older listeners
+    /// reject the newly valid events and block ingestion. If a cap is lowered,
+    /// listeners must still accept the historical limit for replay.
     uint8 private constant FHE_COLLECTION_NARROW_MAX_SIZE = 100;
     uint8 private constant FHE_COLLECTION_WIDE_MAX_SIZE = 60;
 

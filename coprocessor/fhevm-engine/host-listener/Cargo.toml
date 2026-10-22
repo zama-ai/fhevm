@@ -87,12 +87,17 @@ consumer = { path = "../../../listener/crates/consumer" }
 primitives = { path = "../../../listener/crates/shared/primitives" }
 
 [dev-dependencies]
+broker = { path = "../../../listener/crates/shared/broker" }
+testcontainers = { workspace = true }
+axum = { workspace = true }
+tokio-tungstenite = "0.28.0"
 alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = { workspace = true }
 aws-smithy-mocks = "0.1.1"
 bs58 = "0.5.1"
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
+tokio = { workspace = true, features = ["test-util"] }
 tracing-test = { workspace = true }
 
 # Enable test bypass features for integration tests

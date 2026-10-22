@@ -11,9 +11,9 @@ This chart deploys the following components:
 - **kms-connector-kms-worker**: A service that interacts with the KMS-Core.
 - **kms-connector-tx-sender**: A service that sends transactions to the gateway chain.
 - **kms-connector-endpoint**: A service that serves the HTTP decryption interface, reached through the proxy.
-- **kms-connector-proxy**: A TLS-terminating proxy that authenticates the relayer with an API key and forwards requests to the endpoint.
+- **kms-connector-proxy**: A TLS-terminating proxy that authenticates the relayer's `FhevmSig` (RFC-038) signatures and forwards requests to the endpoint.
 
-The proxy needs two secrets that this chart does not create: a `kubernetes.io/tls` secret (`kmsConnectorProxy.tls.secretName`) with the certificate it serves, and a secret holding the SHA-256 digest of the relayer API key (`kmsConnectorProxy.apiKeyDigest.secret`, or `apiKeyDigest.value` inline). Its Service is a ClusterIP; exposing it outside the cluster (TLS passthrough, since the proxy terminates TLS itself) is left to the deployment.
+The proxy needs a `kubernetes.io/tls` secret that this chart does not create (`kmsConnectorProxy.tls.secretName`) with the certificate it serves. It accepts requests signed by one of `kmsConnectorProxy.allowedSenders` for this connector's tx-sender address (`kmsConnectorProxy.txSenderAddress`), and takes the EIP-712 domain (Ethereum chain id and ProtocolConfig address) from the contract settings below. Its Service is a ClusterIP; exposing it outside the cluster (TLS passthrough, since the proxy terminates TLS itself) is left to the deployment.
 
 ## Installing the Chart
 
@@ -106,9 +106,8 @@ The following table lists the configurable parameters of the `kms-connector` cha
 | `kmsConnectorProxy.image.name`                | The docker image name for the proxy.                      | `ghcr.io/zama-ai/fhevm/kms-connector/proxy`                                                                                                                         |
 | `kmsConnectorProxy.image.tag`                 | The docker image tag for the proxy.                       | `v0.15.0`                                                                                                                                                         |
 | `kmsConnectorProxy.replicas`                  | The number of replicas for the proxy.                     | `1`                                                                                                                                                               |
-| `kmsConnectorProxy.apiKeyDigest.value`        | Inline SHA-256 digest of the relayer API key; read from the secret below when empty. | `""`                                                                                                                                 |
-| `kmsConnectorProxy.apiKeyDigest.secret.name`  | The name of the secret containing the API key digest.     | `kms-connector-proxy`                                                                                                                                             |
-| `kmsConnectorProxy.apiKeyDigest.secret.key`   | The key in the secret containing the API key digest.      | `api-key-digest`                                                                                                                                                  |
+| `kmsConnectorProxy.allowedSenders`            | Addresses allowed to sign requests (required).            | `[]`                                                                                                                                                              |
+| `kmsConnectorProxy.txSenderAddress`           | This connector's tx-sender address, the signed audience (required). | `""`                                                                                                                                                |
 | `kmsConnectorProxy.tls.secretName`            | The `kubernetes.io/tls` secret served by the proxy.       | `kms-connector-proxy-tls`                                                                                                                                         |
 | `podAnnotations`                              | Annotations to be added to all pods.                      | `{}`                                                                                                                                                              |
 | `podLabels`                                   | Labels to be added to all pods.                           | `{}`                                                                                                                                                              |

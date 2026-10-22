@@ -160,6 +160,8 @@ jobs:
           - host-contracts/rust_bindings/**
           - shared/request-authorization/**
           - shared/kms-context/**
+          - shared/ciphertext-attestation/**
+          - shared/user-decryption-signature/**
 
   check-changes-tx-sender:
     uses: ./.github/workflows/check-changes-for-docker-build.yml
@@ -225,6 +227,7 @@ jobs:
           - solana/crates/zama-solana-acl/**
           - solana/crates/zama-solana-permit/**
           - solana/crates/zama-solana-request/**
+          - shared/fhevm-sig-auth/**
 
   ########################################################################
   #                        BUILD DECISIONS                               #

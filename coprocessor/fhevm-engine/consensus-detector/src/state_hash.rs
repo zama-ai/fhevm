@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context;
 use aws_sdk_s3::primitives::ByteStream;
 use fhevm_engine_common::database::{GCS_SCHEMA, GCS_SCHEMA_QUOTED};
 use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
@@ -18,6 +19,9 @@ pub const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 /// `printf '' | shasum -a 256` (equivalently `encode(sha256(''::bytea), 'hex')`).
 pub const EMPTY_BLOCK_STATE_HASH: &str =
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+// A stalled object store must not hold the containment/cutover fence forever.
+const STATE_HASH_UPLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 
 // TODO: confirm. RFC 021 defers the state_hash S3
 // layout to RFC 023, but RFC 023 only specifies the layout for ciphertext
@@ -73,6 +77,16 @@ async fn compute_and_insert_gcs(
     batch_limit: i64,
     schema: &str,
 ) -> anyhow::Result<()> {
+    // A replay must observe this commitment before changing its inventory.
+    // The caller holds the cutover fence; acquire history before reading work,
+    // including when no hash row exists yet (row locks cannot cover that race).
+    fhevm_engine_common::chain_recovery::lock_history_tx(
+        tx,
+        fhevm_engine_common::chain_recovery::ListenerSource::Host,
+        schema != "public",
+        chain_id,
+    )
+    .await?;
     // This is the write path, so both the pending-scan read and the INSERT
     // explicitly qualify the versioned GCS schema (`GCS_SCHEMA_QUOTED`, e.g.
     // `"gcs-0.14.0"`) instead of relying on the connection search_path. An
@@ -428,11 +442,32 @@ where
 /// The in-progress attempt `(proposal_id, proposal_block)`, if any.
 type Attempt = Option<(Vec<u8>, i64)>;
 
+/// Blue ingested the `end_block` of this chain at least `cutoff` ago.
+pub(crate) async fn chain_upload_closed(
+    pool: &Pool<Postgres>,
+    chain_id: i64,
+    end_block: i64,
+    cutoff: Duration,
+) -> Result<bool, sqlx::Error> {
+    let (closed,): (bool,) = sqlx::query_as(
+        "SELECT EXISTS(
+            SELECT 1 FROM public.host_chain_blocks_valid b
+             WHERE b.chain_id = $1 AND b.block_number >= $2
+               AND b.created_at <= NOW() - make_interval(secs => $3))",
+    )
+    .bind(chain_id)
+    .bind(end_block)
+    .bind(cutoff.as_secs_f64())
+    .fetch_one(pool)
+    .await?;
+    Ok(closed)
+}
+
 /// `(in-progress attempt, every chain's end_block was ingested by Blue at least cutoff
 /// ago)`. Past the cutoff peers have decided, so a hash published now could only
 /// mislead a returning operator.
-pub(crate) async fn upload_window(
-    pool: &Pool<Postgres>,
+pub(crate) async fn upload_window<'e>(
+    executor: impl sqlx::Executor<'e, Database = Postgres>,
     cutoff: Duration,
 ) -> Result<(Attempt, bool), sqlx::Error> {
     let (proposal_id, proposal_block, closed): (Option<Vec<u8>>, Option<i64>, bool) =
@@ -448,19 +483,32 @@ pub(crate) async fn upload_window(
            FROM upgrade_state w WHERE w.stack_role = 'GCS' AND w.status = 'in_progress'",
         )
         .bind(cutoff.as_secs_f64())
-        .fetch_one(pool)
+        .fetch_one(executor)
         .await?;
     Ok((proposal_id.zip(proposal_block), closed))
 }
 
+/// Fence each upload and its bookkeeping against containment and cutover.
 /// Also stops a batch whose attempt was rolled back or replaced after it started.
-async fn upload_stopped(
+/// All checks use the held connection, including with a single-connection pool.
+/// No history admission lock is held during the network operation.
+async fn begin_hash_upload(
     pool: &Pool<Postgres>,
     cutoff: Duration,
     started: &Attempt,
-) -> Result<bool, sqlx::Error> {
-    let (current, closed) = upload_window(pool, cutoff).await?;
-    Ok(closed || (started.is_some() && current != *started))
+) -> Result<Option<Transaction<'static, Postgres>>, sqlx::Error> {
+    let Some(mut tx) = begin_write_guarded(pool, true, GcsRollbackPolicy::Skip)
+        .await?
+        .into_tx()
+    else {
+        return Ok(None);
+    };
+    let (current, closed) = upload_window(&mut *tx, cutoff).await?;
+    if closed || (started.is_some() && current != *started) {
+        tx.rollback().await?;
+        return Ok(None);
+    }
+    Ok(Some(tx))
 }
 
 async fn upload_pending_state_hashes(
@@ -545,18 +593,22 @@ async fn upload_pending_state_hashes(
         };
         let block_hash_hex = format!("0x{}", hex::encode(&row.3));
         let key = state_hash_key(chain_id, block_number);
-        if upload_stopped(pool, cutoff, &started).await? {
+        let Some(mut tx) = begin_hash_upload(pool, cutoff, &started).await? else {
             return Ok(());
-        }
-        match s3
-            .put_object()
-            .bucket(my_bucket)
-            .key(&key)
-            .metadata("block-hash", &block_hash_hex)
-            .body(ByteStream::from(bytes))
-            .send()
-            .await
-        {
+        };
+        let uploaded = tokio::time::timeout(
+            STATE_HASH_UPLOAD_TIMEOUT,
+            s3.put_object()
+                .bucket(my_bucket)
+                .key(&key)
+                .metadata("block-hash", &block_hash_hex)
+                .body(ByteStream::from(bytes))
+                .send(),
+        )
+        .await
+        .context("state_hash S3 upload timed out")
+        .and_then(|result| result.map_err(anyhow::Error::from));
+        match uploaded {
             Ok(_) => {
                 sqlx::query!(
                     "UPDATE state_hash SET s3_uploaded_at = NOW()
@@ -564,11 +616,13 @@ async fn upload_pending_state_hashes(
                     chain_id,
                     block_number,
                 )
-                .execute(pool)
+                .execute(&mut *tx)
                 .await?;
+                tx.commit().await?;
                 info!(chain_id, block_number, block_hash = %block_hash_hex, bucket = my_bucket, "state_hash uploaded");
             }
             Err(e) => {
+                tx.rollback().await?;
                 warn!(chain_id, block_number, error = %e, "state_hash upload failed; will retry");
             }
         }
@@ -620,23 +674,28 @@ async fn upload_pending_gw_state_hashes(
             }
         };
         let key = state_hash_key(gw_chain_id, block_number);
-        if upload_stopped(pool, cutoff, &started).await? {
+        let Some(mut tx) = begin_hash_upload(pool, cutoff, &started).await? else {
             return Ok(());
-        }
-        match s3
-            .put_object()
-            .bucket(my_bucket)
-            .key(&key)
-            .body(ByteStream::from(bytes))
-            .send()
-            .await
-        {
+        };
+        let uploaded = tokio::time::timeout(
+            STATE_HASH_UPLOAD_TIMEOUT,
+            s3.put_object()
+                .bucket(my_bucket)
+                .key(&key)
+                .body(ByteStream::from(bytes))
+                .send(),
+        )
+        .await
+        .context("gw state_hash S3 upload timed out")
+        .and_then(|result| result.map_err(anyhow::Error::from));
+        match uploaded {
             Ok(_) => {
                 sqlx::query(&update_sql)
                     .bind(gw_chain_id)
                     .bind(block_number)
-                    .execute(pool)
+                    .execute(&mut *tx)
                     .await?;
+                tx.commit().await?;
                 info!(
                     gw_chain_id,
                     block_number,
@@ -645,6 +704,7 @@ async fn upload_pending_gw_state_hashes(
                 );
             }
             Err(e) => {
+                tx.rollback().await?;
                 warn!(gw_chain_id, block_number, error = %e, "gw state_hash upload failed; will retry");
             }
         }
@@ -721,8 +781,9 @@ async fn compute_and_upload_state_hashes(
     // gw_ready captures "GW track eligible this pass" (not anchored AND watermark past gw_start);
     // it gates compute AND upload.
     let mut gw_ready = false;
-    if let Some((_, _, windows)) = crate::active_upgrade_windows(&mut *tx).await? {
+    if let Some((_, _, _, mut windows)) = crate::active_upgrade_windows(&mut *tx).await? {
         let skip_gw = gw_consensus_reached(&mut *tx).await?;
+        windows.sort_unstable_by_key(|(chain_id, _, _)| *chain_id);
         for (chain_id, start, end) in windows {
             compute_and_insert_gcs(
                 &mut tx,
@@ -875,6 +936,160 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[serial_test::serial(db)]
+    async fn uploaded_upgrade_hash_contains_replay_that_would_add_work() -> anyhow::Result<()> {
+        use crate::ingestion_recovery_tests::{object_store, partial_block, repair_is_contained};
+        let (mut db, pool, _instance) = partial_block().await?;
+        let mut tx = pool.begin().await?;
+        compute_and_insert_gcs(&mut tx, 42, 100, 100, 10, "public").await?;
+        tx.commit().await?;
+        let hash: String = sqlx::query_scalar(
+            "SELECT state_hash FROM state_hash WHERE chain_id=42 AND block_number=100",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert_ne!(hash, EMPTY_BLOCK_STATE_HASH);
+        let (s3, uploaded) = object_store().await?;
+        upload_pending_state_hashes(&pool, &s3, "test", 10, Duration::from_secs(3600)).await?;
+        let body = tokio::time::timeout(Duration::from_secs(10), uploaded).await??;
+        assert_eq!(body, hex::decode(&hash)?);
+        repair_is_contained(&mut db, &pool).await?;
+        let retained: (String, bool) = sqlx::query_as("SELECT state_hash, s3_uploaded_at IS NOT NULL FROM state_hash WHERE chain_id=42 AND block_number=100").fetch_one(&pool).await?;
+        assert_eq!(retained, (hash, true));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn host_hash_waits_for_ingestion_before_reading_completion() -> anyhow::Result<()> {
+        use fhevm_engine_common::chain_recovery::{lock_history_tx, ListenerSource};
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await?;
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+            (chain_id, block_hash, block_number, block_status, fhe_event_count)
+            VALUES (42, '\\x10', 100, 'finalized', 2)",
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO computations
+            (output_handle, dependencies, fhe_operation, is_scalar, transaction_id,
+             host_chain_id, block_number, is_allowed, is_completed)
+            VALUES ('\\x01', '{}', 0, FALSE, '\\x01', 42, 100, TRUE, TRUE),
+                   ('\\x02', '{}', 0, FALSE, '\\x02', 42, 100, FALSE, TRUE)",
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO ciphertexts
+            (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
+            VALUES (0, '\\x01', '\\xaa', 0, 5)",
+        )
+        .execute(&pool)
+        .await?;
+
+        let mut repair = pool.begin().await?;
+        lock_history_tx(&mut repair, ListenerSource::Host, false, 42).await?;
+        sqlx::query(
+            "UPDATE computations SET is_allowed = TRUE, is_completed = FALSE
+            WHERE output_handle = '\\x02'",
+        )
+        .execute(&mut *repair)
+        .await?;
+        let hash_pool = pool.clone();
+        let hash_task = tokio::spawn(async move {
+            let mut tx = hash_pool.begin().await?;
+            compute_and_insert_gcs(&mut tx, 42, 100, 100, 10, "public").await?;
+            tx.commit().await?;
+            anyhow::Ok(())
+        });
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                let waiting: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM pg_locks
+                    WHERE locktype = 'advisory' AND NOT granted AND database =
+                        (SELECT oid FROM pg_database WHERE datname = current_database()))",
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+                if waiting {
+                    break;
+                }
+                assert!(
+                    !hash_task.is_finished(),
+                    "hashing bypassed ingestion's fence"
+                );
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+        repair.commit().await?;
+        tokio::time::timeout(Duration::from_secs(5), hash_task).await???;
+        let hashes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM state_hash")
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(hashes, 0, "repaired B is pending; do not freeze A alone");
+
+        sqlx::query("UPDATE computations SET is_completed = TRUE WHERE output_handle = '\\x02'")
+            .execute(&pool)
+            .await?;
+        sqlx::query(
+            "INSERT INTO ciphertexts
+            (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
+            VALUES (0, '\\x02', '\\xbb', 0, 5)",
+        )
+        .execute(&pool)
+        .await?;
+        let mut tx = pool.begin().await?;
+        compute_and_insert_gcs(&mut tx, 42, 100, 100, 10, "public").await?;
+        tx.commit().await?;
+        let includes_b: bool = sqlx::query_scalar(
+            "SELECT state_hash = encode(sha256('\\xaabb'::bytea), 'hex')
+            FROM state_hash WHERE chain_id = 42 AND block_number = 100",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert!(includes_b);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn containment_stops_state_hash_uploads() -> anyhow::Result<()> {
+        use fhevm_engine_common::chain_recovery::{record_halt, HistoryMismatch, ListenerSource};
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect(instance.db_url())
+            .await?;
+        record_halt(
+            &pool,
+            HistoryMismatch {
+                source: ListenerSource::Host,
+                gcs_mode: false,
+                chain_id: 42,
+                block_number: 100,
+                expected_hash: None,
+                observed_hash: None,
+                reason: "committed inventory changed",
+            },
+        )
+        .await?;
+        assert!(begin_hash_upload(&pool, Duration::from_secs(60), &None)
+            .await?
+            .is_none());
+        Ok(())
+    }
 
     #[tokio::test]
     async fn gw_hashes_skipped_until_watermark_reaches_gw_start() {
@@ -1155,11 +1370,17 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            upload_stopped(&pool, cutoff, &started).await.unwrap(),
+            begin_hash_upload(&pool, cutoff, &started)
+                .await
+                .unwrap()
+                .is_none(),
             "attempt ended mid-batch"
         );
         assert!(
-            !upload_stopped(&pool, cutoff, &None).await.unwrap(),
+            begin_hash_upload(&pool, cutoff, &None)
+                .await
+                .unwrap()
+                .is_some(),
             "no attempt at batch start"
         );
         sqlx::query(
@@ -1170,7 +1391,10 @@ mod tests {
         .await
         .unwrap();
         assert!(
-            upload_stopped(&pool, cutoff, &started).await.unwrap(),
+            begin_hash_upload(&pool, cutoff, &started)
+                .await
+                .unwrap()
+                .is_none(),
             "attempt replaced mid-batch"
         );
         sqlx::query("UPDATE public.upgrade_state SET proposal_id = '\\x02', proposal_block = 11")
@@ -1178,7 +1402,10 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            upload_stopped(&pool, cutoff, &started).await.unwrap(),
+            begin_hash_upload(&pool, cutoff, &started)
+                .await
+                .unwrap()
+                .is_none(),
             "same proposal re-proposed at another block"
         );
     }
@@ -1211,3 +1438,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "state_hash_upload_tests.rs"]
+mod upload_tests;

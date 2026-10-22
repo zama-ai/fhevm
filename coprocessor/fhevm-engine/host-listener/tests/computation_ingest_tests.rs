@@ -37,6 +37,8 @@ async fn malformed_evm_computation_reports_its_source() -> anyhow::Result<()> {
                 address: executor,
                 data: event.encode_log_data(),
             },
+            block_hash: Some(Handle::repeat_byte(42)),
+            block_number: Some(42),
             transaction_hash: Some(transaction_id),
             log_index: Some(13),
             ..Default::default()
@@ -73,8 +75,7 @@ async fn malformed_evm_computation_reports_its_source() -> anyhow::Result<()> {
     assert!(error.contains(&format!(
         "EVM computation in block 42, transaction Some({transaction_id:#x}), log Some(13)",
     )));
-    assert!(error.contains("FheSum: expected 0..=256 encrypted operands"));
-    assert!(error.contains("received 257 operands"));
+    assert!(error.contains("FheSum event exceeds collection limit"));
     let pool = db.pool.read().await.clone();
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM computations")
@@ -123,6 +124,7 @@ async fn grouped_outputs_preserve_order_permissions_and_replay_counts(
         tx_depth_size: 0,
         dependence_chain: TransactionId::Hash(Handle::repeat_byte(20)),
         log_index: Some(0),
+        has_legacy_operand_origin: false,
         is_executor_minted: true,
         is_fallback_grant: false,
         is_synthetic: false,

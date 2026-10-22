@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Patch preview-env Helm values in the working tree.
 # External chain modes (blockchain-dev | testnets) rewrite RPC/mnemonic overlays.
-# GPU=true (Anvil or external) switches keygen to Default FHE params.
-# Anvil without GPU is a no-op.
+# FHE_PARAMS / KEYGEN other than the values' default (default / insecure) patch
+# the keygen values. Anvil with the default is a no-op.
 set -euo pipefail
 
-if [[ "${EXTERNAL_CHAINS:-false}" != "true" && "${GPU:-false}" != "true" ]]; then
+if [[ "${EXTERNAL_CHAINS:-false}" != "true" && "${FHE_PARAMS:?}" == "default" && "${KEYGEN:?}" == "insecure" ]]; then
   echo "Anvil mode: leaving values overlays unchanged."
   exit 0
 fi
@@ -60,21 +60,18 @@ set_poller_flag() {
 # Workflow run-test env is nested; match by .name anywhere under a given file
 # would collide on DEPLOYER_PRIVATE_KEY. Keep file-specific helpers instead.
 
-apply_gpu_keygen() {
-  # GPU workers cannot ingest Test keys (DriftTechniqueNoiseReduction). Bound
-  # Default params + the multi-hour waits to this path only.
-  local keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
-  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_PARAMS_TYPE 0
+# The values hold Default params. The insecure keygen and Test params fit the
+# trigger script's 15 min waits; the four-party Default DKG needs hours.
+keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
+if [[ "${FHE_PARAMS}" == "test" ]]; then
+  set_named_env "${keygen}" ".scDeploy.env" KEYGEN_PARAMS_TYPE 1
+elif [[ "${KEYGEN}" == "secure" ]]; then
   set_named_env "${keygen}" ".scDeploy.env" KEYGEN_WAIT_TIMEOUT_MS "${KEYGEN_WAIT_TIMEOUT_MS:-14400000}"
   set_named_env "${keygen}" ".scDeploy.env" CRSGEN_WAIT_TIMEOUT_MS "${CRSGEN_WAIT_TIMEOUT_MS:-3600000}"
-}
-
-if [[ "${GPU:-false}" == "true" ]]; then
-  apply_gpu_keygen
-  if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
-    echo "Anvil GPU: Default FHE params and long keygen waits."
-    exit 0
-  fi
+fi
+if [[ "${EXTERNAL_CHAINS:-false}" != "true" ]]; then
+  echo "Anvil: fhe_params=${FHE_PARAMS} keygen=${KEYGEN}."
+  exit 0
 fi
 
 : "${CHAIN_MODE:?}"
@@ -118,12 +115,11 @@ set_named_env "${host}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
 set_named_env "${host}" ".scDeploy.env" CHAIN_ID_GATEWAY "${GATEWAY_CHAIN_ID}"
 set_named_env "${host}" ".scDeploy.env" CHAIN_ID "${HOST_CHAIN_ID}"
 
-keygen="${root}/host-chain/values-host-trigger-keygen-e2e.yaml"
 set_named_env "${keygen}" ".scDeploy.env" MNEMONIC "${MNEMONIC}"
 if rpc_from_secret; then set_named_env_secret "${keygen}" ".scDeploy.env" RPC_URL ethereum-rpc-url; else set_named_env "${keygen}" ".scDeploy.env" RPC_URL "${HOST_HTTP}"; fi
 set_named_env "${keygen}" ".scDeploy.env" DEPLOYER_PRIVATE_KEY "${DEPLOYER_KEY_9}"
 set_named_env "${keygen}" ".scDeploy.env" CHAIN_ID "${HOST_CHAIN_ID}"
-if [[ "${CHAIN_MODE}" == "testnets" && "${GPU:-false}" != "true" ]]; then
+if [[ "${CHAIN_MODE}" == "testnets" && ! ( "${FHE_PARAMS}" == "default" && "${KEYGEN}" == "secure" ) ]]; then
   # gw-listener pins its Ethereum reads to the FINALIZED block (BlockId::finalized() in
   # kms-connector/crates/gw-listener/src/core/ethereum.rs - not configurable), and Sepolia
   # finalizes ~14 min behind head. Keygen needs two such round trips (PrepKeygenRequest ->
@@ -170,11 +166,15 @@ for f in "${root}/coprocessor/values-coprocessor-bcs-e2e.yaml" \
 done
 GATEWAY_WS="${GATEWAY_WS}" yq -i '.commonConfig.gatewayUrl.value = strenv(GATEWAY_WS)' \
   "${root}/coprocessor/values-coprocessor-e2e.yaml"
-# The tx-sender needs HTTP from 0.15 on - it fails fast on a ws:// URL ("Gateway URL is not usable
-# by this build") - while commonConfig stays ws:// for the gw-listener. The BCS overlay pins the
-# previous release's sender back to ws://, since that build speaks WebSocket.
-GATEWAY_HTTP="${GATEWAY_HTTP}" yq -i '.txSender.config.gatewayUrl.value = strenv(GATEWAY_HTTP)' \
-  "${root}/coprocessor/values-coprocessor-e2e.yaml"
+# v0.14.2+ tx-sender fails fast on a ws:// URL ("Gateway URL is not usable by this
+# build"); commonConfig stays ws:// for the gw-listener. Chart 0.13.8 ignores
+# txSender.config.gatewayUrl and only renders the template --gateway-url flag, so
+# the HTTP URL is also the extraArgs entry (the template flag is disabled). The
+# BCS overlay clears that arg and pins the v0.14.1 sender back to ws://.
+GATEWAY_HTTP="${GATEWAY_HTTP}" yq -i '
+  .txSender.config.gatewayUrl.value = strenv(GATEWAY_HTTP) |
+  .txSender.extraArgs = ["--gateway-url=" + strenv(GATEWAY_HTTP)]
+' "${root}/coprocessor/values-coprocessor-e2e.yaml"
 GATEWAY_WS="${GATEWAY_WS}" yq -i '.txSender.config.gatewayUrl.value = strenv(GATEWAY_WS)' \
   "${root}/coprocessor/values-coprocessor-bcs-e2e.yaml"
 if rpc_from_secret; then
@@ -193,11 +193,27 @@ set_poller_flag "${poller}" "--finality-lag" "${HOST_FINALITY_LAG}"
 kms="${root}/kms-connector/values-kms-connector-e2e.yaml"
 set_kms_host_chain() {
   # $1 file, $2 entry name, $3 url, $4 chain id
+  # Chart 2.x reads hostChains.<name>. Chart 1.5.3 (v0.14.2) reads the flat
+  # ethereumUrl / ethereumChainId / polygonUrl / polygonChainId keys.
   local file="$1" name="$2" url="$3" chain_id="$4"
   NAME="${name}" URL="${url}" CHAIN_ID="${chain_id}" yq -i '
     .commonConfig.hostChains[strenv(NAME)].url = strenv(URL) |
     .commonConfig.hostChains[strenv(NAME)].chainId = strenv(CHAIN_ID)
   ' "${file}"
+  case "${name}" in
+    ethereum)
+      URL="${url}" CHAIN_ID="${chain_id}" yq -i '
+        .commonConfig.ethereumUrl = strenv(URL) |
+        .commonConfig.ethereumChainId = strenv(CHAIN_ID)
+      ' "${file}"
+      ;;
+    polygon)
+      URL="${url}" CHAIN_ID="${chain_id}" yq -i '
+        .commonConfig.polygonUrl = strenv(URL) |
+        .commonConfig.polygonChainId = strenv(CHAIN_ID)
+      ' "${file}"
+      ;;
+  esac
 }
 GATEWAY_HTTP="${GATEWAY_HTTP}" GATEWAY_CHAIN_ID="${GATEWAY_CHAIN_ID}" yq -i '
   .commonConfig.gatewayUrl = strenv(GATEWAY_HTTP) |

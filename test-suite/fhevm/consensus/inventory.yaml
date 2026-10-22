@@ -57,8 +57,9 @@ selections:
   harness: [harness]
   rust-regression: [rust-regression]
   smoke: [byte-agreement]
-  standard: [harness, rust-regression, byte-agreement, degraded, fork, failure-matrix, failure-matrix-db, crash-retry, bridge, cpu-scheduling, backlog, object-integrity, host-rpc, broker-redelivery, storage-pressure, submission-partition]
+  standard: [ingestion-recovery, harness, rust-regression, byte-agreement, degraded, fork, failure-matrix, failure-matrix-db, crash-retry, bridge, cpu-scheduling, backlog, object-integrity, host-rpc, broker-redelivery, storage-pressure, submission-partition]
   full:
+    - ingestion-recovery
     - harness
     - rust-regression
     - byte-agreement
@@ -78,6 +79,8 @@ selections:
     - submission-partition
 
 families:
+  ingestion-recovery:
+    description: Full-environment ACL replay through deployed listeners, workers, Gateway and KMS.
   input:
     description: Verified compact input bytes, identity, replay and explicit rejection.
   materialization:
@@ -1830,4 +1833,54 @@ cases:
     runner: scripts/run-stackless-cases.sh --leg rust-regression
     ci: { leg: rust-regression, backend: cpu }
     artifacts: [case-results, tests-run, run-identity]
+    acceptance: required
+
+  - id: INGEST-ACL-OVERLAP
+    family: ingestion-recovery
+    property: The original ACL-blocked graph recovers through deployed services and unanimous Gateway consensus with startup-overlap replay.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu] }
+    services: [host-listener-poller, tfhe-worker, sns-worker, transaction-sender, consensus-detector, relayer, kms-connector]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: One producer, two children, a grandchild and an independent canary through the real deployed executor and ACL.
+    fault: { mechanism: scoped-http-acl-omission, stage: producer delivery before history publication, observation: named ACL logs removed from actual poller responses and missing ciphertext observed while a canary reaches Gateway }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: victim ingestion isolated and original producer observed unallowed
+      - fault: original allowed descendants stay pending while the independent canary completes
+      - transport: complete RPC delivery repairs work through the actual poller
+      - liveness: every original handle completes without direct computation or ACL SQL writes
+      - bytes: every original handle has canonical byte agreement across all three operators
+      - quorum: every handle reaches authorized distinct-sender unanimous Gateway consensus
+      - correctness: all original values decrypt through the public SDK and KMS to the independent model
+      - safety: explicit duplicate replay preserves ciphertexts and completion flags without a halt
+    timeout_s: 1800
+    cleanup: [restore original poller configuration, stop owned RPC proxy, restore listeners and history publisher only after successful healing]
+    runner: scripts/run-artifact-ingestion-recovery.sh overlap
+    ci: { leg: ingestion-recovery, backend: cpu }
+    artifacts: [case-results, rpc-request-evidence, workload-handshake, run-identity]
+    acceptance: required
+
+  - id: INGEST-ACL-CURSOR
+    family: ingestion-recovery
+    property: The original ACL-blocked graph recovers through deployed services and unanimous Gateway consensus with explicit cursor replay.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu] }
+    services: [host-listener-poller, tfhe-worker, sns-worker, transaction-sender, consensus-detector, relayer, kms-connector]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: One producer, two children, a grandchild and an independent canary through the real deployed executor and ACL.
+    fault: { mechanism: scoped-http-acl-omission, stage: producer delivery before history publication, observation: named ACL logs removed from actual poller responses and missing ciphertext observed while a canary reaches Gateway }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: victim ingestion isolated and original producer observed unallowed
+      - fault: original allowed descendants stay pending while the independent canary completes
+      - transport: complete RPC delivery repairs work through the actual poller
+      - liveness: every original handle completes without direct computation or ACL SQL writes
+      - bytes: every original handle has canonical byte agreement across all three operators
+      - quorum: every handle reaches authorized distinct-sender unanimous Gateway consensus
+      - correctness: all original values decrypt through the public SDK and KMS to the independent model
+      - safety: explicit duplicate replay preserves ciphertexts and completion flags without a halt
+    timeout_s: 1800
+    cleanup: [restore original poller configuration, stop owned RPC proxy, restore listeners and history publisher only after successful healing]
+    runner: scripts/run-artifact-ingestion-recovery.sh cursor
+    ci: { leg: ingestion-recovery, backend: cpu }
+    artifacts: [case-results, rpc-request-evidence, workload-handshake, run-identity]
     acceptance: required

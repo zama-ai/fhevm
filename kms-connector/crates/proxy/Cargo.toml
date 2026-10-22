@@ -9,6 +9,7 @@ version.workspace = true
 [dependencies]
 connector-utils.workspace = true
 kms-connector-api.workspace = true
+fhevm-sig-auth.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true
@@ -20,8 +21,6 @@ humantime-serde.workspace = true
 pingora.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
-subtle.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true

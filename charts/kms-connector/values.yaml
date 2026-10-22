@@ -8,7 +8,7 @@
 # - KMS worker (communicates with KMS cores)
 # - Transaction sender (submits transactions to gateway)
 # - Endpoint (HTTP decryption interface)
-# - Proxy (TLS termination and API key authentication in front of the endpoints)
+# - Proxy (TLS termination and FhevmSig authentication in front of the endpoints)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -428,7 +428,7 @@ kmsConnectorEndpoint:
 # -----------------------------------------------------------------------------
 # Proxy
 # -----------------------------------------------------------------------------
-# Terminates TLS, authenticates the relayer with an API key and forwards
+# Terminates TLS, authenticates the relayer's `FhevmSig` signatures and forwards
 # requests to the endpoint Service
 kmsConnectorProxy:
   enabled: true
@@ -440,13 +440,10 @@ kmsConnectorProxy:
 
   replicas: 1
 
-  # SHA-256 digest of the accepted API key (`printf '%s' "$API_KEY" | sha256sum`),
-  # read from a secret unless `value` is set
-  apiKeyDigest:
-    value: ""
-    secret:
-      name: kms-connector-proxy
-      key: api-key-digest
+  # Addresses allowed to sign `FhevmSig` requests (the relayer signers)
+  allowedSenders: []
+  # This connector's tx-sender wallet address: the `audience` accepted requests are signed for
+  txSenderAddress: ""
 
   # `kubernetes.io/tls` secret (tls.crt, tls.key) served by the proxy, not created by this chart
   tls:

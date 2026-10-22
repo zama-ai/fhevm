@@ -60,6 +60,15 @@ pub fn describe_metrics() {
         "Failures during event publishing to broker"
     );
 
+    // ── Subscriber identities ───────────────────────────────────────────
+    describe_gauge!(
+        "listener_chain_consumer_ids",
+        Unit::Count,
+        "Distinct consumer identities subscribed to this chain. Expected 1, briefly 2 \
+         while an identity is migrating. A sustained 2 means an identity has orphaned \
+         itself and is being published to with nothing reading"
+    );
+
     // ── Catchup ─────────────────────────────────────────────────────────
     describe_counter!(
         "listener_catchup_iterations_total",

@@ -522,7 +522,7 @@ dependencies = [
  "either",
  "serde",
  "serde_with",
- "sha2 0.10.9",
+ "sha2",
 ]
 
 [[package]]
@@ -1820,7 +1820,7 @@ dependencies = [
  "http 0.2.12",
  "http 1.4.0",
  "percent-encoding",
- "sha2 0.10.9",
+ "sha2",
  "time",
  "tracing",
 ]
@@ -3340,7 +3340,7 @@ dependencies = [
  "curve25519-dalek",
  "ed25519",
  "serde",
- "sha2 0.10.9",
+ "sha2",
  "subtle",
  "zeroize",
 ]
@@ -3572,6 +3572,15 @@ checksum = "c0b50bfb653653f9ca9095b427bed08ab8d75a137839d9ad64eb11810d5b6393"
 dependencies = [
  "rand_core 0.6.4",
  "subtle",
+]
+
+[[package]]
+name = "fhevm-sig-auth"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "http 1.4.0",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -4295,7 +4304,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots 1.0.7",
+ "webpki-roots 1.0.10",
 ]
 
 [[package]]
@@ -4724,7 +4733,7 @@ dependencies = [
  "elliptic-curve",
  "once_cell",
  "serdect",
- "sha2 0.10.9",
+ "sha2",
 ]
 
 [[package]]
@@ -6251,6 +6260,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "connector-utils",
+ "fhevm-sig-auth",
  "http 1.4.0",
  "humantime-serde",
  "kms-connector-api",
@@ -6261,8 +6271,6 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
- "sha2 0.11.0",
- "subtle",
  "tokio",
  "tokio-rustls",
  "tokio-util",
@@ -6687,7 +6695,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "webpki-roots 1.0.7",
+ "webpki-roots 1.0.10",
 ]
 
 [[package]]
@@ -7014,9 +7022,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.15"
+version = "0.103.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
+checksum = "4443b1b6d39d7c663139942cc4558262562d2c84123bb6282ef177009ca8b281"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -7430,17 +7438,6 @@ dependencies = [
  "cfg-if",
  "cpufeatures 0.2.17",
  "digest 0.10.7",
-]
-
-[[package]]
-name = "sha2"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4"
-dependencies = [
- "cfg-if",
- "cpufeatures 0.3.0",
- "digest 0.11.3",
 ]
 
 [[package]]
@@ -8310,7 +8307,7 @@ checksum = "dc905b200a95f2ea9146e43f2a7181e3aeb55de6bc12afb36462d00a3c7310de"
 dependencies = [
  "hmac",
  "pbkdf2",
- "sha2 0.10.9",
+ "sha2",
 ]
 
 [[package]]
@@ -8339,7 +8336,7 @@ version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db7dc3011ea4c0334aaaa7e7128cb390ecf546b28d412e9bf2064680f57f588f"
 dependencies = [
- "sha2 0.10.9",
+ "sha2",
  "solana-define-syscall 4.0.1",
  "solana-hash 4.6.0",
 ]
@@ -8725,7 +8722,7 @@ checksum = "5d1dbc82ab91422345b6df40a79e2b78c7bce1ebb366da323572dd60b7076b67"
 dependencies = [
  "proc-macro2",
  "quote",
- "sha2 0.10.9",
+ "sha2",
  "syn 2.0.117",
  "thiserror 1.0.69",
 ]
@@ -8943,7 +8940,7 @@ dependencies = [
  "rustls",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2",
  "smallvec",
  "thiserror 2.0.20",
  "tokio",
@@ -8981,7 +8978,7 @@ dependencies = [
  "quote",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2",
  "sqlx-core",
  "sqlx-mysql",
  "sqlx-postgres",
@@ -9025,7 +9022,7 @@ dependencies = [
  "rsa",
  "serde",
  "sha1 0.10.6",
- "sha2 0.10.9",
+ "sha2",
  "smallvec",
  "sqlx-core",
  "stringprep",
@@ -9063,7 +9060,7 @@ dependencies = [
  "rand 0.8.6",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2",
  "smallvec",
  "sqlx-core",
  "stringprep",
@@ -10517,9 +10514,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-root-certs"
-version = "1.0.8"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d46a5a140e6f7afeccd8eae97eff335163939eac8b929834875168b29b3d267"
+checksum = "58ec80e73fd8baf57bf0d9615554c75348bda990d6d5bbeab964dd068319fecb"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -10530,14 +10527,14 @@ version = "0.26.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
 dependencies = [
- "webpki-roots 1.0.7",
+ "webpki-roots 1.0.10",
 ]
 
 [[package]]
 name = "webpki-roots"
-version = "1.0.7"
+version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52f5ee44c96cf55f1b349600768e3ece3a8f26010c05265ab73f945bb1a2eb9d"
+checksum = "1c1c8e20c8a38fc7d65abfe74eb7280e4aa667e8eec8bc84996d2874810748d9"
 dependencies = [
  "rustls-pki-types",
 ]
@@ -11042,7 +11039,7 @@ name = "zama-solana-acl"
 version = "0.1.0"
 dependencies = [
  "borsh",
- "sha2 0.10.9",
+ "sha2",
  "sha3 0.10.8",
  "solana-address 2.7.0",
  "solana-keccak-hasher",

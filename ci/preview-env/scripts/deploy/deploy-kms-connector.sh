@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Install one kms-connector release per KMS party.
 # Env: NAMESPACE, NB_KMS_CORE, DEPLOY_POLYGON, OBSERVABILITY, OTLP_ENDPOINT,
-# KMS_CONNECTOR_CHART, TAGS_JSON.
+# KMS_CONNECTOR_CHART, TAGS_JSON, WALLETS_JSON (the KMS tx-sender wallets), KEYGEN,
+# COMMON_CHART, COMMON_CHART_VERSION.
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -17,6 +18,11 @@ tls_secret=kms-connector-proxy-tls          # kmsConnectorProxy.tls.secretName i
 api_key_secret=kms-connector-proxy          # kmsConnectorProxy.apiKeyDigest.secret.name (chart default)
 api_key=fhevm-e2e-kms-connector-api-key     # test literal; relayer-http reads it from ${api_key_secret}
 http_configmap=kms-connector-http           # read by the test-suite overlays
+# Party i's KMS tx-sender address: the `audience` its proxy accepts.
+tx_sender() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .address' <<<"${WALLETS_JSON}"; }
+for i in $(seq 1 "${NB_KMS_CORE}"); do
+  require_nonempty "$(tx_sender "${i}")" "no KMS tx-sender address for party ${i} in WALLETS_JSON"
+done
 
 decryption=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.decryption\.address}')
 gateway_config=$(kubectl get configmap gw-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.gateway_config\.address}')
@@ -47,7 +53,10 @@ if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
   cp ci/preview-env/kms-connector/values-kms-connector-polygon-e2e.yaml "${polygon_values}"
   set_host_chain_acl "${polygon_values}" ethereum "${acl}"
   set_host_chain_acl "${polygon_values}" polygon "${polygon_acl}"
-  polygon_args=(-f "${polygon_values}")
+  polygon_args=(
+    -f "${polygon_values}"
+    --set-string "commonConfig.polygonContractAddresses.acl=${polygon_acl}"
+  )
 fi
 
 tracing=()
@@ -115,11 +124,14 @@ kubectl create secret generic "${api_key_secret}" -n "${NAMESPACE}" \
 #   endpoint-urls  KMS_CONNECTOR_ENDPOINT_URLS, one https proxy URL per party
 #   kms-threshold  KMS_THRESHOLD: MPC t, quorum is 2t+1 (kms_t in lib.sh)
 #   ca.crt         the proxies' CA, for NODE_EXTRA_CA_CERTS
-# The API key itself is a fixed test literal in the overlays.
+#   tx-sender-addresses  KMS_CONNECTOR_TX_SENDER_ADDRESSES, aligned with endpoint-urls
+# The FhevmSig test key itself is a fixed literal in the overlays.
 ######################################################################
 urls="https://$(proxy_service 1):${proxy_port}"
+tx_senders="$(tx_sender 1)"
 for i in $(seq 2 "${NB_KMS_CORE}"); do
   urls="${urls},https://$(proxy_service "${i}"):${proxy_port}"
+  tx_senders="${tx_senders},$(tx_sender "${i}")"
 done
 threshold=$(kms_t "${NB_KMS_CORE}")
 ca=$(kubectl get secret "${tls_secret}" -n "${NAMESPACE}" -o jsonpath='{.data.ca\.crt}')
@@ -129,10 +141,40 @@ base64 -d <<<"${ca}" > "${ca_file}"
 kubectl create configmap "${http_configmap}" -n "${NAMESPACE}" \
   --from-literal=endpoint-urls="${urls}" \
   --from-literal=kms-threshold="${threshold}" \
+  --from-literal=tx-sender-addresses="${tx_senders}" \
   --from-file=ca.crt="${ca_file}" \
   --dry-run=client -o yaml | kubectl apply -f -
 rm -f "${ca_file}"
-echo "Connector HTTP: urls=${urls} threshold=${threshold}"
+echo "Connector HTTP: urls=${urls} tx-senders=${tx_senders} threshold=${threshold}"
+
+kms_core_url() { echo "http://kms-core-${1}-core-${1}:50100"; }
+keygen_redirect() { echo "kms-insecure-keygen-redirect-${1}"; }
+keygen_redirect_port=3000 # the script's default; service.ports in values-kms-insecure-keygen-redirect-e2e.yaml
+kms_worker_endpoint() {
+  if [[ "${KEYGEN:?}" == "insecure" ]]; then
+    echo "http://$(keygen_redirect "${1}"):${keygen_redirect_port}"
+  else
+    kms_core_url "${1}"
+  fi
+}
+
+# KEYGEN=insecure: each kms-worker reaches its kms-core through a redirect that
+# switches keygen to the Insecure* RPCs (see values-kms-insecure-keygen-redirect-e2e.yaml).
+if [[ "${KEYGEN}" == "insecure" ]]; then
+  pids=()
+  for i in $(seq 1 "${NB_KMS_CORE}"); do
+    helm upgrade --install "$(keygen_redirect "${i}")" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+      -n "${NAMESPACE}" -f ci/preview-env/kms-connector/values-kms-insecure-keygen-redirect-e2e.yaml \
+      --set-string "fullnameOverride=$(keygen_redirect "${i}")" \
+      --set-file "configmapFiles.files.kms-test-keygen-proxy\.cjs=test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs" \
+      --set-json "args=[\"$(kms_core_url "${i}")\"]" \
+      --wait &
+    pids+=($!)
+  done
+  for pid in "${pids[@]}"; do
+    wait "${pid}"
+  done
+fi
 
 for i in $(seq 1 "${NB_KMS_CORE}"); do
   helm upgrade --install "kms-connector-${i}" "${KMS_CONNECTOR_CHART}" \
@@ -142,9 +184,11 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
     --set-string "commonConfig.gatewayContractAddresses.gatewayConfig=${gateway_config}" \
     --set-string "commonConfig.ethereumContractAddresses.kmsGeneration=${kms_generation}" \
     --set-string "commonConfig.ethereumContractAddresses.protocolConfig=${protocol_config}" \
+    --set-string "commonConfig.ethereumContractAddresses.acl=${acl}" \
     --set-string "commonConfig.databaseUrl=postgresql://zama:zama@postgres-connector-${i}:5432/connector" \
-    --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=http://kms-core-${i}-core-${i}:50100" \
+    --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=$(kms_worker_endpoint "${i}")" \
     --set-string "kmsConnectorTxSender.wallet.secret.name=kms-connector-tx-sender-${i}" \
+    --set-string "kmsConnectorProxy.txSenderAddress=$(tx_sender "${i}")" \
     --set-string "kmsConnectorDbMigration.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/db-migration" \
     --set-string "kmsConnectorDbMigration.image.tag=$(jq -r .kms_connector_db_migration <<<"${TAGS_JSON}")" \
     --set-string "kmsConnectorGwListener.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/gw-listener" \

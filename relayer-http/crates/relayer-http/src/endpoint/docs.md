@@ -183,7 +183,7 @@ Connector codes that can come back this way, with the status the connector assig
 `malformed` 400, `unsupported_attestation_type` 400 (only reachable if the relayer and connector crates disagree:
 the relayer rejects other schemes before the fan-out with `400 malformed "attestationType: must be …"`),
 `sender_authentication_failed` 401 (the relayer's API key is wrong for that node), `acl_denied` 403,
-`user_signature_rejected` 403, `ciphertext_not_found` 404 (the ciphertext is not committed yet),
+`user_signature_rejected` 403, `user_decryption_expired` 403 (the signed validity interval ended; not retried), `ciphertext_not_found` 404 (the ciphertext is not committed yet),
 `kms_context_destroyed` 410, `kms_context_invalid` 412, `unprocessable` 422, `rate_limited` 429,
 `copro_consensus_failed` 502, `upstream_transient` 502, `overloaded` 503, `timeout` 504, `unknown` 500.
 The message always carries the counts: `KMS threshold not reached (<counted> of <threshold> responses, <rejected> rejected)`,

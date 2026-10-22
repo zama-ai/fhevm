@@ -21,22 +21,33 @@ GCS_VERSION="${GCS_VERSION:-v0.15.0}"
 # Caller-supplied; contract does not enforce uniqueness. Default the Actions
 # run id so a reused namespace can re-propose after a rollback.
 PROPOSAL_ID="${PROPOSAL_ID:-${GITHUB_RUN_ID:-1}}"
-# Host window = [now + START_LEAD_SECS, + WINDOW_DURATION]. The preview anvil mines every second, so
-# keep the lead tiny (tip+5) and the historical 80-block window; external chains get a window that
-# covers the first e2e DAG. gwStartBlock is pinned to the gateway tip and needs no lead.
-if [[ "${EXTERNAL_CHAINS:-false}" == "true" ]]; then
-  START_LEAD_SECS="${START_LEAD_SECS:-60}"
-  WINDOW_DURATION="${WINDOW_DURATION:-5h}"
-else
-  START_LEAD_SECS="${START_LEAD_SECS:-5}"
-  WINDOW_DURATION="${WINDOW_DURATION:-80s}"
-fi
+# Host window = [start + START_LEAD_SECS, + WINDOW_DURATION], where `start` is read inside the pod
+# and not here. See the container args below: everything between this script and hardhat's first RPC
+# call - scheduling, node provisioning, image pull - is time the window would otherwise spend already
+# running, and the tool refuses to broadcast a startBlock that is behind the tip. gwStartBlock is
+# pinned to the gateway tip and needs no lead.
+#
+# What remains inside the pod is hardhat's own boot plus the tool's block sampling, tens of seconds
+# at worst, so one lead suits every chain. The projection divides the lead by the chain's block time
+# and the buffer check multiplies it straight back out, so what the lead has to cover is wall-clock
+# either way: a slower chain does not need a larger one.
+START_LEAD_SECS="${START_LEAD_SECS:-60}"
+# The window must still be open when the traffic that carries the cutover arrives, and that traffic
+# comes from the e2e DAG the workflow only deploys after this script has returned from its
+# DryRunStarted wait (preview-env-deploy.yml: propose, e2e, then ASSERT_CUTOVER=true here again).
+# A window that closes in between yields no unanimity and no version bump. Length costs nothing -
+# the cutover fires on unanimity inside the window, not at its end - so default to outlasting the
+# deploy and let the QA cases that need a closed window set their own.
+WINDOW_DURATION="${WINDOW_DURATION:-5h}"
 # The tool refuses to broadcast when startBlock is closer to the tip than this; the lead is the guard here.
 BUFFER="${BUFFER:-0}"
 # Anything else the hardhat task accepts, appended verbatim - e.g. --use-internal-proxy-address
 # true. Empty by default; the six flags above cover a normal round.
 PROPOSE_EXTRA_ARGS="${PROPOSE_EXTRA_ARGS:-}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-420}"
+# How long the propose pod gets to reach a terminal phase, scheduling included. Doubles as the
+# pod's own activeDeadlineSeconds so a hung hardhat is cut off rather than outliving the wait.
+POD_WAIT_SECS="${POD_WAIT_SECS:-600}"
 # UC writes the binary stack version (v0.15.0). Compose e2e stored v0.15.
 # Compare major.minor so either form counts as cutover.
 version_major_minor() {
@@ -115,8 +126,7 @@ if [[ "${SKIP_PROPOSE}" == "true" ]]; then
 else
 task="task:proposeCoprocessorUpgrade"
 [[ "${PROPOSE_DRY_RUN}" != "true" ]] || task="task:buildProposeCoprocessorUpgradeCalldata"
-start_time=$(python3 -c 'import datetime,sys; print((datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(seconds=int(sys.argv[1]))).strftime("%Y-%m-%dT%H:%M:%SZ"))' "${START_LEAD_SECS}")
-echo "${task} id=${PROPOSAL_ID} version=${GCS_VERSION} environment=${tool_env} network=${hardhat_network} start=${start_time} duration=${WINDOW_DURATION} buffer=${BUFFER}"
+echo "${task} id=${PROPOSAL_ID} version=${GCS_VERSION} environment=${tool_env} network=${hardhat_network} start=+${START_LEAD_SECS}s (read in-pod) duration=${WINDOW_DURATION} buffer=${BUFFER}"
 
 # Secrets and RPC URLs (QuickNode keys) travel as env vars; the window parameters are plain args.
 kubectl create secret generic "${job}" -n "${NAMESPACE}" \
@@ -135,7 +145,24 @@ metadata:
   name: ${job}
 spec:
   restartPolicy: Never
-  activeDeadlineSeconds: 600
+  activeDeadlineSeconds: ${POD_WAIT_SECS}
+  # Pin onto zws-pool, the same general-purpose nodepool the in-cluster
+  # Postgres, Redis and listener releases use.
+  #
+  # This is not a preference, it is the only way this pod reliably gets a core.
+  # It requests one, and every Karpenter nodepool on the cluster is tainted
+  # with its own name. Karpenter provisions only from pools whose taint a pod
+  # tolerates, so tolerating none means no node is ever created for this one
+  # and it is confined to whatever untainted capacity happens to be idle. The
+  # sibling preview pods get away with that by requesting nothing at all; this
+  # one sits Pending until the wait below times out.
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - key: "karpenter.sh/nodepool"
+      operator: "Equal"
+      value: "zws-pool"
+      effect: "NoSchedule"
   imagePullSecrets:
     - name: registry-credentials
   containers:
@@ -143,15 +170,24 @@ spec:
       image: ${HOST_CONTRACTS_IMAGE}
       command: ["/bin/bash", "-c"]
       args:
-        - >-
-          npx hardhat --network ${hardhat_network} ${task}
-          --environment ${tool_env}
-          --start-time ${start_time}
-          --duration ${WINDOW_DURATION}
-          --buffer ${BUFFER}
-          --proposal-id ${PROPOSAL_ID}
-          --software-version ${GCS_VERSION}
-          ${PROPOSE_EXTRA_ARGS}
+        - |
+          set -euo pipefail
+          # The clock is read here rather than on the runner. This pod can spend minutes
+          # being scheduled onto a node Karpenter has to provision and pulling an image
+          # that node has never seen, and on the runner all of that came out of the lead:
+          # the window opened while the pod was still Pending, and the tool then refused
+          # to broadcast a startBlock already behind the tip. Reading it here leaves only
+          # hardhat's boot and the tool's own block sampling in front of the tip read the
+          # lead is measured against.
+          start_time=\$(node -e 'console.log(new Date(Date.now() + Number(process.argv[1]) * 1000).toISOString().slice(0, 19) + "Z")' ${START_LEAD_SECS})
+          echo "window opens \${start_time} (now + ${START_LEAD_SECS}s, read in-pod)"
+          npx hardhat --network ${hardhat_network} ${task} \\
+            --environment ${tool_env} \\
+            --start-time "\${start_time}" \\
+            --duration ${WINDOW_DURATION} \\
+            --buffer ${BUFFER} \\
+            --proposal-id ${PROPOSAL_ID} \\
+            --software-version ${GCS_VERSION} ${PROPOSE_EXTRA_ARGS}
       envFrom:
         - secretRef:
             name: ${job}
@@ -160,11 +196,27 @@ spec:
         limits: {cpu: "2", memory: 4Gi}
 EOF
 
-if ! kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/"${job}" -n "${NAMESPACE}" --timeout=600s; then
-  kubectl logs -n "${NAMESPACE}" "${job}" || true
-  echo "::error::${task} did not succeed (see report above)"
-  exit 1
-fi
+# `kubectl wait --for=jsonpath=...=Succeeded` cannot also be told "or Failed", so a pod that errors
+# out in the first minute still sits here until the timeout expires before anyone sees its report.
+# Poll both terminal phases instead; a refused proposal now surfaces in seconds.
+pod_deadline=$((SECONDS + POD_WAIT_SECS))
+while true; do
+  phase=$(kubectl get pod -n "${NAMESPACE}" "${job}" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+  [[ "${phase}" == "Succeeded" ]] && break
+  if [[ "${phase}" == "Failed" ]]; then
+    kubectl logs -n "${NAMESPACE}" "${job}" || true
+    echo "::error::${task} did not succeed (see report above)"
+    exit 1
+  fi
+  if (( SECONDS >= pod_deadline )); then
+    # Pending this long is a scheduling verdict, not slowness; the events carry the reason.
+    kubectl describe pod -n "${NAMESPACE}" "${job}" | tail -n 20 || true
+    kubectl logs -n "${NAMESPACE}" "${job}" || true
+    echo "::error::${task} did not finish within ${POD_WAIT_SECS}s (phase='${phase:-unknown}')"
+    exit 1
+  fi
+  sleep 5
+done
 kubectl logs -n "${NAMESPACE}" "${job}"
 if [[ "${PROPOSE_DRY_RUN}" == "true" ]]; then
   echo "Dry run only (PROPOSE_DRY_RUN=true): nothing broadcast."
@@ -174,6 +226,34 @@ fi
 
 # shellcheck source=../lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
+
+# Per-party rows for the Actions run summary. A dispatch run gets no PR comment
+# (preview-env-deploy.yml only comments on pull_request), so without this the
+# cutover outcome lives in the step log alone. Emitted from an EXIT trap so a
+# timeout still renders the table it failed on, and a no-op off Actions, where
+# the bg/ QA scripts run this from a laptop.
+SUMMARY_ROWS=()
+
+emit_cutover_summary() {
+  [[ -n "${GITHUB_STEP_SUMMARY:-}" ]] || return 0
+  (( ${#SUMMARY_ROWS[@]} )) || return 0
+  {
+    # The workflow runs this script twice (DryRunStarted gate, then the
+    # versioning assert), so name the phase or the page shows two same-titled
+    # tables.
+    local phase="dry run"
+    [[ "${ASSERT_CUTOVER}" == "true" ]] && phase="cutover"
+    echo "### RFC-021 ${phase}${BCS_IMAGE_TAG:+ — BCS \`${BCS_IMAGE_TAG}\`} → GCS ${LIVE_VERSION}"
+    echo
+    echo "| Party | Phase | Observed | Result |"
+    echo "| --- | --- | --- | --- |"
+    printf '%s\n' "${SUMMARY_ROWS[@]}"
+  } >> "${GITHUB_STEP_SUMMARY}"
+}
+# Bash keeps one EXIT handler, so this replaces `trap cleanup EXIT` above and
+# must keep running it: cleanup deletes the pod and the secret holding the
+# deployer key.
+trap 'cleanup; emit_cutover_summary' EXIT
 
 # After in-window e2e, cutover may already have flipped the row to
 # UpgradeAuthorized/LIVE. Skip the DryRunStarted gate when we only want
@@ -192,9 +272,11 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
       || echo 0)
     if [[ "${ready}" -ge "${expected_chains}" ]]; then
       echo "party ${i}: ${state}"
+      SUMMARY_ROWS+=("| ${i} | DryRunStarted | \`${state}\` | ✅ ${ready}/${expected_chains} chain(s) |")
       break
     fi
     if (( SECONDS >= deadline )); then
+      SUMMARY_ROWS+=("| ${i} | DryRunStarted | \`${state:-none}\` | ❌ timed out after ${TIMEOUT_SECS}s |")
       echo "::error::party ${i} did not reach DryRunStarted on all ${expected_chains} chain(s) (last='${state}')"
       # The dry run starts once every chain's consumer has processed start_block; on Amoy the consumer can trail head by hours.
       psql_party "${i}" "SELECT 'chain '||u.host_chain_id||': consumer at '||COALESCE(MAX(c.block_number),0)||', start_block '||u.start_block FROM upgrade_state u LEFT JOIN host_chain_consumer_blocks c ON c.chain_id = u.host_chain_id WHERE u.stack_role='GCS' GROUP BY u.host_chain_id, u.start_block;" || true
@@ -217,9 +299,11 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     version=$(psql_party "${i}" "SELECT stack_version FROM versioning;" || true)
     if [[ "$(version_major_minor "${version}")" == "${LIVE_VERSION}" ]]; then
       echo "party ${i}: versioning=${version}"
+      SUMMARY_ROWS+=("| ${i} | LIVE | \`${version}\` | ✅ cutover |")
       break
     fi
     if (( SECONDS >= deadline )); then
+      SUMMARY_ROWS+=("| ${i} | LIVE | \`${version:-none}\` | ❌ expected ${LIVE_VERSION} |")
       echo "::error::party ${i} versioning='${version}', expected ${LIVE_VERSION} (major.minor)"
       psql_party "${i}" "SELECT stack_role, host_chain_id, state, status, version FROM upgrade_state;" || true
       exit 1

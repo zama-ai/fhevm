@@ -1,0 +1,303 @@
+//! Pure application event metadata, shared by ingestion and application-only fuzz targets.
+use crate::contracts::TfheContract;
+use crate::contracts::TfheContract::TfheContractEvents;
+use alloy_primitives::FixedBytes;
+use fhevm_engine_common::handle_metadata::get_ct_type;
+
+#[cfg(test)]
+type Handle = FixedBytes<32>;
+type ScalarByte = FixedBytes<1>;
+
+/// Before executor d28bce3ae (October 2025), binary operations masked the
+/// scalar byte's low bit but emitted the original byte. Replay can cross that
+/// upgrade, so accept those historical bytes and interpret the low bit in
+/// both dependency extraction and persistence. Div/rem still require a scalar
+/// divisor; MulDiv has its own later bitmask encoding.
+pub fn validate_scalar_mode(
+    op: &TfheContractEvents,
+) -> Result<(), &'static str> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+    match op {
+        E::FheDiv(C::FheDiv { scalarByte, .. })
+        | E::FheRem(C::FheRem { scalarByte, .. }) => {
+            if binary_rhs_is_scalar(scalarByte) {
+                Ok(())
+            } else {
+                Err("division/remainder event requires a scalar divisor")
+            }
+        }
+        E::FheMulDiv(C::FheMulDiv { scalarByte, .. }) => {
+            if matches!(scalarByte.0[0], 1 | 3) {
+                Ok(())
+            } else {
+                Err("MulDiv event requires scalarByte 0x01 or 0x03")
+            }
+        }
+        E::FheShl(C::FheShl {
+            scalarByte, lhs, ..
+        })
+        | E::FheShr(C::FheShr {
+            scalarByte, lhs, ..
+        })
+        | E::FheRotl(C::FheRotl {
+            scalarByte, lhs, ..
+        })
+        | E::FheRotr(C::FheRotr {
+            scalarByte, lhs, ..
+        }) => {
+            // The original executor accepted a full uint256 scalar shift.
+            // Later versions bounded it by the lhs type, then by uint8.
+            // Without an activation height, either bound rejects valid replay.
+            if binary_rhs_is_scalar(scalarByte)
+                && !matches!(get_ct_type(lhs.as_slice()), Some(2..=6 | 8))
+            {
+                Err("scalar shift has unsupported operand type")
+            } else {
+                Ok(())
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod scalar_boundary_tests {
+    use super::*;
+    use crate::database::computation::Computation;
+    use alloy_primitives::Address;
+
+    fn shifts(rhs: Handle, flag: u8, ty: u8) -> [TfheContractEvents; 4] {
+        use TfheContract as C;
+        use TfheContractEvents as E;
+        let caller = Address::ZERO;
+        let mut lhs = Handle::ZERO;
+        lhs.0[30] = ty;
+        let result = Handle::ZERO;
+        let scalar_byte = FixedBytes([flag]);
+        [
+            E::FheShl(C::FheShl {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+            E::FheShr(C::FheShr {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+            E::FheRotl(C::FheRotl {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+            E::FheRotr(C::FheRotr {
+                caller,
+                lhs,
+                rhs,
+                scalarByte: scalar_byte,
+                result,
+            }),
+        ]
+    }
+
+    #[test]
+    fn shifts_and_rotates_preserve_pre_upgrade_scalar_history() {
+        for ty in [2, 3, 4, 5, 6, 8] {
+            for flag in [0, 1, 2, 3, 128, 255] {
+                // Cover both modern uint8 bounds and the original unchecked
+                // uint256 amount, without truncating or changing the operand.
+                for rhs in [
+                    Handle::ZERO,
+                    Handle::with_last_byte(255),
+                    Handle::from(
+                        alloy_primitives::U256::from(256).to_be_bytes::<32>(),
+                    ),
+                    FixedBytes([255; 32]),
+                ] {
+                    for event in shifts(rhs, flag, ty) {
+                        assert!(validate_scalar_mode(&event).is_ok());
+                        assert_eq!(
+                            Computation::from_evm(&event)
+                                .unwrap()
+                                .unwrap()
+                                .inputs()
+                                .len(),
+                            if flag & 1 != 0 { 1 } else { 2 }
+                        );
+                    }
+                }
+            }
+        }
+        for ty in [0, 1, 7, 9, 83, 255] {
+            for event in shifts(Handle::ZERO, 1, ty) {
+                assert!(validate_scalar_mode(&event).is_err());
+            }
+        }
+    }
+}
+
+/// The executor rejects oversized collections before emitting these events.
+/// Their function-only type arguments are not present in the event ABI, but
+/// are retained in the output (`FheSum`) or first operand (`FheIsIn`) handle.
+/// This checks the host event's application metadata, never TFHE values.
+///
+/// These limits mirror FHE_COLLECTION_{NARROW,WIDE}_MAX_SIZE in
+/// host-contracts/contracts/FHEVMExecutor.sol. Before increasing a contract
+/// limit, raise the matching listener limit and deploy compatible listeners
+/// to every operator; otherwise newly valid events will block ingestion.
+/// Keep accepting historical limits if the contract later lowers its caps.
+pub fn validate_collection_shape(
+    op: &TfheContractEvents,
+) -> Result<(), &'static str> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+    match op {
+        E::FheSum(C::FheSum { values, result, .. }) => {
+            let limit = match get_ct_type(result.as_slice()) {
+                Some(2..=4) => 100,
+                Some(5 | 6) => 60,
+                _ => return Err("FheSum event has unsupported result type"),
+            };
+            if values.len() > limit {
+                Err("FheSum event exceeds collection limit")
+            } else {
+                Ok(())
+            }
+        }
+        E::FheIsIn(C::FheIsIn { value, values, .. }) => {
+            let limit = match get_ct_type(value.as_slice()) {
+                Some(2..=4) => 100,
+                Some(5..=8) => 60,
+                _ => return Err("FheIsIn event has unsupported value type"),
+            };
+            if values.len() > limit {
+                Err("FheIsIn event exceeds collection limit")
+            } else {
+                Ok(())
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Shared by dependency extraction and the persisted worker scalar flag.
+/// Non-zero even bytes are encrypted operands in historical executor events.
+pub(crate) fn binary_rhs_is_scalar(scalar_byte: &ScalarByte) -> bool {
+    scalar_byte.0[0] & 1 != 0
+}
+
+/// `fheMulDiv` `scalarByte` bit 1 — factor2 is a plaintext scalar (bit 0 is the
+/// always-scalar divisor).
+pub(crate) fn fhe_mul_div_factor2_is_scalar(scalar_byte: &ScalarByte) -> bool {
+    scalar_byte.0[0] & 0b10 != 0
+}
+
+#[cfg(test)]
+mod scalar_mode_tests {
+    use super::*;
+    use crate::database::computation::Computation;
+    use alloy_primitives::Address;
+    #[test]
+    fn scalar_flags_preserve_historical_low_bit_semantics() {
+        use TfheContract as C;
+        use TfheContractEvents as E;
+        for flag in 0..=u8::MAX {
+            let caller = Address::ZERO;
+            let lhs = Handle::ZERO;
+            let rhs = Handle::ZERO;
+            let result = Handle::ZERO;
+            let scalar_byte = FixedBytes([flag]);
+            let add = E::FheAdd(C::FheAdd {
+                caller,
+                lhs,
+                rhs,
+                result,
+                scalarByte: scalar_byte,
+            });
+            let div = E::FheDiv(C::FheDiv {
+                caller,
+                lhs,
+                rhs,
+                result,
+                scalarByte: scalar_byte,
+            });
+            let rem = E::FheRem(C::FheRem {
+                caller,
+                lhs,
+                rhs,
+                result,
+                scalarByte: scalar_byte,
+            });
+            let mul_div = E::FheMulDiv(C::FheMulDiv {
+                caller,
+                factor1: lhs,
+                factor2: rhs,
+                divisor: rhs,
+                result,
+                scalarByte: scalar_byte,
+            });
+            assert!(validate_scalar_mode(&add).is_ok());
+            let add = Computation::from_evm(&add).unwrap().unwrap();
+            assert_eq!(add.inputs().len(), if flag & 1 != 0 { 1 } else { 2 });
+            let mask = add.boundary_mask(|_| false).unwrap();
+            assert_eq!(mask[31], if flag & 1 != 0 { 1 } else { 3 });
+            assert_eq!(validate_scalar_mode(&div).is_ok(), flag & 1 != 0);
+            assert_eq!(validate_scalar_mode(&rem).is_ok(), flag & 1 != 0);
+            assert_eq!(
+                validate_scalar_mode(&mul_div).is_ok(),
+                flag == 1 || flag == 3
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod collection_boundary_tests {
+    use super::*;
+    use alloy_primitives::Address;
+    #[test]
+    fn collection_limits_follow_event_type_metadata() {
+        use TfheContract as C;
+        use TfheContractEvents as E;
+        for type_byte in [0, 2, 4, 5, 6, 7, 8, 9, 83, 255] {
+            for len in [0, 60, 61, 100, 101] {
+                let mut handle = Handle::ZERO;
+                handle.0[30] = type_byte;
+                let values = vec![Handle::ZERO; len];
+                let sum = E::FheSum(C::FheSum {
+                    caller: Address::ZERO,
+                    values: values.clone(),
+                    result: handle,
+                });
+                let is_in = E::FheIsIn(C::FheIsIn {
+                    caller: Address::ZERO,
+                    value: handle,
+                    values,
+                    result: Handle::ZERO,
+                });
+                let sum_valid = match type_byte {
+                    2..=4 => len <= 100,
+                    5 | 6 => len <= 60,
+                    _ => false,
+                };
+                let is_in_valid = match type_byte {
+                    2..=4 => len <= 100,
+                    5..=8 => len <= 60,
+                    _ => false,
+                };
+                assert_eq!(validate_collection_shape(&sum).is_ok(), sum_valid);
+                assert_eq!(
+                    validate_collection_shape(&is_in).is_ok(),
+                    is_in_valid
+                );
+            }
+        }
+    }
+}

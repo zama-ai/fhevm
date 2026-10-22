@@ -153,6 +153,7 @@ pub async fn insert_event(
         tx_depth_size: 0,
         log_index: log.log_index,
         operand_boundary_mask: Some(operand_boundary_mask),
+        has_legacy_operand_origin: false,
         is_executor_minted: true,
         is_fallback_grant: false,
         is_synthetic: false,

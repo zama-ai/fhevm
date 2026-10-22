@@ -61,6 +61,7 @@ on:
           - backlog
           - object-integrity
           - host-rpc
+          - ingestion-recovery
           - broker-redelivery
           - storage-pressure
           - submission-partition
@@ -489,6 +490,17 @@ jobs:
         working-directory: test-suite/fhevm
         run: ./scripts/run-submission-partition.sh
 
+      - name: Artifact ingestion recovery through deployed services
+        if: ${{ matrix.leg == 'ingestion-recovery' }}
+        working-directory: test-suite/fhevm
+        env:
+          SELECTED_CASES: ${{ join(matrix.cases, ' ') }}
+        run: |
+          for case_id in $SELECTED_CASES; do
+            mode="${case_id#INGEST-ACL-}"
+            ./scripts/run-artifact-ingestion-recovery.sh "${mode,,}"
+          done
+
       - name: Host RPC retry and paginated catch-up
         if: ${{ matrix.leg == 'host-rpc' }}
         working-directory: test-suite/fhevm
@@ -620,6 +632,7 @@ jobs:
           mkdir -p /tmp/consensus-artifacts
           cp -r ../../.fhevm/runtime/consensus-results /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/object-integrity /tmp/consensus-artifacts/ 2>/dev/null || true
+          cp -r ../../.fhevm/runtime/artifact-recovery-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/host-rpc-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/broker-redelivery /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/storage-pressure-evidence /tmp/consensus-artifacts/ 2>/dev/null || true

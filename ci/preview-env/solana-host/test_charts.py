@@ -22,6 +22,9 @@ SIGNER = ["--set-string", "solanaHostListener.proofServer.coprocessorSignerAddre
 COPROCESSOR = [ROOT / "ci/preview-env/coprocessor/values-coprocessor-e2e.yaml",
                VALUES / "values-solana-coprocessor-e2e.yaml"]
 PROOF_SERVERS = [{"url": f"http://{PROOF_SERVER}:8080", "signerAddress": SIGNER_ADDRESS}]
+# deploy-kms-connector.sh sets each party's connector ACL and proxy audience (its KMS tx-sender).
+CONNECTOR_PARTY = ["--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
+                   "--set-string", "kmsConnectorProxy.txSenderAddress=0x" + "22" * 20]
 
 
 def render(release, chart, values, *options):
@@ -167,11 +170,11 @@ class SolanaCharts(unittest.TestCase):
 
     def test_connector_preserves_evm_and_exact_solana_chain_id(self):
         # Same composition as deploy-preview.sh: the party's values, the Solana overlay, and the
-        # proof servers the script sets. aclAddress is filled per party by deploy-kms-connector.sh.
+        # proof servers the script sets.
         documents = render("kms-connector-1", "kms-connector",
                            [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
                             VALUES / "values-solana-connector-e2e.yaml"],
-                           "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
+                           *CONNECTOR_PARTY,
                            "--set-json",
                            'commonConfig.hostChains.solana.solanaProofServers=' + json.dumps(PROOF_SERVERS))
         deployment = next(d for d in documents if d and d["kind"] == "Deployment" and "kms-worker" in d["metadata"]["name"])
@@ -194,7 +197,7 @@ class SolanaCharts(unittest.TestCase):
     def test_kms_worker_gets_the_tx_sender_wallet_only_with_a_solana_chain(self):
         def wallet_env(values, *options):
             documents = render("kms-connector-1", "kms-connector", values,
-                               "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
+                               *CONNECTOR_PARTY,
                                *options)
             envs = {}
             for component in ["kms-worker", "tx-sender"]:
@@ -217,7 +220,7 @@ class SolanaCharts(unittest.TestCase):
         documents = render("kms-connector-1", "kms-connector",
                            [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
                             VALUES / "values-solana-connector-e2e.yaml"],
-                           "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
+                           *CONNECTOR_PARTY,
                            "--set-string", "commonConfig.hostChains.solana.chainId=72057594037940281",
                            "--set-json",
                            'commonConfig.hostChains.solana.solanaProofServers=' + json.dumps(PROOF_SERVERS))
@@ -255,7 +258,7 @@ class SolanaCharts(unittest.TestCase):
                 command = ["helm", "template", "kms-connector-1", str(ROOT / "charts/kms-connector"),
                            "-f", str(ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml"),
                            "-f", str(VALUES / "values-solana-connector-e2e.yaml"),
-                           "--set-string", "commonConfig.hostChains.ethereum.aclAddress=0x" + "11" * 20,
+                           *CONNECTOR_PARTY,
                            "--set-json", "commonConfig.hostChains.solana.solanaProofServers=" + json.dumps(PROOF_SERVERS),
                            *options]
                 result = subprocess.run(command, capture_output=True, text=True)

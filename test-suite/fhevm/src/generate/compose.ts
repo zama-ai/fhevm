@@ -41,6 +41,15 @@ import {
 import { kmsConnectorEnvName, kmsConnectorPrefix } from "../kms-party";
 import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
 import { buildKmsThresholdOverride, kmsRenderOptionsFor } from "./kms-core";
+import {
+  LISTENER_BROKER_URL,
+  listenerBrokerUrl,
+  listenerDatabaseName,
+  listenerDatabaseUrl,
+  listenerOperators,
+  listenerPublisherChains,
+  listenerPublisherService,
+} from "./listener-core";
 import type { HostChainScenario, ResolvedCoprocessorScenarioInstance, State } from "../types";
 import { ensureDir, exists, mergeArgs, readEnvFile, remove, toServiceName } from "../utils/fs";
 
@@ -737,6 +746,30 @@ const argPolicyForInstance = (
 // Green-side services omitted from BCS so it matches the previous-release shape.
 const GCS_ONLY_SERVICES = new Set([...GCS_ONLY_SUFFIXES].map((suffix) => `coprocessor-${suffix}`));
 
+/**
+ * Points a host-listener consumer at its own operator's Redis keyspace.
+ *
+ * The consumer's broker identity is compiled in, so two operators sharing a
+ * keyspace would share a consumer group and split the blocks between them
+ * instead of each receiving all of them. An operator's Blue and Green
+ * consumers do share one, deliberately: they also share that operator's
+ * coprocessor database, so each block wants handling once. The chain id is
+ * already part of every stream name, so an operator's chains need no further
+ * separation from each other.
+ *
+ * A scenario that routes this consumer itself keeps that routing.
+ */
+const pointConsumerAtItsOperator = (
+  service: Record<string, unknown>,
+  suffix: string,
+  operator: number,
+) => {
+  if (suffix !== "host-listener-consumer" || !Array.isArray(service.command)) return;
+  const url = listenerBrokerUrl(operator);
+  service.command = service.command.map((argument: string) =>
+    argument === `--url=${LISTENER_BROKER_URL}` ? `--url=${url}` : argument,
+  );
+};
 
 /** Builds the generated coprocessor compose override across all scenario instances. */
 const buildCoprocessorOverride = async (plan: StackSpec) => {
@@ -914,15 +947,11 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     }
   }
 
-  // A listener consumer's service name also identifies its broker queue.
-  // Sharing it across operator databases or Blue/Green roles load-balances
-  // blocks instead of delivering each block to every independent recipient.
+  // Each operator reads its own listener, on its own Redis logical database.
   for (const [serviceName, service] of Object.entries(services)) {
-    if (!serviceName.endsWith("-host-listener-consumer") || !Array.isArray(service.command)) continue;
-    if (service.command.some((argument: string) => argument === "--service-name" || argument.startsWith("--service-name="))) continue;
-    // Retain the original primary queue, including for single-operator stacks.
-    const identity = serviceName === "coprocessor-host-listener-consumer" ? "host-listener-consumer" : serviceName;
-    service.command = [...service.command, `--service-name=${identity}`];
+    const operator = serviceName.match(/^coprocessor(\d*)-(?:gcs-)?host-listener-consumer$/);
+    if (!operator) continue;
+    pointConsumerAtItsOperator(service, "host-listener-consumer", Number(operator[1] || 0));
   }
 
   next.services = services;
@@ -1039,6 +1068,125 @@ const applyDockerSocketRuntime = (services: ComposeDoc["services"]) => {
   services[TEST_SUITE_RUNNER_SERVICE] = service;
 };
 
+/** How the listener publisher mounts its config in the compose template. */
+const LISTENER_CONFIG_MOUNT = ":/config.yaml:ro";
+
+/**
+ * The operator and chain axes that decide which publishers a stack renders.
+ *
+ * Shared by the renderer below and by the gate that decides whether to run it,
+ * so the two cannot disagree about which containers exist: a stack that starts
+ * a publisher the generated override never rendered fails on `no such service`.
+ */
+const listenerCoreAxes = (plan: Pick<StackSpec, "coprocessor" | "hostChains">) => {
+  const instances = plan.coprocessor?.instances ?? [];
+  return {
+    operators: listenerOperators(instances.length, instances),
+    chains: listenerPublisherChains(plan.hostChains, plan.coprocessor?.hostListenerMode === "consumer"),
+  };
+};
+
+/**
+ * Whether a stack runs more publishers than the single one the template ships.
+ *
+ * Fan-out follows the operator and chain counts, not the listener mode: a
+ * Blue/Green scenario declares no `hostListenerMode` yet still runs an operator
+ * per party, and every operator past 0 needs a publisher feeding the Redis
+ * keyspace its consumer already reads (see `pointConsumerAtItsOperator`).
+ */
+export const needsListenerCoreFanOut = (plan: Pick<StackSpec, "coprocessor" | "hostChains">) => {
+  const { operators, chains } = listenerCoreAxes(plan);
+  return operators.length > 1 || chains.length > 1;
+};
+
+/** Where a chain's generated publisher config is written. */
+const listenerPublisherConfigPath = (chain?: Parameters<typeof listenerPublisherService>[1]) =>
+  path.join(COMPOSE_OUT_DIR, `${listenerPublisherService(0, chain)}.yaml`);
+
+/** The generated publisher configs a fanned-out listener-core mounts. */
+export const listenerPublisherConfigPaths = (plan: Pick<StackSpec, "coprocessor" | "hostChains">) =>
+  needsListenerCoreFanOut(plan)
+    ? listenerCoreAxes(plan).chains.map((chain) => listenerPublisherConfigPath(chain))
+    : [];
+
+/**
+ * Replicates the listener publisher across both axes: one container per
+ * operator, per host chain (mirrors `buildCoprocessorOverride`). Operator 0 on
+ * the default chain keeps every template name — service, container, listener
+ * database, Redis keyspace — so a single-operator single-chain stack renders
+ * exactly as it did.
+ *
+ * The two axes travel by different routes, because they separate different
+ * things. A chain differs by `chain_id` and `rpc_url`, which live in the
+ * mounted config, so each chain gets a generated copy of it. An operator
+ * differs by listener database and Redis keyspace, which the listener also
+ * reads from its `APP_*` environment contract — and environment wins over
+ * file, so every operator on a chain shares that one read-only config and
+ * overrides just its own three values.
+ *
+ * An operator's chains share its database and its keyspace. Every listener
+ * table leads its unique index with `chain_id`, so one database holds several
+ * chains without collision, and the consumer's stream names carry the chain id
+ * too. That is also how an operator runs in production.
+ *
+ * Only the template name carries a build spec: `maybeBuild` builds by base
+ * service name, so the image is built once and the clones reference its tag.
+ */
+const buildListenerCoreOverride = async (plan: StackSpec): Promise<ComposeDoc> => {
+  const template = rewriteComposePaths(structuredClone(await loadComposeDoc("listener-core")));
+  const templateName = listenerPublisherService(0);
+  const base = template.services[templateName];
+  const overridden = overriddenServicesForComponent(plan, "listener-core");
+  const services: ComposeDoc["services"] = {};
+  if (base && overridden.has(templateName)) {
+    const next = structuredClone(base);
+    applyBuildPolicy(next, true);
+    const build = localBuildSpecFor("listener-core", templateName, plan.e2ePublicRuntime);
+    if (build) {
+      next.build = build;
+    }
+    services[templateName] = next;
+  }
+  const { operators, chains } = listenerCoreAxes(plan);
+  if (!base || !needsListenerCoreFanOut(plan)) {
+    return { services };
+  }
+  const built = services[templateName] ?? base;
+  const mount = (base.volumes as string[]).find((value) => value.endsWith(LISTENER_CONFIG_MOUNT))!;
+  const config = YAML.parse(await fs.readFile(mount.slice(0, -LISTENER_CONFIG_MOUNT.length), "utf8"));
+  for (const chain of chains) {
+    let volumes = base.volumes;
+    if (chain) {
+      const chainConfig = structuredClone(config);
+      chainConfig.blockchain.chain_id = Number(chain.chainId);
+      chainConfig.blockchain.rpc_url = `http://${chain.node}:${chain.rpcPort}`;
+      const file = listenerPublisherConfigPath(chain);
+      await fs.writeFile(file, YAML.stringify(chainConfig));
+      volumes = [`${file}${LISTENER_CONFIG_MOUNT}`];
+    }
+    for (const operator of operators) {
+      const name = listenerPublisherService(operator, chain);
+      const clone = structuredClone(built);
+      clone.container_name = name;
+      clone.profiles = [name];
+      clone.volumes = volumes;
+      if (operator !== 0) {
+        // Only the template name builds; the rest ride on the image it produces.
+        delete clone.build;
+        clone.image = built.image;
+        clone.environment = {
+          ...normalizeEnvironment(clone.environment),
+          APP_NAME: listenerDatabaseName(operator),
+          APP_DATABASE__DB_URL: listenerDatabaseUrl(operator),
+          APP_BROKER__BROKER_URL: listenerBrokerUrl(operator),
+        };
+      }
+      services[name] = clone;
+    }
+  }
+  return { services };
+};
+
 /** Builds the generated compose override for one component. */
 const buildComposeOverride = async (component: string, plan: StackSpec) => {
   if (component === "coprocessor") {
@@ -1057,6 +1205,10 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     // One connector per KMS party (each cores↔connector pair is independent).
     return buildKmsConnectorOverride(plan);
   }
+  if (component === "listener-core") {
+    // One publisher per operator per chain.
+    return buildListenerCoreOverride(plan);
+  }
   const template = rewriteComposePaths(structuredClone(await loadComposeDoc(component)));
   const overridden = overriddenServicesForComponent(plan, component);
   const services: ComposeDoc["services"] = {};
@@ -1071,22 +1223,6 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
       next.build = build;
     }
     services[name] = next;
-  }
-  if (component === "listener-core" && plan.coprocessor?.hostListenerMode === "consumer") {
-    const original = template.services["listener-publisher-for-anvil"];
-    const mount = (original.volumes as string[]).find((value) => value.endsWith(":/config.yaml:ro"))!;
-    const config = YAML.parse(await fs.readFile(mount.slice(0, -":/config.yaml:ro".length), "utf8"));
-    for (const chain of hostChainRuntimes(plan.hostChains)) {
-      const name = chain.isDefault ? "listener-publisher-for-anvil" : `listener-publisher-${chain.key}`;
-      const chainConfig = structuredClone(config);
-      chainConfig.blockchain.chain_id = Number(chain.chainId);
-      chainConfig.blockchain.rpc_url = `http://${chain.node}:${chain.rpcPort}`;
-      chainConfig.database.db_url = `postgres://postgres:postgres@coprocessor-and-kms-db:5432/listener_${chain.chainId}`;
-      const file = path.join(COMPOSE_OUT_DIR, `${name}.yaml`);
-      await fs.writeFile(file, YAML.stringify(chainConfig));
-      services[name] = { ...original, ...(services["listener-publisher-for-anvil"] ?? {}),
-        container_name: name, profiles: [name], volumes: [`${file}:/config.yaml:ro`] };
-    }
   }
   if (component === "test-suite") {
     applyDockerSocketRuntime(services);
@@ -1209,15 +1345,11 @@ const buildExtraCoprocessorListenerOverride = async (
       if (plan.coprocessor.hostListenerMode === "consumer" && isLegacyHostListener(suffix)) {
         adjusted.profiles = ["legacy-host-listeners"];
       }
-      // As on the default chain, each operator's consumer needs its own broker
-      // queue: a shared service name load-balances blocks between operators.
-      if (
-        suffix === "host-listener-consumer" &&
-        Array.isArray(adjusted.command) &&
-        !adjusted.command.some((argument: string) => argument === "--service-name" || argument.startsWith("--service-name="))
-      ) {
-        adjusted.command = [...adjusted.command, `--service-name=${cloneName}`];
-      }
+      // As on the default chain, each operator's consumer reads its own
+      // listener. The chain id already separates this consumer from the same
+      // operator's other chains; the keyspace separates it from the other
+      // operators, who would otherwise share its consumer group.
+      pointConsumerAtItsOperator(adjusted, suffix, instance.index);
       // Extra chains keep their env canonical id (default chain), so they don't decode proposals.
       applyCoprocessorSource(adjusted, baseName, instance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       delete adjusted.depends_on;
@@ -1261,6 +1393,8 @@ const buildExtraCoprocessorListenerOverride = async (
           locallyBuilt ? {} : gcsArgPolicy.coprocessorDropFlags,
         );
         adjusted.container_name = cloneName;
+        // Green shares its operator's keyspace with Blue, as on the default chain.
+        pointConsumerAtItsOperator(adjusted, suffix, gcsInstance.index);
         applyCoprocessorSource(adjusted, baseName, gcsInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
         if (locallyBuilt && buildSpec) {
           adjusted.image = retagLocal(baseService.image, "gcs-candidate");
@@ -1276,10 +1410,12 @@ const buildExtraCoprocessorListenerOverride = async (
 };
 
 /** Lists which components need generated compose overrides for a runtime plan. */
-export const generatedComposeComponents = (plan: Pick<StackSpec, "overrides" | "kms" | "coprocessor">) =>
+export const generatedComposeComponents = (
+  plan: Pick<StackSpec, "overrides" | "kms" | "coprocessor" | "hostChains">,
+) =>
   new Set([
     "coprocessor",
-    ...(plan.coprocessor?.hostListenerMode === "consumer" ? ["listener-core"] : []),
+    ...(needsListenerCoreFanOut(plan) ? ["listener-core"] : []),
     // Always generated: it carries the host Docker socket wiring for the e2e runner,
     // which depends on host facts rather than on any local build override.
     "test-suite",
