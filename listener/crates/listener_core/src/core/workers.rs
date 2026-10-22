@@ -65,7 +65,8 @@ enum RequestLookup {
     Untracked,
     /// The store returned a row.
     Found(CatchupStatus),
-    /// No row: swept after retention, or never written.
+    /// No row: the request was never written. Rows are never deleted, so this
+    /// is never a request that finished.
     Missing,
 }
 
@@ -181,7 +182,9 @@ async fn catchup_subrange_is_live(
     }
 }
 
-/// Credit a published sub-range to its request's coverage set (D16).
+/// Credit a published sub-range to its request's coverage set — the set of
+/// blocks published so far, which completes the request once it spans
+/// `block_start..=fanned_end`.
 ///
 /// Runs **after** the publishes, never before. Merging first would mark a
 /// request complete for blocks that a crash then prevents from being emitted;
@@ -1397,10 +1400,10 @@ mod tests {
         );
     }
 
-    /// The inversion guard. A missing row means the request was swept or never
+    /// The inversion guard. A missing row means the request was never
     /// written — never that it was cancelled. Mapping this to `Discard` would
-    /// turn a retention sweep into a silent data gap, which is also what adding
-    /// a `consumer_id` predicate to the lookup would do.
+    /// turn any lookup that misses into a silent data gap, which is also what
+    /// adding a `consumer_id` predicate to the lookup would do.
     #[test]
     fn a_missing_request_row_still_runs() {
         let verdict = subrange_verdict(RequestLookup::Missing);
@@ -1418,7 +1421,7 @@ mod tests {
         assert!(should_fan_out(&RequestAdmission::FanOut));
     }
 
-    /// D13. This is the whole point of `fanned_out_at`: the second delivery of
+    /// This is the whole point of `fanned_out_at`: the second delivery of
     /// the same `catchup_id` publishes nothing.
     #[test]
     fn a_duplicate_request_does_not_fan_out_again() {

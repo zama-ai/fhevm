@@ -11,15 +11,15 @@ CREATE TYPE catchup_flow AS ENUM ('CATCHUP', 'FINAL_CATCHUP');
 --   CANCELLED  → explicit cancel_catchup
 --   SKIPPED    → block_start was above the chain head, so fanout produced
 --                nothing; named after listener_catchup_skipped_above_head_total
---   COMPLETED  → every block this request fanned out has been published
---                (D16). Set by the coverage merge, never by a count.
+--   COMPLETED  → every block this request fanned out has been published.
+--                Set by the coverage merge (see covered), never by a count.
 --
 -- There is deliberately no SUPERSEDED. The core never retires a request on a
 -- consumer's behalf; the consumer cancels the old id itself, and CANCELLED
 -- already records that.
 --
 -- All four values ship in this CREATE TYPE rather than arriving via ALTER TYPE
--- ADD VALUE (D18). Postgres refuses to use a newly added enum value in the
+-- ADD VALUE. Postgres refuses to use a newly added enum value in the
 -- transaction that added it, and sqlx runs every migration in a transaction by
 -- default (sqlx-core-0.8.6 migrate/migrator.rs:25, no_tx: false), so a later
 -- migration could add the value but not reference it. Nothing is committed yet,
@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS catchup_requests (
     -- This is the completion target, and it MUST NOT be block_end. A request
     -- for 1..1_000_000 against a head of 500 fans out 1..500 and nothing else;
     -- measuring coverage against the *requested* end leaves 501..1_000_000
-    -- permanently uncovered and the request permanently ACTIVE (D16).
+    -- permanently uncovered and the request permanently ACTIVE.
     --
     -- NULL on a SKIPPED row: the fanout produced nothing, the row is already
     -- terminal, and nothing will ever merge against it.
@@ -98,9 +98,9 @@ CREATE TABLE IF NOT EXISTS catchup_requests (
     -- idempotent: the one redelivery path that always exists -- a
     -- connection-error XACK leaves the message in the PEL and the sweeper
     -- reclaims it after claim_min_idle -- completes a sub-range twice. Set
-    -- union absorbs that; addition does not. D11 rejected completion detection
-    -- on exactly this ground, and rejected it correctly for every *counting*
-    -- mechanism. D16 revisits it because a coverage set is not a count.
+    -- union absorbs that; addition does not. A count of finished sub-ranges
+    -- would reach its target early and complete a request whose last
+    -- sub-ranges were never published.
     --
     -- Fragmentation is bounded by concurrency, not by block count: with
     -- prefetch = 5 and range_prefetch = 1 only a handful of sub-ranges are ever
