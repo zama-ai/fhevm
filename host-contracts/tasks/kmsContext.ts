@@ -273,7 +273,7 @@ export interface KmsContextSwitchStatus {
   previousContextId?: bigint;
   contextState?: ContextState;
   newSigners?: string[];
-  // The confirmed and outstanding lists and the count below read the leading digest group only.
+  // The confirmed and outstanding lists and the count below span every digest.
   newSignersConfirmed?: string[];
   newSignersOutstanding?: string[];
   previousSignersConfirmed?: string[];
@@ -288,30 +288,25 @@ export interface KmsContextSwitchStatus {
   pendingEpochId?: bigint;
   epochState?: EpochState;
   epochSigners?: string[];
-  // Confirmed and outstanding read the leading digest group only.
+  // Confirmed and outstanding span every digest.
   epochSignersConfirmed?: string[];
   epochSignersOutstanding?: string[];
   // Keyed by `${epochMaterialHash}:${extraData}`, the inputs of the signed digest that vary per signer.
   epochConfirmationsByDigest?: Record<string, string[]>;
   epochConfirmationsDiverged?: boolean;
 
-  // Destruction confirmations of the active committee, which the contract counts toward n - t over one
-  // digest. Contexts: every KmsContextDestroyed in the scanned window, plus the pending context of an
-  // aborted switch. Epochs: every KmsEpochDestroyed in the scanned window after the v0.4.0 upgrade.
+  // Destruction confirmations of the active committee. Contexts: every KmsContextDestroyed in the scanned
+  // window, plus the pending context of an aborted switch. Epochs: every KmsEpochDestroyed in the scanned window.
   contextDestructions?: DestructionConfirmationStatus[];
   epochDestructions?: DestructionConfirmationStatus[];
 }
 
 export interface DestructionConfirmationStatus {
   destroyedId: bigint;
-  signersConfirmed: string[]; // active signers on the leading digest
+  signersConfirmed: string[];
   signersOutstanding: string[];
-  largestDigestGroup: number; // most active signers that share one digest, compared with the threshold
-  threshold: number; // n - t of the active committee, floored at 1
   // Read from the contract's quorum event for the active committee.
   quorumReached: boolean;
-  // Signers that confirmed different extraData sign different digests.
-  diverged: boolean;
 }
 
 // The active committee, the signer set the contract accepts for destruction confirmations.
@@ -331,13 +326,6 @@ function isAfter(event: { blockNumber: number; index: number }, reference: { blo
     event.blockNumber > reference.blockNumber ||
     (event.blockNumber === reference.blockNumber && event.index > reference.index)
   );
-}
-
-// The contract counts confirmations per digest, so progress is read from one digest group. The leading
-// group has the fewest confirmations still missing. A tie goes to the digest confirmed first. `empty`
-// stands in when no confirmation exists.
-function leadingDigestGroup<G>(groups: G[], missing: (group: G) => number, empty: G): G {
-  return groups.reduce((best, group) => (missing(group) < missing(best) ? group : best), empty);
 }
 
 // Reconstructs the in-progress phase of a KMS context switch or epoch rotation. It detects an
@@ -466,38 +454,16 @@ export async function inspectKmsContextSwitch(
       contextId,
       contextConfirmations.filter((confirmation) => confirmation.args.destroyedContextId === contextId),
       contextQuorums.some((quorum) => quorum.args.destroyedContextId === contextId),
-      committee,
+      committee.signers,
       checksum,
     ),
   );
-  // `destroyedEpochs` exists since v0.4.0 (reinitializer 5), so an epoch destroyed before it collects no
-  // confirmation.
-  const upgrade = (await pc.queryFilter(pc.filters.Initialized(), fromBlock, toBlock)).find(
-    (event) => event.args.version >= 5n,
-  );
-  // No upgrade event in the window means the upgrade came before `fromBlock` or has not happened yet. The
-  // initialized version separates the two. OpenZeppelin Initializable v5 keeps it in the low 64 bits of
-  // this ERC-7201 slot.
-  const upgradedBeforeWindow =
-    upgrade === undefined &&
-    (BigInt(
-      await ethers.provider.getStorage(
-        protocolConfigAddress,
-        '0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00',
-      ),
-    ) &
-      ((1n << 64n) - 1n)) >=
-      5n;
-  // An epoch destroyed earlier in the upgrade block is still pre-upgrade, so the log index breaks the tie.
-  const confirmableEpochEvents = destroyedEpochEvents.filter((event) =>
-    upgrade === undefined ? upgradedBeforeWindow : isAfter(event, upgrade),
-  );
-  status.epochDestructions = confirmableEpochEvents.map((event) =>
+  status.epochDestructions = destroyedEpochEvents.map((event) =>
     destructionConfirmationStatus(
       event.args.epochId,
       epochConfirmations.filter((confirmation) => confirmation.args.destroyedEpochId === event.args.epochId),
       epochQuorums.some((quorum) => quorum.args.destroyedEpochId === event.args.epochId),
-      committee,
+      committee.signers,
       checksum,
     ),
   );
@@ -522,10 +488,6 @@ async function fetchActiveCommittee(
 // - ContextCreationConfirmation: previousContextId, newContextId and nodeConfigHash. The in-flight guard
 //   keeps the active context fixed, and the pending context and its node set never change.
 // - EpochActivationConfirmation: contextId, previousEpochId and epochId. They are fixed for one pending epoch.
-// - ContextDestructionConfirmation: destroyedContextId. The caller groups per destroyed context and
-//   queries the active committee only.
-// - EpochDestructionConfirmation: destroyedEpochId. The caller groups per destroyed epoch and queries the
-//   active committee only.
 // A new signed field that can differ between signers of one operation must also go into its key here.
 function groupSignersByDigest<E extends { args: { signer: string } }>(
   confirmations: E[],
@@ -542,21 +504,17 @@ function groupSignersByDigest<E extends { args: { signer: string } }>(
 // Reports the active committee's destruction confirmations of `destroyedId`.
 function destructionConfirmationStatus(
   destroyedId: bigint,
-  confirmations: { args: { signer: string; extraData: string } }[],
+  confirmations: { args: { signer: string } }[],
   quorumReached: boolean,
-  { signers: activeSigners, threshold }: ActiveCommittee,
+  activeSigners: string[],
   checksum: (address: string) => string,
 ): DestructionConfirmationStatus {
-  const groups = Object.values(groupSignersByDigest(confirmations, (event) => event.args.extraData, checksum));
-  const leading = leadingDigestGroup(groups, (group) => threshold - group.length, []);
+  const signersConfirmed = confirmations.map((confirmation) => checksum(confirmation.args.signer));
   return {
     destroyedId,
-    signersConfirmed: leading,
-    signersOutstanding: outstanding(activeSigners, new Set(leading)),
-    largestDigestGroup: leading.length,
-    threshold,
+    signersConfirmed,
+    signersOutstanding: outstanding(activeSigners, new Set(signersConfirmed)),
     quorumReached,
-    diverged: groups.length > 1,
   };
 }
 
@@ -615,28 +573,21 @@ async function fillContextSwitch(
     // The contract counts per digest, so the quorum is checked per extraData group.
     const groups = Object.values(
       groupSignersByDigest(creationConfirmations, (event) => event.args.extraData, checksum),
-    ).map((group) => ({
-      newConfirmed: group.filter((signer) => newSigners.includes(signer)),
-      previousConfirmed: group.filter((signer) => previousSigners.has(signer)),
-    }));
-    const previousSignerThreshold = status.previousSignerThreshold;
-    const leading = leadingDigestGroup(
-      groups,
-      (group) =>
-        newSigners.length -
-        group.newConfirmed.length +
-        Math.max(0, previousSignerThreshold - group.previousConfirmed.length),
-      { newConfirmed: [], previousConfirmed: [] },
     );
-    status.newSignersConfirmed = leading.newConfirmed;
-    status.newSignersOutstanding = outstanding(newSigners, new Set(leading.newConfirmed));
-    status.previousSignersConfirmed = leading.previousConfirmed;
-    status.previousConfirmationCount = leading.previousConfirmed.length;
+    const confirmed = new Set(groups.flat());
+    status.newSignersConfirmed = newSigners.filter((signer) => confirmed.has(signer));
+    status.newSignersOutstanding = outstanding(newSigners, confirmed);
+    status.previousSignersConfirmed = committee.signers.filter((signer) => confirmed.has(signer));
+    status.previousConfirmationCount = status.previousSignersConfirmed.length;
     status.contextCreationConfirmationsDiverged = groups.length > 1;
 
-    status.contextCreationQuorumReached =
-      leading.newConfirmed.length === newSigners.length && leading.previousConfirmed.length >= previousSignerThreshold;
-    status.stuckBelowPreviousThreshold = leading.previousConfirmed.length < previousSignerThreshold;
+    const previousSignerThreshold = status.previousSignerThreshold;
+    status.contextCreationQuorumReached = groups.some(
+      (group) =>
+        newSigners.every((signer) => group.includes(signer)) &&
+        group.filter((signer) => previousSigners.has(signer)).length >= previousSignerThreshold,
+    );
+    status.stuckBelowPreviousThreshold = status.previousConfirmationCount < previousSignerThreshold;
   }
 
   // `Created` is signaled by the NewKmsEpoch emitted once the creation quorum is reached; it also
@@ -693,9 +644,9 @@ async function fillEpochActivation(
     (event) => `${event.args.epochMaterialHash}:${event.args.extraData}`,
     checksum,
   );
-  const leading = leadingDigestGroup(Object.values(byDigest), (group) => epochSigners.length - group.length, []);
-  status.epochSignersConfirmed = leading;
-  status.epochSignersOutstanding = outstanding(epochSigners, new Set(leading));
+  const confirmed = new Set(Object.values(byDigest).flat());
+  status.epochSignersConfirmed = [...confirmed];
+  status.epochSignersOutstanding = outstanding(epochSigners, confirmed);
   status.epochConfirmationsByDigest = byDigest;
   // The epoch activates only when all signers sign one digest. More than one key means the signers
   // disagree on the reshared key/CRS material or on extraData, and the epoch cannot activate as-is.
@@ -711,14 +662,11 @@ async function fillEpochActivation(
 function printDestruction(destruction: DestructionConfirmationStatus): void {
   console.log(
     `destroyed id ${destruction.destroyedId}:`,
-    `${destruction.largestDigestGroup} active signers confirmed one digest (target >= ${destruction.threshold} = n - t)`,
+    `${destruction.signersConfirmed.length} active signers confirmed`,
   );
   console.log('  quorum reached:', destruction.quorumReached);
   if (destruction.signersOutstanding.length > 0) {
     console.log('  outstanding active signers:', destruction.signersOutstanding.join(', '));
-  }
-  if (destruction.diverged) {
-    console.log('  ⚠ signers confirmed different extraData');
   }
 }
 

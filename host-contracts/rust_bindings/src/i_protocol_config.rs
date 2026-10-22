@@ -566,7 +566,6 @@ interface IProtocolConfig {
     error KmsContextNotPending(uint256 kmsContextId);
     error KmsDestructionAlreadyConfirmed(address signer, uint256 destroyedId);
     error KmsDestructionUnauthorized(address signer, uint256 destroyedId);
-    error KmsEpochNotDestroyed(uint256 epochId);
     error KmsLifecycleOperationInFlight(uint256 kmsContextId, uint256 epochId);
     error KmsNodeNullSigner();
     error KmsNodeNullTxSender();
@@ -2138,17 +2137,6 @@ interface IProtocolConfig {
       },
       {
         "name": "destroyedId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "KmsEpochNotDestroyed",
-    "inputs": [
-      {
-        "name": "epochId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -5827,89 +5815,6 @@ error KmsDestructionUnauthorized(address signer, uint256 destroyedId);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.destroyedId),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `KmsEpochNotDestroyed(uint256)` and selector `0x03d8b4d0`.
-```solidity
-error KmsEpochNotDestroyed(uint256 epochId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct KmsEpochNotDestroyed {
-        #[allow(missing_docs)]
-        pub epochId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<KmsEpochNotDestroyed> for UnderlyingRustTuple<'_> {
-            fn from(value: KmsEpochNotDestroyed) -> Self {
-                (value.epochId,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsEpochNotDestroyed {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { epochId: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for KmsEpochNotDestroyed {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "KmsEpochNotDestroyed(uint256)";
-            const SELECTOR: [u8; 4] = [3u8, 216u8, 180u8, 208u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.epochId),
                 )
             }
             #[inline]
@@ -15169,8 +15074,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         KmsDestructionUnauthorized(KmsDestructionUnauthorized),
         #[allow(missing_docs)]
-        KmsEpochNotDestroyed(KmsEpochNotDestroyed),
-        #[allow(missing_docs)]
         KmsLifecycleOperationInFlight(KmsLifecycleOperationInFlight),
         #[allow(missing_docs)]
         KmsNodeNullSigner(KmsNodeNullSigner),
@@ -15201,7 +15104,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [3u8, 216u8, 180u8, 208u8],
             [6u8, 140u8, 141u8, 64u8],
             [7u8, 128u8, 32u8, 190u8],
             [9u8, 146u8, 247u8, 173u8],
@@ -15235,7 +15137,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
-            ::core::stringify!(KmsEpochNotDestroyed),
             ::core::stringify!(EmptyKmsNodes),
             ::core::stringify!(KmsLifecycleOperationInFlight),
             ::core::stringify!(InvalidProposalId),
@@ -15269,7 +15170,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
-            <KmsEpochNotDestroyed as alloy_sol_types::SolError>::SIGNATURE,
             <EmptyKmsNodes as alloy_sol_types::SolError>::SIGNATURE,
             <KmsLifecycleOperationInFlight as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidProposalId as alloy_sol_types::SolError>::SIGNATURE,
@@ -15326,7 +15226,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 31usize;
+        const COUNT: usize = 30usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -15387,9 +15287,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 Self::KmsDestructionUnauthorized(_) => {
                     <KmsDestructionUnauthorized as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::KmsEpochNotDestroyed(_) => {
-                    <KmsEpochNotDestroyed as alloy_sol_types::SolError>::SELECTOR
-                }
                 Self::KmsLifecycleOperationInFlight(_) => {
                     <KmsLifecycleOperationInFlight as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -15442,17 +15339,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             static DECODE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<IProtocolConfigErrors>] = &[
-                {
-                    fn KmsEpochNotDestroyed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <KmsEpochNotDestroyed as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::KmsEpochNotDestroyed)
-                    }
-                    KmsEpochNotDestroyed
-                },
                 {
                     fn EmptyKmsNodes(
                         data: &[u8],
@@ -15809,17 +15695,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<IProtocolConfigErrors>] = &[
-                {
-                    fn KmsEpochNotDestroyed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <KmsEpochNotDestroyed as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::KmsEpochNotDestroyed)
-                    }
-                    KmsEpochNotDestroyed
-                },
                 {
                     fn EmptyKmsNodes(
                         data: &[u8],
@@ -16265,11 +16140,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         inner,
                     )
                 }
-                Self::KmsEpochNotDestroyed(inner) => {
-                    <KmsEpochNotDestroyed as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::KmsLifecycleOperationInFlight(inner) => {
                     <KmsLifecycleOperationInFlight as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -16438,12 +16308,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::KmsDestructionUnauthorized(inner) => {
                     <KmsDestructionUnauthorized as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::KmsEpochNotDestroyed(inner) => {
-                    <KmsEpochNotDestroyed as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

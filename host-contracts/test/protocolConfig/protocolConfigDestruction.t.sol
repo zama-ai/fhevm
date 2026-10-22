@@ -12,9 +12,8 @@ import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contract
 contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
     /// @dev Defines a switch to the disjoint committee {signer2, signer3}, confirms its creation, then
     ///      destroys it with its pending epoch. The genesis committee {signer0, signer1} stays active.
-    function _destroyCreatedDisjointContext() internal returns (uint256 contextId, uint256 epochId) {
+    function _destroyCreatedDisjointContext() internal returns (uint256 contextId) {
         contextId = KMS_CONTEXT_COUNTER_BASE + 2;
-        epochId = EPOCH_COUNTER_BASE + 2;
         _defineDisjointSwitch();
         _confirmContextCreationWithTwoSigners(contextId);
         _confirmContextCreation(contextId, kmsPk2, "");
@@ -38,7 +37,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
     ///      digest material only, so signers may confirm different extraData.
     function test_confirmKmsContextDestruction() public {
         _setupEpochLifecycle();
-        (uint256 contextId, ) = _destroyCreatedDisjointContext();
+        uint256 contextId = _destroyCreatedDisjointContext();
 
         // signer2 belongs to the destroyed committee only.
         bytes memory signature = _computeSignature(kmsPk2, _hashContextDestruction(contextId, ""));
@@ -61,27 +60,6 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
 
         signature = _computeSignature(kmsPk1, _hashContextDestruction(contextId, ""));
         protocolConfig.confirmKmsContextDestruction(contextId, signature, "");
-    }
-
-    /// @dev An epoch cleared by destroyKmsContext is confirmed through the context destruction.
-    function test_revertConfirmKmsEpochDestructionForEpochClearedWithContext() public {
-        _setupEpochLifecycle();
-        (, uint256 epochId) = _destroyCreatedDisjointContext();
-
-        bytes memory signature = _computeSignature(kmsPk0, _hashEpochDestruction(epochId, ""));
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsEpochNotDestroyed.selector, epochId));
-        protocolConfig.confirmKmsEpochDestruction(epochId, signature, "");
-    }
-
-    function test_revertConfirmKmsEpochDestructionBeforeDestroy() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
-
-        bytes memory signature = _computeSignature(kmsPk0, _hashEpochDestruction(epochId, ""));
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsEpochNotDestroyed.selector, epochId));
-        protocolConfig.confirmKmsEpochDestruction(epochId, signature, "");
     }
 
     /// @dev After a switch to {signer2, signer3}, the superseded genesis epoch is destroyed. Its own
@@ -143,7 +121,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
     ///      under A does not count toward B's quorum.
     function test_confirmKmsContextDestructionAcrossRotation() public {
         _setupEpochLifecycle();
-        (uint256 contextId, ) = _destroyCreatedDisjointContext();
+        uint256 contextId = _destroyCreatedDisjointContext();
         bytes memory signature1 = _computeSignature(kmsPk1, _hashContextDestruction(contextId, ""));
         protocolConfig.confirmKmsContextDestruction(contextId, signature1, "");
 
@@ -257,7 +235,7 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
     /// @dev OZ ECDSA rejects the high-s twin of a valid destruction signature.
     function test_revertConfirmDestructionMalleableSignature() public {
         _setupEpochLifecycle();
-        (uint256 contextId, ) = _destroyCreatedDisjointContext();
+        uint256 contextId = _destroyCreatedDisjointContext();
         (bytes memory signature, bytes32 highS) = _highSSignature(kmsPk0, _hashContextDestruction(contextId, ""));
         vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureS.selector, highS));
         protocolConfig.confirmKmsContextDestruction(contextId, signature, "");

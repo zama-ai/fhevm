@@ -81,7 +81,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     ///      storage, because `reinitializeV4` leaves only v0.3.0 confirmations of settled epochs there.
     ///      `destroyedContexts` is also canonical-only but stays in base storage, because it existed
     ///      before v0.4.0. So a context destroyed before the upgrade can still collect destruction
-    ///      confirmations, but an epoch destroyed before the upgrade cannot.
+    ///      confirmations.
     struct ProtocolConfigCanonicalStorage {
         /// @notice Hash of the stored node set and thresholds, signed in ContextCreationConfirmation.
         mapping(uint256 contextId => bytes32) nodeConfigHashForContext;
@@ -95,8 +95,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextDestructionConfirmedBySigner;
         /// @notice Epoch destruction confirmations per signer.
         mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochDestructionConfirmedBySigner;
-        /// @notice Whether an epoch was destroyed by destroyKmsEpoch.
-        mapping(uint256 epochId => bool) destroyedEpochs;
         /// @notice Destruction confirmations grouped by the confirming committee's context and digest.
         mapping(uint256 contextId => mapping(bytes32 digest => uint256 confirmations)) destructionConfirmationCountForDigest;
     }
@@ -401,7 +399,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
 
         _clearEpoch(epochId);
-        _getProtocolConfigCanonicalStorage().destroyedEpochs[epochId] = true;
         emit KmsEpochDestroyed(epochId);
     }
 
@@ -431,20 +428,17 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /// @inheritdoc IProtocolConfig
-    /// @dev Counts like confirmKmsContextDestruction. An epoch cleared by destroyKmsContext is
-    ///      confirmed through confirmKmsContextDestruction instead.
+    /// @dev Counts like confirmKmsContextDestruction. The contract does not check that the epoch was
+    ///      destroyed. KMS nodes sign only after they see the KmsEpochDestroyed event, so an epoch
+    ///      destroyed before v0.4.0 can still collect confirmations. An epoch cleared by
+    ///      destroyKmsContext is confirmed through confirmKmsContextDestruction instead.
     function confirmKmsEpochDestruction(
         uint256 destroyedEpochId,
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual {
-        ProtocolConfigCanonicalStorage storage canonical$ = _getProtocolConfigCanonicalStorage();
-        if (!canonical$.destroyedEpochs[destroyedEpochId]) {
-            revert KmsEpochNotDestroyed(destroyedEpochId);
-        }
-
         (address signer, bool quorumReached) = _confirmDestruction(
-            canonical$.epochDestructionConfirmedBySigner[destroyedEpochId],
+            _getProtocolConfigCanonicalStorage().epochDestructionConfirmedBySigner[destroyedEpochId],
             destroyedEpochId,
             keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData))),
             signature

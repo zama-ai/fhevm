@@ -2003,29 +2003,6 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         assertEq(uint256(vm.load(address(protocolConfig), initializableStorage)), 5);
     }
 
-    /// @dev v0.3.0 destroyKmsEpoch did not set the canonical `destroyedEpochs` flag. Clearing the flag
-    ///      reproduces an epoch destroyed before the upgrade, which never collects destruction
-    ///      confirmations.
-    function test_revertConfirmKmsEpochDestructionForEpochDestroyedBeforeUpgrade() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
-        vm.prank(owner);
-        protocolConfig.destroyKmsEpoch(epochId);
-
-        // destroyedEpochs is field 6 of the canonical namespace.
-        bytes32 location = keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfigCanonical")) - 1)) &
-            ~bytes32(uint256(0xff));
-        bytes32 slot = keccak256(abi.encode(epochId, uint256(location) + 6));
-        assertEq(uint256(vm.load(address(protocolConfig), slot)), 1);
-        vm.store(address(protocolConfig), slot, bytes32(0));
-
-        bytes memory signature = _computeSignature(kmsPk0, _hashEpochDestruction(epochId, ""));
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsEpochNotDestroyed.selector, epochId));
-        protocolConfig.confirmKmsEpochDestruction(epochId, signature, "");
-    }
-
     /// @dev reinitializeV4 reverts while a context switch is Pending.
     function test_reinitializeV4RevertsWhileContextPending() public {
         _setupEpochLifecycle();

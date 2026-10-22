@@ -419,8 +419,8 @@ carrying the real values.
 **Upgrade precondition (ProtocolConfig v0.4.0)**: settle any in-flight lifecycle operation
 first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. `reinitializeV4` reverts with
 `KmsLifecycleOperationInFlight` while one is in flight. So no v0.3.0 confirmation counts toward a signed
-quorum. An epoch destroyed before the upgrade cannot collect signed destruction confirmations. A context
-destroyed before the upgrade can, because its destroyed flag stays in base storage.
+quorum. An epoch or a context destroyed before the upgrade can still collect signed destruction
+confirmations.
 Canonical never destroys its latest active context or epoch. A mirror call copies only those
 ids, so it never copies a destroyed id. `ProtocolConfigReplica` has no destruction method. A
 destruction on canonical does not reach a replica that mirrored that id earlier.
