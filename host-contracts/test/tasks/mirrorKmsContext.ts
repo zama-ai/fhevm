@@ -14,6 +14,7 @@ import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { ProtocolConfig, ProtocolConfigReplica } from '../../types';
 import { confirmEpochActivation } from '../utils/protocolConfigEip712';
 import {
+  buildConnectorUrls,
   buildControllableKmsCommittee,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
@@ -70,6 +71,7 @@ describe('KMS mirror tasks', function () {
           snapshot.kmsNodes[i].signerAddress,
           snapshot.kmsNodes[i].ipAddress,
           snapshot.kmsNodes[i].storageUrl,
+          snapshot.kmsNodes[i].connectorUrl,
         ]);
       });
       expect(decoded[3].toObject()).to.deep.equal(snapshot.thresholds);
@@ -152,6 +154,7 @@ describe('KMS mirror tasks', function () {
         expect(node.ipAddress).to.equal(canonicalNodes[i].ipAddress);
         expect(node.storageUrl).to.equal(canonicalNodes[i].storageUrl);
       });
+      expect(mirroredNodes.map((n) => n.connectorUrl)).to.deep.equal(buildConnectorUrls(committee.nodes.length));
 
       // Now drive a same-set rotation on canonical and mirror just the epoch.
       const asCanonicalOwner = (await ethers.getContractAt(

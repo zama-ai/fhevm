@@ -178,7 +178,8 @@ async function activateNewKmsContext(
   signerAccounts: Signer[],
 ): Promise<void> {
   const asOwner = protocolConfig.connect(deployer);
-  const context = await defineNewKmsContext(asOwner, nodes, thresholds);
+  const connectorUrls = nodes.map((_, i) => `https://kms-connector-${i}.example.com`);
+  const context = await defineNewKmsContext(asOwner, nodes, connectorUrls, thresholds);
   await activateDefinedKmsContext(asOwner, signerAccounts, context);
 }
 
