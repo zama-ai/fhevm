@@ -57,6 +57,8 @@ pub enum RequestCheckKind {
     CoproConsensus,
     /// KMS context/epoch validity check.
     KmsContext,
+    /// Maximum number of handles per decryption request check.
+    HandleLimit,
     /// Network error (on-chain call or DB query) encountered while running any check.
     Network,
 }
@@ -68,6 +70,7 @@ impl RequestCheckKind {
             Self::Signature => "signature",
             Self::CoproConsensus => "copro_consensus",
             Self::KmsContext => "kms_context",
+            Self::HandleLimit => "handle_limit",
             Self::Network => "network",
         }
     }

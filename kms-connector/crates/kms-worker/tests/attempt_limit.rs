@@ -28,7 +28,7 @@ use kms_grpc::kms::v1::Empty;
 use kms_worker::core::Config;
 use mocktail::{MockSet, StatusCode, server::MockServer};
 use rstest::rstest;
-use std::time::Duration;
+use std::{num::NonZeroU16, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
@@ -165,6 +165,74 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
                 .unwrap_err();
         }
     }
+
+    Ok(())
+}
+
+#[rstest]
+#[case::public_decryption(TestEventType::PublicDecryption)]
+#[case::user_decryption(TestEventType::UserDecryption)]
+#[case::user_decryption_v2(TestEventType::UserDecryptionV2)]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_request_exceeding_handle_limit_is_rejected(
+    #[case] event_type: TestEventType,
+) -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::default()
+        .with_db(DbInstance::setup().await?)
+        .build();
+
+    const MAX_HANDLES_PER_DECRYPTION: NonZeroU16 = NonZeroU16::new(2).unwrap();
+    let sns_cts: Vec<_> = (0..=MAX_HANDLES_PER_DECRYPTION.get())
+        .map(|_| rand_sns_ct())
+        .collect();
+    let insert_options = InsertRequestOptions::new()
+        .with_sns_ct_materials(sns_cts.clone())
+        .with_tx_hash(rand_digest());
+    insert_rand_request(test_instance.db(), event_type, insert_options).await?;
+
+    // Apart from the initial Coprocessor registry load, no Gateway, Host chain or KMS response is
+    // mocked: the request must be rejected before reaching any of them.
+    let asserter = Asserter::new();
+    mock_copro_registry_load(&asserter, "http://unused-bucket-url");
+    let mock_provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_mocked_client(asserter);
+    let acl_contracts_mock =
+        init_host_chains_acl_contracts_mock(sns_cts[0].ctHandle.as_slice(), vec![]);
+    let kms_mock_server =
+        MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint").with_mocks(MockSet::new());
+    kms_mock_server.start().await?;
+
+    let config = Config {
+        kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
+        max_handles_per_decryption: MAX_HANDLES_PER_DECRYPTION,
+        // Ensures the request can only be marked as failed by an irrecoverable error
+        max_decryption_attempts: u16::MAX,
+        db_fast_event_polling: Duration::from_millis(500),
+        db_long_event_polling: Duration::from_millis(500),
+        ct_attestation: testing_ct_attestation_config(false),
+        ..Default::default()
+    };
+    let kms_worker = init_kms_worker(
+        config,
+        mock_provider,
+        acl_contracts_mock,
+        test_instance.db(),
+    )
+    .await?;
+    let cancel_token = CancellationToken::new();
+    let kms_worker_task = tokio::spawn(kms_worker.start(cancel_token.clone()));
+
+    while check_no_uncompleted_request_in_db(test_instance.db(), event_type)
+        .await
+        .is_err()
+    {
+        warn!("Still requests in DB!");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    cancel_token.cancel();
+    kms_worker_task.await.unwrap();
 
     Ok(())
 }

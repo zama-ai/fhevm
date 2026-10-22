@@ -15,7 +15,7 @@ use connector_utils::{
     tasks::default_task_limit,
 };
 use serde::{Deserialize, Deserializer, Serialize};
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, num::NonZeroU16, str::FromStr, time::Duration};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -71,6 +71,9 @@ pub struct Config {
     /// The maximum number of decryption attempts.
     #[serde(default = "default_max_decryption_attempts")]
     pub max_decryption_attempts: u16,
+    /// The maximum number of handles a single decryption request can contain.
+    #[serde(default = "default_max_handles_per_decryption")]
+    pub max_handles_per_decryption: NonZeroU16,
 
     /// Number of retries for S3 ciphertext retrieval.
     #[serde(default = "default_s3_ciphertext_retrieval_retries")]
@@ -207,6 +210,10 @@ fn default_max_decryption_attempts() -> u16 {
     20
 }
 
+fn default_max_handles_per_decryption() -> NonZeroU16 {
+    NonZeroU16::new(50).unwrap()
+}
+
 fn default_s3_ciphertext_retrieval_retries() -> u8 {
     3
 }
@@ -258,6 +265,7 @@ impl Default for Config {
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
             grpc_request_retries: default_grpc_request_retries(),
             max_decryption_attempts: default_max_decryption_attempts(),
+            max_handles_per_decryption: default_max_handles_per_decryption(),
             s3_ciphertext_retrieval_retries: default_s3_ciphertext_retrieval_retries(),
             s3_connect_timeout: default_s3_connect_timeout(),
             erc1271_gas_limit: default_erc1271_gas_limit(),
@@ -293,6 +301,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES");
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
+            env::remove_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION");
             env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
@@ -358,6 +367,7 @@ mod tests {
             );
             env::set_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES", "5");
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
+            env::set_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION", "10");
             env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4s");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
@@ -409,6 +419,7 @@ mod tests {
         );
         assert_eq!(config.grpc_request_retries, 5);
         assert_eq!(config.max_decryption_attempts, 300);
+        assert_eq!(config.max_handles_per_decryption.get(), 10);
         assert_eq!(config.s3_ciphertext_retrieval_retries, 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
         assert_eq!(config.service_name, "kms-connector-test");
