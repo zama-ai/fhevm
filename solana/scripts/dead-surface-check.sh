@@ -80,7 +80,15 @@ RUST_ROOTS=(
   solana/crates
   solana/runtime-tests
   solana/test-kit
-  coprocessor/fhevm-engine/host-listener/src
+  # The listener's other files are main's EVM listener, whose "durable", "frame" and "superseded"
+  # are its own words, not retired ACL names.
+  coprocessor/fhevm-engine/host-listener/src/bin/solana_host_listener.rs
+  coprocessor/fhevm-engine/host-listener/src/database/computation.rs
+  coprocessor/fhevm-engine/host-listener/src/database/solana_checkpoint.rs
+  coprocessor/fhevm-engine/host-listener/src/database/transaction_id.rs
+  coprocessor/fhevm-engine/host-listener/src/solana_adapter.rs
+  coprocessor/fhevm-engine/host-listener/src/solana_listener.rs
+  coprocessor/fhevm-engine/host-listener/src/solana_reconstruct.rs
   coprocessor/fhevm-engine/solana-host-follower/src
   coprocessor/fhevm-engine/solana-merkle-proof-service/src
   # The relayer's ACL and signature pre-checks, which skip a Solana host chain; the rest of the
