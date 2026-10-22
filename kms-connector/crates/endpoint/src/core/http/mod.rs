@@ -88,7 +88,7 @@ async fn observe_request<B: MessageBody>(
     let incoming =
         telemetry::extract_context(|name| req.headers().get(name).and_then(|v| v.to_str().ok()));
     let span = telemetry::endpoint_span(req.method().as_str(), path, incoming);
-    let mut observation = metrics::HTTP.start(telemetry::route_label(path));
+    let mut observation = metrics::HTTP_METRICS.start(telemetry::route_label(path));
     let response = next.call(req).instrument(span.clone()).await;
     let (status, code) = match &response {
         Ok(response) => (response.status(), response_code(response.response())),

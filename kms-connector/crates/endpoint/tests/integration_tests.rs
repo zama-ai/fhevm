@@ -125,7 +125,7 @@ async fn test_public_decrypt_happy_path() -> anyhow::Result<()> {
     assert_requests("public_decrypt", "200", "success", 1).await;
     assert_eq!(lookups("public_decrypt", "stored"), 1);
     assert_eq!(
-        metrics::WAIT
+        metrics::DECRYPTION_WAIT_LATENCY_HISTOGRAM
             .with_label_values(&["public_decrypt"])
             .get_sample_count(),
         1
@@ -306,7 +306,9 @@ async fn test_existing_payload_row_is_served_immediately() -> anyhow::Result<()>
     for route in ["public_decrypt", "user_decrypt"] {
         assert_eq!(lookups(route, "served"), 1);
         assert_eq!(
-            metrics::WAIT.with_label_values(&[route]).get_sample_count(),
+            metrics::DECRYPTION_WAIT_LATENCY_HISTOGRAM
+                .with_label_values(&[route])
+                .get_sample_count(),
             0
         );
     }
@@ -926,8 +928,8 @@ async fn test_listener_reconnection_fails_in_flight_requests_fast() -> anyhow::R
         request.id(),
     )
     .await;
-    assert_eq!(metrics::RECONNECTIONS.get(), 1);
-    assert_eq!(metrics::WAITERS_FAILED.get(), 2);
+    assert_eq!(metrics::RESPONSE_LISTENER_RECONNECTION_COUNTER.get(), 1);
+    assert_eq!(metrics::RESPONSE_LISTENER_WAITERS_FAILED_COUNTER.get(), 2);
     assert_requests("public_decrypt", "502", "upstream_transient", 2).await;
     info!("The service keeps running on a fresh listener connection...");
     let next = public_request();
@@ -1255,7 +1257,7 @@ async fn assert_error(
     let route = connector_utils::monitoring::http::route_label(response.url().path());
     let body = error_body(response).await;
     assert!(
-        metrics::HTTP
+        metrics::HTTP_METRICS
             .requests
             .with_label_values(&[route, &status.as_u16().to_string(), code.as_str()])
             .get()
@@ -1284,7 +1286,7 @@ async fn wait_for_counter(value: impl Fn() -> u64, expected: u64) {
 async fn assert_requests(route: &str, status: &str, code: &str, expected: u64) {
     wait_for_counter(
         || {
-            metrics::HTTP
+            metrics::HTTP_METRICS
                 .requests
                 .with_label_values(&[route, status, code])
                 .get()
@@ -1303,5 +1305,7 @@ fn admitted_requests() -> u64 {
 }
 
 fn lookups(route: &str, outcome: &str) -> u64 {
-    metrics::LOOKUP.with_label_values(&[route, outcome]).get()
+    metrics::DECRYPTION_LOOKUP_COUNTER
+        .with_label_values(&[route, outcome])
+        .get()
 }

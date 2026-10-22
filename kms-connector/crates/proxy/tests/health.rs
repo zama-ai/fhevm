@@ -42,7 +42,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
         .await?;
     for name in [
         "kms_connector_proxy_http_requests_counter",
-        "kms_connector_proxy_http_request_duration_seconds",
+        "kms_connector_proxy_http_request_latency_seconds",
         "kms_connector_proxy_http_requests_in_flight",
     ] {
         assert!(

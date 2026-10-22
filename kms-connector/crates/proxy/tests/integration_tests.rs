@@ -12,7 +12,7 @@ use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
     VersionResponse,
 };
-use proxy::monitoring::metrics::HTTP;
+use proxy::monitoring::metrics::HTTP_METRICS;
 use std::time::{Duration, Instant};
 
 #[tokio::test]
@@ -438,7 +438,7 @@ async fn send_raw(t: &TestProxy, request: &[u8]) -> StatusCode {
 async fn assert_requests(route: &str, status: &str, code: &str, expected: u64) {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
-        let count = HTTP
+        let count = HTTP_METRICS
             .requests
             .with_label_values(&[route, status, code])
             .get();

@@ -150,26 +150,24 @@ impl HttpMetrics {
     /// Registers request counts, durations and in-flight requests under the service's metric
     /// prefix.
     pub fn register(prefix: &str) -> Self {
+        let requests_name = format!("{prefix}_http_requests_counter");
         let requests = register_int_counter_vec!(
-            format!("{prefix}_http_requests_counter"),
+            &requests_name,
             "Finished HTTP requests, including cancellations; status 0 means no response",
             &["route", "status", "code"]
         )
-        .expect("register HTTP request counter");
+        .unwrap_or_else(|e| panic!("Failed to register {requests_name} metric: {e}"));
+        let duration_name = format!("{prefix}_http_request_latency_seconds");
         let duration = register_histogram_vec!(
-            HistogramOpts::new(
-                format!("{prefix}_http_request_duration_seconds"),
-                "HTTP request duration in seconds"
-            )
-            .buckets(DURATION_BUCKETS.to_vec()),
+            HistogramOpts::new(&duration_name, "HTTP request duration in seconds")
+                .buckets(DURATION_BUCKETS.to_vec()),
             &["route"]
         )
-        .expect("register HTTP duration histogram");
-        let in_flight = register_int_gauge!(
-            format!("{prefix}_http_requests_in_flight"),
-            "Active HTTP requests after header parsing"
-        )
-        .expect("register HTTP in-flight gauge");
+        .unwrap_or_else(|e| panic!("Failed to register {duration_name} metric: {e}"));
+        let in_flight_name = format!("{prefix}_http_requests_in_flight");
+        let in_flight =
+            register_int_gauge!(&in_flight_name, "Active HTTP requests after header parsing")
+                .unwrap_or_else(|e| panic!("Failed to register {in_flight_name} metric: {e}"));
         for route in ROUTES {
             duration.with_label_values(&[route]);
         }

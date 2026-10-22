@@ -99,7 +99,7 @@ pub async fn handle<R: DecryptionRoute>(
 
     let row = match lookup {
         LookupOutcome::Serve(row) => {
-            metrics::LOOKUP
+            metrics::DECRYPTION_LOOKUP_COUNTER
                 .with_label_values(&[R::LABEL, "served"])
                 .inc();
             row
@@ -108,7 +108,7 @@ pub async fn handle<R: DecryptionRoute>(
             outcome,
             old_response_created_at,
         } => {
-            metrics::LOOKUP
+            metrics::DECRYPTION_LOOKUP_COUNTER
                 .with_label_values(&[R::LABEL, outcome])
                 .inc();
             wait_and_read_response::<R>(state, id, &mut waiter, old_response_created_at).await?
@@ -197,7 +197,7 @@ async fn wait_and_read_response<R: DecryptionRoute>(
                 )
             })?;
         wake_signal.map_err(|_| {
-            metrics::WAITERS_FAILED.inc();
+            metrics::RESPONSE_LISTENER_WAITERS_FAILED_COUNTER.inc();
             warn!(decryption_id = %id, "Response listener gone while waiting");
             upstream_transient("connection to the response stream was lost", id)
         })?;
@@ -221,7 +221,7 @@ async fn wait_and_read_response<R: DecryptionRoute>(
             debug!(decryption_id = %id, "Woken up by the stale error row, waiting again");
             continue;
         }
-        metrics::WAIT
+        metrics::DECRYPTION_WAIT_LATENCY_HISTOGRAM
             .with_label_values(&[R::LABEL])
             .observe(started_at.elapsed().as_secs_f64());
         return Ok(row);

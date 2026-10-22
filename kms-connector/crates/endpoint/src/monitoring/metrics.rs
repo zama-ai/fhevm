@@ -13,53 +13,57 @@ use tokio::sync::Semaphore;
 
 /// Endpoint request counts by route, status, and code, request durations in seconds by route,
 /// and active requests.
-pub static HTTP: LazyLock<HttpMetrics> =
+pub static HTTP_METRICS: LazyLock<HttpMetrics> =
     LazyLock::new(|| HttpMetrics::register("kms_connector_endpoint"));
 
 /// Decryption lookup counts by route and outcome: served, stored, retried, or already_in_progress.
 ///
 /// Updated by `decrypt::handle` after the database transaction commits.
-pub static LOOKUP: LazyLock<IntCounterVec> = LazyLock::new(|| {
+pub static DECRYPTION_LOOKUP_COUNTER: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "kms_connector_endpoint_decryption_lookup_counter",
         "Committed decryption lookups by outcome",
         &["route", "outcome"]
     )
-    .expect("register lookup counter")
+    .expect("Failed to register kms_connector_endpoint_decryption_lookup_counter metric")
 });
 /// Time in seconds spent waiting for a decryption response and reading its database row.
 ///
 /// Only waits ending with a response are recorded, so timeouts do not mask the response latency.
 /// Timeouts, listener disruptions and cancellations are counted by the request counter.
-pub static WAIT: LazyLock<HistogramVec> = LazyLock::new(|| {
+pub static DECRYPTION_WAIT_LATENCY_HISTOGRAM: LazyLock<HistogramVec> = LazyLock::new(|| {
     register_histogram_vec!(
         HistogramOpts::new(
-            "kms_connector_endpoint_decryption_wait_duration_seconds",
+            "kms_connector_endpoint_decryption_wait_latency_seconds",
             "Time waiting for a response, for waits ending with a response"
         )
         .buckets(DURATION_BUCKETS.to_vec()),
         &["route"]
     )
-    .expect("register wait histogram")
+    .expect("Failed to register kms_connector_endpoint_decryption_wait_latency_seconds metric")
 });
 /// Successful PostgreSQL listener reconnections after a connection is lost.
-pub static RECONNECTIONS: LazyLock<IntCounter> = LazyLock::new(|| {
+pub static RESPONSE_LISTENER_RECONNECTION_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(
         "kms_connector_endpoint_response_listener_reconnections_counter",
         "Re-established Postgres listener connections"
     )
-    .expect("register reconnection counter")
+    .expect(
+        "Failed to register kms_connector_endpoint_response_listener_reconnections_counter metric",
+    )
 });
 /// HTTP requests whose wait for a decryption response failed because the listener was disrupted.
 ///
 /// `wait_and_read_response` increments this once per affected request, including requests
 /// waiting for the same decryption ID.
-pub static WAITERS_FAILED: LazyLock<IntCounter> = LazyLock::new(|| {
+pub static RESPONSE_LISTENER_WAITERS_FAILED_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
     register_int_counter!(
         "kms_connector_endpoint_response_listener_waiters_failed_counter",
         "HTTP requests failed by a disrupted response listener"
     )
-    .expect("register disrupted waiter counter")
+    .expect(
+        "Failed to register kms_connector_endpoint_response_listener_waiters_failed_counter metric",
+    )
 });
 
 /// Registers endpoint metrics and creates zero-valued counters and histograms for known labels.
@@ -72,16 +76,18 @@ pub static WAITERS_FAILED: LazyLock<IntCounter> = LazyLock::new(|| {
 /// Returns an error if the admission gauges cannot be created or registered, e.g. when called
 /// twice in the same process.
 pub fn init(limiter: Arc<Semaphore>, capacity: usize) -> prometheus::Result<()> {
-    LazyLock::force(&RECONNECTIONS);
-    LazyLock::force(&WAITERS_FAILED);
+    LazyLock::force(&RESPONSE_LISTENER_RECONNECTION_COUNTER);
+    LazyLock::force(&RESPONSE_LISTENER_WAITERS_FAILED_COUNTER);
     for route in ROUTES.into_iter().filter(|&route| route != UNMATCHED_ROUTE) {
-        HTTP.requests.with_label_values(&[route, "200", "success"]);
+        HTTP_METRICS
+            .requests
+            .with_label_values(&[route, "200", "success"]);
     }
     for route in [PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE].map(route_label) {
         for outcome in ["served", "stored", "retried", "already_in_progress"] {
-            LOOKUP.with_label_values(&[route, outcome]);
+            DECRYPTION_LOOKUP_COUNTER.with_label_values(&[route, outcome]);
         }
-        WAIT.with_label_values(&[route]);
+        DECRYPTION_WAIT_LATENCY_HISTOGRAM.with_label_values(&[route]);
     }
     let limit = IntGauge::new(
         "kms_connector_endpoint_decryption_capacity",

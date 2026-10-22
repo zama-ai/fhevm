@@ -114,7 +114,7 @@ impl ProxyHttp for Proxy {
     fn new_ctx(&self) -> Self::CTX {
         RequestContext {
             span: Span::none(),
-            observation: crate::monitoring::metrics::HTTP.start(telemetry::UNMATCHED_ROUTE),
+            observation: crate::monitoring::metrics::HTTP_METRICS.start(telemetry::UNMATCHED_ROUTE),
             code: "upstream",
             route: None,
             endpoint: None,
@@ -424,7 +424,7 @@ mod tests {
     // Dropping the context decrements the in-flight gauge and counts a cancellation without logging().
     #[test]
     fn dropped_request_metrics() {
-        use crate::{core::Config, monitoring::metrics::HTTP};
+        use crate::{core::Config, monitoring::metrics::HTTP_METRICS};
 
         let config = Config {
             endpoint_addresses: vec!["127.0.0.1:1".parse().unwrap()],
@@ -432,11 +432,12 @@ mod tests {
         };
         let (proxy, _state) = Proxy::from_config(config).unwrap();
         let context = proxy.new_ctx();
-        assert_eq!(HTTP.in_flight.get(), 1);
+        assert_eq!(HTTP_METRICS.in_flight.get(), 1);
         drop(context);
-        assert_eq!(HTTP.in_flight.get(), 0);
+        assert_eq!(HTTP_METRICS.in_flight.get(), 0);
         assert_eq!(
-            HTTP.requests
+            HTTP_METRICS
+                .requests
                 .with_label_values(&[telemetry::UNMATCHED_ROUTE, "0", "cancelled"])
                 .get(),
             1
