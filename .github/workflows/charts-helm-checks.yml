@@ -79,7 +79,7 @@ jobs:
 
       - name: Verify Solana chart integration
         run: |
-          pip install pyyaml ecdsa pycryptodome
+          pip install pyyaml ecdsa==0.19.2 pycryptodome==3.24.0
           python3 ci/preview-env/solana-host/test_charts.py
           python3 ci/preview-env/solana-host/test_reset_preview.py
           python3 ci/preview-env/solana-host/test_kms_connector_proxy_tls.py
