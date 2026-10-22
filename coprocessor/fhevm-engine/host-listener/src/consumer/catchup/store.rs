@@ -68,7 +68,7 @@ pub async fn ensure_requested(
         let start =
             i64::try_from(start).context("catchup start exceeds BIGINT")?;
         let end = i64::try_from(end).context("catchup end exceeds BIGINT")?;
-        let id = Uuid::new_v4();
+        let id = Uuid::now_v7();
         sqlx::query!(
             "INSERT INTO host_consumer_catchups
              (id, chain_id, consumer_id, requested_from, requested_to, block_start, block_end,
