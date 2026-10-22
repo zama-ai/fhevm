@@ -147,12 +147,10 @@ async fn returns_rfc_errors() {
         assert_eq!(body["retryable"], retryable, "{path}");
     }
 
-    for (path, status) in [
-        (prf_path("0", LABEL, "64"), StatusCode::METHOD_NOT_ALLOWED),
-        ("/v1/prf/0".to_string(), StatusCode::NOT_FOUND),
-    ] {
+    for path in [prf_path("0", LABEL, "64"), "/v1/prf/0".to_string()] {
         let response = service.request(&client, Method::POST, &path).await;
-        assert_eq!(response.status(), status, "{path}");
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED, "{path}");
+        assert_eq!(response.headers()["allow"], "GET, HEAD", "{path}");
         assert!(response.bytes().await.unwrap().is_empty(), "{path}");
     }
 
