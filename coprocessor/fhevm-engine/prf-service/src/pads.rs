@@ -61,54 +61,14 @@ impl Admissions {
             return Ok(Admission::Existing(state));
         }
         // Wait in memory: a request that waits for the lock in Postgres holds a connection.
-        let _slot = self.add_slot(connector).await;
-        self.add(path, connector).await
-    }
-
-    async fn add(&self, path: &PrfPath, connector: Address) -> anyhow::Result<Admission> {
-        let mut tx = self.pool.begin().await?;
-        // Lock the connector, so two requests of one connector cannot use the same budget.
-        sqlx::query!(
-            "SELECT pg_advisory_xact_lock(hashtextextended('pads:' || encode($1, 'hex'), 0))",
-            connector.as_slice(),
-        )
-        .execute(tx.as_mut())
-        .await?;
-        let pending = sqlx::query_scalar!(
-            r#"SELECT COALESCE(SUM(pad_length), 0)::BIGINT AS "pending!"
-                 FROM pads
-                WHERE triggered_by = $1 AND signature IS NULL AND NOT is_error"#,
-            connector.as_slice(),
-        )
-        .fetch_one(tx.as_mut())
-        .await?;
-        if pending + i64::from(path.pad_length) > self.max_pending_bits {
-            drop(tx);
-            // Another connector can add the row after the first read. Then this request joins it.
-            return Ok(match read(&self.pool, path).await? {
-                Some(state) => Admission::Existing(state),
-                None => Admission::OverBudget,
-            });
-        }
-        let inserted = sqlx::query!(
-            "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT DO NOTHING",
-            i32::from(path.prf),
-            path.label.as_slice(),
-            i32::from(path.pad_length),
-            connector.as_slice(),
-        )
-        .execute(tx.as_mut())
-        .await?
-        .rows_affected();
-        tx.commit().await?;
-
-        // No row inserted: another request added it at the same time.
-        Ok(match inserted {
-            0 => Admission::Existing(PadState::Pending),
-            _ => Admission::Created,
+        let slot = self.add_slot(connector).await;
+        let (pool, max_pending_bits, path) = (self.pool.clone(), self.max_pending_bits, *path);
+        // In a task, so a cancelled request keeps its slot until its connection is free.
+        tokio::spawn(async move {
+            let _slot = slot;
+            add(&pool, max_pending_bits, &path, connector).await
         })
+        .await?
     }
 
     async fn add_slot(&self, connector: Address) -> OwnedSemaphorePermit {
@@ -124,6 +84,57 @@ impl Admissions {
             .await
             .expect("the semaphore is never closed")
     }
+}
+
+async fn add(
+    pool: &PgPool,
+    max_pending_bits: i64,
+    path: &PrfPath,
+    connector: Address,
+) -> anyhow::Result<Admission> {
+    let mut tx = pool.begin().await?;
+    // Lock the connector, so two requests of one connector cannot use the same budget.
+    sqlx::query!(
+        "SELECT pg_advisory_xact_lock(hashtextextended('pads:' || encode($1, 'hex'), 0))",
+        connector.as_slice(),
+    )
+    .execute(tx.as_mut())
+    .await?;
+    let pending = sqlx::query_scalar!(
+        r#"SELECT COALESCE(SUM(pad_length), 0)::BIGINT AS "pending!"
+                 FROM pads
+                WHERE triggered_by = $1 AND signature IS NULL AND NOT is_error"#,
+        connector.as_slice(),
+    )
+    .fetch_one(tx.as_mut())
+    .await?;
+    if pending + i64::from(path.pad_length) > max_pending_bits {
+        drop(tx);
+        // Another connector can add the row after the first read. Then this request joins it.
+        return Ok(match read(pool, path).await? {
+            Some(state) => Admission::Existing(state),
+            None => Admission::OverBudget,
+        });
+    }
+    let inserted = sqlx::query!(
+        "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT DO NOTHING",
+        i32::from(path.prf),
+        path.label.as_slice(),
+        i32::from(path.pad_length),
+        connector.as_slice(),
+    )
+    .execute(tx.as_mut())
+    .await?
+    .rows_affected();
+    tx.commit().await?;
+
+    // No row inserted: another request added it at the same time.
+    Ok(match inserted {
+        0 => Admission::Existing(PadState::Pending),
+        _ => Admission::Created,
+    })
 }
 
 /// Reads the row of `path`, if it exists.
