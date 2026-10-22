@@ -312,7 +312,7 @@ describe("cli", () => {
     expect(() => dbRevertTargetBlock(1)).toThrow("db-state-revert requires a positive seed boundary");
   });
 
-  test("db-state-revert only expects seeded tables to shrink", () => {
+  test("db-state-revert requires seeded results to shrink but permits retained metadata", () => {
     expect(
       dbRevertDeleteExpectations(
         {
@@ -336,7 +336,6 @@ describe("cli", () => {
       ),
     ).toEqual([
       "computationsDone",
-      "computationsTotal",
       "allowedHandles",
       "pbsComputations",
       "ciphertextDigest",

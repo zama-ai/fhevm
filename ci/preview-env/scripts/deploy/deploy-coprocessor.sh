@@ -71,6 +71,10 @@ party_common() {
     --set-string "hostListenerConsumerShared.config.brokerUrl.value=redis://coprocessor-redis-${i}-master:6379"
     --set-string "txSender.wallet.secret.value=${privkey}"
     --set-string "snsWorker.wallet.secret.value=${privkey}"
+    # The detector's wallet is on by default and its secret ref points at a
+    # coprocessor-tx-sender Secret that only exists where infra provisions one.
+    # Here every signer takes the party key inline, same as bg-green.sh does.
+    --set-string "consensusDetector.wallet.secret.value=${privkey}"
   )
   if [[ "${OBSERVABILITY}" == "true" ]]; then
     common_args+=(

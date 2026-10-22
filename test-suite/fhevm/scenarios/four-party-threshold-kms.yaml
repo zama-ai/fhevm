@@ -15,15 +15,6 @@ description: >
 topology:
   count: 2
   threshold: 2
-instances:
-  - index: 0
-    args:
-      host-listener-consumer:
-        - --service-name=coprocessor-host-listener-consumer
-  - index: 1
-    args:
-      host-listener-consumer:
-        - --service-name=coprocessor1-host-listener-consumer
 # Optional `kms` block. Absent = a 4-party cluster with fast insecure keygen (Default params).
 # Present = the topology and keygen it describes; here, a secure keygen with Test params.
 kms:

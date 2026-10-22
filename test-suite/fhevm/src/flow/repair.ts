@@ -4,8 +4,9 @@ import {
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
-import { consumerOnlyHostListeners, isLegacyHostListener, listenerCoreServices } from "../host-listener-mode";
+import { consumerOnlyHostListeners, isLegacyHostListener } from "../host-listener-mode";
 import { GCS_ONLY_SUFFIXES } from "../generate/compose";
+import { listenerCoreServicesForState } from "../generate/listener-core";
 import { hasLocalCoprocessorInstance } from "../scenario/resolve";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
@@ -106,7 +107,7 @@ export const resumeSteadyStateServices = (state: State) => {
   const listenerSuffixes = coprocessorListenerSuffixes(state);
   return {
     "base": ["fhevm-object-store", "coprocessor-and-kms-db", KMS_CORE_CONTAINER, "gateway-node", ...chains.map((chain) => chain.node)],
-    ...(supportsHostListenerConsumer(state) ? { "listener-core": ["listener-redis", ...listenerCoreServices(state.scenario)] } : {}),
+    ...(supportsHostListenerConsumer(state) ? { "listener-core": listenerCoreServicesForState(state) } : {}),
     "coprocessor": [
       ...Array.from({ length: topology.count }, (_, index) => {
         const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
@@ -191,7 +192,7 @@ export const resolveUpgradePlan = (
   const lockFileMode = options.lockFile === true;
   if (group === "listener-core") {
     if (lockFileMode) {
-      return upgradePlan(group, [splitServices("listener-core", ["listener-redis", ...listenerCoreServices(state.scenario)])], ["listener-core"]);
+      return upgradePlan(group, [splitServices("listener-core", listenerCoreServicesForState(state))], ["listener-core"]);
     }
   }
   const groupOverrides = state.overrides.filter((item) => item.group === group);
