@@ -5,14 +5,6 @@ ARG RUST_IMAGE_VERSION
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
 ARG CARGO_PROFILE=release
-ARG SCCACHE_BUCKET
-ARG SCCACHE_REGION=eu-west-3
-ARG SCCACHE_S3_PREFIX
-ENV SCCACHE_IDLE_TIMEOUT=0
-ENV SCCACHE_BUCKET=${SCCACHE_BUCKET}
-ENV SCCACHE_REGION=${SCCACHE_REGION}
-ENV SCCACHE_S3_KEY_PREFIX=${SCCACHE_S3_PREFIX}
-ENV AWS_REGION=${SCCACHE_REGION}
 
 USER root
 
@@ -34,18 +26,13 @@ WORKDIR /app/coprocessor/fhevm-engine
 # NOTE: We use a cache mount for the target directory to enable incremental compilation.
 # Because cache mounts are NOT committed to the image layer, we must copy the binary
 # to a non-mounted path (/tmp) during the same RUN instruction for COPY --from to work.
+# No sccache: with RUSTC_WRAPPER=sccache, cc also runs the vendored OpenSSL's per-file assembler
+# probes through sccache, whose answers vary. OpenSSL then mixes AVX and non-AVX AES-GCM code and
+# writes TLS records with wrong tags.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
-    --mount=type=secret,id=sccache_aws_access_key_id \
-    --mount=type=secret,id=sccache_aws_secret_access_key \
-    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then \
-      export RUSTC_WRAPPER=sccache; \
-      export AWS_ACCESS_KEY_ID="$(cat /run/secrets/sccache_aws_access_key_id)"; \
-      export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
-    fi && \
     cargo fetch && \
     SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --profile=${CARGO_PROFILE} -p coprocessor-proxy && \
-    if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     cp target/${CARGO_PROFILE}/coprocessor-proxy /tmp/coprocessor-proxy
 
 # Stage 2: Runtime image
