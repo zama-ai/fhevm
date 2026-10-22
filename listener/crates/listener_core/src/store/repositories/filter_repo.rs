@@ -230,17 +230,13 @@ impl FilterRepository {
 mod batch_tests {
     use super::*;
     use primitives::event::FilterCommand;
+    use sqlx::ConnectOptions;
 
-    #[tokio::test]
-    #[ignore = "requires a disposable BATCH_WATCH_DATABASE_URL"]
-    async fn batch_watch_commits_together_and_rolls_back_on_failure() {
-        let pool = sqlx::PgPool::connect(&std::env::var("BATCH_WATCH_DATABASE_URL").unwrap())
-            .await
-            .unwrap();
-        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+    #[sqlx::test(migrations = "./migrations")]
+    async fn batch_watch_commits_together_and_rolls_back_on_failure(pool: sqlx::PgPool) {
         let chain_id = 42;
         let config = serde_json::from_value(serde_json::json!({
-            "db_url": std::env::var("BATCH_WATCH_DATABASE_URL").unwrap()
+            "db_url": pool.connect_options().to_url_lossy().to_string()
         }))
         .unwrap();
         let repo = FilterRepository::new(Arc::new(PgClient::new(&config).await.unwrap()), chain_id);
@@ -304,6 +300,7 @@ mod batch_tests {
             repo.get_filters_by_consumer_id(&owner).await.unwrap().len(),
             2
         );
+        repo.client.close().await;
         pool.close().await;
     }
 }

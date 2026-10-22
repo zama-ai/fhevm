@@ -61,13 +61,13 @@ Host-consumer uses atomic registration even when manual catchup is disabled.
 ## Verification
 
 Protocol validation tests run with `cargo test -p primitives watch_batch_tests`.
-The repository rollback/retry test requires a disposable PostgreSQL database:
+The repository rollback/retry test runs in ordinary listener PR CI. For a local
+run, provide a PostgreSQL server where the test user can create databases:
 
 ```sh
-SQLX_OFFLINE=true cargo test -p listener_core batch_watch -- --ignored
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres SQLX_OFFLINE=true cargo test -p listener_core batch_watch
 ```
 
-Set `BATCH_WATCH_DATABASE_URL` to that disposable database before running the
-command. The test applies migrations and temporarily installs a trigger that
-rejects the second insert, then verifies rollback and idempotent retry. Do not
-point it at a shared or production database.
+`sqlx::test` creates an isolated database, applies migrations, and drops the
+database on success. The test temporarily installs a trigger that rejects the
+second insert, then verifies rollback and idempotent retry.

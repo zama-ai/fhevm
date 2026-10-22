@@ -9,37 +9,31 @@ use tokio::{sync::mpsc, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL and CATCHUP_BROKER_URL (Redis)"]
 async fn startup_no_flags_without_previous_requests() {
     exercise_startup(Startup::NoFlags, false).await;
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL and CATCHUP_BROKER_URL (Redis)"]
 async fn startup_no_flags_with_unowned_requests() {
     exercise_startup(Startup::NoFlags, true).await;
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL and CATCHUP_BROKER_URL (Redis)"]
 async fn startup_new_catchup_without_previous_requests() {
     exercise_startup(Startup::NewCatchup, false).await;
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL and CATCHUP_BROKER_URL (Redis)"]
 async fn startup_new_catchup_with_unowned_requests() {
     exercise_startup(Startup::NewCatchup, true).await;
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL and CATCHUP_BROKER_URL (Redis)"]
 async fn startup_same_catchup_without_other_requests() {
     exercise_startup(Startup::SameCatchup, false).await;
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL and CATCHUP_BROKER_URL (Redis)"]
 async fn startup_same_catchup_with_unowned_requests() {
     exercise_startup(Startup::SameCatchup, true).await;
 }
@@ -250,7 +244,6 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL and CATCHUP_BROKER_URL (Redis)"]
 async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_replacement(
 ) {
     use broker::{AsyncHandlerPayloadClassified, Topic};
@@ -480,7 +473,6 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
 
 /// Exercises public startup with real PostgreSQL ingestion and a broker control peer.
 #[tokio::test]
-#[ignore = "requires PostgreSQL and CATCHUP_BROKER_URL (Redis or RabbitMQ)"]
 async fn consumer_catchup_and_listen() {
     tokio::time::timeout(
         std::time::Duration::from_secs(90),
@@ -491,7 +483,6 @@ async fn consumer_catchup_and_listen() {
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL and CATCHUP_BROKER_URL (Redis or RabbitMQ)"]
 async fn consumer_bounded_catchup_keeps_listening() {
     tokio::time::timeout(
         std::time::Duration::from_secs(90),
@@ -502,7 +493,6 @@ async fn consumer_bounded_catchup_keeps_listening() {
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL and CATCHUP_BROKER_URL (Redis or RabbitMQ)"]
 async fn consumer_unfinalized_catchup_keeps_listening() {
     tokio::time::timeout(
         std::time::Duration::from_secs(90),
