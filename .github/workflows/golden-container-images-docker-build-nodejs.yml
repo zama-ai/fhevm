@@ -45,7 +45,7 @@ jobs:
   build:
     name: golden-container-images-docker-build-nodejs/build
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-golden-nodejs == 'true' || github.event_name == 'release' }}
+    if: ${{ needs.check-changes.outputs.changes-golden-nodejs == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'release' }}
     uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@cc49b4b7f41819757c6b3999c9cadb8e27be8ab3 # v1.0.11
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
@@ -60,7 +60,8 @@ jobs:
       id-token: 'write' # Required for OIDC authentication
     with:
       working-directory: "."
-      push_image: true
+      push_image: ${{ github.event_name != 'workflow_dispatch' || inputs.push_image }}
       image-name: "fhevm/gci/nodejs"
+      image-tag: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '' }}
       docker-file: "./golden-container-images/nodejs/Dockerfile"
       app-cache-dir: "fhevm-golden-nodejs"
