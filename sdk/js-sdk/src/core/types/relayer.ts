@@ -35,6 +35,11 @@ export type FetchDelegatedUserDecryptResult = readonly FetchUserDecryptResultIte
 export type RelayerCommonOptions = {
   auth?: Auth | undefined;
   headers?: Record<string, string>;
+  /**
+   * Extra query parameters sent with job requests and the key-URL lookup.
+   * Used by the Zama SDK to send its metadata (`zama_*`) when a proxy in front
+   * of the relayer doesn't forward custom headers. Prefer `headers`.
+   */
   query?: Record<string, string> | undefined;
   debug?: boolean | undefined;
   fetchRetries?: number | undefined;

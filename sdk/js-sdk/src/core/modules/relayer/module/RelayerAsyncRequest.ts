@@ -67,7 +67,7 @@ import {
 } from './guards/RelayerResponseQueued.js';
 import { assertIsRelayerUserDecryptSucceeded } from './guards/RelayerUserDecryptSucceeded.js';
 import { readErrorMessage } from './readErrorMessage.js';
-import { appendRelayerQuery } from './relayerUrl.js';
+import { appendRelayerQuery, normalizeRelayerQuery } from './relayerUrl.js';
 
 /*
     Actions:
@@ -145,7 +145,7 @@ export class RelayerAsyncRequest {
   private readonly _payload: Record<string, unknown>;
   private readonly _fhevmAuth: Auth | undefined;
   private readonly _customHeaders: Record<string, string> | undefined;
-  private readonly _query: Record<string, string> | undefined;
+  private readonly _query: Readonly<Record<string, string>> | undefined;
   private _retryAfterTimeoutPromiseFuncReject?: ((reason?: unknown) => void) | undefined;
   private readonly _onProgress?:
     | ((
@@ -215,7 +215,7 @@ export class RelayerAsyncRequest {
     this._logger = params.logger;
     this._fhevmAuth = params.options?.auth;
     this._customHeaders = normalizeHeaders(params.options?.headers);
-    this._query = params.options?.query;
+    this._query = normalizeRelayerQuery(params.options?.query);
     this._onProgress = params.options?.onProgress as typeof this._onProgress;
     this._state = {
       aborted: false,

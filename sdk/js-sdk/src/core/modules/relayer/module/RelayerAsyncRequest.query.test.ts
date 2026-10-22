@@ -18,6 +18,7 @@ function newRequest(): RelayerAsyncRequest {
   });
 }
 
+// `options.query` exists for proxies that strip custom headers before they reach the relayer.
 describe('RelayerAsyncRequest query option', () => {
   const originalFetch = global.fetch;
 
@@ -54,5 +55,23 @@ describe('RelayerAsyncRequest query option', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenLastCalledWith(`${RELAYER_URL}/job-1?${QUERY_STRING}`, expect.anything());
+  });
+
+  it('drops non-string query values and ignores later changes to the caller object', async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response('', { status: 401 })));
+    global.fetch = fetchMock;
+
+    // Plain JS callers may pass anything; only string values must be sent.
+    const query = { a: '1', b: undefined, c: 1 } as unknown as Record<string, string>;
+    const request = new RelayerAsyncRequest({
+      relayerOperation: 'PUBLIC_DECRYPT',
+      url: RELAYER_URL,
+      payload: {},
+      options: { fetchRetries: 1, query },
+    });
+    query['a'] = 'changed';
+
+    await expect(request.run()).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledWith(`${RELAYER_URL}?a=1`, expect.anything());
   });
 });

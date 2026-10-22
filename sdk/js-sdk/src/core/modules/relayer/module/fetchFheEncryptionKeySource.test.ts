@@ -35,6 +35,28 @@ describe('fetchFheEncryptionKeySource query option', () => {
       expect.anything(),
     );
   });
+
+  it('keeps `options.query` out of the error url and message', async () => {
+    mockFetchStatus(401, '');
+
+    try {
+      await fetchFheEncryptionKeySource(relayerClient, { options: { query: { zama_sdk_version: '1.2.3' } } });
+      expect.unreachable();
+    } catch (e) {
+      expect(e).toBeInstanceOf(RelayerFetchError);
+      expect((e as RelayerFetchError).url).toBe('https://relayer.example.com/v2/keyurl');
+      expect((e as RelayerFetchError).message).not.toContain('zama_sdk_version');
+    }
+  });
+
+  it('rejects a query value that cannot be percent-encoded before fetching', async () => {
+    mockFetchStatus(200, '');
+
+    await expect(fetchFheEncryptionKeySource(relayerClient, { options: { query: { a: '\uD800' } } })).rejects.toThrow(
+      /cannot be percent-encoded/,
+    );
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });
 
 describe('fetchFheEncryptionKeySource error surfacing', () => {

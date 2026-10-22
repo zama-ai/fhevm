@@ -453,9 +453,10 @@ type RelayerCommonOptions = {
 };
 ```
 
-`query` entries are appended, percent-encoded, to the URL of every relayer
-request. Prefer `headers`; fall back to `query` only when a proxy in front of
-the relayer strips custom headers before they reach it.
+`query` entries are appended, percent-encoded, to the URL of job requests
+(submission and polling) and the key-URL lookup. Prefer `headers`; fall back
+to `query` only when a proxy in front of the relayer strips custom headers
+before they reach it.
 
 `Auth` (and its variants) are exported from `@fhevm/sdk/types`. Zama's hosted
 relayer accepts only `ApiKeyHeader` (the default `x-api-key` header); a

@@ -12,8 +12,8 @@
   upgrading to this SDK version.
 - **Custom query parameters for relayer requests.** `RelayerCommonOptions` now accepts a
   `query: Record<string, string>` field next to `headers`. Its entries are appended,
-  percent-encoded, to the URL of every relayer request (key fetch, job submission and job
-  polling). `headers` remains the preferred option; use `query` only when a proxy in front of
+  percent-encoded, to the URL of job requests (submission and polling) and the key-URL
+  lookup. `headers` remains the preferred option; use `query` only when a proxy in front of
   the relayer strips custom headers before they reach it.
 
 #### Changed

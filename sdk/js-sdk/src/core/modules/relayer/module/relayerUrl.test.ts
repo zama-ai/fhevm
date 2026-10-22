@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { InvalidUrlError } from '../../../base/errors/InvalidUrlError.js';
-import { appendRelayerQuery, buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
+import {
+  appendRelayerQuery,
+  buildRelayerUrlString,
+  normalizeRelayerQuery,
+  validateRelayerBaseUrl,
+} from './relayerUrl.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/relayerUrl.test.ts
@@ -256,5 +261,33 @@ describe('appendRelayerQuery', () => {
 
   it('throws when the url already has a query string', () => {
     expect(() => appendRelayerQuery(`${url}?a=1`, { b: '2' })).toThrow();
+  });
+});
+
+////////////////////////////////////////////////////////////////////////////////
+
+describe('normalizeRelayerQuery', () => {
+  it('returns undefined for undefined and non-object input', () => {
+    expect(normalizeRelayerQuery(undefined)).toBeUndefined();
+    expect(normalizeRelayerQuery(null)).toBeUndefined();
+    expect(normalizeRelayerQuery('a=1')).toBeUndefined();
+    expect(normalizeRelayerQuery(['a', '1'])).toBeUndefined();
+  });
+
+  it('keeps string values and drops the rest', () => {
+    expect(normalizeRelayerQuery({ a: '1', b: undefined, c: 1, d: null, e: true })).toStrictEqual({ a: '1' });
+  });
+
+  it('returns a copy, so later changes to the input are not sent', () => {
+    const input: Record<string, string> = { a: '1' };
+    const normalized = normalizeRelayerQuery(input);
+    input['a'] = '2';
+    input['b'] = '3';
+    expect(normalized).toStrictEqual({ a: '1' });
+  });
+
+  it('throws on a key or value that cannot be percent-encoded', () => {
+    expect(() => normalizeRelayerQuery({ a: '\uD800' })).toThrow(/cannot be percent-encoded/);
+    expect(() => normalizeRelayerQuery({ '\uD800': 'a' })).toThrow(/cannot be percent-encoded/);
   });
 });

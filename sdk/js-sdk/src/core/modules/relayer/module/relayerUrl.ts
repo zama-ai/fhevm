@@ -85,7 +85,36 @@ export function buildRelayerUrlString(relayerBaseUrl: URL, path: string): string
   return removeSuffix(url, '/');
 }
 
-export function appendRelayerQuery(url: string, query: Record<string, string> | undefined): string {
+/**
+ * Validates `options.query` once at intake and returns a detached copy of its string entries.
+ *
+ * @throws If a key or value cannot be percent-encoded, so a bad query fails here and not as a generic fetch error.
+ */
+export function normalizeRelayerQuery(query: unknown): Readonly<Record<string, string>> | undefined {
+  if (query === null || typeof query !== 'object' || Array.isArray(query)) {
+    return undefined;
+  }
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(query)) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+    try {
+      encodeURIComponent(key);
+      encodeURIComponent(value);
+    } catch (cause) {
+      throw new Error(`normalizeRelayerQuery: query parameter '${key}' cannot be percent-encoded`, { cause });
+    }
+    result[key] = value;
+  }
+  return result;
+}
+
+/**
+ * Use the result only as the URL passed to `fetch()`. Keep the query-less `url`
+ * for errors, logs and callbacks, so they show the endpoint, not per-request metadata.
+ */
+export function appendRelayerQuery(url: string, query: Readonly<Record<string, string>> | undefined): string {
   assert(!url.includes('?'));
   const search = Object.entries(query ?? {})
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
