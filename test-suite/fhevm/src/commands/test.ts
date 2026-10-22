@@ -591,20 +591,19 @@ type DriftRevertDbOptions = {
   postgresPassword: string;
 };
 
-/** Counts computations rows for the host chain (coprocessor DB). */
-const countComputations = async (dbOptions: DriftRevertDbOptions, hostChainId: string) => {
+/** Counts completed computations; rollback can retain committed metadata rows. */
+const countCompletedComputations = async (dbOptions: DriftRevertDbOptions, hostChainId: string) => {
   const dbName = coprocessorDatabaseName(dbOptions.instanceIndex);
   const value = await psql(
     dbName,
-    ["-t", "-A", "-c", `SELECT COUNT(*) FROM computations WHERE host_chain_id = ${hostChainId};`],
+    ["-t", "-A", "-c", `SELECT COUNT(*) FROM computations WHERE host_chain_id = ${hostChainId} AND is_completed = true;`],
     dbOptions,
   );
   return Number(value);
 };
 
-/** Polls `computations` row count until it reaches `target` — signals that
- * the host-listener has caught up with blocks re-processed after a revert. */
-const waitForComputationsCatchup = async (
+/** Waits for reverted computations to finish again, including retained rows. */
+const waitForCompletedComputationsCatchup = async (
   options: DriftRevertDbOptions & {
     hostChainId: string;
     target: number;
@@ -615,13 +614,13 @@ const waitForComputationsCatchup = async (
   const attempts = Math.max(0, Math.ceil(options.timeoutSeconds / options.pollIntervalSeconds));
   let lastCount = -1;
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
-    lastCount = await countComputations(options, options.hostChainId);
+    lastCount = await countCompletedComputations(options, options.hostChainId);
     if (lastCount >= options.target) {
       return lastCount;
     }
     if (attempt === attempts) {
       throw new PreflightError(
-        `timed out waiting for computations to catch up: have ${lastCount}, need >= ${options.target}`,
+        `timed out waiting for completed computations to catch up: have ${lastCount}, need >= ${options.target}`,
       );
     }
     await Bun.sleep(options.pollIntervalSeconds * 1000);
@@ -900,11 +899,10 @@ const formatDbRevertSnapshot = (snapshot: DbRevertSnapshot) =>
 
 type DbRevertMetric = Exclude<keyof DbRevertSnapshot, "erroredComputations">;
 
-/** Lists seed-generated tables that should shrink after the revert. */
+/** Lists seed-generated results that should shrink; committed metadata may remain. */
 export const dbRevertDeleteExpectations = (baseline: DbRevertSnapshot, seeded: DbRevertSnapshot) => {
   const metrics: DbRevertMetric[] = [
     "computationsDone",
-    "computationsTotal",
     "allowedHandles",
     "pbsComputations",
     "ciphertextDigest",
@@ -922,7 +920,6 @@ const assertRevertDeletedData = (baseline: DbRevertSnapshot, seeded: DbRevertSna
   }
   const unchanged = [
     expected.includes("computationsDone") && after.computationsDone >= seeded.computationsDone ? "completed computations" : "",
-    expected.includes("computationsTotal") && after.computationsTotal >= seeded.computationsTotal ? "computations" : "",
     expected.includes("allowedHandles") && after.allowedHandles >= seeded.allowedHandles ? "allowed_handles" : "",
     expected.includes("pbsComputations") && after.pbsComputations >= seeded.pbsComputations ? "pbs_computations" : "",
     expected.includes("ciphertextDigest") && after.ciphertextDigest >= seeded.ciphertextDigest ? "ciphertext_digest" : "",
@@ -2525,10 +2522,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           pollIntervalSeconds: driftAlertPollIntervalSeconds,
         });
 
-        // Snapshot row counts before the revert runs. The gw-listener is
+        // Snapshot completion counts before the revert runs. The gw-listener is
         // still in the grace period (pending status), so this is stable.
-        const computationsBefore = await countComputations(dbOptions, hostChainId);
-        console.log(`[drift-auto-recovery] computations before revert: ${computationsBefore}`);
+        const computationsBefore = await countCompletedComputations(dbOptions, hostChainId);
+        console.log(`[drift-auto-recovery] completed computations before revert: ${computationsBefore}`);
 
         // Wait for the revert to actually run (status transitions to
         // "reverting" and the SQL completes). DRIFT_REVERT_TEST_HOLD_SECS
@@ -2543,11 +2540,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
 
         // Snapshot counts while status=reverting. Services are still blocked
         // waiting for status=done, so no new writes are racing.
-        const computationsAfterRevert = await countComputations(dbOptions, hostChainId);
-        console.log(`[drift-auto-recovery] computations after revert: ${computationsAfterRevert}`);
+        const computationsAfterRevert = await countCompletedComputations(dbOptions, hostChainId);
+        console.log(`[drift-auto-recovery] completed computations after revert: ${computationsAfterRevert}`);
         if (computationsAfterRevert >= computationsBefore) {
           throw new PreflightError(
-            `drift revert did not delete any computations (before=${computationsBefore}, after=${computationsAfterRevert})`,
+            `drift revert did not reset any completed computations (before=${computationsBefore}, after=${computationsAfterRevert})`,
           );
         }
 
@@ -2559,16 +2556,16 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           pollIntervalSeconds: driftRecoveryPollIntervalSeconds,
         });
 
-        // Wait for host-listener to re-process the reverted blocks so the
-        // follow-up test isn't racing against catchup.
-        const caughtUp = await waitForComputationsCatchup({
+        // Wait for replay AND worker completion. Retained metadata alone
+        // must not make recovery appear complete.
+        const caughtUp = await waitForCompletedComputationsCatchup({
           ...dbOptions,
           hostChainId,
           target: computationsBefore,
           timeoutSeconds: driftRecoveryTimeoutSeconds,
           pollIntervalSeconds: driftRecoveryPollIntervalSeconds,
         });
-        console.log(`[drift-auto-recovery] revert completed; computations caught up to ${caughtUp} (>= ${computationsBefore}); re-running tests to verify recovery`);
+        console.log(`[drift-auto-recovery] revert completed; completed computations caught up to ${caughtUp} (>= ${computationsBefore}); re-running tests to verify recovery`);
 
         // Re-run the e2e tests to verify the services have fully recovered.
         const followUp = await runWithHeartbeat(

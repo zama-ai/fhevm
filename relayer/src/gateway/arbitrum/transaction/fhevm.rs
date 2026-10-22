@@ -51,6 +51,9 @@ pub fn parse_fhevm_error(err: &Error) -> FhevmError {
             value,
         ));
     }
+    if let Some(value) = err.as_decoded_error::<Decryption::DifferentKeyIdsNotAllowed>() {
+        return FhevmError::DecryptionError(DecryptionErrors::DifferentKeyIdsNotAllowed(value));
+    }
     if let Some(value) = err.as_decoded_error::<Decryption::ECDSAInvalidSignature>() {
         return FhevmError::DecryptionError(DecryptionErrors::ECDSAInvalidSignature(value));
     }

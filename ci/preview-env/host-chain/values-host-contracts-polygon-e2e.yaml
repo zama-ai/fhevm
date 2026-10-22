@@ -61,6 +61,8 @@ scDeploy:
         configMapKeyRef:
           name: host-sc-addresses
           key: protocol_config.address
+    # Placeholders. wire-contracts-values.sh overwrites both from KMS_CORE_TAG
+    # and the enclave PCR0/PCR1/PCR2 before this file is installed.
     - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}
     - {name: KMS_PCR_VALUES, value: '[{"pcr0":"0x00","pcr1":"0x00","pcr2":"0x00"}]'}
   deployCommands:

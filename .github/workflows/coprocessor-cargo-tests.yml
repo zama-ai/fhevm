@@ -59,7 +59,7 @@ jobs:
             use_nextest: true
             package: tfhe-worker
             needs_localstack: false
-            needs_foundry: false
+            needs_foundry: true
             shard: 1
             shards: 3
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
@@ -67,7 +67,7 @@ jobs:
             use_nextest: true
             package: tfhe-worker
             needs_localstack: false
-            needs_foundry: false
+            needs_foundry: true
             shard: 2
             shards: 3
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
@@ -75,7 +75,7 @@ jobs:
             use_nextest: true
             package: tfhe-worker
             needs_localstack: false
-            needs_foundry: false
+            needs_foundry: true
             shard: 3
             shards: 3
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
