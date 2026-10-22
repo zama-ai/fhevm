@@ -29,7 +29,7 @@ CREATE TYPE catchup_flow AS ENUM ('CATCHUP', 'FINAL_CATCHUP');
 -- is a correctness property rather than an oversight.
 --
 -- A row is the only record that a catchup_id was ever used. Both no-op paths
--- depend on it: admit's ON CONFLICT DO NOTHING recognises a duplicate request,
+-- depend on it: admit's ON CONFLICT DO NOTHING recognizes a duplicate request,
 -- and the fetcher's guard discards a stale sub-range by reading the row and
 -- finding it terminal. Absent row means "never seen", which means run. So
 -- deleting a row re-arms the work it describes — a consumer re-sending an id
@@ -54,8 +54,14 @@ CREATE TYPE catchup_status AS ENUM ('ACTIVE', 'CANCELLED', 'SKIPPED', 'COMPLETED
 
 -- The only table. Sub-ranges have no durable state; they carry catchup_id in
 -- the payload and read this row.
+--
+-- Keyed by (chain_id, catchup_id), not by catchup_id alone. The id is minted by
+-- the consumer, and a consumer serving several chains can send the same id to
+-- each. Keyed on the id alone, the second chain's request would hit the first
+-- chain's row, read as a duplicate and never run, and a cancel sent on one
+-- chain could retire the other's request. Every query names both columns.
 CREATE TABLE IF NOT EXISTS catchup_requests (
-    catchup_id    UUID           PRIMARY KEY,  -- minted by the consumer
+    catchup_id    UUID           NOT NULL,     -- minted by the consumer
     flow          catchup_flow   NOT NULL,
     chain_id      BIGINT         NOT NULL,
     consumer_id   TEXT           NOT NULL,
@@ -111,7 +117,8 @@ CREATE TABLE IF NOT EXISTS catchup_requests (
     -- Requires Postgres 14+.
     covered       INT8MULTIRANGE NOT NULL DEFAULT '{}',
     terminal_at   TIMESTAMPTZ,   -- set exactly when status leaves ACTIVE
-    created_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+    created_at    TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (chain_id, catchup_id)
 );
 
 -- Operator and API query: list the active catchups of one consumer, served by
@@ -132,7 +139,7 @@ CREATE INDEX idx_catchup_requests_active
 
 -- Deliberately NOT created:
 --  * anything keyed on sub-ranges — there is no sub-range table, and the
---    fetcher's guard is a primary-key lookup on catchup_id.
+--    fetcher's guard is a primary-key lookup on (chain_id, catchup_id).
 --  * anything on terminal_at — nothing queries rows by when they ended. The
 --    column is history an operator reads, not a sweep predicate; nothing is
 --    swept.

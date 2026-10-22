@@ -112,7 +112,7 @@ Two things worth reading off this:
 
 ```sql
 CREATE TABLE catchup_requests (
-    catchup_id    UUID PRIMARY KEY,   -- minted by the consumer
+    catchup_id    UUID,               -- minted by the consumer
     flow          catchup_flow,       -- CATCHUP | FINAL_CATCHUP
     chain_id      BIGINT,
     consumer_id   TEXT,
@@ -124,7 +124,8 @@ CREATE TABLE catchup_requests (
     fanned_end    BIGINT,             -- what was actually planned, after clamping
     covered       INT8MULTIRANGE,     -- which blocks have actually been delivered
     terminal_at   TIMESTAMPTZ,
-    created_at    TIMESTAMPTZ
+    created_at    TIMESTAMPTZ,
+    PRIMARY KEY (chain_id, catchup_id)
 );
 ```
 
@@ -142,6 +143,10 @@ Two details that look odd until you know the reason:
 - **`block_start` and `block_end` are nullable.** A cancel can arrive before the planner has
   written the row. The cancel handler then creates the row itself and genuinely does not know
   the range. `0` would be a lie — it is a legal genesis replay — so the columns stay `NULL`.
+- **The key is `(chain_id, catchup_id)`, not the id alone.** A consumer serving several chains
+  may send the same id to each. Keyed on the id alone, the second chain's request would find the
+  first chain's row, read as a duplicate and never run, and a cancel on one chain could retire
+  the other's request. Every statement below names both columns.
 - **Rows are never deleted.** The row *is* the idempotency record. Deleting a `CANCELLED` row
   un-cancels the catchup for every sub-range still queued against it, because a missing row and
   a never-written row are indistinguishable. A row costs about 200 bytes.
@@ -199,9 +204,9 @@ The planner inserts the row, then reads it straight back.
 
 ```sql
 INSERT INTO catchup_requests (...) VALUES (...)
-ON CONFLICT (catchup_id) DO NOTHING;
+ON CONFLICT (chain_id, catchup_id) DO NOTHING;
 
-SELECT status, fanned_out_at FROM catchup_requests WHERE catchup_id = $1;
+SELECT status, fanned_out_at FROM catchup_requests WHERE chain_id = $1 AND catchup_id = $2;
 ```
 
 `DO NOTHING` means the stored row always wins. What comes back decides what happens next:
@@ -217,7 +222,7 @@ SELECT status, fanned_out_at FROM catchup_requests WHERE catchup_id = $1;
 Every worker, once per sub-range, before touching the RPC node:
 
 ```sql
-SELECT status FROM catchup_requests WHERE catchup_id = $1;
+SELECT status FROM catchup_requests WHERE chain_id = $1 AND catchup_id = $2;
 ```
 
 | Result | What the worker does |
@@ -237,10 +242,10 @@ After a worker publishes a sub-range, it records what it delivered:
 
 ```sql
 UPDATE catchup_requests
-   SET covered = covered + int8multirange(int8range($2, $3)),
+   SET covered = covered + int8multirange(int8range($3, $4)),
        status  = CASE WHEN <covered now spans the whole target>
                       THEN 'COMPLETED' ELSE status END
- WHERE catchup_id = $1 AND status = 'ACTIVE';
+ WHERE chain_id = $1 AND catchup_id = $2 AND status = 'ACTIVE';
 ```
 
 This one deserves its own section: [How completion is detected](#how-completion-is-detected).
@@ -250,7 +255,7 @@ This one deserves its own section: [How completion is detected](#how-completion-
 ```sql
 INSERT INTO catchup_requests (..., status, terminal_at)
 VALUES (..., 'CANCELLED', NOW())
-ON CONFLICT (catchup_id) DO UPDATE
+ON CONFLICT (chain_id, catchup_id) DO UPDATE
     SET status = 'CANCELLED', terminal_at = NOW()
     WHERE catchup_requests.status = 'ACTIVE'
       AND catchup_requests.consumer_id = $4;
@@ -378,7 +383,7 @@ stuck `ACTIVE` longer than it should be:
 ```sql
 SELECT int8multirange(int8range(block_start, fanned_end + 1)) - covered AS missing
   FROM catchup_requests
- WHERE catchup_id = $1;
+ WHERE chain_id = $1 AND catchup_id = $2;
 ```
 
 It returns the exact blocks that have not been delivered. An empty result means the request

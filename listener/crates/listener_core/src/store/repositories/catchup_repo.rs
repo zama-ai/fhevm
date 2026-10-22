@@ -10,7 +10,9 @@ use primitives::utils::saturating_u64_to_i64;
 
 /// Repository for the `catchup_requests` table.
 ///
-/// One row per catchup request, keyed by the `catchup_id` the consumer minted.
+/// One row per catchup request, keyed by this repository's `chain_id` and the
+/// `catchup_id` the consumer minted. Every query is scoped to `chain_id`, so
+/// the same id sent to two chains names two independent requests.
 /// Sub-ranges have no durable state: they carry the id in their payload and
 /// read this row.
 #[derive(Clone)]
@@ -44,7 +46,7 @@ impl CatchupRepository {
                                           fanned_end, terminal_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
                     CASE WHEN $7 = 'ACTIVE'::catchup_status THEN NULL ELSE NOW() END)
-            ON CONFLICT (catchup_id) DO NOTHING
+            ON CONFLICT (chain_id, catchup_id) DO NOTHING
             "#,
             request.catchup_id,
             request.flow as CatchupFlow,
@@ -63,8 +65,9 @@ impl CatchupRepository {
             r#"
             SELECT status as "status: CatchupStatus", fanned_out_at
             FROM catchup_requests
-            WHERE catchup_id = $1
+            WHERE chain_id = $1 AND catchup_id = $2
             "#,
+            self.chain_id,
             request.catchup_id,
         )
         .fetch_one(&mut *conn)
@@ -89,8 +92,9 @@ impl CatchupRepository {
             r#"
             UPDATE catchup_requests
                SET fanned_out_at = NOW()
-             WHERE catchup_id = $1 AND fanned_out_at IS NULL
+             WHERE chain_id = $1 AND catchup_id = $2 AND fanned_out_at IS NULL
             "#,
+            self.chain_id,
             catchup_id,
         )
         .execute(&mut *conn)
@@ -137,22 +141,23 @@ impl CatchupRepository {
         let row = sqlx::query!(
             r#"
             UPDATE catchup_requests
-               SET covered = covered + int8multirange(int8range($2, $3)),
+               SET covered = covered + int8multirange(int8range($3, $4)),
                    status = CASE
-                              WHEN covered + int8multirange(int8range($2, $3))
+                              WHEN covered + int8multirange(int8range($3, $4))
                                    @> int8range(block_start, fanned_end + 1)
                               THEN 'COMPLETED'::catchup_status
                               ELSE status
                             END,
                    terminal_at = CASE
-                                   WHEN covered + int8multirange(int8range($2, $3))
+                                   WHEN covered + int8multirange(int8range($3, $4))
                                         @> int8range(block_start, fanned_end + 1)
                                    THEN NOW()
                                    ELSE terminal_at
                                  END
-             WHERE catchup_id = $1 AND status = 'ACTIVE'
+             WHERE chain_id = $1 AND catchup_id = $2 AND status = 'ACTIVE'
             RETURNING (status = 'COMPLETED') AS "just_completed!"
             "#,
+            self.chain_id,
             catchup_id,
             lower,
             upper,
@@ -181,8 +186,9 @@ impl CatchupRepository {
             r#"
             SELECT status as "status: CatchupStatus"
             FROM catchup_requests
-            WHERE catchup_id = $1
+            WHERE chain_id = $1 AND catchup_id = $2
             "#,
+            self.chain_id,
             catchup_id,
         )
         .fetch_optional(&mut *conn)
@@ -211,7 +217,7 @@ impl CatchupRepository {
             INSERT INTO catchup_requests (catchup_id, flow, chain_id, consumer_id,
                                           block_start, block_end, status, terminal_at)
             VALUES ($1, $2, $3, $4, NULL, NULL, 'CANCELLED', NOW())
-            ON CONFLICT (catchup_id) DO UPDATE
+            ON CONFLICT (chain_id, catchup_id) DO UPDATE
                 SET status = 'CANCELLED', terminal_at = NOW()
                 WHERE catchup_requests.status = 'ACTIVE'
                   AND catchup_requests.consumer_id = $4
@@ -235,8 +241,9 @@ impl CatchupRepository {
             r#"
             SELECT status as "status: CatchupStatus", consumer_id
             FROM catchup_requests
-            WHERE catchup_id = $1
+            WHERE chain_id = $1 AND catchup_id = $2
             "#,
+            self.chain_id,
             catchup_id,
         )
         .fetch_one(&mut *conn)
