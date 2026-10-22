@@ -1,5 +1,10 @@
-use actix_web::{http::StatusCode, HttpResponse, ResponseError};
+use actix_web::{
+    http::{header::CACHE_CONTROL, StatusCode},
+    HttpResponse, ResponseError,
+};
 use serde::Serialize;
+
+pub(crate) const NO_STORE: &str = "no-store";
 
 #[derive(Debug, thiserror::Error)]
 pub enum PrfError {
@@ -18,27 +23,27 @@ struct ErrorBody {
 }
 
 impl PrfError {
-    fn code(&self) -> &'static str {
+    fn parts(&self) -> (StatusCode, &'static str) {
         match self {
-            Self::NonCanonicalPath => "non_canonical_path",
-            Self::UnknownPrf => "unknown_prf",
+            Self::NonCanonicalPath => (StatusCode::BAD_REQUEST, "non_canonical_path"),
+            Self::UnknownPrf => (StatusCode::NOT_FOUND, "unknown_prf"),
         }
     }
 }
 
 impl ResponseError for PrfError {
     fn status_code(&self) -> StatusCode {
-        match self {
-            Self::NonCanonicalPath => StatusCode::BAD_REQUEST,
-            Self::UnknownPrf => StatusCode::NOT_FOUND,
-        }
+        self.parts().0
     }
 
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status_code()).json(ErrorBody {
-            code: self.code(),
-            message: self.to_string(),
-            retryable: false,
-        })
+        HttpResponse::build(self.status_code())
+            // Only a `200` answer can be kept in a cache.
+            .insert_header((CACHE_CONTROL, NO_STORE))
+            .json(ErrorBody {
+                code: self.parts().1,
+                message: self.to_string(),
+                retryable: false,
+            })
     }
 }
