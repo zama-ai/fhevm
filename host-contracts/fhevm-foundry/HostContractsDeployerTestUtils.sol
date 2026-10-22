@@ -248,7 +248,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address owner,
         uint256 initialContextId,
         uint256 initialEpochId,
-        KmsNodeParams[] memory initialKmsNodeParams,
+        KmsNode[] memory initialNodes,
         KmsThresholds memory initialThresholds,
         uint64 canonicalChainId,
         address canonicalProtocolConfig
@@ -267,7 +267,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
                 (
                     initialContextId,
                     initialEpochId,
-                    initialKmsNodeParams,
+                    initialNodes,
                     initialThresholds,
                     canonicalChainId,
                     canonicalProtocolConfig

@@ -14,7 +14,7 @@ import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
-import {KmsThresholds, KmsNodeParams} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsThresholds, KmsNode, KmsNodeParams} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
@@ -200,7 +200,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     function test_DeployProtocolConfigReplica_UsesProxyUpgradeFlow() public {
         _deployACL(OWNER);
 
-        KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(2);
+        KmsNode[] memory nodes = _makeKmsNodes(2);
         uint256 canonicalContextId = KMS_CONTEXT_COUNTER_BASE + 7;
         uint256 canonicalEpochId = EPOCH_COUNTER_BASE + 7;
         KmsThresholds memory thresholds = KmsThresholds({publicDecryption: 1, userDecryption: 2, kmsGen: 2, mpc: 1});
@@ -209,7 +209,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
             OWNER,
             canonicalContextId,
             canonicalEpochId,
-            nodeParams,
+            nodes,
             thresholds,
             1,
             address(0xC0FFEE)
@@ -224,11 +224,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertEq(activeContextId, canonicalContextId, "Active context mismatch");
         assertEq(activeEpochId, canonicalEpochId, "Active epoch mismatch");
         assertTrue(pcProxy.isValidEpochForContext(canonicalContextId, canonicalEpochId), "Epoch not valid for context");
-        assertEq(
-            pcProxy.getKmsSignersForContext(canonicalContextId).length,
-            nodeParams.length,
-            "Signer count mismatch"
-        );
+        assertEq(pcProxy.getKmsSignersForContext(canonicalContextId).length, nodes.length, "Signer count mismatch");
         assertEq(
             pcProxy.getPublicDecryptionThresholdForContext(canonicalContextId),
             thresholds.publicDecryption,

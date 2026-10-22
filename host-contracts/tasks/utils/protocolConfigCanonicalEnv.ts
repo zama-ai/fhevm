@@ -1,4 +1,4 @@
-import { isAddress } from 'ethers';
+import { ZeroAddress, getAddress, isAddress } from 'ethers';
 
 import { type CanonicalSnapshot, type KmsNode } from '../protocolConfigMirror';
 import { makeEnvHelpers } from './envSnapshot';
@@ -6,9 +6,10 @@ import { formatError } from './formatError';
 import { getRequiredEnvVar } from './loadVariables';
 
 // The context id, epoch id, node set, thresholds, chain id and address become initializeFromCanonical
-// calldata. The task checks the context id, epoch id, node set and thresholds in full. It parses the chain
-// id and block number as decimal strings. It only checks the block hash and the address for presence, then
-// prints them. The block number and block hash are provenance.
+// calldata. The task parses the context id, epoch id and block number as decimal strings. It checks the
+// node set and thresholds in full. It requires a chain id in [1, 2^64) and a nonzero address, as
+// initializeFromCanonical does. It only checks the block hash for presence, then prints it. The block
+// number and block hash are provenance.
 const CANONICAL_SNAPSHOT_ENV_KEYS = [
   'CANONICAL_CHAIN_ID',
   'CANONICAL_PROTOCOL_CONFIG_ADDRESS',
@@ -40,6 +41,25 @@ function parseJson(name: CanonicalSnapshotEnvKey): unknown {
   } catch (err) {
     throw new Error(`"${name}" env variable is not valid JSON (${formatError(err)}).`);
   }
+}
+
+// The chain id is a uint64 in the replica's EIP-712 domain, and initializeFromCanonical rejects 0.
+function requireChainId(): bigint {
+  const chainId = requireDecimal('CANONICAL_CHAIN_ID');
+  if (chainId === 0n || chainId >= 2n ** 64n) {
+    throw new Error(`"CANONICAL_CHAIN_ID" env variable must be in [1, 2^64), got ${chainId}.`);
+  }
+  return chainId;
+}
+
+function requireProtocolConfigAddress(): string {
+  const raw = getRequiredEnvVar('CANONICAL_PROTOCOL_CONFIG_ADDRESS');
+  if (!isAddress(raw) || getAddress(raw) === ZeroAddress) {
+    throw new Error(
+      `"CANONICAL_PROTOCOL_CONFIG_ADDRESS" env variable must be a valid nonzero address, got ${JSON.stringify(raw)}.`,
+    );
+  }
+  return raw;
 }
 
 function requireKmsNodes(): KmsNode[] {
@@ -94,8 +114,8 @@ function requireThresholds(): CanonicalSnapshot['thresholds'] {
 export function readCanonicalSnapshotFromEnv(): CanonicalSnapshot {
   // Read in the order the keys are declared, so a wholly unset environment reports the first key.
   return {
-    canonicalChainId: requireDecimal('CANONICAL_CHAIN_ID'),
-    protocolConfigAddress: getRequiredEnvVar('CANONICAL_PROTOCOL_CONFIG_ADDRESS'),
+    canonicalChainId: requireChainId(),
+    protocolConfigAddress: requireProtocolConfigAddress(),
     blockNumber: Number(requireDecimal('CANONICAL_BLOCK_NUMBER')),
     blockHash: getRequiredEnvVar('CANONICAL_BLOCK_HASH'),
     currentKmsContextId: requireDecimal('CANONICAL_KMS_CONTEXT_ID'),
