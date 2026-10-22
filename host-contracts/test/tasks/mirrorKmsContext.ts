@@ -16,7 +16,7 @@ import {
   buildControllableKmsCommittee,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
-  confirmEpochActivationBySigner,
+  confirmEpochActivationBySigners,
   deployFreshProtocolConfigProxy,
   deployFreshProtocolConfigReplicaProxy,
   rotateToNewKmsContext,
@@ -183,9 +183,12 @@ describe('KMS mirror tasks', function () {
         rotateReceipt!.blockNumber,
       );
       const newEpochId = newEpochEvent.args.epochId;
-      for (const signerSigner of committee.signerSigners) {
-        await confirmEpochActivationBySigner(canonicalAddress, signerSigner, switchArgs.contextId, newEpochId);
-      }
+      await confirmEpochActivationBySigners(
+        canonicalAddress,
+        committee.signerSigners,
+        switchArgs.contextId,
+        newEpochId,
+      );
 
       const [, canonicalEpochIdAfterRotation] = await asCanonicalOwner.getCurrentKmsContextAndEpoch();
       expect(canonicalEpochIdAfterRotation).to.equal(newEpochId);

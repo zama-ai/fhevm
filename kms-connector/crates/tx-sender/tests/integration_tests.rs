@@ -15,7 +15,7 @@ use connector_utils::{
     types::db::{OperationStatus, RequestSource},
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
-use fhevm_host_bindings::{kms_generation::KMSGeneration, protocol_config::ProtocolConfig};
+use fhevm_host_bindings::kms_generation::KMSGeneration;
 use rstest::rstest;
 use sqlx::Row;
 use std::time::Duration;
@@ -302,7 +302,7 @@ async fn test_new_kms_context_response_fails_without_signature() -> anyhow::Resu
         insert_rand_new_kms_context_response(test_instance.db(), None, None).await?;
     info!("NewKmsContextResponse successfully stored!");
 
-    // No transaction is sent until the KMS Core signs the confirmation.
+    // No transaction is sent until the KMS core signs the confirmation.
     test_instance.wait_for_log("planning-blockchain#1369").await;
     test_instance
         .wait_for_log("Successfully updated response in DB!")
@@ -336,7 +336,7 @@ async fn test_epoch_result_response_fails_without_signature() -> anyhow::Result<
         insert_rand_epoch_result_response(test_instance.db(), None, None).await?;
     info!("EpochResultResponse successfully stored!");
 
-    // No transaction is sent until the KMS Core signs the confirmation.
+    // No transaction is sent until the KMS core signs the confirmation.
     test_instance.wait_for_log("planning-blockchain#1369").await;
     test_instance
         .wait_for_log("Successfully updated response in DB!")
@@ -469,16 +469,8 @@ async fn start_test_tx_sender(
         *test_instance.kms_generation_contract().address(),
         eth_provider.clone(),
     );
-    let protocol_config_contract = ProtocolConfig::new(
-        *test_instance.protocol_config_contract().address(),
-        eth_provider.clone(),
-    );
-    let eth_sender = EthereumTransactionSender::new(
-        eth_provider,
-        kms_generation_contract,
-        protocol_config_contract,
-        eth_sender_config,
-    );
+    let eth_sender =
+        EthereumTransactionSender::new(eth_provider, kms_generation_contract, eth_sender_config);
 
     let tx_sender = TransactionSender::new(
         response_picker,

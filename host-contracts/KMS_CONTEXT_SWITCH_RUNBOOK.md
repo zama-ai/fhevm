@@ -40,11 +40,11 @@ per KMS node (struct in `host-contracts/contracts/shared/Structs.sol`). Each ent
 full protocol identity — how the chain authenticates it, how the other parties'
 cores reach it, and where it publishes its public key material:
 
-- **two distinct wallets**: the _tx-sender_ is the **KMS connector's** wallet (it
-  pays gas, and it submits no lifecycle confirmations in this version). The _signer_ is the
-  **KMS core's** signing key (it signs key-material attestations, the lifecycle
-  confirmations and the core's responses to gRPC commands, such as keygens and decryptions).
-  A common mistake is swapping them;
+- **two distinct wallets**: the _tx-sender_ is the **KMS connector's** wallet. It
+  pays gas. It submits no lifecycle confirmations in this version. The _signer_ is the
+  **KMS core's** signing key. It signs key-material attestations and the lifecycle
+  confirmations. It also signs the core's responses to gRPC commands, such as keygens and
+  decryptions. A common mistake is swapping them.
 - **network endpoints**: the core's MPC endpoint (peer-to-peer between parties) and
   the public vault (S3 bucket) where the core publishes its verification address and
   TLS CA cert;
@@ -252,7 +252,8 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
    npx hardhat task:kmsContextSwitchStatus --network <network> --from-block <block>
    ```
    While PENDING it lists exactly which new signers are outstanding and the
-   old-side `n − t` target. This tells you _which party_ to chase. In this version
+   old-side `n − t` target. It reads the leading digest, so a signer that confirmed
+   other `extraData` is listed as outstanding. That signer cannot confirm again. This tells you _which party_ to chase. In this version
    every signer stays outstanding (step 4).
 
 ### 4.3 Verify
@@ -275,7 +276,7 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
 ## 5. Mirroring onto non-canonical hosts (replicas)
 
 Ethereum is the canonical host: §3 and §4 run there and nowhere else. Every other host
-chain runs `ProtocolConfigReplica`, which has no lifecycle: no quorum, no
+chain (e.g. Polygon) runs `ProtocolConfigReplica`, which has no lifecycle: no quorum, no
 reshare and no `KMSGeneration`. Its only write path is the two mirror methods, which import
 state Ethereum has already finalized and land it as immediately `Active`.
 **Bringing each replica forward after a canonical rotation is the operator's job** —
@@ -420,9 +421,9 @@ first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. `reinitializ
 `KmsLifecycleOperationInFlight` while one is in flight. So no v0.3.0 confirmation counts toward a signed
 quorum. An epoch destroyed before the upgrade cannot collect signed destruction confirmations. A context
 destroyed before the upgrade can, because its destroyed flag stays in base storage.
-Canonical never destroys its latest active context or epoch, and a mirror call copies only those
-ids, so a mirror call never copies a destroyed id. `ProtocolConfigReplica` has no destruction
-method, so a destruction on canonical does not reach a replica that mirrored that id earlier.
+Canonical never destroys its latest active context or epoch. A mirror call copies only those
+ids, so it never copies a destroyed id. `ProtocolConfigReplica` has no destruction method. A
+destruction on canonical does not reach a replica that mirrored that id earlier.
 
 `task:kmsContextSwitchStatus` is a canonical-side tool. Pointed at a replica it reports
 `idle`, because it tracks the pending/quorum path that replicas never run — that is the
@@ -457,7 +458,7 @@ Gateway tasks (gateway-contracts/, reads GATEWAY_CONFIG_ADDRESS, KMS_CONTEXT_ID)
 Quorum cheat-sheet:
   context creation  = ALL new signers + (n - t) old signers, on one digest
   epoch activation  = ALL new-committee signers, unanimous on one digest
-  destruction       = canonical collects active-committee signatures, target n - t, unchecked
+  destruction       = (n - t) active-committee signers, on one digest, emits a QuorumReached event
   committee size    = 3 * MPC_THRESHOLD + 1, party ids contiguous 1..n
 ```
 
@@ -479,9 +480,13 @@ Quorum cheat-sheet:
   the contract deduplicates and counts **by signer**.
 - **Destruction confirmations**: after `destroyKmsContext` or `destroyKmsEpoch`, each signer
   of the active committee signs a `ContextDestructionConfirmation` or
-  `EpochDestructionConfirmation`. The canonical contract only collects them. The target is
-  `n − t` of them over one digest, but no contract checks it. The canonical contract accepts
-  them only from the active committee, so a rotation ends collection for the old committee.
+  `EpochDestructionConfirmation`. Each signer confirms once per destroyed id. The canonical
+  contract counts the confirmations per active committee and digest. When `n − t` signers of
+  one committee confirm one digest, it emits
+  `KmsContextDestructionQuorumReached` or `KmsEpochDestructionQuorumReached` once for that
+  digest. The quorum never blocks a rotation. A rotation starts a new count under the next
+  committee. A signer of both committees that confirmed under the old one cannot confirm
+  again, so it does not count toward the new committee's quorum.
 - **Quorums**:
   - Context creation: **ALL new-committee signers** + **(n − t)
     previous-committee signers** (n = previous committee size, t = previous MPC
@@ -493,14 +498,14 @@ Quorum cheat-sheet:
   - The MPC reshare needs the same `n − t` old-committee senders, so both phases
     tolerate up to **t** dead-or-silent previous nodes.
   - Epoch activation: **unanimous**. Every new-committee signer must sign the _same_
-    digest (`epochMaterialHash` and `extraData`). One divergent signature splits the vote and the epoch stays
-    Pending until governance destroys it (`destroyKmsEpoch`).
-- **One switch in flight at a time — by convention, not by contract check.**
-  `defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext` do not revert
-  while another switch is pending, but the contract's bookkeeping _assumes_ at most
-  one context and one epoch are non-active (it resolves "the pending epoch" as the
-  latest-issued one). Settle an in-flight switch — complete it, or cancel it via
-  `destroyKmsContext` / `destroyKmsEpoch` — before opening another.
+    digest (`epochMaterialHash` and `extraData`). One divergent signature splits the confirmations.
+    Each signer confirms once, so the epoch stays Pending until governance settles it. Use `destroyKmsEpoch` for a same-set reshare. Use
+    `destroyKmsContext` for a context switch, because `destroyKmsEpoch` reverts there.
+- **One switch in flight at a time, enforced by the contract.**
+  `defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext` revert with
+  `KmsLifecycleOperationInFlight` while another switch or reshare is in flight. Settle the
+  in-flight one first. Complete it, or cancel it. Cancel a context switch with
+  `destroyKmsContext` and a same-set reshare with `destroyKmsEpoch`.
 - **Party IDs are positional and contiguous `1..n`.** The KMS core rejects any id outside
   that range. In a node swap, the incoming node **takes the dropped node's party id** —
   only the identity fields (addresses, `mpcIdentity`, cert, storage prefix) change.
@@ -553,7 +558,8 @@ npx hardhat task:kmsContextSwitchStatus --network <network> --from-block <recent
 # aborted:      true + reason if governance destroyed the pending context/epoch
 #               (destroyKmsContext / destroyKmsEpoch)
 # destruction:  active-committee destruction confirmations of a destroyed context or
-#               epoch, against the n-t target (no contract checks it)
+#               epoch, against the n-t target. quorumReached is read from the
+#               contract's *DestructionQuorumReached event
 ```
 
 ### B.2 Verify a party's claimed parameters (coordinator-side)

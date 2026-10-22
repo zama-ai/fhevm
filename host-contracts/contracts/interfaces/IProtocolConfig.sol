@@ -132,12 +132,19 @@ interface IProtocolConfig is IProtocolConfigBase {
      * @param signature The signer's EIP-712 ContextDestructionConfirmation signature.
      * @param extraData The extra data bound into the signature.
      */
-    event KmsContextDestructionConfirmed(
+    event KmsContextDestructionConfirmation(
         uint256 indexed destroyedContextId,
         address indexed signer,
         bytes signature,
         bytes extraData
     );
+
+    /**
+     * @notice Emitted when `n - t` signers of the active committee confirm one context destruction digest.
+     * @param destroyedContextId The destroyed context ID.
+     * @param extraData The extra data bound into the quorum's signatures.
+     */
+    event KmsContextDestructionQuorumReached(uint256 indexed destroyedContextId, bytes extraData);
 
     /**
      * @notice Emitted on every successful KMS epoch destruction confirmation.
@@ -146,12 +153,19 @@ interface IProtocolConfig is IProtocolConfigBase {
      * @param signature The signer's EIP-712 EpochDestructionConfirmation signature.
      * @param extraData The extra data bound into the signature.
      */
-    event KmsEpochDestructionConfirmed(
+    event KmsEpochDestructionConfirmation(
         uint256 indexed destroyedEpochId,
         address indexed signer,
         bytes signature,
         bytes extraData
     );
+
+    /**
+     * @notice Emitted when `n - t` signers of the active committee confirm one epoch destruction digest.
+     * @param destroyedEpochId The destroyed epoch ID.
+     * @param extraData The extra data bound into the quorum's signatures.
+     */
+    event KmsEpochDestructionQuorumReached(uint256 indexed destroyedEpochId, bytes extraData);
 
     /**
      * @notice Emitted when a KMS context is destroyed.

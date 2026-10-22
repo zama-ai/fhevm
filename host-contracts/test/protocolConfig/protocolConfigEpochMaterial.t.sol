@@ -39,13 +39,7 @@ contract ProtocolConfigEpochMaterialTest is ProtocolConfigTestBase {
         IProtocolConfig.EpochKeyResult[] memory keys,
         IProtocolConfig.EpochCrsResult[] memory crsList
     ) internal {
-        protocolConfig.confirmEpochActivation(
-            epochId,
-            keys,
-            crsList,
-            _signEpochActivation(contextId, epochId, pk, keys, crsList, ""),
-            ""
-        );
+        _submitEpochActivation(contextId, epochId, pk, keys, crsList);
     }
 
     function _activeEpochId() internal view returns (uint256 activeEpochId) {
@@ -75,7 +69,7 @@ contract ProtocolConfigEpochMaterialTest is ProtocolConfigTestBase {
         assertEq(_activeEpochId(), epochId);
     }
 
-    /// @dev The key order is part of epochMaterialHash, so swapped keys split the vote.
+    /// @dev The key order is part of epochMaterialHash, so swapped keys split the confirmations.
     function test_confirmEpochActivationSwappedKeysDoNotActivate() public {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
@@ -89,7 +83,7 @@ contract ProtocolConfigEpochMaterialTest is ProtocolConfigTestBase {
         assertEq(_activeEpochId(), EPOCH_COUNTER_BASE + 1);
     }
 
-    /// @dev The CRS order is part of epochMaterialHash, so swapped CRS results split the vote.
+    /// @dev The CRS order is part of epochMaterialHash, so swapped CRS results split the confirmations.
     function test_confirmEpochActivationSwappedCrsDoNotActivate() public {
         (
             IProtocolConfig.EpochKeyResult[] memory keys,

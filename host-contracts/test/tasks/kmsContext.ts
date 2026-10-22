@@ -14,11 +14,12 @@ import {
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { ProtocolConfig } from '../../types';
 import {
-  confirmContextCreationBySigner,
+  confirmContextCreationBySigners,
   confirmContextDestructionBySigner,
-  confirmEpochActivationBySigner,
+  confirmEpochActivationBySigners,
   confirmEpochDestructionBySigner,
   deployFreshProtocolConfigProxy,
+  findEventArg,
 } from './taskHelpers';
 
 const PROTOCOL_CONFIG_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
@@ -285,30 +286,9 @@ describe('KMS context tasks', function () {
       return (await ethers.getContractAt('ProtocolConfig', proxyAddress, deployer)) as unknown as ProtocolConfig;
     }
 
-    function parseEventArg(
-      receipt: { logs: readonly { topics: string[]; data: string }[] },
-      name: string,
-      arg: string,
-    ): bigint | undefined {
-      for (const log of receipt.logs) {
-        let parsed;
-        try {
-          parsed = protocolConfig.interface.parseLog({ topics: [...log.topics], data: log.data });
-        } catch {
-          continue;
-        }
-        if (parsed?.name === name) {
-          return parsed.args[arg] as bigint;
-        }
-      }
-      return undefined;
-    }
-
-    async function defineSwitch(): Promise<bigint> {
-      const receipt = await (
-        await (await asOwner()).defineNewKmsContextAndEpoch(newNodes, newThresholds, '', [])
-      ).wait();
-      const contextId = parseEventArg(receipt!, 'NewKmsContext', 'contextId');
+    async function defineSwitch(nodes = newNodes): Promise<bigint> {
+      const receipt = await (await (await asOwner()).defineNewKmsContextAndEpoch(nodes, newThresholds, '', [])).wait();
+      const contextId = findEventArg(protocolConfig, receipt!.logs, 'NewKmsContext', 'contextId');
       if (contextId === undefined) {
         throw new Error('NewKmsContext not emitted');
       }
@@ -320,25 +300,7 @@ describe('KMS context tasks', function () {
       signers: Signer[],
       extraData = '0x',
     ): Promise<bigint | undefined> {
-      let epochId: bigint | undefined;
-      for (const signer of signers) {
-        const receipt = await confirmContextCreationBySigner(
-          proxyAddress,
-          signer,
-          contextId,
-          newNodes,
-          newThresholds,
-          extraData,
-        );
-        epochId ??= parseEventArg(receipt, 'NewKmsEpoch', 'epochId');
-      }
-      return epochId;
-    }
-
-    async function confirmActivation(contextId: bigint, epochId: bigint, signers: Signer[]): Promise<void> {
-      for (const signer of signers) {
-        await confirmEpochActivationBySigner(proxyAddress, signer, contextId, epochId);
-      }
+      return confirmContextCreationBySigners(proxyAddress, signers, contextId, newNodes, newThresholds, extraData);
     }
 
     beforeEach(async function () {
@@ -413,7 +375,7 @@ describe('KMS context tasks', function () {
     it('reports fully live once the epoch is activated', async function () {
       const contextId = await defineSwitch();
       const epochId = await confirmCreation(contextId, [...newSigners, oldSigners[0]]);
-      await confirmActivation(contextId, epochId!, newSigners);
+      await confirmEpochActivationBySigners(proxyAddress, newSigners, contextId, epochId!);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.flow).to.equal('idle');
@@ -457,12 +419,16 @@ describe('KMS context tasks', function () {
       ]);
       // Active committee: 3 nodes and mpc = 2, so n - t = 1.
       expect(result.contextDestructions![0].threshold).to.equal(1);
+      expect(result.contextDestructions![0].quorumReached).to.equal(true);
       expect(result.contextDestructions![0].diverged).to.equal(false);
 
       await confirmContextDestructionBySigner(proxyAddress, oldSigners[1], contextId, '0x01');
       const diverged = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(diverged.contextDestructions![0].diverged).to.equal(true);
       expect(diverged.contextDestructions![0].largestDigestGroup).to.equal(1);
+      // Ties go to the digest confirmed first, so the divergent signer is outstanding on it.
+      expect(diverged.contextDestructions![0].signersConfirmed).to.deep.equal([await oldSigners[0].getAddress()]);
+      expect(diverged.contextDestructions![0].signersOutstanding).to.include(await oldSigners[1].getAddress());
     });
 
     it('reports a destroyed context after a later switch completes', async function () {
@@ -471,7 +437,7 @@ describe('KMS context tasks', function () {
 
       const contextId = await defineSwitch();
       const epochId = await confirmCreation(contextId, [...newSigners, oldSigners[0]]);
-      await confirmActivation(contextId, epochId!, newSigners);
+      await confirmEpochActivationBySigners(proxyAddress, newSigners, contextId, epochId!);
       await confirmContextDestructionBySigner(proxyAddress, newSigners[0], destroyedContextId);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
@@ -493,7 +459,7 @@ describe('KMS context tasks', function () {
         mpc: 3,
       });
       const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
-      const epochId = parseEventArg(receipt!, 'NewKmsEpoch', 'epochId')!;
+      const epochId = findEventArg(protocolConfig, receipt!.logs, 'NewKmsEpoch', 'epochId')!;
       await (await (await asOwner()).destroyKmsEpoch(epochId)).wait();
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
@@ -502,7 +468,7 @@ describe('KMS context tasks', function () {
 
     it('reports partial destruction confirmations of a destroyed epoch', async function () {
       const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
-      const epochId = parseEventArg(receipt!, 'NewKmsEpoch', 'epochId')!;
+      const epochId = findEventArg(protocolConfig, receipt!.logs, 'NewKmsEpoch', 'epochId')!;
       await (await (await asOwner()).destroyKmsEpoch(epochId)).wait();
       await confirmEpochDestructionBySigner(proxyAddress, oldSigners[2], epochId);
 
@@ -516,14 +482,14 @@ describe('KMS context tasks', function () {
 
     it('counts only the active committee in epoch destruction confirmations after a rotation', async function () {
       const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
-      const destroyedEpochId = parseEventArg(receipt!, 'NewKmsEpoch', 'epochId')!;
+      const destroyedEpochId = findEventArg(protocolConfig, receipt!.logs, 'NewKmsEpoch', 'epochId')!;
       await (await (await asOwner()).destroyKmsEpoch(destroyedEpochId)).wait();
       await confirmEpochDestructionBySigner(proxyAddress, oldSigners[0], destroyedEpochId);
       await confirmEpochDestructionBySigner(proxyAddress, oldSigners[1], destroyedEpochId);
 
       const contextId = await defineSwitch();
       const epochId = await confirmCreation(contextId, [...newSigners, oldSigners[0]]);
-      await confirmActivation(contextId, epochId!, newSigners);
+      await confirmEpochActivationBySigners(proxyAddress, newSigners, contextId, epochId!);
       await confirmEpochDestructionBySigner(proxyAddress, newSigners[0], destroyedEpochId);
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
@@ -534,12 +500,13 @@ describe('KMS context tasks', function () {
     it('flags epoch activation confirmations that signed different extraData', async function () {
       const contextId = await defineSwitch();
       const epochId = await confirmCreation(contextId, [...newSigners, oldSigners[0]]);
-      await confirmEpochActivationBySigner(proxyAddress, newSigners[0], contextId, epochId!);
-      await confirmEpochActivationBySigner(proxyAddress, newSigners[1], contextId, epochId!, '0x01');
+      await confirmEpochActivationBySigners(proxyAddress, [newSigners[0]], contextId, epochId!);
+      await confirmEpochActivationBySigners(proxyAddress, [newSigners[1]], contextId, epochId!, '0x01');
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.epochState).to.equal('PENDING');
-      expect(result.epochSignersOutstanding).to.have.lengthOf(0);
+      expect(result.epochSignersConfirmed).to.deep.equal([await newSigners[0].getAddress()]);
+      expect(result.epochSignersOutstanding).to.deep.equal([await newSigners[1].getAddress()]);
       expect(result.epochConfirmationsDiverged).to.equal(true);
     });
 
@@ -550,7 +517,9 @@ describe('KMS context tasks', function () {
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.contextState).to.equal('PENDING');
-      expect(result.newSignersOutstanding).to.have.lengthOf(0);
+      expect(result.newSignersOutstanding).to.deep.equal([await newSigners[1].getAddress()]);
+      expect(result.previousConfirmationCount).to.equal(1);
+      expect(result.stuckBelowPreviousThreshold).to.equal(false);
       expect(result.contextCreationConfirmationsDiverged).to.equal(true);
       expect(result.contextCreationQuorumReached).to.equal(false);
     });
@@ -579,13 +548,91 @@ describe('KMS context tasks', function () {
       );
 
       const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
-      const epochId = parseEventArg(receipt!, 'NewKmsEpoch', 'epochId');
+      const epochId = findEventArg(protocolConfig, receipt!.logs, 'NewKmsEpoch', 'epochId');
 
       const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(result.flow).to.equal('same-set-rotation');
       expect(result.pendingEpochId).to.equal(epochId);
       // Same-set resharing keeps the committee, so the old signers are the expected confirmers.
       expect(result.epochSignersOutstanding).to.have.lengthOf(oldSigners.length);
+    });
+
+    it('counts a signer in both committees on both creation sides and restarts the destruction count', async function () {
+      const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
+      const destroyedEpochId = findEventArg(protocolConfig, receipt!.logs, 'NewKmsEpoch', 'epochId')!;
+      await (await (await asOwner()).destroyKmsEpoch(destroyedEpochId)).wait();
+      const bothCommittees = await oldSigners[0].getAddress();
+      await confirmEpochDestructionBySigner(proxyAddress, oldSigners[0], destroyedEpochId);
+      const beforeRotation = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(beforeRotation.epochDestructions![0].signersConfirmed).to.deep.equal([bothCommittees]);
+      expect(beforeRotation.epochDestructions![0].quorumReached).to.equal(true);
+
+      const overlapNodes = [
+        makeNode(await newTxSenders[0].getAddress(), bothCommittees, 0),
+        makeNode(await newTxSenders[1].getAddress(), await newSigners[1].getAddress(), 1),
+      ];
+      const overlapSigners = [oldSigners[0], newSigners[1]];
+      const contextId = await defineSwitch(overlapNodes);
+      await confirmContextCreationBySigners(proxyAddress, [oldSigners[0]], contextId, overlapNodes, newThresholds);
+
+      const creation = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(creation.newSignersConfirmed).to.deep.equal([bothCommittees]);
+      expect(creation.previousSignersConfirmed).to.deep.equal([bothCommittees]);
+      expect(creation.newSignersOutstanding).to.deep.equal([await newSigners[1].getAddress()]);
+      expect(creation.stuckBelowPreviousThreshold).to.equal(false);
+
+      const epochId = await confirmContextCreationBySigners(
+        proxyAddress,
+        [newSigners[1]],
+        contextId,
+        overlapNodes,
+        newThresholds,
+      );
+      await confirmEpochActivationBySigners(proxyAddress, overlapSigners, contextId, epochId!);
+
+      // The contract counts destruction confirmations per committee, so the earlier one no longer counts.
+      const afterRotation = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(afterRotation.activeContextId).to.equal(contextId);
+      expect(afterRotation.epochDestructions![0].signersConfirmed).to.deep.equal([]);
+      expect(afterRotation.epochDestructions![0].signersOutstanding).to.deep.equal([
+        bothCommittees,
+        await newSigners[1].getAddress(),
+      ]);
+      expect(afterRotation.epochDestructions![0].quorumReached).to.equal(false);
+
+      // Each signer confirms once per destroyed id, so the signer of both committees cannot confirm again.
+      await expect(
+        confirmEpochDestructionBySigner(proxyAddress, oldSigners[0], destroyedEpochId),
+      ).to.be.revertedWithCustomError(protocolConfig, 'KmsDestructionAlreadyConfirmed');
+      await confirmEpochDestructionBySigner(proxyAddress, newSigners[1], destroyedEpochId);
+      const confirmed = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(confirmed.epochDestructions![0].signersConfirmed).to.deep.equal([await newSigners[1].getAddress()]);
+      expect(confirmed.epochDestructions![0].quorumReached).to.equal(confirmed.epochDestructions![0].threshold === 1);
+    });
+
+    it('bounds every log query by fromBlock and still reports epochs destroyed after an earlier upgrade', async function () {
+      const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
+      const epochId = findEventArg(protocolConfig, receipt!.logs, 'NewKmsEpoch', 'epochId')!;
+      await (await (await asOwner()).destroyKmsEpoch(epochId)).wait();
+      // The proxy was initialized at v0.4.0 in an earlier block, so the Initialized event is out of range.
+      const scanFromBlock = receipt!.blockNumber;
+
+      const getLogs = ethers.provider.getLogs;
+      const queriedFromBlocks: number[] = [];
+      ethers.provider.getLogs = async function (filter) {
+        queriedFromBlocks.push(Number((filter as { fromBlock?: unknown }).fromBlock));
+        return getLogs.call(ethers.provider, filter);
+      };
+      let result;
+      try {
+        result = await inspectKmsContextSwitch(hre, proxyAddress, scanFromBlock);
+      } finally {
+        ethers.provider.getLogs = getLogs;
+      }
+
+      expect(queriedFromBlocks).to.not.be.empty;
+      expect(queriedFromBlocks.every((block) => block >= scanFromBlock)).to.equal(true);
+      expect(result.epochDestructions!.map((destruction) => destruction.destroyedId)).to.deep.equal([epochId]);
     });
 
     it('reports a pending switch whose defining event is outside the scanned range', async function () {

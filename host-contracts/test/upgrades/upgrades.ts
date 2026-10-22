@@ -1,10 +1,18 @@
 import { expect } from 'chai';
 import { ethers, upgrades } from 'hardhat';
 
-import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from '../../scripts/protocolConfigEip712';
-import { ACL, ACLUpgradedExample } from '../../types';
+import type { KmsThresholds } from '../../scripts/protocolConfigEip712';
+import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
+import { ACL, ACLUpgradedExample, ProtocolConfig } from '../../types';
 import { getSigners, initSigners } from '../signers';
-import { buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from '../tasks/taskHelpers';
+import {
+  buildControllableKmsCommittee,
+  buildProtocolConfigNodes,
+  buildProtocolConfigThresholds,
+  confirmEpochActivationBySigners,
+  findEventArg,
+  readHostAddress,
+} from '../tasks/taskHelpers';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 describe('Upgrades', function () {
@@ -65,10 +73,15 @@ describe('Upgrades', function () {
   });
 
   // Deploys a proxy with the v0.15 ProtocolConfig storage layout, at initialized version 4.
-  async function deployV015ProtocolConfig(fred: any, emptyUUPSFactory: any) {
+  async function deployV015ProtocolConfig(
+    fred: any,
+    emptyUUPSFactory: any,
+    nodes = buildProtocolConfigNodes(),
+    thresholds: KmsThresholds = buildProtocolConfigThresholds(),
+  ) {
     const factory = await ethers.getContractFactory('ProtocolConfigV015LayoutExample', fred);
     const pc = await upgrades.upgradeProxy(await deployEmptyProxy(emptyUUPSFactory), factory, {
-      call: { fn: 'initializeFromEmptyProxy', args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds()] },
+      call: { fn: 'initializeFromEmptyProxy', args: [nodes, thresholds] },
     });
     await pc.waitForDeployment();
     return pc;
@@ -94,14 +107,34 @@ describe('Upgrades', function () {
   });
 
   it('upgrades a v0.15 ProtocolConfig proxy in place to ProtocolConfig', async function () {
-    const pc = await deployV015ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
+    const committee = await buildControllableKmsCommittee();
+    const pc = await deployV015ProtocolConfig(
+      this.signers.fred,
+      this.emptyUUPSFactory,
+      committee.nodes,
+      committee.thresholds,
+    );
     const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
-    const canonical = await upgrades.upgradeProxy(pc, factory, { call: { fn: 'reinitializeV4' } });
+    const canonical = (await upgrades.upgradeProxy(pc, factory, {
+      call: { fn: 'reinitializeV4' },
+    })) as unknown as ProtocolConfig;
     await canonical.waitForDeployment();
     expect(await canonical.getVersion()).to.equal('ProtocolConfig v0.4.0');
     const [contextId, epochId] = await canonical.getCurrentKmsContextAndEpoch();
     expect(await canonical.isValidEpochForContext(contextId, epochId)).to.be.true;
-    await expectV015State(canonical);
+    expect(await canonical.getKmsSigners()).to.deep.equal(committee.nodes.map((n) => n.signerAddress));
+    expect(await canonical.getPublicDecryptionThreshold()).to.equal(BigInt(committee.thresholds.publicDecryption));
+    expect(await canonical.getUserDecryptionThreshold()).to.equal(BigInt(committee.thresholds.userDecryption));
+    expect(await canonical.getKmsGenThreshold()).to.equal(BigInt(committee.thresholds.kmsGen));
+    expect(await canonical.getMpcThreshold()).to.equal(BigInt(committee.thresholds.mpc));
+
+    // The new confirm paths read the committee that v0.15 stored, so a rotation completes after the upgrade.
+    const receipt = await (await canonical.defineNewEpochForCurrentKmsContext()).wait();
+    const newEpochId = findEventArg(canonical, receipt!.logs, 'NewKmsEpoch', 'epochId')!;
+    const canonicalAddress = await canonical.getAddress();
+    await confirmEpochActivationBySigners(canonicalAddress, committee.signerSigners, contextId, newEpochId);
+    expect(await canonical.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, newEpochId]);
+    expect(await canonical.isValidEpochForContext(contextId, newEpochId)).to.be.true;
   });
 
   it('deploy upgradeable KMSGeneration', async function () {

@@ -356,9 +356,13 @@ abstract contract HostContractsDeployerTestUtils is Test {
 
     /// @dev Projection of _makeKmsNodeParams onto the stored KmsNode shape, for getKmsNodesForContext assertions.
     function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory nodes) {
-        KmsNodeParams[] memory params = _makeKmsNodeParams(count);
-        nodes = new KmsNode[](count);
-        for (uint256 i = 0; i < count; i++) {
+        return _toKmsNodes(_makeKmsNodeParams(count));
+    }
+
+    /// @dev Projection of `params` onto the stored KmsNode shape.
+    function _toKmsNodes(KmsNodeParams[] memory params) internal pure returns (KmsNode[] memory nodes) {
+        nodes = new KmsNode[](params.length);
+        for (uint256 i = 0; i < params.length; i++) {
             nodes[i] = KmsNode({
                 txSenderAddress: params[i].txSenderAddress,
                 signerAddress: params[i].signerAddress,
@@ -436,6 +440,10 @@ abstract contract HostContractsDeployerTestUtils is Test {
         return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
     }
 
+    function _hashProtocolConfigTypedData(bytes32 structHash) internal view returns (bytes32) {
+        return MessageHashUtils.toTypedDataHash(_computeProtocolConfigDomainSeparator(), structHash);
+    }
+
     function _hashContextCreation(
         uint256 previousContextId,
         uint256 newContextId,
@@ -443,8 +451,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         bytes memory extraData
     ) internal view returns (bytes32) {
         return
-            MessageHashUtils.toTypedDataHash(
-                _computeProtocolConfigDomainSeparator(),
+            _hashProtocolConfigTypedData(
                 keccak256(
                     abi.encode(
                         EIP712_CONTEXT_CREATION_TYPE_HASH,
@@ -465,8 +472,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         bytes memory extraData
     ) internal view returns (bytes32) {
         return
-            MessageHashUtils.toTypedDataHash(
-                _computeProtocolConfigDomainSeparator(),
+            _hashProtocolConfigTypedData(
                 keccak256(
                     abi.encode(
                         EIP712_EPOCH_ACTIVATION_TYPE_HASH,
@@ -485,16 +491,14 @@ abstract contract HostContractsDeployerTestUtils is Test {
         bytes memory extraData
     ) internal view returns (bytes32) {
         return
-            MessageHashUtils.toTypedDataHash(
-                _computeProtocolConfigDomainSeparator(),
+            _hashProtocolConfigTypedData(
                 keccak256(abi.encode(EIP712_CONTEXT_DESTRUCTION_TYPE_HASH, destroyedContextId, keccak256(extraData)))
             );
     }
 
     function _hashEpochDestruction(uint256 destroyedEpochId, bytes memory extraData) internal view returns (bytes32) {
         return
-            MessageHashUtils.toTypedDataHash(
-                _computeProtocolConfigDomainSeparator(),
+            _hashProtocolConfigTypedData(
                 keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData)))
             );
     }
@@ -504,16 +508,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         KmsNodeParams[] memory params,
         KmsThresholds memory thresholds
     ) internal pure returns (bytes32) {
-        KmsNode[] memory nodes = new KmsNode[](params.length);
-        for (uint256 i = 0; i < params.length; i++) {
-            nodes[i] = KmsNode({
-                txSenderAddress: params[i].txSenderAddress,
-                signerAddress: params[i].signerAddress,
-                ipAddress: params[i].ipAddress,
-                storageUrl: params[i].storageUrl
-            });
-        }
-        return keccak256(abi.encode(nodes, thresholds));
+        return keccak256(abi.encode(_toKmsNodes(params), thresholds));
     }
 
     /// @dev epochMaterialHash of EpochActivationConfirmation. CRS entries encode the raw digest bytes.
@@ -535,8 +530,16 @@ abstract contract HostContractsDeployerTestUtils is Test {
     }
 
     function _defineNewKmsContextAndEpoch(KmsNodeParams[] memory nodes, KmsThresholds memory thresholds) internal {
-        PcrValues[] memory pcrValues = new PcrValues[](0);
-        protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, "", pcrValues);
+        _defineNewKmsContextAndEpoch(nodes, thresholds, "", new PcrValues[](0));
+    }
+
+    function _defineNewKmsContextAndEpoch(
+        KmsNodeParams[] memory nodes,
+        KmsThresholds memory thresholds,
+        string memory softwareVersion,
+        PcrValues[] memory pcrValues
+    ) internal {
+        protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, softwareVersion, pcrValues);
         nodeConfigHashes[protocolConfig.getCurrentKmsContextIdCounter()] = _nodeConfigHash(nodes, thresholds);
     }
 
@@ -620,6 +623,17 @@ abstract contract HostContractsDeployerTestUtils is Test {
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _buildEpochResults(keyId, crsId);
+        _submitEpochActivation(contextId, epochId, pk, keys, crsList);
+    }
+
+    /// @dev Signs `keys` and `crsList` for `pk` with empty extraData and submits them.
+    function _submitEpochActivation(
+        uint256 contextId,
+        uint256 epochId,
+        uint256 pk,
+        IProtocolConfig.EpochKeyResult[] memory keys,
+        IProtocolConfig.EpochCrsResult[] memory crsList
+    ) internal {
         protocolConfig.confirmEpochActivation(
             epochId,
             keys,

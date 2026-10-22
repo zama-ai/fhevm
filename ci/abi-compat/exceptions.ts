@@ -47,8 +47,8 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "error NonIncreasingEpochId(uint256,uint256)",
       "event MirrorKmsContextAndEpoch(uint256 indexed,uint256 indexed,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])",
       "event MirrorKmsEpoch(uint256 indexed,uint256 indexed)",
-      // Per RFC 037 section 3.1, the lifecycle confirmations carry the KMS signer's EIP-712 signature and
-      // anyone may submit them, so the confirm functions and their events change shape.
+      // Per RFC 037 section 3.1, the lifecycle confirmations carry the KMS signer's EIP-712 signature.
+      // Anyone may submit them. So the confirm functions and their events change shape.
       "error EpochActivationSignerDoesNotMatchTxSender(address,address)",
       "event EpochActivationConfirmation(uint256 indexed,address indexed,bytes32)",
       "event KmsContextCreationConfirmation(uint256 indexed,address indexed,bool,bool)",

@@ -4,15 +4,17 @@ import * as fs from 'fs';
 import { ethers } from 'hardhat';
 
 import {
-  CRS_COUNTER_BASE,
-  KEY_COUNTER_BASE,
   KmsThresholds,
-  PREP_KEYGEN_COUNTER_BASE,
+  epochMaterialHash,
   nodeConfigHash,
   protocolConfigDomainFor,
   signConfirmation,
-  signEpochActivation,
 } from '@fhevm/host-contracts/scripts/protocolConfigEip712';
+import {
+  CRS_COUNTER_BASE,
+  KEY_COUNTER_BASE,
+  PREP_KEYGEN_COUNTER_BASE,
+} from '@fhevm/host-contracts/tasks/utils/kmsGenerationConstants';
 
 import { awaitCoprocessor, getClearText } from '../coprocessorUtils';
 import { createInstances } from '../instance';
@@ -170,8 +172,7 @@ async function activateNewKmsContext(
   thresholds: KmsThresholds,
   signerAccounts: any[],
 ) {
-  const previousContextId = await protocolConfig.getCurrentKmsContextId();
-  const [, previousEpochId] = await protocolConfig.getCurrentKmsContextAndEpoch();
+  const [previousContextId, previousEpochId] = await protocolConfig.getCurrentKmsContextAndEpoch();
   const txNewConfig = await protocolConfig.connect(deployer).defineNewKmsContextAndEpoch(nodes, thresholds, '', []);
   const newConfigReceipt = await txNewConfig.wait();
   const contextId = findEventArgs(protocolConfig, newConfigReceipt, 'NewKmsContext').contextId;
@@ -195,9 +196,10 @@ async function activateNewKmsContext(
       epochId = createdEvent.epochId;
     }
   }
-  // An empty `keys` or `crsList` reverts with EmptyEpochActivationResults, so supply one result of each.
-  // confirmEpochActivation checks only that the signature recovers to the node signer, so the constant ids need
-  // not exist in KMSGeneration, and every signer produces the same epochMaterialHash for quorum.
+  // An empty `keys` or `crsList` reverts with EmptyEpochActivationResults. So supply one result of each.
+  // confirmEpochActivation only checks that the signature recovers to the node signer.
+  // So the constant ids need not exist in KMSGeneration.
+  // Every signer signs the same results. So all signers produce one epochMaterialHash and reach quorum.
   const keyMaterial = {
     prepKeygenId: PREP_KEYGEN_COUNTER_BASE + 1n,
     keyId: KEY_COUNTER_BASE + 1n,
@@ -205,12 +207,11 @@ async function activateNewKmsContext(
   };
   const crsMaterial = { crsId: CRS_COUNTER_BASE + 1n, maxBitLength: 4096n, crsDigest: '0x01020304' };
   for (const signer of signerAccounts) {
-    const signature = await signEpochActivation(signer, domain, {
+    const signature = await signConfirmation(signer, domain, 'EpochActivationConfirmation', {
       contextId,
       previousEpochId,
       epochId,
-      keys: [keyMaterial],
-      crsList: [crsMaterial],
+      epochMaterialHash: epochMaterialHash([keyMaterial], [crsMaterial]),
       extraData: '0x',
     });
     const txConfirmEpoch = await protocolConfig

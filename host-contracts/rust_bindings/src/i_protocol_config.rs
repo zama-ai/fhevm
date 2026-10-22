@@ -584,9 +584,11 @@ interface IProtocolConfig {
     event EpochActivationConfirmation(uint256 indexed epochId, address indexed signer, bytes32 epochMaterialHash, bytes signature, bytes extraData);
     event KmsContextCreationConfirmation(uint256 indexed kmsContextId, address indexed signer, bytes signature, bytes extraData);
     event KmsContextDestroyed(uint256 indexed kmsContextId);
-    event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, address indexed signer, bytes signature, bytes extraData);
+    event KmsContextDestructionConfirmation(uint256 indexed destroyedContextId, address indexed signer, bytes signature, bytes extraData);
+    event KmsContextDestructionQuorumReached(uint256 indexed destroyedContextId, bytes extraData);
     event KmsEpochDestroyed(uint256 indexed epochId);
-    event KmsEpochDestructionConfirmed(uint256 indexed destroyedEpochId, address indexed signer, bytes signature, bytes extraData);
+    event KmsEpochDestructionConfirmation(uint256 indexed destroyedEpochId, address indexed signer, bytes signature, bytes extraData);
+    event KmsEpochDestructionQuorumReached(uint256 indexed destroyedEpochId, bytes extraData);
     event NewKmsContext(uint256 indexed contextId, uint256 indexed previousContextId, KmsNodeParams[] kmsNodeParams, KmsThresholds thresholds, string softwareVersion, PcrValues[] pcrValues);
     event NewKmsEpoch(uint256 indexed kmsContextId, uint256 indexed epochId, uint256 previousContextId, uint256 previousEpochId, uint256 materialBlockNumber);
 
@@ -1634,7 +1636,7 @@ interface IProtocolConfig {
   },
   {
     "type": "event",
-    "name": "KmsContextDestructionConfirmed",
+    "name": "KmsContextDestructionConfirmation",
     "inputs": [
       {
         "name": "destroyedContextId",
@@ -1665,6 +1667,25 @@ interface IProtocolConfig {
   },
   {
     "type": "event",
+    "name": "KmsContextDestructionQuorumReached",
+    "inputs": [
+      {
+        "name": "destroyedContextId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "KmsEpochDestroyed",
     "inputs": [
       {
@@ -1678,7 +1699,7 @@ interface IProtocolConfig {
   },
   {
     "type": "event",
-    "name": "KmsEpochDestructionConfirmed",
+    "name": "KmsEpochDestructionConfirmation",
     "inputs": [
       {
         "name": "destroyedEpochId",
@@ -1697,6 +1718,25 @@ interface IProtocolConfig {
         "type": "bytes",
         "indexed": false,
         "internalType": "bytes"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "KmsEpochDestructionQuorumReached",
+    "inputs": [
+      {
+        "name": "destroyedEpochId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
       },
       {
         "name": "extraData",
@@ -7480,9 +7520,9 @@ event KmsContextDestroyed(uint256 indexed kmsContextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `KmsContextDestructionConfirmed(uint256,address,bytes,bytes)` and selector `0x791fc926ff44a9522265cb0f972b761435c4ee37ab6ca0141ee2746199ed7cf4`.
+    /**Event with signature `KmsContextDestructionConfirmation(uint256,address,bytes,bytes)` and selector `0xd66f95599f219631e26c929d7c92e1d4f995980f3a2f13b8cca05e39770ff39a`.
 ```solidity
-event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, address indexed signer, bytes signature, bytes extraData);
+event KmsContextDestructionConfirmation(uint256 indexed destroyedContextId, address indexed signer, bytes signature, bytes extraData);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -7491,7 +7531,7 @@ event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, address
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct KmsContextDestructionConfirmed {
+    pub struct KmsContextDestructionConfirmation {
         #[allow(missing_docs)]
         pub destroyedContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -7510,7 +7550,7 @@ event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, address
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for KmsContextDestructionConfirmed {
+        impl alloy_sol_types::SolEvent for KmsContextDestructionConfirmation {
             type DataTuple<'a> = (
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
@@ -7523,11 +7563,11 @@ event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, address
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "KmsContextDestructionConfirmed(uint256,address,bytes,bytes)";
+            const SIGNATURE: &'static str = "KmsContextDestructionConfirmation(uint256,address,bytes,bytes)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                121u8, 31u8, 201u8, 38u8, 255u8, 68u8, 169u8, 82u8, 34u8, 101u8, 203u8,
-                15u8, 151u8, 43u8, 118u8, 20u8, 53u8, 196u8, 238u8, 55u8, 171u8, 108u8,
-                160u8, 20u8, 30u8, 226u8, 116u8, 97u8, 153u8, 237u8, 124u8, 244u8,
+                214u8, 111u8, 149u8, 89u8, 159u8, 33u8, 150u8, 49u8, 226u8, 108u8, 146u8,
+                157u8, 124u8, 146u8, 225u8, 212u8, 249u8, 149u8, 152u8, 15u8, 58u8, 47u8,
+                19u8, 184u8, 204u8, 160u8, 94u8, 57u8, 119u8, 15u8, 243u8, 154u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -7600,7 +7640,8 @@ event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, address
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for KmsContextDestructionConfirmed {
+        impl alloy_sol_types::private::IntoLogData
+        for KmsContextDestructionConfirmation {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -7609,11 +7650,133 @@ event KmsContextDestructionConfirmed(uint256 indexed destroyedContextId, address
             }
         }
         #[automatically_derived]
-        impl From<&KmsContextDestructionConfirmed>
+        impl From<&KmsContextDestructionConfirmation>
         for alloy_sol_types::private::LogData {
             #[inline]
             fn from(
-                this: &KmsContextDestructionConfirmed,
+                this: &KmsContextDestructionConfirmation,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `KmsContextDestructionQuorumReached(uint256,bytes)` and selector `0x008d81cc4c9aca7e5c324018869a5401da6f9dec7dc7544393da1dda7844e487`.
+```solidity
+event KmsContextDestructionQuorumReached(uint256 indexed destroyedContextId, bytes extraData);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct KmsContextDestructionQuorumReached {
+        #[allow(missing_docs)]
+        pub destroyedContextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for KmsContextDestructionQuorumReached {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Bytes,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "KmsContextDestructionQuorumReached(uint256,bytes)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                0u8, 141u8, 129u8, 204u8, 76u8, 154u8, 202u8, 126u8, 92u8, 50u8, 64u8,
+                24u8, 134u8, 154u8, 84u8, 1u8, 218u8, 111u8, 157u8, 236u8, 125u8, 199u8,
+                84u8, 67u8, 147u8, 218u8, 29u8, 218u8, 120u8, 68u8, 228u8, 135u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    destroyedContextId: topics.1,
+                    extraData: data.0,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.destroyedContextId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.destroyedContextId,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData
+        for KmsContextDestructionQuorumReached {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&KmsContextDestructionQuorumReached>
+        for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &KmsContextDestructionQuorumReached,
             ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
@@ -7728,9 +7891,9 @@ event KmsEpochDestroyed(uint256 indexed epochId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `KmsEpochDestructionConfirmed(uint256,address,bytes,bytes)` and selector `0xc49c4d74230f015b4921faad66a9d0927d6050f934c94c172a485677a098dd0e`.
+    /**Event with signature `KmsEpochDestructionConfirmation(uint256,address,bytes,bytes)` and selector `0xee1b8f29d516d563f41f2a3b75c200752feb512e6256eb561d17a4e61ee6335e`.
 ```solidity
-event KmsEpochDestructionConfirmed(uint256 indexed destroyedEpochId, address indexed signer, bytes signature, bytes extraData);
+event KmsEpochDestructionConfirmation(uint256 indexed destroyedEpochId, address indexed signer, bytes signature, bytes extraData);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -7739,7 +7902,7 @@ event KmsEpochDestructionConfirmed(uint256 indexed destroyedEpochId, address ind
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct KmsEpochDestructionConfirmed {
+    pub struct KmsEpochDestructionConfirmation {
         #[allow(missing_docs)]
         pub destroyedEpochId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -7758,7 +7921,7 @@ event KmsEpochDestructionConfirmed(uint256 indexed destroyedEpochId, address ind
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for KmsEpochDestructionConfirmed {
+        impl alloy_sol_types::SolEvent for KmsEpochDestructionConfirmation {
             type DataTuple<'a> = (
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
@@ -7771,11 +7934,11 @@ event KmsEpochDestructionConfirmed(uint256 indexed destroyedEpochId, address ind
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Address,
             );
-            const SIGNATURE: &'static str = "KmsEpochDestructionConfirmed(uint256,address,bytes,bytes)";
+            const SIGNATURE: &'static str = "KmsEpochDestructionConfirmation(uint256,address,bytes,bytes)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                196u8, 156u8, 77u8, 116u8, 35u8, 15u8, 1u8, 91u8, 73u8, 33u8, 250u8,
-                173u8, 102u8, 169u8, 208u8, 146u8, 125u8, 96u8, 80u8, 249u8, 52u8, 201u8,
-                76u8, 23u8, 42u8, 72u8, 86u8, 119u8, 160u8, 152u8, 221u8, 14u8,
+                238u8, 27u8, 143u8, 41u8, 213u8, 22u8, 213u8, 99u8, 244u8, 31u8, 42u8,
+                59u8, 117u8, 194u8, 0u8, 117u8, 47u8, 235u8, 81u8, 46u8, 98u8, 86u8,
+                235u8, 86u8, 29u8, 23u8, 164u8, 230u8, 30u8, 230u8, 51u8, 94u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -7846,7 +8009,7 @@ event KmsEpochDestructionConfirmed(uint256 indexed destroyedEpochId, address ind
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for KmsEpochDestructionConfirmed {
+        impl alloy_sol_types::private::IntoLogData for KmsEpochDestructionConfirmation {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -7855,10 +8018,130 @@ event KmsEpochDestructionConfirmed(uint256 indexed destroyedEpochId, address ind
             }
         }
         #[automatically_derived]
-        impl From<&KmsEpochDestructionConfirmed> for alloy_sol_types::private::LogData {
+        impl From<&KmsEpochDestructionConfirmation>
+        for alloy_sol_types::private::LogData {
             #[inline]
             fn from(
-                this: &KmsEpochDestructionConfirmed,
+                this: &KmsEpochDestructionConfirmation,
+            ) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `KmsEpochDestructionQuorumReached(uint256,bytes)` and selector `0xa6914efb141f7e9194f2f6776bdc67f498be20bdffe0f8604f9304a42f23a613`.
+```solidity
+event KmsEpochDestructionQuorumReached(uint256 indexed destroyedEpochId, bytes extraData);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct KmsEpochDestructionQuorumReached {
+        #[allow(missing_docs)]
+        pub destroyedEpochId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for KmsEpochDestructionQuorumReached {
+            type DataTuple<'a> = (alloy::sol_types::sol_data::Bytes,);
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "KmsEpochDestructionQuorumReached(uint256,bytes)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                166u8, 145u8, 78u8, 251u8, 20u8, 31u8, 126u8, 145u8, 148u8, 242u8, 246u8,
+                119u8, 107u8, 220u8, 103u8, 244u8, 152u8, 190u8, 32u8, 189u8, 255u8,
+                224u8, 248u8, 96u8, 79u8, 147u8, 4u8, 164u8, 47u8, 35u8, 166u8, 19u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    destroyedEpochId: topics.1,
+                    extraData: data.0,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.destroyedEpochId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.destroyedEpochId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for KmsEpochDestructionQuorumReached {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&KmsEpochDestructionQuorumReached>
+        for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &KmsEpochDestructionQuorumReached,
             ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
@@ -16250,11 +16533,15 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         KmsContextDestroyed(KmsContextDestroyed),
         #[allow(missing_docs)]
-        KmsContextDestructionConfirmed(KmsContextDestructionConfirmed),
+        KmsContextDestructionConfirmation(KmsContextDestructionConfirmation),
+        #[allow(missing_docs)]
+        KmsContextDestructionQuorumReached(KmsContextDestructionQuorumReached),
         #[allow(missing_docs)]
         KmsEpochDestroyed(KmsEpochDestroyed),
         #[allow(missing_docs)]
-        KmsEpochDestructionConfirmed(KmsEpochDestructionConfirmed),
+        KmsEpochDestructionConfirmation(KmsEpochDestructionConfirmation),
+        #[allow(missing_docs)]
+        KmsEpochDestructionQuorumReached(KmsEpochDestructionQuorumReached),
         #[allow(missing_docs)]
         NewKmsContext(NewKmsContext),
         #[allow(missing_docs)]
@@ -16268,6 +16555,11 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
+            [
+                0u8, 141u8, 129u8, 204u8, 76u8, 154u8, 202u8, 126u8, 92u8, 50u8, 64u8,
+                24u8, 134u8, 154u8, 84u8, 1u8, 218u8, 111u8, 157u8, 236u8, 125u8, 199u8,
+                84u8, 67u8, 147u8, 218u8, 29u8, 218u8, 120u8, 68u8, 228u8, 135u8,
+            ],
             [
                 3u8, 67u8, 96u8, 19u8, 7u8, 95u8, 141u8, 26u8, 187u8, 23u8, 129u8, 219u8,
                 202u8, 244u8, 24u8, 252u8, 118u8, 252u8, 121u8, 125u8, 26u8, 181u8, 28u8,
@@ -16294,14 +16586,14 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 25u8, 44u8, 69u8, 129u8, 225u8, 188u8, 129u8, 192u8, 175u8, 152u8,
             ],
             [
-                121u8, 31u8, 201u8, 38u8, 255u8, 68u8, 169u8, 82u8, 34u8, 101u8, 203u8,
-                15u8, 151u8, 43u8, 118u8, 20u8, 53u8, 196u8, 238u8, 55u8, 171u8, 108u8,
-                160u8, 20u8, 30u8, 226u8, 116u8, 97u8, 153u8, 237u8, 124u8, 244u8,
-            ],
-            [
                 127u8, 174u8, 247u8, 69u8, 175u8, 121u8, 163u8, 175u8, 35u8, 212u8, 25u8,
                 156u8, 224u8, 54u8, 105u8, 117u8, 204u8, 45u8, 215u8, 20u8, 147u8, 132u8,
                 214u8, 49u8, 51u8, 125u8, 19u8, 59u8, 34u8, 107u8, 91u8, 228u8,
+            ],
+            [
+                166u8, 145u8, 78u8, 251u8, 20u8, 31u8, 126u8, 145u8, 148u8, 242u8, 246u8,
+                119u8, 107u8, 220u8, 103u8, 244u8, 152u8, 190u8, 32u8, 189u8, 255u8,
+                224u8, 248u8, 96u8, 79u8, 147u8, 4u8, 164u8, 47u8, 35u8, 166u8, 19u8,
             ],
             [
                 196u8, 47u8, 30u8, 202u8, 200u8, 212u8, 136u8, 30u8, 249u8, 253u8, 51u8,
@@ -16309,41 +16601,50 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 74u8, 96u8, 158u8, 80u8, 167u8, 211u8, 12u8, 72u8, 123u8, 141u8,
             ],
             [
-                196u8, 156u8, 77u8, 116u8, 35u8, 15u8, 1u8, 91u8, 73u8, 33u8, 250u8,
-                173u8, 102u8, 169u8, 208u8, 146u8, 125u8, 96u8, 80u8, 249u8, 52u8, 201u8,
-                76u8, 23u8, 42u8, 72u8, 86u8, 119u8, 160u8, 152u8, 221u8, 14u8,
+                214u8, 111u8, 149u8, 89u8, 159u8, 33u8, 150u8, 49u8, 226u8, 108u8, 146u8,
+                157u8, 124u8, 146u8, 225u8, 212u8, 249u8, 149u8, 152u8, 15u8, 58u8, 47u8,
+                19u8, 184u8, 204u8, 160u8, 94u8, 57u8, 119u8, 15u8, 243u8, 154u8,
             ],
             [
                 218u8, 7u8, 93u8, 9u8, 25u8, 141u8, 32u8, 126u8, 58u8, 145u8, 141u8,
                 75u8, 141u8, 252u8, 135u8, 223u8, 45u8, 96u8, 160u8, 11u8, 231u8, 3u8,
                 253u8, 57u8, 234u8, 172u8, 144u8, 150u8, 45u8, 160u8, 183u8, 240u8,
             ],
+            [
+                238u8, 27u8, 143u8, 41u8, 213u8, 22u8, 213u8, 99u8, 244u8, 31u8, 42u8,
+                59u8, 117u8, 194u8, 0u8, 117u8, 47u8, 235u8, 81u8, 46u8, 98u8, 86u8,
+                235u8, 86u8, 29u8, 23u8, 164u8, 230u8, 30u8, 230u8, 51u8, 94u8,
+            ],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(KmsContextDestructionQuorumReached),
             ::core::stringify!(KmsEpochDestroyed),
             ::core::stringify!(NewKmsEpoch),
             ::core::stringify!(NewKmsContext),
             ::core::stringify!(KmsContextCreationConfirmation),
             ::core::stringify!(ActivateEpoch),
-            ::core::stringify!(KmsContextDestructionConfirmed),
             ::core::stringify!(EpochActivationConfirmation),
+            ::core::stringify!(KmsEpochDestructionQuorumReached),
             ::core::stringify!(CoprocessorUpgradeProposed),
-            ::core::stringify!(KmsEpochDestructionConfirmed),
+            ::core::stringify!(KmsContextDestructionConfirmation),
             ::core::stringify!(KmsContextDestroyed),
+            ::core::stringify!(KmsEpochDestructionConfirmation),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
+            <KmsContextDestructionQuorumReached as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsEpochDestroyed as alloy_sol_types::SolEvent>::SIGNATURE,
             <NewKmsEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
             <NewKmsContext as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsContextCreationConfirmation as alloy_sol_types::SolEvent>::SIGNATURE,
             <ActivateEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
-            <KmsContextDestructionConfirmed as alloy_sol_types::SolEvent>::SIGNATURE,
             <EpochActivationConfirmation as alloy_sol_types::SolEvent>::SIGNATURE,
+            <KmsEpochDestructionQuorumReached as alloy_sol_types::SolEvent>::SIGNATURE,
             <CoprocessorUpgradeProposed as alloy_sol_types::SolEvent>::SIGNATURE,
-            <KmsEpochDestructionConfirmed as alloy_sol_types::SolEvent>::SIGNATURE,
+            <KmsContextDestructionConfirmation as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsContextDestroyed as alloy_sol_types::SolEvent>::SIGNATURE,
+            <KmsEpochDestructionConfirmation as alloy_sol_types::SolEvent>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]
@@ -16369,7 +16670,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IProtocolConfigEvents {
         const NAME: &'static str = "IProtocolConfigEvents";
-        const COUNT: usize = 10usize;
+        const COUNT: usize = 12usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -16419,13 +16720,22 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         .map(Self::KmsContextDestroyed)
                 }
                 Some(
-                    <KmsContextDestructionConfirmed as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                    <KmsContextDestructionConfirmation as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
-                    <KmsContextDestructionConfirmed as alloy_sol_types::SolEvent>::decode_raw_log(
+                    <KmsContextDestructionConfirmation as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                         )
-                        .map(Self::KmsContextDestructionConfirmed)
+                        .map(Self::KmsContextDestructionConfirmation)
+                }
+                Some(
+                    <KmsContextDestructionQuorumReached as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <KmsContextDestructionQuorumReached as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::KmsContextDestructionQuorumReached)
                 }
                 Some(
                     <KmsEpochDestroyed as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -16437,13 +16747,22 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         .map(Self::KmsEpochDestroyed)
                 }
                 Some(
-                    <KmsEpochDestructionConfirmed as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                    <KmsEpochDestructionConfirmation as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
-                    <KmsEpochDestructionConfirmed as alloy_sol_types::SolEvent>::decode_raw_log(
+                    <KmsEpochDestructionConfirmation as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                         )
-                        .map(Self::KmsEpochDestructionConfirmed)
+                        .map(Self::KmsEpochDestructionConfirmation)
+                }
+                Some(
+                    <KmsEpochDestructionQuorumReached as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <KmsEpochDestructionQuorumReached as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::KmsEpochDestructionQuorumReached)
                 }
                 Some(<NewKmsContext as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <NewKmsContext as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -16492,13 +16811,19 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 Self::KmsContextDestroyed(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::KmsContextDestructionConfirmed(inner) => {
+                Self::KmsContextDestructionConfirmation(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::KmsContextDestructionQuorumReached(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::KmsEpochDestroyed(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::KmsEpochDestructionConfirmed(inner) => {
+                Self::KmsEpochDestructionConfirmation(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
+                Self::KmsEpochDestructionQuorumReached(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::NewKmsContext(inner) => {
@@ -16526,13 +16851,19 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 Self::KmsContextDestroyed(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::KmsContextDestructionConfirmed(inner) => {
+                Self::KmsContextDestructionConfirmation(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::KmsContextDestructionQuorumReached(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::KmsEpochDestroyed(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::KmsEpochDestructionConfirmed(inner) => {
+                Self::KmsEpochDestructionConfirmation(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::KmsEpochDestructionQuorumReached(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::NewKmsContext(inner) => {
@@ -17102,11 +17433,17 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, KmsContextDestroyed, N> {
             self.event_filter::<KmsContextDestroyed>()
         }
-        ///Creates a new event filter for the [`KmsContextDestructionConfirmed`] event.
-        pub fn KmsContextDestructionConfirmed_filter(
+        ///Creates a new event filter for the [`KmsContextDestructionConfirmation`] event.
+        pub fn KmsContextDestructionConfirmation_filter(
             &self,
-        ) -> alloy_contract::Event<&P, KmsContextDestructionConfirmed, N> {
-            self.event_filter::<KmsContextDestructionConfirmed>()
+        ) -> alloy_contract::Event<&P, KmsContextDestructionConfirmation, N> {
+            self.event_filter::<KmsContextDestructionConfirmation>()
+        }
+        ///Creates a new event filter for the [`KmsContextDestructionQuorumReached`] event.
+        pub fn KmsContextDestructionQuorumReached_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, KmsContextDestructionQuorumReached, N> {
+            self.event_filter::<KmsContextDestructionQuorumReached>()
         }
         ///Creates a new event filter for the [`KmsEpochDestroyed`] event.
         pub fn KmsEpochDestroyed_filter(
@@ -17114,11 +17451,17 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, KmsEpochDestroyed, N> {
             self.event_filter::<KmsEpochDestroyed>()
         }
-        ///Creates a new event filter for the [`KmsEpochDestructionConfirmed`] event.
-        pub fn KmsEpochDestructionConfirmed_filter(
+        ///Creates a new event filter for the [`KmsEpochDestructionConfirmation`] event.
+        pub fn KmsEpochDestructionConfirmation_filter(
             &self,
-        ) -> alloy_contract::Event<&P, KmsEpochDestructionConfirmed, N> {
-            self.event_filter::<KmsEpochDestructionConfirmed>()
+        ) -> alloy_contract::Event<&P, KmsEpochDestructionConfirmation, N> {
+            self.event_filter::<KmsEpochDestructionConfirmation>()
+        }
+        ///Creates a new event filter for the [`KmsEpochDestructionQuorumReached`] event.
+        pub fn KmsEpochDestructionQuorumReached_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, KmsEpochDestructionQuorumReached, N> {
+            self.event_filter::<KmsEpochDestructionQuorumReached>()
         }
         ///Creates a new event filter for the [`NewKmsContext`] event.
         pub fn NewKmsContext_filter(

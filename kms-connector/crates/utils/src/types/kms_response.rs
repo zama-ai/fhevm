@@ -566,3 +566,77 @@ pub const KEYGEN_RESPONSE_STR: &str = "keygen_response";
 pub const CRSGEN_RESPONSE_STR: &str = "crsgen_response";
 pub const NEW_KMS_CONTEXT_RESPONSE_STR: &str = "new_kms_context_response";
 pub const EPOCH_RESULT_RESPONSE_STR: &str = "epoch_result_response";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::{
+        primitives::Bytes,
+        sol_types::{SolType, sol_data},
+    };
+    use kms_grpc::kms::v1::{KeyDigest as GrpcKeyDigest, RequestId};
+
+    fn request_id(byte: u8) -> Option<RequestId> {
+        Some(RequestId {
+            request_id: hex::encode([byte; 32]),
+        })
+    }
+
+    #[test]
+    fn encode_epoch_result_matches_three_field_layout() {
+        let signatures = vec![TypedSignature {
+            scheme: SigningSchemeType::Ecdsa256k1 as i32,
+            signature: vec![0xaa; 65],
+        }];
+        let response = GrpcEpochResultResponse {
+            reshare_responses: vec![KeyGenResult {
+                request_id: request_id(0x02),
+                preprocessing_id: request_id(0x01),
+                key_digests: vec![
+                    GrpcKeyDigest {
+                        key_type: "ServerKey".to_string(),
+                        digest: vec![0x10, 0x11],
+                    },
+                    GrpcKeyDigest {
+                        key_type: "PublicKey".to_string(),
+                        digest: vec![0x20],
+                    },
+                ],
+                external_signature: vec![0xbb; 65],
+                signatures: signatures.clone(),
+            }],
+            crs_responses: vec![CrsGenResult {
+                request_id: request_id(0x03),
+                crs_digest: vec![0x30, 0x31, 0x32],
+                max_num_bits: 2048,
+                external_signature: vec![0xcc; 65],
+                signatures,
+            }],
+        };
+
+        let (keys, crs_list) = encode_epoch_result(response).unwrap();
+
+        let expected_keys = vec![(
+            U256::from_be_bytes([0x01; 32]),
+            U256::from_be_bytes([0x02; 32]),
+            vec![
+                (0u8, Bytes::from(vec![0x10, 0x11])),
+                (1u8, Bytes::from(vec![0x20])),
+            ],
+        )];
+        let expected_crs_list = vec![(
+            U256::from_be_bytes([0x03; 32]),
+            U256::from(2048),
+            Bytes::from(vec![0x30, 0x31, 0x32]),
+        )];
+        type KeysLayout = sol_data::Array<(
+            sol_data::Uint<256>,
+            sol_data::Uint<256>,
+            sol_data::Array<(sol_data::Uint<8>, sol_data::Bytes)>,
+        )>;
+        type CrsListLayout =
+            sol_data::Array<(sol_data::Uint<256>, sol_data::Uint<256>, sol_data::Bytes)>;
+        assert_eq!(keys, KeysLayout::abi_encode(&expected_keys));
+        assert_eq!(crs_list, CrsListLayout::abi_encode(&expected_crs_list));
+    }
+}

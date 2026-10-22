@@ -97,6 +97,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochDestructionConfirmedBySigner;
         /// @notice Whether an epoch was destroyed by destroyKmsEpoch.
         mapping(uint256 epochId => bool) destroyedEpochs;
+        /// @notice Destruction confirmations grouped by the confirming committee's context and digest.
+        mapping(uint256 contextId => mapping(bytes32 digest => uint256 confirmations)) destructionConfirmationCountForDigest;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfigCanonical")) - 1)) & ~bytes32(uint256(0xff))
@@ -291,19 +293,9 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         ) {
             return;
         }
-        // The previous committee has `n` nodes. At most `t` of them (its MPC threshold) can be faulty,
-        // which means crashed, offline, or malicious. The quorum must be:
-        //   - more than `t`, so faulty nodes can never approve a switch on their own.
-        //   - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
-        //     arrive. Anything higher lets a dead node block the switch forever.
-        // `n - t` satisfies `n - t >= t + 1` under the `n >= 3t + 1` topology the KMS core
-        // requires. The contract itself does not enforce the topology.
-        // The quorum is floored at 1, so the degenerate `t = n` config cannot make it zero.
-        uint256 previousQuorum = $.kmsNodesForContext[previousContextId].length -
-            $.mpcThresholdForContext[previousContextId];
         if (
             canonical$.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest] >=
-            (previousQuorum > 0 ? previousQuorum : 1)
+            _committeeQuorum(previousContextId)
         ) {
             $.contextState[kmsContextId] = ContextState.Created;
             // Create the confirmed context's first epoch here, pairing it with the context by construction.
@@ -414,9 +406,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /// @inheritdoc IProtocolConfig
-    /// @dev Collects signatures only. The target is `n - t` of them over one digest, but no contract
-    ///      checks it. This contract keeps no quorum and accepts signers of the active committee until
-    ///      the next rotation.
+    /// @dev Each signer confirms once. The confirmation counts toward the active committee's `n - t`
+    ///      quorum and never blocks a rotation. A rotation starts a new count under the next committee.
     function confirmKmsContextDestruction(
         uint256 destroyedContextId,
         bytes calldata signature,
@@ -426,19 +417,22 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             revert KmsContextNotDestroyed(destroyedContextId);
         }
 
-        address signer = _confirmDestruction(
+        (address signer, bool quorumReached) = _confirmDestruction(
             _getProtocolConfigCanonicalStorage().contextDestructionConfirmedBySigner[destroyedContextId],
             destroyedContextId,
             keccak256(abi.encode(EIP712_CONTEXT_DESTRUCTION_TYPE_HASH, destroyedContextId, keccak256(extraData))),
             signature
         );
 
-        emit KmsContextDestructionConfirmed(destroyedContextId, signer, signature, extraData);
+        emit KmsContextDestructionConfirmation(destroyedContextId, signer, signature, extraData);
+        if (quorumReached) {
+            emit KmsContextDestructionQuorumReached(destroyedContextId, extraData);
+        }
     }
 
     /// @inheritdoc IProtocolConfig
-    /// @dev Collects signatures only, like confirmKmsContextDestruction. An epoch cleared by
-    ///      destroyKmsContext is confirmed through confirmKmsContextDestruction instead.
+    /// @dev Counts like confirmKmsContextDestruction. An epoch cleared by destroyKmsContext is
+    ///      confirmed through confirmKmsContextDestruction instead.
     function confirmKmsEpochDestruction(
         uint256 destroyedEpochId,
         bytes calldata signature,
@@ -449,14 +443,17 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             revert KmsEpochNotDestroyed(destroyedEpochId);
         }
 
-        address signer = _confirmDestruction(
+        (address signer, bool quorumReached) = _confirmDestruction(
             canonical$.epochDestructionConfirmedBySigner[destroyedEpochId],
             destroyedEpochId,
             keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData))),
             signature
         );
 
-        emit KmsEpochDestructionConfirmed(destroyedEpochId, signer, signature, extraData);
+        emit KmsEpochDestructionConfirmation(destroyedEpochId, signer, signature, extraData);
+        if (quorumReached) {
+            emit KmsEpochDestructionQuorumReached(destroyedEpochId, extraData);
+        }
     }
 
     /// @inheritdoc IProtocolConfig
@@ -530,9 +527,9 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /**
      * @dev Verifies one signer's activation submission for `epochId` under `contextId` and returns
-     *      its signer, `epochMaterialHash`, and EpochActivationConfirmation digest. The aggregate
-     *      signature binds the key and CRS results through `epochMaterialHash` and must recover to
-     *      a signer of the context's committee.
+     *      its signer, `epochMaterialHash`, and EpochActivationConfirmation digest. The
+     *      EpochActivationConfirmation signature binds the key and CRS results through
+     *      `epochMaterialHash` and must recover to a signer of the context's committee.
      */
     function _verifyEpochActivation(
         uint256 contextId,
@@ -597,9 +594,10 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
      * @dev Records `signer`'s confirmation of `digest`. Returns whether every signer of `contextId`
      *      confirmed it.
      *      The contract requires unanimity by design. One divergent epochMaterialHash or extraData splits
-     *      the vote, and no digest reaches quorum. Each signer confirms only once, so a divergent vote
-     *      cannot change. The epoch stays Pending until governance settles it with destroyKmsEpoch()
-     *      and re-triggers the rotation.
+     *      the confirmations, and no digest reaches quorum. Each signer confirms only once, so a divergent
+     *      confirmation cannot change. The epoch stays Pending until governance settles it and
+     *      re-triggers the rotation. A same-set rotation (context Active) is settled with
+     *      destroyKmsEpoch(). A context switch (context Created) is settled with destroyKmsContext().
      */
     function _recordEpochConfirmation(
         uint256 epochId,
@@ -618,23 +616,45 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /**
      * @dev Recovers the signer of a destruction confirmation, requires it in the active committee,
-     *      and records its one confirmation in `confirmedBySigner`.
+     *      and records its one confirmation in `confirmedBySigner`. Reports whether this confirmation
+     *      brings its digest to the active committee's quorum.
      */
     function _confirmDestruction(
         mapping(address signer => bool confirmed) storage confirmedBySigner,
         uint256 destroyedId,
         bytes32 structHash,
         bytes calldata signature
-    ) internal virtual returns (address signer) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        signer = ECDSA.recover(_hashTypedData(structHash), signature);
-        if (!$.isKmsSignerForContext[$.latestActiveKmsContextId][signer]) {
+    ) internal virtual returns (address signer, bool quorumReached) {
+        uint256 kmsContextId = _getProtocolConfigStorage().latestActiveKmsContextId;
+        bytes32 digest = _hashTypedData(structHash);
+        signer = ECDSA.recover(digest, signature);
+        if (!_getProtocolConfigStorage().isKmsSignerForContext[kmsContextId][signer]) {
             revert KmsDestructionUnauthorized(signer, destroyedId);
         }
         if (confirmedBySigner[signer]) {
             revert KmsDestructionAlreadyConfirmed(signer, destroyedId);
         }
         confirmedBySigner[signer] = true;
+        quorumReached =
+            ++_getProtocolConfigCanonicalStorage().destructionConfirmationCountForDigest[kmsContextId][digest] ==
+            _committeeQuorum(kmsContextId);
+    }
+
+    /**
+     * @dev Returns the `n - t` quorum of the committee of `contextId`. The committee has `n` nodes.
+     *      At most `t` of them (its MPC threshold) can be faulty, which means crashed, offline, or
+     *      malicious. The quorum must be:
+     *        - more than `t`, so faulty nodes can never reach it on their own.
+     *        - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
+     *          arrive. Anything higher lets a dead node block the quorum forever.
+     *      `n - t` satisfies `n - t >= t + 1` under the `n >= 3t + 1` topology the KMS core
+     *      requires. The contract itself does not enforce the topology.
+     *      The quorum is floored at 1, so the degenerate `t = n` config cannot make it zero.
+     */
+    function _committeeQuorum(uint256 contextId) internal view virtual returns (uint256) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        uint256 quorum = $.kmsNodesForContext[contextId].length - $.mpcThresholdForContext[contextId];
+        return quorum > 0 ? quorum : 1;
     }
 
     function _hashTypedData(bytes32 structHash) internal view virtual returns (bytes32) {

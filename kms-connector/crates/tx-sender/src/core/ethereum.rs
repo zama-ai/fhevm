@@ -9,10 +9,7 @@ use connector_utils::types::{
     CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponseKind, NewKmsContextResponse,
     PrepKeygenResponse,
 };
-use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::KMSGenerationInstance,
-    protocol_config::ProtocolConfig::ProtocolConfigInstance,
-};
+use fhevm_host_bindings::kms_generation::KMSGeneration::KMSGenerationInstance;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
@@ -23,7 +20,6 @@ where
 {
     provider: P,
     kms_generation_contract: KMSGenerationInstance<P>,
-    protocol_config_contract: ProtocolConfigInstance<P>,
     config: EthereumSenderConfig,
 }
 
@@ -57,13 +53,11 @@ where
     pub fn new(
         provider: P,
         kms_generation_contract: KMSGenerationInstance<P>,
-        protocol_config_contract: ProtocolConfigInstance<P>,
         inner_config: EthereumSenderConfig,
     ) -> Self {
         Self {
             provider,
             kms_generation_contract,
-            protocol_config_contract,
             config: inner_config,
         }
     }
@@ -143,9 +137,9 @@ where
         &self,
         response: NewKmsContextResponse,
     ) -> Result<TransactionReceipt, Error> {
-        // `confirmKmsContextCreation` reverts without a KMS Core signature.
+        // `confirmKmsContextCreation` reverts without a KMS core signature.
         Err(Error::Irrecoverable(anyhow!(
-            "Cannot confirm KMS context #{:#066x}: the KMS Core signature is not available yet \
+            "Cannot confirm KMS context #{:#066x}: the KMS core signature is not available yet \
             (planning-blockchain#1369)",
             response.context_id
         )))
@@ -155,9 +149,9 @@ where
         &self,
         response: EpochResultResponse,
     ) -> Result<TransactionReceipt, Error> {
-        // `confirmEpochActivation` reverts without a KMS Core signature.
+        // `confirmEpochActivation` reverts without a KMS core signature.
         Err(Error::Irrecoverable(anyhow!(
-            "Cannot confirm epoch #{:#066x} activation: the KMS Core signature is not available \
+            "Cannot confirm epoch #{:#066x} activation: the KMS core signature is not available \
             yet (planning-blockchain#1369)",
             response.epoch_id
         )))
@@ -239,7 +233,6 @@ where
         Self {
             provider: self.provider.clone(),
             kms_generation_contract: self.kms_generation_contract.clone(),
-            protocol_config_contract: self.protocol_config_contract.clone(),
             config: self.config.clone(),
         }
     }
@@ -309,7 +302,6 @@ mod tests {
         let tx_sender = EthereumTransactionSender::new(
             mock_provider.clone(),
             KMSGenerationInstance::new(Address::default(), mock_provider.clone()),
-            ProtocolConfigInstance::new(Address::default(), mock_provider.clone()),
             EthereumSenderConfig {
                 tx_retries: 1,
                 trace_reverted_tx: true,

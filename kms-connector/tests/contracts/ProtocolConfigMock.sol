@@ -11,16 +11,6 @@ contract ProtocolConfigMock {
     // across event types don't collide in the DB.
     uint256 contextCounter = (7 << 248) + 1;
     uint256 epochCounter = 8 << 248;
-    enum KeyType {
-        Server,
-        Public
-    }
-
-    struct KeyDigest {
-        KeyType keyType;
-        bytes digest;
-    }
-
     struct KmsThresholds {
         uint256 publicDecryption;
         uint256 userDecryption;
@@ -45,18 +35,6 @@ contract ProtocolConfigMock {
         bytes pcr2;
     }
 
-    struct EpochKeyResult {
-        uint256 prepKeygenId;
-        uint256 keyId;
-        KeyDigest[] keyDigests;
-    }
-
-    struct EpochCrsResult {
-        uint256 crsId;
-        uint256 maxBitLength;
-        bytes crsDigest;
-    }
-
     event NewKmsContext(
         uint256 indexed contextId,
         uint256 indexed previousContextId,
@@ -74,21 +52,6 @@ contract ProtocolConfigMock {
         uint256 materialBlockNumber
     );
 
-    event KmsContextCreationConfirmation(
-        uint256 indexed kmsContextId,
-        address indexed signer,
-        bytes signature,
-        bytes extraData
-    );
-
-    event EpochActivationConfirmation(
-        uint256 indexed epochId,
-        address indexed signer,
-        bytes32 epochMaterialHash,
-        bytes signature,
-        bytes extraData
-    );
-
     event KmsContextDestroyed(uint256 indexed kmsContextId);
 
     event KmsEpochDestroyed(uint256 indexed epochId);
@@ -99,24 +62,6 @@ contract ProtocolConfigMock {
 
     function destroyKmsEpoch(uint256 epochId) external {
         emit KmsEpochDestroyed(epochId);
-    }
-
-    function confirmKmsContextCreation(
-        uint256 kmsContextId,
-        bytes calldata signature,
-        bytes calldata extraData
-    ) external {
-        emit KmsContextCreationConfirmation(kmsContextId, msg.sender, signature, extraData);
-    }
-
-    function confirmEpochActivation(
-        uint256 epochId,
-        EpochKeyResult[] calldata,
-        EpochCrsResult[] calldata,
-        bytes calldata signature,
-        bytes calldata extraData
-    ) external {
-        emit EpochActivationConfirmation(epochId, msg.sender, bytes32(0), signature, extraData);
     }
 
     function defineNewKmsContextAndEpoch(

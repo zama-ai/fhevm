@@ -12,11 +12,6 @@ import {
   solidityPacked,
 } from 'ethers';
 
-// These ID counter bases match contracts/shared/Constants.sol.
-export const PREP_KEYGEN_COUNTER_BASE = 3n << 248n;
-export const KEY_COUNTER_BASE = 4n << 248n;
-export const CRS_COUNTER_BASE = 5n << 248n;
-
 export const CONFIRMATION_TYPES = {
   ContextCreationConfirmation: {
     ContextCreationConfirmation: [
@@ -155,26 +150,4 @@ export function signConfirmation<T extends ConfirmationType>(
   value: ConfirmationValue[T],
 ): Promise<string> {
   return signer.signTypedData(domain, CONFIRMATION_TYPES[primaryType], value);
-}
-
-// Signs the EpochActivationConfirmation over the epochMaterialHash of the key and CRS results.
-export async function signEpochActivation(
-  signer: Signer,
-  domain: TypedDataDomain,
-  a: {
-    contextId: bigint;
-    previousEpochId: bigint;
-    epochId: bigint;
-    keys: KeyResult[];
-    crsList: CrsResult[];
-    extraData: string;
-  },
-): Promise<string> {
-  return signConfirmation(signer, domain, 'EpochActivationConfirmation', {
-    contextId: a.contextId,
-    previousEpochId: a.previousEpochId,
-    epochId: a.epochId,
-    epochMaterialHash: epochMaterialHash(a.keys, a.crsList),
-    extraData: a.extraData,
-  });
 }

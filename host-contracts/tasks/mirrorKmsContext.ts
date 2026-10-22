@@ -2,13 +2,14 @@ import type { Interface, ParamType, Provider } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { ConfigurableTaskDefinition, HardhatRuntimeEnvironment } from 'hardhat/types';
 
+import type { KmsThresholds } from '../scripts/protocolConfigEip712';
 import type { ProtocolConfig, ProtocolConfigReplica } from '../types';
 import type { KmsNodeParamsStruct, PcrValuesStruct } from '../types/contracts/ProtocolConfigReplica';
 import { broadcast, getProtocolConfigReplicaInterface, requireProtocolConfigAddress } from './kmsContext';
-import { type KmsThresholds, readCanonicalSnapshot } from './protocolConfigMirror';
+import { readCanonicalSnapshot } from './protocolConfigMirror';
 
 // This file defines tasks that mirror the canonical (Ethereum) ProtocolConfig's active KMS context
-// and epoch onto a non-canonical replica after a rotation has gone active on
+// and epoch onto a non-canonical replica (e.g. Polygon) after a rotation has gone active on
 // canonical. It follows the same build-calldata (DAO path, never broadcasts) / broadcast (no-DAO
 // path for devnet / test-suite) convention as kmsContext.ts, calling the replica's
 // `mirrorKmsContextAndEpoch` (context switch) or `mirrorKmsEpoch` (same-set epoch rotation).

@@ -89,6 +89,8 @@ contract ProtocolConfigV015LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnabl
                 storageUrl: kmsNodeParams[i].storageUrl
             });
             $.kmsNodesForContext[contextId].push(node);
+            $.isKmsTxSenderForContext[contextId][node.txSenderAddress] = true;
+            $.isKmsSignerForContext[contextId][node.signerAddress] = true;
             $.kmsSignerAddressesForContext[contextId].push(node.signerAddress);
         }
         $.publicDecryptionThresholdForContext[contextId] = thresholds.publicDecryption;
