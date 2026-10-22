@@ -105,10 +105,12 @@ async fn head_returns_same_headers_without_body() {
 async fn serves_healthz() {
     let service = TestService::start();
     let client = Client::new();
-    let health = service.request(&client, Method::GET, "/healthz").await;
-    assert_eq!(health.version(), Version::HTTP_11);
-    assert_eq!(health.status(), StatusCode::OK);
-    assert!(health.bytes().await.unwrap().is_empty());
+    for method in [Method::GET, Method::HEAD] {
+        let health = service.request(&client, method, "/healthz").await;
+        assert_eq!(health.version(), Version::HTTP_11);
+        assert_eq!(health.status(), StatusCode::OK);
+        assert!(health.bytes().await.unwrap().is_empty());
+    }
 
     drop(client);
     service.stop().await;
@@ -118,36 +120,25 @@ async fn serves_healthz() {
 async fn returns_rfc_errors() {
     let service = TestService::start();
     let client = Client::new();
-    for (path, status, code, retryable) in [
-        (
-            prf_path("00", LABEL, "64"),
-            400,
-            "non_canonical_path",
-            false,
-        ),
-        (
-            prf_path("0", LABEL, "2049"),
-            400,
-            "non_canonical_path",
-            false,
-        ),
-        (prf_path("1", LABEL, "64"), 404, "unknown_prf", false),
-        (
-            format!("{}/", prf_path("0", LABEL, "64")),
-            400,
-            "non_canonical_path",
-            false,
-        ),
-        ("/v1/prf/0".to_string(), 400, "non_canonical_path", false),
+    let canonical = prf_path("0", LABEL, "64");
+    for (path, status, code) in [
+        (prf_path("00", LABEL, "64"), 400, "non_canonical_path"),
+        (prf_path("0", LABEL, "2049"), 400, "non_canonical_path"),
+        (prf_path("1", LABEL, "64"), 404, "unknown_prf"),
+        (format!("{canonical}/"), 400, "non_canonical_path"),
+        (format!("{canonical}?x=1"), 400, "non_canonical_path"),
+        (format!("{canonical}?"), 400, "non_canonical_path"),
+        ("/v1/prf/0".to_string(), 400, "non_canonical_path"),
     ] {
         let response = service.request(&client, Method::GET, &path).await;
         assert_eq!(response.status().as_u16(), status, "{path}");
+        assert_eq!(response.headers()["cache-control"], "no-store", "{path}");
         let body: serde_json::Value = response.json().await.unwrap();
         assert_eq!(body["code"], code, "{path}");
-        assert_eq!(body["retryable"], retryable, "{path}");
+        assert_eq!(body["retryable"], false, "{path}");
     }
 
-    for path in [prf_path("0", LABEL, "64"), "/v1/prf/0".to_string()] {
+    for path in [canonical, "/v1/prf/0".to_string()] {
         let response = service.request(&client, Method::POST, &path).await;
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED, "{path}");
         assert_eq!(response.headers()["allow"], "GET, HEAD", "{path}");
