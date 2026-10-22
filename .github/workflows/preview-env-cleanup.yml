@@ -17,6 +17,7 @@ on:
 permissions:
   actions: write # zizmor: ignore[excessive-permissions] gh workflow run needs actions:write to dispatch preview-env-destroy
   contents: read
+  id-token: write # Required for Tailscale OIDC
 
 jobs:
   cleanup:
@@ -27,16 +28,17 @@ jobs:
       group: preview-env-cleanup
       cancel-in-progress: false
     runs-on: ubuntu-latest
+    environment: preview-env
     timeout-minutes: 20
     env:
       TAILSCALE_HOSTNAME: tailscale-operator-zws-dev.diplodocus-boa.ts.net
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Setup tailscale
-        uses: tailscale/github-action@84a3f23bb4d843bcf4da6cf824ec1be473daf4de # v3.2.3
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
         with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          oauth-client-id: ${{ secrets.TS_FHEVM_CI_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TS_FHEVM_CI_OAUTH_AUDIENCE }}
           tags: tag:fhevm-ci
 
       - name: Setup kubectl
