@@ -275,12 +275,14 @@ interface IProtocolConfig is IProtocolConfigBase {
     /**
      * @notice Create a pending KMS context and pending epoch.
      * @param kmsNodeParams The KMS nodes to register, including MPC metadata.
+     * @param connectorUrls The connector URL of each KMS node, in `kmsNodeParams` order.
      * @param thresholds The thresholds for the new context.
      * @param softwareVersion The KMS software version expected for the context.
      * @param pcrValues Accepted enclave PCR values for the context.
      */
     function defineNewKmsContextAndEpoch(
         KmsNodeParams[] calldata kmsNodeParams,
+        string[] calldata connectorUrls,
         KmsThresholds calldata thresholds,
         string calldata softwareVersion,
         PcrValues[] calldata pcrValues

@@ -77,7 +77,7 @@ function requireKmsNodes(): KmsNode[] {
         );
       }
     }
-    for (const field of ['ipAddress', 'storageUrl'] as const) {
+    for (const field of ['ipAddress', 'storageUrl', 'connectorUrl'] as const) {
       if (typeof node?.[field] !== 'string') {
         throw new Error(`"CANONICAL_KMS_NODES" env variable entry ${index} field "${field}" is missing.`);
       }

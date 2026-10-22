@@ -21,6 +21,7 @@ interface IProtocolConfigReplica {
         address signerAddress;
         string ipAddress;
         string storageUrl;
+        string connectorUrl;
     }
     struct KmsThresholds {
         uint256 publicDecryption;
@@ -36,6 +37,7 @@ interface IProtocolConfigReplica {
     error InvalidKmsContext(uint256 kmsContextId);
     error InvalidKmsEpoch(uint256 epochId);
     error InvalidNullThreshold(string thresholdName);
+    error KmsConnectorUrlsLengthMismatch(uint256 nodeCount, uint256 connectorUrlCount);
     error KmsContextAlreadyDestroyed(uint256 contextId);
     error KmsContextDestructionAheadOfReplica(uint256 contextId, uint256 activeContextId);
     error KmsContextIdDestroyed(uint256 contextId);
@@ -216,6 +218,11 @@ interface IProtocolConfigReplica {
             "name": "storageUrl",
             "type": "string",
             "internalType": "string"
+          },
+          {
+            "name": "connectorUrl",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       }
@@ -255,6 +262,11 @@ interface IProtocolConfigReplica {
           },
           {
             "name": "storageUrl",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "connectorUrl",
             "type": "string",
             "internalType": "string"
           }
@@ -571,6 +583,11 @@ interface IProtocolConfigReplica {
             "name": "storageUrl",
             "type": "string",
             "internalType": "string"
+          },
+          {
+            "name": "connectorUrl",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       },
@@ -687,6 +704,11 @@ interface IProtocolConfigReplica {
             "name": "storageUrl",
             "type": "string",
             "internalType": "string"
+          },
+          {
+            "name": "connectorUrl",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       },
@@ -790,6 +812,11 @@ interface IProtocolConfigReplica {
               },
               {
                 "name": "storageUrl",
+                "type": "string",
+                "internalType": "string"
+              },
+              {
+                "name": "connectorUrl",
                 "type": "string",
                 "internalType": "string"
               }
@@ -1028,6 +1055,11 @@ interface IProtocolConfigReplica {
             "name": "storageUrl",
             "type": "string",
             "internalType": "string"
+          },
+          {
+            "name": "connectorUrl",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       },
@@ -1164,6 +1196,22 @@ interface IProtocolConfigReplica {
         "name": "thresholdName",
         "type": "string",
         "internalType": "string"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "KmsConnectorUrlsLengthMismatch",
+    "inputs": [
+      {
+        "name": "nodeCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "connectorUrlCount",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ]
   },
@@ -2021,7 +2069,7 @@ struct KmsEpochSubmission { uint256 epochId; bytes32 epochMaterialHash; bytes[] 
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; string storageUrl; }
+struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; string storageUrl; string connectorUrl; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2034,6 +2082,8 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
         pub ipAddress: alloy::sol_types::private::String,
         #[allow(missing_docs)]
         pub storageUrl: alloy::sol_types::private::String,
+        #[allow(missing_docs)]
+        pub connectorUrl: alloy::sol_types::private::String,
     }
     #[allow(
         non_camel_case_types,
@@ -2050,11 +2100,13 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
             alloy::sol_types::sol_data::Address,
             alloy::sol_types::sol_data::String,
             alloy::sol_types::sol_data::String,
+            alloy::sol_types::sol_data::String,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
             alloy::sol_types::private::Address,
             alloy::sol_types::private::Address,
+            alloy::sol_types::private::String,
             alloy::sol_types::private::String,
             alloy::sol_types::private::String,
         );
@@ -2078,6 +2130,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     value.signerAddress,
                     value.ipAddress,
                     value.storageUrl,
+                    value.connectorUrl,
                 )
             }
         }
@@ -2090,6 +2143,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     signerAddress: tuple.1,
                     ipAddress: tuple.2,
                     storageUrl: tuple.3,
+                    connectorUrl: tuple.4,
                 }
             }
         }
@@ -2113,6 +2167,9 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     ),
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
                         &self.storageUrl,
+                    ),
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.connectorUrl,
                     ),
                 )
             }
@@ -2188,7 +2245,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "KmsNode(address txSenderAddress,address signerAddress,string ipAddress,string storageUrl)",
+                    "KmsNode(address txSenderAddress,address signerAddress,string ipAddress,string storageUrl,string connectorUrl)",
                 )
             }
             #[inline]
@@ -2220,6 +2277,10 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                             &self.storageUrl,
                         )
                         .0,
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.connectorUrl,
+                        )
+                        .0,
                 ]
                     .concat()
             }
@@ -2240,6 +2301,9 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     )
                     + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.storageUrl,
+                    )
+                    + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.connectorUrl,
                     )
             }
             #[inline]
@@ -2264,6 +2328,10 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                 );
                 <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.storageUrl,
+                    out,
+                );
+                <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.connectorUrl,
                     out,
                 );
             }
@@ -3142,6 +3210,103 @@ error InvalidNullThreshold(string thresholdName);
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
                         &self.thresholdName,
                     ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `KmsConnectorUrlsLengthMismatch(uint256,uint256)` and selector `0x0e7e40f5`.
+```solidity
+error KmsConnectorUrlsLengthMismatch(uint256 nodeCount, uint256 connectorUrlCount);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct KmsConnectorUrlsLengthMismatch {
+        #[allow(missing_docs)]
+        pub nodeCount: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub connectorUrlCount: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<KmsConnectorUrlsLengthMismatch>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: KmsConnectorUrlsLengthMismatch) -> Self {
+                (value.nodeCount, value.connectorUrlCount)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for KmsConnectorUrlsLengthMismatch {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    nodeCount: tuple.0,
+                    connectorUrlCount: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for KmsConnectorUrlsLengthMismatch {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "KmsConnectorUrlsLengthMismatch(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [14u8, 126u8, 64u8, 245u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.nodeCount),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.connectorUrlCount),
                 )
             }
             #[inline]
@@ -5280,7 +5445,7 @@ event KmsKeyResharingSubmitted(uint256 indexed contextId, uint256 indexed epochI
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `MirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256))` and selector `0xb648524ce160b57dde60e9bd755dd76dafa3502a58688cb5d3ce049d0f84d642`.
+    /**Event with signature `MirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,string)[],(uint256,uint256,uint256,uint256))` and selector `0xffc9237c77bf853f9ea49555cccaebab95af9a16553a9d6f0b229e134387d0d0`.
 ```solidity
 event MirrorKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochId, KmsNode[] nodes, KmsThresholds thresholds);
 ```*/
@@ -5325,11 +5490,11 @@ event MirrorKmsContextAndEpoch(uint256 indexed contextId, uint256 indexed epochI
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "MirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256))";
+            const SIGNATURE: &'static str = "MirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,string)[],(uint256,uint256,uint256,uint256))";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                182u8, 72u8, 82u8, 76u8, 225u8, 96u8, 181u8, 125u8, 222u8, 96u8, 233u8,
-                189u8, 117u8, 93u8, 215u8, 109u8, 175u8, 163u8, 80u8, 42u8, 88u8, 104u8,
-                140u8, 181u8, 211u8, 206u8, 4u8, 157u8, 15u8, 132u8, 214u8, 66u8,
+                255u8, 201u8, 35u8, 124u8, 119u8, 191u8, 133u8, 63u8, 158u8, 164u8,
+                149u8, 85u8, 204u8, 202u8, 235u8, 171u8, 149u8, 175u8, 154u8, 22u8, 85u8,
+                58u8, 157u8, 111u8, 11u8, 34u8, 158u8, 19u8, 67u8, 135u8, 208u8, 208u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -9041,7 +9206,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256))` and selector `0x596759ff`.
+    /**Function with signature `mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,string)[],(uint256,uint256,uint256,uint256))` and selector `0xb74444a1`.
 ```solidity
 function mirrorKmsContextAndEpoch(uint256 contextId, uint256 epochId, KmsNode[] memory nodes, KmsThresholds memory thresholds) external;
 ```*/
@@ -9059,7 +9224,7 @@ function mirrorKmsContextAndEpoch(uint256 contextId, uint256 epochId, KmsNode[] 
         #[allow(missing_docs)]
         pub thresholds: <KmsThresholds as alloy::sol_types::SolType>::RustType,
     }
-    ///Container type for the return parameters of the [`mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256))`](mirrorKmsContextAndEpochCall) function.
+    ///Container type for the return parameters of the [`mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,string)[],(uint256,uint256,uint256,uint256))`](mirrorKmsContextAndEpochCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct mirrorKmsContextAndEpochReturn {}
@@ -9181,8 +9346,8 @@ function mirrorKmsContextAndEpoch(uint256 contextId, uint256 epochId, KmsNode[] 
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256))";
-            const SELECTOR: [u8; 4] = [89u8, 103u8, 89u8, 255u8];
+            const SIGNATURE: &'static str = "mirrorKmsContextAndEpoch(uint256,uint256,(address,address,string,string,string)[],(uint256,uint256,uint256,uint256))";
+            const SELECTOR: [u8; 4] = [183u8, 68u8, 68u8, 161u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -9699,7 +9864,7 @@ function mirrorKmsEpochDestruction(uint256 destroyedEpochId) external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `recoverKmsState(uint256,uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),uint256[],uint256[])` and selector `0xff1f923d`.
+    /**Function with signature `recoverKmsState(uint256,uint256,(address,address,string,string,string)[],(uint256,uint256,uint256,uint256),uint256[],uint256[])` and selector `0x01657193`.
 ```solidity
 function recoverKmsState(uint256 contextId, uint256 epochId, KmsNode[] memory nodes, KmsThresholds memory thresholds, uint256[] memory destroyedContextIds, uint256[] memory destroyedEpochIds) external;
 ```*/
@@ -9725,7 +9890,7 @@ function recoverKmsState(uint256 contextId, uint256 epochId, KmsNode[] memory no
             alloy::sol_types::private::primitives::aliases::U256,
         >,
     }
-    ///Container type for the return parameters of the [`recoverKmsState(uint256,uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),uint256[],uint256[])`](recoverKmsStateCall) function.
+    ///Container type for the return parameters of the [`recoverKmsState(uint256,uint256,(address,address,string,string,string)[],(uint256,uint256,uint256,uint256),uint256[],uint256[])`](recoverKmsStateCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct recoverKmsStateReturn {}
@@ -9862,8 +10027,8 @@ function recoverKmsState(uint256 contextId, uint256 epochId, KmsNode[] memory no
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "recoverKmsState(uint256,uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),uint256[],uint256[])";
-            const SELECTOR: [u8; 4] = [255u8, 31u8, 146u8, 61u8];
+            const SIGNATURE: &'static str = "recoverKmsState(uint256,uint256,(address,address,string,string,string)[],(uint256,uint256,uint256,uint256),uint256[],uint256[])";
+            const SELECTOR: [u8; 4] = [1u8, 101u8, 113u8, 147u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -10093,7 +10258,7 @@ function submitKmsContextDestruction(uint256 destroyedContextId, bytes[] memory 
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `submitKmsContextSwitch((uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))` and selector `0xa8795fd9`.
+    /**Function with signature `submitKmsContextSwitch((uint256,(address,address,string,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))` and selector `0x7a46c667`.
 ```solidity
 function submitKmsContextSwitch(KmsContextSubmission memory context, KmsEpochSubmission memory epoch) external;
 ```*/
@@ -10105,7 +10270,7 @@ function submitKmsContextSwitch(KmsContextSubmission memory context, KmsEpochSub
         #[allow(missing_docs)]
         pub epoch: <KmsEpochSubmission as alloy::sol_types::SolType>::RustType,
     }
-    ///Container type for the return parameters of the [`submitKmsContextSwitch((uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))`](submitKmsContextSwitchCall) function.
+    ///Container type for the return parameters of the [`submitKmsContextSwitch((uint256,(address,address,string,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))`](submitKmsContextSwitchCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct submitKmsContextSwitchReturn {}
@@ -10211,8 +10376,8 @@ function submitKmsContextSwitch(KmsContextSubmission memory context, KmsEpochSub
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "submitKmsContextSwitch((uint256,(address,address,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))";
-            const SELECTOR: [u8; 4] = [168u8, 121u8, 95u8, 217u8];
+            const SIGNATURE: &'static str = "submitKmsContextSwitch((uint256,(address,address,string,string,string)[],(uint256,uint256,uint256,uint256),bytes[],bytes),(uint256,bytes32,bytes[],bytes))";
+            const SELECTOR: [u8; 4] = [122u8, 70u8, 198u8, 103u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -10658,6 +10823,7 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [1u8, 101u8, 113u8, 147u8],
             [13u8, 142u8, 110u8, 44u8],
             [32u8, 61u8, 1u8, 20u8],
             [38u8, 207u8, 93u8, 239u8],
@@ -10667,18 +10833,18 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
             [65u8, 173u8, 6u8, 156u8],
             [70u8, 197u8, 187u8, 189u8],
             [71u8, 232u8, 34u8, 149u8],
-            [89u8, 103u8, 89u8, 255u8],
             [91u8, 255u8, 118u8, 217u8],
             [98u8, 61u8, 39u8, 71u8],
             [101u8, 179u8, 148u8, 175u8],
+            [122u8, 70u8, 198u8, 103u8],
             [126u8, 170u8, 200u8, 242u8],
             [142u8, 151u8, 203u8, 96u8],
             [148u8, 71u8, 207u8, 212u8],
             [151u8, 111u8, 62u8, 185u8],
             [157u8, 27u8, 27u8, 225u8],
             [166u8, 55u8, 18u8, 217u8],
-            [168u8, 121u8, 95u8, 217u8],
             [180u8, 114u8, 43u8, 196u8],
+            [183u8, 68u8, 68u8, 161u8],
             [191u8, 155u8, 22u8, 200u8],
             [194u8, 180u8, 41u8, 134u8],
             [195u8, 170u8, 170u8, 90u8],
@@ -10688,10 +10854,10 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
             [238u8, 125u8, 82u8, 209u8],
             [249u8, 191u8, 203u8, 5u8],
             [249u8, 198u8, 112u8, 195u8],
-            [255u8, 31u8, 146u8, 61u8],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
+            ::core::stringify!(recoverKmsState),
             ::core::stringify!(getVersion),
             ::core::stringify!(isKmsSigner),
             ::core::stringify!(getMpcThreshold),
@@ -10701,18 +10867,18 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
             ::core::stringify!(getKmsGenThresholdForContext),
             ::core::stringify!(isKmsTxSenderForContext),
             ::core::stringify!(getMpcThresholdForContext),
-            ::core::stringify!(mirrorKmsContextAndEpoch),
             ::core::stringify!(getKmsSignersForContext),
             ::core::stringify!(submitKmsKeyResharing),
             ::core::stringify!(getCurrentKmsContextAndEpoch),
+            ::core::stringify!(submitKmsContextSwitch),
             ::core::stringify!(getKmsSigners),
             ::core::stringify!(mirrorKmsEpoch),
             ::core::stringify!(isKmsSignerForContext),
             ::core::stringify!(getCurrentKmsContextId),
             ::core::stringify!(getCurrentKmsContextIdCounter),
             ::core::stringify!(submitKmsContextDestruction),
-            ::core::stringify!(submitKmsContextSwitch),
             ::core::stringify!(getKmsGenThreshold),
+            ::core::stringify!(mirrorKmsContextAndEpoch),
             ::core::stringify!(isValidKmsContext),
             ::core::stringify!(getUserDecryptionThreshold),
             ::core::stringify!(getPublicDecryptionThresholdForContext),
@@ -10722,10 +10888,10 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
             ::core::stringify!(isLiveKmsContext),
             ::core::stringify!(mirrorKmsContextDestruction),
             ::core::stringify!(getKmsNodesForContext),
-            ::core::stringify!(recoverKmsState),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
+            <recoverKmsStateCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getVersionCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isKmsSignerCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getMpcThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -10735,18 +10901,18 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
             <getKmsGenThresholdForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isKmsTxSenderForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getMpcThresholdForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsSignersForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <submitKmsKeyResharingCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentKmsContextAndEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsSignersCall as alloy_sol_types::SolCall>::SIGNATURE,
             <mirrorKmsEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isKmsSignerForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentKmsContextIdCounterCall as alloy_sol_types::SolCall>::SIGNATURE,
             <submitKmsContextDestructionCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsGenThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isValidKmsContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getUserDecryptionThresholdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getPublicDecryptionThresholdForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -10756,7 +10922,6 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
             <isLiveKmsContextCall as alloy_sol_types::SolCall>::SIGNATURE,
             <mirrorKmsContextDestructionCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsNodesForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <recoverKmsStateCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]
@@ -10900,6 +11065,17 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                 &[u8],
             ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls>] = &[
                 {
+                    fn recoverKmsState(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
+                        <recoverKmsStateCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigReplicaCalls::recoverKmsState)
+                    }
+                    recoverKmsState
+                },
+                {
                     fn getVersion(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
@@ -11005,17 +11181,6 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                     getMpcThresholdForContext
                 },
                 {
-                    fn mirrorKmsContextAndEpoch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
-                        <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigReplicaCalls::mirrorKmsContextAndEpoch)
-                    }
-                    mirrorKmsContextAndEpoch
-                },
-                {
                     fn getKmsSignersForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
@@ -11049,6 +11214,17 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                             )
                     }
                     getCurrentKmsContextAndEpoch
+                },
+                {
+                    fn submitKmsContextSwitch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
+                        <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigReplicaCalls::submitKmsContextSwitch)
+                    }
+                    submitKmsContextSwitch
                 },
                 {
                     fn getKmsSigners(
@@ -11121,17 +11297,6 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                     submitKmsContextDestruction
                 },
                 {
-                    fn submitKmsContextSwitch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
-                        <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigReplicaCalls::submitKmsContextSwitch)
-                    }
-                    submitKmsContextSwitch
-                },
-                {
                     fn getKmsGenThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
@@ -11141,6 +11306,17 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                             .map(IProtocolConfigReplicaCalls::getKmsGenThreshold)
                     }
                     getKmsGenThreshold
+                },
+                {
+                    fn mirrorKmsContextAndEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
+                        <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigReplicaCalls::mirrorKmsContextAndEpoch)
+                    }
+                    mirrorKmsContextAndEpoch
                 },
                 {
                     fn isValidKmsContext(
@@ -11245,17 +11421,6 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                     }
                     getKmsNodesForContext
                 },
-                {
-                    fn recoverKmsState(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
-                        <recoverKmsStateCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigReplicaCalls::recoverKmsState)
-                    }
-                    recoverKmsState
-                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -11276,6 +11441,17 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls>] = &[
+                {
+                    fn recoverKmsState(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
+                        <recoverKmsStateCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigReplicaCalls::recoverKmsState)
+                    }
+                    recoverKmsState
+                },
                 {
                     fn getVersion(
                         data: &[u8],
@@ -11382,17 +11558,6 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                     getMpcThresholdForContext
                 },
                 {
-                    fn mirrorKmsContextAndEpoch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
-                        <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigReplicaCalls::mirrorKmsContextAndEpoch)
-                    }
-                    mirrorKmsContextAndEpoch
-                },
-                {
                     fn getKmsSignersForContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
@@ -11426,6 +11591,17 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                             )
                     }
                     getCurrentKmsContextAndEpoch
+                },
+                {
+                    fn submitKmsContextSwitch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
+                        <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigReplicaCalls::submitKmsContextSwitch)
+                    }
+                    submitKmsContextSwitch
                 },
                 {
                     fn getKmsSigners(
@@ -11498,17 +11674,6 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                     submitKmsContextDestruction
                 },
                 {
-                    fn submitKmsContextSwitch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
-                        <submitKmsContextSwitchCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigReplicaCalls::submitKmsContextSwitch)
-                    }
-                    submitKmsContextSwitch
-                },
-                {
                     fn getKmsGenThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
@@ -11518,6 +11683,17 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                             .map(IProtocolConfigReplicaCalls::getKmsGenThreshold)
                     }
                     getKmsGenThreshold
+                },
+                {
+                    fn mirrorKmsContextAndEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
+                        <mirrorKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigReplicaCalls::mirrorKmsContextAndEpoch)
+                    }
+                    mirrorKmsContextAndEpoch
                 },
                 {
                     fn isValidKmsContext(
@@ -11621,17 +11797,6 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                             .map(IProtocolConfigReplicaCalls::getKmsNodesForContext)
                     }
                     getKmsNodesForContext
-                },
-                {
-                    fn recoverKmsState(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaCalls> {
-                        <recoverKmsStateCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigReplicaCalls::recoverKmsState)
-                    }
-                    recoverKmsState
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -12014,6 +12179,8 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
         #[allow(missing_docs)]
         InvalidNullThreshold(InvalidNullThreshold),
         #[allow(missing_docs)]
+        KmsConnectorUrlsLengthMismatch(KmsConnectorUrlsLengthMismatch),
+        #[allow(missing_docs)]
         KmsContextAlreadyDestroyed(KmsContextAlreadyDestroyed),
         #[allow(missing_docs)]
         KmsContextDestructionAheadOfReplica(KmsContextDestructionAheadOfReplica),
@@ -12061,6 +12228,7 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 140u8, 141u8, 64u8],
+            [14u8, 126u8, 64u8, 245u8],
             [22u8, 167u8, 39u8, 120u8],
             [24u8, 122u8, 234u8, 168u8],
             [25u8, 166u8, 29u8, 196u8],
@@ -12090,6 +12258,7 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(EmptyKmsNodes),
+            ::core::stringify!(KmsConnectorUrlsLengthMismatch),
             ::core::stringify!(KmsSignerSetExceedsProofFormatLimit),
             ::core::stringify!(LatestActiveKmsContextCannotBeDestroyed),
             ::core::stringify!(KmsSignerNotInCommittee),
@@ -12119,6 +12288,7 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <EmptyKmsNodes as alloy_sol_types::SolError>::SIGNATURE,
+            <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::SIGNATURE,
             <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::SIGNATURE,
             <LatestActiveKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::SIGNATURE,
             <KmsSignerNotInCommittee as alloy_sol_types::SolError>::SIGNATURE,
@@ -12170,7 +12340,7 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
     impl alloy_sol_types::SolInterface for IProtocolConfigReplicaErrors {
         const NAME: &'static str = "IProtocolConfigReplicaErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 26usize;
+        const COUNT: usize = 27usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -12194,6 +12364,9 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                 }
                 Self::InvalidNullThreshold(_) => {
                     <InvalidNullThreshold as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::KmsConnectorUrlsLengthMismatch(_) => {
+                    <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::KmsContextAlreadyDestroyed(_) => {
                     <KmsContextAlreadyDestroyed as alloy_sol_types::SolError>::SELECTOR
@@ -12281,6 +12454,19 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                             .map(IProtocolConfigReplicaErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
+                },
+                {
+                    fn KmsConnectorUrlsLengthMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaErrors> {
+                        <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigReplicaErrors::KmsConnectorUrlsLengthMismatch,
+                            )
+                    }
+                    KmsConnectorUrlsLengthMismatch
                 },
                 {
                     fn KmsSignerSetExceedsProofFormatLimit(
@@ -12609,6 +12795,19 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                             .map(IProtocolConfigReplicaErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
+                },
+                {
+                    fn KmsConnectorUrlsLengthMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaErrors> {
+                        <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigReplicaErrors::KmsConnectorUrlsLengthMismatch,
+                            )
+                    }
+                    KmsConnectorUrlsLengthMismatch
                 },
                 {
                     fn KmsSignerSetExceedsProofFormatLimit(
@@ -12954,6 +13153,11 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                         inner,
                     )
                 }
+                Self::KmsConnectorUrlsLengthMismatch(inner) => {
+                    <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::KmsContextAlreadyDestroyed(inner) => {
                     <KmsContextAlreadyDestroyed as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -13092,6 +13296,12 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                 }
                 Self::InvalidNullThreshold(inner) => {
                     <InvalidNullThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::KmsConnectorUrlsLengthMismatch(inner) => {
+                    <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -13255,11 +13465,6 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                 243u8, 152u8, 123u8, 50u8, 157u8, 81u8, 134u8, 117u8, 138u8, 231u8,
             ],
             [
-                182u8, 72u8, 82u8, 76u8, 225u8, 96u8, 181u8, 125u8, 222u8, 96u8, 233u8,
-                189u8, 117u8, 93u8, 215u8, 109u8, 175u8, 163u8, 80u8, 42u8, 88u8, 104u8,
-                140u8, 181u8, 211u8, 206u8, 4u8, 157u8, 15u8, 132u8, 214u8, 66u8,
-            ],
-            [
                 213u8, 110u8, 211u8, 182u8, 154u8, 223u8, 14u8, 94u8, 38u8, 220u8, 114u8,
                 178u8, 106u8, 102u8, 242u8, 162u8, 111u8, 209u8, 5u8, 231u8, 84u8, 67u8,
                 32u8, 201u8, 203u8, 195u8, 75u8, 226u8, 136u8, 233u8, 78u8, 234u8,
@@ -13269,24 +13474,29 @@ function submitKmsKeyResharing(KmsEpochSubmission memory epoch) external;
                 75u8, 141u8, 252u8, 135u8, 223u8, 45u8, 96u8, 160u8, 11u8, 231u8, 3u8,
                 253u8, 57u8, 234u8, 172u8, 144u8, 150u8, 45u8, 160u8, 183u8, 240u8,
             ],
+            [
+                255u8, 201u8, 35u8, 124u8, 119u8, 191u8, 133u8, 63u8, 158u8, 164u8,
+                149u8, 85u8, 204u8, 202u8, 235u8, 171u8, 149u8, 175u8, 154u8, 22u8, 85u8,
+                58u8, 157u8, 111u8, 11u8, 34u8, 158u8, 19u8, 67u8, 135u8, 208u8, 208u8,
+            ],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(KmsEpochDestroyed),
             ::core::stringify!(MirrorKmsEpoch),
             ::core::stringify!(KmsContextSwitchSubmitted),
-            ::core::stringify!(MirrorKmsContextAndEpoch),
             ::core::stringify!(KmsKeyResharingSubmitted),
             ::core::stringify!(KmsContextDestroyed),
+            ::core::stringify!(MirrorKmsContextAndEpoch),
         ];
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <KmsEpochDestroyed as alloy_sol_types::SolEvent>::SIGNATURE,
             <MirrorKmsEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsContextSwitchSubmitted as alloy_sol_types::SolEvent>::SIGNATURE,
-            <MirrorKmsContextAndEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsKeyResharingSubmitted as alloy_sol_types::SolEvent>::SIGNATURE,
             <KmsContextDestroyed as alloy_sol_types::SolEvent>::SIGNATURE,
+            <MirrorKmsContextAndEpoch as alloy_sol_types::SolEvent>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
         #[inline]

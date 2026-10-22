@@ -11,6 +11,7 @@ export type KmsNode = {
   signerAddress: string;
   ipAddress: string;
   storageUrl: string;
+  connectorUrl: string;
 };
 
 export type KmsThresholds = {
@@ -104,6 +105,7 @@ export async function readCanonicalSnapshot(
     signerAddress: node.signerAddress,
     ipAddress: node.ipAddress,
     storageUrl: node.storageUrl,
+    connectorUrl: node.connectorUrl,
   }));
   const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
 

@@ -81,6 +81,10 @@ export function buildProtocolConfigNodes(): Array<{
   ];
 }
 
+export function buildConnectorUrls(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => `https://kms-connector-${i}.example.com`);
+}
+
 export function buildProtocolConfigThresholds() {
   return {
     publicDecryption: 1,
@@ -134,7 +138,7 @@ export async function initializeProtocolConfigProxy(
   const upgraded = await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfig', {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [kmsNodes, thresholds, '', []],
+      args: [kmsNodes, buildConnectorUrls(kmsNodes.length), thresholds, '', []],
     },
   });
   return upgraded as unknown as Contract;
@@ -161,10 +165,18 @@ export async function deployFreshProtocolConfigReplicaProxy(
   // No caller verifies a signature, so the canonical EIP-712 domain uses this chain and a placeholder address.
   const canonicalProtocolConfig = '0x' + '11'.repeat(20);
   const { chainId } = await ethers.provider.getNetwork();
+  const connectorUrls = buildConnectorUrls(kmsNodes.length);
   await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfigReplica', {
     call: {
       fn: 'initializeFromCanonical',
-      args: [contextId, epochId, kmsNodes, thresholds, chainId, canonicalProtocolConfig],
+      args: [
+        contextId,
+        epochId,
+        kmsNodes.map((node, i) => ({ ...node, connectorUrl: connectorUrls[i] })),
+        thresholds,
+        chainId,
+        canonicalProtocolConfig,
+      ],
     },
   });
   return proxyAddress;
@@ -202,19 +214,20 @@ export async function buildControllableKmsCommittee(): Promise<ControllableKmsCo
   };
 }
 
-// Submits each signer's ContextCreationConfirmation for a pending context. `nodes`/`thresholds` are the
-// pending context's definition. Returns the epoch ID of the NewKmsEpoch emitted once the creation quorum
+// Submits each signer's ContextCreationConfirmation for a pending context. `nodes`/`connectorUrls`/`thresholds`
+// are the pending context's definition. Returns the epoch ID of the NewKmsEpoch emitted once the creation quorum
 // is reached.
 export async function confirmContextCreationBySigners(
   proxyAddress: string,
   signerSigners: Signer[],
   contextId: bigint,
   nodes: KmsNodeParamsStruct[],
+  connectorUrls: string[],
   thresholds: KmsThresholdsStruct,
   extraData = '0x',
 ): Promise<bigint | undefined> {
   const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress);
-  return submitContextCreationConfirmations(pc, signerSigners, contextId, nodes, thresholds, extraData);
+  return submitContextCreationConfirmations(pc, signerSigners, contextId, nodes, connectorUrls, thresholds, extraData);
 }
 
 // Submits each signer's EpochActivationConfirmation over one key result and one CRS result.
@@ -280,7 +293,14 @@ export async function rotateToNewKmsContext(
   committee: ControllableKmsCommittee,
 ): Promise<bigint> {
   const asOwner = await ethers.getContractAt('ProtocolConfig', proxyAddress, ownerSigner);
-  const defineTx = await asOwner.defineNewKmsContextAndEpoch(committee.nodes, committee.thresholds, '', []);
+  const connectorUrls = buildConnectorUrls(committee.nodes.length);
+  const defineTx = await asOwner.defineNewKmsContextAndEpoch(
+    committee.nodes,
+    connectorUrls,
+    committee.thresholds,
+    '',
+    [],
+  );
   const defineReceipt = await defineTx.wait();
   const contextId = findEventArg(asOwner, defineReceipt!.logs, 'NewKmsContext', 'contextId');
   if (contextId === undefined) {
@@ -292,6 +312,7 @@ export async function rotateToNewKmsContext(
     committee.signerSigners,
     contextId,
     committee.nodes,
+    connectorUrls,
     committee.thresholds,
   );
   if (epochId === undefined) {

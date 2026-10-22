@@ -59,7 +59,7 @@ abstract contract ProtocolConfigReplicaTestBase is HostContractsDeployerTestUtil
             owner,
             CTX1,
             EPOCH1,
-            _toKmsNodes(_makeKmsNodeParams(N)),
+            _toKmsNodes(_makeKmsNodeParams(N), _makeConnectorUrls(N)),
             _thresholds(),
             CANONICAL_CHAIN_ID,
             CANONICAL_ADDRESS
@@ -97,13 +97,15 @@ abstract contract ProtocolConfigReplicaTestBase is HostContractsDeployerTestUtil
 
     function _nodes(uint256 seed) internal pure returns (KmsNode[] memory nodes) {
         uint256[] memory keys = _keys(seed);
+        string[] memory connectorUrls = _makeConnectorUrls(N);
         nodes = new KmsNode[](N);
         for (uint256 i = 0; i < N; i++) {
             nodes[i] = KmsNode({
                 txSenderAddress: address(uint160(0xA1 + i + seed * 0x10)),
                 signerAddress: vm.addr(keys[i]),
                 ipAddress: "127.0.0.1",
-                storageUrl: "https://s.example.com"
+                storageUrl: "https://s.example.com",
+                connectorUrl: connectorUrls[i]
             });
         }
     }
@@ -250,6 +252,14 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
     // Canonical mirror initializer
     // -----------------------------------------------------------------------
 
+    function test_initializeFromCanonicalStoresNodes() public {
+        _setupReplica();
+        assertEq(
+            abi.encode(protocolConfigReplica.getKmsNodesForContext(CTX1)),
+            abi.encode(_toKmsNodes(_makeKmsNodeParams(N), _makeConnectorUrls(N)))
+        );
+    }
+
     function test_revertInitializeFromCanonicalInvalidEpochId() public {
         _deployACL(owner);
         _deployEmptyProtocolConfigProxy();
@@ -257,7 +267,7 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         address impl = address(new ProtocolConfigReplica());
         uint256 canonicalContextId = KMS_CONTEXT_COUNTER_BASE + 1;
         uint256 invalidEpochId = EPOCH_COUNTER_BASE;
-        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2));
+        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2), _makeConnectorUrls(2));
         KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(owner);
@@ -278,7 +288,7 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         address impl = address(new ProtocolConfigReplica());
         uint256 invalidContextId = KMS_CONTEXT_COUNTER_BASE;
         uint256 canonicalEpochId = EPOCH_COUNTER_BASE + 1;
-        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2));
+        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2), _makeConnectorUrls(2));
         KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(owner);
@@ -297,7 +307,7 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         _deployEmptyProtocolConfigProxy();
 
         address impl = address(new ProtocolConfigReplica());
-        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2));
+        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2), _makeConnectorUrls(2));
         KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(owner);
@@ -355,7 +365,7 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         protocolConfigReplica.initializeFromCanonical(
             canonicalContextId,
             canonicalEpochId,
-            _toKmsNodes(_makeKmsNodeParams(1)),
+            _toKmsNodes(_makeKmsNodeParams(1), _makeConnectorUrls(1)),
             _defaultThresholds(),
             CANONICAL_CHAIN_ID,
             CANONICAL_ADDRESS
@@ -375,7 +385,7 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
                 (
                     KMS_CONTEXT_COUNTER_BASE + 1,
                     EPOCH_COUNTER_BASE + 1,
-                    _toKmsNodes(_makeKmsNodeParams(2)),
+                    _toKmsNodes(_makeKmsNodeParams(2), _makeConnectorUrls(2)),
                     _defaultThresholds(),
                     CANONICAL_CHAIN_ID,
                     CANONICAL_ADDRESS

@@ -4,7 +4,12 @@ import { ethers, upgrades } from 'hardhat';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { ACL, ACLUpgradedExample } from '../../types';
 import { getSigners, initSigners } from '../signers';
-import { buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from '../tasks/taskHelpers';
+import {
+  buildConnectorUrls,
+  buildProtocolConfigNodes,
+  buildProtocolConfigThresholds,
+  readHostAddress,
+} from '../tasks/taskHelpers';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 describe('Upgrades', function () {
@@ -45,7 +50,13 @@ describe('Upgrades', function () {
     const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
       call: {
         fn: 'initializeFromEmptyProxy',
-        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+        args: [
+          buildProtocolConfigNodes(),
+          buildConnectorUrls(buildProtocolConfigNodes().length),
+          buildProtocolConfigThresholds(),
+          '',
+          [],
+        ],
       },
     });
     await pc.waitForDeployment();

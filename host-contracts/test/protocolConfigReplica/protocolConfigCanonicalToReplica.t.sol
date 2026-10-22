@@ -73,7 +73,7 @@ contract ProtocolConfigCanonicalToReplicaTest is ProtocolConfigTestBase {
                 (
                     CTX1,
                     EPOCH1,
-                    _toKmsNodes(_makeKmsNodeParams(2)),
+                    _toKmsNodes(_makeKmsNodeParams(2), _makeConnectorUrls(2)),
                     _defaultThresholds(),
                     canonicalChainId,
                     address(protocolConfig)

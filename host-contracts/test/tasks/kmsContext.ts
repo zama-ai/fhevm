@@ -33,6 +33,7 @@ interface NodeConfig {
   mpcIdentity: string;
   caCert: string;
   storagePrefix: string;
+  connectorUrl: string;
 }
 
 interface Thresholds {
@@ -52,6 +53,7 @@ function makeNode(txSenderAddress: string, signerAddress: string, idx: number): 
     mpcIdentity: `node-${idx}`,
     caCert: '0x',
     storagePrefix: `kms-node-${idx}`,
+    connectorUrl: `https://kms-connector-${idx}.example.com`,
   };
 }
 
@@ -84,6 +86,7 @@ function setKmsEnv(
     process.env[`KMS_NODE_MPC_IDENTITY_${i}`] = node.mpcIdentity;
     process.env[`KMS_NODE_CA_CERT_${i}`] = node.caCert;
     process.env[`KMS_NODE_STORAGE_PREFIX_${i}`] = node.storagePrefix;
+    process.env[`KMS_NODE_CONNECTOR_URL_${i}`] = node.connectorUrl;
   });
   process.env.PUBLIC_DECRYPTION_THRESHOLD = String(thresholds.publicDecryption);
   process.env.USER_DECRYPTION_THRESHOLD = String(thresholds.userDecryption);
@@ -137,10 +140,11 @@ describe('KMS context tasks', function () {
         expect(decodedNodes[i][6]).to.equal(node.caCert);
         expect(decodedNodes[i][7]).to.equal(node.storagePrefix);
       });
-      expect(decoded[1][0]).to.equal(BigInt(DEFAULT_THRESHOLDS.publicDecryption));
-      expect(decoded[1][3]).to.equal(BigInt(DEFAULT_THRESHOLDS.mpc));
-      expect(decoded[2]).to.equal('v0.14.0');
-      expect(decoded[3][0][0]).to.equal('0xaa');
+      expect(decoded[1]).to.deep.equal(nodes.map((n) => n.connectorUrl));
+      expect(decoded[2][0]).to.equal(BigInt(DEFAULT_THRESHOLDS.publicDecryption));
+      expect(decoded[2][3]).to.equal(BigInt(DEFAULT_THRESHOLDS.mpc));
+      expect(decoded[3]).to.equal('v0.14.0');
+      expect(decoded[4][0][0]).to.equal('0xaa');
     });
 
     it('derives the new context id as the allocation counter + 1 from a live ProtocolConfig', async function () {
@@ -194,6 +198,11 @@ describe('KMS context tasks', function () {
       expect(status.flow).to.equal('context-switch');
       expect(status.contextState).to.equal('PENDING');
       expect(status.newSigners).to.deep.equal(newNodes.map((n) => n.signerAddress));
+      const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
+      for (const node of newNodes) {
+        const stored = await protocolConfig.getKmsNodeForContext(status.pendingContextId!, node.txSenderAddress);
+        expect(stored.connectorUrl).to.equal(node.connectorUrl);
+      }
     });
   });
 
@@ -288,7 +297,17 @@ describe('KMS context tasks', function () {
     }
 
     async function defineSwitch(nodes = newNodes): Promise<bigint> {
-      const receipt = await (await (await asOwner()).defineNewKmsContextAndEpoch(nodes, newThresholds, '', [])).wait();
+      const receipt = await (
+        await (
+          await asOwner()
+        ).defineNewKmsContextAndEpoch(
+          nodes,
+          nodes.map((n) => n.connectorUrl),
+          newThresholds,
+          '',
+          [],
+        )
+      ).wait();
       const contextId = findEventArg(protocolConfig, receipt!.logs, 'NewKmsContext', 'contextId');
       if (contextId === undefined) {
         throw new Error('NewKmsContext not emitted');
@@ -301,7 +320,15 @@ describe('KMS context tasks', function () {
       signers: Signer[],
       extraData = '0x',
     ): Promise<bigint | undefined> {
-      return confirmContextCreationBySigners(proxyAddress, signers, contextId, newNodes, newThresholds, extraData);
+      return confirmContextCreationBySigners(
+        proxyAddress,
+        signers,
+        contextId,
+        newNodes,
+        newNodes.map((n) => n.connectorUrl),
+        newThresholds,
+        extraData,
+      );
     }
 
     beforeEach(async function () {
@@ -573,7 +600,15 @@ describe('KMS context tasks', function () {
       ];
       const overlapSigners = [oldSigners[0], newSigners[1]];
       const contextId = await defineSwitch(overlapNodes);
-      await confirmContextCreationBySigners(proxyAddress, [oldSigners[0]], contextId, overlapNodes, newThresholds);
+      const overlapConnectorUrls = overlapNodes.map((n) => n.connectorUrl);
+      await confirmContextCreationBySigners(
+        proxyAddress,
+        [oldSigners[0]],
+        contextId,
+        overlapNodes,
+        overlapConnectorUrls,
+        newThresholds,
+      );
 
       const creation = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(creation.newSignersConfirmed).to.deep.equal([bothCommittees]);
@@ -586,6 +621,7 @@ describe('KMS context tasks', function () {
         [newSigners[1]],
         contextId,
         overlapNodes,
+        overlapConnectorUrls,
         newThresholds,
       );
       await confirmEpochActivationBySigners(proxyAddress, overlapSigners, contextId, epochId!);

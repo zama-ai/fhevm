@@ -100,6 +100,9 @@ scDeploy:
     - name: KMS_NODE_STORAGE_URL_x
       value: ""
 
+    - name: KMS_NODE_CONNECTOR_URL_x
+      value: ""
+
     - name: PUBLIC_DECRYPTION_THRESHOLD
       value: 7
     - name: USER_DECRYPTION_THRESHOLD
