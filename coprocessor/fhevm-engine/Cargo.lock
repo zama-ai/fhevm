@@ -9219,11 +9219,18 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 name = "upgrade-controller"
 version = "0.7.0"
 dependencies = [
+ "alloy",
  "anyhow",
+ "aws-config",
+ "aws-sdk-s3",
  "clap",
+ "consensus-detector",
  "fhevm-engine-common",
+ "hex",
+ "reqwest 0.12.23",
  "serde",
  "serde_json",
+ "sha3 0.10.8",
  "sqlx",
  "test-harness",
  "thiserror 2.0.16",
