@@ -150,10 +150,11 @@ From `coprocessor/fhevm-engine`, supply PostgreSQL and a Redis broker:
 
 ```sh
 cargo test -p host-listener --lib consumer::catchup::
-CATCHUP_BROKER_URL=redis://127.0.0.1:6379 cargo test -p host-listener --test consumer_catchup_tests -- --ignored
-cargo test -p host-listener --test consumer_catchup_store_tests -- --ignored
+CATCHUP_BROKER_URL=redis://127.0.0.1:6379 cargo test -p host-listener --test consumer_catchup_tests
+cargo test -p host-listener --test consumer_catchup_store_tests
 ```
 
+Both integration suites run in ordinary host-listener PR CI, which supplies Redis.
 The integration tests use the existing test harness (Docker by default). Its
 localhost reset mode must only point to a disposable database, and must run with
 one test thread. The tests verify parameter/ID reuse, concurrent replicas,
