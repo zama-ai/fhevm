@@ -42,11 +42,6 @@ pub struct ExtraData {
 ///
 /// Empty or `0x00` → both context_id and epoch_id are `None`.
 /// Version `0x01` → epoch_id is `None`.
-///
-/// Trailing bytes are accepted on purpose. On the HTTP decryption path the decryption id is derived
-/// from the request body, and callers append bytes to get distinct ids for the same handles (the
-/// benchmarking tool relies on it). The gateway and the host `KMSVerifier` accept exact lengths only,
-/// so a request that is paid for on chain is never one the host rejects.
 pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
     match extra_data.first().copied() {
         None | Some(EXTRA_DATA_V0_VERSION) => Ok(ExtraData {

@@ -81,7 +81,7 @@ these requests anyway; failing here saves n calls). Every failure is `400 malfor
 | `payload.allowedContracts` | at most 10 |
 | `payload.publicKey` | non-empty |
 | `payload.requestValidity` | `startTimestamp <= now` and `startTimestamp + durationSeconds > now` |
-| `extraData` | empty or `0x00` (v0), `0x01` + 32-byte context id (v1), `0x02` + context id + 32-byte epoch id (v2); trailing bytes allowed, they give the same handles distinct decryption ids |
+| `extraData` | empty or `0x00` (v0), `0x01` + 32-byte context id (v1), `0x02` + context id + 32-byte epoch id (v2); trailing bytes allowed |
 
 Deliberately not checked here: the user's signature (ERC-1271, connector worker), the signature length, the ACL and
 the ciphertext readiness (connector worker; they surface as the dominant error, section 5).

@@ -88,9 +88,7 @@ pub fn handles<'a>(
 }
 
 /// Empty or `0x00` (v0), `0x01` + 32-byte context id (v1), `0x02` + context id + 32-byte epoch id (v2).
-/// Trailing bytes are allowed on purpose: the connector derives the decryption id from the request
-/// body, and callers append bytes to get distinct ids for the same handles (the benchmarking tool
-/// relies on it). Exact lengths are enforced on chain, where a request is paid for.
+/// Trailing bytes are allowed, as the connector allows them.
 pub fn extra_data(field: &str, bytes: &[u8]) -> Result<(), Invalid> {
     let ok = match bytes.first() {
         None | Some(0) => true,
