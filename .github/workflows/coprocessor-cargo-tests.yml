@@ -200,6 +200,21 @@ jobs:
       if: ${{ matrix.needs_localstack }}
       run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
 
+    - name: Start Redis for consumer catchup tests
+      if: ${{ matrix.package == 'host-listener' }}
+      timeout-minutes: 5
+      run: |
+        set -euo pipefail
+        docker run --rm -d -p 6379:6379 --name catchup-redis redis:8.6.2
+        for _ in $(seq 1 30); do
+          if docker exec catchup-redis redis-cli ping | grep -qx PONG; then
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "::error::Redis did not become ready"
+        exit 1
+
     # Shared by every test in the job, so the FHE keys are imported once, not per test.
     - name: Start postgres
       if: ${{ matrix.use_nextest }}
@@ -221,6 +236,7 @@ jobs:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
         SQLX_OFFLINE: 'true'
         TEST_GLOBAL_LOCALSTACK: ${{ matrix.needs_localstack && '1' || '0' }}
+        CATCHUP_BROKER_URL: redis://127.0.0.1:6379
         TEST_PACKAGE: ${{ matrix.package }}
         IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
       run: |

@@ -12,7 +12,6 @@ fn args(from: i64, to: Option<i64>, keep: bool) -> ManualCatchupArgs {
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL"]
 async fn flow_is_part_of_identity_and_delivery_admission() {
     let instance = setup_test_db(ImportMode::None).await.unwrap();
     let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
@@ -122,7 +121,6 @@ async fn flow_is_part_of_identity_and_delivery_admission() {
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL"]
 async fn creation_leases_atomically_and_matching_flags_do_not_steal() {
     let instance = setup_test_db(ImportMode::None).await.unwrap();
     let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
@@ -182,7 +180,6 @@ async fn creation_leases_atomically_and_matching_flags_do_not_steal() {
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL"]
 async fn expired_owner_cannot_renew_or_acknowledge_after_takeover() {
     let instance = setup_test_db(ImportMode::None).await.unwrap();
     let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
@@ -295,7 +292,6 @@ async fn expired_owner_cannot_renew_or_acknowledge_after_takeover() {
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL"]
 async fn ownership_renewal_extends_the_database_deadline_without_reissuing() {
     let instance = setup_test_db(ImportMode::None).await.unwrap();
     let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
@@ -400,7 +396,6 @@ async fn owner_for(pool: &PgPool, id: uuid::Uuid) -> uuid::Uuid {
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL"]
 async fn completion_is_scoped_idempotent_and_does_not_override_suppression() {
     let instance = setup_test_db(ImportMode::None).await.unwrap();
     let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
@@ -500,7 +495,6 @@ async fn completion_is_scoped_idempotent_and_does_not_override_suppression() {
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL"]
 async fn suppression_waits_for_ingestion_and_prechecked_old_blocks_cannot_commit(
 ) {
     use alloy::primitives::{Address, B256};
@@ -616,7 +610,6 @@ async fn suppression_waits_for_ingestion_and_prechecked_old_blocks_cannot_commit
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL"]
 async fn replicas_reuse_the_first_id_and_relative_bounds() {
     let instance = setup_test_db(ImportMode::None).await.unwrap();
     let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
@@ -681,7 +674,6 @@ async fn replicas_reuse_the_first_id_and_relative_bounds() {
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL"]
 async fn replacement_persists_cancellation_and_no_override_preserves_other_ids()
 {
     let instance = setup_test_db(ImportMode::None).await.unwrap();
@@ -784,7 +776,6 @@ async fn replacement_persists_cancellation_and_no_override_preserves_other_ids()
 }
 
 #[tokio::test]
-#[ignore = "requires PostgreSQL"]
 async fn waiting_for_a_reference_and_empty_startup_leave_intent_untouched() {
     let instance = setup_test_db(ImportMode::None).await.unwrap();
     let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
