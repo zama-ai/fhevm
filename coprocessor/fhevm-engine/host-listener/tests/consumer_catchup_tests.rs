@@ -112,9 +112,10 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
             .build().unwrap();
         control.ensure_topology().await.unwrap();
         let control = tokio::spawn(control.run(AsyncHandlerPayloadClassified::new(
-            move |request: CatchupPayload| {
+            move |mut request: CatchupPayload| {
                 let tx = request_tx.clone();
                 async move {
+                    request.validate().unwrap();
                     tx.send(request).unwrap();
                     Ok(())
                 }
@@ -320,9 +321,10 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
             requests_consumer.ensure_topology().await.unwrap();
             let request_tx = request_tx.clone();
             controls.spawn(requests_consumer.run(AsyncHandlerPayloadClassified::new(
-                move |request: CatchupPayload| {
+                move |mut request: CatchupPayload| {
                     let tx = request_tx.clone();
                     async move {
+                        request.validate().unwrap();
                         assert_eq!(finalized, request.catchup_id != Some(b));
                         tx.send(request).unwrap();
                         Ok(())
@@ -336,9 +338,10 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
             cancels_consumer.ensure_topology().await.unwrap();
             let cancel_tx = cancel_tx.clone();
             controls.spawn(cancels_consumer.run(AsyncHandlerPayloadClassified::new(
-                move |request: CancelCatchupPayload| {
+                move |mut request: CancelCatchupPayload| {
                     let tx = cancel_tx.clone();
                     async move {
+                        request.validate().unwrap();
                         assert_eq!(finalized, request.catchup_id != b);
                         tx.send(request).unwrap();
                         Ok(())
@@ -625,9 +628,10 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
         .unwrap();
     request_control.ensure_topology().await.unwrap();
     controls.spawn(request_control.run(AsyncHandlerPayloadClassified::new(
-        move |command: CatchupPayload| {
+        move |mut command: CatchupPayload| {
             let tx = request_tx.clone();
             async move {
+                command.validate().unwrap();
                 tx.send(command).unwrap();
                 Ok(())
             }

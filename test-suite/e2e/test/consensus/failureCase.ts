@@ -35,6 +35,7 @@ import { requireDriftBaseline, requireIngestionTarget, requireBacklogTargets, re
  *   COPROCESSOR_COUNT         fleet size, default 3
  */
 import { expect } from 'chai';
+import { v7 as uuidv7 } from 'uuid';
 import { tamperUnsubmittedDigest } from './canary';
 import { markDetectorPublicationStarted, completeDetectorRecovery } from './abortRecovery';
 
@@ -473,8 +474,8 @@ describe('Service failure case', function () {
           const request = await withPool(databaseUrls[VICTIM], pool => pool.query<{ id: string }>(
             `INSERT INTO host_consumer_catchups
              (id, chain_id, consumer_id, finalized, requested_from, requested_to, block_start, block_end)
-             VALUES (gen_random_uuid(), $1, $2, FALSE, $3, $4, $3, $4) RETURNING id::text`,
-            [chainId, `host-listener-consumer.${chainId}`, start, end]));
+             VALUES ($1, $2, $3, FALSE, $4, $5, $4, $5) RETURNING id::text`,
+            [uuidv7(), chainId, `host-listener-consumer.${chainId}`, start, end]));
           catchupId = request.rows[0].id;
           console.info(`[failure-case/${CASE_ID}] persisted unowned catchup ${catchupId} [${start}, ${end}] from saved height ${watermark} to current RPC head`);
         }
