@@ -54,13 +54,6 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
         defaultRpcUrl: PUBLIC_AMOY_RPC,
       },
       {
-        chainId: 560048,
-        label: 'hoodi',
-        fallbackBlockTimeSeconds: 12,
-        rpcUrlEnv: 'HOODI_RPC_URL',
-        defaultRpcUrl: PUBLIC_HOODI_RPC,
-      },
-      {
         chainId: 97,
         label: 'bnb-testnet',
         fallbackBlockTimeSeconds: 0.45,
