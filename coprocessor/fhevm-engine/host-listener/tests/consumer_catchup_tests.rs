@@ -90,6 +90,12 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
             ).await.unwrap().unwrap();
             expected.push((id, 900, 999));
         }
+        for (_, start, end) in &expected {
+            seed_history(&pool, chain_id.as_i64(), &[start - 1, end - 1]).await;
+        }
+        if matches!(startup, Startup::NewCatchup) {
+            seed_history(&pool, chain_id.as_i64(), &[1899, 1998]).await;
+        }
         // These requests were already published before their listeners died.
         sqlx::query("UPDATE host_consumer_catchups SET request_pending = false WHERE chain_id = $1 AND consumer_id = $2")
             .bind(chain_id.as_i64()).bind(&identity).execute(&pool).await.unwrap();
@@ -259,7 +265,10 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
         let pool = sqlx::PgPool::connect(instance.db_url.as_str())
             .await
             .unwrap();
-        let chain_id = ChainId::try_from(123456789u64).unwrap();
+        let chain_id = ChainId::try_from(
+            (uuid::Uuid::new_v4().as_u128() % 900_000_000) as u64 + 100_000_000,
+        ).unwrap();
+        seed_history(&pool, chain_id.as_i64(), &[899, 939]).await;
         let identity = format!("host-listener-consumer.{}", chain_id.as_u64());
         let flags = |from, to, keep| ManualCatchupArgs {
             catchup_from_block: Some(from),
@@ -536,6 +545,12 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
     let pool = sqlx::PgPool::connect(instance.db_url.as_str())
         .await
         .unwrap();
+    seed_history(
+        &pool,
+        chain_id.as_i64(),
+        &[899, 908, 924, if bounded { 949 } else { 998 }],
+    )
+    .await;
     let namespace = chain_id_to_namespace(chain_id.as_u64());
     let (watch_tx, mut watch_rx) = mpsc::unbounded_channel();
     let (catchup_tx, mut catchup_rx) = mpsc::unbounded_channel();
@@ -733,11 +748,30 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
         catchup_rx.try_recv().is_err(),
         "only the selected catchup flow is requested"
     );
-    // Final delivery repairs an event missed by live ingestion and catchup.
+    // Final delivery also exercises a missing history link. The repair must
+    // have persisted intent before its reply can pass catchup admission.
     publisher
         .publish(
             &routing::consumer_final_event_routing(first.clone()),
             &block(910, BlockFlow::Final, None),
+        )
+        .await
+        .unwrap();
+    let repair = if unfinalized {
+        catchup_rx.recv().await.unwrap()
+    } else {
+        request_rx.recv().await.unwrap()
+    };
+    assert_eq!((repair.block_start, repair.block_end), (909, 909));
+    let repair_id = repair.catchup_id.unwrap();
+    let stored: (i64, i64, bool) = sqlx::query_as(
+        "SELECT block_start, block_end, finalized FROM host_consumer_catchups WHERE id = $1",
+    ).bind(repair_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(stored, (909, 909, true));
+    publisher
+        .publish(
+            &routing::consumer_final_catchup_event_routing(first.clone()),
+            &block(909, BlockFlow::FinalCatchup, Some(repair_id)),
         )
         .await
         .unwrap();
@@ -750,7 +784,24 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
             .await
             .unwrap();
     }
-    wait_for_events(&pool, &[900, 910, 925, end, 1000, 1001, 1002]).await;
+    wait_for_events(&pool, &[900, 909, 910, 925, end, 1000, 1001, 1002]).await;
+    loop {
+        let repaired: String = sqlx::query_scalar(
+            "SELECT status FROM host_consumer_catchups WHERE id = $1",
+        )
+        .bind(repair_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if repaired == "DONE" {
+            break;
+        }
+        assert!(
+            !run.is_finished(),
+            "listener stopped before completing gap repair"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             let finals: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM host_chain_blocks_valid WHERE chain_id = $1 AND block_number IN (900, 910, 925, $2) AND block_status = 'finalized'")
@@ -808,7 +859,9 @@ fn event_block(
         chain_id,
         block_number: number,
         block_hash: handle,
-        parent_hash: B256::ZERO,
+        parent_hash: B256::from(
+            U256::from(number.saturating_sub(1)).to_be_bytes::<32>(),
+        ),
         timestamp: 1_700_000_000,
         catchup_id,
         transactions: vec![TransactionPayload {
@@ -829,6 +882,26 @@ fn event_block(
                 })
                 .collect(),
         }],
+    }
+}
+
+// Seed finalized parent headers for isolated replay deliveries. TFHE/ACL
+// evidence still has to be ingested by the consumer.
+async fn seed_history(pool: &sqlx::PgPool, chain_id: i64, heights: &[u64]) {
+    use alloy::primitives::U256;
+    for height in heights {
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+             (chain_id, block_number, block_hash, parent_hash, block_status)
+             VALUES ($1, $2, $3, $4, 'finalized')",
+        )
+        .bind(chain_id)
+        .bind(*height as i64)
+        .bind(U256::from(*height).to_be_bytes::<32>().to_vec())
+        .bind(U256::from(height - 1).to_be_bytes::<32>().to_vec())
+        .execute(pool)
+        .await
+        .unwrap();
     }
 }
 
