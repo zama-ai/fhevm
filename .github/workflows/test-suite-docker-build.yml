@@ -79,11 +79,12 @@ jobs:
             echo "sdk_version=" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Use Node.js
+      - name: Select patched Node for npm lookup
         if: github.event_name == 'release'
-        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # zizmor: ignore[cache-poisoning] -- v4.0.2 caches only with an explicit cache input.
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
           node-version: '>=22.23.4 <23'
+          package-manager-cache: false
 
       - name: Wait for @fhevm/sdk on npm
         if: github.event_name == 'release'
