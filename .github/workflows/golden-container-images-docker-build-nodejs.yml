@@ -40,7 +40,7 @@ jobs:
         with:
           filters: |
             golden-nodejs:
-              - '.github/workflows/golden-images-docker-build.yml'
+              - '.github/workflows/golden-container-images-docker-build-nodejs.yml'
               - 'golden-container-images/nodejs/**'
   build:
     name: golden-container-images-docker-build-nodejs/build
@@ -64,3 +64,35 @@ jobs:
       image-name: "fhevm/gci/nodejs"
       docker-file: "./golden-container-images/nodejs/Dockerfile"
       app-cache-dir: "fhevm-golden-nodejs"
+
+  build-arm64:
+    name: golden-container-images-docker-build-nodejs/build-arm64
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: 'read' # Required to checkout the image source
+      packages: 'write' # Required to publish ARM64 and the combined manifest
+    env:
+      IMAGE: ${{ needs.build.outputs.image }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+      - uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and verify ARM64 image
+        run: |
+          docker build --platform linux/arm64 --target prod \
+            --tag "${IMAGE}-arm64-prod" \
+            --file golden-container-images/nodejs/Dockerfile .
+          docker run --rm --network none --entrypoint /bin/bash "${IMAGE}-arm64-prod" -c \
+            'set -e; node --version; test "$(node -p process.arch)" = arm64; npm --version; bash --version; kubectl version --client; id'
+      - name: Publish combined image
+        run: |
+          docker push "${IMAGE}-arm64-prod"
+          docker buildx imagetools create --tag "$IMAGE" \
+            "${IMAGE}-amd64-prod" "${IMAGE}-arm64-prod"
+          docker buildx imagetools inspect "$IMAGE"
