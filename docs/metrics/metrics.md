@@ -207,58 +207,87 @@ Exclude `version` probes when measuring decryption traffic. Proxy metrics start 
 TLS failures and incomplete headers are not counted. Requests still in progress when the process exits
 are not recorded.
 
-#### Metric Names: `kms_connector_proxy_http_requests_counter`, `kms_connector_endpoint_http_requests_counter`
+#### Metric Name: `kms_connector_proxy_http_requests_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `route`: `public_decrypt`, `user_decrypt`, `version` or `unmatched`.
+   - `status`: HTTP response status; `0` means no response status.
+   - `code`: API `ErrorCode` value of an error written by the proxy, `upstream` for responses passed through from the endpoint without body inspection, `not_found`, `method_not_allowed`, `transport_error` or `cancelled`.
+ - **Description**: One count per completed or cancelled request.
+ - **Alarm**: Sustained decryption 5xx responses; break down by code, especially `timeout` and `upstream_transient`. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
+   - **Recommendation**: `sum by (code) (increase(kms_connector_proxy_http_requests_counter{route=~"public_decrypt|user_decrypt", status=~"5.."}[5m])) > 5`.
 
-- **Type / labels**: Counter; `route`, `status`, `code`.
-- **Description**: One count per completed or cancelled request. Status `0` means no response status. Codes are API `ErrorCode` values or `success`, `upstream`, `not_found`, `method_not_allowed`, `transport_error`, `cancelled`, `unclassified`. Proxy `upstream` responses pass through without body inspection. Endpoint completion does not guarantee client delivery.
-- **Alarm**: Sustained decryption 5xx responses; break down by code, especially `overloaded` and `timeout`. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
-  - **Recommendation**: `sum by (code) (increase(kms_connector_endpoint_http_requests_counter{route=~"public_decrypt|user_decrypt", status=~"5.."}[5m])) > 5`.
+#### Metric Name: `kms_connector_endpoint_http_requests_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `route`, `status`: see [description](#metric-name-kms_connector_proxy_http_requests_counter)
+   - `code`: API `ErrorCode` value, `success`, `not_found`, `method_not_allowed`, `cancelled` or `unclassified`.
+ - **Description**: One count per completed or cancelled request. Endpoint completion does not guarantee client delivery.
+ - **Alarm**: Sustained decryption 5xx responses; break down by code, especially `overloaded` and `timeout`. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
+   - **Recommendation**: `sum by (code) (increase(kms_connector_endpoint_http_requests_counter{route=~"public_decrypt|user_decrypt", status=~"5.."}[5m])) > 5`.
 
-#### Metric Names: `kms_connector_proxy_http_request_duration_seconds`, `kms_connector_endpoint_http_request_duration_seconds`
+#### Metric Name: `kms_connector_proxy_http_request_latency_seconds`
+ - **Type**: Histogram
+ - **Labels**:
+   - `route`: see [description](#metric-name-kms_connector_proxy_http_requests_counter)
+ - **Description**: Request duration in seconds, including failures and cancellations. Bucket bounds: 0.01–60 seconds, covering the endpoint's default 30-second decryption timeout and the proxy's default 60-second endpoint response timeout.
+ - **Alarm**: p95 above 80% of the endpoint's `decryption_timeout` for 5 minutes, with sufficient traffic. The proxy waits on the endpoint, so the endpoint's threshold applies.
+   - **Recommendation**: with the default 30-second timeout, `histogram_quantile(0.95, sum by (le, route) (rate(kms_connector_proxy_http_request_latency_seconds_bucket{route=~"public_decrypt|user_decrypt"}[5m]))) > 24`.
 
-- **Type / labels**: Histogram; `route`.
-- **Description**: Request duration in seconds, including failures and cancellations. Bucket bounds: 0.01–60 seconds, covering the endpoint's default 30-second decryption timeout and the proxy's default 60-second endpoint response timeout.
-- **Alarm**: p95 above 80% of the endpoint's `decryption_timeout` for 5 minutes, with sufficient traffic. The proxy waits on the endpoint, so the same threshold applies to both services.
-  - **Recommendation**: with the default 30-second timeout, `histogram_quantile(0.95, sum by (le, route) (rate(kms_connector_endpoint_http_request_duration_seconds_bucket{route=~"public_decrypt|user_decrypt"}[5m]))) > 24`.
+#### Metric Name: `kms_connector_endpoint_http_request_latency_seconds`
+ - **Type**: Histogram
+ - **Labels**:
+   - `route`: see [description](#metric-name-kms_connector_proxy_http_requests_counter)
+ - **Description**: see [description](#metric-name-kms_connector_proxy_http_request_latency_seconds)
+ - **Alarm**: see [description](#metric-name-kms_connector_proxy_http_request_latency_seconds)
+   - **Recommendation**: with the default 30-second timeout, `histogram_quantile(0.95, sum by (le, route) (rate(kms_connector_endpoint_http_request_latency_seconds_bucket{route=~"public_decrypt|user_decrypt"}[5m]))) > 24`.
 
-#### Metric Names: `kms_connector_proxy_http_requests_in_flight`, `kms_connector_endpoint_http_requests_in_flight`
+#### Metric Name: `kms_connector_proxy_http_requests_in_flight`
+ - **Type**: Gauge
+ - **Description**: Active requests after header parsing, of every route; decremented when the request completes or is cancelled.
+ - **Alarm**: Diagnostic only; compare with traffic and latency.
 
-- **Type**: Gauge.
-- **Description**: Active requests after header parsing, of every route; decremented when the request completes or is cancelled.
-- **Alarm**: Diagnostic only; compare with traffic and latency.
+#### Metric Name: `kms_connector_endpoint_http_requests_in_flight`
+ - **Type**: Gauge
+ - **Description**: see [description](#metric-name-kms_connector_proxy_http_requests_in_flight)
+ - **Alarm**: Diagnostic only; compare with traffic and latency.
 
-#### Metric Names: `kms_connector_endpoint_decryptions_in_flight`, `kms_connector_endpoint_decryption_capacity`
+#### Metric Name: `kms_connector_endpoint_decryptions_in_flight`
+ - **Type**: Gauge
+ - **Description**: Used admission permits, read from the semaphore on each scrape. Duplicate requests each hold a permit.
+ - **Alarm**: Utilization above 90% of [`kms_connector_endpoint_decryption_capacity`](#metric-name-kms_connector_endpoint_decryption_capacity) for 5 minutes, together with increasing overload responses.
+   - **Recommendation**: `max(kms_connector_endpoint_decryptions_in_flight / kms_connector_endpoint_decryption_capacity) > 0.9` for 5 minutes, and `sum(increase(kms_connector_endpoint_http_requests_counter{code="overloaded"}[5m])) > 0`.
 
-- **Type**: Gauges.
-- **Description**: Used and total admission permits, read from the semaphore. Duplicate requests each hold a permit.
-- **Alarm**: Utilization above 90% for 5 minutes together with increasing overload responses.
-  - **Recommendation**: `max(kms_connector_endpoint_decryptions_in_flight / kms_connector_endpoint_decryption_capacity) > 0.9` for 5 minutes, and `sum(increase(kms_connector_endpoint_http_requests_counter{code="overloaded"}[5m])) > 0`.
+#### Metric Name: `kms_connector_endpoint_decryption_capacity`
+ - **Type**: Gauge
+ - **Description**: Total admission permits, i.e. the configured maximum number of in-flight decryption requests.
 
 #### Metric Name: `kms_connector_endpoint_decryption_lookup_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `route`: `public_decrypt` or `user_decrypt`.
+   - `outcome`: `served` returns an existing response; `stored` submits new work; `retried` submits work after an old error; `already_in_progress` joins existing work, possibly skipping an old error.
+ - **Description**: Counts the committed decryption lookups.
+ - **Alarm**: Diagnostic only. Worker metrics cannot isolate HTTP work because they lack a source label.
 
-- **Type / labels**: Counter; `route`, `outcome`.
-- **Description**: Committed lookups: `served` returns an existing response; `stored` submits new work; `retried` submits work after an old error; `already_in_progress` joins existing work, possibly skipping an old error.
-- **Alarm**: Diagnostic only. Worker metrics cannot isolate HTTP work because they lack a source label.
-
-#### Metric Name: `kms_connector_endpoint_decryption_wait_duration_seconds`
-
-- **Type / labels**: Histogram; `route`.
-- **Description**: Seconds waiting for a response and reading its database row, for waits ending with a response (including API errors); existing responses served directly are not waited for. Timeouts, listener disruptions and cancellations are left out so they do not mask the response latency: the request counter counts them by `code`.
-- **Alarm**: Diagnostic only; use request timeout and server-error alarms.
+#### Metric Name: `kms_connector_endpoint_decryption_wait_latency_seconds`
+ - **Type**: Histogram
+ - **Labels**:
+   - `route`: `public_decrypt` or `user_decrypt`.
+ - **Description**: Seconds waiting for a response and reading its database row, for waits ending with a response (including API errors); existing responses served directly are not waited for. Timeouts, listener disruptions and cancellations are left out so they do not mask the response latency: the request counter counts them by `code`.
+ - **Alarm**: Diagnostic only; use request timeout and server-error alarms.
 
 #### Metric Name: `kms_connector_endpoint_response_listener_reconnections_counter`
-
-- **Type**: Counter.
-- **Description**: Successful PostgreSQL listener reconnections. Use pod restart monitoring for terminal failures.
-- **Alarm**: More than one reconnection in 5 minutes.
-  - **Recommendation**: `increase(kms_connector_endpoint_response_listener_reconnections_counter[5m]) > 1`.
+ - **Type**: Counter
+ - **Description**: Successful PostgreSQL listener reconnections. Use pod restart monitoring for terminal failures.
+ - **Alarm**: More than one reconnection in 5 minutes.
+   - **Recommendation**: `increase(kms_connector_endpoint_response_listener_reconnections_counter[5m]) > 1`.
 
 #### Metric Name: `kms_connector_endpoint_response_listener_waiters_failed_counter`
-
-- **Type**: Counter.
-- **Description**: Requests whose wait failed because the listener was disrupted; duplicate decryption IDs count separately.
-- **Alarm**: Any increase over 5 minutes; correlate with reconnections and `upstream_transient` responses.
-  - **Recommendation**: `increase(kms_connector_endpoint_response_listener_waiters_failed_counter[5m]) > 0`.
+ - **Type**: Counter
+ - **Description**: Requests whose wait failed because the listener was disrupted; duplicate decryption IDs count separately.
+ - **Alarm**: Any increase over 5 minutes; correlate with reconnections and `upstream_transient` responses.
+   - **Recommendation**: `increase(kms_connector_endpoint_response_listener_waiters_failed_counter[5m]) > 0`.
 
 #### Collection and traces
 
