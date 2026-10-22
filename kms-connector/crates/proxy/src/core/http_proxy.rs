@@ -41,7 +41,7 @@ const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path"
 
 /// Per-request context.
 pub struct RequestContext {
-    /// The root span of the request, disabled for `GET /v1/version` probes.
+    /// The root span of the request, disabled for `GET /version` probes.
     span: Span,
     /// Counts the request as in flight, and records it in the HTTP metrics once dropped.
     observation: RequestObservation,

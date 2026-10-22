@@ -117,7 +117,7 @@ fn request_span(service: &'static str, method: &str, path: &str) -> Span {
 ///
 /// A valid trace supplied by the client is recorded as a related trace. The proxy decides
 /// whether to record its own trace independently of the client's sampling flag.
-/// Returns a disabled span for `GET /v1/version` health checks.
+/// Returns a disabled span for `GET /version` health checks.
 pub fn proxy_span(method: &str, path: &str, incoming: Context) -> Span {
     let span = request_span("proxy", method, path);
     let remote = incoming.span().span_context().clone();
@@ -130,7 +130,7 @@ pub fn proxy_span(method: &str, path: &str, incoming: Context) -> Span {
 /// Creates an endpoint request span with the proxy's span as its parent.
 ///
 /// This puts the endpoint's work in the same trace as the proxy request.
-/// Returns a disabled span for `GET /v1/version` so health checks do not produce traces.
+/// Returns a disabled span for `GET /version` so health checks do not produce traces.
 pub fn endpoint_span(method: &str, path: &str, incoming: Context) -> Span {
     let span = request_span("endpoint", method, path);
     span.set_parent(incoming);
