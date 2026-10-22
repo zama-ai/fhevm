@@ -1,7 +1,10 @@
 use crate::{error::PrfError, metrics::REQUESTS_COUNTER, pad_source::mock_pad, path};
 use actix_web::{
     dev::Server,
-    http::{header::ContentType, Method},
+    http::{
+        header::{ContentType, ALLOW},
+        Method,
+    },
     web, App, HttpRequest, HttpResponse, HttpServer, ResponseError,
 };
 use alloy::primitives::Address;
@@ -11,22 +14,18 @@ use ciphertext_attestation::{
     prf::{Version, PRF_ATTESTATION_HEADER},
     PrfOutputAttestation,
 };
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
-const PRF_ROUTE: &str = "/v1/prf/{prf}/labels/{label}/{pad_length}";
 /// Requests finish in milliseconds, so a stop waits only a short time for idle connections.
 const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
+/// Above the 10 s idle time of the proxy pool, so the proxy closes idle connections first.
+const KEEP_ALIVE: Duration = Duration::from_secs(15);
 
 fn configure(cfg: &mut web::ServiceConfig) {
     // For the endpoint probe of coprocessor-proxy, which checks the port that it forwards to.
     cfg.route("/healthz", web::get().to(HttpResponse::Ok))
-        .service(
-            web::resource(PRF_ROUTE)
-                .route(web::get().to(prf_output))
-                .route(web::head().to(prf_output)),
-        )
         .default_service(web::to(prf_output));
 }
 
@@ -37,6 +36,7 @@ pub(crate) fn run_server(
     HttpServer::new(|| App::new().configure(configure))
         .shutdown_signal(cancel_token.cancelled_owned())
         .shutdown_timeout(SHUTDOWN_TIMEOUT_SECS)
+        .keep_alive(KEEP_ALIVE)
         // Treat a client EOF as a disconnect, to free the place of the request in `InFlight`.
         .h1_allow_half_closed(false)
         .bind(endpoint)
@@ -45,9 +45,10 @@ pub(crate) fn run_server(
 }
 
 async fn prf_output(req: HttpRequest) -> HttpResponse {
-    // Other methods get 405 on the PRF route and 404 on other paths.
     if !matches!(*req.method(), Method::GET | Method::HEAD) {
-        return HttpResponse::NotFound().finish();
+        return HttpResponse::MethodNotAllowed()
+            .insert_header((ALLOW, "GET, HEAD"))
+            .finish();
     }
     let response = serve(&req).unwrap_or_else(|e| e.error_response());
     REQUESTS_COUNTER
