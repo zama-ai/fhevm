@@ -9,8 +9,9 @@ pub enum CatchupFlow {
 }
 
 impl CatchupFlow {
-    /// Value of the `flow` metric label (D10: `chain_id` and `flow` only —
-    /// `consumer_id` would make the cardinality unbounded and belongs in logs).
+    /// Value of the `flow` metric label. Catchup metrics are labeled by
+    /// `chain_id` and `flow` only — `consumer_id` would make the cardinality
+    /// unbounded and belongs in logs.
     pub fn metric_label(self) -> &'static str {
         match self {
             Self::Catchup => "catchup",
@@ -29,7 +30,7 @@ pub enum CatchupStatus {
     Active,
     Cancelled,
     Skipped,
-    /// Every block this request fanned out has been published (D16). Written
+    /// Every block this request fanned out has been published. Written
     /// only by [`CatchupRepository::record_coverage`], and only when the
     /// coverage set closes `block_start..fanned_end` — never by a count.
     ///
@@ -54,7 +55,7 @@ pub struct NewCatchupRequest {
     /// The last block the fanout actually covered — `block_end` clamped to the
     /// chain head. This is the completion target, and passing the *requested*
     /// `block_end` instead leaves any request reaching past the head
-    /// permanently `Active` (D16).
+    /// permanently `Active`.
     ///
     /// `None` on the `Skipped` path, where the fanout produced nothing.
     pub fanned_end: Option<u64>,

@@ -377,10 +377,13 @@ impl ListenerConsumer {
     /// [`Uuid::now_v7`]; any other version is rejected with
     /// [`ConsumerError::InvalidCatchupPayload`] before anything is published.
     /// Store it durably before calling: it is the only
-    /// handle that can later [`cancel_catchup`](Self::cancel_catchup) the
-    /// request. Re-sending the same id is a no-op — the listener will not fan
-    /// the range out a second time — so a crash between persisting the id and
-    /// this call is recovered by simply calling again on the next boot.
+    /// handle that can later
+    /// [`cancel_catchup_request`](Self::cancel_catchup_request) the request.
+    /// Re-sending an id the listener has already fanned out or finished is a
+    /// no-op, so a crash between persisting the id and this call is recovered
+    /// by simply calling again on the next boot. If the listener itself dies
+    /// part-way through fanning a request out, it fans the whole range out
+    /// again on redelivery: blocks can arrive twice, never zero times.
     pub async fn request_catchup(
         &self,
         catchup_id: Uuid,

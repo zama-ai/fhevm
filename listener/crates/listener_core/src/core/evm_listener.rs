@@ -1265,6 +1265,7 @@ impl EvmListener {
     /// A `None` `catchup_id` comes from a consumer predating this field. Those
     /// requests are untracked: nothing is written, the fanout proceeds, and the
     /// behavior is exactly what it was before catchups had identity.
+    ///
     /// Takes the fanout itself rather than its length, because the completion
     /// target has to come from it. `fanned_end` is the last sub-range's end —
     /// `block_end` already clamped to the chain head by
@@ -1272,7 +1273,14 @@ impl EvmListener {
     /// it alongside is deliberate: the requested `block_end` is also in scope,
     /// it is the wrong value, and substituting it would leave every request
     /// reaching past the head permanently `ACTIVE` while still compiling and
-    /// passing every unit test (D16).
+    /// passing every unit test.
+    ///
+    /// The target is fixed by the first delivery: a redelivery re-reads the
+    /// head and re-splits, but the insert does nothing and the stored
+    /// `fanned_end` stands. If the head reads *lower* on the redelivery (a
+    /// lagging RPC replica), the blocks between the two reads are never
+    /// re-published and the request stays `ACTIVE`, visible on
+    /// `listener_catchup_active_requests`.
     pub async fn admit_catchup_request(
         &self,
         request: &CatchupPayload,
@@ -1328,7 +1336,11 @@ impl EvmListener {
             .map_err(|e| EvmListenerError::DatabaseError { source: e })
     }
 
-    /// Merge a published sub-range into its request's coverage set (D16).
+    /// Merge a published sub-range into its request's coverage set — the set
+    /// of blocks published so far. The request completes when that set spans
+    /// `block_start..=fanned_end`; see
+    /// [`CatchupRepository::record_coverage`](crate::store::repositories::CatchupRepository::record_coverage)
+    /// for why it is a set and not a count.
     ///
     /// Takes a concrete id rather than an `Option`: a sub-range from a consumer
     /// predating `catchup_id` has no request to credit, and folding that case
