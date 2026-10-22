@@ -60,20 +60,29 @@ describe('the code table', () => {
 
 describe('the classification', () => {
   // A request refused identically forever: retrying costs attempts and teaches the client nothing.
-  it.each(['malformed', 'user_signature_rejected', 'kms_context_destroyed', 'unprocessable', 'internal'])(
-    'gives up on %s',
-    (code) => {
-      expect(classifySolanaDecryptionRejection({ code })).toBe('give-up');
-    },
-  );
+  it.each([
+    'malformed',
+    'user_signature_rejected',
+    'user_decryption_expired',
+    'kms_context_destroyed',
+    'unprocessable',
+    'internal',
+  ])('gives up on %s', (code) => {
+    expect(classifySolanaDecryptionRejection({ code })).toBe('give-up');
+  });
 
   // Nothing about the request is wrong; a later state of the host or the service passes it.
-  it.each(['acl_denied', 'ciphertext_not_found', 'rate_limited', 'upstream_transient', 'timeout', 'shutting_down'])(
-    'retries the same bytes after %s',
-    (code) => {
-      expect(classifySolanaDecryptionRejection({ code })).toBe('retry-unchanged');
-    },
-  );
+  it.each([
+    'acl_denied',
+    'auth_expired',
+    'ciphertext_not_found',
+    'rate_limited',
+    'upstream_transient',
+    'timeout',
+    'shutting_down',
+  ])('retries the same bytes after %s', (code) => {
+    expect(classifySolanaDecryptionRejection({ code })).toBe('retry-unchanged');
+  });
 
   it('gives up on a code it does not know', () => {
     expect(classifySolanaDecryptionRejection({ code: 'a_code_from_a_later_version' })).toBe('give-up');

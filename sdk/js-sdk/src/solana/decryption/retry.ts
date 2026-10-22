@@ -45,9 +45,11 @@ export type SolanaDecryptionRecovery = 'retry-unchanged' | 'give-up';
  *
  * - `acl_denied` is retried: an allow or a delegation the Connector cannot see yet is the one
  *   authorization a later attempt can find, and on this path the client's retry is the only one.
- * - `user_signature_rejected` is not: an expired or revoked permit stays so. The one case that
- *   passes later, a start ahead of the host clock, is prevented where the start is chosen
- *   (`permit/start.ts`).
+ * - `auth_expired` is retried: it refuses the relayer's own `FhevmSig` header, and the relayer signs
+ *   a fresh one for the next submission.
+ * - `user_signature_rejected` and `user_decryption_expired` are not: an expired or revoked permit
+ *   stays so. The one case that passes later, a start ahead of the host clock, is prevented where
+ *   the start is chosen (`permit/start.ts`).
  * - `internal` and `unknown` are not: a relayer bug and a code this table predates are no reason to
  *   spend the budget, and an unknown code treated as retryable is a client hammering the service
  *   over something no delay repairs.
@@ -57,10 +59,12 @@ export const SOLANA_DECRYPTION_CODE_ACTIONS: Readonly<Record<string, SolanaDecry
   malformed: 'give-up',
   unsupported_attestation_type: 'give-up',
   sender_authentication_failed: 'give-up',
+  auth_expired: 'retry-unchanged',
   rate_limited: 'retry-unchanged',
   overloaded: 'retry-unchanged',
   acl_denied: 'retry-unchanged',
   user_signature_rejected: 'give-up',
+  user_decryption_expired: 'give-up',
   ciphertext_not_found: 'retry-unchanged',
   copro_consensus_failed: 'retry-unchanged',
   kms_context_invalid: 'retry-unchanged',
