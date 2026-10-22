@@ -49,7 +49,7 @@ abstract contract ProtocolConfigSigningTestUtils is HostContractsDeployerTestUti
             );
     }
 
-    function _hashProtocolConfigTypedData(bytes32 structHash) internal view returns (bytes32) {
+    function _hashProtocolConfigTypedData(bytes32 structHash) internal view virtual returns (bytes32) {
         return
             MessageHashUtils.toTypedDataHash(
                 _computeProtocolConfigDomainSeparator(block.chainid, address(protocolConfig)),

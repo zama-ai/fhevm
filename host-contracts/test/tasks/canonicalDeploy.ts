@@ -117,25 +117,20 @@ describe('Canonical prepare tasks', function () {
       const decoded = iface.decodeFunctionData('initializeFromCanonical', innerCalldata);
       expect(decoded[0]).to.equal(canonicalContextId);
       expect(decoded[1]).to.equal(canonicalEpochId);
-      // Round-trip every KmsNodeParams field (4 stored + 4 MPC-metadata) so a dropped or transposed
-      // field is caught instead of silently passing on txSenderAddress alone. The canonical mirror
-      // path preserves the four stored fields and fills the MPC metadata with deterministic
-      // placeholders (partyId = index, mpcIdentity = '', caCert = '0x', storagePrefix = '').
+      // Round-trip every KmsNode field so a dropped or transposed field is caught instead of
+      // silently passing on txSenderAddress alone.
       const expectedNodes = buildProtocolConfigNodes();
       expect(decoded[2].length).to.equal(expectedNodes.length);
       decoded[2].forEach((node: unknown[], index: number) => {
-        const [txSenderAddress, signerAddress, ipAddress, storageUrl, partyId, mpcIdentity, caCert, storagePrefix] =
-          node;
+        const [txSenderAddress, signerAddress, ipAddress, storageUrl] = node;
         expect(txSenderAddress).to.equal(expectedNodes[index].txSenderAddress);
         expect(signerAddress).to.equal(expectedNodes[index].signerAddress);
         expect(ipAddress).to.equal(expectedNodes[index].ipAddress);
         expect(storageUrl).to.equal(expectedNodes[index].storageUrl);
-        expect(partyId).to.equal(BigInt(index));
-        expect(mpcIdentity).to.equal('');
-        expect(caCert).to.equal('0x');
-        expect(storagePrefix).to.equal('');
       });
       expect(decoded[3][0]).to.equal(BigInt(buildProtocolConfigThresholds().publicDecryption));
+      expect(decoded[4]).to.equal((await ethers.provider.getNetwork()).chainId);
+      expect(decoded[5]).to.equal(canonicalAddress);
       expect(outerCalldata).to.equal(
         UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [newImplementationAddress, innerCalldata]),
       );

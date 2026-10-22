@@ -248,8 +248,10 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address owner,
         uint256 initialContextId,
         uint256 initialEpochId,
-        KmsNodeParams[] memory initialKmsNodeParams,
-        KmsThresholds memory initialThresholds
+        KmsNode[] memory initialNodes,
+        KmsThresholds memory initialThresholds,
+        uint64 canonicalChainId,
+        address canonicalProtocolConfig
     ) internal returns (ProtocolConfigReplica protocolConfigProxy, address protocolConfigImplementation) {
         _deployEmptyProtocolConfigProxy();
         vm.label(protocolConfigAdd, "ProtocolConfigReplica Proxy");
@@ -262,7 +264,14 @@ abstract contract HostContractsDeployerTestUtils is Test {
             protocolConfigImplementation,
             abi.encodeCall(
                 ProtocolConfigReplica.initializeFromCanonical,
-                (initialContextId, initialEpochId, initialKmsNodeParams, initialThresholds)
+                (
+                    initialContextId,
+                    initialEpochId,
+                    initialNodes,
+                    initialThresholds,
+                    canonicalChainId,
+                    canonicalProtocolConfig
+                )
             )
         );
 
