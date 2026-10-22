@@ -9,7 +9,7 @@ use alloy::{
 };
 use axum::http::Version;
 use common::{
-    ACCEPTED, FakeRpc, KmsContext, NOT_YET_KNOWN, StubEndpoint, TestProxy, auth_header,
+    ACCEPTED, FakeRpc, KmsContext, StubEndpoint, TestProxy, UNKNOWN_SIGNER, auth_header,
     auth_header_expiring, auth_header_for, free_addr, now, prf_path, rate_limited_path, sender,
     stub_attestation, stub_output,
 };
@@ -134,7 +134,7 @@ async fn test_rejects_unauthenticated_requests() {
         ),
     ] {
         let response = request.send().await.unwrap();
-        assert_proxy_error(response, StatusCode::BAD_GATEWAY, NOT_YET_KNOWN, true).await;
+        assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, false).await;
     }
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
@@ -506,7 +506,7 @@ async fn test_accepted_signers_follow_protocol_config() {
     t.rpc.set_failing(true);
     tokio::time::sleep(5 * common::POLL_INTERVAL).await;
     assert_eq!(t.answer_code(&next).await, ACCEPTED);
-    assert_eq!(t.answer_code(&sender()).await, NOT_YET_KNOWN);
+    assert_eq!(t.answer_code(&sender()).await, UNKNOWN_SIGNER);
 }
 
 #[tokio::test]
@@ -517,7 +517,7 @@ async fn test_refuses_everything_before_the_first_read() {
     let t = TestProxy::launch(rpc, vec![endpoint], |_| {}).await;
 
     tokio::time::sleep(3 * common::POLL_INTERVAL).await;
-    assert_eq!(t.answer_code(&sender()).await, NOT_YET_KNOWN);
+    assert_eq!(t.answer_code(&sender()).await, UNKNOWN_SIGNER);
     assert_eq!(t.endpoints[0].hits(), 0);
 
     t.rpc.set_failing(false);
@@ -617,7 +617,7 @@ async fn test_a_miss_during_a_poll_waits_for_the_next_poll() {
 }
 
 #[tokio::test]
-async fn test_tells_an_unknown_signer_to_retry_within_the_wait() {
+async fn test_refuses_an_unknown_signer_after_the_wait() {
     let t = start_without_polls().await;
     // Longer than the wait: the reader gives up on the poll after 30 s.
     t.rpc.set_reply_delay(Duration::from_secs(60));
@@ -634,9 +634,9 @@ async fn test_tells_an_unknown_signer_to_retry_within_the_wait() {
         .send()
         .await
         .unwrap();
-    assert!(!response.headers().contains_key("www-authenticate"));
-    assert_eq!(response.headers()["retry-after"], "1");
-    assert_proxy_error(response, StatusCode::BAD_GATEWAY, NOT_YET_KNOWN, true).await;
+    assert_eq!(response.headers()["www-authenticate"], "FhevmSig");
+    assert!(!response.headers().contains_key("retry-after"));
+    assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, false).await;
     assert_eq!(t.endpoints[0].hits(), 0);
     let waited = started.elapsed();
     assert!(
@@ -650,11 +650,11 @@ async fn test_concurrent_unknown_signers_share_one_read() {
     let t = start_without_polls().await;
     let unknown = PrivateKeySigner::random();
     // A woken read starts a second after the previous one: the requests below all arrive before.
-    assert_eq!(t.answer_code(&unknown).await, NOT_YET_KNOWN);
+    assert_eq!(t.answer_code(&unknown).await, UNKNOWN_SIGNER);
     let polls = t.rpc.finalized_polls();
 
     let codes = futures_util::future::join_all((0..10).map(|_| t.answer_code(&unknown))).await;
-    assert!(codes.iter().all(|code| code == NOT_YET_KNOWN), "{codes:?}");
+    assert!(codes.iter().all(|code| code == UNKNOWN_SIGNER), "{codes:?}");
     // Long enough for the woken reads that would follow the first one.
     tokio::time::sleep(3 * WOKEN_POLL_SPACING).await;
     assert_eq!(t.rpc.finalized_polls(), polls + 1);
@@ -667,7 +667,7 @@ async fn test_woken_polls_start_a_second_apart() {
 
     // Each miss wakes a poll, which starts once the previous poll is a second old.
     for _ in 0..2 {
-        assert_eq!(t.answer_code(&unknown).await, NOT_YET_KNOWN);
+        assert_eq!(t.answer_code(&unknown).await, UNKNOWN_SIGNER);
     }
 
     let times = t.rpc.finalized_poll_times();

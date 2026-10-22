@@ -138,11 +138,11 @@ describe('Coprocessor proxy', function () {
     }
   });
 
-  it('tells a signer still unknown after a fresh read to retry in a second', async function () {
+  it('refuses a signer still unknown after a fresh read with 401', async function () {
     for (const i of urls.keys()) {
       const sent = await send(i, PRF_PATH, await sign(i, PRF_PATH, { signer: Wallet.createRandom() }));
-      expectRefused(sent, 502, 'upstream_transient', true);
-      expect(sent.headers['retry-after'], sent.where).to.equal('1');
+      expectRefused(sent, 401, 'auth_unknown_signer', false);
+      expect(sent.headers['retry-after'], sent.where).to.equal(undefined);
     }
   });
 
@@ -182,8 +182,8 @@ describe('Coprocessor proxy', function () {
       for (const i of urls.keys()) {
         await waitForSignersBlock(metricsUrls[i], blockTimestamp);
         const sent = await send(i, PRF_PATH, await sign(i, PRF_PATH, { signer: switchSigner() }));
-        expectRefused(sent, 502, 'upstream_transient', true);
-        expect(sent.headers['retry-after'], sent.where).to.equal('1');
+        expectRefused(sent, 401, 'auth_unknown_signer', false);
+        expect(sent.headers['retry-after'], sent.where).to.equal(undefined);
       }
     });
   });

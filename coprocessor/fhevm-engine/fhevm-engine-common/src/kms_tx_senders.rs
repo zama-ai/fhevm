@@ -5,7 +5,7 @@
 //! on chain; a request to a coprocessor only serves a decryption, so they have none to make.
 //!
 //! Failed or non-advancing polls retain the last set. An unknown signer can wake a coalesced,
-//! rate-limited poll, but a lagging RPC may still miss its activation: callers must retry.
+//! rate-limited poll, but a lagging RPC may still miss its activation.
 
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},

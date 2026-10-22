@@ -47,7 +47,7 @@
  *      coprocessor's proxy accepts a request signed by the promoted spare, which only the new
  *      context has. After step 5, every context but the swap's is destroyed; once that is
  *      finalized and each proxy has read the KMS tx-senders again, every proxy refuses the dropped
- *      node with a retryable `502` and forwards nothing.
+ *      node with `401 auth_unknown_signer` and forwards nothing.
  *
  * Activation is not automatic. The KMS cores must reshare, and the connectors must submit
  * `confirmKmsContextCreation` / `confirmEpochActivation`, before `getCurrentKmsContextAndEpoch`

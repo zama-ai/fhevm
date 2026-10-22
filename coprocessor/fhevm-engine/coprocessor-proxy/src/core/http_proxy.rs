@@ -4,14 +4,13 @@ use crate::core::{ErrorCode, ErrorResponse, Proxy, Route, RouteError, match_rout
 use alloy::primitives::{Address, KECCAK256_EMPTY};
 use async_trait::async_trait;
 use bytes::Bytes;
-use fhevm_engine_common::kms_tx_senders::WOKEN_POLL_SPACING;
 use fhevm_sig_auth::AuthError;
 use http::{
     HeaderValue, StatusCode,
     header::{
         ALLOW, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED,
-        HeaderName, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, RETRY_AFTER, TE, TRAILER, UPGRADE,
-        VIA, WWW_AUTHENTICATE,
+        HeaderName, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, UPGRADE, VIA,
+        WWW_AUTHENTICATE,
     },
 };
 use pingora::{
@@ -53,7 +52,6 @@ const NO_STORE: &str = "no-store";
 /// How long a request signed by an unknown signer waits for a poll of the KMS tx-senders that
 /// started after it, before it is checked again.
 pub const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
-const SIGNER_NOT_YET_KNOWN: &str = "signer not yet known";
 
 const BODY_NOT_ALLOWED: &str = "request body is not allowed";
 const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path";
@@ -172,7 +170,7 @@ impl ProxyHttp for Proxy {
         let authorization = req.headers.get(AUTHORIZATION).map(HeaderValue::as_bytes);
         let verified = match self.verifier.verify_header(authorization, target) {
             // The signer can be a node of a KMS context whose activation is finalized but not read
-            // yet: its connector already serves that context and takes a refusal as final.
+            // yet, so it is checked again after one read before being refused.
             Err(AuthError::UnknownSigner(_)) => {
                 self.kms_tx_senders
                     .0
@@ -184,17 +182,10 @@ impl ProxyHttp for Proxy {
         };
         let (sender, body_digest) = match verified {
             Ok(signed) => signed,
-            // This RPC node can lag the connector's by any amount: the connector retries instead.
-            Err(AuthError::UnknownSigner(signer)) => {
-                warn!(%signer, "Unknown signer after waiting for a registry refresh");
-                let error = ErrorResponse::new(ErrorCode::UpstreamTransient, SIGNER_NOT_YET_KNOWN);
-                // No sooner than the reader can poll again.
-                let retry_after = WOKEN_POLL_SPACING.as_secs().to_string();
-                self.respond_with_error(session, error, Some((RETRY_AFTER, &retry_after)))
-                    .await?;
-                return Ok(true);
-            }
             Err(e) => {
+                if let AuthError::UnknownSigner(signer) = &e {
+                    warn!(%signer, "Unknown signer after waiting for a registry refresh");
+                }
                 self.respond_with_error(session, auth_error_response(&e), None)
                     .await?;
                 return Ok(true);

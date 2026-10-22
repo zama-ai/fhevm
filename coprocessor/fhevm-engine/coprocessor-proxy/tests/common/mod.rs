@@ -43,8 +43,8 @@ pub const SENDER_KEY: &str = "0x010101010101010101010101010101010101010101010101
 /// [`TestProxy::answer_code`] for a signer the proxy accepts: the signature checks out, then the
 /// signed digest does not match the empty body.
 pub const ACCEPTED: &str = "auth_body_mismatch";
-/// [`TestProxy::answer_code`] for a signer still unknown after waiting for a registry refresh.
-pub const NOT_YET_KNOWN: &str = "upstream_transient";
+/// [`TestProxy::answer_code`] for a signer still unknown after one read of the KMS tx-senders.
+pub const UNKNOWN_SIGNER: &str = "auth_unknown_signer";
 
 /// The test proxy's own coprocessor signer address, the audience of the headers it accepts.
 pub const AUDIENCE: Address = Address::repeat_byte(0xa1);
@@ -545,7 +545,7 @@ impl TestProxy {
     }
 
     /// The code of the proxy's answer to a request signed by `signer` for a body it does not send:
-    /// [`ACCEPTED`] once the proxy accepts `signer`, [`NOT_YET_KNOWN`] before. The request never
+    /// [`ACCEPTED`] once the proxy accepts `signer`, [`UNKNOWN_SIGNER`] before. The request never
     /// reaches an endpoint.
     pub async fn answer_code(&self, signer: &PrivateKeySigner) -> String {
         let path = prf_path(1);
@@ -558,14 +558,8 @@ impl TestProxy {
             .unwrap();
         let status = response.status();
         let error: Value = response.json().await.unwrap();
-        let code = error["code"].as_str().unwrap().to_string();
-        let expected = if code == NOT_YET_KNOWN {
-            StatusCode::BAD_GATEWAY
-        } else {
-            StatusCode::UNAUTHORIZED
-        };
-        assert_eq!(status, expected, "{error}");
-        code
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "{error}");
+        error["code"].as_str().unwrap().to_string()
     }
 
     /// Waits until the proxy accepts requests signed by `signer`.
@@ -573,9 +567,9 @@ impl TestProxy {
         self.wait_for_code(signer, ACCEPTED).await;
     }
 
-    /// Waits until a request signed by `signer` gets [`NOT_YET_KNOWN`].
+    /// Waits until a request signed by `signer` gets [`UNKNOWN_SIGNER`].
     pub async fn wait_until_refused(&self, signer: &PrivateKeySigner) {
-        self.wait_for_code(signer, NOT_YET_KNOWN).await;
+        self.wait_for_code(signer, UNKNOWN_SIGNER).await;
     }
 
     async fn wait_for_code(&self, signer: &PrivateKeySigner, expected: &str) {
