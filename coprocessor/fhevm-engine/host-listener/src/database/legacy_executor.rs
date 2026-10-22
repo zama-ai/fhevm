@@ -106,7 +106,7 @@ pub(super) fn has_legacy_operand_origin(
     preimage
         .extend_from_slice(&U256::from(block.timestamp).to_be_bytes::<32>());
     // _appendMetadataToPrehandle replaces bytes 21..32. Their chain/type/version
-    // validation is performed by validate_tfhe_event before this recognition.
+    // validation is performed by evm_computation before this recognition.
     keccak256(preimage)[..21] == result[..21]
 }
 
