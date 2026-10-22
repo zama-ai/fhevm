@@ -1306,6 +1306,36 @@ async fn delete_bcs_chain_leftovers(
         }
     }
 
+    // Also clear the in-window `ciphertext_digest` rows. BCS (blue) writes its digest here
+    // during the window; the GCS merge below can only overwrite a handle GCS itself produced,
+    // so if GCS's dry-run never digested a handle (e.g. a lagging operator), blue's stale
+    // digest would survive the merge — and being write-once it can never be corrected by the
+    // post-cutover re-digest, so the sns-worker loops forever on "computed ciphertext digest
+    // mismatch". Dropping it here lets the merge (or the post-cutover re-ingest) lay down the
+    // correct GCS digest. Must run before the computation deletes below, since it reaches rows
+    // through them.
+    for comp_table in COMPUTATION_TABLES {
+        let sql = format!(
+            "DELETE FROM public.ciphertext_digest d
+               USING public.{comp_table} comp
+              WHERE d.handle = comp.output_handle
+                AND comp.host_chain_id = $1 AND comp.block_number >= $2"
+        );
+        let deleted = sqlx::query(&sql)
+            .bind(chain_id)
+            .bind(start_block)
+            .execute(&mut **tx)
+            .await?
+            .rows_affected();
+        info!(
+            host_chain_id = chain_id,
+            start_block,
+            comp_table,
+            deleted,
+            "delete_bcs_leftovers: deleted BCS-leftover ciphertext_digest rows"
+        );
+    }
+
     for pbs_table in PBS_COMPUTATION_TABLES {
         let sql = format!(
             "DELETE FROM public.{pbs_table} p
