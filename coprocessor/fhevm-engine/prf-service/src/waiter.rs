@@ -16,10 +16,10 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
-/// The pad-worker sends it when a row is complete or failed, with the payload `<prf>:<label hex>`.
+/// A trigger on `pads` sends it for a complete or failed row.
 pub const PAD_READY: &str = "pad_ready";
 
-type RowKey = (u16, B256);
+type RowKey = (u16, B256, u16);
 
 /// Wakes the requests of one pod when their row is complete or failed.
 pub struct PadWaiter {
@@ -39,7 +39,7 @@ impl PadWaiter {
 
     /// Waits until the row of `path` is complete or failed.
     pub async fn wait(&self, path: &PrfPath) -> anyhow::Result<PadState> {
-        let waiting = self.register((path.prf, path.label));
+        let waiting = self.register((path.prf, path.label, path.pad_length));
         loop {
             let notified = waiting.notify.notified();
             tokio::pin!(notified);
@@ -104,30 +104,33 @@ impl PadWaiter {
     }
 
     async fn wake_finished(&self) -> anyhow::Result<()> {
-        let (prfs, labels): (Vec<i32>, Vec<Vec<u8>>) = self
-            .waiting
-            .lock()
-            .expect("waiting lock")
-            .keys()
-            .map(|(prf, label)| (i32::from(*prf), label.to_vec()))
-            .unzip();
+        let mut prfs = Vec::new();
+        let mut labels = Vec::new();
+        let mut pad_lengths = Vec::new();
+        for (prf, label, pad_length) in self.waiting.lock().expect("waiting lock").keys() {
+            prfs.push(i32::from(*prf));
+            labels.push(label.to_vec());
+            pad_lengths.push(i32::from(*pad_length));
+        }
         if prfs.is_empty() {
             return Ok(());
         }
         let finished = sqlx::query!(
-            "SELECT p.prf_instance, p.label
-               FROM UNNEST($1::INTEGER[], $2::BYTEA[]) AS w (prf_instance, label)
-               JOIN pads p USING (prf_instance, label)
+            "SELECT p.prf_instance, p.label, p.pad_length
+               FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS w (prf_instance, label, pad_length)
+               JOIN pads p USING (prf_instance, label, pad_length)
               WHERE p.signature IS NOT NULL OR p.is_error",
             &prfs,
             &labels,
+            &pad_lengths,
         )
         .fetch_all(&self.pool)
         .await?;
         for row in finished {
             let prf = u16::try_from(row.prf_instance).context("prf_instance")?;
             let label = B256::try_from(row.label.as_slice()).context("label")?;
-            self.wake(&(prf, label));
+            let pad_length = u16::try_from(row.pad_length).context("pad_length")?;
+            self.wake(&(prf, label, pad_length));
         }
         Ok(())
     }
@@ -151,8 +154,13 @@ impl Drop for Waiting<'_> {
 }
 
 fn parse_payload(payload: &str) -> Option<RowKey> {
-    let (prf, label) = payload.split_once(':')?;
-    Some((prf.parse().ok()?, label.parse().ok()?))
+    let mut parts = payload.split(':');
+    let key = (
+        parts.next()?.parse().ok()?,
+        parts.next()?.parse().ok()?,
+        parts.next()?.parse().ok()?,
+    );
+    parts.next().is_none().then_some(key)
 }
 
 #[cfg(test)]
@@ -166,7 +174,7 @@ mod tests {
             .connect_lazy("postgres://localhost/unused")
             .unwrap();
         let waiter = PadWaiter::new(pool, Duration::from_secs(1));
-        let key = (0, B256::repeat_byte(1));
+        let key = (0, B256::repeat_byte(1), 64);
         let first = waiter.register(key);
         let second = waiter.register(key);
         assert_eq!(waiter.waiting.lock().unwrap().len(), 1);
@@ -177,11 +185,15 @@ mod tests {
     }
 
     #[test]
-    fn parses_only_prf_and_label() {
+    fn parses_only_prf_label_and_pad_length() {
         let label = B256::repeat_byte(0xab);
-        assert_eq!(parse_payload(&format!("7:{label:x}")), Some((7, label)));
-        assert_eq!(parse_payload(&format!("{label:x}")), None);
-        assert_eq!(parse_payload(&format!("70000:{label:x}")), None);
-        assert_eq!(parse_payload("7:ab"), None);
+        assert_eq!(
+            parse_payload(&format!("7:{label:x}:64")),
+            Some((7, label, 64))
+        );
+        assert_eq!(parse_payload(&format!("7:{label:x}")), None);
+        assert_eq!(parse_payload(&format!("7:{label:x}:64:1")), None);
+        assert_eq!(parse_payload(&format!("70000:{label:x}:64")), None);
+        assert_eq!(parse_payload("7:ab:64"), None);
     }
 }
