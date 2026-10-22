@@ -15,8 +15,6 @@ source "${script_dir}/../lib.sh"
 proxy_service() { echo "kms-connector-${1}-kms-connector-proxy"; }
 proxy_port=8443
 tls_secret=kms-connector-proxy-tls          # kmsConnectorProxy.tls.secretName in the overlay
-api_key_secret=kms-connector-proxy          # kmsConnectorProxy.apiKeyDigest.secret.name (chart default)
-api_key=fhevm-e2e-kms-connector-api-key     # test literal; relayer-http reads it from ${api_key_secret}
 http_configmap=kms-connector-http           # read by the test-suite overlays
 # Party i's KMS tx-sender address: the `audience` its proxy accepts.
 tx_sender() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .address' <<<"${WALLETS_JSON}"; }
@@ -107,14 +105,6 @@ else
   rm -rf "${tls_dir}"
   echo "Created ${tls_secret} (SANs: ${sans})"
 fi
-
-######################################################################
-# Proxy API key: the proxies check the digest, relayer-http sends the key.
-######################################################################
-kubectl create secret generic "${api_key_secret}" -n "${NAMESPACE}" \
-  --from-literal=api-key="${api_key}" \
-  --from-literal=api-key-digest="0x$(printf '%s' "${api_key}" | sha256sum | cut -d' ' -f1)" \
-  --dry-run=client -o yaml | kubectl apply -f -
 
 ######################################################################
 # What the e2e suite needs to exercise the HTTP decryption path (see

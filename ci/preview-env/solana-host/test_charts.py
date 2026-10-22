@@ -368,15 +368,23 @@ class SolanaCharts(unittest.TestCase):
                        VALUES / "values-solana-connector-e2e.yaml"]:
             host_chains.update(yaml.safe_load(values.read_text())["commonConfig"]["hostChains"])
         proxies = [f"https://kms-connector-{i}-kms-connector-proxy:8443" for i in range(1, 5)]
+        tx_senders = [f"0x{i:040x}" for i in range(1, 5)]
+        protocol_config = "0x" + "11" * 20
         with tempfile.TemporaryDirectory() as tmp:
             connector = pathlib.Path(tmp) / "connector.yaml"
-            connector.write_text(yaml.safe_dump({"commonConfig": {"hostChains": host_chains}}))
+            connector.write_text(yaml.safe_dump({"commonConfig": {
+                "hostChains": host_chains, "ethereumContractAddresses": {"protocolConfig": protocol_config}}}))
             config = yaml.safe_load(subprocess.check_output(["yq", program, str(connector)], text=True, cwd=ROOT, env={
-                **os.environ, "ENDPOINT_URLS": ",".join(proxies), "THRESHOLD": "3"}))
+                **os.environ, "ENDPOINT_URLS": ",".join(proxies), "TX_SENDERS": ",".join(tx_senders),
+                "THRESHOLD": "3"}))
         # Chain ids stay strings: Helm would read 130140237723663404 as a float64 and round it.
         self.assertEqual(config["http"]["supported_chain_ids"], ["12345", "130140237723663404"])
         self.assertEqual([e["url"] for e in config["kms_aggregator"]["endpoints"]], proxies)
-        self.assertEqual({e["auth"]["value_env"] for e in config["kms_aggregator"]["endpoints"]}, {"KMS_CONNECTOR_API_KEY"})
+        # FhevmSig: each endpoint signs for its own party's tx-sender, in the domain the proxies verify.
+        self.assertEqual([e["audience"] for e in config["kms_aggregator"]["endpoints"]], tx_senders)
+        self.assertEqual(config["kms_aggregator"]["auth"]["chain_id"], 12345)
+        self.assertEqual(config["kms_aggregator"]["auth"]["protocol_config"], protocol_config)
+        self.assertEqual(config["kms_aggregator"]["auth"]["signer"]["value_env"], "RELAYER_SIGNER_KEY")
         # The rest of relayer-http's own config is kept.
         self.assertEqual(config["kms_aggregator"]["call"]["timeout"], "5000ms")
 

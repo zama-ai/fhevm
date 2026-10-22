@@ -538,7 +538,8 @@ const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, pla
   // Compose interpolation of relayer-docker-compose.yml reads relayer.env; the port is set for
   // every scenario so the file parses even where relayer-http does not run.
   envs["relayer"].RELAYER_HTTP_PORT = String(RELAYER_HTTP_PORT);
-  envs["relayer"].KMS_CONNECTOR_API_KEY = envs["test-suite"].KMS_CONNECTOR_API_KEY;
+  // relayer-http signs with the e2e FhevmSig key, whose address KMS_CONNECTOR_ALLOWED_SENDERS lists.
+  envs["relayer"].RELAYER_SIGNER_KEY = envs["test-suite"].KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY;
 };
 
 /** Renders component and per-instance env maps from state, topology, and discovery. */

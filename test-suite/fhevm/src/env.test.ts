@@ -82,8 +82,9 @@ describe("env", () => {
     expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe(
       [1, 2, 3, 4].map((party) => `https://${party === 1 ? "kms-connector" : `kms-connector-${party}`}-proxy:8443`).join(","),
     );
-    expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).toBe(templateEnvs["test-suite"].KMS_CONNECTOR_API_KEY);
-    expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).not.toBe("");
+    expect(withEndpoint.componentEnvs.relayer.RELAYER_SIGNER_KEY).toBe(
+      templateEnvs["test-suite"].KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY,
+    );
     expect(withEndpoint.componentEnvs["test-suite"].KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY).not.toBe("");
     expect(withEndpoint.componentEnvs["kms-connector"].KMS_CONNECTOR_ALLOWED_SENDERS).not.toBe("");
     expect(withEndpoint.componentEnvs["test-suite"].NODE_EXTRA_CA_CERTS).toBe("/etc/kms-connector/proxy/ca.crt");

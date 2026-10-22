@@ -469,7 +469,8 @@ The two out-of-chart inputs the proxy needs are produced at deploy time by
 - **FhevmSig auth**: the e2e suite signs with a fixed test key
   (`KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY` in the test-suite overlays, same as
   `.env.test-suite`) whose address is `kmsConnectorProxy.allowedSenders` in
-  `values-kms-connector-e2e.yaml`, no Secret. Each party's
+  `values-kms-connector-e2e.yaml`, no Secret. relayer-http in a Solana preview signs
+  with the same key (`RELAYER_SIGNER_KEY` in `relayer/values-relayer-http-e2e.yaml`). Each party's
   `kmsConnectorProxy.txSenderAddress` (the request `audience`) is set by the
   script from the derived KMS tx-sender wallets (`WALLETS_JSON`).
 - **Test-suite wiring**: the script publishes ConfigMap **`kms-connector-http`**

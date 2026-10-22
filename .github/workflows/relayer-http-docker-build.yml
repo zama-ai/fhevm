@@ -76,6 +76,8 @@ jobs:
           - solana/crates/zama-solana-acl/**
           - solana/crates/zama-solana-permit/**
           - solana/crates/zama-solana-request/**
+          # FhevmSig signing of the connector calls.
+          - shared/fhevm-sig-auth/**
 
   build:
     needs: [is-latest-commit, check-changes]

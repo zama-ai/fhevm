@@ -58,7 +58,7 @@ services:
     container_name: fhevm-relayer-http
     image: ghcr.io/zama-ai/fhevm/relayer-http:${RELAYER_HTTP_VERSION}
     environment:
-      KMS_CONNECTOR_API_KEY: ${KMS_CONNECTOR_API_KEY}
+      RELAYER_SIGNER_KEY: ${RELAYER_SIGNER_KEY}
       # The proxies' test CA, the only one relayer-http needs to trust.
       SSL_CERT_FILE: /etc/kms-connector/proxy/ca.crt
     volumes:

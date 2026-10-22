@@ -94,8 +94,7 @@ CI publishes the image as `ghcr.io/zama-ai/fhevm/relayer-http` through `.github/
 `relayer-http-tests.yml` and `relayer-http-dependency-analysis.yml`, run on pull requests: the three commands above,
 then `cargo update -w --locked`, `cargo-deny check license` against `deny.toml` (every allowed license must be used)
 and `cargo-audit audit` with `.cargo/audit.toml`. All three are gated on changes under `relayer-http/**`,
-`kms-connector/crates/api/**`, `kms-connector/Cargo.toml` and the three Solana crates (`shared/fhevm-sig-auth/**` still
-to be added).
+`kms-connector/crates/api/**`, `kms-connector/Cargo.toml`, the three Solana crates and `shared/fhevm-sig-auth/**`.
 
 ## Rules
 

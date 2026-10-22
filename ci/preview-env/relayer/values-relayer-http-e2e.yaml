@@ -33,11 +33,10 @@ configmapFiles:
     readOnly: true
 
 env:
-  # deploy-kms-connector.sh creates both Secrets.
-  - name: KMS_CONNECTOR_API_KEY
-    valueFrom:
-      secretKeyRef: {name: kms-connector-proxy, key: api-key}
-  # The proxies' test CA is the only CA relayer-http needs to trust.
+  # FhevmSig test key; its address is kmsConnectorProxy.allowedSenders in values-kms-connector-e2e.yaml.
+  - {name: RELAYER_SIGNER_KEY, value: "0xdcd7f0c4990a3df000d45f6eb2728a8cf93f0d16b1f6bdffbe07f5a250250e6c"}
+  # The proxies' test CA (deploy-kms-connector.sh creates the Secret) is the only CA relayer-http
+  # needs to trust.
   - name: SSL_CERT_FILE
     value: /etc/relayer-http/proxy-ca/ca.crt
 

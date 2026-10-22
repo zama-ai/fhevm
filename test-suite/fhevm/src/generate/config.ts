@@ -144,10 +144,12 @@ export const renderRelayerConfig = (
 /**
  * Renders relayer-http's config from its checked-in example: every host chain in
  * supported_chain_ids, as strings since a Solana chain id exceeds Number.MAX_SAFE_INTEGER, and one
- * endpoint per kms-connector proxy, named after its party. Every party's proxy is listed, spares
- * included, so a node swap needs no new config or restart: a party outside the active context only
- * adds a refused call, which the kms-context-switch leg checks ends at its first attempt. A
- * production deployment lists its current nodes and updates the list on a node change.
+ * endpoint per kms-connector proxy, named after its party, whose `audience` is that party's KMS
+ * tx-sender. The FhevmSig domain is the one the proxies verify: the connectors' Ethereum chain id
+ * and ProtocolConfig. Every party's proxy is listed, spares included, so a node swap needs no new
+ * config or restart: a party outside the active context only adds a refused call, which the
+ * kms-context-switch leg checks ends at its first attempt. A production deployment lists its
+ * current nodes and updates the list on a node change.
  */
 export const renderRelayerHttpConfig = (
   baseText: string,
@@ -157,7 +159,12 @@ export const renderRelayerHttpConfig = (
   const config = YAML.parse(baseText) as {
     log: Record<string, unknown>;
     http: Record<string, unknown>;
-    kms_aggregator: { public_decrypt: { threshold: number }; user_decrypt: { threshold: number }; endpoints: unknown[] };
+    kms_aggregator: {
+      public_decrypt: { threshold: number };
+      user_decrypt: { threshold: number };
+      auth: { chain_id: number; protocol_config: string };
+      endpoints: unknown[];
+    };
   };
   // JSON lines, as in the preview: the e2e reads a request's lines back by its request id.
   config.log.format = "json";
@@ -165,10 +172,12 @@ export const renderRelayerHttpConfig = (
   config.http.supported_chain_ids = plan.hostChains.map((chain) => chain.chainId);
   config.kms_aggregator.public_decrypt.threshold = Number(envs["gateway-sc"].PUBLIC_DECRYPTION_THRESHOLD);
   config.kms_aggregator.user_decrypt.threshold = Number(envs["gateway-sc"].USER_DECRYPTION_THRESHOLD);
+  config.kms_aggregator.auth.chain_id = Number(envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID);
+  config.kms_aggregator.auth.protocol_config = envs["kms-connector"].KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS;
   config.kms_aggregator.endpoints = kmsPartyIds(plan.kms.parties).map((party) => ({
     name: relayerHttpNodeName(party),
     url: kmsConnectorProxyUrl(envs, party),
-    auth: { type: "api_key", value_env: "KMS_CONNECTOR_API_KEY" },
+    audience: envs["gateway-sc"][`KMS_TX_SENDER_ADDRESS_${party - 1}`],
   }));
   return YAML.stringify(config);
 };

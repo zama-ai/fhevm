@@ -182,8 +182,16 @@ describe("config", () => {
         kms: { parties: 5, threshold: 1, committeeSize: 4 } as never,
       },
       {
-        "gateway-sc": { PUBLIC_DECRYPTION_THRESHOLD: "3", USER_DECRYPTION_THRESHOLD: "3" },
-        "kms-connector": { KMS_CONNECTOR_PROXY_BIND_ADDRESS: "0.0.0.0:8443" },
+        "gateway-sc": {
+          PUBLIC_DECRYPTION_THRESHOLD: "3",
+          USER_DECRYPTION_THRESHOLD: "3",
+          ...Object.fromEntries([0, 1, 2, 3, 4].map((i) => [`KMS_TX_SENDER_ADDRESS_${i}`, `0xsender${i + 1}`])),
+        },
+        "kms-connector": {
+          KMS_CONNECTOR_PROXY_BIND_ADDRESS: "0.0.0.0:8443",
+          KMS_CONNECTOR_ETHEREUM_CHAIN_ID: "12345",
+          KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS: "0xprotocolconfig",
+        },
       },
     );
     const parsed = YAML.parse(rendered);
@@ -192,14 +200,14 @@ describe("config", () => {
     expect(parsed.http.supported_chain_ids).toEqual(["12345", "130140237723663404"]);
     expect(parsed.kms_aggregator.public_decrypt.threshold).toBe(3);
     expect(parsed.kms_aggregator.user_decrypt.threshold).toBe(3);
+    expect(parsed.kms_aggregator.auth).toMatchObject({ chain_id: 12345, protocol_config: "0xprotocolconfig" });
     // The spare (party 5) is listed, so the node swap reaches it without a new config.
-    const auth = { type: "api_key", value_env: "KMS_CONNECTOR_API_KEY" };
     expect(parsed.kms_aggregator.endpoints).toEqual([
-      { name: "kms_1", url: "https://kms-connector-proxy:8443", auth },
-      { name: "kms_2", url: "https://kms-connector-2-proxy:8443", auth },
-      { name: "kms_3", url: "https://kms-connector-3-proxy:8443", auth },
-      { name: "kms_4", url: "https://kms-connector-4-proxy:8443", auth },
-      { name: "kms_5", url: "https://kms-connector-5-proxy:8443", auth },
+      { name: "kms_1", url: "https://kms-connector-proxy:8443", audience: "0xsender1" },
+      { name: "kms_2", url: "https://kms-connector-2-proxy:8443", audience: "0xsender2" },
+      { name: "kms_3", url: "https://kms-connector-3-proxy:8443", audience: "0xsender3" },
+      { name: "kms_4", url: "https://kms-connector-4-proxy:8443", audience: "0xsender4" },
+      { name: "kms_5", url: "https://kms-connector-5-proxy:8443", audience: "0xsender5" },
     ]);
   });
 });

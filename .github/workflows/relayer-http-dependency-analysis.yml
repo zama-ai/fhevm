@@ -37,6 +37,8 @@ jobs:
               - solana/crates/zama-solana-acl/**
               - solana/crates/zama-solana-permit/**
               - solana/crates/zama-solana-request/**
+              # FhevmSig signing of the connector calls.
+              - shared/fhevm-sig-auth/**
   dependencies-check:
     name: relayer-http-dependency-analysis/dependencies-check (bpr)
     needs: check-changes

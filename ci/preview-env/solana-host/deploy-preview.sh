@@ -108,7 +108,12 @@ helm upgrade relayer "$COMMON_CHART" --version "$COMMON_CHART_VERSION" -n "$NAME
 helm get values kms-connector-1 -n "$NAMESPACE" --all -o yaml > "$work/connector.yaml"
 endpoint_urls=$(kubectl get configmap kms-connector-http -n "$NAMESPACE" -o jsonpath='{.data.endpoint-urls}')
 require_nonempty "$endpoint_urls" "kms-connector-http[endpoint-urls] is empty"
-ENDPOINT_URLS="$endpoint_urls" THRESHOLD=$(kms_reconstruct "$NB_KMS_CORE") yq '
+tx_senders=$(kubectl get configmap kms-connector-http -n "$NAMESPACE" -o jsonpath='{.data.tx-sender-addresses}')
+require_nonempty "$tx_senders" "kms-connector-http[tx-sender-addresses] is empty"
+# FhevmSig: the domain is the one each proxy verifies (the connector's Ethereum chain id and
+# ProtocolConfig); each endpoint's audience is that party's tx-sender, aligned with the URLs.
+ENDPOINT_URLS="$endpoint_urls" TX_SENDERS="$tx_senders" THRESHOLD=$(kms_reconstruct "$NB_KMS_CORE") yq '
+  (strenv(TX_SENDERS) | split(",")) as $audiences |
   load("relayer-http/config/config.yaml") * {
       "log": {"format": "json"},
       "http": {
@@ -117,7 +122,11 @@ ENDPOINT_URLS="$endpoint_urls" THRESHOLD=$(kms_reconstruct "$NB_KMS_CORE") yq '
       "kms_aggregator": {
         "public_decrypt": {"threshold": env(THRESHOLD)},
         "user_decrypt": {"threshold": env(THRESHOLD)},
-        "endpoints": [strenv(ENDPOINT_URLS) | split(",") | to_entries | .[] | {"name": "kms_" + (.key | tostring), "url": .value, "auth": {"type": "api_key", "value_env": "KMS_CONNECTOR_API_KEY"}}]
+        "auth": {
+          "chain_id": (.commonConfig.hostChains.ethereum.chainId | tonumber),
+          "protocol_config": .commonConfig.ethereumContractAddresses.protocolConfig
+        },
+        "endpoints": [strenv(ENDPOINT_URLS) | split(",") | to_entries | .[] | {"name": "kms_" + (.key | tostring), "url": .value, "audience": $audiences[.key]}]
       }
     }' "$work/connector.yaml" > "$work/relayer-http-config.yaml"
 CONFIG="$work/relayer-http-config.yaml" yq -n '.configmapFiles.files."config.yaml" = load_str(strenv(CONFIG))' \
