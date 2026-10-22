@@ -11,7 +11,7 @@ const EXTRA_DATA_V2_LENGTH: usize = 65; // 1 (version) + 32 (context_id) + 32 (e
 /// - v1: `[0x01 | context_id(32)]`
 /// - v2: `[0x02 | context_id(32) | epoch_id(32)]`
 /// - empty or `0x00`: returns `U256::ZERO` (use static default)
-/// - unknown version or wrong length: returns `Err`
+/// - unknown version or truncated: returns `Err`
 pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, ExtraDataError> {
     let Some(&version) = extra_data.first() else {
         return Ok(U256::ZERO);
@@ -21,16 +21,16 @@ pub fn parse_context_id_from_extra_data(extra_data: &[u8]) -> Result<U256, Extra
         // 0x00 is the legacy/default marker — use static threshold
         0x00 => Ok(U256::ZERO),
         EXTRA_DATA_V1_VERSION | EXTRA_DATA_V2_VERSION => {
-            let expected_len = if version == EXTRA_DATA_V1_VERSION {
+            let min_len = if version == EXTRA_DATA_V1_VERSION {
                 EXTRA_DATA_V1_LENGTH
             } else {
                 EXTRA_DATA_V2_LENGTH
             };
-            if extra_data.len() != expected_len {
-                return Err(ExtraDataError::InvalidLength {
+            if extra_data.len() < min_len {
+                return Err(ExtraDataError::TooShort {
                     version,
                     len: extra_data.len(),
-                    expected: expected_len,
+                    expected: min_len,
                 });
             }
             let bytes: [u8; 32] = extra_data[1..33]
@@ -47,8 +47,8 @@ pub enum ExtraDataError {
     #[error("Unsupported extra_data version: 0x{0:02x}")]
     UnsupportedVersion(u8),
 
-    #[error("invalid extra_data length for v{version:#04x}: {len} bytes, expected {expected}")]
-    InvalidLength {
+    #[error("extra_data too short for v{version:#04x}: {len} bytes, expected at least {expected}")]
+    TooShort {
         version: u8,
         len: usize,
         expected: usize,
@@ -93,20 +93,14 @@ mod tests {
     }
 
     #[test]
-    fn v1_with_trailing_bytes_returns_error() {
-        let mut data = vec![EXTRA_DATA_V1_VERSION];
-        data.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
-        data.push(0xff);
-        assert!(parse_context_id_from_extra_data(&data).is_err());
-    }
-
-    #[test]
-    fn v2_with_trailing_bytes_returns_error() {
+    fn v2_with_trailing_bytes_works() {
+        let context_id = U256::from(1u64);
         let mut data = vec![EXTRA_DATA_V2_VERSION];
-        data.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
+        data.extend_from_slice(&context_id.to_be_bytes::<32>());
         data.extend_from_slice(&U256::from(2u64).to_be_bytes::<32>());
         data.extend_from_slice(&[0xff; 10]);
-        assert!(parse_context_id_from_extra_data(&data).is_err());
+
+        assert_eq!(parse_context_id_from_extra_data(&data).unwrap(), context_id);
     }
 
     #[test]

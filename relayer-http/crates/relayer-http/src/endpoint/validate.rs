@@ -88,12 +88,14 @@ pub fn handles<'a>(
 }
 
 /// Empty or `0x00` (v0), `0x01` + 32-byte context id (v1), `0x02` + context id + 32-byte epoch id (v2).
-/// Exact lengths: the connector and the host `KMSVerifier` reject anything else.
+/// Trailing bytes are allowed on purpose: the connector derives the decryption id from the request
+/// body, and callers append bytes to get distinct ids for the same handles (the benchmarking tool
+/// relies on it). Exact lengths are enforced on chain, where a request is paid for.
 pub fn extra_data(field: &str, bytes: &[u8]) -> Result<(), Invalid> {
     let ok = match bytes.first() {
         None | Some(0) => true,
-        Some(1) => bytes.len() == 33,
-        Some(2) => bytes.len() == 65,
+        Some(1) => bytes.len() >= 33,
+        Some(2) => bytes.len() >= 65,
         Some(_) => false,
     };
     if ok {
@@ -177,14 +179,8 @@ pub(crate) mod tests {
         assert_eq!(extra_data("x", &[0]), Ok(()));
         assert_eq!(extra_data("x", &[1; 33]), Ok(()));
         assert_eq!(extra_data("x", &[2; 65]), Ok(()));
-        for bad in [
-            vec![1; 32],
-            vec![1; 34],
-            vec![2; 64],
-            vec![2; 70],
-            vec![3; 33],
-            vec![0xff],
-        ] {
+        assert_eq!(extra_data("x", &[2; 70]), Ok(()));
+        for bad in [vec![1; 32], vec![2; 64], vec![3; 33], vec![0xff]] {
             assert!(extra_data("x", &bad).is_err(), "{bad:?}");
         }
     }
