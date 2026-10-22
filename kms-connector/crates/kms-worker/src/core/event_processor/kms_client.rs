@@ -23,8 +23,15 @@ use kms_grpc::{
     },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
+use std::time::Duration;
 use tonic::{Code, Request, Response, Status, transport::Channel};
 use tracing::{info, warn};
+
+/// Interval between HTTP/2 keepalive pings sent to the KMS Core, even when the channel is idle.
+const KMS_KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(10);
+
+/// Time to wait for a keepalive ping acknowledgement before closing the connection.
+const KMS_KEEP_ALIVE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The struct handling the communication with the KMS Core.
 #[derive(Clone, Debug)]
@@ -122,9 +129,13 @@ impl KmsClient {
         Ok(Self::new(channels, config.grpc_request_retries))
     }
 
-    async fn connect_single_shard(shard_id: usize, endpoint: &str) -> anyhow::Result<Channel> {
+    /// Connects to a single KMS Core shard.
+    pub async fn connect_single_shard(shard_id: usize, endpoint: &str) -> anyhow::Result<Channel> {
         let grpc_endpoint = Channel::from_shared(endpoint.to_string())
-            .map_err(|e| anyhow!("Invalid KMS Core shard endpoint #{shard_id} {endpoint}: {e}"))?;
+            .map_err(|e| anyhow!("Invalid KMS Core shard endpoint #{shard_id} {endpoint}: {e}"))?
+            .http2_keep_alive_interval(KMS_KEEP_ALIVE_INTERVAL)
+            .keep_alive_timeout(KMS_KEEP_ALIVE_TIMEOUT)
+            .keep_alive_while_idle(true);
 
         for i in 1..=CONNECTION_RETRY_NUMBER {
             info!(
