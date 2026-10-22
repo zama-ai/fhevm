@@ -1,7 +1,5 @@
-use connector_utils::monitoring::http::{
-    DURATION_BUCKETS, HttpMetrics, ROUTES, UNMATCHED_ROUTE, route_label,
-};
-use kms_connector_api::{PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE};
+use connector_utils::monitoring::http::{DURATION_BUCKETS, HttpMetrics};
+use kms_connector_api::{PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE};
 use prometheus::{
     HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge,
     core::{Collector, Desc},
@@ -78,12 +76,16 @@ pub static RESPONSE_LISTENER_WAITERS_FAILED_COUNTER: LazyLock<IntCounter> = Lazy
 pub fn init(limiter: Arc<Semaphore>, capacity: usize) -> prometheus::Result<()> {
     LazyLock::force(&RESPONSE_LISTENER_RECONNECTION_COUNTER);
     LazyLock::force(&RESPONSE_LISTENER_WAITERS_FAILED_COUNTER);
-    for route in ROUTES.into_iter().filter(|&route| route != UNMATCHED_ROUTE) {
+    for route in [
+        PUBLIC_DECRYPTION_ROUTE,
+        USER_DECRYPTION_ROUTE,
+        VERSION_ROUTE,
+    ] {
         HTTP_METRICS
             .requests
             .with_label_values(&[route, "200", "success"]);
     }
-    for route in [PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE].map(route_label) {
+    for route in [PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE] {
         for outcome in ["served", "stored", "retried", "already_in_progress"] {
             DECRYPTION_LOOKUP_COUNTER.with_label_values(&[route, outcome]);
         }

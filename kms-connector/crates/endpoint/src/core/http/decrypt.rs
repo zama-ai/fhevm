@@ -28,7 +28,7 @@ use tracing::{debug, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 pub trait DecryptionRoute {
-    const LABEL: &'static str;
+    const ROUTE: &'static str;
     type Request;
     type ResponseRow;
 
@@ -100,7 +100,7 @@ pub async fn handle<R: DecryptionRoute>(
     let row = match lookup {
         LookupOutcome::Serve(row) => {
             metrics::DECRYPTION_LOOKUP_COUNTER
-                .with_label_values(&[R::LABEL, "served"])
+                .with_label_values(&[R::ROUTE, "served"])
                 .inc();
             row
         }
@@ -109,7 +109,7 @@ pub async fn handle<R: DecryptionRoute>(
             old_response_created_at,
         } => {
             metrics::DECRYPTION_LOOKUP_COUNTER
-                .with_label_values(&[R::LABEL, outcome])
+                .with_label_values(&[R::ROUTE, outcome])
                 .inc();
             wait_and_read_response::<R>(state, id, &mut waiter, old_response_created_at).await?
         }
@@ -222,7 +222,7 @@ async fn wait_and_read_response<R: DecryptionRoute>(
             continue;
         }
         metrics::DECRYPTION_WAIT_LATENCY_HISTOGRAM
-            .with_label_values(&[R::LABEL])
+            .with_label_values(&[R::ROUTE])
             .observe(started_at.elapsed().as_secs_f64());
         return Ok(row);
     }

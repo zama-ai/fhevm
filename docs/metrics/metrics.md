@@ -202,20 +202,20 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
 
 ### HTTP decryption: proxy and endpoint
 
-Metrics are served at `/metrics`. Routes: `public_decrypt`, `user_decrypt`, `version`, `unmatched`.
-Exclude `version` probes when measuring decryption traffic. Proxy metrics start after header parsing;
+Metrics are served at `/metrics`. Routes: `/v1/public-decrypt`, `/v1/user-decrypt`, `/version`, `unmatched`.
+Exclude `/version` probes when measuring decryption traffic. Proxy metrics start after header parsing;
 TLS failures and incomplete headers are not counted. Requests still in progress when the process exits
 are not recorded.
 
 #### Metric Name: `kms_connector_proxy_http_requests_counter`
  - **Type**: Counter
  - **Labels**:
-   - `route`: `public_decrypt`, `user_decrypt`, `version` or `unmatched`.
+   - `route`: the API route, `/v1/public-decrypt`, `/v1/user-decrypt` or `/version`, or `unmatched` for any other path.
    - `status`: HTTP response status; `0` means no response status.
    - `code`: API `ErrorCode` value of an error written by the proxy, `upstream` for responses passed through from the endpoint without body inspection, `not_found`, `method_not_allowed`, `transport_error` or `cancelled`.
  - **Description**: One count per completed or cancelled request.
  - **Alarm**: Sustained decryption 5xx responses; break down by code, especially `timeout` and `upstream_transient`. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
-   - **Recommendation**: `sum by (code) (increase(kms_connector_proxy_http_requests_counter{route=~"public_decrypt|user_decrypt", status=~"5.."}[5m])) > 5`.
+   - **Recommendation**: `sum by (code) (increase(kms_connector_proxy_http_requests_counter{route=~"/v1/(public|user)-decrypt", status=~"5.."}[5m])) > 5`.
 
 #### Metric Name: `kms_connector_endpoint_http_requests_counter`
  - **Type**: Counter
@@ -224,7 +224,7 @@ are not recorded.
    - `code`: API `ErrorCode` value, `success`, `not_found`, `method_not_allowed`, `cancelled` or `unclassified`.
  - **Description**: One count per completed or cancelled request. Endpoint completion does not guarantee client delivery.
  - **Alarm**: Sustained decryption 5xx responses; break down by code, especially `overloaded` and `timeout`. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
-   - **Recommendation**: `sum by (code) (increase(kms_connector_endpoint_http_requests_counter{route=~"public_decrypt|user_decrypt", status=~"5.."}[5m])) > 5`.
+   - **Recommendation**: `sum by (code) (increase(kms_connector_endpoint_http_requests_counter{route=~"/v1/(public|user)-decrypt", status=~"5.."}[5m])) > 5`.
 
 #### Metric Name: `kms_connector_proxy_http_request_latency_seconds`
  - **Type**: Histogram
@@ -232,7 +232,7 @@ are not recorded.
    - `route`: see [description](#metric-name-kms_connector_proxy_http_requests_counter)
  - **Description**: Request duration in seconds, including failures and cancellations. Bucket bounds: 0.01–60 seconds, covering the endpoint's default 30-second decryption timeout and the proxy's default 60-second endpoint response timeout.
  - **Alarm**: p95 above 80% of the endpoint's `decryption_timeout` for 5 minutes, with sufficient traffic. The proxy waits on the endpoint, so the endpoint's threshold applies.
-   - **Recommendation**: with the default 30-second timeout, `histogram_quantile(0.95, sum by (le, route) (rate(kms_connector_proxy_http_request_latency_seconds_bucket{route=~"public_decrypt|user_decrypt"}[5m]))) > 24`.
+   - **Recommendation**: with the default 30-second timeout, `histogram_quantile(0.95, sum by (le, route) (rate(kms_connector_proxy_http_request_latency_seconds_bucket{route=~"/v1/(public|user)-decrypt"}[5m]))) > 24`.
 
 #### Metric Name: `kms_connector_endpoint_http_request_latency_seconds`
  - **Type**: Histogram
@@ -240,7 +240,7 @@ are not recorded.
    - `route`: see [description](#metric-name-kms_connector_proxy_http_requests_counter)
  - **Description**: see [description](#metric-name-kms_connector_proxy_http_request_latency_seconds)
  - **Alarm**: see [description](#metric-name-kms_connector_proxy_http_request_latency_seconds)
-   - **Recommendation**: with the default 30-second timeout, `histogram_quantile(0.95, sum by (le, route) (rate(kms_connector_endpoint_http_request_latency_seconds_bucket{route=~"public_decrypt|user_decrypt"}[5m]))) > 24`.
+   - **Recommendation**: with the default 30-second timeout, `histogram_quantile(0.95, sum by (le, route) (rate(kms_connector_endpoint_http_request_latency_seconds_bucket{route=~"/v1/(public|user)-decrypt"}[5m]))) > 24`.
 
 #### Metric Name: `kms_connector_proxy_http_requests_in_flight`
  - **Type**: Gauge
@@ -265,7 +265,7 @@ are not recorded.
 #### Metric Name: `kms_connector_endpoint_decryption_lookup_counter`
  - **Type**: Counter
  - **Labels**:
-   - `route`: `public_decrypt` or `user_decrypt`.
+   - `route`: `/v1/public-decrypt` or `/v1/user-decrypt`.
    - `outcome`: `served` returns an existing response; `stored` submits new work; `retried` submits work after an old error; `already_in_progress` joins existing work, possibly skipping an old error.
  - **Description**: Counts the committed decryption lookups.
  - **Alarm**: Diagnostic only. Worker metrics cannot isolate HTTP work because they lack a source label.
@@ -273,7 +273,7 @@ are not recorded.
 #### Metric Name: `kms_connector_endpoint_decryption_wait_latency_seconds`
  - **Type**: Histogram
  - **Labels**:
-   - `route`: `public_decrypt` or `user_decrypt`.
+   - `route`: `/v1/public-decrypt` or `/v1/user-decrypt`.
  - **Description**: Seconds waiting for a response and reading its database row, for waits ending with a response (including API errors); existing responses served directly are not waited for. Timeouts, listener disruptions and cancellations are left out so they do not mask the response latency: the request counter counts them by `code`.
  - **Alarm**: Diagnostic only; use request timeout and server-error alarms.
 

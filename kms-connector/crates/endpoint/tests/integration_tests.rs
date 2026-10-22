@@ -122,11 +122,11 @@ async fn test_public_decrypt_happy_path() -> anyhow::Result<()> {
     assert_eq!(body.signature.to_vec(), inserted.signature);
     assert_eq!(body.extra_data.to_vec(), inserted.extra_data);
 
-    assert_requests("public_decrypt", "200", "success", 1).await;
-    assert_eq!(lookups("public_decrypt", "stored"), 1);
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "200", "success", 1).await;
+    assert_eq!(lookups(PUBLIC_DECRYPTION_ROUTE, "stored"), 1);
     assert_eq!(
         metrics::DECRYPTION_WAIT_LATENCY_HISTOGRAM
-            .with_label_values(&["public_decrypt"])
+            .with_label_values(&[PUBLIC_DECRYPTION_ROUTE])
             .get_sample_count(),
         1
     );
@@ -223,8 +223,8 @@ async fn test_user_decrypt_happy_path() -> anyhow::Result<()> {
     );
     assert_eq!(body.signature.to_vec(), inserted.signature);
 
-    assert_requests("user_decrypt", "200", "success", 1).await;
-    assert_eq!(lookups("user_decrypt", "stored"), 1);
+    assert_requests(USER_DECRYPTION_ROUTE, "200", "success", 1).await;
+    assert_eq!(lookups(USER_DECRYPTION_ROUTE, "stored"), 1);
     endpoint.stop().await
 }
 
@@ -240,7 +240,11 @@ async fn test_duplicate_submissions_share_one_request() -> anyhow::Result<()> {
     let second = endpoint.spawn_pdec(&request);
 
     wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, id).await;
-    wait_for_counter(|| lookups("public_decrypt", "already_in_progress"), 1).await;
+    wait_for_counter(
+        || lookups(PUBLIC_DECRYPTION_ROUTE, "already_in_progress"),
+        1,
+    )
+    .await;
     assert_eq!(admitted_requests(), 2);
     complete_public(&endpoint.db, id).await?;
 
@@ -252,9 +256,9 @@ async fn test_duplicate_submissions_share_one_request() -> anyhow::Result<()> {
     }
     assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 1);
 
-    assert_requests("public_decrypt", "200", "success", 2).await;
-    assert_eq!(lookups("public_decrypt", "stored"), 1);
-    assert_eq!(lookups("public_decrypt", "already_in_progress"), 1);
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "200", "success", 2).await;
+    assert_eq!(lookups(PUBLIC_DECRYPTION_ROUTE, "stored"), 1);
+    assert_eq!(lookups(PUBLIC_DECRYPTION_ROUTE, "already_in_progress"), 1);
     assert_eq!(admitted_requests(), 0);
     endpoint.stop().await
 }
@@ -303,7 +307,7 @@ async fn test_existing_payload_row_is_served_immediately() -> anyhow::Result<()>
     assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 0);
     assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 0);
 
-    for route in ["public_decrypt", "user_decrypt"] {
+    for route in [PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE] {
         assert_eq!(lookups(route, "served"), 1);
         assert_eq!(
             metrics::DECRYPTION_WAIT_LATENCY_HISTOGRAM
@@ -513,7 +517,7 @@ async fn test_expired_irrecoverable_error_is_reprocessed(
         count_rows(&endpoint.db, "user_decryption_responses").await,
         1
     );
-    for route in ["public_decrypt", "user_decrypt"] {
+    for route in [PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE] {
         assert_eq!(lookups(route, "retried"), 1);
         assert_eq!(lookups(route, "served"), 1);
     }
@@ -586,10 +590,10 @@ async fn test_retryable_error_row_resets_failed_request() -> anyhow::Result<()> 
     assert_eq!(body.message, "after");
 
     assert_eq!(
-        lookups("public_decrypt", "retried"),
+        lookups(PUBLIC_DECRYPTION_ROUTE, "retried"),
         retryable_codes.len() as u64
     );
-    assert_eq!(lookups("user_decrypt", "retried"), 1);
+    assert_eq!(lookups(USER_DECRYPTION_ROUTE, "retried"), 1);
     endpoint.stop().await
 }
 
@@ -620,7 +624,11 @@ async fn test_retryable_or_expired_error_row_attaches_to_reprocessing(
 
     let pending = endpoint.spawn_pdec(&public);
     // Attachment is observable without changing the request row or consuming the old error.
-    wait_for_counter(|| lookups("public_decrypt", "already_in_progress"), 1).await;
+    wait_for_counter(
+        || lookups(PUBLIC_DECRYPTION_ROUTE, "already_in_progress"),
+        1,
+    )
+    .await;
     assert_eq!(
         request_status(&endpoint.db, PUBLIC_REQUESTS, public_id)
             .await
@@ -644,9 +652,9 @@ async fn test_retryable_or_expired_error_row_attaches_to_reprocessing(
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(error_body(response).await.message, "after");
 
-    assert_eq!(lookups("public_decrypt", "already_in_progress"), 1);
-    assert_eq!(lookups("public_decrypt", "retried"), 0);
-    assert_eq!(lookups("user_decrypt", "retried"), 1);
+    assert_eq!(lookups(PUBLIC_DECRYPTION_ROUTE, "already_in_progress"), 1);
+    assert_eq!(lookups(PUBLIC_DECRYPTION_ROUTE, "retried"), 0);
+    assert_eq!(lookups(USER_DECRYPTION_ROUTE, "retried"), 1);
     endpoint.stop().await
 }
 
@@ -701,7 +709,7 @@ async fn test_overloaded_replica_answers_503() -> anyhow::Result<()> {
     complete_public(&endpoint.db, first_request.id()).await?;
     assert_eq!(first.await?.status(), StatusCode::OK);
 
-    assert_requests("public_decrypt", "503", "overloaded", 1).await;
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "503", "overloaded", 1).await;
     assert_eq!(admitted_requests(), 0);
     endpoint.stop().await
 }
@@ -745,7 +753,7 @@ async fn test_client_disconnect_releases_permit() -> anyhow::Result<()> {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
-    assert_requests("public_decrypt", "0", "cancelled", 1).await;
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "0", "cancelled", 1).await;
     assert_eq!(admitted_requests(), 0);
     endpoint.stop().await
 }
@@ -872,7 +880,7 @@ async fn test_decryption_timeout_answers_504_and_releases_permit() -> anyhow::Re
     complete_public(&endpoint.db, next.id()).await?;
     assert_eq!(endpoint.post_public(&next).await.status(), StatusCode::OK);
 
-    assert_requests("public_decrypt", "504", "timeout", 1).await;
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "504", "timeout", 1).await;
     assert_eq!(admitted_requests(), 0);
     endpoint.stop().await
 }
@@ -888,7 +896,11 @@ async fn test_listener_reconnection_fails_in_flight_requests_fast() -> anyhow::R
     wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, request.id()).await;
 
     let duplicate = endpoint.spawn_pdec(&request);
-    wait_for_counter(|| lookups("public_decrypt", "already_in_progress"), 1).await;
+    wait_for_counter(
+        || lookups(PUBLIC_DECRYPTION_ROUTE, "already_in_progress"),
+        1,
+    )
+    .await;
     info!("Killing the listener connection...");
     let killed = sqlx::query(
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
@@ -930,7 +942,7 @@ async fn test_listener_reconnection_fails_in_flight_requests_fast() -> anyhow::R
     .await;
     assert_eq!(metrics::RESPONSE_LISTENER_RECONNECTION_COUNTER.get(), 1);
     assert_eq!(metrics::RESPONSE_LISTENER_WAITERS_FAILED_COUNTER.get(), 2);
-    assert_requests("public_decrypt", "502", "upstream_transient", 2).await;
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "502", "upstream_transient", 2).await;
     info!("The service keeps running on a fresh listener connection...");
     let next = public_request();
     let pending = endpoint.spawn_pdec(&next);

@@ -17,8 +17,6 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// `route` label of requests matching none of the API routes.
 pub const UNMATCHED_ROUTE: &str = "unmatched";
-/// `route` label values: the API routes, then [`UNMATCHED_ROUTE`].
-pub const ROUTES: [&str; 4] = ["public_decrypt", "user_decrypt", "version", UNMATCHED_ROUTE];
 /// W3C trace context headers.
 pub const TRACEPARENT: &str = "traceparent";
 pub const TRACESTATE: &str = "tracestate";
@@ -29,11 +27,12 @@ pub const DURATION_BUCKETS: &[f64] = &[
     0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0,
 ];
 
+/// The `route` label of a request path: the API route it matches, or [`UNMATCHED_ROUTE`].
 pub fn route_label(path: &str) -> &'static str {
     match path {
-        PUBLIC_DECRYPTION_ROUTE => ROUTES[0],
-        USER_DECRYPTION_ROUTE => ROUTES[1],
-        VERSION_ROUTE => ROUTES[2],
+        PUBLIC_DECRYPTION_ROUTE => PUBLIC_DECRYPTION_ROUTE,
+        USER_DECRYPTION_ROUTE => USER_DECRYPTION_ROUTE,
+        VERSION_ROUTE => VERSION_ROUTE,
         _ => UNMATCHED_ROUTE,
     }
 }
@@ -168,7 +167,12 @@ impl HttpMetrics {
         let in_flight =
             register_int_gauge!(&in_flight_name, "Active HTTP requests after header parsing")
                 .unwrap_or_else(|e| panic!("Failed to register {in_flight_name} metric: {e}"));
-        for route in ROUTES {
+        for route in [
+            PUBLIC_DECRYPTION_ROUTE,
+            USER_DECRYPTION_ROUTE,
+            VERSION_ROUTE,
+            UNMATCHED_ROUTE,
+        ] {
             duration.with_label_values(&[route]);
         }
         Self {
@@ -325,31 +329,35 @@ mod tests {
     fn requests_are_recorded_once_on_drop() {
         static METRICS: std::sync::LazyLock<HttpMetrics> =
             std::sync::LazyLock::new(|| HttpMetrics::register("http_test"));
-        let observation = METRICS.start("public_decrypt");
+        let observation = METRICS.start(PUBLIC_DECRYPTION_ROUTE);
         assert_eq!(METRICS.in_flight.get(), 1);
         drop(observation);
         assert_eq!(METRICS.in_flight.get(), 0);
         assert_eq!(
             METRICS
                 .requests
-                .with_label_values(&["public_decrypt", "0", "cancelled"])
+                .with_label_values(&[PUBLIC_DECRYPTION_ROUTE, "0", "cancelled"])
                 .get(),
             1
         );
-        let mut completed = METRICS.start("public_decrypt");
+        let mut completed = METRICS.start(PUBLIC_DECRYPTION_ROUTE);
         completed.finish(401, "sender_authentication_failed", &Span::none());
         drop(completed);
         assert_eq!(
             METRICS
                 .requests
-                .with_label_values(&["public_decrypt", "401", "sender_authentication_failed"])
+                .with_label_values(&[
+                    PUBLIC_DECRYPTION_ROUTE,
+                    "401",
+                    "sender_authentication_failed"
+                ])
                 .get(),
             1
         );
         assert_eq!(
             METRICS
                 .duration
-                .with_label_values(&["public_decrypt"])
+                .with_label_values(&[PUBLIC_DECRYPTION_ROUTE])
                 .get_sample_count(),
             2
         );

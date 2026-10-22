@@ -8,6 +8,7 @@ use common::{
     MAX_BODY_BYTES, StubEndpoint, TestProxy, auth_header, auth_header_expiring, free_addr, now,
     sender,
 };
+use connector_utils::monitoring::http::UNMATCHED_ROUTE;
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
     VersionResponse,
@@ -76,8 +77,8 @@ async fn test_forwards_authenticated_requests_untouched() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_requests("public_decrypt", "200", "upstream", 1).await;
-    assert_requests("user_decrypt", "200", "upstream", 1).await;
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "200", "upstream", 1).await;
+    assert_requests(USER_DECRYPTION_ROUTE, "200", "upstream", 1).await;
     provider.force_flush().unwrap();
     let spans = exporter.get_finished_spans().unwrap();
     assert_eq!(spans.len(), 2, "version requests must not export spans");
@@ -215,7 +216,7 @@ async fn test_rejects_expired_headers_as_retryable() {
     assert_eq!(error.code, ErrorCode::AuthExpired);
     assert!(error.retryable);
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
-    assert_requests("public_decrypt", "401", "auth_expired", 1).await;
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "401", "auth_expired", 1).await;
 }
 
 #[tokio::test]
@@ -259,9 +260,9 @@ async fn test_default_deny_routing() {
         );
     }
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
-    assert_requests("unmatched", "404", "not_found", 4).await;
-    assert_requests("public_decrypt", "405", "method_not_allowed", 1).await;
-    assert_requests("version", "405", "method_not_allowed", 1).await;
+    assert_requests(UNMATCHED_ROUTE, "404", "not_found", 4).await;
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "405", "method_not_allowed", 1).await;
+    assert_requests(VERSION_ROUTE, "405", "method_not_allowed", 1).await;
 }
 
 #[tokio::test]
@@ -298,8 +299,14 @@ async fn test_rejects_oversized_bodies() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_requests("public_decrypt", "400", "malformed", 2).await;
-    assert_requests("public_decrypt", "401", "sender_authentication_failed", 1).await;
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "400", "malformed", 2).await;
+    assert_requests(
+        PUBLIC_DECRYPTION_ROUTE,
+        "401",
+        "sender_authentication_failed",
+        1,
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -318,7 +325,7 @@ async fn test_passes_endpoint_errors_through() {
     let error: ErrorResponse = response.json().await.unwrap();
     assert_eq!(error.code, ErrorCode::Overloaded);
     assert!(error.retryable);
-    assert_requests("public_decrypt", "503", "upstream", 1).await;
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "503", "upstream", 1).await;
 }
 
 #[tokio::test]
@@ -360,7 +367,7 @@ async fn test_upstream_timeout() {
     let error: ErrorResponse = response.json().await.unwrap();
     assert_eq!(error.code, ErrorCode::Timeout);
     assert!(error.retryable);
-    assert_requests("public_decrypt", "504", "timeout", 1).await;
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "504", "timeout", 1).await;
 }
 
 #[tokio::test]
@@ -380,7 +387,7 @@ async fn test_unreachable_endpoint() {
     let error: ErrorResponse = response.json().await.unwrap();
     assert_eq!(error.code, ErrorCode::UpstreamTransient);
     assert!(error.retryable);
-    assert_requests("public_decrypt", "502", "upstream_transient", 1).await;
+    assert_requests(PUBLIC_DECRYPTION_ROUTE, "502", "upstream_transient", 1).await;
 }
 
 // ---------------------------------------------------------------------------------------------
