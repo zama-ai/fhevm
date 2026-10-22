@@ -2,7 +2,7 @@ use alloy_primitives::{Address, B256, Bytes, U256};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use thiserror::Error;
-use uuid::Uuid;
+use uuid::{Uuid, Version};
 
 /// Event payload for the backtrack-reorg consumer.
 /// Carries the block number where the reorg was detected.
@@ -74,6 +74,8 @@ pub enum CatchupPayloadValidationError {
     EmptyConsumerId,
     #[error("block_start must be <= block_end")]
     InvalidBlockRange,
+    #[error("catchup_id must be a UUIDv7")]
+    CatchupIdNotV7,
 }
 
 /// Event payload for the `catchup` consumer.
@@ -87,7 +89,8 @@ pub struct CatchupPayload {
     pub block_start: u64,
     pub block_end: u64,
     /// Idempotency key minted by the consumer, naming this catchup request.
-    /// `None` only for payloads published by a listener predating this field.
+    /// Must be a UUIDv7. `None` only for payloads published by a listener
+    /// predating this field.
     #[serde(default)]
     pub catchup_id: Option<Uuid>,
     /// Position of this sub-range within its parent request, starting at 0.
@@ -108,6 +111,12 @@ impl CatchupPayload {
         if self.block_start > self.block_end {
             return Err(CatchupPayloadValidationError::InvalidBlockRange);
         }
+        if self
+            .catchup_id
+            .is_some_and(|id| id.get_version() != Some(Version::SortRand))
+        {
+            return Err(CatchupPayloadValidationError::CatchupIdNotV7);
+        }
         Ok(())
     }
 }
@@ -117,6 +126,8 @@ impl CatchupPayload {
 pub enum CancelCatchupPayloadValidationError {
     #[error("consumer_id must not be empty")]
     EmptyConsumerId,
+    #[error("catchup_id must be a UUIDv7")]
+    CatchupIdNotV7,
 }
 
 /// Event payload for the `cancel-catchup` consumer.
@@ -136,6 +147,9 @@ impl CancelCatchupPayload {
         self.consumer_id = self.consumer_id.trim().to_owned();
         if self.consumer_id.is_empty() {
             return Err(CancelCatchupPayloadValidationError::EmptyConsumerId);
+        }
+        if self.catchup_id.get_version() != Some(Version::SortRand) {
+            return Err(CancelCatchupPayloadValidationError::CatchupIdNotV7);
         }
         Ok(())
     }
@@ -772,6 +786,36 @@ mod tests {
     }
 
     #[test]
+    fn catchup_payload_accepts_v7_catchup_id() {
+        let mut p = CatchupPayload {
+            consumer_id: "gateway".into(),
+            block_start: 1,
+            block_end: 10,
+            catchup_id: Some(Uuid::now_v7()),
+            sub_range_seq: None,
+        };
+        p.validate().unwrap();
+    }
+
+    #[test]
+    fn catchup_payload_rejects_non_v7_catchup_id() {
+        for id in [Uuid::new_v4(), Uuid::nil(), Uuid::max()] {
+            let mut p = CatchupPayload {
+                consumer_id: "gateway".into(),
+                block_start: 1,
+                block_end: 10,
+                catchup_id: Some(id),
+                sub_range_seq: None,
+            };
+            assert_eq!(
+                p.validate().unwrap_err(),
+                CatchupPayloadValidationError::CatchupIdNotV7,
+                "accepted {id}",
+            );
+        }
+    }
+
+    #[test]
     fn catchup_payload_round_trips() {
         let payload = CatchupPayload {
             consumer_id: "gateway".into(),
@@ -846,6 +890,21 @@ mod tests {
             empty.validate().unwrap_err(),
             CancelCatchupPayloadValidationError::EmptyConsumerId,
         );
+    }
+
+    #[test]
+    fn cancel_catchup_payload_rejects_non_v7_catchup_id() {
+        for id in [Uuid::new_v4(), Uuid::nil(), Uuid::max()] {
+            let mut p = CancelCatchupPayload {
+                consumer_id: "gateway".into(),
+                catchup_id: id,
+            };
+            assert_eq!(
+                p.validate().unwrap_err(),
+                CancelCatchupPayloadValidationError::CatchupIdNotV7,
+                "accepted {id}",
+            );
+        }
     }
 
     #[test]

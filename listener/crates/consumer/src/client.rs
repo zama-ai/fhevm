@@ -373,7 +373,10 @@ impl ListenerConsumer {
     /// [`consume_catchup`](Self::consume_catchup).
     ///
     /// `catchup_id` is supplied by the caller and identifies this request for
-    /// its whole lifetime. Store it durably before calling: it is the only
+    /// its whole lifetime. It must be a UUIDv7 — mint it with
+    /// [`Uuid::now_v7`]; any other version is rejected with
+    /// [`ConsumerError::InvalidCatchupPayload`] before anything is published.
+    /// Store it durably before calling: it is the only
     /// handle that can later [`cancel_catchup`](Self::cancel_catchup) the
     /// request. Re-sending the same id is a no-op — the listener will not fan
     /// the range out a second time — so a crash between persisting the id and
@@ -421,7 +424,10 @@ impl ListenerConsumer {
     /// the cancelled `catchup_id` on [`BlockPayload::catchup_id`] so a handler
     /// can drop them.
     ///
-    /// Cancelling an id twice, or an id that never existed, is a no-op.
+    /// Cancelling an id twice, or an id that never existed, is a no-op. An id
+    /// that is not a UUIDv7 is rejected with
+    /// [`ConsumerError::InvalidCancelCatchupPayload`] before anything is
+    /// published.
     /// Cancelling an id owned by a different consumer is rejected by the
     /// listener and recorded there — this call still returns `Ok`.
     ///
