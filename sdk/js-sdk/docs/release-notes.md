@@ -10,6 +10,11 @@
   **Breaking:** this SDK release only supports FHEVM protocol `0.15.0` through `0.17.0` — older
   protocol lines are no longer supported. Upgrade your host chain to protocol `>= 0.15.0` before
   upgrading to this SDK version.
+- **Custom query parameters for relayer requests.** `RelayerCommonOptions` now accepts a
+  `query: Record<string, string>` field next to `headers`. Its entries are appended,
+  percent-encoded, to the URL of job requests (submission and polling) and the key-URL
+  lookup. `headers` remains the preferred option; use `query` only when a proxy in front of
+  the relayer strips custom headers before they reach it.
 
 #### Changed
 
