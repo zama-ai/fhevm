@@ -100,7 +100,7 @@ impl CatchupRepository {
     }
 
     /// Merge one published sub-range into the request's coverage set, and
-    /// complete the request if that closed the span (D16).
+    /// complete the request if that closed the span.
     ///
     /// `block_start`/`block_end` are inclusive, matching the payload; the
     /// half-open conversion happens here so no call site has to remember it.
@@ -112,8 +112,7 @@ impl CatchupRepository {
     ///   reason coverage is a set and not a counter: a counter double-counts
     ///   the redelivery, reaches its target early, and marks the request
     ///   terminal while sub-ranges are still outstanding — which the fetcher
-    ///   guard then reads as "discard", turning a retry into a silent data gap
-    ///   (D11).
+    ///   guard then reads as "discard", turning a retry into a silent data gap.
     /// - **The target is `fanned_end`, not `block_end`.** A request reaching
     ///   past the chain head only ever fans out as far as the head, so coverage
     ///   can never reach the requested end and the row would sit `ACTIVE`
