@@ -167,6 +167,9 @@ pub async fn insert_solana_block_records(
         )
         .await?;
         let block_summary = solana_block_summary(block);
+        // Take the chain row locks in hash order, as EVM ingest does.
+        let mut chains = chains;
+        chains.sort_by(|a, b| a.hash.as_slice().cmp(b.hash.as_slice()));
         for chain in &chains {
             db.update_dependence_chain(
                 tx,
