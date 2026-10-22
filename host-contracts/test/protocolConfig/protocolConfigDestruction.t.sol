@@ -5,7 +5,6 @@ import {Vm} from "forge-std/Test.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {ProtocolConfigTestBase} from "./protocolConfig.t.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
-import {KmsNodeParams} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 
 /// @dev EIP-712 destruction confirmations.
@@ -20,17 +19,6 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         _confirmContextCreation(contextId, kmsPk3, "");
         vm.prank(owner);
         protocolConfig.destroyKmsContext(contextId);
-    }
-
-    function test_revertConfirmKmsContextDestructionBeforeDestroy() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
-
-        bytes memory signature = _computeSignature(kmsPk0, _hashContextDestruction(contextId, ""));
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.KmsContextNotDestroyed.selector, contextId));
-        protocolConfig.confirmKmsContextDestruction(contextId, signature, "");
     }
 
     /// @dev Only the active committee confirms, once per signer, from any sender. extraData is
@@ -97,88 +85,6 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         protocolConfig.confirmKmsEpochDestruction(epochId, signature, extraData);
     }
 
-    /// @dev Switches from the genesis committee A = {signer0, signer1} to B = {signer1, signer2} and activates
-    ///      its epoch `newEpochId`. signer1 belongs to both committees.
-    function _rotateToSharedCommittee(uint256 newEpochId) internal {
-        KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        nodes[0].signerAddress = vm.addr(kmsPk1);
-        nodes[1].signerAddress = vm.addr(kmsPk2);
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(nodes, _defaultThresholds());
-        uint256 contextId = protocolConfig.getCurrentKmsContextIdCounter();
-        _confirmContextCreation(contextId, kmsPk0, "");
-        _confirmContextCreation(contextId, kmsPk1, "");
-        _confirmContextCreation(contextId, kmsPk2, "");
-        _confirmEpochActivation(contextId, newEpochId, kmsPk1);
-        _confirmEpochActivation(contextId, newEpochId, kmsPk2);
-        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
-        assertEq(activeContextId, contextId);
-        assertEq(activeEpochId, newEpochId);
-    }
-
-    /// @dev A context destroyed under committee A is confirmed by committee B after the rotation.
-    ///      An A-only signer is rejected. A signer of both committees confirms once, and its confirmation
-    ///      under A does not count toward B's quorum.
-    function test_confirmKmsContextDestructionAcrossRotation() public {
-        _setupEpochLifecycle();
-        uint256 contextId = _destroyCreatedDisjointContext();
-        bytes memory signature1 = _computeSignature(kmsPk1, _hashContextDestruction(contextId, ""));
-        protocolConfig.confirmKmsContextDestruction(contextId, signature1, "");
-
-        _rotateToSharedCommittee(EPOCH_COUNTER_BASE + 3);
-
-        bytes memory signature = _computeSignature(kmsPk0, _hashContextDestruction(contextId, ""));
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.KmsDestructionUnauthorized.selector, vm.addr(kmsPk0), contextId)
-        );
-        protocolConfig.confirmKmsContextDestruction(contextId, signature, "");
-
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.KmsDestructionAlreadyConfirmed.selector, vm.addr(kmsPk1), contextId)
-        );
-        protocolConfig.confirmKmsContextDestruction(contextId, signature1, "");
-
-        signature = _computeSignature(kmsPk2, _hashContextDestruction(contextId, ""));
-        vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestructionConfirmation(contextId, vm.addr(kmsPk2), signature, "");
-        vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestructionQuorumReached(contextId, "");
-        protocolConfig.confirmKmsContextDestruction(contextId, signature, "");
-    }
-
-    /// @dev An epoch destroyed under committee A is confirmed by committee B after the rotation.
-    ///      An A-only signer is rejected. A signer of both committees confirms once.
-    function test_confirmKmsEpochDestructionAcrossRotation() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
-        vm.prank(owner);
-        protocolConfig.destroyKmsEpoch(epochId);
-        bytes memory signature1 = _computeSignature(kmsPk1, _hashEpochDestruction(epochId, ""));
-        protocolConfig.confirmKmsEpochDestruction(epochId, signature1, "");
-
-        _rotateToSharedCommittee(EPOCH_COUNTER_BASE + 3);
-
-        bytes memory signature = _computeSignature(kmsPk0, _hashEpochDestruction(epochId, ""));
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.KmsDestructionUnauthorized.selector, vm.addr(kmsPk0), epochId)
-        );
-        protocolConfig.confirmKmsEpochDestruction(epochId, signature, "");
-
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.KmsDestructionAlreadyConfirmed.selector, vm.addr(kmsPk1), epochId)
-        );
-        protocolConfig.confirmKmsEpochDestruction(epochId, signature1, "");
-
-        signature = _computeSignature(kmsPk2, _hashEpochDestruction(epochId, ""));
-        vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsEpochDestructionConfirmation(epochId, vm.addr(kmsPk2), signature, "");
-        vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsEpochDestructionQuorumReached(epochId, "");
-        protocolConfig.confirmKmsEpochDestruction(epochId, signature, "");
-    }
-
     /// @dev With n = 4 and t = 1 the quorum is 3. A confirmation of another extraData counts apart,
     ///      so the event fires on the third confirmation of one digest.
     function test_kmsEpochDestructionQuorum() public {
@@ -193,22 +99,22 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         vm.recordLogs();
         protocolConfig.confirmKmsEpochDestruction(
             epochId,
-            _signEpochDestruction(kmsPk0, epochId, extraData),
+            _signEpochDestruction(epochId, kmsPk0, extraData),
             extraData
         );
         protocolConfig.confirmKmsEpochDestruction(
             epochId,
-            _signEpochDestruction(kmsPk1, epochId, extraData),
+            _signEpochDestruction(epochId, kmsPk1, extraData),
             extraData
         );
-        protocolConfig.confirmKmsEpochDestruction(epochId, _signEpochDestruction(kmsPk2, epochId, ""), "");
+        protocolConfig.confirmKmsEpochDestruction(epochId, _signEpochDestruction(epochId, kmsPk2, ""), "");
         assertEq(_countLogs(IProtocolConfig.KmsEpochDestructionQuorumReached.selector), 0);
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
         emit IProtocolConfig.KmsEpochDestructionQuorumReached(epochId, extraData);
         protocolConfig.confirmKmsEpochDestruction(
             epochId,
-            _signEpochDestruction(kmsPk3, epochId, extraData),
+            _signEpochDestruction(epochId, kmsPk3, extraData),
             extraData
         );
     }
@@ -223,13 +129,13 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         protocolConfig.destroyKmsContext(contextId);
 
         vm.recordLogs();
-        protocolConfig.confirmKmsContextDestruction(contextId, _signContextDestruction(kmsPk0, contextId), "");
-        protocolConfig.confirmKmsContextDestruction(contextId, _signContextDestruction(kmsPk1, contextId), "");
+        protocolConfig.confirmKmsContextDestruction(contextId, _signContextDestruction(contextId, kmsPk0), "");
+        protocolConfig.confirmKmsContextDestruction(contextId, _signContextDestruction(contextId, kmsPk1), "");
         assertEq(_countLogs(IProtocolConfig.KmsContextDestructionQuorumReached.selector), 0);
 
         vm.expectEmit(true, true, false, true, address(protocolConfig));
         emit IProtocolConfig.KmsContextDestructionQuorumReached(contextId, "");
-        protocolConfig.confirmKmsContextDestruction(contextId, _signContextDestruction(kmsPk2, contextId), "");
+        protocolConfig.confirmKmsContextDestruction(contextId, _signContextDestruction(contextId, kmsPk2), "");
     }
 
     /// @dev OZ ECDSA rejects the high-s twin of a valid destruction signature.
@@ -248,18 +154,6 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         (signature, highS) = _highSSignature(kmsPk0, _hashEpochDestruction(epochId, ""));
         vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureS.selector, highS));
         protocolConfig.confirmKmsEpochDestruction(epochId, signature, "");
-    }
-
-    function _signContextDestruction(uint256 pk, uint256 contextId) internal view returns (bytes memory) {
-        return _computeSignature(pk, _hashContextDestruction(contextId, ""));
-    }
-
-    function _signEpochDestruction(
-        uint256 pk,
-        uint256 epochId,
-        bytes memory extraData
-    ) internal view returns (bytes memory) {
-        return _computeSignature(pk, _hashEpochDestruction(epochId, extraData));
     }
 
     function _countLogs(bytes32 topic) internal view returns (uint256 count) {

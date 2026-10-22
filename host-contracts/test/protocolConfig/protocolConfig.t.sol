@@ -5,7 +5,7 @@ import {Vm} from "forge-std/Test.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
+import {ProtocolConfigSigningTestUtils} from "@fhevm-foundry/ProtocolConfigSigningTestUtils.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
@@ -20,7 +20,7 @@ import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE, 
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /// @dev Shared setup and helpers for the ProtocolConfig test suites.
-abstract contract ProtocolConfigTestBase is HostContractsDeployerTestUtils {
+abstract contract ProtocolConfigTestBase is ProtocolConfigSigningTestUtils {
     KMSGeneration internal kmsGeneration;
 
     address internal constant owner = address(456);
@@ -2240,19 +2240,6 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
     // EIP-712 domain and replay
     // -----------------------------------------------------------------------
 
-    function _domainSeparator(uint256 chainId, address verifyingContract) internal pure returns (bytes32) {
-        return
-            keccak256(
-                abi.encode(
-                    EIP712_DOMAIN_TYPE_HASH,
-                    keccak256(bytes("ProtocolConfig")),
-                    keccak256(bytes("1")),
-                    chainId,
-                    verifyingContract
-                )
-            );
-    }
-
     /// @dev A signature under another chainId or verifyingContract recovers an address outside both
     ///      committees. The domain separator follows block.chainid on every call, so a signature over
     ///      the deploy chainId stops working after a chain id change.
@@ -2273,14 +2260,20 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
 
         bytes memory signature = _computeSignature(
             kmsPk0,
-            MessageHashUtils.toTypedDataHash(_domainSeparator(block.chainid + 1, address(protocolConfig)), structHash)
+            MessageHashUtils.toTypedDataHash(
+                _computeProtocolConfigDomainSeparator(block.chainid + 1, address(protocolConfig)),
+                structHash
+            )
         );
         vm.expectPartialRevert(IProtocolConfig.KmsContextCreationUnauthorized.selector);
         protocolConfig.confirmKmsContextCreation(newContextId, signature, "");
 
         signature = _computeSignature(
             kmsPk0,
-            MessageHashUtils.toTypedDataHash(_domainSeparator(block.chainid, address(0xC0FFEE)), structHash)
+            MessageHashUtils.toTypedDataHash(
+                _computeProtocolConfigDomainSeparator(block.chainid, address(0xC0FFEE)),
+                structHash
+            )
         );
         vm.expectPartialRevert(IProtocolConfig.KmsContextCreationUnauthorized.selector);
         protocolConfig.confirmKmsContextCreation(newContextId, signature, "");

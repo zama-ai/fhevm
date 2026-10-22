@@ -1,16 +1,16 @@
 import { expect } from 'chai';
 import { ethers, upgrades } from 'hardhat';
 
-import type { KmsThresholds } from '../../scripts/protocolConfigEip712';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
+import { findEventArg } from '../../tasks/utils/protocolConfigEip712';
 import { ACL, ACLUpgradedExample, ProtocolConfig } from '../../types';
+import type { KmsThresholdsStruct } from '../../types/contracts/ProtocolConfig';
 import { getSigners, initSigners } from '../signers';
 import {
   buildControllableKmsCommittee,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   confirmEpochActivationBySigners,
-  findEventArg,
   readHostAddress,
 } from '../tasks/taskHelpers';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
@@ -77,7 +77,7 @@ describe('Upgrades', function () {
     fred: any,
     emptyUUPSFactory: any,
     nodes = buildProtocolConfigNodes(),
-    thresholds: KmsThresholds = buildProtocolConfigThresholds(),
+    thresholds: KmsThresholdsStruct = buildProtocolConfigThresholds(),
   ) {
     const factory = await ethers.getContractFactory('ProtocolConfigV015LayoutExample', fred);
     const pc = await upgrades.upgradeProxy(await deployEmptyProxy(emptyUUPSFactory), factory, {

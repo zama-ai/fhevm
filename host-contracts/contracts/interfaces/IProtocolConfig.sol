@@ -239,10 +239,6 @@ interface IProtocolConfig is IProtocolConfigBase {
     /// @param epochId The epoch ID.
     error EmptyEpochActivationResults(uint256 epochId);
 
-    /// @notice The KMS context was not destroyed with destroyKmsContext.
-    /// @param kmsContextId The context ID.
-    error KmsContextNotDestroyed(uint256 kmsContextId);
-
     /// @notice The recovered signer is not in the active committee.
     /// @param signer The recovered signer.
     /// @param destroyedId The destroyed context or epoch ID.
@@ -349,7 +345,8 @@ interface IProtocolConfig is IProtocolConfigBase {
 
     /**
      * @notice Submit an active-committee signer's ContextDestructionConfirmation signature.
-     * @dev Anyone may call. The context must be destroyed with destroyKmsContext first.
+     * @dev Anyone may call. The contract does not check that the context was destroyed. KMS nodes
+     *      sign only after they see the KmsContextDestroyed event.
      * @param destroyedContextId The destroyed context ID.
      * @param signature The signer's EIP-712 ContextDestructionConfirmation signature.
      * @param extraData The extra data bound into the signature.

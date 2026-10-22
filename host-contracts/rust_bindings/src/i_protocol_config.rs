@@ -562,7 +562,6 @@ interface IProtocolConfig {
     error InvalidProposalId();
     error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
     error KmsContextCreationUnauthorized(address signer, uint256 kmsContextId);
-    error KmsContextNotDestroyed(uint256 kmsContextId);
     error KmsContextNotPending(uint256 kmsContextId);
     error KmsDestructionAlreadyConfirmed(address signer, uint256 destroyedId);
     error KmsDestructionUnauthorized(address signer, uint256 destroyedId);
@@ -2081,17 +2080,6 @@ interface IProtocolConfig {
         "type": "address",
         "internalType": "address"
       },
-      {
-        "name": "kmsContextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "KmsContextNotDestroyed",
-    "inputs": [
       {
         "name": "kmsContextId",
         "type": "uint256",
@@ -5452,89 +5440,6 @@ error KmsContextCreationUnauthorized(address signer, uint256 kmsContextId);
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.signer,
                     ),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `KmsContextNotDestroyed(uint256)` and selector `0x2b73d9b7`.
-```solidity
-error KmsContextNotDestroyed(uint256 kmsContextId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct KmsContextNotDestroyed {
-        #[allow(missing_docs)]
-        pub kmsContextId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<KmsContextNotDestroyed> for UnderlyingRustTuple<'_> {
-            fn from(value: KmsContextNotDestroyed) -> Self {
-                (value.kmsContextId,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for KmsContextNotDestroyed {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { kmsContextId: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for KmsContextNotDestroyed {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "KmsContextNotDestroyed(uint256)";
-            const SELECTOR: [u8; 4] = [43u8, 115u8, 217u8, 183u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsContextId),
@@ -15066,8 +14971,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         KmsContextCreationUnauthorized(KmsContextCreationUnauthorized),
         #[allow(missing_docs)]
-        KmsContextNotDestroyed(KmsContextNotDestroyed),
-        #[allow(missing_docs)]
         KmsContextNotPending(KmsContextNotPending),
         #[allow(missing_docs)]
         KmsDestructionAlreadyConfirmed(KmsDestructionAlreadyConfirmed),
@@ -15110,7 +15013,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [22u8, 167u8, 39u8, 120u8],
             [23u8, 211u8, 233u8, 72u8],
             [24u8, 122u8, 234u8, 168u8],
-            [43u8, 115u8, 217u8, 183u8],
             [45u8, 236u8, 207u8, 77u8],
             [53u8, 134u8, 239u8, 161u8],
             [54u8, 191u8, 182u8, 14u8],
@@ -15143,7 +15045,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(KmsSignerSetExceedsProofFormatLimit),
             ::core::stringify!(ZeroGwStartBlock),
             ::core::stringify!(LatestActiveKmsContextCannotBeDestroyed),
-            ::core::stringify!(KmsContextNotDestroyed),
             ::core::stringify!(KmsNodeNullSigner),
             ::core::stringify!(KmsContextNotPending),
             ::core::stringify!(InvalidNullThreshold),
@@ -15176,7 +15077,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::SIGNATURE,
             <ZeroGwStartBlock as alloy_sol_types::SolError>::SIGNATURE,
             <LatestActiveKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::SIGNATURE,
-            <KmsContextNotDestroyed as alloy_sol_types::SolError>::SIGNATURE,
             <KmsNodeNullSigner as alloy_sol_types::SolError>::SIGNATURE,
             <KmsContextNotPending as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidNullThreshold as alloy_sol_types::SolError>::SIGNATURE,
@@ -15226,7 +15126,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 30usize;
+        const COUNT: usize = 29usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -15274,9 +15174,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::KmsContextCreationUnauthorized(_) => {
                     <KmsContextCreationUnauthorized as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::KmsContextNotDestroyed(_) => {
-                    <KmsContextNotDestroyed as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::KmsContextNotPending(_) => {
                     <KmsContextNotPending as alloy_sol_types::SolError>::SELECTOR
@@ -15408,17 +15305,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             )
                     }
                     LatestActiveKmsContextCannotBeDestroyed
-                },
-                {
-                    fn KmsContextNotDestroyed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <KmsContextNotDestroyed as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::KmsContextNotDestroyed)
-                    }
-                    KmsContextNotDestroyed
                 },
                 {
                     fn KmsNodeNullSigner(
@@ -15766,17 +15652,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     LatestActiveKmsContextCannotBeDestroyed
                 },
                 {
-                    fn KmsContextNotDestroyed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
-                        <KmsContextNotDestroyed as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigErrors::KmsContextNotDestroyed)
-                    }
-                    KmsContextNotDestroyed
-                },
-                {
                     fn KmsNodeNullSigner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -16120,11 +15995,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         inner,
                     )
                 }
-                Self::KmsContextNotDestroyed(inner) => {
-                    <KmsContextNotDestroyed as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::KmsContextNotPending(inner) => {
                     <KmsContextNotPending as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -16284,12 +16154,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::KmsContextCreationUnauthorized(inner) => {
                     <KmsContextCreationUnauthorized as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::KmsContextNotDestroyed(inner) => {
-                    <KmsContextNotDestroyed as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

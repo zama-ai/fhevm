@@ -1,7 +1,6 @@
 import { type Provider, getAddress } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import type { KmsThresholds } from '../scripts/protocolConfigEip712';
 import type { ProtocolConfig } from '../types';
 import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import { formatError } from './utils/formatError';
@@ -12,6 +11,13 @@ export type KmsNode = {
   signerAddress: string;
   ipAddress: string;
   storageUrl: string;
+};
+
+export type KmsThresholds = {
+  publicDecryption: bigint;
+  userDecryption: bigint;
+  kmsGen: bigint;
+  mpc: bigint;
 };
 
 export type CanonicalSnapshot = {

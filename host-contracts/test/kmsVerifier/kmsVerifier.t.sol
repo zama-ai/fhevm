@@ -5,7 +5,7 @@ import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Ini
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
-import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
+import {ProtocolConfigSigningTestUtils} from "@fhevm-foundry/ProtocolConfigSigningTestUtils.sol";
 import {KMSVerifier} from "@fhevm-host-contracts/contracts/KMSVerifier.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
@@ -16,7 +16,7 @@ import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {ACLOwnable} from "../../contracts/shared/ACLOwnable.sol";
 
-contract KMSVerifierTest is HostContractsDeployerTestUtils {
+contract KMSVerifierTest is ProtocolConfigSigningTestUtils {
     KMSVerifier internal kmsVerifier;
     KMSGeneration internal kmsGeneration;
 

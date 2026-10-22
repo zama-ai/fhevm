@@ -13,7 +13,7 @@ import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol"
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
-import {HostContractsDeployerTestUtils} from "@fhevm-host-contracts/fhevm-foundry/HostContractsDeployerTestUtils.sol";
+import {ProtocolConfigSigningTestUtils} from "@fhevm-host-contracts/fhevm-foundry/ProtocolConfigSigningTestUtils.sol";
 import {KMSGenerationUpgradedExample} from "@fhevm-host-contracts/examples/KMSGenerationUpgradedExample.sol";
 
 contract KMSGenerationHarness is KMSGeneration {
@@ -84,7 +84,7 @@ contract KMSGenerationV2StateHarness is EIP712Upgradeable, UUPSUpgradeableEmptyP
     function _authorizeUpgrade(address) internal override onlyACLOwner {}
 }
 
-contract KMSGenerationTest is HostContractsDeployerTestUtils {
+contract KMSGenerationTest is ProtocolConfigSigningTestUtils {
     KMSGeneration internal kmsGeneration;
     KMSGenerationHarness internal kmsGenerationHarness;
 

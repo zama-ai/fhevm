@@ -303,9 +303,10 @@ export interface KmsContextSwitchStatus {
 
 export interface DestructionConfirmationStatus {
   destroyedId: bigint;
+  // Both lists cover only the active committee.
   signersConfirmed: string[];
   signersOutstanding: string[];
-  // Read from the contract's quorum event for the active committee.
+  // True when any destruction quorum event exists for `destroyedId`.
   quorumReached: boolean;
 }
 
@@ -318,14 +319,6 @@ interface ActiveCommittee {
 // Returns the elements of `expected` (checksummed addresses) that are not present in `confirmed`.
 function outstanding(expected: string[], confirmed: Set<string>): string[] {
   return expected.filter((address) => !confirmed.has(address));
-}
-
-// Orders two logs by block number, then by log index within the block.
-function isAfter(event: { blockNumber: number; index: number }, reference: { blockNumber: number; index: number }) {
-  return (
-    event.blockNumber > reference.blockNumber ||
-    (event.blockNumber === reference.blockNumber && event.index > reference.index)
-  );
 }
 
 // Reconstructs the in-progress phase of a KMS context switch or epoch rotation. It detects an
@@ -415,20 +408,14 @@ export async function inspectKmsContextSwitch(
       activeContextId > 0n && activeEpochId > 0n && (await pc.isValidEpochForContext(activeContextId, activeEpochId));
   }
 
-  // The contract counts destruction confirmations per confirming committee. Only the active committee's
-  // count matters, and a rotation restarts it. The events do not name the committee, so a log counts for
-  // the active committee when it comes after the active context's first ActivateEpoch. Without that
-  // event in the window, the active context was activated before `fromBlock`.
   const [
-    activations,
     destroyedContextEvents,
-    allContextConfirmations,
-    allContextQuorums,
+    contextConfirmations,
+    contextQuorums,
     destroyedEpochEvents,
-    allEpochConfirmations,
-    allEpochQuorums,
+    epochConfirmations,
+    epochQuorums,
   ] = await Promise.all([
-    pc.queryFilter(pc.filters.ActivateEpoch(activeContextId), fromBlock, toBlock),
     pc.queryFilter(pc.filters.KmsContextDestroyed(), fromBlock, toBlock),
     pc.queryFilter(pc.filters.KmsContextDestructionConfirmation(), fromBlock, toBlock),
     pc.queryFilter(pc.filters.KmsContextDestructionQuorumReached(), fromBlock, toBlock),
@@ -436,13 +423,6 @@ export async function inspectKmsContextSwitch(
     pc.queryFilter(pc.filters.KmsEpochDestructionConfirmation(), fromBlock, toBlock),
     pc.queryFilter(pc.filters.KmsEpochDestructionQuorumReached(), fromBlock, toBlock),
   ]);
-  const activation = activations[0];
-  const underActiveCommittee = <E extends { blockNumber: number; index: number }>(events: E[]) =>
-    events.filter((event) => activation === undefined || isAfter(event, activation));
-  const contextConfirmations = underActiveCommittee(allContextConfirmations);
-  const contextQuorums = underActiveCommittee(allContextQuorums);
-  const epochConfirmations = underActiveCommittee(allEpochConfirmations);
-  const epochQuorums = underActiveCommittee(allEpochQuorums);
   const destroyedContextIds = new Set(destroyedContextEvents.map((event) => event.args.kmsContextId));
   // The task reads an aborted switch from state, so its context is reported even when the destruction
   // happened before `fromBlock`.
@@ -509,7 +489,10 @@ function destructionConfirmationStatus(
   activeSigners: string[],
   checksum: (address: string) => string,
 ): DestructionConfirmationStatus {
-  const signersConfirmed = confirmations.map((confirmation) => checksum(confirmation.args.signer));
+  const active = new Set(activeSigners);
+  const signersConfirmed = confirmations
+    .map((confirmation) => checksum(confirmation.args.signer))
+    .filter((signer) => active.has(signer));
   return {
     destroyedId,
     signersConfirmed,

@@ -2,11 +2,10 @@ import type { Interface, ParamType, Provider } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { ConfigurableTaskDefinition, HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import type { KmsThresholds } from '../scripts/protocolConfigEip712';
 import type { ProtocolConfig, ProtocolConfigReplica } from '../types';
 import type { KmsNodeParamsStruct, PcrValuesStruct } from '../types/contracts/ProtocolConfigReplica';
 import { broadcast, getProtocolConfigReplicaInterface, requireProtocolConfigAddress } from './kmsContext';
-import { readCanonicalSnapshot } from './protocolConfigMirror';
+import { type KmsThresholds, readCanonicalSnapshot } from './protocolConfigMirror';
 
 // This file defines tasks that mirror the canonical (Ethereum) ProtocolConfig's active KMS context
 // and epoch onto a non-canonical replica (e.g. Polygon) after a rotation has gone active on

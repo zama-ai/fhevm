@@ -12,6 +12,7 @@ import {
   predictNewKmsContextId,
 } from '../../tasks/kmsContext';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
+import { findEventArg } from '../../tasks/utils/protocolConfigEip712';
 import type { ProtocolConfig } from '../../types';
 import {
   confirmContextCreationBySigners,
@@ -19,7 +20,6 @@ import {
   confirmEpochActivationBySigners,
   confirmEpochDestructionBySigner,
   deployFreshProtocolConfigProxy,
-  findEventArg,
 } from './taskHelpers';
 
 const PROTOCOL_CONFIG_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
@@ -467,6 +467,24 @@ describe('KMS context tasks', function () {
       expect(result.epochDestructions![0].signersConfirmed).to.deep.equal([await newSigners[0].getAddress()]);
     });
 
+    it('reports a destruction quorum reached under the initial context after a same-set resharing', async function () {
+      const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
+      const destroyedEpochId = findEventArg(protocolConfig, receipt!.logs, 'NewKmsEpoch', 'epochId')!;
+      await (await (await asOwner()).destroyKmsEpoch(destroyedEpochId)).wait();
+      await confirmEpochDestructionBySigner(proxyAddress, oldSigners[0], destroyedEpochId);
+
+      const reshareReceipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
+      const epochId = findEventArg(protocolConfig, reshareReceipt!.logs, 'NewKmsEpoch', 'epochId')!;
+      const [activeContextId] = await protocolConfig.getCurrentKmsContextAndEpoch();
+      await confirmEpochActivationBySigners(proxyAddress, oldSigners, activeContextId, epochId);
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.activeEpochId).to.equal(epochId);
+      expect(result.epochDestructions![0].destroyedId).to.equal(destroyedEpochId);
+      expect(result.epochDestructions![0].signersConfirmed).to.deep.equal([await oldSigners[0].getAddress()]);
+      expect(result.epochDestructions![0].quorumReached).to.equal(true);
+    });
+
     it('flags epoch activation confirmations that signed different extraData', async function () {
       const contextId = await defineSwitch();
       const epochId = await confirmCreation(contextId, [...newSigners, oldSigners[0]]);
@@ -526,7 +544,7 @@ describe('KMS context tasks', function () {
       expect(result.epochSignersOutstanding).to.have.lengthOf(oldSigners.length);
     });
 
-    it('counts a signer in both committees on both creation sides and restarts the destruction count', async function () {
+    it('counts a signer in both committees on both creation sides and keeps its destruction confirmation', async function () {
       const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
       const destroyedEpochId = findEventArg(protocolConfig, receipt!.logs, 'NewKmsEpoch', 'epochId')!;
       await (await (await asOwner()).destroyKmsEpoch(destroyedEpochId)).wait();
@@ -559,15 +577,12 @@ describe('KMS context tasks', function () {
       );
       await confirmEpochActivationBySigners(proxyAddress, overlapSigners, contextId, epochId!);
 
-      // The contract counts destruction confirmations per committee, so the earlier one no longer counts.
+      // The signer of both committees stays a confirmer, and the quorum reached before the rotation stays reached.
       const afterRotation = await inspectKmsContextSwitch(hre, proxyAddress, 0);
       expect(afterRotation.activeContextId).to.equal(contextId);
-      expect(afterRotation.epochDestructions![0].signersConfirmed).to.deep.equal([]);
-      expect(afterRotation.epochDestructions![0].signersOutstanding).to.deep.equal([
-        bothCommittees,
-        await newSigners[1].getAddress(),
-      ]);
-      expect(afterRotation.epochDestructions![0].quorumReached).to.equal(false);
+      expect(afterRotation.epochDestructions![0].signersConfirmed).to.deep.equal([bothCommittees]);
+      expect(afterRotation.epochDestructions![0].signersOutstanding).to.deep.equal([await newSigners[1].getAddress()]);
+      expect(afterRotation.epochDestructions![0].quorumReached).to.equal(true);
 
       // Each signer confirms once per destroyed id, so the signer of both committees cannot confirm again.
       await expect(
@@ -575,9 +590,11 @@ describe('KMS context tasks', function () {
       ).to.be.revertedWithCustomError(protocolConfig, 'KmsDestructionAlreadyConfirmed');
       await confirmEpochDestructionBySigner(proxyAddress, newSigners[1], destroyedEpochId);
       const confirmed = await inspectKmsContextSwitch(hre, proxyAddress, 0);
-      expect(confirmed.epochDestructions![0].signersConfirmed).to.deep.equal([await newSigners[1].getAddress()]);
-      // New committee: 2 nodes and mpc = 1, so n - t = 1.
-      expect(confirmed.epochDestructions![0].quorumReached).to.equal(true);
+      expect(confirmed.epochDestructions![0].signersConfirmed).to.deep.equal([
+        bothCommittees,
+        await newSigners[1].getAddress(),
+      ]);
+      expect(confirmed.epochDestructions![0].signersOutstanding).to.deep.equal([]);
     });
 
     it('bounds every log query by fromBlock', async function () {

@@ -79,9 +79,9 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /// @dev Canonical-only state added in v0.4.0. It is outside the base namespace, so
     ///      `ProtocolConfigReplica` does not carry it. The epoch activation confirmations stay in base
     ///      storage, because `reinitializeV4` leaves only v0.3.0 confirmations of settled epochs there.
-    ///      `destroyedContexts` is also canonical-only but stays in base storage, because it existed
-    ///      before v0.4.0. So a context destroyed before the upgrade can still collect destruction
-    ///      confirmations.
+    ///      So no v0.3.0 per-signer flag blocks a pending epoch.
+    ///      `destroyedContexts` is canonical-only and write-only. It stays in base storage to keep the
+    ///      v0.3.0 layout.
     struct ProtocolConfigCanonicalStorage {
         /// @notice Hash of the stored node set and thresholds, signed in ContextCreationConfirmation.
         mapping(uint256 contextId => bytes32) nodeConfigHashForContext;
@@ -95,8 +95,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         mapping(uint256 contextId => mapping(address signer => bool confirmed)) contextDestructionConfirmedBySigner;
         /// @notice Epoch destruction confirmations per signer.
         mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochDestructionConfirmedBySigner;
-        /// @notice Destruction confirmations grouped by the confirming committee's context and digest.
-        mapping(uint256 contextId => mapping(bytes32 digest => uint256 confirmations)) destructionConfirmationCountForDigest;
+        /// @notice Destruction confirmations grouped by destroyed context or epoch ID and digest.
+        mapping(uint256 destroyedId => mapping(bytes32 digest => uint256 confirmations)) destructionConfirmationCountForDigest;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfigCanonical")) - 1)) & ~bytes32(uint256(0xff))
@@ -163,8 +163,10 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /**
      * @notice Re-initializes the contract from V3.
-     * @dev Reverts while a lifecycle operation is in flight, so no v0.3.0 epoch activation
-     *      confirmation can count toward a v0.4.0 quorum.
+     * @dev Reverts while a lifecycle operation is in flight. A pending epoch would keep its v0.3.0
+     *      per-signer flags, so those signers could not confirm again and the epoch would stay
+     *      Pending. A pending context would have no node config hash, so its
+     *      ContextCreationConfirmation would commit to a zero hash.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
@@ -404,16 +406,14 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /// @inheritdoc IProtocolConfig
     /// @dev Each signer confirms once. The confirmation counts toward the active committee's `n - t`
-    ///      quorum and never blocks a rotation. A rotation starts a new count under the next committee.
+    ///      quorum. The DAO does not rotate before a destruction reaches the quorum (RFC 037).
+    ///      The contract does not check that the context was destroyed. KMS nodes sign only after
+    ///      they see the KmsContextDestroyed event.
     function confirmKmsContextDestruction(
         uint256 destroyedContextId,
         bytes calldata signature,
         bytes calldata extraData
     ) external virtual {
-        if (!_getProtocolConfigStorage().destroyedContexts[destroyedContextId]) {
-            revert KmsContextNotDestroyed(destroyedContextId);
-        }
-
         (address signer, bool quorumReached) = _confirmDestruction(
             _getProtocolConfigCanonicalStorage().contextDestructionConfirmedBySigner[destroyedContextId],
             destroyedContextId,
@@ -611,7 +611,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /**
      * @dev Recovers the signer of a destruction confirmation, requires it in the active committee,
      *      and records its one confirmation in `confirmedBySigner`. Reports whether this confirmation
-     *      brings its digest to the active committee's quorum.
+     *      brings the count of `destroyedId` and its digest to the active committee's quorum.
      */
     function _confirmDestruction(
         mapping(address signer => bool confirmed) storage confirmedBySigner,
@@ -630,7 +630,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
         confirmedBySigner[signer] = true;
         quorumReached =
-            ++_getProtocolConfigCanonicalStorage().destructionConfirmationCountForDigest[kmsContextId][digest] ==
+            ++_getProtocolConfigCanonicalStorage().destructionConfirmationCountForDigest[destroyedId][digest] ==
             _committeeQuorum(kmsContextId);
     }
 

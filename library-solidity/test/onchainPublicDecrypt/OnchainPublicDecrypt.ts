@@ -1,20 +1,21 @@
 import { expect } from 'chai';
 import dotenv from 'dotenv';
+import type { Signer } from 'ethers';
 import * as fs from 'fs';
 import { ethers } from 'hardhat';
 
-import {
-  KmsThresholds,
-  epochMaterialHash,
-  nodeConfigHash,
-  protocolConfigDomainFor,
-  signConfirmation,
-} from '@fhevm/host-contracts/scripts/protocolConfigEip712';
 import {
   CRS_COUNTER_BASE,
   KEY_COUNTER_BASE,
   PREP_KEYGEN_COUNTER_BASE,
 } from '@fhevm/host-contracts/tasks/utils/kmsGenerationConstants';
+import {
+  findEventArg,
+  submitContextCreationConfirmations,
+  submitEpochActivationConfirmations,
+} from '@fhevm/host-contracts/tasks/utils/protocolConfigEip712';
+import type { ProtocolConfig } from '@fhevm/host-contracts/types';
+import type { KmsNodeParamsStruct, KmsThresholdsStruct } from '@fhevm/host-contracts/types/contracts/ProtocolConfig';
 
 import { awaitCoprocessor, getClearText } from '../coprocessorUtils';
 import { createInstances } from '../instance';
@@ -88,7 +89,10 @@ describe('OnchainPublicDecrypt', function () {
     const newSigners = [accounts[7], accounts[8], accounts[9]];
     const signerAddresses = newSigners.map((s) => s.address);
     const kmsVerifier = await ethers.getContractAt('KMSVerifier', kmsAdd);
-    const protocolConfig = await ethers.getContractAt('ProtocolConfig', protocolConfigAdd);
+    const protocolConfig = (await ethers.getContractAt(
+      'ProtocolConfig',
+      protocolConfigAdd,
+    )) as unknown as ProtocolConfig;
     const newTxSenders = [accounts[2], accounts[3], accounts[4]];
     const newNodes = signerAddresses.map((address, index) => ({
       txSenderAddress: newTxSenders[index].address,
@@ -166,74 +170,42 @@ describe('OnchainPublicDecrypt', function () {
 });
 
 async function activateNewKmsContext(
-  protocolConfig: any,
-  deployer: any,
-  nodes: any[],
-  thresholds: KmsThresholds,
-  signerAccounts: any[],
+  protocolConfig: ProtocolConfig,
+  deployer: Signer,
+  nodes: KmsNodeParamsStruct[],
+  thresholds: KmsThresholdsStruct,
+  signerAccounts: Signer[],
 ) {
-  const [previousContextId, previousEpochId] = await protocolConfig.getCurrentKmsContextAndEpoch();
   const txNewConfig = await protocolConfig.connect(deployer).defineNewKmsContextAndEpoch(nodes, thresholds, '', []);
   const newConfigReceipt = await txNewConfig.wait();
-  const contextId = findEventArgs(protocolConfig, newConfigReceipt, 'NewKmsContext').contextId;
-  const domain = await protocolConfigDomainFor(ethers.provider, await protocolConfig.getAddress());
-  const newNodeConfigHash = nodeConfigHash(nodes, thresholds);
-
-  let epochId;
-  for (const signer of signerAccounts) {
-    const signature = await signConfirmation(signer, domain, 'ContextCreationConfirmation', {
-      previousContextId,
-      newContextId: contextId,
-      nodeConfigHash: newNodeConfigHash,
-      extraData: '0x',
-    });
-    const txConfirmContext = await protocolConfig.connect(signer).confirmKmsContextCreation(contextId, signature, '0x');
-    const confirmReceipt = await txConfirmContext.wait();
-    // The pending epoch ID is only known once enough confirmations reach the context-creation quorum,
-    // which emits NewKmsEpoch carrying that epoch ID.
-    const createdEvent = findEventArgs(protocolConfig, confirmReceipt, 'NewKmsEpoch');
-    if (createdEvent !== undefined) {
-      epochId = createdEvent.epochId;
-    }
+  const contextId = findEventArg(protocolConfig, newConfigReceipt!.logs, 'NewKmsContext', 'contextId')!;
+  const epochId = await submitContextCreationConfirmations(
+    protocolConfig,
+    signerAccounts,
+    contextId,
+    nodes,
+    thresholds,
+  );
+  if (epochId === undefined) {
+    throw new Error('Context creation quorum did not emit NewKmsEpoch');
   }
   // An empty `keys` or `crsList` reverts with EmptyEpochActivationResults. So supply one result of each.
   // confirmEpochActivation only checks that the signature recovers to the node signer.
   // So the constant ids need not exist in KMSGeneration.
-  // Every signer signs the same results. So all signers produce one epochMaterialHash and reach quorum.
   const keyMaterial = {
     prepKeygenId: PREP_KEYGEN_COUNTER_BASE + 1n,
     keyId: KEY_COUNTER_BASE + 1n,
     keyDigests: [{ keyType: 0, digest: '0x01020304' }],
   };
   const crsMaterial = { crsId: CRS_COUNTER_BASE + 1n, maxBitLength: 4096n, crsDigest: '0x01020304' };
-  for (const signer of signerAccounts) {
-    const signature = await signConfirmation(signer, domain, 'EpochActivationConfirmation', {
-      contextId,
-      previousEpochId,
-      epochId,
-      epochMaterialHash: epochMaterialHash([keyMaterial], [crsMaterial]),
-      extraData: '0x',
-    });
-    const txConfirmEpoch = await protocolConfig
-      .connect(signer)
-      .confirmEpochActivation(epochId, [keyMaterial], [crsMaterial], signature, '0x');
-    await txConfirmEpoch.wait();
-  }
-}
-
-function findEventArgs(protocolConfig: any, receipt: any, eventName: string): any {
-  for (const log of receipt.logs) {
-    let parsed;
-    try {
-      parsed = protocolConfig.interface.parseLog(log);
-    } catch {
-      continue;
-    }
-    if (parsed?.name === eventName) {
-      return parsed.args;
-    }
-  }
-  return undefined;
+  await submitEpochActivationConfirmations(
+    protocolConfig,
+    signerAccounts,
+    contextId,
+    epochId,
+    [keyMaterial],
+    [crsMaterial],
+  );
 }
 
 async function getPublicDecryptionFromReceipt(

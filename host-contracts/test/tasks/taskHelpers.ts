@@ -5,14 +5,14 @@ import { ethers, upgrades } from 'hardhat';
 import path from 'path';
 
 import {
-  KmsNodeParams,
-  KmsThresholds,
-  epochMaterialHash,
-  nodeConfigHash,
+  findEventArg,
   protocolConfigDomainFor,
   signConfirmation,
-} from '../../scripts/protocolConfigEip712';
-import type { KMSGeneration, ProtocolConfig } from '../../types';
+  submitContextCreationConfirmations,
+  submitEpochActivationConfirmations,
+} from '../../tasks/utils/protocolConfigEip712';
+import type { KMSGeneration } from '../../types';
+import type { KmsNodeParamsStruct, KmsThresholdsStruct } from '../../types/contracts/ProtocolConfig';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 export const HOST_ENV_FILE = path.join(__dirname, '../../addresses/.env.host');
@@ -129,7 +129,7 @@ export async function initializeProtocolConfigProxy(
   proxyAddress: string,
   deployer: Wallet,
   kmsNodes: Array<{ txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }>,
-  thresholds: KmsThresholds,
+  thresholds: KmsThresholdsStruct,
 ): Promise<Contract> {
   const upgraded = await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfig', {
     call: {
@@ -143,7 +143,7 @@ export async function initializeProtocolConfigProxy(
 export async function deployFreshProtocolConfigProxy(
   deployer: Wallet,
   kmsNodes: Array<{ txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }>,
-  thresholds: KmsThresholds,
+  thresholds: KmsThresholdsStruct,
 ): Promise<string> {
   const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
   await initializeProtocolConfigProxy(proxyAddress, deployer, kmsNodes, thresholds);
@@ -155,7 +155,7 @@ export async function deployFreshProtocolConfigReplicaProxy(
   contextId: bigint,
   epochId: bigint,
   kmsNodes: Array<{ txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }>,
-  thresholds: KmsThresholds,
+  thresholds: KmsThresholdsStruct,
 ): Promise<string> {
   const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
   await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfigReplica', {
@@ -167,8 +167,8 @@ export async function deployFreshProtocolConfigReplicaProxy(
 // A KMS committee whose signer addresses are backed by funded Hardhat accounts, so the signed
 // lifecycle confirmations can be produced from a test. Anyone may submit them.
 export interface ControllableKmsCommittee {
-  nodes: KmsNodeParams[];
-  thresholds: KmsThresholds;
+  nodes: ReturnType<typeof buildProtocolConfigNodes>;
+  thresholds: KmsThresholdsStruct;
   signerSigners: Signer[];
 }
 
@@ -196,41 +196,24 @@ export async function buildControllableKmsCommittee(): Promise<ControllableKmsCo
   };
 }
 
-// Signs each signer's ContextCreationConfirmation for a pending context and submits it from the signer
-// account. `nodes`/`thresholds` are the pending context's definition, and the previous context is the
-// active one. Returns the epoch ID of the NewKmsEpoch emitted once the creation quorum is reached.
+// Submits each signer's ContextCreationConfirmation for a pending context. `nodes`/`thresholds` are the
+// pending context's definition. Returns the epoch ID of the NewKmsEpoch emitted once the creation quorum
+// is reached.
 export async function confirmContextCreationBySigners(
   proxyAddress: string,
   signerSigners: Signer[],
   contextId: bigint,
-  nodes: KmsNodeParams[],
-  thresholds: KmsThresholds,
+  nodes: KmsNodeParamsStruct[],
+  thresholds: KmsThresholdsStruct,
   extraData = '0x',
 ): Promise<bigint | undefined> {
-  const pc = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
-  const domain = await protocolConfigDomainFor(ethers.provider, proxyAddress);
-  const previousContextId = await pc.getCurrentKmsContextId();
-  let epochId: bigint | undefined;
-  for (const signerSigner of signerSigners) {
-    const signature = await signConfirmation(signerSigner, domain, 'ContextCreationConfirmation', {
-      previousContextId,
-      newContextId: contextId,
-      nodeConfigHash: nodeConfigHash(nodes, thresholds),
-      extraData,
-    });
-    const receipt = await (
-      await pc.connect(signerSigner).confirmKmsContextCreation(contextId, signature, extraData)
-    ).wait();
-    epochId ??= findEventArg(pc, receipt!.logs, 'NewKmsEpoch', 'epochId');
-  }
-  return epochId;
+  const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress);
+  return submitContextCreationConfirmations(pc, signerSigners, contextId, nodes, thresholds, extraData);
 }
 
-// Builds one key result and one CRS result, signs each signer's EpochActivationConfirmation over them,
-// and submits it from the signer account.
+// Submits each signer's EpochActivationConfirmation over one key result and one CRS result.
 // Both arrays must be non-empty, so a key-only payload is rejected. The material is identical across
 // signers, so every signer produces the same epochMaterialHash and quorum is reachable.
-// `contextId`/`epochId` are the pair being activated. The previous epoch is the active one.
 export async function confirmEpochActivationBySigners(
   proxyAddress: string,
   signerSigners: Signer[],
@@ -238,21 +221,10 @@ export async function confirmEpochActivationBySigners(
   epochId: bigint,
   extraData = '0x',
 ): Promise<void> {
-  const pc = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
-  const domain = await protocolConfigDomainFor(ethers.provider, proxyAddress);
-  const [, previousEpochId] = await pc.getCurrentKmsContextAndEpoch();
+  const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress);
   const keys = [{ prepKeygenId: 1n, keyId: 1n, keyDigests: [{ keyType: 0, digest: '0x01020304' }] }];
   const crsList = [{ crsId: 1n, maxBitLength: 4096n, crsDigest: '0x01020304' }];
-  for (const signerSigner of signerSigners) {
-    const signature = await signConfirmation(signerSigner, domain, 'EpochActivationConfirmation', {
-      contextId,
-      previousEpochId,
-      epochId,
-      epochMaterialHash: epochMaterialHash(keys, crsList),
-      extraData,
-    });
-    await (await pc.connect(signerSigner).confirmEpochActivation(epochId, keys, crsList, signature, extraData)).wait();
-  }
+  await submitEpochActivationConfirmations(pc, signerSigners, contextId, epochId, keys, crsList, extraData);
 }
 
 // Signs the signer's ContextDestructionConfirmation and submits it from the signer account.
@@ -293,26 +265,6 @@ export async function confirmEpochDestructionBySigner(
   await (await pc.confirmKmsEpochDestruction(destroyedEpochId, signature, '0x')).wait();
 }
 
-export function findEventArg(
-  contract: ProtocolConfig,
-  logs: readonly { topics: readonly string[]; data: string }[],
-  eventName: string,
-  argName: string,
-): bigint | undefined {
-  for (const log of logs) {
-    let parsed;
-    try {
-      parsed = contract.interface.parseLog({ topics: [...log.topics], data: log.data });
-    } catch {
-      continue;
-    }
-    if (parsed?.name === eventName) {
-      return parsed.args[argName] as bigint;
-    }
-  }
-  return undefined;
-}
-
 // Rotates the canonical ProtocolConfig to a fresh KMS context that reuses `committee`, driving the full
 // epoch lifecycle (define -> confirm creation -> confirm activation) so getCurrentKmsContextId advances.
 // Activation requires a non-empty key and CRS array, so each signer submits one result of each.
@@ -321,11 +273,7 @@ export async function rotateToNewKmsContext(
   ownerSigner: Signer,
   committee: ControllableKmsCommittee,
 ): Promise<bigint> {
-  const asOwner = (await ethers.getContractAt(
-    'ProtocolConfig',
-    proxyAddress,
-    ownerSigner,
-  )) as unknown as ProtocolConfig;
+  const asOwner = await ethers.getContractAt('ProtocolConfig', proxyAddress, ownerSigner);
   const defineTx = await asOwner.defineNewKmsContextAndEpoch(committee.nodes, committee.thresholds, '', []);
   const defineReceipt = await defineTx.wait();
   const contextId = findEventArg(asOwner, defineReceipt!.logs, 'NewKmsContext', 'contextId');

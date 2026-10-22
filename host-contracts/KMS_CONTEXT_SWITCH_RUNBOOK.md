@@ -418,9 +418,10 @@ carrying the real values.
 
 **Upgrade precondition (ProtocolConfig v0.4.0)**: settle any in-flight lifecycle operation
 first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. `reinitializeV4` reverts with
-`KmsLifecycleOperationInFlight` while one is in flight. So no v0.3.0 confirmation counts toward a signed
-quorum. An epoch or a context destroyed before the upgrade can still collect signed destruction
-confirmations.
+`KmsLifecycleOperationInFlight` while one is in flight. A pending epoch would keep its v0.3.0
+per-signer flags, so its signers could not confirm again. A pending context would have no node config
+hash, so its signed creation confirmation would commit to a zero hash. An epoch or a context
+destroyed before the upgrade can still collect signed destruction confirmations.
 Canonical never destroys its latest active context or epoch. A mirror call copies only those
 ids, so it never copies a destroyed id. `ProtocolConfigReplica` has no destruction method. A
 destruction on canonical does not reach a replica that mirrored that id earlier.
@@ -481,12 +482,10 @@ Quorum cheat-sheet:
 - **Destruction confirmations**: after `destroyKmsContext` or `destroyKmsEpoch`, each signer
   of the active committee signs a `ContextDestructionConfirmation` or
   `EpochDestructionConfirmation`. Each signer confirms once per destroyed id. The canonical
-  contract counts the confirmations per active committee and digest. When `n − t` signers of
-  one committee confirm one digest, it emits
+  contract counts the confirmations per destroyed id and digest. When `n − t` signers of
+  the active committee confirm one digest, it emits
   `KmsContextDestructionQuorumReached` or `KmsEpochDestructionQuorumReached` once for that
-  digest. The quorum never blocks a rotation. A rotation starts a new count under the next
-  committee. A signer of both committees that confirmed under the old one cannot confirm
-  again, so it does not count toward the new committee's quorum.
+  digest. The DAO does not rotate before a destruction reaches the quorum (RFC 037).
 - **Quorums**:
   - Context creation: **ALL new-committee signers** + **(n − t)
     previous-committee signers** (n = previous committee size, t = previous MPC
