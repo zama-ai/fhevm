@@ -45,11 +45,14 @@ describe('KMS mirror tasks', function () {
 
       expect(args.contextId).to.equal(liveContextId);
       expect(args.epochId).to.equal(liveEpochId);
-      expect(args.kmsNodeParams.length).to.equal(committee.nodes.length);
+      expect(args.nodes.length).to.equal(committee.nodes.length);
       committee.nodes.forEach((node, i) => {
-        expect(args.kmsNodeParams[i].txSenderAddress).to.equal(node.txSenderAddress);
-        expect(args.kmsNodeParams[i].signerAddress).to.equal(node.signerAddress);
-        expect(args.kmsNodeParams[i].mpcIdentity).to.equal(node.mpcIdentity);
+        expect(args.nodes[i]).to.deep.equal({
+          txSenderAddress: node.txSenderAddress,
+          signerAddress: node.signerAddress,
+          ipAddress: node.ipAddress,
+          storageUrl: node.storageUrl,
+        });
       });
       expect(args.thresholds.publicDecryption).to.equal(BigInt(committee.thresholds.publicDecryption));
       expect(args.thresholds.userDecryption).to.equal(BigInt(committee.thresholds.userDecryption));
@@ -98,13 +101,13 @@ describe('KMS mirror tasks', function () {
 
       expect(decoded[0]).to.equal(args.contextId);
       expect(decoded[1]).to.equal(args.epochId);
-      expect(decoded[2].length).to.equal(args.kmsNodeParams.length);
+      expect(decoded[2].length).to.equal(args.nodes.length);
       decoded[2].forEach((node: unknown[], i: number) => {
         expect(node).to.deep.equal([
-          args.kmsNodeParams[i].txSenderAddress,
-          args.kmsNodeParams[i].signerAddress,
-          args.kmsNodeParams[i].ipAddress,
-          args.kmsNodeParams[i].storageUrl,
+          args.nodes[i].txSenderAddress,
+          args.nodes[i].signerAddress,
+          args.nodes[i].ipAddress,
+          args.nodes[i].storageUrl,
         ]);
       });
       expect(decoded[3].publicDecryption).to.equal(args.thresholds.publicDecryption);

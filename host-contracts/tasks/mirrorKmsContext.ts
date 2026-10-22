@@ -5,7 +5,7 @@ import type { ConfigurableTaskDefinition, HardhatRuntimeEnvironment } from 'hard
 import type { ProtocolConfig, ProtocolConfigReplica } from '../types';
 import type { KmsNodeParamsStruct, PcrValuesStruct } from '../types/contracts/ProtocolConfig';
 import { broadcast, getProtocolConfigReplicaInterface, requireProtocolConfigAddress } from './kmsContext';
-import { type KmsThresholds, readCanonicalSnapshot } from './protocolConfigMirror';
+import { type KmsNode, type KmsThresholds, readCanonicalSnapshot } from './protocolConfigMirror';
 
 // This file defines tasks that mirror the canonical (Ethereum) ProtocolConfig's active KMS context
 // and epoch onto a non-canonical replica (e.g. Polygon) after a rotation has gone active on
@@ -20,8 +20,16 @@ import { type KmsThresholds, readCanonicalSnapshot } from './protocolConfigMirro
 export interface MirrorContextArgs {
   contextId: bigint;
   epochId: bigint;
+  nodes: KmsNode[];
+  thresholds: KmsThresholds;
+}
+
+// The `NewKmsContext` event fields that the `contextInfoHash` anchor covers.
+interface CanonicalContextInfo {
   kmsNodeParams: KmsNodeParamsStruct[];
   thresholds: KmsThresholds;
+  softwareVersion: string;
+  pcrValues: PcrValuesStruct[];
 }
 
 // Recomputes the on-chain `contextInfoHash` anchor from candidate event args. The encode types come
@@ -30,12 +38,7 @@ export interface MirrorContextArgs {
 function computeContextInfoHash(
   hre: HardhatRuntimeEnvironment,
   encodeTypes: readonly ParamType[],
-  args: {
-    kmsNodeParams: KmsNodeParamsStruct[];
-    thresholds: KmsThresholds;
-    softwareVersion: string;
-    pcrValues: PcrValuesStruct[];
-  },
+  args: CanonicalContextInfo,
 ): string {
   const encoded = hre.ethers.AbiCoder.defaultAbiCoder().encode(encodeTypes, [
     args.kmsNodeParams,
@@ -124,7 +127,12 @@ export async function readCanonicalContextSwitch(
   return {
     contextId: snapshot.currentKmsContextId,
     epochId: snapshot.currentEpochId,
-    kmsNodeParams,
+    nodes: event.args.kmsNodeParams.map(({ txSenderAddress, signerAddress, ipAddress, storageUrl }) => ({
+      txSenderAddress,
+      signerAddress,
+      ipAddress,
+      storageUrl,
+    })),
     thresholds: eventThresholds,
   };
 }
@@ -133,12 +141,14 @@ export function encodeMirrorKmsContextAndEpoch(iface: Interface, args: MirrorCon
   return iface.encodeFunctionData('mirrorKmsContextAndEpoch', [
     args.contextId,
     args.epochId,
-    args.kmsNodeParams,
+    args.nodes,
     args.thresholds,
   ]);
 }
 
-// The replica does not check that context ids increase, so this guard rejects a stale context switch.
+// Rejects a stale context switch before the calldata reaches a DAO proposal. The build-calldata task
+// never broadcasts, so without this check the DAO votes on calldata that reverts with
+// NonIncreasingKmsContextId when the proposal executes.
 export async function assertReplicaNeedsContextSwitch(
   hre: HardhatRuntimeEnvironment,
   replicaProtocolConfigAddress: string,
@@ -209,7 +219,7 @@ addMirrorTaskParams(
   console.log('ProtocolConfigReplica.mirrorKmsContextAndEpoch');
   console.log('  contextId:', args.contextId.toString());
   console.log('  epochId:', args.epochId.toString());
-  console.log('  kmsNodes:', args.kmsNodeParams.length);
+  console.log('  kmsNodes:', args.nodes.length);
   console.log('  target:', target);
   console.log('  calldata:', calldata);
 });

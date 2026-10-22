@@ -114,7 +114,7 @@ lifecycle (pending states and confirmation collection), since KMS resharing and 
 once, on Ethereum. They have no `KMSGeneration`. Anyone may apply a canonical lifecycle step on a
 replica with the KMS confirmation signatures, through the `submitKms*` methods. This is the
 permissionless path. No task in this repo calls them yet. The owner mirror methods below are the
-path the repo tasks use for rotations, and the path for recovery.
+path the repo tasks use for rotations. `recoverKmsState` is the recovery path.
 
 A submitted destruction of an id at or above the replica's active id reverts with
 `KmsContextDestructionAheadOfReplica` or `KmsEpochDestructionAheadOfReplica`. The submitter retries
@@ -124,7 +124,7 @@ it after the replica moves past that id.
 
 The mirror methods are `onlyACLOwner`. They skip signature checks and apply canonical state
 directly. The repo mirror tasks call `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` for every
-rotation. The owner also uses them to recover a replica from a forged context.
+rotation.
 
 - `mirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds)` imports a context and its epoch
   as active. It emits `MirrorKmsContextAndEpoch`.
@@ -132,16 +132,19 @@ rotation. The owner also uses them to recover a replica from a forged context.
   `MirrorKmsEpoch`.
 - `mirrorKmsContextDestruction(contextId)` and `mirrorKmsEpochDestruction(epochId)` mark an id
   destroyed. They emit `KmsContextDestroyed` and `KmsEpochDestroyed`.
+- `recoverKmsState(contextId, epochId, nodes, thresholds, destroyedContextIds, destroyedEpochIds)`
+  recovers a replica from a forged context or epoch in one call. It activates the given pair with no
+  ordering check and destroys every listed id. It emits `MirrorKmsContextAndEpoch`, then
+  `KmsContextDestroyed` and `KmsEpochDestroyed` for each listed id.
 
-`mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` clear the destroyed flag of the ids they activate.
-
-For the forged-context recovery steps, see the `mirrorKmsContextAndEpoch` NatSpec in
-`IProtocolConfigReplica.sol`.
-
-The mirror methods do not check that ids increase, so the ACL owner can move a replica back. Gaps
-are fine (contexts/epochs aborted or never activated on Ethereum are just never mirrored). Nothing
-stops a replica from **drifting** if a mirror call is skipped or applied out of order: replaying
-each Ethereum rotation to every replica, in order, is the operator's responsibility.
+`mirrorKmsContextAndEpoch` requires a context id and an epoch id **strictly above** the active ones.
+`mirrorKmsEpoch` requires the active context id and an epoch id strictly above the active one. Both
+clear the destroyed flag of the ids they activate. `recoverKmsState` also clears the flags of the pair
+it restores. The submit path rejects a destroyed id, so only the owner can land a canonical id that
+`recoverKmsState` destroyed. Only `recoverKmsState` moves a replica back. Gaps are fine (contexts/epochs
+aborted or never activated on Ethereum are just never mirrored). Nothing stops a replica from
+**drifting** if a mirror call is skipped: replaying each Ethereum rotation to every replica is the
+operator's responsibility.
 
 ### Initializing a ProtocolConfigReplica from the canonical chain
 
@@ -183,8 +186,8 @@ on devnet is byte-identical to what the DAO signs**.
 Both apply tasks read their configuration from environment variables. They take no command-line flags
 for the canonical state. A deployment platform injects the values into the deploy container.
 
-The table lists the `export` keys from step 1. The tasks reject a bad value before they deploy anything, so a
-misconfigured environment leaves the proxy untouched.
+The table lists the `export` keys from step 1. The tasks run the checks listed below the table before
+they deploy anything. A value that fails a check leaves the proxy untouched.
 
 | Variable                            | Type           | Meaning                                                |
 | ----------------------------------- | -------------- | ------------------------------------------------------ |
@@ -199,10 +202,10 @@ misconfigured environment leaves the proxy untouched.
 
 The context id, epoch id, node set, thresholds, chain id and address become the
 `initializeFromCanonical` calldata. The chain id and the address set the canonical EIP-712 domain
-that the replica verifies signatures under. The tasks check the context id, epoch id, node set and
-thresholds in full. They parse the chain id and block number as decimal strings. They only check the
-block hash and the address for presence, then print them. The block number and block hash are
-provenance.
+that the replica verifies signatures under. The tasks parse the context id, epoch id and block
+number as decimal strings. They check the node set and thresholds in full. They require a chain id
+in [1, 2^64) and a valid nonzero address. They only check the block hash for presence, then print
+it. The block number and block hash are provenance.
 
 | Environment       | Task                                            | Signer                                              |
 | ----------------- | ----------------------------------------------- | --------------------------------------------------- |
@@ -221,8 +224,7 @@ Only step 1 talks to the canonical chain. The tasks check what the environment g
 They do not prove the values match the reviewed artifact. The deployment platform
 owns that binding. Both apply tasks print `decodedArgs`, the context id, epoch id, node set,
 thresholds, chain id and address the payload encodes. They also print the block number and block
-hash. An operator compares every provenance value against the artifact. The
-printed node set carries placeholder MPC fields, so the operator compares it field by field.
+hash. An operator compares every provenance value against the artifact.
 
 When deploying a full non-canonical host stack, `task:deployAllHostContracts
 --protocol-config-source canonical` runs the mirror in sequence with the other host contracts, with

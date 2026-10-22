@@ -435,6 +435,26 @@ describe('canonical snapshot env (buildCanonicalSnapshotEnv / readCanonicalSnaps
     );
   });
 
+  it('rejects a chain id outside [1, 2^64)', async function () {
+    await exportToEnv();
+    for (const chainId of ['0', (2n ** 64n).toString()]) {
+      process.env.CANONICAL_CHAIN_ID = chainId;
+      expect(() => readCanonicalSnapshotFromEnv()).to.throw(
+        /"CANONICAL_CHAIN_ID" env variable must be in \[1, 2\^64\)/,
+      );
+    }
+  });
+
+  it('rejects a malformed or zero canonical address', async function () {
+    await exportToEnv();
+    for (const address of ['not-an-address', ethers.ZeroAddress, '0'.repeat(40)]) {
+      process.env.CANONICAL_PROTOCOL_CONFIG_ADDRESS = address;
+      expect(() => readCanonicalSnapshotFromEnv()).to.throw(
+        /"CANONICAL_PROTOCOL_CONFIG_ADDRESS" env variable must be a valid nonzero address/,
+      );
+    }
+  });
+
   it('rejects a truncated JSON value', async function () {
     await exportToEnv();
     process.env.CANONICAL_KMS_THRESHOLDS = '{"publicDecryption":"1"';
