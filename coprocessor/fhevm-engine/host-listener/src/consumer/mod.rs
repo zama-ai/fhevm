@@ -601,8 +601,12 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                     // Empty blocks are delivered too. The separate catchup
                     // queue can attach this link while the original delivery
                     // waits for redelivery on the live/finalized queue.
+                    // A fresh id per attempt: each redelivery asks again, so a
+                    // replay that was lost is re-requested rather than read as
+                    // already done.
                     recovery_client
                         .request_final_catchup(
+                            uuid::Uuid::now_v7(),
                             gap.block_number,
                             gap.block_number,
                         )
