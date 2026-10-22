@@ -17,7 +17,8 @@ The fix is to give every request an identity and a durable row. Everything else 
 Three sentences:
 
 1. **The consumer mints the id.** A UUIDv7, persisted on the consumer side *before* the request
-   is published. The listener never invents one.
+   is published. The listener never invents one, and dead-letters requests and cancels whose id
+   is not a UUIDv7.
 2. **One row per request.** The row holds the request's status and how much of it has been
    delivered. No sub-range table.
 3. **Cancel does not interrupt anything.** It flips the row to `CANCELLED`. Each worker reads
