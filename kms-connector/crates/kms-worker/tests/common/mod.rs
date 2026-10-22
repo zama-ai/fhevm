@@ -22,7 +22,7 @@ use kms_worker::core::{
         CiphertextManager, DbContextManager, DbEventProcessor, DecryptionProcessor, HostRpcClient,
         KMSGenerationProcessor, KmsClient, ProtocolConfigProcessor,
     },
-    solana::SolanaDecryptionVerifier,
+    solana::{SolanaDecryptionVerifier, membership::KmsContextMembers},
 };
 use sqlx::{Pool, Postgres};
 use std::{collections::HashMap, time::Duration};
@@ -71,7 +71,13 @@ where
         .collect();
     let decryption_processor =
         DecryptionProcessor::new(&config, provider.clone(), host_clients, ciphertext_manager);
-    let solana_verifier = SolanaDecryptionVerifier::new(HashMap::new());
+    let solana_verifier = SolanaDecryptionVerifier::new(
+        HashMap::new(),
+        KmsContextMembers::new(
+            config.protocol_config_contract.address,
+            provider.clone().erased(),
+        ),
+    );
     let kms_generation_processor = KMSGenerationProcessor::new(&config);
     let protocol_config_processor = ProtocolConfigProcessor::new(&config, provider.clone());
     let event_processor = DbEventProcessor::new(

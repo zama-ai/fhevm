@@ -4,6 +4,7 @@ pub mod delegation;
 pub mod encrypted_store;
 pub mod failure;
 pub mod handle_binding;
+pub mod membership;
 pub mod pipeline;
 pub mod proof;
 pub mod public_decrypt;

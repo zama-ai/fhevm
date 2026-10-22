@@ -69,7 +69,7 @@ impl SolanaPublicDecryptionRequest {
         extra_data: Vec<u8>,
     ) -> Result<Self, SolanaRequestError> {
         let handles: Vec<[u8; 32]> = ct_handles.iter().map(|h| h.0).collect();
-        let chain_id = public_request_chain_id(&handles, encrypted_stores.len())?;
+        let chain_id = public_request_chain_id(&handles, encrypted_stores.len(), &extra_data)?;
         let handles = ct_handles
             .iter()
             .zip(encrypted_stores)
@@ -115,14 +115,19 @@ impl SolanaPublicDecryptionRequest {
 #[cfg(all(test, feature = "tests"))]
 mod tests {
     use super::*;
-    use crate::tests::rand::rand_solana_handle;
+    use crate::{tests::rand::rand_solana_handle, types::extra_data::extra_data_v2_payload};
+
+    fn extra_data_v2() -> Vec<u8> {
+        extra_data_v2_payload(U256::ONE, U256::ONE)
+    }
 
     #[test]
     fn a_public_request_pairs_each_handle_with_its_store() {
         let handles = [rand_solana_handle(), rand_solana_handle()];
         let stores = [B256::repeat_byte(3), B256::repeat_byte(4)];
         let request =
-            SolanaPublicDecryptionRequest::new(U256::ONE, &handles, &stores, vec![0x00]).unwrap();
+            SolanaPublicDecryptionRequest::new(U256::ONE, &handles, &stores, extra_data_v2())
+                .unwrap();
         assert_eq!(request.ct_handles(), handles);
         assert_eq!(request.encrypted_stores(), stores);
         assert_eq!(
@@ -135,13 +140,20 @@ mod tests {
     fn a_public_request_is_checked_by_the_shared_rules() {
         let handles = [rand_solana_handle(), rand_solana_handle()];
         assert_eq!(
-            SolanaPublicDecryptionRequest::new(U256::ONE, &handles, &[B256::ZERO], vec![]),
+            SolanaPublicDecryptionRequest::new(U256::ONE, &handles, &[B256::ZERO], extra_data_v2()),
             Err(SolanaRequestError::StoreCount {
                 handles: 2,
                 stores: 1
             })
         );
         let at_cap = vec![rand_solana_handle(); MAX_REQUEST_HANDLES];
-        assert!(SolanaPublicDecryptionRequest::new(U256::ONE, &at_cap, &at_cap, vec![]).is_ok());
+        assert!(
+            SolanaPublicDecryptionRequest::new(U256::ONE, &at_cap, &at_cap, extra_data_v2())
+                .is_ok()
+        );
+        assert_eq!(
+            SolanaPublicDecryptionRequest::new(U256::ONE, &at_cap, &at_cap, vec![0x00]),
+            Err(SolanaRequestError::NoKmsContext)
+        );
     }
 }

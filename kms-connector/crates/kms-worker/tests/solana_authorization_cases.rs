@@ -712,8 +712,9 @@ async fn judge_public(case: &PublicCase) -> (Option<PublicDecryptFailure>, Vec<L
         .iter()
         .map(|(_, s)| B256::new(s.to_bytes()))
         .collect();
-    let request = SolanaPublicDecryptionRequest::new(U256::ONE, &handles, &store_keys, vec![0x00])
-        .expect("a well-formed request");
+    let request =
+        SolanaPublicDecryptionRequest::new(U256::ONE, &handles, &store_keys, vec![0x02; 65])
+            .expect("a well-formed request");
     let failure = check_public_decrypt(&host.host(), &request).await.err();
     // Every store is judged before the leaves are read.
     let asked = !matches!(

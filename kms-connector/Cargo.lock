@@ -4858,6 +4858,7 @@ dependencies = [
  "toml",
  "tonic 0.14.6",
  "tonic-health",
+ "tower",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",

@@ -1,6 +1,6 @@
 use super::*;
 use connector_utils::types::{
-    ProtocolEventKind, event::from_public_decryption_row,
+    ProtocolEventKind, event::from_public_decryption_row, extra_data::extra_data_v2_payload,
     solana_request::SolanaPublicDecryptionRequest,
 };
 use kms_connector_api::SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody;
@@ -9,7 +9,7 @@ use sqlx::postgres::PgRow;
 fn solana_body(stores: usize) -> SolanaPublicDecryptionBody {
     SolanaPublicDecryptionBody {
         ctHandles: vec![rand_handle(SOLANA_CHAIN_ID), rand_handle(SOLANA_CHAIN_ID)],
-        extraData: vec![0x00].into(),
+        extraData: extra_data_v2_payload(U256::ONE, U256::ONE).into(),
         encryptedStores: (0..stores)
             .map(|i| B256::repeat_byte(0x30 + i as u8))
             .collect(),

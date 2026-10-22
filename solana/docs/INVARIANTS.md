@@ -591,14 +591,30 @@ Pinned by `accepts_an_active_contexts_tx_senders_and_reads_its_nodes_once`,
 
 **73. [HOLDS]** The Merkle proof server reads the KMS tx-sender set again only when the finalized
 block is newer than its last read, and polls that block every `--kms-tx-sender-poll-interval`
-(DD-076). A request whose recovered signer is not in the set is refused only after a poll that
-started after it, or after 3 seconds. Polls woken this way start at least 1 second after the poll
-before them, and concurrent requests share one. Pinned by
+(DD-076). A request whose recovered signer is not in the set is answered only after a poll that
+started after it, or after 3 seconds, and a signer still unknown then gets `upstream_transient`
+(502, retryable). A signature that recovers no address is refused at once, `auth_unknown_signer`
+(401), with no poll woken. Polls woken this way start at least 1 second after the poll before them,
+and concurrent requests share one. Pinned by
 `accepts_a_context_activated_in_a_new_finalized_block_at_the_next_poll`,
 `an_unchanged_finalized_block_reads_no_contract_state`, `an_older_finalized_block_reads_nothing`,
 `a_miss_during_a_poll_waits_for_the_next_poll`, `concurrent_misses_share_one_read`,
-`woken_polls_start_at_least_a_second_apart`, `a_miss_waits_at_most_its_bound` and
-`an_unknown_signer_waits_for_a_poll_after_its_request`.
+`woken_polls_start_at_least_a_second_apart`, `a_miss_waits_at_most_its_bound`,
+`an_unknown_signer_waits_for_a_poll_after_its_request` and
+`a_signature_that_recovers_no_address_is_refused_at_once`.
+
+**74. [HOLDS]** kms-worker sends no Merkle proof request for a Solana decryption until it has checked
+the request's KMS context and that its own tx-sender, the address that signs its proof requests, is
+a node of that context (`isKmsTxSenderForContext` at the finalized block, DD-076). A node outside
+the context is refused for good as `unprocessable`. A failed read is recoverable and kept nowhere,
+so the request's next attempt reads again, and an answer is read once per context and tx-sender. A
+Solana public decryption that names no KMS context is refused as `malformed` by relayer-http and by
+the endpoint, through `zama_solana_request::public_request_chain_id`; a user decryption always names
+one. Pinned by `a_node_outside_the_requests_context_sends_no_proof_request`,
+`a_destroyed_context_sends_no_proof_request`, `a_node_outside_the_context_is_refused_for_good`,
+`each_answer_is_read_once`, `a_failed_read_is_retried`, `a_public_request_names_its_kms_context`,
+`each_solana_public_rule_names_its_field` and
+`a_solana_public_decryption_without_a_kms_context_is_malformed`.
 
 ## H. Reference confidential applications
 

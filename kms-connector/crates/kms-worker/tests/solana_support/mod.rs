@@ -16,13 +16,24 @@
 
 use alloy::primitives::B256;
 use alloy::primitives::U256;
+use alloy::{
+    providers::{Provider, ProviderBuilder, mock::Asserter},
+    rpc::{
+        client::RpcClient,
+        json_rpc::{RequestPacket, ResponsePacket},
+    },
+    sol_types::SolCall,
+    transports::{TransportError, TransportFut, mock::MockTransport},
+};
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use ciborium::cbor;
 use connector_utils::config::KmsWallet;
 use connector_utils::types::solana_request::{
     SolanaUserDecryptFields, SolanaUserDecryptionRequestV1,
 };
+use fhevm_host_bindings::protocol_config::ProtocolConfig::isKmsTxSenderForContextCall;
 use kms_worker::core::ProofServer;
+use kms_worker::core::solana::membership::KmsContextMembers;
 use kms_worker::core::solana::{
     SolanaHost,
     pipeline::AuthorizationContext,
@@ -1201,4 +1212,84 @@ fn wire_outcome(outcome: &MerkleProofOutcome) -> ciborium::Value {
         MerkleProofOutcome::Inconsistent => cbor!({ "status" => "inconsistent" }),
     }
     .unwrap()
+}
+
+// ---------------------------------------------------------------------------
+// The KMS contexts on Ethereum
+// ---------------------------------------------------------------------------
+
+/// The `isKmsTxSenderForContext` calls an Ethereum node received.
+pub type MembershipCalls = std::sync::Arc<Mutex<Vec<isKmsTxSenderForContextCall>>>;
+
+/// An Ethereum node that answers every `isKmsTxSenderForContext` with `is_member`, after `delay`,
+/// and keeps each call. It requires each call at the finalized block.
+#[derive(Clone)]
+struct MembershipNode {
+    is_member: bool,
+    delay: Duration,
+    answers: MockTransport,
+    calls: MembershipCalls,
+}
+
+impl tower::Service<RequestPacket> for MembershipNode {
+    type Response = ResponsePacket;
+    type Error = TransportError;
+    type Future = TransportFut<'static>;
+
+    fn poll_ready(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        self.answers.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: RequestPacket) -> Self::Future {
+        for each in request.requests() {
+            let params: serde_json::Value =
+                serde_json::from_str(each.params().unwrap().get()).unwrap();
+            let input: alloy::primitives::Bytes =
+                serde_json::from_value(params[0]["input"].clone()).unwrap();
+            assert_eq!(params[1], "finalized", "a membership read at another block");
+            self.calls
+                .lock()
+                .unwrap()
+                .push(isKmsTxSenderForContextCall::abi_decode(&input).unwrap());
+            self.answers
+                .asserter()
+                .push_success(&alloy::primitives::Bytes::from(
+                    isKmsTxSenderForContextCall::abi_encode_returns(&self.is_member),
+                ));
+        }
+        let delay = self.delay;
+        let answer = self.answers.call(request);
+        Box::pin(async move {
+            tokio::time::sleep(delay).await;
+            answer.await
+        })
+    }
+}
+
+/// The KMS context nodes as an Ethereum node answering `is_member` after `delay` serves them, and
+/// the calls it receives.
+pub fn kms_context_members(
+    is_member: bool,
+    delay: Duration,
+) -> (KmsContextMembers, MembershipCalls) {
+    let calls = MembershipCalls::default();
+    let node = MembershipNode {
+        is_member,
+        delay,
+        answers: MockTransport::new(Asserter::new()),
+        calls: calls.clone(),
+    };
+    let provider = ProviderBuilder::new()
+        .disable_recommended_fillers()
+        .connect_client(RpcClient::new(node, true));
+    (
+        KmsContextMembers::new(
+            alloy::primitives::Address::repeat_byte(0xC0),
+            provider.erased(),
+        ),
+        calls,
+    )
 }

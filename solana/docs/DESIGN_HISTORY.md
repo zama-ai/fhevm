@@ -1940,6 +1940,26 @@ replaced `sender_authentication_failed` with RFC 038's `auth_*` codes and a quer
 
 > A request whose body does not decode is refused before the cache.
 
+### DD-067 and DD-076, replaced in part: an unknown signer is retried
+
+A coprocessor now answers a signer still unknown after its fresh read with `upstream_transient`
+(502, retryable), and kms-worker refuses a Solana request itself when its node is not a node of the
+request's KMS context. A final refusal from the coprocessors ended a request for a node whose
+coprocessors' RPC lagged behind kms-worker's.
+
+> [...] and a signature that recovers no address, or one that is not the tx-sender of an Active
+> context, `auth_unknown_signer`. A signature for another audience recovers an unrelated address
+> and lands there too.
+
+> A KMS connector that every coprocessor refuses with one of these four codes, in any mix, fails
+> the request `unprocessable`, final: its signer is in no Active context the coprocessors have
+> read, or its signature does not verify, and neither recovers within relayer-http's retries.
+
+> - What remains: if a coprocessor's RPC node sees the activation's finalized block more than 3
+>   seconds after kms-worker's node does, the incoming node's first requests to that coprocessor
+>   are refused with `auth_unknown_signer`, and kms-worker treats that refusal as final. That is RPC
+>   node lag.
+
 ### DD-067, replaced in part by DD-076
 
 DD-076 accepts the tx-senders of Active contexts only, read with `isValidKmsContext` and

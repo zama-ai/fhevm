@@ -930,9 +930,9 @@ async fn an_unavailable_coprocessor_leaves_the_batch_to_one_that_serves() {
 }
 
 /// Through the production client: a coprocessor refuses with `auth_unknown_signer` a connector
-/// whose signer is in no KMS context it has read. When every coprocessor refuses it as a sender,
-/// with that code or another final `auth_*` one, the request fails for good as `unprocessable`; any
-/// other failure, `auth_expired` included, leaves it to a later attempt.
+/// whose signature recovers no address. When every coprocessor refuses it as a sender, with that
+/// code or another final `auth_*` one, the request fails for good as `unprocessable`; any other
+/// failure, `auth_expired` included, leaves it to a later attempt.
 #[rstest]
 #[case::every_coprocessor_refuses_the_sender(
     401,

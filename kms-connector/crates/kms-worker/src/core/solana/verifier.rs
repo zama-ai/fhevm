@@ -7,16 +7,21 @@ use crate::core::{
     event_processor::{RequestCheckError, RequestCheckKind},
     solana::{
         SolanaHost,
+        membership::KmsContextMembers,
         pipeline::{AuthorizationContext, authorize_request},
         proof::{CoprocessorProofClient, proof_http_client},
         public_decrypt::check_public_decrypt,
         snapshot::SolanaRpcClient,
     },
 };
+use alloy::providers::DynProvider;
 use anyhow::anyhow;
 use connector_utils::{
     config::KmsWallet,
-    types::solana_request::{SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1},
+    types::{
+        extra_data::parse_extra_data,
+        solana_request::{SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1},
+    },
 };
 use kms_connector_api::ErrorCode;
 use request_authorization::KeyRegistry;
@@ -29,16 +34,21 @@ use tracing::info;
 pub struct SolanaDecryptionVerifier {
     /// The Solana host chains, by chain id.
     hosts: HashMap<u64, SolanaHost>,
+    /// The nodes of the KMS contexts, one of which a request's own node must be.
+    members: KmsContextMembers,
 }
 
 impl SolanaDecryptionVerifier {
-    pub fn new(hosts: HashMap<u64, SolanaHost>) -> Self {
-        Self { hosts }
+    pub fn new(hosts: HashMap<u64, SolanaHost>, members: KmsContextMembers) -> Self {
+        Self { hosts, members }
     }
 
     /// Builds a reader for every Solana host chain in `config`. The proof requests are signed by
-    /// the configured tx-sender wallet, which a Solana host chain therefore requires.
-    pub async fn connect(config: &Config) -> anyhow::Result<Self> {
+    /// the configured tx-sender wallet, which a Solana host chain therefore requires. The KMS
+    /// contexts are read from `config`'s `ProtocolConfig` through `ethereum_provider`.
+    pub async fn connect(config: &Config, ethereum_provider: DynProvider) -> anyhow::Result<Self> {
+        let members =
+            KmsContextMembers::new(config.protocol_config_contract.address, ethereum_provider);
         let solana_chains: Vec<_> = config
             .host_chains
             .iter()
@@ -48,7 +58,7 @@ impl SolanaDecryptionVerifier {
             })
             .collect();
         if solana_chains.is_empty() {
-            return Ok(Self::new(HashMap::new()));
+            return Ok(Self::new(HashMap::new(), members));
         }
         let wallet = KmsWallet::from_config(
             config.private_key.as_ref(),
@@ -81,7 +91,7 @@ impl SolanaDecryptionVerifier {
                 (host_chain.chain_id, host)
             })
             .collect();
-        Ok(Self::new(hosts))
+        Ok(Self::new(hosts, members))
     }
 
     /// A chain this verifier does not hold is retried, as `DecryptionProcessor` retries a chain its
@@ -96,6 +106,32 @@ impl SolanaDecryptionVerifier {
         })
     }
 
+    /// Refuses a request unless this connector's tx-sender, which signs its proof requests, is a
+    /// node of the KMS context the request names. It runs before any host or proof read.
+    async fn check_member(
+        &self,
+        host: &SolanaHost,
+        extra_data: &[u8],
+    ) -> Result<(), RequestCheckError> {
+        let extra_data = parse_extra_data(extra_data).map_err(|e| {
+            RequestCheckError::irrecoverable(
+                RequestCheckKind::KmsContext,
+                ErrorCode::Unprocessable,
+                e,
+            )
+        })?;
+        let Some(context_id) = extra_data.context_id else {
+            return Err(RequestCheckError::irrecoverable(
+                RequestCheckKind::KmsContext,
+                ErrorCode::Unprocessable,
+                anyhow!("A Solana decryption request names no KMS context"),
+            ));
+        };
+        self.members
+            .check(context_id, host.proofs.tx_sender())
+            .await
+    }
+
     /// Proves each handle's public-decrypt leaf against the encrypted store the request names for
     /// it.
     #[tracing::instrument(skip_all)]
@@ -103,7 +139,9 @@ impl SolanaDecryptionVerifier {
         &self,
         request: &SolanaPublicDecryptionRequest,
     ) -> Result<(), RequestCheckError> {
-        check_public_decrypt(self.host(request.chain_id())?, request).await?;
+        let host = self.host(request.chain_id())?;
+        self.check_member(host, request.extra_data()).await?;
+        check_public_decrypt(host, request).await?;
         info!(
             "Solana public decryption check passed for {} handles!",
             request.handles().len()
@@ -118,6 +156,7 @@ impl SolanaDecryptionVerifier {
         request: &SolanaUserDecryptionRequestV1,
     ) -> Result<(), RequestCheckError> {
         let host = self.host(request.request.permit().chain_id())?;
+        self.check_member(host, &request.extra_data()).await?;
         let context = AuthorizationContext {
             program_id: host.program_id,
             now_unix_seconds: Utc::now().timestamp() as u64,
@@ -142,7 +181,10 @@ mod tests {
             snapshot::HostStateReader,
         },
     };
-    use alloy::primitives::{Address, B256, U256};
+    use alloy::{
+        primitives::{Address, B256, U256},
+        providers::{Provider, ProviderBuilder, mock::Asserter},
+    };
     use connector_utils::tests::rand::rand_handle;
     use solana_pubkey::Pubkey;
     use std::time::Duration;
@@ -163,6 +205,14 @@ mod tests {
         }
     }
 
+    /// An Ethereum node that answers nothing: these tests read no KMS context.
+    fn ethereum() -> DynProvider {
+        ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(Asserter::new())
+            .erased()
+    }
+
     fn handle_on(chain_id: u64) -> B256 {
         let mut bytes = *rand_handle();
         bytes[22..30].copy_from_slice(&chain_id.to_be_bytes());
@@ -170,7 +220,8 @@ mod tests {
     }
 
     fn public_request(handle: B256) -> SolanaPublicDecryptionRequest {
-        SolanaPublicDecryptionRequest::new(U256::ONE, &[handle], &[B256::ZERO], vec![]).unwrap()
+        SolanaPublicDecryptionRequest::new(U256::ONE, &[handle], &[B256::ZERO], vec![0x02; 65])
+            .unwrap()
     }
 
     fn user_request(handle: B256) -> SolanaUserDecryptionRequestV1 {
@@ -204,7 +255,9 @@ mod tests {
             ..Default::default()
         };
 
-        let verifier = SolanaDecryptionVerifier::connect(&config).await.unwrap();
+        let verifier = SolanaDecryptionVerifier::connect(&config, ethereum())
+            .await
+            .unwrap();
 
         assert_eq!(verifier.hosts.len(), 1);
         assert_eq!(
@@ -223,7 +276,9 @@ mod tests {
             host_rpc_call_timeout: Duration::from_millis(250),
             ..Default::default()
         };
-        let verifier = SolanaDecryptionVerifier::connect(&config).await.unwrap();
+        let verifier = SolanaDecryptionVerifier::connect(&config, ethereum())
+            .await
+            .unwrap();
         let host = &verifier.hosts[&solana_host_chain_id(2)];
         let keys = [Pubkey::new_from_array([1; 32])];
         let queries = [LeafQuery {
@@ -255,7 +310,7 @@ mod tests {
             private_key: None,
             ..Default::default()
         };
-        let error = SolanaDecryptionVerifier::connect(&config)
+        let error = SolanaDecryptionVerifier::connect(&config, ethereum())
             .await
             .err()
             .expect("no wallet is configured");
@@ -268,12 +323,19 @@ mod tests {
             private_key: None,
             ..Default::default()
         };
-        assert!(SolanaDecryptionVerifier::connect(&evm_only).await.is_ok());
+        assert!(
+            SolanaDecryptionVerifier::connect(&evm_only, ethereum())
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
     async fn a_request_for_a_chain_without_a_solana_host_is_retried() {
-        let verifier = SolanaDecryptionVerifier::new(HashMap::new());
+        let verifier = SolanaDecryptionVerifier::new(
+            HashMap::new(),
+            KmsContextMembers::new(Address::ZERO, ethereum()),
+        );
 
         for result in check_both(&verifier, handle_on(solana_host_chain_id(12345))).await {
             match result {

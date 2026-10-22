@@ -2,7 +2,7 @@
 //! events; the account holds only the peaks. Each coprocessor is a source of proofs, never of
 //! decisions: every answer is verified against the observed peaks.
 
-use alloy::primitives::B256;
+use alloy::primitives::{Address, B256};
 use connector_utils::config::KmsWallet;
 use futures::future::try_join_all;
 use rand::seq::SliceRandom;
@@ -193,6 +193,11 @@ pub struct SignedBatch {
 }
 
 impl CoprocessorProofClient {
+    /// The address that signs the proof requests: the connector's tx-sender.
+    pub fn tx_sender(&self) -> Address {
+        self.wallet.address()
+    }
+
     pub fn new(
         servers: &[ProofServer],
         client: reqwest::Client,
@@ -326,7 +331,6 @@ impl HostProofReader for CoprocessorProofClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy::primitives::Address;
     use ciborium::cbor;
     use url::Url;
 

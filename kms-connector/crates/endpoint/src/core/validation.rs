@@ -365,7 +365,32 @@ pub(crate) mod tests {
         SolanaPublicDecryptionBody {
             encryptedStores: vec![B256::repeat_byte(0x03); handles.len()],
             ctHandles: handles,
-            extraData: Bytes::new(),
+            extraData: Bytes::from(extra_data_v2()),
+        }
+    }
+
+    /// A Solana public decryption names its KMS context: kms-worker checks its node's membership in
+    /// it before any proof read.
+    #[test]
+    fn a_solana_public_decryption_without_a_kms_context_is_malformed() {
+        let solana_chain = zama_solana_acl::host_chain::solana_host_chain_id(12345);
+        let cfg = Config {
+            supported_chain_ids: vec![solana_chain],
+            ..config()
+        };
+        let mut request = solana_public_request(vec![handle(solana_chain, EUINT64)]);
+        for without_context in [vec![], vec![0x00]] {
+            request.extraData = Bytes::from(without_context);
+            let error = validate_solana_public_decryption(B256::ZERO, &request, &cfg).unwrap_err();
+            assert!(
+                matches!(&error, ValidationError::InvalidSolanaRequest(e) if e.contains("no KMS context")),
+                "{error}"
+            );
+            assert_eq!(error.code(), ErrorCode::Malformed);
+        }
+        for with_context in [[vec![0x01], vec![0xaa; 32]].concat(), extra_data_v2()] {
+            request.extraData = Bytes::from(with_context);
+            validate_solana_public_decryption(B256::ZERO, &request, &cfg).unwrap();
         }
     }
 
