@@ -17,6 +17,7 @@ import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/utils/upgradeProposal
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 import {
   HOST_ENV_FILE,
+  buildConnectorUrls,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   deployFreshProtocolConfigProxy,
@@ -120,13 +121,15 @@ describe('Canonical prepare tasks', function () {
       // Round-trip every KmsNode field so a dropped or transposed field is caught instead of
       // silently passing on txSenderAddress alone.
       const expectedNodes = buildProtocolConfigNodes();
+      const expectedConnectorUrls = buildConnectorUrls(expectedNodes.length);
       expect(decoded[2].length).to.equal(expectedNodes.length);
       decoded[2].forEach((node: unknown[], index: number) => {
-        const [txSenderAddress, signerAddress, ipAddress, storageUrl] = node;
+        const [txSenderAddress, signerAddress, ipAddress, storageUrl, connectorUrl] = node;
         expect(txSenderAddress).to.equal(expectedNodes[index].txSenderAddress);
         expect(signerAddress).to.equal(expectedNodes[index].signerAddress);
         expect(ipAddress).to.equal(expectedNodes[index].ipAddress);
         expect(storageUrl).to.equal(expectedNodes[index].storageUrl);
+        expect(connectorUrl).to.equal(expectedConnectorUrls[index]);
       });
       expect(decoded[3][0]).to.equal(BigInt(buildProtocolConfigThresholds().publicDecryption));
       expect(decoded[4]).to.equal((await ethers.provider.getNetwork()).chainId);
@@ -150,8 +153,8 @@ describe('Canonical prepare tasks', function () {
       const secondaryState = await secondary.getCurrentKmsContextAndEpoch();
       expect(secondaryState[0]).to.equal(canonicalContextId);
       expect(secondaryState[1]).to.equal(canonicalEpochId);
-      expect((await secondary.getKmsNodesForContext(canonicalContextId)).length).to.equal(
-        buildProtocolConfigNodes().length,
+      expect((await secondary.getKmsNodesForContext(canonicalContextId)).map((n) => n.connectorUrl)).to.deep.equal(
+        buildConnectorUrls(buildProtocolConfigNodes().length),
       );
       expect(await secondary.getPublicDecryptionThresholdForContext(canonicalContextId)).to.equal(
         BigInt(buildProtocolConfigThresholds().publicDecryption),

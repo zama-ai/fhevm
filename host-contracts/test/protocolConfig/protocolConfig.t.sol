@@ -75,7 +75,10 @@ abstract contract ProtocolConfigTestBase is ProtocolConfigSigningTestUtils {
         vm.expectRevert(expectedRevert);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             impl,
-            abi.encodeCall(ProtocolConfig.initializeFromEmptyProxy, (nodes, thresholds, "", new PcrValues[](0)))
+            abi.encodeCall(
+                ProtocolConfig.initializeFromEmptyProxy,
+                (nodes, _makeConnectorUrls(nodes.length), thresholds, "", new PcrValues[](0))
+            )
         );
     }
 
@@ -432,6 +435,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
             assertEq(nodes[i].signerAddress, expectedNodes[i].signerAddress);
             assertEq(nodes[i].ipAddress, expectedNodes[i].ipAddress);
             assertEq(nodes[i].storageUrl, expectedNodes[i].storageUrl);
+            assertEq(nodes[i].connectorUrl, expectedNodes[i].connectorUrl);
             assertEq(signers[i], expectedNodes[i].signerAddress);
             assertTrue(protocolConfig.isKmsSignerForContext(contextId, expectedNodes[i].signerAddress));
             assertTrue(protocolConfig.isKmsTxSenderForContext(contextId, expectedNodes[i].txSenderAddress));
@@ -442,6 +446,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
             assertEq(node.signerAddress, expectedNodes[i].signerAddress);
             assertEq(node.ipAddress, expectedNodes[i].ipAddress);
             assertEq(node.storageUrl, expectedNodes[i].storageUrl);
+            assertEq(node.connectorUrl, expectedNodes[i].connectorUrl);
         }
         // Negative: unregistered addresses must return false.
         assertFalse(protocolConfig.isKmsSignerForContext(contextId, address(0xDEAD)));
@@ -485,6 +490,21 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
             emptyNodes,
             _defaultThresholds(),
             abi.encodeWithSelector(IProtocolConfigBase.EmptyKmsNodes.selector)
+        );
+    }
+
+    function test_revertInitConnectorUrlsLengthMismatch() public {
+        _deployACL(owner);
+        _deployEmptyProtocolConfigProxy();
+        address impl = address(new ProtocolConfig());
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.KmsConnectorUrlsLengthMismatch.selector, 2, 3));
+        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
+            impl,
+            abi.encodeCall(
+                ProtocolConfig.initializeFromEmptyProxy,
+                (_makeKmsNodeParams(2), _makeConnectorUrls(3), _defaultThresholds(), "", new PcrValues[](0))
+            )
         );
     }
 
@@ -655,6 +675,68 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         );
         assertEq(emissionBlockNumber, expectedBlock);
         assertEq(contextInfoHash, keccak256(abi.encode(params, thresholds, "kms-v1", pcrValues)));
+    }
+
+    function test_defineNewKmsContextAndEpochStoresConnectorUrls() public {
+        _setupDefault();
+        KmsNodeParams[] memory params = _makeKmsNodeParams(3);
+        vm.prank(owner);
+        _defineNewKmsContextAndEpoch(params, _defaultThresholds());
+
+        KmsNode[] memory expected = _makeKmsNodes(3);
+        for (uint256 i = 0; i < params.length; i++) {
+            KmsNode memory node = protocolConfig.getKmsNodeForContext(
+                KMS_CONTEXT_COUNTER_BASE + 2,
+                params[i].txSenderAddress
+            );
+            assertEq(abi.encode(node), abi.encode(expected[i]));
+        }
+    }
+
+    function test_defineNewKmsContextStoresEmptyAndShortConnectorUrl() public {
+        _setupEpochLifecycle();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        KmsNodeParams[] memory params = _makeKmsNodeParams(3);
+        KmsThresholds memory thresholds = _defaultThresholds();
+        string[] memory connectorUrls = new string[](3);
+        connectorUrls[0] = "";
+        connectorUrls[1] = "a";
+        connectorUrls[2] = "https://kms-connector.example.c";
+        assertEq(bytes(connectorUrls[2]).length, 31);
+
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContextAndEpoch(params, connectorUrls, thresholds, "", new PcrValues[](0));
+        nodeConfigHashes[contextId] = _nodeConfigHash(params, connectorUrls, thresholds);
+
+        KmsNode[] memory expected = _toKmsNodes(params, connectorUrls);
+        for (uint256 i = 0; i < params.length; i++) {
+            assertEq(
+                abi.encode(protocolConfig.getKmsNodeForContext(contextId, params[i].txSenderAddress)),
+                abi.encode(expected[i])
+            );
+        }
+
+        _confirmContextCreation(contextId, kmsPk0, "");
+        _confirmContextCreation(contextId, kmsPk1, "");
+        _confirmContextCreation(contextId, kmsPk2, "");
+        _confirmEpochActivation(contextId, EPOCH_COUNTER_BASE + 2, kmsPk0);
+        _confirmEpochActivation(contextId, EPOCH_COUNTER_BASE + 2, kmsPk1);
+        _confirmEpochActivation(contextId, EPOCH_COUNTER_BASE + 2, kmsPk2);
+        assertEq(protocolConfig.getCurrentKmsContextId(), contextId);
+        assertEq(abi.encode(protocolConfig.getKmsNodesForContext(contextId)), abi.encode(expected));
+    }
+
+    function test_revertDefineNewKmsContextAndEpochConnectorUrlsLengthMismatch() public {
+        _setupDefault();
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.KmsConnectorUrlsLengthMismatch.selector, 2, 1));
+        protocolConfig.defineNewKmsContextAndEpoch(
+            _makeKmsNodeParams(2),
+            _makeConnectorUrls(1),
+            _defaultThresholds(),
+            "",
+            new PcrValues[](0)
+        );
     }
 
     function test_historicalContextReadable() public {
@@ -1748,7 +1830,10 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             impl,
-            abi.encodeCall(ProtocolConfig.initializeFromEmptyProxy, (nodeParams, thresholds, "", pcrValues))
+            abi.encodeCall(
+                ProtocolConfig.initializeFromEmptyProxy,
+                (nodeParams, _makeConnectorUrls(nodeParams.length), thresholds, "", pcrValues)
+            )
         );
     }
 
@@ -1912,7 +1997,13 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         // onlyFromEmptyProxy fires first (version is 3, not 1) before reinitializer.
         vm.prank(owner);
         vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
-        protocolConfig.initializeFromEmptyProxy(_makeKmsNodeParams(1), _defaultThresholds(), "", new PcrValues[](0));
+        protocolConfig.initializeFromEmptyProxy(
+            _makeKmsNodeParams(1),
+            _makeConnectorUrls(1),
+            _defaultThresholds(),
+            "",
+            new PcrValues[](0)
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -2378,8 +2469,9 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         protocolConfig.confirmKmsContextCreation(newContextId, abi.encodePacked(r, s), "");
     }
 
-    /// @dev nodeConfigHash binds the stored nodes and thresholds. A signature over other thresholds
-    ///      recovers an unrelated address, and the same signer over the defined ones is accepted.
+    /// @dev nodeConfigHash binds the stored nodes, connector URLs included, and thresholds. A signature
+    ///      over other thresholds or another connector URL recovers an unrelated address, and the same
+    ///      signer over the defined ones is accepted.
     function test_revertConfirmKmsContextCreationOverOtherNodeConfig() public {
         _setupEpochLifecycle();
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
@@ -2395,16 +2487,36 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
             kmsGen: 1,
             mpc: 2
         });
+        string[] memory connectorUrls = _makeConnectorUrls(nodes.length);
         bytes memory signature = _computeSignature(
             kmsPk0,
-            _hashContextCreation(previousContextId, newContextId, _nodeConfigHash(nodes, otherThresholds), "")
+            _hashContextCreation(
+                previousContextId,
+                newContextId,
+                _nodeConfigHash(nodes, connectorUrls, otherThresholds),
+                ""
+            )
+        );
+        vm.expectPartialRevert(IProtocolConfig.KmsContextCreationUnauthorized.selector);
+        protocolConfig.confirmKmsContextCreation(newContextId, signature, "");
+
+        string[] memory otherConnectorUrls = _makeConnectorUrls(nodes.length);
+        otherConnectorUrls[1] = "https://attacker.example.com";
+        signature = _computeSignature(
+            kmsPk0,
+            _hashContextCreation(
+                previousContextId,
+                newContextId,
+                _nodeConfigHash(nodes, otherConnectorUrls, thresholds),
+                ""
+            )
         );
         vm.expectPartialRevert(IProtocolConfig.KmsContextCreationUnauthorized.selector);
         protocolConfig.confirmKmsContextCreation(newContextId, signature, "");
 
         signature = _computeSignature(
             kmsPk0,
-            _hashContextCreation(previousContextId, newContextId, _nodeConfigHash(nodes, thresholds), "")
+            _hashContextCreation(previousContextId, newContextId, _nodeConfigHash(nodes, connectorUrls, thresholds), "")
         );
         vm.expectEmit(true, true, false, true, address(protocolConfig));
         emit IProtocolConfig.KmsContextCreationConfirmation(newContextId, vm.addr(kmsPk0), signature, "");

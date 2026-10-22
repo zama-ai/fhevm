@@ -105,6 +105,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
      * @notice Fresh deploy initializer: creates the first KMS context.
      * @dev When deploying a fresh ProtocolConfig on Ethereum (canonical host), this function is called.
      * @param initialKmsNodeParams The initial KMS node set, including MPC metadata.
+     * @param initialConnectorUrls The connector URL of each initial KMS node, in `initialKmsNodeParams` order.
      * @param initialThresholds The initial thresholds.
      * @param softwareVersion The KMS software version expected for the context.
      * @param pcrValues Accepted enclave PCR values for the context.
@@ -112,21 +113,20 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
         KmsNodeParams[] calldata initialKmsNodeParams,
+        string[] calldata initialConnectorUrls,
         KmsThresholds calldata initialThresholds,
         string calldata softwareVersion,
         PcrValues[] calldata pcrValues
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 1;
         _storeAndActivateKmsContextAndEpoch(
             newContextId,
             EPOCH_COUNTER_BASE + 1,
-            _toKmsNodes(initialKmsNodeParams),
+            _toKmsNodes(initialKmsNodeParams, initialConnectorUrls),
             initialThresholds
         );
 
-        $.contextAnchors[newContextId] = KmsContextAnchor({
+        _getProtocolConfigStorage().contextAnchors[newContextId] = KmsContextAnchor({
             emissionBlockNumber: block.number,
             contextInfoHash: keccak256(abi.encode(initialKmsNodeParams, initialThresholds, softwareVersion, pcrValues))
         });
@@ -165,6 +165,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     ///      destroying it (destroyKmsContext).
     function defineNewKmsContextAndEpoch(
         KmsNodeParams[] calldata kmsNodeParams,
+        string[] calldata connectorUrls,
         KmsThresholds calldata thresholds,
         string calldata softwareVersion,
         PcrValues[] calldata pcrValues
@@ -176,7 +177,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         // is reached, so the (context, epoch) pair announced to connectors is correct by construction.
         uint256 previousContextId = $.latestActiveKmsContextId;
         uint256 contextId = ++$.currentKmsContextId;
-        KmsNode[] memory nodes = _toKmsNodes(kmsNodeParams);
+        KmsNode[] memory nodes = _toKmsNodes(kmsNodeParams, connectorUrls);
         _storeKmsCommittee(contextId, nodes, thresholds);
         $.contextState[contextId] = ContextState.Pending;
 
@@ -313,7 +314,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         // All signers agreed on `epochId`, so promote `contextId` and `epochId` to Active.
         _activateKmsContextAndEpoch(contextId, epochId);
 
-        KmsNode[] storage nodes = $.kmsNodesForContext[contextId];
+        KmsCommitteeEntry[] storage nodes = $.kmsNodesForContext[contextId];
         string[] memory urls = new string[](nodes.length);
         for (uint256 i = 0; i < nodes.length; i++) {
             urls[i] = nodes[i].storageUrl;
@@ -630,9 +631,16 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /**
-     * @dev Projects `kmsNodeParams` onto the stored KmsNode shape.
+     * @dev Projects `kmsNodeParams` onto the stored KmsNode shape, with `connectorUrls[i]` as the
+     *      connector URL of node `i`.
      */
-    function _toKmsNodes(KmsNodeParams[] calldata kmsNodeParams) private pure returns (KmsNode[] memory nodes) {
+    function _toKmsNodes(
+        KmsNodeParams[] calldata kmsNodeParams,
+        string[] calldata connectorUrls
+    ) private pure returns (KmsNode[] memory nodes) {
+        if (connectorUrls.length != kmsNodeParams.length) {
+            revert KmsConnectorUrlsLengthMismatch(kmsNodeParams.length, connectorUrls.length);
+        }
         nodes = new KmsNode[](kmsNodeParams.length);
         for (uint256 i = 0; i < kmsNodeParams.length; i++) {
             KmsNodeParams calldata params = kmsNodeParams[i];
@@ -640,7 +648,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
                 txSenderAddress: params.txSenderAddress,
                 signerAddress: params.signerAddress,
                 ipAddress: params.ipAddress,
-                storageUrl: params.storageUrl
+                storageUrl: params.storageUrl,
+                connectorUrl: connectorUrls[i]
             });
         }
     }

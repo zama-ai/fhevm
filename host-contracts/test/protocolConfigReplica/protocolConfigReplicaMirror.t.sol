@@ -96,6 +96,12 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaTestBase {
         assertTrue(protocolConfigReplica.isValidKmsContext(contextId));
         assertTrue(protocolConfigReplica.isValidEpochForContext(contextId, epochId));
         assertEq(protocolConfigReplica.getKmsSignersForContext(contextId).length, 2);
+        for (uint256 i = 0; i < nodes.length; i++) {
+            assertEq(
+                abi.encode(protocolConfigReplica.getKmsNodeForContext(contextId, nodes[i].txSenderAddress)),
+                abi.encode(nodes[i])
+            );
+        }
     }
 
     function test_mirrorKmsContextAndEpochAllowsGap() public {
@@ -136,6 +142,57 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaTestBase {
         );
         protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1 + 3, EPOCH1 + 2, _nodes(SEED2), _thresholds());
         vm.stopPrank();
+    }
+
+    function test_recoverOverExistingIdKeepsTxSenderWithNewUrl() public {
+        _setupReplica();
+        KmsNode[] memory nodes = _makeKmsNodes(N);
+        nodes[0].connectorUrl = "https://kms-connector-0.new.example.com";
+        nodes[1].connectorUrl = "";
+
+        vm.prank(owner);
+        protocolConfigReplica.recoverKmsState(
+            CTX1,
+            EPOCH1 + 1,
+            nodes,
+            _thresholds(),
+            new uint256[](0),
+            new uint256[](0)
+        );
+
+        assertEq(abi.encode(protocolConfigReplica.getKmsNodesForContext(CTX1)), abi.encode(nodes));
+        for (uint256 i = 0; i < N; i++) {
+            assertEq(
+                abi.encode(protocolConfigReplica.getKmsNodeForContext(CTX1, nodes[i].txSenderAddress)),
+                abi.encode(nodes[i])
+            );
+        }
+    }
+
+    function test_recoverOverExistingIdWithFewerNodesClearsDroppedNode() public {
+        _setupReplica();
+        KmsNode[] memory oldNodes = _makeKmsNodes(N);
+        KmsNode[] memory nodes = new KmsNode[](N - 1);
+        for (uint256 i = 0; i < N - 1; i++) {
+            nodes[i] = oldNodes[i];
+        }
+        address droppedTxSender = oldNodes[N - 1].txSenderAddress;
+
+        vm.prank(owner);
+        protocolConfigReplica.recoverKmsState(
+            CTX1,
+            EPOCH1 + 1,
+            nodes,
+            _thresholds(),
+            new uint256[](0),
+            new uint256[](0)
+        );
+
+        assertEq(abi.encode(protocolConfigReplica.getKmsNodesForContext(CTX1)), abi.encode(nodes));
+        KmsNode memory emptyNode;
+        assertEq(abi.encode(protocolConfigReplica.getKmsNodeForContext(CTX1, droppedTxSender)), abi.encode(emptyNode));
+        assertFalse(protocolConfigReplica.isKmsTxSenderForContext(CTX1, droppedTxSender));
+        assertFalse(protocolConfigReplica.isKmsSignerForContext(CTX1, oldNodes[N - 1].signerAddress));
     }
 
     function test_recoveryFromLateActivation() public {
