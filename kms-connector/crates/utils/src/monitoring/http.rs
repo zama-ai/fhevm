@@ -38,6 +38,8 @@ pub fn route_label(path: &str) -> &'static str {
 }
 
 /// The trace context headers of a request: borrowed when extracted, owned when injected.
+// TODO: This can be replaced by `opentelemetry_http`'s `HeaderExtractor`/`HeaderInjector` once actix-web moves to
+// `http` 1.x
 #[derive(Default)]
 struct TraceHeaders<S> {
     traceparent: Option<S>,
