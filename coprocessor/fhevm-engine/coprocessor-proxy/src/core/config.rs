@@ -78,7 +78,11 @@ pub struct Config {
         default = "default_request_read_timeout"
     )]
     pub request_read_timeout: Duration,
-    /// How long in-flight requests are given to complete after `SIGTERM`.
+    /// How long the proxy keeps accepting connections after `SIGTERM`, closing each one after its
+    /// next response, before the shutdown grace period starts.
+    #[serde(with = "humantime_serde", default)]
+    pub shutdown_delay: Duration,
+    /// How long in-flight requests are given to complete after the shutdown delay.
     #[serde(with = "humantime_serde", default = "default_shutdown_grace_period")]
     pub shutdown_grace_period: Duration,
 
@@ -264,6 +268,7 @@ impl Default for Config {
             endpoint_response_timeout: default_endpoint_response_timeout(),
             endpoint_idle_timeout: default_endpoint_idle_timeout(),
             request_read_timeout: default_request_read_timeout(),
+            shutdown_delay: Duration::ZERO,
             shutdown_grace_period: default_shutdown_grace_period(),
             service_name: default_service_name(),
             log_level: default_log_level(),
@@ -300,6 +305,7 @@ mod tests {
             env::remove_var("COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT");
             env::remove_var("COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT");
             env::remove_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT");
+            env::remove_var("COPROCESSOR_PROXY_SHUTDOWN_DELAY");
             env::remove_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD");
             env::remove_var("COPROCESSOR_PROXY_SERVICE_NAME");
             env::remove_var("COPROCESSOR_PROXY_LOG_LEVEL");
@@ -355,6 +361,7 @@ mod tests {
             env::set_var("COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT", "45s");
             env::set_var("COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT", "7s");
             env::set_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT", "12s");
+            env::set_var("COPROCESSOR_PROXY_SHUTDOWN_DELAY", "9s");
             env::set_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD", "15s");
             env::set_var("COPROCESSOR_PROXY_SERVICE_NAME", "coprocessor-proxy-test");
             env::set_var("COPROCESSOR_PROXY_LOG_LEVEL", "debug");
@@ -399,6 +406,7 @@ mod tests {
         assert_eq!(config.endpoint_response_timeout, Duration::from_secs(45));
         assert_eq!(config.endpoint_idle_timeout, Duration::from_secs(7));
         assert_eq!(config.request_read_timeout, Duration::from_secs(12));
+        assert_eq!(config.shutdown_delay, Duration::from_secs(9));
         assert_eq!(config.shutdown_grace_period, Duration::from_secs(15));
         assert_eq!(config.service_name, "coprocessor-proxy-test");
         assert_eq!(config.log_level, Level::DEBUG);

@@ -77,10 +77,18 @@ finality delay. Readiness does not check ongoing signer freshness.
 
 prf-service holds a request until its output is ready, so `coprocessorProxy.endpointResponseTimeoutSeconds`
 (120 by default) must exceed the KMS connector's `PRF_RETRIEVAL_DEADLINE`. It is also the shutdown
-grace period: on `SIGTERM` the proxy drains in-flight requests. Pingora waits for this grace on
-every shutdown, even with no request in flight. The pod's
-`terminationGracePeriodSeconds` is that value plus 10 s: Pingora's 5 s to close the remaining
-connections, and 5 s margin.
+grace period.
+
+Kubernetes sends `SIGTERM` when it starts removing the pod from the Service, and each node keeps
+routing new connections to the pod until that removal reaches it. So on `SIGTERM` the proxy keeps
+serving for `coprocessorProxy.shutdownDelaySeconds` (10 by default): it accepts new connections and
+answers every request with `Connection: close`, so each client opens its next connection through
+the Service, to another replica. After the delay, the proxy stops accepting connections, closes the
+idle ones and drains in-flight requests for the grace period. Pingora waits for the whole grace on
+every shutdown, even with no request in flight. A request sent on a connection that stayed idle
+through the whole delay can fail when the delay ends; a client that closes idle connections
+sooner never sends one. The pod's `terminationGracePeriodSeconds` is the delay plus the grace plus
+10 s: Pingora's 5 s to close the remaining connections, and 5 s margin.
 
 ### Deployment requirement
 

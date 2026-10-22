@@ -1902,8 +1902,12 @@ coprocessorProxy:
   # HTTP/1.1 on that address (chart README).
   endpointAddresses: []
   # Must exceed the connector's PRF_RETRIEVAL_DEADLINE; also sets the SIGTERM drain grace.
-  # Pingora waits this grace even when idle. The pod's termination budget adds 10 s.
+  # Pingora waits this grace even when idle.
   endpointResponseTimeoutSeconds: 120
+  # How long the proxy keeps serving after SIGTERM, asking each client to reconnect, before it
+  # stops accepting connections. Must exceed the time the pod's removal from the Service takes to
+  # reach every node. The pod's termination budget is this delay, the drain grace and 10 s.
+  shutdownDelaySeconds: 10
 
   # Ingress allowed from this release's proxy pods to the endpoints.
   endpointNetworkPolicy:

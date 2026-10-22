@@ -62,8 +62,8 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      # The shutdown grace period, then Pingora's 5 s to close what is left, then 5 s margin.
-      terminationGracePeriodSeconds: {{ add (int $proxy.endpointResponseTimeoutSeconds) 10 }}
+      # The shutdown delay and grace period, Pingora's 5 s to close what is left, and 5 s margin.
+      terminationGracePeriodSeconds: {{ add (int $proxy.shutdownDelaySeconds) (int $proxy.endpointResponseTimeoutSeconds) 10 }}
       {{- with $proxy.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -107,6 +107,8 @@ spec:
               value: {{ $proxy.ports.healthcheck | quote }}
             - name: COPROCESSOR_PROXY_METRICS_ENDPOINT
               value: "0.0.0.0:{{ $proxy.ports.metrics }}"
+            - name: COPROCESSOR_PROXY_SHUTDOWN_DELAY
+              value: "{{ int $proxy.shutdownDelaySeconds }}s"
             - name: COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD
               value: "{{ int $proxy.endpointResponseTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID

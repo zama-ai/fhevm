@@ -23,7 +23,7 @@ use pingora::{
 };
 use prometheus::{IntCounterVec, register_int_counter_vec};
 use std::{
-    sync::LazyLock,
+    sync::{LazyLock, atomic::Ordering},
     time::{Duration, Instant},
 };
 use tracing::{error, info, warn};
@@ -120,6 +120,10 @@ impl ProxyHttp for Proxy {
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
         session.set_read_timeout(Some(self.config.request_read_timeout));
+        // The client's next connection goes through the Service, to a replica that is not stopping.
+        if self.draining.load(Ordering::Relaxed) {
+            session.set_keepalive(None);
+        }
         Ok(())
     }
 

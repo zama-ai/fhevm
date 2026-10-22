@@ -15,10 +15,19 @@ use pingora::{
     listeners::tls::TlsSettings,
     prelude::Server,
     proxy::http_proxy_service_with_name,
-    server::{RunArgs, ShutdownWatch, UnixShutdownSignalWatch, configuration::ServerConf},
+    server::{
+        RunArgs, ShutdownSignal, ShutdownSignalWatch, ShutdownWatch, UnixShutdownSignalWatch,
+        configuration::ServerConf,
+    },
     services::background::{BackgroundService, GenBackgroundService},
 };
-use std::sync::Arc;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 use tracing::info;
 
 /// The `Proxy` service: sender authentication and load-balancing in front of the endpoints.
@@ -27,6 +36,33 @@ pub struct Proxy {
     pub(super) verifier: FhevmSigVerifier<RefreshableSigners>,
     pub(super) endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
     pub(super) kms_tx_senders: Arc<KmsTxSenders>,
+    /// Set during the shutdown delay: each client connection closes after its next response.
+    pub(super) draining: Arc<AtomicBool>,
+}
+
+/// Watches the Unix signals like [`UnixShutdownSignalWatch`], but holds `SIGTERM` back for
+/// [`Config::shutdown_delay`]. Kubernetes sends `SIGTERM` when it starts removing the pod from its
+/// Service, and nodes keep routing new connections to the pod until that removal reaches them.
+/// Pingora stops accepting connections as soon as it handles `SIGTERM`.
+struct DelayedShutdown {
+    delay: Duration,
+    draining: Arc<AtomicBool>,
+}
+
+#[async_trait]
+impl ShutdownSignalWatch for DelayedShutdown {
+    async fn recv(&self) -> ShutdownSignal {
+        let signal = UnixShutdownSignalWatch.recv().await;
+        if matches!(signal, ShutdownSignal::GracefulTerminate) {
+            info!(
+                "SIGTERM received, closing client connections after their next response for {:?}",
+                self.delay
+            );
+            self.draining.store(true, Ordering::Relaxed);
+            tokio::time::sleep(self.delay).await;
+        }
+        signal
+    }
 }
 
 /// Runs the [`Follower`] that keeps the verifier's signers equal to the KMS tx-senders.
@@ -90,6 +126,7 @@ impl Proxy {
             config,
             endpoint_balancer,
             kms_tx_senders: Arc::new(KmsTxSenders(follower)),
+            draining: Arc::default(),
         };
         Ok((proxy, state))
     }
@@ -97,9 +134,13 @@ impl Proxy {
     /// Runs the proxy until it receives `SIGTERM`, `SIGINT` or `SIGQUIT`.
     pub fn run(self) -> anyhow::Result<()> {
         info!("Starting Proxy");
+        let shutdown_signal = DelayedShutdown {
+            delay: self.config.shutdown_delay,
+            draining: Arc::clone(&self.draining),
+        };
         let server = self.build_server()?;
         server.run(RunArgs {
-            shutdown_signal: Box::new(UnixShutdownSignalWatch),
+            shutdown_signal: Box::new(shutdown_signal),
         });
         info!("Proxy stopped");
         Ok(())

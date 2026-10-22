@@ -67,7 +67,14 @@ endpoint_addresses = ["endpoint:8080"]
 # ENV: COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # request_read_timeout = "30s"
 
-# How long in-flight requests are given to complete after SIGTERM (optional, defaults to "120s").
+# How long the proxy keeps accepting connections after SIGTERM, closing each one after its next
+# response, before the shutdown grace period starts (optional, defaults to "0s"). Behind a
+# Kubernetes Service, it must exceed the time the pod's removal takes to reach every node.
+# ENV: COPROCESSOR_PROXY_SHUTDOWN_DELAY (format: https://docs.rs/humantime/latest/humantime/)
+# shutdown_delay = "0s"
+
+# How long in-flight requests are given to complete after the shutdown delay (optional, defaults
+# to "120s").
 # ENV: COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD (format: https://docs.rs/humantime/latest/humantime/)
 # shutdown_grace_period = "120s"
 
