@@ -19,13 +19,11 @@ use tracing::{debug, warn};
 /// A trigger on `pads` sends it for a complete or failed row.
 pub const PAD_READY: &str = "pad_ready";
 
-type RowKey = (u16, B256, u16);
-
 /// Wakes the requests of one pod when their row is complete or failed.
 pub struct PadWaiter {
     pool: PgPool,
     poll_interval: Duration,
-    waiting: Mutex<HashMap<RowKey, Arc<Notify>>>,
+    waiting: Mutex<HashMap<PrfPath, Arc<Notify>>>,
 }
 
 impl PadWaiter {
@@ -39,7 +37,7 @@ impl PadWaiter {
 
     /// Waits until the row of `path` is complete or failed.
     pub async fn wait(&self, path: &PrfPath) -> anyhow::Result<PadState> {
-        let waiting = self.register((path.prf, path.label, path.pad_length));
+        let waiting = self.register(*path);
         loop {
             let notified = waiting.notify.notified();
             tokio::pin!(notified);
@@ -63,15 +61,13 @@ impl PadWaiter {
                 _ = cancel.cancelled() => return Ok(()),
                 notification = listener.try_recv() => match notification? {
                     Some(notification) => match parse_payload(notification.payload()) {
-                        Some(key) => self.wake(&key),
+                        Some(path) => self.wake(&path),
                         None => debug!(payload = notification.payload(), "ignored a bad {PAD_READY} payload"),
                     },
                     // sqlx connected again. Read the rows: notifications of the gap are lost.
                     None => {
                         warn!("the {PAD_READY} connection was lost and restored");
-                        if let Err(err) = self.wake_finished().await {
-                            warn!(error = %err, "pad poll failed");
-                        }
+                        poll.reset_immediately();
                     }
                 },
                 // Postgres can lose a notification. A failed poll does not stop the waiter.
@@ -84,23 +80,23 @@ impl PadWaiter {
         }
     }
 
-    fn register(&self, key: RowKey) -> Waiting<'_> {
+    fn register(&self, path: PrfPath) -> Waiting<'_> {
         let notify = self
             .waiting
             .lock()
             .expect("waiting lock")
-            .entry(key)
+            .entry(path)
             .or_default()
             .clone();
         Waiting {
             waiter: self,
-            key,
+            path,
             notify,
         }
     }
 
-    fn wake(&self, key: &RowKey) {
-        if let Some(notify) = self.waiting.lock().expect("waiting lock").get(key) {
+    fn wake(&self, path: &PrfPath) {
+        if let Some(notify) = self.waiting.lock().expect("waiting lock").get(path) {
             notify.notify_waiters();
         }
     }
@@ -109,10 +105,10 @@ impl PadWaiter {
         let mut prfs = Vec::new();
         let mut labels = Vec::new();
         let mut pad_lengths = Vec::new();
-        for (prf, label, pad_length) in self.waiting.lock().expect("waiting lock").keys() {
-            prfs.push(i32::from(*prf));
-            labels.push(label.to_vec());
-            pad_lengths.push(i32::from(*pad_length));
+        for path in self.waiting.lock().expect("waiting lock").keys() {
+            prfs.push(i32::from(path.prf));
+            labels.push(path.label.to_vec());
+            pad_lengths.push(i32::from(path.pad_length));
         }
         if prfs.is_empty() {
             return Ok(());
@@ -129,10 +125,11 @@ impl PadWaiter {
         .fetch_all(&self.pool)
         .await?;
         for row in finished {
-            let prf = u16::try_from(row.prf_instance).context("prf_instance")?;
-            let label = B256::try_from(row.label.as_slice()).context("label")?;
-            let pad_length = u16::try_from(row.pad_length).context("pad_length")?;
-            self.wake(&(prf, label, pad_length));
+            self.wake(&PrfPath {
+                prf: u16::try_from(row.prf_instance).context("prf_instance")?,
+                label: B256::try_from(row.label.as_slice()).context("label")?,
+                pad_length: u16::try_from(row.pad_length).context("pad_length")?,
+            });
         }
         Ok(())
     }
@@ -141,28 +138,32 @@ impl PadWaiter {
 /// A request in the wait list. On drop, it removes its row from the list if no other request waits.
 struct Waiting<'a> {
     waiter: &'a PadWaiter,
-    key: RowKey,
+    path: PrfPath,
     notify: Arc<Notify>,
 }
 
 impl Drop for Waiting<'_> {
     fn drop(&mut self) {
         let mut waiting = self.waiter.waiting.lock().expect("waiting lock");
-        // Only the list and this request hold the Notify: no other request waits.
-        if Arc::strong_count(&self.notify) == 2 {
-            waiting.remove(&self.key);
+        // Release this Notify under the lock, so the last request to drop always sees that it is the last.
+        drop(std::mem::take(&mut self.notify));
+        if waiting
+            .get(&self.path)
+            .is_some_and(|notify| Arc::strong_count(notify) == 1)
+        {
+            waiting.remove(&self.path);
         }
     }
 }
 
-fn parse_payload(payload: &str) -> Option<RowKey> {
+fn parse_payload(payload: &str) -> Option<PrfPath> {
     let mut parts = payload.split(':');
-    let key = (
-        parts.next()?.parse().ok()?,
-        parts.next()?.parse().ok()?,
-        parts.next()?.parse().ok()?,
-    );
-    parts.next().is_none().then_some(key)
+    let path = PrfPath {
+        prf: parts.next()?.parse().ok()?,
+        label: parts.next()?.parse().ok()?,
+        pad_length: parts.next()?.parse().ok()?,
+    };
+    parts.next().is_none().then_some(path)
 }
 
 #[cfg(test)]
@@ -170,15 +171,27 @@ mod tests {
     use super::*;
     use sqlx::postgres::PgPoolOptions;
 
-    #[tokio::test]
-    async fn wait_list_removes_a_row_after_its_last_request() {
+    fn waiter() -> PadWaiter {
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://localhost/unused")
             .unwrap();
-        let waiter = PadWaiter::new(pool, Duration::from_secs(1));
-        let key = (0, B256::repeat_byte(1), 64);
-        let first = waiter.register(key);
-        let second = waiter.register(key);
+        PadWaiter::new(pool, Duration::from_secs(1))
+    }
+
+    fn path(label: B256, pad_length: u16) -> PrfPath {
+        PrfPath {
+            prf: 7,
+            label,
+            pad_length,
+        }
+    }
+
+    #[tokio::test]
+    async fn wait_list_removes_a_row_after_its_last_request() {
+        let waiter = waiter();
+        let path = path(B256::repeat_byte(1), 64);
+        let first = waiter.register(path);
+        let second = waiter.register(path);
         assert_eq!(waiter.waiting.lock().unwrap().len(), 1);
         drop(first);
         assert_eq!(waiter.waiting.lock().unwrap().len(), 1);
@@ -186,12 +199,32 @@ mod tests {
         assert!(waiter.waiting.lock().unwrap().is_empty());
     }
 
+    #[tokio::test]
+    async fn wait_list_is_empty_after_concurrent_requests() {
+        let waiter = waiter();
+        let path = path(B256::repeat_byte(1), 64);
+        let barrier = std::sync::Barrier::new(8);
+        for _ in 0..1000 {
+            // All requests wait on the row, then all drop at the same time.
+            std::thread::scope(|scope| {
+                for _ in 0..8 {
+                    scope.spawn(|| {
+                        let waiting = waiter.register(path);
+                        barrier.wait();
+                        drop(waiting);
+                    });
+                }
+            });
+            assert!(waiter.waiting.lock().unwrap().is_empty());
+        }
+    }
+
     #[test]
     fn parses_only_prf_label_and_pad_length() {
         let label = B256::repeat_byte(0xab);
         assert_eq!(
             parse_payload(&format!("7:{label:x}:64")),
-            Some((7, label, 64))
+            Some(path(label, 64))
         );
         assert_eq!(parse_payload(&format!("7:{label:x}")), None);
         assert_eq!(parse_payload(&format!("7:{label:x}:64:1")), None);

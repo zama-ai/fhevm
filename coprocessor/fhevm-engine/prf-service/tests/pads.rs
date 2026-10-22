@@ -62,6 +62,20 @@ async fn assert_one_created(
     assert_eq!(created, 1);
 }
 
+/// Starts one `admit` of `connector` for each label.
+fn spawn_admits(
+    admissions: &Arc<Admissions>,
+    labels: std::ops::Range<u8>,
+    connector: Address,
+) -> Vec<JoinHandle<anyhow::Result<Admission>>> {
+    labels
+        .map(|label| {
+            let admissions = admissions.clone();
+            tokio::spawn(async move { admissions.admit(&path(label, 64), connector).await })
+        })
+        .collect()
+}
+
 fn path(label: u8, pad_length: u16) -> PrfPath {
     PrfPath {
         prf: 0,
@@ -106,23 +120,20 @@ async fn set_error(pool: &PgPool, path: &PrfPath) {
 #[tokio::test]
 async fn concurrent_requests_make_one_row() {
     let (_instance, _pool, admissions) = test_db().await;
-    let requests = (0..13).map(|i| {
-        let admissions = admissions.clone();
-        let connector = Address::repeat_byte(i + 1);
-        tokio::spawn(async move { admissions.admit(&path(1, 64), connector).await })
-    });
-    let requests: Vec<_> = requests.collect();
+    let requests = (0..13)
+        .map(|i| {
+            let admissions = admissions.clone();
+            let connector = Address::repeat_byte(i + 1);
+            tokio::spawn(async move { admissions.admit(&path(1, 64), connector).await })
+        })
+        .collect();
     assert_one_created(requests, Admission::Existing(PadState::Pending)).await;
 }
 
 #[tokio::test]
 async fn concurrent_requests_of_a_connector_stay_in_its_budget() {
     let (_instance, _pool, admissions) = test_db().await;
-    let requests = (0..10).map(|label| {
-        let admissions = admissions.clone();
-        tokio::spawn(async move { admissions.admit(&path(label, 64), CONNECTOR).await })
-    });
-    let requests: Vec<_> = requests.collect();
+    let requests = spawn_admits(&admissions, 0..10, CONNECTOR);
     assert_one_created(requests, Admission::OverBudget).await;
 }
 
@@ -181,12 +192,7 @@ async fn requests_of_a_connector_wait_in_memory_not_on_the_lock() {
     let (_instance, pool, admissions) = test_db().await;
     // Hold the lock of CONNECTOR, so its requests stop before they can add a row.
     let lock = lock_connector(&pool, CONNECTOR).await;
-    let requests: Vec<_> = (0..10)
-        .map(|label| {
-            let admissions = admissions.clone();
-            tokio::spawn(async move { admissions.admit(&path(label, 64), CONNECTOR).await })
-        })
-        .collect();
+    let requests = spawn_admits(&admissions, 0..10, CONNECTOR);
     while lock_waiters(&pool).await < MAX_ADDS as i64 {
         tokio::task::yield_now().await;
     }
@@ -205,6 +211,30 @@ async fn requests_of_a_connector_wait_in_memory_not_on_the_lock() {
 
     lock.rollback().await.unwrap();
     assert_one_created(requests, Admission::OverBudget).await;
+}
+
+#[tokio::test]
+async fn cancelled_requests_keep_their_slots() {
+    let (_instance, pool, admissions) = test_db().await;
+    let lock = lock_connector(&pool, CONNECTOR).await;
+    let cancelled = spawn_admits(&admissions, 0..MAX_ADDS as u8, CONNECTOR);
+    while lock_waiters(&pool).await < MAX_ADDS as i64 {
+        tokio::task::yield_now().await;
+    }
+    for request in &cancelled {
+        request.abort();
+    }
+
+    // The cancelled requests still wait for the lock, so the new requests wait in memory.
+    let requests = spawn_admits(&admissions, 10..10 + MAX_ADDS as u8, CONNECTOR);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert_eq!(lock_waiters(&pool).await, MAX_ADDS as i64);
+
+    // A cancelled request adds its row first, so the new requests are over the budget.
+    lock.rollback().await.unwrap();
+    for request in requests {
+        assert_eq!(request.await.unwrap().unwrap(), Admission::OverBudget);
+    }
 }
 
 #[tokio::test]
@@ -260,7 +290,7 @@ async fn complete_row_gives_the_output() {
 }
 
 #[tokio::test]
-async fn table_refuses_a_pad_length_above_uint16() {
+async fn table_refuses_a_pad_length_above_the_max() {
     let (_instance, pool, _admissions) = test_db().await;
     let label = B256::repeat_byte(1);
     let insert = |pad_length: i32| {
@@ -273,8 +303,8 @@ async fn table_refuses_a_pad_length_above_uint16() {
         .bind(CONNECTOR.as_slice())
         .execute(&pool)
     };
-    insert(65535).await.unwrap();
-    let err = insert(65536).await.unwrap_err();
+    insert(2048).await.unwrap();
+    let err = insert(2049).await.unwrap_err();
     let code = err.as_database_error().and_then(|e| e.code());
     // 23514 is check_violation.
     assert_eq!(code.as_deref(), Some("23514"), "{err}");
@@ -351,6 +381,11 @@ async fn start_wait(
 const NO_POLL: Duration = Duration::from_secs(3600);
 const DEADLINE: Duration = Duration::from_secs(5);
 
+/// The state that `wait` gives, within `DEADLINE`.
+async fn finished(wait: JoinHandle<anyhow::Result<PadState>>) -> PadState {
+    timeout(DEADLINE, wait).await.unwrap().unwrap().unwrap()
+}
+
 #[tokio::test]
 async fn trigger_wakes_the_request_of_each_row() {
     let (_instance, pool, admissions) = test_db().await;
@@ -359,28 +394,18 @@ async fn trigger_wakes_the_request_of_each_row() {
         admissions.admit(path, CONNECTOR).await.unwrap();
     }
     let (waiter, cancel, run) = start_waiter(&pool, NO_POLL).await;
-    let short_wait = start_wait(&waiter, path(1, 36)).await;
-    let long_wait = start_wait(&waiter, path(1, 64)).await;
+    let short_wait = start_wait(&waiter, short).await;
+    let long_wait = start_wait(&waiter, long).await;
 
     // A bad payload wakes nobody.
     notify(&pool, "not a row").await;
     // The trigger sends `pad_ready`.
     set_output(&pool, &short, &output(1)).await;
-    let short_state = timeout(DEADLINE, short_wait)
-        .await
-        .unwrap()
-        .unwrap()
-        .unwrap();
-    assert_eq!(short_state, PadState::Complete(output(1)));
+    assert_eq!(finished(short_wait).await, PadState::Complete(output(1)));
     assert!(!long_wait.is_finished());
 
     set_error(&pool, &long).await;
-    let long_state = timeout(DEADLINE, long_wait)
-        .await
-        .unwrap()
-        .unwrap()
-        .unwrap();
-    assert_eq!(long_state, PadState::Failed);
+    assert_eq!(finished(long_wait).await, PadState::Failed);
 
     cancel.cancel();
     run.await.unwrap().unwrap();
@@ -392,7 +417,7 @@ async fn poll_wakes_a_request_without_notification() {
     let row = path(1, 64);
     admissions.admit(&row, CONNECTOR).await.unwrap();
     let (waiter, _cancel, _run) = start_waiter(&pool, Duration::from_millis(100)).await;
-    let wait = start_wait(&waiter, path(1, 64)).await;
+    let wait = start_wait(&waiter, row).await;
 
     // Without the trigger, only the poll can wake the request.
     sqlx::query("ALTER TABLE pads DISABLE TRIGGER pads_ready")
@@ -401,8 +426,7 @@ async fn poll_wakes_a_request_without_notification() {
         .unwrap();
     set_output(&pool, &row, &output(1)).await;
 
-    let state = timeout(DEADLINE, wait).await.unwrap().unwrap().unwrap();
-    assert_eq!(state, PadState::Complete(output(1)));
+    assert_eq!(finished(wait).await, PadState::Complete(output(1)));
 }
 
 #[tokio::test]
@@ -411,7 +435,7 @@ async fn failed_poll_does_not_stop_the_waiter() {
     let row = path(1, 64);
     admissions.admit(&row, CONNECTOR).await.unwrap();
     let (waiter, _cancel, run) = start_waiter(&pool, Duration::from_millis(50)).await;
-    let wait = start_wait(&waiter, path(1, 64)).await;
+    let wait = start_wait(&waiter, row).await;
 
     // The poll query fails while the table has another name.
     sqlx::query("ALTER TABLE pads RENAME TO pads_hidden")
@@ -427,8 +451,7 @@ async fn failed_poll_does_not_stop_the_waiter() {
 
     set_output(&pool, &row, &output(1)).await;
     notify(&pool, &payload(&row)).await;
-    let state = timeout(DEADLINE, wait).await.unwrap().unwrap().unwrap();
-    assert_eq!(state, PadState::Complete(output(1)));
+    assert_eq!(finished(wait).await, PadState::Complete(output(1)));
 }
 
 #[tokio::test]
@@ -437,7 +460,7 @@ async fn waiter_reads_the_rows_after_a_lost_connection() {
     let row = path(1, 64);
     admissions.admit(&row, CONNECTOR).await.unwrap();
     let (waiter, _cancel, run) = start_waiter(&pool, NO_POLL).await;
-    let wait = start_wait(&waiter, path(1, 64)).await;
+    let wait = start_wait(&waiter, row).await;
 
     // Complete the row with no notification, then cut the listen connection.
     sqlx::query("ALTER TABLE pads DISABLE TRIGGER pads_ready")
@@ -452,8 +475,7 @@ async fn waiter_reads_the_rows_after_a_lost_connection() {
     .await
     .unwrap();
 
-    let state = timeout(DEADLINE, wait).await.unwrap().unwrap().unwrap();
-    assert_eq!(state, PadState::Complete(output(1)));
+    assert_eq!(finished(wait).await, PadState::Complete(output(1)));
     assert!(!run.is_finished());
 }
 
@@ -462,4 +484,68 @@ async fn wait_for_a_missing_row_fails() {
     let (_instance, pool, _admissions) = test_db().await;
     let waiter = PadWaiter::new(pool, NO_POLL);
     assert!(waiter.wait(&path(1, 64)).await.is_err());
+}
+
+const GRANTS: &str = include_str!("../../db-migration/db-scripts/grant_pad_roles.sql");
+
+const INSERT_PAD: &str = "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
+    VALUES (1, decode(repeat('ab', 32), 'hex'), 64, decode(repeat('11', 20), 'hex'))
+    ON CONFLICT DO NOTHING RETURNING label";
+
+/// Runs `sql` as `prf_service` in a transaction, then rolls the transaction back.
+async fn as_prf_service(pool: &PgPool, sql: &str) -> Result<(), sqlx::Error> {
+    let mut tx = pool.begin().await?;
+    sqlx::raw_sql("SET LOCAL ROLE prf_service")
+        .execute(&mut *tx)
+        .await?;
+    let result = sqlx::raw_sql(sql).execute(&mut *tx).await.map(|_| ());
+    tx.rollback().await?;
+    result
+}
+
+fn assert_denied(result: Result<(), sqlx::Error>, sql: &str) {
+    let err = result.expect_err(sql);
+    let code = err.as_database_error().and_then(|e| e.code());
+    assert_eq!(code.as_deref(), Some("42501"), "{sql}: {err}");
+}
+
+#[tokio::test]
+async fn grants_skip_a_missing_role() {
+    let (_instance, pool, _admissions) = test_db().await;
+    sqlx::raw_sql("DROP ROLE IF EXISTS prf_service")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
+}
+
+#[tokio::test]
+async fn prf_service_role_writes_only_the_queue() {
+    let (_instance, pool, _admissions) = test_db().await;
+    sqlx::raw_sql(
+        "DO $$ BEGIN CREATE ROLE prf_service NOLOGIN;
+         EXCEPTION WHEN duplicate_object THEN NULL; END $$",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    // The grants run on each deploy, so a second run must give the same result.
+    sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
+    sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
+
+    for allowed in [INSERT_PAD, "SELECT prf_instance, signature FROM pads"] {
+        as_prf_service(&pool, allowed).await.expect(allowed);
+    }
+
+    for denied in [
+        "SELECT 1 FROM computations",
+        "SELECT 1 FROM ciphertexts",
+        "SELECT 1 FROM keys",
+        "UPDATE pads SET is_error = false",
+        "UPDATE pads SET signature = NULL",
+        "UPDATE pads SET claimed_at = NULL",
+        "DELETE FROM pads",
+    ] {
+        assert_denied(as_prf_service(&pool, denied).await, denied);
+    }
 }

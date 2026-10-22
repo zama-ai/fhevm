@@ -1,8 +1,9 @@
 use alloy::primitives::B256;
 
-pub const MAX_PAD_LENGTH: u16 = 2048;
+/// The `pads` table has the same limit in a CHECK.
+const MAX_PAD_LENGTH: u16 = 2048;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PrfPath {
     pub prf: u16,
     pub label: B256,
@@ -43,7 +44,7 @@ fn decimal(s: &str) -> Option<u16> {
 }
 
 fn label_hex(s: &str) -> Option<B256> {
-    if s.len() != 64 || !s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
+    if !s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')) {
         return None;
     }
     let mut label = [0u8; 32];
