@@ -1,5 +1,6 @@
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { ResolvedFhevmOptions } from '../types/coreFhevmClient.js';
 import type { BytesHex, ChecksummedAddress, TypedValue } from '../types/primitives.js';
 import type { RelayerInputProofOptions } from '../types/relayer.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
@@ -13,7 +14,7 @@ type Context = {
   readonly chain: FhevmChain;
   readonly runtime: WithEncrypt;
   readonly client: NonNullable<object>;
-  readonly options: { readonly batchRpcCalls: boolean };
+  readonly options: ResolvedFhevmOptions;
 };
 
 type Parameters = {
@@ -35,7 +36,7 @@ export async function encrypt(context: Context, parameters: Parameters): Promise
   const hardCodedExtraData = '0x00' as BytesHex;
 
   const zkProof = await createZkProof(
-    { chain: context.chain, runtime: context.runtime },
+    { chain: context.chain, runtime: context.runtime, options: context.options, client: context.client },
     { ...parameters, extraData: hardCodedExtraData, fhevmContext: parameters.fhevmContext },
   );
 

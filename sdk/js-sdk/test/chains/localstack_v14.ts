@@ -16,6 +16,9 @@ export const localstack_v14 = /*#__PURE__*/ defineFhevmChain({
       protocolConfig: {
         address: '0x52054F36036811ca418be59e41Fc6DD1b9e4F4c8',
       },
+      kmsGeneration: {
+        address: '0x35760912360E875DA50D40a74305575c23D55783',
+      },
     },
     relayerUrl: 'http://localhost:3000',
     gateway: {

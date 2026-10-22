@@ -1,15 +1,19 @@
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { ResolvedFhevmOptions } from '../types/coreFhevmClient.js';
 import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { deserializeFheEncryptionKey } from './deserializeFheEncryptionKey.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
+import { fetchVerifiedFheEncryptionKeyBytes } from './fetchVerifiedFheEncryptionKeyBytes-p.js';
 
 export async function fetchFheEncryptionKeyWasm(
   context: {
     readonly chain: FhevmChain;
     readonly runtime: WithEncrypt;
+    readonly options: ResolvedFhevmOptions;
+    readonly client: NonNullable<object> | undefined;
   },
   parameters: {
     readonly options?: RelayerKeyUrlOptions | undefined;
@@ -30,10 +34,7 @@ export async function fetchFheEncryptionKeyWasm(
         `Fetching FHE encryption key/CRS bytes from relayer "${relayerUrl}" (chainId=${context.chain.id}).`,
       );
       try {
-        const bytes = await runtime.relayer.fetchFheEncryptionKeyBytes(
-          { relayerUrl, chainId: context.chain.id },
-          parameters,
-        );
+        const bytes = await fetchVerifiedFheEncryptionKeyBytes(context, parameters);
         logger?.debug?.(`Fetched FHE encryption key/CRS bytes from relayer "${relayerUrl}".`);
         return bytes;
       } catch (e) {

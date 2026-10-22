@@ -5,6 +5,7 @@ import type {
   Fhevm,
   FhevmBase,
   FhevmExtension,
+  FhevmKeyVerification,
   FhevmOptions,
   NativeClient,
   OptionalNativeClient,
@@ -21,7 +22,6 @@ import { verifyTrustedValue } from '../base/trustedValue.js';
 import { uid } from '../base/uid.js';
 import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js';
 import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
-import { globalFheEncryptionKeyCache } from '../key/FheEncryptionKeyCache-p.js';
 import { cloneModuleVersions } from '../runtimeConfig-p.js';
 import { cloneFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 
@@ -96,6 +96,7 @@ class CoreFhevmImpl<
       readonly runtime: runtime;
       readonly client?: client | undefined;
       readonly options?: FhevmOptions | undefined;
+      readonly keyVerification?: FhevmKeyVerification | undefined;
     },
   ) {
     if (privateToken !== PRIVATE_TOKEN) {
@@ -111,7 +112,7 @@ class CoreFhevmImpl<
     this.#trustedClient =
       parameters.client !== undefined ? createTrustedClient(parameters.client, ownerToken) : undefined;
     this.#chain = parameters.chain;
-    this.#options = resolveOptions(parameters.options);
+    this.#options = resolveOptions(parameters.options, parameters.keyVerification, ownerToken);
     this.#initFns = new Set();
     this.#readyPromise = undefined;
 
@@ -584,25 +585,16 @@ export type CreateCoreFhevmParameters<
   readonly client?: client | undefined;
   readonly runtime: runtime;
   readonly options?: FhevmOptions | undefined;
+  readonly keyVerification?: FhevmKeyVerification | undefined;
 };
 
 export function createCoreFhevm<chain extends FhevmChain, runtime extends FhevmRuntime, client extends NativeClient>(
   ownerToken: symbol,
   parameters: CreateCoreFhevmParameters<chain, runtime, client>,
 ): Fhevm<chain, runtime, client> {
-  // Pre-populate the global FheEncryptionKey cache if the caller provided one.
-  // Avoids a 50MB fetch later when encrypt is first called.
-  // No-op if an entry already exists for this relayerUrl (first write wins).
-  const fheEncryptionKey = parameters.options?.fheEncryptionKey;
-  if (fheEncryptionKey !== undefined) {
-    const relayerUrl = parameters.chain?.fhevm.relayerUrl;
-    globalFheEncryptionKeyCache.setBytes(
-      parameters.runtime,
-      relayerUrl ?? fheEncryptionKey.metadata.relayerUrl,
-      fheEncryptionKey,
-    );
-  }
-
+  // A caller-provided FheEncryptionKey is not written to the global cache here:
+  // it is kept in the resolved options and cached by the key fetch, once it
+  // passes the KMSGeneration check (see verifyFheEncryptionKeyBytes).
   return new CoreFhevmImpl(PRIVATE_TOKEN, ownerToken, parameters);
 }
 
@@ -640,10 +632,22 @@ function extendCoreFhevm<T extends Fhevm<FhevmChain | undefined, FhevmRuntime, O
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function resolveOptions(options: FhevmOptions | undefined): ResolvedFhevmOptions {
+function resolveOptions(
+  options: FhevmOptions | undefined,
+  keyVerification: FhevmKeyVerification | undefined,
+  ownerToken: symbol,
+): ResolvedFhevmOptions {
   return Object.freeze<ResolvedFhevmOptions>({
     batchRpcCalls: options?.batchRpcCalls ?? false,
     moduleVersions: cloneModuleVersions(options?.moduleVersions),
+    fheEncryptionKey: options?.fheEncryptionKey,
+    keyVerification:
+      keyVerification === undefined
+        ? undefined
+        : Object.freeze({
+            chain: keyVerification.chain,
+            trustedClient: createTrustedClient(keyVerification.client, ownerToken),
+          }),
   });
 }
 

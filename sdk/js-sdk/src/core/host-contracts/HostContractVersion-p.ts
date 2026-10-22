@@ -134,7 +134,7 @@ async function _getVersion(context: Context, parameters: Parameters): Promise<Ho
 /**
  * Parses a version string with format: `<contractName> v<major>.<minor>.<patch>`
  */
-function parseVersion(version: string): HostContractVersion {
+export function parseVersion(version: string): HostContractVersion {
   const err = `Invalid version format: "${version}". Expected "<contractName> v<major>.<minor>.<patch>".`;
 
   // Split on " v" to separate contract name from semver
@@ -165,6 +165,7 @@ function parseVersion(version: string): HostContractVersion {
     contractName !== 'FHEVMExecutor' &&
     contractName !== 'InputVerifier' &&
     contractName !== 'KMSVerifier' &&
+    contractName !== 'KMSGeneration' &&
     contractName !== 'HCULimit' &&
     contractName !== 'ProtocolConfig'
   ) {

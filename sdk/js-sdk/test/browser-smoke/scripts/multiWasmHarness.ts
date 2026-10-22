@@ -323,7 +323,14 @@ export async function buildUint64Proof(
   const builder = createZkProofBuilder();
   builder.addUint64(42n);
   return builder.build(
-    { chain, runtime },
+    // No client and no keyVerification: the key is already cached (see
+    // loadAndCacheKey), so build() never fetches nor verifies one.
+    {
+      chain,
+      runtime,
+      client: undefined,
+      options: { batchRpcCalls: false, fheEncryptionKey: undefined, keyVerification: undefined },
+    },
     {
       contractAddress: DUMMY_CONTRACT_ADDRESS,
       userAddress: DUMMY_USER_ADDRESS,

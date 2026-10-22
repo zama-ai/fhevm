@@ -8,6 +8,7 @@ import type {
   TfheVersion,
   TkmsVersion,
 } from './moduleVersions.js';
+import type { TrustedClient } from '../modules/ethereum/types.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -29,9 +30,30 @@ export type FhevmOptions = FhevmBaseOptions & {
   readonly moduleVersions?: FhevmModuleVersions | undefined;
 };
 
+/**
+ * An Ethereum chain definition (one that defines `kmsGeneration`) and a client
+ * connected to it. Used only to read `KMSGeneration` when the host chain is
+ * not Ethereum; every other read goes through the host-chain client.
+ */
+export type FhevmKeyVerification<client extends NativeClient = NativeClient> = {
+  readonly chain: FhevmChain;
+  readonly client: client;
+};
+
+export type ResolvedFhevmKeyVerification = {
+  readonly chain: FhevmChain;
+  readonly trustedClient: TrustedClient;
+};
+
 export type ResolvedFhevmOptions = {
   readonly batchRpcCalls: boolean;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
+  /**
+   * Key / CRS bytes provided by the caller. Used in place of a download, and
+   * cached only once they pass the same check as downloaded bytes.
+   */
+  readonly fheEncryptionKey: FheEncryptionKeyBytes | undefined;
+  readonly keyVerification: ResolvedFhevmKeyVerification | undefined;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
