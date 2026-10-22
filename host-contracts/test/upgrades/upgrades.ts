@@ -8,6 +8,7 @@ import { getSigners, initSigners } from '../signers';
 import {
   PLACEHOLDER_CANONICAL_CHAIN_ID,
   PLACEHOLDER_CANONICAL_PROTOCOL_CONFIG,
+  buildConnectorUrls,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   readHostAddress,
@@ -52,7 +53,13 @@ describe('Upgrades', function () {
     const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
       call: {
         fn: 'initializeFromEmptyProxy',
-        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+        args: [
+          buildProtocolConfigNodes(),
+          buildConnectorUrls(buildProtocolConfigNodes().length),
+          buildProtocolConfigThresholds(),
+          '',
+          [],
+        ],
       },
     });
     await pc.waitForDeployment();

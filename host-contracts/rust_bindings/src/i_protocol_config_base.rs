@@ -8,6 +8,7 @@ interface IProtocolConfigBase {
         address signerAddress;
         string ipAddress;
         string storageUrl;
+        string connectorUrl;
     }
 
     error EmptyKmsNodes();
@@ -15,6 +16,7 @@ interface IProtocolConfigBase {
     error InvalidKmsContext(uint256 kmsContextId);
     error InvalidKmsEpoch(uint256 epochId);
     error InvalidNullThreshold(string thresholdName);
+    error KmsConnectorUrlsLengthMismatch(uint256 nodeCount, uint256 connectorUrlCount);
     error KmsNodeNullSigner();
     error KmsNodeNullTxSender();
     error KmsSignerAlreadyRegistered(address signer);
@@ -170,6 +172,11 @@ interface IProtocolConfigBase {
             "name": "storageUrl",
             "type": "string",
             "internalType": "string"
+          },
+          {
+            "name": "connectorUrl",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       }
@@ -209,6 +216,11 @@ interface IProtocolConfigBase {
           },
           {
             "name": "storageUrl",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "connectorUrl",
             "type": "string",
             "internalType": "string"
           }
@@ -574,6 +586,22 @@ interface IProtocolConfigBase {
   },
   {
     "type": "error",
+    "name": "KmsConnectorUrlsLengthMismatch",
+    "inputs": [
+      {
+        "name": "nodeCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "connectorUrlCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "KmsNodeNullSigner",
     "inputs": []
   },
@@ -677,7 +705,7 @@ pub mod IProtocolConfigBase {
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; string storageUrl; }
+struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; string storageUrl; string connectorUrl; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -690,6 +718,8 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
         pub ipAddress: alloy::sol_types::private::String,
         #[allow(missing_docs)]
         pub storageUrl: alloy::sol_types::private::String,
+        #[allow(missing_docs)]
+        pub connectorUrl: alloy::sol_types::private::String,
     }
     #[allow(
         non_camel_case_types,
@@ -706,11 +736,13 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
             alloy::sol_types::sol_data::Address,
             alloy::sol_types::sol_data::String,
             alloy::sol_types::sol_data::String,
+            alloy::sol_types::sol_data::String,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
             alloy::sol_types::private::Address,
             alloy::sol_types::private::Address,
+            alloy::sol_types::private::String,
             alloy::sol_types::private::String,
             alloy::sol_types::private::String,
         );
@@ -734,6 +766,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     value.signerAddress,
                     value.ipAddress,
                     value.storageUrl,
+                    value.connectorUrl,
                 )
             }
         }
@@ -746,6 +779,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     signerAddress: tuple.1,
                     ipAddress: tuple.2,
                     storageUrl: tuple.3,
+                    connectorUrl: tuple.4,
                 }
             }
         }
@@ -769,6 +803,9 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     ),
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
                         &self.storageUrl,
+                    ),
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.connectorUrl,
                     ),
                 )
             }
@@ -844,7 +881,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "KmsNode(address txSenderAddress,address signerAddress,string ipAddress,string storageUrl)",
+                    "KmsNode(address txSenderAddress,address signerAddress,string ipAddress,string storageUrl,string connectorUrl)",
                 )
             }
             #[inline]
@@ -876,6 +913,10 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                             &self.storageUrl,
                         )
                         .0,
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.connectorUrl,
+                        )
+                        .0,
                 ]
                     .concat()
             }
@@ -896,6 +937,9 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     )
                     + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.storageUrl,
+                    )
+                    + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.connectorUrl,
                     )
             }
             #[inline]
@@ -920,6 +964,10 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                 );
                 <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.storageUrl,
+                    out,
+                );
+                <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.connectorUrl,
                     out,
                 );
             }
@@ -1351,6 +1399,103 @@ error InvalidNullThreshold(string thresholdName);
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
                         &self.thresholdName,
                     ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `KmsConnectorUrlsLengthMismatch(uint256,uint256)` and selector `0x0e7e40f5`.
+```solidity
+error KmsConnectorUrlsLengthMismatch(uint256 nodeCount, uint256 connectorUrlCount);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct KmsConnectorUrlsLengthMismatch {
+        #[allow(missing_docs)]
+        pub nodeCount: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub connectorUrlCount: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<KmsConnectorUrlsLengthMismatch>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: KmsConnectorUrlsLengthMismatch) -> Self {
+                (value.nodeCount, value.connectorUrlCount)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for KmsConnectorUrlsLengthMismatch {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    nodeCount: tuple.0,
+                    connectorUrlCount: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for KmsConnectorUrlsLengthMismatch {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "KmsConnectorUrlsLengthMismatch(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [14u8, 126u8, 64u8, 245u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.nodeCount),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.connectorUrlCount),
                 )
             }
             #[inline]
@@ -6695,6 +6840,8 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         #[allow(missing_docs)]
         InvalidNullThreshold(InvalidNullThreshold),
         #[allow(missing_docs)]
+        KmsConnectorUrlsLengthMismatch(KmsConnectorUrlsLengthMismatch),
+        #[allow(missing_docs)]
         KmsNodeNullSigner(KmsNodeNullSigner),
         #[allow(missing_docs)]
         KmsNodeNullTxSender(KmsNodeNullTxSender),
@@ -6718,6 +6865,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 140u8, 141u8, 64u8],
+            [14u8, 126u8, 64u8, 245u8],
             [22u8, 167u8, 39u8, 120u8],
             [24u8, 122u8, 234u8, 168u8],
             [45u8, 236u8, 207u8, 77u8],
@@ -6733,6 +6881,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         /// The names of the variants in the same order as `SELECTORS`.
         pub const VARIANT_NAMES: &'static [&'static str] = &[
             ::core::stringify!(EmptyKmsNodes),
+            ::core::stringify!(KmsConnectorUrlsLengthMismatch),
             ::core::stringify!(KmsSignerSetExceedsProofFormatLimit),
             ::core::stringify!(LatestActiveKmsContextCannotBeDestroyed),
             ::core::stringify!(KmsNodeNullSigner),
@@ -6748,6 +6897,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         /// The signatures in the same order as `SELECTORS`.
         pub const SIGNATURES: &'static [&'static str] = &[
             <EmptyKmsNodes as alloy_sol_types::SolError>::SIGNATURE,
+            <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::SIGNATURE,
             <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::SIGNATURE,
             <LatestActiveKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::SIGNATURE,
             <KmsNodeNullSigner as alloy_sol_types::SolError>::SIGNATURE,
@@ -6785,7 +6935,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     impl alloy_sol_types::SolInterface for IProtocolConfigBaseErrors {
         const NAME: &'static str = "IProtocolConfigBaseErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 12usize;
+        const COUNT: usize = 13usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -6803,6 +6953,9 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                 }
                 Self::InvalidNullThreshold(_) => {
                     <InvalidNullThreshold as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::KmsConnectorUrlsLengthMismatch(_) => {
+                    <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::KmsNodeNullSigner(_) => {
                     <KmsNodeNullSigner as alloy_sol_types::SolError>::SELECTOR
@@ -6854,6 +7007,19 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigBaseErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
+                },
+                {
+                    fn KmsConnectorUrlsLengthMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigBaseErrors> {
+                        <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigBaseErrors::KmsConnectorUrlsLengthMismatch,
+                            )
+                    }
+                    KmsConnectorUrlsLengthMismatch
                 },
                 {
                     fn KmsSignerSetExceedsProofFormatLimit(
@@ -7012,6 +7178,19 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                             .map(IProtocolConfigBaseErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
+                },
+                {
+                    fn KmsConnectorUrlsLengthMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigBaseErrors> {
+                        <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigBaseErrors::KmsConnectorUrlsLengthMismatch,
+                            )
+                    }
+                    KmsConnectorUrlsLengthMismatch
                 },
                 {
                     fn KmsSignerSetExceedsProofFormatLimit(
@@ -7177,6 +7356,11 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                         inner,
                     )
                 }
+                Self::KmsConnectorUrlsLengthMismatch(inner) => {
+                    <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::KmsNodeNullSigner(inner) => {
                     <KmsNodeNullSigner as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -7243,6 +7427,12 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                 }
                 Self::InvalidNullThreshold(inner) => {
                     <InvalidNullThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::KmsConnectorUrlsLengthMismatch(inner) => {
+                    <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

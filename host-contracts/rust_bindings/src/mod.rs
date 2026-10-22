@@ -53,6 +53,7 @@ pub mod i_protocol_config_base;
 pub mod i_protocol_config_replica;
 pub mod initializable;
 pub mod input_verifier;
+pub mod i_kms_node_reader;
 pub mod kms_generation;
 pub mod kms_verifier;
 pub mod math;

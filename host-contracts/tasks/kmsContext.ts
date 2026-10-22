@@ -77,12 +77,13 @@ export function encodeDefineNewKmsContextAndEpoch(iface: Interface): EncodedCall
   const functionSignature = iface.getFunction('defineNewKmsContextAndEpoch')!.format('sighash');
   const calldata = iface.encodeFunctionData('defineNewKmsContextAndEpoch', args);
   // Key each struct by field name, so a reviewer can tell a tx-sender from a signer.
-  const [nodes, thresholds, softwareVersion, pcrValues] = iface.decodeFunctionData(
+  const [nodes, connectorUrls, thresholds, softwareVersion, pcrValues] = iface.decodeFunctionData(
     'defineNewKmsContextAndEpoch',
     calldata,
   );
   const decodedArgs = [
     nodes.map((node: Result) => node.toObject()),
+    [...connectorUrls],
     thresholds.toObject(),
     softwareVersion,
     pcrValues.map((pcr: Result) => pcr.toObject()),

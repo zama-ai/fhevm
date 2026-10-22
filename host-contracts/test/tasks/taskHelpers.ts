@@ -75,6 +75,10 @@ export function buildProtocolConfigNodes(): Array<{
   ];
 }
 
+export function buildConnectorUrls(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => `https://kms-connector-${i}.example.com`);
+}
+
 export function buildProtocolConfigThresholds() {
   return {
     publicDecryption: 1,
@@ -128,7 +132,7 @@ export async function initializeProtocolConfigProxy(
   const upgraded = await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfig', {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [kmsNodes, thresholds, '', []],
+      args: [kmsNodes, buildConnectorUrls(kmsNodes.length), thresholds, '', []],
     },
   });
   return upgraded as unknown as Contract;
@@ -156,13 +160,14 @@ export async function deployFreshProtocolConfigReplicaProxy(
   thresholds: KmsThresholdsStruct,
 ): Promise<string> {
   const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
+  const connectorUrls = buildConnectorUrls(kmsNodes.length);
   await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfigReplica', {
     call: {
       fn: 'initializeFromCanonical',
       args: [
         contextId,
         epochId,
-        kmsNodes,
+        kmsNodes.map((node, i) => ({ ...node, connectorUrl: connectorUrls[i] })),
         thresholds,
         PLACEHOLDER_CANONICAL_CHAIN_ID,
         PLACEHOLDER_CANONICAL_PROTOCOL_CONFIG,
@@ -213,7 +218,12 @@ export async function rotateToNewKmsContext(
   committee: ControllableKmsCommittee,
 ): Promise<bigint> {
   const asOwner = await ethers.getContractAt('ProtocolConfig', proxyAddress, ownerSigner);
-  const context = await defineNewKmsContext(asOwner, committee.nodes, committee.thresholds);
+  const context = await defineNewKmsContext(
+    asOwner,
+    committee.nodes,
+    buildConnectorUrls(committee.nodes.length),
+    committee.thresholds,
+  );
   await activateDefinedKmsContext(asOwner, committee.signerSigners, context);
   return context.contextId;
 }

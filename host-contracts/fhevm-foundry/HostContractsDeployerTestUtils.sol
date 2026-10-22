@@ -250,7 +250,13 @@ abstract contract HostContractsDeployerTestUtils is Test {
             protocolConfigImplementation,
             abi.encodeCall(
                 ProtocolConfig.initializeFromEmptyProxy,
-                (initialKmsNodeParams, initialThresholds, "", pcrValues)
+                (
+                    initialKmsNodeParams,
+                    _makeConnectorUrls(initialKmsNodeParams.length),
+                    initialThresholds,
+                    "",
+                    pcrValues
+                )
             )
         );
 
@@ -379,15 +385,26 @@ abstract contract HostContractsDeployerTestUtils is Test {
         }
     }
 
-    /// @dev Projection of `params` onto the stored KmsNode shape.
-    function _toKmsNodes(KmsNodeParams[] memory params) internal pure returns (KmsNode[] memory nodes) {
+    function _makeConnectorUrls(uint256 count) internal pure returns (string[] memory connectorUrls) {
+        connectorUrls = new string[](count);
+        for (uint256 i = 0; i < count; i++) {
+            connectorUrls[i] = string.concat("https://kms-connector-", vm.toString(i), ".example.com");
+        }
+    }
+
+    /// @dev Projection of `params` and `connectorUrls` onto the stored KmsNode shape.
+    function _toKmsNodes(
+        KmsNodeParams[] memory params,
+        string[] memory connectorUrls
+    ) internal pure returns (KmsNode[] memory nodes) {
         nodes = new KmsNode[](params.length);
         for (uint256 i = 0; i < params.length; i++) {
             nodes[i] = KmsNode({
                 txSenderAddress: params[i].txSenderAddress,
                 signerAddress: params[i].signerAddress,
                 ipAddress: params[i].ipAddress,
-                storageUrl: params[i].storageUrl
+                storageUrl: params[i].storageUrl,
+                connectorUrl: connectorUrls[i]
             });
         }
     }
@@ -517,9 +534,10 @@ abstract contract HostContractsDeployerTestUtils is Test {
     /// @dev nodeConfigHash of ContextCreationConfirmation, over the params projected onto the stored KmsNode shape.
     function _hashNodeConfig(
         KmsNodeParams[] memory params,
+        string[] memory connectorUrls,
         KmsThresholds memory thresholds
     ) internal pure returns (bytes32) {
-        return keccak256(abi.encode(_toKmsNodes(params), thresholds));
+        return keccak256(abi.encode(_toKmsNodes(params, connectorUrls), thresholds));
     }
 
     /// @dev epochMaterialHash of EpochActivationConfirmation. Each entry is the EIP-712 hashStruct of its
@@ -562,8 +580,9 @@ abstract contract HostContractsDeployerTestUtils is Test {
         KmsNodeParams[] memory nodes,
         KmsThresholds memory thresholds
     ) internal returns (bytes32 nodeConfigHash) {
-        protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, "", new PcrValues[](0));
-        return _hashNodeConfig(nodes, thresholds);
+        string[] memory connectorUrls = _makeConnectorUrls(nodes.length);
+        protocolConfig.defineNewKmsContextAndEpoch(nodes, connectorUrls, thresholds, "", new PcrValues[](0));
+        return _hashNodeConfig(nodes, connectorUrls, thresholds);
     }
 
     /// @dev Signs ContextCreationConfirmation with the latest active context as previousContextId.
