@@ -269,7 +269,9 @@ abstract contract HostContractsDeployerTestUtils is Test {
         uint256 initialContextId,
         uint256 initialEpochId,
         KmsNodeParams[] memory initialKmsNodeParams,
-        KmsThresholds memory initialThresholds
+        KmsThresholds memory initialThresholds,
+        uint64 canonicalChainId,
+        address canonicalProtocolConfig
     ) internal returns (ProtocolConfigReplica protocolConfigProxy, address protocolConfigImplementation) {
         _deployEmptyProtocolConfigProxy();
         vm.label(protocolConfigAdd, "ProtocolConfigReplica Proxy");
@@ -282,7 +284,14 @@ abstract contract HostContractsDeployerTestUtils is Test {
             protocolConfigImplementation,
             abi.encodeCall(
                 ProtocolConfigReplica.initializeFromCanonical,
-                (initialContextId, initialEpochId, initialKmsNodeParams, initialThresholds)
+                (
+                    initialContextId,
+                    initialEpochId,
+                    initialKmsNodeParams,
+                    initialThresholds,
+                    canonicalChainId,
+                    canonicalProtocolConfig
+                )
             )
         );
 
@@ -422,17 +431,28 @@ abstract contract HostContractsDeployerTestUtils is Test {
         return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
     }
 
-    function _hashProtocolConfigTypedData(bytes32 structHash) internal view returns (bytes32) {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                EIP712_DOMAIN_TYPE_HASH,
-                keccak256(bytes("ProtocolConfig")),
-                keccak256(bytes("1")),
-                block.chainid,
-                address(protocolConfig)
-            )
-        );
-        return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
+    function _computeProtocolConfigDomainSeparator(
+        uint256 chainId,
+        address verifyingContract
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    EIP712_DOMAIN_TYPE_HASH,
+                    keccak256(bytes("ProtocolConfig")),
+                    keccak256(bytes("1")),
+                    chainId,
+                    verifyingContract
+                )
+            );
+    }
+
+    function _hashProtocolConfigTypedData(bytes32 structHash) internal view virtual returns (bytes32) {
+        return
+            MessageHashUtils.toTypedDataHash(
+                _computeProtocolConfigDomainSeparator(block.chainid, address(protocolConfig)),
+                structHash
+            );
     }
 
     function _hashContextCreation(

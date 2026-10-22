@@ -3,7 +3,7 @@ import { task, types } from 'hardhat/config';
 import type { ConfigurableTaskDefinition, HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig, ProtocolConfigReplica } from '../types';
-import type { KmsNodeParamsStruct, PcrValuesStruct } from '../types/contracts/ProtocolConfigReplica';
+import type { KmsNodeParamsStruct, PcrValuesStruct } from '../types/contracts/ProtocolConfig';
 import { broadcast, getProtocolConfigReplicaInterface, requireProtocolConfigAddress } from './kmsContext';
 import { type KmsThresholds, readCanonicalSnapshot } from './protocolConfigMirror';
 
@@ -22,8 +22,6 @@ export interface MirrorContextArgs {
   epochId: bigint;
   kmsNodeParams: KmsNodeParamsStruct[];
   thresholds: KmsThresholds;
-  softwareVersion: string;
-  pcrValues: PcrValuesStruct[];
 }
 
 // Recomputes the on-chain `contextInfoHash` anchor from candidate event args. The encode types come
@@ -32,7 +30,12 @@ export interface MirrorContextArgs {
 function computeContextInfoHash(
   hre: HardhatRuntimeEnvironment,
   encodeTypes: readonly ParamType[],
-  args: Pick<MirrorContextArgs, 'kmsNodeParams' | 'thresholds' | 'softwareVersion' | 'pcrValues'>,
+  args: {
+    kmsNodeParams: KmsNodeParamsStruct[];
+    thresholds: KmsThresholds;
+    softwareVersion: string;
+    pcrValues: PcrValuesStruct[];
+  },
 ): string {
   const encoded = hre.ethers.AbiCoder.defaultAbiCoder().encode(encodeTypes, [
     args.kmsNodeParams,
@@ -43,10 +46,9 @@ function computeContextInfoHash(
   return hre.ethers.keccak256(encoded);
 }
 
-// Reads canonical's active KMS context as `mirrorKmsContextAndEpoch` args. The node/software-version/
-// PCR data only exists in the `NewKmsContext` event, so this reads the event at the block the context
-// anchor records and verifies its hash against the anchor. Thresholds come from the same event: they
-// are fixed at context creation, and the anchor hash check covers them too.
+// Reads canonical's active KMS context for `mirrorKmsContextAndEpoch`. It reads the `NewKmsContext`
+// event at the block the context anchor records and checks the event against the anchor hash, which
+// also covers the software version and PCR values. The nodes and thresholds come from that checked event.
 export async function readCanonicalContextSwitch(
   hre: HardhatRuntimeEnvironment,
   options: {
@@ -124,8 +126,6 @@ export async function readCanonicalContextSwitch(
     epochId: snapshot.currentEpochId,
     kmsNodeParams,
     thresholds: eventThresholds,
-    softwareVersion,
-    pcrValues,
   };
 }
 
@@ -135,12 +135,10 @@ export function encodeMirrorKmsContextAndEpoch(iface: Interface, args: MirrorCon
     args.epochId,
     args.kmsNodeParams,
     args.thresholds,
-    args.softwareVersion,
-    args.pcrValues,
   ]);
 }
 
-// Fails with an explicit mismatch message instead of the replica's NonIncreasingKmsContextId revert.
+// The replica does not check that context ids increase, so this guard rejects a stale context switch.
 export async function assertReplicaNeedsContextSwitch(
   hre: HardhatRuntimeEnvironment,
   replicaProtocolConfigAddress: string,

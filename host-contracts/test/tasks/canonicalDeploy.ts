@@ -136,6 +136,8 @@ describe('Canonical prepare tasks', function () {
         expect(storagePrefix).to.equal('');
       });
       expect(decoded[3][0]).to.equal(BigInt(buildProtocolConfigThresholds().publicDecryption));
+      expect(decoded[4]).to.equal((await ethers.provider.getNetwork()).chainId);
+      expect(decoded[5]).to.equal(canonicalAddress);
       expect(outerCalldata).to.equal(
         UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [newImplementationAddress, innerCalldata]),
       );

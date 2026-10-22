@@ -39,7 +39,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     // -----------------------------------------------------------------------------------------
     // EIP-712 type hashes
     //
-    // Used to recover the KMS signer from the four KMS lifecycle confirmations.
+    // The four KMS lifecycle confirmation type hashes are in ProtocolConfigBase.
     // -----------------------------------------------------------------------------------------
 
     /// @dev Hash of the EIP-712 domain separator type.
@@ -48,26 +48,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /// @dev Hash of the KeyDigest type, used to hash the key digests into `epochMaterialHash`.
     bytes32 private constant EIP712_KEY_DIGEST_TYPE_HASH = keccak256("KeyDigest(uint8 keyType,bytes digest)");
-
-    /// @dev Hash of the ContextCreationConfirmation type.
-    bytes32 private constant EIP712_CONTEXT_CREATION_TYPE_HASH =
-        keccak256(
-            "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)"
-        );
-
-    /// @dev Hash of the EpochActivationConfirmation type.
-    bytes32 private constant EIP712_EPOCH_ACTIVATION_TYPE_HASH =
-        keccak256(
-            "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)"
-        );
-
-    /// @dev Hash of the ContextDestructionConfirmation type.
-    bytes32 private constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
-        keccak256("ContextDestructionConfirmation(uint256 destroyedContextId,bytes extraData)");
-
-    /// @dev Hash of the EpochDestructionConfirmation type.
-    bytes32 private constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
-        keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
 
     // -----------------------------------------------------------------------------------------
     // ERC-7201 namespaced storage
@@ -390,6 +370,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /// @inheritdoc IProtocolConfig
     /// @dev Each signer confirms once. The confirmation counts toward the active committee's `n - t`
     ///      quorum. The DAO does not rotate before a destruction reaches the quorum (RFC 037).
+    ///      `ProtocolConfigReplica` requires `n - t` signatures over one digest too.
     ///      The contract does not check that the context was destroyed. KMS nodes sign only after
     ///      they see the KmsContextDestroyed event.
     function confirmKmsContextDestruction(
@@ -667,16 +648,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         epochId = ++$.epochCounter;
         $.epochState[epochId] = EpochState.Pending;
         $.contextForEpoch[epochId] = contextId;
-    }
-
-    /**
-     * @dev Clears `epochId` back to None and drops its context link. Callers own the preconditions
-     *      and any event emission.
-     */
-    function _clearEpoch(uint256 epochId) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.epochState[epochId] = EpochState.None;
-        delete $.contextForEpoch[epochId];
     }
 
     /**

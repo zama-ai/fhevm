@@ -5,9 +5,10 @@ import { makeEnvHelpers } from './envSnapshot';
 import { formatError } from './formatError';
 import { getRequiredEnvVar } from './loadVariables';
 
-// The context id, epoch id, node set and thresholds become initializeFromCanonical calldata, so the task
-// checks them in full. The chain id and block number are provenance, and the task parses them as decimal
-// strings. The block hash and the address are provenance that the task only checks for presence, then prints.
+// The context id, epoch id, node set, thresholds, chain id and address become initializeFromCanonical
+// calldata. The task checks the context id, epoch id, node set and thresholds in full. It parses the chain
+// id and block number as decimal strings. It only checks the block hash and the address for presence, then
+// prints them. The block number and block hash are provenance.
 const CANONICAL_SNAPSHOT_ENV_KEYS = [
   'CANONICAL_CHAIN_ID',
   'CANONICAL_PROTOCOL_CONFIG_ADDRESS',

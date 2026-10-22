@@ -168,18 +168,6 @@ interface IProtocolConfig is IProtocolConfigBase {
     event KmsEpochDestructionQuorumReached(uint256 indexed destroyedEpochId, bytes extraData);
 
     /**
-     * @notice Emitted when a KMS context is destroyed.
-     * @param kmsContextId The destroyed context ID.
-     */
-    event KmsContextDestroyed(uint256 indexed kmsContextId);
-
-    /**
-     * @notice Emitted when a KMS epoch is destroyed.
-     * @param epochId The destroyed epoch ID.
-     */
-    event KmsEpochDestroyed(uint256 indexed epochId);
-
-    /**
      * @notice Emitted when a coprocessor upgrade is proposed. This event drives the
      *         coprocessor software upgrade.
      * @param proposalId Caller-supplied identifier for this upgrade attempt.
@@ -197,14 +185,6 @@ interface IProtocolConfig is IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------
     // Errors
     // -----------------------------------------------------------------------------------------
-
-    /// @notice Cannot destroy the latest active context.
-    /// @param kmsContextId The latest active context ID.
-    error LatestActiveKmsContextCannotBeDestroyed(uint256 kmsContextId);
-
-    /// @notice Cannot destroy the latest active epoch.
-    /// @param epochId The latest active epoch ID.
-    error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
 
     /// @notice The KMS context is not pending.
     /// @param kmsContextId The context ID.
