@@ -64,3 +64,22 @@ CREATE TRIGGER pads_work_available_update
     WHEN (OLD.claimed_at IS NOT NULL AND NEW.claimed_at IS NULL
         AND NEW.signature IS NULL AND NOT NEW.is_error)
     EXECUTE FUNCTION notify_pad_work_available();
+
+-- Wake the requests of a complete or failed row. Payload: `<prf>:<label hex>:<pad_length>`.
+CREATE OR REPLACE FUNCTION notify_pad_ready()
+    RETURNS trigger AS $$
+BEGIN
+    PERFORM pg_notify(
+        'pad_ready',
+        NEW.prf_instance || ':' || encode(NEW.label, 'hex') || ':' || NEW.pad_length
+    );
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER pads_ready
+    AFTER UPDATE
+    ON pads
+    FOR EACH ROW
+    WHEN ((OLD.signature IS NULL AND NEW.signature IS NOT NULL) OR (NOT OLD.is_error AND NEW.is_error))
+    EXECUTE FUNCTION notify_pad_ready();

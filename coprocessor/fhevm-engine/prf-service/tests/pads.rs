@@ -304,7 +304,7 @@ async fn notify(pool: &PgPool, payload: &str) {
 }
 
 fn payload(path: &PrfPath) -> String {
-    format!("{}:{:x}", path.prf, path.label)
+    format!("{}:{:x}:{}", path.prf, path.label, path.pad_length)
 }
 
 /// Starts the waiter and returns once it listens.
@@ -352,7 +352,7 @@ const NO_POLL: Duration = Duration::from_secs(3600);
 const DEADLINE: Duration = Duration::from_secs(5);
 
 #[tokio::test]
-async fn notification_wakes_the_requests_of_the_row() {
+async fn trigger_wakes_the_request_of_each_row() {
     let (_instance, pool, admissions) = test_db().await;
     let (short, long) = (path(1, 36), path(1, 64));
     for path in [&short, &long] {
@@ -364,17 +364,17 @@ async fn notification_wakes_the_requests_of_the_row() {
 
     // A bad payload wakes nobody.
     notify(&pool, "not a row").await;
+    // The trigger sends `pad_ready`.
     set_output(&pool, &short, &output(1)).await;
-    set_error(&pool, &long).await;
-    // One notification for the label wakes the requests for both lengths.
-    notify(&pool, &payload(&short)).await;
-
     let short_state = timeout(DEADLINE, short_wait)
         .await
         .unwrap()
         .unwrap()
         .unwrap();
     assert_eq!(short_state, PadState::Complete(output(1)));
+    assert!(!long_wait.is_finished());
+
+    set_error(&pool, &long).await;
     let long_state = timeout(DEADLINE, long_wait)
         .await
         .unwrap()
@@ -394,6 +394,11 @@ async fn poll_wakes_a_request_without_notification() {
     let (waiter, _cancel, _run) = start_waiter(&pool, Duration::from_millis(100)).await;
     let wait = start_wait(&waiter, path(1, 64)).await;
 
+    // Without the trigger, only the poll can wake the request.
+    sqlx::query("ALTER TABLE pads DISABLE TRIGGER pads_ready")
+        .execute(&pool)
+        .await
+        .unwrap();
     set_output(&pool, &row, &output(1)).await;
 
     let state = timeout(DEADLINE, wait).await.unwrap().unwrap().unwrap();
