@@ -334,6 +334,7 @@ const applyKmsThresholdGatewayEnv = async (
     hostSc[`KMS_TX_SENDER_ADDRESS_${idx}`] = wallet.address;
     hostSc[`KMS_NODE_IP_${idx}`] = gw[`KMS_NODE_IP_ADDRESS_${idx}`];
     hostSc[`KMS_NODE_STORAGE_URL_${idx}`] = gw[`KMS_NODE_STORAGE_URL_${idx}`];
+    hostSc[`KMS_NODE_CONNECTOR_URL_${idx}`] = `https://${kmsConnectorPrefix(party)}-proxy:8443`;
     // KMS_SIGNER_ADDRESS_{idx} comes from per-party signing-key discovery.
     const endpoint = plan.kms.insecureTestKeygen
       ? `http://${kmsTestKeygenProxyName(party)}:3000`
@@ -380,6 +381,7 @@ export const buildHostScSwapEnv = (
     swap[`KMS_SIGNER_ADDRESS_${slot}`] = hostSc[`KMS_SIGNER_ADDRESS_${src}`];
     swap[`KMS_NODE_IP_${slot}`] = hostSc[`KMS_NODE_IP_${src}`];
     swap[`KMS_NODE_STORAGE_URL_${slot}`] = hostSc[`KMS_NODE_STORAGE_URL_${src}`];
+    swap[`KMS_NODE_CONNECTOR_URL_${slot}`] = hostSc[`KMS_NODE_CONNECTOR_URL_${src}`];
     swap[`KMS_NODE_MPC_IDENTITY_${slot}`] = hostSc[`KMS_NODE_MPC_IDENTITY_${src}`];
     swap[`KMS_NODE_CA_CERT_${slot}`] = hostSc[`KMS_NODE_CA_CERT_${src}`];
     swap[`KMS_NODE_STORAGE_PREFIX_${slot}`] = hostSc[`KMS_NODE_STORAGE_PREFIX_${src}`];

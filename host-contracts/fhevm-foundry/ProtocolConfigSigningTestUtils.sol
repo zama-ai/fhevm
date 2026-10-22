@@ -116,12 +116,13 @@ abstract contract ProtocolConfigSigningTestUtils is HostContractsDeployerTestUti
             );
     }
 
-    /// @dev nodeConfigHash of ContextCreationConfirmation, over the params projected onto the stored KmsNode shape.
+    /// @dev nodeConfigHash of ContextCreationConfirmation, over the inputs projected onto the stored KmsNode shape.
     function _nodeConfigHash(
         KmsNodeParams[] memory params,
+        string[] memory connectorUrls,
         KmsThresholds memory thresholds
     ) internal pure returns (bytes32) {
-        return keccak256(abi.encode(_toKmsNodes(params), thresholds));
+        return keccak256(abi.encode(_toKmsNodes(params, connectorUrls), thresholds));
     }
 
     /// @dev epochMaterialHash of EpochActivationConfirmation. CRS entries encode the raw digest bytes.
@@ -152,8 +153,13 @@ abstract contract ProtocolConfigSigningTestUtils is HostContractsDeployerTestUti
         string memory softwareVersion,
         PcrValues[] memory pcrValues
     ) internal {
-        protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, softwareVersion, pcrValues);
-        nodeConfigHashes[protocolConfig.getCurrentKmsContextIdCounter()] = _nodeConfigHash(nodes, thresholds);
+        string[] memory connectorUrls = _makeConnectorUrls(nodes.length);
+        protocolConfig.defineNewKmsContextAndEpoch(nodes, connectorUrls, thresholds, softwareVersion, pcrValues);
+        nodeConfigHashes[protocolConfig.getCurrentKmsContextIdCounter()] = _nodeConfigHash(
+            nodes,
+            connectorUrls,
+            thresholds
+        );
     }
 
     /// @dev Signs ContextCreationConfirmation with the latest active context as previousContextId.

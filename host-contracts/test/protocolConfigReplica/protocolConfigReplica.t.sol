@@ -97,13 +97,15 @@ abstract contract ProtocolConfigReplicaTestBase is ProtocolConfigSigningTestUtil
 
     function _nodes(uint256 seed) internal pure returns (KmsNode[] memory nodes) {
         uint256[] memory keys = _keys(seed);
+        string[] memory connectorUrls = _makeConnectorUrls(N);
         nodes = new KmsNode[](N);
         for (uint256 i = 0; i < N; i++) {
             nodes[i] = KmsNode({
                 txSenderAddress: address(uint160(0xA1 + i + seed * 0x10)),
                 signerAddress: vm.addr(keys[i]),
                 ipAddress: "127.0.0.1",
-                storageUrl: "https://s.example.com"
+                storageUrl: "https://s.example.com",
+                connectorUrl: connectorUrls[i]
             });
         }
     }
@@ -249,6 +251,11 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
     // -----------------------------------------------------------------------
     // Canonical mirror initializer
     // -----------------------------------------------------------------------
+
+    function test_initializeFromCanonicalStoresNodes() public {
+        _setupReplica();
+        assertEq(abi.encode(protocolConfigReplica.getKmsNodesForContext(CTX1)), abi.encode(_makeKmsNodes(N)));
+    }
 
     function test_revertInitializeFromCanonicalInvalidEpochId() public {
         _deployACL(owner);

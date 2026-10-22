@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
-import {KmsNode} from "./shared/Structs.sol";
 import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE, EXTRA_DATA_V1, EXTRA_DATA_V2} from "./shared/Constants.sol";
 import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -11,6 +10,27 @@ import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/crypt
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
+
+/**
+ * @dev The first four `KmsNode` fields, in order. ABI decoding is positional and ignores the
+ *      trailing `connectorUrl`, so KMSGeneration needs no upgrade when `KmsNode` gains it.
+ */
+struct KmsNodeSignerAndStorage {
+    address txSenderAddress;
+    address signerAddress;
+    string ipAddress;
+    string storageUrl;
+}
+
+/**
+ * @dev The `ProtocolConfig` node getter, decoded into `KmsNodeSignerAndStorage`.
+ */
+interface IKmsNodeReader {
+    function getKmsNodeForContext(
+        uint256 kmsContextId,
+        address txSender
+    ) external view returns (KmsNodeSignerAndStorage memory);
+}
 
 /**
  * @title KMSGeneration contract
@@ -939,7 +959,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         if (!PROTOCOL_CONFIG.isKmsSignerForContext(contextId, signerAddress)) {
             revert NotKmsSigner(signerAddress);
         }
-        KmsNode memory node = PROTOCOL_CONFIG.getKmsNodeForContext(contextId, txSenderAddress);
+        KmsNodeSignerAndStorage memory node = IKmsNodeReader(protocolConfigAdd).getKmsNodeForContext(
+            contextId,
+            txSenderAddress
+        );
         if (node.signerAddress != signerAddress) {
             revert KmsSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
         }
@@ -957,7 +980,9 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         uint256 len = consensusTxSenders.length;
         string[] memory urls = new string[](len);
         for (uint256 i = 0; i < len; i++) {
-            urls[i] = PROTOCOL_CONFIG.getKmsNodeForContext(contextId, consensusTxSenders[i]).storageUrl;
+            urls[i] = IKmsNodeReader(protocolConfigAdd)
+                .getKmsNodeForContext(contextId, consensusTxSenders[i])
+                .storageUrl;
         }
         return urls;
     }

@@ -154,7 +154,8 @@ seed their replica from it.
 An existing replica proxy that still runs `ProtocolConfig` does not need this flow. It migrates in
 place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV4(canonicalChainId, canonicalProtocolConfig))`.
 The two arguments set the canonical `ProtocolConfig` EIP-712 domain. Both contracts use the
-same base storage, so the KMS context, epoch and nodes stay as they are.
+same base storage, so the KMS context, epoch and nodes stay as they are. Nodes stored before
+ProtocolConfig v0.4.0 read an empty `connectorUrl`. Connector URLs arrive with the next context switch.
 
 The flow is artifact-centric — the same three steps in every environment:
 
@@ -199,6 +200,9 @@ they deploy anything. A value that fails a check leaves the proxy untouched.
 | `CANONICAL_EPOCH_ID`                | decimal string | Active KMS epoch id to mirror.                         |
 | `CANONICAL_KMS_NODES`               | JSON array     | The KMS node set, one JSON object per node.            |
 | `CANONICAL_KMS_THRESHOLDS`          | JSON object    | The four thresholds, each a decimal string.            |
+
+Each `CANONICAL_KMS_NODES` object carries `connectorUrl`. It is empty for a context defined before
+ProtocolConfig v0.4.0.
 
 The context id, epoch id, node set, thresholds, chain id and address become the
 `initializeFromCanonical` calldata. The chain id and the address set the canonical EIP-712 domain

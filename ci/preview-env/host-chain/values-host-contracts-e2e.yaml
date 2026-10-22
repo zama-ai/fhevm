@@ -23,7 +23,7 @@
 # exist before that ("HH305: Unrecognized param" if pinned older).
 #
 # NUM_KMS_NODES / KMS_TX_SENDER_ADDRESS_x / KMS_SIGNER_ADDRESS_x / KMS_NODE_IP_x /
-# KMS_NODE_STORAGE_URL_x / KMS_NODE_PARTY_ID_x / KMS_NODE_MPC_IDENTITY_x /
+# KMS_NODE_STORAGE_URL_x / KMS_NODE_CONNECTOR_URL_x / KMS_NODE_PARTY_ID_x / KMS_NODE_MPC_IDENTITY_x /
 # KMS_NODE_CA_CERT_x / KMS_NODE_STORAGE_PREFIX_x / the 4 threshold fields are all
 # generated dynamically for NB_KMS_CORE real parties by the "Wire real KMS node info
 # into host-contracts values" step in preview-env-deploy.yml - see
@@ -86,7 +86,7 @@ scDeploy:
     # static mock, or host-chain input verification rejects every proof. Not set
     # statically here so the two never duplicate/conflict.
     # NUM_KMS_NODES / KMS_TX_SENDER_ADDRESS_x / KMS_SIGNER_ADDRESS_x / KMS_NODE_IP_x /
-    # KMS_NODE_STORAGE_URL_x / KMS_NODE_PARTY_ID_x / KMS_NODE_MPC_IDENTITY_x /
+    # KMS_NODE_STORAGE_URL_x / KMS_NODE_CONNECTOR_URL_x / KMS_NODE_PARTY_ID_x / KMS_NODE_MPC_IDENTITY_x /
     # KMS_NODE_CA_CERT_x / KMS_NODE_STORAGE_PREFIX_x / the 4 threshold fields are
     # appended dynamically for NB_KMS_CORE parties - see header note.
     - {name: KMS_SOFTWARE_VERSION, value: "0.1.0"}

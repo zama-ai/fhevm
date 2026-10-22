@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ProtocolConfigReplicaTestBase} from "./protocolConfigReplica.t.sol";
 import {IProtocolConfigReplica, KmsContextSubmission, KmsEpochSubmission} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
+import {KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 
 contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaTestBase {
     // -----------------------------------------------------------------------
@@ -27,6 +28,14 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaTestBase {
         assertEq(protocolConfigReplica.getCurrentKmsContextIdCounter(), contextId);
         assertTrue(protocolConfigReplica.isValidEpochForContext(contextId, epochId));
         _assertMembers(contextId, SEED1);
+        KmsNode[] memory nodes = _nodes(SEED1);
+        assertEq(abi.encode(protocolConfigReplica.getKmsNodesForContext(contextId)), abi.encode(nodes));
+        for (uint256 i = 0; i < nodes.length; i++) {
+            assertEq(
+                abi.encode(protocolConfigReplica.getKmsNodeForContext(contextId, nodes[i].txSenderAddress)),
+                abi.encode(nodes[i])
+            );
+        }
         assertEq(protocolConfigReplica.getKmsGenThresholdForContext(contextId), _thresholds().kmsGen);
         // The previous context stays valid, like on the canonical.
         assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1));
@@ -86,6 +95,15 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaTestBase {
         _setupReplica();
         KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
         context.nodes[0].ipAddress = "10.0.0.1";
+
+        _expectNotInCommittee(_contextDigest(CTX1, context), context.signatures[0], CTX1);
+        protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N));
+    }
+
+    function test_revertSwitchTamperedConnectorUrl() public {
+        _setupReplica();
+        KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
+        context.nodes[1].connectorUrl = "https://attacker.example.com";
 
         _expectNotInCommittee(_contextDigest(CTX1, context), context.signatures[0], CTX1);
         protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N));

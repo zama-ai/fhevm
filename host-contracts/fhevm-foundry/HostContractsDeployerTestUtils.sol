@@ -237,7 +237,13 @@ abstract contract HostContractsDeployerTestUtils is Test {
             protocolConfigImplementation,
             abi.encodeCall(
                 ProtocolConfig.initializeFromEmptyProxy,
-                (initialKmsNodeParams, initialThresholds, "", pcrValues)
+                (
+                    initialKmsNodeParams,
+                    _makeConnectorUrls(initialKmsNodeParams.length),
+                    initialThresholds,
+                    "",
+                    pcrValues
+                )
             )
         );
 
@@ -343,20 +349,31 @@ abstract contract HostContractsDeployerTestUtils is Test {
         }
     }
 
-    /// @dev Projection of _makeKmsNodeParams onto the stored KmsNode shape, for getKmsNodesForContext assertions.
-    function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory nodes) {
-        return _toKmsNodes(_makeKmsNodeParams(count));
+    function _makeConnectorUrls(uint256 count) internal pure returns (string[] memory connectorUrls) {
+        connectorUrls = new string[](count);
+        for (uint256 i = 0; i < count; i++) {
+            connectorUrls[i] = string.concat("https://kms-connector-", vm.toString(i), ".example.com");
+        }
     }
 
-    /// @dev Projection of `params` onto the stored KmsNode shape.
-    function _toKmsNodes(KmsNodeParams[] memory params) internal pure returns (KmsNode[] memory nodes) {
+    /// @dev Projection of _makeKmsNodeParams and _makeConnectorUrls onto the stored KmsNode shape, for
+    ///      getKmsNodesForContext assertions.
+    function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory) {
+        return _toKmsNodes(_makeKmsNodeParams(count), _makeConnectorUrls(count));
+    }
+
+    function _toKmsNodes(
+        KmsNodeParams[] memory params,
+        string[] memory connectorUrls
+    ) internal pure returns (KmsNode[] memory nodes) {
         nodes = new KmsNode[](params.length);
         for (uint256 i = 0; i < params.length; i++) {
             nodes[i] = KmsNode({
                 txSenderAddress: params[i].txSenderAddress,
                 signerAddress: params[i].signerAddress,
                 ipAddress: params[i].ipAddress,
-                storageUrl: params[i].storageUrl
+                storageUrl: params[i].storageUrl,
+                connectorUrl: connectorUrls[i]
             });
         }
     }

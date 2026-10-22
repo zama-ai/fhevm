@@ -13,6 +13,8 @@ struct KmsNode {
     string ipAddress;
     /// @notice URL address of the KMS node's storage where ciphertexts are stored
     string storageUrl;
+    /// @notice URL of the KMS node's connector endpoint. Empty for contexts defined before ProtocolConfig v0.4.0.
+    string connectorUrl;
 }
 
 /**
@@ -26,7 +28,7 @@ struct PcrValues {
 
 /**
  * @notice Connector-facing KMS node parameters.
- * @dev Extends the stored KmsNode fields with MPC connection metadata.
+ * @dev Extends the stored KmsNode fields, except `connectorUrl`, with MPC connection metadata.
  */
 struct KmsNodeParams {
     address txSenderAddress;

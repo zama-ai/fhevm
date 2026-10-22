@@ -1,12 +1,13 @@
 import { expect } from 'chai';
 import { ethers, upgrades } from 'hardhat';
 
-import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
+import { CRS_COUNTER_BASE, KEY_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { findEventArg } from '../../tasks/utils/protocolConfigEip712';
 import { ACL, ACLUpgradedExample, ProtocolConfig } from '../../types';
 import type { KmsThresholdsStruct } from '../../types/contracts/ProtocolConfig';
 import { getSigners, initSigners } from '../signers';
 import {
+  buildConnectorUrls,
   buildControllableKmsCommittee,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
@@ -60,7 +61,13 @@ describe('Upgrades', function () {
     const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
       call: {
         fn: 'initializeFromEmptyProxy',
-        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+        args: [
+          buildProtocolConfigNodes(),
+          buildConnectorUrls(buildProtocolConfigNodes().length),
+          buildProtocolConfigThresholds(),
+          '',
+          [],
+        ],
       },
     });
     await pc.waitForDeployment();
@@ -87,8 +94,41 @@ describe('Upgrades', function () {
     return pc;
   }
 
+  const v015ContextId = KMS_CONTEXT_COUNTER_BASE + 1n;
+
+  const toKmsNode = (n: ReturnType<typeof buildProtocolConfigNodes>[number], connectorUrl: string) => ({
+    txSenderAddress: n.txSenderAddress,
+    signerAddress: n.signerAddress,
+    ipAddress: n.ipAddress,
+    storageUrl: n.storageUrl,
+    connectorUrl,
+  });
+
+  const emptyKmsNode = {
+    txSenderAddress: ethers.ZeroAddress,
+    signerAddress: ethers.ZeroAddress,
+    ipAddress: '',
+    storageUrl: '',
+    connectorUrl: '',
+  };
+
+  const expectKmsNodes = async (c: any, contextId: bigint, expected: ReturnType<typeof toKmsNode>[]) => {
+    const nodes = await c.getKmsNodesForContext(contextId);
+    expect(nodes.map((n: any) => n.toObject())).to.deep.equal(expected);
+    for (const node of expected) {
+      expect((await c.getKmsNodeForContext(contextId, node.txSenderAddress)).toObject()).to.deep.equal(node);
+    }
+  };
+
   const expectV015State = async (c: any) => {
-    expect(await c.getKmsSigners()).to.deep.equal(buildProtocolConfigNodes().map((n) => n.signerAddress));
+    const nodes = buildProtocolConfigNodes();
+    await expectKmsNodes(
+      c,
+      v015ContextId,
+      nodes.map((n) => toKmsNode(n, '')),
+    );
+    expect(await c.getKmsSignersForContext(v015ContextId)).to.deep.equal(nodes.map((n) => n.signerAddress));
+    expect(await c.getKmsSigners()).to.deep.equal(nodes.map((n) => n.signerAddress));
     await expectThresholds(c);
   };
 
@@ -105,11 +145,34 @@ describe('Upgrades', function () {
     const domain = Array.from(await replica.eip712Domain());
     expect(domain.slice(1, 5)).to.deep.equal(['ProtocolConfig', '1', chainId, canonicalProtocolConfig]);
     const [contextId, epochId] = await replica.getCurrentKmsContextAndEpoch();
+    expect(contextId).to.equal(v015ContextId);
     expect(await replica.isValidEpochForContext(contextId, epochId)).to.be.true;
     await expectV015State(replica);
 
     await (await replica.mirrorKmsEpoch(contextId, epochId + 1n)).wait();
     expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId + 1n]);
+
+    const oldNodes = buildProtocolConfigNodes();
+    const newNodes = oldNodes.map((n, i) =>
+      toKmsNode(
+        {
+          ...n,
+          txSenderAddress: ethers.getAddress(ethers.zeroPadValue(ethers.toBeHex(0xa000 + i), 20)),
+          signerAddress: ethers.getAddress(ethers.zeroPadValue(ethers.toBeHex(0xb000 + i), 20)),
+        },
+        buildConnectorUrls(oldNodes.length)[i],
+      ),
+    );
+    await (
+      await replica.recoverKmsState(contextId, epochId + 2n, newNodes, buildProtocolConfigThresholds(), [], [])
+    ).wait();
+    await expectKmsNodes(replica, contextId, newNodes);
+    expect(await replica.getKmsSigners()).to.deep.equal(newNodes.map((n) => n.signerAddress));
+    for (const n of oldNodes) {
+      expect((await replica.getKmsNodeForContext(contextId, n.txSenderAddress)).toObject()).to.deep.equal(emptyKmsNode);
+      expect(await replica.isKmsTxSenderForContext(contextId, n.txSenderAddress)).to.be.false;
+      expect(await replica.isKmsSignerForContext(contextId, n.signerAddress)).to.be.false;
+    }
   });
 
   it('upgrades a v0.15 ProtocolConfig proxy in place to ProtocolConfig', async function () {
@@ -128,6 +191,8 @@ describe('Upgrades', function () {
     expect(await canonical.getVersion()).to.equal('ProtocolConfig v0.4.0');
     const [contextId, epochId] = await canonical.getCurrentKmsContextAndEpoch();
     expect(await canonical.isValidEpochForContext(contextId, epochId)).to.be.true;
+    const v015Nodes = committee.nodes.map((n) => toKmsNode(n, ''));
+    await expectKmsNodes(canonical, contextId, v015Nodes);
     expect(await canonical.getKmsSigners()).to.deep.equal(committee.nodes.map((n) => n.signerAddress));
     expect(await canonical.getPublicDecryptionThreshold()).to.equal(BigInt(committee.thresholds.publicDecryption));
     expect(await canonical.getUserDecryptionThreshold()).to.equal(BigInt(committee.thresholds.userDecryption));
@@ -141,6 +206,19 @@ describe('Upgrades', function () {
     await confirmEpochActivationBySigners(canonicalAddress, committee.signerSigners, contextId, newEpochId);
     expect(await canonical.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, newEpochId]);
     expect(await canonical.isValidEpochForContext(contextId, newEpochId)).to.be.true;
+
+    // A context defined after the upgrade stores its connector URLs. The v0.15 context keeps empty ones.
+    const newNodeParams = buildProtocolConfigNodes();
+    const connectorUrls = buildConnectorUrls(newNodeParams.length);
+    await (
+      await canonical.defineNewKmsContextAndEpoch(newNodeParams, connectorUrls, buildProtocolConfigThresholds(), '', [])
+    ).wait();
+    for (const [i, n] of newNodeParams.entries()) {
+      expect((await canonical.getKmsNodeForContext(contextId + 1n, n.txSenderAddress)).toObject()).to.deep.equal(
+        toKmsNode(n, connectorUrls[i]),
+      );
+    }
+    await expectKmsNodes(canonical, contextId, v015Nodes);
   });
 
   it('deploy upgradeable KMSGeneration', async function () {

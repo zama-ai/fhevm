@@ -2,10 +2,18 @@
 
 pragma solidity ^0.8.24;
 
-import {KmsContextAnchor, KmsNode, KmsNodeParams, KmsThresholds} from "../contracts/shared/Structs.sol";
+import {KmsContextAnchor, KmsNodeParams, KmsThresholds} from "../contracts/shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "../contracts/shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "../contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "../contracts/shared/ACLOwnable.sol";
+
+/// @dev The v0.15 `KmsNode`. Declared here so this layout stays the v0.15 one when `Structs.sol` changes.
+struct KmsNode {
+    address txSenderAddress;
+    address signerAddress;
+    string ipAddress;
+    string storageUrl;
+}
 
 /// @notice Stand-in for the release v0.15 ProtocolConfig proxy: same storage layout and initialized version.
 contract ProtocolConfigV015LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnable {
@@ -91,6 +99,7 @@ contract ProtocolConfigV015LayoutExample is UUPSUpgradeableEmptyProxy, ACLOwnabl
             $.kmsNodesForContext[contextId].push(node);
             $.isKmsTxSenderForContext[contextId][node.txSenderAddress] = true;
             $.isKmsSignerForContext[contextId][node.signerAddress] = true;
+            $.kmsNodeByTxSenderForContext[contextId][node.txSenderAddress] = node;
             $.kmsSignerAddressesForContext[contextId].push(node.signerAddress);
         }
         $.publicDecryptionThresholdForContext[contextId] = thresholds.publicDecryption;

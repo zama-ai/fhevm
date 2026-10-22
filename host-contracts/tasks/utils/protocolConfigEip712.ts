@@ -90,15 +90,18 @@ const abi = AbiCoder.defaultAbiCoder();
 
 // keccak256(abi.encode(KmsNode[] nodes, KmsThresholds thresholds)). The encode types come off the
 // ProtocolConfig ABI, so the tuple layout cannot drift from the contract. KmsNode is the projection of
-// KmsNodeParams that ProtocolConfig stores, and the encoder drops the fields KmsNode does not have.
+// KmsNodeParams that ProtocolConfig stores, then `connectorUrls[i]` as node i's connectorUrl. The encoder
+// drops the fields KmsNode does not have.
 export function nodeConfigHash(
   iface: ProtocolConfigInterface,
   params: KmsNodeParamsStruct[],
+  connectorUrls: string[],
   thresholds: KmsThresholdsStruct,
 ): string {
   const [kmsNodesType] = iface.getFunction('getKmsNodesForContext').outputs;
-  const [, thresholdsType] = iface.getFunction('defineNewKmsContextAndEpoch').inputs;
-  return keccak256(abi.encode([kmsNodesType, thresholdsType], [params, thresholds]));
+  const [, , thresholdsType] = iface.getFunction('defineNewKmsContextAndEpoch').inputs;
+  const nodes = params.map((p, i) => ({ ...p, connectorUrl: connectorUrls[i] }));
+  return keccak256(abi.encode([kmsNodesType, thresholdsType], [nodes, thresholds]));
 }
 
 // keccak256(abi.encode(prepKeygenId, keyId, keyDigestsHash)), where keyDigestsHash is the EIP-712 hash of
@@ -131,14 +134,15 @@ export function signConfirmation<T extends ConfirmationType>(
   return signer.signTypedData(domain, CONFIRMATION_TYPES[primaryType], value);
 }
 
-// Signs each signer's ContextCreationConfirmation for the pending context `contextId`, defined by `nodes`
-// and `thresholds`, and submits it from the signer account. The previous context is the active one.
+// Signs each signer's ContextCreationConfirmation for the pending context `contextId`, defined by `nodes`,
+// `connectorUrls` and `thresholds`, and submits it from the signer account. The previous context is the active one.
 // Returns the epoch ID of the NewKmsEpoch emitted once the creation quorum is reached.
 export async function submitContextCreationConfirmations(
   pc: ProtocolConfig,
   signers: Signer[],
   contextId: bigint,
   nodes: KmsNodeParamsStruct[],
+  connectorUrls: string[],
   thresholds: KmsThresholdsStruct,
   extraData = '0x',
 ): Promise<bigint | undefined> {
@@ -149,7 +153,7 @@ export async function submitContextCreationConfirmations(
     const signature = await signConfirmation(signer, domain, 'ContextCreationConfirmation', {
       previousContextId,
       newContextId: contextId,
-      nodeConfigHash: nodeConfigHash(pc.interface, nodes, thresholds),
+      nodeConfigHash: nodeConfigHash(pc.interface, nodes, connectorUrls, thresholds),
       extraData,
     });
     const receipt = await (await pc.connect(signer).confirmKmsContextCreation(contextId, signature, extraData)).wait();
