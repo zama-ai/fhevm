@@ -53,8 +53,7 @@ impl PadWaiter {
         }
     }
 
-    /// Listens for `pad_ready` until `cancel`. An error means that the connection failed, so the
-    /// process must exit.
+    /// Listens for `pad_ready` until `cancel`. On an error, the process must exit.
     pub async fn run(&self, cancel: CancellationToken) -> anyhow::Result<()> {
         let mut listener = PgListener::connect_with(&self.pool).await?;
         listener.listen(PAD_READY).await?;
@@ -62,17 +61,20 @@ impl PadWaiter {
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => return Ok(()),
-                notification = listener.try_recv() => {
-                    let Some(notification) = notification? else {
-                        bail!("lost the {PAD_READY} connection");
-                    };
-                    match parse_payload(notification.payload()) {
+                notification = listener.try_recv() => match notification? {
+                    Some(notification) => match parse_payload(notification.payload()) {
                         Some(key) => self.wake(&key),
                         None => debug!(payload = notification.payload(), "ignored a bad {PAD_READY} payload"),
+                    },
+                    // sqlx connected again. Read the rows: notifications of the gap are lost.
+                    None => {
+                        warn!("the {PAD_READY} connection was lost and restored");
+                        if let Err(err) = self.wake_finished().await {
+                            warn!(error = %err, "pad poll failed");
+                        }
                     }
-                }
-                // Postgres can lose a notification. A failed poll does not stop the waiter: the
-                // listener finds a lost connection.
+                },
+                // Postgres can lose a notification. A failed poll does not stop the waiter.
                 _ = poll.tick() => {
                     if let Err(err) = self.wake_finished().await {
                         warn!(error = %err, "pad poll failed");

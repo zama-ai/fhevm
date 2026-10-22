@@ -432,10 +432,19 @@ async fn failed_poll_does_not_stop_the_waiter() {
 }
 
 #[tokio::test]
-async fn waiter_stops_when_its_connection_fails() {
-    let (_instance, pool, _admissions) = test_db().await;
-    let (_waiter, _cancel, run) = start_waiter(&pool, NO_POLL).await;
+async fn waiter_reads_the_rows_after_a_lost_connection() {
+    let (_instance, pool, admissions) = test_db().await;
+    let row = path(1, 64);
+    admissions.admit(&row, CONNECTOR).await.unwrap();
+    let (waiter, _cancel, run) = start_waiter(&pool, NO_POLL).await;
+    let wait = start_wait(&waiter, path(1, 64)).await;
 
+    // Complete the row with no notification, then cut the listen connection.
+    sqlx::query("ALTER TABLE pads DISABLE TRIGGER pads_ready")
+        .execute(&pool)
+        .await
+        .unwrap();
+    set_output(&pool, &row, &output(1)).await;
     sqlx::query(
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE 'LISTEN%'",
     )
@@ -443,7 +452,9 @@ async fn waiter_stops_when_its_connection_fails() {
     .await
     .unwrap();
 
-    assert!(timeout(DEADLINE, run).await.unwrap().unwrap().is_err());
+    let state = timeout(DEADLINE, wait).await.unwrap().unwrap().unwrap();
+    assert_eq!(state, PadState::Complete(output(1)));
+    assert!(!run.is_finished());
 }
 
 #[tokio::test]
