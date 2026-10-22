@@ -205,11 +205,12 @@ describe('Coprocessor proxy', function () {
       console.log('[coprocessor-proxy] load started');
       for (const end = Date.now() + loadSeconds * 1000; Date.now() < end; sent += 1) {
         const i = sent % urls.length;
+        const fail = (reason: string) => failures.push(`${new Date().toISOString()} ${urls[i]} -> ${reason}`);
         try {
           const reply = await get(`${urls[i]}${PRF_PATH}`, await sign(i, PRF_PATH));
-          if (reply.status !== 200) failures.push(`${urls[i]} -> ${reply.status} ${reply.body}`);
+          if (reply.status !== 200) fail(`${reply.status} ${reply.body}`);
         } catch (err) {
-          failures.push(`${urls[i]} -> ${err}`);
+          fail(`${err}`);
         }
       }
       const countsAfter = await Promise.all(countUrls.map(prfRequests));
