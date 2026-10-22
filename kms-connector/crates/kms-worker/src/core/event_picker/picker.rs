@@ -24,8 +24,8 @@ pub struct DbEventPicker {
     /// The receiver channel used to receive event notification.
     notif_receiver: Receiver<EventType>,
 
-    /// The event types that need to be picked, without duplicates.
-    pending: VecDeque<EventType>,
+    /// The event types that need to be picked, in FIFO order and without duplicates.
+    pending_event_types: VecDeque<EventType>,
 
     /// The limit number of events to fetch from the database.
     events_batch_size: u8,
@@ -40,7 +40,7 @@ impl DbEventPicker {
         Self {
             db_pool,
             notif_receiver,
-            pending: VecDeque::new(),
+            pending_event_types: VecDeque::new(),
             events_batch_size,
         }
     }
@@ -61,13 +61,20 @@ impl EventPicker for DbEventPicker {
 
     /// Picks events from the database.
     ///
+    /// Notifications are coalesced per event type to handle bursts:
+    /// - `drain_notifications` reads the received notifications off the channel, but
+    ///   `mark_pending` skips the types already queued, so 1000 notifications result in a single
+    ///   pick query.
+    /// - After a full batch, the type is re-queued at the back, as more events may be pending,
+    ///   giving the other types a chance to be picked first.
+    ///
     /// Should only return an error if the notification channel is closed, so the `kms_worker` can
     /// shutdown gracefully.
     /// If another error is encountered, it will just be logged with a warning and will wait for
     /// next events.
     async fn pick_events(&mut self) -> anyhow::Result<Vec<Self::Event>> {
         loop {
-            if self.pending.is_empty() {
+            if self.pending_event_types.is_empty() {
                 let Some(notification) = self.notif_receiver.recv().await else {
                     return Err(anyhow!("notification channel was closed!"));
                 };
@@ -75,14 +82,14 @@ impl EventPicker for DbEventPicker {
             }
             self.drain_notifications();
 
-            let Some(notification) = self.pending.pop_front() else {
+            let Some(event_type) = self.pending_event_types.pop_front() else {
                 continue;
             };
-            match self.pick_notified_events(&notification).await {
+            match self.pick_notified_events(&event_type).await {
                 Err(e) => {
                     warn!("Error while picking events: {e}");
                     EVENT_RECEIVED_ERRORS
-                        .with_label_values(&[notification.as_str()])
+                        .with_label_values(&[event_type.as_str()])
                         .inc();
                     continue;
                 }
@@ -91,13 +98,13 @@ impl EventPicker for DbEventPicker {
                     continue;
                 }
                 Ok(events) => {
-                    // A full batch means more events may still be pending: re-queue the event.
-                    if events.len() >= self.batch_limit(&notification) {
-                        self.mark_pending(notification);
+                    // A full batch means more events may still be pending: re-queue the event type.
+                    if events.len() >= self.batch_limit(&event_type) {
+                        self.mark_pending(event_type);
                     }
-                    info!("Picked {} {} successfully", events.len(), notification);
+                    info!("Picked {} {} successfully", events.len(), event_type);
                     EVENT_RECEIVED_COUNTER
-                        .with_label_values(&[notification.as_str()])
+                        .with_label_values(&[event_type.as_str()])
                         .inc_by(events.len() as u64);
                     return Ok(events);
                 }
@@ -107,24 +114,32 @@ impl EventPicker for DbEventPicker {
 }
 
 impl DbEventPicker {
-    /// Moves all the notifications already received into the `pending` queue, without blocking.
+    /// Moves the notifications already received into the `pending_event_types` queue, without
+    /// blocking.
     ///
-    /// A closed channel is ignored here, it will be reported by `recv` once `pending` is empty.
+    /// The drain is bounded by the channel capacity, so it cannot loop forever if notifications
+    /// keep coming. The remaining ones will be drained on the next pick.
+    ///
+    /// A closed channel is ignored here, it will be reported by `recv` once `pending_event_types` is
+    /// empty.
     fn drain_notifications(&mut self) {
-        while let Ok(notification) = self.notif_receiver.try_recv() {
+        for _ in 0..self.notif_receiver.max_capacity() {
+            let Ok(notification) = self.notif_receiver.try_recv() else {
+                break;
+            };
             self.mark_pending(notification);
         }
     }
 
-    fn mark_pending(&mut self, notification: EventType) {
-        if !self.pending.contains(&notification) {
-            self.pending.push_back(notification);
+    fn mark_pending(&mut self, event_type: EventType) {
+        if !self.pending_event_types.contains(&event_type) {
+            self.pending_event_types.push_back(event_type);
         }
     }
 
     /// The maximum number of events returned by a single pick query of the given event type.
-    fn batch_limit(&self, notification: &EventType) -> usize {
-        match notification {
+    fn batch_limit(&self, event_type: &EventType) -> usize {
+        match event_type {
             EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
                 self.events_batch_size as usize
             }
@@ -134,9 +149,9 @@ impl DbEventPicker {
 
     async fn pick_notified_events(
         &self,
-        notification: &EventType,
+        event_type: &EventType,
     ) -> anyhow::Result<Vec<ProtocolEvent>> {
-        match notification {
+        match event_type {
             EventType::PublicDecryptionRequest => self.pick_public_decryption_requests().await,
             EventType::UserDecryptionRequest => self.pick_user_decryption_requests().await,
             EventType::PrepKeygenRequest => self.pick_prep_keygen_requests().await,
@@ -434,7 +449,7 @@ mod tests {
         // The user decryption must not be queued behind the 1000 public decryption notifications
         event_picker.drain_notifications();
         assert_eq!(
-            event_picker.pending,
+            event_picker.pending_event_types,
             [
                 EventType::PublicDecryptionRequest,
                 EventType::UserDecryptionRequest
