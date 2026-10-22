@@ -36,6 +36,7 @@ interface NodeConfig {
   mpcIdentity: string;
   caCert: string;
   storagePrefix: string;
+  connectorUrl: string;
 }
 
 interface Thresholds {
@@ -55,6 +56,7 @@ function makeNode(txSenderAddress: string, signerAddress: string, idx: number): 
     mpcIdentity: `node-${idx}`,
     caCert: '0x',
     storagePrefix: `kms-node-${idx}`,
+    connectorUrl: `https://kms-connector-${idx}.example.com`,
   };
 }
 
@@ -87,6 +89,7 @@ function setKmsEnv(
     process.env[`KMS_NODE_MPC_IDENTITY_${i}`] = node.mpcIdentity;
     process.env[`KMS_NODE_CA_CERT_${i}`] = node.caCert;
     process.env[`KMS_NODE_STORAGE_PREFIX_${i}`] = node.storagePrefix;
+    process.env[`KMS_NODE_CONNECTOR_URL_${i}`] = node.connectorUrl;
   });
   process.env.PUBLIC_DECRYPTION_THRESHOLD = String(thresholds.publicDecryption);
   process.env.USER_DECRYPTION_THRESHOLD = String(thresholds.userDecryption);
@@ -140,20 +143,23 @@ describe('KMS context tasks', function () {
         expect(decodedNodes[i][6]).to.equal(node.caCert);
         expect(decodedNodes[i][7]).to.equal(node.storagePrefix);
       });
-      expect(decoded[1][0]).to.equal(BigInt(DEFAULT_THRESHOLDS.publicDecryption));
-      expect(decoded[1][3]).to.equal(BigInt(DEFAULT_THRESHOLDS.mpc));
-      expect(decoded[2]).to.equal('v0.14.0');
-      expect(decoded[3][0][0]).to.equal('0xaa');
+      expect(decoded[1]).to.deep.equal(nodes.map((n) => n.connectorUrl));
+      expect(decoded[2][0]).to.equal(BigInt(DEFAULT_THRESHOLDS.publicDecryption));
+      expect(decoded[2][3]).to.equal(BigInt(DEFAULT_THRESHOLDS.mpc));
+      expect(decoded[3]).to.equal('v0.14.0');
+      expect(decoded[4][0][0]).to.equal('0xaa');
 
       // The printed args carry field names, so a swapped tx-sender and signer is visible.
-      const [labeledNodes, labeledThresholds] = encoded.decodedArgs as [
+      const [labeledNodes, labeledConnectorUrls, labeledThresholds] = encoded.decodedArgs as [
         Record<string, unknown>[],
+        string[],
         Record<string, unknown>,
       ];
       expect(labeledNodes[0]).to.include({
         txSenderAddress: nodes[0].txSenderAddress,
         signerAddress: nodes[0].signerAddress,
       });
+      expect(labeledConnectorUrls).to.deep.equal(nodes.map((n) => n.connectorUrl));
       expect(labeledThresholds).to.include({ publicDecryption: BigInt(DEFAULT_THRESHOLDS.publicDecryption) });
     });
 
@@ -208,6 +214,11 @@ describe('KMS context tasks', function () {
       expect(status.flow).to.equal('context-switch');
       expect(status.contextState).to.equal('PENDING');
       expect(status.newSigners).to.deep.equal(newNodes.map((n) => n.signerAddress));
+      const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
+      for (const node of newNodes) {
+        const stored = await protocolConfig.getKmsNodeForContext(status.pendingContextId!, node.txSenderAddress);
+        expect(stored.connectorUrl).to.equal(node.connectorUrl);
+      }
     });
   });
 
@@ -302,7 +313,12 @@ describe('KMS context tasks', function () {
     }
 
     async function defineSwitch(nodes = newNodes): Promise<DefinedKmsContext> {
-      return defineNewKmsContext(await asOwner(), nodes, newThresholds);
+      return defineNewKmsContext(
+        await asOwner(),
+        nodes,
+        nodes.map((n) => n.connectorUrl),
+        newThresholds,
+      );
     }
 
     async function defineEpoch(): Promise<{ epochId: bigint; blockNumber: number }> {

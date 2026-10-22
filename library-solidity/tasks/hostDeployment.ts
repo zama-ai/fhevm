@@ -210,6 +210,11 @@ function buildKmsNodeParams(): KmsNodeParams[] {
   return nodes;
 }
 
+function buildKmsConnectorUrls(): string[] {
+  const numNodes = getRequiredCountEnvVar('NUM_KMS_NODES');
+  return Array.from({ length: numNodes }, (_, idx) => getRequiredEnvVar(`KMS_NODE_CONNECTOR_URL_${idx}`));
+}
+
 function buildKmsThresholds(): { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number } {
   return {
     publicDecryption: getIntegerEnvVar('PUBLIC_DECRYPTION_THRESHOLD'),
@@ -263,7 +268,7 @@ export async function upgradeHostProxies(hre: HardhatRuntimeEnvironment, connect
   await upgradeToRealImplementation(
     'PROTOCOL_CONFIG_CONTRACT_ADDRESS',
     'fhevmTemp/contracts/ProtocolConfig.sol:ProtocolConfig',
-    [buildKmsNodeParams(), buildKmsThresholds(), process.env.KMS_SOFTWARE_VERSION ?? '', []],
+    [buildKmsNodeParams(), buildKmsConnectorUrls(), buildKmsThresholds(), process.env.KMS_SOFTWARE_VERSION ?? '', []],
   );
   await upgradeToRealImplementation(
     'KMS_GENERATION_CONTRACT_ADDRESS',

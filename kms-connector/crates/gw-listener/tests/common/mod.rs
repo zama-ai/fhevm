@@ -235,6 +235,7 @@ pub async fn mock_event_on_gw(
                 .protocol_config_contract()
                 .defineNewKmsContextAndEpoch(
                     kms_node_params,
+                    vec![String::new()],
                     thresholds,
                     software_version,
                     pcr_values,
