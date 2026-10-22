@@ -14,14 +14,15 @@ on:
     - cron: "17 * * * *"
   workflow_dispatch:
 
-permissions:
-  actions: write # zizmor: ignore[excessive-permissions] gh workflow run needs actions:write to dispatch preview-env-destroy
-  contents: read
-  id-token: write # Required for Tailscale OIDC
+permissions: {}
 
 jobs:
   cleanup:
     name: cleanup
+    permissions:
+      actions: write # zizmor: ignore[excessive-permissions] gh workflow run needs actions:write to dispatch preview-env-destroy
+      contents: read
+      id-token: write # Required for Tailscale OIDC
     # One sweep at a time. A manual dispatch overlapping the hourly run would
     # otherwise post twice and queue a second destroy.
     concurrency:
