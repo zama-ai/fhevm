@@ -379,7 +379,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn extra_data_accepts_known_versions_and_trailing_bytes() {
+    fn extra_data_accepts_known_versions() {
         let cfg = config();
         let handles = vec![handle(1, EUINT64)];
         for extra_data in [
@@ -387,7 +387,6 @@ pub(crate) mod tests {
             vec![0x00],
             [vec![0x01], vec![0xaa; 32]].concat(),
             extra_data_v2(),
-            [extra_data_v2(), vec![0xff; 7]].concat(),
         ] {
             assert_eq!(
                 validate_public_decryption(&public_request(handles.clone(), extra_data), &cfg),
@@ -397,10 +396,16 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn extra_data_rejects_unknown_version_and_truncation() {
+    fn extra_data_rejects_unknown_version_and_wrong_lengths() {
         let cfg = config();
         let handles = vec![handle(1, EUINT64)];
-        for extra_data in [vec![0x03], vec![0x01; 10], vec![0x02; 64]] {
+        for extra_data in [
+            vec![0x03],
+            vec![0x01; 10],
+            vec![0x02; 64],
+            vec![0x01; 34],
+            [extra_data_v2(), vec![0xff; 7]].concat(),
+        ] {
             assert!(matches!(
                 validate_public_decryption(&public_request(handles.clone(), extra_data), &cfg),
                 Err(ValidationError::InvalidExtraData(_))

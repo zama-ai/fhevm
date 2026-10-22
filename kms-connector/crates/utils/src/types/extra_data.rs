@@ -32,13 +32,13 @@ pub struct ExtraData {
 /// Format (v1, RFC 003):
 /// - Byte 0: version (`0x01`)
 /// - Bytes 1..33: context ID (32 bytes, big-endian U256)
-/// - Bytes 33..: optional additional data (ignored)
 ///
 /// Format (v2, RFC 005):
 /// - Byte 0: version (`0x02`)
 /// - Bytes 1..33: context ID (32 bytes, big-endian U256)
 /// - Bytes 33..65: epoch ID (32 bytes, big-endian U256)
-/// - Bytes 65..: optional additional data (ignored)
+///
+/// Any other length is rejected, as the host `KMSVerifier` rejects it when verifying the response.
 ///
 /// Empty or `0x00` → both context_id and epoch_id are `None`.
 /// Version `0x01` → epoch_id is `None`.
@@ -49,9 +49,9 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
             epoch_id: None,
         }),
         Some(EXTRA_DATA_V1_VERSION) => {
-            if extra_data.len() < EXTRA_DATA_V1_LENGTH {
+            if extra_data.len() != EXTRA_DATA_V1_LENGTH {
                 return Err(anyhow!(
-                    "extra_data too short for v1: {} bytes, expected at least {} bytes",
+                    "invalid extra_data length for v1: {} bytes, expected {} bytes",
                     extra_data.len(),
                     EXTRA_DATA_V1_LENGTH
                 ));
@@ -67,9 +67,9 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
             })
         }
         Some(EXTRA_DATA_V2_VERSION) => {
-            if extra_data.len() < EXTRA_DATA_V2_LENGTH {
+            if extra_data.len() != EXTRA_DATA_V2_LENGTH {
                 return Err(anyhow!(
-                    "extra_data too short for v2: {} bytes, expected at least {} bytes",
+                    "invalid extra_data length for v2: {} bytes, expected {} bytes",
                     extra_data.len(),
                     EXTRA_DATA_V2_LENGTH
                 ));
@@ -148,7 +148,6 @@ mod tests {
         let mut data = vec![EXTRA_DATA_V1_VERSION];
         let context_id = U256::from(69u64);
         data.extend_from_slice(&context_id.to_be_bytes::<32>());
-        data.extend_from_slice(&U256::from(2u64).to_be_bytes::<32>());
 
         let result = parse_extra_data(&data).unwrap();
         assert_eq!(
@@ -179,19 +178,29 @@ mod tests {
     }
 
     #[test]
-    fn v2_with_trailing_bytes_ignored() {
+    fn v1_with_trailing_bytes_errors() {
+        let mut data = vec![EXTRA_DATA_V1_VERSION];
+        data.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
+        data.push(0xff);
+
+        let err = parse_extra_data(&data).unwrap_err();
+        assert!(
+            err.to_string().contains("invalid extra_data length for v1"),
+            "Unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn v2_with_trailing_bytes_errors() {
         let mut data = vec![EXTRA_DATA_V2_VERSION];
         data.extend_from_slice(&U256::from(1u64).to_be_bytes::<32>());
         data.extend_from_slice(&U256::from(2u64).to_be_bytes::<32>());
-        data.extend_from_slice(&[0xff; 10]); // extra trailing bytes
+        data.extend_from_slice(&[0xff; 10]);
 
-        let result = parse_extra_data(&data).unwrap();
-        assert_eq!(
-            result,
-            ExtraData {
-                context_id: Some(U256::from(1u64)),
-                epoch_id: Some(U256::from(2u64))
-            }
+        let err = parse_extra_data(&data).unwrap_err();
+        assert!(
+            err.to_string().contains("invalid extra_data length for v2"),
+            "Unexpected error: {err}"
         );
     }
 
@@ -214,7 +223,7 @@ mod tests {
 
         let err = parse_extra_data(&data).unwrap_err();
         assert!(
-            err.to_string().contains("extra_data too short for v1"),
+            err.to_string().contains("invalid extra_data length for v1"),
             "Unexpected error: {err}"
         );
     }
@@ -243,7 +252,7 @@ mod tests {
 
         let err = parse_extra_data(&data).unwrap_err();
         assert!(
-            err.to_string().contains("extra_data too short for v2"),
+            err.to_string().contains("invalid extra_data length for v2"),
             "Unexpected error: {err}"
         );
     }
