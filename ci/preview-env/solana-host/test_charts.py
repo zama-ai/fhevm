@@ -8,6 +8,8 @@ import subprocess
 import unittest
 
 import yaml
+from Crypto.Hash import keccak
+from ecdsa import SECP256k1, SigningKey
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 VALUES = ROOT / "ci/preview-env/solana-host"
@@ -387,6 +389,16 @@ class SolanaCharts(unittest.TestCase):
         self.assertEqual(config["kms_aggregator"]["auth"]["signer"]["value_env"], "RELAYER_SIGNER_KEY")
         # The rest of relayer-http's own config is kept.
         self.assertEqual(config["kms_aggregator"]["call"]["timeout"], "5000ms")
+
+    def test_relayer_http_signer_is_an_allowed_sender_of_the_proxies(self):
+        # Otherwise every relayer-http request fails with auth_unknown_signer.
+        relayer = yaml.safe_load((ROOT / "ci/preview-env/relayer/values-relayer-http-e2e.yaml").read_text())
+        key = next(e["value"] for e in relayer["env"] if e["name"] == "RELAYER_SIGNER_KEY")
+        public_key = SigningKey.from_string(bytes.fromhex(key.removeprefix("0x")),
+                                            curve=SECP256k1).get_verifying_key().to_string()
+        address = "0x" + keccak.new(digest_bits=256, data=public_key).hexdigest()[-40:]
+        connector = yaml.safe_load((ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml").read_text())
+        self.assertIn(address, [a.lower() for a in connector["kmsConnectorProxy"]["allowedSenders"]])
 
     def test_dispatch_overrides_reject_unknown_keys_and_non_string_values(self):
         script = ROOT / "ci/preview-env/scripts/resolve/parse-overrides.cjs"
