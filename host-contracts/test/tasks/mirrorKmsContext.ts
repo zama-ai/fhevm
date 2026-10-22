@@ -99,6 +99,15 @@ describe('KMS mirror tasks', function () {
       expect(decoded[0]).to.equal(args.contextId);
       expect(decoded[1]).to.equal(args.epochId);
       expect(decoded[2].length).to.equal(args.kmsNodeParams.length);
+      decoded[2].forEach((node: unknown[], i: number) => {
+        expect(node).to.deep.equal([
+          args.kmsNodeParams[i].txSenderAddress,
+          args.kmsNodeParams[i].signerAddress,
+          args.kmsNodeParams[i].ipAddress,
+          args.kmsNodeParams[i].storageUrl,
+        ]);
+      });
+      expect(decoded[3].publicDecryption).to.equal(args.thresholds.publicDecryption);
     });
   });
 

@@ -152,6 +152,13 @@ export async function buildCanonicalUpgradeProposal(
     proxyAddress,
     contractName: 'contracts/ProtocolConfigReplica.sol:ProtocolConfigReplica',
     innerFunctionName: 'initializeFromCanonical',
-    decodedArgs: [snapshot.currentKmsContextId, snapshot.currentEpochId, kmsNodeParams, snapshot.thresholds],
+    decodedArgs: [
+      snapshot.currentKmsContextId,
+      snapshot.currentEpochId,
+      kmsNodeParams,
+      snapshot.thresholds,
+      snapshot.canonicalChainId,
+      snapshot.protocolConfigAddress,
+    ],
   });
 }

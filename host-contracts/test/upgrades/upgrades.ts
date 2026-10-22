@@ -95,9 +95,15 @@ describe('Upgrades', function () {
   it('upgrades a v0.15 ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
     const pc = await deployV015ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
     const replicaFactory = await ethers.getContractFactory('ProtocolConfigReplica', this.signers.fred);
-    const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV4' } });
+    const { chainId } = await ethers.provider.getNetwork();
+    const canonicalProtocolConfig = '0x' + '11'.repeat(20);
+    const replica = await upgrades.upgradeProxy(pc, replicaFactory, {
+      call: { fn: 'reinitializeV4', args: [chainId, canonicalProtocolConfig] },
+    });
     await replica.waitForDeployment();
     expect(await replica.getVersion()).to.equal('ProtocolConfigReplica v0.4.0');
+    const domain = Array.from(await replica.eip712Domain());
+    expect(domain.slice(1, 5)).to.deep.equal(['ProtocolConfig', '1', chainId, canonicalProtocolConfig]);
     const [contextId, epochId] = await replica.getCurrentKmsContextAndEpoch();
     expect(await replica.isValidEpochForContext(contextId, epochId)).to.be.true;
     await expectV015State(replica);

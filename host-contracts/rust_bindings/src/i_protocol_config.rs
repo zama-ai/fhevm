@@ -573,7 +573,7 @@ interface IProtocolConfig {
     error KmsTxSenderAlreadyRegistered(address txSender);
     error LatestActiveKmsContextCannotBeDestroyed(uint256 kmsContextId);
     error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
-    error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
+    error NonIncreasingKmsContextId(uint256 contextId, uint256 currentKmsContextId);
     error ZeroChainId();
     error ZeroGwStartBlock();
 
@@ -2226,7 +2226,7 @@ interface IProtocolConfig {
         "internalType": "uint256"
       },
       {
-        "name": "latestActiveKmsContextId",
+        "name": "currentKmsContextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -6413,7 +6413,7 @@ error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NonIncreasingKmsContextId(uint256,uint256)` and selector `0xefd55f67`.
 ```solidity
-error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
+error NonIncreasingKmsContextId(uint256 contextId, uint256 currentKmsContextId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -6421,7 +6421,7 @@ error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContex
         #[allow(missing_docs)]
         pub contextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub latestActiveKmsContextId: alloy::sol_types::private::primitives::aliases::U256,
+        pub currentKmsContextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -6458,7 +6458,7 @@ error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContex
         impl ::core::convert::From<NonIncreasingKmsContextId>
         for UnderlyingRustTuple<'_> {
             fn from(value: NonIncreasingKmsContextId) -> Self {
-                (value.contextId, value.latestActiveKmsContextId)
+                (value.contextId, value.currentKmsContextId)
             }
         }
         #[automatically_derived]
@@ -6468,7 +6468,7 @@ error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContex
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     contextId: tuple.0,
-                    latestActiveKmsContextId: tuple.1,
+                    currentKmsContextId: tuple.1,
                 }
             }
         }
@@ -6494,9 +6494,7 @@ error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContex
                     > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.latestActiveKmsContextId,
-                    ),
+                    > as alloy_sol_types::SolType>::tokenize(&self.currentKmsContextId),
                 )
             }
             #[inline]
