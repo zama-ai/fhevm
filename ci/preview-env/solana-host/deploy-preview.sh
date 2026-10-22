@@ -113,7 +113,6 @@ require_nonempty "$tx_senders" "kms-connector-http[tx-sender-addresses] is empty
 # FhevmSig: the domain is the one each proxy verifies (the connector's Ethereum chain id and
 # ProtocolConfig); each endpoint's audience is that party's tx-sender, aligned with the URLs.
 ENDPOINT_URLS="$endpoint_urls" TX_SENDERS="$tx_senders" THRESHOLD=$(kms_reconstruct "$NB_KMS_CORE") yq '
-  (strenv(TX_SENDERS) | split(",")) as $audiences |
   load("relayer-http/config/config.yaml") * {
       "log": {"format": "json"},
       "http": {
@@ -126,7 +125,7 @@ ENDPOINT_URLS="$endpoint_urls" TX_SENDERS="$tx_senders" THRESHOLD=$(kms_reconstr
           "chain_id": (.commonConfig.hostChains.ethereum.chainId | tonumber),
           "protocol_config": .commonConfig.ethereumContractAddresses.protocolConfig
         },
-        "endpoints": [strenv(ENDPOINT_URLS) | split(",") | to_entries | .[] | {"name": "kms_" + (.key | tostring), "url": .value, "audience": $audiences[.key]}]
+        "endpoints": [strenv(ENDPOINT_URLS) | split(",") | to_entries | .[] | {"name": "kms_" + (.key | tostring), "url": .value, "audience": (strenv(TX_SENDERS) | split(","))[.key]}]
       }
     }' "$work/connector.yaml" > "$work/relayer-http-config.yaml"
 CONFIG="$work/relayer-http-config.yaml" yq -n '.configmapFiles.files."config.yaml" = load_str(strenv(CONFIG))' \
