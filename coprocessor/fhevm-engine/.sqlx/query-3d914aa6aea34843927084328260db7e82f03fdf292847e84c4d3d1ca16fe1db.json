@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT block_start, block_end, observed_head FROM host_consumer_catchups\n         WHERE id = $1 AND owner_id = $2 AND lease_until > clock_timestamp()\n           AND status = 'ONGOING' AND request_pending FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_start",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "block_end",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "observed_head",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "3d914aa6aea34843927084328260db7e82f03fdf292847e84c4d3d1ca16fe1db"
+}

@@ -11,6 +11,7 @@ pub(super) async fn run(
     client: consumer::ListenerConsumer,
     args: ManualCatchupArgs,
     reference: tokio::sync::oneshot::Receiver<u64>,
+    heads: LiveReference,
     mode: std::sync::Arc<fhevm_engine_common::versioning::StackMode>,
 ) -> Result<()> {
     let creator_owner = uuid::Uuid::new_v4();
@@ -25,7 +26,14 @@ pub(super) async fn run(
                 creator_owner,
                 requested
             ),
-            maintain_leases(&db, &client, &mode, creator_owner, requested_id),
+            maintain_leases(
+                &db,
+                &client,
+                &heads,
+                &mode,
+                creator_owner,
+                requested_id
+            ),
         )?;
         Ok(())
     };
@@ -90,6 +98,7 @@ async fn configure_requested(
 async fn maintain_leases(
     db: &crate::database::tfhe_event_propagate::Database,
     client: &consumer::ListenerConsumer,
+    heads: &LiveReference,
     mode: &fhevm_engine_common::versioning::StackMode,
     creator_owner: uuid::Uuid,
     mut requested_id: tokio::sync::oneshot::Receiver<uuid::Uuid>,
@@ -105,7 +114,7 @@ async fn maintain_leases(
         db.gcs_mode(),
     )
     .await?;
-    publish_pending_requests(db, client, mode, &mut owned).await?;
+    publish_pending_requests(db, client, heads, mode, &mut owned).await?;
 
     let period = std::time::Duration::from_secs(5);
     let mut interval =
@@ -135,20 +144,21 @@ async fn maintain_leases(
             )
             .await?,
         );
-        publish_pending_requests(db, client, mode, &mut owned).await?;
+        publish_pending_requests(db, client, heads, mode, &mut owned).await?;
     }
 }
 
 async fn publish_pending_requests(
     db: &crate::database::tfhe_event_propagate::Database,
     client: &consumer::ListenerConsumer,
+    heads: &LiveReference,
     mode: &fhevm_engine_common::versioning::StackMode,
     owned: &mut [store::Request],
 ) -> Result<()> {
     owned.sort_by_key(|r| (!r.cancel_pending, r.id));
 
     for command in owned
-        .iter()
+        .iter_mut()
         .filter(|r| r.request_pending || r.cancel_pending)
     {
         if mode.is_paused() {
@@ -156,6 +166,20 @@ async fn publish_pending_requests(
         }
         if !store::owns_command(&db.pool().await, command).await? {
             continue;
+        }
+        if !command.cancel_pending {
+            let head = heads.head(command.finalized).await;
+            let Some(end) = store::bound_for_publication(
+                &db.pool().await,
+                command,
+                head,
+                db.gcs_mode(),
+            )
+            .await?
+            else {
+                continue;
+            };
+            command.block_end = end;
         }
         publish_command(client, command).await?;
         let acknowledged = if command.cancel_pending {
@@ -279,9 +303,16 @@ impl ManualCatchupArgs {
 #[derive(Clone)]
 pub(super) struct LiveReference {
     chain_id: u64,
+    heads: std::sync::Arc<tokio::sync::RwLock<ObservedHeads>>,
     sender: std::sync::Arc<
         tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<u64>>>,
     >,
+}
+
+#[derive(Default)]
+struct ObservedHeads {
+    live: Option<u64>,
+    finalized: Option<u64>,
 }
 
 impl LiveReference {
@@ -290,6 +321,7 @@ impl LiveReference {
         (
             Self {
                 chain_id,
+                heads: Default::default(),
                 sender: std::sync::Arc::new(tokio::sync::Mutex::new(Some(
                     sender,
                 ))),
@@ -298,10 +330,33 @@ impl LiveReference {
         )
     }
 
+    /// Observed eligible heights may lag core. Never infer finality from LIVE.
+    async fn head(&self, finalized: bool) -> Option<u64> {
+        let heads = self.heads.read().await;
+        if finalized {
+            heads.finalized
+        } else {
+            heads.live
+        }
+    }
+
     pub async fn observe(&self, payload: &consumer::BlockPayload) {
-        if payload.chain_id == self.chain_id
-            && payload.flow == primitives::event::BlockFlow::Live
+        use primitives::event::BlockFlow;
+        if payload.chain_id != self.chain_id {
+            return;
+        }
         {
+            let mut heads = self.heads.write().await;
+            let head = match payload.flow {
+                BlockFlow::Live => Some(&mut heads.live),
+                BlockFlow::Final => Some(&mut heads.finalized),
+                _ => None,
+            };
+            if let Some(head) = head {
+                *head = Some(head.unwrap_or(0).max(payload.block_number));
+            }
+        }
+        if payload.flow == BlockFlow::Live {
             if let Some(sender) = self.sender.lock().await.take() {
                 let _ = sender.send(payload.block_number);
             }
@@ -351,6 +406,22 @@ mod tests {
         payload.block_number = 200;
         reference.clone().observe(&payload).await;
         assert_eq!(receiver.await.unwrap(), 100);
+        assert_eq!(reference.head(false).await, Some(200));
+        assert_eq!(reference.head(true).await, None);
+        payload.flow = BlockFlow::FinalCatchup;
+        payload.block_number = 300;
+        reference.observe(&payload).await;
+        assert_eq!(reference.head(true).await, None);
+        payload.flow = BlockFlow::Final;
+        payload.block_number = 150;
+        reference.observe(&payload).await;
+        payload.block_number = 100;
+        reference.observe(&payload).await;
+        assert_eq!(reference.head(true).await, Some(150));
+        payload.chain_id = 2;
+        payload.block_number = 1000;
+        reference.observe(&payload).await;
+        assert_eq!(reference.head(true).await, Some(150));
     }
 
     #[test]

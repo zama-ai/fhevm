@@ -214,6 +214,76 @@ pub async fn owns_command(pool: &PgPool, request: &Request) -> Result<bool> {
     .await?)
 }
 
+/// Freeze the effective end before the first broker publication. A replay's
+/// payloads can then cache that end safely. Reacquisition never re-clamps an ID.
+/// None means not owned, waiting for a head, or terminal SKIPPED (no publication).
+pub async fn bound_for_publication(
+    pool: &PgPool,
+    request: &Request,
+    observed_head: Option<u64>,
+    gcs_mode: bool,
+) -> Result<Option<i64>> {
+    let Some(mut tx) = write_transaction(pool, gcs_mode).await? else {
+        return Ok(None);
+    };
+    let row = sqlx::query!(
+        "SELECT block_start, block_end, observed_head FROM host_consumer_catchups
+         WHERE id = $1 AND owner_id = $2 AND lease_until > clock_timestamp()
+           AND status = 'ONGOING' AND request_pending FOR UPDATE",
+        request.id,
+        request.owner_id,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    if row.observed_head.is_some() {
+        return Ok(Some(row.block_end));
+    }
+    let Some(head) = observed_head else {
+        tracing::debug!(catchup_id = %request.id, finalized = request.finalized,
+            "Waiting for an observed head before bounding catchup");
+        return Ok(None);
+    };
+    let head =
+        i64::try_from(head).context("observed catchup head exceeds BIGINT")?;
+    let skipped = row.block_start > head;
+    let end = if skipped {
+        row.block_end
+    } else {
+        row.block_end.min(head)
+    };
+    let status = if skipped { "SKIPPED" } else { "ONGOING" };
+    sqlx::query!(
+        "UPDATE host_consumer_catchups
+         SET block_end = $2, observed_head = $3, status = $4,
+             request_pending = NOT $5,
+             owner_id = CASE WHEN $5 THEN NULL ELSE owner_id END,
+             lease_until = CASE WHEN $5 THEN NULL ELSE lease_until END
+         WHERE id = $1",
+        request.id,
+        end,
+        head,
+        status,
+        skipped,
+    )
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    if skipped {
+        tracing::warn!(catchup_id = %request.id, finalized = request.finalized,
+            start = row.block_start, requested_end = row.block_end, observed_head = head,
+            "Skipping catchup: start is above the observed eligible head");
+        Ok(None)
+    } else {
+        if end < row.block_end {
+            tracing::warn!(catchup_id = %request.id, finalized = request.finalized,
+                start = row.block_start, requested_end = row.block_end, end, observed_head = head,
+                "Clamping catchup end to the observed eligible head");
+        }
+        Ok(Some(end))
+    }
+}
+
 pub async fn requested(
     pool: &PgPool,
     id: Uuid,
@@ -259,7 +329,7 @@ pub async fn cancelled(
     Ok(updated.rows_affected() == 1)
 }
 
-/// Bounds are immutable for a catchup ID and can be cached by the handler.
+/// Bounds are frozen before first publication and can be cached by the handler.
 pub async fn block_end(
     pool: &PgPool,
     chain_id: i64,

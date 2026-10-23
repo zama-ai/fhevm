@@ -554,6 +554,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let catchup_client = client.clone();
     let catchup_db = db.clone();
     let catchup_mode = stack_mode.clone();
+    let catchup_heads = live_reference.clone();
     let catchup_task = if retired {
         None
     } else {
@@ -569,6 +570,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 catchup_client,
                 manual_catchup,
                 reference_rx,
+                catchup_heads,
                 catchup_mode,
             )
             .await;
