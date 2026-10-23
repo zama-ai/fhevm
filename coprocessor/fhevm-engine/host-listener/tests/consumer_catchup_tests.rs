@@ -206,12 +206,12 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
                     let status: String = sqlx::query_scalar("SELECT status FROM host_consumer_catchups WHERE id = $1")
                         .bind(id).fetch_one(&pool).await.unwrap();
                     assert_eq!(status, "ONGOING", "failed ingestion must not complete the request");
-                    assert_event_sets(&pool, &blocks).await;
+                    assert_event_sets(&pool, chain_id, &blocks).await;
                     sqlx::query("DROP TRIGGER reject_catchup_block ON host_chain_blocks_valid")
                         .execute(&pool).await.unwrap();
                 }
                 blocks.push(number);
-                wait_for_events(&pool, &blocks).await;
+                wait_for_events(&pool, chain_id, &blocks).await;
                 let expected_status = if number == request.block_end { "DONE" } else { "ONGOING" };
                 loop {
                     let status: String = sqlx::query_scalar(
@@ -226,7 +226,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         actual.sort();
         expected.sort();
         assert_eq!(actual, expected, "every retained request must be replayed exactly once");
-        wait_for_events(&pool, &blocks).await;
+        wait_for_events(&pool, chain_id, &blocks).await;
         // Observe another reconciliation tick. Empty startup must also wait
         // through the ten-second WATCH propagation grace period.
         let observe_seconds = if expected.is_empty() { 16 } else { 6 };
@@ -390,7 +390,7 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
                 .await
                 .unwrap();
         }
-        wait_for_events(&pool, &[900, 920]).await;
+        wait_for_events(&pool, chain_id, &[900, 920]).await;
         // Simulate takeover while this process still has the old local token.
         sqlx::query("UPDATE host_consumer_catchups SET lease_until = clock_timestamp() - interval '1 second' WHERE id = $1")
             .bind(a).execute(&pool).await.unwrap();
@@ -442,7 +442,7 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
                 .await
                 .unwrap();
         }
-        wait_for_events(&pool, &[900, 920, 940]).await;
+        wait_for_events(&pool, chain_id, &[900, 920, 940]).await;
         let observer = consumer::ListenerConsumer::new(
             &broker,
             chain_id.as_u64(),
@@ -464,7 +464,7 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
             }
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
-        assert_event_sets(&pool, &[900, 920, 940]).await;
+        assert_event_sets(&pool, chain_id, &[900, 920, 940]).await;
         assert!(
             !run.is_finished(),
             "catchup readers stay alive after the last delivered block"
@@ -523,12 +523,7 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
     let broker_url = std::env::var("CATCHUP_BROKER_URL").unwrap();
     let broker = Broker::from_url(&broker_url).await.unwrap();
     let chain_id = ChainId::try_from(
-        (std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-            % 900_000_000) as u64
-            + 100_000_000,
+        (uuid::Uuid::new_v4().as_u128() % 900_000_000) as u64 + 100_000_000,
     )
     .unwrap();
     let config = test_config(
@@ -678,7 +673,7 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
         )
         .await
         .unwrap();
-    wait_for_events(&pool, &[900, 1000, 1001]).await;
+    wait_for_events(&pool, chain_id, &[900, 1000, 1001]).await;
     let end = request.block_end;
     if bounded {
         // The same block delivered on the ordinary final flow must not
@@ -690,7 +685,7 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
             )
             .await
             .unwrap();
-        wait_for_events(&pool, &[900, end, 1000, 1001]).await;
+        wait_for_events(&pool, chain_id, &[900, end, 1000, 1001]).await;
         let status: String = sqlx::query_scalar(
             "SELECT status FROM host_consumer_catchups WHERE id = $1",
         )
@@ -710,7 +705,7 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
             .await
             .unwrap();
     }
-    wait_for_events(&pool, &[900, 925, end, 1000, 1001]).await;
+    wait_for_events(&pool, chain_id, &[900, 925, end, 1000, 1001]).await;
     loop {
         let status: String = sqlx::query_scalar(
             "SELECT status FROM host_consumer_catchups WHERE id = $1",
@@ -743,7 +738,7 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
         )
         .await
         .unwrap();
-    wait_for_events(&pool, &[900, 925, end, 1000, 1001, 1002]).await;
+    wait_for_events(&pool, chain_id, &[900, 925, end, 1000, 1001, 1002]).await;
     assert!(
         catchup_rx.try_recv().is_err(),
         "only the selected catchup flow is requested"
@@ -784,7 +779,12 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
             .await
             .unwrap();
     }
-    wait_for_events(&pool, &[900, 909, 910, 925, end, 1000, 1001, 1002]).await;
+    wait_for_events(
+        &pool,
+        chain_id,
+        &[900, 909, 910, 925, end, 1000, 1001, 1002],
+    )
+    .await;
     loop {
         let repaired: String = sqlx::query_scalar(
             "SELECT status FROM host_consumer_catchups WHERE id = $1",
@@ -839,7 +839,8 @@ fn event_block(
         sol_types::SolEvent,
     };
     use primitives::event::{IndexedLog, TransactionPayload};
-    let handle = B256::from(U256::from(number).to_be_bytes::<32>());
+    let hash = B256::from(U256::from(number).to_be_bytes::<32>());
+    let handle = computed_handle(chain_id, number);
     let caller = Address::repeat_byte(2);
     let tfhe = host_listener::contracts::TfheContract::TrivialEncrypt {
         caller,
@@ -858,7 +859,7 @@ fn event_block(
         flow,
         chain_id,
         block_number: number,
-        block_hash: handle,
+        block_hash: hash,
         parent_hash: B256::from(
             U256::from(number.saturating_sub(1)).to_be_bytes::<32>(),
         ),
@@ -867,7 +868,7 @@ fn event_block(
         transactions: vec![TransactionPayload {
             from: caller,
             to: Some(Address::repeat_byte(1)),
-            hash: handle,
+            hash,
             transaction_index: 0,
             value: U256::ZERO,
             data: Default::default(),
@@ -921,26 +922,39 @@ async fn event_sets(pool: &sqlx::PgPool) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
     (computations, allowed)
 }
 
-fn expected_handles(blocks: &[u64]) -> Vec<Vec<u8>> {
+fn computed_handle(chain_id: u64, number: u64) -> alloy::primitives::B256 {
+    let mut bytes = [0; 32];
+    bytes[..8].copy_from_slice(&number.to_be_bytes());
+    bytes[21] = 0xff;
+    bytes[22..30].copy_from_slice(&chain_id.to_be_bytes());
+    bytes[30] = 4;
+    alloy::primitives::B256::from(bytes)
+}
+
+fn expected_handles(chain_id: ChainId, blocks: &[u64]) -> Vec<Vec<u8>> {
     let mut expected: Vec<_> = blocks
         .iter()
-        .map(|n| {
-            alloy::primitives::U256::from(*n)
-                .to_be_bytes::<32>()
-                .to_vec()
-        })
+        .map(|n| computed_handle(chain_id.as_u64(), *n).to_vec())
         .collect();
     expected.sort();
     expected
 }
 
-async fn assert_event_sets(pool: &sqlx::PgPool, blocks: &[u64]) {
-    let expected = expected_handles(blocks);
+async fn assert_event_sets(
+    pool: &sqlx::PgPool,
+    chain_id: ChainId,
+    blocks: &[u64],
+) {
+    let expected = expected_handles(chain_id, blocks);
     assert_eq!(event_sets(pool).await, (expected.clone(), expected));
 }
 
-async fn wait_for_events(pool: &sqlx::PgPool, blocks: &[u64]) {
-    let expected = expected_handles(blocks);
+async fn wait_for_events(
+    pool: &sqlx::PgPool,
+    chain_id: ChainId,
+    blocks: &[u64],
+) {
+    let expected = expected_handles(chain_id, blocks);
     let result =
         tokio::time::timeout(std::time::Duration::from_secs(15), async {
             loop {
@@ -952,7 +966,7 @@ async fn wait_for_events(pool: &sqlx::PgPool, blocks: &[u64]) {
             }
         })
         .await;
-    assert_event_sets(pool, blocks).await;
+    assert_event_sets(pool, chain_id, blocks).await;
     result.unwrap();
 }
 
