@@ -166,8 +166,8 @@ const encrypted = await client.encryptValues({
 });
 ```
 
-Common fields: `timeout`, `signal` (an `AbortSignal`), `headers`, `fetchRetries`,
-`fetchRetryDelayInMilliseconds`, and `onProgress`. See
+Common fields: `timeout`, `signal` (an `AbortSignal`), `headers`, `query`,
+`fetchRetries`, `fetchRetryDelayInMilliseconds`, and `onProgress`. See
 [API reference](api-reference.md#relayer-options) for the full set.
 
 ## What happens under the hood
