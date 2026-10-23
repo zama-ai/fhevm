@@ -19,7 +19,7 @@ prometheus.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
-strum = { version = "0.28", default-features = false, features = ["derive"] }
+strum.workspace = true
 tfhe.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
