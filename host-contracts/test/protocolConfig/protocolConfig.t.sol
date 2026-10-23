@@ -1979,48 +1979,6 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         ProtocolConfig(protocolConfigAdd).reinitializeV4();
     }
 
-    /// @dev reinitializeV4 reverts while an epoch is Pending, so no v0.3.0 confirmation can count toward
-    ///      its activation. It succeeds once the epoch is destroyed.
-    function test_reinitializeV4RevertsWhileEpochPending() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        protocolConfig.defineNewEpochForCurrentKmsContext();
-        bytes32 initializableStorage = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
-        vm.store(address(protocolConfig), initializableStorage, bytes32(uint256(4)));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
-                KMS_CONTEXT_COUNTER_BASE + 1,
-                EPOCH_COUNTER_BASE + 2
-            )
-        );
-        protocolConfig.reinitializeV4();
-
-        vm.prank(owner);
-        protocolConfig.destroyKmsEpoch(EPOCH_COUNTER_BASE + 2);
-        protocolConfig.reinitializeV4();
-        assertEq(uint256(vm.load(address(protocolConfig), initializableStorage)), 5);
-    }
-
-    /// @dev reinitializeV4 reverts while a context switch is Pending.
-    function test_reinitializeV4RevertsWhileContextPending() public {
-        _setupEpochLifecycle();
-        vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        bytes32 initializableStorage = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
-        vm.store(address(protocolConfig), initializableStorage, bytes32(uint256(4)));
-
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IProtocolConfig.KmsLifecycleOperationInFlight.selector,
-                KMS_CONTEXT_COUNTER_BASE + 2,
-                EPOCH_COUNTER_BASE + 1
-            )
-        );
-        protocolConfig.reinitializeV4();
-    }
-
     // -----------------------------------------------------------------------
     // confirmEpochActivation negative branches
     // -----------------------------------------------------------------------

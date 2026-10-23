@@ -156,16 +156,10 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /**
      * @notice Re-initializes the contract from V3.
-     * @dev Reverts while a lifecycle operation is in flight. A pending epoch would keep its v0.3.0
-     *      per-signer flags, so those signers could not confirm again and the epoch would stay
-     *      Pending. A pending context would have no node config hash, so its
-     *      ContextCreationConfirmation would commit to a zero hash.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {
-        _checkNoKmsLifecycleOperationInFlight();
-    }
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions

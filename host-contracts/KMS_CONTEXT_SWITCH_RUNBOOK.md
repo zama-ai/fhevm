@@ -417,8 +417,7 @@ filled placeholders, so the first mirrored switch is where a replica's event his
 carrying the real values.
 
 **Upgrade precondition (ProtocolConfig v0.4.0)**: settle any in-flight lifecycle operation
-first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. `reinitializeV4` reverts with
-`KmsLifecycleOperationInFlight` while one is in flight. A pending epoch would keep its v0.3.0
+first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. A pending epoch would keep its v0.3.0
 per-signer flags, so its signers could not confirm again. A pending context would have no node config
 hash, so its signed creation confirmation would commit to a zero hash. An epoch or a context
 destroyed before the upgrade can still collect signed destruction confirmations.
