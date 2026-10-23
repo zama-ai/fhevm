@@ -1,9 +1,16 @@
-FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS prod
+FROM cgr.dev/zama.ai/node:22.23.4-dev AS prod
+
+USER root
+
+RUN apk add --no-cache bash kubectl-1.34-default && \
+    addgroup -g 10001 fhevm && \
+    adduser -D -u 10000 -G fhevm fhevm && \
+    mkdir -p /home/fhevm && \
+    chown -R fhevm:fhevm /home/fhevm /app
+
+USER fhevm:fhevm
 
 WORKDIR /app
-
-RUN chown -R fhevm:fhevm /home/fhevm && \
-    chown -R fhevm:fhevm /app
 
 # Copy only necessary files
 COPY --chown=fhevm:fhevm package.json package-lock.json ./
