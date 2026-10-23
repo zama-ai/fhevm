@@ -835,3 +835,200 @@ async fn waiting_for_a_reference_and_empty_startup_leave_intent_untouched() {
         .await
         .unwrap());
 }
+
+#[tokio::test]
+async fn publication_bounds_are_persisted_once_and_survive_takeover() {
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
+    for finalized in [true, false] {
+        let flags = ManualCatchupArgs {
+            catchup_unfinalized: !finalized,
+            ..args(100, Some(200), true)
+        };
+        let id = store::ensure_requested(
+            &pool,
+            1,
+            "host.1",
+            &flags,
+            Some(300),
+            None,
+            false,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let request = store::take_request_ownership(&pool, 1, "host.1", false)
+            .await
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(request.id, id);
+        assert_eq!(
+            store::bound_for_publication(&pool, &request, None, false)
+                .await
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            store::block_end(&pool, 1, "host.1", id).await.unwrap(),
+            Some(200)
+        );
+        assert_eq!(
+            store::bound_for_publication(&pool, &request, Some(150), false)
+                .await
+                .unwrap(),
+            Some(150)
+        );
+        assert_eq!(
+            store::block_end(&pool, 1, "host.1", id).await.unwrap(),
+            Some(150)
+        );
+        // Neither a rising nor a lower observed head changes this UUID's range.
+        for head in [Some(250), Some(90), None] {
+            assert_eq!(
+                store::bound_for_publication(&pool, &request, head, false)
+                    .await
+                    .unwrap(),
+                Some(150)
+            );
+        }
+        store::requested(&pool, id, request.owner_id, false)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE host_consumer_catchups SET lease_until = now() - interval '1 second' WHERE id = $1")
+            .bind(id).execute(&pool).await.unwrap();
+        let replacement =
+            store::take_request_ownership(&pool, 1, "host.1", false)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
+        assert_ne!(request.owner_id, replacement.owner_id);
+        assert_eq!(
+            store::bound_for_publication(&pool, &replacement, None, false)
+                .await
+                .unwrap(),
+            Some(150)
+        );
+        assert!(store::completed(&pool, 1, "host.1", id, false)
+            .await
+            .unwrap());
+        let row: (String, i64, i64) = sqlx::query_as("SELECT status, block_end, observed_head FROM host_consumer_catchups WHERE id = $1")
+            .bind(id).fetch_one(&pool).await.unwrap();
+        assert_eq!(row, ("DONE".into(), 150, 150));
+    }
+}
+
+#[tokio::test]
+async fn skipped_requests_are_terminal_without_publication_but_matching_flags_can_retry(
+) {
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
+    let flags = args(100, Some(200), true);
+    let id = store::ensure_requested(
+        &pool,
+        1,
+        "host.1",
+        &flags,
+        Some(300),
+        None,
+        false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let request = store::take_request_ownership(&pool, 1, "host.1", false)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(
+        store::bound_for_publication(&pool, &request, Some(90), false)
+            .await
+            .unwrap(),
+        None
+    );
+    let row: (String, Option<uuid::Uuid>, Option<i64>, bool) = sqlx::query_as(
+        "SELECT status, owner_id, observed_head, request_pending FROM host_consumer_catchups WHERE id = $1",
+    ).bind(id).fetch_one(&pool).await.unwrap();
+    assert_eq!(row, ("SKIPPED".into(), None, Some(90), false));
+    assert!(!store::accepts(&pool, 1, "host.1", Some(id), true)
+        .await
+        .unwrap());
+    assert!(!store::completed(&pool, 1, "host.1", id, false)
+        .await
+        .unwrap());
+    assert!(store::take_request_ownership(&pool, 1, "host.1", false)
+        .await
+        .unwrap()
+        .is_empty());
+    let retry = store::ensure_requested(
+        &pool,
+        1,
+        "host.1",
+        &flags,
+        Some(300),
+        None,
+        false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_ne!(retry, id, "a later explicit retry must get a fresh UUID");
+    let request = store::take_request_ownership(&pool, 1, "host.1", false)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(
+        store::bound_for_publication(&pool, &request, Some(200), false)
+            .await
+            .unwrap(),
+        Some(200)
+    );
+}
+
+#[tokio::test]
+async fn a_stale_owner_cannot_clamp_or_skip_its_successors_request() {
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
+    let id = store::ensure_requested(
+        &pool,
+        1,
+        "host.1",
+        &args(100, Some(200), true),
+        Some(300),
+        None,
+        false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let old = store::take_request_ownership(&pool, 1, "host.1", false)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    sqlx::query("UPDATE host_consumer_catchups SET lease_until = now() - interval '1 second' WHERE id = $1")
+        .bind(id).execute(&pool).await.unwrap();
+    let current = store::take_request_ownership(&pool, 1, "host.1", false)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+    assert_eq!(
+        store::bound_for_publication(&pool, &old, Some(90), false)
+            .await
+            .unwrap(),
+        None
+    );
+    let row: (i64, Option<i64>, String) = sqlx::query_as("SELECT block_end, observed_head, status FROM host_consumer_catchups WHERE id = $1")
+        .bind(id).fetch_one(&pool).await.unwrap();
+    assert_eq!(row, (200, None, "ONGOING".into()));
+    assert_eq!(
+        store::bound_for_publication(&pool, &current, Some(150), false)
+            .await
+            .unwrap(),
+        Some(150)
+    );
+}
