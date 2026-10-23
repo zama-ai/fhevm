@@ -1,3 +1,4 @@
+use crate::core::LOOKUP_OUTCOME_LABELS;
 use connector_utils::monitoring::http::{DURATION_BUCKETS, HttpMetrics};
 use kms_connector_api::{PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE};
 use prometheus::{
@@ -54,7 +55,7 @@ pub(crate) fn init(limiter: Arc<Semaphore>, capacity: usize) {
             .with_label_values(&[route, "200", "success"]);
     }
     for route in [PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE] {
-        for outcome in ["served", "stored", "retried", "already_in_progress"] {
+        for outcome in LOOKUP_OUTCOME_LABELS {
             DECRYPTION_LOOKUP_COUNTER.with_label_values(&[route, outcome]);
         }
         DECRYPTION_WAIT_LATENCY_HISTOGRAM.with_label_values(&[route]);

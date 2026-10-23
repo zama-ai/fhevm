@@ -3175,6 +3175,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "sqlx",
+ "strum 0.28.0",
  "tfhe",
  "thiserror 2.0.20",
  "tokio",

@@ -23,6 +23,7 @@ use sqlx::{
     types::chrono::{DateTime, Utc},
 };
 use std::{future::Future, sync::Arc};
+use strum::{IntoStaticStr, VariantNames};
 use tokio::time::Instant;
 use tracing::{debug, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
@@ -58,12 +59,18 @@ pub trait DecryptionRoute {
 }
 
 /// Outcome of the lookup transaction of [`find_response_or_store_request`].
+///
+/// Its variant names give the `outcome` label of [`metrics::DECRYPTION_LOOKUP_COUNTER`].
+#[derive(IntoStaticStr, VariantNames)]
+#[strum(serialize_all = "snake_case")]
 enum LookupOutcome<Row> {
     /// A payload or an irrecoverable error within its serve window to serve as is.
+    #[strum(serialize = "served")]
     Serve(Row),
     /// The request is stored for processing, its response has to be waited for.
     Stored,
     /// The request is stored for reprocessing, after a recoverable or expired error was skipped.
+    #[strum(serialize = "retried")]
     Retry {
         old_response_created_at: DateTime<Utc>,
     },
@@ -76,17 +83,8 @@ enum LookupOutcome<Row> {
     },
 }
 
-impl<Row> LookupOutcome<Row> {
-    /// The `outcome` label of [`metrics::DECRYPTION_LOOKUP_COUNTER`].
-    fn label(&self) -> &'static str {
-        match self {
-            Self::Serve(_) => "served",
-            Self::Stored => "stored",
-            Self::Retry { .. } => "retried",
-            Self::AlreadyInProgress { .. } => "already_in_progress",
-        }
-    }
-}
+/// Every `outcome` label of [`metrics::DECRYPTION_LOOKUP_COUNTER`].
+pub(crate) const LOOKUP_OUTCOME_LABELS: &[&str] = LookupOutcome::<()>::VARIANTS;
 
 /// Handles a validated decryption request.
 pub async fn handle<R: DecryptionRoute>(
@@ -112,8 +110,9 @@ pub async fn handle<R: DecryptionRoute>(
             upstream_transient("temporary storage error", id)
         })?;
 
+    let label: &str = (&lookup).into();
     metrics::DECRYPTION_LOOKUP_COUNTER
-        .with_label_values(&[R::ROUTE, lookup.label()])
+        .with_label_values(&[R::ROUTE, label])
         .inc();
     let old_response_created_at = match lookup {
         LookupOutcome::Serve(row) => return R::build_response(id, row),
