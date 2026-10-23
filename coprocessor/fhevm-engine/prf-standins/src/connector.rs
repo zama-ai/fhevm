@@ -16,7 +16,10 @@ use reqwest::{header::AUTHORIZATION, Method, StatusCode};
 use serde::Serialize;
 use std::{
     num::NonZeroUsize,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 use tokio::{sync::mpsc, task::JoinSet};
@@ -41,6 +44,37 @@ pub struct Connector {
     pub deadline: Duration,
     /// Wait before re-sending after a connection error or a retryable status without `Retry-After`.
     pub backoff: Duration,
+    /// The fallback policy. `None`, as RFC-038 step 5 reads: the GET target counts once its body
+    /// is in, and the connector falls back if quorum forms before. `Some(bound)`: the target counts
+    /// from its headers, and when it is in the quorum group the connector waits up to `bound` for
+    /// its body (the optimistic fetch).
+    pub body_wait: Option<Duration>,
+    /// Test knob (QA row R7): the first fallback GET counts as failed, as after a restart.
+    pub fail_first_fallback: bool,
+}
+
+/// What a request loop of `retrieve` sends back.
+enum Event {
+    /// The GET target's attestation, when its headers arrive and before its body.
+    Headers {
+        coprocessor: usize,
+        attestation: Option<PrfOutputAttestation>,
+    },
+    Done(Answer),
+}
+
+/// Options of [`Connector::probe`], to build requests a connector would not send.
+#[derive(Default)]
+pub struct ProbeOptions {
+    pub expires: Option<u64>,
+    /// Sign for this audience instead of the coprocessor's signer.
+    pub audience: Option<Address>,
+    /// Sign with this key instead of the connector's.
+    pub key: Option<PrivateKeySigner>,
+    /// Sign for this body digest.
+    pub signed_body: Vec<u8>,
+    /// Send this body.
+    pub body: Option<Vec<u8>>,
 }
 
 pub struct Retrieval {
@@ -76,6 +110,12 @@ pub struct Report {
     pub get_from: usize,
     pub body_from: Option<usize>,
     pub fallback: bool,
+    /// How long the optimistic policy waited for the GET target's body.
+    pub body_wait_ms: Option<u64>,
+    /// Body bytes received, including the part of a GET abandoned when the retrieval returned.
+    pub bytes: usize,
+    /// GETs sent: the target's, then one per fallback member tried.
+    pub gets: u32,
     pub resigns: u32,
     pub replies: Vec<ReplyReport>,
     pub elapsed_ms: u64,
@@ -141,12 +181,16 @@ impl Connector {
             get_from,
             body_from: None,
             fallback: false,
+            body_wait_ms: None,
+            bytes: 0,
+            gets: 1,
             resigns: 0,
             replies: Vec::new(),
             elapsed_ms: 0,
         };
 
         let (tx, mut rx) = mpsc::unbounded_channel();
+        let received = Arc::new(AtomicUsize::new(0));
         let mut tasks = JoinSet::new();
         for i in 0..self.coprocessors.len() {
             let method = if i == get_from {
@@ -156,36 +200,61 @@ impl Connector {
             };
             let (connector, path, tx) = (self.clone(), path.clone(), tx.clone());
             let first_expires = retrieval.first_expires;
+            let received = received.clone();
             tasks.spawn(async move {
-                let _ = tx.send(connector.ask(i, method, &path, first_expires).await);
+                let headers = (i == get_from && connector.body_wait.is_some()).then_some(&tx);
+                let answer = connector
+                    .ask(i, method, &path, first_expires, headers, &received)
+                    .await;
+                let _ = tx.send(Event::Done(answer));
             });
         }
         drop(tx);
 
         let mut get_body = None;
+        // The GET target's attestation counted from its headers, before its body.
+        let mut target_counted = false;
         let outcome = loop {
-            let answer = match tokio::time::timeout_at(deadline, rx.recv()).await {
-                Ok(Some(answer)) => answer,
+            let event = match tokio::time::timeout_at(deadline, rx.recv()).await {
+                Ok(Some(event)) => event,
                 Ok(None) => break round.clone().close(),
                 Err(_) => {
                     report.error = Some("deadline");
                     break round.clone().close();
                 }
             };
-            report.resigns += answer.resigns;
-            let signer = self.coprocessors[answer.coprocessor].signer;
-            if answer.coprocessor == get_from {
-                get_body = answer.body.clone();
-            }
-            let decided = match &answer.attestation {
-                Some(attestation) => round.record_attestation(signer, attestation),
-                None => round.record_no_reply(signer),
+            let decided = match event {
+                Event::Headers {
+                    coprocessor,
+                    attestation,
+                } => {
+                    target_counted = true;
+                    let signer = self.coprocessors[coprocessor].signer;
+                    match &attestation {
+                        Some(attestation) => round.record_attestation(signer, attestation),
+                        None => round.record_no_reply(signer),
+                    }
+                }
+                Event::Done(answer) => {
+                    report.resigns += answer.resigns;
+                    let signer = self.coprocessors[answer.coprocessor].signer;
+                    let counted = answer.coprocessor == get_from && target_counted;
+                    if answer.coprocessor == get_from {
+                        get_body = answer.body.clone();
+                    }
+                    let decided = match (&answer.attestation, counted) {
+                        (_, true) => None,
+                        (Some(attestation), false) => round.record_attestation(signer, attestation),
+                        (None, false) => round.record_no_reply(signer),
+                    };
+                    let mut reply = answer.report;
+                    if round.rejected().contains(&signer) {
+                        reply.attestation = Some("rejected");
+                    }
+                    report.replies.push(reply);
+                    decided
+                }
             };
-            let mut reply = answer.report;
-            if round.rejected().contains(&signer) {
-                reply.attestation = Some("rejected");
-            }
-            report.replies.push(reply);
             if let Some(outcome) = decided {
                 break outcome;
             }
@@ -198,6 +267,7 @@ impl Connector {
                     ConsensusCheckError::NotReachedThisRound(_)
                     | ConsensusCheckError::Unreachable(_) => "no_quorum",
                 });
+                report.bytes = received.load(Ordering::Relaxed);
                 report.elapsed_ms = started.elapsed().as_millis() as u64;
                 return report;
             }
@@ -205,6 +275,27 @@ impl Connector {
         report.error = None;
         let digest = resolved.material;
         report.quorum_digest = Some(digest);
+
+        let target_signer = self.coprocessors[get_from].signer;
+        let target_in_quorum =
+            target_counted && resolved.winners.iter().any(|w| w.signer == target_signer);
+        if let (None, true, Some(bound)) = (&get_body, target_in_quorum, self.body_wait) {
+            let waited = tokio::time::Instant::now();
+            let until = deadline.min(waited + bound);
+            while let Ok(Some(event)) = tokio::time::timeout_at(until, rx.recv()).await {
+                if let Event::Done(answer) = event {
+                    let target = answer.coprocessor == get_from;
+                    if target {
+                        get_body = answer.body;
+                    }
+                    report.replies.push(answer.report);
+                    if target {
+                        break;
+                    }
+                }
+            }
+            report.body_wait_ms = Some(waited.elapsed().as_millis() as u64);
+        }
 
         if get_body
             .as_ref()
@@ -221,10 +312,27 @@ impl Connector {
                 .filter(|&i| i != get_from)
                 .collect();
             members.shuffle(&mut rand::rng());
-            for i in members {
+            for (n, i) in members.into_iter().enumerate() {
+                report.gets += 1;
+                if n == 0 && self.fail_first_fallback {
+                    report.replies.push(ReplyReport {
+                        coprocessor: i,
+                        method: "GET",
+                        status: None,
+                        code: Some("simulated_failure".into()),
+                        attempts: 0,
+                        retried: Vec::new(),
+                        attestation: None,
+                        digest: None,
+                    });
+                    continue;
+                }
                 let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-                let Ok(answer) =
-                    tokio::time::timeout(remaining, self.ask(i, Method::GET, &path, None)).await
+                let Ok(answer) = tokio::time::timeout(
+                    remaining,
+                    self.ask(i, Method::GET, &path, None, None, &received),
+                )
+                .await
                 else {
                     break;
                 };
@@ -244,6 +352,7 @@ impl Connector {
                 "no_matching_body"
             });
         }
+        report.bytes = received.load(Ordering::Relaxed);
         report.elapsed_ms = started.elapsed().as_millis() as u64;
         report
     }
@@ -257,6 +366,8 @@ impl Connector {
         method: Method,
         path: &str,
         first_expires: Option<u64>,
+        headers: Option<&mpsc::UnboundedSender<Event>>,
+        received: &AtomicUsize,
     ) -> Answer {
         let coprocessor = &self.coprocessors[i];
         let mut expires = first_expires;
@@ -306,8 +417,14 @@ impl Connector {
                     "missing"
                 });
                 report.digest = attestation.as_ref().map(|a| a.sns_ciphertext_digest);
+                if let Some(headers) = headers {
+                    let _ = headers.send(Event::Headers {
+                        coprocessor: i,
+                        attestation: attestation.clone(),
+                    });
+                }
                 let body = if method == Method::GET {
-                    response.bytes().await.ok()
+                    read_body(response, received).await.map(Into::into)
                 } else {
                     None
                 };
@@ -371,30 +488,47 @@ impl Connector {
 
     /// The request loop of the retrieval to one coprocessor, alone, until the deadline.
     pub async fn ask_one(&self, i: usize, method: Method, path: &str) -> Option<ReplyReport> {
-        tokio::time::timeout(self.deadline, self.ask(i, method, path, None))
-            .await
-            .ok()
-            .map(|answer| answer.report)
+        let received = AtomicUsize::new(0);
+        tokio::time::timeout(
+            self.deadline,
+            self.ask(i, method, path, None, None, &received),
+        )
+        .await
+        .ok()
+        .map(|answer| answer.report)
     }
 
-    /// One signed request, without retries: for the endpoint's error cases.
+    /// One signed request, without retries: for the endpoint's error cases. The path is signed and
+    /// sent as given, without its query string in the signature.
     pub async fn probe(
         &self,
         i: usize,
         method: Method,
         path: &str,
-        expires: Option<u64>,
+        options: &ProbeOptions,
     ) -> anyhow::Result<(u16, Option<ErrorBody>, Option<String>)> {
         let coprocessor = &self.coprocessors[i];
-        let header = self
-            .sign(coprocessor.signer, path_without_query(path), expires)
-            .await;
-        let response = self
+        let target = PathAndQuery::try_from(path_without_query(path))?;
+        let expires = options.expires.unwrap_or_else(|| {
+            fhevm_sig_auth::unix_now().saturating_add(self.header_validity.as_secs())
+        });
+        let header = fhevm_sig_auth::sign(
+            options.key.as_ref().unwrap_or(&self.key),
+            &self.domain,
+            options.audience.unwrap_or(coprocessor.signer),
+            &target,
+            &options.signed_body,
+            expires,
+        )
+        .await?;
+        let mut request = self
             .http
             .request(method, format!("{}{path}", coprocessor.url))
-            .header(AUTHORIZATION, header.to_string())
-            .send()
-            .await?;
+            .header(AUTHORIZATION, header.to_string());
+        if let Some(body) = &options.body {
+            request = request.body(body.clone());
+        }
+        let response = request.send().await?;
         let status = response.status().as_u16();
         let retry_after = response
             .headers()
@@ -404,6 +538,16 @@ impl Connector {
         let error = response.json::<ErrorBody>().await.ok();
         Ok((status, error, retry_after))
     }
+}
+
+/// Reads a body and counts its bytes as they arrive, so that an abandoned transfer still counts.
+async fn read_body(mut response: reqwest::Response, received: &AtomicUsize) -> Option<Vec<u8>> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.ok()? {
+        received.fetch_add(chunk.len(), Ordering::Relaxed);
+        body.extend_from_slice(&chunk);
+    }
+    Some(body)
 }
 
 /// A query string is not signed: the endpoint must refuse it.

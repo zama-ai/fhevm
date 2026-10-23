@@ -31,6 +31,9 @@ pub struct PadWorkerConfig {
     /// After this many claims, an expired row is marked failed.
     pub max_attempts: i32,
     pub poll_interval: Duration,
+    /// Bytes of each PRF block in the stand-in ciphertexts, to give bodies a realistic size. Every
+    /// party must use the same value, or their digests differ.
+    pub block_bytes: usize,
 }
 
 pub struct Pad {
@@ -38,8 +41,13 @@ pub struct Pad {
     pub ct128: Vec<u8>,
 }
 
-/// One 32-byte keccak entry for each PRF block. `salt` makes a pad only one party computes.
-pub fn keccak_pad(path: &PrfPath, block_bits: u32, salt: Option<Address>) -> Pad {
+/// `block_bytes` of chained keccak for each PRF block. `salt` makes a pad only one party computes.
+pub fn keccak_pad(
+    path: &PrfPath,
+    block_bits: u32,
+    block_bytes: usize,
+    salt: Option<Address>,
+) -> Pad {
     let blocks = u32::from(path.pad_length).div_ceil(block_bits);
     let salt = salt.map(|s| s.to_vec()).unwrap_or_default();
     let entries = |tag: &[u8]| -> Vec<u8> {
@@ -54,7 +62,12 @@ pub fn keccak_pad(path: &PrfPath, block_bits: u32, salt: Option<Address>) -> Pad
                     &i.to_be_bytes(),
                 ]
                 .concat();
-                keccak_b256(&preimage).0
+                std::iter::successors(Some(keccak_b256(&preimage)), |prev| {
+                    Some(keccak_b256(prev.as_slice()))
+                })
+                .flat_map(|digest| digest.0)
+                .take(block_bytes)
+                .collect::<Vec<u8>>()
             })
             .collect()
     };
@@ -188,14 +201,21 @@ impl PadWorker {
         .await?;
         let Some(row) = row else { return Ok(None) };
         let label: Vec<u8> = row.get("label");
-        Ok(Some(Claimed {
+        let claimed = Claimed {
             path: PrfPath {
                 prf: u16::try_from(row.get::<i32, _>("prf_instance"))?,
                 label: B256::try_from(label.as_slice())?,
                 pad_length: u16::try_from(row.get::<i32, _>("pad_length"))?,
             },
             retry_count: row.get("retry_count"),
-        }))
+        };
+        info!(
+            label = %claimed.path.label,
+            pad_length = claimed.path.pad_length,
+            attempt = claimed.retry_count + 1,
+            "claimed pad"
+        );
+        Ok(Some(claimed))
     }
 
     async fn evaluate(&self, claimed: &Claimed) -> anyhow::Result<()> {
@@ -225,7 +245,7 @@ impl PadWorker {
 
         let block_bits = block_bits(path.prf).context("unknown prf in a pads row")?;
         let salt = matches!(fault, Some(Fault::WrongDigest)).then(|| self.signer.address());
-        let pad = keccak_pad(path, block_bits, salt);
+        let pad = keccak_pad(path, block_bits, self.config.block_bytes, salt);
         let payload = PrfOutputAttestationPayload::new(
             Version::V1,
             path.prf,
@@ -242,6 +262,7 @@ impl PadWorker {
                 signer: self.signer.address(),
                 signature: vec![0; 65],
             },
+            Some(Fault::ForeignSigner) => payload.sign(&PrivateKeySigner::random()).await?,
             _ => payload.sign(&self.signer).await?,
         };
         let written = sqlx::query(

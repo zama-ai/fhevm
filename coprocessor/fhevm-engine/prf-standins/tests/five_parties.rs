@@ -9,7 +9,7 @@ use alloy::{
 };
 use prf_service::{AuthConfig, Config, PrfService};
 use prf_standins::{
-    connector::{Connector, Coprocessor, Retrieval},
+    connector::{Connector, Coprocessor, ProbeOptions, Retrieval},
     pad_worker::{PadWorker, PadWorkerConfig},
 };
 use reqwest::Method;
@@ -28,7 +28,13 @@ const PARTY2_IN_FLIGHT: usize = 2;
 fn faults(party: usize) -> String {
     let mut faults = vec!["4a:delay=5s", "7f:delay=8s", "e1:fail"];
     if party == 0 {
-        faults.extend(["d1:delay=3s", "b1:wrong_digest", "a1:unsigned", "e2:fail"]);
+        faults.extend([
+            "d1:delay=3s",
+            "b1:wrong_digest",
+            "a1:unsigned",
+            "a2:foreign_signer",
+            "e2:fail",
+        ]);
     }
     if party <= 1 {
         faults.push("b2:wrong_digest");
@@ -136,6 +142,7 @@ async fn start_party(admin: &PgPool, i: usize, cancel: &CancellationToken) -> Pa
             claim_timeout: Duration::from_secs(10),
             max_attempts: 3,
             poll_interval: Duration::from_secs(1),
+            block_bytes: 32,
         },
     );
     tokio::spawn(worker.run(cancel.clone()));
@@ -168,6 +175,8 @@ fn connector(parties: &[Party], down: &[usize], deadline: Duration) -> Arc<Conne
         header_validity: Duration::from_secs(60),
         deadline,
         backoff: Duration::from_millis(200),
+        body_wait: None,
+        fail_first_fallback: false,
     })
 }
 
@@ -185,6 +194,7 @@ fn retrieval(prefix: u8, get_from: Option<usize>) -> Retrieval {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 8)]
 async fn retrieval_matrix() {
+    let plain = ProbeOptions::default();
     let admin = PgPoolOptions::new()
         .max_connections(2)
         .connect(&admin_url())
@@ -252,6 +262,69 @@ async fn retrieval_matrix() {
         break;
     }
     assert!(a1_checked, "party 0 never answered before quorum");
+    // QA row S2: an attestation signed by a key that is not party 0's signer is discarded too.
+    let mut a2_checked = false;
+    for _ in 0..5 {
+        let report = one.retrieve(&retrieval(0xa2, Some(0))).await;
+        assert!(report.ok, "{report:?}");
+        let Some(reply) = report.replies.iter().find(|r| r.coprocessor == 0) else {
+            continue;
+        };
+        assert_eq!(reply.attestation, Some("rejected"), "{report:?}");
+        a2_checked = true;
+        break;
+    }
+    assert!(a2_checked, "party 0 never answered before quorum");
+    // Fallback policy 2: when the GET target's attestation is in the quorum group, its body is
+    // awaited, not fetched again. Three HEADs can still win before the target's headers arrive;
+    // then, as for a slow target, the connector falls back at once.
+    let mut waiting = Arc::into_inner(connector(&parties, &[], deadline)).unwrap();
+    waiting.body_wait = Some(Duration::from_secs(2));
+    let waiting = Arc::new(waiting);
+    // 64 bits in 2-bit blocks of 32 bytes.
+    let body = 32 * 32;
+    let mut fallbacks = [0; 2];
+    let mut bytes = [0; 2];
+    for _ in 0..20 {
+        for (policy, c) in [&one, &waiting].into_iter().enumerate() {
+            let report = c.retrieve(&retrieval(0x00, Some(0))).await;
+            assert!(report.ok, "{report:?}");
+            if report.fallback {
+                assert!(report.body_wait_ms.is_none(), "{report:?}");
+                assert!(
+                    report.gets == 2 && report.bytes >= body && report.bytes <= 2 * body,
+                    "{report:?}"
+                );
+                fallbacks[policy] += 1;
+            } else {
+                assert!(report.gets == 1 && report.bytes == body, "{report:?}");
+            }
+            bytes[policy] += report.bytes;
+        }
+    }
+    println!(
+        "fallbacks in 20 retrievals: policy 1 {} ({} bytes), policy 2 {} ({} bytes)",
+        fallbacks[0], bytes[0], fallbacks[1], bytes[1]
+    );
+    assert!(fallbacks[1] < 20, "policy 2 never used the target's body");
+    let report = waiting.retrieve(&retrieval(0xd1, Some(0))).await;
+    assert!(
+        report.ok && report.fallback && report.body_wait_ms.is_none(),
+        "{report:?}"
+    );
+    // QA row R7: the first fallback GET fails, the next quorum member serves the body.
+    let mut failing = Arc::into_inner(connector(&parties, &[], deadline)).unwrap();
+    failing.fail_first_fallback = true;
+    let failing = Arc::new(failing);
+    let report = failing.retrieve(&retrieval(0xd1, Some(0))).await;
+    assert!(report.ok && report.fallback, "{report:?}");
+    assert!(
+        report
+            .replies
+            .iter()
+            .any(|r| r.code.as_deref() == Some("simulated_failure")),
+        "{report:?}"
+    );
     // Two wrong digests are outvoted.
     let report = one.retrieve(&retrieval(0xb2, Some(4))).await;
     assert!(report.ok && !report.fallback, "{report:?}");
@@ -274,23 +347,17 @@ async fn retrieval_matrix() {
             .all(|r| r.status == Some(500) && r.attempts == 1),
         "{report:?}"
     );
-    assert_eq!(
-        report
-            .replies
-            .iter()
-            .find(|r| r.coprocessor == 0)
-            .unwrap()
-            .code
-            .as_deref(),
-        Some("prf_evaluation_failed"),
-        "{report:?}"
-    );
     // The request loop alone stops at the first `500`, GET or HEAD.
     let path = retrieval(0xe1, None).path();
     for method in [Method::GET, Method::HEAD] {
-        let reply = one.ask_one(1, method, &path).await.unwrap();
+        let reply = one.ask_one(1, method.clone(), &path).await.unwrap();
         assert!(
-            reply.status == Some(500) && reply.attempts == 1 && reply.retried.is_empty(),
+            reply.status == Some(500)
+                // A HEAD reply has no body, so no code.
+                && (method == Method::HEAD
+                    || reply.code.as_deref() == Some("prf_evaluation_failed"))
+                && reply.attempts == 1
+                && reply.retried.is_empty(),
             "{reply:?}"
         );
     }
@@ -331,9 +398,10 @@ async fn retrieval_matrix() {
             r.path()
         })
         .collect();
-    let results =
-        futures_util::future::join_all(paths.iter().map(|p| flood.probe(0, Method::GET, p, None)))
-            .await;
+    let results = futures_util::future::join_all(
+        paths.iter().map(|p| flood.probe(0, Method::GET, p, &plain)),
+    )
+    .await;
     let mut statuses: Vec<u16> = results.iter().map(|r| r.as_ref().unwrap().0).collect();
     statuses.sort();
     assert_eq!(statuses, vec![200, 200, 429, 429, 429, 429], "{results:?}");
@@ -350,18 +418,19 @@ async fn retrieval_matrix() {
     );
     // One request per connector and label at a time.
     let path = retrieval(0x4a, None).path();
-    let (first, second) = tokio::join!(flood.probe(1, Method::GET, &path, None), async {
+    let (first, second) = tokio::join!(flood.probe(1, Method::GET, &path, &plain), async {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        flood.probe(1, Method::HEAD, &path, None).await
+        flood.probe(1, Method::HEAD, &path, &plain).await
     });
     assert_eq!((first.unwrap().0, second.unwrap().0), (200, 429));
     // The request cap of party 2, across labels: the third request in progress gets 429.
     let paths: Vec<String> = (0..=PARTY2_IN_FLIGHT)
         .map(|_| retrieval(0x4a, None).path())
         .collect();
-    let results =
-        futures_util::future::join_all(paths.iter().map(|p| flood.probe(2, Method::GET, p, None)))
-            .await;
+    let results = futures_util::future::join_all(
+        paths.iter().map(|p| flood.probe(2, Method::GET, p, &plain)),
+    )
+    .await;
     let mut statuses: Vec<u16> = results.iter().map(|r| r.as_ref().unwrap().0).collect();
     statuses.sort();
     assert_eq!(statuses, vec![200, 200, 429], "{results:?}");
@@ -391,6 +460,11 @@ async fn retrieval_matrix() {
         ),
         (format!("/v1/prf/1/labels/{label}/64"), 404, "unknown_prf"),
         // QA row G4: the encodings the proxy forwards unchanged.
+        (
+            format!("/v1/prf/0/labels/{label}/064"),
+            400,
+            "non_canonical_path",
+        ),
         (
             format!("/v1/prf/0/labels/{label}/0x40"),
             400,
@@ -426,7 +500,7 @@ async fn retrieval_matrix() {
             .fetch_one(&parties[1].pool)
             .await
             .unwrap();
-        let (got, error, _) = one.probe(1, Method::GET, &path, None).await.unwrap();
+        let (got, error, _) = one.probe(1, Method::GET, &path, &plain).await.unwrap();
         let got_code = error.map(|e| e.code);
         assert_eq!((got, got_code.as_deref()), (status, Some(code)), "{path}");
         let rows_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pads")
@@ -440,7 +514,7 @@ async fn retrieval_matrix() {
             1,
             Method::HEAD,
             &format!("/v1/prf/0/labels/{label}/2048"),
-            None,
+            &plain,
         )
         .await
         .unwrap();

@@ -14,6 +14,8 @@ padWorker:
   # Secret with the party's signing key under `private-key`.
   keySecret: ""
   faults: ""
+  # Bytes per 2-bit PRF block: 100 gives a 2048-bit ct128 of about 100 KB.
+  blockBytes: "100"
 
 additionalResources:
   - enabled: true
@@ -43,6 +45,7 @@ additionalResources:
                 env:
                   - {name: DATABASE_URL, value: "{{ .Values.padWorker.databaseUrl }}"}
                   - {name: PAD_WORKER_FAULTS, value: "{{ .Values.padWorker.faults }}"}
+                  - {name: PAD_WORKER_BLOCK_BYTES, value: "{{ .Values.padWorker.blockBytes }}"}
                   - name: PAD_WORKER_PRIVATE_KEY
                     valueFrom:
                       secretKeyRef: {name: "{{ .Values.padWorker.keySecret }}", key: private-key}

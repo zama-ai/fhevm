@@ -5,7 +5,7 @@ use alloy::{
 use anyhow::{bail, Context};
 use clap::{Parser, Subcommand};
 use futures_util::future::join_all;
-use prf_standins::connector::{Connector, Coprocessor, Retrieval};
+use prf_standins::connector::{Connector, Coprocessor, ProbeOptions, Retrieval};
 use reqwest::Method;
 use std::{collections::BTreeMap, num::NonZeroUsize, sync::Arc, time::Duration};
 
@@ -39,6 +39,20 @@ struct Args {
     header_validity: Duration,
     #[arg(long, global = true, value_parser = humantime::parse_duration, default_value = "1s")]
     backoff: Duration,
+    /// Fallback policy 2: when the GET target's attestation is in the quorum group, wait up to this
+    /// long for its body before falling back. Unset: fall back as soon as quorum forms.
+    #[arg(long, global = true, value_parser = humantime::parse_duration)]
+    body_wait: Option<Duration>,
+    /// QA row R7: count the first fallback GET as failed.
+    #[arg(long, global = true)]
+    fail_first_fallback: bool,
+    /// The key that `flood`, `ask` and `probe` sign with, and the first key of `fetch`, so that
+    /// rows do not share a budget.
+    #[arg(long, global = true, default_value_t = 0)]
+    key_index: usize,
+    /// Sign with random keys, not registered tx-senders (QA row C2).
+    #[arg(long, global = true)]
+    random_keys: bool,
     /// Skip TLS verification. rustls refuses the preview's self-signed `CA:TRUE` proxy certificate
     /// as a server certificate (`CaUsedAsEndEntity`); integrity comes from the attestation quorum.
     #[arg(long)]
@@ -63,9 +77,13 @@ enum Command {
         /// Start from headers that expired 10 minutes ago, as from a stale cache.
         #[arg(long)]
         stale_headers: bool,
-        /// Use only the first `connectors` keys.
+        /// Use only `connectors` keys, from `--key-index`.
         #[arg(long)]
         connectors: Option<usize>,
+        /// Retrieve this many labels one after the other, on the same connections. A new label each
+        /// time with `--label-prefix`.
+        #[arg(long, default_value_t = 1)]
+        repeat: usize,
     },
     /// Sends `count` GETs of distinct labels to one coprocessor at once, with the first key, without
     /// retries. Prints the count of each status.
@@ -90,6 +108,16 @@ enum Command {
         pad_length: u16,
         #[arg(long, default_value = "GET")]
         method: Method,
+        /// Give up after this long and exit, which closes the socket. Prints the path, to ask again
+        /// for the same label.
+        #[arg(long, value_parser = humantime::parse_duration)]
+        abort_after: Option<Duration>,
+        /// Ask this many times on the same connections, `--interval` apart. A new label each time
+        /// with `--label-prefix`.
+        #[arg(long, default_value_t = 1)]
+        repeat: usize,
+        #[arg(long, value_parser = humantime::parse_duration, default_value = "0s")]
+        interval: Duration,
     },
     /// Waits forever: keeps a pod up for `kubectl exec`, in an image without a shell.
     Idle,
@@ -102,6 +130,21 @@ enum Command {
         path: String,
         #[arg(long, default_value = "GET")]
         method: Method,
+        /// `expires` relative to now, in seconds; negative for the past.
+        #[arg(long, allow_hyphen_values = true)]
+        expires_in: Option<i64>,
+        /// Sign for this audience instead of the target's signer.
+        #[arg(long)]
+        audience: Option<Address>,
+        /// Sign with a random key, not a registered tx-sender.
+        #[arg(long)]
+        random_key: bool,
+        /// Send this body.
+        #[arg(long)]
+        body: Option<String>,
+        /// Sign for this body's digest.
+        #[arg(long, default_value = "")]
+        signed_body: String,
     },
 }
 
@@ -117,10 +160,10 @@ struct LabelArgs {
 }
 
 impl LabelArgs {
-    fn resolve(self) -> anyhow::Result<B256> {
-        match (self.label, self.label_prefix) {
+    fn resolve(&self) -> anyhow::Result<B256> {
+        match (self.label, &self.label_prefix) {
             (Some(label), _) => Ok(label),
-            (_, Some(prefix)) => label_with_prefix(&prefix),
+            (_, Some(prefix)) => label_with_prefix(prefix),
             (None, None) => unreachable!("clap requires one"),
         }
     }
@@ -164,8 +207,13 @@ async fn main() -> anyhow::Result<()> {
         .keys
         .iter()
         .map(|key| -> anyhow::Result<_> {
+            let key = if args.random_keys {
+                PrivateKeySigner::random()
+            } else {
+                key.trim().parse::<PrivateKeySigner>()?
+            };
             Ok(Arc::new(Connector {
-                key: key.trim().parse::<PrivateKeySigner>()?,
+                key,
                 domain: domain.clone(),
                 coprocessors: coprocessors.clone(),
                 threshold,
@@ -173,10 +221,15 @@ async fn main() -> anyhow::Result<()> {
                 header_validity: args.header_validity,
                 deadline: args.deadline,
                 backoff: args.backoff,
+                body_wait: args.body_wait,
+                fail_first_fallback: args.fail_first_fallback,
             }))
         })
         .collect::<anyhow::Result<_>>()?;
-    let first = connectors.first().context("give at least one key")?.clone();
+    let first = connectors
+        .get(args.key_index)
+        .context("--key-index: no such key")?
+        .clone();
 
     match args.command {
         Command::Fetch {
@@ -186,19 +239,23 @@ async fn main() -> anyhow::Result<()> {
             get_from,
             stale_headers,
             connectors: count,
+            repeat,
         } => {
-            let retrieval = Retrieval {
-                prf,
-                label: label.resolve()?,
-                pad_length,
-                get_from,
-                first_expires: stale_headers
-                    .then(|| fhevm_sig_auth::unix_now().saturating_sub(600)),
-            };
-            let chosen = &connectors[..count.unwrap_or(connectors.len()).min(connectors.len())];
-            let reports = join_all(chosen.iter().map(|c| c.retrieve(&retrieval))).await;
-            for report in reports {
-                println!("{}", serde_json::to_string(&report)?);
+            let from = &connectors[args.key_index.min(connectors.len())..];
+            let chosen = &from[..count.unwrap_or(from.len()).min(from.len())];
+            for _ in 0..repeat {
+                let retrieval = Retrieval {
+                    prf,
+                    label: label.resolve()?,
+                    pad_length,
+                    get_from,
+                    first_expires: stale_headers
+                        .then(|| fhevm_sig_auth::unix_now().saturating_sub(600)),
+                };
+                let reports = join_all(chosen.iter().map(|c| c.retrieve(&retrieval))).await;
+                for report in reports {
+                    println!("{}", serde_json::to_string(&report)?);
+                }
             }
         }
         Command::Flood {
@@ -214,10 +271,11 @@ async fn main() -> anyhow::Result<()> {
                     })
                 })
                 .collect::<anyhow::Result<Vec<_>>>()?;
+            let plain = ProbeOptions::default();
             let results = join_all(
                 paths
                     .iter()
-                    .map(|path| first.probe(target, Method::GET, path, None)),
+                    .map(|path| first.probe(target, Method::GET, path, &plain)),
             )
             .await;
             let mut statuses = BTreeMap::<String, usize>::new();
@@ -242,14 +300,41 @@ async fn main() -> anyhow::Result<()> {
             label,
             pad_length,
             method,
+            abort_after,
+            repeat,
+            interval,
         } => {
-            let path = format!(
-                "/v1/prf/0/labels/{}/{pad_length}",
-                hex::encode(label.resolve()?)
-            );
-            match first.ask_one(target, method, &path).await {
-                Some(reply) => println!("{}", serde_json::to_string(&reply)?),
-                None => println!("{}", serde_json::json!({"error": "deadline", "path": path})),
+            for round in 0..repeat {
+                if round > 0 {
+                    tokio::time::sleep(interval).await;
+                }
+                let path = format!(
+                    "/v1/prf/0/labels/{}/{pad_length}",
+                    hex::encode(label.resolve()?)
+                );
+                let started = std::time::Instant::now();
+                let asked = first.ask_one(target, method.clone(), &path);
+                let reply = match abort_after {
+                    Some(after) => match tokio::time::timeout(after, asked).await {
+                        Ok(reply) => reply,
+                        Err(_) => {
+                            println!(
+                                "{}",
+                                serde_json::json!({"aborted_after_ms": after.as_millis() as u64, "path": path})
+                            );
+                            // Exiting closes the socket.
+                            return Ok(());
+                        }
+                    },
+                    None => asked.await,
+                };
+                let mut out = match reply {
+                    Some(reply) => serde_json::to_value(&reply)?,
+                    None => serde_json::json!({"error": "deadline"}),
+                };
+                out["path"] = path.into();
+                out["elapsed_ms"] = (started.elapsed().as_millis() as u64).into();
+                println!("{out}");
             }
         }
         Command::Idle => std::future::pending::<()>().await,
@@ -257,12 +342,29 @@ async fn main() -> anyhow::Result<()> {
             target,
             path,
             method,
+            expires_in,
+            audience,
+            random_key,
+            body,
+            signed_body,
         } => {
-            let (status, error, retry_after) = first.probe(target, method, &path, None).await?;
-            println!(
-                "{}",
-                serde_json::json!({"status": status, "error": error, "retry_after": retry_after})
-            );
+            let options = ProbeOptions {
+                expires: expires_in
+                    .map(|secs| fhevm_sig_auth::unix_now().saturating_add_signed(secs)),
+                audience,
+                key: random_key.then(PrivateKeySigner::random),
+                signed_body: signed_body.into_bytes(),
+                body: body.map(String::into_bytes),
+            };
+            let started = std::time::Instant::now();
+            let mut out = match first.probe(target, method, &path, &options).await {
+                Ok((status, error, retry_after)) => {
+                    serde_json::json!({"status": status, "error": error, "retry_after": retry_after})
+                }
+                Err(err) => serde_json::json!({"status": 0, "transport_error": format!("{err:#}")}),
+            };
+            out["elapsed_ms"] = (started.elapsed().as_millis() as u64).into();
+            println!("{out}");
         }
     }
     Ok(())

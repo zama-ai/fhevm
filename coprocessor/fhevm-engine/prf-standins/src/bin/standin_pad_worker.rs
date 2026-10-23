@@ -20,7 +20,7 @@ struct Args {
     private_key: String,
 
     /// `<label first byte hex>:<fault>`, comma-separated. Faults: `delay=<duration>`,
-    /// `wrong_digest`, `unsigned`, `crash_once`, `fail`.
+    /// `wrong_digest`, `unsigned`, `foreign_signer`, `crash_once`, `fail`.
     #[arg(long, env = "PAD_WORKER_FAULTS", default_value = "")]
     faults: Faults,
 
@@ -35,6 +35,10 @@ struct Args {
 
     #[arg(long, value_parser = humantime::parse_duration, default_value = "1s")]
     poll_interval: Duration,
+
+    /// Bytes of each PRF block in the stand-in ciphertexts. Same value at every party.
+    #[arg(long, env = "PAD_WORKER_BLOCK_BYTES", default_value_t = 32)]
+    block_bytes: usize,
 }
 
 #[tokio::main]
@@ -68,6 +72,7 @@ async fn main() -> anyhow::Result<()> {
             claim_timeout: args.claim_timeout,
             max_attempts: args.max_attempts,
             poll_interval: args.poll_interval,
+            block_bytes: args.block_bytes,
         },
     )
     .run(cancel)

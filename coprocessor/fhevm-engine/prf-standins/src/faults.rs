@@ -13,6 +13,8 @@ pub enum Fault {
     WrongDigest,
     /// Writes the right pad with a zero signature.
     Unsigned,
+    /// Writes the right pad, signed by a key that is not a registered coprocessor signer.
+    ForeignSigner,
     /// Exits the process after claiming the row, on the first attempt only.
     CrashOnce,
     /// Marks the row failed (`is_error`), as for a permanent evaluation failure.
@@ -25,6 +27,7 @@ impl fmt::Display for Fault {
             Self::Delay(d) => write!(f, "delay={}", humantime::format_duration(*d)),
             Self::WrongDigest => f.write_str("wrong_digest"),
             Self::Unsigned => f.write_str("unsigned"),
+            Self::ForeignSigner => f.write_str("foreign_signer"),
             Self::CrashOnce => f.write_str("crash_once"),
             Self::Fail => f.write_str("fail"),
         }
@@ -41,6 +44,7 @@ impl FromStr for Fault {
         Ok(match s {
             "wrong_digest" => Self::WrongDigest,
             "unsigned" => Self::Unsigned,
+            "foreign_signer" => Self::ForeignSigner,
             "crash_once" => Self::CrashOnce,
             "fail" => Self::Fail,
             other => bail!("unknown fault {other:?}"),

@@ -32,8 +32,9 @@ fn status_of(response: &str) -> u16 {
         .unwrap_or_else(|| panic!("unexpected response: {response}"))
 }
 
-/// G4: odd encodings signed exactly as sent reach prf-service, which owns the encoding check; a
-/// space in the target is refused by Pingora's parser before any hook, as a bare 400.
+/// G4: odd encodings signed exactly as sent reach prf-service, which owns the encoding check. A
+/// trailing slash is not the PRF route. A space in the target cannot be signed, so only the
+/// unsigned-path case is tested here.
 #[tokio::test]
 async fn g4_raw_paths() {
     let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
@@ -41,6 +42,7 @@ async fn g4_raw_paths() {
     let addr = t.addr;
     let mut forwarded = 0;
     for path in [
+        format!("/v1/prf/0/labels/{label}/064"),
         format!("/v1/prf/0/labels/{label}/0x40"),
         format!("/v1/prf/0/labels/{label}/%36%34"),
         format!("/v1/prf/0/labels/{label}/+64"),
@@ -57,6 +59,16 @@ async fn g4_raw_paths() {
         forwarded += 1;
         assert_eq!(t.endpoints[0].hits(), forwarded, "{path}");
     }
+
+    let path = format!("/v1/prf/0/labels/{label}/64/");
+    let auth = auth_header(&sender(), &path, b"").await;
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\nConnection: close\r\n\r\n"
+    );
+    let response = raw_response(&t, request.as_bytes()).await;
+    assert_eq!(status_of(&response), 404, "{response}");
+    assert!(response.contains("not_found"), "{response}");
+    assert_eq!(t.endpoints[0].hits(), forwarded, "{path}");
 
     // A trailing space in the target cannot be signed. Pingora parses the request line anyway, and
     // the path the proxy verifies is not the one signed: the signature recovers another address.

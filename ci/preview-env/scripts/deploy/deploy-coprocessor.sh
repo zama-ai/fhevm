@@ -34,7 +34,7 @@ pad_worker() { echo "coprocessor-${1}-standin-pad-worker"; }
 # requests in progress. The scenarios of check-prf-endpoint.sh depend on this table.
 pad_worker_faults() {
   local i="$1" faults="4a:delay=5s,7f:delay=40s,9a:delay=5s,6d:delay=20s,f0:delay=130s,e1:fail"
-  if (( i == 1 )); then faults+=",d1:delay=10s,b1:wrong_digest,a1:unsigned,e2:fail"; fi
+  if (( i == 1 )); then faults+=",d1:delay=10s,b1:wrong_digest,a1:unsigned,a2:foreign_signer,e2:fail"; fi
   if (( i <= 2 )); then faults+=",b2:wrong_digest"; fi
   if (( i <= 3 )); then faults+=",b3:wrong_digest,a5:unsigned,c1:crash_once"; fi
   echo "${faults}"
