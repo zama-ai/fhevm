@@ -10,7 +10,9 @@ CREATE TABLE host_consumer_catchups (
     block_start BIGINT NOT NULL CHECK (block_start >= 0),
     block_end BIGINT NOT NULL CHECK (block_end >= block_start),
     status TEXT NOT NULL DEFAULT 'ONGOING'
-        CHECK (status IN ('ONGOING', 'DONE', 'SUPPRESSED')),
+        CHECK (status IN ('ONGOING', 'DONE', 'SUPPRESSED', 'SKIPPED')),
+    -- Set before first publication; retries retain this head and effective end.
+    observed_head BIGINT CHECK (observed_head >= 0),
     -- Persist before publishing either command; clear only after broker ACK.
     request_pending BOOLEAN NOT NULL DEFAULT TRUE,
     cancel_pending BOOLEAN NOT NULL DEFAULT FALSE,
