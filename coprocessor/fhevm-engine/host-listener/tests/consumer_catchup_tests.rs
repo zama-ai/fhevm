@@ -103,7 +103,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup) {
             seed_history(&pool, chain_id.as_i64(), &[1899, 1998]).await;
         }
-        seed_history(&pool, chain_id.as_i64(), &[1999]).await;
+        seed_history(&pool, chain_id.as_i64(), &[1799, 1999]).await;
         // These requests were bounded and published before their listeners died.
         sqlx::query("UPDATE host_consumer_catchups SET request_pending = false, observed_head = 1000 WHERE chain_id = $1 AND consumer_id = $2")
             .bind(chain_id.as_i64()).bind(&identity).execute(&pool).await.unwrap();
@@ -241,11 +241,44 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         expected.sort();
         assert_eq!(actual, expected, "every retained request must be replayed exactly once");
         wait_for_events(&pool, chain_id, &blocks).await;
-        // Observe another reconciliation tick. Empty startup must also wait
-        // through the ten-second WATCH propagation grace period.
-        let observe_seconds = if expected.is_empty() { 16 } else { 6 };
-        assert!(tokio::time::timeout(std::time::Duration::from_secs(observe_seconds), requests.recv()).await.is_err(),
-            "startup must not create or reissue unexpected requests");
+        // Two successive unowned requests form a reconciliation barrier. The
+        // first may be claimed by the startup scan; the second must be found by
+        // a later poll. A timeout alone proves neither scan actually ran.
+        for number in [1800u64, 1801] {
+            let barrier = store::ensure_requested(
+                &pool, chain_id.as_i64(), &identity,
+                &ManualCatchupArgs {
+                    catchup_from_block: Some(number as i64),
+                    catchup_up_to_block: Some(number as i64),
+                    no_override_catchup: true,
+                    ..Default::default()
+                }, Some(2000), None, false,
+            ).await.unwrap().unwrap();
+            let command = requests.recv().await.unwrap();
+            assert_eq!((command.catchup_id, command.block_start, command.block_end),
+                (Some(barrier), number, number), "reconciliation must emit the barrier rather than an unintended request");
+            let claimed: bool = sqlx::query_scalar(
+                "SELECT owner_id IS NOT NULL AND lease_until > clock_timestamp() FROM host_consumer_catchups WHERE id = $1",
+            ).bind(barrier).fetch_one(&pool).await.unwrap();
+            assert!(claimed, "the coordinator must acquire the barrier lease");
+            publisher.publish(
+                &routing::consumer_final_catchup_event_routing(identity.clone()),
+                &event_block(chain_id.as_u64(), number, BlockFlow::FinalCatchup, Some(barrier)),
+            ).await.unwrap();
+            blocks.push(number);
+            wait_for_events(&pool, chain_id, &blocks).await;
+            loop {
+                let status: String = sqlx::query_scalar("SELECT status FROM host_consumer_catchups WHERE id = $1")
+                    .bind(barrier).fetch_one(&pool).await.unwrap();
+                if status == "DONE" { break; }
+                assert!(!run.is_finished(), "listener stopped at reconciliation barrier");
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+            assert!(matches!(requests.try_recv(), Err(mpsc::error::TryRecvError::Empty)),
+                "reconciliation emitted an extra command");
+            expected.push((barrier, number, number));
+        }
+        expected.sort();
         let stored: Vec<(uuid::Uuid, i64, i64, String, bool)> = sqlx::query_as(
             "SELECT id, block_start, block_end, status, owner_id IS NOT NULL AND lease_until > clock_timestamp() FROM host_consumer_catchups WHERE chain_id = $1 AND consumer_id = $2 ORDER BY id",
         ).bind(chain_id.as_i64()).bind(&identity).fetch_all(&pool).await.unwrap();
@@ -421,8 +454,24 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
             .await.unwrap();
         assert_eq!(takeover.len(), 1);
         assert_eq!(takeover[0].id, a);
-        assert!(tokio::time::timeout(std::time::Duration::from_secs(6), requests.recv()).await.is_err(),
-            "the old coordinator must not publish the new owner's pending request");
+        // Publish a separate barrier so the exclusion check follows an actual
+        // reconciliation pass, rather than six seconds without a message.
+        let barrier = store::ensure_requested(
+            &pool, chain_id.as_i64(), &identity, &flags(1000, 1000, true), Some(1000), None, false,
+        ).await.unwrap().unwrap();
+        assert_eq!(requests.recv().await.unwrap().catchup_id, Some(barrier),
+            "the old coordinator must publish the barrier, not the new owner's pending request");
+        publisher.publish(
+            &routing::consumer_final_catchup_event_routing(identity.clone()),
+            &event_block(chain_id.as_u64(), 1000, BlockFlow::FinalCatchup, Some(barrier)),
+        ).await.unwrap();
+        loop {
+            let status: String = sqlx::query_scalar("SELECT status FROM host_consumer_catchups WHERE id = $1")
+                .bind(barrier).fetch_one(&pool).await.unwrap();
+            if status == "DONE" { break; }
+            assert!(!run.is_finished(), "listener stopped at ownership barrier");
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
         let actual: (Option<uuid::Uuid>, bool) = sqlx::query_as(
             "SELECT owner_id, request_pending FROM host_consumer_catchups WHERE id = $1")
             .bind(a).fetch_one(&pool).await.unwrap();
