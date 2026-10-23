@@ -123,7 +123,10 @@ describe("RFC 029 rollout gates", () => {
       ["task:upgradeInputVerification", "InputVerification"],
       ["task:upgradeGatewayConfig", "GatewayConfig"],
     ]);
-    expect(hostContractUpgradePlan).toEqual([["task:upgradeKMSGeneration", "KMSGeneration"]]);
+    expect(hostContractUpgradePlan).toEqual([
+      ["task:upgradeProtocolConfig", "ProtocolConfig"],
+      ["task:upgradeKMSGeneration", "KMSGeneration"],
+    ]);
   });
 
   test("blocks a mixed connector deployment", () => {
