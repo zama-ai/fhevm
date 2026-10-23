@@ -198,7 +198,7 @@ attestation_case() {
 }
 attestation_case "1 unsigned attestation (party 1)" a1 1
 attestation_case "S2 attestation signed by a key that is not party 1's (party 1, GET target)" a2 0
-fetch_case "3 unsigned attestations (parties 1-3)" "rejected, no quorum" '(.ok | not)' fetch --connectors 1 --label-prefix a5
+fetch_case "3 unsigned attestations (parties 1-3)" "rejected, no quorum" '(.ok | not) and .error == "no_quorum"' fetch --connectors 1 --label-prefix a5
 fetch_case "expired FhevmSig headers" "401 auth_expired, re-sign, ok" '.ok and .resigns >= 3' fetch --connectors 1 --label-prefix 00 --stale-headers
 fetch_case "permanent failure on the GET target (party 1)" "ok via fallback" '.ok and .fallback' fetch --connectors 1 --label-prefix e2 --get-from 0
 # The round can close on three failures before the GET reply arrives: check the replies present.
@@ -242,8 +242,8 @@ probe_case "padLength 2048" 200 "" 1 "/v1/prf/0/labels/${l}/2048"
 # (RFC-038 step 6) until the deadline, its HEADs stop at once.
 probe_case "C2 unknown signer, GET (party 2)" 401 auth_unknown_signer 1 "/v1/prf/0/labels/00$(rand_label)/64" --random-key
 probe_case "C2 unknown signer, HEAD (party 2)" 401 "" 1 "/v1/prf/0/labels/00$(rand_label)/64" --random-key --method HEAD
-fetch_case "C2 unknown signer, retrieval (deadline 10 s)" "not ok; every HEAD reply 1 attempt" \
-  '(.ok | not) and all((.replies // [])[] | select(.method == "HEAD"); .attempts == 1)' \
+fetch_case "C2 unknown signer, retrieval (deadline 10 s)" "no quorum; at least 3 HEAD replies, each 1 attempt" \
+  '(.ok | not) and .error == "no_quorum" and ([(.replies // [])[] | select(.method == "HEAD")] | length >= 3) and all((.replies // [])[] | select(.method == "HEAD"); .attempts == 1)' \
   --random-keys --deadline 10s fetch --connectors 1 --label-prefix 00
 ask_case "C2 unknown signer, GET request loop (deadline 10 s)" "retried until the deadline" \
   '.error == "deadline" and .elapsed_ms >= 9000' --random-keys --deadline 10s ask --target 1 --label-prefix 00
@@ -268,15 +268,15 @@ out=$(connector --key-index 2 flood --target 1 --count 3 --label-prefix 4a --pad
 record "G2 PRF_MAX_IN_FLIGHT_PER_CONNECTOR (party 2, 2 requests, key 2)" '2x 200, 1x 429 concurrency_limited' "$(jq -c . <<<"${out}")" \
   "$(jq '.statuses == {"200": 2, "429 concurrency_limited": 1}' <<<"${out}")"
 
-# S1: one label at 64 and 2048 bits at once (party 1, key 3, 5 s evaluations). Both rows count
+# S1: one label at 64 and 2048 bits at once (party 1, key 3, 20 s evaluations). Both rows count
 # against the 4096-bit cap: 64 + 2048 + another 2048 is over it.
-x="4a$(rand_label)"
+x="6d$(rand_label)"
 connector --key-index 3 ask --target 0 --label "${x}" --pad-length 64 > /tmp/prf-s1-64.json &
 s1_short=$!
 connector --key-index 3 ask --target 0 --label "${x}" --pad-length 2048 > /tmp/prf-s1-2048.json &
 s1_long=$!
 sleep 3
-third=$(connector --key-index 3 probe --target 0 --path "/v1/prf/0/labels/4a$(rand_label)/2048")
+third=$(connector --key-index 3 probe --target 0 --path "/v1/prf/0/labels/6d$(rand_label)/2048")
 wait "${s1_short}" "${s1_long}" || true
 rows=$(psql_party 1 "SELECT count(*) FROM pads WHERE label = decode('${x}', 'hex')")
 short=$(cat /tmp/prf-s1-64.json) long=$(cat /tmp/prf-s1-2048.json)
@@ -308,8 +308,12 @@ record "D2 drop while held, immediate retry (party 3)" "200; at most one 429 con
 restarts_before=$(for p in 1 2 3; do kubectl get pods -n "${NAMESPACE}" -l "app=standin-pad-worker,fhevm.zama.ai/party=${p}" -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'; echo -n " "; done)
 report=$(connector fetch --connectors 1 --label-prefix c1 --deadline 120s)
 restarts_after=$(for p in 1 2 3; do kubectl get pods -n "${NAMESPACE}" -l "app=standin-pad-worker,fhevm.zama.ai/party=${p}" -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'; echo -n " "; done)
-record "R3 pad-worker killed mid-evaluation (parties 1-3)" "ok after restart and reap" "$(summary "${report}"); restarts ${restarts_before}-> ${restarts_after}" \
-  "$(jq '.ok' <<<"${report}")"
+read -r -a before <<<"${restarts_before}"
+read -r -a after <<<"${restarts_after}"
+crashed=true
+for n in 0 1 2; do (( ${after[n]:-0} > ${before[n]:-0} )) || crashed=false; done
+record "R3 pad-worker killed mid-evaluation (parties 1-3)" "ok after restart and reap; each of parties 1-3 restarted" "$(summary "${report}"); restarts ${restarts_before}-> ${restarts_after}" \
+  "$(jq --argjson c "${crashed}" '.ok and $c' <<<"${report}")"
 
 # An evaluation longer than the connector's 30 s deadline, then the stored output.
 report=$(connector fetch --connectors 1 --label-prefix 7f)
@@ -337,7 +341,7 @@ for p in 1 2 3; do wait_ready "deploy/coprocessor-${p}-prf-service"; done
 proxy_pod() { kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/name=coprocessor-${1}-coprocessor-proxy" -o jsonpath='{.items[0].metadata.name}'; }
 prf_502() {
   local metrics
-  if ! metrics=$(kubectl get --raw "/api/v1/namespaces/${NAMESPACE}/pods/$(proxy_pod 1):9100/proxy/metrics" 2>/dev/null); then
+  if ! metrics=$(kubectl get --request-timeout=10s --raw "/api/v1/namespaces/${NAMESPACE}/pods/$(proxy_pod 1):9100/proxy/metrics" 2>/dev/null); then
     echo unavailable
     return
   fi
@@ -377,7 +381,7 @@ for p in $(seq 1 "${NB_COPROCESSOR}"); do wait_ready "deploy/coprocessor-${p}-co
 touch /tmp/prf-restart.stop
 wait "${load_pid}" || true
 out=$(jq -sc '{retrievals: length, ok: [.[] | select(.ok)] | length, fallback: [.[] | select(.fallback)] | length, max_ms: ([.[].elapsed_ms // 0] | max)}' /tmp/prf-restart.jsonl)
-record "R1 proxy rolling restart under load" "every retrieval ok" "${out}" "$(jq '.ok == .retrievals' <<<"${out}")"
+record "R1 proxy rolling restart under load" "every retrieval ok" "${out}" "$(jq '.retrievals > 0 and .ok == .retrievals' <<<"${out}")"
 check_pod_load R1
 
 # R9: one client asks party 2 every 15 s while its proxy restarts: a pooled connection that idled
@@ -398,10 +402,10 @@ rm -f /tmp/prf-r5.stop
 (
   until [[ -f /tmp/prf-r5.stop ]]; do
     first=$(connector fetch --connectors 1 --label-prefix 00)
-    jq -c '. + {try: 1}' <<<"${first}"
-    retry_label=$(jq -r 'if .ok then empty else (.label // empty) end' <<<"${first}")
+    jq -c '. + {try: 1}' <<<"${first}" || true
+    retry_label=$(jq -r 'if .ok then empty else (.label // empty) end' <<<"${first}" || true)
     if [[ -n "${retry_label}" ]]; then
-      connector fetch --connectors 1 --label "${retry_label}" | jq -c '. + {try: 2}'
+      connector fetch --connectors 1 --label "${retry_label}" | jq -c '. + {try: 2}' || true
     fi
   done
 ) > /tmp/prf-r5.jsonl &
@@ -427,9 +431,9 @@ touch /tmp/prf-r5.stop
 wait "${load_pid}" || true
 restarts4=$(kubectl get pods -n "${NAMESPACE}" -l app.kubernetes.io/name=coprocessor-4-prf-service -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}' 2>/dev/null || true)
 out=$(jq -sc '{labels: (group_by(.label) | length), first_try_failures: ([.[] | select(.try == 1 and (.ok | not))] | length), failed_labels: (group_by(.label) | map(select(all(.[]; .ok | not))) | length), max_ms: ([.[].elapsed_ms // 0] | max)}' /tmp/prf-r5.jsonl)
-record "R5 staggered restarts under load (parties 1-5, 10 s apart)" "every label ok on its first try or its one retry" \
+record "R5 staggered restarts under load (parties 1-5, 10 s apart)" "at least 10 labels; every label ok on its first try or its one retry" \
   "${out}; ready by (from t0) ${ready_by% }; party 4 prf-service restarts ${restarts4}" \
-  "$(jq '.failed_labels == 0' <<<"${out}")"
+  "$(jq '.labels >= 10 and .failed_labels == 0' <<<"${out}")"
 
 # R8 and coprocessors down: proxies scaled to 0, one after the other. Each step waits until a new
 # connection to that party is refused (the old pod accepts for its 10 s shutdownDelaySeconds).
