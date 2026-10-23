@@ -1,9 +1,10 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
-use crate::core::{Proxy, Route, match_route};
+use crate::core::{Proxy, Route, RouteError, match_route};
 use alloy::primitives::{Address, B256, KECCAK256_EMPTY, Keccak256};
 use async_trait::async_trait;
 use bytes::Bytes;
+use connector_utils::monitoring::http::{self as telemetry, RequestObservation};
 use fhevm_sig_auth::AuthError;
 use http::{
     HeaderValue, Method, StatusCode,
@@ -12,15 +13,16 @@ use http::{
         PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, UPGRADE, VIA, WWW_AUTHENTICATE,
     },
 };
-use kms_connector_api::{ErrorCode, ErrorResponse};
+use kms_connector_api::{ErrorCode, ErrorResponse, VERSION_ROUTE};
+use opentelemetry::{Context, trace::TraceContextExt};
 use pingora::{
     Error, ErrorSource, ErrorType,
     http::{RequestHeader, ResponseHeader},
     prelude::HttpPeer,
     proxy::{FailToProxy, ProxyHttp, Session},
 };
-use std::time::Instant;
-use tracing::{error, info};
+use tracing::{Span, error, info};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 // The `X-Forwarded-*` headers set by the proxy (any inbound value is dropped first).
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
@@ -30,6 +32,10 @@ const X_FORWARDED_HOST: HeaderName = HeaderName::from_static("x-forwarded-host")
 // Hop-by-hop headers without a constant in the `http` crate.
 const KEEP_ALIVE: HeaderName = HeaderName::from_static("keep-alive");
 const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection");
+// Client-supplied trace context: the proxy starts its own trace and propagates that one instead.
+const TRACEPARENT: HeaderName = HeaderName::from_static(telemetry::TRACEPARENT);
+const TRACESTATE: HeaderName = HeaderName::from_static(telemetry::TRACESTATE);
+const BAGGAGE: HeaderName = HeaderName::from_static("baggage");
 
 /// Error message for oversized request bodies.
 const BODY_TOO_LARGE: &str = "request body too large";
@@ -37,7 +43,13 @@ const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path"
 
 /// Per-request context.
 pub struct RequestContext {
-    started_at: Instant,
+    /// The root span of the request, disabled for `GET /version` probes and unmatched paths.
+    span: Span,
+    /// Counts the request as in flight, and records it in the HTTP metrics once dropped.
+    observation: RequestObservation,
+    /// The `code` metric label: the error code of a response written by the proxy, otherwise
+    /// `upstream`.
+    code: &'static str,
     route: Option<Route>,
     endpoint: Option<String>,
     /// The sender authenticated by the `FhevmSig` header.
@@ -56,7 +68,9 @@ impl Proxy {
         &self,
         session: &mut Session,
         error: ErrorResponse,
+        ctx: &mut RequestContext,
     ) -> pingora::Result<()> {
+        ctx.code = error.code.as_str();
         let status = StatusCode::from_u16(error.code.http_status())
             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         let body = serde_json::to_vec(&error).unwrap_or_default();
@@ -101,7 +115,9 @@ impl ProxyHttp for Proxy {
 
     fn new_ctx(&self) -> Self::CTX {
         RequestContext {
-            started_at: Instant::now(),
+            span: Span::none(),
+            observation: crate::monitoring::metrics::HTTP_METRICS.start(telemetry::UNMATCHED_ROUTE),
+            code: "upstream",
             route: None,
             endpoint: None,
             sender: None,
@@ -114,8 +130,13 @@ impl ProxyHttp for Proxy {
     async fn early_request_filter(
         &self,
         session: &mut Session,
-        _ctx: &mut Self::CTX,
+        ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
+        let req = session.req_header();
+        let incoming =
+            telemetry::extract_context(|name| req.headers.get(name).and_then(|v| v.to_str().ok()));
+        ctx.span = proxy_span(&req.method, req.uri.path(), incoming);
+        ctx.observation.route = telemetry::route_label(req.uri.path());
         session.set_read_timeout(Some(self.config.request_read_timeout));
         Ok(())
     }
@@ -137,13 +158,17 @@ impl ProxyHttp for Proxy {
             .filter(|target| target.as_str().as_bytes() == req.raw_path())
         else {
             let error = ErrorResponse::new(ErrorCode::Malformed, NOT_ORIGIN_FORM, None);
-            self.respond_with_error(session, error).await?;
+            self.respond_with_error(session, error, ctx).await?;
             return Ok(true);
         };
 
         let route = match match_route(&req.method, target.path()) {
             Ok(route) => route,
             Err(e) => {
+                ctx.code = match e {
+                    RouteError::NotFound => "not_found",
+                    RouteError::MethodNotAllowed(_) => "method_not_allowed",
+                };
                 self.respond_empty(session, e.http_status(), e.allow_header())
                     .await?;
                 return Ok(true);
@@ -155,7 +180,7 @@ impl ProxyHttp for Proxy {
         let (sender, body_digest) = match self.verifier.verify_header(authorization, target) {
             Ok(signed) => signed,
             Err(e) => {
-                self.respond_with_error(session, auth_error_response(&e))
+                self.respond_with_error(session, auth_error_response(&e), ctx)
                     .await?;
                 return Ok(true);
             }
@@ -169,12 +194,12 @@ impl ProxyHttp for Proxy {
             .and_then(|v| v.parse::<usize>().ok());
         if declared_length.is_some_and(|len| len > self.config.max_body_bytes) {
             let error = ErrorResponse::new(ErrorCode::Malformed, BODY_TOO_LARGE, None);
-            self.respond_with_error(session, error).await?;
+            self.respond_with_error(session, error, ctx).await?;
             return Ok(true);
         }
 
         if session.is_body_empty() && KECCAK256_EMPTY != body_digest {
-            self.respond_with_error(session, auth_error_response(&AuthError::BodyMismatch))
+            self.respond_with_error(session, auth_error_response(&AuthError::BodyMismatch), ctx)
                 .await?;
             return Ok(true);
         }
@@ -241,9 +266,12 @@ impl ProxyHttp for Proxy {
         &self,
         session: &mut Session,
         upstream_request: &mut RequestHeader,
-        _ctx: &mut Self::CTX,
+        ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
         sanitize_headers(upstream_request);
+        for (name, value) in telemetry::trace_headers(&ctx.span) {
+            upstream_request.insert_header(name, value)?;
+        }
         if let Some(addr) = session.client_addr().and_then(|a| a.as_inet()) {
             upstream_request.insert_header(X_FORWARDED_FOR, addr.ip().to_string())?;
         }
@@ -255,14 +283,14 @@ impl ProxyHttp for Proxy {
         &self,
         session: &mut Session,
         e: &Error,
-        _ctx: &mut Self::CTX,
+        ctx: &mut Self::CTX,
     ) -> FailToProxy {
         let error_code = match e.root_cause().downcast_ref::<ErrorResponse>() {
             Some(error) => {
                 let status = StatusCode::from_u16(error.code.http_status())
                     .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                if let Err(e) = self.respond_with_error(session, error.clone()).await {
-                    error!("Failed to send error response to downstream: {e}");
+                if let Err(e) = self.respond_with_error(session, error.clone(), ctx).await {
+                    error!(parent: &ctx.span, "Failed to send error response to downstream: {e}");
                 }
                 status.as_u16()
             }
@@ -279,17 +307,18 @@ impl ProxyHttp for Proxy {
                 let error = ErrorResponse::new(code, message.to_string(), None);
                 let status = StatusCode::from_u16(error.code.http_status())
                     .unwrap_or(StatusCode::BAD_GATEWAY);
-                if let Err(e) = self.respond_with_error(session, error).await {
-                    error!("Failed to send error response to downstream: {e}");
+                if let Err(e) = self.respond_with_error(session, error, ctx).await {
+                    error!(parent: &ctx.span, "Failed to send error response to downstream: {e}");
                 }
                 status.as_u16()
             }
             None => {
+                ctx.code = "transport_error";
                 let code = default_error_code(e);
                 if code > 0
                     && let Err(e) = session.respond_error(code).await
                 {
-                    error!("Failed to send error response to downstream: {e}");
+                    error!(parent: &ctx.span, "Failed to send error response to downstream: {e}");
                 }
                 code
             }
@@ -306,6 +335,7 @@ impl ProxyHttp for Proxy {
             .response_written()
             .map(|resp| resp.status.as_u16())
             .unwrap_or(0);
+        ctx.observation.finish(status, ctx.code, &ctx.span);
         let req = session.req_header();
         let client = session
             .client_addr()
@@ -313,16 +343,41 @@ impl ProxyHttp for Proxy {
             .unwrap_or_default();
 
         info!(
+            parent: &ctx.span,
             path = req.uri.path(),
             status,
             client,
             endpoint = ctx.endpoint.as_deref().unwrap_or(""),
             sender = ctx.sender.map(|s| s.to_string()).unwrap_or_default(),
-            duration_ms = ctx.started_at.elapsed().as_millis() as u64,
+            duration_ms = ctx.observation.elapsed().as_millis() as u64,
             error = e.map(|e| e.to_string()).unwrap_or_default(),
             "Proxied request"
         );
     }
+}
+
+/// Starts a new trace for a request received by the proxy.
+///
+/// Note: returns a disabled span for `GET /version` health checks and for paths matching no API
+/// route.
+fn proxy_span(method: &Method, path: &str, incoming: Context) -> Span {
+    let route = telemetry::route_label(path);
+    // Probes traverse both services, and unmatched paths are mostly scanners: never create or
+    // export a request span for them. Both are still counted in the request metrics.
+    if (*method == Method::GET && path == VERSION_ROUTE) || route == telemetry::UNMATCHED_ROUTE {
+        return Span::none();
+    }
+    let span = tracing::info_span!(parent: None, "http_request",
+        service = "proxy",
+        http.route = route,
+        http.response.status_code = tracing::field::Empty,
+        code = tracing::field::Empty
+    );
+    let remote = incoming.span().span_context().clone();
+    if remote.is_valid() {
+        span.add_link(remote);
+    }
+    span
 }
 
 /// Converts an `AuthError` into an `ErrorResponse`.
@@ -360,8 +415,8 @@ fn default_error_code(e: &Error) -> u16 {
 }
 
 /// Headers that must not be forwarded to the endpoint: the proxy credentials, client-supplied
-/// forwarding information and the HTTP/1.1 hop-by-hop headers (RFC 9110 §7.6.1).
-const STRIPPED_HEADERS: [HeaderName; 14] = [
+/// forwarding and trace information and the HTTP/1.1 hop-by-hop headers (RFC 9110 §7.6.1).
+const STRIPPED_HEADERS: [HeaderName; 17] = [
     AUTHORIZATION,
     X_FORWARDED_FOR,
     X_FORWARDED_PROTO,
@@ -376,6 +431,9 @@ const STRIPPED_HEADERS: [HeaderName; 14] = [
     TE,
     TRAILER,
     UPGRADE,
+    TRACEPARENT,
+    TRACESTATE,
+    BAGGAGE,
 ];
 
 /// Removes the [`STRIPPED_HEADERS`] from the request.
@@ -423,6 +481,12 @@ mod tests {
             ("connection", "keep-alive"),
             ("keep-alive", "timeout=5"),
             ("te", "trailers"),
+            (
+                "traceparent",
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+            ),
+            ("tracestate", "vendor=client"),
+            ("baggage", "client=untrusted"),
             ("content-type", "application/json"),
             ("content-length", "2"),
             ("host", "kms.example"),

@@ -1,6 +1,6 @@
 use crate::{
     core::{Config, ResponseListener, WaiterRegistry, http},
-    monitoring::health::State,
+    monitoring::{health::State, metrics},
 };
 use anyhow::anyhow;
 use connector_utils::conn::connect_to_db;
@@ -37,6 +37,18 @@ impl Endpoint {
             response_listener,
         };
         Ok((endpoint, state))
+    }
+
+    /// Registers the endpoint's metrics, including the admission gauges read from its in-flight
+    /// limiter.
+    ///
+    /// Called once per process by the binary: the admission gauges can only be registered once, and
+    /// a second call panics.
+    pub fn register_metrics(&self) {
+        metrics::init(
+            Arc::clone(&self.app_state.in_flight_limiter),
+            self.app_state.config.max_in_flight_decryptions,
+        );
     }
 
     /// Starts the HTTP server and response listener.
