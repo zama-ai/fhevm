@@ -80,7 +80,8 @@ impl BackgroundService for KmsTxSenders {
 }
 
 /// How long in-flight connections are given to finish once the graceful shutdown deadline (
-/// [`Config::shutdown_grace_period`]) has passed, before Pingora forcibly closes them.
+/// [`Config::shutdown_grace_period`]) has passed, before Pingora forcibly closes them. The chart's
+/// `terminationGracePeriodSeconds` (coprocessor-proxy-deployment.yaml) includes it.
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
 
 impl Proxy {

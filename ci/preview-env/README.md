@@ -496,7 +496,8 @@ provides what the chart does not:
 
 With `automated_tests`, `scripts/e2e/check-coprocessor-proxy.sh` then checks that
 every proxy rolled out with its replicas Ready, and restarts every proxy under a
-steady load of signed requests from a test-suite pod: no request may fail, and no
+steady load of signed requests from a test-suite pod, which stops once every old
+proxy pod is gone: no request may fail, and no
 new pod may be Ready before its log shows its first read of the KMS tx-senders. It
 also reports whether a test-suite pod reaches the fake's PRF port, that is, whether
 the cluster enforces NetworkPolicy; that result does not fail the run.

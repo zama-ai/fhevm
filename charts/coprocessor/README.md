@@ -8,9 +8,12 @@ A helm chart to distribute and deploy the Zama fhevm coprocessor services.
 request's `FhevmSig` signature (RFC-038) and forwards an accepted request unchanged, over HTTP/1.1,
 to the endpoints in `coprocessorProxy.endpointAddresses`. Its only route is the
 PRF route, `GET` and `HEAD` `/v1/prf/{prf}/labels/{label}/{padLength}`, served by prf-service. The
-proxy checks the shape of the path. prf-service checks the encoding of its parameters, and checks
-the `FhevmSig` header again. Request bodies are rejected; the signed body digest must be that of
-an empty body.
+proxy checks the shape of the path, and prf-service the encoding of its parameters. The proxy
+forwards the `Authorization` header: prf-service recovers the signer from it for its per-connector
+limits. It does not verify the header again, and relies on the proxy's check and on the
+NetworkPolicy below. Request bodies are rejected; the signed body digest must be that of an empty body.
+
+Blue-green (RFC-021) deployments do not run the proxy yet. One proxy per fleet is a follow-up.
 
 The accepted signers are the KMS tx-senders of the Active KMS contexts that the `ProtocolConfig`
 contract lists. A context becomes Active once all its nodes have
@@ -41,7 +44,7 @@ The proxy reads its TLS certificate at startup: a renewed secret takes effect af
 nothing the proxy should not.
 
 A NetworkPolicy allows this release's proxy pods to reach the endpoint pods selected by
-`endpointNetworkPolicy.podSelector`, on `endpointNetworkPolicy.ports` (TCP 8080 by default).
+`endpointNetworkPolicy.podSelector`, on `endpointNetworkPolicy.ports` (TCP 8090 by default).
 Set these to the endpoint **pod** ports, which may differ from the Service ports in
 `endpointAddresses`. Add other required ingress, such as metrics scraping, to
 `endpointNetworkPolicy.extraIngress`. Isolation requires a CNI that enforces NetworkPolicy

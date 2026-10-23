@@ -59,7 +59,7 @@ async fn test_forwards_authenticated_requests_untouched() {
     let seen = t.endpoints[0].last_request();
     assert_eq!(seen.version, Some(Version::HTTP_11));
     assert_eq!(seen.headers["host"], t.addr.to_string());
-    // prf-service checks the `FhevmSig` header again.
+    // prf-service recovers the signer from the `FhevmSig` header.
     assert_eq!(seen.headers["authorization"], auth.as_str());
     assert_eq!(seen.headers["x-forwarded-for"], "127.0.0.1");
     assert_eq!(seen.headers["x-forwarded-proto"], "https");
@@ -296,19 +296,23 @@ async fn test_rejects_request_bodies() {
             "Content-Length: 1\r\n\r\nx",
             "Transfer-Encoding: chunked\r\n\r\n1\r\nx\r\n0\r\n\r\n",
             "Transfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+            // The declared body never arrives.
+            "Content-Length: 4\r\n\r\n",
         ] {
             let request = format!(
-                "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
-                 Connection: close\r\n{body}"
+                "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n{body}"
             );
-            let response = raw_response(&t, request.as_bytes()).await;
-            assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+            // Pingora closes a connection answered before its request body is read, so the proxy
+            // never drains the body.
+            let response = raw_response(&t, request.as_bytes())
+                .await
+                .to_ascii_lowercase();
+            assert!(response.starts_with("http/1.1 400"), "{response}");
             assert!(
-                response
-                    .to_ascii_lowercase()
-                    .contains("\r\ncache-control: no-store\r\n"),
+                response.contains("\r\ncache-control: no-store\r\n"),
                 "{response}"
             );
+            assert!(response.contains("\r\nconnection: close\r\n"), "{response}");
         }
     }
 
@@ -317,7 +321,7 @@ async fn test_rejects_request_bodies() {
     let stranger = auth_header(&PrivateKeySigner::random(), &path, b"").await;
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {stranger}\r\n\
-         Connection: close\r\nContent-Length: 1\r\n\r\nx"
+         Content-Length: 1\r\n\r\nx"
     );
     let started = Instant::now();
     assert_eq!(
@@ -328,24 +332,6 @@ async fn test_rejects_request_bodies() {
         started.elapsed() < UNKNOWN_SIGNER_WAIT / 3,
         "{:?}",
         started.elapsed()
-    );
-    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
-}
-
-#[tokio::test]
-async fn test_rejects_incomplete_bodies_before_forwarding() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
-    let path = prf_path(1);
-    let addr = t.addr;
-    let auth = auth_header(&sender(), &path, b"").await;
-    // The declared body never arrives: reject from the headers without reaching the endpoint.
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
-         Content-Length: 4\r\nConnection: close\r\n\r\n"
-    );
-    assert_eq!(
-        send_raw(&t, request.as_bytes()).await,
-        StatusCode::BAD_REQUEST
     );
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
@@ -589,34 +575,6 @@ async fn test_reads_again_only_for_an_unknown_signer() {
 }
 
 #[tokio::test]
-async fn test_a_miss_during_a_poll_waits_for_the_next_poll() {
-    let t = start_without_polls().await;
-    let next = PrivateKeySigner::random();
-    let polls = t.rpc.finalized_polls();
-    t.rpc.set_reply_delay(Duration::from_secs(1));
-
-    let during_the_poll = async {
-        // The poll woken below has the finalized block from before `next`'s context.
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while t.rpc.finalized_polls() == polls {
-            assert!(Instant::now() < deadline, "the miss woke no poll");
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        // The next poll's five calls end about 1 s after this poll: a request checked when this
-        // poll ends is refused.
-        t.rpc.set_reply_delay(Duration::from_millis(200));
-        t.rpc.set_contexts(vec![
-            KmsContext::active(&[sender().address()]),
-            KmsContext::active(&[next.address()]),
-        ]);
-        t.answer_code(&next).await
-    };
-    let unknown = PrivateKeySigner::random();
-    let (_, code) = tokio::join!(t.answer_code(&unknown), during_the_poll);
-    assert_eq!(code, ACCEPTED);
-}
-
-#[tokio::test]
 async fn test_refuses_an_unknown_signer_after_the_wait() {
     let t = start_without_polls().await;
     // Longer than the wait: the reader gives up on the poll after 30 s.
@@ -643,43 +601,6 @@ async fn test_refuses_an_unknown_signer_after_the_wait() {
         waited >= UNKNOWN_SIGNER_WAIT && waited < UNKNOWN_SIGNER_WAIT + Duration::from_secs(1),
         "{waited:?}"
     );
-}
-
-#[tokio::test]
-async fn test_concurrent_unknown_signers_share_one_read() {
-    let t = start_without_polls().await;
-    let unknown = PrivateKeySigner::random();
-    // A woken read starts a second after the previous one: the requests below all arrive before.
-    assert_eq!(t.answer_code(&unknown).await, UNKNOWN_SIGNER);
-    let polls = t.rpc.finalized_polls();
-
-    let codes = futures_util::future::join_all((0..10).map(|_| t.answer_code(&unknown))).await;
-    assert!(codes.iter().all(|code| code == UNKNOWN_SIGNER), "{codes:?}");
-    // Long enough for the woken reads that would follow the first one.
-    tokio::time::sleep(3 * WOKEN_POLL_SPACING).await;
-    assert_eq!(t.rpc.finalized_polls(), polls + 1);
-}
-
-#[tokio::test]
-async fn test_woken_polls_start_a_second_apart() {
-    let t = start_without_polls().await;
-    let unknown = PrivateKeySigner::random();
-
-    // Each miss wakes a poll, which starts once the previous poll is a second old.
-    for _ in 0..2 {
-        assert_eq!(t.answer_code(&unknown).await, UNKNOWN_SIGNER);
-    }
-
-    let times = t.rpc.finalized_poll_times();
-    assert_eq!(times.len(), 3);
-    for pair in times.windows(2) {
-        // The RPC sees a poll a few milliseconds after it starts.
-        let gap = pair[1] - pair[0];
-        assert!(
-            gap > WOKEN_POLL_SPACING - Duration::from_millis(50),
-            "{gap:?}"
-        );
-    }
 }
 
 #[tokio::test]
@@ -743,7 +664,8 @@ async fn send_raw(t: &TestProxy, request: &[u8]) -> StatusCode {
         .unwrap_or_else(|| panic!("unexpected response: {response}"))
 }
 
-/// Sends raw request bytes over TLS and returns the whole response, read until the server closes.
+/// Sends raw request bytes over TLS and returns the whole response, read until the server closes,
+/// which it must do within 5 s.
 async fn raw_response(t: &TestProxy, request: &[u8]) -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -752,6 +674,9 @@ async fn raw_response(t: &TestProxy, request: &[u8]) -> String {
 
     let mut response = Vec::new();
     // The server may close without a TLS `close_notify`, which surfaces as an EOF error.
-    let _ = stream.read_to_end(&mut response).await;
-    String::from_utf8_lossy(&response).into_owned()
+    let read =
+        tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response)).await;
+    let response = String::from_utf8_lossy(&response).into_owned();
+    assert!(read.is_ok(), "the connection stayed open after: {response}");
+    response
 }

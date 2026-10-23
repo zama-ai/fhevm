@@ -2,17 +2,15 @@
 // real pad-connector e2e when it lands. kms-context-switch and preview rollout checks invoke this
 // suite and must switch to that client too, removing the proxy-only env and party-1 key mapping.
 import { expect } from 'chai';
-import { type BaseWallet, Signature, Wallet, concat, toBeHex } from 'ethers';
-import { readFileSync } from 'node:fs';
+import { type BaseWallet, Signature, Wallet, concat, keccak256, toBeHex } from 'ethers';
+import { existsSync, readFileSync } from 'node:fs';
 import type { IncomingHttpHeaders } from 'node:http';
 import https from 'node:https';
 
 import { fhevmSigHeader } from '../sdk/connector/connectorHttp';
 
-const PRF_PATH = '/v1/prf/0/labels/00/1';
-// What the fake prf-service answers on the PRF route.
-const FAKE_PRF_OUTPUT = 'fake-prf-output';
-const FAKE_PRF_ATTESTATION = 'fake-prf-attestation';
+// prf-service accepts only canonical parameters: decimal numbers and a 64-lowercase-hex label.
+const PRF_PATH = `/v1/prf/0/labels/${'01'.repeat(32)}/1`;
 // Order of the secp256k1 group: `s` and `n - s` both sign the same message.
 const SECP256K1_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
 
@@ -25,7 +23,7 @@ const envList = (name: string): string[] =>
 interface Sent {
   status: number;
   headers: IncomingHttpHeaders;
-  body: string;
+  body: Buffer;
   /** PRF requests that reached the fake prf-service while this one was answered. */
   forwarded: number;
   where: string;
@@ -37,10 +35,11 @@ function get(url: string, authorization: string): Promise<Omit<Sent, 'forwarded'
   return new Promise((resolve, reject) => {
     const req = https
       .get(url, { ca, headers: { authorization }, signal: AbortSignal.timeout(30_000) }, (res) => {
-        let body = '';
-        res.setEncoding('utf8');
-        res.on('data', (chunk) => (body += chunk));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () =>
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }),
+        );
       })
       .on('error', (err) => reject(new Error(`${err.message}${req.reusedSocket ? ' on a reused connection' : ''}`)));
   });
@@ -77,9 +76,17 @@ function withHighS(header: string): string {
   return `${params}sig=${concat([r, toBeHex(SECP256K1_N - BigInt(s), 32), toBeHex(v === 27 ? 28 : 27, 1)])}`;
 }
 
+/** The answer of prf-service, passed through: its body is the one its attestation names. */
+function expectForwarded(sent: Sent) {
+  expect(sent.status, sent.where).to.equal(200);
+  const attestation = JSON.parse(String(sent.headers['x-prf-attestation'])) as { sns_ciphertext_digest: string };
+  expect(keccak256(sent.body), sent.where).to.equal(attestation.sns_ciphertext_digest);
+  expect(sent.forwarded, sent.where).to.equal(1);
+}
+
 function expectRefused(sent: Sent, status: number, code: string, retryable: boolean) {
   expect(sent.status, sent.where).to.equal(status);
-  const body = JSON.parse(sent.body) as { code: string; retryable: boolean };
+  const body = JSON.parse(sent.body.toString()) as { code: string; retryable: boolean };
   expect(body.code, sent.where).to.equal(code);
   expect(body.retryable, sent.where).to.equal(retryable);
   expect(sent.forwarded, sent.where).to.equal(0);
@@ -115,11 +122,7 @@ describe('Coprocessor proxy', function () {
 
   it('forwards a request a KMS tx-sender signed and returns the answer unchanged', async function () {
     for (const i of urls.keys()) {
-      const sent = await send(i, PRF_PATH, await sign(i, PRF_PATH));
-      expect(sent.status, sent.where).to.equal(200);
-      expect(sent.body, sent.where).to.equal(FAKE_PRF_OUTPUT);
-      expect(sent.headers['x-prf-attestation'], sent.where).to.equal(FAKE_PRF_ATTESTATION);
-      expect(sent.forwarded, sent.where).to.equal(1);
+      expectForwarded(await send(i, PRF_PATH, await sign(i, PRF_PATH)));
     }
   });
 
@@ -164,12 +167,9 @@ describe('Coprocessor proxy', function () {
       if (!process.env.COPROCESSOR_PROXY_SWITCH_SIGNER_KEY) this.skip();
     });
 
-    it('accepts a node that is only in the new Active context', async function () {
+    it('accepts a node of an Active context', async function () {
       for (const i of urls.keys()) {
-        const sent = await send(i, PRF_PATH, await sign(i, PRF_PATH, { signer: switchSigner() }));
-        expect(sent.status, sent.where).to.equal(200);
-        expect(sent.body, sent.where).to.equal(FAKE_PRF_OUTPUT);
-        expect(sent.forwarded, sent.where).to.equal(1);
+        expectForwarded(await send(i, PRF_PATH, await sign(i, PRF_PATH, { signer: switchSigner() })));
       }
     });
 
@@ -189,9 +189,12 @@ describe('Coprocessor proxy', function () {
   });
 
   // Run by ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh, which restarts every proxy
-  // Deployment once this test logs that its load started.
+  // Deployment once this test logs that its load started, and creates the stop file once every old
+  // pod is gone. The load lasts at most COPROCESSOR_PROXY_LOAD_SECONDS.
   describe('through a rolling restart', function () {
     const loadSeconds = Number(process.env.COPROCESSOR_PROXY_LOAD_SECONDS ?? 0);
+    const stopFile = process.env.COPROCESSOR_PROXY_LOAD_STOP_FILE;
+    const stopped = () => stopFile !== undefined && existsSync(stopFile);
 
     before(function () {
       if (!loadSeconds) this.skip();
@@ -203,7 +206,7 @@ describe('Coprocessor proxy', function () {
       const failures: string[] = [];
       let sent = 0;
       console.log('[coprocessor-proxy] load started');
-      for (const end = Date.now() + loadSeconds * 1000; Date.now() < end; sent += 1) {
+      for (const end = Date.now() + loadSeconds * 1000; Date.now() < end && !stopped(); sent += 1) {
         const i = sent % urls.length;
         const fail = (reason: string) => failures.push(`${new Date().toISOString()} ${urls[i]} -> ${reason}`);
         try {

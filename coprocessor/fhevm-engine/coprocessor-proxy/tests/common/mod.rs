@@ -121,7 +121,6 @@ pub fn stub_attestation(path: &str) -> String {
 pub struct SeenRequest {
     pub version: Option<Version>,
     pub headers: HeaderMap,
-    pub body: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -214,16 +213,12 @@ async fn prf(
     Path((prf, label, pad_length)): Path<(String, String, String)>,
     version: Version,
     headers: HeaderMap,
-    // Read as prf-service does to check it against the signed digest: a body the proxy cuts
-    // short is never handled.
-    body: axum::body::Bytes,
 ) -> Response {
     state.hits.fetch_add(1, Ordering::SeqCst);
     state.connections.lock().unwrap().insert(client);
     *state.last.lock().unwrap() = SeenRequest {
         version: Some(version),
         headers: headers.clone(),
-        body: body.to_vec(),
     };
     if headers.contains_key("x-stub-hold") {
         state.release.notified().await;
@@ -300,8 +295,8 @@ struct RpcState {
     contexts: Vec<KmsContext>,
     /// The number of the finalized block, the only block the contexts are known at.
     finalized: u64,
-    /// When the finalized block was asked for: one entry per poll of the proxy.
-    finalized_polls: Vec<Instant>,
+    /// How many times the finalized block was asked for: one per poll of the proxy.
+    finalized_polls: usize,
     failing: bool,
     /// How long each answer is held after it is computed.
     reply_delay: Duration,
@@ -319,7 +314,7 @@ impl FakeRpc {
         let state = Arc::new(Mutex::new(RpcState {
             contexts,
             finalized: 100,
-            finalized_polls: Vec::new(),
+            finalized_polls: 0,
             failing: false,
             reply_delay: Duration::ZERO,
         }));
@@ -354,12 +349,7 @@ impl FakeRpc {
 
     /// How many times the finalized block was asked for: one per poll of the proxy.
     pub fn finalized_polls(&self) -> usize {
-        self.state.lock().unwrap().finalized_polls.len()
-    }
-
-    /// When the finalized block was asked for, in order.
-    pub fn finalized_poll_times(&self) -> Vec<Instant> {
-        self.state.lock().unwrap().finalized_polls.clone()
+        self.state.lock().unwrap().finalized_polls
     }
 }
 
@@ -383,7 +373,7 @@ fn answer(state: &mut RpcState, call: &Value) -> Response {
     }
     let id = &call["id"];
     if call["method"] == "eth_getBlockByNumber" && call["params"][0] == "finalized" {
-        state.finalized_polls.push(Instant::now());
+        state.finalized_polls += 1;
         let mut block: Block = Block::default();
         block.header.inner.number = state.finalized;
         return Json(json!({"jsonrpc": "2.0", "id": id, "result": block})).into_response();

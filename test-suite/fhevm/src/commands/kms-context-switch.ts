@@ -45,9 +45,10 @@
  *      and abort above.
  *   6. coprocessor-proxy, when the stack runs it. Once the swap's activation is finalized, every
  *      coprocessor's proxy accepts a request signed by the promoted spare, which only the new
- *      context has. After step 5, every context but the swap's is destroyed; once that is
- *      finalized and each proxy has read the KMS tx-senders again, every proxy refuses the dropped
- *      node with `401 auth_unknown_signer` and forwards nothing.
+ *      context has, and one signed by the dropped node, which the outgoing context still has.
+ *      After step 5, every context but the swap's is destroyed; once that is finalized and each
+ *      proxy has read the KMS tx-senders again, every proxy refuses the dropped node with
+ *      `401 auth_unknown_signer` and forwards nothing.
  *
  * Activation is not automatic. The KMS cores must reshare, and the connectors must submit
  * `confirmKmsContextCreation` / `confirmEpochActivation`, before `getCurrentKmsContextAndEpoch`
@@ -775,15 +776,20 @@ export const runKmsContextSwitchProfile = async (
     recovered, true,
   );
 
-  // 6a) Every coprocessor-proxy accepts the promoted spare once the swap is finalized.
+  // 6a) Once the swap is finalized, every coprocessor-proxy accepts the promoted spare, and the
+  //     dropped node while the outgoing context is still Active: 6b's refusal then comes from the
+  //     destroy, not from a node the proxy never accepted.
   if (runProxyCheck) {
     await waitForLatestFinalized(rpcUrl);
-    for (const party of committeePlan(state.scenario.kms).spares) {
-      await runProxyCheck(
-        `kms-context-switch: every coprocessor-proxy accepts promoted node ${party}`,
-        "accepts a node that is only in the new Active context",
-        { COPROCESSOR_PROXY_SWITCH_SIGNER_KEY: await kmsTxSenderKey(party) },
-      );
+    const { spares, dropped } = committeePlan(state.scenario.kms);
+    for (const [role, parties] of [["promoted", spares], ["outgoing", dropped]] as const) {
+      for (const party of parties) {
+        await runProxyCheck(
+          `kms-context-switch: every coprocessor-proxy accepts ${role} node ${party}`,
+          "accepts a node of an Active context",
+          { COPROCESSOR_PROXY_SWITCH_SIGNER_KEY: await kmsTxSenderKey(party) },
+        );
+      }
     }
   }
 
@@ -804,6 +810,8 @@ export const runKmsContextSwitchProfile = async (
       "was aborted (single-in-flight revert + Pending-epoch destroy) and recovered; the node swap activated " +
       "and the promoted spare serves the 2t+1 quorum; user-decryption works under each transition; the " +
       "input-proof app flow held at every checkpoint" +
-      (runProxyCheck ? "; and every coprocessor-proxy accepted the promoted spare and refused the dropped node" : ""),
+      (runProxyCheck
+        ? "; and every coprocessor-proxy accepted the promoted spare, accepted the dropped node until its context was destroyed, then refused it"
+        : ""),
   );
 };

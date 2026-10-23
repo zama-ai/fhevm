@@ -11,11 +11,13 @@
 set -euo pipefail
 
 : "${NAMESPACE:?}" "${NB_COPROCESSOR:?}" "${E2E_IMAGE:?}" "${HOST_CHAIN_ID:?}"
-# Every party's proxy restarts at once and must finish within restart_seconds; each old pod
-# drains for up to its grace period. The load outlasts that budget and the 5 s wait for its start.
+# Every party's proxy restarts at once and must finish within restart_seconds, its old pods gone
+# after draining for up to their grace period. The load stops once they are gone; it is bounded by
+# that budget and the 5 s wait for its start.
 restart_seconds=600
 load_seconds=$((restart_seconds + 60))
 pod=coprocessor-proxy-check
+stop_file=/tmp/coprocessor-proxy-load-stop
 deployments=()
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
   deployments+=("coprocessor-${i}-coprocessor-proxy")
@@ -53,7 +55,7 @@ const probe = (host, port) => new Promise((resolve) => {
 kubectl delete pod "${pod}" -n "${NAMESPACE}" --ignore-not-found --wait=true
 # The container's shell, not this one, expands $NETCHECK_JS.
 # shellcheck disable=SC2016
-NETCHECK_JS="${netcheck_js}" POD="${pod}" LOAD_SECONDS="${load_seconds}" yq -n '
+NETCHECK_JS="${netcheck_js}" POD="${pod}" LOAD_SECONDS="${load_seconds}" STOP_FILE="${stop_file}" yq -n '
 {
   "apiVersion": "v1",
   "kind": "Pod",
@@ -72,6 +74,7 @@ NETCHECK_JS="${netcheck_js}" POD="${pod}" LOAD_SECONDS="${load_seconds}" yq -n '
         {"name": "NETCHECK_JS", "value": strenv(NETCHECK_JS)},
         {"name": "TS_NODE_TRANSPILE_ONLY", "value": "true"},
         {"name": "COPROCESSOR_PROXY_LOAD_SECONDS", "value": strenv(LOAD_SECONDS)},
+        {"name": "COPROCESSOR_PROXY_LOAD_STOP_FILE", "value": strenv(STOP_FILE)},
         {"name": "COPROCESSOR_PROXY_CA_CERT", "value": "/etc/coprocessor-proxy/ca.crt"},
         {"name": "CHAIN_ID_HOST", "value": strenv(HOST_CHAIN_ID)},
         {"name": "PROTOCOL_CONFIG_CONTRACT_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "host-sc-addresses", "key": "protocol_config.address"}}},
@@ -98,22 +101,31 @@ until started_load; do
 done
 kubectl logs "${pod}" -n "${NAMESPACE}" | grep '^networkpolicy:'
 
+old_pods=()
+for deploy in "${deployments[@]}"; do
+  while IFS= read -r p; do
+    old_pods+=("${p}")
+  done < <(kubectl get pods -n "${NAMESPACE}" -l "app=coprocessor-proxy,app.kubernetes.io/name=${deploy}" -o name)
+done
 restart_started=$(date -u +%s)
 restart_deadline=$((SECONDS + restart_seconds))
+# A zero timeout would wait forever.
+remaining() { local left=$((restart_deadline - SECONDS)); echo "$((left > 0 ? left : 1))s"; }
 for deploy in "${deployments[@]}"; do
   kubectl rollout restart "deploy/${deploy}" -n "${NAMESPACE}"
 done
 for deploy in "${deployments[@]}"; do
-  # A zero timeout would wait forever.
-  remaining=$((restart_deadline - SECONDS))
-  kubectl rollout status "deploy/${deploy}" -n "${NAMESPACE}" --timeout="$((remaining > 0 ? remaining : 1))s"
+  kubectl rollout status "deploy/${deploy}" -n "${NAMESPACE}" --timeout="$(remaining)"
 done
+# An old pod keeps serving its held requests until it exits.
+kubectl wait --for=delete "${old_pods[@]}" -n "${NAMESPACE}" --timeout="$(remaining)"
 # The load must still be running, or it did not cover the whole restart.
 if [[ "$(phase)" != "Running" ]]; then
   kubectl logs "${pod}" -n "${NAMESPACE}" || true
   echo "::error::the load ended before the rolling restart did (phase $(phase))"
   exit 1
 fi
+kubectl exec "${pod}" -n "${NAMESPACE}" -- touch "${stop_file}"
 
 # Every pod that started during the restart became Ready only after its first read.
 not_ready_before_read=true

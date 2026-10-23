@@ -228,7 +228,8 @@ impl ProxyHttp for Proxy {
     }
 
     // Strips the forwarding and hop-by-hop headers before forwarding. The `FhevmSig` header is
-    // kept: the endpoint checks it again. The body is never touched.
+    // kept: prf-service recovers the signer from it for its per-connector limits, and trusts this
+    // check instead of verifying it. The body is never touched.
     async fn upstream_request_filter(
         &self,
         session: &mut Session,
