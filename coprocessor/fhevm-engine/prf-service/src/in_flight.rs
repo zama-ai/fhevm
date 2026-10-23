@@ -1,27 +1,41 @@
-//! Allows one request for each connector and label at a time, in one pod.
+//! Limits the requests in progress of each connector, in one pod.
 
 use crate::path::PrfPath;
 use alloy::primitives::{Address, B256};
-use std::{collections::HashSet, sync::Mutex};
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroUsize,
+    sync::Mutex,
+};
 
-type Key = (Address, u16, B256);
+type Label = (u16, B256);
 
-#[derive(Default)]
 pub struct InFlight {
-    requests: Mutex<HashSet<Key>>,
+    max_per_connector: NonZeroUsize,
+    requests: Mutex<HashMap<Address, HashSet<Label>>>,
 }
 
 impl InFlight {
-    /// Starts a request of `connector`. Returns `None` if the connector already has a request for
-    /// this label. Then the handler answers `429`.
+    pub fn new(max_per_connector: NonZeroUsize) -> Self {
+        Self {
+            max_per_connector,
+            requests: Mutex::default(),
+        }
+    }
+
+    /// Returns `None` if `connector` has a request for this label, or `max_per_connector` requests.
     pub fn start(&self, connector: Address, path: &PrfPath) -> Option<InFlightRequest<'_>> {
-        let key = (connector, path.prf, path.label);
-        if !self.requests.lock().expect("requests lock").insert(key) {
+        let label = (path.prf, path.label);
+        let mut requests = self.requests.lock().expect("requests lock");
+        let labels = requests.entry(connector).or_default();
+        // The limit is at least 1, so a refusal never leaves `labels` empty.
+        if labels.len() >= self.max_per_connector.get() || !labels.insert(label) {
             return None;
         }
         Some(InFlightRequest {
             in_flight: self,
-            key,
+            connector,
+            label,
         })
     }
 }
@@ -29,16 +43,19 @@ impl InFlight {
 /// A request in progress. On drop, it frees its place.
 pub struct InFlightRequest<'a> {
     in_flight: &'a InFlight,
-    key: Key,
+    connector: Address,
+    label: Label,
 }
 
 impl Drop for InFlightRequest<'_> {
     fn drop(&mut self) {
-        self.in_flight
-            .requests
-            .lock()
-            .expect("requests lock")
-            .remove(&self.key);
+        let mut requests = self.in_flight.requests.lock().expect("requests lock");
+        if let Some(labels) = requests.get_mut(&self.connector) {
+            labels.remove(&self.label);
+            if labels.is_empty() {
+                requests.remove(&self.connector);
+            }
+        }
     }
 }
 
@@ -47,6 +64,11 @@ mod tests {
     use super::*;
 
     const CONNECTOR: Address = Address::repeat_byte(0x11);
+    const OTHER_CONNECTOR: Address = Address::repeat_byte(0x22);
+
+    fn in_flight(max_per_connector: usize) -> InFlight {
+        InFlight::new(NonZeroUsize::new(max_per_connector).unwrap())
+    }
 
     fn path(label: u8) -> PrfPath {
         PrfPath {
@@ -58,17 +80,26 @@ mod tests {
 
     #[test]
     fn one_request_for_each_connector_and_label() {
-        let in_flight = InFlight::default();
+        let in_flight = in_flight(10);
         let first = in_flight.start(CONNECTOR, &path(1));
         assert!(first.is_some());
         assert!(in_flight.start(CONNECTOR, &path(1)).is_none());
         // Another label, or another connector, is another request.
         assert!(in_flight.start(CONNECTOR, &path(2)).is_some());
-        assert!(in_flight
-            .start(Address::repeat_byte(0x22), &path(1))
-            .is_some());
+        assert!(in_flight.start(OTHER_CONNECTOR, &path(1)).is_some());
         drop(first);
         assert!(in_flight.start(CONNECTOR, &path(1)).is_some());
         assert!(in_flight.requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn limits_the_requests_of_each_connector() {
+        let in_flight = in_flight(2);
+        let first = in_flight.start(CONNECTOR, &path(1));
+        let _second = in_flight.start(CONNECTOR, &path(2)).unwrap();
+        assert!(in_flight.start(CONNECTOR, &path(3)).is_none());
+        assert!(in_flight.start(OTHER_CONNECTOR, &path(3)).is_some());
+        drop(first);
+        assert!(in_flight.start(CONNECTOR, &path(3)).is_some());
     }
 }
