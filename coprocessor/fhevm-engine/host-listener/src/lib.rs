@@ -9,3 +9,6 @@ pub mod protocol_config;
 
 #[cfg(feature = "test-failpoints")]
 pub mod consensus_test_control;
+
+#[cfg(any(test, feature = "test-failpoints"))]
+pub mod catchup_test_control;

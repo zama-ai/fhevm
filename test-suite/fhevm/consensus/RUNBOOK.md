@@ -472,6 +472,27 @@ replacement. Both require every original output to agree, remain unique,
 reach quorum and decrypt to 12; fresh work must also succeed. Neither case is
 a throughput benchmark or a claim about broker delivery attribution.
 
+`FM-HOST-RELATIVE-CATCHUP` is the separate relative-flags-only regression in
+that same CPU `backlog` leg. It creates no absolute database request. It retains
+the queued LIVE backlog, selects the new request with CLI identity `(-1024, -1,
+unfinalized)`, and requires its resolved bounds to cover all twelve offline
+receipts. The initial request must be DONE with no other unfinished requests.
+A stale first LIVE reference currently makes this strict range assertion fail;
+completion of an older range must not turn that into a passing recovery claim.
+
+A private `host-listener/test-failpoints` gate holds LIVE, FINAL and REORGED
+payloads for those exact receipt hashes before ingestion, while readers can
+observe the LIVE reference and catchup delivery continues. After successful
+catchup ingestion, it journals the full payload. Verification requires all
+twelve original transactions in successful CATCHUP payloads with the exact
+CLI-created request ID, plus the usual block, output, quorum, decryption and
+fresh-work checks. The gate must remain unexpired through verification. The
+shared supervisor cleanup marker removes the gate even if the child runner is
+interrupted. Evidence is uploaded under `failure-matrix/FM-HOST-RELATIVE-CATCHUP`.
+Select this case directly in the consensus workflow with `build=true`; the
+inventory capability enables the fault-test image. This test exposes relative
+bounds limitations and does not change their production semantics.
+
 FM-STORAGE-WORKER-RESTART extends the noisy-storage case: an actual upload
 failure must occur, then the SNS owner is killed and automatically replaced
 while storage is still stopped. Only then is storage restored, and the original
