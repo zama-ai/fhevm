@@ -59,8 +59,8 @@ contract ProtocolConfigDestructionTest is ProtocolConfigTestBase {
         _confirmContextCreationWithTwoSigners(newContextId);
         _confirmContextCreation(newContextId, kmsPk2, "");
         _confirmContextCreation(newContextId, kmsPk3, "");
-        _confirmEpochActivation(newContextId, EPOCH_COUNTER_BASE + 2, kmsPk2);
-        _confirmEpochActivation(newContextId, EPOCH_COUNTER_BASE + 2, kmsPk3);
+        _confirmEpochActivationWithDummyMaterial(newContextId, EPOCH_COUNTER_BASE + 2, kmsPk2);
+        _confirmEpochActivationWithDummyMaterial(newContextId, EPOCH_COUNTER_BASE + 2, kmsPk3);
 
         uint256 epochId = EPOCH_COUNTER_BASE + 1;
         vm.prank(owner);

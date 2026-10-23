@@ -14,7 +14,7 @@ import {IProtocolConfigBase} from "./IProtocolConfigBase.sol";
  */
 interface IProtocolConfig is IProtocolConfigBase {
     /**
-     * @notice A keygen result attested by a KMS signer during epoch activation.
+     * @notice A keygen result a KMS signer confirms during epoch activation.
      * @param prepKeygenId The preprocessing keygen ID the key derives from.
      * @param keyId The generated key ID.
      * @param keyDigests The per-type digests of the generated key.
@@ -26,7 +26,7 @@ interface IProtocolConfig is IProtocolConfigBase {
     }
 
     /**
-     * @notice A CRS result attested by a KMS signer during epoch activation.
+     * @notice A CRS result a KMS signer confirms during epoch activation.
      * @param crsId The generated CRS ID.
      * @param maxBitLength The maximum bit length the CRS supports.
      * @param crsDigest The digest of the generated CRS.
@@ -294,7 +294,6 @@ interface IProtocolConfig is IProtocolConfigBase {
 
     /**
      * @notice Create a pending KMS context and pending epoch.
-     * @dev Every committee must satisfy `n >= 3t + 1`. The contract does not check it.
      * @param kmsNodeParams The KMS nodes to register, including MPC metadata.
      * @param thresholds The thresholds for the new context.
      * @param softwareVersion The KMS software version expected for the context.

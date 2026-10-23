@@ -205,8 +205,8 @@ contract KMSGenerationTest is ProtocolConfigSigningTestUtils {
     function _activatePendingTwoNodeContext(uint256 contextId, uint256 epochId, uint256 pk0, uint256 pk1) internal {
         _confirmContextCreation(contextId, pk0, "");
         _confirmContextCreation(contextId, pk1, "");
-        _confirmEpochActivation(contextId, epochId, pk0);
-        _confirmEpochActivation(contextId, epochId, pk1);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, pk0);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, pk1);
     }
 
     function _activatePendingDisjointTwoNodeContext(
@@ -219,8 +219,8 @@ contract KMSGenerationTest is ProtocolConfigSigningTestUtils {
         _confirmContextCreation(contextId, kmsPk1, "");
         _confirmContextCreation(contextId, pk0, "");
         _confirmContextCreation(contextId, pk1, "");
-        _confirmEpochActivation(contextId, epochId, pk0);
-        _confirmEpochActivation(contextId, epochId, pk1);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, pk0);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, pk1);
     }
 
     function _activatePendingFourNodeContext(uint256 contextId, uint256 epochId) internal {
@@ -228,10 +228,10 @@ contract KMSGenerationTest is ProtocolConfigSigningTestUtils {
         _confirmContextCreation(contextId, kmsPk1, "");
         _confirmContextCreation(contextId, kmsPk2, "");
         _confirmContextCreation(contextId, kmsPk3, "");
-        _confirmEpochActivation(contextId, epochId, kmsPk0);
-        _confirmEpochActivation(contextId, epochId, kmsPk1);
-        _confirmEpochActivation(contextId, epochId, kmsPk2);
-        _confirmEpochActivation(contextId, epochId, kmsPk3);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk0);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk1);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk2);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk3);
     }
 
     function _primaryStorageUrls() internal pure returns (string[] memory urls) {

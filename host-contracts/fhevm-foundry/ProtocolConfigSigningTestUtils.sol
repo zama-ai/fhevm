@@ -217,7 +217,7 @@ abstract contract ProtocolConfigSigningTestUtils is HostContractsDeployerTestUti
 
     /// @dev Setup helper that drives a pending epoch to Active for suites that need a usable KMS context.
     ///      Callers need only the active epoch, not a specific payload, so this submits constant material.
-    function _confirmEpochActivation(uint256 contextId, uint256 epochId, uint256 pk) internal {
+    function _confirmEpochActivationWithDummyMaterial(uint256 contextId, uint256 epochId, uint256 pk) internal {
         // An empty `keys` or `crsList` reverts with EmptyEpochActivationResults, so supply one deterministic
         // result of each kind with constant ids. Every signer produces the same epochMaterialHash.
         // The ids need not exist in KMSGeneration because confirmEpochActivation checks only signer recovery.

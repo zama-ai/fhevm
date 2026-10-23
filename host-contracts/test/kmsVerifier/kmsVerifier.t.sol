@@ -106,16 +106,16 @@ contract KMSVerifierTest is ProtocolConfigSigningTestUtils {
         _confirmContextCreation(contextId, privateKeySigner1, "");
         _confirmContextCreation(contextId, privateKeySigner2, "");
         _confirmContextCreation(contextId, pk, "");
-        _confirmEpochActivation(contextId, epochId, pk);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, pk);
     }
 
     function _activatePendingThreeNodeContext(uint256 contextId, uint256 epochId) internal {
         _confirmContextCreation(contextId, privateKeySigner0, "");
         _confirmContextCreation(contextId, privateKeySigner1, "");
         _confirmContextCreation(contextId, privateKeySigner2, "");
-        _confirmEpochActivation(contextId, epochId, privateKeySigner0);
-        _confirmEpochActivation(contextId, epochId, privateKeySigner1);
-        _confirmEpochActivation(contextId, epochId, privateKeySigner2);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, privateKeySigner0);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, privateKeySigner1);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, privateKeySigner2);
     }
 
     function _buildSingleSignerProof(

@@ -19,10 +19,8 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  *      (`defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext`, then
  *      `confirmKmsContextCreation` / `confirmEpochActivation`) runs only there, alongside
  *      `KMSGeneration`. Every other host chain runs `ProtocolConfigReplica` instead.
- *      Anyone may submit a KMS signer's EIP-712 lifecycle confirmation. The contract checks the
- *      recovered signer, not the caller. The signatures exist so that another chain can check a
- *      lifecycle step under this contract's EIP-712 domain (RFC 037). `ProtocolConfigReplica` does
- *      not check them.
+ *      Each lifecycle confirmation is a KMS signer's EIP-712 signature, so any caller may submit it.
+ *      The signatures let other chains verify lifecycle steps (RFC 037).
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableEmptyProxy, ACLOwnable {

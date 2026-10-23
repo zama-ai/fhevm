@@ -165,13 +165,13 @@ abstract contract ProtocolConfigTestBase is ProtocolConfigSigningTestUtils {
 
     function _activatePendingContextWithOneKmsNode(uint256 contextId, uint256 epochId) internal {
         _confirmContextCreation(contextId, kmsPk0, "");
-        _confirmEpochActivation(contextId, epochId, kmsPk0);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk0);
     }
 
     function _activatePendingContextWithTwoKmsNodes(uint256 contextId, uint256 epochId) internal {
         _confirmContextCreationWithTwoSigners(contextId);
-        _confirmEpochActivation(contextId, epochId, kmsPk0);
-        _confirmEpochActivation(contextId, epochId, kmsPk1);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk0);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk1);
     }
 
     function _completeKmsGenerationMaterial() internal returns (uint256 keyId, uint256 crsId) {
@@ -937,8 +937,8 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         uint256 retriedEpochId = EPOCH_COUNTER_BASE + 3;
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
-        _confirmEpochActivation(contextId, retriedEpochId, kmsPk0);
-        _confirmEpochActivation(contextId, retriedEpochId, kmsPk1);
+        _confirmEpochActivationWithDummyMaterial(contextId, retriedEpochId, kmsPk0);
+        _confirmEpochActivationWithDummyMaterial(contextId, retriedEpochId, kmsPk1);
         (, uint256 epochFinal) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(epochFinal, retriedEpochId);
     }
@@ -1015,8 +1015,8 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         _confirmContextCreationWithTwoSigners(retriedContextId);
         _confirmContextCreation(retriedContextId, kmsPk2, "");
         _confirmContextCreation(retriedContextId, kmsPk3, "");
-        _confirmEpochActivation(retriedContextId, retriedEpochId, kmsPk2);
-        _confirmEpochActivation(retriedContextId, retriedEpochId, kmsPk3);
+        _confirmEpochActivationWithDummyMaterial(retriedContextId, retriedEpochId, kmsPk2);
+        _confirmEpochActivationWithDummyMaterial(retriedContextId, retriedEpochId, kmsPk3);
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, retriedContextId);
         assertEq(activeEpochId, retriedEpochId);
@@ -2522,7 +2522,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
-        _confirmEpochActivation(contextId, epochId, kmsPk0);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk0);
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
@@ -2571,7 +2571,7 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
             _hashEpochActivation(contextId, EPOCH_COUNTER_BASE + 1, epochId, epochMaterialHash, "")
         );
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, "");
-        _confirmEpochActivation(contextId, epochId, kmsPk1);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk1);
 
         (, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeEpochId, epochId);
@@ -2583,8 +2583,8 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         uint256 epochId = EPOCH_COUNTER_BASE + 2;
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
-        _confirmEpochActivation(contextId, epochId, kmsPk0);
-        _confirmEpochActivation(contextId, epochId, kmsPk1);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk0);
+        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk1);
 
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
