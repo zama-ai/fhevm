@@ -4,7 +4,6 @@ use kms_connector_api::{PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_
 use opentelemetry::{
     Context,
     propagation::{Extractor, Injector, TextMapPropagator},
-    trace::TraceContextExt,
 };
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use prometheus::{
@@ -100,41 +99,6 @@ pub fn trace_headers(span: &Span) -> impl Iterator<Item = (&'static str, String)
     ]
     .into_iter()
     .filter_map(|(name, value)| Some((name, value?)))
-}
-
-/// The root span of a request, outside any current trace.
-fn request_span(service: &'static str, method: &str, path: &str) -> Span {
-    // Probes traverse both services. Never create or export a request span for them.
-    if method == "GET" && path == VERSION_ROUTE {
-        return Span::none();
-    }
-    tracing::info_span!(parent: None, "http_request", service,
-        http.route = route_label(path), http.request.method = method,
-        http.response.status_code = tracing::field::Empty, code = tracing::field::Empty)
-}
-
-/// Starts a new trace for a request received by the proxy.
-///
-/// A valid trace supplied by the client is recorded as a related trace. The proxy decides
-/// whether to record its own trace independently of the client's sampling flag.
-/// Returns a disabled span for `GET /version` health checks.
-pub fn proxy_span(method: &str, path: &str, incoming: Context) -> Span {
-    let span = request_span("proxy", method, path);
-    let remote = incoming.span().span_context().clone();
-    if remote.is_valid() {
-        span.add_link(remote);
-    }
-    span
-}
-
-/// Creates an endpoint request span with the proxy's span as its parent.
-///
-/// This puts the endpoint's work in the same trace as the proxy request.
-/// Returns a disabled span for `GET /version` so health checks do not produce traces.
-pub fn endpoint_span(method: &str, path: &str, incoming: Context) -> Span {
-    let span = request_span("endpoint", method, path);
-    span.set_parent(incoming);
-    span
 }
 
 /// Request counters, duration histograms and in-flight gauges shared by the proxy and endpoint.
@@ -248,83 +212,34 @@ impl Drop for RequestObservation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::monitoring::otlp::PropagationContext;
-    use opentelemetry::trace::{SpanId, TracerProvider};
-    use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+    use opentelemetry::trace::{TraceContextExt, TracerProvider};
+    use opentelemetry_sdk::trace::SdkTracerProvider;
     use std::collections::HashMap;
     use tracing_subscriber::layer::SubscriberExt;
 
     #[test]
-    // The proxy starts a new trace linked to the client's trace; the endpoint and worker continue it.
-    fn request_trace_propagation() {
-        let exporter = InMemorySpanExporter::default();
-        let provider = SdkTracerProvider::builder()
-            .with_simple_exporter(exporter.clone())
-            .build();
+    // Headers injected from a span extract back to that span's context. Checks: disabled spans inject nothing, an empty
+    // `tracestate` is omitted, and invalid headers extract nothing.
+    fn trace_headers_round_trip() {
+        let provider = SdkTracerProvider::builder().build();
         let subscriber = tracing_subscriber::registry()
             .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("http-test")));
-        // `PropagationContext`, persisted with the request row, uses the global propagator.
-        opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
         tracing::subscriber::with_default(subscriber, || {
-            // An unsampled client trace must not stop the proxy from recording its own.
-            let client = extract_context(|name| {
-                (name == TRACEPARENT)
-                    .then_some("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00")
-            });
-            let proxy = proxy_span("POST", PUBLIC_DECRYPTION_ROUTE, client.clone());
-            let local = proxy.context();
-            assert!(local.span().span_context().is_sampled());
-            assert_ne!(
-                local.span().span_context().trace_id(),
-                client.span().span_context().trace_id()
-            );
-
-            let headers: HashMap<_, _> = trace_headers(&proxy).collect();
+            let span = tracing::info_span!("request");
+            let headers: HashMap<_, _> = trace_headers(&span).collect();
             assert_eq!(headers.len(), 1, "only a traceparent: {headers:?}");
-            let endpoint = endpoint_span(
-                "POST",
-                PUBLIC_DECRYPTION_ROUTE,
-                extract_context(|name| headers.get(name).map(String::as_str)),
+            let extracted = extract_context(|name| headers.get(name).map(String::as_str));
+            let (extracted, original) = (
+                extracted.span().span_context().clone(),
+                span.context().span().span_context().clone(),
             );
-            let handler =
-                endpoint.in_scope(|| tracing::info_span!("public_decrypt", decryption_id = "test"));
-            let persisted =
-                bc2wrap::serialize(&PropagationContext::inject(&handler.context())).unwrap();
-            let restored: PropagationContext = bc2wrap::deserialize_slice(&persisted).unwrap();
-            let worker = tracing::info_span!(parent: None, "handle_event");
-            worker.set_parent(restored.extract());
-            assert_eq!(
-                worker.context().span().span_context().trace_id(),
-                local.span().span_context().trace_id()
-            );
-            drop((worker, handler, endpoint, proxy));
+            assert_eq!(extracted.trace_id(), original.trace_id());
+            assert_eq!(extracted.span_id(), original.span_id());
 
-            assert!(proxy_span("GET", VERSION_ROUTE, Context::new()).is_disabled());
-            assert!(endpoint_span("GET", VERSION_ROUTE, Context::new()).is_disabled());
             assert_eq!(trace_headers(&Span::none()).count(), 0);
-            let first = proxy_span(
-                "POST",
-                PUBLIC_DECRYPTION_ROUTE,
-                extract_context(|_| Some("invalid")),
-            );
-            let second =
-                first.in_scope(|| proxy_span("POST", USER_DECRYPTION_ROUTE, Context::new()));
-            assert_ne!(
-                first.context().span().span_context().trace_id(),
-                second.context().span().span_context().trace_id()
-            );
+            let invalid = extract_context(|_| Some("invalid"));
+            assert!(!invalid.span().span_context().is_valid());
         });
-        provider.force_flush().unwrap();
-        let spans = exporter.get_finished_spans().unwrap();
-        assert_eq!(spans.len(), 6); // One four-span chain and two independent roots; no probes.
-        let [worker, handler, endpoint, proxy] = &spans[..4] else {
-            unreachable!()
-        };
-        assert_eq!(worker.parent_span_id, handler.span_context.span_id());
-        assert_eq!(handler.parent_span_id, endpoint.span_context.span_id());
-        assert_eq!(endpoint.parent_span_id, proxy.span_context.span_id());
-        assert_eq!(proxy.parent_span_id, SpanId::INVALID);
-        assert_eq!(proxy.links.links.len(), 1);
     }
 
     #[test]

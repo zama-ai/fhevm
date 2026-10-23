@@ -13,7 +13,8 @@ use http::{
         PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, UPGRADE, VIA, WWW_AUTHENTICATE,
     },
 };
-use kms_connector_api::{ErrorCode, ErrorResponse};
+use kms_connector_api::{ErrorCode, ErrorResponse, VERSION_ROUTE};
+use opentelemetry::{Context, trace::TraceContextExt};
 use pingora::{
     Error, ErrorSource, ErrorType,
     http::{RequestHeader, ResponseHeader},
@@ -21,6 +22,7 @@ use pingora::{
     proxy::{FailToProxy, ProxyHttp, Session},
 };
 use tracing::{Span, error, info};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 // The `X-Forwarded-*` headers set by the proxy (any inbound value is dropped first).
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
@@ -133,7 +135,7 @@ impl ProxyHttp for Proxy {
         let req = session.req_header();
         let incoming =
             telemetry::extract_context(|name| req.headers.get(name).and_then(|v| v.to_str().ok()));
-        ctx.span = telemetry::proxy_span(req.method.as_str(), req.uri.path(), incoming);
+        ctx.span = proxy_span(&req.method, req.uri.path(), incoming);
         ctx.observation.route = telemetry::route_label(req.uri.path());
         session.set_read_timeout(Some(self.config.request_read_timeout));
         Ok(())
@@ -352,6 +354,27 @@ impl ProxyHttp for Proxy {
             "Proxied request"
         );
     }
+}
+
+/// Starts a new trace for a request received by the proxy.
+///
+/// Note: returns a disabled span for `GET /version` health checks.
+fn proxy_span(method: &Method, path: &str, incoming: Context) -> Span {
+    // Probes traverse both services. Never create or export a request span for them.
+    if *method == Method::GET && path == VERSION_ROUTE {
+        return Span::none();
+    }
+    let span = tracing::info_span!(parent: None, "http_request",
+        service = "proxy",
+        http.route = telemetry::route_label(path),
+        http.response.status_code = tracing::field::Empty,
+        code = tracing::field::Empty
+    );
+    let remote = incoming.span().span_context().clone();
+    if remote.is_valid() {
+        span.add_link(remote);
+    }
+    span
 }
 
 /// Converts an `AuthError` into an `ErrorResponse`.

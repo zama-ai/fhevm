@@ -130,9 +130,6 @@ async fn echo(
         "authorization": header("authorization"),
         "x-forwarded-for": header("x-forwarded-for"),
         "x-forwarded-proto": header("x-forwarded-proto"),
-        "traceparent": header("traceparent"),
-        "tracestate": header("tracestate"),
-        "baggage": header("baggage"),
     }))
 }
 

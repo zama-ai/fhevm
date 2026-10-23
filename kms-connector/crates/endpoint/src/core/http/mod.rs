@@ -14,18 +14,20 @@ use actix_web::{
     body::MessageBody,
     dev::{Server, ServiceRequest, ServiceResponse},
     error::{InternalError, JsonPayloadError},
+    http::Method,
     middleware::{Next, from_fn},
     web::{self, Data, JsonConfig},
 };
 use anyhow::anyhow;
-use connector_utils::monitoring::http as telemetry;
+use connector_utils::monitoring::http::{self as telemetry, RequestObservation};
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
 };
 use sqlx::{Pool, Postgres};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::Semaphore;
-use tracing::Instrument;
+use tracing::Span;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Shared state of the HTTP handlers.
 #[derive(Clone)]
@@ -84,12 +86,37 @@ async fn observe_request<B: MessageBody>(
     req: ServiceRequest,
     next: Next<B>,
 ) -> Result<ServiceResponse<B>, actix_web::Error> {
-    let path = req.path();
-    let incoming =
-        telemetry::extract_context(|name| req.headers().get(name).and_then(|v| v.to_str().ok()));
-    let span = telemetry::endpoint_span(req.method().as_str(), path, incoming);
-    let mut observation = metrics::HTTP_METRICS.start(telemetry::route_label(path));
-    let response = next.call(req).instrument(span.clone()).await;
+    let observation = metrics::HTTP_METRICS.start(telemetry::route_label(req.path()));
+    if req.method() == Method::GET && req.path() == VERSION_ROUTE {
+        return record_response(next.call(req).await, observation, &Span::none());
+    }
+    trace_request(req, next, observation).await
+}
+
+/// Handles a request in a span continuing the proxy's trace.
+#[tracing::instrument(name = "http_request", parent = None, skip_all, fields(
+    service = "endpoint",
+    http.route = telemetry::route_label(req.path()),
+    http.response.status_code = tracing::field::Empty,
+    code = tracing::field::Empty,
+))]
+async fn trace_request<B: MessageBody>(
+    req: ServiceRequest,
+    next: Next<B>,
+    observation: RequestObservation,
+) -> Result<ServiceResponse<B>, actix_web::Error> {
+    Span::current().set_parent(telemetry::extract_context(|name| {
+        req.headers().get(name).and_then(|v| v.to_str().ok())
+    }));
+    record_response(next.call(req).await, observation, &Span::current())
+}
+
+/// Records the status and code of a response in the HTTP metrics and on the request span.
+fn record_response<B>(
+    response: Result<ServiceResponse<B>, actix_web::Error>,
+    mut observation: RequestObservation,
+    span: &Span,
+) -> Result<ServiceResponse<B>, actix_web::Error> {
     let (status, code) = match &response {
         Ok(response) => (response.status(), response_code(response.response())),
         // Handler and extractor errors arrive as responses: only the service stack fails here.
@@ -100,7 +127,7 @@ async fn observe_request<B: MessageBody>(
                 .map_or(UNCLASSIFIED, |e| e.code.as_str()),
         ),
     };
-    observation.finish(status.as_u16(), code, &span);
+    observation.finish(status.as_u16(), code, span);
     response
 }
 

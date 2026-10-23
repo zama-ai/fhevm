@@ -27,9 +27,6 @@ tracing.workspace = true
 tracing-opentelemetry.workspace = true
 
 [dev-dependencies]
-opentelemetry.workspace = true
-opentelemetry_sdk = { workspace = true, features = ["testing"] }
-tracing-subscriber.workspace = true
 connector-utils = { workspace = true, features = ["tests"] }
 rand.workspace = true
 rstest.workspace = true
