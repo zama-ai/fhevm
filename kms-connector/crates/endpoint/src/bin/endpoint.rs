@@ -43,7 +43,7 @@ async fn run() -> anyhow::Result<()> {
             let monitoring_endpoint = config.monitoring_endpoint;
 
             let (endpoint, state) = Endpoint::from_config(config).await?;
-            endpoint.register_metrics()?;
+            endpoint.register_metrics();
             start_monitoring_server(monitoring_endpoint, state, cancel_token.clone())?;
             endpoint.start(cancel_token).await?;
         }

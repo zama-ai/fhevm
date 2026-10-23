@@ -42,7 +42,8 @@ pub static DECRYPTION_WAIT_LATENCY_HISTOGRAM: LazyLock<HistogramVec> = LazyLock:
 ///
 /// Should be called once at endpoint startup, through `Endpoint::register_metrics`, so metrics appear in
 /// scrapes before any requests arrive.
-pub fn init(limiter: Arc<Semaphore>, capacity: usize) -> prometheus::Result<()> {
+/// Panics if the admission gauges cannot be registered, e.g. when called twice in the same process.
+pub(crate) fn init(limiter: Arc<Semaphore>, capacity: usize) {
     for route in [
         PUBLIC_DECRYPTION_ROUTE,
         USER_DECRYPTION_ROUTE,
@@ -61,17 +62,22 @@ pub fn init(limiter: Arc<Semaphore>, capacity: usize) -> prometheus::Result<()> 
     let limit = IntGauge::new(
         "kms_connector_endpoint_decryption_capacity",
         "Maximum admitted decryption requests",
-    )?;
+    )
+    .expect("Failed to create kms_connector_endpoint_decryption_capacity metric");
     limit.set(capacity as i64);
-    prometheus::default_registry().register(Box::new(AdmissionCollector {
-        limiter,
-        capacity,
-        in_flight: IntGauge::new(
-            "kms_connector_endpoint_decryptions_in_flight",
-            "Decryption requests holding admission permits",
-        )?,
-        limit,
-    }))
+    let in_flight = IntGauge::new(
+        "kms_connector_endpoint_decryptions_in_flight",
+        "Decryption requests holding admission permits",
+    )
+    .expect("Failed to create kms_connector_endpoint_decryptions_in_flight metric");
+    prometheus::default_registry()
+        .register(Box::new(AdmissionCollector {
+            limiter,
+            capacity,
+            in_flight,
+            limit,
+        }))
+        .expect("Failed to register kms_connector_endpoint_decryptions_in_flight and kms_connector_endpoint_decryption_capacity metrics");
 }
 
 /// Prometheus [`Collector`] that reads used semaphore permits on each scrape.

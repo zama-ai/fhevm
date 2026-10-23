@@ -7,7 +7,7 @@ use connector_utils::{
 };
 use proxy::{
     core::{Config, Proxy},
-    monitoring::{health::HealthStatus, metrics},
+    monitoring::health::HealthStatus,
 };
 use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
@@ -49,7 +49,7 @@ fn run() -> anyhow::Result<()> {
             // The monitoring server runs on the tokio runtime, next to Pingora's own.
             let monitoring_endpoint = config.monitoring_endpoint;
             let (proxy, state) = Proxy::from_config(config)?;
-            metrics::init();
+            proxy.register_metrics();
             let cancel_token = CancellationToken::new();
             let monitoring_server_task =
                 start_monitoring_server(monitoring_endpoint, state, cancel_token.clone())?;

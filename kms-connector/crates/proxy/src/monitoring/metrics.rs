@@ -9,10 +9,10 @@ pub static HTTP_METRICS: LazyLock<HttpMetrics> =
 
 /// Registers proxy metrics and creates zero-valued success counters for every API route.
 ///
-/// Called at proxy startup so metrics appear in scrapes before any requests arrive.
+/// Called at proxy startup, through `Proxy::register_metrics`, so metrics appear in scrapes before any requests arrive.
 /// `LazyLock` lets us construct and register each global metric once at runtime;
 /// forcing it here makes registration happen at startup rather than on the first request.
-pub fn init() {
+pub(crate) fn init() {
     for route in [
         PUBLIC_DECRYPTION_ROUTE,
         USER_DECRYPTION_ROUTE,
