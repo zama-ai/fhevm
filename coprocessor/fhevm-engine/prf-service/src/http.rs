@@ -1,30 +1,25 @@
 use crate::{
     error::{PrfError, NO_STORE},
     metrics::REQUESTS_COUNTER,
-    pad_source::mock_pad,
-    path,
+    pads::{Admission, PadOutput, PadState},
+    path, State,
 };
 use actix_web::{
     dev::Server,
     guard,
     http::{
-        header::{ContentType, ALLOW, CACHE_CONTROL},
+        header::{ContentType, ALLOW, AUTHORIZATION, CACHE_CONTROL},
         Method,
     },
     web, App, HttpRequest, HttpResponse, HttpServer, ResponseError,
 };
-use alloy::primitives::Address;
 use anyhow::anyhow;
-use ciphertext_attestation::{
-    keccak_b256,
-    prf::{Version, PRF_ATTESTATION_HEADER},
-    PrfOutputAttestation,
-};
-use std::{net::SocketAddr, time::Duration};
+use ciphertext_attestation::prf::PRF_ATTESTATION_HEADER;
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
-/// Requests finish in milliseconds, so a stop waits only a short time for idle connections.
+/// A stop waits only a short time: a held request is answered again by another pod on retry.
 const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 /// Above the 10 s idle time of the proxy pool, so the proxy closes idle connections first.
 const KEEP_ALIVE: Duration = Duration::from_secs(15);
@@ -42,9 +37,11 @@ fn configure(cfg: &mut web::ServiceConfig) {
 
 pub(crate) fn run_server(
     endpoint: SocketAddr,
+    state: Arc<State>,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<Server> {
-    HttpServer::new(|| App::new().configure(configure))
+    let state = web::Data::from(state);
+    HttpServer::new(move || App::new().app_data(state.clone()).configure(configure))
         .shutdown_signal(cancel_token.cancelled_owned())
         .shutdown_timeout(SHUTDOWN_TIMEOUT_SECS)
         .keep_alive(KEEP_ALIVE)
@@ -55,7 +52,7 @@ pub(crate) fn run_server(
         .map(|server| server.run())
 }
 
-async fn prf_output(req: HttpRequest) -> HttpResponse {
+async fn prf_output(req: HttpRequest, state: web::Data<State>) -> HttpResponse {
     // Before the metric, so its method label takes only GET and HEAD.
     if !matches!(*req.method(), Method::GET | Method::HEAD) {
         return HttpResponse::MethodNotAllowed()
@@ -63,35 +60,62 @@ async fn prf_output(req: HttpRequest) -> HttpResponse {
             .insert_header((CACHE_CONTROL, NO_STORE))
             .finish();
     }
-    let response = serve(&req).unwrap_or_else(|e| e.error_response());
+    let response = match serve(&req, &state).await {
+        Ok(output) => HttpResponse::Ok()
+            .content_type(ContentType::octet_stream())
+            .insert_header((
+                PRF_ATTESTATION_HEADER,
+                serde_json::to_string(&output.attestation).expect("attestation serializes"),
+            ))
+            .body(output.ciphertext128),
+        Err(e) => {
+            if let PrfError::Unavailable(err) = &e {
+                tracing::warn!(error = %err, "PRF output storage error");
+            }
+            e.error_response()
+        }
+    };
     REQUESTS_COUNTER
         .with_label_values(&[req.method().as_str(), response.status().as_str()])
         .inc();
     response
 }
 
-fn serve(req: &HttpRequest) -> Result<HttpResponse, PrfError> {
+async fn serve(req: &HttpRequest, state: &State) -> Result<PadOutput, PrfError> {
     // The proxy also refuses a query string. This check is for a request that did not pass the proxy.
     if req.uri().query().is_some() {
         return Err(PrfError::NonCanonicalPath);
     }
-    let path = path::parse(req.uri().path()).ok_or(PrfError::NonCanonicalPath)?;
-    let block_bits = path::block_bits(path.prf).ok_or(PrfError::UnknownPrf)?;
-    debug!(prf = path.prf, label = %path.label, pad_length = path.pad_length, "PRF output request");
+    let target = req.uri().path_and_query().ok_or(PrfError::NonCanonicalPath)?;
+    let path = path::parse(target.path()).ok_or(PrfError::NonCanonicalPath)?;
+    path::block_bits(path.prf).ok_or(PrfError::UnknownPrf)?;
+    // actix-web is on `http` 0.2, fhevm-sig-auth on `http` 1.
+    let signed_target = fhevm_sig_auth::PathAndQuery::try_from(target.as_str())
+        .map_err(|_| PrfError::NonCanonicalPath)?;
+    let (connector, _) = state
+        .auth
+        .recover(
+            req.headers().get(AUTHORIZATION).map(|v| v.as_bytes()),
+            &signed_target,
+            fhevm_sig_auth::unix_now(),
+        )
+        .map_err(PrfError::Unauthenticated)?;
+    debug!(prf = path.prf, label = %path.label, pad_length = path.pad_length, %connector, "PRF output request");
 
-    let pad = mock_pad(&path, block_bits);
-    // TODO: send the attestation that the pad-worker signed. This mock has no signature.
-    let attestation = PrfOutputAttestation {
-        version: Version::V1,
-        ciphertext_digest: keccak_b256(&pad.ct64),
-        sns_ciphertext_digest: keccak_b256(&pad.ct128),
-        signer: Address::ZERO,
-        signature: vec![0; 65],
+    let limited = || PrfError::ConcurrencyLimited {
+        retry_after: state.retry_after,
     };
-    let attestation = serde_json::to_string(&attestation).expect("attestation serializes");
-
-    Ok(HttpResponse::Ok()
-        .content_type(ContentType::octet_stream())
-        .insert_header((PRF_ATTESTATION_HEADER, attestation))
-        .body(pad.ct128))
+    let _in_flight = state.in_flight.start(connector, &path).ok_or_else(limited)?;
+    let state_after_admission = match state.admissions.admit(&path, connector).await? {
+        Admission::OverBudget => return Err(limited()),
+        Admission::Existing(PadState::Pending) | Admission::Created => {
+            state.waiter.wait(&path).await?
+        }
+        Admission::Existing(done) => done,
+    };
+    match state_after_admission {
+        PadState::Complete(output) => Ok(output),
+        PadState::Failed => Err(PrfError::EvaluationFailed),
+        PadState::Pending => unreachable!("the waiter returns only a complete or failed row"),
+    }
 }

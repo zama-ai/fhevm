@@ -1,0 +1,40 @@
+[package]
+name = "prf-standins"
+version = "0.1.0"
+description = "Test stand-ins for the RFC-038 PRF endpoint spike: a pad-worker that writes keccak pads, and a KMS Connector client"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+alloy = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+humantime = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+ciphertext-attestation = { path = "../../../shared/ciphertext-attestation" }
+fhevm-sig-auth = { path = "../../../shared/fhevm-sig-auth" }
+prf-service = { path = "../prf-service" }
+
+[[bin]]
+name = "standin-pad-worker"
+path = "src/bin/standin_pad_worker.rs"
+
+[[bin]]
+name = "standin-connector"
+path = "src/bin/standin_connector.rs"
+
+[lints]
+workspace = true
