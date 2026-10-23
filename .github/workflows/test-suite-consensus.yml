@@ -60,6 +60,7 @@ on:
           - bridge
           - backlog
           - FM-HOST-LONG-OFFLINE
+          - FM-HOST-RELATIVE-CATCHUP
           - object-integrity
           - host-rpc
           - ingestion-recovery
