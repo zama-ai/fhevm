@@ -59,7 +59,7 @@ async fn test_forwards_authenticated_requests_untouched() {
     let seen = t.endpoints[0].last_request();
     assert_eq!(seen.version, Some(Version::HTTP_11));
     assert_eq!(seen.headers["host"], t.addr.to_string());
-    // prf-service checks the `FhevmSig` header again.
+    // prf-service recovers the signer from the `FhevmSig` header.
     assert_eq!(seen.headers["authorization"], auth.as_str());
     assert_eq!(seen.headers["x-forwarded-for"], "127.0.0.1");
     assert_eq!(seen.headers["x-forwarded-proto"], "https");

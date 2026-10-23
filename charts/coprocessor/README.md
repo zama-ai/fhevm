@@ -8,9 +8,10 @@ A helm chart to distribute and deploy the Zama fhevm coprocessor services.
 request's `FhevmSig` signature (RFC-038) and forwards an accepted request unchanged, over HTTP/1.1,
 to the endpoints in `coprocessorProxy.endpointAddresses`. Its only route is the
 PRF route, `GET` and `HEAD` `/v1/prf/{prf}/labels/{label}/{padLength}`, served by prf-service. The
-proxy checks the shape of the path. prf-service checks the encoding of its parameters, and checks
-the `FhevmSig` header again. Request bodies are rejected; the signed body digest must be that of
-an empty body.
+proxy checks the shape of the path, and prf-service the encoding of its parameters. The proxy
+forwards the `Authorization` header: prf-service recovers the signer from it for its per-connector
+limits. It does not verify the header again, and relies on the proxy's check and on the
+NetworkPolicy below. Request bodies are rejected; the signed body digest must be that of an empty body.
 
 The accepted signers are the KMS tx-senders of the Active KMS contexts that the `ProtocolConfig`
 contract lists. A context becomes Active once all its nodes have
