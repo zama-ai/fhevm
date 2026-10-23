@@ -38,10 +38,17 @@ async fn startup_same_catchup_with_unowned_requests() {
     exercise_startup(Startup::SameCatchup, true).await;
 }
 
+#[tokio::test]
+async fn startup_clamps_to_observed_final_head_and_marks_the_effective_end_done(
+) {
+    exercise_startup(Startup::ClampedCatchup, false).await;
+}
+
 #[derive(Clone, Copy)]
 enum Startup {
     NoFlags,
     NewCatchup,
+    ClampedCatchup,
     SameCatchup,
 }
 
@@ -62,9 +69,9 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         let identity = format!("host-listener-consumer.{}", chain_id.as_u64());
         let manual = match startup {
             Startup::NoFlags => ManualCatchupArgs::default(),
-            Startup::NewCatchup | Startup::SameCatchup => ManualCatchupArgs {
+            Startup::NewCatchup | Startup::ClampedCatchup | Startup::SameCatchup => ManualCatchupArgs {
                 catchup_from_block: Some(-100),
-                catchup_up_to_block: None,
+                catchup_up_to_block: matches!(startup, Startup::ClampedCatchup).then_some(2100),
                 catchup_unfinalized: false,
                 no_override_catchup: true,
             },
@@ -93,11 +100,12 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         for (_, start, end) in &expected {
             seed_history(&pool, chain_id.as_i64(), &[start - 1, end - 1]).await;
         }
-        if matches!(startup, Startup::NewCatchup) {
+        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup) {
             seed_history(&pool, chain_id.as_i64(), &[1899, 1998]).await;
         }
-        // These requests were already published before their listeners died.
-        sqlx::query("UPDATE host_consumer_catchups SET request_pending = false WHERE chain_id = $1 AND consumer_id = $2")
+        seed_history(&pool, chain_id.as_i64(), &[1999]).await;
+        // These requests were bounded and published before their listeners died.
+        sqlx::query("UPDATE host_consumer_catchups SET request_pending = false, observed_head = 1000 WHERE chain_id = $1 AND consumer_id = $2")
             .bind(chain_id.as_i64()).bind(&identity).execute(&pool).await.unwrap();
 
         let broker_url = std::env::var("CATCHUP_BROKER_URL").unwrap();
@@ -121,6 +129,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
                 }
             },
         )));
+        let requested_to = manual.catchup_up_to_block.unwrap_or(-1);
         let run = tokio::spawn(run_consumer(test_config(
             broker_url, instance.db_url.clone(), chain_id, manual,
         )));
@@ -136,35 +145,40 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
             assert!(!run.is_finished(), "listener stopped during startup");
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
-        let mut blocks = Vec::new();
+        // FINAL supplies the eligible replay head independently of LIVE.
+        publisher.publish(
+            &routing::consumer_final_event_routing(identity.clone()),
+            &event_block(chain_id.as_u64(), 2000, BlockFlow::Final, None),
+        ).await.unwrap();
+        let mut blocks = vec![2000];
+        wait_for_events(&pool, chain_id, &blocks).await;
         let mut pending_requests = Vec::new();
-        if matches!(startup, Startup::NewCatchup) && previous_requests {
+        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup) && previous_requests {
             let request = requests.recv().await.unwrap();
             assert!(expected.iter().any(|(id, _, _)| Some(*id) == request.catchup_id),
                 "retained requests must resume while the new range waits for a live block");
             pending_requests.push(request);
         }
-        if matches!(startup, Startup::NewCatchup)
+        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup)
             || (matches!(startup, Startup::NoFlags) && !previous_requests)
         {
             publisher.publish(
                 &routing::consumer_new_event_routing(identity.clone()),
                 &event_block(chain_id.as_u64(), 2000, BlockFlow::Live, None),
             ).await.unwrap();
-            blocks.push(2000);
         }
         // Resuming existing requests needs no new live reference. A new request
         // resolves relative bounds against this startup's first live block.
-        if matches!(startup, Startup::NewCatchup) {
+        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup) {
             let id = loop {
                 let id: Option<uuid::Uuid> = sqlx::query_scalar(
-                    "SELECT id FROM host_consumer_catchups WHERE chain_id = $1 AND consumer_id = $2 AND requested_from = -100 AND requested_to = -1",
-                ).bind(chain_id.as_i64()).bind(&identity).fetch_optional(&pool).await.unwrap();
+                    "SELECT id FROM host_consumer_catchups WHERE chain_id = $1 AND consumer_id = $2 AND requested_from = -100 AND requested_to = $3",
+                ).bind(chain_id.as_i64()).bind(&identity).bind(requested_to).fetch_optional(&pool).await.unwrap();
                 if let Some(id) = id { break id; }
                 assert!(!run.is_finished(), "listener stopped before creating catchup");
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             };
-            expected.push((id, 1900, 1999));
+            expected.push((id, 1900, if matches!(startup, Startup::ClampedCatchup) { 2000 } else { 1999 }));
         }
         let mut actual = Vec::new();
         for _ in 0..expected.len() {
@@ -210,7 +224,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
                     sqlx::query("DROP TRIGGER reject_catchup_block ON host_chain_blocks_valid")
                         .execute(&pool).await.unwrap();
                 }
-                blocks.push(number);
+                if !blocks.contains(&number) { blocks.push(number); }
                 wait_for_events(&pool, chain_id, &blocks).await;
                 let expected_status = if number == request.block_end { "DONE" } else { "ONGOING" };
                 loop {
@@ -303,6 +317,8 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
         // Both former instances died after publishing; only their shared state remains.
         let former_owner = store::take_request_ownership(&pool, chain_id.as_i64(), &identity, false)
             .await.unwrap()[0].owner_id;
+        sqlx::query("UPDATE host_consumer_catchups SET observed_head = 1000 WHERE id = ANY($1)")
+            .bind(vec![a, b]).execute(&pool).await.unwrap();
         store::requested(&pool, a, former_owner, false).await.unwrap();
         store::requested(&pool, b, former_owner, false).await.unwrap();
         let broker_url = std::env::var("CATCHUP_BROKER_URL").unwrap();
@@ -391,6 +407,13 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
                 .unwrap();
         }
         wait_for_events(&pool, chain_id, &[900, 920]).await;
+        // An observed FINAL supplies the head for newly added intent.
+        seed_history(&pool, chain_id.as_i64(), &[999]).await;
+        publisher.publish(
+            &routing::consumer_final_event_routing(identity.clone()),
+            &event_block(chain_id.as_u64(), 1000, BlockFlow::Final, None),
+        ).await.unwrap();
+        wait_for_events(&pool, chain_id, &[900, 920, 1000]).await;
         // Simulate takeover while this process still has the old local token.
         sqlx::query("UPDATE host_consumer_catchups SET lease_until = clock_timestamp() - interval '1 second' WHERE id = $1")
             .bind(a).execute(&pool).await.unwrap();
@@ -442,7 +465,7 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
                 .await
                 .unwrap();
         }
-        wait_for_events(&pool, chain_id, &[900, 920, 940]).await;
+        wait_for_events(&pool, chain_id, &[900, 920, 940, 1000]).await;
         let observer = consumer::ListenerConsumer::new(
             &broker,
             chain_id.as_u64(),
@@ -464,7 +487,7 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
             }
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
-        assert_event_sets(&pool, chain_id, &[900, 920, 940]).await;
+        assert_event_sets(&pool, chain_id, &[900, 920, 940, 1000]).await;
         assert!(
             !run.is_finished(),
             "catchup readers stay alive after the last delivered block"
@@ -650,6 +673,16 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
         )
         .await
         .unwrap();
+    if !unfinalized {
+        seed_history(&pool, chain_id.as_i64(), &[999]).await;
+        publisher
+            .publish(
+                &routing::consumer_final_event_routing(first.clone()),
+                &block(1000, BlockFlow::Final, None),
+            )
+            .await
+            .unwrap();
+    }
     let request = request_rx.recv().await.unwrap();
     assert_eq!(
         (request.block_start, request.block_end),

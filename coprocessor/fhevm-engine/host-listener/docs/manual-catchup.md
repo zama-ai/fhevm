@@ -15,15 +15,42 @@ transaction, avoiding replay while only part of the contract set is visible.
 Both bounds are inclusive. Nonnegative values are absolute block numbers;
 negative values are offsets from the first live block this process observes,
 saturating at genesis. The omitted end is `-1`. An inverted range is rejected.
-By default, listener-core clamps the end to its finalized head; finality must
-be enabled in core. `--catchup-unfinalized` instead replays up to the current
-chain head, including blocks which can still reorg. Both modes are bounded
-replays, not requests to wait for future blocks.
+Before first publication, the consumer bounds the end to its highest observed
+FINAL payload for finalized replay, or LIVE payload for `--catchup-unfinalized`.
+It waits for a payload of the appropriate flow if no head has been observed.
+Relative offsets still use the first LIVE block; observing a newer head does
+not move those offsets. Finalized replay requires finality enabled in core.
+Unfinalized replay can include blocks which can still reorg. Both modes are
+bounded replays, not requests to wait for future blocks.
+
+Clamping is persisted as `block_end` together with `observed_head` before the
+request is published, so completion detection uses the effective end. Retries
+and takeover keep that end even if a later observed head is different. A start
+above the observed head records `SKIPPED`, releases its lease and publishes no
+command. Clamping and skipping produce warning logs containing the request ID,
+mode, original resolved bounds and observed head. Restarting with the same
+flags after SKIPPED creates a fresh request ID.
+
+Observed payloads can be stale, and core still applies its own head check. A
+lower head at core can therefore shorten the request again; this is not an
+acknowledgement of core's effective coverage.
+
+For outage recovery, relative flags alone may end before the outage workload
+when the first queued LIVE block is old. Use explicit absolute bounds from a
+known safe pre-outage checkpoint to a freshly sampled RPC head, for example:
+
+```sh
+--catchup-from-block=<checkpoint-plus-one> --catchup-up-to-block=<rpc-head> --catchup-unfinalized
+```
+
+The observed-head bound above still applies; inspect clamp/skip warnings and the
+stored effective range rather than assuming the entire requested range ran.
 
 ## Retaining requests
 
 `host_consumer_catchups` stores the original signed parameters, the absolute
-bounds resolved once, the `finalized` mode, and the UUID sent as `catchup_id`.
+bounds resolved once, the observed head used to bound first publication, the
+`finalized` mode, and the UUID sent as `catchup_id`.
 A restart with the same parameters and mode reuses the stored UUID and bounds, without waiting for another live
 block. Two replicas serialize their changes in PostgreSQL, so matching requests
 reuse one ID even when their first live blocks differ.
@@ -123,7 +150,8 @@ live ingestion retains its existing drift recovery policy.
 ## Status and completion
 
 `ONGOING` means the consumer retains and accepts the request. `SUPPRESSED` means
-it no longer accepts it. The store supports an idempotent, consumer/chain-scoped
+it no longer accepts it. `SKIPPED` means its start was above the observed eligible
+head; no replay was published and no deliveries are admitted for that ID. The store supports an idempotent, consumer/chain-scoped
 `ONGOING` to `DONE` transition that releases ownership,
 and clears pending request publication without overwriting suppression.
 A `DONE` request is no longer resumed at startup, but
@@ -140,8 +168,9 @@ leave the delivery retryable. Suppressed requests cannot become `DONE`.
 
 This status is informative: other replicas can still be processing earlier
 deliveries. It relies on listener-core publishing the last block last.
-If core clamps the request to a finalized or current head below the stored `block_end`,
-the request remains `ONGOING`. `consume_final_catchup()` continues reading the
+Consumer-side clamping makes the stored `block_end` the target of the published
+request. If core nevertheless clamps further because its head is lower, the
+request remains `ONGOING`. `consume_final_catchup()` continues reading the
 shared queue after an individual request completes; subscription cancellation
 or errors do not mark requests done.
 
