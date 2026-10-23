@@ -3,7 +3,7 @@
 // suite and must switch to that client too, removing the proxy-only env and party-1 key mapping.
 import { expect } from 'chai';
 import { type BaseWallet, Signature, Wallet, concat, keccak256, toBeHex } from 'ethers';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type { IncomingHttpHeaders } from 'node:http';
 import https from 'node:https';
 
@@ -189,9 +189,12 @@ describe('Coprocessor proxy', function () {
   });
 
   // Run by ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh, which restarts every proxy
-  // Deployment once this test logs that its load started.
+  // Deployment once this test logs that its load started, and creates the stop file once every old
+  // pod is gone. The load lasts at most COPROCESSOR_PROXY_LOAD_SECONDS.
   describe('through a rolling restart', function () {
     const loadSeconds = Number(process.env.COPROCESSOR_PROXY_LOAD_SECONDS ?? 0);
+    const stopFile = process.env.COPROCESSOR_PROXY_LOAD_STOP_FILE;
+    const stopped = () => stopFile !== undefined && existsSync(stopFile);
 
     before(function () {
       if (!loadSeconds) this.skip();
@@ -203,7 +206,7 @@ describe('Coprocessor proxy', function () {
       const failures: string[] = [];
       let sent = 0;
       console.log('[coprocessor-proxy] load started');
-      for (const end = Date.now() + loadSeconds * 1000; Date.now() < end; sent += 1) {
+      for (const end = Date.now() + loadSeconds * 1000; Date.now() < end && !stopped(); sent += 1) {
         const i = sent % urls.length;
         const fail = (reason: string) => failures.push(`${new Date().toISOString()} ${urls[i]} -> ${reason}`);
         try {
