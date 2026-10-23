@@ -85,6 +85,13 @@ record "4 connectors, same label" "4 ok; 1 evaluation per coprocessor; triggered
   "${oks} ok; evaluations ${evaluations% }; triggered_by ok=${triggered_ok}" \
   "$([[ "${oks}" == "${NB_KMS_CORE}" && "${evaluations// /}" == "$(printf '1%.0s' $(seq 1 "${NB_COPROCESSOR}"))" && "${triggered_ok}" == true ]] && echo true)" "label 0x${label}"
 
+# How often a healthy stack still needs the fallback GET: RFC-038 falls back when quorum forms
+# before the GET target answered, and three HEADs are lighter than one GET.
+for _ in $(seq 1 20); do connector fetch --connectors 1 --label-prefix 00; done > /tmp/prf-healthy.jsonl
+out=$(jq -sc '{retrievals: length, ok: [.[] | select(.ok)] | length, fallback: [.[] | select(.fallback)] | length}' /tmp/prf-healthy.jsonl)
+record "fallback rate, healthy stack, 64-bit pads" "body from the GET target in most retrievals (<= 20% fallback)" "${out}" \
+  "$(jq '.ok == .retrievals and .fallback * 5 <= .retrievals' <<<"${out}")"
+
 # fetch_case <scenario> <expected> <jq predicate on the report> <connector args...>
 fetch_case() {
   local name="$1" expected="$2" predicate="$3"; shift 3
@@ -168,7 +175,7 @@ sleep 3
 for p in $(seq 1 "${NB_COPROCESSOR}"); do kubectl rollout restart "deploy/coprocessor-${p}-coprocessor-proxy" -n "${NAMESPACE}"; done
 for p in $(seq 1 "${NB_COPROCESSOR}"); do wait_ready "deploy/coprocessor-${p}-coprocessor-proxy"; done
 wait "${load_pid}" || true
-out=$(jq -sc '{retrievals: length, ok: [.[] | select(.ok)] | length, max_ms: ([.[].elapsed_ms // 0] | max)}' /tmp/prf-restart.jsonl)
+out=$(jq -sc '{retrievals: length, ok: [.[] | select(.ok)] | length, fallback: [.[] | select(.fallback)] | length, max_ms: ([.[].elapsed_ms // 0] | max)}' /tmp/prf-restart.jsonl)
 record "proxy rolling restart under load" "every retrieval ok" "${out}" "$(jq '.ok == .retrievals' <<<"${out}")"
 
 # Coprocessors down: their proxies scaled to 0.
