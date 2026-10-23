@@ -357,10 +357,12 @@ jobs:
         prf-service:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/prf-service/**
+          - coprocessor/fhevm-engine/prf-standins/**
           - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
           - shared/ciphertext-attestation/**
+          - shared/fhevm-sig-auth/**
 
   ########################################################################
   #                        BUILD DECISIONS                               #

@@ -80,7 +80,9 @@ mod tests {
 
     #[test]
     fn parses_faults_by_label_byte() {
-        let faults: Faults = "d1:delay=10s, b1:wrong_digest,c1:crash_once".parse().unwrap();
+        let faults: Faults = "d1:delay=10s, b1:wrong_digest,c1:crash_once"
+            .parse()
+            .unwrap();
         let label = |byte: u8| {
             let mut label = B256::ZERO;
             label.0[0] = byte;

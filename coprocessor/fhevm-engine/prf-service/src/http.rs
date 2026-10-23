@@ -86,7 +86,10 @@ async fn serve(req: &HttpRequest, state: &State) -> Result<PadOutput, PrfError> 
     if req.uri().query().is_some() {
         return Err(PrfError::NonCanonicalPath);
     }
-    let target = req.uri().path_and_query().ok_or(PrfError::NonCanonicalPath)?;
+    let target = req
+        .uri()
+        .path_and_query()
+        .ok_or(PrfError::NonCanonicalPath)?;
     let path = path::parse(target.path()).ok_or(PrfError::NonCanonicalPath)?;
     path::block_bits(path.prf).ok_or(PrfError::UnknownPrf)?;
     // actix-web is on `http` 0.2, fhevm-sig-auth on `http` 1.
@@ -105,7 +108,10 @@ async fn serve(req: &HttpRequest, state: &State) -> Result<PadOutput, PrfError> 
     let limited = || PrfError::ConcurrencyLimited {
         retry_after: state.retry_after,
     };
-    let _in_flight = state.in_flight.start(connector, &path).ok_or_else(limited)?;
+    let _in_flight = state
+        .in_flight
+        .start(connector, &path)
+        .ok_or_else(limited)?;
     let state_after_admission = match state.admissions.admit(&path, connector).await? {
         Admission::OverBudget => return Err(limited()),
         Admission::Existing(PadState::Pending) | Admission::Created => {

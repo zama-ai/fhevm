@@ -6869,6 +6869,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "prf-standins"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "bytes",
+ "ciphertext-attestation",
+ "clap",
+ "fhevm-sig-auth",
+ "futures-util",
+ "hex",
+ "humantime",
+ "prf-service",
+ "rand 0.9.2",
+ "reqwest 0.12.23",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "primitive-types"
 version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,7 +1,7 @@
+use alloy::primitives::Address;
 use anyhow::anyhow;
 use clap::Parser;
 use fhevm_engine_common::{healthz_server::HttpServer, metrics_server, telemetry};
-use alloy::primitives::Address;
 use prf_service::{AuthConfig, Config, PrfService};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::signal::unix::{signal, SignalKind};
@@ -23,7 +23,11 @@ struct Args {
     database_pool_size: u32,
 
     /// RFC-038 `PRF_MAX_CONCURRENT_PER_CONNECTOR`, in pad bits.
-    #[arg(long, env = "PRF_MAX_CONCURRENT_PER_CONNECTOR", default_value_t = 65536)]
+    #[arg(
+        long,
+        env = "PRF_MAX_CONCURRENT_PER_CONNECTOR",
+        default_value_t = 65536
+    )]
     max_pending_bits_per_connector: i64,
 
     #[arg(long, default_value_t = 4)]

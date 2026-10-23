@@ -1,0 +1,48 @@
+# common chart overlay for coprocessor-<i>-standin-pad-worker: the PRF spike's stand-in for the
+# RFC-038 pad-worker of party i (coprocessor/fhevm-engine/prf-standins). It claims the `pads` rows
+# that prf-service adds, writes a keccak pad, and signs the attestation with the party's key.
+# `faults` selects injected faults by label first byte (see prf-standins/src/faults.rs).
+# scripts/deploy/deploy-coprocessor.sh sets every value per party.
+#
+# Deployed as:
+#   helm upgrade --install coprocessor-<i>-standin-pad-worker \
+#     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common -n <namespace> -f this-file
+padWorker:
+  image: ""
+  party: ""
+  databaseUrl: ""
+  # Secret with the party's signing key under `private-key`.
+  keySecret: ""
+  faults: ""
+
+additionalResources:
+  - enabled: true
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ .Release.Name }}"
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: standin-pad-worker
+            fhevm.zama.ai/party: "{{ .Values.padWorker.party }}"
+        template:
+          metadata:
+            labels:
+              app: standin-pad-worker
+              fhevm.zama.ai/party: "{{ .Values.padWorker.party }}"
+          spec:
+            imagePullSecrets:
+              - name: registry-credentials
+            containers:
+              - name: standin-pad-worker
+                image: "{{ .Values.padWorker.image }}"
+                command: ["standin-pad-worker"]
+                env:
+                  - {name: DATABASE_URL, value: "{{ .Values.padWorker.databaseUrl }}"}
+                  - {name: PAD_WORKER_FAULTS, value: "{{ .Values.padWorker.faults }}"}
+                  - name: PAD_WORKER_PRIVATE_KEY
+                    valueFrom:
+                      secretKeyRef: {name: "{{ .Values.padWorker.keySecret }}", key: private-key}

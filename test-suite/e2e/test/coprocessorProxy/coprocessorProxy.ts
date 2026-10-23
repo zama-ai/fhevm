@@ -1,4 +1,4 @@
-// Temporary KMS-connector client against every proxy and its fake PRF backend. Replace with the
+// Temporary KMS-connector client against every proxy and its prf-service. Replace with the
 // real pad-connector e2e when it lands. kms-context-switch and preview rollout checks invoke this
 // suite and must switch to that client too, removing the proxy-only env and party-1 key mapping.
 import { expect } from 'chai';
@@ -24,7 +24,7 @@ interface Sent {
   status: number;
   headers: IncomingHttpHeaders;
   body: Buffer;
-  /** PRF requests that reached the fake prf-service while this one was answered. */
+  /** PRF requests that reached prf-service while this one was answered. */
   forwarded: number;
   where: string;
 }
@@ -45,9 +45,13 @@ function get(url: string, authorization: string): Promise<Omit<Sent, 'forwarded'
   });
 }
 
-async function prfRequests(countUrl: string): Promise<number> {
-  const resp = await fetch(countUrl, { signal: AbortSignal.timeout(10_000) });
-  return ((await resp.json()) as { prfRequests: number }).prfRequests;
+/** The PRF requests prf-service answered: the sum of its `coprocessor_prf_service_requests_total`. */
+async function prfRequests(metricsUrl: string): Promise<number> {
+  const resp = await fetch(metricsUrl, { signal: AbortSignal.timeout(10_000) });
+  return (await resp.text())
+    .split('\n')
+    .filter((line) => line.startsWith('coprocessor_prf_service_requests_total{'))
+    .reduce((sum, line) => sum + Number(line.split(' ').pop()), 0);
 }
 
 /** Timestamp of the finalized block applied to the proxy's signer set. */
@@ -96,7 +100,7 @@ describe('Coprocessor proxy', function () {
   this.timeout(60_000);
   const urls = envList('COPROCESSOR_PROXY_URLS');
   const signers = envList('COPROCESSOR_SIGNER_ADDRESSES');
-  const countUrls = envList('PRF_SERVICE_FAKE_COUNT_URLS');
+  const countUrls = envList('PRF_SERVICE_METRICS_URLS');
   const metricsUrls = envList('COPROCESSOR_PROXY_METRICS_URLS');
 
   before(function () {

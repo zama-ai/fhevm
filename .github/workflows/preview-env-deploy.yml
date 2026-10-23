@@ -1430,6 +1430,14 @@ jobs:
           E2E_IMAGE: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e:${{ fromJSON(needs.resolve-tags.outputs.tags_json).test_suite }}
         run: bash ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh
 
+      - name: Check the PRF endpoint failure matrix (spike, option A)
+        if: >-
+          !cancelled() && steps.e2e_report.outcome != 'skipped' &&
+          env.AUTOMATED_TESTS == 'true' && env.BLUE_GREEN != 'true'
+        env:
+          PRF_IMAGE: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/prf-service:${{ fromJSON(needs.resolve-tags.outputs.tags_json).prf_service }}
+        run: bash ci/preview-env/scripts/e2e/check-prf-endpoint.sh
+
       - name: Assert RFC-021 cutover
         if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
         env:

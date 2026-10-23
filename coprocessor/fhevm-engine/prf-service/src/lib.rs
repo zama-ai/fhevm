@@ -86,8 +86,7 @@ impl PrfService {
             ),
             retry_after: config.retry_after,
         });
-        let server =
-            http::run_server(config.http_endpoint, state.clone(), cancel_token.clone())?;
+        let server = http::run_server(config.http_endpoint, state.clone(), cancel_token.clone())?;
         info!("HTTP server listening at: {}", config.http_endpoint);
         Ok(Self {
             server,

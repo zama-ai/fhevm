@@ -3,8 +3,8 @@
 #   - every party's proxy rolled out with all its replicas Ready;
 #   - a rolling restart of every proxy under a steady load of signed requests fails none of them,
 #     and every new pod became Ready only after its first read of the KMS tx-senders;
-#   - the NetworkPolicy: a test-suite pod reaches each fake prf-service's count port (9090) but
-#     not its PRF port (8080). Reported only: whether zws-dev enforces NetworkPolicy is unknown.
+#   - the NetworkPolicy: a test-suite pod reaches each prf-service's metrics port (9100) but
+#     not its PRF port (8090). Reported only: whether zws-dev enforces NetworkPolicy is unknown.
 # The load runs the "through a rolling restart" test of test-suite/e2e/test/coprocessorProxy in a
 # pod of the test-suite image.
 # Env: NAMESPACE, NB_COPROCESSOR, E2E_IMAGE, HOST_CHAIN_ID.
@@ -34,11 +34,11 @@ for deploy in "${deployments[@]}"; do
   echo "${deploy}: ${ready} of ${wanted} replicas Ready"
 done
 
-# Probes each fake's PRF and count ports, then runs the load. JavaScript, not for the shell:
+# Probes each prf-service's PRF and metrics ports, then runs the load. JavaScript, not for the shell:
 # shellcheck disable=SC2016
 netcheck_js='
 const net = require("net");
-const hosts = process.env.PRF_SERVICE_FAKE_COUNT_URLS.split(",").map((url) => new URL(url).hostname);
+const hosts = process.env.PRF_SERVICE_METRICS_URLS.split(",").map((url) => new URL(url).hostname);
 const probe = (host, port) => new Promise((resolve) => {
   const socket = net.connect({ host, port });
   socket.setTimeout(3000);
@@ -48,7 +48,7 @@ const probe = (host, port) => new Promise((resolve) => {
 });
 (async () => {
   for (const host of hosts) {
-    for (const port of [8080, 9090]) console.log(`networkpolicy: ${host}:${port} ${await probe(host, port)}`);
+    for (const port of [8090, 9100]) console.log(`networkpolicy: ${host}:${port} ${await probe(host, port)}`);
   }
 })();
 '
@@ -80,7 +80,7 @@ NETCHECK_JS="${netcheck_js}" POD="${pod}" LOAD_SECONDS="${load_seconds}" STOP_FI
         {"name": "PROTOCOL_CONFIG_CONTRACT_ADDRESS", "valueFrom": {"configMapKeyRef": {"name": "host-sc-addresses", "key": "protocol_config.address"}}},
         {"name": "COPROCESSOR_PROXY_URLS", "valueFrom": {"configMapKeyRef": {"name": "coprocessor-proxy", "key": "urls"}}},
         {"name": "COPROCESSOR_SIGNER_ADDRESSES", "valueFrom": {"configMapKeyRef": {"name": "coprocessor-proxy", "key": "signer-addresses"}}},
-        {"name": "PRF_SERVICE_FAKE_COUNT_URLS", "valueFrom": {"configMapKeyRef": {"name": "coprocessor-proxy", "key": "count-urls"}}},
+        {"name": "PRF_SERVICE_METRICS_URLS", "valueFrom": {"configMapKeyRef": {"name": "coprocessor-proxy", "key": "prf-service-metrics-urls"}}},
         {"name": "COPROCESSOR_PROXY_METRICS_URLS", "valueFrom": {"configMapKeyRef": {"name": "coprocessor-proxy", "key": "metrics-urls"}}},
         {"name": "KMS_CONNECTOR_PRIVATE_KEY", "valueFrom": {"secretKeyRef": {"name": "kms-connector-tx-sender-1", "key": "kms-wallet"}}}
       ]
@@ -156,14 +156,14 @@ done
 kubectl logs "${pod}" -n "${NAMESPACE}" | grep -v '^networkpolicy:' || true
 load_phase=$(phase)
 
-# Report only. Enforced: 8080 blocked and 9090 open on every fake.
+# Report only. Enforced: 8090 blocked and 9100 open on every prf-service.
 logs=$(kubectl logs "${pod}" -n "${NAMESPACE}" | grep '^networkpolicy:')
-if grep -q ':8080 open' <<<"${logs}"; then
-  echo "NetworkPolicy NOT enforced: a test-suite pod reached a fake prf-service's PRF port"
-elif grep -q ':9090 blocked' <<<"${logs}"; then
-  echo "NetworkPolicy inconclusive: a test-suite pod could not reach a fake's count port either"
+if grep -q ':8090 open' <<<"${logs}"; then
+  echo "NetworkPolicy NOT enforced: a test-suite pod reached a prf-service's PRF port"
+elif grep -q ':9100 blocked' <<<"${logs}"; then
+  echo "NetworkPolicy inconclusive: a test-suite pod could not reach a prf-service's metrics port either"
 else
-  echo "NetworkPolicy enforced: only the count port of each fake prf-service is reachable from a test-suite pod"
+  echo "NetworkPolicy enforced: only the metrics port of each prf-service is reachable from a test-suite pod"
 fi
 
 if [[ "${load_phase}" != "Succeeded" ]]; then

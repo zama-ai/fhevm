@@ -10,12 +10,13 @@ publish = false
 [dependencies]
 alloy = { workspace = true }
 anyhow = { workspace = true }
+bytes = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 humantime = { workspace = true }
 rand = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }

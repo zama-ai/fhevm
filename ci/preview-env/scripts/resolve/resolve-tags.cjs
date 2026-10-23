@@ -39,6 +39,7 @@ const IMAGES = [
   { key: 'coprocessor_tx_sender', repo: 'fhevm/coprocessor/tx-sender', job: 'build-coprocessor', output: 'tx_sender_build_result', component: 'coprocessor', label: 'coprocessor/tx-sender' },
   { key: 'coprocessor_zkproof_worker', repo: 'fhevm/coprocessor/zkproof-worker', job: 'build-coprocessor', output: 'zkproof_worker_build_result', component: 'coprocessor', label: 'coprocessor/zkproof-worker' },
   { key: 'coprocessor_proxy', repo: 'fhevm/coprocessor/coprocessor-proxy', job: 'build-coprocessor', output: 'coprocessor_proxy_build_result', component: 'coprocessor', label: 'coprocessor/coprocessor-proxy' },
+  { key: 'prf_service', repo: 'fhevm/coprocessor/prf-service', job: 'build-coprocessor', output: 'prf_service_build_result', component: 'coprocessor', label: 'coprocessor/prf-service' },
   { key: 'listener', repo: 'fhevm/listener/listener-core', job: 'build-listener', output: 'build_result', component: 'listener', label: 'listener/listener-core' },
   { key: 'relayer_migrate', repo: 'fhevm/relayer-migrate', job: 'build-relayer', output: 'relayer_migrate_build_result', component: 'relayer', label: 'relayer/migrate' },
   { key: 'relayer', repo: 'fhevm/relayer', job: 'build-relayer', output: 'relayer_build_result', component: 'relayer', label: 'relayer' },

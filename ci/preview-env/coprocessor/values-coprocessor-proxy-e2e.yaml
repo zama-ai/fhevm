@@ -1,7 +1,9 @@
-# coprocessor-proxy in front of party i's fake prf-service (values-prf-service-fake-e2e.yaml).
+# The RFC-038 PRF endpoint of party i: coprocessor-proxy in front of prf-service, whose rows the
+# stand-in pad-worker completes (values-standin-pad-worker-e2e.yaml).
 # scripts/deploy/deploy-coprocessor.sh applies it to the coprocessor-<i> release, except on
-# blue-green stacks, and sets the image tag, the signer, the endpoint and the NetworkPolicy's
-# podSelector per party. apply-chain-env.sh sets canonicalProtocolConfigChainId to the host chain.
+# blue-green stacks, and sets the image tags, the signer, the endpoint, prf-service's env and the
+# NetworkPolicy's podSelector per party. apply-chain-env.sh sets canonicalProtocolConfigChainId to
+# the host chain.
 commonConfig:
   canonicalProtocolConfigChainId: "12345"
 
@@ -14,14 +16,23 @@ coprocessorProxy:
   tls:
     secretName: coprocessor-proxy-tls
   endpointNetworkPolicy:
-    # The fake serves the PRF route and /healthz on 8080.
+    # prf-service serves the PRF route and /healthz on 8090.
     ports:
-      - {port: 8080, protocol: TCP}
-    # The e2e suite reads the fake's request count; it reaches nothing else of the fake.
+      - {port: 8090, protocol: TCP}
+    # The e2e suite reads prf-service's request count from its metrics; it reaches nothing else.
     extraIngress:
       - from:
           - podSelector:
               matchLabels:
                 app: fhevm-test-suite
         ports:
-          - {port: 9090, protocol: TCP}
+          - {port: 9100, protocol: TCP}
+      # The kubelet's HTTP probes of prf-service.
+      - ports:
+          - {port: 8080, protocol: TCP}
+
+prfService:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/prf-service
+    tag: latest

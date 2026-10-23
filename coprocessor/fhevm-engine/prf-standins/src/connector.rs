@@ -103,10 +103,11 @@ struct Answer {
     body: Option<bytes::Bytes>,
 }
 
-#[derive(serde::Deserialize)]
-struct ErrorBody {
-    code: String,
-    retryable: bool,
+/// The RFC-033 error body.
+#[derive(Debug, serde::Deserialize, Serialize)]
+pub struct ErrorBody {
+    pub code: String,
+    pub retryable: bool,
 }
 
 impl Connector {
@@ -146,7 +147,11 @@ impl Connector {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let mut tasks = JoinSet::new();
         for i in 0..self.coprocessors.len() {
-            let method = if i == get_from { Method::GET } else { Method::HEAD };
+            let method = if i == get_from {
+                Method::GET
+            } else {
+                Method::HEAD
+            };
             let (connector, path, tx) = (self.clone(), path.clone(), tx.clone());
             let first_expires = retrieval.first_expires;
             tasks.spawn(async move {
@@ -170,11 +175,15 @@ impl Connector {
             if answer.coprocessor == get_from {
                 get_body = answer.body.clone();
             }
-            report.replies.push(answer.report);
             let decided = match &answer.attestation {
                 Some(attestation) => round.record_attestation(signer, attestation),
                 None => round.record_no_reply(signer),
             };
+            let mut reply = answer.report;
+            if round.rejected().contains(&signer) {
+                reply.attestation = Some("rejected");
+            }
+            report.replies.push(reply);
             if let Some(outcome) = decided {
                 break outcome;
             }
@@ -195,7 +204,10 @@ impl Connector {
         let digest = resolved.material;
         report.quorum_digest = Some(digest);
 
-        if get_body.as_ref().is_some_and(|body| keccak256(body) == digest) {
+        if get_body
+            .as_ref()
+            .is_some_and(|body| keccak256(body) == digest)
+        {
             report.body_from = Some(get_from);
         } else {
             // The GET target failed, is slow, or served another body: a quorum member answers at once.
@@ -236,7 +248,13 @@ impl Connector {
 
     /// Sends `method` to coprocessor `i` until it answers `200` or a non-retryable error. Retries
     /// connection errors, `429`, `401 auth_expired` after re-signing, and other retryable errors.
-    async fn ask(&self, i: usize, method: Method, path: &str, first_expires: Option<u64>) -> Answer {
+    async fn ask(
+        &self,
+        i: usize,
+        method: Method,
+        path: &str,
+        first_expires: Option<u64>,
+    ) -> Answer {
         let coprocessor = &self.coprocessors[i];
         let mut expires = first_expires;
         let mut resigns = 0;
@@ -277,7 +295,11 @@ impl Connector {
                     .and_then(|v| v.to_str().ok())
                     .and_then(|v| serde_json::from_str::<PrfOutputAttestation>(v).ok());
                 report.code = None;
-                report.attestation = Some(if attestation.is_some() { "valid" } else { "missing" });
+                report.attestation = Some(if attestation.is_some() {
+                    "valid"
+                } else {
+                    "missing"
+                });
                 report.digest = attestation.as_ref().map(|a| a.sns_ciphertext_digest);
                 let body = if method == Method::GET {
                     response.bytes().await.ok()
@@ -298,26 +320,31 @@ impl Connector {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|v| v.parse::<u64>().ok())
                 .map(Duration::from_secs);
+            // A HEAD answer has no body: only its status tells what went wrong (RFC-038 gap).
             let error = response.json::<ErrorBody>().await.ok();
             report.code = error.as_ref().map(|e| e.code.clone());
-            match error {
-                Some(e) if e.code == "auth_expired" => {
-                    resigns += 1;
-                    expires = None;
-                }
-                Some(e) if e.retryable => {
-                    tokio::time::sleep(retry_after.unwrap_or(self.backoff)).await;
-                }
-                None if status.is_server_error() => tokio::time::sleep(self.backoff).await,
-                _ => {
-                    return Answer {
-                        coprocessor: i,
-                        report,
-                        resigns,
-                        attestation: None,
-                        body: None,
-                    }
-                }
+            let expired = match &error {
+                Some(e) => e.code == "auth_expired",
+                // Re-sign once: a fresh header settles whether the 401 was an expiry.
+                None => status == StatusCode::UNAUTHORIZED && expires.is_some(),
+            };
+            let retryable = match &error {
+                Some(e) => e.retryable,
+                None => status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error(),
+            };
+            if expired {
+                resigns += 1;
+                expires = None;
+            } else if retryable {
+                tokio::time::sleep(retry_after.unwrap_or(self.backoff)).await;
+            } else {
+                return Answer {
+                    coprocessor: i,
+                    report,
+                    resigns,
+                    attestation: None,
+                    body: None,
+                };
             }
         }
     }
@@ -339,9 +366,11 @@ impl Connector {
         method: Method,
         path: &str,
         expires: Option<u64>,
-    ) -> anyhow::Result<(u16, Option<String>, Option<String>)> {
+    ) -> anyhow::Result<(u16, Option<ErrorBody>, Option<String>)> {
         let coprocessor = &self.coprocessors[i];
-        let header = self.sign(coprocessor.signer, path_without_query(path), expires).await;
+        let header = self
+            .sign(coprocessor.signer, path_without_query(path), expires)
+            .await;
         let response = self
             .http
             .request(method, format!("{}{path}", coprocessor.url))
@@ -354,8 +383,8 @@ impl Connector {
             .get(reqwest::header::RETRY_AFTER)
             .and_then(|v| v.to_str().ok())
             .map(str::to_owned);
-        let code = response.json::<ErrorBody>().await.ok().map(|e| e.code);
-        Ok((status, code, retry_after))
+        let error = response.json::<ErrorBody>().await.ok();
+        Ok((status, error, retry_after))
     }
 }
 

@@ -41,7 +41,11 @@ impl PrfError {
         match self {
             Self::NonCanonicalPath => (StatusCode::BAD_REQUEST, "non_canonical_path", false),
             Self::UnknownPrf => (StatusCode::NOT_FOUND, "unknown_prf", false),
-            Self::Unauthenticated(_) => (StatusCode::UNAUTHORIZED, "auth_invalid_signature", false),
+            Self::Unauthenticated(e) => (
+                StatusCode::UNAUTHORIZED,
+                e.code(),
+                matches!(e, fhevm_sig_auth::AuthError::Expired),
+            ),
             Self::ConcurrencyLimited { .. } => {
                 (StatusCode::TOO_MANY_REQUESTS, "concurrency_limited", true)
             }

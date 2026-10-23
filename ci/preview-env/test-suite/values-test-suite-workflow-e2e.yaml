@@ -495,8 +495,8 @@ additionalResources:
                   valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: urls, optional: true}}
                 - name: COPROCESSOR_SIGNER_ADDRESSES
                   valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: signer-addresses, optional: true}}
-                - name: PRF_SERVICE_FAKE_COUNT_URLS
-                  valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: count-urls, optional: true}}
+                - name: PRF_SERVICE_METRICS_URLS
+                  valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: prf-service-metrics-urls, optional: true}}
                 - name: COPROCESSOR_PROXY_METRICS_URLS
                   valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: metrics-urls, optional: true}}
                 - name: COPROCESSOR_PROXY_CA

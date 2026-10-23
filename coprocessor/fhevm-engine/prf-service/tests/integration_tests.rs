@@ -1,21 +1,26 @@
-use alloy::primitives::{keccak256, Address};
-use ciphertext_attestation::{prf::PRF_ATTESTATION_HEADER, PrfOutputAttestation};
-use prf_service::{Config, PrfService};
+//! The answers of prf-service that need no pad. prf-standins/tests/five_parties.rs covers the
+//! outputs, with the stand-in pad-worker.
+
+use alloy::primitives::Address;
+use prf_service::{AuthConfig, Config, PrfService};
 use reqwest::{Client, Method, Response, StatusCode, Version};
-use std::net::TcpListener;
+use std::{net::TcpListener, time::Duration};
+use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 const LABEL: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
 
 struct TestService {
+    _db: DBInstance,
     base_url: String,
     cancel_token: CancellationToken,
     task: JoinHandle<anyhow::Result<()>>,
 }
 
 impl TestService {
-    fn start() -> Self {
+    async fn start() -> Self {
+        let db = setup_test_db(ImportMode::None).await.expect("test db");
         let port = TcpListener::bind("127.0.0.1:0")
             .unwrap()
             .local_addr()
@@ -25,12 +30,25 @@ impl TestService {
         let service = PrfService::new(
             Config {
                 http_endpoint: ([127, 0, 0, 1], port).into(),
+                database_url: db.db_url().to_owned(),
+                database_pool_size: 2,
+                max_pending_bits_per_connector: 4096,
+                max_adds_per_connector: 1,
+                pad_poll_interval: Duration::from_secs(1),
+                retry_after: Duration::from_secs(1),
+                auth: AuthConfig {
+                    ethereum_chain_id: 1,
+                    protocol_config_address: Address::ZERO,
+                    coprocessor_signer_address: Address::ZERO,
+                },
             },
             cancel_token.clone(),
         )
+        .await
         .unwrap();
         let task = tokio::spawn(service.start());
         Self {
+            _db: db,
             base_url: format!("http://127.0.0.1:{port}"),
             cancel_token,
             task,
@@ -55,55 +73,9 @@ fn prf_path(prf: &str, label: &str, pad_length: &str) -> String {
     format!("/v1/prf/{prf}/labels/{label}/{pad_length}")
 }
 
-fn attestation(response: &Response) -> PrfOutputAttestation {
-    serde_json::from_str(response.headers()[PRF_ATTESTATION_HEADER].to_str().unwrap()).unwrap()
-}
-
-#[tokio::test]
-async fn get_returns_body_and_attestation() {
-    let service = TestService::start();
-    let response = service
-        .request(&Client::new(), Method::GET, &prf_path("0", LABEL, "64"))
-        .await;
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers()["content-type"],
-        "application/octet-stream"
-    );
-    let attestation = attestation(&response);
-    let body = response.bytes().await.unwrap();
-    assert_eq!(body.len(), 32 * 32);
-    assert_eq!(attestation.sns_ciphertext_digest, keccak256(&body));
-    assert_eq!(attestation.signer, Address::ZERO);
-    assert_eq!(attestation.signature, vec![0; 65]);
-
-    service.stop().await;
-}
-
-#[tokio::test]
-async fn head_returns_same_headers_without_body() {
-    let service = TestService::start();
-    let client = Client::new();
-    let path = prf_path("0", LABEL, "7");
-    let get = service.request(&client, Method::GET, &path).await;
-    let head = service.request(&client, Method::HEAD, &path).await;
-
-    assert_eq!(head.status(), StatusCode::OK);
-    assert_eq!(
-        head.headers()["content-length"],
-        get.headers()["content-length"]
-    );
-    assert_eq!(attestation(&head), attestation(&get));
-    assert!(head.bytes().await.unwrap().is_empty());
-
-    drop(client);
-    service.stop().await;
-}
-
 #[tokio::test]
 async fn serves_healthz() {
-    let service = TestService::start();
+    let service = TestService::start().await;
     let client = Client::new();
     for method in [Method::GET, Method::HEAD] {
         let health = service.request(&client, method, "/healthz").await;
@@ -118,7 +90,7 @@ async fn serves_healthz() {
 
 #[tokio::test]
 async fn returns_rfc_errors() {
-    let service = TestService::start();
+    let service = TestService::start().await;
     let client = Client::new();
     let canonical = prf_path("0", LABEL, "64");
     for (path, status, code) in [
