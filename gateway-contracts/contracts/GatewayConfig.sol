@@ -389,56 +389,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice See {IGatewayConfig-updateMpcThresholdForContext}.
-     * @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
-     */
-    function updateMpcThresholdForContext(uint256 contextId, uint256 newMpcThreshold) external virtual onlyOwner {
-        _requireValidContext(contextId);
-        _setMpcThreshold(contextId, newMpcThreshold);
-        emit UpdateMpcThresholdForContext(contextId, newMpcThreshold);
-    }
-
-    /**
-     * @notice See {IGatewayConfig-updatePublicDecryptionThresholdForContext}.
-     * @dev WARNING: This mutates threshold state read by `Decryption` without enforcing
-     *      an on-chain pause. Operators must follow the runbook to avoid racing in-flight
-     *      decryption requests.
-     */
-    function updatePublicDecryptionThresholdForContext(
-        uint256 contextId,
-        uint256 newPublicDecryptionThreshold
-    ) external virtual onlyOwner {
-        _requireValidContext(contextId);
-        _setPublicDecryptionThreshold(contextId, newPublicDecryptionThreshold);
-        emit UpdatePublicDecryptionThresholdForContext(contextId, newPublicDecryptionThreshold);
-    }
-
-    /**
-     * @notice See {IGatewayConfig-updateUserDecryptionThresholdForContext}.
-     * @dev WARNING: This mutates threshold state read by `Decryption` without enforcing
-     *      an on-chain pause. Operators must follow the runbook to avoid racing in-flight
-     *      decryption requests.
-     */
-    function updateUserDecryptionThresholdForContext(
-        uint256 contextId,
-        uint256 newUserDecryptionThreshold
-    ) external virtual onlyOwner {
-        _requireValidContext(contextId);
-        _setUserDecryptionThreshold(contextId, newUserDecryptionThreshold);
-        emit UpdateUserDecryptionThresholdForContext(contextId, newUserDecryptionThreshold);
-    }
-
-    /**
-     * @notice See {IGatewayConfig-updateKmsGenThresholdForContext}.
-     * @dev This threshold is consumed by host-side KMS generation, not Gateway-side decryption.
-     */
-    function updateKmsGenThresholdForContext(uint256 contextId, uint256 newKmsGenThreshold) external virtual onlyOwner {
-        _requireValidContext(contextId);
-        _setKmsGenThreshold(contextId, newKmsGenThreshold);
-        emit UpdateKmsGenThresholdForContext(contextId, newKmsGenThreshold);
-    }
-
-    /**
      * @notice See {IGatewayConfig-updateCoprocessorThreshold}.
      * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
      *      because InputVerification is not paused here.

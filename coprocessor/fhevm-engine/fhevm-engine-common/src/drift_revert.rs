@@ -531,7 +531,7 @@ fn prepare_revert_sql(chain_id: i64, to_block_number: i64) -> String {
         .filter(|line| {
             let trimmed = line.trim();
             // Strip psql directives
-            !trimmed.starts_with("\\set")
+            !trimmed.starts_with("\\set") && trimmed != "BEGIN;" && trimmed != "COMMIT;"
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -539,13 +539,21 @@ fn prepare_revert_sql(chain_id: i64, to_block_number: i64) -> String {
         .replace(":'to_block_number'", &to_block_number.to_string())
 }
 
+#[derive(Debug, thiserror::Error)]
+enum HostHistoryPreflightError {
+    #[error("host history is contained; operator recovery must precede automatic drift revert")]
+    Contained,
+    #[error("could not check host history containment before drift revert: {0}")]
+    Unavailable(#[source] sqlx::Error),
+}
+
 /// Execute the revert SQL script against the database.
 ///
 /// `to_block = offending_host_block_number - 1` — we subtract 1 because the
 /// script reverts everything strictly greater than `to_block`, and we want the
-/// offending block itself gone. If ciphertexts from earlier blocks also
-/// drifted (due to out-of-order processing), the drift detector will catch
-/// them eventually in subsequent rounds.
+/// offending block's results cleared (committed admission metadata is retained).
+/// If ciphertexts from earlier blocks also drifted (due to out-of-order
+/// processing), the drift detector will catch them in subsequent rounds.
 ///
 /// Refuses to revert when `offending <= 1`: the SQL script rejects
 /// `to_block <= 0`, and clamping to `to_block = 1` would silently leave
@@ -572,7 +580,21 @@ pub async fn execute_revert(
     );
 
     let sql = prepare_revert_sql(host_chain_id, to_block_number);
-    sqlx::raw_sql(&sql).execute(pool).await?;
+    // Destructive repair must not bypass a confirmed host-history halt.
+    // Strip the script's BEGIN/COMMIT above so this fence covers all its writes.
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(crate::versioning::CUTOVER_LOCK_ID)
+        .execute(&mut *tx)
+        .await?;
+    let contained = crate::chain_recovery::is_halted_tx(&mut tx)
+        .await
+        .map_err(HostHistoryPreflightError::Unavailable)?;
+    if contained {
+        return Err(HostHistoryPreflightError::Contained.into());
+    }
+    sqlx::Executor::execute(&mut *tx, sql.as_str()).await?;
+    tx.commit().await?;
 
     info!(host_chain_id, to_block_number, "DB state revert completed");
     Ok(())
@@ -791,6 +813,13 @@ async fn run_all_pending_as_runner(
         )
         .await
         {
+            if e.downcast_ref::<HostHistoryPreflightError>().is_some() {
+                // No revert ran. Preserve retryability after audited recovery
+                // or once the containment gate becomes readable (for example,
+                // when a migration finishes). An unreadable gate stays closed.
+                update_signal_status(pool, signal.id, &SignalStatus::Pending).await?;
+                return Err(e);
+            }
             REVERT_FAILURE_COUNTER
                 .with_label_values(&[&signal.host_chain_id.to_string()])
                 .inc();

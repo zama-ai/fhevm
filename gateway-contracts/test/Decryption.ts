@@ -6,6 +6,7 @@ import hre from 'hardhat';
 
 import { approveContractWithMaxAllowance } from '../tasks/mockedTokenFund';
 import {
+  CiphertextCommits,
   Decryption,
   Decryption__factory,
   GatewayConfig,
@@ -15,7 +16,10 @@ import {
 } from '../typechain-types';
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
-import { CtHandleContractPairStruct } from '../typechain-types/contracts/interfaces/IDecryption';
+import {
+  CtHandleContractPairStruct,
+  SnsCiphertextMaterialStruct,
+} from '../typechain-types/contracts/interfaces/IDecryption';
 import {
   EIP712,
   createAndFundRandomWallet,
@@ -31,6 +35,7 @@ import {
   createRandomAddress,
   createRandomAddresses,
   createRandomWallet,
+  getKeyId,
   getPublicDecryptId,
   getSignaturesDelegatedUserDecryptRequest,
   getSignaturesPublicDecrypt,
@@ -62,6 +67,9 @@ describe('Decryption', function () {
   const gatewayChainId = hre.network.config.chainId!;
 
   // Define input values
+  const keyId = getKeyId(1);
+  const ciphertextDigest = createBytes32();
+  const snsCiphertextDigest = createBytes32();
 
   // Define an euint256 ctHandle (which has a bit size of 256 bits)
   const euint256CtHandle = createCtHandle(hostChainId, 8);
@@ -76,6 +84,9 @@ describe('Decryption', function () {
   // public decryption or account access by default)
   const newCtHandles = createCtHandles(3, hostChainId);
   const newCtHandle = newCtHandles[0];
+
+  // Define a new key ID
+  const newKeyId = getKeyId(2);
 
   // Define a handle with an invalid FHE type (see `FheType.sol`)
   const invalidFHEType = 255;
@@ -108,13 +119,47 @@ describe('Decryption', function () {
     return hre.ethers.solidityPacked(['uint8', 'uint256', 'uint256'], [2, contextId, epochId]);
   }
 
-  // Full event signatures. `UserDecryptionRequest` is overloaded (legacy paths vs unified EIP-712
-  // path), which makes bare-name lookups ambiguous in ethers/hardhat, so request events are always
-  // addressed by their full signature. Since v0.16, only the handles-only variants remain.
-  const PUBLIC_DECRYPTION_REQUEST_SIG = 'PublicDecryptionRequest(uint256,bytes32[],bytes)';
-  const USER_DECRYPTION_REQUEST_SIG = 'UserDecryptionRequest(uint256,bytes32[],address,bytes,bytes)';
+  // Full event signatures. Solidity event overloading makes bare-name lookups ambiguous in
+  // ethers/hardhat, so every `PublicDecryptionRequest`/`UserDecryptionRequest` assertion must
+  // address the event by its full signature. The legacy `SnsCiphertextMaterial[]` variants and the
+  // overloaded handles-only variants (RFC-023 Part 2) are emitted together on every request; the
+  // handles-only variants are removed together with the legacy ones in a later release.
+  // `SnsCiphertextMaterial` encodes as `(bytes32,uint256,bytes32,address[])`.
+  const PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG =
+    'PublicDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],bytes)';
+  const PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG = 'PublicDecryptionRequest(uint256,bytes32[],bytes)';
+  const USER_DECRYPTION_REQUEST_LEGACY_SIG =
+    'UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)';
+  const USER_DECRYPTION_REQUEST_HANDLES_SIG = 'UserDecryptionRequest(uint256,bytes32[],address,bytes,bytes)';
 
   let kmsSigners: HardhatEthersSigner[];
+
+  // Add ciphertext materials
+  async function prepareAddCiphertextFixture() {
+    const fixtureData = await loadFixture(loadTestVariablesFixture);
+    const { ciphertextCommits, coprocessorTxSenders } = fixtureData;
+
+    let snsCiphertextMaterials: SnsCiphertextMaterialStruct[] = [];
+
+    // Allow public decryption
+    for (const ctHandle of ctHandles) {
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
+        await ciphertextCommits
+          .connect(coprocessorTxSenders[i])
+          .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+      }
+
+      // Store the SNS ciphertext materials for event checks
+      snsCiphertextMaterials.push({
+        ctHandle,
+        keyId,
+        snsCiphertextDigest,
+        coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+      });
+    }
+
+    return { ...fixtureData, snsCiphertextMaterials, keyId };
+  }
 
   describe('Deployment', function () {
     let decryption: Decryption;
@@ -140,15 +185,18 @@ describe('Decryption', function () {
   });
 
   describe('Public Decryption', function () {
+    let ciphertextCommits: CiphertextCommits;
     let decryption: Decryption;
     let gatewayConfig: GatewayConfig;
     let owner: Wallet;
     let protocolPayment: ProtocolPayment;
     let mockedZamaOFT: ZamaOFT;
     let pauser: Wallet;
+    let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
     let kmsSignatures: string[];
     let kmsTxSenders: HardhatEthersSigner[];
     let kmsSigners: HardhatEthersSigner[];
+    let coprocessorTxSenders: HardhatEthersSigner[];
     let publicDecryptionPrice: bigint;
     let tokenFundedTxSender: Wallet;
     let protocolPaymentAddress: string;
@@ -169,7 +217,7 @@ describe('Decryption', function () {
 
     // Prepare EIP712 messages for public decryption
     async function preparePublicDecryptEIP712Fixture() {
-      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
       const { decryption, kmsSigners } = fixtureData;
 
       // Create EIP712 messages
@@ -196,6 +244,7 @@ describe('Decryption', function () {
     beforeEach(async function () {
       // Initialize globally used variables before each test
       const fixtureData = await loadFixture(preparePublicDecryptEIP712Fixture);
+      ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       gatewayConfig = fixtureData.gatewayConfig;
       owner = fixtureData.owner;
@@ -203,9 +252,11 @@ describe('Decryption', function () {
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
       pauser = fixtureData.pauser;
+      snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       kmsSignatures = fixtureData.kmsSignatures;
       kmsTxSenders = fixtureData.kmsTxSenders;
       kmsSigners = fixtureData.kmsSigners;
+      coprocessorTxSenders = fixtureData.coprocessorTxSenders;
       eip712Message = fixtureData.eip712Message;
       decryptionAddress = fixtureData.decryptionAddress;
       publicDecryptionPrice = fixtureData.publicDecryptionPrice;
@@ -218,9 +269,13 @@ describe('Decryption', function () {
       // Request public decryption
       const requestTx = await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0);
 
-      // Check that the request event is emitted with the handles.
+      // Check that both the legacy (SnsCiphertextMaterial[]) and the overloaded handles-only events
+      // are emitted in the same tx with a consistent payload.
       await expect(requestTx)
-        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_SIG)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG)
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), extraDataV0);
+      await expect(requestTx)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG)
         .withArgs(decryptionId, ctHandles, extraDataV0);
     });
 
@@ -230,9 +285,14 @@ describe('Decryption', function () {
         .connect(tokenFundedTxSender)
         .publicDecryptionRequest([ctHandles[0]], extraDataV0);
 
-      // Check the request event
+      const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
+
+      // Check both request events
       await expect(requestTx)
-        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_SIG)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG)
+        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), extraDataV0);
+      await expect(requestTx)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG)
         .withArgs(decryptionId, [ctHandles[0]], extraDataV0);
     });
 
@@ -275,21 +335,21 @@ describe('Decryption', function () {
         .withArgs(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
     });
 
-    it('Should request a public decryption without on-chain ciphertext material', async function () {
-      // Ciphertext material availability is checked off-chain (since v0.15), not by the gateway
+    it('Should revert because ciphertext material has not been added', async function () {
+      // Check that the request fails because the ciphertext material is unavailable
       await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(newCtHandles, extraDataV0))
-        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_SIG)
-        .withArgs(decryptionId, newCtHandles, extraDataV0);
+        .to.be.revertedWithCustomError(ciphertextCommits, 'CiphertextMaterialNotFound')
+        .withArgs(newCtHandles[0]);
     });
 
     it("Should revert because the handle's chain ID corresponds to a disabled host chain", async function () {
-      // publicDecryptionRequest has no top-level chain modifier and gates per handle in its
-      // conformance check, which rejects handles from disabled chains.
+      // publicDecryptionRequest has no top-level chain modifier and gates transitively through
+      // CiphertextCommits.getSnsCiphertextMaterials, which rejects handles from disabled chains.
       const handleChainId = hostChainId;
       await gatewayConfig.connect(owner).disableHostChain(handleChainId);
 
       await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0))
-        .to.be.revertedWithCustomError(decryption, 'HostChainDisabled')
+        .to.be.revertedWithCustomError(ciphertextCommits, 'HostChainDisabled')
         .withArgs(handleChainId);
     });
 
@@ -343,6 +403,35 @@ describe('Decryption', function () {
       )
         .to.be.revertedWithCustomError(decryption, 'KmsNodeAlreadySigned')
         .withArgs(decryptionId, kmsSigners[0].address);
+    });
+
+    it('Should revert because of ctMaterials tied to different key IDs', async function () {
+      // Store the handles with a new key ID
+      for (const newCtHandle of newCtHandles) {
+        for (let i = 0; i < coprocessorTxSenders.length; i++) {
+          await ciphertextCommits
+            .connect(coprocessorTxSenders[i])
+            .addCiphertextMaterial(newCtHandle, newKeyId, ciphertextDigest, snsCiphertextDigest);
+        }
+      }
+
+      // Request public decryption with ctMaterials tied to different key IDs
+      const requestTx = decryption
+        .connect(tokenFundedTxSender)
+        .publicDecryptionRequest([...ctHandles, newCtHandle], extraDataV0);
+
+      // Check that different key IDs are not allowed for batched public decryption
+      await expect(requestTx)
+        .to.be.revertedWithCustomError(decryption, 'DifferentKeyIdsNotAllowed')
+        .withArgs(
+          toValues(snsCiphertextMaterials[0]),
+          toValues({
+            ctHandle: newCtHandle,
+            keyId: newKeyId,
+            snsCiphertextDigest,
+            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+          }),
+        );
     });
 
     it('Should emit an event when calling a single public decryption response', async function () {
@@ -517,8 +606,8 @@ describe('Decryption', function () {
       expect(await mockedZamaOFT.balanceOf(mockedFeesSenderToBurnerAddress)).to.equal(feesSenderToBurnerBalance);
 
       await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraDataV0))
-        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_SIG)
-        .withArgs(decryptionId, ctHandles, extraDataV0);
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG)
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), extraDataV0);
     });
 
     it('Should revert when extraData v2 pins a null contextId', async function () {
@@ -571,7 +660,10 @@ describe('Decryption', function () {
 
       const requestTx = await decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, v2ExtraData);
       await expect(requestTx)
-        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_SIG)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_LEGACY_SIG)
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), v2ExtraData);
+      await expect(requestTx)
+        .to.emit(decryption, PUBLIC_DECRYPTION_REQUEST_HANDLES_SIG)
         .withArgs(decryptionId, ctHandles, v2ExtraData);
 
       const v2ResponseEip712 = createEIP712ResponsePublicDecrypt(
@@ -730,10 +822,16 @@ describe('Decryption', function () {
     });
 
     describe('Checks', function () {
-      it('Should always be true because readiness is checked off-chain', async function () {
+      it('Should be true because public decryption is ready', async function () {
         expect(await decryption.isPublicDecryptionReady(ctHandles, extraDataV0)).to.be.true;
-        expect(await decryption.isPublicDecryptionReady(newCtHandles, extraDataV0)).to.be.true;
-        expect(await decryption.isPublicDecryptionReady([], extraDataV0)).to.be.true;
+      });
+
+      it('Should be false because handles have not been allowed for public decryption', async function () {
+        expect(await decryption.isPublicDecryptionReady(newCtHandles, extraDataV0)).to.be.false;
+      });
+
+      it('Should be false because ciphertext material has not been added', async function () {
+        expect(await decryption.isPublicDecryptionReady(newCtHandles, extraDataV0)).to.be.false;
       });
 
       it('Should be false because the public decryption is not done', async function () {
@@ -772,15 +870,18 @@ describe('Decryption', function () {
   });
 
   describe('User Decryption', function () {
+    let ciphertextCommits: CiphertextCommits;
     let decryption: Decryption;
     let gatewayConfig: GatewayConfig;
     let owner: Wallet;
     let protocolPayment: ProtocolPayment;
     let mockedZamaOFT: ZamaOFT;
     let pauser: Wallet;
+    let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
     let kmsSignatures: string[];
     let kmsTxSenders: HardhatEthersSigner[];
     let kmsSigners: HardhatEthersSigner[];
+    let coprocessorTxSenders: HardhatEthersSigner[];
     let userDecryptionPrice: bigint;
     let tokenFundedTxSender: Wallet;
     let protocolPaymentAddress: string;
@@ -831,7 +932,7 @@ describe('Decryption', function () {
 
     // Prepare EIP712 messages for user decryption
     async function prepareUserDecryptEIP712Fixture() {
-      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
       const { decryption, kmsSigners } = fixtureData;
 
       // Create EIP712 messages
@@ -880,6 +981,7 @@ describe('Decryption', function () {
     beforeEach(async function () {
       // Initialize globally used variables before each test
       const fixtureData = await loadFixture(prepareUserDecryptEIP712Fixture);
+      ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       gatewayConfig = fixtureData.gatewayConfig;
       owner = fixtureData.owner;
@@ -887,10 +989,12 @@ describe('Decryption', function () {
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
       pauser = fixtureData.pauser;
+      snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       userSignature = fixtureData.userSignature;
       kmsSignatures = fixtureData.kmsSignatures;
       kmsTxSenders = fixtureData.kmsTxSenders;
       kmsSigners = fixtureData.kmsSigners;
+      coprocessorTxSenders = fixtureData.coprocessorTxSenders;
       userDecryptedShares = fixtureData.userDecryptedShares;
       eip712RequestMessage = fixtureData.eip712RequestMessage;
       eip712ResponseMessages = fixtureData.eip712ResponseMessages;
@@ -909,15 +1013,20 @@ describe('Decryption', function () {
           'userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)'
         ](ctHandleContractPairs, requestValidity, contractsInfo, user.address, publicKey, userSignature, extraDataV0);
 
-      // Check that the request event is emitted with the handles.
+      // Check that both the legacy (SnsCiphertextMaterial[]) and the overloaded handles-only events
+      // are emitted in the same tx with a consistent payload.
       await expect(requestTx)
-        .to.emit(decryption, USER_DECRYPTION_REQUEST_SIG)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_LEGACY_SIG)
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey, extraDataV0);
+      await expect(requestTx)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_HANDLES_SIG)
         .withArgs(decryptionId, ctHandles, user.address, publicKey, extraDataV0);
     });
 
     it('Should request a user decryption with a single ctHandleContractPair', async function () {
       // Create single list of inputs
       const singleCtHandleContractPair: CtHandleContractPairStruct[] = ctHandleContractPairs.slice(0, 1);
+      const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
 
       // Request user decryption
       const requestTx = await decryption
@@ -926,9 +1035,12 @@ describe('Decryption', function () {
           'userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)'
         ](singleCtHandleContractPair, requestValidity, contractsInfo, user.address, publicKey, userSignature, extraDataV0);
 
-      // Check the request event
+      // Check both request events
       await expect(requestTx)
-        .to.emit(decryption, USER_DECRYPTION_REQUEST_SIG)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_LEGACY_SIG)
+        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey, extraDataV0);
+      await expect(requestTx)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_HANDLES_SIG)
         .withArgs(decryptionId, [ctHandles[0]], user.address, publicKey, extraDataV0);
     });
 
@@ -1196,8 +1308,7 @@ describe('Decryption', function () {
         .withArgs(user.address, userInContractsInfo.addresses);
     });
 
-    it('Should request a user decryption without on-chain ciphertext material', async function () {
-      // Ciphertext material availability is checked off-chain (since v0.15), not by the gateway
+    it('Should revert because ciphertext material has not been added', async function () {
       await expect(
         decryption
           .connect(tokenFundedTxSender)
@@ -1205,8 +1316,8 @@ describe('Decryption', function () {
             'userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)'
           ]([newCtHandleContractPair], requestValidity, contractsInfo, user.address, publicKey, userSignature, extraDataV0),
       )
-        .to.emit(decryption, USER_DECRYPTION_REQUEST_SIG)
-        .withArgs(decryptionId, [newCtHandle], user.address, publicKey, extraDataV0);
+        .to.be.revertedWithCustomError(ciphertextCommits, 'CiphertextMaterialNotFound')
+        .withArgs(newCtHandle);
     });
 
     it('Should revert because of invalid EIP712 user request signature', async function () {
@@ -1296,6 +1407,35 @@ describe('Decryption', function () {
       await expect(requestTx)
         .to.be.revertedWithCustomError(decryption, 'ContractNotInContractAddresses')
         .withArgs(contractAddress, fakeContractAddresses);
+    });
+
+    it('Should revert because of ctMaterials tied to different key IDs', async function () {
+      // Store the handle with a new key ID
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
+        await ciphertextCommits
+          .connect(coprocessorTxSenders[i])
+          .addCiphertextMaterial(newCtHandle, newKeyId, ciphertextDigest, snsCiphertextDigest);
+      }
+
+      // Request user decryption with ctMaterials tied to different key IDs
+      const requestTx = decryption
+        .connect(tokenFundedTxSender)
+        [
+          'userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)'
+        ]([...ctHandleContractPairs, newCtHandleContractPair], requestValidity, contractsInfo, user.address, publicKey, userSignature, extraDataV0);
+
+      // Check that different key IDs are not allowed for batched user decryption
+      await expect(requestTx)
+        .to.revertedWithCustomError(decryption, 'DifferentKeyIdsNotAllowed')
+        .withArgs(
+          toValues(snsCiphertextMaterials[0]),
+          toValues({
+            ctHandle: newCtHandle,
+            keyId: newKeyId,
+            snsCiphertextDigest,
+            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+          }),
+        );
     });
 
     it('Should revert because of two responses with same signature', async function () {
@@ -1492,8 +1632,8 @@ describe('Decryption', function () {
             'userDecryptionRequest((bytes32,address)[],(uint256,uint256),(uint256,address[]),address,bytes,bytes,bytes)'
           ](ctHandleContractPairs, requestValidity, contractsInfo, user.address, publicKey, userSignature, extraDataV0),
       )
-        .to.emit(decryption, USER_DECRYPTION_REQUEST_SIG)
-        .withArgs(decryptionId, ctHandles, user.address, publicKey, extraDataV0);
+        .to.emit(decryption, 'UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)')
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey, extraDataV0);
     });
 
     it('Should revert when extraData v2 pins a null contextId', async function () {
@@ -1676,18 +1816,10 @@ describe('Decryption', function () {
     });
 
     describe('Checks', function () {
-      it('Should always be true because readiness is checked off-chain', async function () {
+      it('Should be false because ciphertext material has not been added', async function () {
         expect(
           await decryption['isUserDecryptionReady((bytes32,address)[],bytes)']([newCtHandleContractPair], extraDataV0),
-        ).to.be.true;
-        expect(await decryption['isUserDecryptionReady((bytes32,address)[],bytes)']([], extraDataV0)).to.be.true;
-        expect(
-          await decryption['isUserDecryptionReady(address,(bytes32,address)[],bytes)'](
-            user.address,
-            [newCtHandleContractPair],
-            extraDataV0,
-          ),
-        ).to.be.true;
+        ).to.be.false;
       });
 
       it('Should be false because the user decryption is not done', async function () {
@@ -1736,15 +1868,18 @@ describe('Decryption', function () {
   });
 
   describe('Delegated User Decryption', function () {
+    let ciphertextCommits: CiphertextCommits;
     let decryption: Decryption;
     let gatewayConfig: GatewayConfig;
     let owner: Wallet;
     let protocolPayment: ProtocolPayment;
     let mockedZamaOFT: ZamaOFT;
     let pauser: Wallet;
+    let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
     let kmsSignatures: string[];
     let kmsSigners: HardhatEthersSigner[];
     let kmsTxSenders: HardhatEthersSigner[];
+    let coprocessorTxSenders: HardhatEthersSigner[];
     let userDecryptionPrice: bigint;
     let tokenFundedTxSender: Wallet;
     let protocolPaymentAddress: string;
@@ -1800,7 +1935,7 @@ describe('Decryption', function () {
 
     // Prepare EIP712 messages for delegated user decryption.
     async function prepareDelegatedUserDecryptEIP712Fixture() {
-      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
       const { decryption, kmsSigners } = fixtureData;
 
       // Create the EIP712 messages.
@@ -1850,6 +1985,7 @@ describe('Decryption', function () {
     beforeEach(async function () {
       // Initialize globally used variables before each test.
       const fixtureData = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
+      ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       gatewayConfig = fixtureData.gatewayConfig;
       owner = fixtureData.owner;
@@ -1857,10 +1993,12 @@ describe('Decryption', function () {
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
       pauser = fixtureData.pauser;
+      snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       delegateSignature = fixtureData.delegateSignature;
       kmsSignatures = fixtureData.kmsSignatures;
       kmsSigners = fixtureData.kmsSigners;
       kmsTxSenders = fixtureData.kmsTxSenders;
+      coprocessorTxSenders = fixtureData.coprocessorTxSenders;
       eip712RequestMessage = fixtureData.eip712RequestMessage;
       userDecryptedShares = fixtureData.userDecryptedShares;
       userDecryptionPrice = fixtureData.userDecryptionPrice;
@@ -1882,15 +2020,26 @@ describe('Decryption', function () {
           extraDataV0,
         );
 
-      // Check that the request event is emitted with the handles.
+      // Check that both the legacy (SnsCiphertextMaterial[]) and the overloaded handles-only events
+      // are emitted in the same tx with a consistent payload.
       await expect(requestTx)
-        .to.emit(decryption, USER_DECRYPTION_REQUEST_SIG)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_LEGACY_SIG)
+        .withArgs(
+          decryptionId,
+          toValues(snsCiphertextMaterials),
+          delegationAccounts.delegateAddress,
+          publicKey,
+          extraDataV0,
+        );
+      await expect(requestTx)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_HANDLES_SIG)
         .withArgs(decryptionId, ctHandles, delegationAccounts.delegateAddress, publicKey, extraDataV0);
     });
 
     it('Should request a user decryption with a single ctHandleContractPair', async function () {
       // Create single list of inputs.
       const singleCtHandleContractPairs = ctHandleContractPairs.slice(0, 1);
+      const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
 
       // Request delegated user decryption.
       const requestTx = await decryption
@@ -1905,9 +2054,18 @@ describe('Decryption', function () {
           extraDataV0,
         );
 
-      // Check the request event
+      // Check both request events.
       await expect(requestTx)
-        .to.emit(decryption, USER_DECRYPTION_REQUEST_SIG)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_LEGACY_SIG)
+        .withArgs(
+          decryptionId,
+          toValues(singleSnsCiphertextMaterials),
+          delegationAccounts.delegateAddress,
+          publicKey,
+          extraDataV0,
+        );
+      await expect(requestTx)
+        .to.emit(decryption, USER_DECRYPTION_REQUEST_HANDLES_SIG)
         .withArgs(decryptionId, [ctHandles[0]], delegationAccounts.delegateAddress, publicKey, extraDataV0);
     });
 
@@ -2260,8 +2418,7 @@ describe('Decryption', function () {
         .withArgs(delegatorAddress, delegatorInContractsInfo.addresses);
     });
 
-    it('Should request a delegated user decryption without on-chain ciphertext material', async function () {
-      // Ciphertext material availability is checked off-chain (since v0.15), not by the gateway
+    it('Should revert because ciphertext material has not been added', async function () {
       await expect(
         decryption
           .connect(tokenFundedTxSender)
@@ -2275,8 +2432,8 @@ describe('Decryption', function () {
             extraDataV0,
           ),
       )
-        .to.emit(decryption, USER_DECRYPTION_REQUEST_SIG)
-        .withArgs(decryptionId, [newCtHandle], delegationAccounts.delegateAddress, publicKey, extraDataV0);
+        .to.be.revertedWithCustomError(ciphertextCommits, 'CiphertextMaterialNotFound')
+        .withArgs(newCtHandles[0]);
     });
 
     it('Should revert because of invalid EIP712 user request signature', async function () {
@@ -2322,6 +2479,41 @@ describe('Decryption', function () {
       )
         .to.be.revertedWithCustomError(decryption, 'ContractNotInContractAddresses')
         .withArgs(contractAddress, fakeContractAddresses);
+    });
+
+    it('Should revert because of ctMaterials tied to different key IDs', async function () {
+      // Store the handle with a new key ID.
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
+        await ciphertextCommits
+          .connect(coprocessorTxSenders[i])
+          .addCiphertextMaterial(newCtHandle, newKeyId, ciphertextDigest, snsCiphertextDigest);
+      }
+
+      // Request delegated user decryption with ctMaterials tied to different key IDs.
+      const requestTx = decryption
+        .connect(tokenFundedTxSender)
+        .delegatedUserDecryptionRequest(
+          [...ctHandleContractPairs, newCtHandleContractPair],
+          requestValidity,
+          delegationAccounts,
+          contractsInfo,
+          publicKey,
+          delegateSignature,
+          extraDataV0,
+        );
+
+      // Check that different key IDs are not allowed for batched user decryption.
+      await expect(requestTx)
+        .to.be.revertedWithCustomError(decryption, 'DifferentKeyIdsNotAllowed')
+        .withArgs(
+          toValues(snsCiphertextMaterials[0]),
+          toValues({
+            ctHandle: newCtHandle,
+            keyId: newKeyId,
+            snsCiphertextDigest,
+            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+          }),
+        );
     });
 
     it('Should delegate user decrypt with 3 valid responses', async function () {
@@ -2531,8 +2723,8 @@ describe('Decryption', function () {
             extraDataV0,
           ),
       )
-        .to.emit(decryption, USER_DECRYPTION_REQUEST_SIG)
-        .withArgs(decryptionId, ctHandles, delegateAddress, publicKey, extraDataV0);
+        .to.emit(decryption, 'UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)')
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), delegateAddress, publicKey, extraDataV0);
     });
 
     it('Should revert when extraData v2 pins a null contextId', async function () {
@@ -2660,7 +2852,7 @@ describe('Decryption', function () {
     });
 
     describe('Checks', function () {
-      it('Should always be true because readiness is checked off-chain', async function () {
+      it('Should be false because the user decryption is not delegated for the chainId in ctHandleContractPairs', async function () {
         const fakeChainIdCtHandleContractPairs: CtHandleContractPairStruct[] = [
           {
             contractAddress,
@@ -2668,9 +2860,15 @@ describe('Decryption', function () {
           },
         ];
         expect(await decryption.isDelegatedUserDecryptionReady(fakeChainIdCtHandleContractPairs, extraDataV0)).to.be
-          .true;
-        expect(await decryption.isDelegatedUserDecryptionReady([newCtHandleContractPair], extraDataV0)).to.be.true;
-        expect(await decryption.isDelegatedUserDecryptionReady([], extraDataV0)).to.be.true;
+          .false;
+      });
+
+      it('Should be false because ciphertext material has not been added', async function () {
+        expect(await decryption.isDelegatedUserDecryptionReady([newCtHandleContractPair], extraDataV0)).to.be.false;
+      });
+
+      it('Should be false because the ctHandleContractPairs list is empty', async function () {
+        expect(await decryption.isDelegatedUserDecryptionReady([], extraDataV0)).to.be.false;
       });
     });
 
@@ -2732,8 +2930,12 @@ describe('Decryption', function () {
     const UNIFIED_REQUEST_SIG =
       'userDecryptionRequest((bytes32,address,address)[],address,bytes,address[],(uint256,uint256),bytes,bytes)';
     const UNIFIED_EVENT_SIG =
+      'UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],(bytes32,address,address)[],(address,bytes,address[],(uint256,uint256),bytes,bytes))';
+    // Overloaded handles-only unified event (RFC-023 Part 2): same as UNIFIED_EVENT_SIG minus the
+    // on-chain-resolved `SnsCiphertextMaterial[]`.
+    const UNIFIED_HANDLES_EVENT_SIG =
       'UserDecryptionRequest(uint256,(bytes32,address,address)[],(address,bytes,address[],(uint256,uint256),bytes,bytes))';
-    const LEGACY_EVENT_SIG = USER_DECRYPTION_REQUEST_SIG;
+    const LEGACY_EVENT_SIG = 'UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)';
     const UNIFIED_READY_SIG = 'isUserDecryptionReady((bytes32,address,address)[],bytes)';
 
     const decryptionId = getUserDecryptId(1);
@@ -2764,16 +2966,16 @@ describe('Decryption', function () {
 
     let decryption: Decryption;
     let gatewayConfig: GatewayConfig;
-    let owner: Wallet;
-    let tokenFundedTxSender: Wallet;
+    let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
+    let tokenFundedTxSender: HardhatEthersSigner;
     let mockedZamaOFT: ZamaOFT;
     let mockedFeesSenderToBurnerAddress: string;
 
     beforeEach(async function () {
-      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
       decryption = fixtureData.decryption;
       gatewayConfig = fixtureData.gatewayConfig;
-      owner = fixtureData.owner;
+      snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       tokenFundedTxSender = fixtureData.tokenFundedTxSender;
       mockedZamaOFT = fixtureData.mockedZamaOFT;
       mockedFeesSenderToBurnerAddress = fixtureData.mockedFeesSenderToBurnerAddress;
@@ -2788,8 +2990,20 @@ describe('Decryption', function () {
           UNIFIED_REQUEST_SIG
         ](directHandles, user.address, publicKey, allowedContracts, requestValidity, opaqueSignature, extraDataV0);
 
+      // Check that both the legacy (SnsCiphertextMaterial[]) and the overloaded handles-only unified
+      // events are emitted in the same tx with a consistent payload.
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), toValues(directHandles), [
+          user.address,
+          publicKey,
+          allowedContracts,
+          toValues(requestValidity),
+          extraDataV0,
+          opaqueSignature,
+        ]);
+      await expect(tx)
+        .to.emit(decryption, UNIFIED_HANDLES_EVENT_SIG)
         .withArgs(decryptionId, toValues(directHandles), [
           user.address,
           publicKey,
@@ -2823,7 +3037,7 @@ describe('Decryption', function () {
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
-        .withArgs(decryptionId, toValues(mixedHandles), [
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), toValues(mixedHandles), [
           user.address,
           publicKey,
           allowedContracts,
@@ -2842,7 +3056,7 @@ describe('Decryption', function () {
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
-        .withArgs(decryptionId, toValues(directHandles), [
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), toValues(directHandles), [
           user.address,
           publicKey,
           [],
@@ -2863,7 +3077,7 @@ describe('Decryption', function () {
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
-        .withArgs(decryptionId, toValues(directHandles), [
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), toValues(directHandles), [
           user.address,
           publicKey,
           allowedContracts,
@@ -2886,7 +3100,7 @@ describe('Decryption', function () {
 
       await expect(tx)
         .to.emit(decryption, UNIFIED_EVENT_SIG)
-        .withArgs(decryptionId, toValues(directHandles), [
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), toValues(directHandles), [
           user.address,
           publicKey,
           [contractAddress],
@@ -3021,33 +3235,28 @@ describe('Decryption', function () {
         .withArgs(fakeHostChainId);
     });
 
-    it('Should revert when handles belong to a disabled host chain', async function () {
-      await gatewayConfig.connect(owner).disableHostChain(hostChainId);
-
-      await expect(
-        decryption
-          .connect(tokenFundedTxSender)
-          [
-            UNIFIED_REQUEST_SIG
-          ](directHandles, user.address, publicKey, [contractAddress], requestValidity, opaqueSignature, extraDataV0),
-      )
-        .to.be.revertedWithCustomError(decryption, 'HostChainDisabled')
-        .withArgs(hostChainId);
+    it('Should return true from isUserDecryptionReady when all handles are registered', async function () {
+      expect(await decryption[UNIFIED_READY_SIG](directHandles, extraDataV0)).to.be.true;
     });
 
-    it('Should always return true from isUserDecryptionReady because readiness is checked off-chain', async function () {
-      const newHandles = [{ handle: newCtHandle, contractAddress, ownerAddress: user.address }];
+    it('Should return false from isUserDecryptionReady when any handle is not registered', async function () {
+      const unregistered = [
+        { handle: ctHandles[0], contractAddress, ownerAddress: user.address },
+        { handle: newCtHandle, contractAddress, ownerAddress: user.address },
+      ];
 
-      expect(await decryption[UNIFIED_READY_SIG](directHandles, extraDataV0)).to.be.true;
-      expect(await decryption[UNIFIED_READY_SIG](newHandles, extraDataV0)).to.be.true;
-      expect(await decryption[UNIFIED_READY_SIG]([], extraDataV0)).to.be.true;
+      expect(await decryption[UNIFIED_READY_SIG](unregistered, extraDataV0)).to.be.false;
+    });
+
+    it('Should return false from isUserDecryptionReady when handles is empty', async function () {
+      expect(await decryption[UNIFIED_READY_SIG]([], extraDataV0)).to.be.false;
     });
 
     it('Should revert when the response declares a contextId that differs from the one pinned at request time', async function () {
       // The unified path pins the KMS context at request time just like the legacy paths. A v0
       // request pins the current KMS context; a response declaring a different context in its
       // extraData must be rejected with DecryptionContextMismatch.
-      const { kmsSigners, kmsTxSenders } = await loadFixture(loadTestVariablesFixture);
+      const { kmsSigners, kmsTxSenders } = await loadFixture(prepareAddCiphertextFixture);
       const decryptionAddress = await decryption.getAddress();
 
       await decryption
@@ -3128,7 +3337,7 @@ describe('Decryption', function () {
 
     it('Should revert when a response uses extraData v2 with a contextId that differs from the one pinned at request time', async function () {
       const { kmsSigners: unifiedKmsSigners, kmsTxSenders: unifiedKmsTxSenders } =
-        await loadFixture(loadTestVariablesFixture);
+        await loadFixture(prepareAddCiphertextFixture);
       const decryptionAddress = await decryption.getAddress();
 
       await decryption

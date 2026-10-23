@@ -189,14 +189,14 @@ describe('Connector HTTP negative', function () {
       expectErrorOnEveryParty(out.results, { status: 403, code: 'user_signature_rejected' });
     });
 
-    it('test connector endpoint negative user decrypt with an expired validity window is user_signature_rejected', async function () {
+    it('test connector endpoint negative user decrypt with an expired validity window is user_decryption_expired', async function () {
       this.timeout(ASYNC_TIMEOUT_MS);
       const body = await userRequest(await aliceContract.xUint8(), {
         startTimestamp: Math.floor(Date.now() / 1000) - 3600,
         durationSeconds: 60,
       });
       const out = await fanOutUntilSettled<UserDecryptionResponse>(USER_DECRYPT_ROUTE, body);
-      expectErrorOnEveryParty(out.results, { status: 403, code: 'user_signature_rejected' });
+      expectErrorOnEveryParty(out.results, { status: 403, code: 'user_decryption_expired' });
     });
 
     it('test connector endpoint negative user decrypt with userAddress inside allowedContracts is unprocessable', async function () {

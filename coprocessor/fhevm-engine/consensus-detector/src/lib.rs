@@ -488,22 +488,6 @@ async fn host_consensus_candidates(
     Ok(rows.into_iter().map(|(b,)| b).collect())
 }
 
-/// Latest finalized GCS host-chain block for `host_chain_id`, or -1 if none.
-async fn gcs_host_watermark(pool: &Pool<Postgres>, host_chain_id: i64) -> Result<i64, Error> {
-    let sql = format!(
-        "SELECT COALESCE(
-                  (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid
-                    WHERE chain_id = $1 AND block_status = 'finalized'),
-                  -1
-                )"
-    );
-    let (watermark,): (i64,) = sqlx::query_as(&sql)
-        .bind(host_chain_id)
-        .fetch_one(pool)
-        .await?;
-    Ok(watermark)
-}
-
 /// True once every block in `[start, end]` has a `state_hash`: counts the hashes and
 /// compares to the window size, so a gap below a hashed block still fails.
 async fn gcs_window_fully_hashed(
@@ -717,17 +701,21 @@ where
 
     let own_name = fleet.signer.map(|s| decision::name_of(s.address()));
 
-    // One deadline per chain, so an early chain ends the attempt without a wait
-    // for a later window.
+    // One deadline per chain, armed only once that chain is actually READY to
+    // anchor — its whole window is hashed — or a stuck listener's window was
+    // closed by Blue. Arming on the watermark (blocks merely finalized) instead
+    // let an early chain's timer fire while it was still hashing, or while a
+    // later, legitimately staggered window had not even opened yet, aborting a
+    // healthy disjoint-window upgrade. Measuring from "ready to anchor" means a
+    // chain that then stays un-anchored past the timeout is genuinely divergent,
+    // not merely lagging, so ending the attempt on it is correct.
     let mut expired = false;
     if !both_anchored {
-        for &(chain_id, _, end) in &windows {
+        for &(chain_id, start, end) in &windows {
             if window_state.deadlines.contains_key(&chain_id) {
                 continue;
             }
-            // A stuck listener still ends once Blue passed the window. The peers
-            // decided before that moment.
-            if gcs_host_watermark(pool, chain_id).await? >= end
+            if gcs_window_fully_hashed(pool, chain_id, start, end).await?
                 || state_hash::chain_upload_closed(pool, chain_id, end, commitment_timeout).await?
             {
                 window_state
@@ -737,7 +725,7 @@ where
                     chain_id,
                     end_block = end,
                     timeout_secs = commitment_timeout.as_secs(),
-                    "arming consensus timeout (the chain reached end_block, or uploads closed)"
+                    "arming consensus timeout (window fully hashed, or uploads closed)"
                 );
             }
         }
@@ -1386,3 +1374,5 @@ mod tests {
         assert!(!all_slots_filled(&empty));
     }
 }
+#[cfg(test)]
+mod ingestion_recovery_tests;

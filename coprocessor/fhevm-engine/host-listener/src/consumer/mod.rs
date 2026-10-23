@@ -7,6 +7,7 @@ use alloy::rpc::types::Log;
 use alloy_primitives::LogData;
 use anyhow::Result;
 use tokio::sync::RwLock;
+use tokio::task::{JoinError, JoinHandle};
 use tokio::time::{interval_at, sleep, Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -16,7 +17,10 @@ use fhevm_engine_common::drift_revert::SignalStatus as DriftStatus;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use fhevm_engine_common::versioning::StackMode;
+use fhevm_engine_common::versioning::{
+    is_retired, older_versions_are_retired, StackMode,
+};
+use fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION;
 use primitives::event::BlockFlow;
 
 use crate::cmd::block_history::BlockSummary;
@@ -24,7 +28,10 @@ use crate::consumer::metrics::{
     inc_blocks_duplicated, inc_blocks_missing, inc_blocks_processed,
     inc_db_errors, observe_legacy_insert_delay_seconds, set_received_block,
 };
-use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
+use crate::consumer::migration::spawn_id_migration;
+use crate::database::ingest::{
+    ingest_block_logs, BlockLogs, HistoryGap, IngestOptions, IngestResult,
+};
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
 };
@@ -38,11 +45,29 @@ use consumer::{
 #[cfg(test)]
 mod finalization_tests;
 mod metrics;
+mod migration;
 
 const MAX_DB_RETRIES: u64 = 10;
 const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(60);
 static SLOW_LANE_PROMOTION_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 const STATS_FINALIZATION_MARGIN: i64 = 5;
+/// How often the retirement watcher re-reads the paused flag.
+const RETIREMENT_POLL_INTERVAL: Duration = Duration::from_secs(10);
+/// How often the superseded group sweep re-reads the live consensus version.
+const SUPERSEDED_SWEEP_INTERVAL: Duration = Duration::from_secs(60);
+
+/// Data-plane identity of this listener on the broker.
+///
+/// Together with the chain id this names the `filters.consumer_id` row the
+/// publisher fans out to, and the four stream keys those events land on. It is
+/// a constant on purpose: it must not move when a deployment is renamed, when
+/// an operator sets a different OTLP service name, or when blue and green run
+/// side by side. Blue and green share this identity and are told apart by the
+/// consumer group suffix below, not by the stream they read.
+///
+/// Changing this value orphans the previous streams and filter rows. That is a
+/// migration (see `--migrate-from-service-name`), not a configuration change.
+const DEFAULT_CONSUMER_ID: &str = "host-listener-consumer";
 
 #[derive(Clone, Debug)]
 pub struct ConsumerConfig {
@@ -54,7 +79,6 @@ pub struct ConsumerConfig {
     pub confidential_bridge_address: Option<Address>,
     pub database_url: DatabaseURL,
     pub database_retry_interval: Duration,
-    pub service_name: String,
     pub health_port: u16,
     // Dependence chain settings
     pub dependence_cache_size: u16,
@@ -65,6 +89,11 @@ pub struct ConsumerConfig {
     pub gcs_mode: bool,
     pub disable_synthetic_ops: bool,
     pub canonical_protocol_config_chain_id: Option<u64>,
+    /// Service name this environment ran under when that name was also its
+    /// broker identity, before [`DEFAULT_CONSUMER_ID`]. The chain id is
+    /// appended to it to name the identity to retire, exactly as it is for the
+    /// live one. Temporary — see [`migration`].
+    pub migrate_from_service_name: Option<String>,
 }
 
 pub fn collect_logs(payload: &BlockPayload) -> Vec<Log> {
@@ -342,9 +371,17 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     let broker_url = config.url.clone(); // e.g."amqp://user:pass@localhost:5672";
     let broker = Broker::from_url(&broker_url).await?;
-    let consumer_id = format!("{}.{}", config.service_name, config.chain_id);
+    // Identity is a constant, not the telemetry name: see `DEFAULT_CONSUMER_ID`.
+    let consumer_id = format!("{}.{}", DEFAULT_CONSUMER_ID, config.chain_id);
+    // Blue and green share the streams and the filter row, and are separated by
+    // the consensus version they were compiled against. A build only ever reads
+    // the group matching its own version, so a cutover cannot deliver a block to
+    // a stack that would disagree about how to execute it. This is compiled in
+    // rather than configured: no operator flag can make two stacks collide, and
+    // no stack can be talked into reading another version's group.
     let client =
-        ListenerConsumer::new(&broker, chain_id.as_u64(), &consumer_id);
+        ListenerConsumer::new(&broker, chain_id.as_u64(), &consumer_id)
+            .with_group_suffix(format!("v{CONSENSUS_PROTOCOL_VERSION}"));
 
     let stack_mode = StackMode::new(config.gcs_mode);
     let db = Database::new_with_stack_mode(
@@ -357,12 +394,39 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     db.tick.update();
 
-    info!("Consumer registering contracts");
-    client.register_contracts(&contracts).await?;
-    client.register_final_contracts(&contracts).await?;
-    info!("Consumer ensure queues");
-    client.ensure_consumer().await?;
-    client.ensure_final_consumer().await?;
+    // A stack whose consensus version is behind the live one is retired: every
+    // guarded transaction it attempts is refused and the consume handler below
+    // acks and drops. Reading would only move a cursor nobody acts on, so it
+    // does not create a group to begin with. Checked here because
+    // `resolve_gcs_mode` cannot tell a retired build from an ordinary blue one
+    // — compiled-older is not compiled-newer — so without this a retired pod
+    // would create a group on every restart and leave it behind.
+    let retired = {
+        let pool = db.pool.read().await;
+        let mut conn = pool.acquire().await?;
+        is_retired(&mut conn).await?
+    };
+
+    if retired {
+        warn!(
+            chain_id = %config.chain_id,
+            consensus_version = CONSENSUS_PROTOCOL_VERSION,
+            "Consensus version is behind the live one: this stack is retired \
+             and will not consume"
+        );
+    } else {
+        // Queue before filters, in that order: registering a contract is what
+        // starts the listener publishing, and a group created afterwards starts
+        // at the end of the stream and never sees what was published in
+        // between.
+        info!("Consumer ensure queues");
+        client.ensure_consumer().await?;
+        client.ensure_final_consumer().await?;
+        client.ensure_final_catchup_consumer().await?;
+        info!("Consumer registering contracts");
+        client.register_contracts(&contracts).await?;
+        client.register_final_contracts(&contracts).await?;
+    }
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: blockchain_timeout_tick.clone(),
@@ -370,6 +434,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         blockchain_provider: blockchain_provider.clone(),
         database_pool: db.pool.clone(),
         database_tick: db.tick.clone(),
+        recovery_paused: Default::default(),
     };
     let health_check_server = HealthHttpServer::new(
         Arc::new(health_check),
@@ -399,6 +464,50 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         client.cancel_token.clone(),
     );
 
+    // ...and when it does, stop reading. This watcher cancels only the three
+    // read flows, so the stats observer and the identity migration below are
+    // untouched by retirement itself. They do not outlive it for long: once
+    // the first read flow returns, the loop below cancels the parent token and
+    // takes every remaining child down with it. An interrupted migration is
+    // safe to cut short — it is spawned again on the next start, before the
+    // retirement check — but nothing here keeps it running to completion.
+    //
+    // A group cannot be released while something is still blocked in
+    // `XREADGROUP` on it, so the release happens after all flows have
+    // returned, not here.
+    spawn_retirement_watcher(
+        stack_mode.clone(),
+        client.clone(),
+        client.cancel_token.clone(),
+    );
+
+    // Temporary: retires whatever identity this environment used before
+    // `DEFAULT_CONSUMER_ID`. Removed once every environment has been through
+    // the release that introduced it. See `migration`.
+    if let Some(old_service_name) = config.migrate_from_service_name.clone() {
+        // Composed exactly as the live identity is above. The chain id belongs
+        // to this process, which serves one chain, so it is not something an
+        // operator should have to restate and so cannot be restated wrongly.
+        let old_consumer_id =
+            format!("{}.{}", old_service_name, config.chain_id);
+        spawn_id_migration(
+            broker.clone(),
+            client.clone(),
+            old_consumer_id,
+            contracts.clone(),
+            stack_mode.clone(),
+            client.cancel_token.clone(),
+        );
+    }
+
+    // Backstop for the release a retired stack does on its way out, which a
+    // killed pod, a restarted one or a failed attempt never completes.
+    spawn_superseded_group_sweep(
+        db.clone(),
+        client.clone(),
+        client.cancel_token.clone(),
+    );
+
     let last_known_drift = Arc::new(RwLock::new(STARTING_DRIFT));
     let chain_id_str = config.chain_id.to_string();
     let stats_task = tokio::spawn(run_consumer_stats_observer(
@@ -417,10 +526,15 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     }
     // Live and finalized deliveries share this handler. A finalized delivery
     // re-ingests the block idempotently and marks it finalized.
+    // The closure below takes the mode; keep a handle for the check after
+    // the loop has returned.
+    let retirement_mode = stack_mode.clone();
     let handler_config = config.clone();
     let kms_cancel = client.cancel_token.clone();
+    let recovery_client = client.clone();
     let handle_block = move |payload: BlockPayload, _cancel| {
-        let finalized = payload.flow == BlockFlow::Final;
+        let finalized =
+            matches!(payload.flow, BlockFlow::Final | BlockFlow::FinalCatchup);
         if !finalized {
             blockchain_tick.update();
         }
@@ -432,6 +546,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         let stack_mode = stack_mode.clone();
         let config = handler_config.clone();
         let kms_cancel = kms_cancel.clone();
+        let recovery_client = recovery_client.clone();
         async move {
             // Paused (retired blue stack after cutover): no-op — ack and drop
             // the block without writing anything to the DB.
@@ -471,7 +586,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 );
                 return Ok(AckDecision::Ack);
             }
-            ingest_payload(
+            let result = ingest_payload(
                 &mut db,
                 &config,
                 &ingest_options,
@@ -480,7 +595,24 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 AwsS3Client {},
                 &kms_cancel,
             )
-            .await
+            .await;
+            if let Err(HandlerError::Transient(error)) = &result {
+                if let Some(gap) = error.downcast_ref::<HistoryGap>() {
+                    // Empty blocks are delivered too. The separate catchup
+                    // queue can attach this link while the original delivery
+                    // waits for redelivery on the live/finalized queue.
+                    recovery_client
+                        .request_final_catchup(
+                            gap.block_number,
+                            gap.block_number,
+                        )
+                        .await
+                        .map_err(|error| {
+                            HandlerError::Transient(error.into())
+                        })?;
+                }
+            }
+            result
         }
     };
 
@@ -488,12 +620,20 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         chain_id = %config.chain_id,
         "Starting host-listener consumer"
     );
-    let live_run = tokio::spawn(client.consume(handle_block.clone()));
-    let final_run = tokio::spawn(client.consume_final(handle_block));
-    // Either flow ending stops the consumer; cancelling below stops the other.
-    let consumer_result = tokio::select! {
-        result = live_run => result,
-        result = final_run => result,
+    let consumer_result = if retired {
+        // Nothing to read, but the process stays up: its pod is managed like
+        // any other and exiting here would just crash-loop until the operator
+        // removes it.
+        client.cancel_token.cancelled().await;
+        Ok(Ok(()))
+    } else {
+        first_flow_to_return(
+            &client.cancel_token,
+            tokio::spawn(client.consume(handle_block.clone())),
+            tokio::spawn(client.consume_final(handle_block.clone())),
+            tokio::spawn(client.consume_final_catchup(handle_block)),
+        )
+        .await
     };
     info!(
         chain_id = %config.chain_id,
@@ -502,6 +642,26 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     client.cancel();
     if let Err(err) = stats_task.await {
         error!(error = %err, "Consumer stats background task failed");
+    }
+
+    // All read flows have returned, so nothing is on these groups any more
+    // and they can go. A retired build's cursors never move again, and the broker's
+    // trimmer will not reclaim past the furthest-behind group on a stream, so
+    // leaving them pins the backlog until the live stack's sweep releases them.
+    // Only this build's own groups are released: the streams, their entries
+    // and the incoming build's groups are shared with it and must survive.
+    if retired || retirement_mode.is_paused() {
+        match client.destroy_own_groups().await {
+            Ok(0) => {}
+            Ok(released) => {
+                info!(released, "Retired stack released its consumer groups")
+            }
+            Err(err) => warn!(
+                error = %err,
+                "Retired stack failed to release its consumer groups; the \
+                 live stack will release them"
+            ),
+        }
     }
     match consumer_result {
         Ok(Ok(())) => {
@@ -531,7 +691,8 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
     kms_cancel: &CancellationToken,
 ) -> Result<AckDecision, HandlerError> {
     let chain_id = db.chain_id;
-    let finalized = payload.flow == BlockFlow::Final;
+    let finalized =
+        matches!(payload.flow, BlockFlow::Final | BlockFlow::FinalCatchup);
     let block_summary = BlockSummary {
         number: payload.block_number,
         hash: payload.block_hash,
@@ -578,7 +739,7 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
     )
     .await
     {
-        Ok(_) => {
+        Ok((IngestResult::Complete, _)) => {
             db.tick.update();
             if finalized {
                 if let Err(error) = db
@@ -602,6 +763,9 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
 
             inc_blocks_processed(chain_id_str, 1);
             Ok(AckDecision::Ack)
+        }
+        Ok((IngestResult::NeedsHistory(gap), _)) => {
+            Err(HandlerError::Transient(Box::new(gap)))
         }
         Err((err, retries)) => {
             inc_db_errors(chain_id_str, 1);
@@ -661,6 +825,180 @@ fn spawn_kms_activations<A: AwsS3Interface + Clone + 'static>(
     });
 }
 
+/// Stop the read flows once the cutover retires this stack.
+///
+/// `spawn_stack_version_listener` sets `paused` but leaves the readers
+/// running, which is correct while the stack is up: the handler acks and
+/// drops, so the cursors keep moving and nothing is pinned. It is only once
+/// the pods go that a frozen cursor starts holding the stream. Stopping the
+/// readers here is what lets the caller release the groups afterwards.
+///
+/// All flows are cancelled, including finalized recovery. They read different
+/// streams under the same identity and each holds a group of its own, so a
+/// release that only one of them has stopped for is a release racing a reader.
+///
+/// Polled rather than signaled: `paused` is a plain flag, and a load every
+/// [`RETIREMENT_POLL_INTERVAL`] costs nothing next to reacting to it late.
+/// There is no path back — `paused` is only ever set, never cleared — so this
+/// returns as soon as it fires.
+fn spawn_retirement_watcher(
+    stack_mode: Arc<StackMode>,
+    client: ListenerConsumer,
+    cancel: CancellationToken,
+) {
+    tokio::spawn(async move {
+        if awaiting_retirement(
+            || stack_mode.is_paused(),
+            &cancel,
+            RETIREMENT_POLL_INTERVAL,
+        )
+        .await
+        {
+            warn!("Stack retired by cutover: stopping the consumer read loops");
+            client.cancel_live();
+            client.cancel_final();
+            client.cancel_final_catchup();
+        }
+    });
+}
+
+/// Return the first read flow's result after stopping and joining all siblings.
+///
+/// All flows read under the same identity, each holding a consumer group of
+/// its own, and the caller releases those groups once this returns. A group
+/// cannot be released while a reader is still blocked in `XREADGROUP` on it,
+/// so the other flows must be waited for and not merely cancelled: dropping
+/// its [`JoinHandle`] detaches the task rather than stopping it, which is what
+/// `tokio::select!` over handles does on its own.
+///
+/// The result reported is the first flow's. Whichever returned first is the
+/// one that decided the shutdown; the others were told to stop and their results
+/// say nothing the caller did not already cause.
+async fn first_flow_to_return<T>(
+    cancel: &CancellationToken,
+    mut live: JoinHandle<T>,
+    mut finalized: JoinHandle<T>,
+    mut recovery: JoinHandle<T>,
+) -> Result<T, JoinError> {
+    tokio::select! {
+        result = &mut live => {
+            cancel.cancel();
+            let _ = finalized.await;
+            let _ = recovery.await;
+            result
+        }
+        result = &mut finalized => {
+            cancel.cancel();
+            let _ = live.await;
+            let _ = recovery.await;
+            result
+        }
+        result = &mut recovery => {
+            cancel.cancel();
+            let _ = live.await;
+            let _ = finalized.await;
+            result
+        }
+    }
+}
+
+/// Resolve to `true` once the stack is retired, or `false` if shutdown came
+/// first.
+///
+/// Split out from the spawn above so the decision can be tested without a
+/// broker: which of the two it returns is the whole of the logic, and acting on
+/// it is one call. The check is a predicate rather than the mode itself because
+/// `paused` has no public setter — a one-way latch should not have one — and a
+/// test that cannot arrange the condition cannot assert on it.
+async fn awaiting_retirement(
+    retired: impl Fn() -> bool,
+    cancel: &CancellationToken,
+    poll_interval: Duration,
+) -> bool {
+    loop {
+        if retired() {
+            return true;
+        }
+        tokio::select! {
+            _ = cancel.cancelled() => return false,
+            _ = sleep(poll_interval) => {}
+        }
+    }
+}
+
+/// Release the consumer groups of retired consensus versions, for the life of
+/// the pod.
+///
+/// A retired stack releases its own groups once its read flows return, but
+/// only if it gets there: a pod killed or restarted after cutover, or a single
+/// failed attempt, leaves a frozen cursor that holds back the trimmer on the
+/// whole stream. The live stack is the one that outlives it, so it finishes
+/// the job. See [`ListenerConsumer::destroy_superseded_groups`] for which
+/// groups that covers.
+///
+/// The proof is read from `versioning` on every tick rather than taken from
+/// [`StackMode`]: this destroys groups another stack may still be reading, so
+/// it fails closed on an unseeded or unreadable row. It must hold on two ticks
+/// in a row before anything goes, which leaves the retiring stack time to
+/// release its own groups first. A reader still on a destroyed group fails its
+/// next read and restarts retired; that is noise, not loss, since a retired
+/// stack writes nothing.
+fn spawn_superseded_group_sweep(
+    db: Database,
+    client: ListenerConsumer,
+    cancel: CancellationToken,
+) {
+    tokio::spawn(async move {
+        let mut tick = interval_at(
+            Instant::now() + SUPERSEDED_SWEEP_INTERVAL,
+            SUPERSEDED_SWEEP_INTERVAL,
+        );
+        tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        let mut proven_last_tick = false;
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => break,
+                _ = tick.tick() => {}
+            }
+            let proven = async {
+                let mut conn = db.pool().await.acquire().await?;
+                older_versions_are_retired(&mut conn).await
+            }
+            .await
+            .unwrap_or_else(|err| {
+                warn!(
+                    error = %err,
+                    "Could not read the live consensus version; skipping the \
+                     superseded consumer group sweep"
+                );
+                false
+            });
+            if !sweep_is_armed(&mut proven_last_tick, proven) {
+                continue;
+            }
+            match client.destroy_superseded_groups().await {
+                Ok(0) => {}
+                Ok(released) => info!(
+                    released,
+                    "Released consumer groups left behind by retired \
+                     consensus versions"
+                ),
+                Err(err) => warn!(
+                    error = %err,
+                    "Failed to release consumer groups left behind by retired \
+                     consensus versions; retrying on the next tick"
+                ),
+            }
+        }
+    });
+}
+
+/// Record this tick's proof and report whether it also held on the previous
+/// one, which is when the sweep may act.
+fn sweep_is_armed(proven_last_tick: &mut bool, proven: bool) -> bool {
+    std::mem::replace(proven_last_tick, proven) && proven
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn ingest_with_retry(
     chain_id: ChainId,
@@ -673,7 +1011,7 @@ async fn ingest_with_retry(
     confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
-) -> Result<u64, (sqlx::Error, u64)> {
+) -> Result<(IngestResult, u64), (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
@@ -692,7 +1030,7 @@ async fn ingest_with_retry(
         )
         .await
         {
-            Ok(_) => return Ok(errors),
+            Ok(result) => return Ok((result, errors)),
             Err(err) => {
                 errors += 1;
                 if errors > MAX_DB_RETRIES {
@@ -707,6 +1045,133 @@ async fn ingest_with_retry(
                 db.reconnect().await;
                 sleep(retry_interval).await;
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TICK: Duration = Duration::from_millis(5);
+
+    /// A stack that is already retired is seen as such without waiting out a
+    /// poll.
+    ///
+    /// The restart case: a pod coming back up after the cutover must not spend
+    /// a poll interval behaving as though it were live.
+    #[tokio::test]
+    async fn retirement_already_in_effect_is_seen_immediately() {
+        assert!(
+            awaiting_retirement(|| true, &CancellationToken::new(), TICK).await
+        );
+    }
+
+    /// Retirement arriving while the watcher is waiting is picked up.
+    ///
+    /// This is the cutover itself, and the reason the wait is a loop rather
+    /// than a single read: `paused` is a plain flag with nothing to wake on, so
+    /// a watcher that only looked once at startup would never fire.
+    #[tokio::test]
+    async fn retirement_arriving_later_is_picked_up_by_the_poll() {
+        let retired = Arc::new(AtomicBool::new(false));
+        let cancel = CancellationToken::new();
+
+        let setter = {
+            let retired = Arc::clone(&retired);
+            tokio::spawn(async move {
+                sleep(TICK * 4).await;
+                retired.store(true, Ordering::SeqCst);
+            })
+        };
+
+        assert!(tokio::time::timeout(
+            Duration::from_secs(5),
+            awaiting_retirement(
+                || retired.load(Ordering::SeqCst),
+                &cancel,
+                TICK
+            ),
+        )
+        .await
+        .expect("the poll must observe a flag set while it waits"));
+        setter.await.unwrap();
+    }
+
+    /// An ordinary shutdown is not a retirement.
+    ///
+    /// Reporting one here would have the caller destroy the consumer group of a
+    /// stack that is merely restarting. On the way back up it would find no
+    /// group, reseed at the tip of the stream, and silently skip whatever was
+    /// published while it was down.
+    #[tokio::test]
+    async fn shutdown_without_a_cutover_is_not_a_retirement() {
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+
+        assert!(!awaiting_retirement(|| false, &cancel, TICK).await);
+    }
+
+    /// The sweep acts only on a proof that has held for two ticks in a row.
+    ///
+    /// The first tick after cutover belongs to the retiring stack, which
+    /// releases its own groups; a lapse in between, including a failed read,
+    /// starts the wait over.
+    #[test]
+    fn the_sweep_waits_for_a_second_tick_of_proof() {
+        let mut proven_last_tick = false;
+        assert!(!sweep_is_armed(&mut proven_last_tick, true));
+        assert!(sweep_is_armed(&mut proven_last_tick, true));
+        assert!(sweep_is_armed(&mut proven_last_tick, true));
+        assert!(!sweep_is_armed(&mut proven_last_tick, false));
+        assert!(!sweep_is_armed(&mut proven_last_tick, true));
+        assert!(sweep_is_armed(&mut proven_last_tick, true));
+    }
+
+    /// A read flow that is still unwinding when its sibling returns is waited
+    /// for, not left running.
+    ///
+    /// The caller releases all consumer groups as soon as this returns. A
+    /// flow still inside `XREADGROUP` at that point would have its group
+    /// destroyed underneath it — which is what happens if the losing
+    /// `JoinHandle` is dropped instead of awaited, because dropping one
+    /// detaches its task.
+    #[tokio::test]
+    async fn the_flow_that_did_not_return_first_is_waited_for() {
+        for first_flow in 0..3 {
+            let cancel = CancellationToken::new();
+            let unwound = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let mut flows: Vec<_> = (0..3)
+                .map(|flow| {
+                    let cancel = cancel.clone();
+                    let unwound = Arc::clone(&unwound);
+                    tokio::spawn(async move {
+                        if flow != first_flow {
+                            cancel.cancelled().await;
+                            // The blocking read it is still sitting in.
+                            sleep(TICK * 4).await;
+                            unwound.fetch_add(1, Ordering::SeqCst);
+                        }
+                    })
+                })
+                .collect();
+            let recovery = flows.pop().unwrap();
+            let finalized = flows.pop().unwrap();
+            let live = flows.pop().unwrap();
+            tokio::time::timeout(
+                Duration::from_secs(5),
+                first_flow_to_return(&cancel, live, finalized, recovery),
+            )
+            .await
+            .expect("the other flows must be told to stop, not just waited on")
+            .expect("no flow panics");
+
+            assert_eq!(
+                unwound.load(Ordering::SeqCst),
+                2,
+                "the group release that follows must not begin while the \
+                 other flows are still reading (first flow: {first_flow})"
+            );
         }
     }
 }

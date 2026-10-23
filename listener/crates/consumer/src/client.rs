@@ -1,5 +1,7 @@
 use alloy_primitives::Address;
 use async_trait::async_trait;
+pub use broker::redis::GroupStatus;
+use broker::redis::{StreamManager, id_before};
 pub use broker::{AckDecision, Broker, HandlerError};
 use broker::{BrokerError, CancellationToken, Consumer, Handler, Message, Topic};
 use primitives::event::{
@@ -13,6 +15,77 @@ use tracing::warn;
 
 pub use crate::error::ConsumerError;
 use crate::options::{CatchupConsumerOptions, LiveConsumerOptions};
+
+/// Redis start position meaning "deliver only what arrives from now on".
+const NEW_ENTRIES_ONLY: &str = "$";
+
+/// Where `name` sits in the succession of groups on `stream`, or `None` if it
+/// is not part of one.
+///
+/// The unsuffixed group is rung 0. It comes from a build that predates group
+/// suffixes entirely, so every suffixed build is newer than it, and a build
+/// that finds it is the first of the versioned ones.
+///
+/// Anything that is not `{stream}` or `{stream}.v{digits}` is unranked: a
+/// group belonging to a different stream, or a suffix in a shape this
+/// ordering was not built to compare.
+fn rung(stream: &str, name: &str) -> Option<u32> {
+    if name == stream {
+        return Some(0);
+    }
+    name.strip_prefix(stream)
+        .and_then(|rest| rest.strip_prefix(".v"))
+        .and_then(|digits| digits.parse().ok())
+}
+
+/// The group on `stream` whose position a group with `suffix` should start
+/// from: the highest rung below its own.
+///
+/// `None` means there is nothing older to inherit — an empty stream, a stream
+/// carrying only newer groups, or a suffix that does not name a version,
+/// which is a shape this ordering cannot rank and so will not guess at.
+fn predecessor_group<'a>(
+    stream: &str,
+    suffix: Option<&str>,
+    existing: &'a [GroupStatus],
+) -> Option<&'a GroupStatus> {
+    let mine = rung(stream, &format!("{stream}.{}", suffix?))?;
+
+    existing
+        .iter()
+        .filter_map(|candidate| {
+            rung(stream, &candidate.name)
+                .filter(|rung| *rung < mine)
+                .map(|rung| (rung, candidate))
+        })
+        .max_by_key(|(rung, _)| *rung)
+        .map(|(_, candidate)| candidate)
+}
+
+/// The groups on `stream` that a client with `suffix` releases once its own
+/// version is no longer ahead of the live one: every versioned rung strictly
+/// below its own.
+///
+/// Rung 0 is left alone. The unsuffixed group belongs to a build that predates
+/// versioning and cannot see a cutover, so being behind the live version does
+/// not mean it has stopped reading. Its own group, newer ones, unranked names
+/// and an unrankable `suffix` are never returned either.
+fn superseded_groups<'a>(
+    stream: &str,
+    suffix: Option<&str>,
+    existing: &'a [GroupStatus],
+) -> Vec<&'a GroupStatus> {
+    let Some(mine) = suffix.and_then(|suffix| rung(stream, &format!("{stream}.{suffix}"))) else {
+        return Vec::new();
+    };
+
+    existing
+        .iter()
+        .filter(|candidate| {
+            rung(stream, &candidate.name).is_some_and(|rung| 0 < rung && rung < mine)
+        })
+        .collect()
+}
 
 /// Chain & Consumer-scoped client for the consumer library.
 ///
@@ -58,6 +131,10 @@ pub struct ListenerConsumer {
     final_catchup_cancel: CancellationToken,
     live_options: LiveConsumerOptions,
     catchup_options: CatchupConsumerOptions,
+    /// Optional suffix appended to every delivery group name.
+    ///
+    /// See [`with_group_suffix`](Self::with_group_suffix).
+    group_suffix: Option<String>,
 }
 
 impl ListenerConsumer {
@@ -104,6 +181,55 @@ impl ListenerConsumer {
             final_catchup_cancel,
             live_options: live.unwrap_or_default(),
             catchup_options: catchup.unwrap_or_default(),
+            group_suffix: None,
+        }
+    }
+
+    /// Append a suffix to every delivery group name this consumer creates.
+    ///
+    /// Group name and stream name are the same string by default, which means
+    /// two builds of the same service cannot read the same stream
+    /// independently — they share a group, and every entry goes to exactly one
+    /// of them. A suffix separates the two: same stream, same `consumer_id`,
+    /// same registered filters, but its own cursor and its own copy of every
+    /// entry.
+    ///
+    /// The caller owns the suffix and therefore owns what counts as "a
+    /// different reader". Deriving it from something the two builds genuinely
+    /// disagree about — a protocol version, say — makes the separation happen
+    /// exactly when it is needed and not otherwise. Deriving it from something
+    /// an operator sets by hand makes it a footgun.
+    ///
+    /// A new group does not start from the beginning of retained history. It
+    /// takes over from the newest group ranking below its own suffix, and only
+    /// starts at the end of the stream when there is nothing below it to take
+    /// over from. Suffixes that rank — `v1`, `v2` and so on, with the
+    /// unsuffixed name ranking below all of them — are what make that handover
+    /// possible; one that does not rank always starts at the end.
+    ///
+    /// On AMQP the group is the queue, so changing the suffix points the
+    /// consumer at a different queue and anything still in the old one is left
+    /// behind.
+    pub fn with_group_suffix(mut self, suffix: impl Into<String>) -> Self {
+        let suffix = suffix.into();
+        self.group_suffix = if suffix.is_empty() {
+            None
+        } else {
+            Some(suffix)
+        };
+        self
+    }
+
+    /// Delivery group name for `topic` — the topic itself, plus the suffix
+    /// from [`with_group_suffix`](Self::with_group_suffix) if one is set.
+    ///
+    /// Kept in one place so the four pipelines cannot drift apart: they must
+    /// either all carry the suffix or none of them do, or a build reads some
+    /// of its streams independently and shares the rest.
+    fn group_for(&self, topic: &Topic) -> String {
+        match &self.group_suffix {
+            Some(suffix) => format!("{topic}.{suffix}"),
+            None => topic.to_string(),
         }
     }
 
@@ -333,7 +459,7 @@ impl ListenerConsumer {
         let mut builder = self
             .broker
             .consumer(&topic)
-            .group(topic.to_string())
+            .group(self.group_for(&topic))
             .prefetch(opts.prefetch())
             .max_retries(opts.max_retries())
             .with_cancellation(cancel);
@@ -370,7 +496,7 @@ impl ListenerConsumer {
         let mut builder = self
             .broker
             .consumer(&topic)
-            .group(topic.to_string())
+            .group(self.group_for(&topic))
             .prefetch(opts.prefetch())
             .max_retries(opts.max_retries())
             .with_cancellation(cancel);
@@ -408,7 +534,7 @@ impl ListenerConsumer {
         let mut builder = self
             .broker
             .consumer(&topic)
-            .group(topic.to_string())
+            .group(self.group_for(&topic))
             .prefetch(opts.prefetch())
             .max_retries(opts.max_retries())
             .with_cancellation(cancel);
@@ -442,7 +568,7 @@ impl ListenerConsumer {
         let mut builder = self
             .broker
             .consumer(&topic)
-            .group(topic.to_string())
+            .group(self.group_for(&topic))
             .prefetch(opts.prefetch())
             .max_retries(opts.max_retries())
             .with_cancellation(cancel);
@@ -537,41 +663,356 @@ impl ListenerConsumer {
     /// Ensure the consumer topology is set up in the broker.
     pub async fn ensure_consumer(&self) -> Result<(), BrokerError> {
         // TODO: start core listener
-        self.broker_consumer()?.ensure_topology().await
+        self.broker_consumer()?.ensure_topology().await?;
+        self.seed_group(&self.consumer_topic()).await
     }
 
     /// Ensure the catchup consumer topology is set up in the broker.
     pub async fn ensure_catchup_consumer(&self) -> Result<(), BrokerError> {
-        self.broker_catchup_consumer()?.ensure_topology().await
+        self.broker_catchup_consumer()?.ensure_topology().await?;
+        self.seed_group(&self.catchup_consumer_topic()).await
     }
 
     /// Ensure the finalized-only consumer topology is set up in the broker.
     ///
     /// On AMQP this declares the exchanges/queues/bindings up front. On Redis
-    /// it is a no-op — the stream is created when the
-    /// [`consume_final`](Self::consume_final) future starts. Until the queue
-    /// exists, events published by the listener for this consumer's FINAL
-    /// filters go through the listener's stale-publish handling (indefinite
-    /// retry by default), so start consuming promptly after registering
-    /// FINAL filters
+    /// it creates the stream and its dead-letter companion, so the destination
+    /// exists before the listener publishes to it — a publisher that checks
+    /// for the stream first would otherwise wait forever for a stream only a
+    /// running consumer would create.
+    ///
+    /// Call this before registering FINAL filters
     /// ([`register_final_contracts`](Self::register_final_contracts) /
-    /// [`register_final_full_block`](Self::register_final_full_block)).
+    /// [`register_final_full_block`](Self::register_final_full_block)), so no
+    /// event is ever published at a destination that does not exist yet.
     pub async fn ensure_final_consumer(&self) -> Result<(), BrokerError> {
-        self.broker_final_consumer()?.ensure_topology().await
+        self.broker_final_consumer()?.ensure_topology().await?;
+        self.seed_group(&self.final_consumer_topic()).await
     }
 
     /// Ensure the final catchup consumer topology is set up in the broker.
     ///
     /// On AMQP this declares the exchanges/queues/bindings up front. On Redis
-    /// it is a no-op — the stream is created when the
-    /// [`consume_final_catchup`](Self::consume_final_catchup) future starts,
-    /// so start consuming before (or promptly after)
+    /// it creates the stream and its dead-letter companion. Call it before
     /// [`request_final_catchup`](Self::request_final_catchup) so replayed
-    /// events have a queue to land on.
+    /// events have somewhere to land.
     pub async fn ensure_final_catchup_consumer(&self) -> Result<(), BrokerError> {
         self.broker_final_catchup_consumer()?
             .ensure_topology()
-            .await
+            .await?;
+        self.seed_group(&self.final_catchup_consumer_topic()).await
+    }
+
+    /// Create this identity's consumer group on one of its streams, at the
+    /// position it should start reading from.
+    ///
+    /// A consumer group's start position is fixed when the group is created
+    /// and never again: once it exists, creating it is a no-op and the
+    /// position argument is ignored. So the only chance to get it right is the
+    /// first time, and the right answer depends on what is already on the
+    /// stream:
+    ///
+    /// - **This group already exists.** Nothing to decide — it resumes from
+    ///   its own cursor.
+    /// - **An older group is reading this stream under the same identity.**
+    ///   Start where its unfinished work begins. Groups on one stream are
+    ///   ordered by the version in their suffix, the unsuffixed group oldest
+    ///   of all; the one to inherit from is the newest below our own, because
+    ///   an interrupted cutover can leave more than one behind and only the
+    ///   latest has a position worth having. A *newer* group is never
+    ///   inherited from: during a blue/green the successor reads the same
+    ///   stream, and it is not a predecessor.
+    ///
+    ///   Its cursor records what it was handed, not what it completed, and a
+    ///   consumer killed mid-batch leaves the difference outstanding for
+    ///   good: nothing reclaims another consumer's pending entries, and the
+    ///   host listener takes no part in its own shutdown. Inheriting the
+    ///   cursor steps over that work. Starting at the oldest entry the
+    ///   predecessor still owes repeats a few blocks into the same database
+    ///   instead, which is the cheaper of the two mistakes.
+    /// - **Nothing older is reading this stream.** Start at the end. On a
+    ///   stream nothing has ever been published to — a fresh identity, and
+    ///   the usual case, since the group is created before the filters that
+    ///   set the publisher going — the end is also the beginning and nothing
+    ///   is skipped. On a populated one the retained entries are of unknown
+    ///   age with no cursor to inherit, and the host listener wires no
+    ///   catchup flow that would fetch them from the chain instead, so the
+    ///   tip is a floor and not a recovery.
+    ///
+    /// Without this, a group created on a populated stream starts at `0` and
+    /// replays everything retained — which, on a stream whose trimming has
+    /// been pinned by an abandoned group, is as much history as the stream is
+    /// allowed to hold.
+    ///
+    /// AMQP has no consumer groups and no start positions; this does nothing.
+    async fn seed_group(&self, topic: &Topic) -> Result<(), BrokerError> {
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(()),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let stream = topic.key();
+        let group = self.group_for(topic);
+        let existing = manager.list_groups(&stream).await?;
+
+        if existing.iter().any(|candidate| candidate.name == group) {
+            return Ok(());
+        }
+
+        let start = match predecessor_group(&stream, self.group_suffix.as_deref(), &existing) {
+            Some(predecessor) => {
+                match manager
+                    .oldest_pending_id(&stream, &predecessor.name)
+                    .await?
+                {
+                    Some(oldest) => id_before(&oldest),
+                    None => predecessor.last_delivered_id.clone(),
+                }
+            }
+            None => NEW_ENTRIES_ONLY.to_string(),
+        };
+
+        manager
+            .ensure_consumer_group(&stream, &group, &start)
+            .await?;
+        Ok(())
+    }
+
+    /// The four streams this identity owns: live, catchup, finalized-only and
+    /// final catchup.
+    fn owned_topics(&self) -> [Topic; 4] {
+        [
+            self.consumer_topic(),
+            self.catchup_consumer_topic(),
+            self.final_consumer_topic(),
+            self.final_catchup_consumer_topic(),
+        ]
+    }
+
+    /// Report the consumer groups attached to each of this identity's four
+    /// streams, as `(stream key, groups)`.
+    ///
+    /// This is the read half of retiring a predecessor. A group whose
+    /// last-delivered ID does not move between samples while its lag is
+    /// non-zero has no live reader: entries are waiting and nobody is taking
+    /// them. How long "does not move" must hold before acting is the caller's
+    /// policy — this only reports what Redis says.
+    ///
+    /// Lag is `None` on Redis older than 7.0, which reports no lag field. A
+    /// caller that cannot tell how far behind a group is should decline to act
+    /// rather than assume zero.
+    ///
+    /// A stream that does not exist reports no groups. AMQP has no consumer
+    /// groups, so it reports nothing at all.
+    pub async fn group_status(&self) -> Result<Vec<(String, Vec<GroupStatus>)>, BrokerError> {
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(Vec::new()),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut statuses = Vec::with_capacity(4);
+        for topic in self.owned_topics() {
+            let key = topic.key();
+            let groups = manager.list_groups(&key).await?;
+            statuses.push((key, groups));
+        }
+        Ok(statuses)
+    }
+
+    /// Where each of this identity's four streams was last written to.
+    ///
+    /// This is how a caller establishes that the publisher has *stopped*
+    /// before deleting anything. Unregistering an identity's filters only
+    /// queues a command; the row that drives publishing is removed some time
+    /// later, and until it is, traffic keeps arriving. Two identical readings
+    /// a poll apart mean nothing has been appended in that window.
+    ///
+    /// Stream length would be the wrong signal — it stays flat on a stream
+    /// trimmed as fast as it is written. These positions only move forwards.
+    ///
+    /// A stream that does not exist reports `None`. AMQP reports nothing.
+    pub async fn write_positions(&self) -> Result<Vec<(String, Option<String>)>, BrokerError> {
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(Vec::new()),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut positions = Vec::with_capacity(4);
+        for topic in self.owned_topics() {
+            let key = topic.key();
+            let last = manager.last_generated_id(&key).await?;
+            positions.push((key, last));
+        }
+        Ok(positions)
+    }
+
+    /// Destroy the *unsuffixed* consumer group on each of this identity's four
+    /// streams, returning how many were actually destroyed.
+    ///
+    /// This retires a predecessor that read the same streams under the same
+    /// identity but without a group suffix. Group names are derived per
+    /// stream, so one logical reader holds four of them and there is no single
+    /// name to pass in; the name this removes is exactly the one
+    /// [`group_for`](Self::group_for) would produce with no suffix set.
+    ///
+    /// Destroying a group discards its pending list and its cursor. The stream
+    /// and its entries are untouched, which is what makes this safe to run
+    /// while another group is still reading the same stream.
+    ///
+    /// # Errors
+    ///
+    /// Refuses with [`ConsumerError::InvalidParameter`] when this client has no
+    /// group suffix, because then the unsuffixed group *is* this client's own
+    /// group and the call would cut the caller's own cursor out from under it.
+    pub async fn destroy_unsuffixed_groups(&self) -> Result<usize, ConsumerError> {
+        if self.group_suffix.is_none() {
+            return Err(ConsumerError::InvalidParameter(
+                "refusing to destroy the unsuffixed groups: this client has no group suffix, so \
+                 they are its own"
+                    .into(),
+            ));
+        }
+
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(0),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut destroyed = 0;
+        for topic in self.owned_topics() {
+            let group = topic.to_string();
+            if manager
+                .destroy_group(&topic.key(), &group)
+                .await
+                .map_err(BrokerError::from)?
+            {
+                destroyed += 1;
+            }
+        }
+        Ok(destroyed)
+    }
+
+    /// Destroy *this client's own* consumer group on each of its four streams,
+    /// returning how many were actually destroyed.
+    ///
+    /// This is how a retired stack gives back what it holds. Once
+    /// `versioning.consensus_version` has moved past the version this binary
+    /// was built against, the stack writes nothing — guarded transactions are
+    /// refused and the consume handler drops what it reads — so its cursor is
+    /// pure overhead. Left behind after the pods go, that cursor never moves
+    /// again and the trimmer will not reclaim past it.
+    ///
+    /// Only the groups are removed. The streams, their entries and the groups
+    /// belonging to *other* suffixes are untouched, which is what makes this
+    /// safe to run while the incoming stack reads the same four streams.
+    ///
+    /// Idempotent: destroying an absent group is not an error, it just does
+    /// not count towards the total.
+    ///
+    /// # Errors
+    ///
+    /// Refuses with [`ConsumerError::InvalidParameter`] when this client has
+    /// no group suffix. An unsuffixed client's own group is the bare legacy
+    /// name, which a predecessor sharing these streams may still be reading —
+    /// see [`destroy_unsuffixed_groups`](Self::destroy_unsuffixed_groups),
+    /// whose guard this mirrors from the other side.
+    pub async fn destroy_own_groups(&self) -> Result<usize, ConsumerError> {
+        if self.group_suffix.is_none() {
+            return Err(ConsumerError::InvalidParameter(
+                "refusing to destroy this client's own groups: without a group suffix they are \
+                 the bare legacy names, which a predecessor may still hold"
+                    .into(),
+            ));
+        }
+
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(0),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut destroyed = 0;
+        for topic in self.owned_topics() {
+            if manager
+                .destroy_group(&topic.key(), &self.group_for(&topic))
+                .await
+                .map_err(BrokerError::from)?
+            {
+                destroyed += 1;
+            }
+        }
+        Ok(destroyed)
+    }
+
+    /// Destroy the groups older versions left on this identity's four
+    /// streams, returning how many were actually destroyed.
+    ///
+    /// This is the backstop for [`destroy_own_groups`](Self::destroy_own_groups),
+    /// which a retired stack only reaches if it is still running when it
+    /// notices the cutover. Whatever it left behind is released here by the
+    /// stack that replaced it. See `superseded_groups` for what counts: the
+    /// versioned rungs below this client's own, never the unsuffixed one.
+    ///
+    /// Call this only once this client's version is no longer ahead of the
+    /// live one. Before that, the rungs below it include the live stack's own
+    /// group, and destroying a group under a reader breaks that reader.
+    ///
+    /// Idempotent, and a client without a rankable suffix destroys nothing.
+    pub async fn destroy_superseded_groups(&self) -> Result<usize, ConsumerError> {
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(0),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut destroyed = 0;
+        for topic in self.owned_topics() {
+            let stream = topic.key();
+            let existing = manager
+                .list_groups(&stream)
+                .await
+                .map_err(BrokerError::from)?;
+            for group in superseded_groups(&stream, self.group_suffix.as_deref(), &existing) {
+                if manager
+                    .destroy_group(&stream, &group.name)
+                    .await
+                    .map_err(BrokerError::from)?
+                {
+                    destroyed += 1;
+                }
+            }
+        }
+        Ok(destroyed)
+    }
+
+    /// Delete this identity's four streams and their dead-letter companions,
+    /// returning how many keys were actually removed.
+    ///
+    /// Unconditional and destructive: it does not check whether anything is
+    /// reading. Establish that the identity is drained first — see
+    /// [`group_status`](Self::group_status) — and stop the publisher writing to
+    /// it first, via [`unregister_contracts`](Self::unregister_contracts), or
+    /// the streams will simply be recreated by the next published event.
+    pub async fn delete_streams(&self) -> Result<usize, BrokerError> {
+        let conn = match &self.broker {
+            Broker::Redis { conn, .. } => conn,
+            Broker::Amqp { .. } => return Ok(0),
+        };
+        let manager = StreamManager::new((**conn).clone());
+
+        let mut deleted = 0;
+        for topic in self.owned_topics() {
+            for key in [topic.key(), topic.dead_key()] {
+                if manager.delete_stream(&key).await? {
+                    deleted += 1;
+                }
+            }
+        }
+        Ok(deleted)
     }
 
     /// Start consuming messages with the provided handler function.
@@ -729,6 +1170,136 @@ mod tests {
 
     fn unique_name(prefix: &str) -> String {
         format!("{prefix}-{}", TEST_ID.fetch_add(1, Ordering::Relaxed))
+    }
+
+    const STREAM: &str = "host-listener-consumer.11155111.new-event";
+
+    fn group(name: &str) -> GroupStatus {
+        GroupStatus {
+            name: name.to_string(),
+            last_delivered_id: "1700000000000-0".to_string(),
+            pending: 0,
+            lag: Some(0),
+        }
+    }
+
+    #[test]
+    fn the_unsuffixed_group_is_the_oldest_rung() {
+        assert_eq!(rung(STREAM, STREAM), Some(0));
+    }
+
+    #[test]
+    fn a_versioned_suffix_is_its_own_rung() {
+        assert_eq!(rung(STREAM, &format!("{STREAM}.v1")), Some(1));
+        assert_eq!(rung(STREAM, &format!("{STREAM}.v2")), Some(2));
+        assert_eq!(rung(STREAM, &format!("{STREAM}.v17")), Some(17));
+    }
+
+    #[test]
+    fn names_this_ordering_cannot_rank_are_unranked() {
+        // Another stream's group, which `XINFO GROUPS` would never return for
+        // this stream but which the ordering should still refuse to rank.
+        assert_eq!(rung(STREAM, "somewhere-else.new-event.v2"), None);
+        // Suffixes that are not `v<digits>`.
+        assert_eq!(rung(STREAM, &format!("{STREAM}.v")), None);
+        assert_eq!(rung(STREAM, &format!("{STREAM}.vx")), None);
+        assert_eq!(rung(STREAM, &format!("{STREAM}.v2x")), None);
+        assert_eq!(rung(STREAM, &format!("{STREAM}.beta")), None);
+        // Suffixed, but not with the separator `group_for` writes.
+        assert_eq!(rung(STREAM, &format!("{STREAM}v2")), None);
+    }
+
+    #[test]
+    fn the_newest_group_below_mine_is_the_predecessor() {
+        let existing = vec![
+            group(STREAM),
+            group(&format!("{STREAM}.v1")),
+            group(&format!("{STREAM}.v2")),
+        ];
+        let found = predecessor_group(STREAM, Some("v3"), &existing).unwrap();
+        assert_eq!(
+            found.name,
+            format!("{STREAM}.v2"),
+            "an interrupted cutover leaves several behind; only the latest has \
+             a position worth having"
+        );
+    }
+
+    #[test]
+    fn a_newer_group_is_never_inherited_from() {
+        // The shape of a blue/green: the successor is reading the same stream
+        // while this one is being created.
+        let existing = vec![group(&format!("{STREAM}.v3"))];
+        assert!(predecessor_group(STREAM, Some("v2"), &existing).is_none());
+    }
+
+    #[test]
+    fn my_own_group_is_not_my_predecessor() {
+        let existing = vec![group(&format!("{STREAM}.v2"))];
+        assert!(predecessor_group(STREAM, Some("v2"), &existing).is_none());
+    }
+
+    #[test]
+    fn an_unsuffixed_predecessor_is_still_found() {
+        // The rung-0 case, and the only one the matcher handled before.
+        let existing = vec![group(STREAM)];
+        let found = predecessor_group(STREAM, Some("v2"), &existing).unwrap();
+        assert_eq!(found.name, STREAM);
+    }
+
+    #[test]
+    fn nothing_on_the_stream_means_no_predecessor() {
+        assert!(predecessor_group(STREAM, Some("v2"), &[]).is_none());
+    }
+
+    fn names(groups: Vec<&GroupStatus>) -> Vec<String> {
+        groups.into_iter().map(|group| group.name.clone()).collect()
+    }
+
+    #[test]
+    fn the_versions_below_mine_are_superseded() {
+        let existing = vec![
+            group(&format!("{STREAM}.v1")),
+            group(&format!("{STREAM}.v2")),
+            group(&format!("{STREAM}.v3")),
+        ];
+        assert_eq!(
+            names(superseded_groups(STREAM, Some("v3"), &existing)),
+            vec![format!("{STREAM}.v1"), format!("{STREAM}.v2")],
+            "an interrupted cutover leaves several behind and all of them go"
+        );
+    }
+
+    #[test]
+    fn the_unsuffixed_group_is_never_superseded() {
+        // It predates versioning and cannot see a cutover, so being below the
+        // live version says nothing about whether it is still reading.
+        let existing = vec![group(STREAM), group(&format!("{STREAM}.v2"))];
+        assert!(superseded_groups(STREAM, Some("v2"), &existing).is_empty());
+    }
+
+    #[test]
+    fn newer_and_unranked_groups_are_never_superseded() {
+        let existing = vec![
+            group(&format!("{STREAM}.v3")),
+            group(&format!("{STREAM}.beta")),
+            group("somewhere-else.new-event.v1"),
+        ];
+        assert!(superseded_groups(STREAM, Some("v2"), &existing).is_empty());
+    }
+
+    #[test]
+    fn an_unrankable_suffix_supersedes_nothing() {
+        let existing = vec![group(&format!("{STREAM}.v1"))];
+        assert!(superseded_groups(STREAM, Some("beta"), &existing).is_empty());
+        assert!(superseded_groups(STREAM, None, &existing).is_empty());
+    }
+
+    #[test]
+    fn an_unrankable_suffix_declines_to_guess() {
+        let existing = vec![group(STREAM), group(&format!("{STREAM}.v1"))];
+        assert!(predecessor_group(STREAM, Some("beta"), &existing).is_none());
+        assert!(predecessor_group(STREAM, None, &existing).is_none());
     }
 
     #[tokio::test]

@@ -107,7 +107,7 @@ abstract contract GatewayConfigChecks {
 
     /**
      * @notice Internal variant of `onlyHandleFromRegisteredHostChain` callable from loops where a
-     *         per-iteration modifier isn't available (e.g., ciphertext handle conformance checking on `Decryption` contract).
+     *         per-iteration modifier isn't available (e.g., `CiphertextCommits.getSnsCiphertextMaterials`).
      * @dev Reverts with the same errors as the modifier.
      */
     function _checkHandleFromRegisteredHostChain(bytes32 handle) internal view {
