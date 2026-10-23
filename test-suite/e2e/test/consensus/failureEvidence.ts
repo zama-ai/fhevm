@@ -76,3 +76,42 @@ export function requireBacklogTargets(handles: string[], transactions: string[],
       blocks.some((height, index) => !Number.isSafeInteger(height) || height < 1 || (index > 0 && height <= blocks[index - 1])) ||
       blocks[11] - blocks[0] < 8)) throw new Error('backlog must span at least nine host blocks so catch-up needs several pages');
 }
+
+/** Relative flags must cover the outage without a separately seeded request. */
+export function requireRelativeConsumerCatchup(
+  row: { id?: unknown; finalized?: unknown; requestedFrom?: unknown; requestedTo?: unknown; blockStart?: unknown; blockEnd?: unknown },
+  previousId: unknown,
+  blocks: number[],
+): void {
+  if (typeof previousId !== 'string' || !previousId || typeof row.id !== 'string' || !row.id || row.id === previousId ||
+      row.finalized !== false || row.requestedFrom !== -1024 || row.requestedTo !== -1) {
+    throw new Error('relative recovery requires the new CLI-created non-finalized request (-1024, -1)');
+  }
+  const start = requiredEvidenceCount(row.blockStart, 'relative catchup start');
+  const end = requiredEvidenceCount(row.blockEnd, 'relative catchup end');
+  if (blocks.length !== 12 || blocks.some(block => !Number.isSafeInteger(block) || block < start || block > end)) {
+    throw new Error(`relative catchup ${row.id} [${start}, ${end}] does not cover all twelve offline receipts [${blocks.join(', ')}]; the first queued LIVE reference may be stale`);
+  }
+}
+
+/** Successful handler receipts prove replay of the original transactions. */
+export function requireCatchupIngestionReceipts(
+  catchupId: unknown,
+  blocks: number[],
+  blockHashes: string[],
+  transactionHashes: string[],
+  receipts: { flow?: string; catchup_id?: string; block_number?: number; block_hash?: string; transactions?: { hash?: string }[] }[],
+): void {
+  if (typeof catchupId !== 'string' || !catchupId || blocks.length !== 12 || blockHashes.length !== 12 || transactionHashes.length !== 12) {
+    throw new Error('catchup attribution requires the exact request and twelve original receipt identities');
+  }
+  if (blocks.some((block, i) => !Number.isSafeInteger(block) || block < 1 || (i > 0 && block <= blocks[i - 1])) ||
+      new Set(blockHashes).size !== 12 || new Set(transactionHashes).size !== 12 ||
+      [...blockHashes, ...transactionHashes].some(hash => typeof hash !== 'string' || !/^0x[0-9a-f]{64}$/.test(hash))) {
+    throw new Error('catchup attribution requires twelve distinct valid receipt identities');
+  }
+  const missing = blocks.filter((block, index) => !receipts.some(receipt =>
+    receipt.flow === 'CATCHUP' && receipt.catchup_id === catchupId && receipt.block_number === block &&
+    receipt.block_hash === blockHashes[index] && receipt.transactions?.some(tx => tx.hash === transactionHashes[index])));
+  if (missing.length) throw new Error(`catchup ${catchupId} has no successful ingestion receipt for original transactions in blocks [${missing.join(', ')}]`);
+}

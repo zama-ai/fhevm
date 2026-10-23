@@ -607,6 +607,14 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 return Ok(AckDecision::Ack);
             }
             live_reference.observe(&payload).await;
+            #[cfg(feature = "test-failpoints")]
+            let test_payload = serde_json::to_value(&payload)
+                .map_err(|error| HandlerError::Transient(error.into()))?;
+            #[cfg(feature = "test-failpoints")]
+            crate::catchup_test_control::before_ingest(&test_payload, &_cancel)
+                .await
+                .map_err(|error| HandlerError::Transient(error.into()))?;
+
             let drift_revert_is_over = if is_catchup {
                 let pool = db.pool().await;
                 if !catchup::store::accepts(
@@ -728,6 +736,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 }
             }
             let decision = result?;
+            #[cfg(feature = "test-failpoints")]
+            crate::catchup_test_control::after_ingest(&test_payload)
+                .map_err(|error| HandlerError::Transient(error.into()))?;
+
             if let Some(id) =
                 catchup_id.filter(|_| catchup_end == Some(payload.block_number))
             {

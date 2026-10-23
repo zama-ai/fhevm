@@ -196,6 +196,19 @@ async fn main() -> anyhow::Result<()> {
         );
         return Ok(());
     }
+    #[cfg(feature = "test-failpoints")]
+    if std::env::args().nth(1).as_deref() == Some("--catchup-test-control") {
+        let args: Vec<_> = std::env::args().skip(2).collect();
+        anyhow::ensure!(
+            args.len() == 1,
+            "exactly one private catchup control action required"
+        );
+        println!(
+            "{}",
+            host_listener::catchup_test_control::execute(&args[0])?
+        );
+        return Ok(());
+    }
     // Handle `--stack-version` before clap parsing: it prints the compiled-in
     // STACK_VERSION and exits 0. Without this, clap rejects the unknown flag
     // with exit code 2, so the Helm `--stack-version` startupProbe would never

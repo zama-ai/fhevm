@@ -48,6 +48,7 @@ source "${SCRIPT_DIR}/lib/case-deadline.sh"
 # shellcheck source=lib/suite-process.sh
 source "${SCRIPT_DIR}/lib/runner-assertions.sh"
 source "${SCRIPT_DIR}/lib/suite-process.sh"
+source "${SCRIPT_DIR}/lib/catchup-isolation.sh"
 # shellcheck source=lib/crash-controls.sh
 source "${SCRIPT_DIR}/lib/crash-controls.sh"
 sc_init || exit 1
@@ -136,6 +137,7 @@ restore_case_resources() {
     cc_disable_failpoints "$DB_CONTAINER" "$crash_database" || { retain_case_recovery; return 1; }
   fi
   sc_run_restores || status=1
+  restore_catchup_isolation || status=1
   if [[ -n "$SC_CASE_BASELINE" && -f "$SC_CASE_BASELINE" ]]; then
     sc_restore_running "$SC_CASE_BASELINE" || status=1
   fi
@@ -208,6 +210,7 @@ MATRIX=(
   "FM-CONSENSUS-DETECTOR|crash|%d-transaction-sender|pause|detector-drift"
   "FM-OBJECT-STORAGE-OUTAGE|data|fhevm-object-store|stop|storage"
   "FM-HOST-LONG-OFFLINE|data|%d-host-listener-consumer|stop|ingestion-backlog"
+  "FM-HOST-RELATIVE-CATCHUP|data|%d-host-listener-consumer|stop|ingestion-backlog"
   "FM-DURABLE-BACKLOG|crash|%d-tfhe-worker|kill|compute-backlog"
   "FM-STORAGE-WORKER-RESTART|data|fhevm-object-store|stop|storage"
   "FM-BROKER-OUTAGE|data|listener-redis|stop|ingestion"
@@ -602,7 +605,7 @@ run_cell_body() {
   if [[ "$workload" == *-backlog ]]; then
     local role flag arguments
     local ingestion_role=host-listener-poller
-    [[ "$case_id" != FM-HOST-LONG-OFFLINE ]] || ingestion_role=host-listener-consumer
+    [[ "$case_id" != FM-HOST-LONG-OFFLINE && "$case_id" != FM-HOST-RELATIVE-CATCHUP ]] || ingestion_role=host-listener-consumer
     for role in tfhe-worker "$ingestion_role"; do
       flag=--work-items-batch-size=4
       [[ "$role" != host-listener-poller ]] || flag=--batch-size=4
@@ -613,7 +616,7 @@ run_cell_body() {
         return 1
       }
     done
-    if [[ "$case_id" == FM-HOST-LONG-OFFLINE ]]; then
+    if [[ "$case_id" == FM-HOST-LONG-OFFLINE || "$case_id" == FM-HOST-RELATIVE-CATCHUP ]]; then
       grep -Fxq -- '--catchup-unfinalized' <<<"$arguments" || {
         cr_record "$case_id" INVALID cleanup=not_required started_at="$started" detail="offline replay requires non-finalized consumer catchup"
         return 1
@@ -631,6 +634,13 @@ run_cell_body() {
         return 1
       }
     fi
+  fi
+
+  if [[ "$case_id" == FM-HOST-RELATIVE-CATCHUP ]]; then
+    docker exec "$service" host_listener_consumer --catchup-test-control empty || {
+      cr_record "$case_id" INVALID cleanup=not_required started_at="$started" detail="relative replay requires a clean host-listener/test-failpoints image"
+      return 1
+    }
   fi
 
   log "$case_id — $fault on $service (workload $workload)"
@@ -907,6 +917,11 @@ run_cell_body() {
   fi
 
   # Kill the paused process only after the selected work is proven pending.
+  if [[ "$case_id" == FM-HOST-RELATIVE-CATCHUP ]]; then
+    install_catchup_isolation "$service" "$workload_json" || return 1
+    record+=("artifact=catchup_isolation=$REPORT_DIR/$case_id")
+  fi
+
   local recovered=""
   if [[ "$fault" == kill ]]; then
     local killed_identity policy replaced
@@ -981,6 +996,14 @@ run_cell_body() {
   fi
   if [[ "$verify_status" == 0 ]]; then
     run_phase cell_out "$case_id" "$workload" verify || verify_status=$?
+  fi
+  if [[ "$case_id" == FM-HOST-RELATIVE-CATCHUP ]]; then
+    # Capture successful replay payloads even when the range assertion fails.
+    # The complete scenario and the attribution check must both succeed.
+    if ! verify_catchup_isolation "$service" && [[ "$verify_status" == 0 ]]; then
+      verify_status=1
+      cell_out="relative catchup ingestion attribution failed (see catchup isolation artifacts)"
+    fi
   fi
   if [[ "$verify_status" == 0 && "$case_id" == FM-CONSENSUS-DETECTOR ]] && ! verify_detector_receipt; then
     verify_status=1
