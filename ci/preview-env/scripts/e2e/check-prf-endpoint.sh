@@ -59,7 +59,7 @@ connector() {
     || echo '{"ok": false, "error": "connector_exited", "status": 0}'
 }
 # Parties are 1-based; the connector's coprocessor indexes are 0-based.
-psql_party() { kubectl exec "statefulset/postgres-coprocessor-${1}" -n "${NAMESPACE}" -- psql -U zama -d fhevm_e2e -tAc "$2"; }
+psql_party() { kubectl exec "statefulset/postgres-coprocessor-${1}" -n "${NAMESPACE}" -- psql -U zama -d fhevm_e2e -tAc "$2" || echo psql_failed; }
 pad_worker_logs() { kubectl logs "deploy/coprocessor-${1}-standin-pad-worker" -n "${NAMESPACE}" --all-containers 2>/dev/null || true; }
 label_hex() { jq -r '.label' <<<"$1" | sed 's/^0x//'; }
 
@@ -70,12 +70,26 @@ record() {
   printf '| %s | %s | %s | %s | %s |\n' "$1" "$2" "$3" "${verdict}" "${5:-}" | tee -a "${results}"
 }
 summary() { jq -c '{ok, error, get_from, body_from, fallback, resigns, elapsed_ms, replies: [(.replies // [])[] | "\(.coprocessor):\(.method):\(.status // "conn"):\(.code // .attestation)"]}' <<<"$1"; }
+# A component that does not come back is a failed row, not the end of the matrix.
 wait_ready() {
-  kubectl rollout status "$1" -n "${NAMESPACE}" --timeout=300s >/dev/null
+  kubectl rollout status "$1" -n "${NAMESPACE}" --timeout=300s >/dev/null \
+    || record "$1 ready again" "ready within 300 s" "not ready" false
 }
 
 echo "| scenario | expected | observed | verdict | evidence |"
 echo "|---|---|---|---|---|"
+
+# Precondition: every party's PRF path is up. A party that is not (capacity, OOM) makes later rows
+# fail for a reason this row names.
+not_ready=""
+for p in $(seq 1 "${NB_COPROCESSOR}"); do
+  for selector in "app.kubernetes.io/name=coprocessor-${p}-prf-service" "app.kubernetes.io/name=coprocessor-${p}-coprocessor-proxy" \
+    "app=standin-pad-worker,fhevm.zama.ai/party=${p}" "statefulset.kubernetes.io/pod-name=postgres-coprocessor-${p}-0"; do
+    ready=$(kubectl get pods -n "${NAMESPACE}" -l "${selector}" -o jsonpath='{.items[*].status.containerStatuses[0].ready}' 2>/dev/null || true)
+    [[ "${ready}" == *true* ]] || not_ready+="${selector} "
+  done
+done
+record "precondition: PRF path of every party ready" "all ready" "${not_ready:-all ready}" "$([[ -z "${not_ready}" ]] && echo true)"
 
 # 1. Four connectors ask for the same label at once: one evaluation per coprocessor, and the row is
 # triggered by one of the tx-senders that signed (prf-service recovered the real signer).
