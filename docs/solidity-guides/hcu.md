@@ -12,7 +12,7 @@ To do so, there is a contract named `HCULimit`, which monitors HCU consumption a
 
 - **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order. Exceeding it reverts with `HCUTransactionDepthLimitExceeded`.
 - **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel. Exceeding it reverts with `HCUTransactionLimitExceeded`.
-- **HCU quota**: Caps the HCU that the contracts sharing a quota consume over time. Exceeding it reverts with `HCUQuotaExceeded`; a paused contract or a stopped quota reverts with `HCUQuotaStopped`.
+- **HCU quota**: Limits the HCU that the contracts sharing a quota can use at once (a maximum) and on average (a decay per block). Exceeding it reverts with `HCUQuotaExceeded`; a paused contract or a stopped quota reverts with `HCUQuotaStopped`.
 - **Depth across transactions** (off unless governance enables it): Caps the sequential HCU depth that builds up over a chain of dependent transactions. Exceeding it reverts with `HCUCrossTxDepthLimitExceeded`.
 
 If any of these limits is exceeded, the transaction will revert.
@@ -30,7 +30,7 @@ To resolve a per-transaction revert, you must do one of the following:
 
 Every contract that calls `FHEVMExecutor` belongs to one quota. Contracts start in the default quota (`0`); governance can assign a contract to another quota (`assignQuota`). Here, the contract is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA.
 
-A quota has a maximum and a decay per block, like the depth limit across transactions below. Every FHE operation adds its HCU to the quota's usage, usage decreases by the decay every block, and an operation fits while usage stays at or below the maximum. The maximum sets the largest burst; the decay sets the sustained rate. A quota whose maximum is `type(uint48).max` is not metered.
+A quota has a maximum and a decay per block, like the depth limit across transactions below. Every FHE operation adds its HCU to the quota's usage, usage decreases by the decay every block, and an operation fits while usage stays at or below the maximum. The maximum sets the largest burst; the decay sets the sustained rate. A quota whose maximum is `type(uint48).max` is not metered. A quota's maximum and decay are both 0 (stopped) or both non-zero.
 
 Unlike the per-transaction limits, a quota depends on **other transactions in the same quota**, not just on your own. As a result:
 
@@ -47,10 +47,10 @@ Options include:
 - **Reduce the HCU footprint** of the transaction so it is more likely to fit alongside others (same techniques as for per-transaction reverts).
 - **Request a dedicated quota** for contracts that have a justified need for more HCU per block; this is governed on-chain and is not available to arbitrary callers.
 
-Governance sets quotas (`setQuota(quotaId, maxHCU, decayPerBlock)`) and assigns contracts to them (`assignQuota`), which also lifts a pause. Pausers can only restrict:
+Governance sets quotas (`setQuota(quotaId, maxHCU, decayPerBlock)`) and assigns contracts to them (`assignQuota`), which also lifts a pause. Pausers cannot raise a quota or lift a pause:
 
 - `lowerQuota(quotaId, maxHCU, decayPerBlock)` lowers a quota's maximum, its decay, or both; `(0, 0)` stops every contract in the quota.
-- `moveToDefaultQuota(contract)` moves a contract to the default quota, where it shares the budget of every contract nobody assigned.
+- `moveToDefaultQuota(contract)` moves a contract to the default quota, where it shares the usage of every contract nobody assigned. This can give it more than a tight quota did, but never more than any unknown contract gets.
 - `pauseContract(contract)` stops a contract's FHE operations until governance assigns it a quota.
 
 ### Depth across transactions

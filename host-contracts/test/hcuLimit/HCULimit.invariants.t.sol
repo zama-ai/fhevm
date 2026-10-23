@@ -48,8 +48,8 @@ contract HCULimitInvariantHandler is Test {
 
     function assignCaller(address caller, bool uncapped) external {
         caller = _sanitizeCaller(caller);
-        (uint48 defaultCap, , ) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        if (!uncapped && defaultCap == 0) return;
+        (uint48 defaultMax, , ) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        if (!uncapped && defaultMax == 0) return;
         vm.prank(owner);
         hcuLimit.assignQuota(caller, uncapped ? UNCAPPED_QUOTA : DEFAULT_QUOTA);
     }
@@ -111,11 +111,11 @@ contract HCULimitInvariantHandler is Test {
             return;
         }
 
-        (uint48 defaultCap, , ) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        if (!uncapped && successes != 0 && afterUsedHCU > defaultCap) {
+        (uint48 defaultMax, , ) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        if (!uncapped && successes != 0 && afterUsedHCU > defaultMax) {
             accountingViolation = true;
         }
-        uint256 expectedDelta = (uncapped || defaultCap == type(uint48).max) ? 0 : successes * 32;
+        uint256 expectedDelta = (uncapped || defaultMax == type(uint48).max) ? 0 : successes * 32;
         if (uint256(afterUsedHCU - beforeUsedHCU) != expectedDelta) {
             accountingViolation = true;
         }

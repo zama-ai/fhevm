@@ -332,9 +332,9 @@ describe('EncryptedERC20:HCU', function () {
       const TIGHT_DEPTH_PER_TX = 400_000;
       const TIGHT_MAX_PER_TX = 600_000;
       const TIGHT_PER_BLOCK = 600_000;
-      let savedDefaultCap: bigint;
+      let savedDefaultMax: bigint;
       let savedDefaultDecay: bigint;
-      let savedUncappedCap: bigint;
+      let savedUncappedMax: bigint;
       let savedUncappedDecay: bigint;
       let savedMaxHCUPerTx: bigint;
       let savedMaxHCUDepthPerTx: bigint;
@@ -349,8 +349,8 @@ describe('EncryptedERC20:HCU', function () {
         }
         const deployer = requireDeployer(this.deployer);
         [
-          [savedDefaultCap, savedDefaultDecay],
-          [savedUncappedCap, savedUncappedDecay],
+          [savedDefaultMax, savedDefaultDecay],
+          [savedUncappedMax, savedUncappedDecay],
           savedMaxHCUPerTx,
           savedMaxHCUDepthPerTx,
         ] = await Promise.all([
@@ -372,7 +372,7 @@ describe('EncryptedERC20:HCU', function () {
           return;
         }
         // beforeEach skipped (live network or HCULimit v0.1.x) — nothing to restore.
-        if (savedDefaultCap === undefined) {
+        if (savedDefaultMax === undefined) {
           return;
         }
         await ethers.provider.send('evm_setAutomine', [true]);
@@ -380,8 +380,8 @@ describe('EncryptedERC20:HCU', function () {
 
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
         const ownerHcuLimit = hcuLimit.connect(requireDeployer(this.deployer));
-        await (await ownerHcuLimit.setQuota(DEFAULT_QUOTA, savedDefaultCap, savedDefaultDecay)).wait();
-        await (await ownerHcuLimit.setQuota(UNCAPPED_QUOTA, savedUncappedCap, savedUncappedDecay)).wait();
+        await (await ownerHcuLimit.setQuota(DEFAULT_QUOTA, savedDefaultMax, savedDefaultDecay)).wait();
+        await (await ownerHcuLimit.setQuota(UNCAPPED_QUOTA, savedUncappedMax, savedUncappedDecay)).wait();
         await (await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx)).wait();
         await (await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx)).wait();
       });

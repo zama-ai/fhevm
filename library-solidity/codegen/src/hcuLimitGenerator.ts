@@ -51,7 +51,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned when lowerQuota is given a maximum or a decay above the current one.
     error QuotaNotLower(uint16 quotaId);
 
-    /// @notice Returned when setting the paused quota, when only one of a metered quota's maximum and decay is 0,
+    /// @notice Returned when setting the paused quota, when only one of a quota's maximum and decay is 0,
     ///         or when assigning a contract to the paused quota (use pauseContract) or to a quota whose maximum is 0.
     error InvalidQuota(uint16 quotaId);
 
@@ -463,8 +463,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Moves a contract to the default quota, whose budget it then shares with every contract nobody assigned.
-     * @dev Any contract can already run in the default quota, so this never gives a contract more than an unknown one gets.
+     * @notice Moves a contract to the default quota, whose usage it then shares with every contract nobody assigned.
+     * @dev This can give a contract more than a tight quota did, but never more than any unknown contract gets,
+     *      since any contract can already run in the default quota by being deployed.
      */
     function moveToDefaultQuota(address account) external onlyACLOwnerOrPauser {
         if (_getHCULimitStorage().contractQuota[account] == PAUSED_QUOTA) revert ContractIsPaused(account);
@@ -689,10 +690,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
     }
 
-    /// @dev A metered quota needs a decay, or its usage never comes back down; a stopped quota has neither.
     function _setQuota(uint16 quotaId, uint48 maxHCU, uint48 decayPerBlock) private {
         if (quotaId == PAUSED_QUOTA) revert InvalidQuota(quotaId);
-        if (maxHCU != NO_CAP && (maxHCU == 0) != (decayPerBlock == 0)) revert InvalidQuota(quotaId);
+        // Both 0 stops the quota. A maximum without decay would never free up, and a decay without maximum means nothing.
+        bool stopped = maxHCU == 0;
+        if (stopped != (decayPerBlock == 0)) revert InvalidQuota(quotaId);
         Quota storage quota = _getHCULimitStorage().quotas[quotaId];
         quota.maxHCU = maxHCU;
         quota.decayPerBlock = decayPerBlock;
