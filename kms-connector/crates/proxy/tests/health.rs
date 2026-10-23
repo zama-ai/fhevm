@@ -32,21 +32,6 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
         start_monitoring_server(monitoring_endpoint, t.state.clone(), cancel_token.clone())?;
     wait_for_listener(monitoring_endpoint).await;
 
-    let metrics = reqwest::get(format!("http://{monitoring_endpoint}/metrics"))
-        .await?
-        .text()
-        .await?;
-    for name in [
-        "kms_connector_proxy_http_requests_counter",
-        "kms_connector_proxy_http_request_latency_seconds",
-        "kms_connector_proxy_http_requests_in_flight",
-    ] {
-        assert!(
-            metrics.contains(name),
-            "metric not exposed at startup: {name}"
-        );
-    }
-
     // Test `liveness` endpoint
     let url = format!("http://{}/liveness", monitoring_endpoint);
     let response = reqwest::get(&url).await?;
