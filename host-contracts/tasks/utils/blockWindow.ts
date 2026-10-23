@@ -9,6 +9,9 @@ const BLOCK_TIME_DRIFT_WARN_FRACTION = 0.2;
 
 export interface ChainConfig {
   chainId: number;
+  // Short name for reports, e.g. 'sepolia'; shown in place of the RPC URL. Scenario-defined chains
+  // without one get 'chain-<id>'.
+  label: string;
   rpcUrl: string;
   // Configured fallback block time in seconds, used only if RPC sampling fails.
   fallbackBlockTimeSeconds: number;
@@ -178,8 +181,17 @@ export function parseDurationToSeconds(input: string): number {
 }
 
 // Parse an ISO 8601 timestamp into UNIX seconds. Throws on invalid input.
+// Date.parse reads a zone-less timestamp as local time, which would shift every window by the operator's UTC offset.
+const EXPLICIT_TIME_ZONE = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
 export function parseIsoTimestampToEpochSeconds(input: string): number {
-  const ms = Date.parse(input);
+  const value = input.trim();
+  if (!EXPLICIT_TIME_ZONE.test(value)) {
+    throw new Error(
+      `Timestamp "${input}" has no time zone. Use ISO 8601 with Z or an offset (e.g. 2026-07-01T12:00:00Z).`,
+    );
+  }
+  const ms = Date.parse(value);
   if (Number.isNaN(ms)) {
     throw new Error(`Unparsable timestamp "${input}". Use ISO 8601 (e.g. 2026-07-01T12:00:00Z).`);
   }
