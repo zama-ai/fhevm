@@ -3,7 +3,7 @@ use coprocessor_proxy::core::{Config, Proxy};
 use fhevm_engine_common::{healthz_server, metrics_server, telemetry};
 use std::{path::PathBuf, process::ExitCode, sync::Arc};
 use tokio_util::sync::CancellationToken;
-use tracing::error;
+use tracing::{Level, Metadata, error};
 
 #[derive(Parser)]
 #[command(version, about = "Public HTTPS entry point of a coprocessor")]
@@ -27,6 +27,18 @@ enum Subcommands {
         #[arg(short, long, value_name = "FILE")]
         config: PathBuf,
     },
+}
+
+/// Where Pingora logs whole requests, signed `Authorization` included, and response bodies, at DEBUG
+/// and TRACE.
+const PINGORA_MESSAGE_TARGETS: [&str; 2] = ["pingora_proxy", "pingora_core::protocols::http"];
+
+fn log_filter(metadata: &Metadata<'_>) -> bool {
+    let pingora_message = *metadata.level() > Level::INFO
+        && PINGORA_MESSAGE_TARGETS
+            .iter()
+            .any(|target| metadata.target().starts_with(target));
+    telemetry::transport_dependency_filter(metadata) && !pingora_message
 }
 
 fn main() -> ExitCode {
@@ -60,7 +72,7 @@ fn run() -> anyhow::Result<()> {
                 config.log_level,
                 &config.service_name,
                 "otlp-layer",
-                telemetry::transport_dependency_filter,
+                log_filter,
             );
 
             // The monitoring servers run on the tokio runtime, next to Pingora's own.

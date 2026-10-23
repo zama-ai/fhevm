@@ -1,3 +1,4 @@
+//! Tests that run the proxy binary: its shutdown and its logs.
 #![cfg(unix)]
 
 mod common;
@@ -262,4 +263,47 @@ async fn sigterm_keeps_serving_with_connection_close_for_the_shutdown_delay() {
     .expect("the proxy refused new connections after the delay");
     let exit = proxy.wait_for_exit(Duration::from_secs(10)).await;
     assert!(exit.success(), "{exit}: {}", proxy.log());
+}
+
+#[tokio::test]
+async fn logs_never_carry_the_signed_authorization() {
+    // Pingora writes request headers at DEBUG, and the bytes it sends at TRACE.
+    for level in ["DEBUG", "TRACE"] {
+        let endpoint = StubEndpoint::start().await;
+        let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
+        let mut proxy = ProxyProcess::start(
+            &endpoint,
+            &rpc,
+            &[
+                ("COPROCESSOR_PROXY_LOG_LEVEL", level),
+                ("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD", "1s"),
+            ],
+        )
+        .await;
+        let path = prf_path(1);
+        let authorization = auth_header(&sender(), &path, b"").await;
+        let response = client()
+            .get(format!("https://{}{path}", proxy.addr))
+            .header("authorization", &authorization)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.bytes().await.unwrap(), stub_output(&path));
+        proxy.sigterm().await;
+        let exit = proxy.wait_for_exit(Duration::from_secs(10)).await;
+        assert!(exit.success(), "{exit}: {}", proxy.log());
+
+        let log = proxy.log();
+        assert!(log.contains(&format!(r#""level":"{level}""#)), "{log}");
+        let signature = authorization.split("sig=").nth(1).unwrap();
+        assert!(
+            !log.contains(signature),
+            "{level} log has the signature: {log}"
+        );
+        assert!(
+            !log.contains(&authorization),
+            "{level} log has the header: {log}"
+        );
+    }
 }
