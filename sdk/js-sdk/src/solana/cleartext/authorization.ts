@@ -41,6 +41,7 @@ export type SolanaHostAccountsReader = (
 ) => Promise<{ readonly slot: bigint; readonly accounts: readonly MaybeEncodedAccount[] }>;
 
 const SIGNATURE_REJECTED = 'user_signature_rejected';
+const DECRYPTION_EXPIRED = 'user_decryption_expired';
 const ACL_DENIED = 'acl_denied';
 const UNPROCESSABLE = 'unprocessable';
 
@@ -52,7 +53,7 @@ const UNPROCESSABLE = 'unprocessable';
 export const CONNECTOR_FAILURE_CODE = {
   Signature: SIGNATURE_REJECTED,
   'Window::NotYetValid': SIGNATURE_REJECTED,
-  'Window::Expired': SIGNATURE_REJECTED,
+  'Window::Expired': DECRYPTION_EXPIRED,
   ProgramIdMismatch: SIGNATURE_REJECTED,
   'Watermark::Invalidated': SIGNATURE_REJECTED,
   'Watermark::InvalidHostRecord': UNPROCESSABLE,

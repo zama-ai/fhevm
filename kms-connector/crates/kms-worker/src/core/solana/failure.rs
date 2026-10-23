@@ -62,8 +62,9 @@ pub enum AuthorizationFailure {
 
 /// How the worker records a failure: the check family for the metric, the code a caller sees, and
 /// whether a later attempt may succeed. The codes are the ones EVM uses for the same outcomes: a
-/// bad, expired or revoked permit is a rejected signature, a host or coprocessor that cannot be
-/// read now is transient, and host state that grants no access is an ACL denial. A host record the
+/// bad or revoked permit is a rejected signature, a permit past its window is an expired user
+/// decryption, a host or coprocessor that cannot be read now is transient, and host state that
+/// grants no access is an ACL denial. A host record the
 /// host program could not have written is not the user's permission state, so it is
 /// unprocessable. A proof record its coprocessor knows is wrong is the coprocessors' failure, so it
 /// is transient. A request every coprocessor refused this connector as a sender for is
@@ -86,6 +87,11 @@ const fn class(check: RequestCheckKind, code: ErrorCode, recoverable: bool) -> F
 const SIGNATURE_REJECTED: FailureClass = class(
     RequestCheckKind::Signature,
     ErrorCode::UserSignatureRejected,
+    false,
+);
+const DECRYPTION_EXPIRED: FailureClass = class(
+    RequestCheckKind::Signature,
+    ErrorCode::UserDecryptionExpired,
     false,
 );
 const UPSTREAM_TRANSIENT: FailureClass = class(
@@ -147,7 +153,7 @@ impl WindowFailure {
                 recoverable: true,
                 ..SIGNATURE_REJECTED
             },
-            Self::Expired { .. } => SIGNATURE_REJECTED,
+            Self::Expired { .. } => DECRYPTION_EXPIRED,
         }
     }
 }
@@ -280,6 +286,11 @@ mod tests {
         RequestCheckKind::Signature,
         ErrorCode::UserSignatureRejected,
     );
+    /// Signature family, `user_decryption_expired`.
+    const EXPIRED: (RequestCheckKind, ErrorCode) = (
+        RequestCheckKind::Signature,
+        ErrorCode::UserDecryptionExpired,
+    );
     /// Network family, `upstream_transient`.
     const NETWORK: (RequestCheckKind, ErrorCode) =
         (RequestCheckKind::Network, ErrorCode::UpstreamTransient);
@@ -340,7 +351,7 @@ mod tests {
             ),
             (
                 AuthorizationFailure::Window(WindowFailure::Expired { end: 1, now: 2 }),
-                SIGNATURE,
+                EXPIRED,
                 TERMINAL,
             ),
             (
