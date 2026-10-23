@@ -433,7 +433,7 @@ additionalResources:
                 # block-cap owner-only setters succeed. Only the HCU test reads this key
                 # (this.deployer); every other test signs as the MNEMONIC-derived signers
                 # (alice..eve = #0..#4) and ignores it. Because owner == #9 != alice (#0),
-                # HCU's "reject setQuotaCap from a non-owner non-pauser" subtest also correctly reverts.
+                # HCU's "reject lowerQuotaCap from a non-owner non-pauser" subtest also correctly reverts.
                 - name: DEPLOYER_PRIVATE_KEY
                   value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
                 # Gateway-chain deployer (Hardhat account #0), SEPARATE from the host

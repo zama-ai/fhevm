@@ -12,7 +12,7 @@ To do so, there is a contract named `HCULimit`, which monitors HCU consumption a
 
 - **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order. Exceeding it reverts with `HCUTransactionDepthLimitExceeded`.
 - **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel. Exceeding it reverts with `HCUTransactionLimitExceeded`.
-- **HCU quota per block**: Caps the total HCU that the contracts sharing a quota consume in one block. Exceeding it reverts with `HCUQuotaExceeded`.
+- **HCU quota per block**: Caps the total HCU that the contracts sharing a quota consume in one block. Exceeding it reverts with `HCUQuotaExceeded`; a paused contract or a stopped quota reverts with `HCUQuotaStopped`.
 - **Depth across transactions** (off unless governance enables it): Caps the sequential HCU depth that builds up over a chain of dependent transactions. Exceeding it reverts with `HCUCrossTxDepthLimitExceeded`.
 
 If any of these limits is exceeded, the transaction will revert.
@@ -35,10 +35,9 @@ Unlike the per-transaction limits, a quota depends on the **other transactions i
 - A transaction that estimates successfully (e.g. via `eth_estimateGas` or a static call) can still revert with `HCUQuotaExceeded` at execution time if other FHE-heavy transactions in the same quota are mined in the same block ahead of it.
 - This revert is **non-deterministic from the sender's perspective**: it is a function of block-inclusion ordering, not of the transaction's own payload.
 
-If you hit `HCUQuotaExceeded(account, quotaId)`, first check whether a retry can succeed:
+If you hit `HCUQuotaStopped(account, quotaId)`, retrying fails until governance acts: the contract is paused (`quotaId` is `PAUSED_QUOTA`) or its quota's cap is 0.
 
-- If `quotaId` is `PAUSED_QUOTA`, the contract is paused; retrying fails until governance assigns it to another quota.
-- If the quota's cap (`getQuota(quotaId)`) is below the transaction's HCU, the transaction never fits; retrying fails until the cap is raised.
+If you hit `HCUQuotaExceeded(account, quotaId)`, first check whether a retry can succeed: if the quota's cap (`getQuota(quotaId)`) is below the transaction's HCU, the transaction never fits, and retrying fails until the cap is raised.
 
 Otherwise, options include:
 
@@ -46,7 +45,11 @@ Otherwise, options include:
 - **Reduce the HCU footprint** of the transaction so it is more likely to fit alongside others (same techniques as for per-transaction reverts).
 - **Request a dedicated quota** for contracts that have a justified need for more HCU per block; this is governed on-chain and is not available to arbitrary callers.
 
-Pausers can lower quota caps and move a contract to the paused quota (`PAUSED_QUOTA`), whose cap is zero: every FHE operation from a paused contract reverts with `HCUQuotaExceeded`.
+Governance sets caps (`setQuotaCap`) and assigns contracts to quotas (`assignQuota`), which also lifts a pause. Pausers can only restrict:
+
+- `lowerQuotaCap(quotaId, cap)` lowers a quota's cap; a cap of 0 stops every contract in the quota.
+- `moveToDefaultQuota(contract)` moves a contract to the default quota, where it shares the budget of every contract nobody assigned.
+- `pauseContract(contract)` stops a contract's FHE operations until governance assigns it a quota.
 
 ### Depth across transactions
 

@@ -56,7 +56,7 @@ scDeploy:
     # time and the onlyACLOwner keygen()/crsgen() calls succeed. #9 STAYS the owner:
     # there is no post-crsgen ownership transfer, so this.deployer (#9 in the test-suite
     # workflow) == ACL.owner() (#9). This keeps every HCU block-cap subtest green - the
-    # owner-only setters signed by #9 succeed, and "reject setQuotaCap from a non-owner non-pauser"
+    # owner-only setters signed by #9 succeed, and "reject lowerQuotaCap from a non-owner non-pauser"
     # reverts because it signs as alice (account #0) != owner. Keep in sync with
     # host-trigger-keygen's and the test-suite workflow's DEPLOYER_PRIVATE_KEY. Separate
     # chain from gateway-contracts (#0), no collision.

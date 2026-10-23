@@ -27,6 +27,7 @@ const HCU_LIMIT_ABI = [
   'function getMaxHCUDepthPerTx() view returns (uint48)',
   'function setQuotaCap(uint16, uint48)',
   'function assignQuota(address, uint16)',
+  'function lowerQuotaCap(uint16, uint48)',
   'function setMaxHCUPerTx(uint48)',
   'function setMaxHCUDepthPerTx(uint48)',
   'error NotPauser(address)',
@@ -41,6 +42,7 @@ type HcuLimitContract = {
   getMaxHCUDepthPerTx(): Promise<bigint>;
   setQuotaCap(quotaId: number, cap: bigint | number): Promise<ContractTransactionResponse>;
   assignQuota(account: string, quotaId: number): Promise<ContractTransactionResponse>;
+  lowerQuotaCap(quotaId: number, cap: bigint | number): Promise<ContractTransactionResponse>;
   setMaxHCUPerTx(value: bigint | number): Promise<ContractTransactionResponse>;
   setMaxHCUDepthPerTx(value: bigint | number): Promise<ContractTransactionResponse>;
 };
@@ -485,10 +487,10 @@ describe('EncryptedERC20:HCU', function () {
         expect(usedHCUDefault).to.be.greaterThan(0n, 'Should count HCU in the default quota');
       });
 
-      it('should reject setQuotaCap from a non-owner non-pauser', async function () {
+      it('should reject lowerQuotaCap from a non-owner non-pauser', async function () {
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
         const aliceHcuLimit = hcuLimit.connect(this.signers.alice);
-        await expect(aliceHcuLimit.setQuotaCap(DEFAULT_QUOTA, 1_000_000)).to.be.revertedWithCustomError(
+        await expect(aliceHcuLimit.lowerQuotaCap(DEFAULT_QUOTA, 1_000_000)).to.be.revertedWithCustomError(
           hcuLimit as unknown as { interface: any },
           'NotPauser',
         );

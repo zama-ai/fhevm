@@ -31,20 +31,29 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
-    /// @notice Returned when an operation would take a quota over its cap for this block.
+    /// @notice Returned when an operation would take a quota over its cap for this block. A later block can succeed.
     /// @param account Contract that ran the operation.
     /// @param quotaId Quota the contract is assigned to.
     error HCUQuotaExceeded(address account, uint16 quotaId);
 
+    /// @notice Returned when the contract's quota has a cap of 0: the contract is paused (quotaId is PAUSED_QUOTA)
+    ///         or its quota is stopped. Retrying fails until the owner acts.
+    /// @param account Contract that ran the operation.
+    /// @param quotaId Quota the contract is assigned to.
+    error HCUQuotaStopped(address account, uint16 quotaId);
+
     /// @notice Returned when the sender is neither the ACL owner nor a pauser.
     error NotPauser(address sender);
 
-    /// @notice Returned when a pauser tries to raise a quota's cap or assign a contract to a quota other than the paused one.
-    error QuotaNotTighter(uint16 quotaId);
+    /// @notice Returned when lowerQuotaCap is given a cap above the current one.
+    error QuotaCapNotLower(uint16 quotaId);
 
-    /// @notice Returned when setting the paused quota's cap, which stays 0, or when assigning a contract to
-    ///         a quota whose cap is 0, which would pause it without saying so.
+    /// @notice Returned when setting the paused quota's cap, or when assigning a contract to the paused quota
+    ///         (use pauseContract) or to a quota whose cap is 0.
     error InvalidQuota(uint16 quotaId);
+
+    /// @notice Returned when moving a paused contract to the default quota: only the owner lifts a pause.
+    error ContractIsPaused(address account);
 
     /// @notice Returned if the transaction exceeds the maximum allowed homomorphic complexity units.
     error HCUTransactionLimitExceeded();
@@ -173,6 +182,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         assembly {
             $.slot := HCU_LIMIT_STORAGE_LOCATION
         }
+    }
+
+    /// @dev Pausers are the ACL's pausers (PauserSet).
+    modifier onlyACLOwnerOrPauser() {
+        if (msg.sender != ACL(aclAdd).owner() && !ACL(aclAdd).isPauser(msg.sender)) revert NotPauser(msg.sender);
+        _;
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -414,28 +429,44 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
   return (
     output +
     `    /**
-     * @notice Sets a quota's cap per block; type(uint48).max leaves the quota unmetered.
-     * @dev The ACL owner sets any cap; a pauser can only lower one. The paused quota stays at 0.
+     * @notice Sets a quota's cap per block. type(uint48).max leaves the quota unmetered; 0 stops it.
      */
-    function setQuotaCap(uint16 quotaId, uint48 capPerBlock) external {
-        if (quotaId == PAUSED_QUOTA) revert InvalidQuota(quotaId);
-        if (!_isOwnerElseRequirePauser() && capPerBlock > _getHCULimitStorage().quotas[quotaId].capPerBlock) {
-            revert QuotaNotTighter(quotaId);
-        }
+    function setQuotaCap(uint16 quotaId, uint48 capPerBlock) external onlyACLOwner {
         _setQuotaCap(quotaId, capPerBlock);
     }
 
     /**
-     * @notice Assigns a contract to a quota: its FHE operations then spend that quota's budget.
-     * @dev The ACL owner assigns to any quota with a cap; a pauser can only assign to the paused quota.
+     * @notice Lowers a quota's cap per block. 0 stops every contract assigned to the quota.
      */
-    function assignQuota(address account, uint16 quotaId) external {
-        if (!_isOwnerElseRequirePauser() && quotaId != PAUSED_QUOTA) revert QuotaNotTighter(quotaId);
-        if (quotaId != PAUSED_QUOTA && _getHCULimitStorage().quotas[quotaId].capPerBlock == 0) {
+    function lowerQuotaCap(uint16 quotaId, uint48 capPerBlock) external onlyACLOwnerOrPauser {
+        if (capPerBlock > _getHCULimitStorage().quotas[quotaId].capPerBlock) revert QuotaCapNotLower(quotaId);
+        _setQuotaCap(quotaId, capPerBlock);
+    }
+
+    /**
+     * @notice Assigns a contract to a quota whose cap is above 0. This also lifts a pause.
+     */
+    function assignQuota(address account, uint16 quotaId) external onlyACLOwner {
+        if (quotaId == PAUSED_QUOTA || _getHCULimitStorage().quotas[quotaId].capPerBlock == 0) {
             revert InvalidQuota(quotaId);
         }
-        _getHCULimitStorage().contractQuota[account] = quotaId;
-        emit ContractQuotaAssigned(account, quotaId, msg.sender);
+        _assignQuota(account, quotaId);
+    }
+
+    /**
+     * @notice Moves a contract to the default quota, whose budget it then shares with every contract nobody assigned.
+     * @dev Any contract can already run in the default quota, so this never gives a contract more than an unknown one gets.
+     */
+    function moveToDefaultQuota(address account) external onlyACLOwnerOrPauser {
+        if (_getHCULimitStorage().contractQuota[account] == PAUSED_QUOTA) revert ContractIsPaused(account);
+        _assignQuota(account, DEFAULT_QUOTA);
+    }
+
+    /**
+     * @notice Stops a contract's FHE operations until the owner assigns it a quota.
+     */
+    function pauseContract(address account) external onlyACLOwnerOrPauser {
+        _assignQuota(account, PAUSED_QUOTA);
     }
 
     /**
@@ -596,7 +627,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint48 cap = quota.capPerBlock;
         if (cap == NO_CAP) return;
         uint256 used = (quota.lastBlock == block.number ? quota.usedHCU : 0) + opHCU;
-        if (used > cap) revert HCUQuotaExceeded(caller, quotaId);
+        if (used > cap) {
+            if (cap == 0) revert HCUQuotaStopped(caller, quotaId);
+            revert HCUQuotaExceeded(caller, quotaId);
+        }
         quota.usedHCU = uint48(used);
         quota.lastBlock = uint48(block.number);
     }
@@ -639,15 +673,14 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     function _setQuotaCap(uint16 quotaId, uint48 capPerBlock) private {
+        if (quotaId == PAUSED_QUOTA) revert InvalidQuota(quotaId);
         _getHCULimitStorage().quotas[quotaId].capPerBlock = capPerBlock;
         emit QuotaCapSet(quotaId, capPerBlock, msg.sender);
     }
 
-    /// @dev Returns whether the sender is the ACL owner; otherwise reverts unless it is a pauser.
-    function _isOwnerElseRequirePauser() private view returns (bool) {
-        if (msg.sender == ACL(aclAdd).owner()) return true;
-        if (!ACL(aclAdd).isPauser(msg.sender)) revert NotPauser(msg.sender);
-        return false;
+    function _assignQuota(address account, uint16 quotaId) private {
+        _getHCULimitStorage().contractQuota[account] = quotaId;
+        emit ContractQuotaAssigned(account, quotaId, msg.sender);
     }
 
     /**
