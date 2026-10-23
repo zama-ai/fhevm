@@ -445,10 +445,8 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         client.ensure_catchup_consumer().await?;
         info!("Consumer registering contracts");
         client.register_live_and_final_contracts(&contracts).await?;
-        // WATCH confirms publication, not activation. Allow filters to propagate
-        // before starting live/finalized readers or catchup coordination.
-        sleep(WATCH_PROPAGATION_DELAY).await;
     }
+    let catchup_not_before = Instant::now() + WATCH_PROPAGATION_DELAY;
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: blockchain_timeout_tick.clone(),
@@ -560,6 +558,12 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         None
     } else {
         Some(tokio::spawn(async move {
+            // WATCH confirms publication, not activation. Delay replay requests
+            // while all readers can already drain their delivery queues.
+            tokio::select! {
+                _ = catchup_client.cancel_token.cancelled() => return Ok(()),
+                _ = tokio::time::sleep_until(catchup_not_before) => {}
+            }
             let result = catchup::run(
                 catchup_db,
                 catchup_client,
