@@ -82,8 +82,6 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
         "kms_connector_endpoint_decryption_wait_latency_seconds",
         "kms_connector_endpoint_decryption_capacity",
         "kms_connector_endpoint_decryptions_in_flight",
-        "kms_connector_endpoint_response_listener_reconnections_counter",
-        "kms_connector_endpoint_response_listener_waiters_failed_counter",
     ] {
         assert!(
             metrics.contains(name),

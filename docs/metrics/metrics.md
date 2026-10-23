@@ -277,18 +277,6 @@ are not recorded.
  - **Description**: Seconds waiting for a response and reading its database row, for waits ending with a response (including API errors); existing responses served directly are not waited for. Timeouts, listener disruptions and cancellations are left out so they do not mask the response latency: the request counter counts them by `code`.
  - **Alarm**: Diagnostic only; use request timeout and server-error alarms.
 
-#### Metric Name: `kms_connector_endpoint_response_listener_reconnections_counter`
- - **Type**: Counter
- - **Description**: Successful PostgreSQL listener reconnections. Use pod restart monitoring for terminal failures.
- - **Alarm**: More than one reconnection in 5 minutes.
-   - **Recommendation**: `increase(kms_connector_endpoint_response_listener_reconnections_counter[5m]) > 1`.
-
-#### Metric Name: `kms_connector_endpoint_response_listener_waiters_failed_counter`
- - **Type**: Counter
- - **Description**: Requests whose wait failed because the listener was disrupted; duplicate decryption IDs count separately.
- - **Alarm**: Any increase over 5 minutes; correlate with reconnections and `upstream_transient` responses.
-   - **Recommendation**: `increase(kms_connector_endpoint_response_listener_waiters_failed_counter[5m]) > 0`.
-
 #### Collection and traces
 
 Enable `kmsConnectorProxy.serviceMonitor.enabled` and `kmsConnectorEndpoint.serviceMonitor.enabled`
