@@ -34,7 +34,7 @@
 //! Exit codes: 0 pass, 1 fail, 2 cutover not executed, 3 rolled back,
 //! 4 inconclusive (an endpoint was unreachable or data was missing).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -902,6 +902,22 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
             for row in rows {
                 found.insert(row.try_get("handle")?, row.try_get("consensus_version")?);
             }
+            // S3 stores only allowed handles, so only an allowed input's ct64/ct128 is
+            // expected there. An un-allowed input keeps its ct64 in the DB but is never
+            // uploaded (correct, not a gap), so checking it against S3 would be a false
+            // MissingInS3. Gate the S3 digest target on membership in allowed_handles,
+            // mirroring the is_allowed = true filter the computed-output query already uses.
+            const INPUT_ALLOWED_SQL: &str =
+                "SELECT DISTINCT handle FROM allowed_handles WHERE handle = ANY($1)";
+            let rows = sqlx::query(INPUT_ALLOWED_SQL)
+                .bind(&handle_list)
+                .fetch_all(&pool)
+                .await
+                .context("querying allowed input handles")?;
+            let mut allowed: BTreeSet<Vec<u8>> = BTreeSet::new();
+            for row in rows {
+                allowed.insert(row.try_get("handle")?);
+            }
             for (handle, zk_proof_id) in &input_handles {
                 match found.get(handle) {
                     None => {
@@ -925,11 +941,15 @@ async fn run(args: &Args, report: &mut Report) -> Result<Verdict> {
                     }
                     Some(_) => {}
                 }
-                digest_targets.push(DigestTarget {
-                    handle: handle.clone(),
-                    origin: "input",
-                    boundary: false,
-                });
+                // Only allowed inputs are uploaded to S3; an un-allowed input's ct64 lives
+                // only in the DB, so checking it against S3 would be a false MissingInS3.
+                if allowed.contains(handle) {
+                    digest_targets.push(DigestTarget {
+                        handle: handle.clone(),
+                        origin: "input",
+                        boundary: false,
+                    });
+                }
             }
             println!(
                 "inputs: {} handles from Gateway block {gw_start_block}, {} missing, \
