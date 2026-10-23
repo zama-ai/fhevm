@@ -936,7 +936,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
      *      The CiphertextFHEList actually contains: 1 byte (= N) for size of handles_list, N bytes for the handles_types : 1 per handle, then the original fhe160list raw ciphertext
      */
     function _typeOf(bytes32 handle) internal pure virtual returns (FheType typeCt) {
-        typeCt = FheType(uint8(handle[30]));
+        uint8 rawType = uint8(handle[30]);
+        if (rawType > uint8(type(FheType).max)) revert InvalidType();
+        typeCt = FheType(rawType);
     }
 
     function _appendMetadataToPrehandle(
