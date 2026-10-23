@@ -15,6 +15,8 @@ pub mod handle_metadata;
 pub mod healthz_server;
 pub mod host_chains;
 pub mod keys;
+#[cfg(feature = "kms-tx-senders")]
+pub mod kms_tx_senders;
 pub mod metrics_server;
 pub mod pg_pool;
 #[cfg(feature = "test-failpoints")]

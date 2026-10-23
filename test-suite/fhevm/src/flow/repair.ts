@@ -1,6 +1,7 @@
 import {
   supportsConnectorHttp,
   supportsConsensusDetector,
+  supportsCoprocessorProxy,
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
@@ -10,6 +11,7 @@ import { listenerCoreServicesForState } from "../generate/listener-core";
 import { hasLocalCoprocessorInstance } from "../scenario/resolve";
 import { topologyForState } from "../stack-spec/stack-spec";
 import {
+  COPROCESSOR_PROXY_SUFFIXES,
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
   GROUP_SERVICE_SUFFIXES,
@@ -19,6 +21,7 @@ import {
   coprocessorHostKey,
   defaultHostChainKey,
   hostChainSuffix,
+  withCoprocessorProxySuffixes,
 } from "../layout";
 import type { LocalOverride, OverrideGroup, ResolvedCoprocessorScenarioInstance, State, StepName } from "../types";
 import { extraHostChains, hostChainsForState } from "./topology";
@@ -37,6 +40,7 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "COPROCESSOR_SNS_WORKER_VERSION",
     "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
     "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
+    "COPROCESSOR_PROXY_VERSION",
   ],
   "kms-connector": [
     "CONNECTOR_DB_MIGRATION_VERSION",
@@ -74,28 +78,36 @@ const supportsUpgradeControllerForState = (state: { versions?: State["versions"]
   !state.versions || supportsUpgradeController({ versions: state.versions });
 const supportsConnectorHttpForState = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
   !state.versions || supportsConnectorHttp({ versions: state.versions, overrides: state.overrides });
+type CoprocessorServicesState = { versions?: State["versions"]; overrides: LocalOverride[]; scenario?: State["scenario"] };
+const supportsCoprocessorProxyForState = (state: CoprocessorServicesState) =>
+  state.scenario?.kind !== "blue-green" &&
+  (!state.versions || supportsCoprocessorProxy({ versions: state.versions, overrides: state.overrides }));
 const kmsConnectorServices = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
   GROUP_BUILD_SERVICES["kms-connector"].filter(
     (service) => !KMS_CONNECTOR_HTTP_SERVICES.includes(service) || supportsConnectorHttpForState(state),
   );
-const coprocessorRuntimeSuffixes = (state: { versions?: State["versions"]; scenario?: State["scenario"] }) =>
-  GROUP_SERVICE_SUFFIXES.coprocessor.filter(
-    (service) =>
-      (!state.scenario || !consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(service)) &&
-      service !== "db-migration" &&
-      (service !== "host-listener-consumer" || supportsConsumerForState(state)) &&
-      (service !== "consensus-detector" || supportsConsensusDetectorForState(state)) &&
-      (service !== "upgrade-controller" || supportsUpgradeControllerForState(state)),
+const coprocessorRuntimeSuffixes = (state: CoprocessorServicesState) =>
+  withCoprocessorProxySuffixes(
+    GROUP_SERVICE_SUFFIXES.coprocessor.filter(
+      (service) =>
+        (!state.scenario || !consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(service)) &&
+        service !== "db-migration" &&
+        (service !== "host-listener-consumer" || supportsConsumerForState(state)) &&
+        (service !== "consensus-detector" || supportsConsensusDetectorForState(state)) &&
+        (service !== "upgrade-controller" || supportsUpgradeControllerForState(state)),
+    ),
+    supportsCoprocessorProxyForState(state),
   );
-const coprocessorListenerSuffixes = (state: { versions?: State["versions"]; scenario?: State["scenario"] }) =>
+const coprocessorListenerSuffixes = (state: CoprocessorServicesState) =>
   coprocessorRuntimeSuffixes(state).filter((service) => state.scenario && consumerOnlyHostListeners(state.scenario) ? service === "host-listener-consumer" : /^host-listener(?:-poller)?$/.test(service));
-const coprocessorServices = (state: { versions?: State["versions"]; scenario?: State["scenario"] }) =>
+const coprocessorServices = (state: CoprocessorServicesState) =>
   GROUP_BUILD_SERVICES.coprocessor.filter(
     (service) =>
       (!state.scenario || !consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(service.replace(/^coprocessor-/, ""))) &&
       (service !== "coprocessor-host-listener-consumer" || supportsConsumerForState(state)) &&
       (service !== "coprocessor-consensus-detector" || supportsConsensusDetectorForState(state)) &&
-      (service !== "coprocessor-upgrade-controller" || supportsUpgradeControllerForState(state)),
+      (service !== "coprocessor-upgrade-controller" || supportsUpgradeControllerForState(state)) &&
+      (service !== "coprocessor-proxy" || supportsCoprocessorProxyForState(state)),
   );
 
 /** Lists steady-state services expected for each resumable lifecycle step. */
@@ -242,7 +254,10 @@ export const resolveUpgradePlan = (
               ? instance.localServices ?? coprocessorServices(state)
               : releaseServices;
           const available = scenario.kind === "blue-green"
-            ? selected.filter((service) => !GCS_ONLY_SUFFIXES.has(service.replace(/^coprocessor-/, "")))
+            ? selected.filter((service) => {
+                const suffix = service.replace(/^coprocessor-/, "");
+                return !GCS_ONLY_SUFFIXES.has(suffix) && !COPROCESSOR_PROXY_SUFFIXES.includes(suffix);
+              })
             : selected;
           return available.map((service) =>
             instance.index === 0 ? service : service.replace(/^coprocessor-/, `coprocessor${instance.index}-`),

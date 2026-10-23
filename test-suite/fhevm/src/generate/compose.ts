@@ -16,6 +16,7 @@ import {
   compatPolicyForState,
   supportsConnectorHttp,
   supportsConsensusDetector,
+  supportsCoprocessorProxy,
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
@@ -23,6 +24,7 @@ import {
   ANVIL_CHAIN_ID,
   COMPONENTS,
   COMPOSE_OUT_DIR,
+  COPROCESSOR_PROXY_SUFFIXES,
   DEFAULT_CHAIN_ID,
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
@@ -34,6 +36,7 @@ import {
   envPath,
   hostChainNames,
   hostChainRuntimes,
+  withCoprocessorProxySuffixes,
 } from "../layout";
 import { kmsConnectorEnvName, kmsConnectorPrefix } from "../kms-party";
 import { type StackSpec, topologyForState } from "../stack-spec/stack-spec";
@@ -177,6 +180,7 @@ const COPROCESSOR_BUILD_TARGETS: Record<string, string> = {
   "coprocessor-transaction-sender": "transaction-sender",
   "coprocessor-consensus-detector": "consensus-detector",
   "coprocessor-upgrade-controller": "upgrade-controller",
+  "coprocessor-proxy": "coprocessor-proxy",
 };
 
 const coprocessorBuildSpec = (target: string, e2ePublicRuntime = false) =>
@@ -548,17 +552,18 @@ export const blueGreenServiceNames = (
 ): string[] => {
   const includeConsumer = supportsHostListenerConsumer(state);
   const greenDeferred = state.scenario.kind === "blue-green" && state.scenario.gcs.deferredStart;
+  const suffixes = withCoprocessorProxySuffixes(GROUP_SERVICE_SUFFIXES.coprocessor, false);
   const names: string[] = [];
   for (let index = 0; index < topologyForState(state).count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
-    for (const suffix of GROUP_SERVICE_SUFFIXES.coprocessor) {
+    for (const suffix of suffixes) {
       if (GCS_ONLY_SUFFIXES.has(suffix)) continue;
       if (!options.includeMigration && suffix.includes("migration")) continue;
       if (suffix === "host-listener-consumer" && !includeConsumer) continue;
       names.push(`${prefix}${suffix}`);
     }
     if (!greenDeferred || options.includeDeferredGreen) {
-      for (const suffix of GROUP_SERVICE_SUFFIXES.coprocessor) {
+      for (const suffix of suffixes) {
         if (suffix.includes("migration")) continue;
         if (suffix === "host-listener-consumer" && !includeConsumer) continue;
         names.push(`${prefix}gcs-${suffix}`);
@@ -609,12 +614,15 @@ export const serviceNameList = (
   const includeConsumer = supportsHostListenerConsumer(state);
   const includeConsensusDetector = supportsConsensusDetector(state);
   const includeUpgradeController = supportsUpgradeController(state);
-  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
-    (suffix) =>
-      (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
-      (includeConsumer || suffix !== "host-listener-consumer") &&
-      (includeConsensusDetector || suffix !== "consensus-detector") &&
-      (includeUpgradeController || suffix !== "upgrade-controller"),
+  const suffixes = withCoprocessorProxySuffixes(
+    GROUP_SERVICE_SUFFIXES.coprocessor.filter(
+      (suffix) =>
+        (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
+        (includeConsumer || suffix !== "host-listener-consumer") &&
+        (includeConsensusDetector || suffix !== "consensus-detector") &&
+        (includeUpgradeController || suffix !== "upgrade-controller"),
+    ),
+    supportsCoprocessorProxy(state),
   );
   const topology = topologyForState(state);
   const names: string[] = [];
@@ -751,6 +759,8 @@ const pointConsumerAtItsOperator = (
   );
 };
 
+const COPROCESSOR_PROXY_SERVICES = new Set(COPROCESSOR_PROXY_SUFFIXES.map((suffix) => `coprocessor-${suffix}`));
+
 /** Builds the generated coprocessor compose override across all scenario instances. */
 const buildCoprocessorOverride = async (plan: StackSpec) => {
   const doc = rewriteComposePaths(await loadComposeDoc("coprocessor"));
@@ -769,6 +779,8 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     ...(supportsHostListenerConsumer(plan) ? [] : ["coprocessor-host-listener-consumer"]),
     ...(supportsConsensusDetector(plan) ? [] : ["coprocessor-consensus-detector"]),
     ...(supportsUpgradeController(plan) ? [] : ["coprocessor-upgrade-controller"]),
+    // Blue-green stacks test the coprocessor fleets, not the proxy.
+    ...(supportsCoprocessorProxy(plan) && !plan.blueGreen ? [] : COPROCESSOR_PROXY_SERVICES),
   ]);
   const includeConsumer = supportsHostListenerConsumer(plan);
   const isBlueGreen = Boolean(plan.blueGreen);
@@ -858,7 +870,11 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       if (plan.coprocessor.hostListenerMode === "consumer" && isLegacyHostListener(suffix)) {
         adjusted.profiles = ["legacy-host-listeners"];
       }
-      applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
+      // The proxy pair keeps the bundle's images unless built locally: a registry instance's tag names
+      // a coprocessor release that may predate the proxy, and the fake runs the test-suite image.
+      if (locallyBuilt || !COPROCESSOR_PROXY_SERVICES.has(name)) {
+        applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
+      }
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
         adjusted.depends_on = rewriteCoprocessorDependsOn(
           adjusted.depends_on as Record<string, unknown>,
@@ -890,7 +906,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         if (!includeConsumer && baseName === "coprocessor-host-listener-consumer") {
           continue;
         }
-        if (baseName === "coprocessor-db-migration") {
+        if (baseName === "coprocessor-db-migration" || COPROCESSOR_PROXY_SERVICES.has(baseName)) {
           continue;
         }
         const suffix = baseName.replace(/^coprocessor-/, "");

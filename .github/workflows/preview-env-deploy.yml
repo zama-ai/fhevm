@@ -1421,6 +1421,15 @@ jobs:
           REPORT_PHASE: ${{ env.BLUE_GREEN == 'true' && 'during DryRunStarted (BCS live, GCS shadowing)' || '' }}
         run: bash ci/preview-env/scripts/e2e/build-e2e-report.sh
 
+      - name: Check coprocessor-proxy (rollout, rolling restart, NetworkPolicy)
+        # Also after a failed e2e test: these checks do not depend on the suites.
+        if: >-
+          !cancelled() && steps.e2e_report.outcome != 'skipped' &&
+          env.AUTOMATED_TESTS == 'true' && env.BLUE_GREEN != 'true'
+        env:
+          E2E_IMAGE: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e:${{ fromJSON(needs.resolve-tags.outputs.tags_json).test_suite }}
+        run: bash ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh
+
       - name: Assert RFC-021 cutover
         if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
         env:

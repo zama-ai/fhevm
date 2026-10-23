@@ -1,0 +1,24 @@
+# ct lint renders the chart once per file of this directory: this one enables the coprocessor
+# proxy.
+commonConfig:
+  canonicalProtocolConfigChainId: "11155111"
+chains:
+  - name: gnosis
+    chainId: "100"
+    httpUrl: "http://gnosis-node:8545"
+    protocolConfigContractAddress: "0x00000000000000000000000000000000000000ff"
+  - name: ethereum
+    chainId: "11155111"
+    httpUrlValueFrom:
+      secretKeyRef:
+        name: ethereum-rpc
+        key: url
+    protocolConfigContractAddress: "0x00000000000000000000000000000000000000c0"
+coprocessorProxy:
+  enabled: true
+  image:
+    tag: v0.0.0-test
+  tls:
+    secretName: coprocessor-proxy-tls
+  coprocessorSignerAddress: "0x00000000000000000000000000000000000000a1"
+  endpointAddresses: ["prf-service-a:8090", "prf-service-b:8090"]
