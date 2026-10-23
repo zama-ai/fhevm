@@ -166,14 +166,16 @@ report=$(cat /tmp/prf-held.json)
 record "prf-service killed while holding requests (parties 1-3)" "ok: retries reach the new pods" "$(summary "${report}")" "$(jq '.ok' <<<"${report}")"
 for p in 1 2 3; do wait_ready "deploy/coprocessor-${p}-prf-service"; done
 
-# Proxy rolling restart under load: sequential retrievals while every proxy restarts.
+# Proxy rolling restart under load: sequential retrievals until every proxy has restarted.
+rm -f /tmp/prf-restart.stop
 (
-  for _ in $(seq 1 40); do connector fetch --connectors 1 --label-prefix 00 || echo '{"ok":false}'; done
+  until [[ -f /tmp/prf-restart.stop ]]; do connector fetch --connectors 1 --label-prefix 00; done
 ) > /tmp/prf-restart.jsonl &
 load_pid=$!
 sleep 3
 for p in $(seq 1 "${NB_COPROCESSOR}"); do kubectl rollout restart "deploy/coprocessor-${p}-coprocessor-proxy" -n "${NAMESPACE}"; done
 for p in $(seq 1 "${NB_COPROCESSOR}"); do wait_ready "deploy/coprocessor-${p}-coprocessor-proxy"; done
+touch /tmp/prf-restart.stop
 wait "${load_pid}" || true
 out=$(jq -sc '{retrievals: length, ok: [.[] | select(.ok)] | length, fallback: [.[] | select(.fallback)] | length, max_ms: ([.[].elapsed_ms // 0] | max)}' /tmp/prf-restart.jsonl)
 record "proxy rolling restart under load" "every retrieval ok" "${out}" "$(jq '.ok == .retrievals' <<<"${out}")"

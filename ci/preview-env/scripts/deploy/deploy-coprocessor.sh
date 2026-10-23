@@ -242,7 +242,7 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
       --set-string "padWorker.party=${i}" \
       --set-string "padWorker.databaseUrl=postgresql://zama:zama@postgres-coprocessor-${i}:5432/fhevm_e2e" \
       --set-string "padWorker.keySecret=$(pad_worker "${i}")-key" \
-      --set-string "padWorker.faults=$(pad_worker_faults "${i}")"
+      --set-string "padWorker.faults=$(pad_worker_faults "${i}" | sed 's/,/\\,/g')"
   fi
 done
 
