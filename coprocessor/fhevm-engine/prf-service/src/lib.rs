@@ -14,7 +14,7 @@ use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Vers
 use in_flight::InFlight;
 use pads::Admissions;
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use waiter::PadWaiter;
@@ -25,6 +25,8 @@ pub struct Config {
     pub database_pool_size: u32,
     /// RFC-038 `PRF_MAX_CONCURRENT_PER_CONNECTOR`: pad bits pending for one connector before `429`.
     pub max_pending_bits_per_connector: i64,
+    /// Requests of one connector in progress in this pod, on any label, before `429`.
+    pub max_requests_per_connector: NonZeroUsize,
     /// Admissions of one connector that run at once in this pod.
     pub max_adds_per_connector: usize,
     /// How often the waiting requests read their rows, in case a `pad_ready` notification is lost.
@@ -78,7 +80,7 @@ impl PrfService {
                 config.max_adds_per_connector,
             ),
             waiter: PadWaiter::new(pool.clone(), config.pad_poll_interval),
-            in_flight: InFlight::default(),
+            in_flight: InFlight::new(config.max_requests_per_connector),
             auth: fhevm_sig_auth::FhevmSigVerifier::new(
                 domain,
                 config.auth.coprocessor_signer_address,

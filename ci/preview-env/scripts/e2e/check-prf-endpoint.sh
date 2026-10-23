@@ -106,8 +106,15 @@ fetch_case "1 wrong digest (party 1, GET target)" "outvoted, ok via fallback" \
   '.ok and .fallback and .body_from != 0' --label-prefix b1 --get-from 0
 fetch_case "2 wrong digests (parties 1-2)" "outvoted, ok" '.ok' --label-prefix b2 --get-from 4
 fetch_case "3 wrong digests (parties 1-3)" "no quorum, failed" '(.ok | not) and .error == "no_quorum"' --label-prefix b3
-fetch_case "1 unsigned attestation (party 1)" "rejected, ok" \
-  '.ok and ([(.replies // [])[] | select(.coprocessor == 0 and .method == "HEAD") | .attestation] == ["rejected"])' --label-prefix a1 --get-from 1
+# Quorum can form before party 1's HEAD answers, and then the report has no reply from party 1:
+# retry on a new label until it does.
+for _ in 1 2 3 4 5; do
+  report=$(connector fetch --connectors 1 --label-prefix a1 --get-from 1)
+  jq -e '[(.replies // [])[] | select(.coprocessor == 0)] | length > 0' <<<"${report}" >/dev/null && break
+done
+record "1 unsigned attestation (party 1)" "rejected, ok" "$(summary "${report}")" \
+  "$(jq '.ok and ([(.replies // [])[] | select(.coprocessor == 0 and .method == "HEAD") | .attestation] == ["rejected"])' <<<"${report}")" \
+  "label $(jq -r .label <<<"${report}")"
 fetch_case "3 unsigned attestations (parties 1-3)" "rejected, no quorum" '(.ok | not)' --label-prefix a5
 fetch_case "expired FhevmSig headers" "401 auth_expired, re-sign, ok" '.ok and .resigns >= 3' --label-prefix 00 --stale-headers
 fetch_case "permanent failure on the GET target (party 1)" "ok via fallback" '.ok and .fallback' --label-prefix e2 --get-from 0
@@ -137,6 +144,9 @@ probe_case "padLength 2048" 200 "" 1 "/v1/prf/0/labels/${l}/2048"
 out=$(connector flood --target 0 --count 6 --label-prefix 4a --pad-length 2048)
 record "per-connector cap (party 1)" '2x 200, 4x 429 concurrency_limited, Retry-After' "$(jq -c . <<<"${out}")" \
   "$(jq '.statuses == {"200": 2, "429 concurrency_limited": 4} and .retry_after != null' <<<"${out}")"
+out=$(connector flood --target 1 --count 3 --label-prefix 4a --pad-length 64)
+record "per-connector request cap (party 2, 2 requests)" '2x 200, 1x 429 concurrency_limited' "$(jq -c . <<<"${out}")" \
+  "$(jq '.statuses == {"200": 2, "429 concurrency_limited": 1}' <<<"${out}")"
 
 # The pad-worker of parties 1-3 exits once with the row claimed; the reaper gives it back.
 restarts_before=$(for p in 1 2 3; do kubectl get pods -n "${NAMESPACE}" -l "app=standin-pad-worker,fhevm.zama.ai/party=${p}" -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'; echo -n " "; done)

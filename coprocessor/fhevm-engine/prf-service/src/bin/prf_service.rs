@@ -3,7 +3,7 @@ use anyhow::anyhow;
 use clap::Parser;
 use fhevm_engine_common::{healthz_server::HttpServer, metrics_server, telemetry};
 use prf_service::{AuthConfig, Config, PrfService};
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
@@ -29,6 +29,13 @@ struct Args {
         default_value_t = 65536
     )]
     max_pending_bits_per_connector: i64,
+
+    #[arg(
+        long,
+        env = "PRF_MAX_REQUESTS_PER_CONNECTOR",
+        default_value_t = NonZeroUsize::new(1024).unwrap()
+    )]
+    max_requests_per_connector: NonZeroUsize,
 
     #[arg(long, default_value_t = 4)]
     max_adds_per_connector: usize,
@@ -104,6 +111,7 @@ async fn main() -> anyhow::Result<()> {
             database_url: args.database_url,
             database_pool_size: args.database_pool_size,
             max_pending_bits_per_connector: args.max_pending_bits_per_connector,
+            max_requests_per_connector: args.max_requests_per_connector,
             max_adds_per_connector: args.max_adds_per_connector,
             pad_poll_interval: args.pad_poll_interval,
             retry_after: args.retry_after,

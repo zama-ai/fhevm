@@ -1248,6 +1248,7 @@ jobs:
         run: bash ci/preview-env/scripts/deploy/deploy-party-deps.sh listener-polygon
 
       - name: Deploy coprocessor
+        id: deploy_coprocessor
         # One release PER COPROCESSOR PARTY (coprocessor-<i>), each with its own
         # Postgres (postgres-coprocessor-<i>), IRSA SA + S3 bucket ConfigMap
         # (coprocessor-<i>, from coprocessor-infra-<i>) and tx-sender/sns-worker
@@ -1322,6 +1323,7 @@ jobs:
         run: bash ci/preview-env/scripts/deploy/deploy-coprocessor-sidecars.sh poller-polygon
 
       - name: Create kms-connector-tx-sender secrets
+        id: kms_tx_sender_secrets
         env:
           WALLETS_JSON: ${{ steps.kms-wallets.outputs.wallets_json }}
         run: |
@@ -1431,8 +1433,10 @@ jobs:
         run: bash ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh
 
       - name: Check the PRF endpoint failure matrix (spike, option A)
+        # Needs the coprocessors, their proxies and the tx-sender keys, not KMS keygen or the suites.
         if: >-
-          !cancelled() && steps.e2e_report.outcome != 'skipped' &&
+          !cancelled() && steps.deploy_coprocessor.outcome == 'success' &&
+          steps.kms_tx_sender_secrets.outcome == 'success' &&
           env.AUTOMATED_TESTS == 'true' && env.BLUE_GREEN != 'true'
         env:
           PRF_IMAGE: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/prf-service:${{ fromJSON(needs.resolve-tags.outputs.tags_json).prf_service }}

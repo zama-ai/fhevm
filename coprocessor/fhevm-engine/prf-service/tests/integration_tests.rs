@@ -4,7 +4,7 @@
 use alloy::primitives::Address;
 use prf_service::{AuthConfig, Config, PrfService};
 use reqwest::{Client, Method, Response, StatusCode, Version};
-use std::{net::TcpListener, time::Duration};
+use std::{net::TcpListener, num::NonZeroUsize, time::Duration};
 use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -33,6 +33,7 @@ impl TestService {
                 database_url: db.db_url().to_owned(),
                 database_pool_size: 2,
                 max_pending_bits_per_connector: 4096,
+                max_requests_per_connector: NonZeroUsize::MIN,
                 max_adds_per_connector: 1,
                 pad_poll_interval: Duration::from_secs(1),
                 retry_after: Duration::from_secs(1),

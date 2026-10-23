@@ -21,6 +21,8 @@ const CHAIN_ID: u64 = 12345;
 const PROTOCOL_CONFIG: Address = Address::repeat_byte(0xc0);
 /// Party 0 refuses more than one pending 2048-bit pad per connector.
 const PARTY0_PENDING_BITS: i64 = 4096;
+/// Party 2 refuses a third request in progress from one connector.
+const PARTY2_REQUESTS: usize = 2;
 
 /// The faults of each party, by label first byte. Mirrors the preview check.
 fn faults(party: usize) -> String {
@@ -105,6 +107,12 @@ async fn start_party(admin: &PgPool, i: usize, cancel: &CancellationToken) -> Pa
             database_url: with_database(&admin_url(), "prf_service", &name),
             database_pool_size: 4,
             max_pending_bits_per_connector: if i == 0 { PARTY0_PENDING_BITS } else { 1 << 20 },
+            max_requests_per_connector: NonZeroUsize::new(if i == 2 {
+                PARTY2_REQUESTS
+            } else {
+                1024
+            })
+            .unwrap(),
             max_adds_per_connector: 4,
             pad_poll_interval: Duration::from_secs(1),
             retry_after: Duration::from_secs(1),
@@ -229,17 +237,21 @@ async fn retrieval_matrix() {
         );
     }
     // An unsigned attestation is discarded, but the GET target's body still matches the quorum.
-    let report = one.retrieve(&retrieval(0xa1, Some(0))).await;
-    assert!(report.ok && report.body_from == Some(0), "{report:?}");
-    assert_eq!(
-        report
-            .replies
-            .iter()
-            .find(|r| r.coprocessor == 0)
-            .unwrap()
-            .attestation,
-        Some("rejected")
-    );
+    // The three HEADs can reach quorum before the GET answers (RFC-038 step 5 then falls back),
+    // so retry on a new label until party 0's reply is in the report.
+    let mut a1_checked = false;
+    for _ in 0..5 {
+        let report = one.retrieve(&retrieval(0xa1, Some(0))).await;
+        assert!(report.ok, "{report:?}");
+        let Some(reply) = report.replies.iter().find(|r| r.coprocessor == 0) else {
+            continue;
+        };
+        assert_eq!(reply.attestation, Some("rejected"), "{report:?}");
+        assert_eq!(report.body_from, Some(0), "{report:?}");
+        a1_checked = true;
+        break;
+    }
+    assert!(a1_checked, "party 0 never answered before quorum");
     // Two wrong digests are outvoted.
     let report = one.retrieve(&retrieval(0xb2, Some(4))).await;
     assert!(report.ok && !report.fallback, "{report:?}");
@@ -326,6 +338,16 @@ async fn retrieval_matrix() {
         flood.probe(1, Method::HEAD, &path, None).await
     });
     assert_eq!((first.unwrap().0, second.unwrap().0), (200, 429));
+    // The request cap of party 2, across labels: the third request in progress gets 429.
+    let paths: Vec<String> = (0..=PARTY2_REQUESTS)
+        .map(|_| retrieval(0x4a, None).path())
+        .collect();
+    let results =
+        futures_util::future::join_all(paths.iter().map(|p| flood.probe(2, Method::GET, p, None)))
+            .await;
+    let mut statuses: Vec<u16> = results.iter().map(|r| r.as_ref().unwrap().0).collect();
+    statuses.sort();
+    assert_eq!(statuses, vec![200, 200, 429], "{results:?}");
 
     // Path checks of prf-service.
     let label = hex::encode(B256::repeat_byte(0x0a));

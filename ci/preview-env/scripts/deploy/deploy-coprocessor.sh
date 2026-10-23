@@ -30,8 +30,8 @@ proxy_service() { echo "coprocessor-${1}-coprocessor-proxy"; }
 prf_service() { echo "coprocessor-${1}-prf-service"; }
 pad_worker() { echo "coprocessor-${1}-standin-pad-worker"; }
 # Faults of the stand-in pad-worker of party i, by label first byte. Party 1
-# alone also caps a connector at two pending 2048-bit pads. The scenarios of
-# check-prf-endpoint.sh depend on this table.
+# alone also caps a connector at two pending 2048-bit pads, and party 2 at two
+# requests in progress. The scenarios of check-prf-endpoint.sh depend on this table.
 pad_worker_faults() {
   local i="$1" faults="4a:delay=5s,7f:delay=40s,9a:delay=5s,6d:delay=20s,f0:delay=130s,e1:fail"
   if (( i == 1 )); then faults+=",d1:delay=10s,b1:wrong_digest,a1:unsigned,e2:fail"; fi
@@ -40,6 +40,7 @@ pad_worker_faults() {
   echo "${faults}"
 }
 pending_bits_cap() { if (( $1 == 1 )); then echo 4096; else echo 1048576; fi; }
+requests_cap() { if (( $1 == 2 )); then echo 2; else echo 1024; fi; }
 proxy_tls_secret=coprocessor-proxy-tls  # tls.secretName in values-coprocessor-proxy-e2e.yaml
 coproc_signer() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}"; }
 with_proxy="false"
@@ -208,12 +209,14 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
       --from-literal=private-key="${privkey}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     prf_image_tag=$(jq -r .prf_service <<<"${TAGS_JSON}")
     prf_env=$(jq -cn --arg db "postgresql://prf_service:prf_service@postgres-coprocessor-${i}:5432/fhevm_e2e" \
-      --arg chain "${HOST_CHAIN_ID:?}" --arg signer "${signer}" --arg cap "$(pending_bits_cap "${i}")" '[
+      --arg chain "${HOST_CHAIN_ID:?}" --arg signer "${signer}" --arg cap "$(pending_bits_cap "${i}")" \
+      --arg requests "$(requests_cap "${i}")" '[
         {name: "DATABASE_URL", value: $db},
         {name: "PRF_ETHEREUM_CHAIN_ID", value: $chain},
         {name: "PRF_PROTOCOL_CONFIG_ADDRESS", valueFrom: {configMapKeyRef: {name: "host-sc-addresses", key: "protocol_config.address"}}},
         {name: "PRF_COPROCESSOR_SIGNER_ADDRESS", value: $signer},
-        {name: "PRF_MAX_CONCURRENT_PER_CONNECTOR", value: $cap}
+        {name: "PRF_MAX_CONCURRENT_PER_CONNECTOR", value: $cap},
+        {name: "PRF_MAX_REQUESTS_PER_CONNECTOR", value: $requests}
       ]')
     proxy_args=(
       -f ci/preview-env/coprocessor/values-coprocessor-proxy-e2e.yaml
