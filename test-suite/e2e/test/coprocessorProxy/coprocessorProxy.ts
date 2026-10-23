@@ -167,7 +167,7 @@ describe('Coprocessor proxy', function () {
       if (!process.env.COPROCESSOR_PROXY_SWITCH_SIGNER_KEY) this.skip();
     });
 
-    it('accepts a node that is only in the new Active context', async function () {
+    it('accepts a node of an Active context', async function () {
       for (const i of urls.keys()) {
         expectForwarded(await send(i, PRF_PATH, await sign(i, PRF_PATH, { signer: switchSigner() })));
       }
