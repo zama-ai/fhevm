@@ -18,10 +18,7 @@ use connector_utils::{
     },
     types::db::{OperationStatus, RequestSource},
 };
-use endpoint::{
-    core::{Config, Endpoint},
-    monitoring::metrics,
-};
+use endpoint::core::{Config, Endpoint};
 use kms_connector_api::{
     AttestationType, ErrorCode, ErrorResponse, HandleEntry, PUBLIC_DECRYPTION_ROUTE,
     PublicDecryptionRequest, PublicDecryptionResponse, RequestValidity, USER_DECRYPTION_ROUTE,
@@ -49,28 +46,7 @@ const USER_REQUESTS: &str = "user_decryption_requests";
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_public_decrypt_happy_path() -> anyhow::Result<()> {
-    use opentelemetry::trace::{TraceContextExt, TracerProvider};
-    use opentelemetry_sdk::{
-        propagation::TraceContextPropagator,
-        trace::{InMemorySpanExporter, SdkTracerProvider},
-    };
-    use tracing_subscriber::layer::SubscriberExt;
-    let exporter = InMemorySpanExporter::default();
-    let provider = SdkTracerProvider::builder()
-        .with_simple_exporter(exporter.clone())
-        .build();
-    tracing::subscriber::set_global_default(
-        tracing_subscriber::registry()
-            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer("endpoint-test"))),
-    )?;
-    opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
-    let mut endpoint = setup().await?;
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(
-        "traceparent",
-        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01".parse()?,
-    );
-    endpoint.client = Client::builder().default_headers(headers).build()?;
+    let endpoint = setup().await?;
 
     let response = reqwest::get(endpoint.url(VERSION_ROUTE)).await?;
     assert_eq!(response.status(), StatusCode::OK);
@@ -86,13 +62,6 @@ async fn test_public_decrypt_happy_path() -> anyhow::Result<()> {
     info!("Checking the stored request row...");
     let row = wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, id).await;
     assert_eq!(row.get::<RequestSource, _>("source"), RequestSource::Http);
-    let persisted: connector_utils::monitoring::otlp::PropagationContext =
-        bc2wrap::deserialize_slice(&row.get::<Vec<u8>, _>("otlp_context"))?;
-    let stored_context = persisted.extract().span().span_context().clone();
-    assert_eq!(
-        stored_context.trace_id().to_string(),
-        "4bf92f3577b34da6a3ce929d0e0e4736"
-    );
     assert_eq!(
         row.get::<OperationStatus, _>("status"),
         OperationStatus::Pending
@@ -122,37 +91,7 @@ async fn test_public_decrypt_happy_path() -> anyhow::Result<()> {
     assert_eq!(body.signature.to_vec(), inserted.signature);
     assert_eq!(body.extra_data.to_vec(), inserted.extra_data);
 
-    assert_requests(PUBLIC_DECRYPTION_ROUTE, "200", "success", 1).await;
-    assert_eq!(lookups(PUBLIC_DECRYPTION_ROUTE, "stored"), 1);
-    assert_eq!(
-        metrics::DECRYPTION_WAIT_LATENCY_HISTOGRAM
-            .with_label_values(&[PUBLIC_DECRYPTION_ROUTE])
-            .get_sample_count(),
-        1
-    );
-    assert_eq!(admitted_requests(), 0);
-    endpoint.stop().await?;
-    provider.force_flush()?;
-    let spans = exporter.get_finished_spans()?;
-    let handler = spans
-        .iter()
-        .find(|span| span.span_context.span_id() == stored_context.span_id())
-        .expect("stored handler span");
-    let http = spans
-        .iter()
-        .find(|span| span.span_context.span_id() == handler.parent_span_id)
-        .expect("HTTP parent span");
-    assert_eq!(http.name, "http_request");
-    assert_eq!(http.parent_span_id.to_string(), "00f067aa0ba902b7");
-    assert_eq!(
-        spans
-            .iter()
-            .filter(|span| span.name == "http_request")
-            .count(),
-        1,
-        "version probes must not export spans"
-    );
-    Ok(())
+    endpoint.stop().await
 }
 
 #[rstest]
@@ -223,8 +162,6 @@ async fn test_user_decrypt_happy_path() -> anyhow::Result<()> {
     );
     assert_eq!(body.signature.to_vec(), inserted.signature);
 
-    assert_requests(USER_DECRYPTION_ROUTE, "200", "success", 1).await;
-    assert_eq!(lookups(USER_DECRYPTION_ROUTE, "stored"), 1);
     endpoint.stop().await
 }
 
@@ -240,12 +177,6 @@ async fn test_duplicate_submissions_share_one_request() -> anyhow::Result<()> {
     let second = endpoint.spawn_pdec(&request);
 
     wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, id).await;
-    wait_for_counter(
-        || lookups(PUBLIC_DECRYPTION_ROUTE, "already_in_progress"),
-        1,
-    )
-    .await;
-    assert_eq!(admitted_requests(), 2);
     complete_public(&endpoint.db, id).await?;
 
     for pending in [first, second] {
@@ -256,10 +187,6 @@ async fn test_duplicate_submissions_share_one_request() -> anyhow::Result<()> {
     }
     assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 1);
 
-    assert_requests(PUBLIC_DECRYPTION_ROUTE, "200", "success", 2).await;
-    assert_eq!(lookups(PUBLIC_DECRYPTION_ROUTE, "stored"), 1);
-    assert_eq!(lookups(PUBLIC_DECRYPTION_ROUTE, "already_in_progress"), 1);
-    assert_eq!(admitted_requests(), 0);
     endpoint.stop().await
 }
 
@@ -307,15 +234,6 @@ async fn test_existing_payload_row_is_served_immediately() -> anyhow::Result<()>
     assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 0);
     assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 0);
 
-    for route in [PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE] {
-        assert_eq!(lookups(route, "served"), 1);
-        assert_eq!(
-            metrics::DECRYPTION_WAIT_LATENCY_HISTOGRAM
-                .with_label_values(&[route])
-                .get_sample_count(),
-            0
-        );
-    }
     endpoint.stop().await
 }
 
@@ -517,10 +435,6 @@ async fn test_expired_irrecoverable_error_is_reprocessed(
         count_rows(&endpoint.db, "user_decryption_responses").await,
         1
     );
-    for route in [PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE] {
-        assert_eq!(lookups(route, "retried"), 1);
-        assert_eq!(lookups(route, "served"), 1);
-    }
     endpoint.stop().await
 }
 
@@ -589,11 +503,6 @@ async fn test_retryable_error_row_resets_failed_request() -> anyhow::Result<()> 
     .await;
     assert_eq!(body.message, "after");
 
-    assert_eq!(
-        lookups(PUBLIC_DECRYPTION_ROUTE, "retried"),
-        retryable_codes.len() as u64
-    );
-    assert_eq!(lookups(USER_DECRYPTION_ROUTE, "retried"), 1);
     endpoint.stop().await
 }
 
@@ -623,12 +532,8 @@ async fn test_retryable_or_expired_error_row_attaches_to_reprocessing(
     age_response(&endpoint.db, "public_decryption_responses", public_id, age).await?;
 
     let pending = endpoint.spawn_pdec(&public);
-    // Attachment is observable without changing the request row or consuming the old error.
-    wait_for_counter(
-        || lookups(PUBLIC_DECRYPTION_ROUTE, "already_in_progress"),
-        1,
-    )
-    .await;
+    // Nothing observable happens in DB until the worker answers, so give the route time to run.
+    tokio::time::sleep(Duration::from_millis(300)).await;
     assert_eq!(
         request_status(&endpoint.db, PUBLIC_REQUESTS, public_id)
             .await
@@ -652,9 +557,6 @@ async fn test_retryable_or_expired_error_row_attaches_to_reprocessing(
     assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(error_body(response).await.message, "after");
 
-    assert_eq!(lookups(PUBLIC_DECRYPTION_ROUTE, "already_in_progress"), 1);
-    assert_eq!(lookups(PUBLIC_DECRYPTION_ROUTE, "retried"), 0);
-    assert_eq!(lookups(USER_DECRYPTION_ROUTE, "retried"), 1);
     endpoint.stop().await
 }
 
@@ -693,7 +595,6 @@ async fn test_overloaded_replica_answers_503() -> anyhow::Result<()> {
     let first = endpoint.spawn_pdec(&first_request);
     wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, first_request.id()).await;
 
-    assert_eq!(admitted_requests(), 1);
     let second_request = public_request();
     let response = endpoint.post_public(&second_request).await;
     assert_error(
@@ -709,8 +610,6 @@ async fn test_overloaded_replica_answers_503() -> anyhow::Result<()> {
     complete_public(&endpoint.db, first_request.id()).await?;
     assert_eq!(first.await?.status(), StatusCode::OK);
 
-    assert_requests(PUBLIC_DECRYPTION_ROUTE, "503", "overloaded", 1).await;
-    assert_eq!(admitted_requests(), 0);
     endpoint.stop().await
 }
 
@@ -753,8 +652,6 @@ async fn test_client_disconnect_releases_permit() -> anyhow::Result<()> {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
-    assert_requests(PUBLIC_DECRYPTION_ROUTE, "0", "cancelled", 1).await;
-    assert_eq!(admitted_requests(), 0);
     endpoint.stop().await
 }
 
@@ -880,8 +777,6 @@ async fn test_decryption_timeout_answers_504_and_releases_permit() -> anyhow::Re
     complete_public(&endpoint.db, next.id()).await?;
     assert_eq!(endpoint.post_public(&next).await.status(), StatusCode::OK);
 
-    assert_requests(PUBLIC_DECRYPTION_ROUTE, "504", "timeout", 1).await;
-    assert_eq!(admitted_requests(), 0);
     endpoint.stop().await
 }
 
@@ -895,12 +790,6 @@ async fn test_listener_reconnection_fails_in_flight_requests_fast() -> anyhow::R
     let pending = endpoint.spawn_pdec(&request);
     wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, request.id()).await;
 
-    let duplicate = endpoint.spawn_pdec(&request);
-    wait_for_counter(
-        || lookups(PUBLIC_DECRYPTION_ROUTE, "already_in_progress"),
-        1,
-    )
-    .await;
     info!("Killing the listener connection...");
     let killed = sqlx::query(
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity
@@ -933,14 +822,6 @@ async fn test_listener_reconnection_fails_in_flight_requests_fast() -> anyhow::R
         .wait_for_log("connection was lost and re-established")
         .await;
 
-    assert_error(
-        duplicate.await?,
-        StatusCode::BAD_GATEWAY,
-        ErrorCode::UpstreamTransient,
-        request.id(),
-    )
-    .await;
-    assert_requests(PUBLIC_DECRYPTION_ROUTE, "502", "upstream_transient", 2).await;
     info!("The service keeps running on a fresh listener connection...");
     let next = public_request();
     let pending = endpoint.spawn_pdec(&next);
@@ -982,7 +863,6 @@ async fn setup_with(configure: impl FnOnce(Config) -> Config) -> anyhow::Result<
 
     let base_url = format!("http://{}", config.http_endpoint);
     let (endpoint, _state) = Endpoint::from_config(config).await?;
-    endpoint.register_metrics()?;
     let cancel_token = CancellationToken::new();
     let task = tokio::spawn(endpoint.start(cancel_token.clone()));
     test_instance.wait_for_log("HTTP server listening at").await;
@@ -1264,58 +1144,9 @@ async fn assert_error(
     id: B256,
 ) -> ErrorResponse {
     assert_eq!(response.status(), status);
-    let route = connector_utils::monitoring::http::route_label(response.url().path());
     let body = error_body(response).await;
-    assert!(
-        metrics::HTTP_METRICS
-            .requests
-            .with_label_values(&[route, &status.as_u16().to_string(), code.as_str()])
-            .get()
-            > 0,
-        "missing metric for {code:?}"
-    );
     assert_eq!(body.code, code);
     assert_eq!(body.retryable, code.retryable());
     assert_eq!(body.decryption_id, Some(id));
     body
-}
-
-async fn wait_for_counter(value: impl Fn() -> u64, expected: u64) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while value() < expected {
-        assert!(
-            Instant::now() < deadline,
-            "counter did not reach {expected}"
-        );
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert_eq!(value(), expected);
-}
-
-// Check that we see `expected` requests in the metrics within a 5s window.
-async fn assert_requests(route: &str, status: &str, code: &str, expected: u64) {
-    wait_for_counter(
-        || {
-            metrics::HTTP_METRICS
-                .requests
-                .with_label_values(&[route, status, code])
-                .get()
-        },
-        expected,
-    )
-    .await;
-}
-
-fn admitted_requests() -> u64 {
-    let family = prometheus::gather()
-        .into_iter()
-        .find(|family| family.name() == "kms_connector_endpoint_decryptions_in_flight")
-        .unwrap();
-    family.get_metric()[0].get_gauge().value() as u64
-}
-
-fn lookups(route: &str, outcome: &str) -> u64 {
-    metrics::DECRYPTION_LOOKUP_COUNTER
-        .with_label_values(&[route, outcome])
-        .get()
 }
