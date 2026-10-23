@@ -45,11 +45,15 @@ export type SolanaDecryptionRecovery = 'retry-unchanged' | 'give-up';
  *
  * - `acl_denied` is retried: an allow or a delegation the Connector cannot see yet is the one
  *   authorization a later attempt can find, and on this path the client's retry is the only one.
- * - `auth_expired` is retried: it refuses the relayer's own `FhevmSig` header, and the relayer signs
- *   a fresh one for the next submission.
- * - `user_signature_rejected` and `user_decryption_expired` are not: an expired or revoked permit
- *   stays so. The one case that passes later, a start ahead of the host clock, is prevented where
- *   the start is chosen (`permit/start.ts`).
+ * - `auth_expired` is retried: it refuses relayer-http's own `FhevmSig` header, which relayer-http
+ *   signs again and retries before answering, so a client sees it only while relayer-http's clock
+ *   runs behind the nodes'. A later submission passes once that is corrected.
+ * - `user_signature_rejected` is not: a bad or revoked permit stays so. The one case that passes
+ *   later, a start ahead of the host clock, is prevented where the start is chosen
+ *   (`permit/start.ts`).
+ * - `user_decryption_expired` is not: the Connector answers it for a permit past its window, which
+ *   no later attempt reopens. relayer-http refuses a permit already past its window as `malformed`;
+ *   this code covers one that ends before the Connector checks it, by the Connector's clock.
  * - `internal` and `unknown` are not: a relayer bug and a code this table predates are no reason to
  *   spend the budget, and an unknown code treated as retryable is a client hammering the service
  *   over something no delay repairs.
