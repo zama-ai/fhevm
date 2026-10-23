@@ -1,6 +1,8 @@
 -- revert_coprocessor_db_state.sql
--- Reverts all coprocessor state for a given chain to a given block number.
--- All data from blocks strictly greater than to_block_number will be deleted.
+-- Reverts coprocessor execution state for a given chain to a given block number.
+-- Results from blocks strictly greater than to_block_number will be deleted.
+-- Computation metadata referenced by commitments is retained and reset for
+-- recomputation: replay must restore that inventory, not replace its history.
 --
 -- ***WARNING***: The script validates that chain_id exists, but does not verify that
 -- to_block_number is a correct number. It is the operator's responsibility
@@ -17,8 +19,8 @@
 -- Reasoning for this script is that it assumes we would be able to detect a state drift
 -- with a ciphertext granularity. The operator should identify the earliest host chain
 -- block number (in host chain order) where drift occurred — not the first one observed in time,
--- since ciphertext commits reach the gateway out of host chain order. All data from that block
--- onward is reverted. To revert, pass the block before the offending one as
+-- since ciphertext commits reach the gateway out of host chain order. Results from that block
+-- onward are reverted. To revert, pass the block before the offending one as
 -- to_block_number (i.e. offending_block - 1).
 -- Note that due to out-of-order processing, some ciphertexts from blocks prior to the
 -- identified one might also have drifted. Therefore, operators should go further back
@@ -86,6 +88,22 @@ SELECT DISTINCT handle
    AND block_number > :'to_block_number';
 
 CREATE INDEX ON _affected_digest_handles (handle);
+
+-- Keep the admission metadata underneath immutable hashes and manifests. If
+-- these computation rows were deleted, replay would appear to ADD inventory
+-- to a sealed block and trigger history containment. Retaining the original
+-- operation and is_allowed also keeps real metadata/ACL changes detectable.
+-- Conservatively retain every discovered manifest root, including unsealed
+-- rows that a published descendant may already cover. This only affects the
+-- explicit rollback path; ordinary ingestion keeps its commitment checks.
+CREATE TEMP TABLE _retained_computation_blocks AS
+SELECT block_number FROM state_hash
+ WHERE chain_id = :'chain_id' AND block_number > :'to_block_number'
+UNION
+SELECT block_number FROM block_manifest_state
+ WHERE host_chain_id = :'chain_id' AND block_number > :'to_block_number';
+
+CREATE UNIQUE INDEX ON _retained_computation_blocks (block_number);
 
 -- ===========================================================================
 -- Check for key rotation across the reverted range.
@@ -202,10 +220,25 @@ DELETE FROM ciphertexts128
 
 DELETE FROM computations
  WHERE host_chain_id = :'chain_id'
-   AND block_number > :'to_block_number';
+   AND block_number > :'to_block_number'
+   AND block_number NOT IN (SELECT block_number FROM _retained_computation_blocks);
+
+-- Clear execution state, not committed inventory. A disallowed row remains
+-- completed without a ciphertext, exactly as on initial ingestion. A shared
+-- ciphertext retained above can still satisfy its later computation. Replay
+-- re-arms/recreates the stored dependence chain for the remaining pending work.
+UPDATE computations c
+   SET is_completed = NOT c.is_allowed OR EXISTS (
+           SELECT 1 FROM ciphertexts ct WHERE ct.handle = c.output_handle),
+       is_error = FALSE,
+       error_message = NULL,
+       error_retry_count = 0
+ WHERE c.host_chain_id = :'chain_id'
+   AND c.block_number IN (SELECT block_number FROM _retained_computation_blocks);
 
 DROP TABLE IF EXISTS _affected_output_handles;
 DROP TABLE IF EXISTS _affected_digest_handles;
+DROP TABLE IF EXISTS _retained_computation_blocks;
 
 -- ===========================================================================
 -- Delete block tracking and transactions

@@ -119,7 +119,16 @@ async fn verification_returns_while_detached_containment_waits_and_marks_descend
 async fn containment_failure_preserves_verification_and_remains_recoverable() {
     let (_instance, pool) = setup_download_db().await;
     let source = schedule_drift(&pool).await;
-    // Missing producer metadata makes propagation fail after verification commits.
+    // Seed the completed descendant before verification can launch detached
+    // containment. Without it, containment can acknowledge the root before the
+    // failing producer lookup exists, making the later explicit call a no-op.
+    let child = B256::repeat_byte(2);
+    sqlx::query("INSERT INTO computations (output_handle, dependencies, fhe_operation, is_scalar, transaction_id, host_chain_id, block_number, is_completed, is_allowed) VALUES ($1, ARRAY[$2, $3]::bytea[], 0, TRUE, $1, $4, 43, TRUE, TRUE)")
+        .bind(child.as_slice()).bind(B256::repeat_byte(1).as_slice()).bind(B256::ZERO.as_slice()).bind(TEST_CHAIN_ID).execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type) VALUES ($1, $2, 0, 0)")
+        .bind(child.as_slice()).bind(vec![1u8]).execute(&pool).await.unwrap();
+    // The descendant's missing producer metadata makes propagation fail after
+    // verification commits, regardless of when the detached task runs.
     let result = run_peer_manifest_download_once(
         &pool,
         &source,
@@ -142,19 +151,34 @@ async fn containment_failure_preserves_verification_and_remains_recoverable() {
         .await
         .unwrap();
     assert!(!contained);
-    let child = B256::repeat_byte(2);
-    sqlx::query("INSERT INTO computations (output_handle, dependencies, fhe_operation, is_scalar, transaction_id, host_chain_id, block_number, is_completed, is_allowed) VALUES ($1, ARRAY[$2, $3]::bytea[], 0, TRUE, $1, $4, 43, TRUE, TRUE)")
-        .bind(child.as_slice()).bind(B256::repeat_byte(1).as_slice()).bind(B256::ZERO.as_slice()).bind(TEST_CHAIN_ID).execute(&pool).await.unwrap();
-    sqlx::query("INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type) VALUES ($1, $2, 0, 0)")
-        .bind(child.as_slice()).bind(vec![1u8]).execute(&pool).await.unwrap();
-    assert!(enforce_guaranteed_containment(&pool).await.is_err());
-    add_root_producer(&pool).await;
-    sqlx::query("INSERT INTO handle_producer_block (host_chain_id, handle, producer_block_number, producer_block_hash) VALUES ($1, $2, 43, $3)")
-        .bind(TEST_CHAIN_ID).bind(child.as_slice()).bind(B256::repeat_byte(0xab).as_slice()).execute(&pool).await.unwrap();
-    enforce_guaranteed_containment(&pool).await.unwrap();
+    let error = enforce_guaranteed_containment(&pool).await.unwrap_err();
+    assert!(
+        error.to_string().contains(&format!(
+            "missing producer identity for handle {} on chain {TEST_CHAIN_ID}",
+            hex::encode(child)
+        )),
+        "unexpected containment error: {error:#}"
+    );
     let contained: bool = sqlx::query_scalar("SELECT is_contained FROM drifted_handle")
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert!(contained);
+    assert!(!contained, "failed propagation must leave the root pending");
+    add_root_producer(&pool).await;
+    sqlx::query("INSERT INTO handle_producer_block (host_chain_id, handle, producer_block_number, producer_block_hash) VALUES ($1, $2, 43, $3)")
+        .bind(TEST_CHAIN_ID).bind(child.as_slice()).bind(B256::repeat_byte(0xab).as_slice()).execute(&pool).await.unwrap();
+    enforce_guaranteed_containment(&pool).await.unwrap();
+    let findings: Vec<(Vec<u8>, String, bool)> = sqlx::query_as(
+        "SELECT handle, detection_kind, is_contained FROM drifted_handle ORDER BY handle",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        findings,
+        vec![
+            (B256::repeat_byte(1).to_vec(), "verified".into(), true),
+            (child.to_vec(), "inferred".into(), true),
+        ]
+    );
 }

@@ -513,8 +513,8 @@ async fn load_keyset_ids(
     Ok(keyset_ids)
 }
 
-/// Seals the block digest exactly once. A zero-row update is always reported
-/// with the current state so an unexpected repeat is diagnosable.
+/// Seals a currently unsealed block. A retained descriptor count records a
+/// previous seal whose bytes became stale as admitted work completed.
 pub(crate) async fn seal_block_content(
     trx: &mut Transaction<'_, Postgres>,
     block: &PendingBlock,
@@ -559,7 +559,6 @@ pub(crate) async fn seal_block_content(
            AND block_hash = $2
            AND consensus_epoch = $5
            AND block_content_digest IS NULL
-           AND block_handle_count IS NULL
         "#,
         block.host_chain_id,
         &block.block_hash,
@@ -615,7 +614,9 @@ pub(crate) async fn seal_block_content(
     Ok(digest)
 }
 
-/// Drops an unpublished seal so the next pass reseals from live tables.
+/// Drops an unpublished digest so the next pass reseals from live tables.
+/// Retain the previous count as durable evidence that inventory was sealed:
+/// replay must not change that inventory during the gap before resealing.
 /// Published rows are left untouched: that would be a new revision.
 async fn discard_unpublished_seal(
     trx: &mut Transaction<'_, Postgres>,
@@ -625,7 +626,6 @@ async fn discard_unpublished_seal(
         r#"
         UPDATE block_manifest_state
            SET block_content_digest = NULL,
-               block_handle_count = NULL,
                publication_error_count = 0,
                publication_last_error = NULL,
                publication_next_retry_at = NULL,

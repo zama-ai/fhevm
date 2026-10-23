@@ -29,7 +29,9 @@ use crate::consumer::metrics::{
     inc_db_errors, observe_legacy_insert_delay_seconds, set_received_block,
 };
 use crate::consumer::migration::spawn_id_migration;
-use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
+use crate::database::ingest::{
+    ingest_block_logs, BlockLogs, HistoryGap, IngestOptions, IngestResult,
+};
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
 };
@@ -420,6 +422,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         info!("Consumer ensure queues");
         client.ensure_consumer().await?;
         client.ensure_final_consumer().await?;
+        client.ensure_final_catchup_consumer().await?;
         info!("Consumer registering contracts");
         client.register_contracts(&contracts).await?;
         client.register_final_contracts(&contracts).await?;
@@ -431,6 +434,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         blockchain_provider: blockchain_provider.clone(),
         database_pool: db.pool.clone(),
         database_tick: db.tick.clone(),
+        recovery_paused: Default::default(),
     };
     let health_check_server = HealthHttpServer::new(
         Arc::new(health_check),
@@ -460,7 +464,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         client.cancel_token.clone(),
     );
 
-    // ...and when it does, stop reading. This watcher cancels only the two
+    // ...and when it does, stop reading. This watcher cancels only the three
     // read flows, so the stats observer and the identity migration below are
     // untouched by retirement itself. They do not outlive it for long: once
     // the first read flow returns, the loop below cancels the parent token and
@@ -469,7 +473,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     // retirement check — but nothing here keeps it running to completion.
     //
     // A group cannot be released while something is still blocked in
-    // `XREADGROUP` on it, so the release happens after both flows have
+    // `XREADGROUP` on it, so the release happens after all flows have
     // returned, not here.
     spawn_retirement_watcher(
         stack_mode.clone(),
@@ -527,8 +531,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let retirement_mode = stack_mode.clone();
     let handler_config = config.clone();
     let kms_cancel = client.cancel_token.clone();
+    let recovery_client = client.clone();
     let handle_block = move |payload: BlockPayload, _cancel| {
-        let finalized = payload.flow == BlockFlow::Final;
+        let finalized =
+            matches!(payload.flow, BlockFlow::Final | BlockFlow::FinalCatchup);
         if !finalized {
             blockchain_tick.update();
         }
@@ -540,6 +546,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         let stack_mode = stack_mode.clone();
         let config = handler_config.clone();
         let kms_cancel = kms_cancel.clone();
+        let recovery_client = recovery_client.clone();
         async move {
             // Paused (retired blue stack after cutover): no-op — ack and drop
             // the block without writing anything to the DB.
@@ -579,7 +586,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 );
                 return Ok(AckDecision::Ack);
             }
-            ingest_payload(
+            let result = ingest_payload(
                 &mut db,
                 &config,
                 &ingest_options,
@@ -588,7 +595,24 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 AwsS3Client {},
                 &kms_cancel,
             )
-            .await
+            .await;
+            if let Err(HandlerError::Transient(error)) = &result {
+                if let Some(gap) = error.downcast_ref::<HistoryGap>() {
+                    // Empty blocks are delivered too. The separate catchup
+                    // queue can attach this link while the original delivery
+                    // waits for redelivery on the live/finalized queue.
+                    recovery_client
+                        .request_final_catchup(
+                            gap.block_number,
+                            gap.block_number,
+                        )
+                        .await
+                        .map_err(|error| {
+                            HandlerError::Transient(error.into())
+                        })?;
+                }
+            }
+            result
         }
     };
 
@@ -606,7 +630,8 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         first_flow_to_return(
             &client.cancel_token,
             tokio::spawn(client.consume(handle_block.clone())),
-            tokio::spawn(client.consume_final(handle_block)),
+            tokio::spawn(client.consume_final(handle_block.clone())),
+            tokio::spawn(client.consume_final_catchup(handle_block)),
         )
         .await
     };
@@ -619,7 +644,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         error!(error = %err, "Consumer stats background task failed");
     }
 
-    // Both read flows have returned, so nothing is on these groups any more
+    // All read flows have returned, so nothing is on these groups any more
     // and they can go. A retired build's cursors never move again, and the broker's
     // trimmer will not reclaim past the furthest-behind group on a stream, so
     // leaving them pins the backlog until the live stack's sweep releases them.
@@ -666,7 +691,8 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
     kms_cancel: &CancellationToken,
 ) -> Result<AckDecision, HandlerError> {
     let chain_id = db.chain_id;
-    let finalized = payload.flow == BlockFlow::Final;
+    let finalized =
+        matches!(payload.flow, BlockFlow::Final | BlockFlow::FinalCatchup);
     let block_summary = BlockSummary {
         number: payload.block_number,
         hash: payload.block_hash,
@@ -713,7 +739,7 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
     )
     .await
     {
-        Ok(_) => {
+        Ok((IngestResult::Complete, _)) => {
             db.tick.update();
             if finalized {
                 if let Err(error) = db
@@ -737,6 +763,9 @@ async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
 
             inc_blocks_processed(chain_id_str, 1);
             Ok(AckDecision::Ack)
+        }
+        Ok((IngestResult::NeedsHistory(gap), _)) => {
+            Err(HandlerError::Transient(Box::new(gap)))
         }
         Err((err, retries)) => {
             inc_db_errors(chain_id_str, 1);
@@ -804,7 +833,7 @@ fn spawn_kms_activations<A: AwsS3Interface + Clone + 'static>(
 /// the pods go that a frozen cursor starts holding the stream. Stopping the
 /// readers here is what lets the caller release the groups afterwards.
 ///
-/// Both flows are cancelled, not just the live one. They read different
+/// All flows are cancelled, including finalized recovery. They read different
 /// streams under the same identity and each holds a group of its own, so a
 /// release that only one of them has stopped for is a release racing a reader.
 ///
@@ -828,37 +857,46 @@ fn spawn_retirement_watcher(
             warn!("Stack retired by cutover: stopping the consumer read loops");
             client.cancel_live();
             client.cancel_final();
+            client.cancel_final_catchup();
         }
     });
 }
 
-/// Return as soon as one of the two read flows does, having stopped the other
-/// and waited for it to return too.
+/// Return the first read flow's result after stopping and joining all siblings.
 ///
-/// Both flows read under the same identity, each holding a consumer group of
+/// All flows read under the same identity, each holding a consumer group of
 /// its own, and the caller releases those groups once this returns. A group
 /// cannot be released while a reader is still blocked in `XREADGROUP` on it,
-/// so the second flow has to be waited for and not merely cancelled: dropping
+/// so the other flows must be waited for and not merely cancelled: dropping
 /// its [`JoinHandle`] detaches the task rather than stopping it, which is what
-/// `tokio::select!` over two handles does on its own.
+/// `tokio::select!` over handles does on its own.
 ///
 /// The result reported is the first flow's. Whichever returned first is the
-/// one that decided the shutdown; the other was told to stop and its result
-/// says nothing the caller did not already cause.
+/// one that decided the shutdown; the others were told to stop and their results
+/// say nothing the caller did not already cause.
 async fn first_flow_to_return<T>(
     cancel: &CancellationToken,
     mut live: JoinHandle<T>,
     mut finalized: JoinHandle<T>,
+    mut recovery: JoinHandle<T>,
 ) -> Result<T, JoinError> {
     tokio::select! {
         result = &mut live => {
             cancel.cancel();
             let _ = finalized.await;
+            let _ = recovery.await;
             result
         }
         result = &mut finalized => {
             cancel.cancel();
             let _ = live.await;
+            let _ = recovery.await;
+            result
+        }
+        result = &mut recovery => {
+            cancel.cancel();
+            let _ = live.await;
+            let _ = finalized.await;
             result
         }
     }
@@ -973,7 +1011,7 @@ async fn ingest_with_retry(
     confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
-) -> Result<u64, (sqlx::Error, u64)> {
+) -> Result<(IngestResult, u64), (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
@@ -992,7 +1030,7 @@ async fn ingest_with_retry(
         )
         .await
         {
-            Ok(_) => return Ok(errors),
+            Ok(result) => return Ok((result, errors)),
             Err(err) => {
                 errors += 1;
                 if errors > MAX_DB_RETRIES {
@@ -1093,46 +1131,46 @@ mod tests {
     /// A read flow that is still unwinding when its sibling returns is waited
     /// for, not left running.
     ///
-    /// The caller releases both consumer groups as soon as this returns. A
+    /// The caller releases all consumer groups as soon as this returns. A
     /// flow still inside `XREADGROUP` at that point would have its group
     /// destroyed underneath it — which is what happens if the losing
     /// `JoinHandle` is dropped instead of awaited, because dropping one
     /// detaches its task.
     #[tokio::test]
     async fn the_flow_that_did_not_return_first_is_waited_for() {
-        for live_returns_first in [true, false] {
+        for first_flow in 0..3 {
             let cancel = CancellationToken::new();
-            let unwound = Arc::new(AtomicBool::new(false));
-
-            let returning = tokio::spawn(async {});
-            let reading = {
-                let cancel = cancel.clone();
-                let unwound = Arc::clone(&unwound);
-                tokio::spawn(async move {
-                    cancel.cancelled().await;
-                    // The blocking read it is still sitting in.
-                    sleep(TICK * 4).await;
-                    unwound.store(true, Ordering::SeqCst);
+            let unwound = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let mut flows: Vec<_> = (0..3)
+                .map(|flow| {
+                    let cancel = cancel.clone();
+                    let unwound = Arc::clone(&unwound);
+                    tokio::spawn(async move {
+                        if flow != first_flow {
+                            cancel.cancelled().await;
+                            // The blocking read it is still sitting in.
+                            sleep(TICK * 4).await;
+                            unwound.fetch_add(1, Ordering::SeqCst);
+                        }
+                    })
                 })
-            };
-
-            let (live, finalized) = if live_returns_first {
-                (returning, reading)
-            } else {
-                (reading, returning)
-            };
+                .collect();
+            let recovery = flows.pop().unwrap();
+            let finalized = flows.pop().unwrap();
+            let live = flows.pop().unwrap();
             tokio::time::timeout(
                 Duration::from_secs(5),
-                first_flow_to_return(&cancel, live, finalized),
+                first_flow_to_return(&cancel, live, finalized, recovery),
             )
             .await
-            .expect("the other flow must be told to stop, not just waited on")
-            .expect("neither flow panics");
+            .expect("the other flows must be told to stop, not just waited on")
+            .expect("no flow panics");
 
-            assert!(
+            assert_eq!(
                 unwound.load(Ordering::SeqCst),
+                2,
                 "the group release that follows must not begin while the \
-                 other flow is still reading (live first: {live_returns_first})"
+                 other flows are still reading (first flow: {first_flow})"
             );
         }
     }

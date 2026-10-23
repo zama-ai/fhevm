@@ -10,7 +10,12 @@ import { assertRecordArrayProperty, assertRecordNonNullableProperty } from '../.
 import { fetchWithRetry, normalizeHeaders } from '../../../base/fetch.js';
 import { sdkName, version } from '../../../_version.js';
 import { assertRecordStringArrayProperty, assertRecordStringProperty } from '../../../base/string.js';
-import { buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
+import {
+  appendRelayerQuery,
+  buildRelayerUrlString,
+  normalizeRelayerQuery,
+  validateRelayerBaseUrl,
+} from './relayerUrl.js';
 import { readErrorMessage } from './readErrorMessage.js';
 import { assert } from '../../../base/errors/InternalError.js';
 
@@ -25,6 +30,7 @@ export async function fetchFheEncryptionKeySource(
   const { options } = parameters;
   const relayerBaseUrl: URL = validateRelayerBaseUrl(relayerClient.relayerUrl, options?.auth !== undefined);
   const customHeaders = normalizeHeaders(options?.headers);
+  const query = normalizeRelayerQuery(options?.query);
   const init = setAuth(
     {
       method: 'GET',
@@ -38,12 +44,13 @@ export async function fetchFheEncryptionKeySource(
   );
 
   assert(relayerBaseUrl.pathname.endsWith('/'));
+  // Keep `url` query-less so errors and logs show the endpoint, not per-request metadata.
   const url = buildRelayerUrlString(relayerBaseUrl, 'v2/keyurl');
 
   let response;
   try {
     response = await fetchWithRetry({
-      url,
+      url: appendRelayerQuery(url, query),
       init,
       retries: options?.fetchRetries,
       retryDelayMs: options?.fetchRetryDelayInMilliseconds,
@@ -68,8 +75,8 @@ export async function fetchFheEncryptionKeySource(
       url,
       message:
         message !== undefined
-          ? `HTTP error! status: ${response.status} on ${response.url}: ${message}`
-          : `HTTP error! status: ${response.status} on ${response.url}`,
+          ? `HTTP error! status: ${response.status} on ${url}: ${message}`
+          : `HTTP error! status: ${response.status} on ${url}`,
     });
   }
 
