@@ -51,14 +51,14 @@ npx hardhat task:buildProposeCoprocessorUpgradeCalldata \
   --software-version v0.15.0
 ```
 
-| Flag                 | Value                                                                                        |
-| -------------------- | -------------------------------------------------------------------------------------------- |
-| `--environment`      | `devnet`, `testnet`, or `mainnet`.                                                           |
-| `--start-time`       | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`.                                                   |
-| `--duration`         | Window length, e.g. `30m`.                                                                   |
-| `--buffer`           | DAO lead time, e.g. `2h`.                                                                    |
-| `--proposal-id`      | Any positive integer (operator-chosen).                                                      |
-| `--software-version` | The coprocessor release tag, e.g. `v0.15.0`. Must match the green binaries' `STACK_VERSION`. |
+| Flag                 | Value                                                                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--environment`      | `devnet`, `testnet`, or `mainnet`.                                                                                                                                                                      |
+| `--start-time`       | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`.                                                                                                                                                              |
+| `--duration`         | Window length, e.g. `30m`. At least the floor of every chain in the environment (`30m` where Ethereum, Sepolia or Hoodi is included): the dry run cannot start before the chain finalizes `startBlock`. |
+| `--buffer`           | DAO lead time, e.g. `2h`.                                                                                                                                                                               |
+| `--proposal-id`      | Any positive integer (operator-chosen).                                                                                                                                                                 |
+| `--software-version` | The coprocessor release tag, e.g. `v0.15.0`. Must match the green binaries' `STACK_VERSION`.                                                                                                            |
 
 ## Step 2 — Copy the proposal action
 
@@ -87,7 +87,8 @@ Once the DAO vote passes and the proposal executes, the on-chain `proposeCoproce
 | `DAO buffer violated for: chain X — short by 22m`               | Re-run with `--start-time` pushed forward by at least that amount.              |
 | `env var <CHAIN>_RPC_URL is not set`                            | Export the RPC env var for that chain (names in `tasks/utils/environments.ts`). |
 | `--environment must be one of: devnet, testnet, mainnet, local` | Pass a valid `--environment`; `local` is only for the test-suite stack.         |
-| `duration too short for chain block time`                       | Use at least `1m` for `--duration`.                                             |
+| `is below the minimum window of chain X`                        | Raise `--duration` to that chain's floor (`30m` for Ethereum-class chains).     |
+| `chain tip is N s old`                                          | The RPC for that chain is behind; use another endpoint and re-run.              |
 
 The task exits non-zero (and prints the calldata for inspection) if any host chain's `startBlock` is
 closer to its tip than `--buffer`. `npx hardhat help task:buildProposeCoprocessorUpgradeCalldata` prints the full

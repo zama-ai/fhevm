@@ -74,20 +74,31 @@ function resolveEnvRpc(envName: string, label: string, defaultRpcUrl?: string): 
   throw new Error(`env var ${envName} (RPC URL for ${label}) is not set`);
 }
 
+// One LOCAL_HOST_CHAINS entry: a ChainConfig whose finality floor the harness may leave out.
+type LocalHostChainJson = Omit<ChainConfig, 'minWindowSeconds'> & { minWindowSeconds?: number };
+
+// The e2e harness (test-suite, preview-env) runs the `local` environment with whatever host chains it
+// deployed for the run, one or several, so it passes them in LOCAL_HOST_CHAINS instead of using the
+// registry. They have no finality floor unless the harness sets one.
+function parseLocalHostChains(json: string): ChainConfig[] {
+  const entries = JSON.parse(json) as LocalHostChainJson[];
+  return entries.map((c) => ({ ...c, minWindowSeconds: c.minWindowSeconds ?? 0 }));
+}
+
 export function resolveEnvironment(name: string): { chains: ChainConfig[]; gateway: GatewayConfig } {
   const def = ENVIRONMENTS[name];
   if (!def) {
     throw new Error(`--environment must be one of: ${SUPPORTED_ENVIRONMENTS.join(', ')}`);
   }
-  // Local e2e chains are scenario-defined (1..N), so the test passes them as JSON.
-  const chains =
-    name === 'local' && process.env.LOCAL_HOST_CHAINS
-      ? (JSON.parse(process.env.LOCAL_HOST_CHAINS) as ChainConfig[])
-      : def.chains.map((c) => ({
-          chainId: c.chainId,
-          rpcUrl: resolveEnvRpc(c.rpcUrlEnv, c.label, c.defaultRpcUrl),
-          fallbackBlockTimeSeconds: c.fallbackBlockTimeSeconds,
-        }));
+  const localChains = name === 'local' ? process.env.LOCAL_HOST_CHAINS : undefined;
+  const chains: ChainConfig[] = localChains
+    ? parseLocalHostChains(localChains)
+    : def.chains.map((c) => ({
+        chainId: c.chainId,
+        rpcUrl: resolveEnvRpc(c.rpcUrlEnv, c.label, c.defaultRpcUrl),
+        fallbackBlockTimeSeconds: c.fallbackBlockTimeSeconds,
+        minWindowSeconds: c.minWindowSeconds,
+      }));
   const gateway = { rpcUrl: resolveEnvRpc(def.gateway.rpcUrlEnv, def.gateway.label, def.gateway.defaultRpcUrl) };
   return { chains, gateway };
 }
@@ -99,6 +110,7 @@ export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams):
   const startEpochSeconds = parseIsoTimestampToEpochSeconds(raw.startTime);
   const durationSeconds = parseDurationToSeconds(raw.duration);
   const bufferSeconds = parseDurationToSeconds(raw.buffer);
+  assertWindowCoversFinality(durationSeconds, hostChains);
 
   let proposalId: bigint;
   try {
@@ -126,9 +138,24 @@ export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams):
   };
 }
 
+// A window shorter than a chain's floor ends before the chain finalizes startBlock, so the dry run
+// never starts and the attempt rolls back.
+export function assertWindowCoversFinality(durationSeconds: number, chains: ChainConfig[]): void {
+  for (const chain of chains) {
+    const floor = chain.minWindowSeconds;
+    if (durationSeconds < floor) {
+      throw new Error(
+        `--duration ${durationSeconds}s is below the minimum window of chain ${chain.chainId} (${floor}s): ` +
+          'the dry run cannot start before the chain finalizes startBlock',
+      );
+    }
+  }
+}
+
 async function gatherWindows(
   inputs: CoprocessorUpgradeInputs,
 ): Promise<{ host: HostReport[]; gateway: GatewayReport }> {
+  const nowEpochSeconds = Math.floor(Date.now() / 1000);
   const host: HostReport[] = [];
   for (const chain of inputs.hostChains) {
     const provider = new JsonRpcProvider(chain.rpcUrl);
@@ -139,6 +166,7 @@ async function gatherWindows(
         durationSeconds: inputs.durationSeconds,
         bufferSeconds: inputs.bufferSeconds,
         fallbackBlockTimeSeconds: chain.fallbackBlockTimeSeconds,
+        nowEpochSeconds,
       });
       host.push({
         chainId: chain.chainId,
@@ -248,7 +276,9 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
   console.log(`Proposal id        : ${inputs.proposalId}`);
   console.log(`Software version   : ${inputs.softwareVersion}`);
   console.log(
-    `Evaluation window  : ${isoUtc(inputs.startEpochSeconds)} → ${isoUtc(inputs.startEpochSeconds + inputs.durationSeconds)} (${inputs.durationSeconds}s)`,
+    `Evaluation window  : ${isoUtc(inputs.startEpochSeconds)} → ${isoUtc(
+      inputs.startEpochSeconds + inputs.durationSeconds,
+    )} (${inputs.durationSeconds}s)`,
   );
   console.log(`DAO buffer         : ${inputs.bufferSeconds}s`);
   console.log(
@@ -260,11 +290,15 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
     console.log(`  chainId=${report.chainId}`);
     console.log(`    rpc            : ${report.rpcUrl}`);
     console.log(
-      `    tip            : block ${report.result.currentTipBlock} @ ${isoUtc(report.result.currentTipTimestamp)}`,
+      `    tip            : block ${report.result.currentTipBlock} @ ${isoUtc(report.result.currentTipTimestamp)} (${
+        report.result.tipAgeSeconds
+      }s behind the clock)`,
     );
     console.log(`    block time     : ${formatBlockTime(report.result.effectiveBlockTimeSeconds)}`);
     console.log(
-      `    startBlock     : ${report.result.startBlock} (estimated ${isoUtc(report.result.startBlockEstimatedTimestamp)}, skew ${report.result.startSkewSeconds >= 0 ? '+' : ''}${report.result.startSkewSeconds}s)`,
+      `    startBlock     : ${report.result.startBlock} (estimated ${isoUtc(
+        report.result.startBlockEstimatedTimestamp,
+      )}, skew ${report.result.startSkewSeconds >= 0 ? '+' : ''}${report.result.startSkewSeconds}s)`,
     );
     console.log(
       `    endBlock       : ${report.result.endBlock} (estimated ${isoUtc(report.result.endBlockEstimatedTimestamp)})`,

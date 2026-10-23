@@ -14,6 +14,9 @@ export interface EnvChainEntry {
   chainId: number;
   label: string;
   fallbackBlockTimeSeconds: number;
+  // Shortest --duration the chain's finality allows: the dry run cannot start before startBlock is
+  // finalized (two epochs on Ethereum-class chains).
+  minWindowSeconds: number;
   rpcUrlEnv: string;
   defaultRpcUrl?: string;
 }
@@ -42,6 +45,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 11155111,
         label: 'sepolia',
+        minWindowSeconds: 1800,
         fallbackBlockTimeSeconds: 12,
         rpcUrlEnv: 'SEPOLIA_RPC_URL',
         defaultRpcUrl: PUBLIC_SEPOLIA_RPC,
@@ -49,6 +53,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 80002,
         label: 'amoy',
+        minWindowSeconds: 600,
         fallbackBlockTimeSeconds: 1.5,
         rpcUrlEnv: 'POLYGON_AMOY_RPC_URL',
         defaultRpcUrl: PUBLIC_AMOY_RPC,
@@ -56,6 +61,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 560048,
         label: 'hoodi',
+        minWindowSeconds: 1800,
         fallbackBlockTimeSeconds: 12,
         rpcUrlEnv: 'HOODI_RPC_URL',
         defaultRpcUrl: PUBLIC_HOODI_RPC,
@@ -63,6 +69,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 97,
         label: 'bnb-testnet',
+        minWindowSeconds: 300,
         fallbackBlockTimeSeconds: 0.45,
         rpcUrlEnv: 'BNB_TESTNET_RPC_URL',
         defaultRpcUrl: PUBLIC_BNB_TESTNET_RPC,
@@ -76,6 +83,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 11155111,
         label: 'sepolia',
+        minWindowSeconds: 1800,
         fallbackBlockTimeSeconds: 12,
         rpcUrlEnv: 'SEPOLIA_RPC_URL',
         defaultRpcUrl: PUBLIC_SEPOLIA_RPC,
@@ -83,6 +91,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 80002,
         label: 'amoy',
+        minWindowSeconds: 600,
         fallbackBlockTimeSeconds: 1.5,
         rpcUrlEnv: 'POLYGON_AMOY_RPC_URL',
         defaultRpcUrl: PUBLIC_AMOY_RPC,
@@ -90,6 +99,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 560048,
         label: 'hoodi',
+        minWindowSeconds: 1800,
         fallbackBlockTimeSeconds: 12,
         rpcUrlEnv: 'HOODI_RPC_URL',
         defaultRpcUrl: PUBLIC_HOODI_RPC,
@@ -97,6 +107,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 97,
         label: 'bnb-testnet',
+        minWindowSeconds: 300,
         fallbackBlockTimeSeconds: 0.45,
         rpcUrlEnv: 'BNB_TESTNET_RPC_URL',
         defaultRpcUrl: PUBLIC_BNB_TESTNET_RPC,
@@ -111,15 +122,41 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
   // No defaults — production RPCs are private; env vars required.
   mainnet: {
     chains: [
-      { chainId: 1, label: 'ethereum', fallbackBlockTimeSeconds: 12, rpcUrlEnv: 'ETHEREUM_MAINNET_RPC_URL' },
-      { chainId: 137, label: 'polygon', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'POLYGON_MAINNET_RPC_URL' },
-      { chainId: 56, label: 'bnb', fallbackBlockTimeSeconds: 0.45, rpcUrlEnv: 'BNB_MAINNET_RPC_URL' },
+      {
+        chainId: 1,
+        label: 'ethereum',
+        minWindowSeconds: 1800,
+        fallbackBlockTimeSeconds: 12,
+        rpcUrlEnv: 'ETHEREUM_MAINNET_RPC_URL',
+      },
+      {
+        chainId: 137,
+        label: 'polygon',
+        minWindowSeconds: 600,
+        fallbackBlockTimeSeconds: 2,
+        rpcUrlEnv: 'POLYGON_MAINNET_RPC_URL',
+      },
+      {
+        chainId: 56,
+        label: 'bnb',
+        minWindowSeconds: 300,
+        fallbackBlockTimeSeconds: 0.45,
+        rpcUrlEnv: 'BNB_MAINNET_RPC_URL',
+      },
     ],
     gateway: { label: 'gateway-mainnet', rpcUrlEnv: 'GATEWAY_MAINNET_RPC_URL' },
   },
   // Local anvil stack for the blue-green e2e: single host chain + local gateway, RPCs from env vars.
   local: {
-    chains: [{ chainId: 12345, label: 'host-local', fallbackBlockTimeSeconds: 1, rpcUrlEnv: 'LOCAL_HOST_RPC_URL' }],
+    chains: [
+      {
+        chainId: 12345,
+        label: 'host-local',
+        minWindowSeconds: 0,
+        fallbackBlockTimeSeconds: 1,
+        rpcUrlEnv: 'LOCAL_HOST_RPC_URL',
+      },
+    ],
     gateway: { label: 'gateway-local', rpcUrlEnv: 'LOCAL_GATEWAY_RPC_URL' },
   },
 };
