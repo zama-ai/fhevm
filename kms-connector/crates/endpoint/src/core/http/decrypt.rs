@@ -197,7 +197,6 @@ async fn wait_and_read_response<R: DecryptionRoute>(
                 )
             })?;
         wake_signal.map_err(|_| {
-            metrics::RESPONSE_LISTENER_WAITERS_FAILED_COUNTER.inc();
             warn!(decryption_id = %id, "Response listener gone while waiting");
             upstream_transient("connection to the response stream was lost", id)
         })?;

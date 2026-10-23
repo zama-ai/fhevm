@@ -1,10 +1,10 @@
 use connector_utils::monitoring::http::{DURATION_BUCKETS, HttpMetrics};
 use kms_connector_api::{PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE};
 use prometheus::{
-    HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge,
+    HistogramOpts, HistogramVec, IntCounterVec, IntGauge,
     core::{Collector, Desc},
     proto::MetricFamily,
-    register_histogram_vec, register_int_counter, register_int_counter_vec,
+    register_histogram_vec, register_int_counter_vec,
 };
 use std::sync::{Arc, LazyLock};
 use tokio::sync::Semaphore;

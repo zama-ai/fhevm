@@ -940,8 +940,6 @@ async fn test_listener_reconnection_fails_in_flight_requests_fast() -> anyhow::R
         request.id(),
     )
     .await;
-    assert_eq!(metrics::RESPONSE_LISTENER_RECONNECTION_COUNTER.get(), 1);
-    assert_eq!(metrics::RESPONSE_LISTENER_WAITERS_FAILED_COUNTER.get(), 2);
     assert_requests(PUBLIC_DECRYPTION_ROUTE, "502", "upstream_transient", 2).await;
     info!("The service keeps running on a fresh listener connection...");
     let next = public_request();
