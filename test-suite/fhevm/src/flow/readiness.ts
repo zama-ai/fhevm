@@ -9,6 +9,7 @@ import {
   supportsCoprocessorDbStateRevert,
   supportsCoprocessorProxy,
   supportsHostListenerConsumer,
+  supportsPrfService,
   supportsUpgradeController,
 } from "../compat/compat";
 import { BootstrapTimeout, ContainerCrashed, ObjectStoreError, PreflightError, ProbeTimeout, RpcError } from "../errors";
@@ -226,7 +227,8 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
         !suffix.includes("migration") &&
         (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
         (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
-        (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
+        (suffix !== "upgrade-controller" || supportsUpgradeController(state)) &&
+        (suffix !== "prf-service" || supportsPrfService(state)),
     ),
     supportsCoprocessorProxy(state),
   );
@@ -332,6 +334,9 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
       await waitCoreFleet(`${prefix}gcs-`, false);
       await waitForContainer(`${prefix}gcs-upgrade-controller`, "running");
       await waitForContainer(`${prefix}gcs-consensus-detector`, "running");
+      if (supportsPrfService(state)) {
+        await waitForContainer(`${prefix}gcs-prf-service`, "running");
+      }
     }
   }
   // Both of these are about who is allowed to serve the queues, so they belong

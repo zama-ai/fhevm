@@ -131,6 +131,8 @@ jobs:
             runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
           - service: coprocessor-proxy
             package: coprocessor-proxy
+          - service: prf-service
+            package: prf-service
             needs_localstack: false
             needs_foundry: false
             runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false

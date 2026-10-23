@@ -13,6 +13,7 @@ members = [
     "upgrade-controller",
     "consensus-detector",
     "coprocessor-proxy",
+    "prf-service",
 ]
 
 [workspace.package]
@@ -21,6 +22,7 @@ edition = "2021"
 license = "BSD-3-Clause-Clear"
 
 [workspace.dependencies]
+actix-web = { version = "=4.15.0", default-features = false }
 alloy = { version = "2.2.0", default-features = false, features = [
     "essentials",
     "std",

@@ -3,6 +3,7 @@ import {
   supportsConsensusDetector,
   supportsCoprocessorProxy,
   supportsHostListenerConsumer,
+  supportsPrfService,
   supportsUpgradeController,
 } from "../compat/compat";
 import { consumerOnlyHostListeners, isLegacyHostListener } from "../host-listener-mode";
@@ -41,6 +42,7 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
     "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
     "COPROCESSOR_PROXY_VERSION",
+    "COPROCESSOR_PRF_SERVICE_VERSION",
   ],
   "kms-connector": [
     "CONNECTOR_DB_MIGRATION_VERSION",
@@ -76,6 +78,8 @@ const supportsConsensusDetectorForState = (state: { versions?: State["versions"]
   !state.versions || supportsConsensusDetector({ versions: state.versions });
 const supportsUpgradeControllerForState = (state: { versions?: State["versions"] }) =>
   !state.versions || supportsUpgradeController({ versions: state.versions });
+const supportsPrfServiceForState = (state: { versions?: State["versions"]; overrides?: LocalOverride[] }) =>
+  !state.versions || supportsPrfService({ versions: state.versions, overrides: state.overrides ?? [] });
 const supportsConnectorHttpForState = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
   !state.versions || supportsConnectorHttp({ versions: state.versions, overrides: state.overrides });
 type CoprocessorServicesState = { versions?: State["versions"]; overrides: LocalOverride[]; scenario?: State["scenario"] };
@@ -94,7 +98,8 @@ const coprocessorRuntimeSuffixes = (state: CoprocessorServicesState) =>
         service !== "db-migration" &&
         (service !== "host-listener-consumer" || supportsConsumerForState(state)) &&
         (service !== "consensus-detector" || supportsConsensusDetectorForState(state)) &&
-        (service !== "upgrade-controller" || supportsUpgradeControllerForState(state)),
+        (service !== "upgrade-controller" || supportsUpgradeControllerForState(state)) &&
+        (service !== "prf-service" || supportsPrfServiceForState(state)),
     ),
     supportsCoprocessorProxyForState(state),
   );
@@ -107,7 +112,8 @@ const coprocessorServices = (state: CoprocessorServicesState) =>
       (service !== "coprocessor-host-listener-consumer" || supportsConsumerForState(state)) &&
       (service !== "coprocessor-consensus-detector" || supportsConsensusDetectorForState(state)) &&
       (service !== "coprocessor-upgrade-controller" || supportsUpgradeControllerForState(state)) &&
-      (service !== "coprocessor-proxy" || supportsCoprocessorProxyForState(state)),
+      (service !== "coprocessor-proxy" || supportsCoprocessorProxyForState(state)) &&
+      (service !== "coprocessor-prf-service" || supportsPrfServiceForState(state)),
   );
 
 /** Lists steady-state services expected for each resumable lifecycle step. */
