@@ -285,6 +285,15 @@ async fn retrieval_matrix() {
         Some("prf_evaluation_failed"),
         "{report:?}"
     );
+    // The request loop alone stops at the first `500`, GET or HEAD.
+    let path = retrieval(0xe1, None).path();
+    for method in [Method::GET, Method::HEAD] {
+        let reply = one.ask_one(1, method, &path).await.unwrap();
+        assert!(
+            reply.status == Some(500) && reply.attempts == 1 && reply.retried.is_empty(),
+            "{reply:?}"
+        );
+    }
 
     // Stale headers: re-signed after `auth_expired`.
     let mut stale = retrieval(0x00, None);

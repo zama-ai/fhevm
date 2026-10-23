@@ -132,6 +132,17 @@ rand_label() { od -An -N31 -tx1 /dev/urandom | tr -d ' \n'; }
 l="00$(rand_label)"
 probe_case "permanent failure, GET answer" 500 prf_evaluation_failed 1 "/v1/prf/0/labels/e1$(rand_label)/64"
 probe_case "permanent failure, HEAD answer" 500 "" 1 "/v1/prf/0/labels/e1$(rand_label)/64" HEAD
+# ask_case <scenario> <expected> <jq predicate on the reply> <connector ask args...>
+ask_case() {
+  local name="$1" expected="$2" predicate="$3"; shift 3
+  local reply
+  reply=$(connector ask "$@")
+  record "${name}" "${expected}" "$(jq -c . <<<"${reply}")" "$(jq "${predicate}" <<<"${reply}")"
+}
+for method in GET HEAD; do
+  ask_case "retry rule: 500 on ${method} stops" "1 attempt, nothing retried" \
+    '.status == 500 and .attempts == 1 and .retried == []' --target 1 --label-prefix e1 --method "${method}"
+done
 probe_case "non-canonical path: uppercase label" 400 non_canonical_path 1 "/v1/prf/0/labels/AB$(rand_label | tr a-f A-F)/64"
 probe_case "non-canonical path: leading zero" 400 non_canonical_path 1 "/v1/prf/00/labels/${l}/64"
 probe_case "query string" 401 auth_query_string 1 "/v1/prf/0/labels/${l}/64?x=1"
@@ -176,6 +187,19 @@ report=$(cat /tmp/prf-held.json)
 record "prf-service killed while holding requests (parties 1-3)" "ok: retries reach the new pods" "$(summary "${report}")" "$(jq '.ok' <<<"${report}")"
 for p in 1 2 3; do wait_ready "deploy/coprocessor-${p}-prf-service"; done
 
+# The proxy answers 502 upstream_transient while party 1 has no prf-service pod.
+kubectl scale deploy/coprocessor-1-prf-service -n "${NAMESPACE}" --replicas=0 >/dev/null
+kubectl wait --for=delete pod -l app.kubernetes.io/name=coprocessor-1-prf-service -n "${NAMESPACE}" --timeout=120s >/dev/null || true
+connector ask --target 0 --label-prefix 00 --deadline 120s > /tmp/prf-502.json &
+ask_pid=$!
+sleep 10
+kubectl scale deploy/coprocessor-1-prf-service -n "${NAMESPACE}" --replicas=1 >/dev/null
+wait "${ask_pid}" || true
+wait_ready deploy/coprocessor-1-prf-service
+reply=$(cat /tmp/prf-502.json)
+record "retry rule: proxy 502 is retried (party 1 prf-service down 10 s)" "502 upstream_transient retried, then 200" \
+  "$(jq -c . <<<"${reply}")" "$(jq '.status == 200 and any((.retried // [])[]; . == "502 upstream_transient")' <<<"${reply}")"
+
 # Proxy rolling restart under load: sequential retrievals until every proxy has restarted.
 rm -f /tmp/prf-restart.stop
 (
@@ -212,10 +236,10 @@ kubectl scale statefulset/postgres-coprocessor-5 -n "${NAMESPACE}" --replicas=1 
 kubectl rollout status statefulset/postgres-coprocessor-5 -n "${NAMESPACE}" --timeout=300s >/dev/null
 wait_ready deploy/coprocessor-5-prf-service
 
-# An evaluation longer than the proxy's 120 s endpoint_response_timeout.
-out=$(connector probe --target 1 --path "/v1/prf/0/labels/f0$(rand_label)/64")
-record "evaluation of 130 s, proxy timeout 120 s" "504 timeout from the proxy (record)" "$(jq -c . <<<"${out}")" \
-  "$(jq '.status == 504' <<<"${out}")"
+# An evaluation of 130 s outlives the proxy's 120 s endpoint_response_timeout: the proxy answers
+# 504 timeout, and the retry joins the same evaluation.
+ask_case "retry rule: proxy 504 is retried (evaluation 130 s, proxy timeout 120 s)" "504 timeout retried, then 200" \
+  '.status == 200 and .retried == ["504 timeout"]' --target 1 --label-prefix f0 --deadline 200s
 
 kubectl delete pod "${pod}" -n "${NAMESPACE}" --wait=false >/dev/null
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then

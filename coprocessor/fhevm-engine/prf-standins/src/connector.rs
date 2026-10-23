@@ -89,6 +89,8 @@ pub struct ReplyReport {
     pub status: Option<u16>,
     pub code: Option<String>,
     pub attempts: u32,
+    /// The answers that were retried, in order: `<status> <code>`, or `connection_error`.
+    pub retried: Vec<String>,
     /// `valid`, `rejected` or `missing`, for a `200`.
     pub attestation: Option<&'static str>,
     pub digest: Option<B256>,
@@ -265,6 +267,7 @@ impl Connector {
             status: None,
             code: None,
             attempts: 0,
+            retried: Vec::new(),
             attestation: None,
             digest: None,
         };
@@ -283,6 +286,7 @@ impl Connector {
                     debug!(coprocessor = i, error = %err, "request failed");
                     report.status = None;
                     report.code = Some("connection_error".into());
+                    report.retried.push("connection_error".into());
                     tokio::time::sleep(self.backoff).await;
                     continue;
                 }
@@ -324,32 +328,33 @@ impl Connector {
             // A HEAD answer has no body: only its status tells what went wrong (RFC-038 gap).
             let error = response.json::<ErrorBody>().await.ok();
             report.code = error.as_ref().map(|e| e.code.clone());
-            let expired = match &error {
-                Some(e) => e.code == "auth_expired",
-                // Re-sign once: a fresh header settles whether the 401 was an expiry.
-                None => status == StatusCode::UNAUTHORIZED && expires.is_some(),
-            };
-            let retryable = matches!(
-                status,
-                StatusCode::TOO_MANY_REQUESTS
-                    | StatusCode::BAD_GATEWAY
-                    | StatusCode::GATEWAY_TIMEOUT
-            ) || error
-                .as_ref()
-                .is_some_and(|e| e.code == "auth_unknown_signer");
-            if expired {
-                resigns += 1;
-                expires = None;
-            } else if retryable {
-                tokio::time::sleep(retry_after.unwrap_or(self.backoff)).await;
-            } else {
-                return Answer {
-                    coprocessor: i,
-                    report,
-                    resigns,
-                    attestation: None,
-                    body: None,
-                };
+            let next = after_error(status, report.code.as_deref(), expires.is_some());
+            if next != Next::Stop {
+                report.retried.push(
+                    format!(
+                        "{} {}",
+                        status.as_u16(),
+                        report.code.as_deref().unwrap_or("")
+                    )
+                    .trim()
+                    .to_owned(),
+                );
+            }
+            match next {
+                Next::Resign => {
+                    resigns += 1;
+                    expires = None;
+                }
+                Next::Retry => tokio::time::sleep(retry_after.unwrap_or(self.backoff)).await,
+                Next::Stop => {
+                    return Answer {
+                        coprocessor: i,
+                        report,
+                        resigns,
+                        attestation: None,
+                        body: None,
+                    };
+                }
             }
         }
     }
@@ -362,6 +367,14 @@ impl Connector {
         fhevm_sig_auth::sign(&self.key, &self.domain, audience, &target, b"", expires)
             .await
             .expect("a local key signs")
+    }
+
+    /// The request loop of the retrieval to one coprocessor, alone, until the deadline.
+    pub async fn ask_one(&self, i: usize, method: Method, path: &str) -> Option<ReplyReport> {
+        tokio::time::timeout(self.deadline, self.ask(i, method, path, None))
+            .await
+            .ok()
+            .map(|answer| answer.report)
     }
 
     /// One signed request, without retries: for the endpoint's error cases.
@@ -396,4 +409,59 @@ impl Connector {
 /// A query string is not signed: the endpoint must refuse it.
 fn path_without_query(path: &str) -> &str {
     path.split_once('?').map_or(path, |(path, _)| path)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Next {
+    Resign,
+    Retry,
+    Stop,
+}
+
+/// RFC-038 step 6 for an error answer: `code` is `None` for a HEAD, and `stale` says whether the
+/// header was a cached one that a fresh signature could fix.
+fn after_error(status: StatusCode, code: Option<&str>, stale: bool) -> Next {
+    match (status, code) {
+        (StatusCode::UNAUTHORIZED, Some("auth_expired")) => Next::Resign,
+        // Re-sign once: a fresh header settles whether a bodyless 401 was an expiry.
+        (StatusCode::UNAUTHORIZED, None) if stale => Next::Resign,
+        (StatusCode::UNAUTHORIZED, Some("auth_unknown_signer")) => Next::Retry,
+        (
+            StatusCode::TOO_MANY_REQUESTS | StatusCode::BAD_GATEWAY | StatusCode::GATEWAY_TIMEOUT,
+            _,
+        ) => Next::Retry,
+        _ => Next::Stop,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn follows_rfc_038_step_6() {
+        for (status, code, stale, next) in [
+            (500, Some("prf_evaluation_failed"), false, Next::Stop),
+            (500, None, false, Next::Stop),
+            (502, Some("upstream_transient"), false, Next::Retry),
+            (502, None, false, Next::Retry),
+            (504, Some("timeout"), false, Next::Retry),
+            (504, None, false, Next::Retry),
+            (429, Some("concurrency_limited"), false, Next::Retry),
+            (401, Some("auth_expired"), false, Next::Resign),
+            (401, Some("auth_unknown_signer"), false, Next::Retry),
+            (401, Some("auth_malformed"), true, Next::Stop),
+            (401, None, true, Next::Resign),
+            (401, None, false, Next::Stop),
+            (503, Some("unavailable"), false, Next::Stop),
+            (400, Some("non_canonical_path"), false, Next::Stop),
+        ] {
+            let status = StatusCode::from_u16(status).unwrap();
+            assert_eq!(
+                after_error(status, code, stale),
+                next,
+                "{status} {code:?} {stale}"
+            );
+        }
+    }
 }

@@ -33,11 +33,11 @@ struct Args {
     /// Coprocessor majority threshold. Defaults to N/2+1.
     #[arg(long)]
     threshold: Option<usize>,
-    #[arg(long, value_parser = humantime::parse_duration, default_value = "30s")]
+    #[arg(long, global = true, value_parser = humantime::parse_duration, default_value = "30s")]
     deadline: Duration,
-    #[arg(long, value_parser = humantime::parse_duration, default_value = "60s")]
+    #[arg(long, global = true, value_parser = humantime::parse_duration, default_value = "60s")]
     header_validity: Duration,
-    #[arg(long, value_parser = humantime::parse_duration, default_value = "1s")]
+    #[arg(long, global = true, value_parser = humantime::parse_duration, default_value = "1s")]
     backoff: Duration,
     /// Skip TLS verification. rustls refuses the preview's self-signed `CA:TRUE` proxy certificate
     /// as a server certificate (`CaUsedAsEndEntity`); integrity comes from the attestation quorum.
@@ -79,6 +79,18 @@ enum Command {
         #[arg(long, default_value_t = 2048)]
         pad_length: u16,
     },
+    /// Sends one request to one coprocessor with the first key, with the retries of the retrieval,
+    /// until `--deadline`. Prints the reply report, or `{"error": "deadline"}`.
+    Ask {
+        #[arg(long)]
+        target: usize,
+        #[command(flatten)]
+        label: LabelArgs,
+        #[arg(long, default_value_t = 64)]
+        pad_length: u16,
+        #[arg(long, default_value = "GET")]
+        method: Method,
+    },
     /// Waits forever: keeps a pod up for `kubectl exec`, in an image without a shell.
     Idle,
     /// Sends one signed request with the first key, without retries.
@@ -102,6 +114,16 @@ struct LabelArgs {
     /// A random label that starts with this byte (2 hex characters), to select a pad-worker fault.
     #[arg(long)]
     label_prefix: Option<String>,
+}
+
+impl LabelArgs {
+    fn resolve(self) -> anyhow::Result<B256> {
+        match (self.label, self.label_prefix) {
+            (Some(label), _) => Ok(label),
+            (_, Some(prefix)) => label_with_prefix(&prefix),
+            (None, None) => unreachable!("clap requires one"),
+        }
+    }
 }
 
 fn label_with_prefix(prefix: &str) -> anyhow::Result<B256> {
@@ -165,14 +187,9 @@ async fn main() -> anyhow::Result<()> {
             stale_headers,
             connectors: count,
         } => {
-            let label = match (label.label, label.label_prefix) {
-                (Some(label), _) => label,
-                (None, Some(prefix)) => label_with_prefix(&prefix)?,
-                (None, None) => unreachable!("clap requires one"),
-            };
             let retrieval = Retrieval {
                 prf,
-                label,
+                label: label.resolve()?,
                 pad_length,
                 get_from,
                 first_expires: stale_headers
@@ -219,6 +236,21 @@ async fn main() -> anyhow::Result<()> {
                 "{}",
                 serde_json::json!({"statuses": statuses, "retry_after": retry_after})
             );
+        }
+        Command::Ask {
+            target,
+            label,
+            pad_length,
+            method,
+        } => {
+            let path = format!(
+                "/v1/prf/0/labels/{}/{pad_length}",
+                hex::encode(label.resolve()?)
+            );
+            match first.ask_one(target, method, &path).await {
+                Some(reply) => println!("{}", serde_json::to_string(&reply)?),
+                None => println!("{}", serde_json::json!({"error": "deadline", "path": path})),
+            }
         }
         Command::Idle => std::future::pending::<()>().await,
         Command::Probe {
