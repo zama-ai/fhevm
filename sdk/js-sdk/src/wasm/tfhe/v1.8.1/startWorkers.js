@@ -714,13 +714,10 @@ async function startWorkers(module, memory, builder) {
       throw errors[0];
     }
 
-    // In Node, a worker_threads Worker keeps the event loop alive for as long as
-    // it runs, and these workers block in the rayon receive loop for the life
-    // of the process. Unref them so a script that is done encrypting can exit
-    // on its own: the main thread never awaits a message from them after
-    // startup (rayon joins block synchronously inside the wasm call), so an
-    // unref'd pool cannot cut an encryption short. Browser workers have no
-    // unref() and are unaffected.
+    // Node workers block in the rayon receive loop for the life of the process
+    // and would keep the event loop alive. Unref them so a finished script can
+    // exit. This is safe because the main thread never awaits a worker message
+    // after startup: rayon joins block synchronously inside the wasm call.
     for (const worker of workers) {
       if (typeof worker.unref === 'function') {
         worker.unref();
