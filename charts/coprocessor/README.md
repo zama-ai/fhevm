@@ -13,6 +13,8 @@ forwards the `Authorization` header: prf-service recovers the signer from it for
 limits. It does not verify the header again, and relies on the proxy's check and on the
 NetworkPolicy below. Request bodies are rejected; the signed body digest must be that of an empty body.
 
+Blue-green (RFC-021) deployments do not run the proxy yet. One proxy per fleet is a follow-up.
+
 The accepted signers are the KMS tx-senders of the Active KMS contexts that the `ProtocolConfig`
 contract lists. A context becomes Active once all its nodes have
 attested the same keys and CRS, the first state in which they can serve a decryption, and PRF
@@ -42,7 +44,7 @@ The proxy reads its TLS certificate at startup: a renewed secret takes effect af
 nothing the proxy should not.
 
 A NetworkPolicy allows this release's proxy pods to reach the endpoint pods selected by
-`endpointNetworkPolicy.podSelector`, on `endpointNetworkPolicy.ports` (TCP 8080 by default).
+`endpointNetworkPolicy.podSelector`, on `endpointNetworkPolicy.ports` (TCP 8090 by default).
 Set these to the endpoint **pod** ports, which may differ from the Service ports in
 `endpointAddresses`. Add other required ingress, such as metrics scraping, to
 `endpointNetworkPolicy.extraIngress`. Isolation requires a CNI that enforces NetworkPolicy
