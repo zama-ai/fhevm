@@ -296,19 +296,23 @@ async fn test_rejects_request_bodies() {
             "Content-Length: 1\r\n\r\nx",
             "Transfer-Encoding: chunked\r\n\r\n1\r\nx\r\n0\r\n\r\n",
             "Transfer-Encoding: chunked\r\n\r\n0\r\n\r\n",
+            // The declared body never arrives.
+            "Content-Length: 4\r\n\r\n",
         ] {
             let request = format!(
-                "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
-                 Connection: close\r\n{body}"
+                "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n{body}"
             );
-            let response = raw_response(&t, request.as_bytes()).await;
-            assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+            // Pingora closes a connection answered before its request body is read, so the proxy
+            // never drains the body.
+            let response = raw_response(&t, request.as_bytes())
+                .await
+                .to_ascii_lowercase();
+            assert!(response.starts_with("http/1.1 400"), "{response}");
             assert!(
-                response
-                    .to_ascii_lowercase()
-                    .contains("\r\ncache-control: no-store\r\n"),
+                response.contains("\r\ncache-control: no-store\r\n"),
                 "{response}"
             );
+            assert!(response.contains("\r\nconnection: close\r\n"), "{response}");
         }
     }
 
@@ -317,7 +321,7 @@ async fn test_rejects_request_bodies() {
     let stranger = auth_header(&PrivateKeySigner::random(), &path, b"").await;
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {stranger}\r\n\
-         Connection: close\r\nContent-Length: 1\r\n\r\nx"
+         Content-Length: 1\r\n\r\nx"
     );
     let started = Instant::now();
     assert_eq!(
@@ -328,24 +332,6 @@ async fn test_rejects_request_bodies() {
         started.elapsed() < UNKNOWN_SIGNER_WAIT / 3,
         "{:?}",
         started.elapsed()
-    );
-    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
-}
-
-#[tokio::test]
-async fn test_rejects_incomplete_bodies_before_forwarding() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
-    let path = prf_path(1);
-    let addr = t.addr;
-    let auth = auth_header(&sender(), &path, b"").await;
-    // The declared body never arrives: reject from the headers without reaching the endpoint.
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\
-         Content-Length: 4\r\nConnection: close\r\n\r\n"
-    );
-    assert_eq!(
-        send_raw(&t, request.as_bytes()).await,
-        StatusCode::BAD_REQUEST
     );
     assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
 }
@@ -743,7 +729,8 @@ async fn send_raw(t: &TestProxy, request: &[u8]) -> StatusCode {
         .unwrap_or_else(|| panic!("unexpected response: {response}"))
 }
 
-/// Sends raw request bytes over TLS and returns the whole response, read until the server closes.
+/// Sends raw request bytes over TLS and returns the whole response, read until the server closes,
+/// which it must do within 5 s.
 async fn raw_response(t: &TestProxy, request: &[u8]) -> String {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -752,6 +739,9 @@ async fn raw_response(t: &TestProxy, request: &[u8]) -> String {
 
     let mut response = Vec::new();
     // The server may close without a TLS `close_notify`, which surfaces as an EOF error.
-    let _ = stream.read_to_end(&mut response).await;
-    String::from_utf8_lossy(&response).into_owned()
+    let read =
+        tokio::time::timeout(Duration::from_secs(5), stream.read_to_end(&mut response)).await;
+    let response = String::from_utf8_lossy(&response).into_owned();
+    assert!(read.is_ok(), "the connection stayed open after: {response}");
+    response
 }
