@@ -575,34 +575,6 @@ async fn test_reads_again_only_for_an_unknown_signer() {
 }
 
 #[tokio::test]
-async fn test_a_miss_during_a_poll_waits_for_the_next_poll() {
-    let t = start_without_polls().await;
-    let next = PrivateKeySigner::random();
-    let polls = t.rpc.finalized_polls();
-    t.rpc.set_reply_delay(Duration::from_secs(1));
-
-    let during_the_poll = async {
-        // The poll woken below has the finalized block from before `next`'s context.
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while t.rpc.finalized_polls() == polls {
-            assert!(Instant::now() < deadline, "the miss woke no poll");
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-        // The next poll's five calls end about 1 s after this poll: a request checked when this
-        // poll ends is refused.
-        t.rpc.set_reply_delay(Duration::from_millis(200));
-        t.rpc.set_contexts(vec![
-            KmsContext::active(&[sender().address()]),
-            KmsContext::active(&[next.address()]),
-        ]);
-        t.answer_code(&next).await
-    };
-    let unknown = PrivateKeySigner::random();
-    let (_, code) = tokio::join!(t.answer_code(&unknown), during_the_poll);
-    assert_eq!(code, ACCEPTED);
-}
-
-#[tokio::test]
 async fn test_refuses_an_unknown_signer_after_the_wait() {
     let t = start_without_polls().await;
     // Longer than the wait: the reader gives up on the poll after 30 s.
@@ -629,43 +601,6 @@ async fn test_refuses_an_unknown_signer_after_the_wait() {
         waited >= UNKNOWN_SIGNER_WAIT && waited < UNKNOWN_SIGNER_WAIT + Duration::from_secs(1),
         "{waited:?}"
     );
-}
-
-#[tokio::test]
-async fn test_concurrent_unknown_signers_share_one_read() {
-    let t = start_without_polls().await;
-    let unknown = PrivateKeySigner::random();
-    // A woken read starts a second after the previous one: the requests below all arrive before.
-    assert_eq!(t.answer_code(&unknown).await, UNKNOWN_SIGNER);
-    let polls = t.rpc.finalized_polls();
-
-    let codes = futures_util::future::join_all((0..10).map(|_| t.answer_code(&unknown))).await;
-    assert!(codes.iter().all(|code| code == UNKNOWN_SIGNER), "{codes:?}");
-    // Long enough for the woken reads that would follow the first one.
-    tokio::time::sleep(3 * WOKEN_POLL_SPACING).await;
-    assert_eq!(t.rpc.finalized_polls(), polls + 1);
-}
-
-#[tokio::test]
-async fn test_woken_polls_start_a_second_apart() {
-    let t = start_without_polls().await;
-    let unknown = PrivateKeySigner::random();
-
-    // Each miss wakes a poll, which starts once the previous poll is a second old.
-    for _ in 0..2 {
-        assert_eq!(t.answer_code(&unknown).await, UNKNOWN_SIGNER);
-    }
-
-    let times = t.rpc.finalized_poll_times();
-    assert_eq!(times.len(), 3);
-    for pair in times.windows(2) {
-        // The RPC sees a poll a few milliseconds after it starts.
-        let gap = pair[1] - pair[0];
-        assert!(
-            gap > WOKEN_POLL_SPACING - Duration::from_millis(50),
-            "{gap:?}"
-        );
-    }
 }
 
 #[tokio::test]

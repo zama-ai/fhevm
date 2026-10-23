@@ -427,11 +427,13 @@ mod tests {
         assert!(reader.poll().await.is_err());
     }
 
-    /// The mocked RPC, recording the parameters of each `eth_call` it answers.
+    /// The mocked RPC, recording the parameters of each `eth_call` it answers, and holding each
+    /// answer for `delay`.
     #[derive(Clone)]
     struct RecordedCalls {
         transport: MockTransport,
         params: Arc<std::sync::Mutex<Vec<String>>>,
+        delay: Arc<std::sync::Mutex<Duration>>,
     }
 
     impl tower::Service<RequestPacket> for RecordedCalls {
@@ -452,7 +454,12 @@ mod tests {
                     self.params.lock().unwrap().push(params);
                 }
             }
-            self.transport.call(request)
+            let delay = *self.delay.lock().unwrap();
+            let answer = self.transport.call(request);
+            Box::pin(async move {
+                tokio::time::sleep(delay).await;
+                answer.await
+            })
         }
     }
 
@@ -461,6 +468,7 @@ mod tests {
         let recorded = RecordedCalls {
             transport: MockTransport::new(asserter),
             params: Arc::default(),
+            delay: Arc::default(),
         };
         let client = ClientBuilder::default().transport(recorded.clone(), true);
         (ProviderBuilder::new().connect_client(client), recorded)
@@ -494,10 +502,13 @@ mod tests {
 
     const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
-    /// Runs `follower` for `polls` polls, in paused time: no answer takes time.
+    /// Runs `follower` for `polls` polls on its interval, in paused time: an answer takes no time
+    /// unless the test delays it.
     async fn run_polls<P: Provider>(follower: &Follower<P>, polls: u32) {
-        let stop = POLL_INTERVAL * (polls - 1) + POLL_INTERVAL / 2;
-        follower.run(tokio::time::sleep(stop)).await;
+        let interval = follower.poll_interval;
+        follower
+            .run(tokio::time::sleep(interval * (polls - 1) + interval / 2))
+            .await;
     }
 
     fn follower<P: Provider>(provider: P, signers: &RefreshableSigners) -> Follower<P> {
@@ -603,6 +614,115 @@ mod tests {
 
         assert!(!follower.loaded().is_loaded());
         assert!(!signers.allows(Address::repeat_byte(1)));
+    }
+
+    /// Longer than the spacing, so a woken poll that gets its answers ends within it.
+    const MISS_WAIT: Duration = Duration::from_secs(3);
+
+    /// A follower that polls on its interval only once, at start: the others are woken polls.
+    fn follower_without_polls<P: Provider>(provider: P) -> Follower<P> {
+        let interval = Duration::from_secs(600);
+        Follower::new(
+            provider,
+            Address::ZERO,
+            RefreshableSigners::default(),
+            interval,
+        )
+    }
+
+    async fn wait_for_polls<P: Provider>(follower: &Follower<P>, done: impl FnMut(&Polls) -> bool) {
+        let _ = follower.polls.subscribe().wait_for(done).await;
+    }
+
+    /// Answers the first read of [`first_read`], then `polls` polls that find block 100 again.
+    fn first_read_then_unchanged(polls: usize) -> Asserter {
+        let asserter = first_read(Address::repeat_byte(1));
+        for _ in 0..polls {
+            asserter.push_success(&finalized());
+        }
+        asserter
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn concurrent_misses_share_one_woken_poll() {
+        let asserter = first_read_then_unchanged(1);
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
+        let follower = follower_without_polls(provider);
+
+        tokio::join!(run_polls(&follower, 1), async {
+            wait_for_polls(&follower, |polls| polls.finished == 1).await;
+            let start = Instant::now();
+            let misses = (0..10).map(|_| async {
+                follower.refresh_after_miss(MISS_WAIT).await;
+                start.elapsed()
+            });
+            // One poll, a spacing after the first, releases every miss.
+            for waited in futures::future::join_all(misses).await {
+                assert_eq!(waited, WOKEN_POLL_SPACING);
+            }
+        });
+
+        assert_eq!(follower.polls.borrow().started, 2);
+        assert!(asserter.read_q().is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn woken_polls_start_a_spacing_after_the_previous_poll() {
+        let asserter = first_read_then_unchanged(3);
+        let provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
+        let follower = follower_without_polls(provider);
+
+        tokio::join!(run_polls(&follower, 1), async {
+            wait_for_polls(&follower, |polls| polls.finished == 1).await;
+            for _ in 0..2 {
+                let start = Instant::now();
+                follower.refresh_after_miss(MISS_WAIT).await;
+                assert_eq!(start.elapsed(), WOKEN_POLL_SPACING);
+            }
+            // Long after the last poll, a miss does not wait for the spacing.
+            tokio::time::sleep(10 * WOKEN_POLL_SPACING).await;
+            let start = Instant::now();
+            follower.refresh_after_miss(MISS_WAIT).await;
+            assert_eq!(start.elapsed(), Duration::ZERO);
+        });
+
+        assert_eq!(follower.polls.borrow().started, 4);
+        assert!(asserter.read_q().is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_miss_during_a_poll_waits_for_the_next_poll() {
+        let (provider, recorded) = recorded_provider(first_read_then_unchanged(1));
+        let reply_delay = Duration::from_millis(100);
+        *recorded.delay.lock().unwrap() = reply_delay;
+        let follower = follower_without_polls(provider);
+
+        tokio::join!(run_polls(&follower, 1), async {
+            wait_for_polls(&follower, |polls| polls.started == 1).await;
+            let start = Instant::now();
+            follower.refresh_after_miss(MISS_WAIT).await;
+            // The running poll may have read the set before the miss. The next poll starts a
+            // spacing after it and finds the block unchanged in one call.
+            assert_eq!(start.elapsed(), WOKEN_POLL_SPACING + reply_delay);
+        });
+
+        assert_eq!(follower.polls.borrow().started, 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_miss_waits_at_most_its_wait() {
+        let (provider, recorded) = recorded_provider(first_read_then_unchanged(1));
+        let follower = follower_without_polls(provider);
+
+        tokio::join!(run_polls(&follower, 1), async {
+            wait_for_polls(&follower, |polls| polls.finished == 1).await;
+            // The woken poll gets no answer before the reader gives up on it.
+            *recorded.delay.lock().unwrap() = 2 * READ_TIMEOUT;
+            let start = Instant::now();
+            follower.refresh_after_miss(MISS_WAIT).await;
+            assert_eq!(start.elapsed(), MISS_WAIT);
+            assert_eq!(follower.polls.borrow().finished, 1);
+        });
     }
 
     #[tokio::test]
