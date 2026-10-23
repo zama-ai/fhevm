@@ -52,7 +52,8 @@ export type SolanaDecryptionRecovery = 'retry-unchanged' | 'give-up';
  *   later, a start ahead of the host clock, is prevented where the start is chosen
  *   (`permit/start.ts`).
  * - `user_decryption_expired` is not: the Connector answers it for a permit past its window, which
- *   no later attempt reopens.
+ *   no later attempt reopens. relayer-http refuses a permit already past its window as `malformed`;
+ *   this code covers one that ends before the Connector checks it, by the Connector's clock.
  * - `internal` and `unknown` are not: a relayer bug and a code this table predates are no reason to
  *   spend the budget, and an unknown code treated as retryable is a client hammering the service
  *   over something no delay repairs.
