@@ -118,8 +118,8 @@ record "1 unsigned attestation (party 1)" "rejected, ok" "$(summary "${report}")
 fetch_case "3 unsigned attestations (parties 1-3)" "rejected, no quorum" '(.ok | not)' --label-prefix a5
 fetch_case "expired FhevmSig headers" "401 auth_expired, re-sign, ok" '.ok and .resigns >= 3' --label-prefix 00 --stale-headers
 fetch_case "permanent failure on the GET target (party 1)" "ok via fallback" '.ok and .fallback' --label-prefix e2 --get-from 0
-fetch_case "permanent failure everywhere" "502 prf_evaluation_failed, not retryable; label fails" \
-  '(.ok | not) and ([(.replies // [])[] | select(.method == "GET") | .code] == ["prf_evaluation_failed"])' --label-prefix e1 --get-from 0
+fetch_case "permanent failure everywhere" "500 prf_evaluation_failed, not retried; label fails before the deadline" \
+  '(.ok | not) and .error == "no_quorum" and ([(.replies // [])[] | select(.method == "GET") | .code] == ["prf_evaluation_failed"]) and ([(.replies // [])[] | .attempts] | max) == 1' --label-prefix e1 --get-from 0
 
 # probe_case <scenario> <expected status> <expected code> <target> <path> [method]
 probe_case() {
@@ -130,8 +130,8 @@ probe_case() {
 }
 rand_label() { od -An -N31 -tx1 /dev/urandom | tr -d ' \n'; }
 l="00$(rand_label)"
-probe_case "permanent failure, GET answer" 502 prf_evaluation_failed 1 "/v1/prf/0/labels/e1$(rand_label)/64"
-probe_case "permanent failure, HEAD answer" 502 "" 1 "/v1/prf/0/labels/e1$(rand_label)/64" HEAD
+probe_case "permanent failure, GET answer" 500 prf_evaluation_failed 1 "/v1/prf/0/labels/e1$(rand_label)/64"
+probe_case "permanent failure, HEAD answer" 500 "" 1 "/v1/prf/0/labels/e1$(rand_label)/64" HEAD
 probe_case "non-canonical path: uppercase label" 400 non_canonical_path 1 "/v1/prf/0/labels/AB$(rand_label | tr a-f A-F)/64"
 probe_case "non-canonical path: leading zero" 400 non_canonical_path 1 "/v1/prf/00/labels/${l}/64"
 probe_case "query string" 401 auth_query_string 1 "/v1/prf/0/labels/${l}/64?x=1"
@@ -145,7 +145,7 @@ out=$(connector flood --target 0 --count 6 --label-prefix 4a --pad-length 2048)
 record "per-connector cap (party 1)" '2x 200, 4x 429 concurrency_limited, Retry-After' "$(jq -c . <<<"${out}")" \
   "$(jq '.statuses == {"200": 2, "429 concurrency_limited": 4} and .retry_after != null' <<<"${out}")"
 out=$(connector flood --target 1 --count 3 --label-prefix 4a --pad-length 64)
-record "per-connector request cap (party 2, 2 requests)" '2x 200, 1x 429 concurrency_limited' "$(jq -c . <<<"${out}")" \
+record "PRF_MAX_IN_FLIGHT_PER_CONNECTOR (party 2, 2 requests)" '2x 200, 1x 429 concurrency_limited' "$(jq -c . <<<"${out}")" \
   "$(jq '.statuses == {"200": 2, "429 concurrency_limited": 1}' <<<"${out}")"
 
 # The pad-worker of parties 1-3 exits once with the row claimed; the reaper gives it back.

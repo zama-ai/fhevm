@@ -25,8 +25,9 @@ pub struct Config {
     pub database_pool_size: u32,
     /// RFC-038 `PRF_MAX_CONCURRENT_PER_CONNECTOR`: pad bits pending for one connector before `429`.
     pub max_pending_bits_per_connector: i64,
-    /// Requests of one connector in progress in this pod, on any label, before `429`.
-    pub max_requests_per_connector: NonZeroUsize,
+    /// RFC-038 `PRF_MAX_IN_FLIGHT_PER_CONNECTOR`: requests of one connector in progress in this
+    /// pod, on any label, before `429`.
+    pub max_in_flight_per_connector: NonZeroUsize,
     /// Admissions of one connector that run at once in this pod.
     pub max_adds_per_connector: usize,
     /// How often the waiting requests read their rows, in case a `pad_ready` notification is lost.
@@ -80,7 +81,7 @@ impl PrfService {
                 config.max_adds_per_connector,
             ),
             waiter: PadWaiter::new(pool.clone(), config.pad_poll_interval),
-            in_flight: InFlight::new(config.max_requests_per_connector),
+            in_flight: InFlight::new(config.max_in_flight_per_connector),
             auth: fhevm_sig_auth::FhevmSigVerifier::new(
                 domain,
                 config.auth.coprocessor_signer_address,

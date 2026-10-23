@@ -246,8 +246,9 @@ impl Connector {
         report
     }
 
-    /// Sends `method` to coprocessor `i` until it answers `200` or a non-retryable error. Retries
-    /// connection errors, `429`, `401 auth_expired` after re-signing, and other retryable errors.
+    /// Sends `method` to coprocessor `i` until it answers `200` or an error that RFC-038 step 6
+    /// does not retry. Retries connection errors, `429`, `502`, `504`, `401 auth_unknown_signer`,
+    /// and `401 auth_expired` after re-signing. Like the RFC, it reads the status and `code` only.
     async fn ask(
         &self,
         i: usize,
@@ -328,10 +329,14 @@ impl Connector {
                 // Re-sign once: a fresh header settles whether the 401 was an expiry.
                 None => status == StatusCode::UNAUTHORIZED && expires.is_some(),
             };
-            let retryable = match &error {
-                Some(e) => e.retryable,
-                None => status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error(),
-            };
+            let retryable = matches!(
+                status,
+                StatusCode::TOO_MANY_REQUESTS
+                    | StatusCode::BAD_GATEWAY
+                    | StatusCode::GATEWAY_TIMEOUT
+            ) || error
+                .as_ref()
+                .is_some_and(|e| e.code == "auth_unknown_signer");
             if expired {
                 resigns += 1;
                 expires = None;

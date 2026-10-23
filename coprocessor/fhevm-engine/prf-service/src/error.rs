@@ -49,7 +49,11 @@ impl PrfError {
             Self::ConcurrencyLimited { .. } => {
                 (StatusCode::TOO_MANY_REQUESTS, "concurrency_limited", true)
             }
-            Self::EvaluationFailed => (StatusCode::BAD_GATEWAY, "prf_evaluation_failed", false),
+            Self::EvaluationFailed => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "prf_evaluation_failed",
+                false,
+            ),
             Self::Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable", true),
         }
     }

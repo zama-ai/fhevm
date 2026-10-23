@@ -33,7 +33,7 @@ impl TestService {
                 database_url: db.db_url().to_owned(),
                 database_pool_size: 2,
                 max_pending_bits_per_connector: 4096,
-                max_requests_per_connector: NonZeroUsize::MIN,
+                max_in_flight_per_connector: NonZeroUsize::MIN,
                 max_adds_per_connector: 1,
                 pad_poll_interval: Duration::from_secs(1),
                 retry_after: Duration::from_secs(1),

@@ -40,7 +40,7 @@ pad_worker_faults() {
   echo "${faults}"
 }
 pending_bits_cap() { if (( $1 == 1 )); then echo 4096; else echo 1048576; fi; }
-requests_cap() { if (( $1 == 2 )); then echo 2; else echo 1024; fi; }
+in_flight_cap() { if (( $1 == 2 )); then echo 2; else echo 1024; fi; }
 proxy_tls_secret=coprocessor-proxy-tls  # tls.secretName in values-coprocessor-proxy-e2e.yaml
 coproc_signer() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}"; }
 with_proxy="false"
@@ -210,13 +210,13 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
     prf_image_tag=$(jq -r .prf_service <<<"${TAGS_JSON}")
     prf_env=$(jq -cn --arg db "postgresql://prf_service:prf_service@postgres-coprocessor-${i}:5432/fhevm_e2e" \
       --arg chain "${HOST_CHAIN_ID:?}" --arg signer "${signer}" --arg cap "$(pending_bits_cap "${i}")" \
-      --arg requests "$(requests_cap "${i}")" '[
+      --arg in_flight "$(in_flight_cap "${i}")" '[
         {name: "DATABASE_URL", value: $db},
         {name: "PRF_ETHEREUM_CHAIN_ID", value: $chain},
         {name: "PRF_PROTOCOL_CONFIG_ADDRESS", valueFrom: {configMapKeyRef: {name: "host-sc-addresses", key: "protocol_config.address"}}},
         {name: "PRF_COPROCESSOR_SIGNER_ADDRESS", value: $signer},
         {name: "PRF_MAX_CONCURRENT_PER_CONNECTOR", value: $cap},
-        {name: "PRF_MAX_REQUESTS_PER_CONNECTOR", value: $requests}
+        {name: "PRF_MAX_IN_FLIGHT_PER_CONNECTOR", value: $in_flight}
       ]')
     proxy_args=(
       -f ci/preview-env/coprocessor/values-coprocessor-proxy-e2e.yaml

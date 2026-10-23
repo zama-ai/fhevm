@@ -22,7 +22,7 @@ const PROTOCOL_CONFIG: Address = Address::repeat_byte(0xc0);
 /// Party 0 refuses more than one pending 2048-bit pad per connector.
 const PARTY0_PENDING_BITS: i64 = 4096;
 /// Party 2 refuses a third request in progress from one connector.
-const PARTY2_REQUESTS: usize = 2;
+const PARTY2_IN_FLIGHT: usize = 2;
 
 /// The faults of each party, by label first byte. Mirrors the preview check.
 fn faults(party: usize) -> String {
@@ -107,8 +107,8 @@ async fn start_party(admin: &PgPool, i: usize, cancel: &CancellationToken) -> Pa
             database_url: with_database(&admin_url(), "prf_service", &name),
             database_pool_size: 4,
             max_pending_bits_per_connector: if i == 0 { PARTY0_PENDING_BITS } else { 1 << 20 },
-            max_requests_per_connector: NonZeroUsize::new(if i == 2 {
-                PARTY2_REQUESTS
+            max_in_flight_per_connector: NonZeroUsize::new(if i == 2 {
+                PARTY2_IN_FLIGHT
             } else {
                 1024
             })
@@ -260,12 +260,20 @@ async fn retrieval_matrix() {
         let report = one.retrieve(&retrieval(prefix, None)).await;
         assert_eq!(report.error, Some("no_quorum"), "{prefix:x}: {report:?}");
     }
-    // A permanent failure everywhere. The GET target answers `prf_evaluation_failed`, but a HEAD
-    // answer has no body, so the HEADs' 502 reads as transient and they retry until the deadline.
-    let report = connector(&parties, &[], Duration::from_secs(3))
+    // A permanent failure everywhere: `500` is not retried, by GET or HEAD, so the label fails
+    // without waiting for the deadline.
+    let report = connector(&parties, &[], Duration::from_secs(10))
         .retrieve(&retrieval(0xe1, Some(0)))
         .await;
-    assert_eq!(report.error, Some("deadline"), "{report:?}");
+    assert_eq!(report.error, Some("no_quorum"), "{report:?}");
+    assert!(report.elapsed_ms < 5_000, "{report:?}");
+    assert!(
+        report
+            .replies
+            .iter()
+            .all(|r| r.status == Some(500) && r.attempts == 1),
+        "{report:?}"
+    );
     assert_eq!(
         report
             .replies
@@ -339,7 +347,7 @@ async fn retrieval_matrix() {
     });
     assert_eq!((first.unwrap().0, second.unwrap().0), (200, 429));
     // The request cap of party 2, across labels: the third request in progress gets 429.
-    let paths: Vec<String> = (0..=PARTY2_REQUESTS)
+    let paths: Vec<String> = (0..=PARTY2_IN_FLIGHT)
         .map(|_| retrieval(0x4a, None).path())
         .collect();
     let results =
