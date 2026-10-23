@@ -25,7 +25,7 @@ contract HCULimitInvariantHandler is Test {
     uint256 internal resultNonce = 1;
     bool public uncappedViolation;
     bool public accountingViolation;
-    bool public resetViolation;
+    bool public decayViolation;
 
     constructor(HCULimit _hcuLimit, address _owner) {
         hcuLimit = _hcuLimit;
@@ -33,19 +33,22 @@ contract HCULimitInvariantHandler is Test {
         fhevmExecutor = _hcuLimit.getFHEVMExecutorAddress();
 
         vm.startPrank(owner);
-        hcuLimit.setQuotaCap(UNCAPPED_QUOTA, type(uint48).max);
+        hcuLimit.setQuota(UNCAPPED_QUOTA, type(uint48).max, type(uint48).max);
         hcuLimit.assignQuota(UNCAPPED_CALLER, UNCAPPED_QUOTA);
         vm.stopPrank();
     }
 
-    function setDefaultCap(uint48 cap) external {
+    function setDefaultQuota(uint48 maxHCU, uint48 decayPerBlock) external {
+        // A metered quota needs a decay, a stopped one has none.
+        if (maxHCU == 0) decayPerBlock = 0;
+        else if (decayPerBlock == 0) decayPerBlock = 1;
         vm.prank(owner);
-        hcuLimit.setQuotaCap(DEFAULT_QUOTA, cap);
+        hcuLimit.setQuota(DEFAULT_QUOTA, maxHCU, decayPerBlock);
     }
 
     function assignCaller(address caller, bool uncapped) external {
         caller = _sanitizeCaller(caller);
-        (uint48 defaultCap, ) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        (uint48 defaultCap, , ) = hcuLimit.getQuota(DEFAULT_QUOTA);
         if (!uncapped && defaultCap == 0) return;
         vm.prank(owner);
         hcuLimit.assignQuota(caller, uncapped ? UNCAPPED_QUOTA : DEFAULT_QUOTA);
@@ -53,10 +56,13 @@ contract HCULimitInvariantHandler is Test {
 
     function mine(uint8 rawBlocks) external {
         uint256 blocks = bound(uint256(rawBlocks), 1, 8);
+        (, uint48 decayPerBlock, uint48 beforeUsedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
         vm.roll(block.number + blocks);
-        (, uint48 usedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        if (usedHCU != 0) {
-            resetViolation = true;
+        (, , uint48 afterUsedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        uint256 decay = blocks * decayPerBlock;
+        uint256 expected = decay >= beforeUsedHCU ? 0 : beforeUsedHCU - decay;
+        if (afterUsedHCU != expected) {
+            decayViolation = true;
         }
     }
 
@@ -79,7 +85,7 @@ contract HCULimitInvariantHandler is Test {
      */
     function _runBurst(address caller, uint256 ops) internal {
         bool uncapped = hcuLimit.getContractQuota(caller) == UNCAPPED_QUOTA;
-        (, uint48 beforeUsedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        (, , uint48 beforeUsedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
         uint256 successes;
 
         vm.startPrank(fhevmExecutor);
@@ -94,8 +100,8 @@ contract HCULimitInvariantHandler is Test {
         }
         vm.stopPrank();
 
-        (, uint48 afterUsedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        (, uint48 uncappedUsedHCU) = hcuLimit.getQuota(UNCAPPED_QUOTA);
+        (, , uint48 afterUsedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        (, , uint48 uncappedUsedHCU) = hcuLimit.getQuota(UNCAPPED_QUOTA);
         if (uncappedUsedHCU != 0) {
             uncappedViolation = true;
         }
@@ -105,7 +111,7 @@ contract HCULimitInvariantHandler is Test {
             return;
         }
 
-        (uint48 defaultCap, ) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        (uint48 defaultCap, , ) = hcuLimit.getQuota(DEFAULT_QUOTA);
         if (!uncapped && successes != 0 && afterUsedHCU > defaultCap) {
             accountingViolation = true;
         }
@@ -141,7 +147,7 @@ contract HCULimitInvariantTest is StdInvariant, Test {
         // Invariants targeted by this harness:
         // 1) callers in an uncapped quota are never refused or metered.
         // 2) capped accounting is consistent with successful casts and stays within the cap.
-        // 3) usage resets after block advancement.
+        // 3) usage decays by decayPerBlock for each mined block, floored at 0.
         // This harness intentionally validates accounting invariants only, not cap-exhaustion behavior.
         _deployAndEtchACL();
 
@@ -165,7 +171,7 @@ contract HCULimitInvariantTest is StdInvariant, Test {
         targetContract(address(handler));
 
         bytes4[] memory selectors = new bytes4[](6);
-        selectors[0] = HCULimitInvariantHandler.setDefaultCap.selector;
+        selectors[0] = HCULimitInvariantHandler.setDefaultQuota.selector;
         selectors[1] = HCULimitInvariantHandler.defaultBurst.selector;
         selectors[2] = HCULimitInvariantHandler.uncappedBurst.selector;
         selectors[3] = HCULimitInvariantHandler.mine.selector;
@@ -183,8 +189,8 @@ contract HCULimitInvariantTest is StdInvariant, Test {
         assertFalse(handler.accountingViolation());
     }
 
-    function invariant_usageResetsAfterMinedBlocks() public view {
-        assertFalse(handler.resetViolation());
+    function invariant_usageDecaysWithMinedBlocks() public view {
+        assertFalse(handler.decayViolation());
     }
 
     function _deployAndEtchACL() internal {

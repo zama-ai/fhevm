@@ -21,13 +21,13 @@ import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 // but not compiled in the E2E test suite.
 const HCU_LIMIT_ABI = [
   'function getVersion() view returns (string)',
-  'function getQuota(uint16) view returns (uint48, uint48)',
+  'function getQuota(uint16) view returns (uint48, uint48, uint48)',
   'function getContractQuota(address) view returns (uint16)',
   'function getMaxHCUPerTx() view returns (uint48)',
   'function getMaxHCUDepthPerTx() view returns (uint48)',
-  'function setQuotaCap(uint16, uint48)',
+  'function setQuota(uint16, uint48, uint48)',
   'function assignQuota(address, uint16)',
-  'function lowerQuotaCap(uint16, uint48)',
+  'function lowerQuota(uint16, uint48, uint48)',
   'function setMaxHCUPerTx(uint48)',
   'function setMaxHCUDepthPerTx(uint48)',
   'error NotPauser(address)',
@@ -36,13 +36,21 @@ const HCU_LIMIT_ABI = [
 type HcuLimitContract = {
   connect(runner: ContractRunner): HcuLimitContract;
   getVersion(): Promise<string>;
-  getQuota(quotaId: number, overrides?: ReadAtBlock): Promise<[bigint, bigint]>;
+  getQuota(quotaId: number, overrides?: ReadAtBlock): Promise<[bigint, bigint, bigint]>;
   getContractQuota(account: string): Promise<bigint>;
   getMaxHCUPerTx(): Promise<bigint>;
   getMaxHCUDepthPerTx(): Promise<bigint>;
-  setQuotaCap(quotaId: number, cap: bigint | number): Promise<ContractTransactionResponse>;
+  setQuota(
+    quotaId: number,
+    maxHCU: bigint | number,
+    decayPerBlock: bigint | number,
+  ): Promise<ContractTransactionResponse>;
   assignQuota(account: string, quotaId: number): Promise<ContractTransactionResponse>;
-  lowerQuotaCap(quotaId: number, cap: bigint | number): Promise<ContractTransactionResponse>;
+  lowerQuota(
+    quotaId: number,
+    maxHCU: bigint | number,
+    decayPerBlock: bigint | number,
+  ): Promise<ContractTransactionResponse>;
   setMaxHCUPerTx(value: bigint | number): Promise<ContractTransactionResponse>;
   setMaxHCUDepthPerTx(value: bigint | number): Promise<ContractTransactionResponse>;
 };
@@ -113,7 +121,7 @@ describe('EncryptedERC20:HCU', function () {
     }
     const { globalTxHCU } = getTxHCUFromTxReceipt(receipt);
     const quotaId = Number(await hcuLimit.getContractQuota(contractAddress));
-    const [cap, usedHCU] = await hcuLimit.getQuota(quotaId, { blockTag: receipt.blockNumber });
+    const [cap, , usedHCU] = await hcuLimit.getQuota(quotaId, { blockTag: receipt.blockNumber });
     if (cap === NO_CAP) {
       expect(usedHCU).to.eq(0n, `${label} should not be metered by an uncapped quota`);
       return;
@@ -325,7 +333,9 @@ describe('EncryptedERC20:HCU', function () {
       const TIGHT_MAX_PER_TX = 600_000;
       const TIGHT_PER_BLOCK = 600_000;
       let savedDefaultCap: bigint;
+      let savedDefaultDecay: bigint;
       let savedUncappedCap: bigint;
+      let savedUncappedDecay: bigint;
       let savedMaxHCUPerTx: bigint;
       let savedMaxHCUDepthPerTx: bigint;
 
@@ -338,7 +348,12 @@ describe('EncryptedERC20:HCU', function () {
           this.skip();
         }
         const deployer = requireDeployer(this.deployer);
-        [[savedDefaultCap], [savedUncappedCap], savedMaxHCUPerTx, savedMaxHCUDepthPerTx] = await Promise.all([
+        [
+          [savedDefaultCap, savedDefaultDecay],
+          [savedUncappedCap, savedUncappedDecay],
+          savedMaxHCUPerTx,
+          savedMaxHCUDepthPerTx,
+        ] = await Promise.all([
           hcuLimit.getQuota(DEFAULT_QUOTA),
           hcuLimit.getQuota(UNCAPPED_QUOTA),
           hcuLimit.getMaxHCUPerTx(),
@@ -348,7 +363,8 @@ describe('EncryptedERC20:HCU', function () {
         const ownerHcuLimit = hcuLimit.connect(deployer);
         await (await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX)).wait();
         await (await ownerHcuLimit.setMaxHCUPerTx(TIGHT_MAX_PER_TX)).wait();
-        await (await ownerHcuLimit.setQuotaCap(DEFAULT_QUOTA, TIGHT_PER_BLOCK)).wait();
+        // Maximum and decay both TIGHT_PER_BLOCK: the quota allows TIGHT_PER_BLOCK HCU per block.
+        await (await ownerHcuLimit.setQuota(DEFAULT_QUOTA, TIGHT_PER_BLOCK, TIGHT_PER_BLOCK)).wait();
       });
 
       afterEach(async function () {
@@ -364,8 +380,8 @@ describe('EncryptedERC20:HCU', function () {
 
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
         const ownerHcuLimit = hcuLimit.connect(requireDeployer(this.deployer));
-        await (await ownerHcuLimit.setQuotaCap(DEFAULT_QUOTA, savedDefaultCap)).wait();
-        await (await ownerHcuLimit.setQuotaCap(UNCAPPED_QUOTA, savedUncappedCap)).wait();
+        await (await ownerHcuLimit.setQuota(DEFAULT_QUOTA, savedDefaultCap, savedDefaultDecay)).wait();
+        await (await ownerHcuLimit.setQuota(UNCAPPED_QUOTA, savedUncappedCap, savedUncappedDecay)).wait();
         await (await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx)).wait();
         await (await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx)).wait();
       });
@@ -427,11 +443,11 @@ describe('EncryptedERC20:HCU', function () {
         const receiptBob = await ethers.provider.getTransactionReceipt(txBob.hash);
         expect(receiptBob?.status).to.eq(0, 'Bob should be blocked in block N');
 
-        // Block N+1: quota usage resets, bob retries and succeeds
+        // Block N+1: quota usage has decayed by a full block, bob retries and succeeds
         await mineNBlocks(1);
 
-        const [, usedHCUAfterReset] = await hcuLimit.getQuota(DEFAULT_QUOTA);
-        expect(usedHCUAfterReset).to.eq(0n, 'Quota usage should reset after new block');
+        const [, , usedHCUAfterReset] = await hcuLimit.getQuota(DEFAULT_QUOTA);
+        expect(usedHCUAfterReset).to.eq(0n, 'Quota usage should decay to 0 after a block');
 
         const retryBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100);
         const receiptRetry = requireReceipt(await retryBob.wait(), 'retry transfer');
@@ -452,7 +468,7 @@ describe('EncryptedERC20:HCU', function () {
         const mintReceipt = await waitForTransactionReceipt(mintTx.hash);
         expect(mintReceipt.status).to.eq(1, 'Mint should succeed');
 
-        const uncapTx = await ownerHcuLimit.setQuotaCap(UNCAPPED_QUOTA, NO_CAP);
+        const uncapTx = await ownerHcuLimit.setQuota(UNCAPPED_QUOTA, NO_CAP, NO_CAP);
         const assignTx = await ownerHcuLimit.assignQuota(this.contractAddress, UNCAPPED_QUOTA);
         await ethers.provider.send('evm_mine');
         await waitForTransactionReceipt(uncapTx.hash);
@@ -469,7 +485,7 @@ describe('EncryptedERC20:HCU', function () {
         const receiptUncapped = await waitForTransactionReceipt(tx1.hash);
         expect(receiptUncapped.status).to.eq(1, 'Transfer in an uncapped quota should succeed');
 
-        const [, usedHCUUncapped] = await hcuLimit.getQuota(DEFAULT_QUOTA);
+        const [, , usedHCUUncapped] = await hcuLimit.getQuota(DEFAULT_QUOTA);
         expect(usedHCUUncapped).to.eq(0n, 'A contract in an uncapped quota should not count HCU');
 
         const reassignTx = await ownerHcuLimit.assignQuota(this.contractAddress, DEFAULT_QUOTA);
@@ -483,14 +499,14 @@ describe('EncryptedERC20:HCU', function () {
         await ethers.provider.send('evm_mine');
         await waitForTransactionReceipt(tx2.hash);
 
-        const [, usedHCUDefault] = await hcuLimit.getQuota(DEFAULT_QUOTA);
+        const [, , usedHCUDefault] = await hcuLimit.getQuota(DEFAULT_QUOTA);
         expect(usedHCUDefault).to.be.greaterThan(0n, 'Should count HCU in the default quota');
       });
 
-      it('should reject lowerQuotaCap from a non-owner non-pauser', async function () {
+      it('should reject lowerQuota from a non-owner non-pauser', async function () {
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
         const aliceHcuLimit = hcuLimit.connect(this.signers.alice);
-        await expect(aliceHcuLimit.lowerQuotaCap(DEFAULT_QUOTA, 1_000_000)).to.be.revertedWithCustomError(
+        await expect(aliceHcuLimit.lowerQuota(DEFAULT_QUOTA, 1_000_000, 1_000_000)).to.be.revertedWithCustomError(
           hcuLimit as unknown as { interface: any },
           'NotPauser',
         );

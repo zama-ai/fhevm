@@ -25,7 +25,7 @@ describe('EncryptedERC20:HCU', function () {
 
   afterEach(async function () {
     const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-    await ownerHcuLimit.setQuotaCap(0, MAX_UINT48);
+    await ownerHcuLimit.setQuota(0, MAX_UINT48, MAX_UINT48);
     await ownerHcuLimit.setCrossTxDepthLimit(0, 0);
   });
 
@@ -103,7 +103,7 @@ describe('EncryptedERC20:HCU', function () {
     await transaction.wait();
 
     const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-    await ownerHcuLimit.setQuotaCap(0, 1_000_000_000);
+    await ownerHcuLimit.setQuota(0, 1_000_000_000, 1_000_000_000);
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
@@ -116,7 +116,7 @@ describe('EncryptedERC20:HCU', function () {
     const receipt = await tx.wait();
     expect(receipt?.status).to.eq(1);
 
-    const [, usedHCU] = await this.hcuLimit.getQuota(0);
+    const [, , usedHCU] = await this.hcuLimit.getQuota(0);
     expect(usedHCU).to.be.greaterThan(0n);
   });
 
@@ -125,8 +125,8 @@ describe('EncryptedERC20:HCU', function () {
     await transaction.wait();
 
     const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
-    await ownerHcuLimit.setQuotaCap(0, 1_000_000_000);
-    await ownerHcuLimit.setQuotaCap(1, MAX_UINT48);
+    await ownerHcuLimit.setQuota(0, 1_000_000_000, 1_000_000_000);
+    await ownerHcuLimit.setQuota(1, MAX_UINT48, MAX_UINT48);
     await ownerHcuLimit.assignQuota(this.contractAddress, 1);
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
@@ -140,8 +140,8 @@ describe('EncryptedERC20:HCU', function () {
     const receipt = await tx.wait();
     expect(receipt?.status).to.eq(1);
 
-    const [, defaultUsedHCU] = await this.hcuLimit.getQuota(0);
-    const [, uncappedUsedHCU] = await this.hcuLimit.getQuota(1);
+    const [, , defaultUsedHCU] = await this.hcuLimit.getQuota(0);
+    const [, , uncappedUsedHCU] = await this.hcuLimit.getQuota(1);
     expect(defaultUsedHCU).to.eq(0n);
     expect(uncappedUsedHCU).to.eq(0n);
   });

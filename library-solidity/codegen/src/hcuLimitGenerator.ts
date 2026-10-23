@@ -31,13 +31,16 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
-    /// @notice Returned when an operation would take a quota over its cap for this block. A later block can succeed.
+    /// @notice Returned when an operation would take a quota's usage over its maximum.
     /// @param account Contract that ran the operation.
     /// @param quotaId Quota the contract is assigned to.
-    error HCUQuotaExceeded(address account, uint16 quotaId);
+    /// @param retryAfterBlocks Blocks of decay after which this operation fits, if nothing else spends the quota;
+    ///        type(uint256).max if the operation alone exceeds the maximum. Later operations of the same
+    ///        transaction can need more, so clients simulate again after waiting.
+    error HCUQuotaExceeded(address account, uint16 quotaId, uint256 retryAfterBlocks);
 
-    /// @notice Returned when the contract's quota has a cap of 0: the contract is paused (quotaId is PAUSED_QUOTA)
-    ///         or its quota is stopped. Retrying fails until the owner acts.
+    /// @notice Returned when the contract's quota has a maximum of 0: the contract is paused (quotaId is
+    ///         PAUSED_QUOTA) or its quota is stopped. Retrying fails until the owner acts.
     /// @param account Contract that ran the operation.
     /// @param quotaId Quota the contract is assigned to.
     error HCUQuotaStopped(address account, uint16 quotaId);
@@ -45,11 +48,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned when the sender is neither the ACL owner nor a pauser.
     error NotPauser(address sender);
 
-    /// @notice Returned when lowerQuotaCap is given a cap above the current one.
-    error QuotaCapNotLower(uint16 quotaId);
+    /// @notice Returned when lowerQuota is given a maximum or a decay above the current one.
+    error QuotaNotLower(uint16 quotaId);
 
-    /// @notice Returned when setting the paused quota's cap, or when assigning a contract to the paused quota
-    ///         (use pauseContract) or to a quota whose cap is 0.
+    /// @notice Returned when setting the paused quota, when only one of a metered quota's maximum and decay is 0,
+    ///         or when assigning a contract to the paused quota (use pauseContract) or to a quota whose maximum is 0.
     error InvalidQuota(uint16 quotaId);
 
     /// @notice Returned when moving a paused contract to the default quota: only the owner lifts a pause.
@@ -91,8 +94,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Emitted when the cross-transaction depth limit is updated.
     event CrossTxDepthLimitSet(uint48 maxDepth, uint48 decayPerBlock);
 
-    /// @notice Emitted when a quota's cap per block is set.
-    event QuotaCapSet(uint16 indexed quotaId, uint48 capPerBlock, address indexed setBy);
+    /// @notice Emitted when a quota's maximum and decay are set.
+    event QuotaSet(uint16 indexed quotaId, uint48 maxHCU, uint48 decayPerBlock, address indexed setBy);
 
     /// @notice Emitted when a contract is assigned to a quota.
     event ContractQuotaAssigned(address indexed account, uint16 indexed quotaId, address indexed setBy);
@@ -123,10 +126,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Quota of every contract that was never assigned.
     uint16 private constant DEFAULT_QUOTA = 0;
 
-    /// @notice Quota with cap 0: contracts assigned to it cannot run FHE operations.
+    /// @notice Quota with maximum 0: contracts assigned to it cannot run FHE operations.
     uint16 public constant PAUSED_QUOTA = type(uint16).max;
 
-    /// @notice A quota with this cap is not metered.
+    /// @notice A quota with this maximum is not metered.
     uint48 private constant NO_CAP = type(uint48).max;
 
     /// @dev Per-handle transient word: bit 255 marks the depths as known, bits 128-254 hold the
@@ -137,9 +140,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     bytes1 private constant FHE_MUL_DIV_FACTOR2_ENCRYPTED = 0x01;
     bytes1 private constant FHE_MUL_DIV_FACTOR2_SCALAR = 0x03;
 
-    /// @dev Cap and meter of one quota, in one slot. All contracts assigned to the quota share it.
+    /// @dev Limit and meter of one quota, in one slot. All contracts assigned to the quota share it. Usage decays
+    ///      by decayPerBlock every block, as carried depth does, and an operation fits while usage stays at most maxHCU.
     struct Quota {
-        uint48 capPerBlock;
+        uint48 maxHCU;
+        uint48 decayPerBlock;
         uint48 usedHCU;
         uint48 lastBlock;
     }
@@ -197,25 +202,27 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice  Initializes the contract.
-     * @param defaultQuotaCapPerBlock Cap per block of the default quota; type(uint48).max leaves it unmetered.
+     * @param defaultQuotaHCUPerBlock Maximum and decay per block of the default quota; type(uint48).max leaves it unmetered.
      * @param maxHCUDepthPerTx Maximum sequential HCU depth per transaction.
      * @param maxHCUPerTx Maximum total HCU per transaction.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy(uint48 defaultQuotaCapPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        _setQuotaCap(DEFAULT_QUOTA, defaultQuotaCapPerBlock);
+    function initializeFromEmptyProxy(uint48 defaultQuotaHCUPerBlock, uint48 maxHCUDepthPerTx, uint48 maxHCUPerTx) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+        _setQuota(DEFAULT_QUOTA, defaultQuotaHCUPerBlock, defaultQuotaHCUPerBlock);
         _setMaxHCUPerTx(maxHCUPerTx);
         _setMaxHCUDepthPerTx(maxHCUDepthPerTx);
     }
 
     /**
      * @notice Re-initializes the contract from V4.
-     * @dev Quotas replace the global block cap, so its value becomes the default quota's cap.
+     * @dev Quotas replace the global block cap. The default quota gets it as maximum and decay per block,
+     *      which allows the same HCU per block.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {
-        _setQuotaCap(DEFAULT_QUOTA, _getHCULimitStorage().globalHCUCapPerBlock);
+        uint48 globalCap = _getHCULimitStorage().globalHCUCapPerBlock;
+        _setQuota(DEFAULT_QUOTA, globalCap, globalCap);
     }
 
 \n\n`;
@@ -429,25 +436,27 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
   return (
     output +
     `    /**
-     * @notice Sets a quota's cap per block. type(uint48).max leaves the quota unmetered; 0 stops it.
+     * @notice Sets a quota's maximum usage and how much usage decays per block, like setCrossTxDepthLimit.
+     *         A maximum of type(uint48).max leaves the quota unmetered; (0, 0) stops it.
      */
-    function setQuotaCap(uint16 quotaId, uint48 capPerBlock) external onlyACLOwner {
-        _setQuotaCap(quotaId, capPerBlock);
+    function setQuota(uint16 quotaId, uint48 maxHCU, uint48 decayPerBlock) external onlyACLOwner {
+        _setQuota(quotaId, maxHCU, decayPerBlock);
     }
 
     /**
-     * @notice Lowers a quota's cap per block. 0 stops every contract assigned to the quota.
+     * @notice Lowers a quota's maximum, its decay, or both. (0, 0) stops every contract assigned to the quota.
      */
-    function lowerQuotaCap(uint16 quotaId, uint48 capPerBlock) external onlyACLOwnerOrPauser {
-        if (capPerBlock > _getHCULimitStorage().quotas[quotaId].capPerBlock) revert QuotaCapNotLower(quotaId);
-        _setQuotaCap(quotaId, capPerBlock);
+    function lowerQuota(uint16 quotaId, uint48 maxHCU, uint48 decayPerBlock) external onlyACLOwnerOrPauser {
+        Quota storage quota = _getHCULimitStorage().quotas[quotaId];
+        if (maxHCU > quota.maxHCU || decayPerBlock > quota.decayPerBlock) revert QuotaNotLower(quotaId);
+        _setQuota(quotaId, maxHCU, decayPerBlock);
     }
 
     /**
-     * @notice Assigns a contract to a quota whose cap is above 0. This also lifts a pause.
+     * @notice Assigns a contract to a quota whose maximum is above 0. This also lifts a pause.
      */
     function assignQuota(address account, uint16 quotaId) external onlyACLOwner {
-        if (quotaId == PAUSED_QUOTA || _getHCULimitStorage().quotas[quotaId].capPerBlock == 0) {
+        if (quotaId == PAUSED_QUOTA || _getHCULimitStorage().quotas[quotaId].maxHCU == 0) {
             revert InvalidQuota(quotaId);
         }
         _assignQuota(account, quotaId);
@@ -529,16 +538,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 maxDepth = $.maxCrossTxDepth;
         uint256 carried = depths >> 128;
         if (maxDepth != 0 && carried > maxDepth) {
-            uint256 decay = $.crossTxDepthDecayPerBlock;
-            revert HCUCrossTxDepthLimitExceeded((carried - maxDepth + decay - 1) / decay);
+            revert HCUCrossTxDepthLimitExceeded(_blocksToDecay(carried - maxDepth, $.crossTxDepthDecayPerBlock));
         }
         _setHCUForHandle(result, depths | DEPTH_KNOWN);
     }
 
-    /// @dev Returns \`depth\` minus the decay accrued since \`sinceBlock\`, floored at 0.
-    function _decayed(uint48 depth, uint48 sinceBlock) private view returns (uint256) {
-        uint256 decay = (block.number - sinceBlock) * _getHCULimitStorage().crossTxDepthDecayPerBlock;
-        return decay >= depth ? 0 : depth - decay;
+    /// @dev Returns \`value\` minus \`decayPerBlock\` for each block since \`sinceBlock\`, floored at 0.
+    ///      Carried depth and quota usage both decay this way.
+    function _decayed(uint48 value, uint48 sinceBlock, uint256 decayPerBlock) private view returns (uint256) {
+        uint256 decay = (block.number - sinceBlock) * decayPerBlock;
+        return decay >= value ? 0 : value - decay;
+    }
+
+    /// @dev Returns the blocks of decay needed to absorb \`excess\`, rounded up.
+    function _blocksToDecay(uint256 excess, uint256 decayPerBlock) private pure returns (uint256) {
+        return (excess + decayPerBlock - 1) / decayPerBlock;
     }
 
     /**
@@ -555,7 +569,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (depths & DEPTH_KNOWN != 0) return depths & ~DEPTH_KNOWN;
         if (_getHCULimitStorage().maxCrossTxDepth == 0) return 0;
         (uint48 storedDepth, uint48 storedBlock) = ACL(aclAdd).getStoredDepth(handle, holder);
-        depths = _decayed(storedDepth, storedBlock) << 128;
+        depths = _decayed(storedDepth, storedBlock, _getHCULimitStorage().crossTxDepthDecayPerBlock) << 128;
         _setHCUForHandle(handle, depths | DEPTH_KNOWN);
     }
 
@@ -624,12 +638,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         HCULimitStorage storage $ = _getHCULimitStorage();
         uint16 quotaId = $.contractQuota[caller];
         Quota storage quota = $.quotas[quotaId];
-        uint48 cap = quota.capPerBlock;
-        if (cap == NO_CAP) return;
-        uint256 used = (quota.lastBlock == block.number ? quota.usedHCU : 0) + opHCU;
-        if (used > cap) {
-            if (cap == 0) revert HCUQuotaStopped(caller, quotaId);
-            revert HCUQuotaExceeded(caller, quotaId);
+        uint48 maxHCU = quota.maxHCU;
+        if (maxHCU == NO_CAP) return;
+        uint256 used = _decayed(quota.usedHCU, quota.lastBlock, quota.decayPerBlock) + opHCU;
+        if (used > maxHCU) {
+            if (maxHCU == 0) revert HCUQuotaStopped(caller, quotaId);
+            uint256 retryAfterBlocks = opHCU > maxHCU
+                ? type(uint256).max
+                : _blocksToDecay(used - maxHCU, quota.decayPerBlock);
+            revert HCUQuotaExceeded(caller, quotaId, retryAfterBlocks);
         }
         quota.usedHCU = uint48(used);
         quota.lastBlock = uint48(block.number);
@@ -672,10 +689,14 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
     }
 
-    function _setQuotaCap(uint16 quotaId, uint48 capPerBlock) private {
+    /// @dev A metered quota needs a decay, or its usage never comes back down; a stopped quota has neither.
+    function _setQuota(uint16 quotaId, uint48 maxHCU, uint48 decayPerBlock) private {
         if (quotaId == PAUSED_QUOTA) revert InvalidQuota(quotaId);
-        _getHCULimitStorage().quotas[quotaId].capPerBlock = capPerBlock;
-        emit QuotaCapSet(quotaId, capPerBlock, msg.sender);
+        if (maxHCU != NO_CAP && (maxHCU == 0) != (decayPerBlock == 0)) revert InvalidQuota(quotaId);
+        Quota storage quota = _getHCULimitStorage().quotas[quotaId];
+        quota.maxHCU = maxHCU;
+        quota.decayPerBlock = decayPerBlock;
+        emit QuotaSet(quotaId, maxHCU, decayPerBlock, msg.sender);
     }
 
     function _assignQuota(address account, uint16 quotaId) private {
@@ -748,11 +769,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Returns a quota's cap per block and the HCU it has used in the current block.
+     * @notice Returns a quota's maximum usage, its decay per block and its current usage after decay.
      */
-    function getQuota(uint16 quotaId) public view virtual returns (uint48 capPerBlock, uint48 usedThisBlock) {
+    function getQuota(uint16 quotaId) public view virtual returns (uint48 maxHCU, uint48 decayPerBlock, uint48 usedHCU) {
         Quota storage quota = _getHCULimitStorage().quotas[quotaId];
-        return (quota.capPerBlock, quota.lastBlock == block.number ? quota.usedHCU : 0);
+        return (quota.maxHCU, quota.decayPerBlock, uint48(_decayed(quota.usedHCU, quota.lastBlock, quota.decayPerBlock)));
     }
 
     /**

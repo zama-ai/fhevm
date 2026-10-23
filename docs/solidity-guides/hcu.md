@@ -12,14 +12,14 @@ To do so, there is a contract named `HCULimit`, which monitors HCU consumption a
 
 - **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order. Exceeding it reverts with `HCUTransactionDepthLimitExceeded`.
 - **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel. Exceeding it reverts with `HCUTransactionLimitExceeded`.
-- **HCU quota per block**: Caps the total HCU that the contracts sharing a quota consume in one block. Exceeding it reverts with `HCUQuotaExceeded`; a paused contract or a stopped quota reverts with `HCUQuotaStopped`.
+- **HCU quota**: Caps the HCU that the contracts sharing a quota consume over time. Exceeding it reverts with `HCUQuotaExceeded`; a paused contract or a stopped quota reverts with `HCUQuotaStopped`.
 - **Depth across transactions** (off unless governance enables it): Caps the sequential HCU depth that builds up over a chain of dependent transactions. Exceeding it reverts with `HCUCrossTxDepthLimitExceeded`.
 
 If any of these limits is exceeded, the transaction will revert.
 
 ## HCU limit
 
-The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. Quota caps are set on-chain by governance (via `HCULimit.setQuotaCap`); you can read a contract's quota with `getContractQuota(contract)`, and that quota's cap and the current block's usage with `getQuota(quotaId)`. If any HCU limit is exceeded, the transaction will revert.
+The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. Quotas are set on-chain by governance (via `HCULimit.setQuota`); you can read a contract's quota with `getContractQuota(contract)`, and that quota's maximum, decay per block and current usage with `getQuota(quotaId)`. If any HCU limit is exceeded, the transaction will revert.
 
 To resolve a per-transaction revert, you must do one of the following:
 
@@ -28,26 +28,28 @@ To resolve a per-transaction revert, you must do one of the following:
 
 ### Quotas and transaction estimation
 
-Every contract that calls `FHEVMExecutor` belongs to one quota. Contracts start in the default quota (`0`); governance can assign a contract to another quota (`assignQuota`). A quota with the maximum cap (`type(uint48).max`) is not metered. A quota's usage resets every block. Here, the contract is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA.
+Every contract that calls `FHEVMExecutor` belongs to one quota. Contracts start in the default quota (`0`); governance can assign a contract to another quota (`assignQuota`). Here, the contract is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA.
 
-Unlike the per-transaction limits, a quota depends on the **other transactions included in the same block**, not just on your own. As a result:
+A quota has a maximum and a decay per block, like the depth limit across transactions below. Every FHE operation adds its HCU to the quota's usage, usage decreases by the decay every block, and an operation fits while usage stays at or below the maximum. The maximum sets the largest burst; the decay sets the sustained rate. A quota whose maximum is `type(uint48).max` is not metered.
 
-- A transaction that estimates successfully (e.g. via `eth_estimateGas` or a static call) can still revert with `HCUQuotaExceeded` at execution time if other FHE-heavy transactions in the same quota are mined in the same block ahead of it.
+Unlike the per-transaction limits, a quota depends on **other transactions in the same quota**, not just on your own. As a result:
+
+- A transaction that estimates successfully (e.g. via `eth_estimateGas` or a static call) can still revert with `HCUQuotaExceeded` at execution time if other FHE-heavy transactions in the same quota are mined ahead of it.
 - This revert is **non-deterministic from the sender's perspective**: it is a function of block-inclusion ordering, not of the transaction's own payload.
 
-If you hit `HCUQuotaStopped(account, quotaId)`, retrying fails until governance acts: the contract is paused (`quotaId` is `PAUSED_QUOTA`) or its quota's cap is 0.
+If you hit `HCUQuotaStopped(account, quotaId)`, retrying fails until governance acts: the contract is paused (`quotaId` is `PAUSED_QUOTA`) or its quota's maximum is 0.
 
-If you hit `HCUQuotaExceeded(account, quotaId)`, first check whether a retry can succeed: if the quota's cap (`getQuota(quotaId)`) is below the transaction's HCU, the transaction never fits, and retrying fails until the cap is raised.
+If you hit `HCUQuotaExceeded(account, quotaId, retryAfterBlocks)`, `retryAfterBlocks` is the wait for the operation that failed, as for the depth limit: wait at least that many blocks, simulate again, and repeat until the simulation passes. It is `type(uint256).max` when one operation alone exceeds the quota's maximum; then retrying fails until the maximum is raised.
 
-Otherwise, options include:
+Options include:
 
-- **Retry** the transaction in a later block, when the quota has room again.
+- **Retry** the transaction after `retryAfterBlocks`, when the quota has room again.
 - **Reduce the HCU footprint** of the transaction so it is more likely to fit alongside others (same techniques as for per-transaction reverts).
 - **Request a dedicated quota** for contracts that have a justified need for more HCU per block; this is governed on-chain and is not available to arbitrary callers.
 
-Governance sets caps (`setQuotaCap`) and assigns contracts to quotas (`assignQuota`), which also lifts a pause. Pausers can only restrict:
+Governance sets quotas (`setQuota(quotaId, maxHCU, decayPerBlock)`) and assigns contracts to them (`assignQuota`), which also lifts a pause. Pausers can only restrict:
 
-- `lowerQuotaCap(quotaId, cap)` lowers a quota's cap; a cap of 0 stops every contract in the quota.
+- `lowerQuota(quotaId, maxHCU, decayPerBlock)` lowers a quota's maximum, its decay, or both; `(0, 0)` stops every contract in the quota.
 - `moveToDefaultQuota(contract)` moves a contract to the default quota, where it shares the budget of every contract nobody assigned.
 - `pauseContract(contract)` stops a contract's FHE operations until governance assigns it a quota.
 
