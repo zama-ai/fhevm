@@ -119,6 +119,7 @@ WORKDIR /app/coprocessor/fhevm-engine
 # NOTE: We use cache mounts for incremental compilation. Because cache mounts
 # are NOT committed to the image layer, we must copy binaries to /out during
 # the same RUN instruction for COPY --from to work in later stages.
+# coprocessor-proxy builds without sccache, as coprocessor-proxy/Dockerfile does and says why.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
     --mount=type=secret,id=sccache_aws_access_key_id \
@@ -129,7 +130,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace --features "${CARGO_FEATURES}" && \
+    SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace --exclude coprocessor-proxy --features "${CARGO_FEATURES}" && \
+    env -u RUSTC_WRAPPER SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} -p coprocessor-proxy && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
     cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \
