@@ -14,7 +14,9 @@ use actix_web::{
 };
 use alloy::primitives::B256;
 use connector_utils::monitoring::otlp::PropagationContext;
-use kms_connector_api::{ErrorCode, ErrorResponse, UserDecryptionRequest, UserDecryptionResponse};
+use kms_connector_api::{
+    ErrorCode, ErrorResponse, USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse,
+};
 use sqlx::{
     PgExecutor,
     postgres::PgQueryResult,
@@ -39,6 +41,7 @@ pub async fn user_decrypt(
 pub struct UserRoute;
 
 impl DecryptionRoute for UserRoute {
+    const ROUTE: &'static str = USER_DECRYPTION_ROUTE;
     type Request = UserDecryptionRequest;
     type ResponseRow = UserDecryptionResponseRow;
 

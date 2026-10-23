@@ -32,6 +32,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
 
     // Start the `Endpoint` and its monitoring server
     let (endpoint, state) = Endpoint::from_config(config).await?;
+    endpoint.register_metrics();
     let endpoint_cancel_token = CancellationToken::new();
     let endpoint_task = tokio::spawn(endpoint.start(endpoint_cancel_token.clone()));
     test_instance.wait_for_log("HTTP server listening at").await;
@@ -70,7 +71,6 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
         }
     );
 
-    // Test the endpoint while everything is fine
     query_healthcheck_endpoint::<HealthStatus>(Some(monitoring_url.clone())).await?;
     let status = fetch_status(&monitoring_url).await?;
     assert!(status.healthy);
