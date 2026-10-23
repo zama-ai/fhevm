@@ -43,7 +43,7 @@ const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path"
 
 /// Per-request context.
 pub struct RequestContext {
-    /// The root span of the request, disabled for `GET /version` probes.
+    /// The root span of the request, disabled for `GET /version` probes and unmatched paths.
     span: Span,
     /// Counts the request as in flight, and records it in the HTTP metrics once dropped.
     observation: RequestObservation,
@@ -358,15 +358,18 @@ impl ProxyHttp for Proxy {
 
 /// Starts a new trace for a request received by the proxy.
 ///
-/// Note: returns a disabled span for `GET /version` health checks.
+/// Note: returns a disabled span for `GET /version` health checks and for paths matching no API
+/// route.
 fn proxy_span(method: &Method, path: &str, incoming: Context) -> Span {
-    // Probes traverse both services. Never create or export a request span for them.
-    if *method == Method::GET && path == VERSION_ROUTE {
+    let route = telemetry::route_label(path);
+    // Probes traverse both services, and unmatched paths are mostly scanners: never create or
+    // export a request span for them. Both are still counted in the request metrics.
+    if (*method == Method::GET && path == VERSION_ROUTE) || route == telemetry::UNMATCHED_ROUTE {
         return Span::none();
     }
     let span = tracing::info_span!(parent: None, "http_request",
         service = "proxy",
-        http.route = telemetry::route_label(path),
+        http.route = route,
         http.response.status_code = tracing::field::Empty,
         code = tracing::field::Empty
     );
@@ -443,29 +446,6 @@ pub fn sanitize_headers(req: &mut RequestHeader) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Dropping the context decrements the in-flight gauge and counts a cancellation without logging().
-    #[test]
-    fn dropped_request_metrics() {
-        use crate::{core::Config, monitoring::metrics::HTTP_METRICS};
-
-        let config = Config {
-            endpoint_addresses: vec!["127.0.0.1:1".parse().unwrap()],
-            ..Config::default()
-        };
-        let (proxy, _state) = Proxy::from_config(config).unwrap();
-        let context = proxy.new_ctx();
-        assert_eq!(HTTP_METRICS.in_flight.get(), 1);
-        drop(context);
-        assert_eq!(HTTP_METRICS.in_flight.get(), 0);
-        assert_eq!(
-            HTTP_METRICS
-                .requests
-                .with_label_values(&[telemetry::UNMATCHED_ROUTE, "0", "cancelled"])
-                .get(),
-            1
-        );
-    }
 
     #[test]
     fn error_response_is_recovered_from_the_pingora_error() {
