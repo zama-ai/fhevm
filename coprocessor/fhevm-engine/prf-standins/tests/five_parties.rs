@@ -390,10 +390,50 @@ async fn retrieval_matrix() {
             "non_canonical_path",
         ),
         (format!("/v1/prf/1/labels/{label}/64"), 404, "unknown_prf"),
+        // QA row G4: the encodings the proxy forwards unchanged.
+        (
+            format!("/v1/prf/0/labels/{label}/0x40"),
+            400,
+            "non_canonical_path",
+        ),
+        (
+            format!("/v1/prf/0/labels/{label}/%36%34"),
+            400,
+            "non_canonical_path",
+        ),
+        (
+            format!("/v1/prf/0/labels/{label}/+64"),
+            400,
+            "non_canonical_path",
+        ),
+        (
+            format!("/v1/prf/0/labels/{label}/65536"),
+            400,
+            "non_canonical_path",
+        ),
+        (
+            format!("/v1/prf/0/labels/{label}/{}", "9".repeat(30)),
+            400,
+            "non_canonical_path",
+        ),
+        (
+            format!("/v1/prf/0/labels/0x{label}/64"),
+            400,
+            "non_canonical_path",
+        ),
     ] {
+        let rows_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pads")
+            .fetch_one(&parties[1].pool)
+            .await
+            .unwrap();
         let (got, error, _) = one.probe(1, Method::GET, &path, None).await.unwrap();
         let got_code = error.map(|e| e.code);
         assert_eq!((got, got_code.as_deref()), (status, Some(code)), "{path}");
+        let rows_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pads")
+            .fetch_one(&parties[1].pool)
+            .await
+            .unwrap();
+        assert_eq!(rows_after, rows_before, "{path} must not create a row");
     }
     let (got, _, _) = one
         .probe(
