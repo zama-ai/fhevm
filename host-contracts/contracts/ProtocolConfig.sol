@@ -74,12 +74,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     // -----------------------------------------------------------------------------------------
 
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfigCanonical
-    /// @dev Canonical-only state added in v0.4.0. It is outside the base namespace, so
-    ///      `ProtocolConfigReplica` does not carry it. The epoch activation confirmations stay in base
-    ///      storage, because `reinitializeV4` leaves only v0.3.0 confirmations of settled epochs there.
-    ///      So no v0.3.0 per-signer flag blocks a pending epoch.
-    ///      `destroyedContexts` is canonical-only and write-only. It stays in base storage to keep the
-    ///      v0.3.0 layout.
+    /// @dev Canonical-only state added in v0.4.0. `ProtocolConfigReplica` does not carry it.
     struct ProtocolConfigCanonicalStorage {
         /// @notice Hash of the stored node set and thresholds, signed in ContextCreationConfirmation.
         mapping(uint256 contextId => bytes32) nodeConfigHashForContext;
