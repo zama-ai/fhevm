@@ -13,9 +13,11 @@ import {
 import { verifyUserDecryptResponses } from '../sdk/connector/verify';
 import { type Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
-import { connectorSetup } from './setup';
+import { connectorSetup, delegateForUserDecryption, waitBlocks } from './setup';
 
 const POSITIVE_TIMEOUT_MS = 4 * 60 * 1000;
+// Blocks to wait after an on-chain ACL change before the kms-workers' host reads observe it.
+const PROPAGATION_BLOCKS = 3;
 
 const TYPED_HANDLES = [
   ['ebool', 'xBool'],
@@ -113,5 +115,27 @@ describe('Connector HTTP user decrypt', function () {
     await fanOutUntilSettled<UserDecryptionResponse>(USER_DECRYPT_ROUTE, await aliceRequest([handle]));
     const viaSdk = await instances.alice.userDecryptSingleHandle({ handle, contractAddress, signer: signers.alice });
     expect(viaSdk).to.equal(18446744073709551600n);
+  });
+
+  it('test connector endpoint user decrypt delegated handle (ownerAddress != userAddress)', async function () {
+    this.timeout(POSITIVE_TIMEOUT_MS);
+    await delegateForUserDecryption(signers.alice, signers.bob.address, contractAddress);
+    await waitBlocks(PROPAGATION_BLOCKS);
+
+    // Only the alice -> bob delegation exists: the request passes only if the connector checks
+    // `isHandleDelegatedForUserDecryption` with alice as delegator and bob as delegate.
+    const handle = await contract.xUint32();
+    const body = await buildUserRequest(
+      {
+        handles: [{ handle, contractAddress, ownerAddress: signers.alice.address }],
+        userAddress: signers.bob.address,
+        publicKey,
+        allowedContracts: [contractAddress],
+        decryptionContractAddress: verifyingContractAddressDecryption,
+      },
+      signers.bob,
+    );
+    const out = await fanOutUntilSettled<UserDecryptionResponse>(USER_DECRYPT_ROUTE, body);
+    verifyUserDecryptResponses(out.results);
   });
 });
