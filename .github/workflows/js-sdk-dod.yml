@@ -105,7 +105,7 @@ jobs:
           persist-credentials: "false"
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
-          node-version: 22.x
+          node-version: '>=22.23.4 <23'
       - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
         with:
           version: stable
@@ -134,7 +134,7 @@ jobs:
           persist-credentials: "false"
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
-          node-version: 22.x
+          node-version: '>=22.23.4 <23'
       - uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
         with:
           version: stable
@@ -186,7 +186,7 @@ jobs:
           version: stable
       - uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
-          node-version: 22.x
+          node-version: '>=22.23.4 <23'
       - name: Log in to GitHub Container Registry
         uses: zama-ai/ci-templates/.github/actions/retry@d13c806c229167a30eab20c228b87467d0e2e470 # v1.0.12
         env:
