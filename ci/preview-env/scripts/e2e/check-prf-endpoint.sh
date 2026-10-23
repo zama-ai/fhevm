@@ -11,6 +11,14 @@ set -euo pipefail
 pod=prf-endpoint-check
 results=$(mktemp)
 failed=0
+# shellcheck disable=SC2329 # called by the EXIT trap
+finish() {
+  kubectl delete pod "${pod}" -n "${NAMESPACE}" --wait=false >/dev/null 2>&1 || true
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    { echo "### PRF endpoint failure matrix"; echo; echo "| scenario | expected | observed | verdict | evidence |"; echo "|---|---|---|---|---|"; cat "${results}"; } >> "${GITHUB_STEP_SUMMARY}"
+  fi
+}
+trap finish EXIT
 
 key_env='[]'
 key_list=""
@@ -228,21 +236,27 @@ for p in 3 4 5; do
   wait_ready "deploy/coprocessor-${p}-coprocessor-proxy"
 done
 
-# The Postgres of party 5 is down.
+# An evaluation of 130 s outlives the proxy's 120 s endpoint_response_timeout: the proxy answers
+# 504 timeout, and the retry joins the same evaluation.
+# A 429 between the 504 and the 200 means the retry arrived before prf-service freed the request:
+# the observed column keeps the full list.
+ask_case "retry rule: proxy 504 is retried (evaluation 130 s, proxy timeout 120 s)" "504 timeout retried, then 200" \
+  '.status == 200 and (.retried // [])[0] == "504 timeout"' --target 1 --label-prefix f0 --deadline 200s
+
+# Last, since prf-service and the pad-worker of party 5 exit without their database and may then
+# wait out a crash-loop backoff: the Postgres of party 5 is down.
 kubectl scale statefulset/postgres-coprocessor-5 -n "${NAMESPACE}" --replicas=0 >/dev/null
 kubectl wait --for=delete pod/postgres-coprocessor-5-0 -n "${NAMESPACE}" --timeout=120s >/dev/null || true
 fetch_case "Postgres of one coprocessor down (party 5, GET target)" "ok via fallback" '.ok and .fallback' --label-prefix 00 --get-from 4
 kubectl scale statefulset/postgres-coprocessor-5 -n "${NAMESPACE}" --replicas=1 >/dev/null
-kubectl rollout status statefulset/postgres-coprocessor-5 -n "${NAMESPACE}" --timeout=300s >/dev/null
-wait_ready deploy/coprocessor-5-prf-service
+started=${SECONDS}
+recovered=true
+{ kubectl rollout status statefulset/postgres-coprocessor-5 -n "${NAMESPACE}" --timeout=300s >/dev/null \
+  && wait_ready deploy/coprocessor-5-prf-service && wait_ready deploy/coprocessor-5-standin-pad-worker; } || recovered=false
+restarts=$(kubectl get pods -n "${NAMESPACE}" -l app.kubernetes.io/name=coprocessor-5-prf-service -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}' 2>/dev/null || true)
+report=$(connector fetch --connectors 1 --label-prefix 00 --get-from 4)
+record "party 5 recovers after its Postgres returns" "prf-service ready, party 5 serves the GET" \
+  "ready=${recovered} after $((SECONDS - started)) s, prf-service restarts ${restarts}; $(summary "${report}")" \
+  "$(jq --argjson r "${recovered}" '$r and .ok and .body_from == 4' <<<"${report}")"
 
-# An evaluation of 130 s outlives the proxy's 120 s endpoint_response_timeout: the proxy answers
-# 504 timeout, and the retry joins the same evaluation.
-ask_case "retry rule: proxy 504 is retried (evaluation 130 s, proxy timeout 120 s)" "504 timeout retried, then 200" \
-  '.status == 200 and .retried == ["504 timeout"]' --target 1 --label-prefix f0 --deadline 200s
-
-kubectl delete pod "${pod}" -n "${NAMESPACE}" --wait=false >/dev/null
-if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-  { echo "### PRF endpoint failure matrix"; echo; echo "| scenario | expected | observed | verdict | evidence |"; echo "|---|---|---|---|---|"; cat "${results}"; } >> "${GITHUB_STEP_SUMMARY}"
-fi
 exit "${failed}"
