@@ -62,8 +62,9 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      # The shutdown delay and grace period, Pingora's 5 s to close what is left, and 5 s margin.
-      terminationGracePeriodSeconds: {{ add (int $proxy.shutdownDelaySeconds) (int $proxy.endpointResponseTimeoutSeconds) 10 }}
+      # The shutdown delay and grace period, the proxy's GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS (5 s,
+      # coprocessor-proxy/src/core/proxy.rs) to close what is left, and 5 s margin.
+      terminationGracePeriodSeconds: {{ add (int $proxy.shutdownDelaySeconds) (int $proxy.endpointResponseTimeoutSeconds) 5 5 }}
       {{- with $proxy.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

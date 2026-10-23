@@ -121,7 +121,6 @@ pub fn stub_attestation(path: &str) -> String {
 pub struct SeenRequest {
     pub version: Option<Version>,
     pub headers: HeaderMap,
-    pub body: Vec<u8>,
 }
 
 #[derive(Default)]
@@ -214,16 +213,12 @@ async fn prf(
     Path((prf, label, pad_length)): Path<(String, String, String)>,
     version: Version,
     headers: HeaderMap,
-    // Read as prf-service does to check it against the signed digest: a body the proxy cuts
-    // short is never handled.
-    body: axum::body::Bytes,
 ) -> Response {
     state.hits.fetch_add(1, Ordering::SeqCst);
     state.connections.lock().unwrap().insert(client);
     *state.last.lock().unwrap() = SeenRequest {
         version: Some(version),
         headers: headers.clone(),
-        body: body.to_vec(),
     };
     if headers.contains_key("x-stub-hold") {
         state.release.notified().await;
