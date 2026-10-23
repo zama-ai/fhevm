@@ -72,8 +72,9 @@ worker runs separately; the consumer waits for all four read flows before cleanu
 
 ## Ownership and takeover
 
-At startup, the consumer waits ten seconds after publishing WATCH for its live
-and finalized filters, before starting any readers or catchup coordination.
+At startup, readers start without waiting after publishing WATCH for the live
+and finalized filters. Catchup coordination starts no earlier than ten seconds
+after WATCH publication, delaying new, resumed and history-repair requests.
 This gives listener-core time to activate filters; it is a propagation grace
 period, not an activation acknowledgement.
 
