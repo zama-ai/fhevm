@@ -80,7 +80,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
         "kms_connector_endpoint_http_requests_counter",
         "kms_connector_endpoint_decryption_lookup_counter",
         "kms_connector_endpoint_decryption_wait_latency_seconds",
-        "kms_connector_endpoint_decryption_capacity",
+        "kms_connector_endpoint_max_in_flight_decryptions",
         "kms_connector_endpoint_decryptions_in_flight",
     ] {
         assert!(

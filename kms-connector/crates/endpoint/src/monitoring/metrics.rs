@@ -44,7 +44,7 @@ pub static DECRYPTION_WAIT_LATENCY_HISTOGRAM: LazyLock<HistogramVec> = LazyLock:
 /// Should be called once at endpoint startup, through `Endpoint::register_metrics`, so metrics appear in
 /// scrapes before any requests arrive.
 /// Panics if the admission gauges cannot be registered, e.g. when called twice in the same process.
-pub(crate) fn init(limiter: Arc<Semaphore>, capacity: usize) {
+pub(crate) fn init(decryption_limiter: Arc<Semaphore>, capacity: usize) {
     for route in [
         PUBLIC_DECRYPTION_ROUTE,
         USER_DECRYPTION_ROUTE,
@@ -61,10 +61,10 @@ pub(crate) fn init(limiter: Arc<Semaphore>, capacity: usize) {
         DECRYPTION_WAIT_LATENCY_HISTOGRAM.with_label_values(&[route]);
     }
     let limit = IntGauge::new(
-        "kms_connector_endpoint_decryption_capacity",
-        "Maximum admitted decryption requests",
+        "kms_connector_endpoint_max_in_flight_decryptions",
+        "Configured max_in_flight_decryptions",
     )
-    .expect("Failed to create kms_connector_endpoint_decryption_capacity metric");
+    .expect("Failed to create kms_connector_endpoint_max_in_flight_decryptions metric");
     limit.set(capacity as i64);
     let in_flight = IntGauge::new(
         "kms_connector_endpoint_decryptions_in_flight",
@@ -73,35 +73,39 @@ pub(crate) fn init(limiter: Arc<Semaphore>, capacity: usize) {
     .expect("Failed to create kms_connector_endpoint_decryptions_in_flight metric");
     prometheus::default_registry()
         .register(Box::new(AdmissionCollector {
-            limiter,
-            capacity,
+            decryption_limiter,
+            permits: capacity,
             in_flight,
-            limit,
+            max_in_flight_decryptions: limit,
         }))
-        .expect("Failed to register kms_connector_endpoint_decryptions_in_flight and kms_connector_endpoint_decryption_capacity metrics");
+        .expect("Failed to register kms_connector_endpoint_decryptions_in_flight and kms_connector_endpoint_max_in_flight_decryptions metrics");
 }
 
 /// Prometheus [`Collector`] that reads used semaphore permits on each scrape.
 struct AdmissionCollector {
     /// Semaphore that limits the number of concurrent decryption requests.
-    limiter: Arc<Semaphore>,
+    decryption_limiter: Arc<Semaphore>,
     /// Total number of permits configured for the semaphore.
-    capacity: usize,
+    permits: usize,
     /// Gauge reporting the number of decryption requests currently holding permits.
     in_flight: IntGauge,
-    /// Gauge reporting the maximum number of concurrent decryption requests.
-    limit: IntGauge,
+    /// Gauge reporting the configured `max_in_flight_decryptions`.
+    max_in_flight_decryptions: IntGauge,
 }
 
 impl Collector for AdmissionCollector {
     fn desc(&self) -> Vec<&Desc> {
-        [self.in_flight.desc(), self.limit.desc()].concat()
+        [self.in_flight.desc(), self.max_in_flight_decryptions.desc()].concat()
     }
     fn collect(&self) -> Vec<MetricFamily> {
         self.in_flight.set(
-            self.capacity
-                .saturating_sub(self.limiter.available_permits()) as i64,
+            self.permits
+                .saturating_sub(self.decryption_limiter.available_permits()) as i64,
         );
-        [self.in_flight.collect(), self.limit.collect()].concat()
+        [
+            self.in_flight.collect(),
+            self.max_in_flight_decryptions.collect(),
+        ]
+        .concat()
     }
 }

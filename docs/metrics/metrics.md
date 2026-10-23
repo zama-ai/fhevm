@@ -255,10 +255,10 @@ are not recorded.
 #### Metric Name: `kms_connector_endpoint_decryptions_in_flight`
  - **Type**: Gauge
  - **Description**: Used admission permits, read from the semaphore on each scrape. Duplicate requests each hold a permit.
- - **Alarm**: Utilization above 90% of [`kms_connector_endpoint_decryption_capacity`](#metric-name-kms_connector_endpoint_decryption_capacity) for 5 minutes, together with increasing overload responses.
-   - **Recommendation**: `max(kms_connector_endpoint_decryptions_in_flight / kms_connector_endpoint_decryption_capacity) > 0.9` for 5 minutes, and `sum(increase(kms_connector_endpoint_http_requests_counter{code="overloaded"}[5m])) > 0`.
+ - **Alarm**: Utilization above 90% of [`kms_connector_endpoint_max_in_flight_decryptions`](#metric-name-kms_connector_endpoint_max_in_flight_decryptions) for 5 minutes, together with increasing overload responses.
+   - **Recommendation**: `max(kms_connector_endpoint_decryptions_in_flight / kms_connector_endpoint_max_in_flight_decryptions) > 0.9` for 5 minutes, and `sum(increase(kms_connector_endpoint_http_requests_counter{code="overloaded"}[5m])) > 0`.
 
-#### Metric Name: `kms_connector_endpoint_decryption_capacity`
+#### Metric Name: `kms_connector_endpoint_max_in_flight_decryptions`
  - **Type**: Gauge
  - **Description**: Total admission permits, i.e. the configured maximum number of in-flight decryption requests.
 
