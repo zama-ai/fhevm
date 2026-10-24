@@ -70,6 +70,7 @@ jobs:
           # manifest it inherits from.
           - kms-connector/crates/api/**
           - kms-connector/Cargo.toml
+          - shared/fhevm-sig-auth/**
 
   build:
     needs: [is-latest-commit, check-changes]
