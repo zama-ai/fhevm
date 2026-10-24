@@ -31,7 +31,8 @@ import {
 // XOR-masked with the first 32 bytes of the transport public key.
 ////////////////////////////////////////////////////////////////////////////////
 
-const CHAIN_ID = 31337n as Uint64BigInt;
+const HOST_CHAIN_ID = 31337n as Uint64BigInt;
+const GATEWAY_CHAIN_ID = 54321n as Uint64BigInt;
 const DECRYPTION_ADDRESS = '0x5ffdaAB0373E62E2ea2944776209aEf29E631A64' as ChecksummedAddress;
 const EXTRA_DATA = `0x02${'00'.repeat(31)}01${'00'.repeat(31)}01` as BytesHex;
 const TRANSPORT_PUBLIC_KEY = `0x${'a5'.repeat(64)}` as BytesHex;
@@ -91,6 +92,7 @@ async function response(
   partyIndex: number,
   padShares: readonly PadShare[],
   packingFactor: number = CLEARTEXT_PAD_PACKING_FACTOR,
+  chainId: Uint64BigInt = GATEWAY_CHAIN_ID,
 ): Promise<PadDecryptResponse> {
   const payload: CleartextPadDecryptResponsePayload = {
     packingFactor: packingFactor as Uint32Number,
@@ -100,7 +102,7 @@ async function response(
     padShares,
   };
   const signature = await KMS_ACCOUNTS[partyIndex]!.signTypedData({
-    domain: createKmsEip712Domain({ chainId: CHAIN_ID, verifyingContractAddressDecryption: DECRYPTION_ADDRESS }),
+    domain: createKmsEip712Domain({ chainId, verifyingContractAddressDecryption: DECRYPTION_ADDRESS }),
     types: {
       PadDecryptResponsePayload: [...kmsPadDecryptResponseEip712Types.PadDecryptResponsePayload],
       PadShare: [...kmsPadDecryptResponseEip712Types.PadShare],
@@ -132,7 +134,7 @@ function run(responses: readonly PadDecryptResponse[], witnesses: readonly PadWi
     extraData: EXTRA_DATA,
     transportPublicKey: TRANSPORT_PUBLIC_KEY,
     kmsSigners: KMS_SIGNERS,
-    chainId: CHAIN_ID,
+    gatewayChainId: GATEWAY_CHAIN_ID,
     verifyingContractAddressDecryption: DECRYPTION_ADDRESS,
   });
 }
@@ -206,5 +208,19 @@ describe('reconstructPads', () => {
       [0, 1, 2].map((i) => response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) }])),
     );
     await expect(run(responses, [a, b])).rejects.toThrow(/requested label\(s\) missing/);
+  });
+
+  it('rejects a response signed under the host chain id instead of the gateway chain id', async () => {
+    const responses = await Promise.all(
+      [0, 1, 2].map((i) =>
+        response(
+          i,
+          [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) }],
+          CLEARTEXT_PAD_PACKING_FACTOR,
+          HOST_CHAIN_ID,
+        ),
+      ),
+    );
+    await expect(run(responses, [a])).rejects.toThrow(/is not a KMS signer/);
   });
 });

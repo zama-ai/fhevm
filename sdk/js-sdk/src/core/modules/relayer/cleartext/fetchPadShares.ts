@@ -119,8 +119,9 @@ export async function fetchPadShares(
 
   const requestId = _computeRequestId(parameters, extraData);
 
+  // KMS responses are signed under the gateway chainId, like user decryption responses.
   const domain = createKmsEip712Domain({
-    chainId: relayerClient.chain.id,
+    chainId: relayerClient.chain.fhevm.gateway.id,
     verifyingContractAddressDecryption: relayerClient.chain.fhevm.gateway.contracts.decryption.address,
   });
   const privateKeys = getKmsSignersPrivateKeyMap(relayerClient);

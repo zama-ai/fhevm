@@ -42,8 +42,8 @@ export type ReconstructPadsParameters = {
   readonly transportPublicKey: BytesHex;
   /** KMS signers of the context named by `extraData`. */
   readonly kmsSigners: readonly ChecksummedAddress[];
-  /** EIP-712 domain of the response signature (host chain, KMS `Decryption` domain). */
-  readonly chainId: Uint64BigInt | number;
+  /** EIP-712 domain of the response signature (gateway chain, KMS `Decryption` domain). */
+  readonly gatewayChainId: Uint64BigInt | number;
   readonly verifyingContractAddressDecryption: ChecksummedAddress;
 };
 
@@ -123,7 +123,7 @@ async function _verifyResponse(
 
   // Signature over the payload, by a signer of the request's context.
   const domain = createKmsEip712Domain({
-    chainId: parameters.chainId,
+    chainId: parameters.gatewayChainId,
     verifyingContractAddressDecryption: parameters.verifyingContractAddressDecryption,
   });
   const signer = await ethereum.recoverTypedDataAddress({

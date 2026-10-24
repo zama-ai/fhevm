@@ -153,7 +153,7 @@ export async function encryptTransci(context: Context, parameters: Parameters): 
     extraData,
     transportPublicKey: signedPermit.eip712.message.publicKey,
     kmsSigners: kmsSignersContext.signers,
-    chainId,
+    gatewayChainId: context.chain.fhevm.gateway.id,
     verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address as ChecksummedAddress,
   });
   const pad = pads.get(label);
