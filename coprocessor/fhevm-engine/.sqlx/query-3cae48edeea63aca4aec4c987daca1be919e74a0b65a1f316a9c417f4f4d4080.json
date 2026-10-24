@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE host_consumer_catchups AS r\n         SET lease_until = clock_timestamp() + interval '60 seconds'\n         FROM UNNEST($1::uuid[], $2::uuid[]) AS owned(id, owner_id)\n         WHERE r.id = owned.id AND r.owner_id = owned.owner_id\n           AND r.lease_until > clock_timestamp()\n           AND r.lease_until <= clock_timestamp() + interval '30 seconds'\n           AND (r.status = 'ONGOING' OR r.cancel_pending)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3cae48edeea63aca4aec4c987daca1be919e74a0b65a1f316a9c417f4f4d4080"
+}

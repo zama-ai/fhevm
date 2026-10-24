@@ -141,7 +141,7 @@ test("feature additions are routed on CPU without adding a multi-GPU prerequisit
 });
 
 test("backlog cases require the small observed batch/page topology", () => {
-  for (const id of ["FM-HOST-LONG-OFFLINE", "FM-DURABLE-BACKLOG"]) {
+  for (const id of ["FM-HOST-LONG-OFFLINE", "FM-HOST-RELATIVE-CATCHUP", "FM-DURABLE-BACKLOG"]) {
     const row = inventory.cases.find(entry => entry.id === id)!;
     expect(row.topology.scenario).toBe("three-of-three-backlog");
     expect(row.ci.leg).toBe("backlog");
@@ -154,6 +154,9 @@ test("backlog cases require the small observed batch/page topology", () => {
   expect(blockTimeMs).toBeGreaterThan(0);
   for (const instance of scenario.instances) {
     expect(instance.args["tfhe-worker"]).toContain("--work-items-batch-size=4");
+    expect(instance.args["host-listener-consumer"]).toContain("--catchup-from-block=-1024");
+    expect(instance.args["host-listener-consumer"]).toContain("--catchup-unfinalized");
+    expect(instance.args["host-listener-consumer"]).toContain("--no-override-catchup");
     const pollerArgs = instance.args["host-listener-poller"] as string[];
     expect(pollerArgs).toContain("--batch-size=4");
     const pageSize = Number(pollerArgs.find(arg => arg.startsWith("--batch-size="))?.split("=")[1]);
@@ -176,4 +179,17 @@ test("GPU pressure opts into hook builds only when selected and retains one-devi
   }
   expect(workflow.jobs.gpu.env.GPU_CONSENSUS_TEST_FAILPOINTS).toContain("needs.plan.outputs.gpu-pressure");
   expect(workflow.jobs.gpu.steps.find((step: any) => step.run === "./scripts/run-gpu-pressure.sh").if).toContain("gpu-pressure");
+});
+
+test("relative catchup regression is routed through backlog with the private ingestion gate enabled", () => {
+  const row = inventory.cases.find(entry => entry.id === "FM-HOST-RELATIVE-CATCHUP")!;
+  expect(row.capabilities).toContain("broker-failpoints");
+  expect(row.runner).toBe("scripts/run-failure-matrix.sh --case FM-HOST-RELATIVE-CATCHUP");
+  expect(workflow.on.workflow_dispatch.inputs.selection.options).toContain(row.id);
+  const plan = Bun.spawnSync([process.execPath, "scripts/consensus-inventory.ts", "plan", row.id], { cwd: cli });
+  expect(plan.exitCode, plan.stderr.toString()).toBe(0);
+  const jobs = JSON.parse(plan.stdout.toString()).jobs;
+  expect(jobs).toHaveLength(1);
+  expect(jobs[0].leg).toBe("backlog");
+  expect(jobs[0].capabilities).toContain("broker-failpoints");
 });

@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS(SELECT 1 FROM host_consumer_catchups\n         WHERE id = $1 AND owner_id = $2 AND lease_until > clock_timestamp()\n           AND CASE WHEN $3 THEN cancel_pending\n                    ELSE status = 'ONGOING' AND request_pending END) AS \"owned!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "owned!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "09ce5331a42e735b18cd9d8b01159c80633dbdf7816a126f5589da3c6776d4f9"
+}

@@ -1,5 +1,5 @@
 import { emitAssertions } from './assertionEvidence';
-import { requireDriftBaseline, requireIngestionTarget, requireBacklogTargets } from './failureEvidence';
+import { requireDriftBaseline, requireIngestionTarget, requireBacklogTargets, requireCompletedConsumerCatchup, missingIngestedReceiptBlocks, offlineCatchupRange, requireRelativeConsumerCatchup } from './failureEvidence';
 /**
  * Service-specific failure cases: the workload half.
  *
@@ -35,6 +35,7 @@ import { requireDriftBaseline, requireIngestionTarget, requireBacklogTargets } f
  *   COPROCESSOR_COUNT         fleet size, default 3
  */
 import { expect } from 'chai';
+import { v7 as uuidv7 } from 'uuid';
 import { tamperUnsubmittedDigest } from './canary';
 import { markDetectorPublicationStarted, completeDetectorRecovery } from './abortRecovery';
 
@@ -59,6 +60,8 @@ import { INSTALL_PROOF_OUTCOME_AUDIT, DROP_PROOF_OUTCOME_AUDIT, waitForOriginalP
 
 const ENABLE = process.env.RUN_FAILURE_CASE === '1';
 const CASE_ID = process.env.FAILURE_CASE_ID ?? 'unnamed';
+const RELATIVE_CATCHUP = CASE_ID === 'FM-HOST-RELATIVE-CATCHUP';
+const OFFLINE_CATCHUP = CASE_ID === 'FM-HOST-LONG-OFFLINE' || RELATIVE_CATCHUP;
 const WORKLOAD = process.env.FAILURE_WORKLOAD ?? 'compute-chain';
 const PHASE = process.env.FAILURE_PHASE ?? 'arm';
 const VICTIM = Number.parseInt(process.env.FAILURE_VICTIM_OPERATOR ?? '1', 10);
@@ -169,11 +172,13 @@ async function driftSignals(databaseUrl: string): Promise<number> {
   });
 }
 
-/** The poller's cursor, used as an ingestion watermark. */
-async function pollerCursor(databaseUrl: string, chainId: string): Promise<number | null> {
+/** Watermark of the ingestion path selected by this case. */
+async function ingestionCursor(databaseUrl: string, chainId: string): Promise<number | null> {
   return withPool(databaseUrl, async (pool) => {
     const result = await pool.query<{ block: string | null }>(
-      'SELECT MAX(last_caught_up_block)::text AS block FROM host_listener_poller_state WHERE chain_id = $1',
+      OFFLINE_CATCHUP
+        ? 'SELECT MAX(block_number)::text AS block FROM host_chain_blocks_valid WHERE chain_id = $1'
+        : 'SELECT MAX(last_caught_up_block)::text AS block FROM host_listener_poller_state WHERE chain_id = $1',
       [chainId],
     );
     const value = result.rows[0]?.block;
@@ -435,8 +440,28 @@ describe('Service failure case', function () {
         // the blocks the workload lands in are then pending delivery to it.
         const { ethers } = await import('hardhat');
         const chainId = (await ethers.provider.getNetwork()).chainId.toString();
-        const watermark = await pollerCursor(databaseUrls[VICTIM], chainId);
+        const watermark = await ingestionCursor(databaseUrls[VICTIM], chainId);
+        let catchupIdBefore: string | undefined;
+        let catchupId: string | undefined;
+        if (OFFLINE_CATCHUP) {
+          const previous = await withPool(databaseUrls[VICTIM], pool => pool.query<{ id: string; status: string }>(
+            `SELECT id::text, status FROM host_consumer_catchups
+             WHERE chain_id = $1 AND consumer_id = $2 AND NOT finalized
+               AND requested_from = -1024 AND requested_to = -1
+             ORDER BY created_at DESC LIMIT 1`, [chainId, `host-listener-consumer.${chainId}`]));
+          expect(previous.rows, 'initial consumer replay must exist').to.have.length(1);
+          expect(previous.rows[0].status, 'initial replay must finish before taking the consumer offline').to.eq('DONE');
+          catchupIdBefore = previous.rows[0].id;
+          if (RELATIVE_CATCHUP) {
+            const pending = await withPool(databaseUrls[VICTIM], pool => pool.query(
+              `SELECT id::text FROM host_consumer_catchups
+               WHERE chain_id = $1 AND consumer_id = $2 AND status = 'ONGOING'`,
+              [chainId, `host-listener-consumer.${chainId}`]));
+            expect(pending.rows, 'relative-only recovery must not inherit another unfinished request').to.have.length(0);
+          }
+        }
         const blocks: number[] = [];
+        const blockHashes: string[] = [];
         let blockHash = "";
         const targets = WORKLOAD === 'ingestion-backlog' ? 12 : 1;
         for (let index = 0; index < targets; index++) {
@@ -445,11 +470,25 @@ describe('Service failure case', function () {
           armed.handles.push((await contract.combined()).toLowerCase());
           blocks.push(receipt.blockNumber);
           blockHash = receipt.blockHash;
+          blockHashes.push(blockHash.toLowerCase());
         }
         expect(new Set(armed.handles).size).to.eq(targets);
         const blockNumber = blocks[blocks.length - 1];
         if (targets > 1) expect(blockNumber - blocks[0], 'backlog spans at least nine host blocks').to.be.at.least(8);
-        armed.detail = { watermarkWhenArmed: watermark, blockNumber, blockHash, chainId, blocks };
+        if (CASE_ID === 'FM-HOST-LONG-OFFLINE') {
+          // Match the legacy poller: resume after the saved height, up to the
+          // actual RPC head. A queued LIVE block is not a current head sample.
+          const head = Number.parseInt(await ethers.provider.send('eth_blockNumber', []), 16);
+          const { start, end } = offlineCatchupRange(watermark, head, blocks);
+          const request = await withPool(databaseUrls[VICTIM], pool => pool.query<{ id: string }>(
+            `INSERT INTO host_consumer_catchups
+             (id, chain_id, consumer_id, finalized, requested_from, requested_to, block_start, block_end)
+             VALUES ($1, $2, $3, FALSE, $4, $5, $4, $5) RETURNING id::text`,
+            [uuidv7(), chainId, `host-listener-consumer.${chainId}`, start, end]));
+          catchupId = request.rows[0].id;
+          console.info(`[failure-case/${CASE_ID}] persisted unowned catchup ${catchupId} [${start}, ${end}] from saved height ${watermark} to current RPC head`);
+        }
+        armed.detail = { watermarkWhenArmed: watermark, blockNumber, blockHash, chainId, blocks, blockHashes, catchupIdBefore, catchupId };
         expect(
           watermark === null || watermark < blockNumber,
           `operator ${VICTIM}'s ingestion watermark (${watermark}) is already past the workload's block ` +
@@ -797,9 +836,62 @@ describe('Service failure case', function () {
         // The path under test must have caught up past the workload's block,
         // and nothing may have been duplicated by the catch-up.
         const { blockNumber, chainId } = requireIngestionTarget(record.detail);
+        if (OFFLINE_CATCHUP) {
+          const listenerDatabaseUrl = new URL(databaseUrls[record.victim]);
+          listenerDatabaseUrl.pathname = record.victim === 0 ? '/listener' : `/listener${record.victim}`;
+          const blocks = record.detail!.blocks as number[];
+          const replayDeadline = Date.now() + 8 * 60_000;
+          for (;;) {
+            const replay = await withPool(databaseUrls[record.victim], pool => pool.query(
+              `SELECT id::text, status, finalized, requested_from::integer AS "requestedFrom", requested_to::integer AS "requestedTo",
+                      block_start::integer AS "blockStart", block_end::integer AS "blockEnd"
+               FROM host_consumer_catchups
+               WHERE chain_id = $1 AND consumer_id = $2 AND NOT finalized AND
+                 ${RELATIVE_CATCHUP
+                   ? 'requested_from = -1024 AND requested_to = -1 AND id <> $3::uuid ORDER BY created_at DESC LIMIT 1'
+                   : 'id = $3::uuid'}`,
+              [chainId, `host-listener-consumer.${chainId}`, RELATIVE_CATCHUP ? record.detail?.catchupIdBefore : record.detail?.catchupId]));
+            const row = replay.rows[0];
+            if (RELATIVE_CATCHUP && row) {
+              // Check the CLI-created range immediately, even if that request
+              // finishes while LIVE/FINAL are held. An old LIVE reference must
+              // not be hidden by waiting for the backlog to ingest the receipts.
+              requireRelativeConsumerCatchup(row, record.detail?.catchupIdBefore, blocks);
+            }
+            const ingested = await withPool(databaseUrls[record.victim], pool => pool.query<{
+              blockNumber: number; blockHash: string; blockStatus: string;
+            }>(
+              `SELECT block_number::integer AS "blockNumber", '0x' || encode(block_hash, 'hex') AS "blockHash",
+                      block_status AS "blockStatus"
+               FROM host_chain_blocks_valid WHERE chain_id = $1 AND block_number = ANY($2::bigint[])`,
+              [chainId, blocks]));
+            const missing = missingIngestedReceiptBlocks(blocks, record.detail?.blockHashes, ingested.rows);
+            if (row?.status === 'DONE') {
+              const core = await withPool(listenerDatabaseUrl.toString(), pool => pool.query(
+                `SELECT status, sub_ranges, fanned_end::integer AS "fannedEnd" FROM catchup_requests
+                 WHERE catchup_id = $1 AND chain_id = $2 AND consumer_id = $3 AND flow = 'CATCHUP'`,
+                [row.id, chainId, `host-listener-consumer.${chainId}`]));
+              if (core.rows[0]?.status === 'COMPLETED' && missing.length === 0) {
+                console.info(`[failure-case/${CASE_ID}] all ${blocks.length} exact receipt blocks are stored on chain ${chainId}; catchup ${row.id} [${row.blockStart}, ${row.blockEnd}], receipts [${blocks.join(', ')}]`);
+                const covered = requireCompletedConsumerCatchup(row, record.detail?.catchupIdBefore, blocks);
+                expect(covered, 'the resumed catchup must cover every offline receipt').to.deep.eq(blocks);
+                expect(core.rows[0].sub_ranges, 'offline replay must span at least three core sub-ranges').to.be.at.least(3);
+                expect(core.rows[0].fannedEnd, 'core publication must cover the catchup end').to.be.at.least(row.blockEnd);
+                console.info(`[failure-case/${CASE_ID}] completed catchup covers ${covered.length}/${blocks.length} workload blocks: [${covered.join(', ')}]`);
+                if (RELATIVE_CATCHUP) {
+                  publishHandshake('failure-catchup', { caseId: CASE_ID, catchupId: row.id });
+                }
+                emitAssertions(CASE_ID, ['scope'], `A new non-finalized consumer catchup covered ${covered.length}/${blocks.length} receipt blocks, completed at least three listener-core sub-ranges and reached DONE; all exact receipt blocks were stored while legacy ingestion stayed stopped. ${RELATIVE_CATCHUP ? 'LIVE/FINAL receipt delivery is held; the runner additionally requires successful payloads with this exact catchup ID and the original transactions.' : 'Live and replay delivery may overlap.'}`);
+                break;
+              }
+            }
+            if (Date.now() >= replayDeadline) throw new Error(`consumer catchup ${row?.id ?? 'missing'} [${row?.blockStart}, ${row?.blockEnd}] status ${row?.status}; missing receipt blocks in database: [${missing.join(', ')}]`);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
         const deadline = Date.now() + 8 * 60_000;
         for (;;) {
-          const cursor = await pollerCursor(databaseUrls[record.victim], chainId);
+          const cursor = await ingestionCursor(databaseUrls[record.victim], chainId);
           if (cursor !== null && cursor >= blockNumber) {
             console.info(
               `[failure-case/${CASE_ID}] operator ${record.victim}'s ingestion path caught up to ${cursor} ` +

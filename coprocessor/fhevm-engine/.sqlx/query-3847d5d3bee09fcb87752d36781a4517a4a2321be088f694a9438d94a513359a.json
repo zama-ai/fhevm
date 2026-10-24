@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO host_consumer_catchups\n             (id, chain_id, consumer_id, requested_from, requested_to, block_start, block_end,\n              owner_id, lease_until, finalized)\n             VALUES ($1, $2, $3, $4, $5, $6, $7, $8,\n                     CASE WHEN $8::uuid IS NULL THEN NULL\n                          ELSE clock_timestamp() + interval '60 seconds' END, $9)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3847d5d3bee09fcb87752d36781a4517a4a2321be088f694a9438d94a513359a"
+}

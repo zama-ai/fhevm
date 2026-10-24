@@ -62,7 +62,7 @@ tracing-subscriber = { workspace = true }
 union-find = { workspace = true}
 
 url = "2.5.7"
-uuid = { version = "1", features = ["v7"] }
+uuid = { version = "1", features = ["v4", "v7"] }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }

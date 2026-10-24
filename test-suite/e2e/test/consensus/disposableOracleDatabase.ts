@@ -16,7 +16,7 @@ export async function createDisposableOracleDatabase(
     closed = true;
     try {
       try { if (child) await child.end(); }
-      finally { if (owned) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); }
+      finally { if (owned) await admin.query(`DROP DATABASE "${name}"`); }
     } finally { await admin.end(); }
   };
   try {

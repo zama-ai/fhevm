@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE host_consumer_catchups\n         SET status = 'SUPPRESSED', request_pending = FALSE, cancel_pending = TRUE\n         WHERE chain_id = $1 AND consumer_id = $2\n           AND status = 'ONGOING' AND id <> $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb3877705df19fd7914e5236df70102b867f4acef3f0745b0db00a93e34afa3e"
+}
