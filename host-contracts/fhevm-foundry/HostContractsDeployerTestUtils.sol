@@ -15,10 +15,9 @@ import {EmptyUUPSProxyACL} from "@fhevm-host-contracts/contracts/emptyProxyACL/E
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
-import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
-import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /**
@@ -53,9 +52,6 @@ abstract contract HostContractsDeployerTestUtils is Test {
         );
     bytes32 internal constant EIP712_CRSGEN_TYPE_HASH =
         keccak256("CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest,bytes extraData)");
-
-    /// @dev Shared ProtocolConfig handle bound by each suite's setUp; used by the hoisted EIP-712 helpers below.
-    ProtocolConfig internal protocolConfig;
 
     function _deployACL(address owner) internal returns (ACL aclProxy, address aclImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxyACL());
@@ -340,9 +336,13 @@ abstract contract HostContractsDeployerTestUtils is Test {
 
     /// @dev Projection of _makeKmsNodeParams onto the stored KmsNode shape, for getKmsNodesForContext assertions.
     function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory nodes) {
-        KmsNodeParams[] memory params = _makeKmsNodeParams(count);
-        nodes = new KmsNode[](count);
-        for (uint256 i = 0; i < count; i++) {
+        return _toKmsNodes(_makeKmsNodeParams(count));
+    }
+
+    /// @dev Projection of `params` onto the stored KmsNode shape.
+    function _toKmsNodes(KmsNodeParams[] memory params) internal pure returns (KmsNode[] memory nodes) {
+        nodes = new KmsNode[](params.length);
+        for (uint256 i = 0; i < params.length; i++) {
             nodes[i] = KmsNode({
                 txSenderAddress: params[i].txSenderAddress,
                 signerAddress: params[i].signerAddress,
@@ -362,19 +362,6 @@ abstract contract HostContractsDeployerTestUtils is Test {
         return PREP_KEYGEN_COUNTER_BASE + (keyId - KEY_COUNTER_BASE);
     }
 
-    function _computeProtocolConfigDomainSeparator() internal view returns (bytes32) {
-        return
-            keccak256(
-                abi.encode(
-                    EIP712_DOMAIN_TYPE_HASH,
-                    keccak256(bytes("ProtocolConfig")),
-                    keccak256(bytes("1")),
-                    block.chainid,
-                    address(protocolConfig)
-                )
-            );
-    }
-
     /// @dev Shared keygen struct-hash builder, parameterized by EIP-712 domain separator.
     function _hashKeygenWithDomain(
         bytes32 domainSeparator,
@@ -383,22 +370,21 @@ abstract contract HostContractsDeployerTestUtils is Test {
         IKMSGeneration.KeyDigest[] memory keyDigests,
         bytes memory extraData
     ) internal pure returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(EIP712_KEYGEN_TYPE_HASH, prepKeygenId, keyId, _hashKeyDigests(keyDigests), keccak256(extraData))
+        );
+        return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
+    }
+
+    /// @dev EIP-712 hash of a KeyDigest[] array.
+    function _hashKeyDigests(IKMSGeneration.KeyDigest[] memory keyDigests) internal pure returns (bytes32) {
         bytes32[] memory digestHashes = new bytes32[](keyDigests.length);
         for (uint256 i = 0; i < keyDigests.length; i++) {
             digestHashes[i] = keccak256(
                 abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
             );
         }
-        bytes32 structHash = keccak256(
-            abi.encode(
-                EIP712_KEYGEN_TYPE_HASH,
-                prepKeygenId,
-                keyId,
-                keccak256(abi.encodePacked(digestHashes)),
-                keccak256(extraData)
-            )
-        );
-        return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
+        return keccak256(abi.encodePacked(digestHashes));
     }
 
     /// @dev Shared crsgen struct-hash builder, parameterized by EIP-712 domain separator.
@@ -419,69 +405,5 @@ abstract contract HostContractsDeployerTestUtils is Test {
             )
         );
         return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
-    }
-
-    function _hashProtocolConfigKeygen(
-        uint256 prepKeygenId,
-        uint256 keyId,
-        IKMSGeneration.KeyDigest[] memory keyDigests,
-        bytes memory extraData
-    ) internal view returns (bytes32) {
-        return
-            _hashKeygenWithDomain(_computeProtocolConfigDomainSeparator(), prepKeygenId, keyId, keyDigests, extraData);
-    }
-
-    function _hashProtocolConfigCrsgen(
-        uint256 crsId,
-        uint256 maxBitLength,
-        bytes memory crsDigest,
-        bytes memory extraData
-    ) internal view returns (bytes32) {
-        return
-            _hashCrsgenWithDomain(_computeProtocolConfigDomainSeparator(), crsId, maxBitLength, crsDigest, extraData);
-    }
-
-    function _defineNewKmsContextAndEpoch(KmsNodeParams[] memory nodes, KmsThresholds memory thresholds) internal {
-        PcrValues[] memory pcrValues = new PcrValues[](0);
-        protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, "", pcrValues);
-    }
-
-    function _confirmContextCreation(uint256 contextId, address txSender) internal {
-        vm.prank(txSender);
-        protocolConfig.confirmKmsContextCreation(contextId);
-    }
-
-    /// @dev Setup helper that drives a pending epoch to Active for suites that need a usable KMS context.
-    ///      Callers need only the active epoch, not a specific payload, so this submits constant material.
-    ///      Tests that assert on the payload use `_confirmEpochWithMaterial` in the ProtocolConfig suite instead.
-    function _confirmEpochActivation(uint256 contextId, uint256 epochId, uint256 pk, address txSender) internal {
-        bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
-
-        // An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one deterministic
-        // self-signed attestation of each kind with constant ids. Every signer produces the same dataHash. The ids
-        // need not exist in KMSGeneration because confirmEpochActivation checks only signer recovery.
-        IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
-        uint256 keyId = KEY_COUNTER_BASE + 1;
-        uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
-
-        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
-        keys[0] = IProtocolConfig.EpochKeyResult({
-            prepKeygenId: prepKeygenId,
-            keyId: keyId,
-            keyDigests: keyDigests,
-            signature: _computeSignature(pk, _hashProtocolConfigKeygen(prepKeygenId, keyId, keyDigests, extraData))
-        });
-
-        uint256 crsId = CRS_COUNTER_BASE + 1;
-        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
-        crsList[0] = IProtocolConfig.EpochCrsResult({
-            crsId: crsId,
-            maxBitLength: 4096,
-            crsDigest: hex"deadbeef",
-            signature: _computeSignature(pk, _hashProtocolConfigCrsgen(crsId, 4096, hex"deadbeef", extraData))
-        });
-
-        vm.prank(txSender);
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList);
     }
 }

@@ -1,7 +1,21 @@
 import { expect } from 'chai';
 import dotenv from 'dotenv';
+import type { Signer } from 'ethers';
 import * as fs from 'fs';
 import { ethers } from 'hardhat';
+
+import {
+  CRS_COUNTER_BASE,
+  KEY_COUNTER_BASE,
+  PREP_KEYGEN_COUNTER_BASE,
+} from '@fhevm/host-contracts/tasks/utils/kmsGenerationConstants';
+import {
+  findEventArg,
+  submitContextCreationConfirmations,
+  submitEpochActivationConfirmations,
+} from '@fhevm/host-contracts/tasks/utils/protocolConfigEip712';
+import type { ProtocolConfig } from '@fhevm/host-contracts/types';
+import type { KmsNodeParamsStruct, KmsThresholdsStruct } from '@fhevm/host-contracts/types/contracts/ProtocolConfig';
 
 import { awaitCoprocessor, getClearText } from '../coprocessorUtils';
 import { createInstances } from '../instance';
@@ -72,9 +86,13 @@ describe('OnchainPublicDecrypt', function () {
     const protocolConfigAdd = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const accounts = await ethers.getSigners();
-    const signerAddresses = [accounts[7], accounts[8], accounts[9]].map((s) => s.address);
+    const newSigners = [accounts[7], accounts[8], accounts[9]];
+    const signerAddresses = newSigners.map((s) => s.address);
     const kmsVerifier = await ethers.getContractAt('KMSVerifier', kmsAdd);
-    const protocolConfig = await ethers.getContractAt('ProtocolConfig', protocolConfigAdd);
+    const protocolConfig = (await ethers.getContractAt(
+      'ProtocolConfig',
+      protocolConfigAdd,
+    )) as unknown as ProtocolConfig;
     const newTxSenders = [accounts[2], accounts[3], accounts[4]];
     const newNodes = signerAddresses.map((address, index) => ({
       txSenderAddress: newTxSenders[index].address,
@@ -87,7 +105,9 @@ describe('OnchainPublicDecrypt', function () {
       storagePrefix: '',
     }));
     const newThresholds = { publicDecryption: 2, userDecryption: 2, kmsGen: 2, mpc: 2 };
-    await activateNewKmsContext(protocolConfig, deployer, newNodes, newThresholds, newTxSenders, newTxSenders);
+    // accounts[7] signs for the default context too, so its confirmation also covers the previous side's
+    // n - t target (one node, so the target is 1).
+    await activateNewKmsContext(protocolConfig, deployer, newNodes, newThresholds, newSigners);
     expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(2);
     expect(await kmsVerifier.getKmsSigners()).to.deep.equal(signerAddresses); /// Now KMS_SIGNER_ADDRESS_0, KMS_SIGNER_ADDRESS_1 and KMS_SIGNER_ADDRESS_2 are all signers, threshold is 2
 
@@ -141,116 +161,51 @@ describe('OnchainPublicDecrypt', function () {
       },
     ];
     const resetThresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
-    // accounts[2] alone completes the creation quorum: it is the only new tx-sender and its
+    // accounts[7] alone completes the creation quorum. It is the only new signer and its
     // confirmation also covers the previous side's n - t = 1 target (3 nodes, mpc = 2).
-    await activateNewKmsContext(protocolConfig, deployer, resetNodes, resetThresholds, [accounts[2]], [accounts[2]]);
+    await activateNewKmsContext(protocolConfig, deployer, resetNodes, resetThresholds, [accounts[7]]);
     expect(await protocolConfig.getPublicDecryptionThreshold()).to.equal(1);
     expect(await kmsVerifier.getKmsSigners()).to.deep.equal([signerAddresses[0]]);
   });
 });
 
 async function activateNewKmsContext(
-  protocolConfig: any,
-  deployer: any,
-  nodes: any[],
-  thresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
-  contextCreationConfirmers: any[],
-  epochActivationConfirmers: any[],
+  protocolConfig: ProtocolConfig,
+  deployer: Signer,
+  nodes: KmsNodeParamsStruct[],
+  thresholds: KmsThresholdsStruct,
+  signerAccounts: Signer[],
 ) {
   const txNewConfig = await protocolConfig.connect(deployer).defineNewKmsContextAndEpoch(nodes, thresholds, '', []);
   const newConfigReceipt = await txNewConfig.wait();
-  const contextId = findEventArgs(protocolConfig, newConfigReceipt, 'NewKmsContext').contextId;
-
-  let epochId;
-  for (const signer of contextCreationConfirmers) {
-    const txConfirmContext = await protocolConfig.connect(signer).confirmKmsContextCreation(contextId);
-    const confirmReceipt = await txConfirmContext.wait();
-    // The pending epoch ID is only known once enough confirmations reach the context-creation quorum,
-    // which emits NewKmsEpoch carrying that epoch ID.
-    const createdEvent = findEventArgs(protocolConfig, confirmReceipt, 'NewKmsEpoch');
-    if (createdEvent !== undefined) {
-      epochId = createdEvent.epochId;
-    }
+  const contextId = findEventArg(protocolConfig, newConfigReceipt!.logs, 'NewKmsContext', 'contextId')!;
+  const epochId = await submitContextCreationConfirmations(
+    protocolConfig,
+    signerAccounts,
+    contextId,
+    nodes,
+    thresholds,
+  );
+  if (epochId === undefined) {
+    throw new Error('Context creation quorum did not emit NewKmsEpoch');
   }
-  const allSigners = await ethers.getSigners();
-  for (const txSender of epochActivationConfirmers) {
-    const node = nodes.find((n) => n.txSenderAddress === txSender.address);
-    const signerAccount = allSigners.find((s) => s.address === node.signerAddress);
-    const { keys, crsList } = await buildEpochAttestations(protocolConfig, signerAccount, contextId, epochId);
-    const txConfirmEpoch = await protocolConfig.connect(txSender).confirmEpochActivation(epochId, keys, crsList);
-    await txConfirmEpoch.wait();
-  }
-}
-
-// An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one self-signed
-// attestation of each. confirmEpochActivation checks only that the signature recovers to the node signer, so
-// the constant ids need not exist in KMSGeneration, and every signer produces the same dataHash for quorum.
-async function buildEpochAttestations(protocolConfig: any, signerAccount: any, contextId: bigint, epochId: bigint) {
-  const domain = {
-    name: 'ProtocolConfig',
-    version: '1',
-    chainId: (await ethers.provider.getNetwork()).chainId,
-    verifyingContract: await protocolConfig.getAddress(),
+  // An empty `keys` or `crsList` reverts with EmptyEpochActivationResults. So supply one result of each.
+  // confirmEpochActivation only checks that the signature recovers to the node signer.
+  // So the constant ids need not exist in KMSGeneration.
+  const keyMaterial = {
+    prepKeygenId: PREP_KEYGEN_COUNTER_BASE + 1n,
+    keyId: KEY_COUNTER_BASE + 1n,
+    keyDigests: [{ keyType: 0, digest: '0x01020304' }],
   };
-  const keygenTypes = {
-    KeygenVerification: [
-      { name: 'prepKeygenId', type: 'uint256' },
-      { name: 'keyId', type: 'uint256' },
-      { name: 'keyDigests', type: 'KeyDigest[]' },
-      { name: 'extraData', type: 'bytes' },
-    ],
-    KeyDigest: [
-      { name: 'keyType', type: 'uint8' },
-      { name: 'digest', type: 'bytes' },
-    ],
-  };
-  const crsgenTypes = {
-    CrsgenVerification: [
-      { name: 'crsId', type: 'uint256' },
-      { name: 'maxBitLength', type: 'uint256' },
-      { name: 'crsDigest', type: 'bytes' },
-      { name: 'extraData', type: 'bytes' },
-    ],
-  };
-  const keyId = (4n << 248n) + 1n; // KEY_COUNTER_BASE + 1
-  const prepKeygenId = (3n << 248n) + 1n; // PREP_KEYGEN_COUNTER_BASE + 1
-  const keyDigests = [{ keyType: 0, digest: '0x01020304' }];
-  const crsId = (5n << 248n) + 1n; // CRS_COUNTER_BASE + 1
-  const maxBitLength = 4096n;
-  const crsDigest = '0x01020304';
-  // extraData mirrors abi.encodePacked(EXTRA_DATA_V2, contextId, epochId) with EXTRA_DATA_V2 = 0x02.
-  const extraData = ethers.solidityPacked(['uint8', 'uint256', 'uint256'], [2, contextId, epochId]);
-  const signature = await signerAccount.signTypedData(domain, keygenTypes, {
-    prepKeygenId,
-    keyId,
-    keyDigests,
-    extraData,
-  });
-  const crsSignature = await signerAccount.signTypedData(domain, crsgenTypes, {
-    crsId,
-    maxBitLength,
-    crsDigest,
-    extraData,
-  });
-  return {
-    keys: [{ prepKeygenId, keyId, keyDigests, signature }],
-    crsList: [{ crsId, maxBitLength, crsDigest, signature: crsSignature }],
-  };
-}
-
-function findEventArgs(protocolConfig: any, receipt: any, eventName: string): any {
-  for (const log of receipt.logs) {
-    let parsed;
-    try {
-      parsed = protocolConfig.interface.parseLog(log);
-    } catch {
-      continue;
-    }
-    if (parsed?.name === eventName) {
-      return parsed.args;
-    }
-  }
-  return undefined;
+  const crsMaterial = { crsId: CRS_COUNTER_BASE + 1n, maxBitLength: 4096n, crsDigest: '0x01020304' };
+  await submitEpochActivationConfirmations(
+    protocolConfig,
+    signerAccounts,
+    contextId,
+    epochId,
+    [keyMaterial],
+    [crsMaterial],
+  );
 }
 
 async function getPublicDecryptionFromReceipt(
