@@ -16,14 +16,16 @@ contract HCULimitInvariantHandler is Test {
     address internal immutable owner;
     address internal immutable fhevmExecutor;
 
-    address internal constant NON_WHITELISTED_CALLER = address(0xBEEF);
-    address internal constant WHITELISTED_CALLER = address(0xCAFE);
+    uint16 internal constant DEFAULT_QUOTA = 0;
+    uint16 internal constant UNCAPPED_QUOTA = 1;
+    address internal constant DEFAULT_CALLER = address(0xBEEF);
+    address internal constant UNCAPPED_CALLER = address(0xCAFE);
     bytes32 internal constant INPUT_HANDLE = bytes32(uint256(0xA11CE));
 
     uint256 internal resultNonce = 1;
-    bool public whitelistViolation;
-    bool public nonWhitelistedAccountingViolation;
-    bool public resetViolation;
+    bool public uncappedViolation;
+    bool public accountingViolation;
+    bool public decayViolation;
 
     constructor(HCULimit _hcuLimit, address _owner) {
         hcuLimit = _hcuLimit;
@@ -31,52 +33,49 @@ contract HCULimitInvariantHandler is Test {
         fhevmExecutor = _hcuLimit.getFHEVMExecutorAddress();
 
         vm.startPrank(owner);
-        hcuLimit.addToBlockHCUWhitelist(WHITELISTED_CALLER);
+        hcuLimit.setQuota(UNCAPPED_QUOTA, type(uint48).max, type(uint48).max);
+        hcuLimit.assignQuota(UNCAPPED_CALLER, UNCAPPED_QUOTA);
         vm.stopPrank();
     }
 
-    function setCap(uint48 cap) external {
-        // Must satisfy invariant: hcuPerBlock >= maxHCUPerTx (20_000_000).
-        cap = uint48(bound(uint256(cap), 20_000_000, uint256(type(uint48).max)));
+    function setDefaultQuota(uint48 maxHCU, uint48 decayPerBlock) external {
+        // A metered quota needs a decay, a stopped one has none.
+        if (maxHCU == 0) decayPerBlock = 0;
+        else if (decayPerBlock == 0) decayPerBlock = 1;
         vm.prank(owner);
-        hcuLimit.setHCUPerBlock(cap);
+        hcuLimit.setQuota(DEFAULT_QUOTA, maxHCU, decayPerBlock);
     }
 
-    function setCallerWhitelist(address caller, bool isWhitelisted) external {
+    function assignCaller(address caller, bool uncapped) external {
         caller = _sanitizeCaller(caller);
-        bool currentlyWhitelisted = hcuLimit.isBlockHCUWhitelisted(caller);
-        if (isWhitelisted == currentlyWhitelisted) return;
+        (uint48 defaultMax, , ) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        if (!uncapped && defaultMax == 0) return;
         vm.prank(owner);
-        if (isWhitelisted) {
-            hcuLimit.addToBlockHCUWhitelist(caller);
-        } else {
-            hcuLimit.removeFromBlockHCUWhitelist(caller);
-        }
+        hcuLimit.assignQuota(caller, uncapped ? UNCAPPED_QUOTA : DEFAULT_QUOTA);
     }
 
     function mine(uint8 rawBlocks) external {
         uint256 blocks = bound(uint256(rawBlocks), 1, 8);
+        (, uint48 decayPerBlock, uint48 beforeUsedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
         vm.roll(block.number + blocks);
-        (, uint48 usedHCU) = hcuLimit.getBlockMeter();
-        if (usedHCU != 0) {
-            resetViolation = true;
+        (, , uint48 afterUsedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        uint256 decay = blocks * decayPerBlock;
+        uint256 expected = decay >= beforeUsedHCU ? 0 : beforeUsedHCU - decay;
+        if (afterUsedHCU != expected) {
+            decayViolation = true;
         }
     }
 
     function callerBurst(address caller, uint8 rawOps) external {
-        caller = _sanitizeCaller(caller);
-        uint256 ops = bound(uint256(rawOps), 1, 24);
-        _runBurst(caller, ops);
+        _runBurst(_sanitizeCaller(caller), bound(uint256(rawOps), 1, 24));
     }
 
-    function nonWhitelistedBurst(uint8 rawOps) external {
-        uint256 ops = bound(uint256(rawOps), 1, 24);
-        _runBurst(NON_WHITELISTED_CALLER, ops);
+    function defaultBurst(uint8 rawOps) external {
+        _runBurst(DEFAULT_CALLER, bound(uint256(rawOps), 1, 24));
     }
 
-    function whitelistedBurst(uint8 rawOps) external {
-        uint256 ops = bound(uint256(rawOps), 1, 24);
-        _runBurst(WHITELISTED_CALLER, ops);
+    function uncappedBurst(uint8 rawOps) external {
+        _runBurst(UNCAPPED_CALLER, bound(uint256(rawOps), 1, 24));
     }
 
     /**
@@ -85,16 +84,15 @@ contract HCULimitInvariantHandler is Test {
      *      - keeps bursts small on purpose (not a cap-exhaustion stress test).
      */
     function _runBurst(address caller, uint256 ops) internal {
-        bool isWhitelisted = hcuLimit.isBlockHCUWhitelisted(caller);
-        uint48 cap = hcuLimit.getGlobalHCUCapPerBlock();
-        (, uint48 beforeUsedHCU) = hcuLimit.getBlockMeter();
+        bool uncapped = hcuLimit.getContractQuota(caller) == UNCAPPED_QUOTA;
+        (, , uint48 beforeUsedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
         uint256 successes;
 
         vm.startPrank(fhevmExecutor);
         for (uint256 i; i < ops; ++i) {
             try hcuLimit.checkHCUForCast(FheType.Uint8, INPUT_HANDLE, _nextResultHandle(), caller) {} catch {
-                if (isWhitelisted) {
-                    whitelistViolation = true;
+                if (uncapped) {
+                    uncappedViolation = true;
                 }
                 continue;
             }
@@ -102,24 +100,24 @@ contract HCULimitInvariantHandler is Test {
         }
         vm.stopPrank();
 
-        (, uint48 afterUsedHCU) = hcuLimit.getBlockMeter();
+        (, , uint48 afterUsedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        (, , uint48 uncappedUsedHCU) = hcuLimit.getQuota(UNCAPPED_QUOTA);
+        if (uncappedUsedHCU != 0) {
+            uncappedViolation = true;
+        }
 
         if (afterUsedHCU < beforeUsedHCU) {
-            nonWhitelistedAccountingViolation = true;
+            accountingViolation = true;
             return;
         }
 
-        uint256 delta = uint256(afterUsedHCU - beforeUsedHCU);
-
-        if (isWhitelisted) {
-            if (delta != 0 || successes != ops) {
-                whitelistViolation = true;
-            }
-            return;
+        (uint48 defaultMax, , ) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        if (!uncapped && successes != 0 && afterUsedHCU > defaultMax) {
+            accountingViolation = true;
         }
-
-        if (delta != successes * 32) {
-            nonWhitelistedAccountingViolation = true;
+        uint256 expectedDelta = (uncapped || defaultMax == type(uint48).max) ? 0 : successes * 32;
+        if (uint256(afterUsedHCU - beforeUsedHCU) != expectedDelta) {
+            accountingViolation = true;
         }
     }
 
@@ -127,7 +125,7 @@ contract HCULimitInvariantHandler is Test {
         if (caller == address(0)) {
             return address(1);
         }
-        if (caller == NON_WHITELISTED_CALLER || caller == WHITELISTED_CALLER) {
+        if (caller == DEFAULT_CALLER || caller == UNCAPPED_CALLER) {
             return address(uint160(caller) + 2);
         }
         return caller;
@@ -147,10 +145,9 @@ contract HCULimitInvariantTest is StdInvariant, Test {
 
     function setUp() public {
         // Invariants targeted by this harness:
-        // 1) block meter block number equals current block.
-        // 2) whitelisted callers never consume the public block meter.
-        // 3) non-whitelisted accounting is consistent with successful casts.
-        // 4) meter resets after block advancement.
+        // 1) callers in an uncapped quota are never refused or metered.
+        // 2) capped accounting is consistent with successful casts and stays within the cap.
+        // 3) usage decays by decayPerBlock for each mined block, floored at 0.
         // This harness intentionally validates accounting invariants only, not cap-exhaustion behavior.
         _deployAndEtchACL();
 
@@ -174,35 +171,26 @@ contract HCULimitInvariantTest is StdInvariant, Test {
         targetContract(address(handler));
 
         bytes4[] memory selectors = new bytes4[](6);
-        selectors[0] = HCULimitInvariantHandler.setCap.selector;
-        selectors[1] = HCULimitInvariantHandler.nonWhitelistedBurst.selector;
-        selectors[2] = HCULimitInvariantHandler.whitelistedBurst.selector;
+        selectors[0] = HCULimitInvariantHandler.setDefaultQuota.selector;
+        selectors[1] = HCULimitInvariantHandler.defaultBurst.selector;
+        selectors[2] = HCULimitInvariantHandler.uncappedBurst.selector;
         selectors[3] = HCULimitInvariantHandler.mine.selector;
-        selectors[4] = HCULimitInvariantHandler.setCallerWhitelist.selector;
+        selectors[4] = HCULimitInvariantHandler.assignCaller.selector;
         selectors[5] = HCULimitInvariantHandler.callerBurst.selector;
 
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
 
-    function invariant_blockMeterMatchesCurrentBlock() public view {
-        // Invariant: getBlockMeter must always report the current block number.
-        (uint48 blockNumber, ) = hcuLimit.getBlockMeter();
-        assertEq(blockNumber, uint48(block.number));
+    function invariant_uncappedCallsAreNeverMetered() public view {
+        assertFalse(handler.uncappedViolation());
     }
 
-    function invariant_whitelistedCallsDoNotConsumePublicMeter() public view {
-        // Invariant: calls from whitelisted callers must never increase the public block meter.
-        assertFalse(handler.whitelistViolation());
+    function invariant_cappedAccountingIsConsistent() public view {
+        assertFalse(handler.accountingViolation());
     }
 
-    function invariant_nonWhitelistedAccountingIsConsistent() public view {
-        // Invariant: for non-whitelisted callers, meter growth equals successful op count times cast-op cost.
-        assertFalse(handler.nonWhitelistedAccountingViolation());
-    }
-
-    function invariant_meterResetsAfterMinedBlocks() public view {
-        // Invariant: once the block number advances, observed usedHCU for the new block is zero until a new op succeeds.
-        assertFalse(handler.resetViolation());
+    function invariant_usageDecaysWithMinedBlocks() public view {
+        assertFalse(handler.decayViolation());
     }
 
     function _deployAndEtchACL() internal {

@@ -21,32 +21,48 @@ import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
 // but not compiled in the E2E test suite.
 const HCU_LIMIT_ABI = [
   'function getVersion() view returns (string)',
-  'function getBlockMeter() view returns (uint48, uint48)',
-  'function getGlobalHCUCapPerBlock() view returns (uint48)',
+  'function getQuota(uint16) view returns (uint48, uint48, uint48)',
+  'function getContractQuota(address) view returns (uint16)',
   'function getMaxHCUPerTx() view returns (uint48)',
   'function getMaxHCUDepthPerTx() view returns (uint48)',
-  'function setHCUPerBlock(uint48)',
+  'function setQuota(uint16, uint48, uint48)',
+  'function assignQuota(address, uint16)',
+  'function lowerQuota(uint16, uint48, uint48)',
   'function setMaxHCUPerTx(uint48)',
   'function setMaxHCUDepthPerTx(uint48)',
-  'function addToBlockHCUWhitelist(address)',
-  'function removeFromBlockHCUWhitelist(address)',
-  'function isBlockHCUWhitelisted(address) view returns (bool)',
-  'error NotHostOwner(address)',
+  'error NotPauser(address)',
 ];
 
 type HcuLimitContract = {
   connect(runner: ContractRunner): HcuLimitContract;
   getVersion(): Promise<string>;
-  getBlockMeter(overrides?: ReadAtBlock): Promise<[bigint, bigint]>;
-  getGlobalHCUCapPerBlock(): Promise<bigint>;
+  getQuota(quotaId: number, overrides?: ReadAtBlock): Promise<[bigint, bigint, bigint]>;
+  getContractQuota(account: string): Promise<bigint>;
   getMaxHCUPerTx(): Promise<bigint>;
   getMaxHCUDepthPerTx(): Promise<bigint>;
-  setHCUPerBlock(value: bigint | number): Promise<ContractTransactionResponse>;
+  setQuota(
+    quotaId: number,
+    maxHCU: bigint | number,
+    decayPerBlock: bigint | number,
+  ): Promise<ContractTransactionResponse>;
+  assignQuota(account: string, quotaId: number): Promise<ContractTransactionResponse>;
+  lowerQuota(
+    quotaId: number,
+    maxHCU: bigint | number,
+    decayPerBlock: bigint | number,
+  ): Promise<ContractTransactionResponse>;
   setMaxHCUPerTx(value: bigint | number): Promise<ContractTransactionResponse>;
   setMaxHCUDepthPerTx(value: bigint | number): Promise<ContractTransactionResponse>;
-  addToBlockHCUWhitelist(address: string): Promise<ContractTransactionResponse>;
-  removeFromBlockHCUWhitelist(address: string): Promise<ContractTransactionResponse>;
-  isBlockHCUWhitelisted(address: string): Promise<boolean>;
+};
+
+const DEFAULT_QUOTA = 0;
+const UNCAPPED_QUOTA = 1;
+const NO_CAP = 2n ** 48n - 1n;
+
+// Quotas replaced the global block cap in HCULimit v0.5.0; getVersion() returns e.g. "HCULimit v0.5.0".
+const supportsQuotas = async (hcuLimit: HcuLimitContract): Promise<boolean> => {
+  const [, major, minor] = (await hcuLimit.getVersion()).match(/v(\d+)\.(\d+)\./) ?? [];
+  return Number(major) > 0 || Number(minor) >= 5;
 };
 
 type ReadAtBlock = {
@@ -89,30 +105,29 @@ const requireReceipt = (receipt: TransactionReceipt | null, label: string): Tran
 describe('EncryptedERC20:HCU', function () {
   async function assertWithinConfiguredCaps(hcuLimit: HcuLimitContract, receipt: TransactionReceipt, label: string) {
     const { globalTxHCU, maxTxHCUDepth } = getTxHCUFromTxReceipt(receipt);
-    const [perBlock, maxPerTx, maxDepth] = await Promise.all([
-      hcuLimit.getGlobalHCUCapPerBlock(),
-      hcuLimit.getMaxHCUPerTx(),
-      hcuLimit.getMaxHCUDepthPerTx(),
-    ]);
-    expect(BigInt(globalTxHCU) <= perBlock).to.eq(true, `${label} should stay within the deployed block cap`);
+    const [maxPerTx, maxDepth] = await Promise.all([hcuLimit.getMaxHCUPerTx(), hcuLimit.getMaxHCUDepthPerTx()]);
     expect(BigInt(globalTxHCU) <= maxPerTx).to.eq(true, `${label} should stay within the deployed per-tx cap`);
     expect(BigInt(maxTxHCUDepth) <= maxDepth).to.eq(true, `${label} should stay within the deployed depth cap`);
   }
 
-  async function assertBlockMeterIncludesTransaction(
+  async function assertQuotaIncludesTransaction(
     hcuLimit: HcuLimitContract,
+    contractAddress: string,
     receipt: TransactionReceipt,
     label: string,
   ) {
+    if (!(await supportsQuotas(hcuLimit))) {
+      return;
+    }
     const { globalTxHCU } = getTxHCUFromTxReceipt(receipt);
-    const [[blockNumber, usedHCU], perBlock] = await Promise.all([
-      hcuLimit.getBlockMeter({ blockTag: receipt.blockNumber }),
-      hcuLimit.getGlobalHCUCapPerBlock(),
-    ]);
-    expect(blockNumber).to.eq(BigInt(receipt.blockNumber), `${label} should read the receipt block meter`);
-    expect(usedHCU).to.be.greaterThan(0n, `${label} should record non-zero HCU in the block meter`);
-    expect(usedHCU >= BigInt(globalTxHCU)).to.eq(true, `${label} block meter should include this tx HCU`);
-    expect(usedHCU <= perBlock).to.eq(true, `${label} block meter should stay within the deployed block cap`);
+    const quotaId = Number(await hcuLimit.getContractQuota(contractAddress));
+    const [cap, , usedHCU] = await hcuLimit.getQuota(quotaId, { blockTag: receipt.blockNumber });
+    if (cap === NO_CAP) {
+      expect(usedHCU).to.eq(0n, `${label} should not be metered by an uncapped quota`);
+      return;
+    }
+    expect(usedHCU >= BigInt(globalTxHCU)).to.eq(true, `${label} quota usage should include this tx HCU`);
+    expect(usedHCU <= cap).to.eq(true, `${label} quota usage should stay within the quota cap`);
   }
 
   before(async function () {
@@ -275,7 +290,7 @@ describe('EncryptedERC20:HCU', function () {
         const receipt = requireReceipt(await tx.wait(), 'live transfer');
         const hcuLimit = requireHcuLimit(this.hcuLimit, LIVE_HCU_LIMIT_ERROR);
         await assertWithinConfiguredCaps(hcuLimit, receipt, 'transfer');
-        await assertBlockMeterIncludesTransaction(hcuLimit, receipt, 'transfer');
+        await assertQuotaIncludesTransaction(hcuLimit, this.contractAddress, receipt, 'transfer');
       });
 
       it('should keep transferFrom HCU within deployed caps', async function () {
@@ -317,35 +332,39 @@ describe('EncryptedERC20:HCU', function () {
       const TIGHT_DEPTH_PER_TX = 400_000;
       const TIGHT_MAX_PER_TX = 600_000;
       const TIGHT_PER_BLOCK = 600_000;
-      let savedHCUPerBlock: bigint;
+      let savedDefaultMax: bigint;
+      let savedDefaultDecay: bigint;
+      let savedUncappedMax: bigint;
+      let savedUncappedDecay: bigint;
       let savedMaxHCUPerTx: bigint;
       let savedMaxHCUDepthPerTx: bigint;
-      let wasWhitelisted: boolean;
 
       beforeEach(async function () {
         if (isLiveNetwork()) {
           this.skip();
         }
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
-        // Per-block cap (setHCUPerBlock, getMaxHCUPerTx, …) was added in HCULimit v0.2.0.
-        // Skip on v0.1.x deployments (protocol v0.11 and earlier).
-        // getVersion() returns e.g. "HCULimit v0.1.0".
-        const version = await hcuLimit.getVersion();
-        if (version.includes(' v0.1.')) {
+        if (!(await supportsQuotas(hcuLimit))) {
           this.skip();
         }
         const deployer = requireDeployer(this.deployer);
-        [savedHCUPerBlock, savedMaxHCUPerTx, savedMaxHCUDepthPerTx, wasWhitelisted] = await Promise.all([
-          hcuLimit.getGlobalHCUCapPerBlock(),
+        [
+          [savedDefaultMax, savedDefaultDecay],
+          [savedUncappedMax, savedUncappedDecay],
+          savedMaxHCUPerTx,
+          savedMaxHCUDepthPerTx,
+        ] = await Promise.all([
+          hcuLimit.getQuota(DEFAULT_QUOTA),
+          hcuLimit.getQuota(UNCAPPED_QUOTA),
           hcuLimit.getMaxHCUPerTx(),
           hcuLimit.getMaxHCUDepthPerTx(),
-          hcuLimit.isBlockHCUWhitelisted(this.contractAddress),
         ]);
-        // Narrowest-first when lowering: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
+        // Narrowest-first when lowering: maxHCUPerTx >= maxHCUDepthPerTx
         const ownerHcuLimit = hcuLimit.connect(deployer);
         await (await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX)).wait();
         await (await ownerHcuLimit.setMaxHCUPerTx(TIGHT_MAX_PER_TX)).wait();
-        await (await ownerHcuLimit.setHCUPerBlock(TIGHT_PER_BLOCK)).wait();
+        // Maximum and decay both TIGHT_PER_BLOCK: the quota allows TIGHT_PER_BLOCK HCU per block.
+        await (await ownerHcuLimit.setQuota(DEFAULT_QUOTA, TIGHT_PER_BLOCK, TIGHT_PER_BLOCK)).wait();
       });
 
       afterEach(async function () {
@@ -353,7 +372,7 @@ describe('EncryptedERC20:HCU', function () {
           return;
         }
         // beforeEach skipped (live network or HCULimit v0.1.x) — nothing to restore.
-        if (savedHCUPerBlock === undefined) {
+        if (savedDefaultMax === undefined) {
           return;
         }
         await ethers.provider.send('evm_setAutomine', [true]);
@@ -361,16 +380,10 @@ describe('EncryptedERC20:HCU', function () {
 
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
         const ownerHcuLimit = hcuLimit.connect(requireDeployer(this.deployer));
-        await (await ownerHcuLimit.setHCUPerBlock(savedHCUPerBlock)).wait();
+        await (await ownerHcuLimit.setQuota(DEFAULT_QUOTA, savedDefaultMax, savedDefaultDecay)).wait();
+        await (await ownerHcuLimit.setQuota(UNCAPPED_QUOTA, savedUncappedMax, savedUncappedDecay)).wait();
         await (await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx)).wait();
         await (await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx)).wait();
-
-        const isWhitelisted = await hcuLimit.isBlockHCUWhitelisted(this.contractAddress);
-        if (wasWhitelisted && !isWhitelisted) {
-          await (await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress)).wait();
-        } else if (!wasWhitelisted && isWhitelisted) {
-          await (await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress)).wait();
-        }
       });
 
       it('should accumulate HCU across users until the block cap is exhausted', async function () {
@@ -430,18 +443,18 @@ describe('EncryptedERC20:HCU', function () {
         const receiptBob = await ethers.provider.getTransactionReceipt(txBob.hash);
         expect(receiptBob?.status).to.eq(0, 'Bob should be blocked in block N');
 
-        // Block N+1: meter resets, bob retries and succeeds
+        // Block N+1: quota usage has decayed by a full block, bob retries and succeeds
         await mineNBlocks(1);
 
-        const [, usedHCUAfterReset] = await hcuLimit.getBlockMeter();
-        expect(usedHCUAfterReset).to.eq(0n, 'Meter should reset after new block');
+        const [, , usedHCUAfterReset] = await hcuLimit.getQuota(DEFAULT_QUOTA);
+        expect(usedHCUAfterReset).to.eq(0n, 'Quota usage should decay to 0 after a block');
 
         const retryBob = await sendEncryptedTransfer(this, 'bob', this.signers.carol.address, 100);
         const receiptRetry = requireReceipt(await retryBob.wait(), 'retry transfer');
         expect(receiptRetry.status).to.eq(1, 'Bob should succeed after rollover');
       });
 
-      it('should count HCU after whitelist removal', async function () {
+      it('should count HCU after leaving an uncapped quota', async function () {
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
         const ownerHcuLimit = hcuLimit.connect(requireDeployer(this.deployer));
 
@@ -455,44 +468,47 @@ describe('EncryptedERC20:HCU', function () {
         const mintReceipt = await waitForTransactionReceipt(mintTx.hash);
         expect(mintReceipt.status).to.eq(1, 'Mint should succeed');
 
-        const whitelistTx = await ownerHcuLimit.addToBlockHCUWhitelist(this.contractAddress);
+        const uncapTx = await ownerHcuLimit.setQuota(UNCAPPED_QUOTA, NO_CAP, NO_CAP);
+        const assignTx = await ownerHcuLimit.assignQuota(this.contractAddress, UNCAPPED_QUOTA);
         await ethers.provider.send('evm_mine');
-        await waitForTransactionReceipt(whitelistTx.hash);
+        await waitForTransactionReceipt(uncapTx.hash);
+        await waitForTransactionReceipt(assignTx.hash);
 
-        // Advance to a fresh block so the transfer starts with a clean meter
+        // Advance to a fresh block so the transfer starts with clean quota usage
         await mineNBlocks(1);
 
-        // Transfer while whitelisted — meter stays at 0
+        // Transfer while uncapped — the default quota stays at 0
         const tx1 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100, {
           gasLimit: BATCHED_TRANSFER_GAS_LIMIT,
         });
         await ethers.provider.send('evm_mine');
-        await waitForTransactionReceipt(tx1.hash);
+        const receiptUncapped = await waitForTransactionReceipt(tx1.hash);
+        expect(receiptUncapped.status).to.eq(1, 'Transfer in an uncapped quota should succeed');
 
-        const [, usedHCUWhitelisted] = await hcuLimit.getBlockMeter();
-        expect(usedHCUWhitelisted).to.eq(0n, 'Whitelisted contract should not count HCU');
+        const [, , usedHCUUncapped] = await hcuLimit.getQuota(DEFAULT_QUOTA);
+        expect(usedHCUUncapped).to.eq(0n, 'A contract in an uncapped quota should not count HCU');
 
-        const unwhitelistTx = await ownerHcuLimit.removeFromBlockHCUWhitelist(this.contractAddress);
+        const reassignTx = await ownerHcuLimit.assignQuota(this.contractAddress, DEFAULT_QUOTA);
         await ethers.provider.send('evm_mine');
-        await waitForTransactionReceipt(unwhitelistTx.hash);
+        await waitForTransactionReceipt(reassignTx.hash);
 
-        // Transfer after removal — meter should count HCU
+        // Transfer back in the default quota — usage should count HCU
         const tx2 = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100, {
           gasLimit: BATCHED_TRANSFER_GAS_LIMIT,
         });
         await ethers.provider.send('evm_mine');
         await waitForTransactionReceipt(tx2.hash);
 
-        const [, usedHCUAfterRemoval] = await hcuLimit.getBlockMeter();
-        expect(usedHCUAfterRemoval).to.be.greaterThan(0n, 'Should count HCU after whitelist removal');
+        const [, , usedHCUDefault] = await hcuLimit.getQuota(DEFAULT_QUOTA);
+        expect(usedHCUDefault).to.be.greaterThan(0n, 'Should count HCU in the default quota');
       });
 
-      it('should reject setHCUPerBlock from non-owner', async function () {
+      it('should reject lowerQuota from a non-owner non-pauser', async function () {
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
         const aliceHcuLimit = hcuLimit.connect(this.signers.alice);
-        await expect(aliceHcuLimit.setHCUPerBlock(1_000_000)).to.be.revertedWithCustomError(
+        await expect(aliceHcuLimit.lowerQuota(DEFAULT_QUOTA, 1_000_000, 1_000_000)).to.be.revertedWithCustomError(
           hcuLimit as unknown as { interface: any },
-          'NotHostOwner',
+          'NotPauser',
         );
       });
     });
