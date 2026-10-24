@@ -1,4 +1,4 @@
-FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS prod
+FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.23.4-alpine3.23 AS prod
 
 WORKDIR /app
 
