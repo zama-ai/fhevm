@@ -153,6 +153,9 @@ export async function encryptTransci(context: Context, parameters: Parameters): 
     extraData,
     transportPublicKey: signedPermit.eip712.message.publicKey,
     kmsSigners: kmsSignersContext.signers,
+    // The sharing degree t, not `kmsSignersContext.threshold` (the public decryption
+    // threshold). Per the KMS team, n = 3t+1 when the context does not expose it.
+    mpcThreshold: kmsSignersContext.mpcThreshold ?? Math.floor((kmsSignersContext.signers.length - 1) / 3),
     gatewayChainId: context.chain.fhevm.gateway.id,
     verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address as ChecksummedAddress,
   });

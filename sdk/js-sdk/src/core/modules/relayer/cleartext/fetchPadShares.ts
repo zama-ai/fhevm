@@ -140,8 +140,8 @@ export async function fetchPadShares(
     const payload = {
       packingFactor: CLEARTEXT_PAD_PACKING_FACTOR,
       extraData,
-      // Each share is the whole pad, so a single share reconstructs it.
-      degree: 0 as Uint32Number,
+      // Each share is the whole pad, but the client checks the context's degree (n = 3t+1).
+      degree: Math.floor((signers.length - 1) / 3) as Uint32Number,
       partyId,
       padShares,
     };

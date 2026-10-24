@@ -32,7 +32,7 @@ export type CleartextPadDecryptResponsePayload = {
   /** PRF blocks per ring element. */
   readonly packingFactor: Uint32Number;
   readonly extraData: BytesHex;
-  /** Sharing degree `t`; 0 in cleartext mode, since every share is the whole pad. */
+  /** Sharing degree `t` of the context; in cleartext mode every share is still the whole pad. */
   readonly degree: Uint32Number;
   readonly partyId: Uint32Number;
   readonly padShares: readonly PadShare[];

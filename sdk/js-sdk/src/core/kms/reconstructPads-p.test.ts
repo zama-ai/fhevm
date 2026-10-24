@@ -33,6 +33,8 @@ import {
 
 const HOST_CHAIN_ID = 31337n as Uint64BigInt;
 const GATEWAY_CHAIN_ID = 54321n as Uint64BigInt;
+/** 4 KMS signers: n = 3t+1 with t = 1. */
+const MPC_THRESHOLD = 1;
 const DECRYPTION_ADDRESS = '0x5ffdaAB0373E62E2ea2944776209aEf29E631A64' as ChecksummedAddress;
 const EXTRA_DATA = `0x02${'00'.repeat(31)}01${'00'.repeat(31)}01` as BytesHex;
 const TRANSPORT_PUBLIC_KEY = `0x${'a5'.repeat(64)}` as BytesHex;
@@ -91,13 +93,16 @@ function maskedShare(w: PadWitness, fill: number, extraBlocks = 0): BytesHex {
 async function response(
   partyIndex: number,
   padShares: readonly PadShare[],
-  packingFactor: number = CLEARTEXT_PAD_PACKING_FACTOR,
-  chainId: Uint64BigInt = GATEWAY_CHAIN_ID,
+  {
+    packingFactor = CLEARTEXT_PAD_PACKING_FACTOR,
+    chainId = GATEWAY_CHAIN_ID,
+    degree = MPC_THRESHOLD,
+  }: { packingFactor?: number; chainId?: Uint64BigInt; degree?: number } = {},
 ): Promise<PadDecryptResponse> {
   const payload: CleartextPadDecryptResponsePayload = {
     packingFactor: packingFactor as Uint32Number,
     extraData: EXTRA_DATA,
-    degree: 1 as Uint32Number,
+    degree: degree as Uint32Number,
     partyId: (partyIndex + 1) as Uint32Number,
     padShares,
   };
@@ -134,6 +139,7 @@ function run(responses: readonly PadDecryptResponse[], witnesses: readonly PadWi
     extraData: EXTRA_DATA,
     transportPublicKey: TRANSPORT_PUBLIC_KEY,
     kmsSigners: KMS_SIGNERS,
+    mpcThreshold: MPC_THRESHOLD,
     gatewayChainId: GATEWAY_CHAIN_ID,
     verifyingContractAddressDecryption: DECRYPTION_ADDRESS,
   });
@@ -188,7 +194,9 @@ describe('reconstructPads', () => {
     const responses = await Promise.all(
       [0, 1, 2, 3].map((i) =>
         i === 1
-          ? response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x00) }], 2)
+          ? response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x00) }], {
+              packingFactor: 2,
+            })
           : response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) }]),
       ),
     );
@@ -213,12 +221,9 @@ describe('reconstructPads', () => {
   it('rejects a response signed under the host chain id instead of the gateway chain id', async () => {
     const responses = await Promise.all(
       [0, 1, 2].map((i) =>
-        response(
-          i,
-          [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) }],
-          CLEARTEXT_PAD_PACKING_FACTOR,
-          HOST_CHAIN_ID,
-        ),
+        response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) }], {
+          chainId: HOST_CHAIN_ID,
+        }),
       ),
     );
     await expect(run(responses, [a])).rejects.toThrow(/is not a KMS signer/);
@@ -231,12 +236,9 @@ describe('reconstructPads', () => {
     const responses = await Promise.all(
       [0, 1, 2, 3].map((i) => {
         const { chainId = GATEWAY_CHAIN_ID, extraBlocks = 0 } = i === 1 ? bad : {};
-        return response(
-          i,
-          [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c, extraBlocks) }],
-          CLEARTEXT_PAD_PACKING_FACTOR,
+        return response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c, extraBlocks) }], {
           chainId,
-        );
+        });
       }),
     );
     const pads = await run(responses, [a]);
@@ -246,16 +248,34 @@ describe('reconstructPads', () => {
   it('reports the rejected responses when fewer than 2t+1 valid ones remain', async () => {
     const responses = await Promise.all(
       [0, 1, 2].map((i) =>
-        response(
-          i,
-          [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) }],
-          CLEARTEXT_PAD_PACKING_FACTOR,
-          i === 1 ? HOST_CHAIN_ID : GATEWAY_CHAIN_ID,
-        ),
+        response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) }], {
+          chainId: i === 1 ? HOST_CHAIN_ID : GATEWAY_CHAIN_ID,
+        }),
       ),
     );
     await expect(run(responses, [a])).rejects.toThrow(
       /got 2 valid of 3, .* Rejected responses: #1 \(partyId hint 2\): .*is not a KMS signer/,
     );
+  });
+
+  it('rejects a response signed with a degree other than the context MPC threshold', async () => {
+    // A single node claiming degree 0 must not reconstruct the pad alone (1 >= 2*0+1).
+    const responses = [
+      await response(0, [{ label: a.label, sessionId: session('66'), share: maskedShare(a, 0x00) }], { degree: 0 }),
+    ];
+    await expect(run(responses, [a])).rejects.toThrow(/degree 0 is not the context's MPC threshold 1/);
+  });
+
+  it('requires 2t+1 responses from the context threshold, not from the signed degree', async () => {
+    // A malicious party 0 signs degree 0 first; the 3 honest parties still provide the pad.
+    const responses = await Promise.all(
+      [0, 1, 2, 3].map((i) =>
+        i === 0
+          ? response(i, [{ label: a.label, sessionId: session('66'), share: maskedShare(a, 0x00) }], { degree: 0 })
+          : response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) }]),
+      ),
+    );
+    const pads = await run(responses, [a]);
+    expect(pads.get(a.label)).toEqual(expectedPad(a, 0x3c));
   });
 });

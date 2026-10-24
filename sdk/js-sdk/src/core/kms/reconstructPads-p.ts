@@ -19,10 +19,11 @@ import {
 //
 // For each response: open it, verify its EIP-712 signature against the KMS
 // signers of the request's context, and check its structure against the
-// request; an invalid response is skipped. Then, label by label, select at least 2t+1 responses whose shares
-// for that label carry the same `sessionId` and whose payloads carry the same
-// `packingFactor`, from distinct parties, and reconstruct that label's pad.
-// The selection may differ from label to label.
+// request, including that it is signed with the context's sharing degree t;
+// an invalid response is skipped. Then, label by label, select at least 2t+1
+// responses whose shares for that label carry the same `sessionId` and whose
+// payloads carry the same `packingFactor`, from distinct parties, and
+// reconstruct that label's pad. The selection may differ from label to label.
 //
 // Only the cleartext share encoding is supported: opening a real response
 // needs the ML-KEM + AES-GCM hybrid decryption of `encrypted`, and
@@ -42,6 +43,12 @@ export type ReconstructPadsParameters = {
   readonly transportPublicKey: BytesHex;
   /** KMS signers of the context named by `extraData`. */
   readonly kmsSigners: readonly ChecksummedAddress[];
+  /**
+   * Sharing degree `t` of the context named by `extraData` (its MPC threshold).
+   * A response must be signed with this degree, and a pad needs 2t+1 of them:
+   * the degree a response signs for itself is never trusted to set the bar.
+   */
+  readonly mpcThreshold: number;
   /** EIP-712 domain of the response signature (gateway chain, KMS `Decryption` domain). */
   readonly gatewayChainId: Uint64BigInt | number;
   readonly verifyingContractAddressDecryption: ChecksummedAddress;
@@ -63,6 +70,10 @@ export async function reconstructPads(
 ): Promise<ReconstructedPads> {
   const { responses, witnesses } = parameters;
 
+  const { mpcThreshold } = parameters;
+  if (!Number.isInteger(mpcThreshold) || mpcThreshold < 0) {
+    throw new Error(`Invalid MPC threshold ${mpcThreshold}.`);
+  }
   const kmsSigners = new Set(parameters.kmsSigners.map((a) => a.toLowerCase()));
   const padLengthByLabel = new Map<string, number>(witnesses.map((w) => [w.label.toLowerCase(), w.padLength]));
 
@@ -88,14 +99,14 @@ export async function reconstructPads(
   }
 
   // 2. Per label: select at least 2t+1 responses agreeing on that label's
-  //    session, on the packing factor and on the degree, from distinct parties
-  //    and signers, then reconstruct the label's pad from them.
+  //    session and on the packing factor, from distinct parties and signers,
+  //    then reconstruct the label's pad from them.
   const pads = new Map<Bytes32Hex, Uint8Array>();
   for (const w of witnesses) {
     const label = w.label.toLowerCase();
     const groups = new Map<string, VerifiedResponse[]>();
     for (const v of verified) {
-      const key = `${_padShareOf(v, label).sessionId.toLowerCase()}|${v.payload.packingFactor}|${v.payload.degree}`;
+      const key = `${_padShareOf(v, label).sessionId.toLowerCase()}|${v.payload.packingFactor}`;
       const group = groups.get(key) ?? [];
       if (
         !group.some((g) => g.payload.partyId === v.payload.partyId || g.signer.toLowerCase() === v.signer.toLowerCase())
@@ -105,12 +116,11 @@ export async function reconstructPads(
       groups.set(key, group);
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const selected = Array.from(groups.values()).find((group) => group.length >= 2 * group[0]!.payload.degree + 1);
+    const selected = Array.from(groups.values()).find((group) => group.length >= 2 * mpcThreshold + 1);
     if (selected === undefined) {
       const rejectedDetails = rejected.length === 0 ? '' : ` Rejected responses: ${rejected.join('; ')}`;
       throw new Error(
-        `Not enough consistent pad decryption responses for label ${w.label}: got ${verified.length} valid of ${responses.length}, no (session, packing factor) reaches 2t+1 distinct parties.${rejectedDetails}`,
+        `Not enough consistent pad decryption responses for label ${w.label}: got ${verified.length} valid of ${responses.length}, no (session, packing factor) reaches 2t+1 = ${2 * mpcThreshold + 1} distinct parties.${rejectedDetails}`,
       );
     }
     pads.set(w.label, _reconstruct(selected, w));
@@ -158,6 +168,11 @@ async function _verifyResponse(
   // The signed extraData must be the request's.
   if (payload.extraData.toLowerCase() !== parameters.extraData.toLowerCase()) {
     throw new Error(`extraData ${payload.extraData} does not match the request's ${parameters.extraData}`);
+  }
+
+  // The sharing degree is the context's, whatever the node claims.
+  if (payload.degree !== parameters.mpcThreshold) {
+    throw new Error(`degree ${payload.degree} is not the context's MPC threshold ${parameters.mpcThreshold}`);
   }
 
   if (payload.packingFactor < 1) {
