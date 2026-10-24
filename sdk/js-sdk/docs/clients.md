@@ -10,7 +10,7 @@ object differs (`provider` for ethers, `publicClient` for viem).
 
 ## Choosing a client
 
-Four factories exist. They differ only in **which WASM modules they load** and
+Five factories exist. They differ only in **which WASM modules they load** and
 therefore **which methods they expose**. Pick the narrowest one your page needs —
 a page that only reads public values should never download the 4.9 MB encryption
 module.
@@ -19,8 +19,14 @@ module.
 | ---------------------------- | :------: | :------: | ----------------------- |
 | `createFhevmClient`          |    ✅    |    ✅    | TFHE (~4.9 MB) + TKMS (~600 KB) |
 | `createFhevmEncryptClient`   |    ✅    |    —     | TFHE (~4.9 MB)          |
+| `createFhevmEncryptTransciClient` | ✅ (pad-based) | — | TKMS (~600 KB)     |
 | `createFhevmDecryptClient`   |    —     |    ✅    | TKMS (~600 KB)          |
 | `createFhevmBaseClient`      |    —     |    —     | None                    |
+
+"Encrypts" means the input-proof methods (`encryptValue` / `encryptValues`),
+except for `createFhevmEncryptTransciClient`, which exposes only the RFC-030
+pad-based methods (`encryptValueTransci` / `encryptValuesTransci`, experimental).
+See [Encryption](encryption.md) for the two paths.
 
 "Decrypts" above covers **private** decryption (`decryptValue`). Reading
 **public** values (`decryptPublicValue`) and signing permits are available on
@@ -168,12 +174,22 @@ const client = createFhevmDecryptClient({ chain: sepolia, provider });
 // exposes decryptValue / decryptValues / generateTransportKeyPair (+ public-decrypt + permit helpers)
 ```
 
+A page that encrypts with RFC-030 pad-based inputs instead uses the
+transciphering client:
+
+```ts
+import { createFhevmEncryptTransciClient } from '@fhevm/sdk/ethers';
+
+const client = createFhevmEncryptTransciClient({ chain, provider });
+// exposes encryptValueTransci / encryptValuesTransci / generateTransportKeyPair (+ public-decrypt + permit helpers)
+```
+
 Each downloads only the WASM it needs. See [Encryption](encryption.md) and
 [Decryption](decryption.md) for the method details.
 
 ## Related
 
-- [Encryption](encryption.md) — encrypt values and build input proofs.
+- [Encryption](encryption.md) — encrypt values into input proofs or pad-based input packages.
 - [Decryption](decryption.md) — private decryption, public values, delegation.
 - [Runtime configuration](runtime-configuration.md) — threads, WASM loading, version pinning.
 - [API reference](api-reference.md) — full factory and method signatures.

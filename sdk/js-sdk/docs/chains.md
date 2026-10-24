@@ -70,7 +70,7 @@ type ChainContract = {
 | `fhevm.contracts.inputVerifier`         | Verifies encrypted inputs and their proofs.                 |
 | `fhevm.contracts.kmsVerifier`           | Holds the authorized KMS signer set and quorum threshold.   |
 | `fhevm.contracts.protocolConfig`        | Optional aggregate config contract; may be `undefined`.     |
-| `fhevm.relayerUrl`                       | The Relayer the SDK sends proof and decryption requests to. |
+| `fhevm.relayerUrl`                       | The Relayer the SDK sends proof, pad and decryption requests to. |
 | `fhevm.gateway.id`                       | The gateway rollup's chain id.                              |
 | `fhevm.gateway.contracts.decryption`     | Gateway decryption contract.                                 |
 | `fhevm.gateway.contracts.inputVerification` | Gateway input-verification contract.                     |

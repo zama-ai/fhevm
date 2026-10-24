@@ -1,0 +1,210 @@
+import type {
+  Bytes32Hex,
+  BytesHex,
+  ChecksummedAddress,
+  Uint16Number,
+  Uint32Number,
+  Uint64BigInt,
+} from '../types/primitives.js';
+import type { PadDecryptResponse, PadShare, PadWitness } from '../modules/relayer/types.js';
+import { describe, expect, it } from 'vitest';
+import { decodeAbiParameters, encodeAbiParameters, parseAbiParameters, recoverTypedDataAddress } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { reconstructPads } from './reconstructPads-p.js';
+import { createKmsEip712Domain } from './createKmsEip712Domain.js';
+import {
+  kmsPadDecryptResponseEip712PrimaryType,
+  kmsPadDecryptResponseEip712Types,
+} from './kmsPadDecryptResponseEip712Types.js';
+import {
+  CLEARTEXT_PAD_BLOCK_BYTES,
+  CLEARTEXT_PAD_PACKING_FACTOR,
+  encodeCleartextPadDecryptResponse,
+  type CleartextPadDecryptResponsePayload,
+} from '../modules/relayer/cleartext/padDecryptResponse.js';
+
+////////////////////////////////////////////////////////////////////////////////
+// npx vitest run --config src/vitest.config.ts src/core/kms/reconstructPads-p.test.ts
+//
+// RFC-030 response processing against the cleartext share encoding: every
+// share is the whole encrypted pad (one 32-byte block per ring element),
+// XOR-masked with the first 32 bytes of the transport public key.
+////////////////////////////////////////////////////////////////////////////////
+
+const CHAIN_ID = 31337n as Uint64BigInt;
+const DECRYPTION_ADDRESS = '0x5ffdaAB0373E62E2ea2944776209aEf29E631A64' as ChecksummedAddress;
+const EXTRA_DATA = `0x02${'00'.repeat(31)}01${'00'.repeat(31)}01` as BytesHex;
+const TRANSPORT_PUBLIC_KEY = `0x${'a5'.repeat(64)}` as BytesHex;
+
+const KMS_KEYS = [
+  `0x${'01'.repeat(32)}`,
+  `0x${'02'.repeat(32)}`,
+  `0x${'03'.repeat(32)}`,
+  `0x${'04'.repeat(32)}`,
+] as const;
+const KMS_ACCOUNTS = KMS_KEYS.map((k) => privateKeyToAccount(k));
+const KMS_SIGNERS = KMS_ACCOUNTS.map((a) => a.address as ChecksummedAddress);
+
+const ethereum = {
+  encode: ({ types, values }: { types: readonly string[]; values: readonly unknown[] }) =>
+    encodeAbiParameters(parseAbiParameters(types.join(',')), values as never) as BytesHex,
+  decode: ({ types, encodedData }: { types: readonly string[]; encodedData: BytesHex }) =>
+    Array.from(decodeAbiParameters(parseAbiParameters(types.join(',')), encodedData)),
+  recoverTypedDataAddress: async (parameters: Parameters<typeof recoverTypedDataAddress>[0]) =>
+    (await recoverTypedDataAddress(parameters)) as ChecksummedAddress,
+};
+
+function witness(byte: string, padLength: number): PadWitness {
+  return {
+    submitter: KMS_SIGNERS[0]!,
+    consumer: KMS_SIGNERS[1]!,
+    expirationTimestamp: 0n as Uint64BigInt,
+    decryptors: [],
+    nonce: `0x${'00'.repeat(16)}` as BytesHex,
+    label: `0x${byte.repeat(32)}` as Bytes32Hex,
+    padLength: padLength as Uint16Number,
+  };
+}
+
+/** The expected plaintext pad bytes of `w`: blocks filled with `fill`, truncated to `padLength` bits. */
+function expectedPad(w: PadWitness, fill: number): Uint8Array {
+  const numBytes = Math.ceil(w.padLength / 8);
+  const pad = new Uint8Array(numBytes).fill(fill);
+  const extraBits = numBytes * 8 - w.padLength;
+  if (extraBits !== 0) {
+    pad[numBytes - 1]! &= 0xff >> extraBits;
+  }
+  return pad;
+}
+
+/** Cleartext share of `w`: ⌈padLength/256⌉ blocks of `fill`, masked with the transport key. */
+function maskedShare(w: PadWitness, fill: number, extraBlocks = 0): BytesHex {
+  const numBlocks = Math.ceil(w.padLength / (8 * CLEARTEXT_PAD_BLOCK_BYTES)) + extraBlocks;
+  const mask = Number.parseInt(TRANSPORT_PUBLIC_KEY.slice(2, 4), 16);
+  return `0x${(fill ^ mask)
+    .toString(16)
+    .padStart(2, '0')
+    .repeat(numBlocks * CLEARTEXT_PAD_BLOCK_BYTES)}` as BytesHex;
+}
+
+async function response(
+  partyIndex: number,
+  padShares: readonly PadShare[],
+  packingFactor: number = CLEARTEXT_PAD_PACKING_FACTOR,
+): Promise<PadDecryptResponse> {
+  const payload: CleartextPadDecryptResponsePayload = {
+    packingFactor: packingFactor as Uint32Number,
+    extraData: EXTRA_DATA,
+    degree: 1 as Uint32Number,
+    partyId: (partyIndex + 1) as Uint32Number,
+    padShares,
+  };
+  const signature = await KMS_ACCOUNTS[partyIndex]!.signTypedData({
+    domain: createKmsEip712Domain({ chainId: CHAIN_ID, verifyingContractAddressDecryption: DECRYPTION_ADDRESS }),
+    types: {
+      PadDecryptResponsePayload: [...kmsPadDecryptResponseEip712Types.PadDecryptResponsePayload],
+      PadShare: [...kmsPadDecryptResponseEip712Types.PadShare],
+    },
+    primaryType: kmsPadDecryptResponseEip712PrimaryType,
+    message: {
+      packingFactor: payload.packingFactor,
+      extraData: payload.extraData,
+      degree: payload.degree,
+      partyId: payload.partyId,
+      pad_shares: padShares.map((s) => ({ label: s.label, sessionId: s.sessionId, share: s.share })),
+    },
+  });
+  return {
+    requestId: `0x${'ee'.repeat(32)}` as Bytes32Hex,
+    partyId: payload.partyId,
+    encrypted: encodeCleartextPadDecryptResponse(ethereum, payload, signature as never),
+  };
+}
+
+function session(byte: string): BytesHex {
+  return `0x${byte.repeat(16)}` as BytesHex;
+}
+
+function run(responses: readonly PadDecryptResponse[], witnesses: readonly PadWitness[]) {
+  return reconstructPads(ethereum, {
+    responses,
+    witnesses,
+    extraData: EXTRA_DATA,
+    transportPublicKey: TRANSPORT_PUBLIC_KEY,
+    kmsSigners: KMS_SIGNERS,
+    chainId: CHAIN_ID,
+    verifyingContractAddressDecryption: DECRYPTION_ADDRESS,
+  });
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+describe('reconstructPads', () => {
+  const a = witness('aa', 300); // 2 blocks, 38 bytes, 4 trailing bits cleared
+  const b = witness('bb', 8); // 1 block, 1 byte
+
+  it('reconstructs every label from 2t+1 agreeing responses', async () => {
+    const responses = await Promise.all(
+      [0, 1, 2].map((i) =>
+        response(i, [
+          { label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) },
+          { label: b.label, sessionId: session('22'), share: maskedShare(b, 0x5a) },
+        ]),
+      ),
+    );
+    const pads = await run(responses, [a, b]);
+    expect(pads.get(a.label)).toEqual(expectedPad(a, 0x3c));
+    expect(pads.get(b.label)).toEqual(expectedPad(b, 0x5a));
+  });
+
+  it('selects responses per label: a dissenting session only drops that label', async () => {
+    // Party 1 names another session for `a` only. `a` must use parties {0,2,3}; `b` may use all.
+    const responses = await Promise.all(
+      [0, 1, 2, 3].map((i) =>
+        response(i, [
+          { label: a.label, sessionId: session(i === 1 ? '99' : '11'), share: maskedShare(a, i === 1 ? 0x00 : 0x3c) },
+          { label: b.label, sessionId: session('22'), share: maskedShare(b, 0x5a) },
+        ]),
+      ),
+    );
+    const pads = await run(responses, [a, b]);
+    expect(pads.get(a.label)).toEqual(expectedPad(a, 0x3c));
+    expect(pads.get(b.label)).toEqual(expectedPad(b, 0x5a));
+  });
+
+  it('fails a label when fewer than 2t+1 responses agree on its session', async () => {
+    const responses = await Promise.all(
+      [0, 1, 2].map((i) =>
+        response(i, [{ label: a.label, sessionId: session(i === 1 ? '99' : '11'), share: maskedShare(a, 0x3c) }]),
+      ),
+    );
+    await expect(run(responses, [a])).rejects.toThrow(/Not enough consistent pad decryption responses for label/);
+  });
+
+  it('leaves out a response whose packing factor dissents', async () => {
+    // Party 1 claims packingFactor 2 (its share is padded to whole 2-block elements).
+    const responses = await Promise.all(
+      [0, 1, 2, 3].map((i) =>
+        i === 1
+          ? response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x00) }], 2)
+          : response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) }]),
+      ),
+    );
+    const pads = await run(responses, [a]);
+    expect(pads.get(a.label)).toEqual(expectedPad(a, 0x3c));
+  });
+
+  it('rejects a share whose length does not match the packing factor', async () => {
+    const responses = await Promise.all(
+      [0, 1, 2].map((i) => response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c, 1) }])),
+    );
+    await expect(run(responses, [a])).rejects.toThrow(/is not 64 bytes/);
+  });
+
+  it('rejects a response that misses a requested label', async () => {
+    const responses = await Promise.all(
+      [0, 1, 2].map((i) => response(i, [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) }])),
+    );
+    await expect(run(responses, [a, b])).rejects.toThrow(/requested label\(s\) missing/);
+  });
+});
