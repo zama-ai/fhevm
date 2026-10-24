@@ -1,5 +1,5 @@
 use alloy::primitives::{Address, FixedBytes, U256};
-use config::{Config as ConfigBuilder, File, FileFormat};
+use config::{Config as ConfigBuilder, Environment, File, FileFormat};
 use serde::Deserialize;
 use std::{
     path::{Path, PathBuf},
@@ -58,10 +58,17 @@ pub struct DatabaseConfig {
 pub struct HttpConfig {
     /// One base URL per KMS party (ex: `https://kms-connector-proxy:8443`).
     pub urls: Vec<Url>,
-    /// Pre-shared API key sent as `Authorization: Bearer ...`. Optional when the endpoints are
-    /// targeted directly, without the proxies.
-    #[serde(default)]
-    pub api_key: Option<String>,
+    /// Each party's KMS tx-sender address.
+    pub tx_sender_addresses: Vec<Address>,
+    /// The host chain id, part of the `FhevmSig` EIP-712 domain.
+    pub ethereum_chain_id: u64,
+    /// The host `ProtocolConfig` contract address, part of the `FhevmSig` EIP-712 domain.
+    pub protocol_config_address: Address,
+    /// Private key signing the `FhevmSig` headers.
+    pub sender_private_key: String,
+    /// How long each `FhevmSig` header is valid for. Defaults to `request_timeout`.
+    #[serde(with = "humantime_serde", default)]
+    pub auth_validity: Option<Duration>,
     /// Path of an additional PEM root certificate to trust (the proxies' self-signed test cert).
     #[serde(default)]
     pub tls_ca_cert: Option<PathBuf>,
@@ -74,9 +81,21 @@ pub struct HttpConfig {
 }
 
 impl Config {
+    /// Loads the config file, then overrides its values with the `GATEWAY_STRESS__*` environment
+    /// variables (ex: `GATEWAY_STRESS__HTTP__URLS`, a comma-separated list).
     pub fn from_env_and_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let builder = ConfigBuilder::builder()
-            .add_source(File::with_name(path.as_ref().to_str().unwrap()).format(FileFormat::Toml));
+            .add_source(File::with_name(path.as_ref().to_str().unwrap()).format(FileFormat::Toml))
+            .add_source(
+                Environment::with_prefix("GATEWAY_STRESS")
+                    .prefix_separator("__")
+                    .separator("__")
+                    // Required to split lists, restricted to the list keys below.
+                    .try_parsing(true)
+                    .list_separator(",")
+                    .with_list_parse_key("http.urls")
+                    .with_list_parse_key("http.tx_sender_addresses"),
+            );
         let settings = builder.build()?;
         let config = settings.try_deserialize()?;
         Ok(config)
