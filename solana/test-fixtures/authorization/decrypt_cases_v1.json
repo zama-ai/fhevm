@@ -861,7 +861,7 @@
       "signature": "30b70740500880efc780c725912624f9a9f793d50363c60431f40e6f56d66a670e64b995d01dfa6aed2b79764846dee747066eb820bb33ffd8cfc5224b11b607",
       "verdict": {
         "authorized": false,
-        "code": "user_signature_rejected",
+        "code": "user_decryption_expired",
         "entry": null,
         "failure": "Window::Expired",
         "recoverable": false
