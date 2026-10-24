@@ -103,6 +103,8 @@ abstract contract PaddedInputter {
     error PadPackageTooLarge(uint256 bits);
     error PadCiphertextLengthMismatch(uint256 ciphertextBytes, uint256 expectedBytes);
     error PadLabelMismatch(bytes32 label, bytes32 expectedLabel);
+    error PadHandleDigestMismatch(bytes32 externalHandle, bytes32 packageDigest);
+    error PadHandleVersionMismatch(uint8 handleVersion);
     error PadInputIndexOutOfBounds(uint8 inputIndex, uint8 partCount);
     error PadInputTypeMismatch(uint8 inputIndex, uint8 handleType, uint8 partType);
     error PadSubmitterMismatch(address claimedSubmitter, address submitter);
@@ -146,6 +148,10 @@ abstract contract PaddedInputter {
         }
 
         // 2. External handle checks.
+        if (bytes29(externalHandle) != bytes29(packageDigest)) {
+            revert PadHandleDigestMismatch(externalHandle, packageDigest);
+        }
+        if (uint8(externalHandle[31]) != HANDLE_VERSION) revert PadHandleVersionMismatch(uint8(externalHandle[31]));
         inputIndex = uint8(externalHandle[29]);
         if (inputIndex >= pkg.partCount) revert PadInputIndexOutOfBounds(inputIndex, pkg.partCount);
         uint8 partType = uint8(inputPackage[pkg.partsOffset + inputIndex]);
