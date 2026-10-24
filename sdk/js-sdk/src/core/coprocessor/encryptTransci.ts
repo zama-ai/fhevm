@@ -127,28 +127,31 @@ export async function encryptTransci(context: Context, parameters: Parameters): 
 
   const witness: PadWitness = Object.freeze({ ...witnessFields, label, padLength });
 
-  // 4. Fetch the pad shares (one response per KMS node).
-  const padDecryptResponses = await context.runtime.relayer.fetchPadShares(context, {
-    payload: {
-      kmsDecryptEip712Message: signedPermit.eip712.message,
-      kmsDecryptEip712Signature: signedPermit.signature,
-      witnessVersion: PAD_WITNESS_VERSION,
-      prf: PAD_PRF_INSTANCE,
-      chainId,
-      witnesses: [witness],
-    },
-    fhevmContext,
-    options,
-  });
+  // 4. Fetch the pad shares (one response per KMS node) and, concurrently, the
+  //    signers of the context named by the permit's extraData.
+  const extraData = signedPermit.eip712.message.extraData;
+  const [padDecryptResponses, kmsSignersContext] = await Promise.all([
+    context.runtime.relayer.fetchPadShares(context, {
+      payload: {
+        kmsDecryptEip712Message: signedPermit.eip712.message,
+        kmsDecryptEip712Signature: signedPermit.signature,
+        witnessVersion: PAD_WITNESS_VERSION,
+        prf: PAD_PRF_INSTANCE,
+        chainId,
+        witnesses: [witness],
+      },
+      fhevmContext,
+      options,
+    }),
+    readKmsSignersContextFromPermitExtraData(context, {
+      kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+      protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+      fhevmContext,
+      extraData: createKmsExtraDataFromBytesHex(extraData),
+    }),
+  ]);
 
   // 5. Verify the responses against the context signers and reconstruct the pad.
-  const extraData = signedPermit.eip712.message.extraData;
-  const kmsSignersContext = await readKmsSignersContextFromPermitExtraData(context, {
-    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-    fhevmContext,
-    extraData: createKmsExtraDataFromBytesHex(extraData),
-  });
   const pads = await context.runtime.encryptTransci.reconstructPads({
     responses: padDecryptResponses,
     witnesses: [witness],
