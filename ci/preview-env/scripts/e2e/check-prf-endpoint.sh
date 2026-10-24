@@ -46,7 +46,8 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
   key_list="${key_list:+${key_list},}\$(KMS_KEY_${i})"
 done
 
-# The check pod requests resources: a BestEffort pod is the first one throttled or evicted.
+# The check pod requests a little (Burstable, not BestEffort, so not the first evicted). Run B asked
+# for 1 CPU and 512 Mi and could not be scheduled on the preview nodes.
 kubectl delete pod "${pod}" -n "${NAMESPACE}" --ignore-not-found --wait=true
 POD="${pod}" IMAGE="${PRF_IMAGE}" KEY_ENV="${key_env}" KEY_LIST="${key_list}" CHAIN="${HOST_CHAIN_ID}" yq -n '
 {
@@ -60,7 +61,7 @@ POD="${pod}" IMAGE="${PRF_IMAGE}" KEY_ENV="${key_env}" KEY_LIST="${key_list}" CH
       "name": "connector",
       "image": strenv(IMAGE),
       "command": ["standin-connector", "idle"],
-      "resources": {"requests": {"cpu": "1", "memory": "512Mi"}},
+      "resources": {"requests": {"cpu": "100m", "memory": "128Mi"}},
       "env": (env(KEY_ENV) + [
         {"name": "KMS_TX_SENDER_KEYS", "value": strenv(KEY_LIST)},
         {"name": "PRF_ETHEREUM_CHAIN_ID", "value": strenv(CHAIN)},
