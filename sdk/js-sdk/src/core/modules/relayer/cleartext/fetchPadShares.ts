@@ -8,7 +8,7 @@ import type {
   RelayerClientWithRuntime,
 } from '../types.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
-import { assertIsBytes32Hex, assertIsBytesHex, bytes32ToHex, hexToBytes } from '../../../base/bytes.js';
+import { assertIsBytes32Hex, assertIsBytesHex, bytes32ToHex, concatBytesHex, hexToBytes } from '../../../base/bytes.js';
 import { addressToChecksummedAddress } from '../../../base/address.js';
 import { tryParseUintBigIntString } from '../../../base/uint.js';
 import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
@@ -244,12 +244,12 @@ async function _readPadShares(
 
 /** Deterministic request id: keccak256 over the request's labels, extraData and signature. */
 function _computeRequestId(parameters: FetchPadSharesParameters, extraData: BytesHex): Bytes32Hex {
-  const parts: string[] = [
+  const parts: BytesHex[] = [
     ...parameters.payload.witnesses.map((w) => w.label),
     extraData,
     parameters.payload.kmsDecryptEip712Signature,
   ];
-  return bytes32ToHex(keccak_256(hexToBytes('0x' + parts.map((p) => p.slice(2)).join(''))));
+  return bytes32ToHex(keccak_256(hexToBytes(concatBytesHex(parts))));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -15,7 +15,7 @@ import type { ExternalHandle } from '../types/encryptedTypes-p.js';
 import type { SignedDecryptionPermit, SignedDecryptionPermitV2 } from '../types/signedDecryptionPermit.js';
 import type { PadWitness } from '../modules/relayer/types.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
-import { bytes32ToHex, bytesToHex, hexToBytes } from '../base/bytes.js';
+import { bytes32ToHex, bytesToHex, concatBytes, hexToBytes } from '../base/bytes.js';
 import { encryptionBitsFromFheType, fheTypeIdFromName, fheTypeNameFromTypeName } from '../handle/FheType.js';
 import { buildExternalHandle } from '../handle/FhevmHandle.js';
 import { assertIsSignedDecryptionPermit } from '../kms/SignedDecryptionPermit-p.js';
@@ -173,7 +173,7 @@ export async function encryptTransci(context: Context, parameters: Parameters): 
 
   // 7. Input package and external handles.
   const parts = values.map((v) => fheTypeIdFromName(fheTypeNameFromTypeName(v.type)));
-  const inputPackage = _concatBytes([
+  const inputPackage = concatBytes(
     Uint8Array.of(PAD_PACKAGE_TYPE),
     _uintToBytes(BigInt(PAD_WITNESS_VERSION), 1),
     _uintToBytes(BigInt(PAD_PRF_INSTANCE), 2),
@@ -188,9 +188,9 @@ export async function encryptTransci(context: Context, parameters: Parameters): 
     _uintToBytes(BigInt(parts.length), 1),
     Uint8Array.from(parts),
     ciphertext,
-  ]);
+  );
 
-  const packageDigest = keccak_256(_concatBytes([PAD_PACKAGE_DOMAIN_SEPARATOR, inputPackage]));
+  const packageDigest = keccak_256(concatBytes(PAD_PACKAGE_DOMAIN_SEPARATOR, inputPackage));
   const hash29 = bytesToHex(packageDigest.subarray(0, 29));
   const externalHandles = parts.map((fheTypeId, index) => buildExternalHandle({ hash29, index, fheTypeId }));
 
@@ -254,7 +254,7 @@ function _computePadLabel(w: {
     nonce,
   ];
 
-  return bytes32ToHex(keccak_256(_concatBytes(parts)));
+  return bytes32ToHex(keccak_256(concatBytes(...parts)));
 }
 
 /** Big-endian, fixed width. */
@@ -276,8 +276,8 @@ function _uintToBytes(value: bigint, byteLength: number): Uint8Array {
  * significant byte (and bit) first, padding bits zero.
  */
 function _packValues(values: readonly TypedValue[]): Uint8Array {
-  return _concatBytes(
-    values.map((v) => {
+  return concatBytes(
+    ...values.map((v) => {
       const width = encryptionBitsFromFheType(fheTypeNameFromTypeName(v.type));
       const byteLength = Math.ceil(width / 8);
       const n = _typedValueToBigInt(v);
@@ -295,14 +295,4 @@ function _typedValueToBigInt(v: TypedValue): bigint {
   }
   // uintN values are numbers or bigints; addresses are 0x-prefixed hex strings.
   return BigInt(v.value);
-}
-
-function _concatBytes(parts: readonly Uint8Array[]): Uint8Array {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let offset = 0;
-  for (const p of parts) {
-    out.set(p, offset);
-    offset += p.length;
-  }
-  return out;
 }
