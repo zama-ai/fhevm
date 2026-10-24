@@ -19,7 +19,7 @@ import {
 //
 // For each response: open it, verify its EIP-712 signature against the KMS
 // signers of the request's context, and check its structure against the
-// request. Then, label by label, select at least 2t+1 responses whose shares
+// request; an invalid response is skipped. Then, label by label, select at least 2t+1 responses whose shares
 // for that label carry the same `sessionId` and whose payloads carry the same
 // `packingFactor`, from distinct parties, and reconstruct that label's pad.
 // The selection may differ from label to label.
@@ -66,17 +66,24 @@ export async function reconstructPads(
   const kmsSigners = new Set(parameters.kmsSigners.map((a) => a.toLowerCase()));
   const padLengthByLabel = new Map<string, number>(witnesses.map((w) => [w.label.toLowerCase(), w.padLength]));
 
-  // 1. Open and verify every response on its own.
+  // The cleartext stand-in for decrypting a share: unmask with the transport public key.
+  const mask = hexToBytes(parameters.transportPublicKey).slice(0, 32);
+  if (mask.length !== 32) {
+    throw new Error('transport public key is shorter than 32 bytes');
+  }
+
+  // 1. Open and verify every response on its own. An invalid response is left
+  //    out (one faulty node must not block the others), its reason kept for
+  //    the error raised if too few valid responses remain.
   const verified: VerifiedResponse[] = [];
+  const rejected: string[] = [];
   for (let i = 0; i < responses.length; ++i) {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const response = responses[i]!;
     try {
-      verified.push(await _verifyResponse(ethereum, response, parameters, kmsSigners, padLengthByLabel));
+      verified.push(await _verifyResponse(ethereum, response, parameters, mask, kmsSigners, padLengthByLabel));
     } catch (e) {
-      throw new Error(`Invalid pad decryption response #${i} (partyId hint ${response.partyId}): ${String(e)}`, {
-        cause: e,
-      });
+      rejected.push(`#${i} (partyId hint ${response.partyId}): ${String(e)}`);
     }
   }
 
@@ -101,8 +108,9 @@ export async function reconstructPads(
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const selected = Array.from(groups.values()).find((group) => group.length >= 2 * group[0]!.payload.degree + 1);
     if (selected === undefined) {
+      const rejectedDetails = rejected.length === 0 ? '' : ` Rejected responses: ${rejected.join('; ')}`;
       throw new Error(
-        `Not enough consistent pad decryption responses for label ${w.label}: got ${verified.length}, no (session, packing factor) reaches 2t+1 distinct parties.`,
+        `Not enough consistent pad decryption responses for label ${w.label}: got ${verified.length} valid of ${responses.length}, no (session, packing factor) reaches 2t+1 distinct parties.${rejectedDetails}`,
       );
     }
     pads.set(w.label, _reconstruct(selected, w));
@@ -116,6 +124,7 @@ async function _verifyResponse(
   ethereum: Pick<EthereumModule, 'decode' | 'recoverTypedDataAddress'>,
   response: PadDecryptResponse,
   parameters: ReconstructPadsParameters,
+  mask: Uint8Array,
   kmsSigners: ReadonlySet<string>,
   padLengthByLabel: ReadonlyMap<string, number>,
 ): Promise<VerifiedResponse> {
@@ -178,10 +187,6 @@ async function _verifyResponse(
   }
 
   // Unmask with the transport public key: the cleartext stand-in for decrypting the share.
-  const mask = hexToBytes(parameters.transportPublicKey).slice(0, 32);
-  if (mask.length !== 32) {
-    throw new Error('transport public key is shorter than 32 bytes');
-  }
   const padShares = payload.padShares.map((s) => {
     const masked = hexToBytes(s.share);
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion

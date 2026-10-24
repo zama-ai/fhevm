@@ -223,4 +223,39 @@ describe('reconstructPads', () => {
     );
     await expect(run(responses, [a])).rejects.toThrow(/is not a KMS signer/);
   });
+
+  it.each<[string, { chainId?: Uint64BigInt; extraBlocks?: number }]>([
+    ['a signature under the wrong chain id', { chainId: HOST_CHAIN_ID }],
+    ['a share of the wrong length', { extraBlocks: 1 }],
+  ])('skips a response with %s when 2t+1 valid ones remain', async (_, bad) => {
+    const responses = await Promise.all(
+      [0, 1, 2, 3].map((i) => {
+        const { chainId = GATEWAY_CHAIN_ID, extraBlocks = 0 } = i === 1 ? bad : {};
+        return response(
+          i,
+          [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c, extraBlocks) }],
+          CLEARTEXT_PAD_PACKING_FACTOR,
+          chainId,
+        );
+      }),
+    );
+    const pads = await run(responses, [a]);
+    expect(pads.get(a.label)).toEqual(expectedPad(a, 0x3c));
+  });
+
+  it('reports the rejected responses when fewer than 2t+1 valid ones remain', async () => {
+    const responses = await Promise.all(
+      [0, 1, 2].map((i) =>
+        response(
+          i,
+          [{ label: a.label, sessionId: session('11'), share: maskedShare(a, 0x3c) }],
+          CLEARTEXT_PAD_PACKING_FACTOR,
+          i === 1 ? HOST_CHAIN_ID : GATEWAY_CHAIN_ID,
+        ),
+      ),
+    );
+    await expect(run(responses, [a])).rejects.toThrow(
+      /got 2 valid of 3, .* Rejected responses: #1 \(partyId hint 2\): .*is not a KMS signer/,
+    );
+  });
 });
