@@ -72,7 +72,6 @@ POD="${pod}" IMAGE="${PRF_IMAGE}" KEY_ENV="${key_env}" KEY_LIST="${key_list}" CH
     }]
   }
 }' | kubectl apply -n "${NAMESPACE}" -f -
-kubectl wait --for=condition=Ready "pod/${pod}" -n "${NAMESPACE}" --timeout=300s
 
 # The stand-in connector, in the check pod. rustls refuses the preview's self-signed CA:TRUE proxy
 # certificate, so TLS is not verified: integrity comes from the attestation quorum.
@@ -207,6 +206,17 @@ run_burst() {
 
 echo "| row | expected | observed | verdict | evidence |"
 echo "|---|---|---|---|---|"
+
+# P-1: the check pod runs within 120 s, or the run ends here as capacity, with the scheduler's reason.
+if ! kubectl wait --for=condition=Ready "pod/${pod}" -n "${NAMESPACE}" --timeout=120s >/dev/null 2>&1; then
+  reason=$(kubectl get events -n "${NAMESPACE}" --field-selector "involvedObject.name=${pod},reason=FailedScheduling" \
+    -o jsonpath='{.items[-1:].message}' 2>/dev/null || true)
+  record "P-1 check pod running within 120 s (requests 100m CPU, 128 Mi)" "Running" "phase $(kubectl get pod "${pod}" -n "${NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null)" \
+    capacity "${reason:-no FailedScheduling event}"
+  exit 1
+fi
+record "P-1 check pod running within 120 s (requests 100m CPU, 128 Mi; no CPU limit, so no throttling at a limit)" "Running" \
+  "Running on $(kubectl get pod "${pod}" -n "${NAMESPACE}" -o jsonpath='{.spec.nodeName}')" true
 
 # P0: every party's PRF path is up, and nothing is pending.
 not_ready=""
