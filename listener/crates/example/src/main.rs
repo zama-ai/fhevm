@@ -21,23 +21,38 @@
 //! BROKER_URL=redis://localhost:6379 CHAIN_ID=1 cargo run -p example
 //! ```
 
+mod catchup_state;
+mod control;
 mod final_events;
 mod live_events;
+mod stats;
 mod transfer;
 
 use std::env;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 use alloy_primitives::Address;
 use anyhow::Context;
 use broker::Broker;
 use consumer::ListenerConsumer;
+use tokio::sync::watch;
 use tracing::{info, warn};
 
-/// Zama ERC-20 deployment on Ethereum mainnet.
-const TOKEN_ADDRESS: &str = "0xA12CC123ba206d4031D1c7f6223D1C2Ec249f4f3";
+use crate::catchup_state::{Flow, Store};
+use crate::stats::Stats;
+
+/// Zama ERC-20 deployment on Ethereum mainnet. Override with `TOKEN_ADDRESS`
+/// to point at a contract on a local chain.
+const DEFAULT_TOKEN_ADDRESS: &str = "0xA12CC123ba206d4031D1c7f6223D1C2Ec249f4f3";
 /// Logical name for this downstream — prefix of the four delivery queues
-/// `token.{new,catchup,final,final-catchup}-event`.
-const CONSUMER_ID: &str = "token";
+/// `token.{new,catchup,final,final-catchup}-event`. Override with
+/// `CONSUMER_ID`; two instances with different ids are two independent
+/// consumers, each owning its own catchup requests.
+const DEFAULT_CONSUMER_ID: &str = "token";
+/// Where the control plane listens. Loopback by default — the endpoint is
+/// unauthenticated, so exposing it is an explicit choice.
+const DEFAULT_CONTROL_ADDR: &str = "127.0.0.1:8088";
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -50,20 +65,67 @@ async fn main() -> anyhow::Result<()> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1);
-    let token: Address = TOKEN_ADDRESS.parse().context("invalid TOKEN_ADDRESS")?;
+    let token: Address = env::var("TOKEN_ADDRESS")
+        .unwrap_or_else(|_| DEFAULT_TOKEN_ADDRESS.to_string())
+        .parse()
+        .context("invalid TOKEN_ADDRESS")?;
+    let consumer_id = env::var("CONSUMER_ID").unwrap_or_else(|_| DEFAULT_CONSUMER_ID.to_string());
+    let control_addr: SocketAddr = env::var("CONTROL_ADDR")
+        .unwrap_or_else(|_| DEFAULT_CONTROL_ADDR.to_string())
+        .parse()
+        .context("invalid CONTROL_ADDR")?;
 
-    info!(%broker_url, chain_id, %token, consumer_id = CONSUMER_ID,
+    info!(%broker_url, chain_id, %token, %consumer_id,
         "starting Zama-token showcase (live + final)");
 
     let broker = Broker::from_url(&broker_url)
         .await
         .context("connecting to broker")?;
-    let consumer = ListenerConsumer::new(&broker, chain_id, CONSUMER_ID);
+    let consumer = ListenerConsumer::new(&broker, chain_id, &consumer_id);
+
+    // ── Durable catchup bookkeeping. The listener never retires a catchup on
+    //    our behalf, so the ids and ranges we have asked for have to outlive
+    //    this process — see `catchup_state` ─────────────────────────────────
+    let store = Store::new(catchup_state::default_path());
+    let stats = Arc::new(Stats::default());
+
+    // ── The id each catchup handler should accept blocks for. Seeded from
+    //    the store so a restart keeps dropping blocks from a catchup a
+    //    previous boot retired, and shared with the control plane so a
+    //    runtime cancel updates the handler as well as the listener ────────
+    let catchup_active = Arc::new(watch::channel(store.current_id(Flow::Catchup).await?).0);
+    let final_catchup_active =
+        Arc::new(watch::channel(store.current_id(Flow::FinalCatchup).await?).0);
 
     // ── Start both subsets — each declares its queues, registers its
     //    watcher, and spawns its consumers ──────────────────────────────────
-    let (live, live_catchup) = live_events::start(&consumer, token).await?;
-    let (finality, final_catchup) = final_events::start(&consumer, token).await?;
+    let (live, live_catchup) = live_events::start(
+        &consumer,
+        &store,
+        token,
+        stats.clone(),
+        catchup_active.clone(),
+    )
+    .await?;
+    let (finality, final_catchup) = final_events::start(
+        &consumer,
+        &store,
+        token,
+        stats.clone(),
+        final_catchup_active.clone(),
+    )
+    .await?;
+
+    // ── Runtime control plane: inspect counters, request a different range,
+    //    or cancel — without a redeploy ──────────────────────────────────────
+    let control = control::Control::new(
+        consumer.clone(),
+        store.clone(),
+        stats,
+        catchup_active,
+        final_catchup_active,
+    );
+    let control_handle = tokio::spawn(control::serve(control, control_addr));
 
     // ── Run until Ctrl-C or an unexpected consumer exit ────────────────────
     tokio::select! {
@@ -72,6 +134,7 @@ async fn main() -> anyhow::Result<()> {
         r = live_catchup  => warn!(?r, "LIVE-CATCHUP consumer exited unexpectedly"),
         r = finality      => warn!(?r, "FINAL consumer exited unexpectedly"),
         r = final_catchup => warn!(?r, "FINAL-CATCHUP consumer exited unexpectedly"),
+        r = control_handle => warn!(?r, "control endpoint exited unexpectedly"),
     }
 
     // ── Clean shutdown: parent token stops all four flows, then unregister ─

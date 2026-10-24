@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT status as \"status: CatchupStatus\"\n            FROM catchup_requests\n            WHERE chain_id = $1 AND catchup_id = $2\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "status: CatchupStatus",
+        "type_info": {
+          "Custom": {
+            "name": "catchup_status",
+            "kind": {
+              "Enum": [
+                "ACTIVE",
+                "CANCELLED",
+                "SKIPPED",
+                "COMPLETED"
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1f7376f596be426df624c9e71c5c5fc0c849d31d868b0bec543b494b74c8e1e7"
+}

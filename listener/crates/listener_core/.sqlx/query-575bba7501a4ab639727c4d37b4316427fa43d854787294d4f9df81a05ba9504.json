@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT flow as \"flow: CatchupFlow\", COUNT(*) as \"count!\"\n            FROM catchup_requests\n            WHERE chain_id = $1 AND status = 'ACTIVE'\n            GROUP BY flow\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "flow: CatchupFlow",
+        "type_info": {
+          "Custom": {
+            "name": "catchup_flow",
+            "kind": {
+              "Enum": [
+                "CATCHUP",
+                "FINAL_CATCHUP"
+              ]
+            }
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "575bba7501a4ab639727c4d37b4316427fa43d854787294d4f9df81a05ba9504"
+}
