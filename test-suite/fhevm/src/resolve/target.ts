@@ -414,6 +414,10 @@ export const selectSupportedMainSha = (
   return candidateShas.find((sha) => gatingSets.every((set) => set.has(sha)));
 };
 
+/** Returns the optional repo keys whose image is published at `tag`. */
+export const publishedOptionalKeysAt = (packageTagsMap: Record<string, Set<string>>, tag: string) =>
+  new Set([...OPTIONAL_REPO_KEYS].filter((key) => packageTagsMap[key]?.has(tag)));
+
 /** Fetches the available tag sets for all repo-owned packages. */
 const repoPackageTags = async (targetTag?: string) =>
   Object.fromEntries(
@@ -478,8 +482,9 @@ export const resolveTarget = async (
     const missingKeys = Object.keys(REPO_PACKAGES).filter(
       (key) => !OPTIONAL_REPO_KEYS.has(key) && !packageTagsMap[key]?.has(tag),
     );
+    const publishedOptionalKeys = publishedOptionalKeysAt(packageTagsMap, tag);
     if (!missingKeys.length) {
-      return presetBundle(target, tag, lockName, baseSources, new Set());
+      return presetBundle(target, tag, lockName, baseSources, publishedOptionalKeys);
     }
     console.log(
       `[resolve] sha ${tag}: no published image for ${missingKeys.join(", ")}; looking for published ancestor tags`,
@@ -507,7 +512,8 @@ export const resolveTarget = async (
     for (const source of sources) {
       console.log(`[resolve] ${source}`);
     }
-    return presetBundle(target, tag, lockName, [...baseSources, ...sources], new Set(), overrides);
+    // Optional images pin only at the requested tag itself, never at a fallback ancestor.
+    return presetBundle(target, tag, lockName, [...baseSources, ...sources], publishedOptionalKeys, overrides);
   }
 
   const [packageTagsMap, commits] = await Promise.all([repoPackageTags(), mainCommits(5000)]);
@@ -527,8 +533,5 @@ export const resolveTarget = async (
   if (!short) {
     throw new GitHubApiError("Could not find a supported modern latest-main image set");
   }
-  const publishedOptionalKeys = new Set(
-    [...OPTIONAL_REPO_KEYS].filter((key) => packageTagsMap[key]?.has(short)),
-  );
-  return presetBundle(target, short, `latest-main-${short}.json`, [], publishedOptionalKeys);
+  return presetBundle(target, short, `latest-main-${short}.json`, [], publishedOptionalKeysAt(packageTagsMap, short));
 };
