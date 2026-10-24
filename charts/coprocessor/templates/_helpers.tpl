@@ -57,6 +57,11 @@ Usage: include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom)
 {{- default $default .Values.consensusDetector.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "prfServiceName" -}}
+{{- $default := printf "%s-%s" .Release.Name "prf-service" }}
+{{- default $default .Values.prfService.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "tfheWorkerName" -}}
 {{- $tfheWorkerNameDefault := printf "%s-%s" .Release.Name "tfhe-worker" }}
 {{- default $tfheWorkerNameDefault .Values.tfheWorker.nameOverride | trunc 63 | trimSuffix "-" -}}

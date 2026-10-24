@@ -141,6 +141,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cp target/${CARGO_PROFILE}/zkproof_worker /out/ && \
     cp target/${CARGO_PROFILE}/consensus-detector /out/ && \
     cp target/${CARGO_PROFILE}/upgrade-controller /out/ && \
+    cp target/${CARGO_PROFILE}/prf-service /out/ && \
     cp target/${CARGO_PROFILE}/resolve_database_url /out/ && \
     cp target/${CARGO_PROFILE}/bootstrap_versioning /out/
 
@@ -310,3 +311,16 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD psql --version || exit 1
 
 ENTRYPOINT ["/bin/bash", "-c"]
+
+# =============================================================================
+# Stage 2j: prf-service runtime
+# =============================================================================
+FROM ${COPROCESSOR_RUNTIME_BASE_IMAGE} AS prf-service
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/prf-service /usr/local/bin/prf-service
+
+USER fhevm:fhevm
+
+CMD ["/usr/local/bin/prf-service"]

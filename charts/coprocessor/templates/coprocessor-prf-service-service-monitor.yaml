@@ -1,0 +1,16 @@
+{{- if .Values.prfService.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-prf-service
+    app.kubernetes.io/name: {{ include "prfServiceName" . }}
+  name: {{ include "prfServiceName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-prf-service
+      app.kubernetes.io/name: {{ include "prfServiceName" . }}
+  endpoints:
+    - port: metrics
+{{- end -}}

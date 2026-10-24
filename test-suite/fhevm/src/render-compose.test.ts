@@ -313,6 +313,7 @@ describe("render-compose", () => {
         "coprocessor-transaction-sender",
         "coprocessor-consensus-detector",
         "coprocessor-upgrade-controller",
+        "coprocessor-prf-service",
       ];
       // These implement exit-for-restart: fatal error, non-zero exit, and they
       // expect to be brought back. Without a policy the stack degraded
@@ -437,6 +438,22 @@ describe("render-compose", () => {
     const modernServices = serviceNameList(state, "coprocessor");
     expect(modernServices).toContain("coprocessor-consensus-detector");
     expect(modernServices).toContain("coprocessor-upgrade-controller");
+  });
+
+  test("requests the prf-service only when the bundle pins its image", () => {
+    const withoutPrf: State = {
+      ...state,
+      versions: { ...state.versions, env: { ...state.versions.env, COPROCESSOR_PRF_SERVICE_VERSION: "" } },
+    };
+    expect(serviceNameList(withoutPrf, "coprocessor")).not.toContain("coprocessor-prf-service");
+
+    const withPrf: State = {
+      ...state,
+      versions: { ...state.versions, env: { ...state.versions.env, COPROCESSOR_PRF_SERVICE_VERSION: "02f6cc0" } },
+    };
+    const services = serviceNameList(withPrf, "coprocessor");
+    expect(services).toContain("coprocessor-prf-service");
+    expect(services).toContain("coprocessor1-prf-service");
   });
 
   test("requests the kms-connector endpoint and proxy only when the bundle pins their images", () => {
@@ -981,6 +998,15 @@ gcs:
     });
     expect(explicitGreenServices).toContain("coprocessor-gcs-host-listener");
     expect(explicitGreenServices).toContain("coprocessor-gcs-upgrade-controller");
+    expect(explicitGreenServices).toContain("coprocessor-gcs-prf-service");
+    expect(explicitGreenServices).not.toContain("coprocessor-prf-service");
+
+    const withoutPrf: State = {
+      ...deferredState,
+      versions: { ...state.versions, env: { ...state.versions.env, COPROCESSOR_PRF_SERVICE_VERSION: "" } },
+    };
+    const greenWithoutPrf = blueGreenServiceNames(withoutPrf, { includeMigration: false, includeDeferredGreen: true });
+    expect(greenWithoutPrf).not.toContain("coprocessor-gcs-prf-service");
   });
 
   test("multi-operator blue-green emits BCS + GCS fleets per operator with correct prefixes", async () => {
