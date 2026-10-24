@@ -1,0 +1,27 @@
+# coprocessor-proxy in front of party i's fake prf-service (values-prf-service-fake-e2e.yaml).
+# scripts/deploy/deploy-coprocessor.sh applies it to the coprocessor-<i> release, except on
+# blue-green stacks, and sets the image tag, the signer, the endpoint and the NetworkPolicy's
+# podSelector per party. apply-chain-env.sh sets canonicalProtocolConfigChainId to the host chain.
+commonConfig:
+  canonicalProtocolConfigChainId: "12345"
+
+coprocessorProxy:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/coprocessor-proxy
+    tag: latest
+  # Created by scripts/deploy/deploy-coprocessor.sh.
+  tls:
+    secretName: coprocessor-proxy-tls
+  endpointNetworkPolicy:
+    # The fake serves the PRF route and /healthz on 8080.
+    ports:
+      - {port: 8080, protocol: TCP}
+    # The e2e suite reads the fake's request count; it reaches nothing else of the fake.
+    extraIngress:
+      - from:
+          - podSelector:
+              matchLabels:
+                app: fhevm-test-suite
+        ports:
+          - {port: 9090, protocol: TCP}

@@ -7,6 +7,7 @@ import {
   supportsConnectorHttp,
   supportsConsensusDetector,
   supportsCoprocessorDbStateRevert,
+  supportsCoprocessorProxy,
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
@@ -23,6 +24,7 @@ import {
   coprocessorDatabaseName,
   defaultHostChainKey,
   hostChainSuffix,
+  withCoprocessorProxySuffixes,
 } from "../layout";
 import { blueGreenServiceNames } from "../generate/compose";
 import { kmsConnectorPrefix, kmsPublicPrefix } from "../kms-party";
@@ -39,6 +41,8 @@ const KMS_CONNECTOR_KMS_GENERATION_READY =
 
 /** Number of KMS connector instances: one per party. */
 const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
+
+const COPROCESSOR_PROXY_SIGNERS_READ = /KMS tx-sender set updated/;
 
 /** gw-listener / kms-worker / tx-sender (+ endpoint and proxy when the bundle ships them) health containers across every KMS party. */
 export const kmsConnectorHealthContainers = (state: State): string[] => {
@@ -211,17 +215,20 @@ export const postBootHealthGate = async (containers: string[], delayMs = POST_BO
 };
 
 /** Lists the coprocessor containers whose health determines coprocessor readiness. */
-export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "versions">) => {
+export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "versions" | "overrides">) => {
   if (state.scenario.kind === "blue-green") {
     return blueGreenServiceNames(state, { includeMigration: false });
   }
-  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
-    (suffix) =>
-      (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
-      !suffix.includes("migration") &&
-      (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
-      (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
-      (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
+  const suffixes = withCoprocessorProxySuffixes(
+    GROUP_SERVICE_SUFFIXES.coprocessor.filter(
+      (suffix) =>
+        (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
+        !suffix.includes("migration") &&
+        (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
+        (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
+        (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
+    ),
+    supportsCoprocessorProxy(state),
   );
   const topology = topologyForState(state);
   const names: string[] = [];
@@ -312,9 +319,15 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
     await waitForContainer(`${prefix}transaction-sender`, "running");
   };
   const count = topologyForState(state).count;
+  const includeProxy = state.scenario.kind !== "blue-green" && supportsCoprocessorProxy(state);
   for (let index = 0; index < count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
     await waitCoreFleet(prefix, true);
+    if (includeProxy) {
+      await waitForContainer(`${prefix}prf-service-fake`, "healthy");
+      // The proxy image has no healthcheck; its reader logs this once the first read succeeded.
+      await waitForLog(`${prefix}proxy`, COPROCESSOR_PROXY_SIGNERS_READ);
+    }
     if (state.scenario.kind === "blue-green" && !state.scenario.gcs.deferredStart) {
       await waitCoreFleet(`${prefix}gcs-`, false);
       await waitForContainer(`${prefix}gcs-upgrade-controller`, "running");
