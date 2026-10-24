@@ -5,7 +5,10 @@ use alloy::{
 use anyhow::{bail, Context};
 use clap::{Parser, Subcommand};
 use futures_util::future::join_all;
-use prf_standins::connector::{Connector, Coprocessor, ProbeOptions, Retrieval};
+use prf_standins::{
+    connector::{Connector, Coprocessor, ProbeOptions, Retrieval},
+    load,
+};
 use reqwest::Method;
 use std::{collections::BTreeMap, num::NonZeroUsize, sync::Arc, time::Duration};
 
@@ -104,8 +107,9 @@ enum Command {
         target: usize,
         #[command(flatten)]
         label: LabelArgs,
-        #[arg(long, default_value_t = 64)]
-        pad_length: u16,
+        /// One request at once for each length, for the same label.
+        #[arg(long, value_delimiter = ',', default_value = "64")]
+        pad_lengths: Vec<u16>,
         #[arg(long, default_value = "GET")]
         method: Method,
         /// Give up after this long and exit, which closes the socket. Prints the path, to ask again
@@ -121,6 +125,69 @@ enum Command {
     },
     /// Waits forever: keeps a pod up for `kubectl exec`, in an image without a shell.
     Idle,
+    /// Users arrive over `--window`; for each, every connector from `--key-index` retrieves a new
+    /// label. Prints one summary.
+    Burst {
+        #[arg(long)]
+        users: usize,
+        #[arg(long, value_parser = humantime::parse_duration)]
+        window: Duration,
+        #[arg(long, default_value_t = 1)]
+        copies: usize,
+        #[arg(long, default_value_t = 64)]
+        pad_length: u16,
+        /// Label first byte, 2 hex characters.
+        #[arg(long, default_value = "00")]
+        label_prefix: String,
+        /// Use only `connectors` keys, from `--key-index`.
+        #[arg(long)]
+        connectors: Option<usize>,
+        /// The first connector starts each label this much before the others.
+        #[arg(long, value_parser = humantime::parse_duration, default_value = "0s")]
+        lead: Duration,
+        /// Ask this one coprocessor instead of retrieving.
+        #[arg(long)]
+        only: Option<usize>,
+        /// Then retry each failed retrieval once, with this deadline.
+        #[arg(long, value_parser = humantime::parse_duration)]
+        retry_deadline: Option<Duration>,
+    },
+    /// `--concurrency` loops repeat signed requests for a label each (new labels with
+    /// `--label-prefix`: the first request of each evaluates it), for `--duration`.
+    Hammer {
+        #[arg(long)]
+        target: usize,
+        #[arg(long)]
+        label_prefix: String,
+        #[arg(long, default_value_t = 2048)]
+        pad_length: u16,
+        #[arg(long, default_value = "GET")]
+        method: Method,
+        #[arg(long)]
+        concurrency: usize,
+        #[arg(long, value_parser = humantime::parse_duration)]
+        duration: Duration,
+    },
+    /// Holds slow and idle TLS connections to one coprocessor's proxy.
+    Slowloris {
+        #[arg(long)]
+        target: usize,
+        #[arg(long)]
+        slow: usize,
+        #[arg(long)]
+        idle: usize,
+        #[arg(long, value_parser = humantime::parse_duration)]
+        duration: Duration,
+        #[arg(long, value_parser = humantime::parse_duration, default_value = "10s")]
+        byte_every: Duration,
+    },
+    /// Prints the lines of a Prometheus page that start with `--prefix`.
+    Metrics {
+        #[arg(long)]
+        url: String,
+        #[arg(long, default_value = "")]
+        prefix: String,
+    },
     /// Sends one signed request with the first key, without retries.
     Probe {
         #[arg(long)]
@@ -298,7 +365,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Ask {
             target,
             label,
-            pad_length,
+            pad_lengths,
             method,
             abort_after,
             repeat,
@@ -308,33 +375,83 @@ async fn main() -> anyhow::Result<()> {
                 if round > 0 {
                     tokio::time::sleep(interval).await;
                 }
-                let path = format!(
-                    "/v1/prf/0/labels/{}/{pad_length}",
-                    hex::encode(label.resolve()?)
-                );
-                let started = std::time::Instant::now();
-                let asked = first.ask_one(target, method.clone(), &path);
-                let reply = match abort_after {
-                    Some(after) => match tokio::time::timeout(after, asked).await {
-                        Ok(reply) => reply,
-                        Err(_) => {
-                            println!(
-                                "{}",
-                                serde_json::json!({"aborted_after_ms": after.as_millis() as u64, "path": path})
-                            );
-                            // Exiting closes the socket.
-                            return Ok(());
-                        }
-                    },
-                    None => asked.await,
-                };
-                let mut out = match reply {
-                    Some(reply) => serde_json::to_value(&reply)?,
-                    None => serde_json::json!({"error": "deadline"}),
-                };
-                out["path"] = path.into();
-                out["elapsed_ms"] = (started.elapsed().as_millis() as u64).into();
-                println!("{out}");
+                let label = hex::encode(label.resolve()?);
+                let asks = pad_lengths.iter().map(|pad_length| {
+                    let path = format!("/v1/prf/0/labels/{label}/{pad_length}");
+                    ask_and_print(&first, target, method.clone(), path, abort_after)
+                });
+                for aborted in join_all(asks).await {
+                    if aborted? {
+                        // Exiting closes the socket.
+                        return Ok(());
+                    }
+                }
+            }
+        }
+        Command::Burst {
+            users,
+            window,
+            copies,
+            pad_length,
+            label_prefix,
+            connectors: count,
+            lead,
+            only,
+            retry_deadline,
+        } => {
+            let from = &connectors[args.key_index.min(connectors.len())..];
+            let chosen = &from[..count.unwrap_or(from.len()).min(from.len())];
+            let burst = load::Burst {
+                users,
+                window,
+                copies,
+                pad_length,
+                label_prefix: u8::from_str_radix(&label_prefix, 16).context("label prefix")?,
+                lead,
+                only,
+                retry_deadline,
+            };
+            println!(
+                "{}",
+                serde_json::to_string(&load::burst(chosen, &burst).await)?
+            );
+        }
+        Command::Hammer {
+            target,
+            label_prefix,
+            pad_length,
+            method,
+            concurrency,
+            duration,
+        } => {
+            let paths = (0..concurrency)
+                .map(|_| {
+                    label_with_prefix(&label_prefix).map(|label| {
+                        format!("/v1/prf/0/labels/{}/{pad_length}", hex::encode(label))
+                    })
+                })
+                .collect::<anyhow::Result<Vec<_>>>()?;
+            let report = load::hammer(first, target, method, paths, duration).await;
+            println!("{}", serde_json::to_string(&report)?);
+        }
+        Command::Slowloris {
+            target,
+            slow,
+            idle,
+            duration,
+            byte_every,
+        } => {
+            let url = &first
+                .coprocessors
+                .get(target)
+                .context("no such target")?
+                .url;
+            let report = load::slowloris(url, slow, idle, duration, byte_every).await?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
+        Command::Metrics { url, prefix } => {
+            for line in load::metrics(&url, &prefix).await? {
+                println!("{line}");
             }
         }
         Command::Idle => std::future::pending::<()>().await,
@@ -368,4 +485,38 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Asks one coprocessor and prints the reply with its path and elapsed time. Returns true when
+/// `abort_after` cut the request, and the caller then exits.
+async fn ask_and_print(
+    connector: &Connector,
+    target: usize,
+    method: Method,
+    path: String,
+    abort_after: Option<Duration>,
+) -> anyhow::Result<bool> {
+    let started = std::time::Instant::now();
+    let asked = connector.ask_one(target, method, &path);
+    let reply = match abort_after {
+        Some(after) => match tokio::time::timeout(after, asked).await {
+            Ok(reply) => reply,
+            Err(_) => {
+                println!(
+                    "{}",
+                    serde_json::json!({"aborted_after_ms": after.as_millis() as u64, "path": path})
+                );
+                return Ok(true);
+            }
+        },
+        None => asked.await,
+    };
+    let mut out = match reply {
+        Some(reply) => serde_json::to_value(&reply)?,
+        None => serde_json::json!({"error": "deadline"}),
+    };
+    out["path"] = path.into();
+    out["elapsed_ms"] = (started.elapsed().as_millis() as u64).into();
+    println!("{out}");
+    Ok(false)
 }

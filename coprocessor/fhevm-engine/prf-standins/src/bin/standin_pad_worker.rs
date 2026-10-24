@@ -2,7 +2,7 @@ use alloy::signers::local::PrivateKeySigner;
 use clap::Parser;
 use prf_standins::{
     faults::Faults,
-    pad_worker::{PadWorker, PadWorkerConfig},
+    pad_worker::{Cost, PadWorker, PadWorkerConfig},
 };
 use sqlx::postgres::PgPoolOptions;
 use std::time::Duration;
@@ -24,7 +24,8 @@ struct Args {
     #[arg(long, env = "PAD_WORKER_FAULTS", default_value = "")]
     faults: Faults,
 
-    #[arg(long, default_value_t = 16)]
+    /// Rows evaluated at once: the stand-in `PRF_MAX_CONCURRENT`.
+    #[arg(long, env = "PAD_WORKER_CONCURRENCY", default_value_t = 16)]
     concurrency: usize,
 
     #[arg(long, value_parser = humantime::parse_duration, default_value = "10s")]
@@ -39,6 +40,13 @@ struct Args {
     /// Bytes of each PRF block in the stand-in ciphertexts. Same value at every party.
     #[arg(long, env = "PAD_WORKER_BLOCK_BYTES", default_value_t = 32)]
     block_bytes: usize,
+
+    /// Evaluation time of a label without a fault: base + per_bit x padLength.
+    #[arg(long, env = "PAD_WORKER_COST_BASE", value_parser = humantime::parse_duration, default_value = "0s")]
+    cost_base: Duration,
+
+    #[arg(long, env = "PAD_WORKER_COST_PER_BIT", value_parser = humantime::parse_duration, default_value = "0s")]
+    cost_per_bit: Duration,
 }
 
 #[tokio::main]
@@ -73,6 +81,10 @@ async fn main() -> anyhow::Result<()> {
             max_attempts: args.max_attempts,
             poll_interval: args.poll_interval,
             block_bytes: args.block_bytes,
+            cost: Cost {
+                base: args.cost_base,
+                per_bit: args.cost_per_bit,
+            },
         },
     )
     .run(cancel)

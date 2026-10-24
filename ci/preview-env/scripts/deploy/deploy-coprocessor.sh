@@ -29,18 +29,19 @@ source "${script_dir}/../lib.sh"
 proxy_service() { echo "coprocessor-${1}-coprocessor-proxy"; }
 prf_service() { echo "coprocessor-${1}-prf-service"; }
 pad_worker() { echo "coprocessor-${1}-standin-pad-worker"; }
-# Faults of the stand-in pad-worker of party i, by label first byte. Party 1
-# alone also caps a connector at two pending 2048-bit pads, and party 2 at two
-# requests in progress. The scenarios of check-prf-endpoint.sh depend on this table.
+# Faults of the stand-in pad-worker of party i, by label first byte (0f: no
+# evaluation cost, for 100 KB bodies without a queue). Every other label costs
+# E = base + per_bit x padLength (values-standin-pad-worker-e2e.yaml). Run B
+# deploys without the test caps. The rows of check-prf-endpoint.sh depend on this table.
 pad_worker_faults() {
-  local i="$1" faults="4a:delay=5s,7f:delay=40s,9a:delay=5s,6d:delay=20s,f0:delay=130s,f1:delay=110s,e1:fail"
+  local i="$1" faults="0f:delay=0s,4a:delay=5s,7f:delay=40s,9a:delay=5s,6d:delay=20s,f0:delay=130s,f1:delay=110s,e1:fail"
   if (( i == 1 )); then faults+=",d1:delay=10s,b1:wrong_digest,a1:unsigned,a2:foreign_signer,e2:fail"; fi
   if (( i <= 2 )); then faults+=",b2:wrong_digest"; fi
   if (( i <= 3 )); then faults+=",b3:wrong_digest,a5:unsigned,c1:crash_once"; fi
   echo "${faults}"
 }
-pending_bits_cap() { if (( $1 == 1 )); then echo 4096; else echo 1048576; fi; }
-in_flight_cap() { if (( $1 == 2 )); then echo 2; else echo 1024; fi; }
+pending_bits_cap() { echo 1048576; }
+in_flight_cap() { echo 1024; }
 proxy_tls_secret=coprocessor-proxy-tls  # tls.secretName in values-coprocessor-proxy-e2e.yaml
 coproc_signer() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}"; }
 with_proxy="false"

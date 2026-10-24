@@ -1,24 +1,28 @@
 #!/usr/bin/env bash
-# PRF spike (option A): the RFC-038 QA gate of the coprocessor half (Run A). A stand-in connector
-# (prf-standins standin-connector) signs as the KMS tx-senders and retrieves labels through every
-# party's coprocessor-proxy; the stand-in pad-worker injects faults by label first byte (the
-# table is pad_worker_faults in scripts/deploy/deploy-coprocessor.sh). Cluster faults use kubectl.
-# Prints one line per row: expected, observed, verdict (PASS, FAIL, MEASURED or NOT TESTABLE).
-# Fails if a gate row fails.
-# Keys: 0 general rows, 1 the pending-bits cap, 2 the in-flight cap, 3 the two-lengths row, so
-# that no row meets the pending work of another.
+# PRF spike (option A): the QA gate of the coprocessor half, Run B (load). A stand-in connector
+# (prf-standins standin-connector) signs as the KMS tx-senders and loads every party's
+# coprocessor-proxy; the stand-in pad-worker costs E = 1 s + 1.5 ms x padLength for a label
+# without a fault (1.1 s at 64 bits, 4.1 s at 2048 bits) and evaluates C = 16 rows at once. Labels
+# starting with 0f cost nothing. Run B deploys without the test caps.
+# Load rows gate on correctness only: no 5xx but the retryable 502 and 504, no lost label, no
+# unplanned pod restart, never more than C evaluations at once, and every label that misses the
+# deadline served on retry. Everything else is measured. A row that meets a capacity event on the
+# PRF path is CAPACITY, never a pass; a saturated load generator makes a row NOT TESTABLE.
+# Keys: 0-2 honest, 3 the rogue.
 # Env: NAMESPACE, NB_COPROCESSOR, NB_KMS_CORE, HOST_CHAIN_ID, PRF_IMAGE.
 set -euo pipefail
 
 : "${NAMESPACE:?}" "${NB_COPROCESSOR:?}" "${NB_KMS_CORE:?}" "${HOST_CHAIN_ID:?}" "${PRF_IMAGE:?}"
 pod=prf-endpoint-check
 results=$(mktemp)
+samples=$(mktemp)
 failed=0
+C=16
 # shellcheck disable=SC2329 # called by the EXIT trap
 finish() {
   kubectl delete pod "${pod}" -n "${NAMESPACE}" --wait=false >/dev/null 2>&1 || true
   if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-    { echo "### PRF endpoint QA gate (Run A)"; echo; echo "| row | expected | observed | verdict | evidence |"; echo "|---|---|---|---|---|"; cat "${results}"; } >> "${GITHUB_STEP_SUMMARY}"
+    { echo "### PRF endpoint QA gate (Run B)"; echo; echo "| row | expected | observed | verdict | evidence |"; echo "|---|---|---|---|---|"; cat "${results}"; } >> "${GITHUB_STEP_SUMMARY}"
   fi
 }
 trap finish EXIT
@@ -42,6 +46,7 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
   key_list="${key_list:+${key_list},}\$(KMS_KEY_${i})"
 done
 
+# The check pod requests resources: a BestEffort pod is the first one throttled or evicted.
 kubectl delete pod "${pod}" -n "${NAMESPACE}" --ignore-not-found --wait=true
 POD="${pod}" IMAGE="${PRF_IMAGE}" KEY_ENV="${key_env}" KEY_LIST="${key_list}" CHAIN="${HOST_CHAIN_ID}" yq -n '
 {
@@ -55,6 +60,7 @@ POD="${pod}" IMAGE="${PRF_IMAGE}" KEY_ENV="${key_env}" KEY_LIST="${key_list}" CH
       "name": "connector",
       "image": strenv(IMAGE),
       "command": ["standin-connector", "idle"],
+      "resources": {"requests": {"cpu": "1", "memory": "512Mi"}},
       "env": (env(KEY_ENV) + [
         {"name": "KMS_TX_SENDER_KEYS", "value": strenv(KEY_LIST)},
         {"name": "PRF_ETHEREUM_CHAIN_ID", "value": strenv(CHAIN)},
@@ -75,54 +81,133 @@ connector() {
 }
 # Parties are 1-based; the connector's coprocessor indexes are 0-based.
 psql_party() { kubectl exec "statefulset/postgres-coprocessor-${1}" -n "${NAMESPACE}" -- psql -U zama -d fhevm_e2e -tAc "$2" || echo psql_failed; }
-pad_worker_logs() { kubectl logs "deploy/coprocessor-${1}-standin-pad-worker" -n "${NAMESPACE}" --all-containers 2>/dev/null || true; }
-label_hex() { jq -r '.label' <<<"$1" | sed 's/^0x//'; }
 rand_label() { od -An -N31 -tx1 /dev/urandom | tr -d ' \n'; }
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+prf_pods='^(coprocessor-[0-9]+-(coprocessor-proxy|prf-service|standin-pad-worker)-|postgres-coprocessor-[0-9]+-0$|prf-endpoint-check$)'
 
-# Capacity events so far in the namespace, named next to any failed row: a row that ends in
-# capacity is not a finding.
-capacity() {
-  local events oom
-  events=$(kubectl get events -n "${NAMESPACE}" -o json 2>/dev/null \
-    | jq -r '[.items[] | select(.reason | test("FailedScheduling|OOM|Evict|MemoryPressure")) | .reason] | group_by(.) | map("\(.[0]) x\(length)") | join(", ")' 2>/dev/null || true)
-  oom=$(kubectl get pods -n "${NAMESPACE}" -o json 2>/dev/null \
-    | jq -r '[.items[] | select(any(.status.containerStatuses[]?; .lastState.terminated.reason == "OOMKilled")) | .metadata.name] | join(", ")' 2>/dev/null || true)
-  [[ -n "${events}${oom}" ]] && echo "capacity events so far: ${events:-none}; OOMKilled: ${oom:-none}"
-  return 0
-}
-
-# record <row> <expected> <observed> <true | measure | untestable | anything else = fail> [evidence]
+# record <row> <expected> <observed> <true | measure | untestable | capacity | anything else = fail> [evidence]
 record() {
-  local verdict evidence="${5:-}"
+  local verdict
   case "$4" in
     true) verdict=PASS ;;
     measure) verdict=MEASURED ;;
     untestable) verdict="NOT TESTABLE" ;;
-    *) verdict=FAIL; failed=1; evidence="${evidence:+${evidence}; }$(capacity)" ;;
+    capacity) verdict=CAPACITY; failed=1 ;;
+    *) verdict=FAIL; failed=1 ;;
   esac
-  printf '| %s | %s | %s | %s | %s |\n' "$1" "$2" "$3" "${verdict}" "${evidence}" | tee -a "${results}"
+  printf '| %s | %s | %s | %s | %s |\n' "$1" "$2" "$3" "${verdict}" "${5:-}" | tee -a "${results}"
 }
-summary() { jq -c '{ok, error, get_from, body_from, fallback, bytes, gets, resigns, elapsed_ms, replies: [(.replies // [])[] | "\(.coprocessor):\(.method):\(.status // "conn"):\(.code // .attestation)"]}' <<<"$1"; }
-# A component that does not come back is a failed row, not the end of the matrix.
-wait_ready() {
-  kubectl rollout status "$1" -n "${NAMESPACE}" --timeout=300s >/dev/null \
-    || record "$1 ready again" "ready within 300 s" "not ready" false
+
+# PRF path pods by uid, with their restart counts.
+pods_snapshot() {
+  kubectl get pods -n "${NAMESPACE}" -o json | jq -c --arg re "${prf_pods}" \
+    '[.items[] | select(.metadata.name | test($re)) | {key: .metadata.uid, value: {name: .metadata.name, restarts: ([.status.containerStatuses[]?.restartCount] | add // 0)}}] | from_entries'
 }
-check_pod_load() {
-  local top
-  top=$(kubectl top pod "${pod}" -n "${NAMESPACE}" --no-headers 2>/dev/null || true)
-  if [[ -n "${top}" ]]; then
-    record "load generator after $1" "check pod CPU and memory" "${top}" measure
-  else
-    record "load generator after $1" "check pod CPU and memory" "kubectl top unavailable" untestable
+# unplanned_restarts <before> <after> [pod name regex that may be replaced]
+unplanned_restarts() {
+  jq -rn --argjson b "$1" --argjson a "$2" --arg planned "${3:-^$}" \
+    '[$b | to_entries[] | select(.value.name | test($planned) | not)
+      | if $a[.key] == null then "replaced \(.value.name)" elif $a[.key].restarts > .value.restarts then "restarted \(.value.name)" else empty end]
+     | join(", ")'
+}
+# Capacity events on the PRF path since <time>: scheduling, OOM and eviction events, OOMKilled
+# containers, and MemoryPressure on the nodes that host the PRF path.
+capacity_since() {
+  local since="$1" events oom nodes pressure=""
+  events=$(kubectl get events -n "${NAMESPACE}" -o json | jq -r --arg re "${prf_pods}" --arg t "${since}" \
+    '[.items[] | select((.lastTimestamp // .eventTime // "") >= $t and (.reason | test("FailedScheduling|OOM|Evict")) and (.involvedObject.name | test($re))) | "\(.reason) \(.involvedObject.name)"] | unique | join(", ")')
+  oom=$(kubectl get pods -n "${NAMESPACE}" -o json | jq -r --arg re "${prf_pods}" --arg t "${since}" \
+    '[.items[] | select(.metadata.name | test($re)) | select(any(.status.containerStatuses[]?; .lastState.terminated.reason == "OOMKilled" and .lastState.terminated.finishedAt >= $t)) | "OOMKilled \(.metadata.name)"] | join(", ")')
+  nodes=$(kubectl get pods -n "${NAMESPACE}" -o json | jq -r --arg re "${prf_pods}" '[.items[] | select(.metadata.name | test($re)) | .spec.nodeName // empty] | unique | .[]')
+  for node in ${nodes}; do
+    if kubectl get node "${node}" -o jsonpath='{.status.conditions[?(@.type=="MemoryPressure")].status}' 2>/dev/null | grep -q True; then
+      pressure+="MemoryPressure ${node} "
+    fi
+  done
+  echo "${events}${oom:+; ${oom}}${pressure:+; ${pressure}}" | sed 's/^; //'
+}
+# The most evaluations at once at each party since <time>, from the pad-worker claim and finish lines.
+concurrency_since() {
+  local out=""
+  for p in $(seq 1 "${NB_COPROCESSOR}"); do
+    out+="$(kubectl logs "deploy/coprocessor-${p}-standin-pad-worker" -n "${NAMESPACE}" --since-time="$1" 2>/dev/null \
+      | awk '/claimed pad/ {n++; if (n > m) m = n} /evaluated pad|marked pad failed/ {if (n > 0) n--} END {print m + 0}') "
+  done
+  echo "${out% }"
+}
+# kubectl top every 10 s while a row runs; memory_max prints the highest memory of each component.
+sample_start() {
+  : > "${samples}"
+  ( while true; do kubectl top pods -n "${NAMESPACE}" --no-headers 2>/dev/null >> "${samples}" || true; sleep 10; done ) &
+  sampler=$!
+}
+sample_stop() {
+  kill "${sampler}" 2>/dev/null || true
+  wait "${sampler}" 2>/dev/null || true
+  awk '$1 ~ /coprocessor-[0-9]+-(coprocessor-proxy|prf-service)-|postgres-coprocessor-[0-9]+-0|prf-endpoint-check/ {
+         name = $1; if (name ~ /^coprocessor-/) sub(/-[a-z0-9]+-[a-z0-9]+$/, "", name); cpu = $2 + 0; mem = $3 + 0
+         if (mem > m[name]) m[name] = mem; if (cpu > c[name]) c[name] = cpu }
+       END { for (n in m) printf "%s %dm/%dMi; ", n, c[n], m[n] }' "${samples}" | sed 's/; $//'
+}
+# Waits until no row is pending at any party; prints the seconds it took.
+wait_drained() {
+  local started=${SECONDS} pending
+  while (( SECONDS - started < 600 )); do
+    pending=0
+    for p in $(seq 1 "${NB_COPROCESSOR}"); do
+      n=$(psql_party "${p}" "SELECT count(*) FROM pads WHERE signature IS NULL AND NOT is_error")
+      [[ "${n}" =~ ^[0-9]+$ ]] || n=1
+      pending=$((pending + n))
+    done
+    if (( pending == 0 )); then echo "$((SECONDS - started))"; return; fi
+    sleep 3
+  done
+  echo "not drained after 600"
+}
+
+row_begin() {
+  row_t=$(now)
+  row_pods=$(pods_snapshot)
+  sample_start
+}
+# row_end <row> <expected> <observed> <correct: true|false> [saturated: true|false] [planned replacements regex]
+row_end() {
+  local name="$1" expected="$2" observed="$3" correct="$4" saturated="${5:-false}" planned="${6:-^$}"
+  local usage restarts capacity concurrency drained verdict over
+  usage=$(sample_stop)
+  drained=$(wait_drained)
+  restarts=$(unplanned_restarts "${row_pods}" "$(pods_snapshot)" "${planned}")
+  capacity=$(capacity_since "${row_t}")
+  concurrency=$(concurrency_since "${row_t}")
+  over=$(tr ' ' '\n' <<<"${concurrency}" | awk -v c="${C}" '$1 > c' | head -1)
+  if [[ -n "${capacity}" ]]; then verdict=capacity
+  elif [[ "${saturated}" == true ]]; then verdict=untestable
+  elif [[ "${correct}" == true && -z "${restarts}" && -z "${over}" ]]; then verdict=true
+  else verdict=false
   fi
+  record "${name}" "${expected}" "${observed}; most evaluations at once per party ${concurrency}; queue drained after ${drained} s; top ${usage}" \
+    "${verdict}" "${restarts:+unplanned: ${restarts}; }${capacity:+capacity: ${capacity}}"
+  last_verdict="${verdict}"
+}
+# Correctness of a burst report: no 5xx but 502 and 504, and every failed retrieval served on retry.
+# Only the retryable 5xx (502, 504) are allowed: a 503 is the A1 finding.
+allowed_5xx='all((test("^5") | not) or test("^50[24]"))'
+burst_correct() { jq "(.statuses | keys | ${allowed_5xx}) and .requests > 0 and (if .retry then .retry.ok == .retry.retried else .ok == .requests end)" <<<"$1"; }
+burst_saturated() { jq '.lag_ms.p99 > 500' <<<"$1"; }
+burst_summary() { jq -c '{users, requests, ok, failed: (.failed | length), failed_labels, latency_ms, lag_ms, statuses, fallback_rate, bytes_per_label, drain_ms, max_fds, retry: (.retry | if . then {retried, ok, failed: (.failed | length), latency_ms} else null end)}' <<<"$1"; }
+# run_burst <row> <expected> <connector args...>: one burst row, with the retry of what missed the deadline.
+run_burst() {
+  local name="$1" expected="$2" out; shift 2
+  row_begin
+  out=$(connector "$@")
+  row_end "${name}" "${expected}" "$(burst_summary "${out}")" "$(burst_correct "${out}")" "$(burst_saturated "${out}")"
+  last_burst="${out}"
 }
 
 echo "| row | expected | observed | verdict | evidence |"
 echo "|---|---|---|---|---|"
 
-# P0: every party's PRF path is up. A party that is not (capacity, OOM) makes later rows fail for
-# a reason this row names.
+# P0: every party's PRF path is up, and nothing is pending.
 not_ready=""
 for p in $(seq 1 "${NB_COPROCESSOR}"); do
   for selector in "app.kubernetes.io/name=coprocessor-${p}-prf-service" "app.kubernetes.io/name=coprocessor-${p}-coprocessor-proxy" \
@@ -133,379 +218,170 @@ for p in $(seq 1 "${NB_COPROCESSOR}"); do
 done
 record "P0 PRF path of every party ready" "all ready" "${not_ready:-all ready}" "$([[ -z "${not_ready}" ]] && echo true)" "${leftover}"
 
-# F1: four connectors ask for the same label at once: one evaluation per coprocessor, and the row
-# is triggered by one of the tx-senders that signed (prf-service recovered the real signer).
-reports=$(connector fetch --label-prefix 9a)
-label=$(label_hex "$(head -1 <<<"${reports}")")
-oks=$(jq -s '[.[] | select(.ok)] | length' <<<"${reports}")
-senders=$(jq -rs '[.[].connector | ascii_downcase | sub("^0x"; "")] | join(",")' <<<"${reports}")
-evaluations="" triggered_ok=true
-for p in $(seq 1 "${NB_COPROCESSOR}"); do
-  evaluations+="$(pad_worker_logs "${p}" | grep 'evaluated pad' | grep -c "label=0x${label}" || true) "
-  triggered=$(psql_party "${p}" "SELECT encode(triggered_by, 'hex') FROM pads WHERE label = decode('${label}', 'hex')")
-  [[ ",${senders}," == *",${triggered},"* ]] || triggered_ok=false
-done
-record "F1 4 connectors, same label" "4 ok; 1 evaluation per coprocessor; triggered_by is a signer" \
-  "${oks} ok; evaluations ${evaluations% }; triggered_by ok=${triggered_ok}" \
-  "$([[ "${oks}" == "${NB_KMS_CORE}" && "${evaluations// /}" == "$(printf '1%.0s' $(seq 1 "${NB_COPROCESSOR}"))" && "${triggered_ok}" == true ]] && echo true)" "label 0x${label}"
-
-# F2: how often a healthy stack needs the fallback GET, and what it costs, under the two connector
-# policies. Policy 1 is RFC-038 step 5 as written; policy 2 waits briefly for the GET target's body
-# when its attestation is in the quorum group. One client each, so connections are pooled.
-f2_stats='{retrievals: length, ok: ([.[] | select(.ok)] | length), fallback_rate: (([.[] | select(.fallback)] | length) / length), bytes_per_label: (([.[].bytes // 0] | add) / length | floor), gets_per_label: (([.[].gets // 0] | add) / length), p50_ms: ([.[].elapsed_ms // 0] | sort | .[length / 2 | floor]), max_ms: ([.[].elapsed_ms // 0] | max)}'
-for policy in 1 2; do
-  policy_args=()
-  if (( policy == 2 )); then policy_args=(--body-wait 2s); fi
-  for bits in 64 2048; do
-    connector ${policy_args[@]+"${policy_args[@]}"} fetch --connectors 1 --repeat 100 --label-prefix 00 --pad-length "${bits}" > "/tmp/prf-f2-${policy}-${bits}.jsonl"
-    out=$(jq -sc "${f2_stats}" "/tmp/prf-f2-${policy}-${bits}.jsonl")
-    record "F2 policy ${policy}, ${bits}-bit pads (100 retrievals, pooled)" "measured; every retrieval ok" "${out}" \
-      "$(jq -r 'if .ok == .retrievals then "measure" else "fail" end' <<<"${out}")"
-  done
-done
-check_pod_load F2
-# The run 4 form: a new process (cold TLS to every proxy) for each retrieval, policy 1.
-for _ in $(seq 1 20); do connector fetch --connectors 1 --label-prefix 00; done > /tmp/prf-healthy.jsonl
-out=$(jq -sc "${f2_stats}" /tmp/prf-healthy.jsonl)
-record "F2 policy 1, 64-bit pads (20 retrievals, one process each)" "measured; every retrieval ok" "${out}" \
-  "$(jq -r 'if .ok == .retrievals then "measure" else "fail" end' <<<"${out}")"
-
-# fetch_case <row> <expected> <jq predicate on the report> <connector args...>
-fetch_case() {
-  local name="$1" expected="$2" predicate="$3"; shift 3
-  local report
-  report=$(connector "$@")
-  record "${name}" "${expected}" "$(summary "${report}")" "$(jq "${predicate}" <<<"${report}")" "label $(jq -r .label <<<"${report}")"
-}
-
-fetch_case "slow pad-worker on the GET target (party 1, 10 s)" "ok via fallback GET" \
-  '.ok and .fallback and .body_from != 0' fetch --connectors 1 --label-prefix d1 --get-from 0
-fetch_case "1 wrong digest (party 1, GET target)" "outvoted, ok via fallback" \
-  '.ok and .fallback and .body_from != 0' fetch --connectors 1 --label-prefix b1 --get-from 0
-fetch_case "2 wrong digests (parties 1-2)" "outvoted, ok" '.ok' fetch --connectors 1 --label-prefix b2 --get-from 4
-fetch_case "3 wrong digests (parties 1-3)" "no quorum, failed" '(.ok | not) and .error == "no_quorum"' fetch --connectors 1 --label-prefix b3
-# attestation_case <row> <label prefix> <get-from>: quorum can form before party 1 answers, and
-# then the report has no reply from party 1: retry on a new label until it does.
-attestation_case() {
-  local report
-  for _ in 1 2 3 4 5; do
-    report=$(connector fetch --connectors 1 --label-prefix "$2" --get-from "$3")
-    jq -e '[(.replies // [])[] | select(.coprocessor == 0)] | length > 0' <<<"${report}" >/dev/null && break
-  done
-  record "$1" "rejected, ok" "$(summary "${report}")" \
-    "$(jq '.ok and ([(.replies // [])[] | select(.coprocessor == 0) | .attestation] == ["rejected"])' <<<"${report}")" \
-    "label $(jq -r .label <<<"${report}")"
-}
-attestation_case "1 unsigned attestation (party 1)" a1 1
-attestation_case "S2 attestation signed by a key that is not party 1's (party 1, GET target)" a2 0
-fetch_case "3 unsigned attestations (parties 1-3)" "rejected, no quorum" '(.ok | not) and .error == "no_quorum"' fetch --connectors 1 --label-prefix a5
-fetch_case "expired FhevmSig headers" "401 auth_expired, re-sign, ok" '.ok and .resigns >= 3' fetch --connectors 1 --label-prefix 00 --stale-headers
-fetch_case "permanent failure on the GET target (party 1)" "ok via fallback" '.ok and .fallback' fetch --connectors 1 --label-prefix e2 --get-from 0
-# The round can close on three failures before the GET reply arrives: check the replies present.
-fetch_case "permanent failure everywhere" "500, not retried; a GET reply carries prf_evaluation_failed; fails before the deadline" \
-  '(.ok | not) and .error == "no_quorum" and .elapsed_ms < 30000 and all((.replies // [])[]; .status == 500 and .attempts == 1) and all((.replies // [])[] | select(.method == "GET"); .code == "prf_evaluation_failed")' \
-  fetch --connectors 1 --label-prefix e1 --get-from 0
-fetch_case "R7 the first fallback GET fails (party 1 slow)" "the next quorum member serves" \
-  '.ok and .fallback and any((.replies // [])[]; .code == "simulated_failure")' \
-  --fail-first-fallback fetch --connectors 1 --label-prefix d1 --get-from 0
-
-# probe_case <row> <expected status> <expected code> <target> <path> [connector args...]
-probe_case() {
-  local name="$1" status="$2" code="$3" target="$4" path="$5" out; shift 5
-  out=$(connector probe --target "${target}" --path "${path}" "$@")
-  record "${name}" "${status} ${code}" "$(jq -c . <<<"${out}")" \
-    "$(jq --argjson s "${status}" --arg c "${code}" '.status == $s and ((.error.code // "") == $c)' <<<"${out}")"
-}
-l="00$(rand_label)"
-probe_case "permanent failure, GET answer" 500 prf_evaluation_failed 1 "/v1/prf/0/labels/e1$(rand_label)/64"
-probe_case "permanent failure, HEAD answer" 500 "" 1 "/v1/prf/0/labels/e1$(rand_label)/64" --method HEAD
-# ask_case <row> <expected> <jq predicate on the reply> <connector args...>
-ask_case() {
-  local name="$1" expected="$2" predicate="$3"; shift 3
-  local reply
-  reply=$(connector "$@")
-  record "${name}" "${expected}" "$(jq -c . <<<"${reply}")" "$(jq "${predicate}" <<<"${reply}")"
-}
-for method in GET HEAD; do
-  ask_case "retry rule: 500 on ${method} stops" "1 attempt, nothing retried" \
-    '.status == 500 and .attempts == 1 and .retried == []' ask --target 1 --label-prefix e1 --method "${method}"
-done
-probe_case "non-canonical path: uppercase label" 400 non_canonical_path 1 "/v1/prf/0/labels/AB$(rand_label | tr a-f A-F)/64"
-probe_case "non-canonical path: leading zero" 400 non_canonical_path 1 "/v1/prf/00/labels/${l}/64"
-probe_case "query string" 401 auth_query_string 1 "/v1/prf/0/labels/${l}/64?x=1"
-probe_case "unknown prf" 404 unknown_prf 1 "/v1/prf/1/labels/${l}/64"
-probe_case "padLength 0" 400 non_canonical_path 1 "/v1/prf/0/labels/${l}/0"
-probe_case "padLength 2049" 400 non_canonical_path 1 "/v1/prf/0/labels/${l}/2049"
-probe_case "padLength 2048" 200 "" 1 "/v1/prf/0/labels/${l}/2048"
-
-# C2: an unknown signer. GET tells it apart, HEAD cannot; the connector's GET keeps retrying it
-# (RFC-038 step 6) until the deadline, its HEADs stop at once.
-probe_case "C2 unknown signer, GET (party 2)" 401 auth_unknown_signer 1 "/v1/prf/0/labels/00$(rand_label)/64" --random-key
-probe_case "C2 unknown signer, HEAD (party 2)" 401 "" 1 "/v1/prf/0/labels/00$(rand_label)/64" --random-key --method HEAD
-fetch_case "C2 unknown signer, retrieval (deadline 10 s)" "no quorum; at least 3 HEAD replies, each 1 attempt" \
-  '(.ok | not) and .error == "no_quorum" and ([(.replies // [])[] | select(.method == "HEAD")] | length >= 3) and all((.replies // [])[] | select(.method == "HEAD"); .attempts == 1)' \
-  --random-keys --deadline 10s fetch --connectors 1 --label-prefix 00
-ask_case "C2 unknown signer, GET request loop (deadline 10 s)" "retried until the deadline" \
-  '.error == "deadline" and .elapsed_ms >= 9000' --random-keys --deadline 10s ask --target 1 --label-prefix 00
-
-# G5: a header signed for party 1 sent to party 2, and a random key: 401 after the registry wait.
-signers=$(kubectl get configmap coprocessor-proxy -n "${NAMESPACE}" -o jsonpath='{.data.signer-addresses}')
-probe_case "G5 header signed for party 1, sent to party 2" 401 auth_unknown_signer 1 "/v1/prf/0/labels/00$(rand_label)/64" --audience "${signers%%,*}"
-waits=""
-for _ in 1 2 3; do
-  waits+="$(connector probe --target 1 --path "/v1/prf/0/labels/00$(rand_label)/64" --random-key | jq -r '"\(.status):\(.elapsed_ms)ms"') "
-done
-warns=$(kubectl logs deploy/coprocessor-2-coprocessor-proxy -n "${NAMESPACE}" --since=2m 2>/dev/null | grep -c 'Unknown signer after waiting' || true)
-record "G5 unknown-signer wait at party 2" "about 1 s each, at most about 3.5 s; one WARN line per request" \
-  "3 random-key probes: ${waits% }; ${warns} WARN lines in party 2's proxy log over 2 min (7 unknown-signer requests in C2 and G5, plus the C2 retrieval's retries)" measure
-
-# B1: the cap of party 1: at most two pending 2048-bit pads per connector (4096 bits). Key 1.
-out=$(connector --key-index 1 flood --target 0 --count 6 --label-prefix 4a --pad-length 2048)
-record "B1 per-connector cap (party 1, key 1)" '2x 200, 4x 429 concurrency_limited, Retry-After' "$(jq -c . <<<"${out}")" \
-  "$(jq '.statuses == {"200": 2, "429 concurrency_limited": 4} and .retry_after != null' <<<"${out}")"
-# G2: party 2 holds at most two requests of one connector. Key 2.
-out=$(connector --key-index 2 flood --target 1 --count 3 --label-prefix 4a --pad-length 64)
-record "G2 PRF_MAX_IN_FLIGHT_PER_CONNECTOR (party 2, 2 requests, key 2)" '2x 200, 1x 429 concurrency_limited' "$(jq -c . <<<"${out}")" \
-  "$(jq '.statuses == {"200": 2, "429 concurrency_limited": 1}' <<<"${out}")"
-
-# S1: one label at 64 and 2048 bits at once (party 1, key 3, 20 s evaluations). Both rows count
-# against the 4096-bit cap: 64 + 2048 + another 2048 is over it.
+# S1 rerun: one label at 64 and 2048 bits from one process (party 1, key 3, 20 s evaluations).
+# While both rows are pending, the sum admission uses for key 3 is 64 + 2048.
 x="6d$(rand_label)"
-connector --key-index 3 ask --target 0 --label "${x}" --pad-length 64 > /tmp/prf-s1-64.json &
-s1_short=$!
-connector --key-index 3 ask --target 0 --label "${x}" --pad-length 2048 > /tmp/prf-s1-2048.json &
-s1_long=$!
-sleep 3
-third=$(connector --key-index 3 probe --target 0 --path "/v1/prf/0/labels/6d$(rand_label)/2048")
-wait "${s1_short}" "${s1_long}" || true
+row_begin
+connector --key-index 3 ask --target 0 --label "${x}" --pad-lengths 64,2048 > /tmp/prf-s1.jsonl &
+s1_pid=$!
+sleep 6
 rows=$(psql_party 1 "SELECT count(*) FROM pads WHERE label = decode('${x}', 'hex')")
-short=$(cat /tmp/prf-s1-64.json) long=$(cat /tmp/prf-s1-2048.json)
-record "S1 same label at 64 and 2048 bits (party 1, key 3)" "both 200, different digests; 2 rows; a third 2048-bit label gets 429" \
-  "64: $(jq -c '{status, digest}' <<<"${short}"); 2048: $(jq -c '{status, digest}' <<<"${long}"); rows ${rows}; third $(jq -c '{status, code: .error.code}' <<<"${third}")" \
-  "$(jq -n --argjson a "${short}" --argjson b "${long}" --argjson t "${third}" --arg rows "${rows}" \
-    '$a.status == 200 and $b.status == 200 and $a.digest != $b.digest and $rows == "2" and $t.status == 429 and $t.error.code == "concurrency_limited"')" "label 0x${x}"
+pending=$(psql_party 1 "SELECT COALESCE(SUM(pad_length), 0) FROM pads WHERE triggered_by = (SELECT triggered_by FROM pads WHERE label = decode('${x}', 'hex') LIMIT 1) AND signature IS NULL AND NOT is_error")
+triggerers=$(psql_party 1 "SELECT count(DISTINCT triggered_by) FROM pads WHERE label = decode('${x}', 'hex')")
+wait "${s1_pid}" || true
+asks=$(jq -sc '[.[] | {status, digest, path}]' /tmp/prf-s1.jsonl)
+row_end "S1 same label at 64 and 2048 bits, one process (party 1, key 3)" "2 rows, both by key 3; key 3's pending sum 2112 while both are pending; both 200 with different digests" \
+  "rows ${rows}; triggered by ${triggerers} key(s); pending sum ${pending}; asks ${asks}" \
+  "$(jq --arg rows "${rows}" --arg sum "${pending}" --arg t "${triggerers}" \
+    'length == 2 and all(.status == 200) and .[0].digest != .[1].digest and $rows == "2" and $sum == "2112" and $t == "1"' <<<"${asks}")"
 
-# D1: the connector drops while its request is held (party 3, 20 s evaluation), then asks again.
-d="6d$(rand_label)"
-aborted=$(connector ask --target 2 --label "${d}" --abort-after 2s)
-pending=$(psql_party 3 "SELECT count(*) FROM pads WHERE label = decode('${d}', 'hex') AND signature IS NULL")
-retry=$(connector ask --target 2 --label "${d}" --deadline 60s)
-claims=$(pad_worker_logs 3 | grep 'claimed pad' | grep -c "label=0x${d}" || true)
-evals=$(pad_worker_logs 3 | grep 'evaluated pad' | grep -c "label=0x${d}" || true)
-record "D1 drop while held, retry later (party 3)" "row still pending after the drop; retry 200; 1 claim, 1 evaluation; at most one 429" \
-  "aborted $(jq -c . <<<"${aborted}"); pending ${pending}; retry $(jq -c '{status, attempts, retried, elapsed_ms}' <<<"${retry}"); claims ${claims}, evaluations ${evals}" \
-  "$(jq --arg p "${pending}" --arg c "${claims}" --arg e "${evals}" --argjson a "${aborted}" \
-    '$a.aborted_after_ms != null and $p == "1" and .status == 200 and $c == "1" and $e == "1" and ([(.retried // [])[] | select(startswith("429"))] | length) <= 1' <<<"${retry}")" "label 0x${d}"
-# D2: the same, with the new request at once: the dropped request must free its place.
-d="6d$(rand_label)"
-aborted=$(connector ask --target 2 --label "${d}" --abort-after 2s)
-retry=$(connector ask --target 2 --label "${d}" --deadline 60s)
-record "D2 drop while held, immediate retry (party 3)" "200; at most one 429 concurrency_limited" \
-  "aborted $(jq -c . <<<"${aborted}"); retry $(jq -c '{status, attempts, retried, elapsed_ms}' <<<"${retry}")" \
-  "$(jq --argjson a "${aborted}" '$a.aborted_after_ms != null and .status == 200 and ([(.retried // [])[] | select(startswith("429"))] | length) <= 1' <<<"${retry}")" "label 0x${d}"
+# B3: 3C new labels at once with one connector: never more than C evaluations at once (true by
+# construction of the stand-in: it runs C workers), FIFO drain in about 48 x 1.1 / 16 = 3.3 s.
+run_burst "B3 global cap: 48 new 64-bit labels at once, 1 connector (E 1.1 s, C 16)" "all ok; at most 16 at once" \
+  burst --connectors 1 --users 48 --window 0s --retry-deadline 120s
 
-# R3: the pad-worker of parties 1-3 exits once with the row claimed; the reaper gives it back.
-restarts_before=$(for p in 1 2 3; do kubectl get pods -n "${NAMESPACE}" -l "app=standin-pad-worker,fhevm.zama.ai/party=${p}" -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'; echo -n " "; done)
-report=$(connector fetch --connectors 1 --label-prefix c1 --deadline 120s)
-restarts_after=$(for p in 1 2 3; do kubectl get pods -n "${NAMESPACE}" -l "app=standin-pad-worker,fhevm.zama.ai/party=${p}" -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}'; echo -n " "; done)
-read -r -a before <<<"${restarts_before}"
-read -r -a after <<<"${restarts_after}"
-crashed=true
-for n in 0 1 2; do (( ${after[n]:-0} > ${before[n]:-0} )) || crashed=false; done
-record "R3 pad-worker killed mid-evaluation (parties 1-3)" "ok after restart and reap; each of parties 1-3 restarted" "$(summary "${report}"); restarts ${restarts_before}-> ${restarts_after}" \
-  "$(jq --argjson c "${crashed}" '.ok and $c' <<<"${report}")"
+# L1: 100 users in 10 s, every connector (model drain 100 x 1.1 / 16 = 6.9 s).
+run_burst "L1 100 users in 10 s, 64-bit (E 1.1 s, C 16)" "all ok; model drain 6.9 s" \
+  burst --users 100 --window 10s --retry-deadline 300s
+l1_p50=$(jq '.latency_ms.p50' <<<"${last_burst}")
+ladder="${last_verdict}"
 
-# An evaluation longer than the connector's 30 s deadline, then the stored output.
-report=$(connector fetch --connectors 1 --label-prefix 7f)
-label=$(jq -r .label <<<"${report}")
-sleep 15
-again=$(connector fetch --connectors 1 --label "${label}")
-record "evaluation of 40 s, connector deadline 30 s" "first fails at the deadline; the stored output is served after" \
-  "first $(summary "${report}"); then $(summary "${again}")" \
-  "$(jq -n --argjson a "${report}" --argjson b "${again}" '($a.error == "deadline") and $b.ok and $b.elapsed_ms < 5000')"
-
-# R2: prf-service of parties 1-3 is killed while it holds requests for a 20 s evaluation.
-connector fetch --connectors 1 --label-prefix 6d --deadline 120s > /tmp/prf-held.json &
-fetch_pid=$!
-sleep 5
-for p in 1 2 3; do
-  kubectl delete pod -n "${NAMESPACE}" -l "app.kubernetes.io/name=coprocessor-${p}-prf-service" --wait=false
+# F3: decryptor fan-out: each connector asks for each label 2 or 3 times at once. The duplicates
+# get 429 concurrency_limited (one request per connector and label) and join after Retry-After.
+for copies in 2 3; do
+  run_burst "F3 decryptor fan-out x${copies}: 100 users in 10 s, 64-bit (E 1.1 s)" "all ok; 429s and added latency measured (L1 p50 ${l1_p50} ms)" \
+    burst --users 100 --window 10s --copies "${copies}" --retry-deadline 300s
 done
-wait "${fetch_pid}" || true
-report=$(cat /tmp/prf-held.json)
-record "R2 prf-service killed while holding requests (parties 1-3)" "ok: retries reach the new pods" "$(summary "${report}")" "$(jq '.ok' <<<"${report}")"
-for p in 1 2 3; do wait_ready "deploy/coprocessor-${p}-prf-service"; done
 
-# The proxy answers 502 upstream_transient while party 1 has no prf-service pod. O6: the proxy
-# stays Ready, so only its 502 counter shows that the party is down.
-proxy_pod() { kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/name=coprocessor-${1}-coprocessor-proxy" -o jsonpath='{.items[0].metadata.name}'; }
-prf_502() {
-  local metrics
-  if ! metrics=$(kubectl get --request-timeout=10s --raw "/api/v1/namespaces/${NAMESPACE}/pods/$(proxy_pod 1):9100/proxy/metrics" 2>/dev/null); then
-    echo unavailable
-    return
-  fi
-  awk '/^coprocessor_proxy_requests_total/ && /route="prf"/ && /status="502"/ {s += $NF} END {printf "%d\n", s}' <<<"${metrics}"
-}
-before_502=$(prf_502)
-kubectl scale deploy/coprocessor-1-prf-service -n "${NAMESPACE}" --replicas=0 >/dev/null
-kubectl wait --for=delete pod -l app.kubernetes.io/name=coprocessor-1-prf-service -n "${NAMESPACE}" --timeout=120s >/dev/null || true
-connector --deadline 120s ask --target 0 --label-prefix 00 > /tmp/prf-502.json &
-ask_pid=$!
-sleep 8
-proxy_ready=$(kubectl get pods -n "${NAMESPACE}" -l app.kubernetes.io/name=coprocessor-1-coprocessor-proxy -o jsonpath='{.items[*].status.containerStatuses[0].ready}')
-after_502=$(prf_502)
-sleep 2
-kubectl scale deploy/coprocessor-1-prf-service -n "${NAMESPACE}" --replicas=1 >/dev/null
-wait "${ask_pid}" || true
-wait_ready deploy/coprocessor-1-prf-service
-reply=$(cat /tmp/prf-502.json)
-record "retry rule: proxy 502 is retried (party 1 prf-service down 10 s)" "502 upstream_transient retried, then 200" \
-  "$(jq -c . <<<"${reply}")" "$(jq '.status == 200 and any((.retried // [])[]; . == "502 upstream_transient")' <<<"${reply}")"
-if [[ "${before_502}" == unavailable || "${after_502}" == unavailable || -z "${before_502}" || -z "${after_502}" ]]; then
-  record "O6 proxy Ready while prf-service is down (party 1)" "the 502 counter rises" "metrics read refused; proxy ready=${proxy_ready}" untestable
+# B5: the fastest connector absorbs its budget. Party 1 evaluates nothing while 600 new 2048-bit
+# labels arrive with key 0 200 ms ahead: key 0 triggers 512 (1,048,576 bits), then gets 429, and
+# the others trigger the rest. The other parties evaluate 0f labels at once.
+kubectl scale deploy/coprocessor-1-standin-pad-worker -n "${NAMESPACE}" --replicas=0 >/dev/null
+b5_t=$(now)
+row_begin
+out=$(connector burst --users 600 --window 10s --pad-length 2048 --label-prefix 0f --lead 200ms --retry-deadline 300s)
+kubectl scale deploy/coprocessor-1-standin-pad-worker -n "${NAMESPACE}" --replicas=1 >/dev/null
+kubectl rollout status deploy/coprocessor-1-standin-pad-worker -n "${NAMESPACE}" --timeout=300s >/dev/null || true
+distribution=$(psql_party 1 "SELECT string_agg(n::text, ',' ORDER BY n DESC) FROM (SELECT count(*) AS n FROM pads WHERE get_byte(label, 0) = 15 AND created_at >= '${b5_t}' GROUP BY triggered_by) t")
+row_end "B5 fastest connector absorbs its budget (party 1 not evaluating, 600 labels of 2048 bits, key 0 leads 200 ms)" \
+  "all ok; key 0 triggers 512 at party 1, the rest by other keys" \
+  "$(burst_summary "${out}"); rows triggered per key at party 1: ${distribution}" \
+  "$(burst_correct "${out}")" "$(burst_saturated "${out}")" '^coprocessor-1-standin-pad-worker-'
+
+# B4: the queue under a rising rate, 30 s per step (throughput model C / E = 14.5 labels/s).
+for rate in 4 8 16 32; do
+  run_burst "B4 ${rate} new labels/s for 30 s, 64-bit (E 1.1 s, C 16)" "all ok, misses served on retry; p99 against the 30 s deadline measured" \
+    burst --users $((rate * 30)) --window 30s --retry-deadline 300s
+done
+
+# L2, then L4 (2048-bit) only if L2 left headroom (p99 under 15 s). The ladder stops at the first
+# capacity event.
+if [[ "${ladder}" != capacity ]]; then
+  run_burst "L2 250 users in 10 s, 64-bit (E 1.1 s, C 16)" "all ok; model drain 17 s" \
+    burst --users 250 --window 10s --retry-deadline 300s
+  ladder="${last_verdict}"
 else
-  record "O6 proxy Ready while prf-service is down (party 1)" "the 502 counter rises" "502 count ${before_502} -> ${after_502}; proxy ready=${proxy_ready}" \
-    "$([[ "${after_502%.*}" -gt "${before_502%.*}" ]] && echo true)"
+  record "L2 250 users in 10 s" "run unless the ladder met capacity" "skipped: capacity in L1" untestable
+fi
+if [[ "${ladder}" == true ]] && jq -e '.latency_ms.p99 < 15000' <<<"${last_burst}" >/dev/null; then
+  run_burst "L4 250 users in 10 s, 2048-bit (E 4.1 s, C 16)" "all ok, misses served on retry; model drain 64 s" \
+    burst --users 250 --window 10s --pad-length 2048 --retry-deadline 300s
+  ladder="${last_verdict}"
+else
+  record "L4 250 users in 10 s, 2048-bit" "only with headroom after L2" "skipped: L2 verdict ${ladder}, p99 $(jq '.latency_ms.p99' <<<"${last_burst}") ms" untestable
 fi
 
-# R1: proxy rolling restart under load: sequential retrievals until every proxy has restarted.
-rm -f /tmp/prf-restart.stop
-(
-  until [[ -f /tmp/prf-restart.stop ]]; do connector fetch --connectors 1 --label-prefix 00; done
-) > /tmp/prf-restart.jsonl &
-load_pid=$!
-sleep 3
-for p in $(seq 1 "${NB_COPROCESSOR}"); do kubectl rollout restart "deploy/coprocessor-${p}-coprocessor-proxy" -n "${NAMESPACE}"; done
-for p in $(seq 1 "${NB_COPROCESSOR}"); do wait_ready "deploy/coprocessor-${p}-coprocessor-proxy"; done
-touch /tmp/prf-restart.stop
-wait "${load_pid}" || true
-out=$(jq -sc '{retrievals: length, ok: [.[] | select(.ok)] | length, fallback: [.[] | select(.fallback)] | length, max_ms: ([.[].elapsed_ms // 0] | max)}' /tmp/prf-restart.jsonl)
-record "R1 proxy rolling restart under load" "every retrieval ok" "${out}" "$(jq '.retrievals > 0 and .ok == .retrievals' <<<"${out}")"
-check_pod_load R1
-
-# R9: one client asks party 2 every 15 s while its proxy restarts: a pooled connection that idled
-# through the drain may fail once, and the connector retries it.
-connector --deadline 60s ask --target 1 --label-prefix 00 --repeat 16 --interval 15s > /tmp/prf-r9.jsonl &
-r9_pid=$!
+# G1: a rogue (key 3) floods 600 new 2048-bit labels at party 2. It is bounded by its budget:
+# 512 admitted (1,048,576 bits), 88 refused. Honest keys 0-2 keep retrieving, and party 2's own
+# answers to key 0 queue behind the rogue's: about 512 / 16 x 4.1 = 131 s.
+row_begin
+connector --key-index 3 flood --target 1 --count 600 --label-prefix 00 --pad-length 2048 > /tmp/prf-g1-rogue.json &
+rogue_pid=$!
 sleep 5
-kubectl rollout restart deploy/coprocessor-2-coprocessor-proxy -n "${NAMESPACE}"
-wait_ready deploy/coprocessor-2-coprocessor-proxy
-wait "${r9_pid}" || true
-out=$(jq -sc '{asks: length, ok: ([.[] | select(.status == 200)] | length), connection_errors: ([.[].retried // [] | .[] | select(. == "connection_error")] | length), max_ms: ([.[].elapsed_ms // 0] | max)}' /tmp/prf-r9.jsonl)
-record "R9 pooled connection across a proxy restart (party 2)" "every ask 200; connection errors retried" "${out}" \
-  "$(jq '.asks == 16 and .ok == 16' <<<"${out}")"
+connector --deadline 300s ask --target 1 --label-prefix 00 --repeat 4 --interval 20s > /tmp/prf-g1-party2.jsonl &
+party2_pid=$!
+honest=$(connector burst --connectors 3 --users 60 --window 60s --retry-deadline 300s)
+wait "${rogue_pid}" "${party2_pid}" || true
+rogue=$(cat /tmp/prf-g1-rogue.json)
+party2=$(jq -sc '[.[] | {status, elapsed_ms, retried: (.retried | length)}]' /tmp/prf-g1-party2.jsonl)
+row_end "G1 rogue floods 600 new 2048-bit labels at party 2 (key 3; E 4.1 s, C 16)" \
+  "rogue: 88x 429, the rest 200 or 504; honest retrievals all ok; party 2's own answers measured (model 131 s)" \
+  "rogue $(jq -c . <<<"${rogue}"); honest $(burst_summary "${honest}"); party 2 to key 0 ${party2}" \
+  "$(jq -n --argjson r "${rogue}" --argjson h "$(burst_correct "${honest}")" --argjson p "${party2}" \
+    '$h and ($r.statuses["429 concurrency_limited"] == 88) and ($r.statuses | keys | all(. == "200" or . == "504 timeout" or . == "429 concurrency_limited")) and ($p | length == 4 and all(.status == 200))')" \
+  "$(burst_saturated "${honest}")"
 
-# R5: staggered restarts under a continuous load, one component of each party 10 s apart. Each
-# failed label is retried once.
-rm -f /tmp/prf-r5.stop
-(
-  until [[ -f /tmp/prf-r5.stop ]]; do
-    first=$(connector fetch --connectors 1 --label-prefix 00)
-    jq -c '. + {try: 1}' <<<"${first}" || true
-    retry_label=$(jq -r 'if .ok then empty else (.label // empty) end' <<<"${first}" || true)
-    if [[ -n "${retry_label}" ]]; then
-      connector fetch --connectors 1 --label "${retry_label}" | jq -c '. + {try: 2}' || true
-    fi
-  done
-) > /tmp/prf-r5.jsonl &
-load_pid=$!
-sleep 3
-t0=${SECONDS}
-kubectl rollout restart deploy/coprocessor-1-coprocessor-proxy -n "${NAMESPACE}"
-sleep 10
-kubectl delete pod -n "${NAMESPACE}" -l app.kubernetes.io/name=coprocessor-2-prf-service --wait=false
-sleep 10
-kubectl delete pod -n "${NAMESPACE}" -l "app=standin-pad-worker,fhevm.zama.ai/party=3" --wait=false
-sleep 10
-kubectl delete pod postgres-coprocessor-4-0 -n "${NAMESPACE}" --wait=false
-sleep 10
-kubectl rollout restart deploy/coprocessor-5-coprocessor-proxy -n "${NAMESPACE}"
-ready_by=""
-for target in deploy/coprocessor-1-coprocessor-proxy deploy/coprocessor-2-prf-service deploy/coprocessor-3-standin-pad-worker \
-  statefulset/postgres-coprocessor-4 deploy/coprocessor-4-prf-service deploy/coprocessor-4-standin-pad-worker deploy/coprocessor-5-coprocessor-proxy; do
-  wait_ready "${target}"
-  ready_by+="${target#*/coprocessor-}:$((SECONDS - t0))s "
-done
-touch /tmp/prf-r5.stop
-wait "${load_pid}" || true
-restarts4=$(kubectl get pods -n "${NAMESPACE}" -l app.kubernetes.io/name=coprocessor-4-prf-service -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}' 2>/dev/null || true)
-out=$(jq -sc '{labels: (group_by(.label) | length), first_try_failures: ([.[] | select(.try == 1 and (.ok | not))] | length), failed_labels: (group_by(.label) | map(select(all(.[]; .ok | not))) | length), max_ms: ([.[].elapsed_ms // 0] | max)}' /tmp/prf-r5.jsonl)
-record "R5 staggered restarts under load (parties 1-5, 10 s apart)" "at least 10 labels; every label ok on its first try or its one retry" \
-  "${out}; ready by (from t0) ${ready_by% }; party 4 prf-service restarts ${restarts4}" \
-  "$(jq '.labels >= 10 and .failed_labels == 0' <<<"${out}")"
-
-# R8 and coprocessors down: proxies scaled to 0, one after the other. Each step waits until a new
-# connection to that party is refused (the old pod accepts for its 10 s shutdownDelaySeconds).
-proxy_down() { kubectl scale "deploy/coprocessor-${1}-coprocessor-proxy" -n "${NAMESPACE}" --replicas=0 >/dev/null; }
-# wait_refused <party>: prints the seconds until a probe to it gets a transport error.
-wait_refused() {
-  local started=${SECONDS}
-  for _ in $(seq 1 30); do
-    if connector probe --target "$(( $1 - 1 ))" --path "/v1/prf/0/labels/00$(rand_label)/64" | jq -e '.transport_error != null' >/dev/null; then
-      echo "$((SECONDS - started))"
-      return
-    fi
-    sleep 2
-  done
-  echo "not refused after $((SECONDS - started))"
-}
-replicas=$(kubectl get deploy/coprocessor-5-coprocessor-proxy -n "${NAMESPACE}" -o jsonpath='{.spec.replicas}')
-connector --deadline 120s ask --target 4 --label-prefix 6d > /tmp/prf-r8.json &
-r8_pid=$!
-sleep 3
-proxy_down 5
-refused5=$(wait_refused 5)
-wait "${r8_pid}" || true
-reply=$(cat /tmp/prf-r8.json)
-record "R8 scale-down drains a held request (party 5)" "the held request returns 200 on attempt 1" \
-  "$(jq -c '{status, attempts, retried, elapsed_ms}' <<<"${reply}"); new connections refused after ${refused5} s" \
-  "$(jq '.status == 200 and .attempts == 1' <<<"${reply}")" "$(jq -r .path <<<"${reply}")"
-fetch_case "1 coprocessor down (party 5, GET target)" "ok via fallback" '.ok and .fallback' fetch --connectors 1 --label-prefix 00 --get-from 4
-proxy_down 4
-refused4=$(wait_refused 4)
-fetch_case "2 coprocessors down (parties 4-5)" "ok via fallback" '.ok and .fallback' fetch --connectors 1 --label-prefix 00 --get-from 3
-proxy_down 3
-refused3=$(wait_refused 3)
-fetch_case "3 coprocessors down (parties 3-5)" "no quorum before the deadline: retryable failure" '(.ok | not) and .error == "deadline"' fetch --connectors 1 --label-prefix 00
-record "seconds until a scaled-down proxy refuses connections" "about 10-15 s (shutdownDelaySeconds 10 s)" "party 5: ${refused5}; party 4: ${refused4}; party 3: ${refused3}" measure
-for p in 3 4 5; do
-  kubectl scale "deploy/coprocessor-${p}-coprocessor-proxy" -n "${NAMESPACE}" --replicas="${replicas}" >/dev/null
-  wait_ready "deploy/coprocessor-${p}-coprocessor-proxy"
+# G3: a rogue (key 3) repeats stored 100 KB outputs as fast as it can at party 3, 128 loops for
+# 60 s, GET then HEAD. Party 3's own answers to key 0 are measured meanwhile.
+for method in GET HEAD; do
+  row_begin
+  connector --deadline 120s ask --target 2 --label-prefix 00 --repeat 10 --interval 5s > /tmp/prf-g3-party3.jsonl &
+  party3_pid=$!
+  rogue=$(connector --key-index 3 hammer --target 2 --label-prefix 0f --pad-length 2048 --method "${method}" --concurrency 128 --duration 60s)
+  wait "${party3_pid}" || true
+  party3=$(jq -sc '{asks: length, ok: ([.[] | select(.status == 200)] | length), elapsed_ms: ([.[].elapsed_ms] | sort), statuses: ([.[] | "\(.status // .error)"] | group_by(.) | map({key: .[0], value: length}) | from_entries)}' /tmp/prf-g3-party3.jsonl)
+  row_end "G3 rogue repeats stored 100 KB outputs at party 3, ${method} (key 3, 128 loops, 60 s)" \
+    "no 5xx; rate, bandwidth and party 3's own latency measured (no rate bound expected)" \
+    "rogue $(jq -c . <<<"${rogue}"); party 3 to key 0 ${party3}" \
+    "$(jq -n --argjson r "${rogue}" --argjson p "${party3}" "(\$r.statuses | keys | ${allowed_5xx}) and \$p.ok == \$p.asks")"
 done
 
-# O1: the proxy holds a request just under its 120 s endpoint_response_timeout (110 s), and an
-# evaluation of 130 s gets 504 timeout, whose retry joins the same evaluation. In parallel: party 2
-# holds two requests of one connector.
-connector --deadline 200s ask --target 1 --label-prefix f1 > /tmp/prf-o1-f1.json &
-f1_pid=$!
-connector --deadline 200s ask --target 1 --label-prefix f0 > /tmp/prf-o1-f0.json &
-f0_pid=$!
-wait "${f1_pid}" "${f0_pid}" || true
-reply=$(cat /tmp/prf-o1-f1.json)
-record "O1 evaluation of 110 s, proxy timeout 120 s" "200 on attempt 1, no 504" "$(jq -c . <<<"${reply}")" \
-  "$(jq '.status == 200 and .attempts == 1 and all((.retried // [])[]; . != "504 timeout")' <<<"${reply}")"
-reply=$(cat /tmp/prf-o1-f0.json)
-record "O1 retry rule: proxy 504 is retried (evaluation 130 s, proxy timeout 120 s)" "504 timeout retried, then 200" \
-  "$(jq -c . <<<"${reply}")" "$(jq '.status == 200 and (.retried // [])[0] == "504 timeout"' <<<"${reply}")"
+# L3: 1000 users in 10 s (model drain 1000 x 1.1 / 16 = 69 s: labels past 30 s miss and are
+# served on retry). Only if the ladder has not met capacity.
+if [[ "${ladder}" != capacity ]]; then
+  run_burst "L3 1000 users in 10 s, 64-bit (E 1.1 s, C 16)" "all ok or served on retry; model drain 69 s" \
+    burst --users 1000 --window 10s --retry-deadline 300s
+else
+  record "L3 1000 users in 10 s" "run unless the ladder met capacity" "skipped: capacity earlier in the ladder" untestable
+fi
 
-# R4 and A1, last, since prf-service and the pad-worker of party 5 exit without their database and
-# may then wait out a crash-loop backoff: the Postgres of party 5 is down.
-kubectl scale statefulset/postgres-coprocessor-5 -n "${NAMESPACE}" --replicas=0 >/dev/null
-kubectl wait --for=delete pod/postgres-coprocessor-5-0 -n "${NAMESPACE}" --timeout=120s >/dev/null || true
-fetch_case "R4 Postgres of one coprocessor down (party 5, GET target)" "ok via fallback" '.ok and .fallback' fetch --connectors 1 --label-prefix 00 --get-from 4
-class=$(connector --deadline 15s ask --target 4 --label-prefix 00)
-record "A1 what party 5 answers without its Postgres" "503 unavailable (not retried) or 502 / connection error (retried)" \
-  "$(jq -c . <<<"${class}")" measure
-kubectl scale statefulset/postgres-coprocessor-5 -n "${NAMESPACE}" --replicas=1 >/dev/null
-started=${SECONDS}
-recovered=true
-{ kubectl rollout status statefulset/postgres-coprocessor-5 -n "${NAMESPACE}" --timeout=300s >/dev/null \
-  && wait_ready deploy/coprocessor-5-prf-service && wait_ready deploy/coprocessor-5-standin-pad-worker; } || recovered=false
-restarts=$(kubectl get pods -n "${NAMESPACE}" -l app.kubernetes.io/name=coprocessor-5-prf-service -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}' 2>/dev/null || true)
-reply=$(connector ask --target 4 --label-prefix 00)
-record "R4 party 5 recovers after its Postgres returns" "prf-service ready; party 5 answers 200" \
-  "ready=${recovered} after $((SECONDS - started)) s, prf-service restarts ${restarts}; $(jq -c '{status, attempts, retried, elapsed_ms}' <<<"${reply}")" \
-  "$(jq --argjson r "${recovered}" '$r and .status == 200' <<<"${reply}")"
+# O4: 500 slow-header and 2000 idle TLS connections at party 2's proxy for 120 s, while key 0
+# keeps asking party 2. The proxy does not shed slow clients (that is the front layer's job).
+row_begin
+connector slowloris --target 1 --slow 500 --idle 2000 --duration 120s --byte-every 10s > /tmp/prf-o4.json &
+slow_pid=$!
+sleep 10
+connector ask --target 1 --label-prefix 00 --repeat 20 --interval 5s > /tmp/prf-o4-party2.jsonl
+wait "${slow_pid}" || true
+slow=$(cat /tmp/prf-o4.json)
+party2=$(jq -sc '{asks: length, ok: ([.[] | select(.status == 200)] | length), elapsed_ms: ([.[].elapsed_ms] | sort)}' /tmp/prf-o4-party2.jsonl)
+row_end "O4 2500 slow or idle connections at party 2's proxy (120 s)" \
+  "honest asks all 200; held connections, proxy memory and honest latency measured" \
+  "slowloris $(jq -c . <<<"${slow}"); party 2 to key 0 ${party2}" \
+  "$(jq '.ok == .asks and .asks == 20' <<<"${party2}")"
+
+# K10: the proxy's own counters, read by the check pod (no NetworkPolicy covers the proxy pods).
+k10=""
+k10_ok=true
+for p in $(seq 1 "${NB_COPROCESSOR}"); do
+  ip=$(kubectl get pods -n "${NAMESPACE}" -l "app.kubernetes.io/name=coprocessor-${p}-coprocessor-proxy" -o jsonpath='{.items[0].status.podIP}')
+  lines=$(connector metrics --url "http://${ip}:9100/metrics" --prefix coprocessor_proxy_requests_total 2>/dev/null | grep 'route="prf"' || true)
+  if [[ -z "${lines}" ]]; then k10_ok=false; k10+="party ${p}: unreadable; "; continue; fi
+  k10+="party ${p}: $(awk '{match($0, /status="[0-9]+"/); s = substr($0, RSTART + 8, 3); n[s] += $NF} END {for (s in n) printf "%s=%d ", s, n[s]}' <<<"${lines}"); "
+done
+if [[ "${k10_ok}" == true ]]; then
+  record "K10 proxy PRF answers by status over Run B (since each proxy started)" "no 500 or 503" "${k10% ; }" \
+    "$([[ "${k10}" != *500=* && "${k10}" != *503=* ]] && echo true)"
+else
+  record "K10 proxy PRF answers by status over Run B" "metrics readable from the check pod" "${k10% ; }" untestable
+fi
+
+# O2 and O3, last: copro expects prf-service to run out of memory. Party 3 evaluates nothing while
+# 4 keys hold 1000 new 2048-bit labels each (4000 held requests), then evaluates them all at once
+# (0f: no cost): 4000 waiters read 100 KB each.
+kubectl scale deploy/coprocessor-3-standin-pad-worker -n "${NAMESPACE}" --replicas=0 >/dev/null
+row_begin
+connector --deadline 300s burst --only 2 --users 1000 --window 5s --pad-length 2048 --label-prefix 0f > /tmp/prf-o2.json &
+o2_pid=$!
+sleep 60
+kubectl scale deploy/coprocessor-3-standin-pad-worker -n "${NAMESPACE}" --replicas=1 >/dev/null
+wait "${o2_pid}" || true
+o2=$(cat /tmp/prf-o2.json)
+pool=$(kubectl logs deploy/coprocessor-3-prf-service -n "${NAMESPACE}" --since-time="${row_t}" 2>/dev/null | grep -c -i 'pool timed out\|PoolTimedOut' || true)
+row_end "O2 4000 requests held at party 3, then served at once (2048-bit, 4 keys)" \
+  "all 200 within 300 s; prf-service memory measured (capacity expected)" \
+  "$(burst_summary "${o2}")" "$(burst_correct "${o2}")" "$(burst_saturated "${o2}")" '^coprocessor-3-standin-pad-worker-'
+record "O3 DB pool pressure during O2 (pool of 16)" "503 count and pool timeouts measured" \
+  "503s $(jq '[.statuses | to_entries[] | select(.key | test("^503")) | .value] | add // 0' <<<"${o2}"); pool timeout log lines ${pool}" measure
 
 exit "${failed}"

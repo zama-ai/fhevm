@@ -10,7 +10,8 @@ use alloy::{
 use prf_service::{AuthConfig, Config, PrfService};
 use prf_standins::{
     connector::{Connector, Coprocessor, ProbeOptions, Retrieval},
-    pad_worker::{PadWorker, PadWorkerConfig},
+    load::{self, Burst},
+    pad_worker::{Cost, PadWorker, PadWorkerConfig},
 };
 use reqwest::Method;
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -143,6 +144,11 @@ async fn start_party(admin: &PgPool, i: usize, cancel: &CancellationToken) -> Pa
             max_attempts: 3,
             poll_interval: Duration::from_secs(1),
             block_bytes: 32,
+            // 64 ms for a 64-bit label without a fault.
+            cost: Cost {
+                base: Duration::ZERO,
+                per_bit: Duration::from_millis(1),
+            },
         },
     );
     tokio::spawn(worker.run(cancel.clone()));
@@ -519,5 +525,76 @@ async fn retrieval_matrix() {
         .await
         .unwrap();
     assert_eq!(got, 200);
+
+    // Run B tools. A burst of 50 users, each label asked twice by each of 4 connectors.
+    let four: Vec<_> = (0..4).map(|_| connector(&parties, &[], deadline)).collect();
+    let burst = |users, prefix, window| Burst {
+        users,
+        window,
+        copies: 1,
+        pad_length: 64,
+        label_prefix: prefix,
+        lead: Duration::ZERO,
+        only: None,
+        retry_deadline: None,
+    };
+    let report = load::burst(
+        &four,
+        &Burst {
+            copies: 2,
+            ..burst(50, 0x00, Duration::from_secs(2))
+        },
+    )
+    .await;
+    println!("burst: {}", serde_json::to_string(&report).unwrap());
+    assert_eq!(
+        (report.requests, report.ok, report.failed_labels),
+        (400, 400, 0),
+        "{report:?}"
+    );
+    // The cost model: no label is served before its 64 ms evaluation.
+    assert!(report.latency_ms.p50 >= 64, "{report:?}");
+    assert!(
+        report.max_fds > 0 && report.lag_ms.max < 1_000,
+        "{report:?}"
+    );
+    // Labels that miss the deadline (8 s evaluations, 3 s deadline) are served from the stored
+    // output once the queue drained.
+    let short: Vec<_> = (0..2)
+        .map(|_| connector(&parties, &[], Duration::from_secs(3)))
+        .collect();
+    let missed = load::burst(
+        &short,
+        &Burst {
+            retry_deadline: Some(Duration::from_secs(15)),
+            ..burst(3, 0x7f, Duration::ZERO)
+        },
+    )
+    .await;
+    assert_eq!(
+        (missed.failed.len(), missed.failed_labels),
+        (6, 3),
+        "{missed:?}"
+    );
+    let retried = missed.retry.expect("retried");
+    assert!(retried.retried == 6 && retried.ok == 6, "{retried:?}");
+    // One connector asks one coprocessor: `only`.
+    let asked = load::burst(
+        &four[..1],
+        &Burst {
+            only: Some(3),
+            ..burst(10, 0x00, Duration::ZERO)
+        },
+    )
+    .await;
+    assert_eq!((asked.requests, asked.ok), (10, 10), "{asked:?}");
+    // A rogue repeats stored outputs, one label per loop: the first request evaluates it.
+    let paths = (0..4).map(|_| retrieval(0x00, None).path()).collect();
+    let hammered = load::hammer(one.clone(), 1, Method::GET, paths, Duration::from_secs(1)).await;
+    println!("hammer: {}", serde_json::to_string(&hammered).unwrap());
+    assert!(
+        hammered.requests > 10 && hammered.statuses.keys().eq(["200"]) && hammered.mb_per_s > 0.0,
+        "{hammered:?}"
+    );
     cancel.cancel();
 }

@@ -33,6 +33,7 @@ pub struct Coprocessor {
     pub signer: Address,
 }
 
+#[derive(Clone)]
 pub struct Connector {
     pub key: PrivateKeySigner,
     pub domain: Eip712Domain,
@@ -484,6 +485,22 @@ impl Connector {
         fhevm_sig_auth::sign(&self.key, &self.domain, audience, &target, b"", expires)
             .await
             .expect("a local key signs")
+    }
+
+    /// One signed request, freshly signed, without retries.
+    pub async fn send(
+        &self,
+        i: usize,
+        method: Method,
+        path: &str,
+    ) -> reqwest::Result<reqwest::Response> {
+        let coprocessor = &self.coprocessors[i];
+        let header = self.sign(coprocessor.signer, path, None).await;
+        self.http
+            .request(method, format!("{}{path}", coprocessor.url))
+            .header(AUTHORIZATION, header.to_string())
+            .send()
+            .await
     }
 
     /// The request loop of the retrieval to one coprocessor, alone, until the deadline.

@@ -4,4 +4,5 @@
 
 pub mod connector;
 pub mod faults;
+pub mod load;
 pub mod pad_worker;

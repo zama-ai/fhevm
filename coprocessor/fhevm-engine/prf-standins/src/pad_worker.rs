@@ -34,6 +34,21 @@ pub struct PadWorkerConfig {
     /// Bytes of each PRF block in the stand-in ciphertexts, to give bodies a realistic size. Every
     /// party must use the same value, or their digests differ.
     pub block_bytes: usize,
+    /// The evaluation time of a label without a fault: `base + per_bit x padLength`, the stand-in
+    /// for the FHE cost. A fault delay replaces it.
+    pub cost: Cost,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Cost {
+    pub base: Duration,
+    pub per_bit: Duration,
+}
+
+impl Cost {
+    pub fn of(&self, pad_length: u16) -> Duration {
+        self.base + self.per_bit * u32::from(pad_length)
+    }
 }
 
 pub struct Pad {
@@ -101,7 +116,13 @@ impl PadWorker {
 
     /// Runs until `cancel`, or until a task fails.
     pub async fn run(self: Arc<Self>, cancel: CancellationToken) -> anyhow::Result<()> {
-        info!(signer = %self.signer.address(), faults = ?self.config.faults, "stand-in pad-worker started");
+        info!(
+            signer = %self.signer.address(),
+            faults = ?self.config.faults,
+            concurrency = self.config.concurrency,
+            cost = ?self.config.cost,
+            "stand-in pad-worker started"
+        );
         let mut tasks = JoinSet::new();
         tasks.spawn(self.clone().listen(cancel.clone()));
         tasks.spawn(self.clone().reap(cancel.clone()));
@@ -240,6 +261,12 @@ impl PadWorker {
                 return Ok(());
             }
             Some(Fault::Delay(delay)) => self.hold_lease(path, *delay).await?,
+            None => {
+                let cost = self.config.cost.of(path.pad_length);
+                if !cost.is_zero() {
+                    self.hold_lease(path, cost).await?;
+                }
+            }
             _ => {}
         }
 
