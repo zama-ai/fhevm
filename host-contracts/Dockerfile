@@ -1,4 +1,4 @@
-FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS prod
+FROM cgr.dev/zama.ai/node:22.23.4-dev AS prod
 
 USER root
 
@@ -7,28 +7,21 @@ RUN apk add --no-cache \
     curl \
     git \
     jq \
-    kubectl \
-    python3 \
-    python3-dev \
-    make \
-    g++ \
-    gcc \
-    nodejs-dev && \
-    ln -sf /usr/bin/gcc /usr/bin/cc && \
-    rm -rf /var/cache/apk/*
+    kubectl-1.34-default \
+    python-3.12 \
+    python-3.12-dev && \
+    addgroup -g 10001 fhevm && \
+    adduser -D -u 10000 -G fhevm fhevm && \
+    mkdir -p /home/fhevm
 
 # pnpm (used by host-contracts/lz-wiring/) and Foundry `cast` (used by
 # host-contracts/lz_wiring_from_eoa_owner.sh) — baked in so LayerZero
 # bridge wiring can run without any runtime installs.
 RUN npm install -g pnpm@9
 
-# Foundry publishes native musl/alpine builds; grab the archive directly
-# instead of running foundryup (which downloads the glibc build and then
-# fails to load on Alpine with `Error relocating cast: fcntl64: symbol
-# not found`). Pin FOUNDRY_VERSION explicitly so image builds are
-# reproducible.
+# Chainguard uses glibc, so use the Linux archive rather than the Alpine build.
 ARG FOUNDRY_VERSION=v1.7.1
-RUN curl -fsSL "https://github.com/foundry-rs/foundry/releases/download/${FOUNDRY_VERSION}/foundry_${FOUNDRY_VERSION}_alpine_amd64.tar.gz" \
+RUN curl -fsSL "https://github.com/foundry-rs/foundry/releases/download/${FOUNDRY_VERSION}/foundry_${FOUNDRY_VERSION}_linux_amd64.tar.gz" \
       | tar -xz -C /usr/local/bin forge cast anvil chisel
 
 RUN mkdir -p /app && \
