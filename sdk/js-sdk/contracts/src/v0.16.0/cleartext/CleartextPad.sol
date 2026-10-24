@@ -33,9 +33,4 @@ library CleartextPad {
             }
         }
     }
-
-    /// @notice Byte `byteIndex` of the pad stream of `(prf, label)`.
-    function padByte(uint16 prf, bytes32 label, uint256 byteIndex) internal pure returns (uint8) {
-        return uint8(padBlock(prf, label, byteIndex / 32)[byteIndex % 32]);
-    }
 }

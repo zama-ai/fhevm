@@ -150,10 +150,17 @@ contract CleartextFHEVMExecutor is FHEVMExecutor, PaddedInputter {
         returns (uint256 value)
     {
         (uint256 byteOffset, uint256 byteLength) = _paddedPartRange(inputPackage, pkg, inputIndex);
+        // A part is at most 32 bytes, so it spans at most two pad blocks: hash each one once.
+        uint256 blockIndex = type(uint256).max;
+        bytes32 padBlock;
         for (uint256 k = 0; k < byteLength; ++k) {
-            uint8 c = uint8(inputPackage[pkg.ciphertextOffset + byteOffset + k]);
-            uint8 r = CleartextPad.padByte(pkg.prf, pkg.label, byteOffset + k);
-            value |= uint256(c ^ r) << (8 * k);
+            uint256 j = byteOffset + k;
+            if (j / 32 != blockIndex) {
+                blockIndex = j / 32;
+                padBlock = CleartextPad.padBlock(pkg.prf, pkg.label, blockIndex);
+            }
+            uint8 c = uint8(inputPackage[pkg.ciphertextOffset + j]);
+            value |= uint256(c ^ uint8(padBlock[j % 32])) << (8 * k);
         }
         value = CleartextArithmetic.clamp(value, FheTypeBitWidth.bitWidthForType(uint8(inputType)));
         value = CleartextArithmetic.normalizePlaintextToType(value, inputType);
