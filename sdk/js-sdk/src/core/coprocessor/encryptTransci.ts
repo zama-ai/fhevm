@@ -115,13 +115,15 @@ export async function encryptTransci(context: Context, parameters: Parameters): 
     nonce,
   };
 
-  // 3. Label = hash(witness).
-  const label = _computePadLabel({
+  // 3. Label = hash(witness). The same witness bytes go into the package header,
+  //    where the host contract hashes them again to check the label.
+  const witnessBytes = _serializePadWitness({
     witnessVersion: PAD_WITNESS_VERSION,
     prf: PAD_PRF_INSTANCE,
     chainId,
     ...witnessFields,
   });
+  const label = _computePadLabel(witnessBytes);
 
   const witness: PadWitness = Object.freeze({ ...witnessFields, label, padLength });
 
@@ -175,15 +177,7 @@ export async function encryptTransci(context: Context, parameters: Parameters): 
   const parts = values.map((v) => fheTypeIdFromName(fheTypeNameFromTypeName(v.type)));
   const inputPackage = concatBytes(
     Uint8Array.of(PAD_PACKAGE_TYPE),
-    _uintToBytes(BigInt(PAD_WITNESS_VERSION), 1),
-    _uintToBytes(BigInt(PAD_PRF_INSTANCE), 2),
-    _uintToBytes(chainId, 8),
-    hexToBytes(witness.submitter),
-    hexToBytes(witness.consumer),
-    _uintToBytes(witness.expirationTimestamp, 8),
-    _uintToBytes(BigInt(witness.decryptors.length), 1),
-    ...witness.decryptors.map((d) => hexToBytes(d)),
-    hexToBytes(witness.nonce),
+    witnessBytes,
     hexToBytes(label),
     _uintToBytes(BigInt(parts.length), 1),
     Uint8Array.from(parts),
@@ -222,12 +216,12 @@ function _computePadLength(values: readonly TypedValue[]): Uint16Number {
 }
 
 /**
- * RFC-030 label:
- *   keccak256("FHE_padl" ‖ witnessVersion ‖ prf ‖ chainId ‖ submitter ‖ consumer ‖
- *             expirationTimestamp ‖ decryptorCount ‖ decryptors ‖ nonce)
+ * RFC-030 witness bytes, as they appear in the input package after `packageType`:
+ *   witnessVersion ‖ prf ‖ chainId ‖ submitter ‖ consumer ‖ expirationTimestamp ‖
+ *   decryptorCount ‖ decryptors ‖ nonce
  * Fixed-width big-endian fields; addresses are 20 bytes, the nonce 16 bytes.
  */
-function _computePadLabel(w: {
+function _serializePadWitness(w: {
   readonly witnessVersion: Uint8Number;
   readonly prf: Uint16Number;
   readonly chainId: Uint64BigInt;
@@ -236,13 +230,12 @@ function _computePadLabel(w: {
   readonly expirationTimestamp: Uint64BigInt;
   readonly decryptors: readonly ChecksummedAddress[];
   readonly nonce: BytesHex;
-}): Bytes32Hex {
+}): Uint8Array {
   const nonce = hexToBytes(w.nonce);
   if (nonce.length !== 16) {
     throw new Error(`Invalid witness nonce length: ${nonce.length} bytes (expected 16).`);
   }
-  const parts: Uint8Array[] = [
-    PAD_LABEL_DOMAIN_SEPARATOR,
+  return concatBytes(
     _uintToBytes(BigInt(w.witnessVersion), 1),
     _uintToBytes(BigInt(w.prf), 2),
     _uintToBytes(w.chainId, 8),
@@ -252,9 +245,12 @@ function _computePadLabel(w: {
     _uintToBytes(BigInt(w.decryptors.length), 1),
     ...w.decryptors.map((d) => hexToBytes(d)),
     nonce,
-  ];
+  );
+}
 
-  return bytes32ToHex(keccak_256(concatBytes(...parts)));
+/** RFC-030 label: keccak256("FHE_padl" ‖ witnessBytes), see {@link _serializePadWitness}. */
+function _computePadLabel(witnessBytes: Uint8Array): Bytes32Hex {
+  return bytes32ToHex(keccak_256(concatBytes(PAD_LABEL_DOMAIN_SEPARATOR, witnessBytes)));
 }
 
 /** Big-endian, fixed width. */
