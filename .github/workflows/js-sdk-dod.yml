@@ -6,11 +6,12 @@ name: js-sdk-dod
 # commands as independent jobs on separate runners, so wall-clock collapses to
 # roughly the slowest single job (the ~20-25 min localstack legs).
 #
-# NOT a required status check — this runs on PRs for visibility but does not
-# block merge (branch protection is not configured for it).
+# Required status check on release/0.14.x through the `js-sdk-dod/dod (bpr)`
+# job, which always reports.
 #
 # Triggers:
-#   - pull_request to devex/js-sdk / main  -> runs the REAL jobs.
+#   - pull_request to release/0.14.x -> runs the jobs below when the PR touches
+#     the SDK, its stack setup, or this workflow; otherwise only (bpr) reports.
 #   - workflow_dispatch                    -> `mode: dry-run` (default) runs a
 #     cheap sleep+trace matrix to validate the parallel fan-out (works with
 #     `act` locally); `mode: real` runs the real jobs.
@@ -21,11 +22,7 @@ name: js-sdk-dod
 on:
   pull_request:
     branches:
-      - devex/js-sdk
-      - main
-    paths:
-      - "sdk/js-sdk/**"
-      - ".github/workflows/js-sdk-dod.yml"
+      - release/0.14.x
   workflow_dispatch:
     inputs:
       mode:
@@ -75,10 +72,7 @@ jobs:
           - browser
           - cleartext-v12
           - cleartext-v13
-          - localstack-v11
-          - localstack-v12
-          - localstack-v13
-          - localstack-latest
+          - localstack-v14
     steps:
       # Pass matrix values through env (not direct ${{ }} expansion in the
       # shell) to avoid template-injection — zizmor / GitHub code scanning.
@@ -90,6 +84,29 @@ jobs:
           MATRIX_NAME: ${{ matrix.name }}
         run: echo "::notice title=${MATRIX_NAME}::end $(date -u +%T)"
 
+  # --- Path filter: the jobs below run only when the PR touches the SDK ---
+  check-changes:
+    name: js-sdk-dod/check-changes
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: "read" # checkout the repository
+      pull-requests: "read" # list the PR's changed files
+    outputs:
+      sdk: ${{ steps.filter.outputs.sdk }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: "false"
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            sdk:
+              - .github/workflows/js-sdk-dod.yml
+              - sdk/js-sdk/**
+              - test-suite/fhevm/**
+
   # ===========================================================================
   # REAL JOBS — run on PRs, or on workflow_dispatch with mode=real.
   # Each job mirrors a slice of dod.mjs. They are independent and run in
@@ -100,7 +117,8 @@ jobs:
   # --- Standard gate: prod build (clean/codegen/prettier/lint/builds) + unit ---
   quality:
     name: dod quality (build:prod + unit)
-    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
+    needs: check-changes
+    if: ${{ !cancelled() && (inputs.mode == 'real' || needs.check-changes.outputs.sdk == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -125,7 +143,8 @@ jobs:
   # --- Dev-profile build check (dod step: BUILD_PROFILE=dev build) ---
   build-dev:
     name: dod build:dev
-    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
+    needs: check-changes
+    if: ${{ !cancelled() && (inputs.mode == 'real' || needs.check-changes.outputs.sdk == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -149,7 +168,8 @@ jobs:
   # --- Browser WASM test (Playwright) ---
   browser:
     name: dod browser
-    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
+    needs: check-changes
+    if: ${{ !cancelled() && (inputs.mode == 'real' || needs.check-changes.outputs.sdk == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -175,7 +195,8 @@ jobs:
   # --- Cleartext (Anvil) suites: one job per foundry profile ---
   cleartext:
     name: dod cleartext ${{ matrix.profile }}
-    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
+    needs: check-changes
+    if: ${{ !cancelled() && (inputs.mode == 'real' || needs.check-changes.outputs.sdk == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -218,10 +239,11 @@ jobs:
           # shellcheck disable=SC2086
           ./test/scripts/localcleartext-run-tests.sh ${CLEARTEXT_FLAGS}
 
-  # --- Localstack (full FHE stack) suites: one job per protocol version ---
+  # --- Localstack (full FHE stack) suite against the pinned v0.14 release ---
   localstack:
     name: dod localstack ${{ matrix.name }}
-    if: ${{ github.event_name == 'pull_request' || inputs.mode == 'real' }}
+    needs: check-changes
+    if: ${{ !cancelled() && (inputs.mode == 'real' || needs.check-changes.outputs.sdk == 'true') }}
     runs-on: large_ubuntu_32
     timeout-minutes: 60
     permissions:
@@ -235,14 +257,8 @@ jobs:
       max-parallel: 4
       matrix:
         include:
-          - name: v11
-            script: test:localstack:v11
-          - name: v12
-            script: test:localstack:v12
-          - name: v13
-            script: test:localstack:v13
-          - name: latest
-            script: test:localstack
+          - name: v14
+            script: test:localstack:v14
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
@@ -294,3 +310,24 @@ jobs:
         run: |
           ulimit -n 65536
           npm run "${LOCALSTACK_SCRIPT}"
+
+  # --- Required check: always reports, fails if any job above failed ---
+  dod-status:
+    name: js-sdk-dod/dod (bpr)
+    needs: [check-changes, quality, build-dev, browser, cleartext, localstack]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      NEEDS_RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - name: Check results
+        working-directory: ${{ runner.temp }} # no checkout; skip the sdk/js-sdk default
+        run: |
+          for result in $NEEDS_RESULTS; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "One or more jobs failed or were cancelled: $NEEDS_RESULTS"
+              exit 1
+            fi
+          done
+          echo "All jobs passed or were skipped: $NEEDS_RESULTS"
