@@ -224,12 +224,7 @@ function _parseCrsDigest(crsMaterials: unknown): Uint8Array {
   return hexToBytes(crsMaterials[1]);
 }
 
-/**
- * Relayers in on-chain mode serve the 32-byte id as 0x-prefixed hex, which
- * must equal the active id. Older relayers serve a fixed label instead (e.g.
- * "fhe-public-key-data-id"); the digest check alone then binds the bytes to the
- * active id, as the digest is the one recorded for that id.
- */
+// A label id (e.g. "fhe-public-key-data-id", served by relayers today) is not compared, as the digest check already binds the bytes to the active key; to be made strict with the unified caching scheme.
 function _assertIdMatch(subject: string, relayerId: string, activeId: bigint): void {
   if (!/^0x[0-9a-fA-F]{64}$/.test(relayerId)) {
     return;
