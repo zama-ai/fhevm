@@ -4,7 +4,7 @@ use crate::{
 };
 use alloy::{network::Ethereum, providers::Provider};
 use anyhow::anyhow;
-use connector_utils::conn::{DefaultProvider, connect_to_db, connect_to_rpc_node};
+use connector_utils::conn::{DefaultProvider, connect_to_db, connect_to_rpc_node_with_timeout};
 use tokio::join;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -42,13 +42,13 @@ where
         self.ethereum_listener
             .store_on_chain_context()
             .await
-            .map_err(|e| anyhow!("Failed to store current context: {e}"))?;
+            .map_err(|e| anyhow!("Failed to store current context: {e:#}"))?;
 
         // Invalidate cached-valid contexts/epochs
         self.ethereum_listener
             .revalidate_context_cache()
             .await
-            .map_err(|e| anyhow!("Failed to revalidate the KMS context cache: {e}"))?;
+            .map_err(|e| anyhow!("Failed to revalidate the KMS context cache: {e:#}"))?;
 
         join!(
             self.gateway_listener.start(),
@@ -67,10 +67,18 @@ impl EventListener<DefaultProvider, DefaultProvider> {
         cancel_token: CancellationToken,
     ) -> anyhow::Result<(Self, State<DefaultProvider, DefaultProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let gateway_provider =
-            connect_to_rpc_node(config.gateway_url.clone(), config.gateway_chain_id).await?;
-        let ethereum_provider =
-            connect_to_rpc_node(config.ethereum_url.clone(), config.ethereum_chain_id).await?;
+        let gateway_provider = connect_to_rpc_node_with_timeout(
+            config.gateway_url.clone(),
+            config.gateway_chain_id,
+            config.rpc_call_timeout,
+        )
+        .await?;
+        let ethereum_provider = connect_to_rpc_node_with_timeout(
+            config.ethereum_url.clone(),
+            config.ethereum_chain_id,
+            config.rpc_call_timeout,
+        )
+        .await?;
 
         let state = State::new(
             db_pool.clone(),

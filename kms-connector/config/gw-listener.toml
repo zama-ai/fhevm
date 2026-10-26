@@ -53,6 +53,11 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_MAX_CONSECUTIVE_POLLING_ERRORS
 # max_consecutive_polling_errors = 20
 
+# Timeout of a single Gateway or Ethereum RPC call, until its whole response is received (optional, defaults to 10s)
+# It also bounds eth_getLogs: raise it, or lower get_logs_batch_size, if large block ranges time out.
+# ENV: KMS_CONNECTOR_RPC_CALL_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# rpc_call_timeout = "10s"
+
 # Block number to start processing decryption events from (optional, defaults to latest block if not set)
 # ENV: KMS_CONNECTOR_DECRYPTION_FROM_BLOCK_NUMBER
 # decryption_from_block_number = 1234

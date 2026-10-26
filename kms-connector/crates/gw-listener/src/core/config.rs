@@ -87,6 +87,14 @@ pub struct Config {
     #[serde(default = "default_max_consecutive_polling_errors")]
     pub max_consecutive_polling_errors: usize,
 
+    /// Timeout of a single Gateway or Ethereum RPC call.
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_rpc_call_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
+    pub rpc_call_timeout: Duration,
+
     /// Optional block number to start processing decryption events from.
     pub decryption_from_block_number: Option<u64>,
     /// Optional block number to start processing KMS operation events from.
@@ -115,6 +123,10 @@ fn default_max_consecutive_polling_errors() -> usize {
     20
 }
 
+fn default_rpc_call_timeout() -> Duration {
+    Duration::from_secs(10)
+}
+
 // Default implementation for testing purpose
 impl Default for Config {
     fn default() -> Self {
@@ -136,6 +148,7 @@ impl Default for Config {
             key_management_polling: default_key_management_polling(),
             get_logs_batch_size: default_get_logs_batch_size(),
             max_consecutive_polling_errors: default_max_consecutive_polling_errors(),
+            rpc_call_timeout: default_rpc_call_timeout(),
             decryption_from_block_number: None,
             kms_operation_from_block_number: None,
         }
@@ -162,6 +175,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_GET_LOGS_BATCH_SIZE");
             env::remove_var("KMS_CONNECTOR_MAX_CONSECUTIVE_POLLING_ERRORS");
+            env::remove_var("KMS_CONNECTOR_RPC_CALL_TIMEOUT");
         }
     }
 
@@ -246,11 +260,13 @@ mod tests {
         let service_name = "kms-connector-override";
         let get_logs_batch_size: u64 = 500;
         let max_consecutive_polling_errors = 5;
+        let rpc_call_timeout = Duration::from_secs(3);
         let mut expected_config = example_config.clone();
         expected_config.gateway_chain_id = gateway_chain_id;
         expected_config.service_name = service_name.to_string();
         expected_config.get_logs_batch_size = get_logs_batch_size;
         expected_config.max_consecutive_polling_errors = max_consecutive_polling_errors;
+        expected_config.rpc_call_timeout = rpc_call_timeout;
         unsafe {
             env::set_var(
                 "KMS_CONNECTOR_GATEWAY_CHAIN_ID",
@@ -265,6 +281,7 @@ mod tests {
                 "KMS_CONNECTOR_MAX_CONSECUTIVE_POLLING_ERRORS",
                 max_consecutive_polling_errors.to_string(),
             );
+            env::set_var("KMS_CONNECTOR_RPC_CALL_TIMEOUT", "3s");
         }
 
         // Load config from both sources

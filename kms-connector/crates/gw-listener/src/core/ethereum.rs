@@ -99,7 +99,7 @@ where
             biased;
             _ = self.cancel_token.cancelled() => info!("KMSGeneration polling cancelled..."),
             result = self.run_poll_loop() => if let Err(e) = result {
-                error!("KMSGeneration polling failed: {e}");
+                error!("KMSGeneration polling failed: {e:#}");
             }
         }
         self.cancel_token.cancel();
@@ -227,7 +227,7 @@ where
                         .with_label_values(&["ethereum"])
                         .inc();
                     consecutive_errors = consecutive_errors.saturating_add(1);
-                    warn!("Ethereum listening error: {e} ({consecutive_errors}/{max_errors})");
+                    warn!("Ethereum listening error: {e:#} ({consecutive_errors}/{max_errors})");
                     if consecutive_errors >= max_errors {
                         anyhow::bail!("Too many consecutive errors for Ethereum polling");
                     }

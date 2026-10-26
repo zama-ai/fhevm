@@ -76,7 +76,7 @@ where
             biased;
             _ = self.cancel_token.cancelled() => info!("Decryption polling cancelled..."),
             result = self.run_poll_loop() => if let Err(e) = result {
-                error!("Decryption polling failed: {e}");
+                error!("Decryption polling failed: {e:#}");
             }
         }
         self.cancel_token.cancel();
@@ -132,7 +132,7 @@ where
                         .with_label_values(&["decryption"])
                         .inc();
                     consecutive_errors = consecutive_errors.saturating_add(1);
-                    warn!("Decryption listening error: {e} ({consecutive_errors}/{max_errors})");
+                    warn!("Decryption listening error: {e:#} ({consecutive_errors}/{max_errors})");
                     if consecutive_errors >= max_errors {
                         anyhow::bail!("Too many consecutive errors for Decryption");
                     }

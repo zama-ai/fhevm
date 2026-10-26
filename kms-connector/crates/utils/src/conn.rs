@@ -69,11 +69,11 @@ pub type WalletProviderFillers = JoinFill<
     WalletFiller<EthereumWallet>,
 >;
 
-/// The ceilings of a RPC connection: how many calls it may have in flight, and how long any single
-/// one of them may take.
+/// The ceilings of a RPC connection: how long any single call may take, and optionally how many
+/// calls it may have in flight.
 #[derive(Clone, Copy, Debug)]
 struct RpcCallBounds {
-    max_concurrent_calls: NonZeroUsize,
+    max_concurrent_calls: Option<NonZeroUsize>,
     call_timeout: Duration,
 }
 
@@ -97,7 +97,23 @@ pub async fn connect_to_rpc_node_with_bounds(
     call_timeout: Duration,
 ) -> anyhow::Result<DefaultProvider> {
     let bounds = RpcCallBounds {
-        max_concurrent_calls,
+        max_concurrent_calls: Some(max_concurrent_calls),
+        call_timeout,
+    };
+    connect_to_rpc_node_inner(rpc_node_url, Some(bounds), || {
+        ProviderBuilder::new().with_chain_id(chain_id)
+    })
+    .await
+}
+
+/// Tries to establish the connection with a RPC node, bounding the duration of each call.
+pub async fn connect_to_rpc_node_with_timeout(
+    rpc_node_url: Url,
+    chain_id: u64,
+    call_timeout: Duration,
+) -> anyhow::Result<DefaultProvider> {
+    let bounds = RpcCallBounds {
+        max_concurrent_calls: None,
         call_timeout,
     };
     connect_to_rpc_node_inner(rpc_node_url, Some(bounds), || {
@@ -164,7 +180,12 @@ where
                 .map_err(|e| anyhow!("Failed to create the RPC HTTP client: {e}"))?;
             let transport = Http::with_client(http_client, rpc_node_url.clone());
             let is_local = transport.guess_local();
-            bounded_rpc_client(transport, is_local, bounds.max_concurrent_calls)
+            match bounds.max_concurrent_calls {
+                Some(max_concurrent_calls) => {
+                    bounded_rpc_client(transport, is_local, max_concurrent_calls)
+                }
+                None => ClientBuilder::default().transport(transport, is_local),
+            }
         }
         None => {
             let transport = Http::new(rpc_node_url.clone());
@@ -292,5 +313,32 @@ mod tests {
         assert!(calls_res.iter().all(|r| r.is_ok()), "{calls_res:?}");
 
         assert_eq!(in_flight.max.load(Ordering::SeqCst), CALLS);
+    }
+
+    #[tokio::test]
+    async fn timed_out_calls_end_on_their_deadline() {
+        const CALL_TIMEOUT: Duration = Duration::from_millis(200);
+
+        let (url, accept_loop) = black_hole_server().await;
+        let url = Url::parse(&url).unwrap();
+        let provider = connect_to_rpc_node_with_timeout(url, 1, CALL_TIMEOUT)
+            .await
+            .expect("the provider with a call timeout should have been built");
+
+        // Without the deadline, the silent node would leave this call pending forever.
+        let started = std::time::Instant::now();
+        let call = tokio::time::timeout(Duration::from_secs(5), provider.get_block_number())
+            .await
+            .expect("the call should have ended on its own deadline");
+        let err = call.unwrap_err();
+
+        // And the deadline is what ended it, rather than the call failing on the spot.
+        assert!(started.elapsed() >= CALL_TIMEOUT, "{:?}", started.elapsed());
+
+        // The listeners log errors with their sources (`{:#}`), which say the call timed out.
+        let logged = format!("{:#}", anyhow::Error::from(err));
+        assert!(logged.contains("timed out"), "{logged}");
+
+        accept_loop.abort();
     }
 }
