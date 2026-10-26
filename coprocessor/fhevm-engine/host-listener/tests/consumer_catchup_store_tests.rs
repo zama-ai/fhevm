@@ -599,6 +599,8 @@ async fn suppression_waits_for_ingestion_and_prechecked_old_blocks_cannot_commit
             options.clone(),
         )
         .await
+        .unwrap()
+        .require_complete()
         .unwrap();
     }
     let blocks: Vec<i64> = sqlx::query_scalar("SELECT block_number FROM host_chain_blocks_valid WHERE chain_id = 1 ORDER BY block_number").fetch_all(&pool).await.unwrap();
