@@ -495,12 +495,11 @@ provides what the chart does not:
   (`kms-connector-tx-sender-1`).
 
 With `automated_tests`, `scripts/e2e/check-coprocessor-proxy.sh` then checks that
-every proxy rolled out with its replicas Ready, and restarts every proxy under a
+every proxy rolled out with its replicas Ready (its `/healthz` answers once the TLS
+listener is up and the KMS tx-senders have been read), and restarts every proxy under a
 steady load of signed requests from a test-suite pod, which stops once every old
-proxy pod is gone: no request may fail, and no
-new pod may be Ready before its log shows its first read of the KMS tx-senders. It
-also reports whether a test-suite pod reaches the fake's PRF port, that is, whether
-the cluster enforces NetworkPolicy; that result does not fail the run.
+proxy pod is gone: no request may fail. It also checks the NetworkPolicy: that
+test-suite pod must reach each fake's port 9090 and no fake's PRF port.
 
 When prf-service deploys here, the fake release, the NetworkPolicy overrides and the count
 URLs go, and the endpoint points at prf-service.

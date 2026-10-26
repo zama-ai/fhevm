@@ -128,8 +128,6 @@ impl<P: Provider> Follower<P> {
                 Ok(read) => {
                     if let Some((senders, block_timestamp)) = read {
                         if last.as_ref() != Some(&senders) {
-                            // ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh matches this
-                            // line.
                             info!(senders = senders.len(), "KMS tx-sender set updated");
                         }
                         self.signers.replace(senders.iter().copied());

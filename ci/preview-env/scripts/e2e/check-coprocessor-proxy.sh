@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Cluster checks of coprocessor-proxy that the e2e suite cannot make from inside a test:
-#   - every party's proxy rolled out with all its replicas Ready;
-#   - a rolling restart of every proxy under a steady load of signed requests fails none of them,
-#     and every new pod became Ready only after its first read of the KMS tx-senders;
-#   - the NetworkPolicy: a test-suite pod reaches each fake prf-service's count port (9090) but
-#     not its PRF port (8080). Reported only: whether zws-dev enforces NetworkPolicy is unknown.
+#   - every party's proxy rolled out with all its replicas Ready, that is answering /healthz,
+#     which needs the TLS listener up and a first read of the KMS tx-senders;
+#   - a rolling restart of every proxy under a steady load of signed requests fails none of them;
+#   - the NetworkPolicy: a test-suite pod reaches each fake prf-service's count port (9090), so it
+#     has a route to the fake, but not its PRF port (8080), which only the proxy may reach.
 # The load runs the "through a rolling restart" test of test-suite/e2e/test/coprocessorProxy in a
 # pod of the test-suite image.
 # Env: NAMESPACE, NB_COPROCESSOR, E2E_IMAGE, HOST_CHAIN_ID.
@@ -106,7 +106,13 @@ until started_load; do
   fi
   sleep 5
 done
-kubectl logs "${pod}" -n "${NAMESPACE}" | grep '^networkpolicy:'
+netcheck=$(kubectl logs "${pod}" -n "${NAMESPACE}" | grep '^networkpolicy:' || true)
+echo "${netcheck}"
+if [[ $(grep -c ':8080 blocked' <<<"${netcheck}") -ne ${NB_COPROCESSOR} ||
+  $(grep -c ':9090 open' <<<"${netcheck}") -ne ${NB_COPROCESSOR} ]]; then
+  echo "::error::NetworkPolicy: a test-suite pod must reach each fake prf-service's port 9090 and none's port 8080"
+  exit 1
+fi
 
 old_pods=()
 for deploy in "${deployments[@]}"; do
@@ -114,7 +120,6 @@ for deploy in "${deployments[@]}"; do
     old_pods+=("${p}")
   done < <(kubectl get pods -n "${NAMESPACE}" -l "app=coprocessor-proxy,app.kubernetes.io/name=${deploy}" -o name)
 done
-restart_started=$(date -u +%s)
 restart_deadline=$((SECONDS + restart_seconds))
 # A zero timeout would wait forever.
 remaining() { local left=$((restart_deadline - SECONDS)); echo "$((left > 0 ? left : 1))s"; }
@@ -134,50 +139,14 @@ if [[ "$(phase)" != "Running" ]]; then
 fi
 kubectl exec "${pod}" -n "${NAMESPACE}" -- touch "${stop_file}"
 
-# Every pod that started during the restart became Ready only after its first read.
-not_ready_before_read=true
-for deploy in "${deployments[@]}"; do
-  for p in $(kubectl get pods -n "${NAMESPACE}" -l "app=coprocessor-proxy,app.kubernetes.io/name=${deploy}" -o name); do
-    started=$(date -u -d "$(kubectl get "${p}" -n "${NAMESPACE}" -o jsonpath='{.metadata.creationTimestamp}')" +%s)
-    if (( started < restart_started )); then
-      continue
-    fi
-    ready_at=$(kubectl get "${p}" -n "${NAMESPACE}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].lastTransitionTime}')
-    first_read=$(kubectl logs "${p}" -n "${NAMESPACE}" --timestamps | grep -m1 'KMS tx-sender set updated' | cut -d' ' -f1 || true)
-    if [[ -z "${first_read}" ]]; then
-      echo "::error::${p}: Ready at ${ready_at} with no read of the KMS tx-senders in its log"
-      not_ready_before_read=false
-    elif (( $(date -u -d "${ready_at}" +%s) < $(date -u -d "${first_read}" +%s) )); then
-      echo "::error::${p}: Ready at ${ready_at}, before its first read at ${first_read}"
-      not_ready_before_read=false
-    else
-      echo "${p}: first read at ${first_read}, Ready at ${ready_at}"
-    fi
-  done
-done
-
 deadline=$((SECONDS + load_seconds + 300))
 until [[ "$(phase)" == "Succeeded" || "$(phase)" == "Failed" || ${SECONDS} -ge ${deadline} ]]; do
   sleep 10
 done
 kubectl logs "${pod}" -n "${NAMESPACE}" | grep -v '^networkpolicy:' || true
 load_phase=$(phase)
-
-# Report only. Enforced: 8080 blocked and 9090 open on every fake.
-logs=$(kubectl logs "${pod}" -n "${NAMESPACE}" | grep '^networkpolicy:')
-if grep -q ':8080 open' <<<"${logs}"; then
-  echo "NetworkPolicy NOT enforced: a test-suite pod reached a fake prf-service's PRF port"
-elif grep -q ':9090 blocked' <<<"${logs}"; then
-  echo "NetworkPolicy inconclusive: a test-suite pod could not reach a fake's count port either"
-else
-  echo "NetworkPolicy enforced: only the count port of each fake prf-service is reachable from a test-suite pod"
-fi
-
 if [[ "${load_phase}" != "Succeeded" ]]; then
   echo "::error::the load through the rolling restart failed (phase ${load_phase})"
   exit 1
 fi
-if [[ "${not_ready_before_read}" != "true" ]]; then
-  exit 1
-fi
-echo "coprocessor-proxy: rolling restart answered every request; no pod was Ready before its first read"
+echo "coprocessor-proxy: rolling restart answered every request; only the proxies reach the PRF port"
