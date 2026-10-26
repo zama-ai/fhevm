@@ -44,6 +44,137 @@ async fn startup_clamps_to_observed_final_head_and_marks_the_effective_end_done(
     exercise_startup(Startup::ClampedCatchup, false).await;
 }
 
+#[tokio::test]
+async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
+    use broker::{AsyncHandlerPayloadClassified, Topic};
+    use host_listener::consumer::catchup::store;
+    use primitives::{
+        event::CatchupPayload, routing, utils::chain_id_to_namespace,
+    };
+    use test_harness::instance::{setup_test_db, ImportMode};
+
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::PgPool::connect(instance.db_url.as_str()).await.unwrap();
+        let chain_id = ChainId::try_from(
+            (uuid::Uuid::new_v4().as_u128() % 900_000_000) as u64 + 100_000_000,
+        ).unwrap();
+        let identity = format!("host-listener-consumer.{}", chain_id.as_u64());
+        seed_history(&pool, chain_id.as_i64(), &[900, 999]).await;
+        let id = store::ensure_requested(
+            &pool,
+            chain_id.as_i64(),
+            &identity,
+            &ManualCatchupArgs {
+                catchup_from_block: Some(901),
+                catchup_up_to_block: Some(906),
+                no_override_catchup: true,
+                ..Default::default()
+            },
+            Some(1000),
+            None,
+            false,
+        ).await.unwrap().unwrap();
+
+        let broker_url = std::env::var("CATCHUP_BROKER_URL").unwrap();
+        let broker = Broker::from_url(&broker_url).await.unwrap();
+        let namespace = chain_id_to_namespace(chain_id.as_u64());
+        let stop = CancellationToken::new();
+        let (request_tx, mut requests) = mpsc::unbounded_channel();
+        let control = broker
+            .consumer(&Topic::namespaced(&namespace, routing::FINAL_CATCHUP))
+            .group("same-queue-repair-requests")
+            .with_cancellation(stop.clone())
+            .build().unwrap();
+        control.ensure_topology().await.unwrap();
+        let control = tokio::spawn(control.run(AsyncHandlerPayloadClassified::new(
+            move |request: CatchupPayload| {
+                let tx = request_tx.clone();
+                async move {
+                    tx.send(request).unwrap();
+                    Ok(())
+                }
+            },
+        )));
+        let run = tokio::spawn(run_consumer(test_config(
+            broker_url, instance.db_url.clone(), chain_id, ManualCatchupArgs::default(),
+        )));
+        let publisher = broker.publisher("").await.unwrap();
+        let observer = consumer::ListenerConsumer::new(&broker, chain_id.as_u64(), &identity);
+        loop {
+            let status = observer.group_status().await.unwrap();
+            if [".final-event", ".final-catchup-event"].iter().all(|suffix| {
+                status.iter().any(|(topic, groups)| topic.ends_with(suffix) && !groups.is_empty())
+            }) {
+                break;
+            }
+            assert!(!run.is_finished(), "listener stopped during startup");
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        // Establish the eligible finalized head before replay. After this,
+        // no LIVE/FINAL delivery may provide the missing history.
+        publisher.publish(
+            &routing::consumer_final_event_routing(identity.clone()),
+            &event_block(chain_id.as_u64(), 1000, BlockFlow::Final, None),
+        ).await.unwrap();
+        wait_for_events(&pool, chain_id, &[1000]).await;
+        let request = requests.recv().await.unwrap();
+        assert_eq!((request.catchup_id, request.block_start, request.block_end),
+            (Some(id), 901, 906));
+
+        let replay_routing = routing::consumer_final_catchup_event_routing(identity.clone());
+        for number in 902..=906 {
+            publisher.publish(
+                &replay_routing,
+                &event_block(chain_id.as_u64(), number, BlockFlow::FinalCatchup, Some(id)),
+            ).await.unwrap();
+        }
+        // Five blocked deliveries would open the transient-error circuit
+        // breaker. Observe them pending before delivering their dependency.
+        loop {
+            let status = observer.group_status().await.unwrap();
+            if status.iter().any(|(topic, groups)| {
+                topic.ends_with(".final-catchup-event")
+                    && groups.iter().any(|group| group.pending == 5 && group.lag == Some(0))
+            }) {
+                break;
+            }
+            assert!(!run.is_finished(), "listener stopped while waiting for history");
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert_event_sets(&pool, chain_id, &[1000]).await;
+        let repair = requests.recv().await.unwrap();
+        assert_eq!((repair.block_start, repair.block_end), (901, 901));
+        let repair_id = repair.catchup_id.unwrap();
+        assert_ne!(repair_id, id);
+        publisher.publish(
+            &replay_routing,
+            &event_block(chain_id.as_u64(), 901, BlockFlow::FinalCatchup, Some(repair_id)),
+        ).await.unwrap();
+
+        wait_for_events(&pool, chain_id, &[901, 902, 903, 904, 905, 906, 1000]).await;
+        loop {
+            let done: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM host_consumer_catchups WHERE id = ANY($1) AND status = 'DONE'",
+            ).bind(&[id, repair_id][..]).fetch_one(&pool).await.unwrap();
+            let status = observer.group_status().await.unwrap();
+            let drained = status.iter().any(|(topic, groups)| {
+                topic.ends_with(".final-catchup-event") && !groups.is_empty()
+                    && groups.iter().all(|group| group.pending == 0 && group.lag == Some(0))
+            });
+            if done == 2 && drained { break; }
+            assert!(!run.is_finished(), "listener stopped before completing replay");
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert!(!run.is_finished(), "listener stopped after recovery");
+        run.abort();
+        let _ = run.await;
+        stop.cancel();
+        control.await.unwrap().unwrap();
+        instance.parent_token.cancel();
+    }).await.expect("finalized catchup must consume its repair without live/final assistance");
+}
+
 #[derive(Clone, Copy)]
 enum Startup {
     NoFlags,
