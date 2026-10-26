@@ -302,6 +302,22 @@ There are no exemplars; find traces by time/service and correlate requests using
  - **Alarm**: If the counter increases over a period of time.
    - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
 
+#### Metric Name: `kms_connector_gw_listener_rpc_head_block`
+ - **Type**: Gauge
+ - **Labels**:
+   - `chain`: can be used to filter by chain (gateway, ethereum).
+ - **Description**: The latest head reported by the chain's RPC node: the latest block for the Gateway, the finalized block for Ethereum.
+ - **Alarm**: If the gauge stays the same over a period of time. This catches both a lagging RPC node and a listener that no longer gets the head from it, e.g. because its RPC calls keep failing or it is stuck on a DB query. The Gateway only produces blocks when it receives transactions, so a quiet chain also triggers this alarm.
+   - **Recommendation**: unchanged for 10 minutes on the Gateway, i.e. `changes(gauge{chain="gateway"}[10m]) == 0`, and for 20 minutes on Ethereum.
+
+#### Metric Name: `kms_connector_gw_listener_last_polled_block`
+ - **Type**: Gauge
+ - **Labels**:
+   - `chain`: see [description](#metric-name-kms_connector_gw_listener_rpc_head_block)
+ - **Description**: The end of the last block range the GW listener has polled and stored in DB. It is only set once the listener has stored a block range since it started. If the listener re-polls older blocks, e.g. with `decryption_from_block_number` set, it can be lower than the last block stored in DB.
+ - **Alarm**: If the GW listener falls behind the head reported by the RPC node, e.g. because `eth_getLogs` or the DB keeps failing. A lagging RPC node does not trigger this alarm, as the listener keeps up with the stale head: see [`kms_connector_gw_listener_rpc_head_block`](#metric-name-kms_connector_gw_listener_rpc_head_block) for that case.
+   - **Recommendation**: more than 100 blocks behind on the Gateway for 5 minutes, i.e. `kms_connector_gw_listener_rpc_head_block{chain="gateway"} - kms_connector_gw_listener_last_polled_block{chain="gateway"} > 100` for 5m.
+
 ### kms-worker
 
 #### Metric Name: `kms_connector_worker_event_received_counter`

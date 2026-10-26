@@ -1,5 +1,6 @@
-use crate::core::publish::ChainName;
+use crate::{core::publish::ChainName, monitoring::metrics::RPC_HEAD_BLOCK};
 use alloy::transports::http::reqwest::Url;
+use prometheus::IntGauge;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
@@ -17,6 +18,8 @@ pub struct HeadTracker {
     highest_head: Option<(u64, Instant)>,
     /// When the last stale head warning was logged, while the head has not advanced since.
     warned_at: Option<Instant>,
+    /// The `RPC_HEAD_BLOCK` gauge of the chain.
+    head_gauge: IntGauge,
 }
 
 impl HeadTracker {
@@ -27,16 +30,18 @@ impl HeadTracker {
             stale_threshold,
             highest_head: None,
             warned_at: None,
+            head_gauge: RPC_HEAD_BLOCK.with_label_values(&[chain.as_str()]),
         }
     }
 
-    /// Records the head reported by the RPC node at `now`.
+    /// Records the head reported by the RPC node at `now`, and sets the `RPC_HEAD_BLOCK` gauge.
     ///
     /// Warns, at most once per `stale_threshold`, once the head has not advanced for
     /// `stale_threshold`. Logs once when the head advances again after a warning.
     pub fn observe(&mut self, head: u64, next_block_to_poll: u64, now: Instant) {
         let chain = self.chain.as_str();
         let (head_name, idle_cause) = self.chain_wording();
+        self.head_gauge.set(i64::try_from(head).unwrap_or(i64::MAX));
 
         let (highest_head, advanced_at) = match self.highest_head {
             Some((highest_head, advanced_at)) if head <= highest_head => {
@@ -193,6 +198,20 @@ mod tests {
                 n => Err(format!("expected 1 stale head warning, got {n}")),
             },
         );
+    }
+
+    #[test]
+    fn sets_the_gauge_to_the_reported_head() {
+        let mut tracker = tracker();
+        // A gauge of its own, as other tests set the registered one concurrently.
+        tracker.head_gauge = IntGauge::new("test_rpc_head_block", "test").unwrap();
+        let start = Instant::now();
+
+        tracker.observe(100, 101, start);
+        assert_eq!(tracker.head_gauge.get(), 100);
+        // The gauge shows what the RPC node reports, even when it goes backwards.
+        tracker.observe(99, 101, start);
+        assert_eq!(tracker.head_gauge.get(), 99);
     }
 
     #[test]
