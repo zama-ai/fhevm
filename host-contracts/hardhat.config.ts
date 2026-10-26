@@ -185,6 +185,9 @@ const config: HardhatUserConfig = {
       viaIR: false,
     },
   },
+  sourcify: {
+    enabled: true,
+  },
   etherscan: {
     apiKey: process.env.ETHERSCAN_API_KEY!,
     // Chains hardhat-verify does not ship a built-in config for.
