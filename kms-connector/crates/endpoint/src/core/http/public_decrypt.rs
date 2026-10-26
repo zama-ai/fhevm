@@ -16,7 +16,8 @@ use actix_web::{
 use alloy::primitives::B256;
 use connector_utils::monitoring::otlp::PropagationContext;
 use kms_connector_api::{
-    ErrorCode, ErrorResponse, PublicDecryptionRequest, PublicDecryptionResponse,
+    ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, PublicDecryptionRequest,
+    PublicDecryptionResponse,
 };
 use sqlx::{
     PgExecutor,
@@ -42,6 +43,7 @@ pub async fn public_decrypt(
 pub struct PublicRoute;
 
 impl DecryptionRoute for PublicRoute {
+    const ROUTE: &'static str = PUBLIC_DECRYPTION_ROUTE;
     type Request = PublicDecryptionRequest;
     type ResponseRow = PublicDecryptionResponseRow;
 

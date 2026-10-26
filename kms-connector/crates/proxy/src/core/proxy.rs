@@ -2,7 +2,10 @@
 use crate::core::TlsConfig;
 use crate::{
     core::Config,
-    monitoring::health::{self, endpoint_health_check},
+    monitoring::{
+        health::{self, endpoint_health_check},
+        metrics,
+    },
 };
 use anyhow::{Context, anyhow};
 use fhevm_sig_auth::FhevmSigVerifier;
@@ -69,6 +72,11 @@ impl Proxy {
             endpoint_balancer,
         };
         Ok((proxy, state))
+    }
+
+    /// Registers the proxy's metrics, so they appear in scrapes before any requests arrive.
+    pub fn register_metrics(&self) {
+        metrics::init();
     }
 
     /// Runs the proxy until it receives `SIGTERM`, `SIGINT` or `SIGQUIT`.
