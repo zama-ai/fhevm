@@ -727,6 +727,38 @@ mod tests {
         });
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn a_hung_read_is_given_up_after_30_s_and_the_next_poll_applies() {
+        let (a, b) = (Address::repeat_byte(1), Address::repeat_byte(2));
+        let asserter = first_read(a);
+        // The hung poll consumes no answer: the mock answers a call once it is awaited. The next
+        // poll finds context 2 Active at block 101.
+        asserter.push_success(&finalized_at(101));
+        for answer in [counter(2), valid(true), valid(true), nodes(&[b])] {
+            asserter.push_success(&answer);
+        }
+        let (provider, recorded) = recorded_provider(asserter.clone());
+        let signers = RefreshableSigners::default();
+        let follower = follower(provider, &signers);
+        let stop = tokio::sync::Notify::new();
+
+        tokio::join!(follower.run(stop.notified()), async {
+            wait_for_polls(&follower, |polls| polls.finished == 1).await;
+            *recorded.delay.lock().unwrap() = Duration::from_secs(3600);
+            wait_for_polls(&follower, |polls| polls.started == 2).await;
+            let started = Instant::now();
+            wait_for_polls(&follower, |polls| polls.finished == 2).await;
+            assert_eq!(started.elapsed(), Duration::from_secs(30));
+
+            *recorded.delay.lock().unwrap() = Duration::ZERO;
+            wait_for_polls(&follower, |polls| polls.finished == 3).await;
+            stop.notify_one();
+        });
+
+        assert!(asserter.read_q().is_empty());
+        assert!(signers.allows(b));
+    }
+
     #[tokio::test]
     async fn read_errors_leave_out_what_the_rpc_wrote() {
         let echo = "error for https://rpc.example/v3/SECRET-KEY: /v3/SECRET-KEY?apikey=SECRET-KEY";
