@@ -1,6 +1,7 @@
 use crate::{
     core::{
         Config,
+        head::HeadTracker,
         publish::{ChainName, publish_batch, publish_context_and_epoch},
     },
     monitoring::metrics::EVENT_LISTENING_ERRORS,
@@ -32,7 +33,7 @@ use fhevm_host_bindings::{
     },
 };
 use sqlx::{Pool, Postgres};
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Instant};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, info_span, warn};
@@ -206,13 +207,18 @@ where
         };
         info!("Started Ethereum polling from block {from_block}");
 
+        let mut head_tracker = HeadTracker::new(
+            ChainName::Ethereum,
+            &self.config.ethereum_url,
+            self.config.ethereum_stale_head_threshold,
+        );
         let mut ticker = tokio::time::interval(self.config.key_management_polling);
         let max_errors = self.config.max_consecutive_polling_errors;
         let mut consecutive_errors: usize = 0;
         loop {
             ticker.tick().await;
             match self
-                .fetch_and_publish(base_filter.clone(), from_block)
+                .fetch_and_publish(base_filter.clone(), from_block, &mut head_tracker)
                 .await
             {
                 Ok((new_from_block, has_more)) => {
@@ -243,6 +249,7 @@ where
         &self,
         base_filter: Filter,
         from_block: u64,
+        head_tracker: &mut HeadTracker,
     ) -> anyhow::Result<(u64, bool)> {
         let finalized_block = self
             .provider
@@ -251,6 +258,7 @@ where
             .ok_or_else(|| anyhow!("Finalized block not available"))?
             .header
             .number;
+        head_tracker.observe(finalized_block, from_block, Instant::now());
 
         if from_block > finalized_block {
             return Ok((from_block, false));
@@ -593,6 +601,30 @@ mod tests {
         }
 
         eth_listener.start().await;
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(90))]
+    #[tokio::test]
+    async fn test_stale_finalized_block_is_logged() {
+        // The listener is already past the finalized block, so polling never reaches the DB.
+        let (mut test_instance, asserter, mut eth_listener) = test_setup(Some(101));
+        eth_listener.config.key_management_polling = Duration::from_millis(50);
+        eth_listener.config.ethereum_stale_head_threshold = Duration::from_millis(500);
+        for _ in 0..1000 {
+            push_finalized_block(&asserter, 100);
+        }
+
+        let cancel_token = eth_listener.cancel_token.clone();
+        let listener_task = tokio::spawn(eth_listener.start());
+        test_instance
+            .wait_for_log(
+                "The ethereum finalized block reported by RPC node localhost has stayed at block 100",
+            )
+            .await;
+
+        cancel_token.cancel();
+        listener_task.await.unwrap();
     }
 
     #[rstest::rstest]

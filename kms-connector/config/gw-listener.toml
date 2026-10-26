@@ -58,6 +58,15 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_RPC_CALL_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # rpc_call_timeout = "10s"
 
+# How long the Gateway head may stay the same before a warning is logged (optional, defaults to 10m)
+# The Gateway only produces blocks when it receives transactions: keep this above its longest quiet period.
+# ENV: KMS_CONNECTOR_GATEWAY_STALE_HEAD_THRESHOLD (format: https://docs.rs/humantime/latest/humantime/)
+# gateway_stale_head_threshold = "10m"
+
+# How long the Ethereum finalized block may stay the same before a warning is logged (optional, defaults to 20m)
+# ENV: KMS_CONNECTOR_ETHEREUM_STALE_HEAD_THRESHOLD (format: https://docs.rs/humantime/latest/humantime/)
+# ethereum_stale_head_threshold = "20m"
+
 # Block number to start processing decryption events from (optional, defaults to latest block if not set)
 # ENV: KMS_CONNECTOR_DECRYPTION_FROM_BLOCK_NUMBER
 # decryption_from_block_number = 1234
