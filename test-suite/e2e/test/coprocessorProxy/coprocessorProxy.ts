@@ -29,12 +29,16 @@ interface Sent {
   where: string;
 }
 
-/** GET over TLS, trusting the proxies' self-signed test certificate. */
-function get(url: string, authorization: string): Promise<Omit<Sent, 'forwarded' | 'where'>> {
+/** A request over TLS, trusting the proxies' self-signed test certificate. */
+function request(
+  method: 'GET' | 'HEAD',
+  url: string,
+  authorization: string,
+): Promise<Omit<Sent, 'forwarded' | 'where'>> {
   const ca = readFileSync(process.env.COPROCESSOR_PROXY_CA_CERT!);
   return new Promise((resolve, reject) => {
     const req = https
-      .get(url, { ca, headers: { authorization }, signal: AbortSignal.timeout(30_000) }, (res) => {
+      .request(url, { method, ca, headers: { authorization }, signal: AbortSignal.timeout(30_000) }, (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
         res.on('end', () =>
@@ -42,6 +46,7 @@ function get(url: string, authorization: string): Promise<Omit<Sent, 'forwarded'
         );
       })
       .on('error', (err) => reject(new Error(`${err.message}${req.reusedSocket ? ' on a reused connection' : ''}`)));
+    req.end();
   });
 }
 
@@ -113,16 +118,26 @@ describe('Coprocessor proxy', function () {
   const sign = (i: number, path: string, opts?: { signer?: BaseWallet; expires?: number }) =>
     fhevmSigHeader(path, '', signers[i], { signer: new Wallet(process.env.KMS_CONNECTOR_PRIVATE_KEY!), ...opts });
 
-  async function send(i: number, path: string, authorization: string): Promise<Sent> {
+  async function send(i: number, path: string, authorization: string, method: 'GET' | 'HEAD' = 'GET'): Promise<Sent> {
     const before = await prfRequests(countUrls[i]);
-    const reply = await get(`${urls[i]}${path}`, authorization);
+    const reply = await request(method, `${urls[i]}${path}`, authorization);
     const forwarded = (await prfRequests(countUrls[i])) - before;
-    return { ...reply, forwarded, where: `${urls[i]}${path} -> ${reply.status} ${reply.body}` };
+    return { ...reply, forwarded, where: `${method} ${urls[i]}${path} -> ${reply.status} ${reply.body}` };
   }
 
   it('forwards a request a KMS tx-sender signed and returns the answer unchanged', async function () {
     for (const i of urls.keys()) {
       expectForwarded(await send(i, PRF_PATH, await sign(i, PRF_PATH)));
+    }
+  });
+
+  it('forwards a signed HEAD request and returns the answer headers without a body', async function () {
+    for (const i of urls.keys()) {
+      const sent = await send(i, PRF_PATH, await sign(i, PRF_PATH), 'HEAD');
+      expect(sent.status, sent.where).to.equal(200);
+      expect(sent.headers['x-prf-attestation'], sent.where).to.be.a('string');
+      expect(sent.body, sent.where).to.have.lengthOf(0);
+      expect(sent.forwarded, sent.where).to.equal(1);
     }
   });
 
@@ -210,7 +225,7 @@ describe('Coprocessor proxy', function () {
         const i = sent % urls.length;
         const fail = (reason: string) => failures.push(`${new Date().toISOString()} ${urls[i]} -> ${reason}`);
         try {
-          const reply = await get(`${urls[i]}${PRF_PATH}`, await sign(i, PRF_PATH));
+          const reply = await request('GET', `${urls[i]}${PRF_PATH}`, await sign(i, PRF_PATH));
           if (reply.status !== 200) fail(`${reply.status} ${reply.body}`);
         } catch (err) {
           fail(`${err}`);
