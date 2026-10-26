@@ -1923,7 +1923,8 @@ coprocessorProxy:
     extraIngress: []
 
   # Additional environment variables, e.g. COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL.
-  # `coprocessor-proxy --help` lists every setting and its variable.
+  # `coprocessor-proxy --help` lists every setting and its variable. commonConfig.env does not
+  # apply to the proxy.
   env: []
 
   tracing:

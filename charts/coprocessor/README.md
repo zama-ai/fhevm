@@ -39,8 +39,8 @@ to a ready prf-service pod. Idle pooled connections close after 10 s without tra
 connections reach newly scaled pods.
 
 The proxy reads its TLS certificate at startup: a renewed secret takes effect after a pod restart.
-`commonConfig.env` applies to the proxy too, which is the internet-facing pod, so it must hold
-nothing the proxy should not.
+`commonConfig.env` does not apply to the proxy, the internet-facing pod: put a shared setting it
+needs in `coprocessorProxy.env`.
 
 A NetworkPolicy allows this release's proxy pods to reach the prf-service pods selected by
 `prfServiceNetworkPolicy.podSelector`, on `prfServiceNetworkPolicy.ports` (TCP 8090 by default).
@@ -54,6 +54,10 @@ The proxy reads the signers at the latest finalized block. It checks that block 
 again when the block advances. Refresh latency includes RPC time and any delay in that RPC's
 finalized head. Each poll is bounded at 30 s; a failure retains the last set and retries on the
 next poll. Before the first successful read, readiness fails.
+
+Reading at the finalized block delays removals too. The nodes of a destroyed KMS context stay
+accepted until the destruction's block is finalized and read: on Ethereum, about 13 minutes (two
+epochs) plus up to one refresh interval.
 
 The KMS connector serves a new context as soon as its own RPC node reports the activation block
 finalized. An unknown signer wakes a poll and waits at most 3 s before being checked again.

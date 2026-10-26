@@ -139,9 +139,7 @@ spec:
               value: {{ . | quote }}
             {{- end }}
           {{- end }}
-          {{- with .Values.commonConfig.env }}
-            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
-          {{- end }}
+          {{- /* Not commonConfig.env: the internet-facing pod gets only what it needs. */}}
           {{- with $proxy.env }}
             {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
           {{- end }}
