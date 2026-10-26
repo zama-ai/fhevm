@@ -1870,8 +1870,9 @@ txSender:
 # Coprocessor proxy
 # -----------------------------------------------------------------------------
 # Public HTTPS entry point: checks each request's FhevmSig against the KMS
-# tx-senders ProtocolConfig lists, then forwards it unchanged to prf-service, its
-# one upstream, over HTTP/1.1. The Service is ClusterIP; exposing it is
+# tx-senders ProtocolConfig lists, then forwards it to prf-service, its one
+# upstream, over HTTP/1.1, with the authenticated signer in X-Fhevm-Signer in
+# place of Authorization. The Service is ClusterIP; exposing it is
 # the deployment's, within the requirement in the chart README.
 coprocessorProxy:
   enabled: false

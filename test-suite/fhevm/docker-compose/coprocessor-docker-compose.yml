@@ -309,7 +309,7 @@ services:
       coprocessor-db-migration:
         condition: service_completed_successfully
 
-  # Stand-in for prf-service, the endpoint coprocessor-proxy forwards to, until prf-service ships.
+  # Stand-in for prf-service, the upstream coprocessor-proxy forwards to, until prf-service ships.
   # The e2e image's Node runs the mounted script, so any test-suite image tag works.
   coprocessor-prf-service-fake:
     container_name: coprocessor-prf-service-fake
@@ -341,7 +341,7 @@ services:
       COPROCESSOR_PROXY_TLS_KEY_PATH: /etc/coprocessor-proxy/tls/tls.key
     volumes:
       - ../static/config/coprocessor-proxy:/etc/coprocessor-proxy/tls:ro
-    # The proxy resolves the endpoint hostname once, at startup.
+    # The proxy resolves the prf-service hostname once, at startup.
     depends_on:
       coprocessor-prf-service-fake:
         condition: service_healthy

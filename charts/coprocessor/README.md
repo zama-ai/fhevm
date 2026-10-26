@@ -5,8 +5,8 @@ A helm chart to distribute and deploy the Zama fhevm coprocessor services.
 ## Coprocessor proxy
 
 `coprocessorProxy` deploys the coprocessor's public HTTPS entry point. The proxy checks each
-request's `FhevmSig` signature (RFC-038) and forwards an accepted request unchanged, over HTTP/1.1,
-to prf-service's Service at `coprocessorProxy.prfServiceAddress`. Its only route is the
+request's `FhevmSig` signature (RFC-038) and forwards an accepted request, over HTTP/1.1, to
+prf-service's Service at `coprocessorProxy.prfServiceAddress`. Its only route is the
 PRF route, `GET` and `HEAD` `/v1/prf/{prf}/labels/{label}/{padLength}`, served by prf-service. The
 proxy checks the shape of the path, and prf-service the encoding of its parameters. The proxy
 replaces the `Authorization` header with the signer it authenticated, in the `X-Fhevm-Signer`

@@ -487,7 +487,7 @@ provides what the chart does not:
 - **TLS**: the Secret `coprocessor-proxy-tls`, made as for the kms-connector proxies,
   with SANs = every party's `coprocessor-<i>-coprocessor-proxy` Service.
 - **Per party**: the image tag (`coprocessor_proxy` in resolve-tags), the signer (the
-  derived coprocessor wallet), the endpoint and the NetworkPolicy's podSelector.
+  derived coprocessor wallet), the prf-service address and the NetworkPolicy's podSelector.
 - **Test-suite wiring**: the ConfigMap **`coprocessor-proxy`** (`urls`,
   `signer-addresses`, `count-urls`, `metrics-urls`, `ca.crt`), read `optional` by the
   `@fhevm/sdk` Argo Workflow, whose `coprocessor-proxy` task runs the
@@ -502,7 +502,7 @@ proxy pod is gone: no request may fail. It also checks the NetworkPolicy: that
 test-suite pod must reach each fake's port 9090 and no fake's PRF port.
 
 When prf-service deploys here, the fake release, the NetworkPolicy overrides and the count
-URLs go, and the endpoint points at prf-service.
+URLs go, and the prf-service address points at prf-service.
 
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 
