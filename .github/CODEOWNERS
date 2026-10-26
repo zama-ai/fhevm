@@ -30,10 +30,6 @@
 /kms-connector/ @zama-ai/mpc-devs
 /test-suite/gateway-stress/ @zama-ai/mpc-devs
 
-# Enforces changes in Sandboxed AI CI/CD
-.github/squid/sandbox-*.conf @zama-ai/security-team
-.github/workflows/claude-*.yml @zama-ai/security-team
-
 # Production Dockerfiles should be reviewed by members of fhevm-devops
 **/Dockerfile @zama-ai/fhevm-devops
 
