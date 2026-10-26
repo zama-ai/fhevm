@@ -428,6 +428,9 @@ interface IKMSGeneration {
 
     /**
      * @notice Get the full completed-key record for a given key ID, in a single call.
+     * @dev After a compressed key migration, this describes the migrated record KMS nodes are expected
+     * to hold: the migration's preprocessing ID, without the legacy `Server` digest that
+     * {getKeyMaterials} keeps.
      * @param keyId The ID of the key.
      * @return The key record (prepKeygenId, keyId, paramsType, key digests).
      */
