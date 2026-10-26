@@ -128,6 +128,7 @@ const SOME_PENDING_RE = /\b[1-9]\d* pending\b/;
 // Mocha prints "0 passing" alongside "N failing" when every matched test failed —
 // the grep DID match; the run failed for a different reason than an empty grep.
 const SOME_FAILING_RE = /\b[1-9]\d* failing\b/;
+const SOME_PASSING_RE = /\b[1-9]\d* passing\b/;
 /** True when the grep actually matched tests (some passed, failed, or are pending). */
 const matchedTests = (output: string) =>
   !(ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output) && !SOME_FAILING_RE.test(output));
@@ -700,6 +701,18 @@ const runTestsCommand = (
 const assertMatchedTests = (output: string, label: string) => {
   if (!matchedTests(output)) {
     throw new PreflightError(`${label} matched zero tests`);
+  }
+};
+
+/**
+ * Throws unless the run of profile `name` executed its tests. The coprocessor-proxy suite skips
+ * itself when it finds no proxy URL, so its tests all end pending; the CLI only runs the profile on
+ * a stack with proxies, so such a run must fail rather than pass.
+ */
+export const assertProfileRanTests = (name: string, output: string, label: string) => {
+  assertMatchedTests(output, label);
+  if (name === "coprocessor-proxy" && !SOME_PASSING_RE.test(output)) {
+    throw new PreflightError(`${label}: no coprocessor-proxy test passed; the suite skips itself without COPROCESSOR_PROXY_URLS`);
   }
 };
 
@@ -2616,7 +2629,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           await waitForKeyBootstrap(state);
         }
         const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), `test ${name}`);
-        assertMatchedTests(result.stdout + result.stderr, `test ${name}`);
+        assertProfileRanTests(name, result.stdout + result.stderr, `test ${name}`);
       });
     };
 
