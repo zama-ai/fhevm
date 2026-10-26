@@ -185,54 +185,6 @@ export async function assertRpcChainId(provider: NetworkReader, expectedChainId:
   }
 }
 
-export type LogReader = Pick<JsonRpcProvider, 'getLogs'>;
-
-const PROPOSED_EVENT_TOPIC = new ethers.Interface([
-  'event CoprocessorUpgradeProposed(uint256 indexed proposalId, string softwareVersion, tuple(uint64 chainId, uint64 startBlock, uint64 endBlock)[] chainUpgradeWindows, uint64 gwStartBlock)',
-]).getEvent('CoprocessorUpgradeProposed')!.topicHash;
-
-// Tx hash of a prior proposal with this id, null when none, undefined when the RPC refused the log scan.
-export async function findPriorProposal(
-  provider: LogReader,
-  target: string,
-  proposalId: bigint,
-): Promise<string | null | undefined> {
-  try {
-    const logs = await provider.getLogs({
-      address: target,
-      topics: [PROPOSED_EVENT_TOPIC, ethers.zeroPadValue(ethers.toBeHex(proposalId), 32)],
-      fromBlock: 0,
-      toBlock: 'latest',
-    });
-    return logs.length > 0 ? logs[0].transactionHash : null;
-  } catch {
-    return undefined;
-  }
-}
-
-// Proposal ids are single use: a coprocessor keeps a completed or aborted id and ignores a later proposal reusing it.
-export async function assertProposalIdUnused(inputs: CoprocessorUpgradeInputs, target: string): Promise<void> {
-  const canonical = inputs.hostChains.find((c) => c.chainId === inputs.canonicalChainId);
-  if (!canonical) {
-    throw new Error(`ProtocolConfig chain ${inputs.canonicalChainId} is not in the ${inputs.environment} chain set`);
-  }
-  const provider = new JsonRpcProvider(canonical.rpcUrl);
-  try {
-    const prior = await findPriorProposal(provider, target, inputs.proposalId);
-    if (prior === undefined) {
-      console.warn(
-        `WARN: could not scan ${target} for prior CoprocessorUpgradeProposed events; confirm proposal id ${inputs.proposalId} was never used.`,
-      );
-      return;
-    }
-    if (prior !== null) {
-      throw new Error(`proposal id ${inputs.proposalId} was already used on ${target} (tx ${prior}); pick a new id`);
-    }
-  } finally {
-    provider.destroy();
-  }
-}
-
 // RPC URLs can carry an API key in the path or query, and the runbook has the operator copy this output.
 export function redactRpcUrl(url: string): string {
   try {

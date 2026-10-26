@@ -11,13 +11,11 @@ import {
   type CoprocessorUpgradeInputs,
   type GatewayReport,
   type HostReport,
-  type LogReader,
   type NetworkReader,
   PROPOSE_UPGRADE_ABI,
   assertRpcChainId,
   bufferViolations,
   encodeProposeCoprocessorUpgrade,
-  findPriorProposal,
   isReleaseTag,
   parseCoprocessorUpgradeInputs,
   redactRpcUrl,
@@ -74,16 +72,6 @@ function stubNetworkReader(chainId: bigint | Error): NetworkReader {
       return { chainId };
     },
   } as unknown as NetworkReader;
-}
-
-function stubLogReader(logs: { transactionHash: string }[] | Error, capture?: (filter: unknown) => void): LogReader {
-  return {
-    async getLogs(filter: unknown) {
-      capture?.(filter);
-      if (logs instanceof Error) throw logs;
-      return logs;
-    },
-  } as unknown as LogReader;
 }
 
 const TESTNET_PARAMS = {
@@ -324,36 +312,6 @@ describe('prepareCoprocessorUpgrade task utils', function () {
         assertRpcChainId(stubNetworkReader(new Error('ECONNREFUSED')), 1, 'ethereum'),
         /did not answer eth_chainId/,
       );
-    });
-  });
-
-  describe('findPriorProposal', function () {
-    const target = '0x0000000000000000000000000000000000000002';
-
-    it('returns null when the id was never proposed', async function () {
-      expect(await findPriorProposal(stubLogReader([]), target, 5n)).to.equal(null);
-    });
-
-    it('returns the tx hash of a prior proposal with the same id', async function () {
-      expect(await findPriorProposal(stubLogReader([{ transactionHash: '0xabc' }]), target, 5n)).to.equal('0xabc');
-    });
-
-    it('returns undefined when the RPC refuses the scan', async function () {
-      expect(await findPriorProposal(stubLogReader(new Error('range too wide')), target, 5n)).to.equal(undefined);
-    });
-
-    it('filters on the target, the event topic and the proposal id', async function () {
-      let filter: { address?: string; topics?: string[] } = {};
-      await findPriorProposal(
-        stubLogReader([], (f) => {
-          filter = f as typeof filter;
-        }),
-        target,
-        5n,
-      );
-      expect(filter.address).to.equal(target);
-      expect(filter.topics).to.have.length(2);
-      expect(filter.topics?.[1]).to.equal(`0x${'0'.repeat(63)}5`);
     });
   });
 

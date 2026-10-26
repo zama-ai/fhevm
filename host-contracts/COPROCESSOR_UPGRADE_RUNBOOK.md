@@ -93,7 +93,6 @@ Once the DAO vote passes and the proposal executes, the on-chain `proposeCoproce
 | `No ProtocolConfig address configured`                           | Set `PROTOCOL_CONFIG_CONTRACT_ADDRESS` or pass `--use-internal-proxy-address true`.   |
 | `is not a release tag`                                           | Pass the release tag, e.g. `v0.15.0`.                                                 |
 | `reports chain id X, expected Y`                                 | The RPC env var for that chain points at another network.                             |
-| `proposal id N was already used`                                 | Pick an id never used on this `ProtocolConfig`.                                       |
 | `--network is chain X but ... lives on chain Y`                  | Pass the `--network` of the environment's `ProtocolConfig` chain.                     |
 | `does not expose getVersion()` or `expected "ProtocolConfig v…"` | `PROTOCOL_CONFIG_CONTRACT_ADDRESS` is not the `ProtocolConfig` proxy on that network. |
 

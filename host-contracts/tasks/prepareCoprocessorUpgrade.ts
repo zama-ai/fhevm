@@ -2,7 +2,6 @@ import { task, types } from 'hardhat/config';
 
 import { requireProtocolConfigAddress } from './kmsContext';
 import {
-  assertProposalIdUnused,
   bufferViolations,
   buildCoprocessorUpgradeProposal,
   executeCoprocessorUpgradeProposal,
@@ -55,7 +54,6 @@ task(
       softwareVersion,
     });
     const target = requireProtocolConfigAddress(useInternalProxyAddress);
-    await assertProposalIdUnused(inputs, target);
     const proposal = await buildCoprocessorUpgradeProposal(inputs);
     printCoprocessorUpgradeProposal(proposal, target);
 
@@ -103,7 +101,6 @@ task(
       softwareVersion,
     });
     const target = requireProtocolConfigAddress(useInternalProxyAddress);
-    await assertProposalIdUnused(inputs, target);
     const proposal = await buildCoprocessorUpgradeProposal(inputs);
     printCoprocessorUpgradeProposal(proposal, target);
 
