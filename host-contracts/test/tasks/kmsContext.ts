@@ -446,6 +446,59 @@ describe('KMS context tasks', function () {
       expect(aborted.flow).to.equal('context-switch');
       expect(aborted.aborted).to.equal(true);
       expect(aborted.abortReason).to.equal('context-destroyed');
+      // The abort does not touch the active context and epoch.
+      expect(aborted.fullyLive).to.equal(true);
+    });
+
+    it('reports a destroyed CREATED switch with its epoch gone', async function () {
+      const contextId = await defineSwitch();
+      const epochId = await confirmCreation(contextId, [...newTxSenders, oldTxSenders[0]]);
+      await (await (await asOwner()).destroyKmsContext(contextId)).wait();
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.aborted).to.equal(true);
+      expect(result.abortReason).to.equal('context-destroyed');
+      expect(result.pendingEpochId).to.equal(epochId);
+      // destroyKmsContext also clears the context's pending epoch, so there is nobody left to chase.
+      expect(result.epochState).to.equal('DESTROYED');
+      expect(result.fullyLive).to.equal(true);
+    });
+
+    it('reports a destroyed same-set epoch as aborted instead of pending', async function () {
+      const receipt = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
+      const epochId = parseEventArg(receipt!, 'NewKmsEpoch', 'epochId')!;
+
+      const pending = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(pending.flow).to.equal('same-set-rotation');
+      expect(pending.aborted).to.equal(false);
+      expect(pending.epochState).to.equal('PENDING');
+      expect(pending.fullyLive).to.equal(false);
+
+      // After destroyKmsEpoch the NewKmsEpoch event still looks like a pending rotation, and the
+      // contract has no getter for the epoch state. Only the KmsEpochDestroyed event tells an
+      // aborted rotation from a live one.
+      await (await (await asOwner()).destroyKmsEpoch(epochId)).wait();
+
+      const aborted = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(aborted.flow).to.equal('same-set-rotation');
+      expect(aborted.pendingEpochId).to.equal(epochId);
+      expect(aborted.aborted).to.equal(true);
+      expect(aborted.abortReason).to.equal('epoch-destroyed');
+      expect(aborted.epochState).to.equal('DESTROYED');
+      expect(aborted.fullyLive).to.equal(true);
+    });
+
+    it('reports a rotation opened after a destroyed rotation as pending', async function () {
+      const first = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
+      await (await (await asOwner()).destroyKmsEpoch(parseEventArg(first!, 'NewKmsEpoch', 'epochId')!)).wait();
+      const second = await (await (await asOwner()).defineNewEpochForCurrentKmsContext()).wait();
+      const epochId = parseEventArg(second!, 'NewKmsEpoch', 'epochId');
+
+      const result = await inspectKmsContextSwitch(hre, proxyAddress, 0);
+      expect(result.flow).to.equal('same-set-rotation');
+      expect(result.pendingEpochId).to.equal(epochId);
+      expect(result.aborted).to.equal(false);
+      expect(result.epochState).to.equal('PENDING');
     });
 
     it('reports a rotation opened after an aborted switch', async function () {
