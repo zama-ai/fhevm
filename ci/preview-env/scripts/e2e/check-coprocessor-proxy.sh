@@ -11,11 +11,6 @@
 set -euo pipefail
 
 : "${NAMESPACE:?}" "${NB_COPROCESSOR:?}" "${E2E_IMAGE:?}" "${HOST_CHAIN_ID:?}"
-# Every party's proxy restarts at once and must finish within restart_seconds, its old pods gone
-# after draining for up to their grace period. The load stops once they are gone; it is bounded by
-# that budget and the 5 s wait for its start.
-restart_seconds=600
-load_seconds=$((restart_seconds + 60))
 pod=coprocessor-proxy-check
 stop_file=/tmp/coprocessor-proxy-load-stop
 deployments=()
@@ -33,6 +28,16 @@ for deploy in "${deployments[@]}"; do
   fi
   echo "${deploy}: ${ready} of ${wanted} replicas Ready"
 done
+
+# Every party's proxy restarts at once and must finish within restart_seconds, its old pods gone
+# after draining for up to their grace period. A cluster short of CPU schedules each new pod only
+# once an old one has exited, so the budget allows one grace period, plus 30 s to start, per party.
+# The load stops once the old pods are gone; it is bounded by that budget and the 5 s wait for its
+# start.
+grace=$(kubectl get "deploy/${deployments[0]}" -n "${NAMESPACE}" -o jsonpath='{.spec.template.spec.terminationGracePeriodSeconds}')
+restart_seconds=$((NB_COPROCESSOR * (grace + 30)))
+restart_seconds=$((restart_seconds > 600 ? restart_seconds : 600))
+load_seconds=$((restart_seconds + 60))
 
 # Probes each fake's PRF and count ports, then runs the load. JavaScript, not for the shell:
 # shellcheck disable=SC2016
@@ -53,6 +58,8 @@ const probe = (host, port) => new Promise((resolve) => {
 })();
 '
 kubectl delete pod "${pod}" -n "${NAMESPACE}" --ignore-not-found --wait=true
+# A failed check must not leave its load running into the next step.
+trap 'kubectl delete pod "${pod}" -n "${NAMESPACE}" --ignore-not-found --wait=false >/dev/null 2>&1 || true' EXIT
 # The container's shell, not this one, expands $NETCHECK_JS.
 # shellcheck disable=SC2016
 NETCHECK_JS="${netcheck_js}" POD="${pod}" LOAD_SECONDS="${load_seconds}" STOP_FILE="${stop_file}" yq -n '
