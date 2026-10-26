@@ -1,8 +1,9 @@
-import { type DataTable, Given, Then, When, World, setWorldConstructor } from '@cucumber/cucumber';
+import { EngineWorld } from '#engine';
+import { type DataTable, Given, Then, When, setWorldConstructor } from '@cucumber/cucumber';
 import assert from 'node:assert/strict';
 
 /** Scenario state. A fresh instance is created for every Gherkin scenario. */
-class ArithmeticWorld extends World {
+class ArithmeticWorld extends EngineWorld {
   numbers: number[] = [];
   result: number | undefined;
 }
@@ -29,6 +30,12 @@ Given('the newline-separated numbers:', function (this: ArithmeticWorld, docStri
 
 When('the numbers are added', function (this: ArithmeticWorld) {
   this.result = this.numbers.reduce((sum, value) => sum + value, 0);
+  // Exercises the evidence pipeline (attachment → evidence.json → reports) without any stack.
+  this.engine.evidence.record(
+    'engine.note',
+    { operands: this.numbers, result: this.result },
+    { label: 'Computed sum' },
+  );
 });
 
 Then('the result is {int}', function (this: ArithmeticWorld, expected: number) {

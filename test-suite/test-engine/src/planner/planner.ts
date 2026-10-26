@@ -23,6 +23,8 @@ export interface PlanItem {
 
 export interface ExecutionPlan {
   filters: SelectionFilters;
+  /** Name of the profile the plan was made for. */
+  profile: string;
   /** Selected scenarios, in execution order. Scenarios excluded by the filters are not listed. */
   items: PlanItem[];
 }
@@ -64,18 +66,73 @@ export function selectScenarios(scenarios: DiscoveredScenario[], filters: Select
   );
 }
 
-export function planExecution(scenarios: DiscoveredScenario[], filters: SelectionFilters): ExecutionPlan {
+/** What the planner needs to know about the target profile. */
+export interface PlanningProfile {
+  name: string;
+  requiresConfirmation: boolean;
+}
+
+/**
+ * Decides whether a scenario runs on the profile. The first matching rule wins:
+ * 1. disabled → skip; 2. profile requires confirmation and is not listed in `targets` → skip;
+ * 3. `targets` present without the profile → skip; 4. run.
+ */
+export function decide(scenario: DiscoveredScenario, profile: PlanningProfile): PlanDecision {
+  const { spec } = scenario.manifest;
+  if (!spec.enabled) {
+    return { action: 'skip', reason: 'disabled in manifest (spec.enabled: false)' };
+  }
+  const targets = spec.targets;
+  if (profile.requiresConfirmation && !targets?.includes(profile.name)) {
+    return { action: 'skip', reason: `profile '${profile.name}' must be listed explicitly in spec.targets` };
+  }
+  if (targets && !targets.includes(profile.name)) {
+    return { action: 'skip', reason: `profile '${profile.name}' not in spec.targets [${targets.join(', ')}]` };
+  }
+  return { action: 'run' };
+}
+
+export function planExecution(
+  scenarios: DiscoveredScenario[],
+  filters: SelectionFilters,
+  profile: PlanningProfile,
+): ExecutionPlan {
   const selected = selectScenarios(scenarios, filters);
   if (selected.length === 0) {
     throw new PlanError('No scenario matches the selection.');
   }
+  const items = selected.map((scenario): PlanItem => ({ scenario, decision: decide(scenario, profile) }));
+  return { filters, profile: profile.name, items };
+}
 
-  const items = selected.map((scenario): PlanItem => {
-    if (!scenario.manifest.spec.enabled) {
-      return { scenario, decision: { action: 'skip', reason: 'disabled in manifest (spec.enabled: false)' } };
+/** True when the plan has at least one scenario to run. */
+export function hasRunnableItems(plan: ExecutionPlan): boolean {
+  return plan.items.some((item) => item.decision.action === 'run');
+}
+
+/**
+ * Applies the confirmation rules of sensitive profiles: `run` on a profile with
+ * `requiresConfirmation` needs `--confirm <name>`; a confirmation with a different name, or on a
+ * profile that does not require it, is rejected (it usually means the wrong profile was selected).
+ *
+ * @throws PlanError
+ */
+export function checkConfirmation(
+  command: 'run' | 'dry-run',
+  profile: PlanningProfile,
+  confirm: string | undefined,
+): void {
+  if (confirm !== undefined) {
+    if (!profile.requiresConfirmation) {
+      throw new PlanError(
+        `--confirm is only accepted for profiles that require confirmation; '${profile.name}' does not`,
+      );
     }
-    return { scenario, decision: { action: 'run' } };
-  });
-
-  return { filters, items };
+    if (confirm !== profile.name) {
+      throw new PlanError(`--confirm '${confirm}' does not match the selected profile '${profile.name}'`);
+    }
+  }
+  if (command === 'run' && profile.requiresConfirmation && confirm === undefined) {
+    throw new PlanError(`profile '${profile.name}' requires confirmation: add --confirm ${profile.name}`);
+  }
 }

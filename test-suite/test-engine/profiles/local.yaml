@@ -1,0 +1,9 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata:
+  name: local
+  description: Local stack started with fhevm-cli (ephemeral, throwaway secrets)
+spec:
+  requiresConfirmation: false
+  # Typed sections (chain, relayer, wallets) and their settings arrive with the Phase 1b modules.
+  settings: {}

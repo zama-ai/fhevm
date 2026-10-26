@@ -1,0 +1,9 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata:
+  name: mainnet
+  description: "Mainnet. Real funds: requires --confirm mainnet and an explicit spec.targets entry"
+spec:
+  requiresConfirmation: true
+  # Typed sections (chain, relayer, wallets) and their settings arrive with the Phase 1b modules.
+  settings: {}

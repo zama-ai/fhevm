@@ -10,6 +10,12 @@
   "bin": {
     "test-engine": "./dist/src/cli/main.js"
   },
+  "imports": {
+    "#engine": {
+      "types": "./src/api/index.ts",
+      "default": "./dist/src/api/index.js"
+    }
+  },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.json",
     "tsc": "tsc --noEmit -p tsconfig.json",
@@ -20,6 +26,7 @@
   },
   "dependencies": {
     "@cucumber/cucumber": "13.2.1",
+    "@cucumber/html-formatter": "24.1.0",
     "@cucumber/messages": "34.2.0",
     "@cucumber/tag-expressions": "11.0.0",
     "ajv": "^8.20.0",

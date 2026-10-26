@@ -56,8 +56,17 @@ jobs:
       - name: Engine tests
         run: npm test
 
-      - name: Validate scenarios (dry-run)
-        run: npm run engine -- dry-run --output-dir reports/dry-run
+      - name: Validate profiles
+        run: npm run engine -- profiles
+
+      # Every shipped scenario must have a valid plan on every profile it can run on. mainnet is not
+      # dry-run here: no shipped scenario targets it, so the run would correctly exit 3 (nothing
+      # executed). Its rules are covered by the engine tests with fixture profiles.
+      - name: Validate scenarios on every profile (dry-run)
+        run: |
+          for profile in none local devnet testnet; do
+            npm run engine -- dry-run --profile "$profile" --output-dir "reports/dry-run-$profile"
+          done
 
       - name: Run smoke scenario
         run: npm run engine -- run --tags @smoke --output-dir reports/smoke

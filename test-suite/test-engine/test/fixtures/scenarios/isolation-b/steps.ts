@@ -1,8 +1,9 @@
-import { Then, World, setWorldConstructor } from '@cucumber/cucumber';
+import { EngineWorld } from '#engine';
+import { Then, type World, setWorldConstructor } from '@cucumber/cucumber';
 import assert from 'node:assert/strict';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-class WorldB extends World {}
+class WorldB extends EngineWorld {}
 setWorldConstructor(WorldB);
 
 // Same text as in scenario A: only unambiguous because each scenario has its own process.

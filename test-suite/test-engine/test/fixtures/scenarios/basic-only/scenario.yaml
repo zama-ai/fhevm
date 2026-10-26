@@ -1,0 +1,14 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.basic-only
+  name: Fixture basic-only
+  owner: qa
+  description: Engine test fixture (basic-only).
+  tags: [fixture, planner]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30
+  targets: [fx-basic]

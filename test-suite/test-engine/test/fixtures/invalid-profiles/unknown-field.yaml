@@ -1,0 +1,5 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata: { name: unknown-field, description: Invalid fixture. }
+spec:
+  rpc: http://localhost:8545
