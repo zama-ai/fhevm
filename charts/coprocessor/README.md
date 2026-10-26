@@ -9,9 +9,10 @@ request's `FhevmSig` signature (RFC-038) and forwards an accepted request unchan
 to prf-service's Service at `coprocessorProxy.prfServiceAddress`. Its only route is the
 PRF route, `GET` and `HEAD` `/v1/prf/{prf}/labels/{label}/{padLength}`, served by prf-service. The
 proxy checks the shape of the path, and prf-service the encoding of its parameters. The proxy
-forwards the `Authorization` header: prf-service recovers the signer from it for its per-connector
-limits. It does not verify the header again, and relies on the proxy's check and on the
-NetworkPolicy below. Request bodies are rejected; the signed body digest must be that of an empty body.
+replaces the `Authorization` header with the signer it authenticated, in the `X-Fhevm-Signer`
+header, EIP-55 checksummed, after dropping any value the client sent. prf-service applies its
+per-connector limits to that signer. It never sees the signature, and relies on the proxy's check
+and on the NetworkPolicy below. Request bodies are rejected; the signed body digest must be that of an empty body.
 
 Blue-green (RFC-021) deployments do not run the proxy yet. One proxy per fleet is a follow-up.
 

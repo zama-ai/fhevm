@@ -33,6 +33,7 @@ async fn assert_proxy_error(response: Response, status: StatusCode, code: &str, 
 async fn test_forwards_authenticated_requests_untouched() {
     let t = TestProxy::start(StubPrfService::start().await).await;
     let path = prf_path(1);
+    let stranger = PrivateKeySigner::random().address();
 
     let auth = auth_header(&sender(), &path, b"").await;
     let response = t
@@ -40,6 +41,9 @@ async fn test_forwards_authenticated_requests_untouched() {
         .get(t.url(&path))
         .header("authorization", &auth)
         .header("x-forwarded-for", "9.9.9.9")
+        // A client cannot name another caller to prf-service.
+        .header("x-fhevm-signer", stranger.to_checksum(None))
+        .header("X-FHEVM-SIGNER", stranger.to_string().to_lowercase())
         .send()
         .await
         .unwrap();
@@ -59,8 +63,10 @@ async fn test_forwards_authenticated_requests_untouched() {
     let seen = t.prf_service.last_request();
     assert_eq!(seen.version, Some(Version::HTTP_11));
     assert_eq!(seen.headers["host"], t.addr.to_string());
-    // prf-service recovers the signer from the `FhevmSig` header.
-    assert_eq!(seen.headers["authorization"], auth.as_str());
+    let signers: Vec<_> = seen.headers.get_all("x-fhevm-signer").iter().collect();
+    assert_eq!(signers, [sender().address().to_checksum(None).as_str()]);
+    // The credential stays at the proxy.
+    assert!(!seen.headers.contains_key("authorization"));
     assert_eq!(seen.headers["x-forwarded-for"], "127.0.0.1");
     assert_eq!(seen.headers["x-forwarded-proto"], "https");
 

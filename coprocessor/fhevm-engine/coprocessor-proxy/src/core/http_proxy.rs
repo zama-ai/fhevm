@@ -36,6 +36,9 @@ static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     .unwrap()
 });
 
+/// The signer the proxy authenticated, EIP-55 checksummed: prf-service's caller. Any inbound value
+/// is dropped first.
+pub const X_FHEVM_SIGNER: HeaderName = HeaderName::from_static("x-fhevm-signer");
 // The `X-Forwarded-*` headers set by the proxy (any inbound value is dropped first).
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto");
@@ -214,16 +217,19 @@ impl ProxyHttp for Proxy {
         Ok(Box::new(peer))
     }
 
-    // Strips the forwarding and hop-by-hop headers before forwarding. The `FhevmSig` header is
-    // kept: prf-service recovers the signer from it for its per-connector limits, and trusts this
-    // check instead of verifying it. The body is never touched.
+    // Replaces the `FhevmSig` credential with the signer it authenticated, in `X-Fhevm-Signer`:
+    // prf-service trusts this check and applies its per-connector limits to that signer. Also strips
+    // the forwarding and hop-by-hop headers. The body is never touched.
     async fn upstream_request_filter(
         &self,
         session: &mut Session,
         upstream_request: &mut RequestHeader,
-        _ctx: &mut Self::CTX,
+        ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
         sanitize_headers(upstream_request);
+        if let Some(sender) = ctx.sender {
+            upstream_request.insert_header(X_FHEVM_SIGNER, sender.to_checksum(None))?;
+        }
         if let Some(addr) = session.client_addr().and_then(|a| a.as_inet()) {
             upstream_request.insert_header(X_FORWARDED_FOR, addr.ip().to_string())?;
         }
@@ -351,9 +357,11 @@ fn default_error_code(e: &Error) -> u16 {
     }
 }
 
-/// Headers that must not be forwarded to prf-service: client-supplied forwarding information and
-/// the HTTP/1.1 hop-by-hop headers (RFC 9110 §7.6.1).
-const STRIPPED_HEADERS: [HeaderName; 13] = [
+/// Headers that must not be forwarded to prf-service: the client's credential, client-supplied
+/// identity and forwarding information, and the HTTP/1.1 hop-by-hop headers (RFC 9110 §7.6.1).
+const STRIPPED_HEADERS: [HeaderName; 15] = [
+    AUTHORIZATION,
+    X_FHEVM_SIGNER,
     X_FORWARDED_FOR,
     X_FORWARDED_PROTO,
     X_FORWARDED_HOST,
@@ -392,10 +400,14 @@ mod tests {
     }
 
     #[test]
-    fn sanitize_strips_forwarding_and_hop_by_hop_headers() {
+    fn sanitize_strips_credential_identity_forwarding_and_hop_by_hop_headers() {
         let mut req = RequestHeader::build("GET", b"/v1/prf/0/labels/00/1", None).unwrap();
         for (name, value) in [
             ("authorization", "FhevmSig expires=1"),
+            (
+                "x-fhevm-signer",
+                "0x0101010101010101010101010101010101010101",
+            ),
             ("x-forwarded-for", "1.2.3.4"),
             ("x-forwarded-proto", "https"),
             ("x-forwarded-host", "evil"),
@@ -415,14 +427,8 @@ mod tests {
         sanitize_headers(&mut req);
 
         let remaining: Vec<_> = req.headers.keys().map(|k| k.as_str()).collect();
-        assert_eq!(remaining.len(), 5);
-        for kept in [
-            "authorization",
-            "content-type",
-            "content-length",
-            "host",
-            "x-request-id",
-        ] {
+        assert_eq!(remaining.len(), 4);
+        for kept in ["content-type", "content-length", "host", "x-request-id"] {
             assert!(remaining.contains(&kept), "{kept} should be kept");
         }
     }
