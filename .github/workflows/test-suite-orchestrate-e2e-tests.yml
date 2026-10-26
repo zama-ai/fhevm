@@ -239,8 +239,8 @@ jobs:
   # shards use a 4-party cluster with insecure (fast) keygen, while the threshold,
   # abort and context-switch legs below run the secure MPC keygen. Together the
   # shards run exactly the standard-suite profiles (enforced by a unit test in the fhevm CLI). All
-  # three are merge-queue gates in .mergify.yml. This job keeps the historical
-  # `run-e2e-tests` id so the `run-e2e-tests / fhevm-e2e-test` check name stays
+  # three, and the consumer-stack leg below, are merge-queue gates in .mergify.yml. This job
+  # keeps the historical `run-e2e-tests` id so the `run-e2e-tests / fhevm-e2e-test` check name stays
   # valid while the mergify config transition lands.
   run-e2e-tests:
     needs: [create-e2e-tests-input]
@@ -306,9 +306,10 @@ jobs:
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
       relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
       relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
-      # Host ingestion by listener-core and host-consumers only.
+      # Host ingestion by listener-core and host-consumers only. A smoke on both chains:
+      # the shards already run the standard suite on the legacy host listener.
       scenario: two-of-three-multi-chain-consumer
-      test-profile: standard
+      test-profile: light multi-chain-isolation
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
 
   run-e2e-tests-shard-decryption:
