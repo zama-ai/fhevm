@@ -318,11 +318,33 @@ Examples:
 `);
 }
 
-// Force-exit once our own work is done, so a handle leaked by any scenario
-// cannot hang the harness.
+// How long a finished run may keep the event loop alive before the watchdog
+// gives up and force-exits. A clean run exits well within this: once main()
+// resolves, nothing but a leaked handle can hold the loop open.
+const NATURAL_EXIT_TIMEOUT_MS = 10_000;
+
+/**
+ * Lets the process exit on its own once main() has resolved, so a handle
+ * leaked by a scenario (a timer, a socket, a listener, or a re-ref'd TFHE
+ * worker) is reported instead of hidden behind an unconditional
+ * `process.exit()`. The watchdog timer is unref'd, so it never holds the loop
+ * open itself; it only fires when something else already does.
+ */
+function armNaturalExitWatchdog(): void {
+  const timer = setTimeout(() => {
+    const resources = process.getActiveResourcesInfo();
+    console.error(
+      `\n❌ The process did not exit within ${NATURAL_EXIT_TIMEOUT_MS / 1_000}s of finishing. ` +
+        `Something is still holding the event loop open: ${resources.join(', ') || '(unknown)'}.`,
+    );
+    process.exit(1);
+  }, NATURAL_EXIT_TIMEOUT_MS);
+  timer.unref();
+}
+
 main()
   .then(() => {
-    process.exit(process.exitCode ?? 0);
+    armNaturalExitWatchdog();
   })
   .catch((error: unknown) => {
     console.error(error);
