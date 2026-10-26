@@ -55,7 +55,7 @@ async function signersBlockTimestamp(metricsUrl: string): Promise<number> {
   const resp = await fetch(metricsUrl, { signal: AbortSignal.timeout(10_000) });
   const gauge = (await resp.text())
     .split('\n')
-    .find((line) => line.startsWith('coprocessor_kms_tx_senders_block_timestamp_seconds '));
+    .find((line) => line.startsWith('coprocessor_proxy_kms_tx_senders_block_timestamp_seconds '));
   return Number(gauge?.split(' ')[1] ?? 0);
 }
 
@@ -144,7 +144,7 @@ describe('Coprocessor proxy', function () {
   it('refuses a signer still unknown after a fresh read with 401', async function () {
     for (const i of urls.keys()) {
       const sent = await send(i, PRF_PATH, await sign(i, PRF_PATH, { signer: Wallet.createRandom() }));
-      expectRefused(sent, 401, 'auth_unknown_signer', false);
+      expectRefused(sent, 401, 'auth_unknown_signer', true);
       expect(sent.headers['retry-after'], sent.where).to.equal(undefined);
     }
   });
@@ -182,7 +182,7 @@ describe('Coprocessor proxy', function () {
       for (const i of urls.keys()) {
         await waitForSignersBlock(metricsUrls[i], blockTimestamp);
         const sent = await send(i, PRF_PATH, await sign(i, PRF_PATH, { signer: switchSigner() }));
-        expectRefused(sent, 401, 'auth_unknown_signer', false);
+        expectRefused(sent, 401, 'auth_unknown_signer', true);
         expect(sent.headers['retry-after'], sent.where).to.equal(undefined);
       }
     });

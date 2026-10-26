@@ -140,7 +140,7 @@ async fn test_rejects_unauthenticated_requests() {
         ),
     ] {
         let response = request.send().await.unwrap();
-        assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, false).await;
+        assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, true).await;
     }
     assert_eq!(t.prf_service.hits(), 0, "nothing must reach prf-service");
 }
@@ -313,7 +313,11 @@ async fn test_rejects_request_bodies() {
             let response = raw_response(&t, request.as_bytes())
                 .await
                 .to_ascii_lowercase();
-            assert!(response.starts_with("http/1.1 400"), "{response}");
+            assert!(response.starts_with("http/1.1 401"), "{response}");
+            // A `HEAD` answer has no body.
+            if method == "GET" {
+                assert!(response.contains("auth_body_mismatch"), "{response}");
+            }
             assert!(
                 response.contains("\r\ncache-control: no-store\r\n"),
                 "{response}"
@@ -332,7 +336,7 @@ async fn test_rejects_request_bodies() {
     let started = Instant::now();
     assert_eq!(
         send_raw(&t, request.as_bytes()).await,
-        StatusCode::BAD_REQUEST
+        StatusCode::UNAUTHORIZED
     );
     assert!(
         started.elapsed() < UNKNOWN_SIGNER_WAIT / 3,
@@ -583,7 +587,7 @@ async fn test_refuses_an_unknown_signer_after_the_wait() {
         .unwrap();
     assert_eq!(response.headers()["www-authenticate"], "FhevmSig");
     assert!(!response.headers().contains_key("retry-after"));
-    assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, false).await;
+    assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, true).await;
     assert_eq!(t.prf_service.hits(), 0);
     let waited = started.elapsed();
     assert!(
@@ -637,7 +641,7 @@ async fn test_counts_requests_by_route_and_status() {
     let count = |route: &str, status: &str| {
         prometheus::gather()
             .iter()
-            .filter(|family| family.name() == "coprocessor_proxy_requests_total")
+            .filter(|family| family.name() == "coprocessor_proxy_requests_counter")
             .flat_map(|family| family.get_metric())
             .filter(|metric| {
                 let label = |name: &str| {

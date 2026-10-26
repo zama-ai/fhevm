@@ -12,7 +12,8 @@ proxy checks the shape of the path, and prf-service the encoding of its paramete
 replaces the `Authorization` header with the signer it authenticated, in the `X-Fhevm-Signer`
 header, EIP-55 checksummed, after dropping any value the client sent. prf-service applies its
 per-connector limits to that signer. It never sees the signature, and relies on the proxy's check
-and on the NetworkPolicy below. Request bodies are rejected; the signed body digest must be that of an empty body.
+and on the NetworkPolicy below. A request with a body gets `401 auth_body_mismatch`: the signed
+body digest must be that of an empty body.
 
 Blue-green (RFC-021) deployments do not run the proxy yet. One proxy per fleet is a follow-up.
 
@@ -57,8 +58,8 @@ next poll. Before the first successful read, readiness fails.
 The KMS connector serves a new context as soon as its own RPC node reports the activation block
 finalized. An unknown signer wakes a poll and waits at most 3 s before being checked again.
 Concurrent misses share the poll; an in-flight poll can delay the next one, and woken polls start
-at least 1 s apart. A signer still unknown gets `401 auth_unknown_signer` with `retryable: false`,
-as RFC-038 specifies. Whether to retry is the connector's choice. Any signature that recovers an
+at least 1 s apart. A signer still unknown gets `401 auth_unknown_signer` with `retryable: true`:
+its context's activation may not have reached the proxy's RPC yet, and RFC-038 has connectors retry. Any signature that recovers an
 unknown address can trigger this path, including one signed for another audience, path or body.
 
 The NetworkPolicy matches the proxy pods in the release namespace only. When prf-service runs in
@@ -69,9 +70,9 @@ answers and the KMS tx-senders have been read. It does not check prf-service: wi
 prf-service pod, every replica stays ready and answers `502` with `"code": "upstream_transient"`
 and `"retryable": true` itself. To
 check the TLS listener, each probe sends it `GET /` and expects `404`, counted in
-`coprocessor_proxy_requests_total{route="none",status="404"}`.
+`coprocessor_proxy_requests_counter{route="none",status="404"}`.
 
-`coprocessor_kms_tx_senders_block_timestamp_seconds` is the timestamp of the finalized block used
+`coprocessor_proxy_kms_tx_senders_block_timestamp_seconds` is the timestamp of the finalized block used
 for the accepted set, or 0 before the first read. It advances only after applying a newer block;
 equal, older or failed RPC replies leave it unchanged. Its age includes the chain's normal
 finality delay. Readiness does not check ongoing signer freshness.

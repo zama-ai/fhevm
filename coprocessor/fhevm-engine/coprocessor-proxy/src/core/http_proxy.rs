@@ -25,11 +25,11 @@ use std::{
     sync::{LazyLock, atomic::Ordering},
     time::{Duration, Instant},
 };
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
-        "coprocessor_proxy_requests_total",
+        "coprocessor_proxy_requests_counter",
         "Requests answered by the proxy, by route and status",
         &["route", "status"]
     )
@@ -161,9 +161,14 @@ impl ProxyHttp for Proxy {
         };
         ctx.route = Some(route);
 
-        // Before the signature, so a body never wakes a read of the KMS tx-senders.
+        // Before the signature, so a body never wakes a read of the KMS tx-senders. The signed body
+        // digest must be that of an empty body, so a body is a body mismatch (RFC-038).
         if !body_empty {
-            let error = ErrorResponse::new(ErrorCode::Malformed, BODY_NOT_ALLOWED);
+            let code = ErrorCode::Auth {
+                code: AuthError::BodyMismatch.code(),
+                retryable: false,
+            };
+            let error = ErrorResponse::new(code, BODY_NOT_ALLOWED);
             self.respond_with_error(session, error, None).await?;
             return Ok(true);
         }
@@ -184,7 +189,7 @@ impl ProxyHttp for Proxy {
             Ok(signed) => signed,
             Err(e) => {
                 if let AuthError::UnknownSigner(signer) = &e {
-                    warn!(%signer, "Unknown signer after waiting for a registry refresh");
+                    info!(%signer, "Unknown signer after waiting for a registry refresh");
                 }
                 self.respond_with_error(session, auth_error_response(&e), None)
                     .await?;
@@ -317,12 +322,13 @@ impl ProxyHttp for Proxy {
     }
 }
 
-/// Converts an `AuthError` into an `ErrorResponse` with its `auth_*` code. Only an expired header is
-/// worth retrying, after re-signing.
+/// Converts an `AuthError` into an `ErrorResponse` with its `auth_*` code. Two are worth retrying: an
+/// expired header, after re-signing, and an unknown signer, whose KMS context activation the proxy
+/// may not have read yet (RFC-038's retry step).
 fn auth_error_response(error: &AuthError) -> ErrorResponse {
     let code = ErrorCode::Auth {
         code: error.code(),
-        retryable: matches!(error, AuthError::Expired),
+        retryable: matches!(error, AuthError::Expired | AuthError::UnknownSigner(_)),
     };
     ErrorResponse::new(code, error.to_string())
 }
@@ -389,10 +395,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_expired_auth_rejection_is_retryable() {
+    fn only_expired_and_unknown_signer_auth_rejections_are_retryable() {
         let expired = auth_error_response(&AuthError::Expired);
         assert_eq!(expired.code.as_str(), "auth_expired");
         assert!(expired.retryable);
+
+        let unknown = auth_error_response(&AuthError::UnknownSigner(Address::ZERO));
+        assert_eq!(unknown.code.as_str(), "auth_unknown_signer");
+        assert!(unknown.retryable);
 
         let missing = auth_error_response(&AuthError::Missing);
         assert_eq!(missing.code.as_str(), "auth_missing");

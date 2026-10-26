@@ -41,7 +41,7 @@ pub const WOKEN_POLL_SPACING: Duration = Duration::from_secs(1);
 
 static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
-        "coprocessor_kms_tx_senders",
+        "coprocessor_proxy_kms_tx_senders",
         "KMS tx-senders the last successful read of ProtocolConfig allows"
     )
     .unwrap()
@@ -49,7 +49,7 @@ static KMS_TX_SENDERS: LazyLock<IntGauge> = LazyLock::new(|| {
 
 static KMS_TX_SENDERS_BLOCK_TIMESTAMP: LazyLock<IntGauge> = LazyLock::new(|| {
     register_int_gauge!(
-        "coprocessor_kms_tx_senders_block_timestamp_seconds",
+        "coprocessor_proxy_kms_tx_senders_block_timestamp_seconds",
         "Unix timestamp of the finalized block used for the KMS tx-sender set; 0 before the first read"
     )
     .unwrap()
