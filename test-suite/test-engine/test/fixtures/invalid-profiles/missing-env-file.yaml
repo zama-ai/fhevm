@@ -1,0 +1,7 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata: { name: missing-env-file, description: Valid file whose resolution fails. }
+spec:
+  envFiles: [./not-there.env]
+  settings:
+    url: { env: SOME_VARIABLE_THAT_IS_NOT_SET }

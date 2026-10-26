@@ -1,0 +1,13 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.missing-setting
+  name: Fixture missing-setting
+  owner: qa
+  description: Engine test fixture (missing-setting).
+  tags: [fixture, world]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30

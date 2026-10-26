@@ -1,0 +1,14 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: invalid.multi-problem
+  name: Invalid fixture
+  owner: qa
+  description: Schema and reference problems at once.
+  tags: []
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  timeoutSeconds: 30
+  isolation: process
+  targets: [staging]

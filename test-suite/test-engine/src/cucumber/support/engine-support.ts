@@ -2,11 +2,19 @@
  * Support code loaded into every scenario before the scenario's own support code.
  * It runs inside the scenario worker process, so it only affects that scenario.
  */
-import { setDefaultTimeout } from '@cucumber/cucumber';
+import { Before, setDefaultTimeout, setWorldConstructor } from '@cucumber/cucumber';
 
-import { STEP_TIMEOUT_ENV } from '../../runner/types.js';
+import { EngineWorld } from '../../api/world.js';
+import { getCurrentJob } from '../../runner/job-context.js';
 
-const stepTimeoutMs = Number(process.env[STEP_TIMEOUT_ENV]);
-if (Number.isInteger(stepTimeoutMs) && stepTimeoutMs > 0) {
-  setDefaultTimeout(stepTimeoutMs);
-}
+const job = getCurrentJob();
+if (job) setDefaultTimeout(job.stepTimeoutMs);
+
+// Default World; a scenario calling setWorldConstructor later replaces it (with a subclass).
+setWorldConstructor(EngineWorld);
+
+Before({ name: 'engine: World must extend EngineWorld' }, function (this: unknown) {
+  if (!(this instanceof EngineWorld)) {
+    throw new Error("the World must extend EngineWorld (import { EngineWorld } from '#engine')");
+  }
+});

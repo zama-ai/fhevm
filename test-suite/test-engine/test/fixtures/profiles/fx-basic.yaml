@@ -1,0 +1,6 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata:
+  name: fx-basic
+  description: Fixture profile with no settings and no confirmation.
+spec: {}

@@ -25,6 +25,8 @@ export interface ScenarioManifest {
     supportCode: string[];
     timeoutSeconds: number;
     enabled: boolean;
+    /** Profiles the scenario may run on; undefined means every profile not requiring confirmation. */
+    targets?: string[];
   };
 }
 

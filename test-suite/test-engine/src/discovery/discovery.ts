@@ -1,7 +1,7 @@
 import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 
-import { parseManifest } from '../manifest/manifest.js';
+import { validateManifest } from '../manifest/manifest.js';
 import { MANIFEST_FILE_NAME, ManifestError, type ScenarioManifest } from '../manifest/types.js';
 import { compiledPathFor, isWithin } from '../paths.js';
 
@@ -21,6 +21,8 @@ export interface DiscoveryOptions {
   sourceRoot: string;
   /** Output directory of `tsc`. */
   distDir: string;
+  /** Profile names valid in `spec.targets` (`none` plus the profile files in use). */
+  knownProfiles: string[];
 }
 
 export interface DiscoveryResult {
@@ -42,6 +44,27 @@ async function findManifestPaths(dir: string): Promise<string[]> {
     }
   }
   return found;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+const stringsOf = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+
+/**
+ * Profiles named in `targets` must exist. Runs on
+ * the parsed document even when the schema failed, so that every problem is reported at once.
+ */
+function referenceProblems(document: unknown, options: DiscoveryOptions): string[] {
+  const problems: string[] = [];
+  const spec = isRecord(document) && isRecord(document.spec) ? document.spec : {};
+  const unknownTargets = stringsOf(spec.targets).filter((target) => !options.knownProfiles.includes(target));
+  if (unknownTargets.length > 0) {
+    problems.push(
+      `spec.targets: unknown profile(s): ${unknownTargets.join(', ')} (known: ${options.knownProfiles.join(', ')})`,
+    );
+  }
+  return problems;
 }
 
 function resolveScenario(
@@ -66,6 +89,8 @@ function resolveScenario(
   };
 
   const featurePath = resolveLocal('spec.entrypoint', manifest.spec.entrypoint);
+
+  problems.push(...referenceProblems(manifest, options));
 
   const supportModules: string[] = [];
   for (const source of manifest.spec.supportCode) {
@@ -100,8 +125,11 @@ export async function discoverScenarios(options: DiscoveryOptions): Promise<Disc
 
   for (const manifestPath of manifestPaths) {
     try {
-      const manifest = parseManifest(manifestPath, await fs.readFile(manifestPath, 'utf8'));
-      scenarios.push(resolveScenario(manifestPath, manifest, options));
+      const result = validateManifest(await fs.readFile(manifestPath, 'utf8'));
+      if (!result.ok) {
+        throw new ManifestError(manifestPath, [...result.problems, ...referenceProblems(result.document, options)]);
+      }
+      scenarios.push(resolveScenario(manifestPath, result.document, options));
     } catch (error) {
       if (!(error instanceof ManifestError)) throw error;
       errors.push(error);

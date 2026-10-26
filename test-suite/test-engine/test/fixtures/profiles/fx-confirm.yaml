@@ -1,0 +1,7 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata:
+  name: fx-confirm
+  description: Fixture profile requiring confirmation (behaves like mainnet).
+spec:
+  requiresConfirmation: true

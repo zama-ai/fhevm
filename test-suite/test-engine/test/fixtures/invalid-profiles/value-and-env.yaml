@@ -1,0 +1,7 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata: { name: value-and-env, description: Invalid fixture. }
+spec:
+  settings:
+    url: { value: http://localhost, env: URL }
+    empty: { secret: false }
