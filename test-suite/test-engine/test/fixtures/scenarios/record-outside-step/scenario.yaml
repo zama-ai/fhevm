@@ -1,0 +1,13 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.record-outside-step
+  name: Fixture record-outside-step
+  owner: qa
+  description: Engine test fixture (record-outside-step).
+  tags: [fixture, evidence]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30

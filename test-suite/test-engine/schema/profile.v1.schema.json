@@ -1,0 +1,109 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://zama.ai/schemas/fhevm/test-engine/profile.v1.schema.json",
+  "title": "fhEVM test engine environment profile (v1)",
+  "description": "Describes one target environment: whether it requires confirmation and the settings scenarios can read. Every field is enforced at runtime; unknown fields are rejected. A setting is exactly one of {value}, {env} or {env, default}; secrets (secret: true) must come from env and cannot have a default.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": {
+      "const": "fhevm.zama.ai/profile/v1"
+    },
+    "kind": {
+      "const": "Profile"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "description"],
+      "properties": {
+        "name": {
+          "description": "Profile name. Must match the file name (<name>.yaml). 'none' is reserved for the built-in profile.",
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$",
+          "maxLength": 100
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requiresConfirmation": {
+          "description": "When true, 'run' requires --confirm <name>, and scenarios must list this profile explicitly in spec.targets.",
+          "type": "boolean",
+          "default": false
+        },
+        "envFiles": {
+          "description": "Env files (KEY=VALUE) read in memory, relative to this profile file. The process environment takes precedence.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["path"],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "optional": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "settings": {
+          "description": "Generic settings read by scenarios through this.engine.profile.setting(key).",
+          "type": "object",
+          "default": {},
+          "propertyNames": {
+            "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/valueSource"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "valueSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "value": {
+          "description": "Literal value (never for secrets).",
+          "type": ["string", "number", "boolean"]
+        },
+        "env": {
+          "description": "Environment variable name (process environment, then env files).",
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "default": {
+          "description": "Fallback when the variable is not set (only with env, never for secrets).",
+          "type": ["string", "number", "boolean"]
+        },
+        "secret": {
+          "description": "Sensitive value: redacted from every output.",
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

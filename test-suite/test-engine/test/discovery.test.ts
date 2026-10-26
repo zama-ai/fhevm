@@ -32,11 +32,14 @@ describe('discoverScenarios', () => {
       errors.map((error) => [path.basename(path.dirname(error.manifestPath)), error.problems.join('; ')]),
     );
     assert.match(byDir.get('bad-yaml')!, /invalid YAML/);
-    assert.match(byDir.get('unknown-field')!, /unknown field 'requires'/);
+    assert.match(byDir.get('unknown-field')!, /unknown field 'isolation'/);
     assert.match(byDir.get('missing-file')!, /file not found/);
     assert.match(byDir.get('escape')!, /must stay inside the scenario directory/);
     assert.match(byDir.get('dup-1')!, /duplicate metadata.id 'invalid.duplicate'/);
     assert.match(byDir.get('dup-2')!, /duplicate metadata.id 'invalid.duplicate'/);
+    // Schema and reference problems are reported together.
+    assert.match(byDir.get('multi-problem')!, /spec: unknown field 'isolation'/);
+    assert.match(byDir.get('multi-problem')!, /spec\.targets: unknown profile\(s\): staging/);
   });
 
   it('rejects support code that has not been compiled', async () => {
@@ -58,9 +61,42 @@ describe('discoverScenarios', () => {
       scenariosDir: path.join(root, 'scenarios'),
       sourceRoot: root,
       distDir: path.join(root, 'dist'),
+      knownProfiles: ['none'],
     });
     assert.equal(errors.length, 1);
     assert.match(errors[0]!.problems[0]!, /has not been compiled.*npm run build/);
+  });
+
+  it('validates targets against the known profiles', async () => {
+    const root = tempDir();
+    const scenarioDir = path.join(root, 'scenarios', 'bad-refs');
+    mkdirSync(scenarioDir, { recursive: true });
+    writeFileSync(path.join(scenarioDir, 'x.feature'), 'Feature: X\n');
+    writeFileSync(
+      path.join(scenarioDir, 'scenario.yaml'),
+      [
+        'apiVersion: fhevm.zama.ai/scenario/v1',
+        'kind: Scenario',
+        'metadata: { id: bad-refs, name: B, owner: qa, description: B, tags: [] }',
+        'spec:',
+        '  runtime: cucumber',
+        '  entrypoint: ./x.feature',
+        '  timeoutSeconds: 5',
+        '  targets: [none, staging]',
+      ].join('\n'),
+    );
+    const { errors } = await discoverScenarios({ ...discoveryOptions(path.join(root, 'scenarios')) });
+    assert.equal(errors.length, 1);
+    const problems = errors[0]!.problems.join('; ');
+    assert.match(problems, /spec\.targets: unknown profile\(s\): staging/);
+  });
+
+  it('accepts the fixture scenarios with and without targets', async () => {
+    const { scenarios } = await discoverScenarios(discoveryOptions(FIXTURE_SCENARIOS));
+    const basicOnly = scenarios.find((scenario) => scenario.manifest.metadata.id === 'fixture.basic-only')!;
+    assert.deepEqual(basicOnly.manifest.spec.targets, ['fx-basic']);
+    const passing = scenarios.find((scenario) => scenario.manifest.metadata.id === 'fixture.passing')!;
+    assert.equal(passing.manifest.spec.targets, undefined);
   });
 
   it('fails when the scenarios directory does not exist', async () => {

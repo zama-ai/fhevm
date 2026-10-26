@@ -1,3 +1,4 @@
+import type { EvidencePayload } from '../api/evidence.js';
 import type { StepReport, StepStatus, TestCaseReport } from './messages.js';
 import type { RunReport, ScenarioReport } from './report.js';
 
@@ -42,14 +43,61 @@ function outcomeLabel(outcome: ScenarioReport['outcome'], dryRun: boolean): stri
 
 const badge = (label: string, tone: Tone) => `<span class="badge ${tone}">${escapeHtml(label)}</span>`;
 
+function renderEvidence(evidence: EvidencePayload[] | undefined): string {
+  if (!evidence?.length) return '';
+  const rows = evidence
+    .map(
+      (entry) => `<tr>
+        <td><code>${escapeHtml(entry.kind)}</code></td>
+        <td>${escapeHtml(entry.label ?? '')}</td>
+        <td><pre class="data">${escapeHtml(JSON.stringify(entry.data, null, 2))}</pre></td>
+        <td class="num">${escapeHtml(entry.timestamp.replace('T', ' ').replace(/\.\d+Z$/, 'Z'))}</td>
+      </tr>`,
+    )
+    .join('');
+  return `<table class="evidence">
+    <thead><tr><th>Evidence</th><th>Label</th><th>Data</th><th class="num">Recorded</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
 function renderStep(step: StepReport): string {
   const error = step.error ? `<pre class="error">${escapeHtml(step.error)}</pre>` : '';
-  return `<tr>
+  const source = step.source ? ` <span class="muted">${escapeHtml(step.source)}</span>` : '';
+  return `<tr${step.kind === 'hook' ? ' class="hook"' : ''}>
     <td>${badge(step.status, stepTone(step.status))}</td>
-    <td><span class="kw">${escapeHtml(step.keyword)}</span> ${escapeHtml(step.text)}${error}</td>
+    <td><span class="kw">${escapeHtml(step.keyword)}</span> ${escapeHtml(step.text)}${source}${error}${renderEvidence(step.evidence)}</td>
     <td class="num">${step.line ?? ''}</td>
     <td class="num">${formatDuration(step.durationMs)}</td>
   </tr>`;
+}
+
+function renderProfile(report: RunReport): string {
+  const { profile } = report.run;
+  const settings = Object.entries(profile.settings);
+  const rows = settings
+    .map(
+      ([key, setting]) => `<tr>
+        <td><code>${escapeHtml(key)}</code></td>
+        <td>${escapeHtml(String(setting.value))}</td>
+        <td class="muted">${escapeHtml(setting.source)}</td>
+        <td>${setting.secret ? badge('secret', 'warn') : ''}</td>
+      </tr>`,
+    )
+    .join('');
+  return `<section class="profile">
+    <h2>Profile <code>${escapeHtml(profile.name)}</code></h2>
+    <p class="muted">${escapeHtml(profile.description)}</p>
+    <dl>
+      <dt>Confirmation</dt><dd>${profile.requiresConfirmation ? 'required' : 'not required'}</dd>
+      ${report.run.gitCommit ? `<dt>Git commit</dt><dd><code>${escapeHtml(report.run.gitCommit)}</code></dd>` : ''}
+    </dl>
+    ${
+      settings.length
+        ? `<table><thead><tr><th>Setting</th><th>Value</th><th>Source</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        : '<p class="muted">No settings.</p>'
+    }
+  </section>`;
 }
 
 function renderTestCase(testCase: TestCaseReport): string {
@@ -89,6 +137,9 @@ function renderScenario(scenario: ScenarioReport, dryRun: boolean): string {
     ['Manifest', scenario.manifestPath],
     ['Feature', scenario.featurePath],
     ['Timeout', `${scenario.timeoutSeconds} s`],
+    ['Targets', scenario.targets?.join(', ') ?? 'any profile not requiring confirmation'],
+    ['Decision', scenario.decision.action === 'run' ? 'run' : `skip: ${scenario.decision.reason}`],
+    ['Evidence', String(scenario.evidenceCount)],
     ...(scenario.origin ? ([['Origin', scenario.origin]] as Array<[string, string]>) : []),
   ];
   return `<details class="scenario ${tone}"${scenario.outcome === 'passed' || scenario.outcome === 'skipped' ? '' : ' open'}>
@@ -115,6 +166,7 @@ export function renderHtmlReport(report: RunReport): string {
   const { summary } = report;
   const tiles: Array<[string, number, Tone]> = [
     ['Total', summary.total, 'muted'],
+    ['Executed', summary.executed, 'muted'],
     [dryRun ? 'Valid' : 'Passed', summary.passed, 'ok'],
     [dryRun ? 'Invalid' : 'Failed', summary.failed, 'bad'],
     ['Timed out', summary['timed-out'], 'warn'],
@@ -183,6 +235,12 @@ export function renderHtmlReport(report: RunReport): string {
   th { font-weight: 500; color: var(--muted); font-size: 12px; }
   .num { text-align: right; white-space: nowrap; }
   .kw { font-weight: 600; }
+  h2 { font-size: 16px; margin: 24px 0 4px; }
+  .profile { margin-top: 24px; }
+  tr.hook td { background: var(--neutral-bg); }
+  table.evidence { margin: 8px 0 4px; }
+  table.evidence th, table.evidence td { font-size: 12.5px; }
+  pre.data { margin: 0; white-space: pre-wrap; word-break: break-all; }
   pre.error { white-space: pre-wrap; color: var(--bad); background: var(--bad-bg); padding: 8px; border-radius: 6px; margin: 6px 0 0; }
 </style>
 </head>
@@ -195,12 +253,16 @@ export function renderHtmlReport(report: RunReport): string {
     <span>${formatDuration(report.run.durationMs)}</span>
     <span>${escapeHtml(report.engine.name)} ${escapeHtml(report.engine.version)} · Node ${escapeHtml(report.engine.node)}</span>
     ${filters.length ? `<span>${escapeHtml(filters.join(' · '))}</span>` : ''}
+    <span>Profile <code>${escapeHtml(report.run.profile.name)}</code></span>
     <span>${badge(summary.success ? 'success' : 'failure', summary.success ? 'ok' : 'bad')}</span>
   </p>
+  ${summary.executed === 0 ? '<p class="reason">No scenario was executed: every selected scenario was skipped (see the reasons below).</p>' : ''}
+  ${report.run.interrupted ? '<p class="reason">The run was interrupted.</p>' : ''}
   <section class="tiles">
     ${tiles.map(([label, value, tone]) => `<div class="tile ${tone}"><div class="muted">${label}</div><div class="value">${value}</div></div>`).join('')}
   </section>
   ${report.scenarios.map((scenario) => renderScenario(scenario, dryRun)).join('')}
+  ${renderProfile(report)}
 </main>
 </body>
 </html>

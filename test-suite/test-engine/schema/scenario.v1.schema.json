@@ -7,8 +7,12 @@
   "additionalProperties": false,
   "required": ["apiVersion", "kind", "metadata", "spec"],
   "properties": {
-    "apiVersion": { "const": "fhevm.zama.ai/scenario/v1" },
-    "kind": { "const": "Scenario" },
+    "apiVersion": {
+      "const": "fhevm.zama.ai/scenario/v1"
+    },
+    "kind": {
+      "const": "Scenario"
+    },
     "metadata": {
       "type": "object",
       "additionalProperties": false,
@@ -20,14 +24,29 @@
           "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$",
           "maxLength": 100
         },
-        "name": { "description": "Human readable name.", "type": "string", "minLength": 1 },
-        "owner": { "description": "Team that owns the scenario.", "type": "string", "minLength": 1 },
-        "description": { "description": "What the scenario verifies.", "type": "string", "minLength": 1 },
+        "name": {
+          "description": "Human readable name.",
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "description": "Team that owns the scenario.",
+          "type": "string",
+          "minLength": 1
+        },
+        "description": {
+          "description": "What the scenario verifies.",
+          "type": "string",
+          "minLength": 1
+        },
         "tags": {
           "description": "Selection tags, written without '@'. Matched with Cucumber tag expressions (e.g. '@smoke and not @slow').",
           "type": "array",
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$" }
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+          }
         },
         "origin": {
           "description": "Reference to the original test this scenario was ported from (traceability of behavioural equivalence).",
@@ -41,7 +60,9 @@
       "additionalProperties": false,
       "required": ["runtime", "entrypoint", "timeoutSeconds"],
       "properties": {
-        "runtime": { "const": "cucumber" },
+        "runtime": {
+          "const": "cucumber"
+        },
         "entrypoint": {
           "description": "Feature file, relative to the scenario directory.",
           "type": "string",
@@ -51,7 +72,10 @@
           "description": "TypeScript support code (step definitions, World) relative to the scenario directory. The engine loads the compiled JavaScript.",
           "type": "array",
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "\\.ts$" },
+          "items": {
+            "type": "string",
+            "pattern": "\\.ts$"
+          },
           "default": []
         },
         "timeoutSeconds": {
@@ -64,6 +88,16 @@
           "description": "Set to false to keep the scenario on disk but always skip it.",
           "type": "boolean",
           "default": true
+        },
+        "targets": {
+          "description": "Profiles this scenario may run on. When absent: every profile except those with requiresConfirmation, which must always be listed explicitly. Names: 'none' or a profile file name. Scenarios that depend on the fhEVM stack must declare targets, since the default profile 'none' has no environment.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+          }
         }
       }
     }

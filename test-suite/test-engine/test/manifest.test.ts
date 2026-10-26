@@ -51,8 +51,8 @@ describe('parseManifest', () => {
   });
 
   it('rejects unknown fields so that no field is decorative', () => {
-    const problems = problemsOf(VALID.replace('timeoutSeconds: 300', 'timeoutSeconds: 300\n  requires: {}'));
-    assert.deepEqual(problems, ["spec: unknown field 'requires'"]);
+    const problems = problemsOf(VALID.replace('timeoutSeconds: 300', 'timeoutSeconds: 300\n  isolation: {}'));
+    assert.deepEqual(problems, ["spec: unknown field 'isolation'"]);
   });
 
   it('reports every missing required field', () => {
@@ -76,6 +76,25 @@ describe('parseManifest', () => {
       problemsOf(VALID.replace('timeoutSeconds: 300', 'timeoutSeconds: 300\n  supportCode: [./steps.js]')).length,
       1,
     );
+  });
+
+  it('accepts targets', () => {
+    const manifest = parseManifest(
+      'scenario.yaml',
+      VALID.replace('timeoutSeconds: 300', 'timeoutSeconds: 300\n  targets: [local, testnet]'),
+    );
+    assert.deepEqual(manifest.spec.targets, ['local', 'testnet']);
+    assert.equal(parseManifest('scenario.yaml', VALID).spec.targets, undefined);
+  });
+
+  it('validates the shape of targets and rejects the removed requires field', () => {
+    const withSpec = (extra: string) => VALID.replace('timeoutSeconds: 300', `timeoutSeconds: 300\n${extra}`);
+    assert.equal(problemsOf(withSpec('  targets: []')).length, 1);
+    assert.equal(problemsOf(withSpec('  targets: [local, local]')).length, 1);
+    assert.equal(problemsOf(withSpec('  targets: [Local Stack]')).length, 1);
+    assert.deepEqual(problemsOf(withSpec('  requires: { capabilities: [relayer] }')), [
+      "spec: unknown field 'requires'",
+    ]);
   });
 
   it('reports invalid YAML on one line', () => {

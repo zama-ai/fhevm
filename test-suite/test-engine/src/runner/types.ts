@@ -2,10 +2,32 @@
  * Contracts of the Runner component: the job handed to a scenario worker process, and the
  * result the orchestrator derives from it.
  */
+import type { ResolvedProfile } from '../profiles/types.js';
 
 export type RunMode = 'run' | 'dry-run';
 
-/** Serialised as JSON and passed to the worker process as its only argument. */
+/** Scenario metadata exposed to support code through `this.engine.scenario`. */
+export interface ScenarioInfo {
+  id: string;
+  name: string;
+  owner: string;
+  tags: string[];
+  origin?: string;
+}
+
+/**
+ * Cucumber `worldParameters` of every scenario. Plain data only: Cucumber structured-clones it
+ * into each World.
+ */
+export interface EngineWorldParameters {
+  scenario: ScenarioInfo;
+  profile: ResolvedProfile;
+}
+
+/**
+ * Serialised as JSON and written to the worker's stdin (never argv or environment variables,
+ * since it carries resolved profile settings, secrets included).
+ */
 export interface WorkerJob {
   scenarioId: string;
   mode: RunMode;
@@ -15,6 +37,9 @@ export interface WorkerJob {
   /** Directory where the worker writes the Cucumber artifacts of this scenario. */
   artifactsDir: string;
   cwd: string;
+  /** Default Cucumber step timeout (the scenario's `spec.timeoutSeconds`). */
+  stepTimeoutMs: number;
+  worldParameters: EngineWorldParameters;
 }
 
 /** File names the worker writes inside `WorkerJob.artifactsDir`. */
@@ -23,9 +48,6 @@ export const ARTIFACTS = {
   cucumberHtml: 'cucumber-report.html',
   console: 'console.log',
 } as const;
-
-/** Environment variable carrying the default Cucumber step timeout into the worker. */
-export const STEP_TIMEOUT_ENV = 'TEST_ENGINE_STEP_TIMEOUT_MS';
 
 /** Prefix of the single stderr line in which the worker reports why it could not run Cucumber. */
 export const ENGINE_ERROR_PREFIX = '[test-engine] worker error: ';

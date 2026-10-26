@@ -1,0 +1,7 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata: { name: another-name, description: Invalid fixture with problems of several kinds. }
+spec:
+  rpc: http://localhost:8545
+  settings:
+    api-key: { value: not-a-real-secret, secret: true }

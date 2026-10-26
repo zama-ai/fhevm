@@ -10,5 +10,5 @@ spec:
   runtime: cucumber
   entrypoint: ./fixture.feature
   timeoutSeconds: 30
-  requires:
-    capabilities: [relayer]
+  isolation:
+    parallelism: safe
