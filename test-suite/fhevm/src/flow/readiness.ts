@@ -8,7 +8,6 @@ import {
   supportsConsensusDetector,
   supportsCoprocessorDbStateRevert,
   runsCoprocessorProxy,
-  supportsCoprocessorProxy,
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
@@ -257,7 +256,7 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
         (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
         (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
     ),
-    supportsCoprocessorProxy(state),
+    runsCoprocessorProxy(state),
   );
   const topology = topologyForState(state);
   const names: string[] = [];

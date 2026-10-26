@@ -17,7 +17,6 @@ import {
   supportsConnectorHttp,
   supportsConsensusDetector,
   runsCoprocessorProxy,
-  supportsCoprocessorProxy,
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
@@ -624,7 +623,7 @@ export const serviceNameList = (
         (includeConsensusDetector || suffix !== "consensus-detector") &&
         (includeUpgradeController || suffix !== "upgrade-controller"),
     ),
-    supportsCoprocessorProxy(state),
+    runsCoprocessorProxy(state),
   );
   const topology = topologyForState(state);
   const names: string[] = [];

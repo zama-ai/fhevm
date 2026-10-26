@@ -79,7 +79,7 @@ const supportsUpgradeControllerForState = (state: { versions?: State["versions"]
 const supportsConnectorHttpForState = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
   !state.versions || supportsConnectorHttp({ versions: state.versions, overrides: state.overrides });
 type CoprocessorServicesState = { versions?: State["versions"]; overrides: LocalOverride[]; scenario?: State["scenario"] };
-const supportsCoprocessorProxyForState = (state: CoprocessorServicesState) =>
+const runsCoprocessorProxyForState = (state: CoprocessorServicesState) =>
   state.versions
     ? runsCoprocessorProxy({ versions: state.versions, overrides: state.overrides, scenario: state.scenario })
     : state.scenario?.kind !== "blue-green";
@@ -97,7 +97,7 @@ const coprocessorRuntimeSuffixes = (state: CoprocessorServicesState) =>
         (service !== "consensus-detector" || supportsConsensusDetectorForState(state)) &&
         (service !== "upgrade-controller" || supportsUpgradeControllerForState(state)),
     ),
-    supportsCoprocessorProxyForState(state),
+    runsCoprocessorProxyForState(state),
   );
 const coprocessorListenerSuffixes = (state: CoprocessorServicesState) =>
   coprocessorRuntimeSuffixes(state).filter((service) => state.scenario && consumerOnlyHostListeners(state.scenario) ? service === "host-listener-consumer" : /^host-listener(?:-poller)?$/.test(service));
@@ -108,7 +108,7 @@ const coprocessorServices = (state: CoprocessorServicesState) =>
       (service !== "coprocessor-host-listener-consumer" || supportsConsumerForState(state)) &&
       (service !== "coprocessor-consensus-detector" || supportsConsensusDetectorForState(state)) &&
       (service !== "coprocessor-upgrade-controller" || supportsUpgradeControllerForState(state)) &&
-      (service !== "coprocessor-proxy" || supportsCoprocessorProxyForState(state)),
+      (service !== "coprocessor-proxy" || runsCoprocessorProxyForState(state)),
   );
 
 /** Lists steady-state services expected for each resumable lifecycle step. */
