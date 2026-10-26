@@ -267,6 +267,13 @@ export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-conne
  */
 export const COPROCESSOR_PROXY_SUFFIXES = ["prf-service-fake", "proxy"];
 
+/**
+ * The env file of coprocessor `index`'s proxy. It holds only the proxy's own settings: the
+ * coprocessor's env carries database and signing secrets the internet-facing proxy must not get.
+ */
+export const coprocessorProxyEnvName = (index: number) =>
+  index === 0 ? "coprocessor-proxy" : `coprocessor-proxy.${index}`;
+
 /** `suffixes` without the proxy pair, then the pair in start order when `includeProxy`. */
 export const withCoprocessorProxySuffixes = (suffixes: readonly string[], includeProxy: boolean) => [
   ...suffixes.filter((suffix) => !COPROCESSOR_PROXY_SUFFIXES.includes(suffix)),

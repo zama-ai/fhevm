@@ -506,7 +506,7 @@ instances:
       expect(proxy?.image).toBe("ghcr.io/zama-ai/fhevm/coprocessor/coprocessor-proxy:${COPROCESSOR_PROXY_VERSION}");
       expect(fake?.image).toBe("ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}");
       expect(proxy?.depends_on).toEqual({ "coprocessor1-prf-service-fake": { condition: "service_healthy" } });
-      expect(proxy?.env_file).toEqual([envPath("coprocessor.1")]);
+      expect(proxy?.env_file).toEqual([envPath("coprocessor-proxy.1")]);
       expect(proxy?.environment?.COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS).toBe("0x00000000000000000000000000000000000000c1");
       expect(proxy?.volumes?.[0]).toMatch(/\/static\/config\/coprocessor-proxy:\/etc\/coprocessor-proxy\/tls:ro$/);
       expect(fake?.volumes?.[0]).toMatch(/\/test-suite\/e2e\/scripts\/fake-prf-service\.ts:\/opt\/fake-prf-service\.ts:ro$/);

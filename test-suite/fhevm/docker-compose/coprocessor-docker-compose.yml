@@ -328,8 +328,9 @@ services:
     image: ghcr.io/zama-ai/fhevm/coprocessor/coprocessor-proxy:${COPROCESSOR_PROXY_VERSION}
     platform: linux/amd64
     restart: "on-failure:10"
+    # Its own env file, without the coprocessor's secrets.
     env_file:
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor-proxy.env
     environment:
       COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID: ${CANONICAL_PROTOCOL_CONFIG_CHAIN_ID}
       COPROCESSOR_PROXY_ETHEREUM_RPC_URL: ${RPC_HTTP_URL}

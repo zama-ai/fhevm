@@ -127,30 +127,49 @@ describe("env", () => {
         ]),
       ),
     ) as Record<string, Record<string, string>>;
+    const bundle = presetBundle("latest-main", "abcdef0", "latest-main.json");
     const stateFor = (count: number): State => ({
       target: "latest-main",
       lockPath: "/tmp/latest-main.json",
       requiresGitHub: true,
-      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      versions: { ...bundle, env: { ...bundle.env, COPROCESSOR_PROXY_VERSION: "v0.15.0" } },
       overrides: [],
       scenario: testDefaultScenario({ topology: { count, threshold: count } }),
       completedSteps: [],
       updatedAt: "2026-03-30T00:00:00.000Z",
     });
+    // The proxy's env file holds only its own settings, none of the coprocessor's.
+    const expectProxyEnv = (env: Record<string, string>, signer: string, prfService: string) =>
+      expect(env).toEqual({
+        COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS: signer,
+        COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS: prfService,
+      });
+    const expectNoProxySetting = (env: Record<string, string>) =>
+      expect(Object.keys(env).filter((key) => key.startsWith("COPROCESSOR_PROXY_"))).toEqual([]);
 
     const solo = await renderEnvMaps({ discovery: undefined }, stackSpecForState(stateFor(1)), templateEnvs, deriveWallet);
-    expect(solo.componentEnvs.coprocessor.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS).toBe(
+    expectProxyEnv(
+      solo.instanceEnvs["coprocessor-proxy"],
       templateEnvs["host-sc"].COPROCESSOR_SIGNER_ADDRESS_0,
+      "coprocessor-prf-service-fake:8080",
     );
-    expect(solo.componentEnvs.coprocessor.COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS).toBe("coprocessor-prf-service-fake:8080");
+    expectNoProxySetting(solo.componentEnvs.coprocessor);
 
     const pair = await renderEnvMaps({ discovery: undefined }, stackSpecForState(stateFor(2)), templateEnvs, deriveWallet);
     const signers = pair.componentEnvs["host-sc"];
     expect(signers.COPROCESSOR_SIGNER_ADDRESS_0).not.toBe(signers.COPROCESSOR_SIGNER_ADDRESS_1);
-    expect(pair.componentEnvs.coprocessor.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS).toBe(signers.COPROCESSOR_SIGNER_ADDRESS_0);
-    expect(pair.componentEnvs.coprocessor.COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS).toBe("coprocessor-prf-service-fake:8080");
-    expect(pair.instanceEnvs["coprocessor.1"].COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS).toBe(signers.COPROCESSOR_SIGNER_ADDRESS_1);
-    expect(pair.instanceEnvs["coprocessor.1"].COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS).toBe("coprocessor1-prf-service-fake:8080");
+    expectProxyEnv(
+      pair.instanceEnvs["coprocessor-proxy"],
+      signers.COPROCESSOR_SIGNER_ADDRESS_0,
+      "coprocessor-prf-service-fake:8080",
+    );
+    expectProxyEnv(
+      pair.instanceEnvs["coprocessor-proxy.1"],
+      signers.COPROCESSOR_SIGNER_ADDRESS_1,
+      "coprocessor1-prf-service-fake:8080",
+    );
+    expectNoProxySetting(pair.componentEnvs.coprocessor);
+    expectNoProxySetting(pair.instanceEnvs["coprocessor.1"]);
   });
 
   test("points the e2e suite at every coprocessor's proxy, signing as KMS party 1's connector", async () => {
@@ -179,8 +198,8 @@ describe("env", () => {
     expect(suite.COPROCESSOR_PROXY_URLS).toBe("https://coprocessor-proxy:8443,https://coprocessor1-proxy:8443");
     expect(suite.COPROCESSOR_SIGNER_ADDRESSES).toBe(
       [
-        pair.componentEnvs.coprocessor.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS,
-        pair.instanceEnvs["coprocessor.1"].COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS,
+        pair.instanceEnvs["coprocessor-proxy"].COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS,
+        pair.instanceEnvs["coprocessor-proxy.1"].COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS,
       ].join(","),
     );
     expect(suite.PRF_SERVICE_FAKE_COUNT_URLS).toBe(
@@ -216,6 +235,7 @@ describe("env", () => {
       ]) {
         expect(gated.componentEnvs["test-suite"][key]).toBe("");
       }
+      expect(gated.instanceEnvs["coprocessor-proxy"]).toBeUndefined();
     }
   });
 

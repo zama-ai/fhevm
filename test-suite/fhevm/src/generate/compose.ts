@@ -34,6 +34,7 @@ import {
   REPO_ROOT,
   TEMPLATE_COMPOSE_DIR,
   composePath,
+  coprocessorProxyEnvName,
   envPath,
   hostChainNames,
   hostChainRuntimes,
@@ -821,7 +822,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       const adjusted = applyInstanceAdjustments(
         name,
         service,
-        envFileValue,
+        name === "coprocessor-proxy" ? envPath(coprocessorProxyEnvName(instance.index)) : envFileValue,
         instanceEnv,
         sourceInstance,
         locallyBuilt ? {} : argPolicy.coprocessorArgs,

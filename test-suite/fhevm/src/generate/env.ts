@@ -21,6 +21,7 @@ import {
   objectStoreOperatorUrl,
   POSTGRES_HOST,
   coprocessorDatabaseName,
+  coprocessorProxyEnvName,
   hostChainRuntimes,
   realLzEndpointFor,
 } from "../layout";
@@ -447,10 +448,26 @@ const COPROCESSOR_PROXY_PORT = 8443;
 /** The coprocessor-proxy's default metrics port. */
 const COPROCESSOR_PROXY_METRICS_PORT = 9100;
 
-/** Points instance `index`'s proxy at its own fake prf-service, for requests signed for `signer`. */
-const setCoprocessorProxyEnv = (env: Record<string, string>, index: number, signer: string) => {
-  env.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS = signer;
-  env.COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS = `${toServiceName("prf-service-fake", index)}:${PRF_SERVICE_FAKE_PORT}`;
+/** Coprocessor `index`'s signer address, set by `buildInstanceEnvs` for multi-coprocessor stacks. */
+const coprocessorSigner = (envs: Record<string, Record<string, string>>, index: number) =>
+  envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`];
+
+/**
+ * Each proxy's env file: it points coprocessor `index`'s proxy at its own fake prf-service, for
+ * requests signed for that coprocessor.
+ */
+const buildCoprocessorProxyEnvs = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
+  const proxyEnvs: Record<string, Record<string, string>> = {};
+  if (!plan.coprocessor || !runsCoprocessorProxy(plan)) {
+    return proxyEnvs;
+  }
+  for (let index = 0; index < plan.topology.count; index += 1) {
+    proxyEnvs[coprocessorProxyEnvName(index)] = {
+      COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS: coprocessorSigner(envs, index),
+      COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS: `${toServiceName("prf-service-fake", index)}:${PRF_SERVICE_FAKE_PORT}`,
+    };
+  }
+  return proxyEnvs;
 };
 
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */
@@ -465,7 +482,6 @@ const buildInstanceEnvs = async (
   }
   const baseInstance = plan.coprocessor.instances.find((instance) => instance.index === 0);
   if (plan.topology.count === 1) {
-    setCoprocessorProxyEnv(envs["coprocessor"], 0, envs["host-sc"].COPROCESSOR_SIGNER_ADDRESS_0);
     if (baseInstance) {
       Object.assign(envs["coprocessor"], baseInstance.env);
     }
@@ -492,7 +508,6 @@ const buildInstanceEnvs = async (
     envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`] = wallet.address;
     if (index === 0) {
       envs["coprocessor"].TX_SENDER_PRIVATE_KEY = wallet.privateKey;
-      setCoprocessorProxyEnv(envs["coprocessor"], index, wallet.address);
       Object.assign(envs["coprocessor"], baseInstance?.env ?? {});
       envs["coprocessor"].BUCKET_NAME = opBucket;
       continue;
@@ -503,7 +518,6 @@ const buildInstanceEnvs = async (
     next.DATABASE_URL = `postgresql://${dbCreds}@${POSTGRES_HOST}/${dbName}`;
     next.TX_SENDER_PRIVATE_KEY = wallet.privateKey;
     next.BUCKET_NAME = opBucket;
-    setCoprocessorProxyEnv(next, index, wallet.address);
     const instance = plan.coprocessor.instances.find((item) => item.index === index);
     Object.assign(next, instance?.env ?? {});
     instanceEnvs[`coprocessor.${index}`] = next;
@@ -525,19 +539,14 @@ const validateEnvMaps = (
  * What the "Coprocessor proxy" suite reads, one entry per coprocessor. Remove with that suite when the
  * RFC-038 pad connector and its e2e land, including the mapping of party 1's connector key below.
  */
-const applyCoprocessorProxyTestSuiteEnv = (
-  envs: Record<string, Record<string, string>>,
-  instanceEnvs: Record<string, Record<string, string>>,
-  plan: StackSpec,
-) => {
+const applyCoprocessorProxyTestSuiteEnv = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
   const supported = plan.coprocessor && runsCoprocessorProxy(plan);
   const indices = supported ? [...Array(plan.topology.count).keys()] : [];
-  const instanceEnv = (index: number) => (index === 0 ? envs["coprocessor"] : instanceEnvs[`coprocessor.${index}`]);
   envs["test-suite"].COPROCESSOR_PROXY_URLS = indices
     .map((index) => `https://${toServiceName("proxy", index)}:${COPROCESSOR_PROXY_PORT}`)
     .join(",");
   envs["test-suite"].COPROCESSOR_SIGNER_ADDRESSES = indices
-    .map((index) => instanceEnv(index).COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS)
+    .map((index) => coprocessorSigner(envs, index))
     .join(",");
   envs["test-suite"].PRF_SERVICE_FAKE_COUNT_URLS = indices
     .map((index) => `http://${toServiceName("prf-service-fake", index)}:${PRF_SERVICE_FAKE_COUNT_PORT}/count`)
@@ -632,7 +641,7 @@ export const renderEnvMaps = async (
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
   envs["test-suite"].GATEWAY_DEPLOYER_PRIVATE_KEY = envs["gateway-sc"].DEPLOYER_PRIVATE_KEY;
   envs["test-suite"].GATEWAY_PAUSER_PRIVATE_KEY = envs["gateway-sc"].PAUSER_PRIVATE_KEY;
-  applyCoprocessorProxyTestSuiteEnv(envs, instanceEnvs, plan);
+  applyCoprocessorProxyTestSuiteEnv(envs, plan);
   Object.assign(instanceEnvs, buildKmsConnectorInstanceEnvs(envs, kmsParties));
 
   // Propagate SNS-worker S3 migration configuration.
@@ -727,6 +736,8 @@ export const renderEnvMaps = async (
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_PROTOCOL_CONFIG_CONTRACT_ADDRESS`] = hostAddresses.PROTOCOL_CONFIG_CONTRACT_ADDRESS ?? "";
   }
 
+  // After the loops that copy coprocessor settings into every `coprocessor*` instance env.
+  Object.assign(instanceEnvs, buildCoprocessorProxyEnvs(envs, plan));
   validateEnvMaps(envs, instanceEnvs);
   const compat = compatPolicyForState(plan);
 
