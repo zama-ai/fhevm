@@ -55,7 +55,7 @@ impl Serialize for ErrorCode {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Debug, PartialEq, Eq, Serialize)]
 pub struct ErrorResponse {
     pub code: ErrorCode,
     pub message: String,

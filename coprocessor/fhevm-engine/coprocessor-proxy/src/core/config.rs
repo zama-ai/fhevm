@@ -9,7 +9,7 @@ use std::{ffi::OsStr, net::SocketAddr, path::PathBuf, time::Duration};
 use tracing::Level;
 
 /// Configuration of the `Proxy` service, from command-line flags or environment variables.
-#[derive(Clone, Parser)]
+#[derive(Parser)]
 #[command(version, about = "Public HTTPS entry point of a coprocessor")]
 pub struct Config {
     /// The public bind address of the proxy.

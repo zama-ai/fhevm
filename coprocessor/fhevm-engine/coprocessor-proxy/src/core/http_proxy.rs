@@ -1,7 +1,7 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
 use crate::core::{ErrorCode, ErrorResponse, Proxy, Route, RouteError, match_route};
-use alloy::primitives::{Address, KECCAK256_EMPTY};
+use alloy::primitives::Address;
 use async_trait::async_trait;
 use bytes::Bytes;
 use fhevm_sig_auth::AuthError;
@@ -60,7 +60,6 @@ pub const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(15);
 /// started after it, before it is checked again.
 pub const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
 
-const BODY_NOT_ALLOWED: &str = "request body is not allowed";
 const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path";
 
 /// Per-request context.
@@ -164,28 +163,24 @@ impl ProxyHttp for Proxy {
         // Before the signature, so a body never wakes a read of the KMS tx-senders. The signed body
         // digest must be that of an empty body, so a body is a body mismatch (RFC-038).
         if !body_empty {
-            let code = ErrorCode::Auth {
-                code: AuthError::BodyMismatch.code(),
-                retryable: false,
-            };
-            let error = ErrorResponse::new(code, BODY_NOT_ALLOWED);
-            self.respond_with_error(session, error, None).await?;
+            self.respond_with_error(session, auth_error_response(&AuthError::BodyMismatch), None)
+                .await?;
             return Ok(true);
         }
 
         let authorization = req.headers.get(AUTHORIZATION).map(HeaderValue::as_bytes);
-        let verified = match self.verifier.verify_header(authorization, target) {
+        let verified = match self.verifier.verify(authorization, target, b"") {
             // The signer can be a node of a KMS context whose activation is finalized but not read
             // yet, so it is checked again after one read before being refused.
             Err(AuthError::UnknownSigner(_)) => {
                 self.kms_tx_senders
                     .refresh_after_miss(UNKNOWN_SIGNER_WAIT)
                     .await;
-                self.verifier.verify_header(authorization, target)
+                self.verifier.verify(authorization, target, b"")
             }
             verified => verified,
         };
-        let (sender, body_digest) = match verified {
+        let sender = match verified {
             Ok(signed) => signed,
             Err(e) => {
                 if let AuthError::UnknownSigner(signer) = &e {
@@ -197,13 +192,6 @@ impl ProxyHttp for Proxy {
             }
         };
         ctx.sender = Some(sender);
-
-        if KECCAK256_EMPTY != body_digest {
-            self.respond_with_error(session, auth_error_response(&AuthError::BodyMismatch), None)
-                .await?;
-            return Ok(true);
-        }
-
         Ok(false)
     }
 
@@ -347,19 +335,17 @@ fn route_error_response(error: &RouteError) -> ErrorResponse {
     }
 }
 
-/// The status Pingora's default `fail_to_proxy` would answer.
+/// The status Pingora's default `fail_to_proxy` would answer to an error that is not
+/// prf-service's: those are answered with a JSON body instead.
 fn default_error_code(e: &Error) -> u16 {
     match (e.etype(), e.esource()) {
         (ErrorType::HTTPStatus(code), _) => *code,
-        (_, ErrorSource::Upstream) => StatusCode::BAD_GATEWAY.as_u16(),
         (
             ErrorType::WriteError | ErrorType::ReadError | ErrorType::ConnectionClosed,
             ErrorSource::Downstream,
         ) => 0,
         (_, ErrorSource::Downstream) => StatusCode::BAD_REQUEST.as_u16(),
-        (_, ErrorSource::Internal | ErrorSource::Unset) => {
-            StatusCode::INTERNAL_SERVER_ERROR.as_u16()
-        }
+        _ => StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
     }
 }
 

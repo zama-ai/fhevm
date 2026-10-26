@@ -179,6 +179,7 @@ mod tests {
     use super::*;
     use clap::Parser;
     use rstest::rstest;
+    use serial_test::serial;
     use std::{fs, path::PathBuf};
 
     fn key_pem() -> String {
@@ -209,7 +210,9 @@ mod tests {
         dir
     }
 
+    // Parsing reads the environment, which config.rs's `test_load_from_env` sets.
     #[rstest]
+    #[serial(config_tests)]
     #[case::garbage_cert("tls.crt", "not a certificate".to_string())]
     #[case::garbage_key("tls.key", "not a private key".to_string())]
     #[case::mismatched_key("tls.key", key_pem())]
