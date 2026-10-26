@@ -4,6 +4,7 @@ import {
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
+import { consumerOnlyHostListeners, isLegacyHostListener, listenerCoreServices } from "../host-listener-mode";
 import { GCS_ONLY_SUFFIXES } from "../generate/compose";
 import { hasLocalCoprocessorInstance } from "../scenario/resolve";
 import { topologyForState } from "../stack-spec/stack-spec";
@@ -57,7 +58,6 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
   "test-suite": ["TEST_SUITE_VERSION"],
 };
-const LISTENER_CORE_SERVICES = ["listener-redis", "listener-publisher-for-anvil"];
 type UpgradeComponentPlan = {
   component: string;
   services: string[];
@@ -76,19 +76,21 @@ const kmsConnectorServices = (state: { versions?: State["versions"]; overrides: 
   GROUP_BUILD_SERVICES["kms-connector"].filter(
     (service) => !KMS_CONNECTOR_HTTP_SERVICES.includes(service) || supportsConnectorHttpForState(state),
   );
-const coprocessorRuntimeSuffixes = (state: { versions?: State["versions"] }) =>
+const coprocessorRuntimeSuffixes = (state: { versions?: State["versions"]; scenario?: State["scenario"] }) =>
   GROUP_SERVICE_SUFFIXES.coprocessor.filter(
     (service) =>
+      (!state.scenario || !consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(service)) &&
       service !== "db-migration" &&
       (service !== "host-listener-consumer" || supportsConsumerForState(state)) &&
       (service !== "consensus-detector" || supportsConsensusDetectorForState(state)) &&
       (service !== "upgrade-controller" || supportsUpgradeControllerForState(state)),
   );
-const coprocessorListenerSuffixes = (state: { versions?: State["versions"] }) =>
-  coprocessorRuntimeSuffixes(state).filter((service) => /^host-listener(?:-poller)?$/.test(service));
-const coprocessorServices = (state: { versions?: State["versions"] }) =>
+const coprocessorListenerSuffixes = (state: { versions?: State["versions"]; scenario?: State["scenario"] }) =>
+  coprocessorRuntimeSuffixes(state).filter((service) => state.scenario && consumerOnlyHostListeners(state.scenario) ? service === "host-listener-consumer" : /^host-listener(?:-poller)?$/.test(service));
+const coprocessorServices = (state: { versions?: State["versions"]; scenario?: State["scenario"] }) =>
   GROUP_BUILD_SERVICES.coprocessor.filter(
     (service) =>
+      (!state.scenario || !consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(service.replace(/^coprocessor-/, ""))) &&
       (service !== "coprocessor-host-listener-consumer" || supportsConsumerForState(state)) &&
       (service !== "coprocessor-consensus-detector" || supportsConsensusDetectorForState(state)) &&
       (service !== "coprocessor-upgrade-controller" || supportsUpgradeControllerForState(state)),
@@ -103,7 +105,7 @@ export const resumeSteadyStateServices = (state: State) => {
   const listenerSuffixes = coprocessorListenerSuffixes(state);
   return {
     "base": ["fhevm-object-store", "coprocessor-and-kms-db", KMS_CORE_CONTAINER, "gateway-node", ...chains.map((chain) => chain.node)],
-    ...(supportsHostListenerConsumer(state) ? { "listener-core": ["listener-redis", "listener-publisher-for-anvil"] } : {}),
+    ...(supportsHostListenerConsumer(state) ? { "listener-core": ["listener-redis", ...listenerCoreServices(state.scenario)] } : {}),
     "coprocessor": [
       ...Array.from({ length: topology.count }, (_, index) => {
         const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
@@ -151,8 +153,8 @@ export const multiChainCoprocessorUpgradeTargets = (
 ) => {
   const restartableSuffixes = new Set(
     runtimeServices.flatMap((service) => {
-      const match = service.match(/^coprocessor\d*-(host-listener(?:-poller)?)$/);
-      return match ? [match[1]] : [];
+      const match = service.match(/^coprocessor\d*-(host-listener(?:-poller|-consumer)?)$/);
+      return match && (match[1] !== "host-listener-consumer" || consumerOnlyHostListeners(state.scenario)) ? [match[1]] : [];
     }),
   );
   return extraHostChains(state).map((chain) => {
@@ -202,7 +204,7 @@ export const resolveUpgradePlan = (
   }
   if (group === "listener-core") {
     if (lockFileMode) {
-      return upgradePlan(group, [splitServices("listener-core", LISTENER_CORE_SERVICES)], ["listener-core"]);
+      return upgradePlan(group, [splitServices("listener-core", ["listener-redis", ...listenerCoreServices(state.scenario)])], ["listener-core"]);
     }
   }
   const groupOverrides = state.overrides.filter((item) => item.group === group);

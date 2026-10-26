@@ -24,15 +24,21 @@ use crate::consumer::metrics::{
     inc_blocks_duplicated, inc_blocks_missing, inc_blocks_processed,
     inc_db_errors, observe_legacy_insert_delay_seconds,
 };
-use crate::database::ingest::{ingest_block_logs, BlockLogs, IngestOptions};
+use crate::database::ingest::{
+    ingest_block_logs, BlockLogs, HistoryGap, IngestOptions, IngestResult,
+};
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
 };
 use crate::health_check::HealthCheck;
+use crate::kms_generation::aws_s3::{AwsS3Client, AwsS3Interface};
+use crate::kms_generation::process_kms_generation_activations;
 
 use consumer::{
     AckDecision, BlockPayload, Broker, HandlerError, ListenerConsumer,
 };
+#[cfg(test)]
+mod finalization_tests;
 mod metrics;
 
 const MAX_DB_RETRIES: u64 = 10;
@@ -336,7 +342,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     let blockchain_timeout_tick = HeartBeat::new();
     let blockchain_provider = Arc::new(RwLock::new(None));
 
-    let broker_url = config.url; // e.g."amqp://user:pass@localhost:5672";
+    let broker_url = config.url.clone(); // e.g."amqp://user:pass@localhost:5672";
     let broker = Broker::from_url(&broker_url).await?;
     let consumer_id = format!("{}.{}", config.service_name, config.chain_id);
     let client =
@@ -355,8 +361,11 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
     info!("Consumer registering contracts");
     client.register_contracts(&contracts).await?;
-    info!("Consumer ensure queue");
+    client.register_final_contracts(&contracts).await?;
+    info!("Consumer ensure queues");
     client.ensure_consumer().await?;
+    client.ensure_final_consumer().await?;
+    client.ensure_final_catchup_consumer().await?;
 
     let health_check = HealthCheck {
         blockchain_timeout_tick: blockchain_timeout_tick.clone(),
@@ -364,6 +373,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         blockchain_provider: blockchain_provider.clone(),
         database_pool: db.pool.clone(),
         database_tick: db.tick.clone(),
+        recovery_paused: Default::default(),
     };
     let health_check_server = HealthHttpServer::new(
         Arc::new(health_check),
@@ -400,13 +410,34 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         chain_id_str.clone(),
         client.cancel_token.clone(),
     ));
-    let consumer_task = client.consume(move |payload, _cancel| {
-        blockchain_tick.update();
+    // Resume pending downloads and activations without waiting for a block.
+    if config.kms_generation_address.is_some() {
+        spawn_kms_activations(
+            db.clone(),
+            None,
+            AwsS3Client {},
+            client.cancel_token.clone(),
+        );
+    }
+    // Live and finalized deliveries share this handler. A finalized delivery
+    // re-ingests the block idempotently and marks it finalized.
+    let handler_config = config.clone();
+    let kms_cancel = client.cancel_token.clone();
+    let recovery_client = client.clone();
+    let handle_block = move |payload: BlockPayload, _cancel| {
+        let finalized =
+            matches!(payload.flow, BlockFlow::Final | BlockFlow::FinalCatchup);
+        if !finalized {
+            blockchain_tick.update();
+        }
         let mut db = db.clone();
         let chain_id_str = chain_id_str.clone();
         let last_known_drift = last_known_drift.clone();
         let ingest_options = ingest_options.clone();
         let stack_mode = stack_mode.clone();
+        let config = handler_config.clone();
+        let kms_cancel = kms_cancel.clone();
+        let recovery_client = recovery_client.clone();
         async move {
             // Paused (retired blue stack after cutover): no-op — ack and drop
             // the block without writing anything to the DB.
@@ -446,76 +477,49 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 );
                 return Ok(AckDecision::Ack);
             }
-            let block_summary = BlockSummary {
-                number: payload.block_number,
-                hash: payload.block_hash,
-                parent_hash: payload.parent_hash,
-                timestamp: payload.timestamp,
-            };
-            let catchup = payload.flow == BlockFlow::Catchup;
-            observe_consumer_block_timing(
-                &db,
+            let result = ingest_payload(
+                &mut db,
+                &config,
+                &ingest_options,
                 &chain_id_str,
-                &block_summary,
-                catchup,
+                &payload,
+                AwsS3Client {},
+                &kms_cancel,
             )
             .await;
-            let logs = collect_logs(&payload);
-            info!(
-                chain_id = %payload.chain_id,
-                block_number = payload.block_number,
-                block_hash = ?payload.block_hash,
-                nb_tx = payload.transactions.len(),
-                nb_logs = logs.len(),
-                "Received new block payload"
-            );
-            let block_logs = BlockLogs {
-                summary: block_summary,
-                logs,
-                catchup: false,
-                finalized: false,
-            };
-            match ingest_with_retry(
-                chain_id,
-                &mut db,
-                &block_logs,
-                config.acl_address,
-                config.tfhe_address,
-                config.kms_generation_address,
-                config.protocol_config_address,
-                config.confidential_bridge_address,
-                config.database_retry_interval,
-                ingest_options.clone(),
-            )
-            .await
-            {
-                Ok(_) => {
-                    db.tick.update();
-
-                    inc_blocks_processed(&chain_id_str, 1);
-                    Ok(AckDecision::Ack)
-                }
-                Err((err, retries)) => {
-                    inc_db_errors(&chain_id_str, 1);
-                    error!(
-                        block_number = block_summary.number,
-                        block_hash = ?block_logs.summary.hash,
-                        error = %err,
-                        retries = retries,
-                        "Failed to ingest block"
-                    );
-                    Err(HandlerError::Transient(err.into()))
+            if let Err(HandlerError::Transient(error)) = &result {
+                if let Some(gap) = error.downcast_ref::<HistoryGap>() {
+                    // Empty blocks are delivered too. The separate catchup
+                    // queue can attach this link while the original delivery
+                    // waits for redelivery on the live/finalized queue.
+                    recovery_client
+                        .request_final_catchup(
+                            gap.block_number,
+                            gap.block_number,
+                        )
+                        .await
+                        .map_err(|error| {
+                            HandlerError::Transient(error.into())
+                        })?;
                 }
             }
+            result
         }
-    });
+    };
 
     info!(
         chain_id = %config.chain_id,
         "Starting host-listener consumer"
     );
-    let consumer_run = tokio::spawn(consumer_task);
-    let consumer_result = consumer_run.await;
+    let live_run = tokio::spawn(client.consume(handle_block.clone()));
+    let final_run = tokio::spawn(client.consume_final(handle_block.clone()));
+    let repair_run = tokio::spawn(client.consume_final_catchup(handle_block));
+    // Either flow ending stops the consumer; cancelling below stops the other.
+    let consumer_result = tokio::select! {
+        result = live_run => result,
+        result = final_run => result,
+        result = repair_run => result,
+    };
     info!(
         chain_id = %config.chain_id,
         "Host listener consumer graceful stop"
@@ -540,6 +544,152 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
     }
 }
 
+/// Ingest one live or finalized payload. A finalized payload re-ingests the
+/// block idempotently and marks it finalized. Then spawn a KMS activation pass.
+async fn ingest_payload<A: AwsS3Interface + Clone + 'static>(
+    db: &mut Database,
+    config: &ConsumerConfig,
+    ingest_options: &IngestOptions,
+    chain_id_str: &str,
+    payload: &BlockPayload,
+    s3: A,
+    kms_cancel: &CancellationToken,
+) -> Result<AckDecision, HandlerError> {
+    let chain_id = db.chain_id;
+    let finalized =
+        matches!(payload.flow, BlockFlow::Final | BlockFlow::FinalCatchup);
+    let block_summary = BlockSummary {
+        number: payload.block_number,
+        hash: payload.block_hash,
+        parent_hash: payload.parent_hash,
+        timestamp: payload.timestamp,
+    };
+    let catchup = payload.flow == BlockFlow::Catchup;
+    // Finalized deliveries do not measure live ingestion timing.
+    if !finalized {
+        observe_consumer_block_timing(
+            db,
+            chain_id_str,
+            &block_summary,
+            catchup,
+        )
+        .await;
+    }
+    let logs = collect_logs(payload);
+    info!(
+        chain_id = %payload.chain_id,
+        block_number = payload.block_number,
+        block_hash = ?payload.block_hash,
+        nb_tx = payload.transactions.len(),
+        nb_logs = logs.len(),
+        "Received new block payload"
+    );
+    let block_logs = BlockLogs {
+        summary: block_summary,
+        logs,
+        catchup: false,
+        finalized,
+    };
+    match ingest_with_retry(
+        chain_id,
+        db,
+        &block_logs,
+        config.acl_address,
+        config.tfhe_address,
+        config.kms_generation_address,
+        config.protocol_config_address,
+        config.confidential_bridge_address,
+        config.database_retry_interval,
+        ingest_options.clone(),
+    )
+    .await
+    {
+        Ok((IngestResult::Complete, _)) => {
+            db.tick.update();
+            if finalized {
+                if let Err(error) = db
+                    .prune_finalized_block_history(block_summary.number as i64)
+                    .await
+                {
+                    warn!(%error, "Could not prune finalized block history");
+                }
+            }
+            // As the legacy listener does, retry KMS activations after
+            // each block: they only depend on database state. A
+            // finalized block also provides the finalized height.
+            if config.kms_generation_address.is_some() {
+                spawn_kms_activations(
+                    db.clone(),
+                    finalized.then_some(block_summary.number as i64),
+                    s3,
+                    kms_cancel.clone(),
+                );
+            }
+
+            inc_blocks_processed(chain_id_str, 1);
+            Ok(AckDecision::Ack)
+        }
+        Ok((IngestResult::NeedsHistory(gap), _)) => {
+            Err(HandlerError::Transient(Box::new(gap)))
+        }
+        Err((err, retries)) => {
+            inc_db_errors(chain_id_str, 1);
+            error!(
+                block_number = block_summary.number,
+                block_hash = ?block_logs.summary.hash,
+                error = %err,
+                retries = retries,
+                "Failed to ingest block"
+            );
+            Err(HandlerError::Transient(err.into()))
+        }
+    }
+}
+
+/// Spawn one KMS activation pass: cancel orphaned candidates, activate
+/// finalized ready keys/CRS, and download and verify pending material.
+/// The pass is skipped while a drift revert is not done, and stops on
+/// shutdown, releasing its transaction.
+fn spawn_kms_activations<A: AwsS3Interface + Clone + 'static>(
+    db: Database,
+    finalized_height: Option<i64>,
+    s3: A,
+    cancel: CancellationToken,
+) {
+    tokio::spawn(async move {
+        let pass = async {
+            let pool = db.pool().await;
+            // The cached drift state is only refreshed by block handling, so
+            // read the latest signal: a revert may start after the block gate.
+            let signal =
+                fhevm_engine_common::drift_revert::latest_signal_for_chain(
+                    &pool,
+                    db.chain_id.as_i64(),
+                )
+                .await?;
+            if let Some(signal) =
+                signal.filter(|signal| signal.status != DriftStatus::Done)
+            {
+                info!(
+                    drift_id = signal.id,
+                    status = ?signal.status,
+                    "Skipping KMSGeneration activations while a drift revert is not done"
+                );
+                return Ok(0);
+            }
+            process_kms_generation_activations(pool, s3, finalized_height).await
+        };
+        tokio::select! {
+            _ = cancel.cancelled() => {}
+            result = pass => {
+                if let Err(error) = result {
+                    error!(%error, "Error processing KMSGeneration activations");
+                }
+            }
+        }
+    });
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn ingest_with_retry(
     chain_id: ChainId,
@@ -552,7 +702,7 @@ async fn ingest_with_retry(
     confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
-) -> Result<u64, (sqlx::Error, u64)> {
+) -> Result<(IngestResult, u64), (sqlx::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
@@ -571,7 +721,7 @@ async fn ingest_with_retry(
         )
         .await
         {
-            Ok(_) => return Ok(errors),
+            Ok(result) => return Ok((result, errors)),
             Err(err) => {
                 errors += 1;
                 if errors > MAX_DB_RETRIES {

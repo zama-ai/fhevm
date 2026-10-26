@@ -118,6 +118,11 @@ const RETRYABLE_STAMP_MARKER: &str = "RETRYABLE";
 const CUTOVER_RETRY_ATTEMPTS: u32 = 10;
 const CUTOVER_RETRY_BASE_DELAY: Duration = Duration::from_millis(500);
 const CUTOVER_RETRY_MAX_DELAY: Duration = Duration::from_secs(60);
+/// The maximum time a cutover waits for the dry-run probe's final descriptor, counted
+/// from the authorization. SNS on one ciphertext takes a few seconds. Once this time has
+/// passed, the cutover copies the probe as it is, so a broken sns-worker cannot keep the
+/// operator out of the upgrade.
+const SYNTHETIC_PROBE_WAIT: Duration = Duration::from_secs(300);
 
 struct GcsReadinessAttempt {
     proposal_id: Vec<u8>,
@@ -522,6 +527,7 @@ async fn reset_gcs_schema(tx: &mut Transaction<'_, Postgres>) -> Result<(), Erro
     let drop_sql = format!("DROP SCHEMA IF EXISTS {GCS_SCHEMA_QUOTED} CASCADE");
     sqlx::query(&drop_sql).execute(&mut **tx).await?;
     let duplicated = create_gcs_tables(tx).await?;
+    fhevm_engine_common::chain_recovery::reset_green_replay_tx(tx).await?;
     info!(
         schema = GCS_SCHEMA_QUOTED,
         tables = ?duplicated,
@@ -632,6 +638,9 @@ async fn check_dry_run_ready(
     let (ready,): (bool,) = sqlx::query_as(
         r#"
         SELECT
+          NOT EXISTS (SELECT 1 FROM public.chain_recovery_halts WHERE resolved_at IS NULL)
+          AND NOT EXISTS (SELECT 1 FROM public.listener_replay_state WHERE pending)
+          AND
           -- 1. Watermark: the host-listener has ingested at least up to start_block.
           --    Without this, an un-ingested start_block would make the two checks
           --    below vacuously true (nothing to find yet != nothing wrong).
@@ -727,6 +736,7 @@ async fn wait_until_dry_run_ready(
             NEW_BLOCK_CHANNEL,
             EVENT_CIPHERTEXT_COMPUTED_CHANNEL,
             EVENT_DRY_RUN_ROLLED_BACK,
+            fhevm_engine_common::chain_recovery::EVENT_RECOVERY_CHANGED,
         ])
         .await?;
 
@@ -769,31 +779,15 @@ async fn wait_until_dry_run_ready(
                 return Ok(true);
             }
             Ok(false) => match host_chain_tip(&pool, chain_id).await {
-                Ok(tip) if dry_run_readiness_is_stale(tip, start_block) => {
-                    warn!(
-                        chain_id,
-                        start_block,
-                        tip,
-                        stale_after = DRY_RUN_READINESS_STALE_BLOCKS,
-                        "dry-run readiness stalled too far behind the chain tip — \
-                             failing the attempt"
-                    );
-                    match rollback_dry_run(
-                        &pool,
-                        proposal_id,
-                        proposal_block,
-                        None,
-                        "dry_run_readiness_stalled",
-                    )
-                    .await
-                    {
-                        Ok(_) => return Ok(false),
-                        Err(e) => error!(
-                            error = %e,
-                            "failed to fail the stalled dry-run attempt; will retry"
-                        ),
-                    }
-                }
+                // A stall is not a decision. The attempt ends through the
+                // detector's abort record, so every operator ends the same way.
+                Ok(tip) if dry_run_readiness_is_stale(tip, start_block) => warn!(
+                    chain_id,
+                    start_block,
+                    tip,
+                    stale_after = DRY_RUN_READINESS_STALE_BLOCKS,
+                    "dry-run readiness stalled too far behind the chain tip"
+                ),
                 Ok(_) => debug!(
                     chain_id,
                     from_block,
@@ -812,6 +806,9 @@ async fn wait_until_dry_run_ready(
                 info!("readiness loop cancelled");
                 return Ok(false);
             }
+            // Notifications are hints; reconnects and operator recovery must
+            // not require new chain activity to release an otherwise-ready gate.
+            _ = tokio::time::sleep(Duration::from_secs(5)) => {}
             recv = listener.recv() => {
                 match recv {
                     Ok(notification) => {
@@ -903,6 +900,15 @@ async fn transition_to_dry_run_started(
         }
     }
 
+    let Some(mut readiness_tx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        true,
+        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+    )
+    .await?
+    .into_tx() else {
+        return Ok(());
+    };
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -915,8 +921,10 @@ async fn transition_to_dry_run_started(
     )
     .bind(proposal_id)
     .bind(proposal_block)
-    .execute(pool)
+    .execute(&mut *readiness_tx)
     .await?;
+
+    readiness_tx.commit().await?;
 
     if result.rows_affected() == 0 {
         warn!(
@@ -979,16 +987,24 @@ async fn transition_to_dry_run_started(
 /// this check is intentionally proposal-wide, not filtered by chain_id,
 /// mirroring `prune_gcs_verify_proofs_before_start`.
 ///
-/// Three conditions, all against the Gateway-block domain:
+/// Four conditions, all against the Gateway-block domain:
 ///   1. Green's own watermark: `gcs.gw_listener_last_block.last_block_num >=
 ///      gw_start_block`. Reads the GCS schema explicitly (not `public`), since
 ///      the green gw-listener tails the Gateway into the GCS schema from
 ///      startup. A missing watermark row reads as `-1`, so this is not
 ///      vacuously true before the GCS gw-listener has written any progress.
-///   2. Blue's watermark: `public.gw_listener_last_block.last_block_num >=
+///   2. The gw-listener's window-alignment latch: every in-progress GCS row has
+///      `gw_window_rewound = TRUE` (`BOOL_AND`; no rows reads as FALSE). The
+///      watermark alone cannot tell "scanned through gw_start_block" from
+///      "jumped past it": a proposal that activates mid-tick — after the
+///      listener's top-of-tick alignment check but before its watermark write —
+///      satisfies check 1 with the window start never scanned. The latch is
+///      written only in (or after) the listener's alignment transaction, so it
+///      closes that race.
+///   3. Blue's watermark: `public.gw_listener_last_block.last_block_num >=
 ///      gw_start_block`. Without this, an unobserved-by-blue block would make
-///      check 3 vacuously true (nothing seen yet != nothing pending).
-///   3. No pre-window proof is still pending: no `public.verify_proofs` row
+///      check 4 vacuously true (nothing seen yet != nothing pending).
+///   4. No pre-window proof is still pending: no `public.verify_proofs` row
 ///      with `block_number < gw_start_block` has `verified IS NULL`. Blue's
 ///      zkproof-worker must have resolved every proof below the snapshot
 ///      point before the dry run's re-randomization strategy activates at
@@ -1001,11 +1017,18 @@ async fn check_gw_dry_run_ready(
 ) -> Result<bool, sqlx::Error> {
     let sql = format!(
         "SELECT
-           COALESCE(
+           NOT EXISTS (SELECT 1 FROM public.chain_recovery_halts WHERE resolved_at IS NULL)
+           AND NOT EXISTS (SELECT 1 FROM public.listener_replay_state WHERE pending)
+           AND COALESCE(
              (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
               WHERE dummy_id = true),
              -1
            ) >= $1
+           AND COALESCE(
+             (SELECT BOOL_AND(gw_window_rewound) FROM upgrade_state
+               WHERE stack_role = 'GCS' AND status = 'in_progress'),
+             FALSE
+           )
            AND COALESCE(
              (SELECT last_block_num FROM public.gw_listener_last_block
               WHERE dummy_id = true),
@@ -1050,7 +1073,11 @@ async fn wait_until_gw_dry_run_ready(
     // and the host-chain readiness loop.
     let mut listener = PgListener::connect_with(&pool).await?;
     listener
-        .listen_all([GW_NEW_BLOCK_CHANNEL, EVENT_DRY_RUN_ROLLED_BACK])
+        .listen_all([
+            GW_NEW_BLOCK_CHANNEL,
+            EVENT_DRY_RUN_ROLLED_BACK,
+            fhevm_engine_common::chain_recovery::EVENT_RECOVERY_CHANGED,
+        ])
         .await?;
 
     loop {
@@ -1111,6 +1138,7 @@ async fn wait_until_gw_dry_run_ready(
                 info!("gw readiness loop cancelled");
                 return Ok(false);
             }
+            _ = tokio::time::sleep(Duration::from_secs(5)) => {}
             recv = listener.recv() => {
                 match recv {
                     Ok(notification) => {
@@ -1192,6 +1220,15 @@ async fn transition_to_gw_dry_run_started(
     proposal_id: &[u8],
     proposal_block: i64,
 ) -> Result<(), Error> {
+    let Some(mut readiness_tx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        true,
+        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+    )
+    .await?
+    .into_tx() else {
+        return Ok(());
+    };
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -1205,8 +1242,10 @@ async fn transition_to_gw_dry_run_started(
     )
     .bind(proposal_id)
     .bind(proposal_block)
-    .execute(pool)
+    .execute(&mut *readiness_tx)
     .await?;
+
+    readiness_tx.commit().await?;
 
     if result.rows_affected() == 0 {
         warn!(
@@ -1302,6 +1341,36 @@ async fn delete_bcs_chain_leftovers(
                 "delete_bcs_leftovers: deleted BCS-leftover ciphertexts"
             );
         }
+    }
+
+    // Also clear the in-window `ciphertext_digest` rows. BCS (blue) writes its digest here
+    // during the window; the GCS merge below can only overwrite a handle GCS itself produced,
+    // so if GCS's dry-run never digested a handle (e.g. a lagging operator), blue's stale
+    // digest would survive the merge — and being write-once it can never be corrected by the
+    // post-cutover re-digest, so the sns-worker loops forever on "computed ciphertext digest
+    // mismatch". Dropping it here lets the merge (or the post-cutover re-ingest) lay down the
+    // correct GCS digest. Must run before the computation deletes below, since it reaches rows
+    // through them.
+    for comp_table in COMPUTATION_TABLES {
+        let sql = format!(
+            "DELETE FROM public.ciphertext_digest d
+               USING public.{comp_table} comp
+              WHERE d.handle = comp.output_handle
+                AND comp.host_chain_id = $1 AND comp.block_number >= $2"
+        );
+        let deleted = sqlx::query(&sql)
+            .bind(chain_id)
+            .bind(start_block)
+            .execute(&mut **tx)
+            .await?
+            .rows_affected();
+        info!(
+            host_chain_id = chain_id,
+            start_block,
+            comp_table,
+            deleted,
+            "delete_bcs_leftovers: deleted BCS-leftover ciphertext_digest rows"
+        );
     }
 
     for pbs_table in PBS_COMPUTATION_TABLES {
@@ -1613,6 +1682,30 @@ async fn delete_bcs_gw_leftovers(tx: &mut Transaction<'_, Postgres>) -> Result<(
             .execute(&mut **tx)
             .await?;
     }
+
+    // Also clear in-window `ciphertext_digest` rows for input handles. An input that is
+    // allowed (ACL `Allowed` / `AllowedForDecryption`) gets a pbs_computation, so the
+    // sns-worker produces its ct128 + digest — but an input has no `computations` row, so
+    // the host-window delete in `delete_bcs_chain_leftovers` (which joins through
+    // `computations`) never reaches it. Green re-verifies and re-randomizes inputs, so
+    // blue's digest goes stale; left here it is write-once, and a lagging operator's
+    // post-cutover re-digest loops forever on "computed ciphertext digest mismatch".
+    // Dropping it lets the merge (or the post-cutover re-digest) lay down green's value.
+    // Reached through `input_handles`, so it must run before that table is cleared below.
+    let deleted_input_digests = sqlx::query(
+        "DELETE FROM public.ciphertext_digest d
+           USING public.input_handles ih
+          WHERE d.handle = ih.handle AND ih.block_number >= $1",
+    )
+    .bind(gw_start_block)
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+    info!(
+        gw_start_block,
+        rows_deleted = deleted_input_digests,
+        "delete_bcs_gw_leftovers: deleted BCS-leftover input ciphertext_digest rows"
+    );
 
     // Clear the whole gw window last: the ciphertext deletes above reach their rows
     // through this table, and the merge restores every handle green reproduced.
@@ -2071,7 +2164,9 @@ async fn delete_synthetic_rows_by_handle(
 /// produced asynchronously by the sns-worker. Copying before it lands would freeze the probe
 /// as uncomputed on that operator only, a permanent manifest disagreement between healthy
 /// peers that synthetic filtering keeps healing from resolving. A probe on an orphaned branch
-/// is never published, so it does not hold cutover back.
+/// is never published, so it does not hold cutover back. The wait is capped at
+/// [`SYNTHETIC_PROBE_WAIT`] after authorization, so a broken sns-worker costs one probe
+/// block's agreement, not the operator's upgrade.
 async fn assert_synthetic_probes_final(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
     let sql = format!(
         "SELECT COUNT(*)
@@ -2102,14 +2197,32 @@ async fn assert_synthetic_probes_final(tx: &mut Transaction<'_, Postgres>) -> Re
         .bind(RETRYABLE_STAMP_MARKER)
         .fetch_one(&mut **tx)
         .await?;
-    if pending > 0 {
+    if pending == 0 {
+        return Ok(());
+    }
+    // A deferred cutover rolls back without touching the authorized rows, so their
+    // `updated_at` still marks the authorization.
+    let waited_secs: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(EXTRACT(EPOCH FROM NOW() - MIN(updated_at))::float8, 0)
+           FROM upgrade_state
+          WHERE stack_role = 'GCS' AND state = 'UpgradeAuthorized'",
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+    if waited_secs >= SYNTHETIC_PROBE_WAIT.as_secs_f64() {
         warn!(
             pending,
-            "cutover deferred: a dry-run probe's ct128 is still pending"
+            waited_secs,
+            "cutover proceeds without a final dry-run probe descriptor: its ct128 never \
+             came; that probe block will disagree across operators, detected only"
         );
-        return Err(Error::PendingSyntheticProbe { pending });
+        return Ok(());
     }
-    Ok(())
+    warn!(
+        pending,
+        waited_secs, "cutover deferred: a dry-run probe's ct128 is still pending"
+    );
+    Err(Error::PendingSyntheticProbe { pending })
 }
 
 /// Copies the dry-run probe's manifest descriptor material into
@@ -2440,6 +2553,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover acquired exclusive advisory lock"
     );
 
+    if fhevm_engine_common::chain_recovery::is_halted_tx(&mut tx).await?
+        || fhevm_engine_common::chain_recovery::replay_pending_tx(&mut tx).await?
+    {
+        warn!("cutover blocked by chain history recovery");
+        return Ok(());
+    }
+
     // Read the GCS proposal rows under the lock, and return early if they are
     // not `UpgradeAuthorized` (normally because a previous attempt already committed).
     let Some((stack_version, proposal_id, proposal_block)) =
@@ -2455,17 +2575,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
             .fetch_one(&mut *tx)
             .await?;
     if let Err(reason) = validate_cutover_release(&stack_version, &live_stack_version) {
-        warn!(reason, "proposal cannot cut over; failing the attempt");
-        sqlx::query(
-            "UPDATE upgrade_state
-                SET state = 'PAUSED', status = 'failed',
-                    last_error = $1, updated_at = NOW()
-              WHERE stack_role = 'GCS' AND state = 'UpgradeAuthorized'",
-        )
-        .bind(&reason)
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
+        // The fleet already authorized this cutover, and this operator's record
+        // says `quorum`. Failing the attempt here would end it on this operator
+        // alone, so refuse the run and keep the attempt for the right release.
+        error!(
+            reason,
+            "cutover refused: this controller cannot run the proposal's release"
+        );
         return Ok(());
     }
 
@@ -2791,6 +2907,10 @@ async fn rollback_dry_run(
                    last_error = $4,
                    host_consensus_reached = FALSE, gw_consensus_reached = FALSE,
                    gw_dry_run_started = FALSE,
+                   -- The gw-listener's once-per-proposal rewind latch. The rolled-back
+                   -- window is dead and its schema is dropped; the next attempt must
+                   -- align to its own gw_start_block from scratch.
+                   gw_window_rewound = FALSE,
                    -- Cleared with the latches: the rolled-back window's schema is dropped, and the
                    -- next attempt injects at a different block (or fork) and so derives a different
                    -- hash. A stale marker would leave cutover matching nothing while the real rows
@@ -3735,6 +3855,49 @@ mod tests {
         check().await.expect("a digested probe is final");
     }
 
+    /// A probe whose ct128 never comes (a broken sns-worker) holds cutover only for
+    /// `SYNTHETIC_PROBE_WAIT` after authorization; then cutover proceeds with the probe as
+    /// it is, instead of leaving the operator outside the upgrade.
+    #[tokio::test]
+    async fn cutover_stops_waiting_for_the_probe_past_the_cap() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        sqlx::query(&format!(
+            "INSERT INTO {GCS_SCHEMA_QUOTED}.handle_producer_block
+                  (host_chain_id, handle, producer_block_number, producer_block_hash, synthetic)
+                  VALUES (12345, $1, 101, $2, TRUE)"
+        ))
+        .bind(vec![0x11u8; 32])
+        .bind(vec![0xB1u8; 32])
+        .execute(&pool)
+        .await
+        .expect("seed probe producer row without any digest");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await;
+
+        let check = || async {
+            let mut tx = pool.begin().await.expect("begin");
+            let result = assert_synthetic_probes_final(&mut tx).await;
+            tx.rollback().await.expect("rollback");
+            result
+        };
+        assert!(matches!(
+            check().await,
+            Err(Error::PendingSyntheticProbe { pending: 1 })
+        ));
+
+        sqlx::query(
+            "UPDATE upgrade_state SET updated_at = NOW() - $1::float8 * INTERVAL '1 second'
+              WHERE stack_role = 'GCS'",
+        )
+        .bind(SYNTHETIC_PROBE_WAIT.as_secs_f64() + 1.0)
+        .execute(&pool)
+        .await
+        .expect("age the authorization past the cap");
+        check()
+            .await
+            .expect("past the cap, cutover proceeds with the probe as it is");
+    }
+
     /// Cutover deletes the probe's digest row, yet its block may seal after cutover: the
     /// descriptor material is copied to `public.synthetic_handle_digest` first, for the
     /// manifest builder only. A real handle of the same block is not copied, and the copy
@@ -4034,14 +4197,13 @@ mod tests {
 
         set_live_versions_behind(&pool).await;
 
-        sqlx::query(
+        sqlx::query(&format!(
             r#"
             INSERT INTO consensus_epoch_history (
-                consensus_epoch, proposal_id, proposal_block, stack_version, outcome
+                consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
             )
-            VALUES ('1', $1, 50, 'v0.15', 'pending')
-            "#,
-        )
+            VALUES ('1', $1, 50, 'v0.15', {}, 'pending')
+            "#, fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION))
         .bind(&[0x02u8; 32][..])
         .execute(&pool)
         .await
@@ -4138,9 +4300,131 @@ mod tests {
         (instance, pool)
     }
 
+    #[tokio::test]
+    async fn green_schema_reset_invalidates_only_green_replay() {
+        use fhevm_engine_common::chain_recovery::{begin_replay, pending_replay, ListenerSource};
+        let (_db, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.unwrap();
+        begin_replay(&pool, ListenerSource::Host, true, 42, 1, 64)
+            .await
+            .unwrap();
+        begin_replay(&pool, ListenerSource::Host, false, 42, 1, 64)
+            .await
+            .unwrap();
+        // A real history halt must survive discarding an upgrade attempt.
+        sqlx::query("INSERT INTO public.chain_recovery_halts (source, stack_role, chain_id, block_number, reason) VALUES ('host', 'GCS', 42, 1, 'retained evidence')").execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(CUTOVER_LOCK_ID)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        reset_gcs_schema(&mut tx).await.unwrap();
+        tx.commit().await.unwrap();
+        assert!(pending_replay(&pool, ListenerSource::Host, true, 42)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(pending_replay(&pool, ListenerSource::Host, false, 42)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(fhevm_engine_common::chain_recovery::is_halted(&pool)
+            .await
+            .unwrap());
+    }
+
     fn timeout_payload() -> String {
         serde_json::json!({ "proposal_id": vec![2; 32], "proposal_block": 10, "chain_id": 1_i64, "block_height": 200_i64, "block_hash": "0x00" })
             .to_string()
+    }
+
+    #[tokio::test]
+    async fn idle_readiness_recovers_after_replay_with_and_without_notification() {
+        use fhevm_engine_common::chain_recovery::{
+            begin_replay, complete_replay, ListenerSource, EVENT_RECOVERY_CHANGED,
+        };
+        use tokio::time::timeout;
+
+        for notify in [true, false] {
+            let (_db, pool) = test_pool().await;
+            seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await;
+            create_gcs_schema(&pool).await.unwrap();
+            sqlx::query("UPDATE upgrade_state SET gw_dry_run_started=FALSE, gw_window_rewound=TRUE WHERE stack_role='GCS'")
+                .execute(&pool).await.unwrap();
+            for schema in ["public", GCS_SCHEMA_QUOTED] {
+                sqlx::query(&format!("INSERT INTO {schema}.gw_listener_last_block (dummy_id,last_block_num) VALUES (TRUE,1) ON CONFLICT (dummy_id) DO UPDATE SET last_block_num=1"))
+                    .execute(&pool).await.unwrap();
+            }
+            sqlx::query("INSERT INTO public.host_chain_blocks_valid (chain_id,block_hash,block_number,block_status) VALUES (1,$1,100,'finalized')")
+                .bind(vec![1_u8;32]).execute(&pool).await.unwrap();
+            let replay = begin_replay(&pool, ListenerSource::Host, false, 1, 100, 100)
+                .await
+                .unwrap();
+            assert!(!check_dry_run_ready(&pool, 1, 100).await.unwrap());
+            assert!(!check_gw_dry_run_ready(&pool, 1).await.unwrap());
+
+            let cancel = CancellationToken::new();
+            let proposal = [0x02_u8; 32];
+            let mut host = Box::pin(wait_until_dry_run_ready(
+                pool.clone(),
+                cancel.clone(),
+                &proposal,
+                10,
+                1,
+                100,
+            ));
+            let mut gateway = Box::pin(wait_until_gw_dry_run_ready(
+                pool.clone(),
+                cancel.clone(),
+                &proposal,
+                10,
+                1,
+            ));
+            // Drive both real waiters while replay blocks them. Keep their
+            // futures alive across the timeout so recovery must wake them.
+            assert!(timeout(Duration::from_millis(200), async {
+                tokio::join!(&mut host, &mut gateway)
+            })
+            .await
+            .is_err());
+            let mut events = PgListener::connect_with(&pool).await.unwrap();
+            events.listen(EVENT_RECOVERY_CHANGED).await.unwrap();
+            if notify {
+                complete_replay(
+                    &pool,
+                    ListenerSource::Host,
+                    false,
+                    1,
+                    100,
+                    100,
+                    replay.generation,
+                )
+                .await
+                .unwrap();
+                timeout(Duration::from_secs(2), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            } else {
+                // Model a recovery whose notification was lost: no host or
+                // Gateway block, worker result or controller restart follows.
+                sqlx::query(
+                    "UPDATE public.listener_replay_state SET pending=FALSE WHERE chain_id=1",
+                )
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+            let deadline = Duration::from_secs(if notify { 2 } else { 8 });
+            let (host_ready, gateway_ready) =
+                timeout(deadline, async { tokio::join!(&mut host, &mut gateway) })
+                    .await
+                    .expect("idle readiness must recover without chain activity");
+            assert!(host_ready.unwrap());
+            assert!(gateway_ready.unwrap());
+            cancel.cancel();
+        }
     }
 
     /// Seed one GCS proposal row with all latches set.
@@ -4193,12 +4477,11 @@ mod tests {
 
         set_live_versions_behind(pool).await;
 
-        sqlx::query(
+        sqlx::query(&format!(
             "INSERT INTO consensus_epoch_history (
-                 consensus_epoch, proposal_id, proposal_block, stack_version, outcome
-             ) VALUES ('1', $1, 10, 'v0.15', 'pending')
-             ON CONFLICT (consensus_epoch) DO NOTHING",
-        )
+                 consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
+             ) VALUES ('1', $1, 10, 'v0.15', {}, 'pending')
+             ON CONFLICT (consensus_epoch) DO NOTHING", fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION))
         .bind(&[0x02u8; 32][..])
         .execute(pool)
         .await
@@ -4330,12 +4613,11 @@ mod tests {
         );
     }
 
-    /// If the chain tip pulls more than [`DRY_RUN_READINESS_STALE_BLOCKS`] ahead of
-    /// `start_block` while readiness is still unmet, the loop itself fails the
-    /// attempt (PAUSED/failed, schema reset) instead of polling forever toward a
-    /// `start_block` row that will eventually be pruned out from under it.
+    /// A stalled attempt reports "not ready" and leaves the row alone. Failing it
+    /// here would be a terminal action on silence, which splits the fleet when a
+    /// peer decides otherwise. The detector's abort record ends the attempt.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn wait_until_dry_run_ready_fails_a_stalled_attempt() {
+    async fn wait_until_dry_run_ready_leaves_a_stalled_attempt_alone() {
         use sqlx::Row;
         use tokio::time::{timeout, Duration};
 
@@ -4358,25 +4640,26 @@ mod tests {
         .await
         .expect("seed host_chain_blocks_valid tip");
 
-        let ready = timeout(
-            Duration::from_secs(10),
-            wait_until_dry_run_ready(
-                pool.clone(),
-                CancellationToken::new(),
-                &[0x02; 32],
-                10,
-                1,
-                100,
-            ),
-        )
-        .await
-        .expect("readiness loop did not exit")
-        .expect("readiness loop failed");
-        assert!(!ready, "a stalled attempt must not report readiness");
+        assert!(
+            timeout(
+                Duration::from_secs(3),
+                wait_until_dry_run_ready(
+                    pool.clone(),
+                    CancellationToken::new(),
+                    &[0x02; 32],
+                    10,
+                    1,
+                    100,
+                ),
+            )
+            .await
+            .is_err(),
+            "a stalled attempt must keep waiting, not decide"
+        );
 
         assert!(
-            !marker_exists(&pool).await,
-            "a stalled attempt must reset the gcs schema like any other rollback"
+            marker_exists(&pool).await,
+            "a stalled attempt must not reset the gcs schema"
         );
 
         let row = sqlx::query(
@@ -4385,12 +4668,15 @@ mod tests {
         .fetch_one(&pool)
         .await
         .expect("GCS row");
-        assert_eq!(row.try_get::<String, _>("state").unwrap(), "PAUSED");
-        assert_eq!(row.try_get::<String, _>("status").unwrap(), "failed");
         assert_eq!(
-            row.try_get::<String, _>("last_error").unwrap(),
-            "dry_run_readiness_stalled"
+            row.try_get::<String, _>("state").unwrap(),
+            "UpgradeActivated"
         );
+        assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
+        assert!(row
+            .try_get::<Option<String>, _>("last_error")
+            .unwrap()
+            .is_none());
     }
 
     /// A late timeout must never undo a cutover: rollback is refused once the row is `UpgradeAuthorized`.
@@ -4864,11 +5150,14 @@ mod tests {
 
         let (_instance, pool) = test_pool().await;
         seed_gcs_row(&pool, "DryRunStarted", "in_progress").await;
+        // gw_window_rewound = TRUE: check_gw_dry_run_ready also requires the
+        // gw-listener's window-alignment latch, or the gate never re-arms.
         sqlx::query(
             "UPDATE upgrade_state
                 SET host_consensus_reached = FALSE,
                     gw_consensus_reached = FALSE,
-                    gw_dry_run_started = FALSE
+                    gw_dry_run_started = FALSE,
+                    gw_window_rewound = TRUE
               WHERE stack_role = 'GCS'",
         )
         .execute(&pool)
@@ -5644,7 +5933,9 @@ mod tests {
     /// stand-in for the transient fault is a missing GCS schema, which makes
     /// A replacement controller joins at whatever state it finds, so it never runs the
     /// activation check. Cutover must refuse a proposal for another release itself,
-    /// before promoting versions or merging its own schema.
+    /// before promoting versions or merging its own schema. It must also leave the
+    /// attempt open: the fleet authorized this cutover, so a controller with the
+    /// right release still has to finish it.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn cutover_rejects_a_proposal_for_another_release() {
         let (_instance, pool) = test_pool().await;
@@ -5658,8 +5949,8 @@ mod tests {
 
         assert_eq!(
             gcs_state(&pool).await,
-            ("PAUSED".into(), "failed".into()),
-            "a proposal for another release must not cut over"
+            ("UpgradeAuthorized".into(), "in_progress".into()),
+            "a proposal for another release must not cut over, and must stay open"
         );
         assert_eq!(
             live_stack_version(&pool).await,

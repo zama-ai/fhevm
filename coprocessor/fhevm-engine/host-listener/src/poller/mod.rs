@@ -1,5 +1,9 @@
+#[cfg(test)]
+mod history_tests;
 mod http_client;
 mod metrics;
+#[cfg(test)]
+mod recovery_tests;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,12 +22,16 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::database::connect_pool_with_options;
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
-use fhevm_engine_common::versioning::StackMode;
+use fhevm_engine_common::versioning::{reconcile_stack_mode, StackMode};
 use sqlx::postgres::PgPoolOptions;
 
 use crate::cmd::block_history::BlockSummary;
+use crate::cmd::wait_while_paused;
+#[cfg(test)]
+use crate::database::ingest::ingest_block_logs;
 use crate::database::ingest::{
-    ingest_block_logs, update_finalized_blocks_aux, BlockLogs, IngestOptions,
+    ingest_with_history_recovery, update_finalized_blocks_aux, BlockLogs,
+    IngestOptions, IngestResult,
 };
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
@@ -36,7 +44,144 @@ use crate::poller::metrics::{
     inc_blocks_processed, inc_db_errors, inc_rpc_errors,
 };
 
+/// Separate RPC calls may observe different forks. Validate every log against
+/// the requested canonical header before ingestion or a cursor write.
+fn validate_log_provenance(
+    requested_block: u64,
+    header: &BlockSummary,
+    logs: &[Log],
+) -> Result<()> {
+    anyhow::ensure!(
+        header.number == requested_block,
+        "RPC header has the wrong height"
+    );
+    for log in logs {
+        anyhow::ensure!(
+            !log.removed
+                && log.block_number == Some(requested_block)
+                && log.block_hash == Some(header.hash),
+            "RPC log does not belong to canonical block {requested_block}"
+        );
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+    use alloy::primitives::FixedBytes;
+
+    #[test]
+    fn only_canonical_logs_are_admitted() {
+        let header = BlockSummary {
+            number: 7,
+            hash: FixedBytes::with_last_byte(7),
+            parent_hash: FixedBytes::with_last_byte(6),
+            timestamp: 100,
+        };
+        let canonical = Log {
+            block_number: Some(7),
+            block_hash: Some(header.hash),
+            ..Default::default()
+        };
+        assert!(validate_log_provenance(7, &header, &[]).is_ok());
+        assert!(validate_log_provenance(
+            7,
+            &header,
+            std::slice::from_ref(&canonical)
+        )
+        .is_ok());
+        assert!(validate_log_provenance(
+            8,
+            &header,
+            std::slice::from_ref(&canonical)
+        )
+        .is_err());
+        for invalid in [
+            Log {
+                block_hash: None,
+                ..canonical.clone()
+            },
+            Log {
+                block_number: None,
+                ..canonical.clone()
+            },
+            Log {
+                block_hash: Some(FixedBytes::with_last_byte(8)),
+                ..canonical.clone()
+            },
+            Log {
+                block_number: Some(8),
+                ..canonical.clone()
+            },
+            Log {
+                removed: true,
+                ..canonical.clone()
+            },
+        ] {
+            assert!(validate_log_provenance(
+                7,
+                &header,
+                &[canonical.clone(), invalid]
+            )
+            .is_err());
+        }
+    }
+}
+
 const MAX_DB_RETRIES: u64 = 10;
+
+/// A canonical replay may repair an omission on an unchanged block. It must
+/// never merge another fork into previously committed or finalized history.
+async fn validate_committed_header(
+    pool: &sqlx::PgPool,
+    chain_id: ChainId,
+    header: &BlockSummary,
+) -> Result<()> {
+    use fhevm_engine_common::chain_recovery::{
+        host_role_tx, is_halted_tx, lock_history_tx, record_halt,
+        HistoryMismatch, ListenerSource,
+    };
+    use fhevm_engine_common::versioning::{is_retired, CUTOVER_LOCK_ID};
+    // Resolve both the role and history in one fenced transaction: a Green
+    // pool may already route to public while its startup mode is still Green.
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
+        .bind(CUTOVER_LOCK_ID)
+        .execute(&mut *tx)
+        .await?;
+    if is_retired(&mut tx).await? || is_halted_tx(&mut tx).await? {
+        tx.rollback().await?;
+        return Ok(());
+    }
+    let gcs_mode = host_role_tx(&mut tx).await?;
+    lock_history_tx(&mut tx, ListenerSource::Host, gcs_mode, chain_id.as_i64())
+        .await?;
+    let height = i64::try_from(header.number)?;
+    let expected: Option<Vec<u8>> = sqlx::query_scalar(
+        "SELECT block_hash FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_number = $2
+           AND block_status = 'finalized'
+           AND block_hash <> $3 LIMIT 1",
+    )
+    .bind(chain_id.as_i64())
+    .bind(height)
+    .bind(header.hash.as_slice())
+    .fetch_optional(&mut *tx)
+    .await?;
+    // record_halt takes the exclusive cutover fence; release the shared one.
+    tx.rollback().await?;
+    if let Some(expected) = expected {
+        record_halt(pool, HistoryMismatch {
+            source: ListenerSource::Host, gcs_mode, chain_id: chain_id.as_i64(),
+            block_number: height, expected_hash: Some(&expected),
+            observed_hash: Some(header.hash.as_slice()),
+            reason: "canonical host header changed after commitment or finalization",
+        }).await?;
+        anyhow::bail!("Committed host history changed at block {height}; operator recovery required");
+    }
+    Ok(())
+}
 /// Exit after this many consecutive RPC failures (after retries exhausted).
 /// Orchestrator will restart with fresh state.
 const MAX_CONSECUTIVE_RPC_FAILURES: u64 = 3;
@@ -74,7 +219,8 @@ fn handle_rpc_failure<E: std::fmt::Display>(
 }
 
 /// Seed for `host_listener_poller_state` when no anchor row exists yet; an
-/// existing row always wins in the caller, so restarts never rewind or skip.
+/// existing row remains the durable cursor; restarts separately replay the
+/// configured bounded window without lowering it.
 /// A non-negative value is an absolute height (0 = genesis, explicitly), a
 /// negative value means that many blocks behind the current head. Unset is an
 /// error: the first start for a chain must state where to begin.
@@ -148,6 +294,8 @@ pub struct PollerConfig {
     /// Initial sync anchor when no poller state exists yet
     /// (initialization-only; >= 0 absolute, negative from head).
     pub seed_start_block: Option<i64>,
+    /// Recent committed blocks re-fetched on every process start (1..=10_000).
+    pub replay_window: u64,
     // Dependence chain settings
     pub dependence_cache_size: u16,
     pub dependence_by_connexity: bool,
@@ -159,6 +307,10 @@ pub struct PollerConfig {
 }
 
 pub async fn run_poller(config: PollerConfig) -> Result<()> {
+    anyhow::ensure!(
+        (1..=10_000).contains(&config.replay_window),
+        "poller replay window must be between 1 and 10000 blocks"
+    );
     let acl_address = config.acl_address;
     let tfhe_address = config.tfhe_address;
     let kms_generation_address = config.kms_generation_address;
@@ -225,10 +377,12 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         blockchain_provider: blockchain_provider.clone(),
         database_pool: db.pool.clone(),
         database_tick: db.tick.clone(),
+        recovery_paused: Default::default(),
     };
     let cancel_token = CancellationToken::new();
+    let _cancel_on_exit = cancel_token.clone().drop_guard();
     let health_check_server = HealthHttpServer::new(
-        Arc::new(health_check),
+        Arc::new(health_check.clone()),
         config.health_port,
         cancel_token.clone(),
     );
@@ -238,286 +392,407 @@ pub async fn run_poller(config: PollerConfig) -> Result<()> {
         }
     });
 
-    // Drift-revert: must run before any DB state reads so we don't read
-    // pre-revert state.
-    let (drift_revert_pool, _pool_refresh_handle) = connect_pool_with_options(
-        &config.database_url,
-        PgPoolOptions::new().max_connections(1),
-        Some(&cancel_token),
-    )
-    .await?;
-    fhevm_engine_common::drift_revert::init(
-        drift_revert_pool,
-        cancel_token.clone(),
-        None,
-        fhevm_engine_common::drift_revert::WatcherTimeouts::default(),
-    )
-    .await?;
+    let work = async {
+        // Drift-revert: must run before any DB state reads so we don't read
+        // pre-revert state.
+        let (drift_revert_pool, _pool_refresh_handle) =
+            connect_pool_with_options(
+                &config.database_url,
+                PgPoolOptions::new().max_connections(1),
+                Some(&cancel_token),
+            )
+            .await?;
+        fhevm_engine_common::drift_revert::init(
+            drift_revert_pool,
+            cancel_token.clone(),
+            None,
+            fhevm_engine_common::drift_revert::WatcherTimeouts::default(),
+        )
+        .await?;
 
-    if config.dependent_ops_max_per_chain == 0 {
-        let promoted = db.promote_all_dep_chains_to_fast_priority().await?;
-        if promoted > 0 {
-            info!(
-                count = promoted,
-                "Slow-lane disabled: promoted all chains to fast on startup"
-            );
+        // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
+        // this (blue) stack is retired and `stack_mode` flips to paused, turning
+        // the poll loop below into a no-op (stops polling/producing blocks).
+        spawn_stack_version_listener(
+            db.clone(),
+            stack_mode.clone(),
+            cancel_token.clone(),
+        );
+
+        // Seed RPC resolution must not hold the cutover fence. Each attempt re-reads
+        // the routed cursor, so promotion and concurrent initialization win over a
+        // seed resolved before them. Replay ownership is returned with its token.
+        let mut seed = None;
+        let mut promoted = config.dependent_ops_max_per_chain != 0;
+        let (mut last_caught_up_block, mut replay) = loop {
+            use fhevm_engine_common::chain_recovery::{
+                prepare_host_replay, HostReplayStartup,
+            };
+            let pool = db.pool.read().await.clone();
+            // A retired process may start after the cutover notification. Pause
+            // before either guarded startup write, keeping liveness healthy.
+            reconcile_stack_mode(&pool, &stack_mode).await?;
+            wait_while_paused(&stack_mode, &blockchain_tick, &cancel_token)
+                .await;
+            if cancel_token.is_cancelled() {
+                return Ok(());
+            }
+            let startup: Result<HostReplayStartup> = async {
+            if !promoted {
+                let count = db.promote_all_dep_chains_to_fast_priority().await?;
+                if count > 0 {
+                    info!(count, "Slow-lane disabled: promoted all chains to fast on startup");
+                }
+                promoted = true;
+            }
+            prepare_host_replay(
+                &pool,
+                db.gcs_mode(),
+                chain_id.as_i64(),
+                config.replay_window,
+                seed,
+            )
+            .await
         }
-    }
+        .await;
+            match startup {
+                Ok(HostReplayStartup::Ready { cursor, replay }) => {
+                    db.tick.update();
+                    break (u64::try_from(cursor)?, replay);
+                }
+                Ok(HostReplayStartup::NeedsSeed) => {
+                    let initial = match resolve_start_anchor(
+                        config.seed_start_block,
+                    )? {
+                        StartAnchor::Block(block) => block,
+                        StartAnchor::BehindHead(delta) => {
+                            let head = client.latest_block_number().await.context(
+                            "Failed to fetch head to resolve negative seed-start-block",
+                        )?;
+                            i64::try_from(head.saturating_sub(delta)).context(
+                            "start block computed from head is out of range",
+                        )?
+                        }
+                    };
+                    seed = Some(initial);
+                }
+                Err(err) => {
+                    // Retirement can also race the check above while a write is
+                    // waiting for the cutover fence. Only retirement becomes a
+                    // pause; containment and other startup errors still fail.
+                    reconcile_stack_mode(&pool, &stack_mode).await?;
+                    if !stack_mode.is_paused() {
+                        return Err(err);
+                    }
+                }
+            }
+        };
+        let mut next_block = match &replay {
+            Some(replay) => u64::try_from(replay.progress.from_block)?,
+            None => last_caught_up_block.saturating_add(1),
+        };
 
-    // Runtime stack mode + `event_stack_version_upgraded` listener: at cutover
-    // this (blue) stack is retired and `stack_mode` flips to paused, turning
-    // the poll loop below into a no-op (stops polling/producing blocks).
-    spawn_stack_version_listener(
-        db.clone(),
-        stack_mode.clone(),
-        cancel_token.clone(),
-    );
+        info!(
+            chain_id = %chain_id,
+            last_caught_up_block = last_caught_up_block,
+            finality_lag = config.finality_lag,
+            batch_size = config.batch_size,
+            poll_interval_ms = config.poll_interval.as_millis(),
+            retry_interval_ms = config.retry_interval.as_millis(),
+            max_http_retries = config.max_http_retries,
+            max_consecutive_rpc_failures = MAX_CONSECUTIVE_RPC_FAILURES,
+            "Starting host-listener poller"
+        );
 
-    let initial_anchor = db.poller_get_last_caught_up_block(chain_id).await?;
-    db.tick.update();
-    let mut last_caught_up_block = match initial_anchor {
-        Some(block) => u64::try_from(block)
-            .context("last_caught_up_block cannot be negative")?,
-        None => {
-            let initial = match resolve_start_anchor(config.seed_start_block)? {
-                StartAnchor::Block(block) => block,
-                StartAnchor::BehindHead(delta) => {
-                    let head = client.latest_block_number().await.context(
-                        "Failed to fetch head to resolve negative seed-start-block",
+        // Track consecutive RPC failures to exit on persistent issues.
+        let mut consecutive_rpc_failures: u64 = 0;
+
+        loop {
+            wait_while_paused(&stack_mode, &blockchain_tick, &cancel_token)
+                .await;
+            if cancel_token.is_cancelled() {
+                return Ok(());
+            }
+            let pool = db.pool.read().await.clone();
+            if fhevm_engine_common::chain_recovery::is_halted(&pool).await? {
+                anyhow::bail!(
+                    "Chain history is contained; operator recovery is required"
+                );
+            }
+            // A different pod can start a generation and then disappear. Adopt
+            // its outstanding prefix without creating another generation (which
+            // would make healthy replicas continually supersede each other).
+            let pending =
+                fhevm_engine_common::chain_recovery::pending_host_replay(
+                    &pool,
+                    db.gcs_mode(),
+                    chain_id.as_i64(),
+                )
+                .await?;
+            if let Some(pending) = pending {
+                if !replay
+                    .as_ref()
+                    .is_some_and(|current| current.same_chunk(&pending))
+                {
+                    next_block = u64::try_from(pending.progress.from_block)?;
+                    replay = Some(pending);
+                }
+            } else {
+                replay = None;
+            }
+            let latest = match client.latest_block_number().await {
+                Ok(block) => block,
+                Err(err) => {
+                    handle_rpc_failure(
+                        &mut consecutive_rpc_failures,
+                        None,
+                        &err,
+                        "Failed to fetch latest block number after retries",
                     )?;
-                    i64::try_from(head.saturating_sub(delta)).context(
-                        "start block computed from head is out of range",
-                    )?
+                    sleep(config.retry_interval).await;
+                    continue;
                 }
             };
-            db.poller_set_last_caught_up_block(chain_id, initial)
-                .await?;
-            db.tick.update();
-            u64::try_from(initial)
-                .context("initial last_caught_up_block cannot be negative")?
-        }
-    };
+            consecutive_rpc_failures = 0;
+            // Check the committed tip even with no new blocks. Its hash commits to
+            // its entire ancestry; a changed descendant also detects a deeper fork.
+            if last_caught_up_block > 0 {
+                let header = match client
+                    .header_for_block(last_caught_up_block)
+                    .await
+                {
+                    Ok(header) => header,
+                    Err(err) => {
+                        warn!(%err, "Cannot verify committed tip; leaving progress unchanged");
+                        sleep(config.retry_interval).await;
+                        continue;
+                    }
+                };
+                anyhow::ensure!(
+                    header.number == last_caught_up_block,
+                    "RPC returned the wrong committed-tip height"
+                );
+                validate_committed_header(&pool, chain_id, &header.into())
+                    .await?;
+            }
+            let safe_tip = latest.saturating_sub(config.finality_lag);
+            let rpc_finalized_block = if kms_generation_address.is_some() {
+                match client.finalized_block_number().await {
+                    Ok(block) => i64::try_from(block).ok(),
+                    Err(err) => {
+                        warn!(%err, "Cannot resolve finalized block, postponing compressed key migration");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            blockchain_timeout_tick.update();
+            let client_ref = &client;
+            let tick_ref = &blockchain_tick;
+            let finalization = match update_finalized_blocks_aux(
+                &mut db,
+                latest,
+                config.finality_lag,
+                |block_number| async move {
+                    let header =
+                        client_ref.header_for_block(block_number).await?;
+                    tick_ref.update();
+                    Ok(header.hash)
+                },
+            )
+            .await
+            {
+                Ok(result) => result,
+                Err(err) => {
+                    // In particular, unavailable historical headers must not
+                    // let new finalized work, the cursor, or replay completion
+                    // pass an unverified segment. Retry this chain without
+                    // turning a transient RPC failure into a durable halt.
+                    warn!(%err, "Cannot verify or finalize committed history; leaving progress unchanged");
+                    sleep(config.retry_interval).await;
+                    continue;
+                }
+            };
+            if let Some(missing) = finalization.missing_canonical_block {
+                // Recover disconnected pending forks even when they precede the
+                // restart overlap. Use the ordinary coherent block/log ingestion
+                // below; the saved high watermark remains monotonic.
+                next_block = next_block.min(missing);
+            }
 
-    info!(
-        chain_id = %chain_id,
-        last_caught_up_block = last_caught_up_block,
-        finality_lag = config.finality_lag,
-        batch_size = config.batch_size,
-        poll_interval_ms = config.poll_interval.as_millis(),
-        retry_interval_ms = config.retry_interval.as_millis(),
-        max_http_retries = config.max_http_retries,
-        max_consecutive_rpc_failures = MAX_CONSECUTIVE_RPC_FAILURES,
-        "Starting host-listener poller"
-    );
-
-    // Track consecutive RPC failures to exit on persistent issues.
-    let mut consecutive_rpc_failures: u64 = 0;
-
-    loop {
-        // Paused (retired blue stack after cutover): no-op — stop polling.
-        if stack_mode.is_paused() {
-            sleep(config.poll_interval).await;
-            continue;
-        }
-        let latest = match client.latest_block_number().await {
-            Ok(block) => block,
-            Err(err) => {
-                handle_rpc_failure(
-                    &mut consecutive_rpc_failures,
-                    None,
-                    &err,
-                    "Failed to fetch latest block number after retries",
-                )?;
-                sleep(config.retry_interval).await;
+            if safe_tip < next_block {
+                info!(
+                    chain_id = %chain_id,
+                    latest_block = latest,
+                    safe_tip = safe_tip,
+                    last_caught_up_block = last_caught_up_block,
+                    "No new finalized blocks, sleeping"
+                );
+                sleep(config.poll_interval).await;
                 continue;
             }
-        };
-        consecutive_rpc_failures = 0;
-        let safe_tip = latest.saturating_sub(config.finality_lag);
-        let rpc_finalized_block = if kms_generation_address.is_some() {
-            match client.finalized_block_number().await {
-                Ok(block) => i64::try_from(block).ok(),
-                Err(err) => {
-                    warn!(%err, "Cannot resolve finalized block, postponing compressed key migration");
-                    None
+
+            let iteration_start = next_block;
+            let mut target = safe_tip.min(
+                next_block.saturating_add(config.batch_size.saturating_sub(1)),
+            );
+            if let Some(replay) = &replay {
+                target = target.min(replay.progress.to_block as u64);
+            }
+            let blocks_to_process = target - next_block + 1;
+
+            let mut processed_blocks = 0;
+            let mut db_errors = 0;
+            let mut rpc_errors = 0;
+
+            for block in iteration_start..=target {
+                let block_logs = match client.block_logs_for_number(block).await
+                {
+                    Ok(block_logs) => {
+                        consecutive_rpc_failures = 0;
+                        block_logs
+                    }
+                    Err(err) => {
+                        handle_rpc_failure(
+                        &mut consecutive_rpc_failures,
+                        Some(block),
+                        &err,
+                        "Failed to fetch a coherent block snapshot after retries",
+                    )?;
+                        rpc_errors += 1;
+                        break;
+                    }
+                };
+
+                validate_log_provenance(
+                    block,
+                    &block_logs.summary,
+                    &block_logs.logs,
+                )?;
+                validate_committed_header(&pool, chain_id, &block_logs.summary)
+                    .await?;
+
+                let ingest_options = IngestOptions {
+                    dependence_by_connexity: config.dependence_by_connexity,
+                    dependence_cross_block: config.dependence_cross_block,
+                    dependent_ops_max_per_chain: config
+                        .dependent_ops_max_per_chain,
+                    is_protocol_config_listener,
+                    disable_synthetic_ops: config.disable_synthetic_ops,
+                };
+                match ingest_with_retry(
+                    chain_id,
+                    &mut db,
+                    &block_logs,
+                    acl_address,
+                    tfhe_address,
+                    kms_generation_address,
+                    protocol_config_address,
+                    confidential_bridge_address,
+                    config.retry_interval,
+                    ingest_options,
+                    &client,
+                    &blockchain_tick,
+                )
+                .await
+                {
+                    Ok((IngestResult::Complete, retries)) => {
+                        db_errors += retries;
+                        processed_blocks += 1;
+                        next_block = block.saturating_add(1);
+                        db.tick.update();
+                    }
+                    Ok((IngestResult::NeedsHistory(_), retries)) => {
+                        db_errors += retries;
+                        // A bounded recovery batch committed, but the original
+                        // block and replay range still need acknowledgement.
+                        break;
+                    }
+                    Err((err, retries)) => {
+                        db_errors += retries;
+                        error!(
+                            block = block,
+                            block_hash = ?block_logs.summary.hash,
+                            error = %err,
+                            retries = retries,
+                            "Failed to ingest block"
+                        );
+                        break;
+                    }
+                }
+                if kms_generation_address.is_some() {
+                    let db_pool = db.pool.read().await.clone();
+                    tokio::spawn(async move {
+                        if let Err(err) = process_kms_generation_activations(
+                            db_pool,
+                            aws_s3_client,
+                            rpc_finalized_block,
+                        )
+                        .await
+                        {
+                            error!(
+                                error = %err,
+                                "Error processing KMSGeneration activations"
+                            );
+                        }
+                    });
                 }
             }
-        } else {
-            None
-        };
-        blockchain_timeout_tick.update();
-        let client_ref = &client;
-        update_finalized_blocks_aux(
-            &mut db,
-            latest,
-            config.finality_lag,
-            |block_number| async move {
-                client_ref
-                    .header_for_block(block_number)
-                    .await
-                    .map(|header| header.hash)
-            },
-        )
-        .await;
 
-        if safe_tip <= last_caught_up_block {
+            let new_anchor =
+                last_caught_up_block.max(next_block.saturating_sub(1));
+            let blocks_failed =
+                blocks_to_process.saturating_sub(processed_blocks);
+
+            if new_anchor > last_caught_up_block {
+                let anchor = i64::try_from(new_anchor)
+                    .context("last_caught_up_block overflow")?;
+                db.poller_set_last_caught_up_block(chain_id, anchor).await?;
+                db.tick.update();
+                last_caught_up_block = new_anchor;
+            }
+            if let Some(replay) = replay
+                .as_ref()
+                .filter(|replay| next_block > replay.progress.to_block as u64)
+            {
+                replay
+                    .complete(
+                        &pool,
+                        i64::try_from(next_block.saturating_sub(1))?,
+                    )
+                    .await?;
+            }
+
+            if processed_blocks > 0 {
+                blockchain_tick.update();
+            }
+
+            inc_blocks_processed(&chain_id_str, processed_blocks);
+            if db_errors > 0 {
+                inc_db_errors(&chain_id_str, db_errors);
+            }
+            if rpc_errors > 0 {
+                inc_rpc_errors(&chain_id_str, rpc_errors);
+            }
+
             info!(
                 chain_id = %chain_id,
                 latest_block = latest,
                 safe_tip = safe_tip,
-                last_caught_up_block = last_caught_up_block,
-                "No new finalized blocks, sleeping"
+                first_requested_block = iteration_start,
+                last_caught_up_block_after = last_caught_up_block,
+                blocks_processed = processed_blocks,
+                blocks_failed = blocks_failed,
+                db_errors = db_errors,
+                rpc_errors = rpc_errors,
+                "Host listener poller iteration complete"
             );
+
             sleep(config.poll_interval).await;
-            continue;
         }
-
-        let target = safe_tip
-            .min(last_caught_up_block.saturating_add(config.batch_size));
-        let blocks_to_process = target - last_caught_up_block;
-
-        let mut processed_blocks = 0;
-        let mut db_errors = 0;
-        let mut rpc_errors = 0;
-
-        for block in (last_caught_up_block + 1)..=target {
-            let logs = match client.logs_for_block(block).await {
-                Ok(logs) => {
-                    consecutive_rpc_failures = 0;
-                    logs
-                }
-                Err(err) => {
-                    handle_rpc_failure(
-                        &mut consecutive_rpc_failures,
-                        Some(block),
-                        &err,
-                        "Failed to fetch logs for block after retries",
-                    )?;
-                    rpc_errors += 1;
-                    break;
-                }
-            };
-
-            let header = match client.header_for_block(block).await {
-                Ok(header) => {
-                    consecutive_rpc_failures = 0;
-                    header
-                }
-                Err(err) => {
-                    handle_rpc_failure(
-                        &mut consecutive_rpc_failures,
-                        Some(block),
-                        &err,
-                        "Failed to fetch header for block after retries",
-                    )?;
-                    rpc_errors += 1;
-                    break;
-                }
-            };
-
-            let summary: BlockSummary = header.into();
-            let block_logs = BlockLogs {
-                logs,
-                summary,
-                catchup: true,
-                finalized: true,
-            };
-
-            let ingest_options = IngestOptions {
-                dependence_by_connexity: config.dependence_by_connexity,
-                dependence_cross_block: config.dependence_cross_block,
-                dependent_ops_max_per_chain: config.dependent_ops_max_per_chain,
-                is_protocol_config_listener,
-                disable_synthetic_ops: config.disable_synthetic_ops,
-            };
-            match ingest_with_retry(
-                chain_id,
-                &mut db,
-                &block_logs,
-                acl_address,
-                tfhe_address,
-                kms_generation_address,
-                protocol_config_address,
-                confidential_bridge_address,
-                config.retry_interval,
-                ingest_options,
-            )
-            .await
-            {
-                Ok(retries) => {
-                    db_errors += retries;
-                    processed_blocks += 1;
-                    db.tick.update();
-                }
-                Err((err, retries)) => {
-                    db_errors += retries;
-                    error!(
-                        block = block,
-                        block_hash = ?block_logs.summary.hash,
-                        error = %err,
-                        retries = retries,
-                        "Failed to ingest block"
-                    );
-                    break;
-                }
-            }
-            if kms_generation_address.is_some() {
-                let db_pool = db.pool.read().await.clone();
-                tokio::spawn(async move {
-                    if let Err(err) = process_kms_generation_activations(
-                        db_pool,
-                        aws_s3_client,
-                        rpc_finalized_block,
-                    )
-                    .await
-                    {
-                        error!(
-                            error = %err,
-                            "Error processing KMSGeneration activations"
-                        );
-                    }
-                });
-            }
-        }
-
-        let new_anchor = last_caught_up_block + processed_blocks;
-        let blocks_failed = blocks_to_process.saturating_sub(processed_blocks);
-
-        if new_anchor > last_caught_up_block {
-            let anchor = i64::try_from(new_anchor)
-                .context("last_caught_up_block overflow")?;
-            db.poller_set_last_caught_up_block(chain_id, anchor).await?;
-            db.tick.update();
-            last_caught_up_block = new_anchor;
-        }
-
-        if processed_blocks > 0 {
-            blockchain_tick.update();
-        }
-
-        inc_blocks_processed(&chain_id_str, processed_blocks);
-        if db_errors > 0 {
-            inc_db_errors(&chain_id_str, db_errors);
-        }
-        if rpc_errors > 0 {
-            inc_rpc_errors(&chain_id_str, rpc_errors);
-        }
-
-        info!(
-            chain_id = %chain_id,
-            latest_block = latest,
-            safe_tip = safe_tip,
-            last_caught_up_block_before = new_anchor - processed_blocks,
-            last_caught_up_block_after = last_caught_up_block,
-            blocks_processed = processed_blocks,
-            blocks_failed = blocks_failed,
-            db_errors = db_errors,
-            rpc_errors = rpc_errors,
-            "Host listener poller iteration complete"
-        );
-
-        sleep(config.poll_interval).await;
-    }
+    };
+    health_check.run_with_containment(&cancel_token, work).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -532,13 +807,15 @@ async fn ingest_with_retry(
     confidential_bridge_address: Option<Address>,
     retry_interval: Duration,
     options: IngestOptions,
-) -> Result<u64, (sqlx::Error, u64)> {
+    client: &HttpChainClient,
+    heartbeat: &HeartBeat,
+) -> Result<(IngestResult, u64), (anyhow::Error, u64)> {
     let mut errors = 0;
     let acl = Some(acl_address);
     let tfhe = Some(tfhe_address);
     let protocol_config = protocol_config_address;
     loop {
-        match ingest_block_logs(
+        match ingest_with_history_recovery(
             chain_id,
             db,
             block_logs,
@@ -548,11 +825,19 @@ async fn ingest_with_retry(
             &protocol_config,
             &confidential_bridge_address,
             options.clone(),
+            |number| async move {
+                let block = client.block_logs_for_number(number).await?;
+                heartbeat.update();
+                Ok(block)
+            },
         )
         .await
         {
-            Ok(_) => return Ok(errors),
+            Ok(result) => return Ok((result, errors)),
             Err(err) => {
+                if err.downcast_ref::<sqlx::Error>().is_none() {
+                    return Err((err, errors));
+                }
                 errors += 1;
                 if errors > MAX_DB_RETRIES {
                     return Err((err, errors));

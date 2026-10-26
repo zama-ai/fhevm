@@ -1,6 +1,12 @@
-use alloy::primitives::B256;
+use alloy::primitives::Address;
 use connector_utils::{
-    config::{DeserializeConfig, deserialize_non_zero_duration},
+    config::{
+        ContractConfig, DeserializeConfig,
+        contract::{
+            default_protocol_config_contract_config, deserialize_protocol_config_contract_config,
+        },
+        deserialize_non_zero_duration,
+    },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
 };
 use http::uri::Authority;
@@ -8,6 +14,7 @@ use serde::{Deserialize, Deserializer};
 #[cfg(test)]
 use serde::{Serialize, Serializer};
 use std::{
+    collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     time::Duration,
@@ -22,9 +29,17 @@ pub struct Config {
     pub bind_address: SocketAddr,
     /// The TLS configuration of the proxy.
     pub tls_config: TlsConfig,
-    /// The SHA-256 digest of the API key the relayer authenticates with. The plaintext key is
-    /// never stored by the proxy.
-    pub api_key_digest: B256,
+
+    /// The Ethereum chain id, part of the `FhevmSig` (RFC-038) EIP-712 domain.
+    pub ethereum_chain_id: u64,
+    /// The `ProtocolConfig` contract on Ethereum.
+    #[serde(deserialize_with = "deserialize_protocol_config_contract_config")]
+    pub protocol_config_contract: ContractConfig,
+    /// The addresses allowed to sign requests.
+    #[serde(deserialize_with = "parse_allowed_senders")]
+    pub allowed_senders: HashSet<Address>,
+    /// This connector's KMS tx-sender address: the `audience` the accepted headers are signed for.
+    pub tx_sender_address: Address,
 
     /// The `host:port` addresses of the endpoints to forward requests to.
     #[serde(deserialize_with = "parse_endpoint_addresses")]
@@ -86,6 +101,19 @@ pub struct Config {
     )]
     #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
+}
+
+fn parse_allowed_senders<'de, D>(d: D) -> Result<HashSet<Address>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let senders = <HashSet<Address>>::deserialize(d)?;
+    if senders.is_empty() {
+        return Err(serde::de::Error::custom(
+            "`allowed_senders` must contain at least one address",
+        ));
+    }
+    Ok(senders)
 }
 
 /// The TLS material used by the proxy to terminate TLS.
@@ -171,9 +199,10 @@ impl Default for Config {
                 cert_path: PathBuf::from("/etc/kms-connector/proxy/tls.crt"),
                 key_path: PathBuf::from("/etc/kms-connector/proxy/tls.key"),
             },
-            api_key_digest: "0x0000000000000000000000000000000000000000000000000000000000000000"
-                .parse()
-                .unwrap(),
+            ethereum_chain_id: 11155111,
+            protocol_config_contract: default_protocol_config_contract_config(),
+            allowed_senders: HashSet::from([Address::ZERO]),
+            tx_sender_address: Address::ZERO,
             endpoint_addresses: vec![
                 "kms-connector-endpoint-1:8080".parse().unwrap(),
                 "kms-connector-endpoint-2:9090".parse().unwrap(),
@@ -218,7 +247,10 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_PROXY_BIND_ADDRESS");
             env::remove_var("KMS_CONNECTOR_TLS_CONFIG__CERT_PATH");
             env::remove_var("KMS_CONNECTOR_TLS_CONFIG__KEY_PATH");
-            env::remove_var("KMS_CONNECTOR_API_KEY_DIGEST");
+            env::remove_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID");
+            env::remove_var("KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS");
+            env::remove_var("KMS_CONNECTOR_ALLOWED_SENDERS");
+            env::remove_var("KMS_CONNECTOR_TX_SENDER_ADDRESS");
             env::remove_var("KMS_CONNECTOR_ENDPOINT_ADDRESSES");
             env::remove_var("KMS_CONNECTOR_ENDPOINT_CONNECT_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_ENDPOINT_HEALTHCHECK_FREQUENCY");
@@ -250,9 +282,18 @@ mod tests {
             env::set_var("KMS_CONNECTOR_PROXY_BIND_ADDRESS", "127.0.0.1:9443");
             env::set_var("KMS_CONNECTOR_TLS_CONFIG__CERT_PATH", "/etc/proxy/tls.crt");
             env::set_var("KMS_CONNECTOR_TLS_CONFIG__KEY_PATH", "/etc/proxy/tls.key");
+            env::set_var("KMS_CONNECTOR_ETHEREUM_CHAIN_ID", "31444");
             env::set_var(
-                "KMS_CONNECTOR_API_KEY_DIGEST",
-                "0x0000000000000000000000000000000000000000000000000000000000000001",
+                "KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS",
+                "0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+            );
+            env::set_var(
+                "KMS_CONNECTOR_ALLOWED_SENDERS",
+                "0x0101010101010101010101010101010101010101,0x0202020202020202020202020202020202020202",
+            );
+            env::set_var(
+                "KMS_CONNECTOR_TX_SENDER_ADDRESS",
+                "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
             );
             env::set_var(
                 "KMS_CONNECTOR_ENDPOINT_ADDRESSES",
@@ -280,7 +321,16 @@ mod tests {
                 key_path: PathBuf::from("/etc/proxy/tls.key"),
             }
         );
-        assert_eq!(config.api_key_digest, B256::with_last_byte(1));
+        assert_eq!(config.ethereum_chain_id, 31444);
+        assert_eq!(
+            config.protocol_config_contract.address,
+            Address::repeat_byte(0xc0)
+        );
+        assert_eq!(
+            config.allowed_senders,
+            HashSet::from([Address::repeat_byte(1), Address::repeat_byte(2)])
+        );
+        assert_eq!(config.tx_sender_address, Address::repeat_byte(0xa1));
         assert_eq!(
             config.endpoint_addresses,
             vec![

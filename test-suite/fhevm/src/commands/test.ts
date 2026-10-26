@@ -1,3 +1,4 @@
+import { runRollbackCases } from "./blue-green-rollback-cases";
 import { runRetainedMaterial } from "../consensus/retained-material-run";
 import { withRolloutSupervisor } from "../consensus/rollout-supervision";
 import { syntheticTrackReadinessSql, syntheticEvidenceAuditSql, SYNTHETIC_EVIDENCE_CLEANUP_SQL, DRY_RUN_EVIDENCE_INSTALL_SQL, DRY_RUN_EVIDENCE_CLEANUP_SQL, dryRunEvidenceReadinessSql } from "../../../e2e/test/consensus/upgradeEvidenceSql";
@@ -5,6 +6,7 @@ import { syntheticTrackReadinessSql, syntheticEvidenceAuditSql, SYNTHETIC_EVIDEN
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
 import { compatPolicyForState, supportsConnectorHttp, supportsCoprocessorDbStateRevert } from "../compat/compat";
+import { consumerOnlyHostListeners } from "../host-listener-mode";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
@@ -66,6 +68,8 @@ const DB_REVERT_CONTAINERS = [
   "zkproof-worker",
 ] as const;
 const DB_REVERT_RECOVERY_PROFILE = "input-proof-compute-decrypt";
+// These profiles revert coprocessor state, which consumer-only ingestion cannot replay.
+const CONSUMER_ONLY_SKIPPED_PROFILES = new Set(["coprocessor-db-state-revert", "ciphertext-drift-auto-recovery"]);
 const KEY_BOOTSTRAP_LOG = /Fetched keyset/;
 const KEY_BOOTSTRAP_PROFILES = new Set(["input-proof", "input-proof-compute-decrypt"]);
 // Intentional ciphertext drift must never run on shared/live networks.
@@ -546,20 +550,19 @@ type DriftRevertDbOptions = {
   postgresPassword: string;
 };
 
-/** Counts computations rows for the host chain (coprocessor DB). */
-const countComputations = async (dbOptions: DriftRevertDbOptions, hostChainId: string) => {
+/** Counts completed computations; rollback can retain committed metadata rows. */
+const countCompletedComputations = async (dbOptions: DriftRevertDbOptions, hostChainId: string) => {
   const dbName = coprocessorDatabaseName(dbOptions.instanceIndex);
   const value = await psql(
     dbName,
-    ["-t", "-A", "-c", `SELECT COUNT(*) FROM computations WHERE host_chain_id = ${hostChainId};`],
+    ["-t", "-A", "-c", `SELECT COUNT(*) FROM computations WHERE host_chain_id = ${hostChainId} AND is_completed = true;`],
     dbOptions,
   );
   return Number(value);
 };
 
-/** Polls `computations` row count until it reaches `target` — signals that
- * the host-listener has caught up with blocks re-processed after a revert. */
-const waitForComputationsCatchup = async (
+/** Waits for reverted computations to finish again, including retained rows. */
+const waitForCompletedComputationsCatchup = async (
   options: DriftRevertDbOptions & {
     hostChainId: string;
     target: number;
@@ -570,13 +573,13 @@ const waitForComputationsCatchup = async (
   const attempts = Math.max(0, Math.ceil(options.timeoutSeconds / options.pollIntervalSeconds));
   let lastCount = -1;
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
-    lastCount = await countComputations(options, options.hostChainId);
+    lastCount = await countCompletedComputations(options, options.hostChainId);
     if (lastCount >= options.target) {
       return lastCount;
     }
     if (attempt === attempts) {
       throw new PreflightError(
-        `timed out waiting for computations to catch up: have ${lastCount}, need >= ${options.target}`,
+        `timed out waiting for completed computations to catch up: have ${lastCount}, need >= ${options.target}`,
       );
     }
     await Bun.sleep(options.pollIntervalSeconds * 1000);
@@ -855,11 +858,10 @@ const formatDbRevertSnapshot = (snapshot: DbRevertSnapshot) =>
 
 type DbRevertMetric = Exclude<keyof DbRevertSnapshot, "erroredComputations">;
 
-/** Lists seed-generated tables that should shrink after the revert. */
+/** Lists seed-generated results that should shrink; committed metadata may remain. */
 export const dbRevertDeleteExpectations = (baseline: DbRevertSnapshot, seeded: DbRevertSnapshot) => {
   const metrics: DbRevertMetric[] = [
     "computationsDone",
-    "computationsTotal",
     "allowedHandles",
     "pbsComputations",
     "ciphertextDigest",
@@ -877,7 +879,6 @@ const assertRevertDeletedData = (baseline: DbRevertSnapshot, seeded: DbRevertSna
   }
   const unchanged = [
     expected.includes("computationsDone") && after.computationsDone >= seeded.computationsDone ? "completed computations" : "",
-    expected.includes("computationsTotal") && after.computationsTotal >= seeded.computationsTotal ? "computations" : "",
     expected.includes("allowedHandles") && after.allowedHandles >= seeded.allowedHandles ? "allowed_handles" : "",
     expected.includes("pbsComputations") && after.pbsComputations >= seeded.pbsComputations ? "pbs_computations" : "",
     expected.includes("ciphertextDigest") && after.ciphertextDigest >= seeded.ciphertextDigest ? "ciphertext_digest" : "",
@@ -1131,6 +1132,8 @@ const runBlueGreenSteps = async (
     if (hooks.stdout.trim() !== "true") throw new PreflightError("upgrade interruption requires upgrade-controller/test-failpoints binaries");
   }
 
+  // The rollback cases take ids 2 to 4, so the cutover proposal follows them.
+  const CUTOVER_PROPOSAL_ID = 5;
   const MIN_BLUE_GREEN_TRAFFIC_STREAMS = 2;
   const CROSS_CUTOVER_CHAIN_DEPTH = 5;
 
@@ -1158,10 +1161,15 @@ const runBlueGreenSteps = async (
 
   const gatewayTip = async () =>
     Number((await run(["cast", "block-number", "--rpc-url", gatewayRpcUrl])).stdout.trim());
-  // gw_start_block is pinned to the Gateway tip at proposal time, so the Gateway gate opens
-  // without any Gateway transaction.
-  const assertGatewayGateOpens = async (tipBeforeProposal: number, tipAfterProposal: number) => {
-    for (const db of operatorDatabases) {
+  // gw_start_block is pinned to the Gateway tip at proposal time, so the gate opens on a block already reached.
+  const assertGatewayGateOpens = async (
+    tipBeforeProposal: number,
+    tipAfterProposal: number,
+    // The rollback cases take one operator out before the window opens, so
+    // they assert the gate on the operators that stay.
+    databases: string[] = operatorDatabases,
+  ) => {
+    for (const db of databases) {
       const gwStartBlock = Number(
         await psqlQuery(db, "SELECT MIN(gw_start_block) FROM upgrade_state WHERE stack_role='GCS';"),
       );
@@ -1171,7 +1179,7 @@ const runBlueGreenSteps = async (
         );
       }
       await waitUntil({
-        label: `${db}  gw_dry_run_started without a Gateway tx (gw_start_block=${gwStartBlock}, tip=${tipAfterProposal})`,
+        label: `${db}  gw_dry_run_started (gw_start_block=${gwStartBlock}, tip=${tipAfterProposal})`,
         timeoutSecs: 60,
         check: async () =>
           (await psqlQuery(
@@ -1357,6 +1365,91 @@ const runBlueGreenSteps = async (
   const reenabled = await setSyntheticOps(true);
   console.log(`OK:   recreated ${reenabled.length} GCS host-listener service(s) with synthetic ops enabled`);
 
+  // Rollback cases, before the cutover: the cutover moves `versioning` and
+  // merges the GCS schema away, so nothing can follow it. Each case leaves its
+  // rows at `failed`, which is what the listener needs for the next proposal.
+  //
+  // The plain profile only. Every other mode drives this same flow with its own
+  // perturbation — host-report faults, a controller interruption — and three
+  // more attempts would land in the middle of it.
+  const plainProfile = !faultHost && !interruptDetector && !quietSynthetic && interrupt === "none";
+  if (opCount >= 2 && plainProfile && process.env.BLUE_GREEN_ROLLBACK_CASES !== "0") {
+    await runRollbackCases({
+      operatorDatabases,
+      hostChainCount: hostChains.length,
+      gcsStackVersion,
+      psqlQuery,
+      waitUntil,
+      propose: async (proposalId: number, duration: string) => {
+        const startTime = new Date(Date.now() + 30_000).toISOString();
+        const tipBefore = await gatewayTip();
+        await runContractTask(
+          "host-sc",
+          "host-sc-deploy",
+          'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
+            '--environment local --start-time "$PROPOSE_START_TIME" --buffer 10s ' +
+            `--duration ${duration} --proposal-id ${proposalId} ` +
+            '--software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+          {
+            env: {
+              LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
+              LOCAL_HOST_CHAINS: localHostChains,
+              PROPOSE_START_TIME: startTime,
+              PROPOSE_SW_VERSION: gcsVersionLive,
+            },
+          },
+        );
+        const tipAfter = await gatewayTip();
+        for (const db of operatorDatabases) {
+          await waitUntil({
+            label: `${db}  GCS rows for proposal ${proposalId}`,
+            timeoutSecs: 120,
+            check: async () =>
+              (await psqlQuery(
+                db,
+                `SELECT CASE WHEN COUNT(*)=${hostChains.length} AND COUNT(DISTINCT proposal_block)=1
+                             THEN 'ready' ELSE 'waiting' END
+                   FROM upgrade_state WHERE stack_role='GCS' AND status='in_progress';`,
+              )) === "ready",
+          });
+        }
+        return { tipBefore, tipAfter };
+      },
+      waitDryRunStarted: async (databases, tips) => {
+        for (const db of databases) {
+          await waitUntil({
+            label: `${db}  GCS DryRunStarted`,
+            timeoutSecs: 300,
+            check: async () =>
+              (await psqlQuery(
+                db,
+                `SELECT CASE WHEN COUNT(*)=${hostChains.length}
+                                    AND BOOL_AND(state='DryRunStarted')
+                                    AND COUNT(DISTINCT proposal_id)=1
+                                    AND COUNT(DISTINCT proposal_block)=1
+                             THEN 'ready' ELSE 'waiting' END
+                   FROM upgrade_state WHERE stack_role='GCS';`,
+              )) === "ready",
+          });
+        }
+        await assertGatewayGateOpens(tips.tipBefore, tips.tipAfter, databases);
+      },
+      withTraffic: async body => {
+        // A stopped operator can starve the proofs and end the traffic. The
+        // case continues, so nothing reads `stream.errored`.
+        const stream = startContinuousErc20Traffic(trafficTargets, blueGreenTrafficStreams);
+        try {
+          return await body();
+        } finally {
+          const stats = await stream.stop();
+          console.log(
+            `OK:   case traffic stopped (${stats.iterations} run(s), ${stats.failures} failure(s))`,
+          );
+        }
+      },
+    });
+  }
+
   // Deploy ERC20 + mint before the proposal so the balance handle lands in
   // public.ciphertexts with block_number < start_block. Transfers during the
   // dry-run window will force GCS's tfhe-worker to fall back to
@@ -1400,7 +1493,8 @@ const runBlueGreenSteps = async (
     "host-sc-deploy",
     'LOCAL_HOST_RPC_URL="$RPC_URL" npx hardhat task:proposeCoprocessorUpgrade ' +
       '--environment local --start-time "$PROPOSE_START_TIME" --duration 5m --buffer 10s ' +
-      '--proposal-id 2 --software-version "$PROPOSE_SW_VERSION" --use-internal-proxy-address true',
+      `--proposal-id ${CUTOVER_PROPOSAL_ID} --software-version "$PROPOSE_SW_VERSION" ` +
+      "--use-internal-proxy-address true",
     {
       env: {
         LOCAL_GATEWAY_RPC_URL: state.discovery!.endpoints.gateway.http,
@@ -1411,15 +1505,17 @@ const runBlueGreenSteps = async (
     },
   );
   const proposeTipAfter = await gatewayTip();
-  console.log(`OK:   activation emitted via task (proposalId=2, version=${gcsVersionLive}, start=${proposeStartTime})`);
+  console.log(
+    `OK:   activation emitted via task (proposalId=${CUTOVER_PROPOSAL_ID}, version=${gcsVersionLive}, start=${proposeStartTime})`,
+  );
 
   console.log(`\n[7/11] verify committed GCS DryRunStarted transitions per operator`);
   for (const db of operatorDatabases) {
     await waitUntil({
-      label: `${db}  proposal 2 entered GCS DryRunStarted`,
+      label: `${db}  proposal ${CUTOVER_PROPOSAL_ID} entered GCS DryRunStarted`,
       timeoutSecs: 120,
       check: async () => (await psqlQuery(db,
-        dryRunEvidenceReadinessSql(gcsStackVersion, hostChains.map(chain => chain.chainId), 2))) === "ready",
+        dryRunEvidenceReadinessSql(gcsStackVersion, hostChains.map(chain => chain.chainId), CUTOVER_PROPOSAL_ID))) === "ready",
     });
   }
   await assertGatewayGateOpens(proposeTipBefore, proposeTipAfter);
@@ -2072,10 +2168,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           pollIntervalSeconds: driftAlertPollIntervalSeconds,
         });
 
-        // Snapshot row counts before the revert runs. The gw-listener is
+        // Snapshot completion counts before the revert runs. The gw-listener is
         // still in the grace period (pending status), so this is stable.
-        const computationsBefore = await countComputations(dbOptions, hostChainId);
-        console.log(`[drift-auto-recovery] computations before revert: ${computationsBefore}`);
+        const computationsBefore = await countCompletedComputations(dbOptions, hostChainId);
+        console.log(`[drift-auto-recovery] completed computations before revert: ${computationsBefore}`);
 
         // Wait for the revert to actually run (status transitions to
         // "reverting" and the SQL completes). DRIFT_REVERT_TEST_HOLD_SECS
@@ -2090,11 +2186,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
 
         // Snapshot counts while status=reverting. Services are still blocked
         // waiting for status=done, so no new writes are racing.
-        const computationsAfterRevert = await countComputations(dbOptions, hostChainId);
-        console.log(`[drift-auto-recovery] computations after revert: ${computationsAfterRevert}`);
+        const computationsAfterRevert = await countCompletedComputations(dbOptions, hostChainId);
+        console.log(`[drift-auto-recovery] completed computations after revert: ${computationsAfterRevert}`);
         if (computationsAfterRevert >= computationsBefore) {
           throw new PreflightError(
-            `drift revert did not delete any computations (before=${computationsBefore}, after=${computationsAfterRevert})`,
+            `drift revert did not reset any completed computations (before=${computationsBefore}, after=${computationsAfterRevert})`,
           );
         }
 
@@ -2106,16 +2202,16 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           pollIntervalSeconds: driftRecoveryPollIntervalSeconds,
         });
 
-        // Wait for host-listener to re-process the reverted blocks so the
-        // follow-up test isn't racing against catchup.
-        const caughtUp = await waitForComputationsCatchup({
+        // Wait for replay AND worker completion. Retained metadata alone
+        // must not make recovery appear complete.
+        const caughtUp = await waitForCompletedComputationsCatchup({
           ...dbOptions,
           hostChainId,
           target: computationsBefore,
           timeoutSeconds: driftRecoveryTimeoutSeconds,
           pollIntervalSeconds: driftRecoveryPollIntervalSeconds,
         });
-        console.log(`[drift-auto-recovery] revert completed; computations caught up to ${caughtUp} (>= ${computationsBefore}); re-running tests to verify recovery`);
+        console.log(`[drift-auto-recovery] revert completed; completed computations caught up to ${caughtUp} (>= ${computationsBefore}); re-running tests to verify recovery`);
 
         // Re-run the e2e tests to verify the services have fully recovered.
         const followUp = await runWithHeartbeat(
@@ -2190,6 +2286,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     const started = Date.now();
     await runLogged(label, started, async () => {
       for (const profile of profiles) {
+        if (CONSUMER_ONLY_SKIPPED_PROFILES.has(profile) && consumerOnlyHostListeners(state.scenario)) {
+          console.log(`[test] skipping ${profile}: host-consumers only pause during a drift revert and do not recover`);
+          continue;
+        }
         if (profile === "multi-chain-isolation" || profile === "confidential-bridge") {
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {

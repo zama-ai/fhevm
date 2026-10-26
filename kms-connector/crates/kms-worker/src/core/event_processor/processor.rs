@@ -86,7 +86,7 @@ where
             if let KmsSendResponse::DestroyedEpochs(epoch_ids) = send_response {
                 for epoch_id in epoch_ids {
                     if let Err(e) = invalidate_kms_epoch(&self.db_pool, epoch_id).await {
-                        warn!("Failed to invalidate destroyed KMS epoch #{epoch_id}: {e}");
+                        warn!("Failed to invalidate destroyed KMS epoch #{epoch_id:#066x}: {e}");
                     }
                 }
             }

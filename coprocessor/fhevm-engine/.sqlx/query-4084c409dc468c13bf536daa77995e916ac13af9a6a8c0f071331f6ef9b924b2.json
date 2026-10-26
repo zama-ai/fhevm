@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT consensus_version, outcome\n          FROM consensus_epoch_history\n         WHERE consensus_epoch = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consensus_version",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "outcome",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "4084c409dc468c13bf536daa77995e916ac13af9a6a8c0f071331f6ef9b924b2"
+}

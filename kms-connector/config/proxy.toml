@@ -8,12 +8,17 @@
 # ENV: KMS_CONNECTOR_PROXY_BIND_ADDRESS
 # bind_address = "0.0.0.0:8443"
 
-# SHA-256 digest of the API key the relayer sends as `Authorization: Bearer <key>` (required).
-# The plaintext key lives in a secret shared with the relayer; only its digest is configured here.
-# Compute it with: printf '%s' "$API_KEY" | sha256sum
-# The value below is a placeholder that matches no key: it must be replaced before deployment.
-# ENV: KMS_CONNECTOR_API_KEY_DIGEST
-api_key_digest = "0x0000000000000000000000000000000000000000000000000000000000000000"
+# Chain ID for the Ethereum network, Sepolia here (required)
+# ENV: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
+ethereum_chain_id = 11155111
+
+# Addresses allowed to send signed requests (required)
+# ENV: KMS_CONNECTOR_ALLOWED_SENDERS (comma-separated list)
+allowed_senders = ["0x0000000000000000000000000000000000000000"]
+
+# This connector's KMS tx-sender address: the audience the accepted requests are signed for (required)
+# ENV: KMS_CONNECTOR_TX_SENDER_ADDRESS
+tx_sender_address = "0x0000000000000000000000000000000000000000"
 
 # `host:port` addresses of the Connector endpoint replicas (required).
 # Can be a Kubernetes ClusterIP Service (kube-proxy balances), a docker-compose service name, or
@@ -58,6 +63,14 @@ endpoint_addresses = ["kms-connector-endpoint-1:8080", "kms-connector-endpoint-2
 # The timeout to perform each external service connection healthcheck (optional, defaults to 3s)
 # ENV: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # healthcheck_timeout = "3s"
+
+# Configuration of the ProtocolConfig contract on Ethereum (required)
+# Its address is part of the `FhevmSig` EIP-712 domain: `domain_name` and `domain_version` are unused.
+[protocol_config_contract]
+# Address of the ProtocolConfig contract on Ethereum
+# Format: hex string with 0x prefix
+# ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
+address = "0x0000000000000000000000000000000000000000"
 
 # TLS configuration of the proxy (required)
 [tls_config]

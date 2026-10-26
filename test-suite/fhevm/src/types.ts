@@ -85,6 +85,7 @@ export type ResolvedKmsTopology = {
 };
 
 export type CoprocessorScenario = {
+  hostListenerMode?: "consumer";
   version: 1;
   kind: "coprocessor-consensus";
   name?: string;
@@ -107,6 +108,7 @@ export type ResolvedCoprocessorScenarioInstance = {
 };
 
 export type ResolvedCoprocessorScenario = {
+  hostListenerMode?: "consumer";
   version: 1;
   kind: "coprocessor-consensus";
   origin: "default" | "file" | "override-shorthand";

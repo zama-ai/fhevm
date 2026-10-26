@@ -76,6 +76,19 @@ pub async fn bootstrap_versioning(pool: &Pool<Postgres>) -> anyhow::Result<()> {
     .await?;
 
     anyhow::ensure!(result.rows_affected() == 1, "versioning row is missing");
+    // The genesis epoch runs the version just set, not the migration's 1.
+    let result = sqlx::query(
+        "UPDATE consensus_epoch_history
+         SET consensus_version = $1
+         WHERE consensus_epoch = 'legacy'",
+    )
+    .bind(compiled_consensus_version)
+    .execute(&mut *transaction)
+    .await?;
+    anyhow::ensure!(
+        result.rows_affected() == 1,
+        "legacy consensus epoch is missing"
+    );
     sqlx::query("DROP TABLE public._fhevm_versioning_bootstrap")
         .execute(&mut *transaction)
         .await?;

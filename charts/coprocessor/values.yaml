@@ -17,6 +17,14 @@
 # -----------------------------------------------------------------------------
 # Common Configuration
 # -----------------------------------------------------------------------------
+# Requires Prometheus Operator, a running host-listener poller, and
+# hostListenerPollerShared.serviceMonitor.enabled=true. Configure Prometheus's
+# rule selector and Alertmanager routing to deliver the critical alert.
+chainRecoveryAlerts:
+  enabled: false
+  # Labels required by the deployment's Prometheus ruleSelector, if any.
+  additionalLabels: {}
+
 # Shared configuration across all coprocessor components
 commonConfig:
   # Keep production Blue on legacy material during a compressed-key migration.
@@ -96,6 +104,8 @@ commonConfig:
   # by `<binary> --stack-version`). When set, it is surfaced as the
   # `app.kubernetes.io/version` pod label so blue/green tooling can select pods
   # by stack version. Should mirror the STACK_VERSION compiled into the images.
+  # Also appended to the contract-address ConfigMap names (see
+  # hostContractConfigMap below) so blue and green releases do not share them.
   stackVersion: ""
   # Extra Deployment/Service matchLabels. Leave empty for a single release
   # (selector stays immutable). Set when installing a second fleet in the same
@@ -144,10 +154,19 @@ podLabels: {}
 # Optional ConfigMap rendering host chain contract addresses. Downstream
 # components (dbMigration, hostListener, hostListenerPoller,
 # hostListenerCatchupOnly) reference its keys via configMapKeyRef.
+#
+# When commonConfig.stackVersion is set, it is appended to the rendered name of
+# this and the gateway/polygon ConfigMaps (lowercased, dots replaced by dashes),
+# e.g. stackVersion v0.13.7 renders eth-sc-addresses-v0-13-7. valueFrom blocks
+# and env lists are rendered through tpl, so reference the computed name with:
+#   configMapKeyRef:
+#     name: '{{ include "coprocessor.hostContractConfigMapName" . }}'
+# (coprocessor.gatewayContractConfigMapName / coprocessor.polygonContractConfigMapName
+# for the other two).
 hostContractConfigMap:
   enabled: false
 
-  # Resource name. Downstream components reference this via configMapKeyRef.name.
+  # Base resource name; see the stackVersion suffix note above.
   name: eth-sc-addresses
 
   # Selects a bundled preset from configs/ethereum-<network>.yaml.
@@ -171,7 +190,8 @@ hostContractConfigMap:
 gatewayContractConfigMap:
   enabled: false
 
-  # Resource name. Downstream components reference this via configMapKeyRef.name.
+  # Base resource name; suffixed with commonConfig.stackVersion when set.
+  # Reference it via '{{ include "coprocessor.gatewayContractConfigMapName" . }}'.
   name: gw-sc-addresses
 
   # Selects a bundled preset from configs/gateway-<network>.yaml.
@@ -195,7 +215,8 @@ gatewayContractConfigMap:
 polygonContractConfigMap:
   enabled: false
 
-  # Resource name. Downstream components reference this via configMapKeyRef.name.
+  # Base resource name; suffixed with commonConfig.stackVersion when set.
+  # Reference it via '{{ include "coprocessor.polygonContractConfigMapName" . }}'.
   name: polygon-sc-addresses
 
   # Selects a bundled preset from configs/polygon-<network>.yaml.
@@ -227,8 +248,8 @@ dbMigration:
   #
   # Default hooks are disabled because Helm pre-install/pre-upgrade hooks run
   # before normal chart resources. The migration Job can depend on chart-created
-  # ConfigMaps/Secrets (for example the IAM DB auth RDS CA ConfigMap), which
-  # would not exist yet during a hook on fresh installs or first enablement.
+  # ConfigMaps (for example the contract-address ConfigMaps), which would not
+  # exist yet during a hook on fresh installs or first enablement.
   #
   # The wave1 *_branch shadow tables are deprecated in v0.15 (no v0.15 binary
   # reads or writes them) but are only dropped by a v0.16 migration; see
@@ -238,11 +259,12 @@ dbMigration:
   # column this release's migration adds. A green (new release) fleet must start
   # after its migration Job has run: a service that starts earlier exits with an
   # error and restarts. For the green release, enable the hook below so Helm runs
-  # the Job before the Deployments. Every Job dependency must then be
-  # pre-existing or rendered as an earlier hook with a lower hook weight.
+  # the Job before the Deployments. The RDS CA hook runs at the same events with
+  # weight one below the Job; its ConfigMap survives uninstall. Other dependencies
+  # must already exist.
   annotations: {}
   # annotations:
-  #   "helm.sh/hook": "pre-upgrade"
+  #   "helm.sh/hook": "pre-install,pre-upgrade"
   #   "helm.sh/hook-weight": "5"
   #   "helm.sh/hook-delete-policy": "before-hook-creation"
 
@@ -781,19 +803,19 @@ hostListenerConsumerShared:
 #     #     name: rpc
 #     #     key: ethereum-rpc-url
 #     aclContractAddress: "0x..."
-#     # aclContractAddressValueFrom:
+#     # aclContractAddressValueFrom:  # valueFrom blocks are rendered through tpl
 #     #   configMapKeyRef:
-#     #     name: eth-sc-addresses
+#     #     name: '{{ include "coprocessor.hostContractConfigMapName" . }}'
 #     #     key: acl.address
 #     fhevmExecutorContractAddress: "0x..."
 #     # fhevmExecutorContractAddressValueFrom:
 #     #   configMapKeyRef:
-#     #     name: eth-sc-addresses
+#     #     name: '{{ include "coprocessor.hostContractConfigMapName" . }}'
 #     #     key: fhevm_executor.address
 #     # kmsGenerationContractAddress: "0x..."  # optional; omit when KMSGeneration is not deployed on the host chain
 #     # kmsGenerationContractAddressValueFrom:
 #     #   configMapKeyRef:
-#     #     name: eth-sc-addresses
+#     #     name: '{{ include "coprocessor.hostContractConfigMapName" . }}'
 #     #     key: kms_generation.address
 #     hostListener:
 #       enabled: true

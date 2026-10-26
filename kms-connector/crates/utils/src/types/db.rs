@@ -317,7 +317,7 @@ pub async fn invalidate_kms_context<'e>(
     .execute(executor)
     .await?;
 
-    info!("KMS context #{context_id} marked as destroyed in DB");
+    info!("KMS context #{context_id:#066x} marked as destroyed in DB");
     Ok(())
 }
 
@@ -340,6 +340,6 @@ pub async fn invalidate_kms_epoch<'e>(
     .execute(executor)
     .await?;
 
-    info!("KMS epoch #{epoch_id} marked as destroyed in DB");
+    info!("KMS epoch #{epoch_id:#066x} marked as destroyed in DB");
     Ok(())
 }

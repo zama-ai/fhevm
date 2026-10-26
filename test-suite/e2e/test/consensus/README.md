@@ -270,3 +270,81 @@ container that fails with HH108 before any test body runs.
 `helpers.test.ts`, `comparator.test.ts`, `validity.test.ts` and
 `materializationFixture.test.ts` are plain unit tests of the harness itself and
 run without a stack.
+
+## Artifact ingestion recovery
+
+These are full-environment tests, separate from the Rust component regressions.
+They use the deployed executor and ACL, actual listener/worker/SNS/sender
+processes, three-operator Gateway consensus, and public SDK decryption through
+the relayer and KMS. No ingestion function is called in-process, and no test
+writes computation, permission, ciphertext or scheduler rows to repair work.
+
+Run on an **isolated, compatible v0.15 full stack**, using the branch's
+coprocessor and test-suite images and the `three-of-three-backlog` scenario.
+The runner requires Docker service control and database observations, like the
+other fault campaigns; it is not a read-only test for a production environment.
+For a new local stack, from `test-suite/fhevm`:
+
+```sh
+./fhevm-cli up --target latest-supported --build --scenario three-of-three-backlog
+./scripts/record-run-identity.sh
+./scripts/run-artifact-ingestion-recovery.sh overlap
+./scripts/run-artifact-ingestion-recovery.sh cursor
+```
+
+Select a deployment target compatible with the release under test. On an
+already running compatible stack, rebuild the suite with
+`./fhevm-cli upgrade test-suite` before running the scripts; the runner checks
+that the container contains the same suite source as the checkout. It also
+checks the deployed Gateway membership and threshold, which must be 3 of 3.
+CI exposes the `ingestion-recovery` selection in `test-suite-consensus.yml` and
+includes it in `standard` and `full`.
+
+Both cases stop the victim's redundant ingestion paths, route its poller through
+an HTTP proxy, and omit only the real ACL logs for one recorded producer
+transaction. The computation is observed as unallowed/completed with no
+ciphertext. Two children and a grandchild must remain pending while an
+independent canary completes and reaches unanimous Gateway consensus.
+
+- `INGEST-ACL-OVERLAP` restores complete RPC responses and restarts the poller.
+  Its bounded startup overlap must recover the original producer without a
+  cursor edit. The test verifies the producer is within that overlap.
+- `INGEST-ACL-CURSOR` uses a one-block startup overlap and explicitly rewinds
+  the stopped poller's cursor to the original producer, exercising the operator
+  replay procedure. The recovery phase only changes that cursor.
+
+Every original output must agree across all operators, reach unanimous Gateway
+consensus, and decrypt to the independently calculated value. A second explicit
+replay must preserve ciphertext bytes, completion flags and storage cardinality.
+A healthy peer's decryption or fresh replacement work cannot satisfy the checks.
+
+The victim's history publisher is held **before** the partial producer is
+created. This tests repair of uncommitted history; repairing already published
+inventory has a different contract (containment), not automatic recovery. The
+publisher resumes only after successful repair. If healing fails, the runner
+restores the original RPC route, leaves publication stopped, retains its private
+restoration ledger, and marks the stack unusable for another case. Repair and
+audit that isolated stack or recreate it before continuing. Public evidence is
+under `.fhevm/runtime/artifact-recovery-evidence`; private Docker inspection and
+restoration files stay under `artifact-recovery-private` and must not be uploaded.
+
+### Test split across the complete #4403 branch
+
+The split applies to all changes against `release/0.15.x`, not just the two
+commits that originally used the E2E name. Detailed interleaving and database
+fixtures stay close to the implementation; tests claiming a deployed pipeline
+belong in this suite.
+
+| Behaviour | Component/integration coverage retained in Rust | Full-environment coverage |
+| --- | --- | --- |
+| ACL delivery order, atomic rollback, row/chain repair and concurrent warm/cold grouping | `acl_delivery_tests`, `allowed_upgrade_tests`, `ingestion_atomicity_tests`, `artifact_ingestion_integration` | New Artifact startup-overlap and operator-replay cases above |
+| Listener RPC, broker, restart, gaps, finality and bounded history audit | `host_listener_integration_tests`, `poller_integration_tests`, `recovery_transport_integration`, `history_continuity_tests`, poller/consumer tests | Existing host-RPC, broker-redelivery, long-offline and fork campaigns; new Artifact cases exercise the real poller through decryption |
+| Historical scalar/operand validation and bridge metadata | `legacy_scalar_tests`, `legacy_operand_origin_tests`, bridge and event-validator tests | Existing operator and bridge suites cover deployed contracts; historical decoder matrices remain component tests |
+| Worker diagnostics, leases, frozen results, release/reacquisition | Worker unit tests, `diagnostic_ingestion_tests`, `release_recovery` | Existing crash-retry, scheduling and fork campaigns; new Artifact cases observe stalled descendants and the live canary |
+| Published inventories, hashes, manifests and halt fences | `derived_history_tests`, consensus-detector publication/verification tests, `chain_recovery_tests`, `recovery_liveness_tests` | Existing consensus/fork campaigns cover deployed commitments; the exact late-repair containment permutations remain component regressions |
+| Test harness deadlines and cross-chain public decryption | Existing host-command harness tests and `multiChainIsolation.ts` | Already located in `test-suite`; retained there |
+
+The crate suites deliberately retain finer-grained tests than the deployed
+scenarios. The renamed native tests use fixture contracts or direct ingestion,
+and the commitment tests use fixture ciphertexts and a local S3 substitute;
+they are not counted as full-environment E2E passes.

@@ -15,6 +15,13 @@ services:
         aliases:
           # KMS storage URLs are published on-chain as `http://minio:9000`, thus this alias.
           - minio
+          # One alias per operator slot. Each coprocessor publishes its bucket
+          # under its own hostname, and all of them reach this container.
+          - object-store-0
+          - object-store-1
+          - object-store-2
+          - object-store-3
+          - object-store-4
     ports:
       - "9000:9000"
       - "9001:9001"

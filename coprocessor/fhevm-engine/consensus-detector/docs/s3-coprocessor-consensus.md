@@ -601,8 +601,18 @@ material to `synthetic_handle_digest`, which only the manifest builder reads: th
 probe block seals the same way whether it seals before or after cutover. Cutover
 first waits for that descriptor to be final (ct128 included, or a terminal
 error): the state hash covers ct64 only, and an operator whose SNS lagged would
-otherwise copy, and publish, a different descriptor than its peers. JSON
-omits the field when false.
+otherwise copy, and publish, a different descriptor than its peers. A Green
+worker that missed the dry-run release (restart, lost notification) is released
+once it finds the upgrade authorized, so that SNS can still complete; and the
+wait is capped five minutes after authorization, after which the probe is
+copied as it is and only that block's agreement is lost. That loss is not a
+single report: the operator's later manifests of the epoch keep the block in
+their signed history, so every later verification whose history covers it
+still reports `differs_from_quorum` for that operator
+(`coprocessor_manifest_verification_total{outcome=...}`), which can trigger
+alerts. Synthetic filtering only keeps the probe out of the handle findings, so
+the disagreement is never contained or healed; it lasts until the next epoch.
+JSON omits the field when false.
 
 `keyset_id` identifies the compatible FHE key generation. It participates in
 consensus because different key generations can explain otherwise valid but
@@ -933,7 +943,7 @@ The signed V1 payload and its canonical bytes include:
 
 - `ManifestPayload.consensus_epoch`: relative path identifying this published
   manifest's verification universe. The baseline is `legacy`. Later
-  identifiers are `{version}/block_{n}`. Detailed-range blocks and compact
+  identifiers are `{consensus_version}/block_{n}`. Detailed-range blocks and compact
   historical ranges belong to this same epoch; they do not carry a separate
   field. Dual-stack coexistence stores the epoch on DB rows
   (`consensus_epoch` / `*_consensus_epoch` columns), not on the wire entry.
@@ -974,12 +984,15 @@ upgrade is minted in the host-listener when it accepts a finalized
 `CoprocessorUpgradeProposed` log:
 
 ```text
-{version}/block_{block_number}
+{consensus_version}/block_{block_number}
 ```
 
-`version` is currently the software version and will become the consensus
-protocol version. It is expected to be unique across breaking upgrades;
-`block_number` is only a fail-safe if the same version is reused.
+`consensus_version` is the protocol version the proposal upgrades to: the live
+`versioning.consensus_version` plus one, since every proposal raises
+`CONSENSUS_PROTOCOL_VERSION` by exactly one. Blue and Green both ingest the
+log and race to record it; reading the version from the database, which only
+cutover changes, makes them derive the same identifier. `block_number` is only
+a fail-safe if the same version is reused, e.g. after a failed attempt.
 `block_number` is the block that contains `CoprocessorUpgradeProposed`, not
 `gwStartBlock`. The log is only ingested on
 `CANONICAL_PROTOCOL_CONFIG_CHAIN_ID`, so the chain id is omitted. Replay of
@@ -1028,8 +1041,15 @@ routing still determines which consensus epoch owns the discovered ciphertexts.
 
 This history stays in `public`, alongside `versioning` and `upgrade_state`; it
 is deliberately not copied into `gcs`. Each row records the consensus epoch, the
-proposal identity and block, the candidate stack version, and its `pending`,
-`succeeded`, or `failed` outcome. It is an allocation ledger, not a manifest
+proposal identity and block, the candidate stack version (audit only), the
+`consensus_version` it was minted for (for `legacy`, the version live before
+the first upgrade: 1 on existing networks, the compiled one on a new database),
+and its `pending`, `succeeded`, or `failed` outcome. sns-worker reads it to tag a
+ct64 object with the epoch that computed it, and healing to date the ciphertexts
+it installs. The detector accepts a non-`legacy` epoch only when its
+`consensus_version` equals the binary's compiled `CONSENSUS_PROTOCOL_VERSION`,
+so a Green release built for another protocol version than the proposal's is
+refused instead of publishing under that epoch. It is an allocation ledger, not a manifest
 selector: manifests still carry the exact consensus epoch to fetch.
 
 All manifest-derived tables are consensus epoch-keyed:

@@ -72,10 +72,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgListener, Executor, Pool, Postgres};
 use thiserror::Error;
 use tokio::select;
-use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Level};
 
+mod decision;
 pub mod manifest_consensus;
 pub mod s3;
 pub mod state_hash;
@@ -287,8 +287,8 @@ fn all_slots_filled(slots: &[Option<Vec<u8>>]) -> bool {
 }
 
 /// An upgrade attempt and its per-chain windows:
-/// `(proposal_id, proposal_block, [(chain_id, start, end), ...])`.
-pub(crate) type HostWindows = (Vec<u8>, i64, Vec<(i64, i64, i64)>);
+/// `(proposal_id, proposal_block, stack_version, [(chain_id, start, end), ...])`.
+pub(crate) type HostWindows = (Vec<u8>, i64, Option<String>, Vec<(i64, i64, i64)>);
 
 /// Returns the complete per-chain window set for the active GCS dry-run.
 /// `None` otherwise. Proposal-level fields must agree across every row.
@@ -300,12 +300,13 @@ where
         String,
         Option<Vec<u8>>,
         Option<i64>,
+        Option<String>,
         i64,
         Option<i64>,
         Option<i64>,
     );
     let rows: Vec<ActiveWindowRow> = sqlx::query_as(
-        "SELECT state, proposal_id, proposal_block,
+        "SELECT state, proposal_id, proposal_block, version,
                 host_chain_id, start_block, end_block
            FROM upgrade_state
           WHERE stack_role = 'GCS' AND status = 'in_progress'
@@ -314,7 +315,7 @@ where
     .fetch_all(executor)
     .await?;
 
-    let Some((state, proposal_id, proposal_block, _, _, _)) = rows.first() else {
+    let Some((state, proposal_id, proposal_block, version, _, _, _)) = rows.first() else {
         return Ok(None);
     };
     if !matches!(state.as_str(), "UpgradeActivated" | "DryRunStarted") {
@@ -328,10 +329,11 @@ where
     };
 
     let mut windows = Vec::with_capacity(rows.len());
-    for (row_state, row_id, row_block, chain_id, start, end) in &rows {
+    for (row_state, row_id, row_block, row_version, chain_id, start, end) in &rows {
         if row_state != state
             || row_id.as_deref() != Some(proposal_id.as_slice())
             || *row_block != Some(proposal_block)
+            || row_version != version
         {
             return Err(Error::Payload(
                 "active GCS upgrade_state rows do not describe one proposal".to_owned(),
@@ -344,7 +346,12 @@ where
         };
         windows.push((*chain_id, start, end));
     }
-    Ok(Some((proposal_id.clone(), proposal_block, windows)))
+    Ok(Some((
+        proposal_id.clone(),
+        proposal_block,
+        version.clone(),
+        windows,
+    )))
 }
 
 /// Per-track eager consensus state. We only need ONE unanimous block to anchor
@@ -481,22 +488,6 @@ async fn host_consensus_candidates(
     Ok(rows.into_iter().map(|(b,)| b).collect())
 }
 
-/// Latest finalized GCS host-chain block for `host_chain_id`, or -1 if none.
-async fn gcs_host_watermark(pool: &Pool<Postgres>, host_chain_id: i64) -> Result<i64, Error> {
-    let sql = format!(
-        "SELECT COALESCE(
-                  (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid
-                    WHERE chain_id = $1 AND block_status = 'finalized'),
-                  -1
-                )"
-    );
-    let (watermark,): (i64,) = sqlx::query_as(&sql)
-        .bind(host_chain_id)
-        .fetch_one(pool)
-        .await?;
-    Ok(watermark)
-}
-
 /// True once every block in `[start, end]` has a `state_hash`: counts the hashes and
 /// compares to the window size, so a gap below a hashed block still fails.
 async fn gcs_window_fully_hashed(
@@ -518,25 +509,28 @@ async fn gcs_window_fully_hashed(
     Ok(ok)
 }
 
-/// Timeout state machine for the tracked window.
-enum WindowTimeout {
-    /// No deadline running.
-    NotArmed,
-    /// Give up at this instant, then re-emit each poll until the row is rolled back.
-    Armed(Instant),
-}
-
 struct WindowState {
     /// Tracked proposal + per-chain window set; a change resets every track.
     tracked_window: Option<HostWindows>,
-    timeout: WindowTimeout,
+    /// One deadline per host chain, armed after the window of that chain.
+    deadlines: HashMap<i64, Instant>,
+    /// The attempt's member set, resolved once from `gw_start_block`.
+    members: Vec<decision::Member>,
 }
 
-/// Every chain finished its window.
-fn should_arm_timeout(windows: &[(i64, i64, i64)], watermarks: &HashMap<i64, i64>) -> bool {
-    windows
-        .iter()
-        .all(|&(chain_id, _, end)| watermarks.get(&chain_id).is_some_and(|&w| w >= end))
+/// The attempt is over: a chain passed its deadline with no anchor, or every
+/// chain passed its deadline. The second rule ends an all-quiet window.
+fn window_expired(
+    windows: &[(i64, i64, i64)],
+    host_tracks: &HashMap<i64, ConsensusTrack>,
+    deadlines: &HashMap<i64, Instant>,
+    now: Instant,
+) -> bool {
+    let passed = |chain_id: &i64| deadlines.get(chain_id).is_some_and(|&d| now >= d);
+    windows.iter().all(|(chain_id, _, _)| passed(chain_id))
+        || host_tracks
+            .iter()
+            .any(|(chain_id, track)| track.anchored.is_none() && passed(chain_id))
 }
 
 /// Host side is ready: every chain anchored and at least one anchor is non-trivial.
@@ -569,33 +563,102 @@ fn unanimity_notifications(
     out
 }
 
+/// What this operator needs to write and read decision records: its own bucket
+/// and signing key, and the `GatewayConfig` reader that resolves the members.
+struct Fleet<'a, P: Provider<Ethereum>> {
+    s3: Option<&'a aws_sdk_s3::Client>,
+    /// Green runs the cutover, so Green alone writes the record. Blue reads it.
+    writes: bool,
+    bucket: Option<&'a str>,
+    signer: Option<&'a fhevm_engine_common::types::CoproSigner>,
+    gateway: &'a S3Service<P>,
+}
+
+/// The members of one attempt, read at `gw_start_block`. Every operator reads
+/// the same block, so no operator counts a smaller set, and no operator loses
+/// the bucket of a member it must count.
+async fn attempt_members<P>(
+    fleet: &Fleet<'_, P>,
+    gw_start_block: i64,
+) -> anyhow::Result<Vec<decision::Member>>
+where
+    P: Provider<Ethereum>,
+{
+    let block = u64::try_from(gw_start_block)?;
+    let members = fleet.gateway.get_members_at(block).await?;
+    if members.is_empty() {
+        return Err(anyhow::anyhow!("no coprocessor signers at block {block}"));
+    }
+    Ok(decision::members_of(&members))
+}
+
 /// One pass over every host-chain track plus the Gateway track: resets tracks on
-/// a window-set change, polls each chain's + the Gateway's candidates, re-emits
-/// anchors, and — once every host chain hit end_block without unanimity — emits a
-/// single timeout past the deadline.
-async fn consensus_pass(
+/// a window-set change, polls each chain's + the Gateway's candidates, records
+/// this operator's decision once the tracks anchor or the deadline passes, and
+/// acts only on the records every member wrote.
+async fn consensus_pass<P>(
     pool: &Pool<Postgres>,
     http: &reqwest::Client,
-    s3_urls: &Arc<RwLock<Vec<String>>>,
+    fleet: &Fleet<'_, P>,
     host_tracks: &mut HashMap<i64, ConsensusTrack>,
     gateway: &mut ConsensusTrack,
     window_state: &mut WindowState,
     commitment_timeout: Duration,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+    P: Provider<Ethereum>,
+{
     let active = active_upgrade_windows(pool).await?;
     if window_state.tracked_window != active {
         // Window set changed: reset all tracks + timeout so no prior anchor carries over.
         host_tracks.clear();
         gateway.reset();
-        window_state.timeout = WindowTimeout::NotArmed;
+        window_state.deadlines.clear();
+        window_state.members.clear();
         window_state.tracked_window = active.clone();
     }
-    let Some((proposal_id, proposal_block, windows)) = active else {
+    let Some((proposal_id, proposal_block, stack_version, windows)) = active else {
         return Ok(());
     };
 
-    // Snapshot the URL list so every track sees a stable operator set this pass.
-    let urls = s3_urls.read().await.clone();
+    // This operator writes its record once and never replaces it, so a restart
+    // reuses the decision, the anchors and the members it already published.
+    let own = match (fleet.s3, fleet.bucket, fleet.signer) {
+        (Some(client), Some(bucket), Some(signer)) => {
+            decision::get_own(
+                client,
+                bucket,
+                signer.address(),
+                &proposal_id,
+                proposal_block,
+            )
+            .await
+        }
+        _ => None,
+    };
+
+    // The record names the members, so a restart recovers them without the chain.
+    if let Some(record) = own.as_ref().filter(|_| window_state.members.is_empty()) {
+        window_state.members = record.payload.members.clone();
+    }
+
+    // This operator never replaces an unknown member set with the current one.
+    // It waits instead of deciding over a set its peers do not share.
+    if window_state.members.is_empty() {
+        let Some(gw_start_block) = state_hash::gw_start_block(pool).await? else {
+            warn!("active GCS proposal has no gw_start_block; waiting");
+            return Ok(());
+        };
+        match attempt_members(fleet, gw_start_block).await {
+            Ok(members) => window_state.members = members,
+            Err(e) => {
+                warn!(gw_start_block, error = %e, "cannot resolve the attempt's members; waiting");
+                return Ok(());
+            }
+        }
+    }
+    let members = window_state.members.clone();
+    let urls: Vec<String> = members.iter().map(|m| m.url.clone()).collect();
 
     // Host tracks: one per chain window, each anchoring independently.
     for &(chain_id, start, end) in &windows {
@@ -631,56 +694,51 @@ async fn consensus_pass(
         }
     }
 
-    // Re-emit each anchor every pass so a controller that missed the NOTIFY still
-    // latches. Each host anchor is emitted per-chain the moment it anchors, so its
-    // host_consensus_reached latch reflects that chain alone and never waits on a
-    // slower/idle sibling. Atomic cutover is preserved by the controller's own gate
-    // (every host + Gateway latched AND >=1 host chain with non-trivial work), so
-    // decoupling the latch here can't let a partial or all-quiet fleet cut over.
-    for (chain_id, block) in unanimity_notifications(host_tracks, gateway) {
-        notify_unanimity(
-            pool,
-            UNANIMITY_CONSENSUS_CHANNEL,
-            &proposal_id,
-            proposal_block,
-            &NewBlockPayload {
-                chain_id,
-                block_height: block,
-                block_hash: String::new(),
-            },
-        )
-        .await?;
-    }
-
-    // One global deadline, armed once every host chain reached its end_block
-    // without agreeing, so the upgrade can be rerun.
     let all_host_anchored =
         !host_tracks.is_empty() && host_tracks.values().all(|t| t.anchored.is_some());
     let both_anchored = host_consensus_ready(host_tracks) && gateway.anchored.is_some();
+    let max_end = windows.iter().map(|&(_, _, end)| end).max().unwrap_or(0);
+
+    let own_name = fleet.signer.map(|s| decision::name_of(s.address()));
+
+    // One deadline per chain, armed only once that chain is actually READY to
+    // anchor — its whole window is hashed — or a stuck listener's window was
+    // closed by Blue. Arming on the watermark (blocks merely finalized) instead
+    // let an early chain's timer fire while it was still hashing, or while a
+    // later, legitimately staggered window had not even opened yet, aborting a
+    // healthy disjoint-window upgrade. Measuring from "ready to anchor" means a
+    // chain that then stays un-anchored past the timeout is genuinely divergent,
+    // not merely lagging, so ending the attempt on it is correct.
+    let mut expired = false;
     if !both_anchored {
-        let max_end = windows.iter().map(|&(_, _, end)| end).max().unwrap_or(0);
-        match window_state.timeout {
-            WindowTimeout::NotArmed => {
-                let mut watermarks = HashMap::with_capacity(windows.len());
-                for &(chain_id, _, _) in &windows {
-                    watermarks.insert(chain_id, gcs_host_watermark(pool, chain_id).await?);
-                }
-                // A stuck listener still ends once uploads are closed; by then peers have decided.
-                if should_arm_timeout(&windows, &watermarks)
-                    || state_hash::upload_window(pool, commitment_timeout).await?.1
-                {
-                    window_state.timeout =
-                        WindowTimeout::Armed(Instant::now() + commitment_timeout);
-                    info!(
-                        chains = windows.len(),
-                        max_end_block = max_end,
-                        timeout_secs = commitment_timeout.as_secs(),
-                        "arming consensus timeout (all chains reached end_block, or uploads closed)"
-                    );
-                }
+        for &(chain_id, start, end) in &windows {
+            if window_state.deadlines.contains_key(&chain_id) {
+                continue;
             }
-            // Still armed past the deadline — (re)emit the timeout.
-            WindowTimeout::Armed(deadline) if Instant::now() >= deadline => {
+            if gcs_window_fully_hashed(pool, chain_id, start, end).await?
+                || state_hash::chain_upload_closed(pool, chain_id, end, commitment_timeout).await?
+            {
+                window_state
+                    .deadlines
+                    .insert(chain_id, Instant::now() + commitment_timeout);
+                info!(
+                    chain_id,
+                    end_block = end,
+                    timeout_secs = commitment_timeout.as_secs(),
+                    "arming consensus timeout (window fully hashed, or uploads closed)"
+                );
+            }
+        }
+        // Past the deadline this operator records `abort`. It still acts only
+        // on the records, so no peer rolls back on this operator's silence.
+        if window_expired(
+            &windows,
+            host_tracks,
+            &window_state.deadlines,
+            Instant::now(),
+        ) {
+            expired = true;
+            if own.is_none() && fleet.writes {
                 let mut unanchored: Vec<i64> = host_tracks
                     .iter()
                     .filter(|(_, t)| t.anchored.is_none())
@@ -697,22 +755,154 @@ async fn consensus_pass(
                     nontrivial_anchored = host_tracks.values().any(|t| t.anchored_nontrivial),
                     gateway_anchored = gateway.anchored.is_some(),
                     unanchored_chains = ?unanchored,
-                    "consensus timeout elapsed without unanimity on all tracks — emitting event_unanimity_consensus_timeout"
+                    "consensus timeout elapsed without unanimity on all tracks — recording abort"
                 );
+            }
+        }
+    }
+
+    let verdict = if both_anchored {
+        Some(decision::Decision::Quorum)
+    } else if expired {
+        Some(decision::Decision::Abort)
+    } else {
+        None
+    };
+    // The protocol version of this binary. The proposal names the stack version.
+    let consensus_version = i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION);
+    if verdict.is_some() && own.is_none() && stack_version.is_none() && fleet.writes {
+        warn!("active GCS proposal has no version; waiting to record the decision");
+    }
+
+    if let (
+        true,
+        None,
+        Some(verdict),
+        Some(client),
+        Some(bucket),
+        Some(signer),
+        Some(stack_version),
+    ) = (
+        fleet.writes,
+        &own,
+        verdict,
+        fleet.s3,
+        fleet.bucket,
+        fleet.signer,
+        stack_version.clone(),
+    ) {
+        let anchors = unanimity_notifications(host_tracks, gateway);
+        match decision::sign(
+            signer,
+            &proposal_id,
+            proposal_block,
+            stack_version,
+            consensus_version,
+            verdict,
+            &members,
+            anchors,
+        )
+        .await
+        {
+            Ok(record) => {
+                if let Err(e) = decision::put(client, bucket, &proposal_id, &record).await {
+                    warn!(error = %e, "failed to write the decision record; retrying next pass");
+                }
+            }
+            Err(e) => warn!(error = %e, "failed to sign the decision record"),
+        }
+    }
+
+    // Cut over only on `quorum` from every member, roll back on `abort` from any
+    // member. An unreadable record counts as neither, so this operator waits.
+    let addresses = members
+        .iter()
+        .map(|m| m.address.as_str())
+        .collect::<Vec<_>>();
+    let mut decisions = Vec::with_capacity(members.len());
+    for member in &members {
+        let record = match &own {
+            // Our own record is already in hand. Do not fetch it twice.
+            Some(record) if Some(&member.address) == own_name.as_ref() => Some(record.clone()),
+            _ => decision::get(http, member, &proposal_id, proposal_block).await,
+        };
+        // A member on another release cannot cut over with this fleet.
+        if let (Some(record), Some(stack_version)) = (&record, &stack_version) {
+            if &record.payload.target_stack_version != stack_version
+                || record.payload.target_consensus_version != consensus_version
+            {
+                warn!(
+                    member = member.address,
+                    member_stack_version = record.payload.target_stack_version,
+                    member_consensus_version = record.payload.target_consensus_version,
+                    own_stack_version = stack_version,
+                    own_consensus_version = consensus_version,
+                    "a member signed a different release"
+                );
+            }
+        }
+        decisions.push(
+            record
+                .filter(|r| r.payload.addresses() == addresses)
+                .map(|r| r.payload.decision),
+        );
+    }
+
+    match decision::fleet_outcome(&decisions) {
+        Some(decision::Decision::Abort) => {
+            warn!(
+                chains = windows.len(),
+                max_end_block = max_end,
+                "a member decided abort — emitting event_unanimity_consensus_timeout"
+            );
+            notify_unanimity(
+                pool,
+                UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
+                &proposal_id,
+                proposal_block,
+                &NewBlockPayload {
+                    chain_id: 0,
+                    block_height: max_end,
+                    block_hash: String::new(),
+                },
+            )
+            .await?;
+        }
+        // Re-emit each anchor every pass so a controller that missed the NOTIFY still
+        // latches. The anchors come from this operator's own record, so a restart
+        // finishes the cutover without re-deriving them from the state hashes.
+        Some(decision::Decision::Quorum) => {
+            let anchors = own
+                .map(|r| r.payload.anchors)
+                .unwrap_or_else(|| unanimity_notifications(host_tracks, gateway));
+            info!(
+                members = members.len(),
+                anchors = anchors.len(),
+                "every member decided quorum — emitting event_unanimity_consensus"
+            );
+            for (chain_id, block) in anchors {
                 notify_unanimity(
                     pool,
-                    UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL,
+                    UNANIMITY_CONSENSUS_CHANNEL,
                     &proposal_id,
                     proposal_block,
                     &NewBlockPayload {
-                        chain_id: unanchored.first().copied().unwrap_or(0),
-                        block_height: max_end,
+                        chain_id,
+                        block_height: block,
                         block_hash: String::new(),
                     },
                 )
                 .await?;
             }
-            WindowTimeout::Armed(_) => {}
+        }
+        None => {
+            let waiting: Vec<&str> = members
+                .iter()
+                .zip(&decisions)
+                .filter(|(_, decision)| decision.is_none())
+                .map(|(member, _)| member.address.as_str())
+                .collect();
+            info!(waiting = ?waiting, "waiting for a decision from every member");
         }
     }
 
@@ -741,30 +931,6 @@ async fn notify_unanimity(
         .bind(body)
         .execute(pool)
         .await?;
-    Ok(())
-}
-
-/// Handle a `new_operator_added` notification.
-///
-/// Placeholder — the intended behaviour is to re-fetch the operator signer set
-/// from `GatewayConfig` (via `S3Service::refresh_signer_urls`) and update the
-/// shared URL list. The wiring is left here so the refresh can be turned on
-/// in a follow-up without changing the dispatch surface.
-async fn handle_new_operator_added<P>(
-    s3_urls: &Arc<RwLock<Vec<String>>>,
-    s3_service: &S3Service<P>,
-    raw_payload: &str,
-) -> Result<(), Error>
-where
-    P: Provider<Ethereum>,
-{
-    info!(
-        payload = raw_payload,
-        "new_operator_added received (placeholder — operator set refresh not yet wired)"
-    );
-
-    // Suppress unused-variable warnings without dropping the wiring.
-    let _ = (s3_urls, s3_service);
     Ok(())
 }
 
@@ -850,18 +1016,6 @@ where
     fhevm_engine_common::metrics_server::spawn(config.metrics_addr.clone(), cancel.child_token());
 
     let s3_service = S3Service::new(provider, config.gateway_config_address);
-    let urls = s3_service.refresh_signer_urls().await?;
-    if urls.is_empty() {
-        return Err(anyhow::anyhow!(
-            "GatewayConfig returned no operator S3 URLs at startup"
-        ));
-    }
-    info!(
-        operator_count = urls.len(),
-        urls = ?urls,
-        "fetched operator S3 URLs from GatewayConfig"
-    );
-    let s3_urls: Arc<RwLock<Vec<String>>> = Arc::new(RwLock::new(urls));
 
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
@@ -875,6 +1029,18 @@ where
         None
     } else {
         Some(Arc::clone(&s3_client))
+    };
+    // Blue holds the old release, and the record must name the release that runs.
+    if !config.gcs_mode {
+        info!("blue stack; this detector reads decision records and writes none");
+    }
+    let decision_s3 = s3.clone();
+    let fleet = Fleet {
+        s3: decision_s3.as_deref(),
+        writes: config.gcs_mode,
+        bucket: config.my_bucket.as_deref(),
+        signer: config.manifest_signer.as_ref(),
+        gateway: &s3_service,
     };
     {
         let pool = pool.clone();
@@ -928,7 +1094,8 @@ where
     // Tracked window + its timeout state.
     let mut window_state = WindowState {
         tracked_window: None,
-        timeout: WindowTimeout::NotArmed,
+        deadlines: HashMap::new(),
+        members: Vec::new(),
     };
 
     // The consensus poll cadence: re-attempt S3 every commitment_poll_interval,
@@ -944,7 +1111,7 @@ where
                 if let Err(e) = consensus_pass(
                     &pool,
                     &http,
-                    &s3_urls,
+                    &fleet,
                     &mut host_tracks,
                     &mut gateway_track,
                     &mut window_state,
@@ -975,12 +1142,10 @@ where
                             NEW_BLOCK_CHANNEL | GW_NEW_BLOCK_CHANNEL => {
                                 consensus_pass!();
                             }
+                            // Each attempt resolves its own members, so this
+                            // refreshes nothing.
                             NEW_OPERATOR_ADDED_CHANNEL => {
-                                if let Err(e) =
-                                    handle_new_operator_added(&s3_urls, &s3_service, payload).await
-                                {
-                                    error!(channel, error = %e, "failed to handle notification");
-                                }
+                                info!(payload, "new_operator_added received");
                             }
                             other => {
                                 warn!(channel = other, "ignoring notification on unexpected channel");
@@ -1069,22 +1234,41 @@ mod tests {
     }
 
     #[test]
-    fn arm_timeout_when_all_chains_reached_end_block() {
+    fn a_chain_ends_the_attempt_on_its_own_deadline() {
+        let now = Instant::now();
+        let past = now - Duration::from_secs(1);
+        let future = now + Duration::from_secs(60);
         let windows = vec![(1, 0, 100), (2, 0, 200)];
-        assert!(should_arm_timeout(
-            &windows,
-            &HashMap::from([(1, 100), (2, 200)])
-        ));
+        let host = HashMap::from([(1, track(1, None, false)), (2, track(2, None, false))]);
+
+        // Chain 1 ends first, and chain 2 is still inside its window.
+        let deadlines = HashMap::from([(1, past)]);
+        assert!(window_expired(&windows, &host, &deadlines, now));
+
+        let deadlines = HashMap::from([(1, future)]);
+        assert!(!window_expired(&windows, &host, &deadlines, now));
     }
 
     #[test]
-    fn wait_while_a_chain_is_below_end_or_unseen() {
+    fn the_last_deadline_ends_an_attempt_that_anchored_every_chain() {
+        let now = Instant::now();
+        let past = now - Duration::from_secs(1);
+        let future = now + Duration::from_secs(60);
         let windows = vec![(1, 0, 100), (2, 0, 200)];
-        assert!(!should_arm_timeout(
+        let host = HashMap::from([(1, track(1, Some(5), false)), (2, track(2, Some(9), false))]);
+
+        assert!(window_expired(
             &windows,
-            &HashMap::from([(1, 100), (2, 150)])
+            &host,
+            &HashMap::from([(1, past), (2, past)]),
+            now
         ));
-        assert!(!should_arm_timeout(&windows, &HashMap::from([(1, 100)])));
+        assert!(!window_expired(
+            &windows,
+            &host,
+            &HashMap::from([(1, past), (2, future)]),
+            now
+        ));
     }
 
     #[test]
@@ -1154,3 +1338,5 @@ mod tests {
         assert!(!all_slots_filled(&empty));
     }
 }
+#[cfg(test)]
+mod ingestion_recovery_tests;

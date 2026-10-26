@@ -3,7 +3,7 @@ use crate::{
         Config,
         publish::{ChainName, publish_batch, publish_context_and_epoch},
     },
-    monitoring::metrics::{EVENT_LISTENING_ERRORS, EVENT_RECEIVED_COUNTER},
+    monitoring::metrics::EVENT_LISTENING_ERRORS,
 };
 use alloy::{
     eips::{BlockId, BlockNumberOrTag},
@@ -18,7 +18,7 @@ use connector_utils::{
     monitoring::otlp::PropagationContext,
     types::{
         KMS_CONTEXT_COUNTER_BASE, ProtocolEvent,
-        db::{EventType, RequestSource, invalidate_kms_context, invalidate_kms_epoch},
+        db::{RequestSource, invalidate_kms_context, invalidate_kms_epoch},
     },
 };
 use fhevm_host_bindings::{
@@ -143,7 +143,7 @@ where
                 .call()
                 .await?;
             if !is_valid_context {
-                warn!("KMS context #{context_id} is no longer valid. Invalidating...");
+                warn!("KMS context #{context_id:#066x} is no longer valid. Invalidating...");
                 invalidate_kms_context(&self.db_pool, context_id).await?;
                 destroyed_contexts.insert(context_id);
             }
@@ -159,7 +159,9 @@ where
                 // A valid epoch row always carries its context association; without it the epoch
                 // cannot be checked on-chain. This should be unreachable, but we delete the row
                 // just in case so the kms-worker's on-chain check is able to fix the cache.
-                warn!("KMS epoch #{epoch_id} was cached as valid without any context. Deleting...");
+                warn!(
+                    "KMS epoch #{epoch_id:#066x} was cached as valid without any context. Deleting..."
+                );
                 sqlx::query!("DELETE FROM kms_epoch WHERE id = $1", epoch.id)
                     .execute(&self.db_pool)
                     .await?;
@@ -176,7 +178,7 @@ where
                     .await?;
             if !epoch_valid {
                 warn!(
-                    "KMS epoch #{epoch_id} (context #{context_id}) is no longer valid. Invalidating..."
+                    "KMS epoch #{epoch_id:#066x} (context #{context_id:#066x}) is no longer valid. Invalidating..."
                 );
                 invalidate_kms_epoch(&self.db_pool, epoch_id).await?;
             }
@@ -294,7 +296,7 @@ where
                     && e.previousContextId == KMS_CONTEXT_COUNTER_BASE
                 {
                     info!(
-                        "Skipping genesis/re-init NewKmsContext #{} (sentinel previousContextId)",
+                        "Skipping genesis/re-init NewKmsContext #{:#066x} (sentinel previousContextId)",
                         e.contextId,
                     );
                     continue;
@@ -305,9 +307,6 @@ where
                 warn!("Skipping log from unexpected address: {log_address}");
                 continue;
             };
-            EVENT_RECEIVED_COUNTER
-                .with_label_values(&[EventType::from(&event_kind).as_str()])
-                .inc();
 
             let span = info_span!("handle_ethereum_event", event = %event_kind);
             let otlp_ctx = PropagationContext::inject(&span.context());

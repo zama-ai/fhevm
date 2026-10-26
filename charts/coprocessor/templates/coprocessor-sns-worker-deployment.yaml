@@ -110,7 +110,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- with .Values.commonConfig.databaseEndpoint }}
@@ -119,7 +119,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
@@ -129,7 +129,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- end }}
@@ -146,7 +146,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" .) "true" }}
@@ -159,7 +159,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- with .Values.snsWorker.config.s3BucketName }}
@@ -168,7 +168,7 @@ spec:
               value: {{ .value | quote }}
               {{- else if .valueFrom }}
               valueFrom:
-                {{- toYaml .valueFrom | nindent 16 }}
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
               {{- end }}
             {{- end }}
             {{- with .Values.snsWorker.config.s3Migration }}
@@ -216,10 +216,10 @@ spec:
               {{- end }}
           {{- end }}
           {{- with .Values.commonConfig.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
           {{- end }}
           {{- with .Values.snsWorker.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
           {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.snsWorker.ports }}

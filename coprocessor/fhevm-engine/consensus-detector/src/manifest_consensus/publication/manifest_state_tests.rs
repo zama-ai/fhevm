@@ -8,6 +8,55 @@ use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 const CHAIN_ID: i64 = 137;
 const ANVIL_CHAIN_ID: i64 = 31337;
 
+#[tokio::test]
+#[serial(db)]
+async fn manifest_selection_serializes_with_ingestion_before_locking_rows() {
+    use fhevm_engine_common::chain_recovery::{
+        lock_history_tx, try_lock_history_tx, ListenerSource,
+    };
+    let (_instance, pool) = setup_pool().await;
+    let hash = vec![0x30; 32];
+    insert_manifest_state(&pool, 30, &hash, &[0x29; 32]).await;
+    let mut ingestion = pool.begin().await.unwrap();
+    lock_history_tx(&mut ingestion, ListenerSource::Host, false, CHAIN_ID)
+        .await
+        .unwrap();
+    let mut publication = pool.begin().await.unwrap();
+    assert!(
+        lock_next_block_to_progress(&mut publication, CHAIN_ID, &ManifestProgressCursor::start())
+            .await
+            .unwrap()
+            .is_none(),
+        "busy ingestion must prevent sealing"
+    );
+    publication.rollback().await.unwrap();
+    ingestion.commit().await.unwrap();
+
+    let mut publication = pool.begin().await.unwrap();
+    assert!(lock_next_block_to_progress(
+        &mut publication,
+        CHAIN_ID,
+        &ManifestProgressCursor::start()
+    )
+    .await
+    .unwrap()
+    .is_some());
+    let mut ingestion = pool.begin().await.unwrap();
+    assert!(
+        !try_lock_history_tx(&mut ingestion, ListenerSource::Host, false, CHAIN_ID)
+            .await
+            .unwrap(),
+        "publication must retain the fence through commit"
+    );
+    publication.commit().await.unwrap();
+    assert!(
+        try_lock_history_tx(&mut ingestion, ListenerSource::Host, false, CHAIN_ID)
+            .await
+            .unwrap()
+    );
+    ingestion.rollback().await.unwrap();
+}
+
 async fn setup_pool() -> (DBInstance, PgPool) {
     let instance = setup_test_db(ImportMode::None)
         .await
@@ -238,11 +287,12 @@ async fn detector_caps_upgrade_discovery_at_the_consensus_epoch_start() {
     insert_producer_block(&pool, 62, &current_block_hash, &current_handle).await;
     insert_completed_sns_digest(&pool, 62, &current_block_hash, &current_handle).await;
 
-    sqlx::query(
+    sqlx::query(&format!(
         "INSERT INTO consensus_epoch_history (
-             consensus_epoch, proposal_id, proposal_block, stack_version, outcome
-         ) VALUES ('1', $1, 50, 'test-green', 'pending')",
-    )
+             consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
+         ) VALUES ('1', $1, 50, 'test-green', {}, 'pending')",
+        fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION
+    ))
     .bind(vec![0x91_u8; 32])
     .execute(&pool)
     .await
@@ -332,11 +382,12 @@ async fn initial_consensus_epoch_bootstraps_at_the_latest_finalized_block() {
 }
 
 async fn open_upgrade_window(pool: &PgPool, start_block: i64) {
-    sqlx::query(
+    sqlx::query(&format!(
         "INSERT INTO consensus_epoch_history (
-             consensus_epoch, proposal_id, proposal_block, stack_version, outcome
-         ) VALUES ('1', $1, $2, 'test-green', 'pending')",
-    )
+             consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
+         ) VALUES ('1', $1, $2, 'test-green', {}, 'pending')",
+        fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION
+    ))
     .bind(vec![0x91_u8; 32])
     .bind(start_block - 10)
     .execute(pool)
@@ -492,11 +543,12 @@ async fn blue_and_green_discover_the_same_block_without_consensus_epoch_collisio
     let parent_hash = vec![0x61; 32];
     let handle = vec![0x42; 32];
 
-    sqlx::query(
+    sqlx::query(&format!(
         "INSERT INTO consensus_epoch_history (
-             consensus_epoch, proposal_id, proposal_block, stack_version, outcome
-         ) VALUES ('1', $1, 60, 'test-green', 'pending')",
-    )
+             consensus_epoch, proposal_id, proposal_block, stack_version, consensus_version, outcome
+         ) VALUES ('1', $1, 60, 'test-green', {}, 'pending')",
+        fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION
+    ))
     .bind(vec![0xa1_u8; 32])
     .execute(&admin_pool)
     .await

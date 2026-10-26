@@ -563,12 +563,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function getCrsParamsType(uint256 crsId) external view virtual returns (ParamsType) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
-        if (!$.isRequestDone[crsId]) {
-            revert CrsNotGenerated(crsId);
-        }
-        if ($.consensusDigest[crsId] == bytes32(0)) {
-            revert CrsAborted(crsId);
-        }
+        _checkGeneratedCrsId(crsId);
 
         return $.requestParamsType[crsId];
     }
@@ -689,13 +684,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     function getCrsMaterials(uint256 crsId) external view virtual returns (string[] memory, bytes memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-        if (!$.isRequestDone[crsId]) {
-            revert CrsNotGenerated(crsId);
-        }
+
+        _checkGeneratedCrsId(crsId);
+
         bytes32 digest = $.consensusDigest[crsId];
-        if (digest == bytes32(0)) {
-            revert CrsAborted(crsId);
-        }
         address[] memory consensusTxSenders = $.consensusTxSenderAddresses[crsId][digest];
 
         uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[crsId]);
@@ -757,6 +749,20 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
         if ($.consensusDigest[keyId] == bytes32(0)) {
             revert KeyAborted(keyId);
+        }
+    }
+
+    function _checkGeneratedCrsId(uint256 crsId) internal view virtual {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        if (crsId > $.crsCounter || crsId <= CRS_COUNTER_BASE) {
+            revert CrsNotGenerated(crsId);
+        }
+        if (!$.isRequestDone[crsId]) {
+            revert CrsNotGenerated(crsId);
+        }
+        if ($.consensusDigest[crsId] == bytes32(0)) {
+            revert CrsAborted(crsId);
         }
     }
 

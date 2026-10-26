@@ -1871,6 +1871,41 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.getKeyParamsType(prepKeygenId);
     }
 
+    function test_crsGettersRejectKeyRequestIds() public {
+        (uint256 prepKeygenId, uint256 keyId) = _runFullKeygenCycle();
+        (, uint256 migrationRequestId) = _runFullMigrationCycle(keyId);
+        uint256 crsId = _runFullCrsCycle();
+
+        // Completed requests of another type share the done/digest bookkeeping with CRS
+        // requests: the CRS getters must revert instead of returning URLs with an empty digest.
+        uint256[3] memory foreignIds = [prepKeygenId, keyId, migrationRequestId];
+        for (uint256 i = 0; i < foreignIds.length; i++) {
+            assertTrue(kmsGeneration.isRequestDone(foreignIds[i]));
+            assertGt(kmsGeneration.getConsensusTxSenders(foreignIds[i]).length, 0);
+
+            vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, foreignIds[i]));
+            kmsGeneration.getCrsParamsType(foreignIds[i]);
+            vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, foreignIds[i]));
+            kmsGeneration.getCrsMaterials(foreignIds[i]);
+        }
+
+        // The real CRS stays readable.
+        (, bytes memory crsDigest) = kmsGeneration.getCrsMaterials(crsId);
+        assertGt(crsDigest.length, 0);
+    }
+
+    function test_keyGettersRejectCrsId() public {
+        _runFullKeygenCycle();
+        uint256 crsId = _runFullCrsCycle();
+
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, crsId));
+        kmsGeneration.getKeyMaterials(crsId);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, crsId));
+        kmsGeneration.getKeyInfo(crsId);
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyNotGenerated.selector, crsId));
+        kmsGeneration.getKeyParamsType(crsId);
+    }
+
     function test_revertMigrationKeygenForNonActiveKey() public {
         (, uint256 keyId1) = _runFullKeygenCycle();
 

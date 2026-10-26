@@ -134,10 +134,27 @@ async fn run_uploader_loop(
                 //
                 // NOTE: the transaction stays open across the S3 upload, so the shared lock
                 // is held for a network round trip and cutover waits on it.
-                let mut trx =
+                let mut trx = loop {
                     match begin_write_guarded(&pool, false, GcsRollbackPolicy::Continue).await? {
-                        WriteGuard::Proceed(trx) => trx,
-                        WriteGuard::Stop | WriteGuard::Skip => {
+                        WriteGuard::Proceed(trx) => break trx,
+                        WriteGuard::Skip => {
+                            // Temporary containment is not retirement. Retain this
+                            // dequeued job and retry; do not terminate SNS or depend
+                            // on a container restart/rescan to recover it.
+                            select! {
+                                _ = token.cancelled() => {
+                                    while let Some(joined) = ongoing_upload_tasks.join_next().await {
+                                        propagate_joined_upload_error(joined)?;
+                                    }
+                                    return Ok(());
+                                }
+                                Some(joined) = ongoing_upload_tasks.join_next() => {
+                                    propagate_joined_upload_error(joined)?;
+                                }
+                                _ = tokio::time::sleep(std::time::Duration::from_millis(500)) => {}
+                            }
+                        }
+                        WriteGuard::Stop => {
                             info!(
                                 "Cutover completed — draining in-flight uploads, then stopping \
                                  the uploader"
@@ -149,7 +166,8 @@ async fn run_uploader_loop(
                             }
                             return Ok(());
                         }
-                    };
+                    }
+                };
 
                 // Normal jobs defer their enqueue into the spawned task: the
                 // provenance witness takes FOR KEY SHARE on the pbs row,
@@ -448,7 +466,8 @@ struct S3ObjectMetadata {
     key_id: String,
     transaction_id: String,
     signer: String,
-    /// The uploading stack's epoch; see [`S3_METADATA_CONSENSUS_EPOCH_KEY`].
+    /// The epoch that computed the object's bytes; see
+    /// [`S3_METADATA_CONSENSUS_EPOCH_KEY`].
     consensus_epoch: Option<String>,
 }
 
@@ -523,6 +542,30 @@ fn validate_existing_attestation(
 
 /// This stack's epoch: `search_path` resolves the selector to its own schema,
 /// and a cutover updates it in the same transaction that makes the stack live.
+/// Epoch that computed a ct64 of protocol `consensus_version`: the epoch that
+/// version names in `consensus_epoch_history`. Every proposal raises the version
+/// by one and a failed attempt's rows are dropped with its schema, so at most one
+/// non-failed epoch carries it. `None` for a row without a version or a version
+/// no epoch records.
+async fn computing_consensus_epoch(
+    trx: &mut Transaction<'_, Postgres>,
+    consensus_version: Option<i16>,
+) -> anyhow::Result<Option<String>> {
+    let Some(consensus_version) = consensus_version else {
+        return Ok(None);
+    };
+    Ok(sqlx::query_scalar!(
+        "SELECT consensus_epoch
+           FROM public.consensus_epoch_history
+          WHERE consensus_version = $1 AND outcome <> 'failed'
+          ORDER BY allocated_at DESC
+          LIMIT 1",
+        i64::from(consensus_version),
+    )
+    .fetch_optional(trx.as_mut())
+    .await?)
+}
+
 async fn uploading_consensus_epoch(
     trx: &mut Transaction<'_, Postgres>,
 ) -> anyhow::Result<Option<String>> {
@@ -721,8 +764,13 @@ async fn upload_ciphertexts(
         key_id: hex::encode(&task.key_id_gw),
         transaction_id: hex::encode(task.transaction_id.as_deref().unwrap_or_default()),
         signer: expected_signer.to_string(),
+        // The ct128 is computed by this upload's SNS, so it belongs to this
+        // stack's epoch; the ct64 may come from an earlier one.
         consensus_epoch: uploading_consensus_epoch(trx).await?,
     };
+    let ct64_consensus_epoch = computing_consensus_epoch(trx, task.ct64_consensus_version)
+        .await?
+        .or_else(|| s3_metadata.consensus_epoch.clone());
 
     if *ct128_digest != NO_SNS_CIPHERTEXT_DIGEST.to_vec() {
         let key = s3_ct128_key(&task.handle, context_id);
@@ -878,7 +926,10 @@ async fn upload_ciphertexts(
                 client.clone(),
                 bucket.clone(),
                 key,
-                s3_metadata.clone(),
+                S3ObjectMetadata {
+                    consensus_epoch: ct64_consensus_epoch.clone(),
+                    ..s3_metadata.clone()
+                },
                 ct64_compressed.clone(),
                 result,
                 conf.verify_sha256_checksum,
@@ -995,6 +1046,7 @@ async fn fetch_pending_uploads(
 
     for row in rows {
         let mut ct64_compressed = Arc::new(Vec::new());
+        let mut ct64_consensus_version = None;
         let mut ct128 = Vec::new();
         let ciphertext_digest = row.ciphertext;
         let ciphertext128_digest = row.ciphertext128;
@@ -1008,7 +1060,7 @@ async fn fetch_pending_uploads(
         // digests and the current format are present: they do not prove upload.
         {
             if let Ok(row) = sqlx::query!(
-                "SELECT ciphertext FROM ciphertexts WHERE handle = $1;",
+                "SELECT ciphertext, consensus_version FROM ciphertexts WHERE handle = $1;",
                 handle,
             )
             .fetch_optional(db_pool)
@@ -1016,6 +1068,7 @@ async fn fetch_pending_uploads(
             {
                 if let Some(record) = row {
                     ct64_compressed = Arc::new(record.ciphertext);
+                    ct64_consensus_version = record.consensus_version;
                 } else {
                     error!(handle = hex::encode(&handle), "Missing ciphertext");
                 }
@@ -1102,6 +1155,7 @@ async fn fetch_pending_uploads(
                 ct64_digest: ciphertext_digest,
                 ct128_digest: ciphertext128_digest,
                 s3_format_version,
+                ct64_consensus_version,
                 span: recovery_span,
                 transaction_id,
             };
@@ -1410,6 +1464,7 @@ mod tests {
             ct64_digest: None,
             ct128_digest: None,
             s3_format_version: None,
+            ct64_consensus_version: None,
             span: Span::none(),
             transaction_id: None,
         }
@@ -1512,6 +1567,7 @@ mod tests {
             ct64_digest: None,
             ct128_digest: None,
             s3_format_version: None,
+            ct64_consensus_version: None,
             span: Span::none(),
             transaction_id: None,
         };
@@ -1549,6 +1605,7 @@ mod tests {
             ct64_digest: None,
             ct128_digest: Some(real_ct128_digest.clone()),
             s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
+            ct64_consensus_version: None,
             span: Span::none(),
             transaction_id: None,
         };
@@ -1581,6 +1638,7 @@ mod tests {
             ct64_digest: None,
             ct128_digest: Some(real_ct128_digest.clone()),
             s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
+            ct64_consensus_version: None,
             span: Span::none(),
             transaction_id: None,
         };
@@ -1607,6 +1665,7 @@ mod tests {
             ct64_digest: None,
             ct128_digest: Some(real_ct128_digest.clone()),
             s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
+            ct64_consensus_version: None,
             span: Span::none(),
             transaction_id: None,
         };
@@ -1621,7 +1680,7 @@ mod tests {
     #[tokio::test]
     #[serial(s3)]
     #[cfg(not(feature = "gpu"))]
-    async fn legacy_partial_ct128_without_bytes_uploads_ct64_and_preserves_legacy_s3_format(
+    async fn uploader_retains_job_during_halt_then_uploads_legacy_ct64_during_replay(
     ) -> anyhow::Result<()> {
         let db_instance = setup_test_db(ImportMode::None)
             .await
@@ -1676,6 +1735,7 @@ mod tests {
             ct64_digest: None,
             ct128_digest: Some(ct128_digest.clone()),
             s3_format_version: Some(S3_FORMAT_VERSION_LEGACY),
+            ct64_consensus_version: None,
             span: Span::none(),
             transaction_id: None,
         };
@@ -1692,17 +1752,81 @@ mod tests {
             verify_sha256_checksum: false,
         };
 
-        let mut trx = pool.begin().await?;
-        create_upload_task_savepoint(&mut trx).await?;
-        upload_ciphertexts(
-            &mut trx,
-            task,
-            &client,
-            &conf,
-            Arc::new(PrivateKeySigner::random()),
+        use fhevm_engine_common::chain_recovery::{
+            begin_replay, record_halt, HistoryMismatch, ListenerSource,
+        };
+        begin_replay(&pool, ListenerSource::Host, false, 42, 1, 64).await?;
+        record_halt(
+            &pool,
+            HistoryMismatch {
+                source: ListenerSource::Host,
+                gcs_mode: false,
+                chain_id: 1,
+                block_number: 1,
+                expected_hash: None,
+                observed_hash: None,
+                reason: "uploader containment regression",
+            },
         )
         .await?;
-        trx.commit().await?;
+        let (tx, rx) = mpsc::channel(1);
+        let token = CancellationToken::new();
+        let uploader = tokio::spawn(run_uploader_loop(
+            Arc::new(RwLock::new(rx)),
+            token.clone(),
+            Arc::new(client.clone()),
+            Arc::new(AtomicBool::new(true)),
+            pool.clone(),
+            conf,
+            Arc::new(PrivateKeySigner::random()),
+        ));
+        tx.send(UploadJob::DatabaseLock(task)).await?;
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while tx.capacity() == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await?;
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        assert!(
+            !uploader.is_finished(),
+            "temporary halt must not retire SNS"
+        );
+        let digest: Option<Vec<u8>> =
+            sqlx::query_scalar("SELECT ciphertext FROM ciphertext_digest WHERE handle=$1")
+                .bind(&handle)
+                .fetch_one(&pool)
+                .await?;
+        assert!(digest.is_none(), "contained job must remain unpublished");
+
+        // Verified fixture recovery: leave a host replay pending. Neither that
+        // obligation nor the unrelated chain may prevent the retained upload.
+        let mut recovery = pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(fhevm_engine_common::versioning::CUTOVER_LOCK_ID)
+            .execute(&mut *recovery)
+            .await?;
+        sqlx::query("UPDATE public.chain_recovery_halts SET resolved_at=NOW(), recovery_note='verified test fixture' WHERE resolved_at IS NULL")
+            .execute(&mut *recovery).await?;
+        recovery.commit().await?;
+        tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                let digest: Option<Vec<u8>> =
+                    sqlx::query_scalar("SELECT ciphertext FROM ciphertext_digest WHERE handle=$1")
+                        .bind(&handle)
+                        .fetch_one(&pool)
+                        .await?;
+                if digest.is_some() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Ok::<_, sqlx::Error>(())
+        })
+        .await??;
+        assert!(!uploader.is_finished());
+        token.cancel();
+        tokio::time::timeout(Duration::from_secs(5), uploader).await???;
 
         let row = sqlx::query!(
             "SELECT ciphertext, ciphertext128, s3_format_version
@@ -1762,5 +1886,66 @@ mod tests {
             "ct64/0000000000000000000000000000000000000000000000000000000000000000/0",
             &s3_ct64_key(handle.as_ref(), coprocessor_context_id)
         );
+    }
+    /// A ct64 object names the epoch that computed its bytes, which can be older
+    /// than the uploading stack's: a handle computed before an upgrade is uploaded
+    /// by the newer stack once an ACL event first allows it.
+    #[tokio::test]
+    async fn ct64_epoch_is_the_epoch_of_its_rows_consensus_version() -> anyhow::Result<()> {
+        let db_instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("setup test db: {err}"))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(db_instance.db_url())
+            .await?;
+        sqlx::query(
+            "INSERT INTO consensus_epoch_history
+                 (consensus_epoch, consensus_version, outcome, completed_at)
+             VALUES ('100/block_10', 100, 'succeeded', NOW()),
+                    ('101/block_20', 101, 'failed', NOW())",
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO consensus_epoch_history
+                 (consensus_epoch, proposal_id, proposal_block, consensus_version, outcome)
+             VALUES ('101/block_30', $1, 30, 101, 'pending')",
+        )
+        .bind(vec![0x30_u8; 32])
+        .execute(&pool)
+        .await?;
+        // The uploading stack has moved on: its selector names the newest epoch.
+        sqlx::query("UPDATE blue_green_consensus_epoch SET consensus_epoch = '101/block_30'")
+            .execute(&pool)
+            .await?;
+
+        let mut trx = pool.begin().await?;
+        let compiled = i16::try_from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION)?;
+        assert_eq!(
+            computing_consensus_epoch(&mut trx, Some(compiled))
+                .await?
+                .as_deref(),
+            Some(block_manifest::LEGACY_CONSENSUS_EPOCH),
+            "a new database's legacy epoch runs the compiled version"
+        );
+        assert_eq!(
+            computing_consensus_epoch(&mut trx, Some(100))
+                .await?
+                .as_deref(),
+            Some("100/block_10"),
+            "an older ciphertext keeps its own epoch"
+        );
+        assert_eq!(
+            computing_consensus_epoch(&mut trx, Some(101))
+                .await?
+                .as_deref(),
+            Some("101/block_30"),
+            "a failed attempt of the same version is not its epoch"
+        );
+        assert_eq!(computing_consensus_epoch(&mut trx, Some(99)).await?, None);
+        assert_eq!(computing_consensus_epoch(&mut trx, None).await?, None);
+        trx.rollback().await?;
+        Ok(())
     }
 }

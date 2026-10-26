@@ -352,16 +352,30 @@ jobs:
           fi
           ./fhevm-cli up "${args[@]}"
 
+      - name: Verify consumer-only topology before tests
+        if: ${{ env.SCENARIO == 'two-of-three-multi-chain-consumer' }}
+        run: python3 test-suite/fhevm/scripts/assert-consumer-stack.py
+
+      - name: Verify key bootstrap on the consumer-only stack
+        if: ${{ env.SCENARIO == 'two-of-three-multi-chain-consumer' }}
+        working-directory: test-suite/fhevm
+        run: bun scripts/assert-consumer-key-bootstrap.ts
+
       - name: Selected e2e suite
         working-directory: test-suite/fhevm
         run: |
           args=("$TEST_PROFILE")
           ./fhevm-cli test "${args[@]}"
 
+      - name: Verify consumer-only topology after tests
+        if: ${{ always() && env.SCENARIO == 'two-of-three-multi-chain-consumer' }}
+        run: python3 test-suite/fhevm/scripts/assert-consumer-stack.py
+
       - name: Host listener consumer only test without drift-revert tests
         # Runs with the full standard suite and with the decryption shard (the lightest
         # shard, so these extras keep the sharded legs balanced).
-        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' || inputs.test-profile == 'standard-shard-decryption' }}
+        # Legacy listeners and pollers do not run in the consumer-only scenario.
+        if: ${{ env.SCENARIO != 'two-of-three-multi-chain-consumer' && (inputs.test-profile == '' || inputs.test-profile == 'standard' || inputs.test-profile == 'standard-shard-decryption') }}
         working-directory: test-suite/fhevm
         run: |
           trap 'docker start coprocessor-host-listener coprocessor-host-listener-poller>/dev/null 2>&1 || true' EXIT
@@ -373,7 +387,8 @@ jobs:
           trap - EXIT
 
       - name: Host listener poller test
-        if: ${{ inputs.test-profile == '' || inputs.test-profile == 'standard' || inputs.test-profile == 'standard-shard-decryption' }}
+        # Legacy listeners and pollers do not run in the consumer-only scenario.
+        if: ${{ env.SCENARIO != 'two-of-three-multi-chain-consumer' && (inputs.test-profile == '' || inputs.test-profile == 'standard' || inputs.test-profile == 'standard-shard-decryption') }}
         working-directory: test-suite/fhevm
         run: |
           trap 'docker start coprocessor-host-listener coprocessor-host-listener-consumer >/dev/null 2>&1 || true' EXIT

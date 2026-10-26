@@ -1,11 +1,17 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::future::Future;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
 use alloy::sol_types::SolEventInterface;
 use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
+use fhevm_engine_common::handle_metadata::{
+    validate_acl_handle_metadata, validate_computed_handle_metadata,
+    validate_verified_input_metadata,
+};
 use fhevm_engine_common::types::{
     Handle, COMPUTED_HANDLE_INDEX_MARKER, HANDLE_VERSION,
 };
@@ -19,6 +25,13 @@ use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
 use crate::database::dependence_chains::dependence_chains;
+use crate::database::derived_history::{
+    CommittedInventory, COMMITTED_INVENTORY_CHANGED,
+};
+use crate::database::event_envelope::{classify, DecodedEvent};
+use crate::database::event_operands::{
+    validate_collection_shape, validate_scalar_mode,
+};
 use crate::database::synthetic_ops::{
     synthetic_logs, synthetic_transaction_hash, SyntheticContext,
     SYNTHETIC_BLOCK_OFFSET,
@@ -26,7 +39,7 @@ use crate::database::synthetic_ops::{
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handles,
     uniform_allowed_outputs, Chain, ChainHash, Database, Handle as EventHandle,
-    LogTfhe, TransactionHash,
+    LogTfhe, TransactionHash, REPLAY_METADATA_CONFLICT,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -37,6 +50,133 @@ pub struct BlockLogs<T> {
     pub summary: BlockSummary,
     pub catchup: bool,
     pub finalized: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HistoryGap {
+    pub block_number: u64,
+}
+
+impl std::fmt::Display for HistoryGap {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "finalized history needs block {}", self.block_number)
+    }
+}
+
+impl std::error::Error for HistoryGap {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use = "a history gap must be recovered before advancing ingestion"]
+pub enum IngestResult {
+    Complete,
+    NeedsHistory(HistoryGap),
+}
+
+impl IngestResult {
+    pub fn require_complete(self) -> Result<(), HistoryGap> {
+        match self {
+            Self::Complete => Ok(()),
+            Self::NeedsHistory(gap) => Err(gap),
+        }
+    }
+}
+
+/// Bound recovery work per attempt without limiting the size of a real gap.
+/// The original delivery is not complete until every required link commits.
+pub const HISTORY_RECOVERY_BATCH: usize = 32;
+
+#[allow(clippy::too_many_arguments)]
+pub async fn ingest_with_history_recovery<GetBlock, BlockFuture>(
+    chain_id: ChainId,
+    db: &mut Database,
+    block: &BlockLogs<Log>,
+    acl: &Option<Address>,
+    tfhe: &Option<Address>,
+    kms: &Option<Address>,
+    protocol: &Option<Address>,
+    bridge: &Option<Address>,
+    options: IngestOptions,
+    mut get_block: GetBlock,
+) -> anyhow::Result<IngestResult>
+where
+    GetBlock: FnMut(u64) -> BlockFuture,
+    BlockFuture: Future<Output = anyhow::Result<BlockLogs<Log>>>,
+{
+    let mut repair = None;
+    let mut fetched = 0;
+    loop {
+        let result = ingest_block_logs(
+            chain_id,
+            db,
+            repair.as_ref().unwrap_or(block),
+            acl,
+            tfhe,
+            kms,
+            protocol,
+            bridge,
+            options.clone(),
+        )
+        .await?;
+        match result {
+            IngestResult::Complete if repair.take().is_some() => continue,
+            IngestResult::Complete => return Ok(result),
+            IngestResult::NeedsHistory(gap)
+                if fetched < HISTORY_RECOVERY_BATCH =>
+            {
+                let recovered = get_block(gap.block_number).await?;
+                anyhow::ensure!(
+                    recovered.summary.number == gap.block_number && recovered.finalized,
+                    "history recovery returned the wrong height or a non-final block"
+                );
+                validate_block_logs(&recovered)?;
+                repair = Some(recovered);
+                fetched += 1;
+                db.tick.update();
+            }
+            IngestResult::NeedsHistory(_) => return Ok(result),
+        }
+    }
+}
+
+/// Refuse to commit logs under a header from another fork, or logs whose
+/// identity/order cannot be established. The caller must refetch the batch.
+pub fn validate_block_logs(block: &BlockLogs<Log>) -> Result<(), sqlx::Error> {
+    for log in &block.logs {
+        if log.block_hash != Some(block.summary.hash)
+            || log.block_number != Some(block.summary.number)
+            || log.removed
+            || log.transaction_hash.is_none()
+            || log.log_index.is_none()
+        {
+            return Err(sqlx::Error::Protocol(format!(
+                "Invalid log identity in block {} ({:?}); refetch the block",
+                block.summary.number, block.summary.hash
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Validate decoded executor metadata before admitting the event to ingestion.
+fn validate_tfhe_event(
+    event: &TfheContract::TfheContractEvents,
+    chain_id: u64,
+) -> Result<(), &'static str> {
+    validate_scalar_mode(event)?;
+    validate_collection_shape(event)?;
+    for handle in tfhe_result_handles(event) {
+        validate_computed_handle_metadata(&handle.0, chain_id)?;
+    }
+    if let TfheContract::TfheContractEvents::VerifyInput(verify) = event {
+        validate_verified_input_metadata(
+            &verify.inputHandle.0,
+            &verify.result.0,
+            verify.inputType,
+            verify.inputProof.as_ref(),
+            chain_id,
+        )?;
+    }
+    Ok(())
 }
 
 #[derive(Clone, Debug)]
@@ -314,11 +454,132 @@ pub async fn ingest_block_logs(
     protocol_config_contract_address: &Option<Address>,
     confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
-) -> Result<(), sqlx::Error> {
+) -> Result<IngestResult, sqlx::Error> {
     let Some(mut tx) = db.new_transaction().await? else {
         info!("cutover completed — host-listener skipping block ingest (retired stack)");
-        return Ok(());
+        return Ok(IngestResult::Complete);
     };
+    validate_block_logs(block_logs)?;
+
+    // Collect every handle whose permission or stored chain may need repair,
+    // including bridge events and deliveries containing only ACL logs.
+    let mut touched_handles = HashSet::new();
+    for log in &block_logs.logs {
+        let address = Some(log.inner.address);
+        if acl_contract_address.is_none() || &address == acl_contract_address {
+            if let Ok(event) =
+                AclContract::AclContractEvents::decode_log(&log.inner)
+            {
+                touched_handles.extend(
+                    acl_result_handles(&event).into_iter().map(|h| h.to_vec()),
+                );
+            }
+        }
+        if tfhe_contract_address.is_none() || &address == tfhe_contract_address
+        {
+            if let Ok(event) =
+                TfheContract::TfheContractEvents::decode_log(&log.inner)
+            {
+                touched_handles.extend(
+                    tfhe_result_handles(&event).into_iter().map(|h| h.to_vec()),
+                );
+            }
+        }
+        if &address == confidential_bridge_address {
+            use BridgeContract::BridgeContractEvents as E;
+            if let Ok(event) = E::decode_log(&log.inner) {
+                match event.data {
+                    E::BridgeHandle(e) => {
+                        touched_handles.insert(e.srcHandle.to_vec());
+                    }
+                    E::HandleBridged(e) => {
+                        touched_handles.insert(e.dstHandle.to_vec());
+                    }
+                    E::FallbackGrantedPlaintext(e) => {
+                        touched_handles.insert(e.dstHandle.to_vec());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    let touched_handles = touched_handles.into_iter().collect::<Vec<_>>();
+
+    // The identity/parent check and all block writes share one per-chain
+    // admission lock. A second replica must observe this transaction's rows
+    // before it can admit a conflicting finalized block. It also serializes
+    // computation/ACL reconciliation for overlapping deliveries, so the
+    // per-handle lock stripes used in v0.14 are unnecessary here.
+    use fhevm_engine_common::chain_recovery::{
+        host_role_tx, lock_history_tx, record_halt, HistoryMismatch,
+        ListenerSource,
+    };
+    let history_role = host_role_tx(&mut tx).await?;
+    lock_history_tx(
+        &mut tx,
+        ListenerSource::Host,
+        history_role,
+        chain_id.as_i64(),
+    )
+    .await?;
+    if let Some(conflict) = host_history_conflict(
+        &mut tx,
+        chain_id,
+        i64::try_from(block_logs.summary.number)
+            .map_err(|err| sqlx::Error::Protocol(err.to_string()))?,
+        block_logs.summary.hash.as_slice(),
+        Some(block_logs.summary.parent_hash.as_slice()),
+    )
+    .await?
+    {
+        tx.rollback().await?;
+        if !block_logs.finalized {
+            // Live subscriptions and the broker's independent live/final
+            // queues can deliver an old fork after its replacement finalized.
+            // This observation makes no new canonical claim: discard it
+            // without touching work or containing the already-consistent DB.
+            warn!(
+                block_number = block_logs.summary.number,
+                block_hash = ?block_logs.summary.hash,
+                conflict_height = conflict.block_number,
+                "Ignoring delayed non-finalized block outside committed history"
+            );
+            return Ok(IngestResult::Complete);
+        }
+        record_halt(
+            &db.pool().await,
+            conflict.observation(
+                ListenerSource::Host,
+                history_role,
+                chain_id.as_i64(),
+            ),
+        )
+        .await?;
+        return Err(sqlx::Error::Protocol(conflict.reason.into()));
+    }
+    if block_logs.finalized {
+        if let Some(block_number) =
+            super::history_verification::missing_finalized_link(
+                &mut tx,
+                chain_id.as_i64(),
+                block_logs.summary.number as i64,
+                block_logs.summary.hash.as_slice(),
+                Some(block_logs.summary.parent_hash.as_slice()),
+            )
+            .await?
+        {
+            tx.rollback().await?;
+            return Ok(IngestResult::NeedsHistory(HistoryGap { block_number }));
+        }
+    }
+
+    let committed_inventory = CommittedInventory::capture(
+        &mut tx,
+        chain_id.as_i64(),
+        &[block_logs.summary.number as i64],
+        &touched_handles,
+    )
+    .await?;
 
     // Queue `pg_notify('event_new_block', ...)` at the top of the transaction so
     // postgres defers delivery until `tx.commit()` below succeeds. Same
@@ -422,43 +683,90 @@ pub async fn ingest_block_logs(
         let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
-            if let Ok(event) =
-                AclContract::AclContractEvents::decode_log(&log.inner)
-            {
-                allow_event_count = allow_event_count.saturating_add(1);
-                let handles = acl_result_handles(&event);
-                for handle in handles {
-                    is_allowed.insert(handle.to_vec());
+            match classify::<AclContract::AclContractEvents>(
+                &log.inner,
+                AclContract::AclContractEvents::SELECTORS,
+            ) {
+                DecodedEvent::Decoded(event) => {
+                    let handles = acl_result_handles(&event);
+                    for handle in &handles {
+                        validate_acl_handle_metadata(
+                            &handle.0,
+                            chain_id.as_u64(),
+                        )
+                        .map_err(|reason| {
+                            sqlx::Error::Protocol(reason.into())
+                        })?;
+                    }
+                    allow_event_count = allow_event_count.saturating_add(1);
+                    for handle in handles {
+                        is_allowed.insert(handle.to_vec());
+                    }
+                    acl_event_log.push((event, log.transaction_hash));
+                    continue;
                 }
-                acl_event_log.push((event, log.transaction_hash));
-                continue;
+                DecodedEvent::MalformedKnown if is_acl_address => {
+                    return Err(sqlx::Error::Protocol(
+                        "malformed known ACL event envelope".into(),
+                    ));
+                }
+                // Wildcard mode also sees unrelated contracts. A shared
+                // selector does not establish ownership of a failed decode.
+                DecodedEvent::MalformedKnown | DecodedEvent::Unknown => {}
             }
         }
 
         let is_tfhe_address = &current_address == tfhe_contract_address;
         if tfhe_contract_address.is_none() || is_tfhe_address {
-            if let Ok(event) =
-                TfheContract::TfheContractEvents::decode_log(&log.inner)
-            {
-                fhe_event_count = fhe_event_count.saturating_add(1);
-                let log = LogTfhe {
-                    event,
-                    transaction_hash: log.transaction_hash,
-                    block_number,
-                    block_hash,
-                    block_timestamp,
-                    // Filled in by the loop below.
-                    allowed_outputs: Default::default(),
-                    dependence_chain: Default::default(),
-                    tx_depth_size: 0,
-                    log_index: log.log_index,
-                    operand_boundary_mask: None,
-                    is_executor_minted: true,
-                    is_fallback_grant: false,
-                    is_synthetic,
-                };
-                tfhe_event_log.push(log);
-                continue;
+            match classify::<TfheContract::TfheContractEvents>(
+                &log.inner,
+                TfheContract::TfheContractEvents::SELECTORS,
+            ) {
+                DecodedEvent::Decoded(event) => {
+                    validate_tfhe_event(&event.data, chain_id.as_u64())
+                        .map_err(|reason| {
+                            sqlx::Error::Protocol(reason.into())
+                        })?;
+                    // Old handles did not commit operand origin. Recognize
+                    // their exact preimage, not a guessed activation height.
+                    // Wildcard development configurations without an ACL
+                    // address cannot prove that preimage and remain strict.
+                    let has_legacy_operand_origin = !is_synthetic
+                        && acl_contract_address.is_some_and(|acl| {
+                            super::legacy_executor::has_legacy_operand_origin(
+                                &event.data,
+                                acl,
+                                chain_id.as_u64(),
+                                &block_logs.summary,
+                            )
+                        });
+                    fhe_event_count = fhe_event_count.saturating_add(1);
+                    let log = LogTfhe {
+                        event,
+                        transaction_hash: log.transaction_hash,
+                        block_number,
+                        block_hash,
+                        block_timestamp,
+                        // Filled in by the loop below.
+                        allowed_outputs: Default::default(),
+                        dependence_chain: Default::default(),
+                        tx_depth_size: 0,
+                        log_index: log.log_index,
+                        operand_boundary_mask: None,
+                        has_legacy_operand_origin,
+                        is_executor_minted: true,
+                        is_fallback_grant: false,
+                        is_synthetic,
+                    };
+                    tfhe_event_log.push(log);
+                    continue;
+                }
+                DecodedEvent::MalformedKnown if is_tfhe_address => {
+                    return Err(sqlx::Error::Protocol(
+                        "malformed known TFHE event envelope".into(),
+                    ));
+                }
+                DecodedEvent::MalformedKnown | DecodedEvent::Unknown => {}
             }
         }
 
@@ -613,6 +921,7 @@ pub async fn ingest_block_logs(
                         // This row is synthesized by the listener after a
                         // bridge event; the executor never called
                         // `_markMinted` for it.
+                        has_legacy_operand_origin: false,
                         is_executor_minted: false,
                         is_fallback_grant: true,
                         is_synthetic: false,
@@ -687,6 +996,13 @@ pub async fn ingest_block_logs(
         acl_event_log.clear();
     }
 
+    // ACL evidence may have arrived in an earlier delivery or another block.
+    // Resolve it before grouping, which also uses the allowed output set.
+    is_allowed.extend(
+        db.allowed_computation_handles(&mut tx, &touched_handles)
+            .await?,
+    );
+
     for tfhe_log in tfhe_event_log.iter_mut() {
         tfhe_log.allowed_outputs = tfhe_result_handles(&tfhe_log.event)
             .into_iter()
@@ -700,9 +1016,13 @@ pub async fn ingest_block_logs(
     // database-local inference.
     populate_operand_boundary_masks(&mut tfhe_event_log)?;
 
+    // Publish only committed producer identities. Rolled-back grouping must
+    // not assign later consumers to chains that were never stored.
+    let private_cache =
+        Arc::new(RwLock::new(db.dependence_chain.read().await.clone()));
     let chains = dependence_chains(
         &mut tfhe_event_log,
-        &db.dependence_chain,
+        &private_cache,
         &db.consumed_boundaries,
         &db.sealed_chains,
         options.dependence_by_connexity,
@@ -710,14 +1030,49 @@ pub async fn ingest_block_logs(
     )
     .await;
 
+    let inferred_chains = tfhe_event_log
+        .iter()
+        .flat_map(|log| {
+            tfhe_result_handles(&log.event)
+                .into_iter()
+                .map(|handle| (handle.to_vec(), log.dependence_chain))
+        })
+        .collect::<HashMap<_, _>>();
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
     let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
+    let mut counted_outputs = HashSet::new();
     for tfhe_log in tfhe_event_log {
-        let inserted = db.insert_tfhe_event(&mut tx, &tfhe_log).await?;
+        let inserted = match db.insert_tfhe_event(&mut tx, &tfhe_log).await {
+            Err(sqlx::Error::Protocol(reason))
+                if reason == REPLAY_METADATA_CONFLICT =>
+            {
+                tx.rollback().await?;
+                record_halt(
+                    &db.pool().await,
+                    HistoryMismatch {
+                        source: ListenerSource::Host,
+                        gcs_mode: history_role,
+                        chain_id: chain_id.as_i64(),
+                        block_number: block_logs.summary.number as i64,
+                        expected_hash: Some(block_logs.summary.hash.as_slice()),
+                        observed_hash: Some(block_logs.summary.hash.as_slice()),
+                        reason: REPLAY_METADATA_CONFLICT,
+                    },
+                )
+                .await?;
+                return Err(sqlx::Error::Protocol(reason));
+            }
+            result => result?,
+        };
         at_least_one_insertion |= inserted;
         // Count all newly inserted ops per chain to avoid underestimating
         // pressure from producer paths that are required by downstream work.
         if slow_lane_enabled && inserted {
+            counted_outputs.extend(
+                tfhe_result_handles(&tfhe_log.event)
+                    .into_iter()
+                    .map(|h| h.to_vec()),
+            );
             dependent_ops_by_chain
                 .entry(tfhe_log.dependence_chain)
                 .and_modify(|count| *count = count.saturating_add(1))
@@ -762,6 +1117,37 @@ pub async fn ingest_block_logs(
         }
     }
 
+    let upgraded = db
+        .upgrade_allowed_computations(
+            &mut tx,
+            &touched_handles,
+            &block_logs.summary,
+            &is_allowed.iter().cloned().collect::<Vec<_>>(),
+        )
+        .await?;
+    let upgraded_chains = upgraded
+        .iter()
+        .filter_map(|(_, chain)| chain.clone())
+        .collect::<Vec<_>>();
+    at_least_one_insertion |= !upgraded.is_empty();
+    if slow_lane_enabled {
+        for (handle, stored_chain) in &upgraded {
+            // Recording a missing producer inventory entry can already have
+            // counted this operation. Its eligibility repair is the same work.
+            if counted_outputs.contains(handle) {
+                continue;
+            }
+            let chain = inferred_chains.get(handle).copied().or_else(|| {
+                stored_chain
+                    .as_ref()
+                    .and_then(|id| ChainHash::try_from(id.as_slice()).ok())
+            });
+            if let Some(chain) = chain {
+                *dependent_ops_by_chain.entry(chain).or_default() += 1;
+            }
+        }
+    }
+
     let mut slow_dep_chain_ids: HashSet<ChainHash> = HashSet::new();
     if slow_lane_enabled {
         let max_per_chain = u64::from(options.dependent_ops_max_per_chain);
@@ -771,6 +1157,13 @@ pub async fn ingest_block_logs(
             max_per_chain,
         );
 
+        // ACL-only replay may have no newly inferred chain at all.
+        slow_dep_chain_ids.extend(
+            dependent_ops_by_chain
+                .iter()
+                .filter(|(_, count)| **count > max_per_chain)
+                .map(|(chain, _)| *chain),
+        );
         let parent_dep_chain_ids = chains
             .iter()
             .flat_map(|chain| {
@@ -788,6 +1181,21 @@ pub async fn ingest_block_logs(
         slow_dep_chain_ids.extend(existing_slow_parents);
         propagate_slow_lane_to_dependents(&chains, &mut slow_dep_chain_ids);
 
+        // Preserve classification on the stored identity when replay grouped
+        // an upgraded computation differently from its first ingestion.
+        for (handle, stored_chain) in &upgraded {
+            if inferred_chains
+                .get(handle)
+                .is_some_and(|chain| slow_dep_chain_ids.contains(chain))
+            {
+                if let Some(chain) = stored_chain
+                    .as_ref()
+                    .and_then(|id| ChainHash::try_from(id.as_slice()).ok())
+                {
+                    slow_dep_chain_ids.insert(chain);
+                }
+            }
+        }
         let slow_marked_chains = chains
             .iter()
             .filter(|chain| slow_dep_chain_ids.contains(&chain.hash))
@@ -821,17 +1229,152 @@ pub async fn ingest_block_logs(
         allow_event_count,
     )
     .await?;
+    // A replay's inferred grouping can differ from the persisted computation's
+    // chain. Order the union before taking any chain row locks: two separately
+    // sorted passes can still deadlock (inferred B -> stored A vs A -> B).
+    // Write missing rows in this order too; SELECT FOR UPDATE alone misses them.
+    let mut chain_updates = BTreeMap::new();
     if at_least_one_insertion {
-        db.update_dependence_chain(
-            &mut tx,
-            chains,
-            block_timestamp,
-            &block_logs.summary,
-            &slow_dep_chain_ids,
+        for chain in chains {
+            chain_updates.insert(chain.hash.to_vec(), (Some(chain), None));
+        }
+    }
+    for (id, schedule_order) in db
+        .pending_computation_chains(&mut tx, &touched_handles)
+        .await?
+    {
+        chain_updates.entry(id).or_default().1 = Some(schedule_order);
+    }
+    let upgraded_chains = upgraded_chains.into_iter().collect::<HashSet<_>>();
+    let slow_chains = slow_dep_chain_ids
+        .iter()
+        .map(|id| id.to_vec())
+        .collect::<HashSet<_>>();
+    let mut repaired = 0;
+    for (id, (inferred, pending)) in chain_updates {
+        if let Some(chain) = inferred {
+            db.update_dependence_chain(
+                &mut tx,
+                &chain,
+                block_timestamp,
+                &block_logs.summary,
+                &slow_dep_chain_ids,
+            )
+            .await?;
+            // This upsert already wakes/recreates the chain and preserves its
+            // slow priority, so it also covers any pending repair for this ID.
+        } else if let Some(schedule_order) = pending {
+            repaired += usize::from(
+                db.repair_pending_computation_chain(
+                    &mut tx,
+                    &id,
+                    schedule_order,
+                    upgraded_chains.contains(&id),
+                    slow_chains.contains(&id),
+                )
+                .await?,
+            );
+        }
+    }
+    if repaired > 0 {
+        warn!(
+            count = repaired,
+            "Pending computation dependence chains re-armed"
+        );
+    }
+    let cache_updates = if options.dependence_cross_block {
+        db.computation_chain_cache_entries(&mut tx, &touched_handles)
+            .await?
+    } else {
+        vec![]
+    };
+    if let Some(block_number) =
+        committed_inventory.changed_block(&mut tx).await?
+    {
+        tx.rollback().await?;
+        record_halt(
+            &db.pool().await,
+            HistoryMismatch {
+                source: ListenerSource::Host,
+                gcs_mode: history_role,
+                chain_id: chain_id.as_i64(),
+                block_number,
+                expected_hash: None,
+                observed_hash: None,
+                reason: COMMITTED_INVENTORY_CHANGED,
+            },
         )
         .await?;
+        return Err(sqlx::Error::Protocol(COMMITTED_INVENTORY_CHANGED.into()));
     }
-    tx.commit().await
+    tx.commit().await?;
+    if options.dependence_cross_block {
+        // Merge only this batch's entries: replacing the entire snapshot could
+        // erase another listener clone's successful publication.
+        let mut shared_cache = db.dependence_chain.write().await;
+        for (handle, chain) in cache_updates {
+            if let (Ok(handle), Ok(chain)) = (
+                alloy::primitives::FixedBytes::<32>::try_from(
+                    handle.as_slice(),
+                ),
+                ChainHash::try_from(chain.as_slice()),
+            ) {
+                shared_cache.put(handle, chain);
+            }
+        }
+    }
+    Ok(IngestResult::Complete)
+}
+
+/// Check both adjacent committed identities: replicas can finish neighboring
+/// heights out of order. Missing links are recovered before finalization;
+/// a gap never permits a second independent anchor. Pending forks are left to the
+/// existing finalizer. Admission and deferred finalization both call this while
+/// holding the same history lock. An absent legacy parent is unknown, so only
+/// the same-height and successor checks apply in that case.
+async fn host_history_conflict(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    height: i64,
+    block_hash: &[u8],
+    parent_hash: Option<&[u8]>,
+) -> Result<
+    Option<fhevm_engine_common::chain_recovery::HistoryConflict>,
+    sqlx::Error,
+> {
+    let rows: Vec<(i64, Vec<u8>, Option<Vec<u8>>)> = sqlx::query_as(
+        "SELECT block_number, block_hash, parent_hash FROM host_chain_blocks_valid
+         WHERE chain_id = $1 AND block_number BETWEEN $2 - 1 AND $2 + 1
+           AND block_status = 'finalized'",
+    ).bind(chain_id.as_i64()).bind(height).fetch_all(&mut **tx).await?;
+    for (number, hash, parent) in rows {
+        let (boundary, expected, observed) = if number == height {
+            (height, hash, block_hash.to_vec())
+        } else if number == height - 1 {
+            let Some(observed_parent) =
+                parent_hash.filter(|hash| !hash.is_empty())
+            else {
+                continue;
+            };
+            (number, hash, observed_parent.to_vec())
+        } else if let Some(parent) = parent.filter(|hash| !hash.is_empty()) {
+            (height, parent, block_hash.to_vec())
+        } else {
+            continue;
+        };
+        if expected != observed {
+            return Ok(Some(
+                fhevm_engine_common::chain_recovery::HistoryConflict {
+                    block_number: boundary,
+                    expected_hash: expected,
+                    observed_hash: observed,
+                    reason:
+                        "host block does not extend committed canonical history",
+                },
+            ));
+        }
+    }
+    Ok(None)
 }
 
 /// Synthetic logs for this block, or empty if it is not the designated one.
@@ -990,18 +1533,21 @@ async fn synthetic_logs_for_block(
 /// Channel name the upgrade-controller LISTENs on for `CoprocessorUpgradeProposed` events.
 const UPGRADE_ACTIVATED_CHANNEL: &str = "event_upgrade_activated";
 
-/// Records the event-derived consensus epoch for an accepted upgrade.
+/// Records the consensus epoch of an accepted upgrade and returns its identifier.
 ///
-/// The identifier is `{version}/block_{block}` of the
-/// `CoprocessorUpgradeProposed` log (`version` is currently software version).
-/// Replay of the same proposal returns the existing row.
+/// The identifier is `{consensus_version}/block_{block}` of the
+/// `CoprocessorUpgradeProposed` log, `consensus_version` being the live
+/// `versioning.consensus_version` plus one (see [`format_consensus_epoch`]).
+/// Blue and Green both ingest the log; reading the version in this transaction
+/// rather than from the binary makes them mint the same identifier. Replay of
+/// the same proposal returns the existing row without reading it again.
 async fn persist_upgrade_consensus_epoch(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     proposal_id: &[u8],
     proposal_block: i64,
     windows: &[(i64, i64, i64)],
     stack_version: &str,
-    consensus_epoch: &str,
+    block_number: u64,
 ) -> Result<String, sqlx::Error> {
     if let Some(consensus_epoch) = sqlx::query_scalar!(
         r#"
@@ -1018,17 +1564,28 @@ async fn persist_upgrade_consensus_epoch(
         return Ok(consensus_epoch);
     }
 
+    let live_consensus_version: i64 = sqlx::query_scalar!(
+        "SELECT consensus_version FROM versioning WHERE singleton = TRUE",
+    )
+    .fetch_one(tx.as_mut())
+    .await?;
+    let consensus_version = live_consensus_version + 1;
+    let consensus_epoch =
+        format_consensus_epoch(consensus_version, block_number);
+
     sqlx::query!(
         r#"
         INSERT INTO consensus_epoch_history (
-            consensus_epoch, proposal_id, proposal_block, stack_version, outcome
+            consensus_epoch, proposal_id, proposal_block, stack_version,
+            consensus_version, outcome
         )
-        VALUES ($1, $2, $3, $4, 'pending')
+        VALUES ($1, $2, $3, $4, $5, 'pending')
         "#,
         consensus_epoch,
         proposal_id,
         proposal_block,
         stack_version,
+        consensus_version,
     )
     .execute(tx.as_mut())
     .await?;
@@ -1050,7 +1607,7 @@ async fn persist_upgrade_consensus_epoch(
         .await?;
     }
 
-    Ok(consensus_epoch.to_owned())
+    Ok(consensus_epoch)
 }
 
 /// Decodes a log known to come from the configured ProtocolConfig contract on
@@ -1144,23 +1701,6 @@ async fn notify_coprocessor_upgrade_proposed(
             "Rejecting CoprocessorUpgradeProposed: block number exceeds u64"
         );
         return Ok(());
-    };
-    let minted_epoch = match format_consensus_epoch(
-        &event.softwareVersion,
-        block_number,
-    ) {
-        Ok(consensus_epoch) => consensus_epoch,
-        Err(reason) => {
-            error!(
-                listener_chain_id,
-                proposal_id = %proposal_id_hex,
-                software_version = %event.softwareVersion,
-                proposal_block,
-                reason,
-                "Rejecting CoprocessorUpgradeProposed: cannot derive consensus_epoch"
-            );
-            return Ok(());
-        }
     };
 
     // gwStartBlock is a single top-level field shared by every per-chain window.
@@ -1368,7 +1908,7 @@ async fn notify_coprocessor_upgrade_proposed(
         proposal_block,
         &windows,
         &event.softwareVersion,
-        &minted_epoch,
+        block_number,
     )
     .await?;
 
@@ -1586,6 +2126,7 @@ pub async fn synthesize_finalized_fallback_grants(
             // executor never ran, so `_markMinted` never recorded this
             // handle and it must not become a same-transaction minted
             // operand for a later real executor operation.
+            has_legacy_operand_origin: false,
             is_executor_minted: false,
             is_fallback_grant: true,
             is_synthetic: false,
@@ -1628,14 +2169,18 @@ pub async fn synthesize_finalized_fallback_grants(
         parent_hash: BlockHash::ZERO,
         timestamp: 0,
     };
-    db.update_dependence_chain(
-        tx,
-        chains,
-        block_timestamp,
-        &summary,
-        &HashSet::new(),
-    )
-    .await?;
+    let mut chains = chains;
+    chains.sort_by_key(|chain| chain.hash);
+    for chain in chains {
+        db.update_dependence_chain(
+            tx,
+            &chain,
+            block_timestamp,
+            &summary,
+            &HashSet::new(),
+        )
+        .await?;
+    }
     Ok(())
 }
 
@@ -1645,82 +2190,141 @@ pub async fn update_finalized_blocks(
     last_block_number: u64,
     finality_lag: u64,
 ) {
-    let log_iter = &*log_iter;
-    update_finalized_blocks_aux(
+    let iter_ref = &*log_iter;
+    let result = match update_finalized_blocks_aux(
         db,
         last_block_number,
         finality_lag,
         |block_number| async move {
-            log_iter
-                .get_block_by_number(block_number)
-                .await
-                .map(|block| block.header.hash)
+            let block = iter_ref.get_block_by_number(block_number).await?;
+            iter_ref.tick_block.update();
+            Ok(block.header.hash)
         },
     )
-    .await;
+    .await
+    {
+        Ok(result) => result,
+        Err(err) => {
+            warn!(%err, "Cannot update finalized blocks; will retry");
+            return;
+        }
+    };
+    if let Some(number) = result.missing_canonical_block {
+        if let Err(err) = log_iter.queue_canonical_block_for_retry(number).await
+        {
+            warn!(number, error = %err, "Cannot recover missing canonical block; finalization will retry");
+        }
+    }
 }
 
+#[derive(Debug, Default)]
+pub struct FinalizationResult {
+    /// A canonical replacement or ancestry link is missing at this height.
+    /// Callers must recover the full block, including
+    /// its logs, before finalization can safely proceed.
+    pub missing_canonical_block: Option<u64>,
+}
+
+/// Verify committed history before finalizing pending observations. On error,
+/// callers must defer further finalized admission and cursor/replay advancement.
 pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
     db: &mut Database,
     last_block_number: u64,
     finality_lag: u64,
     mut get_block_hash_by_number: GetBlockHash,
-) where
+) -> anyhow::Result<FinalizationResult>
+where
     GetBlockHash: FnMut(u64) -> GetBlockHashFuture,
     GetBlockHashFuture: Future<Output = anyhow::Result<BlockHash>>,
 {
     info!(last_block_number, finality_lag, "Updating finalized blocks");
+    // A failed verification is not an empty successful finalization: callers
+    // must retry before admitting new finalized blocks or advancing replay.
+    let verified_hashes =
+        super::history_verification::verify_finalized_history(
+            db,
+            &mut get_block_hash_by_number,
+        )
+        .await?;
     let last_finalized_block = last_block_number.saturating_sub(finality_lag);
 
     // Read the candidate numbers in a short transaction, then resolve the
     // canonical hashes over RPC with NO transaction open: block fetches can
     // take seconds each, and holding the finalization transaction across the
     // round-trips kept its row locks pinned for the whole time.
-    let blocks_number = {
+    let (blocks_number, committed_tip) = {
         let mut tx = match db.new_transaction().await {
             Ok(Some(tx)) => tx,
             Ok(None) => {
                 info!(
                     "cutover completed — skipping finalized-blocks lookup (retired stack)"
                 );
-                return;
+                return Ok(FinalizationResult::default());
             }
             Err(err) => {
                 error!(
                     ?err,
                     "Failed to create transaction for finalized blocks update"
                 );
-                return;
+                return Err(err.into());
             }
         };
-        match Database::get_finalized_blocks_number(
-            &mut tx,
-            last_finalized_block as i64,
-            db.chain_id,
-        )
-        .await
-        {
-            Ok(numbers) => numbers,
+        let candidates = async {
+            let numbers = Database::get_finalized_blocks_number(
+                &mut tx,
+                last_finalized_block as i64,
+                db.chain_id,
+            )
+            .await?;
+            let tip: Option<i64> = sqlx::query_scalar(
+                "SELECT MAX(block_number) FROM host_chain_blocks_valid
+                 WHERE chain_id = $1 AND block_status = 'finalized'",
+            )
+            .bind(db.chain_id.as_i64())
+            .fetch_one(&mut *tx)
+            .await?;
+            Ok::<_, sqlx::Error>((numbers, tip))
+        }
+        .await;
+        match candidates {
+            Ok(candidates) => candidates,
             Err(err) => {
                 error!(
                     ?err,
                     last_finalized_block,
-                    "Failed to fetch finalized blocks number"
+                    "Failed to fetch finalization candidates"
                 );
-                return;
+                return Err(err.into());
             }
         }
     };
     info!(?blocks_number, "Finalizing blocks");
 
-    // Ascending: finalization verifies each block's parent linkage against
-    // its finalized predecessor, so within one batch the predecessor must be
-    // finalized first.
+    // Verify the committed tip even when no pending rows remain. A delayed
+    // non-final observation was safely discarded above, but a real canonical
+    // change must still be detected by a websocket-only deployment. Verify it
+    // first: an unavailable tip must prevent other finalizations this pass.
+    // Pending heights then stay ascending so predecessors finalize first.
+    let verify_only_tip =
+        committed_tip.filter(|tip| !blocks_number.contains(tip));
     let mut blocks_number: Vec<i64> = blocks_number.into_iter().collect();
     blocks_number.sort_unstable();
+    if let Some(tip) = committed_tip {
+        blocks_number.retain(|number| *number != tip);
+        blocks_number.insert(0, tip);
+    }
 
     let mut canonical = Vec::with_capacity(blocks_number.len());
     for block_number in blocks_number {
+        // The segment verifier already fetched the tip for this pass. Reuse
+        // that observation; newly finalized tips still require their own RPC.
+        if let Some((_, hash)) = verified_hashes
+            .iter()
+            .find(|(n, _)| *n == block_number as u64)
+        {
+            canonical.push((block_number, *hash));
+            continue;
+        }
         match get_block_hash_by_number(block_number as u64).await {
             Ok(block_hash) => canonical.push((block_number, block_hash)),
             Err(err) => {
@@ -1740,24 +2344,126 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
         }
     }
     if canonical.is_empty() {
-        return;
+        return Ok(FinalizationResult::default());
     }
 
     let mut tx = match db.new_transaction().await {
         Ok(Some(tx)) => tx,
         Ok(None) => {
             info!("cutover completed — skipping finalized-blocks update (retired stack)");
-            return;
+            return Ok(FinalizationResult::default());
         }
         Err(err) => {
             error!(
                 ?err,
                 "Failed to create transaction for finalized blocks update"
             );
-            return;
+            return Err(err.into());
         }
     };
+    // Finalization changes committed identity just like ingestion. Resolve the
+    // actual schema after acquiring the cutover fence, then serialize the
+    // entire batch with admissions and other finalizers for this chain.
+    use fhevm_engine_common::chain_recovery::{
+        host_role_tx, lock_history_tx, record_halt, ListenerSource,
+    };
+    let history_role = match async {
+        let role = host_role_tx(&mut tx).await?;
+        lock_history_tx(
+            &mut tx,
+            ListenerSource::Host,
+            role,
+            db.chain_id.as_i64(),
+        )
+        .await?;
+        Ok::<_, sqlx::Error>(role)
+    }
+    .await
+    {
+        Ok(role) => role,
+        Err(err) => {
+            error!(?err, "Failed to lock host history for finalization");
+            return Err(err.into());
+        }
+    };
+    let mut result = FinalizationResult::default();
     for (block_number, block_hash) in canonical {
+        let admission = async {
+            let parent: Option<Option<Vec<u8>>> = sqlx::query_scalar(
+                "SELECT parent_hash FROM host_chain_blocks_valid
+                 WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3",
+            )
+            .bind(db.chain_id.as_i64())
+            .bind(block_number)
+            .bind(block_hash.as_slice())
+            .fetch_optional(&mut *tx)
+            .await?;
+            let already_ingested = parent.is_some();
+            let conflict = host_history_conflict(
+                &mut tx,
+                db.chain_id,
+                block_number,
+                block_hash.as_slice(),
+                parent.as_ref().and_then(|p| p.as_deref()),
+            )
+            .await?;
+            let missing = if conflict.is_none() {
+                super::history_verification::missing_finalized_link(
+                    &mut tx,
+                    db.chain_id.as_i64(),
+                    block_number,
+                    block_hash.as_slice(),
+                    parent.as_ref().and_then(|p| p.as_deref()),
+                )
+                .await?
+            } else {
+                None
+            };
+            Ok::<_, sqlx::Error>((already_ingested, conflict, missing))
+        }
+        .await;
+        let (already_ingested, conflict, missing) = match admission {
+            Ok(admission) => admission,
+            Err(err) => {
+                error!(
+                    ?err,
+                    "Failed to check committed history before finalization"
+                );
+                return Err(err.into());
+            }
+        };
+        if let Some(conflict) = conflict {
+            // Never upgrade a shared lock while holding it. Roll back the
+            // batch first, then persist containment under the exclusive fence.
+            if let Err(err) = tx.rollback().await {
+                error!(?err, "Failed to roll back conflicting finalization");
+                return Err(err.into());
+            }
+            if let Err(err) = record_halt(
+                &db.pool().await,
+                conflict.observation(
+                    ListenerSource::Host,
+                    history_role,
+                    db.chain_id.as_i64(),
+                ),
+            )
+            .await
+            {
+                error!(?err, "Failed to contain conflicting finalization");
+                return Err(err.into());
+            }
+            return Err(sqlx::Error::Protocol(conflict.reason.into()).into());
+        }
+        if Some(block_number) == verify_only_tip {
+            // This was a consistency check, not a new finalization. Avoid
+            // repeating side effects unless pending forks at this height need
+            // the existing finalization path to orphan and retract them.
+            continue;
+        }
+        if let Some(number) = missing {
+            result.missing_canonical_block = Some(number);
+            break;
+        }
         match db
             .update_block_as_finalized(&mut tx, block_number, &block_hash)
             .await
@@ -1778,7 +2484,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                         ?err,
                         "Failed to retract orphaned event state during finalization"
                     );
-                    return;
+                    return Err(err.into());
                 }
                 // The block just became final: materialize its deferred
                 // fallback grants in the same transaction, so the synthesis
@@ -1796,10 +2502,18 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                         ?err,
                         "Failed to synthesize finalized fallback grants"
                     );
-                    return;
+                    return Err(err.into());
                 }
             }
             Ok(None) => {
+                if !already_ingested {
+                    // Range catchup omits empty canonical replacements. Gaps
+                    // in the old observed branch can leave disconnected pending
+                    // descendants that recursive orphan marking cannot reach.
+                    // Recover this exact block through normal ingestion instead
+                    // of finalizing an unseen hash or blocking the queue forever.
+                    result.missing_canonical_block = Some(block_number as u64);
+                }
                 // Finalization refused (missing row / orphaned / parent
                 // linkage contradiction). STOP the batch: the next height's
                 // linkage check would pass vacuously without a finalized
@@ -1818,13 +2532,13 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
                     ?err,
                     "Failed to update block as finalized"
                 );
-                return;
+                return Err(err.into());
             }
         }
     }
     if let Err(err) = tx.commit().await {
         error!(?err, "Failed to commit finalized blocks update");
-        return;
+        return Err(err.into());
     }
     // Notify the database of the new block
     // Delayed delegation rely on this signal to reconsider ready delegation
@@ -1842,6 +2556,7 @@ pub async fn update_finalized_blocks_aux<GetBlockHash, GetBlockHashFuture>(
         Ok(pruned) => info!(pruned, "Pruned finalized block history"),
         Err(err) => error!(?err, "Failed to prune finalized block history"),
     }
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -1894,6 +2609,7 @@ mod tests {
             dependence_chain: tx,
             log_index,
             operand_boundary_mask: None,
+            has_legacy_operand_origin: false,
             is_executor_minted,
             is_fallback_grant: false,
             is_synthetic: false,
@@ -2194,6 +2910,12 @@ mod tests {
         .execute(&pool)
         .await
         .expect("seed legacy row");
+        // The epoch is the live protocol version plus one, read from the database,
+        // whichever binary ingests the log; 6 differs from any compiled version.
+        sqlx::query("UPDATE versioning SET consensus_version = 6")
+            .execute(&pool)
+            .await
+            .expect("set live consensus_version");
 
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(2u64),
@@ -2248,13 +2970,16 @@ mod tests {
         );
         assert_eq!(row.try_get::<String, _>("status").unwrap(), "in_progress");
 
-        let consensus_epoch: String = sqlx::query_scalar(
-            "SELECT consensus_epoch FROM consensus_epoch_history WHERE proposal_block = 300",
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("consensus_epoch identifier");
-        assert_eq!(consensus_epoch, "v2/block_300");
+        let (consensus_epoch, consensus_version): (String, Option<i64>) =
+            sqlx::query_as(
+                "SELECT consensus_epoch, consensus_version
+                   FROM consensus_epoch_history WHERE proposal_block = 300",
+            )
+            .fetch_one(&pool)
+            .await
+            .expect("consensus_epoch identifier");
+        assert_eq!(consensus_epoch, "7/block_300");
+        assert_eq!(consensus_version, Some(7));
         let history_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM consensus_epoch_history WHERE consensus_epoch = $1",
         )
@@ -2286,6 +3011,10 @@ mod tests {
         .execute(&pool)
         .await
         .expect("seed host chains");
+        sqlx::query("UPDATE versioning SET consensus_version = 4")
+            .execute(&pool)
+            .await
+            .expect("set live consensus_version");
 
         let event = ProtocolConfig::CoprocessorUpgradeProposed {
             proposalId: U256::from(2u64),
@@ -2354,9 +3083,10 @@ mod tests {
         let consensus_epoch_windows = sqlx::query(
             "SELECT host_chain_id, start_block, consensus_deadline_block
                FROM consensus_epoch_block_window
-              WHERE consensus_epoch = 'v2/block_300'
+              WHERE consensus_epoch = $1
               ORDER BY host_chain_id",
         )
+        .bind("5/block_300")
         .fetch_all(&pool)
         .await
         .expect("consensus_epoch windows");

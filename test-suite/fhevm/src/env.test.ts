@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
@@ -80,19 +79,20 @@ describe("env", () => {
 
     const centralized = await renderEnvMaps({ discovery: undefined }, stackSpecForState(baseState), templateEnvs, deriveWallet);
     expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe("https://kms-connector-proxy:8443");
-    expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).toBe(templateEnvs["test-suite"].KMS_CONNECTOR_API_KEY);
-    expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).not.toBe("");
+    expect(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY).not.toBe("");
+    expect(centralized.componentEnvs["kms-connector"].KMS_CONNECTOR_ALLOWED_SENDERS).not.toBe("");
     expect(centralized.componentEnvs["test-suite"].NODE_EXTRA_CA_CERTS).toBe("/etc/kms-connector/proxy/tls.crt");
     expect(centralized.componentEnvs["test-suite"].KMS_THRESHOLD).toBe("0");
     // The proxy forwards to its own party's endpoint.
     expect(centralized.componentEnvs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-endpoint:8080");
-
-    // The digest the proxies check is the sha256 of the key the e2e suite sends.
-    const digest = createHash("sha256").update(centralized.componentEnvs["test-suite"].KMS_CONNECTOR_API_KEY).digest("hex");
-    expect(centralized.componentEnvs["kms-connector"].KMS_CONNECTOR_API_KEY_DIGEST).toBe(`0x${digest}`);
+    // The proxy accepts requests signed for its tx-sender, the address the e2e suite signs for.
+    const txSender = centralized.componentEnvs["test-suite"].KMS_CONNECTOR_TX_SENDER_ADDRESSES;
+    expect(txSender).toBe(templateEnvs["gateway-sc"].KMS_TX_SENDER_ADDRESS_0);
+    expect(centralized.componentEnvs["kms-connector"].KMS_CONNECTOR_TX_SENDER_ADDRESS).toBe(txSender);
 
     const gated = await renderEnvMaps({ discovery: undefined }, stackSpecForState(withoutEndpoint), templateEnvs, deriveWallet);
     expect(gated.componentEnvs["test-suite"].KMS_CONNECTOR_ENDPOINT_URLS).toBe("");
+    expect(gated.componentEnvs["test-suite"].KMS_CONNECTOR_TX_SENDER_ADDRESSES).toBe("");
 
     // Spares (parties beyond committeeSize) hold no key material and are left out of the list.
     const threshold: State = {
@@ -110,6 +110,12 @@ describe("env", () => {
     );
     expect(rendered.componentEnvs["test-suite"].KMS_THRESHOLD).toBe("1");
     expect(rendered.componentEnvs["kms-connector"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-endpoint:8080");
+    // Each proxy accepts requests signed for its own party's tx-sender, the address the e2e suite signs for.
+    const txSenders = rendered.componentEnvs["test-suite"].KMS_CONNECTOR_TX_SENDER_ADDRESSES.split(",");
+    expect(txSenders).toHaveLength(4);
+    expect(new Set(txSenders).size).toBe(4);
+    expect(rendered.componentEnvs["kms-connector"].KMS_CONNECTOR_TX_SENDER_ADDRESS).toBe(txSenders[0]);
+    expect(rendered.instanceEnvs["kms-connector.3"].KMS_CONNECTOR_TX_SENDER_ADDRESS).toBe(txSenders[2]);
     expect(rendered.instanceEnvs["kms-connector.3"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-3-endpoint:8080");
   });
 
