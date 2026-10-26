@@ -211,9 +211,9 @@ tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest fina
 
 #### Metric Name: `coprocessor_proxy_kms_tx_senders_block_timestamp_seconds`
  - **Type**: Gauge
- - **Description**: Unix timestamp of the finalized block whose KMS tx-senders the proxy applies; 0 before the first read. A finalized Ethereum block is about 13 minutes old, so the gauge normally trails the current time by that much. It stops advancing when reads of ProtocolConfig fail, and the proxy keeps the last set it read.
- - **Alarm**: If the applied block is older than finality plus a margin.
-    - **Recommendation**: more than 20 minutes old, i.e. `time() - coprocessor_proxy_kms_tx_senders_block_timestamp_seconds > 1200`.
+ - **Description**: Unix timestamp of the finalized block whose KMS tx-senders the proxy applies; 0 before the first read. On Ethereum the finalized block is the first block of the epoch two epochs back, so its age normally runs from about 13 to 19 minutes, and a late finalization can push it past 25 minutes with nothing wrong in the proxy. It stops advancing when reads of ProtocolConfig fail, and the proxy keeps the last set it read.
+ - **Alarm**: If the applied block is older than finality plus a margin for late finalization.
+    - **Recommendation**: more than 30 minutes old, i.e. `time() - coprocessor_proxy_kms_tx_senders_block_timestamp_seconds > 1800`.
 
 #### Metric Name: `coprocessor_proxy_requests_counter`
  - **Type**: Counter

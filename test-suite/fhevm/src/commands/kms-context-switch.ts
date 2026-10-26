@@ -49,9 +49,8 @@
  *   6. coprocessor-proxy, when the stack runs it. While the swap's context is held at Created,
  *      once that is finalized, every coprocessor's proxy refuses a request signed by the spare:
  *      only the new context has it, and that context is not Active. Once the swap's activation is
- *      finalized, every proxy accepts a
- *      request signed by the promoted spare, and one signed by the dropped node, which the outgoing
- *      context still has.
+ *      finalized, every proxy accepts a request signed by the promoted spare, and one signed by
+ *      the dropped node, which the outgoing context still has.
  *      After step 5, every context but the swap's is destroyed; once that is finalized and each
  *      proxy has read the KMS tx-senders again, every proxy refuses the dropped node with
  *      `401 auth_unknown_signer` and forwards nothing.
