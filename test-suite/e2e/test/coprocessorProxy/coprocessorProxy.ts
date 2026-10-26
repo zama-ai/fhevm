@@ -188,7 +188,8 @@ describe('Coprocessor proxy', function () {
       }
     });
 
-    it('refuses a node that is only in the destroyed context', async function () {
+    // Once the proxy has read ProtocolConfig at or after COPROCESSOR_PROXY_SWITCH_BLOCK_TIMESTAMP.
+    it('refuses a node of no Active context', async function () {
       const blockTimestamp = Number(process.env.COPROCESSOR_PROXY_SWITCH_BLOCK_TIMESTAMP);
       expect(
         Number.isInteger(blockTimestamp) && blockTimestamp > 0,

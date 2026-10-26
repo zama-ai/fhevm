@@ -39,13 +39,17 @@
  *   5. Node swap (NewKmsContext with a membership change). Broadcast the switch with the swap
  *      committee {1,2,3,5}: node 4 is dropped and the spare is promoted. Node 4's tx-sender is
  *      stopped before the broadcast — a node that cannot transact must not block its own
- *      replacement. After activation, stop `t` continuing members so the live committee is exactly
+ *      replacement. The spare's tx-sender is also stopped until the pending checks have run:
+ *      activation needs its confirmation, so the new context cannot activate during those checks.
+ *      After activation, stop `t` continuing members so the live committee is exactly
  *      the 2t+1 quorum including the spare, then decrypt: this proves the spare holds a working
  *      reshared key. Running the swap last also proves a switch still works after every destroy
  *      and abort above.
- *   6. coprocessor-proxy, when the stack runs it. Once the swap's activation is finalized, every
- *      coprocessor's proxy accepts a request signed by the promoted spare, which only the new
- *      context has, and one signed by the dropped node, which the outgoing context still has.
+ *   6. coprocessor-proxy, when the stack runs it. While the swap is pending and finalized, every
+ *      coprocessor's proxy refuses a request signed by the spare: only the new context has it, and
+ *      that context is not Active. Once the swap's activation is finalized, every proxy accepts a
+ *      request signed by the promoted spare, and one signed by the dropped node, which the outgoing
+ *      context still has.
  *      After step 5, every context but the swap's is destroyed; once that is finalized and each
  *      proxy has read the KMS tx-senders again, every proxy refuses the dropped node with
  *      `401 auth_unknown_signer` and forwards nothing.
@@ -202,8 +206,11 @@ const switchKmsContext = async (
   target: SwitchTarget,
   baseline: ContextAndEpoch,
   swap: boolean,
+  // Absent when the stack runs no coprocessor-proxy.
+  runProxyCheck?: ProxyCheckRunner,
 ): Promise<ContextAndEpoch> => {
   const { continuing, spares, dropped } = committeePlan(state.scenario.kms);
+  const spareTxSenders = spares.map((party) => kmsTxSenderName(party));
   // Same services in both modes; a swap just points them at the swap-committee env files.
   const hostEnv: Record<string, string> = swap ? { HOST_SC_CONTEXT_ENV: "host-sc-swap.env" } : {};
   const gatewayEnv: Record<string, string> = swap ? { GATEWAY_SC_CONTEXT_ENV: "gateway-sc-swap.env" } : {};
@@ -216,6 +223,10 @@ const switchKmsContext = async (
     );
     await setRunning(droppedTxSenders, "stop");
     await waitForContainersStopped(droppedTxSenders);
+    // Started again after the pending checks: activation needs every new-committee signer, so
+    // until then the new context cannot activate, and those checks cannot race it.
+    await setRunning(spareTxSenders, "stop");
+    await waitForContainersStopped(spareTxSenders);
   }
 
   console.log(
@@ -247,6 +258,28 @@ const switchKmsContext = async (
     throw new PreflightError(
       "kms-context-switch: user-decryption failed while the context switch was pending — the previous context must keep serving until the new one activates",
     );
+  }
+
+  if (swap) {
+    if (runProxyCheck) {
+      const blockTimestamp = await waitForLatestFinalized(target.rpcUrl);
+      for (const party of spares) {
+        await runProxyCheck(
+          `kms-context-switch: every coprocessor-proxy refuses spare ${party} while the swap is pending`,
+          "refuses a node of no Active context",
+          { COPROCESSOR_PROXY_SWITCH_SIGNER_KEY: await kmsTxSenderKey(party), COPROCESSOR_PROXY_SWITCH_BLOCK_TIMESTAMP: String(blockTimestamp) },
+        );
+      }
+      const current = await readContextAndEpoch(target.rpcUrl, target.configAddress);
+      if (current.contextId !== baseline.contextId) {
+        throw new PreflightError(
+          `kms-context-switch: context ${current.contextId} activated before the spare could confirm it, so the proxy refusal checked no pending context`,
+        );
+      }
+    }
+    console.log(`[kms-context-switch] starting spare(s) ${spares.join(",")} tx-sender so the swap can activate…`);
+    await setRunning(spareTxSenders, "start");
+    await waitForPartiesRunning(spares);
   }
 
   const afterSwitch = await waitForActivation(
@@ -554,7 +587,7 @@ const proxyRefusesDroppedNodes = async (
   for (const party of committeePlan(state.scenario.kms).dropped) {
     await runProxyCheck(
       `kms-context-switch: every coprocessor-proxy refuses dropped node ${party}`,
-      "refuses a node that is only in the destroyed context",
+      "refuses a node of no Active context",
       { COPROCESSOR_PROXY_SWITCH_SIGNER_KEY: await kmsTxSenderKey(party), COPROCESSOR_PROXY_SWITCH_BLOCK_TIMESTAMP: String(blockTimestamp) },
     );
   }
@@ -773,7 +806,7 @@ export const runKmsContextSwitchProfile = async (
   const afterSwap = await switchKmsContext(
     state, runDecryption, runSmoke,
     { rpcUrl, configAddress, where },
-    recovered, true,
+    recovered, true, runProxyCheck,
   );
 
   // 6a) Once the swap is finalized, every coprocessor-proxy accepts the promoted spare, and the
@@ -811,7 +844,7 @@ export const runKmsContextSwitchProfile = async (
       "and the promoted spare serves the 2t+1 quorum; user-decryption works under each transition; the " +
       "input-proof app flow held at every checkpoint" +
       (runProxyCheck
-        ? "; and every coprocessor-proxy accepted the promoted spare, accepted the dropped node until its context was destroyed, then refused it"
+        ? "; and every coprocessor-proxy refused the spare while the swap was pending, accepted it once promoted, accepted the dropped node until its context was destroyed, then refused it"
         : ""),
   );
 };
