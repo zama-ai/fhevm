@@ -8,7 +8,7 @@ use crate::{
 use anyhow::anyhow;
 use connector_utils::types::{KmsResponse, kms_response};
 use sqlx::{Pool, Postgres};
-use std::future::Future;
+use std::{collections::VecDeque, future::Future};
 use tokio::sync::mpsc::{self, Receiver};
 use tracing::{debug, info, warn};
 
@@ -25,6 +25,9 @@ pub struct DbKmsResponsePicker {
     /// The receiver channel used to receive KMS response notification.
     notif_receiver: Receiver<KmsResponseNotification>,
 
+    /// The response types that need to be picked, in FIFO order and without duplicates.
+    pending_response_types: VecDeque<KmsResponseNotification>,
+
     /// The maximum number of responses to fetch at once.
     responses_batch_size: u8,
 }
@@ -38,6 +41,7 @@ impl DbKmsResponsePicker {
         Self {
             db_pool,
             notif_receiver,
+            pending_response_types: VecDeque::new(),
             responses_batch_size,
         }
     }
@@ -57,21 +61,36 @@ impl DbKmsResponsePicker {
 impl KmsResponsePicker for DbKmsResponsePicker {
     /// Picks KMS responses from the database.
     ///
+    /// Notifications are coalesced per response type to handle bursts:
+    /// - `drain_notifications` reads the received notifications off the channel, but
+    ///   `mark_pending` skips the types already queued, so 1000 notifications result in a single
+    ///   pick query.
+    /// - After a full batch, the type is re-queued at the back, as more responses may be pending,
+    ///   giving the other types a chance to be picked first.
+    ///
     /// Should only return an error if the notification channel is closed, so the `tx_sender` can
     /// shutdown gracefully.
     /// If another error is encountered, it will just be logged with a warning and will wait for
     /// next responses.
     async fn pick_responses(&mut self) -> anyhow::Result<Vec<KmsResponse>> {
         loop {
-            let Some(notification) = self.notif_receiver.recv().await else {
-                return Err(anyhow!("notification channel was closed!"));
+            if self.pending_response_types.is_empty() {
+                let Some(notification) = self.notif_receiver.recv().await else {
+                    return Err(anyhow!("notification channel was closed!"));
+                };
+                self.mark_pending(notification);
+            }
+            self.drain_notifications();
+
+            let Some(response_type) = self.pending_response_types.pop_front() else {
+                continue;
             };
 
-            match self.pick_notified_responses(&notification).await {
+            match self.pick_notified_responses(&response_type).await {
                 Err(e) => {
                     warn!("Error while picking responses: {e}");
                     RESPONSE_RECEIVED_ERRORS
-                        .with_label_values(&[notification.response_str()])
+                        .with_label_values(&[response_type.response_str()])
                         .inc();
                     continue;
                 }
@@ -80,9 +99,14 @@ impl KmsResponsePicker for DbKmsResponsePicker {
                     continue;
                 }
                 Ok(responses) => {
-                    info!("Picked {} {} successfully", responses.len(), notification);
+                    // A full batch means more responses may still be pending: re-queue the
+                    // response type.
+                    if responses.len() >= self.responses_batch_size as usize {
+                        self.mark_pending(response_type);
+                    }
+                    info!("Picked {} {} successfully", responses.len(), response_type);
                     RESPONSE_RECEIVED_COUNTER
-                        .with_label_values(&[notification.response_str()])
+                        .with_label_values(&[response_type.response_str()])
                         .inc_by(responses.len() as u64);
                     return Ok(responses);
                 }
@@ -92,11 +116,34 @@ impl KmsResponsePicker for DbKmsResponsePicker {
 }
 
 impl DbKmsResponsePicker {
+    /// Moves the notifications already received into the `pending_response_types` queue, without
+    /// blocking.
+    ///
+    /// The drain is bounded by the channel capacity, so it cannot loop forever if notifications
+    /// keep coming. The remaining ones will be drained on the next pick.
+    ///
+    /// A closed channel is ignored here, it will be reported by `recv` once `pending_response_types` is
+    /// empty.
+    fn drain_notifications(&mut self) {
+        for _ in 0..self.notif_receiver.max_capacity() {
+            let Ok(notification) = self.notif_receiver.try_recv() else {
+                break;
+            };
+            self.mark_pending(notification);
+        }
+    }
+
+    fn mark_pending(&mut self, response_type: KmsResponseNotification) {
+        if !self.pending_response_types.contains(&response_type) {
+            self.pending_response_types.push_back(response_type);
+        }
+    }
+
     async fn pick_notified_responses(
         &self,
-        notification: &KmsResponseNotification,
+        response_type: &KmsResponseNotification,
     ) -> anyhow::Result<Vec<KmsResponse>> {
-        match notification {
+        match response_type {
             KmsResponseNotification::PublicDecryption => {
                 self.pick_public_decryption_responses().await
             }
@@ -270,5 +317,43 @@ impl DbKmsResponsePicker {
         .iter()
         .map(kms_response::from_epoch_result_row)
         .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::postgres::PgPoolOptions;
+
+    #[tokio::test]
+    async fn test_notifications_are_coalesced_per_response_type() {
+        // The pool is never used, as no response is picked from the database
+        let db_pool = PgPoolOptions::new()
+            .connect_lazy("postgres://localhost")
+            .unwrap();
+        let (notif_sender, notif_receiver) = mpsc::channel(1001);
+        let mut response_picker = DbKmsResponsePicker::new(db_pool, notif_receiver, 50);
+
+        // A burst of public decryption notifications, followed by a user decryption one
+        for _ in 0..1000 {
+            notif_sender
+                .send(KmsResponseNotification::PublicDecryption)
+                .await
+                .unwrap();
+        }
+        notif_sender
+            .send(KmsResponseNotification::UserDecryption)
+            .await
+            .unwrap();
+
+        // The user decryption must not be queued behind the 1000 public decryption notifications
+        response_picker.drain_notifications();
+        assert_eq!(
+            response_picker.pending_response_types,
+            [
+                KmsResponseNotification::PublicDecryption,
+                KmsResponseNotification::UserDecryption
+            ]
+        );
     }
 }

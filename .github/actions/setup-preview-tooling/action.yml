@@ -6,10 +6,10 @@ description: >-
 
 inputs:
   ts-oauth-client-id:
-    description: Tailscale OAuth client id
+    description: Tailscale OIDC federated identity client id
     required: true
-  ts-oauth-secret:
-    description: Tailscale OAuth secret
+  ts-oauth-audience:
+    description: Tailscale OIDC federated identity audience
     required: true
   ts-tags:
     description: Tailscale ACL tags to advertise
@@ -32,10 +32,10 @@ runs:
   using: composite
   steps:
     - name: Setup tailscale
-      uses: tailscale/github-action@84a3f23bb4d843bcf4da6cf824ec1be473daf4de # v3.2.3
+      uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
       with:
         oauth-client-id: ${{ inputs.ts-oauth-client-id }}
-        oauth-secret: ${{ inputs.ts-oauth-secret }}
+        audience: ${{ inputs.ts-oauth-audience }}
         tags: ${{ inputs.ts-tags }}
 
     - name: Setup helm

@@ -4,7 +4,7 @@ import type { FetchPublicDecryptParameters, FetchPublicDecryptReturnType, Relaye
 import type { KmsSignersContext } from '../../../types/kmsSignersContext.js';
 import type { FhevmClientFrozenContext } from '../../../types/fhevmClientFrozenContext-p.js';
 import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
-import { getKmsSignersPrivateKeyMap } from './signers.js';
+import { getKmsSignersPrivateKeyMap, pickRespondingKmsSigners } from './signers.js';
 import { encodeTypedCleartexts, isForgeFhevmV1, readPlaintexts } from './forgeFhevmV1.js';
 import { createKmsEip712Domain } from '../../../kms/createKmsEip712Domain.js';
 import { readCurrentKmsSignersContext } from '../../../host-contracts/readKmsSignersContext-p.js';
@@ -16,7 +16,10 @@ const publicDecryptAbi = [
   {
     type: 'function',
     name: 'publicDecrypt',
-    inputs: [{ name: 'handles', type: 'bytes32[]', internalType: 'bytes32[]' }],
+    inputs: [
+      { name: 'handles', type: 'bytes32[]', internalType: 'bytes32[]' },
+      { name: 'extraData', type: 'bytes', internalType: 'bytes' },
+    ],
     outputs: [
       {
         name: 'abiEncodedCleartexts',
@@ -26,7 +29,7 @@ const publicDecryptAbi = [
       { name: 'digest', type: 'bytes32', internalType: 'bytes32' },
       { name: 'signers', type: 'address[]', internalType: 'address[]' },
       { name: 'threshold', type: 'uint256', internalType: 'uint256' },
-      { name: 'extraData', type: 'bytes', internalType: 'bytes' },
+      { name: 'signedExtraData', type: 'bytes', internalType: 'bytes' },
     ],
     stateMutability: 'view',
   },
@@ -42,6 +45,7 @@ async function runPublicDecryptOffChain(
   readonly orderedAbiEncodedClearValues: BytesHex;
   readonly digest: Bytes32Hex;
   readonly signersAddress: readonly ChecksummedAddress[];
+  readonly threshold: number;
   readonly extraData: BytesHex;
 }> {
   const cleartextEthereumModule = relayerClient.runtime.ethereum as CleartextEthereumModule;
@@ -96,6 +100,7 @@ async function runPublicDecryptOffChain(
     orderedAbiEncodedClearValues,
     digest,
     signersAddress: currentKmsSignersContext.signers,
+    threshold: currentKmsSignersContext.threshold,
     extraData,
   };
 }
@@ -111,25 +116,29 @@ async function runPublicDecryptOnChain(
   readonly orderedAbiEncodedClearValues: BytesHex;
   readonly digest: Bytes32Hex;
   readonly signersAddress: readonly ChecksummedAddress[];
+  readonly threshold: number;
   readonly extraData: BytesHex;
 }> {
   const trustedClient = getTrustedClient(relayerClient);
+  // The host signs over exactly the requested extraData and returns the signers of the context it names.
   const res = (await relayerClient.runtime.ethereum.readContract(trustedClient, {
     abi: publicDecryptAbi,
     address: relayerClient.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    args: [payload.orderedHandles.map((h) => h.bytes32Hex)],
+    args: [payload.orderedHandles.map((h) => h.bytes32Hex), payload.extraData],
     functionName: publicDecryptAbi[0].name,
   })) as unknown[];
 
   const orderedAbiEncodedClearValues = res[0] as BytesHex;
   const digest = res[1] as Bytes32Hex;
   const signersAddress = res[2] as readonly ChecksummedAddress[];
+  const threshold = Number(res[3]);
   const extraData = res[4] as BytesHex;
 
   return {
     orderedAbiEncodedClearValues,
     digest,
     signersAddress,
+    threshold,
     extraData,
   };
 }
@@ -152,16 +161,17 @@ export async function fetchPublicDecrypt(
   }
 
   const digest = res.digest;
-  const signersAddress = res.signersAddress;
   const signers = getKmsSignersPrivateKeyMap(relayerClient);
+  const responders = pickRespondingKmsSigners(res.signersAddress, res.threshold);
 
   const kmsPublicDecryptEip712Signatures: Bytes65Hex[] = [];
 
-  for (let i = 0; i < signersAddress.length; ++i) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const privateKey = signers.get(signersAddress[i]!);
+  for (const signerAddress of responders) {
+    const privateKey = signers.get(signerAddress);
     if (privateKey === undefined) {
-      throw new Error('Unable to find kms signer');
+      throw new Error(
+        `Unable to find KMS signer for address ${signerAddress} (${responders.length} of ${res.signersAddress.length} responding)`,
+      );
     }
 
     const signature = await cleartextEthereumModule.sign({ hash: digest, privateKey });

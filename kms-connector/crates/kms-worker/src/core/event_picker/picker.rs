@@ -5,6 +5,7 @@ use crate::{
 use anyhow::anyhow;
 use connector_utils::types::{ProtocolEvent, db::EventType, event};
 use sqlx::{Pool, Postgres};
+use std::collections::VecDeque;
 use tokio::sync::mpsc::{self, Receiver};
 use tracing::{debug, info, warn};
 
@@ -23,6 +24,9 @@ pub struct DbEventPicker {
     /// The receiver channel used to receive event notification.
     notif_receiver: Receiver<EventType>,
 
+    /// The event types that need to be picked, in FIFO order and without duplicates.
+    pending_event_types: VecDeque<EventType>,
+
     /// The limit number of events to fetch from the database.
     events_batch_size: u8,
 }
@@ -36,6 +40,7 @@ impl DbEventPicker {
         Self {
             db_pool,
             notif_receiver,
+            pending_event_types: VecDeque::new(),
             events_batch_size,
         }
     }
@@ -56,21 +61,35 @@ impl EventPicker for DbEventPicker {
 
     /// Picks events from the database.
     ///
+    /// Notifications are coalesced per event type to handle bursts:
+    /// - `drain_notifications` reads the received notifications off the channel, but
+    ///   `mark_pending` skips the types already queued, so 1000 notifications result in a single
+    ///   pick query.
+    /// - After a full batch, the type is re-queued at the back, as more events may be pending,
+    ///   giving the other types a chance to be picked first.
+    ///
     /// Should only return an error if the notification channel is closed, so the `kms_worker` can
     /// shutdown gracefully.
     /// If another error is encountered, it will just be logged with a warning and will wait for
     /// next events.
     async fn pick_events(&mut self) -> anyhow::Result<Vec<Self::Event>> {
         loop {
-            let Some(notification) = self.notif_receiver.recv().await else {
-                return Err(anyhow!("notification channel was closed!"));
-            };
+            if self.pending_event_types.is_empty() {
+                let Some(notification) = self.notif_receiver.recv().await else {
+                    return Err(anyhow!("notification channel was closed!"));
+                };
+                self.mark_pending(notification);
+            }
+            self.drain_notifications();
 
-            match self.pick_notified_events(&notification).await {
+            let Some(event_type) = self.pending_event_types.pop_front() else {
+                continue;
+            };
+            match self.pick_notified_events(&event_type).await {
                 Err(e) => {
                     warn!("Error while picking events: {e}");
                     EVENT_RECEIVED_ERRORS
-                        .with_label_values(&[notification.as_str()])
+                        .with_label_values(&[event_type.as_str()])
                         .inc();
                     continue;
                 }
@@ -79,9 +98,13 @@ impl EventPicker for DbEventPicker {
                     continue;
                 }
                 Ok(events) => {
-                    info!("Picked {} {} successfully", events.len(), notification);
+                    // A full batch means more events may still be pending: re-queue the event type.
+                    if events.len() >= self.batch_limit(&event_type) {
+                        self.mark_pending(event_type);
+                    }
+                    info!("Picked {} {} successfully", events.len(), event_type);
                     EVENT_RECEIVED_COUNTER
-                        .with_label_values(&[notification.as_str()])
+                        .with_label_values(&[event_type.as_str()])
                         .inc_by(events.len() as u64);
                     return Ok(events);
                 }
@@ -91,11 +114,44 @@ impl EventPicker for DbEventPicker {
 }
 
 impl DbEventPicker {
+    /// Moves the notifications already received into the `pending_event_types` queue, without
+    /// blocking.
+    ///
+    /// The drain is bounded by the channel capacity, so it cannot loop forever if notifications
+    /// keep coming. The remaining ones will be drained on the next pick.
+    ///
+    /// A closed channel is ignored here, it will be reported by `recv` once `pending_event_types` is
+    /// empty.
+    fn drain_notifications(&mut self) {
+        for _ in 0..self.notif_receiver.max_capacity() {
+            let Ok(notification) = self.notif_receiver.try_recv() else {
+                break;
+            };
+            self.mark_pending(notification);
+        }
+    }
+
+    fn mark_pending(&mut self, event_type: EventType) {
+        if !self.pending_event_types.contains(&event_type) {
+            self.pending_event_types.push_back(event_type);
+        }
+    }
+
+    /// The maximum number of events returned by a single pick query of the given event type.
+    fn batch_limit(&self, event_type: &EventType) -> usize {
+        match event_type {
+            EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
+                self.events_batch_size as usize
+            }
+            _ => 1,
+        }
+    }
+
     async fn pick_notified_events(
         &self,
-        notification: &EventType,
+        event_type: &EventType,
     ) -> anyhow::Result<Vec<ProtocolEvent>> {
-        match notification {
+        match event_type {
             EventType::PublicDecryptionRequest => self.pick_public_decryption_requests().await,
             EventType::UserDecryptionRequest => self.pick_user_decryption_requests().await,
             EventType::PrepKeygenRequest => self.pick_prep_keygen_requests().await,
@@ -361,5 +417,43 @@ impl DbEventPicker {
         .iter()
         .map(event::from_abort_crsgen_row)
         .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::postgres::PgPoolOptions;
+
+    #[tokio::test]
+    async fn test_notifications_are_coalesced_per_event_type() {
+        // The pool is never used, as no event is picked from the database
+        let db_pool = PgPoolOptions::new()
+            .connect_lazy("postgres://localhost")
+            .unwrap();
+        let (notif_sender, notif_receiver) = mpsc::channel(1001);
+        let mut event_picker = DbEventPicker::new(db_pool, notif_receiver, 50);
+
+        // A burst of public decryption notifications, followed by one user decryption
+        for _ in 0..1000 {
+            notif_sender
+                .send(EventType::PublicDecryptionRequest)
+                .await
+                .unwrap();
+        }
+        notif_sender
+            .send(EventType::UserDecryptionRequest)
+            .await
+            .unwrap();
+
+        // The user decryption must not be queued behind the 1000 public decryption notifications
+        event_picker.drain_notifications();
+        assert_eq!(
+            event_picker.pending_event_types,
+            [
+                EventType::PublicDecryptionRequest,
+                EventType::UserDecryptionRequest
+            ]
+        );
     }
 }

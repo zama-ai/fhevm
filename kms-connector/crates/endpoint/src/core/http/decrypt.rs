@@ -11,6 +11,7 @@
 //! 6. wait for the response listener to wake the waiter, then read the response row.
 
 use crate::core::{http::AppState, waiters::Waiter};
+use crate::monitoring::metrics;
 use actix_web::HttpResponse;
 use alloy::primitives::B256;
 use anyhow::anyhow;
@@ -22,11 +23,13 @@ use sqlx::{
     types::chrono::{DateTime, Utc},
 };
 use std::{future::Future, sync::Arc};
+use strum::{IntoStaticStr, VariantNames};
 use tokio::time::Instant;
 use tracing::{debug, info, warn};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 pub trait DecryptionRoute {
+    const ROUTE: &'static str;
     type Request;
     type ResponseRow;
 
@@ -56,16 +59,32 @@ pub trait DecryptionRoute {
 }
 
 /// Outcome of the lookup transaction of [`find_response_or_store_request`].
+///
+/// Its variant names give the `outcome` label of [`metrics::DECRYPTION_LOOKUP_COUNTER`].
+#[derive(IntoStaticStr, VariantNames)]
+#[strum(serialize_all = "snake_case")]
 enum LookupOutcome<Row> {
     /// A payload or an irrecoverable error within its serve window to serve as is.
+    #[strum(serialize = "served")]
     Serve(Row),
     /// The request is stored for processing, its response has to be waited for.
     Stored,
     /// The request is stored for reprocessing, after a recoverable or expired error was skipped.
+    #[strum(serialize = "retried")]
     Retry {
         old_response_created_at: DateTime<Utc>,
     },
+    /// The kms-worker is already processing the request, we're waiting for the response.
+    ///
+    /// An old error row is skipped when another request already reset the request after that
+    /// error.
+    AlreadyInProgress {
+        old_response_created_at: Option<DateTime<Utc>>,
+    },
 }
+
+/// Every `outcome` label of [`metrics::DECRYPTION_LOOKUP_COUNTER`].
+pub(crate) const LOOKUP_OUTCOME_LABELS: &[&str] = LookupOutcome::<()>::VARIANTS;
 
 /// Handles a validated decryption request.
 pub async fn handle<R: DecryptionRoute>(
@@ -91,16 +110,21 @@ pub async fn handle<R: DecryptionRoute>(
             upstream_transient("temporary storage error", id)
         })?;
 
-    let row = match lookup {
-        LookupOutcome::Serve(row) => row,
-        LookupOutcome::Stored => wait_and_read_response::<R>(state, id, &mut waiter, None).await?,
+    let label: &str = (&lookup).into();
+    metrics::DECRYPTION_LOOKUP_COUNTER
+        .with_label_values(&[R::ROUTE, label])
+        .inc();
+    let old_response_created_at = match lookup {
+        LookupOutcome::Serve(row) => return R::build_response(id, row),
+        LookupOutcome::Stored => None,
         LookupOutcome::Retry {
             old_response_created_at,
-        } => {
-            wait_and_read_response::<R>(state, id, &mut waiter, Some(old_response_created_at))
-                .await?
-        }
+        } => Some(old_response_created_at),
+        LookupOutcome::AlreadyInProgress {
+            old_response_created_at,
+        } => old_response_created_at,
     };
+    let row = wait_and_read_response::<R>(state, id, &mut waiter, old_response_created_at).await?;
 
     R::build_response(id, row)
 }
@@ -136,20 +160,28 @@ async fn find_response_or_store_request<R: DecryptionRoute>(
 
     let otlp_ctx = PropagationContext::inject(&tracing::Span::current().context());
     let result = R::upsert_request(&mut *tx, id, request, &otlp_ctx).await?;
-    match (result.rows_affected(), old_response_created_at.is_some()) {
-        (1, true) => info!(decryption_id = %id, "Retrying failed decryption request"),
-        (1, false) => info!(decryption_id = %id, "Decryption request stored in DB"),
-        (0, _) => debug!(decryption_id = %id, "Decryption request already in progress, attaching"),
+    let outcome = match (result.rows_affected(), old_response_created_at) {
+        (1, Some(old_response_created_at)) => {
+            info!(decryption_id = %id, "Retrying failed decryption request");
+            LookupOutcome::Retry {
+                old_response_created_at,
+            }
+        }
+        (1, None) => {
+            info!(decryption_id = %id, "Decryption request stored in DB");
+            LookupOutcome::Stored
+        }
+        (0, old_response_created_at) => {
+            debug!(decryption_id = %id, "Decryption request already in progress, attaching");
+            LookupOutcome::AlreadyInProgress {
+                old_response_created_at,
+            }
+        }
         (n, _) => return Err(anyhow!("unexpected upsert result: {n} rows affected")),
-    }
+    };
 
     tx.commit().await?;
-    match old_response_created_at {
-        Some(old_response_created_at) => Ok(LookupOutcome::Retry {
-            old_response_created_at,
-        }),
-        None => Ok(LookupOutcome::Stored),
-    }
+    Ok(outcome)
 }
 
 /// Waits for the response of `id` and reads it, within `Config::decryption_timeout` overall.
@@ -162,8 +194,9 @@ async fn wait_and_read_response<R: DecryptionRoute>(
     waiter: &mut Waiter,
     old_response_created_at: Option<DateTime<Utc>>,
 ) -> Result<R::ResponseRow, ErrorResponse> {
+    let started_at = Instant::now();
     let timeout = state.config.decryption_timeout;
-    let deadline = Instant::now() + timeout;
+    let deadline = started_at + timeout;
     loop {
         let wake_signal = tokio::time::timeout_at(deadline, waiter.wait())
             .await
@@ -199,6 +232,9 @@ async fn wait_and_read_response<R: DecryptionRoute>(
             debug!(decryption_id = %id, "Woken up by the stale error row, waiting again");
             continue;
         }
+        metrics::DECRYPTION_WAIT_LATENCY_HISTOGRAM
+            .with_label_values(&[R::ROUTE])
+            .observe(started_at.elapsed().as_secs_f64());
         return Ok(row);
     }
 }
