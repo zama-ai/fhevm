@@ -1,0 +1,14 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.confirm-target
+  name: Fixture confirm-target
+  owner: qa
+  description: Engine test fixture (confirm-target).
+  tags: [fixture, planner]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30
+  targets: [fx-confirm]

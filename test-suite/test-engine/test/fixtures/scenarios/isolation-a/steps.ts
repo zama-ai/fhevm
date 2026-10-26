@@ -1,9 +1,10 @@
-import { Then, World, setDefaultTimeout, setWorldConstructor } from '@cucumber/cucumber';
+import { EngineWorld } from '#engine';
+import { Then, type World, setDefaultTimeout, setWorldConstructor } from '@cucumber/cucumber';
 import assert from 'node:assert/strict';
 
 // Registered globally in this process. If scenario B shared the process, it would get this
 // World, this 200 ms timeout, and an ambiguous definition for the step below.
-class WorldA extends World {}
+class WorldA extends EngineWorld {}
 setWorldConstructor(WorldA);
 setDefaultTimeout(200);
 

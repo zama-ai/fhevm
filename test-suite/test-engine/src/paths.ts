@@ -10,7 +10,9 @@ export const DIST_DIR = path.join(PACKAGE_ROOT, 'dist');
 
 export const DEFAULT_SCENARIOS_DIR = path.join(PACKAGE_ROOT, 'scenarios');
 export const DEFAULT_REPORTS_DIR = path.join(PACKAGE_ROOT, 'reports');
+export const DEFAULT_PROFILES_DIR = path.join(PACKAGE_ROOT, 'profiles');
 export const MANIFEST_SCHEMA_PATH = path.join(PACKAGE_ROOT, 'schema', 'scenario.v1.schema.json');
+export const PROFILE_SCHEMA_PATH = path.join(PACKAGE_ROOT, 'schema', 'profile.v1.schema.json');
 
 /** Compiled entry point of the scenario worker process. */
 export const WORKER_ENTRY = path.join(DIST_DIR, 'src', 'runner', 'worker.js');

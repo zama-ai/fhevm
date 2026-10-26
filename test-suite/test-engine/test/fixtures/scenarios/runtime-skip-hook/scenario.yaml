@@ -1,0 +1,13 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.runtime-skip-hook
+  name: Fixture runtime-skip-hook
+  owner: qa
+  description: Engine test fixture (runtime-skip-hook).
+  tags: [fixture, runtime-skip]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30

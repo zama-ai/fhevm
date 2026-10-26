@@ -1,6 +1,9 @@
 import {
+  AttachmentContentEncoding,
   type Envelope,
   type GherkinDocument,
+  type Hook,
+  HookType,
   type Pickle,
   type Step,
   type TestCase,
@@ -11,6 +14,10 @@ import {
   TimeConversion,
   getWorstTestStepResult,
 } from '@cucumber/messages';
+
+import { EVIDENCE_MEDIA_TYPE, type EvidencePayload } from '../api/evidence.js';
+import type { RunMode } from '../runner/types.js';
+import { findExecutionProblems, parseEnvelopes } from './execution-problems.js';
 
 /**
  * Turns the canonical Cucumber message stream (NDJSON) of one scenario into a compact,
@@ -24,9 +31,13 @@ export interface StepReport {
   keyword: string;
   text: string;
   line?: number;
+  /** Hooks only: where the hook is defined. */
+  source?: string;
   status: StepStatus;
   durationMs: number;
   error?: string;
+  /** Evidence recorded while this step or hook was running. */
+  evidence?: EvidencePayload[];
 }
 
 export interface TestCaseReport {
@@ -34,7 +45,7 @@ export interface TestCaseReport {
   uri: string;
   line?: number;
   tags: string[];
-  /** `unknown` when the test case never started (e.g. the worker was killed earlier). */
+  /** `unknown` when the test case never started or never finished (e.g. the worker was killed). */
   status: StepStatus;
   durationMs: number;
   attempt: number;
@@ -45,7 +56,7 @@ export interface CucumberExecution {
   /** From `testRunFinished`; undefined when the stream ended before the run finished. */
   success?: boolean;
   testCases: TestCaseReport[];
-  /** Problems that are not tied to a single step result: parse errors, undefined steps, etc. */
+  /** Problems not tied to a single step result: parse errors, undefined steps, runtime skips, etc. */
   issues: string[];
   stepDefinitionCount: number;
 }
@@ -53,9 +64,18 @@ export interface CucumberExecution {
 const toStatus = (status: TestStepResultStatus): StepStatus => status.toLowerCase() as StepStatus;
 const toMs = (result: TestStepResult): number => TimeConversion.durationToMilliseconds(result.duration);
 
-function indexGherkinSteps(document: GherkinDocument, steps: Map<string, Step>, lines: Map<string, number>): void {
+const HOOK_KEYWORDS: Partial<Record<HookType, string>> = {
+  [HookType.BEFORE_TEST_CASE]: 'Before',
+  [HookType.AFTER_TEST_CASE]: 'After',
+  [HookType.BEFORE_TEST_STEP]: 'BeforeStep',
+  [HookType.AFTER_TEST_STEP]: 'AfterStep',
+};
+
+type GherkinScenario = NonNullable<NonNullable<GherkinDocument['feature']>['children'][number]['scenario']>;
+
+function indexGherkin(document: GherkinDocument, steps: Map<string, Step>, lines: Map<string, number>): void {
   const visitSteps = (list: readonly Step[]) => list.forEach((step) => steps.set(step.id, step));
-  const visitScenarioLike = (child: { background?: { steps: readonly Step[] }; scenario?: GherkinScenario }) => {
+  const visit = (child: { background?: { steps: readonly Step[] }; scenario?: GherkinScenario }) => {
     if (child.background) visitSteps(child.background.steps);
     if (child.scenario) {
       lines.set(child.scenario.id, child.scenario.location.line);
@@ -66,41 +86,53 @@ function indexGherkinSteps(document: GherkinDocument, steps: Map<string, Step>, 
     }
   };
   for (const child of document.feature?.children ?? []) {
-    visitScenarioLike(child);
-    child.rule?.children.forEach(visitScenarioLike);
+    visit(child);
+    child.rule?.children.forEach(visit);
   }
 }
 
-type GherkinScenario = NonNullable<NonNullable<GherkinDocument['feature']>['children'][number]['scenario']>;
+function readEvidence(body: string, encoding: AttachmentContentEncoding): EvidencePayload | undefined {
+  try {
+    const text = encoding === AttachmentContentEncoding.BASE64 ? Buffer.from(body, 'base64').toString('utf8') : body;
+    const payload = JSON.parse(text) as EvidencePayload;
+    return typeof payload.kind === 'string' && typeof payload.data === 'object' ? payload : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
-export function parseMessages(ndjson: string): CucumberExecution {
+function hookSource(hook: Hook | undefined): string | undefined {
+  const reference = hook?.sourceReference;
+  return reference?.uri ? `${reference.uri}:${reference.location?.line ?? '?'}` : undefined;
+}
+
+export function parseMessages(ndjson: string, mode: RunMode): CucumberExecution {
+  const { envelopes, unreadable } = parseEnvelopes(ndjson);
+  return buildExecution(envelopes, mode, unreadable);
+}
+
+export function buildExecution(envelopes: readonly Envelope[], mode: RunMode, unreadable = 0): CucumberExecution {
   const pickles = new Map<string, Pickle>();
   const testCases: TestCase[] = [];
   const gherkinSteps = new Map<string, Step>();
   const astLines = new Map<string, number>();
-  const hookNames = new Map<string, string>();
+  const hooks = new Map<string, Hook>();
   /** Last attempt per test case. */
   const startedByTestCase = new Map<string, TestCaseStarted>();
   const finishedAt = new Map<string, number>();
   const stepResults = new Map<string, Map<string, TestStepFinished>>();
-  const issues: string[] = [];
+  /** testCaseStartedId → testStepId → evidence. */
+  const evidence = new Map<string, Map<string, EvidencePayload[]>>();
+  const issues: string[] = findExecutionProblems(envelopes, mode).map((problem) => problem.message);
   let success: boolean | undefined;
   let stepDefinitionCount = 0;
-  let unreadable = 0;
+  let unreadableEvidence = 0;
 
-  for (const line of ndjson.split('\n')) {
-    if (line.trim() === '') continue;
-    let envelope: Envelope;
-    try {
-      envelope = JSON.parse(line) as Envelope;
-    } catch {
-      unreadable += 1;
-      continue;
-    }
-    if (envelope.gherkinDocument) indexGherkinSteps(envelope.gherkinDocument, gherkinSteps, astLines);
+  for (const envelope of envelopes) {
+    if (envelope.gherkinDocument) indexGherkin(envelope.gherkinDocument, gherkinSteps, astLines);
     else if (envelope.pickle) pickles.set(envelope.pickle.id, envelope.pickle);
     else if (envelope.stepDefinition) stepDefinitionCount += 1;
-    else if (envelope.hook) hookNames.set(envelope.hook.id, envelope.hook.name ?? `${envelope.hook.type ?? 'hook'}`);
+    else if (envelope.hook) hooks.set(envelope.hook.id, envelope.hook);
     else if (envelope.testCase) testCases.push(envelope.testCase);
     else if (envelope.testCaseStarted)
       startedByTestCase.set(envelope.testCaseStarted.testCaseId, envelope.testCaseStarted);
@@ -114,12 +146,16 @@ export function parseMessages(ndjson: string): CucumberExecution {
         envelope.testCaseFinished.testCaseStartedId,
         TimeConversion.timestampToMillisecondsSinceEpoch(envelope.testCaseFinished.timestamp),
       );
-    } else if (envelope.parseError) {
-      const { source, message } = envelope.parseError;
-      issues.push(`Parse error in ${source.uri ?? 'unknown source'}: ${message}`);
-    } else if (envelope.undefinedParameterType) {
-      const { name, expression } = envelope.undefinedParameterType;
-      issues.push(`Undefined parameter type {${name}} used in '${expression}'`);
+    } else if (envelope.attachment?.mediaType === EVIDENCE_MEDIA_TYPE) {
+      const { testCaseStartedId, testStepId, body, contentEncoding } = envelope.attachment;
+      const payload = readEvidence(body, contentEncoding);
+      if (!payload || !testCaseStartedId || !testStepId) {
+        unreadableEvidence += 1;
+        continue;
+      }
+      const byStep = evidence.get(testCaseStartedId) ?? new Map<string, EvidencePayload[]>();
+      byStep.set(testStepId, [...(byStep.get(testStepId) ?? []), payload]);
+      evidence.set(testCaseStartedId, byStep);
     } else if (envelope.testRunHookFinished) {
       const { result } = envelope.testRunHookFinished;
       if (result.status !== TestStepResultStatus.PASSED) {
@@ -133,6 +169,7 @@ export function parseMessages(ndjson: string): CucumberExecution {
     }
   }
   if (unreadable > 0) issues.push(`${unreadable} unreadable message line(s); the stream is probably truncated`);
+  if (unreadableEvidence > 0) issues.push(`${unreadableEvidence} unreadable evidence attachment(s)`);
 
   const reports = testCases.flatMap((testCase): TestCaseReport[] => {
     const pickle = pickles.get(testCase.pickleId);
@@ -140,41 +177,43 @@ export function parseMessages(ndjson: string): CucumberExecution {
     const pickleSteps = new Map(pickle.steps.map((step) => [step.id, step]));
     const started = startedByTestCase.get(testCase.id);
     const results = started ? stepResults.get(started.id) : undefined;
+    const stepEvidence = started ? evidence.get(started.id) : undefined;
 
     const steps = testCase.testSteps.flatMap((testStep): StepReport[] => {
       const finished = results?.get(testStep.id);
       const status: StepStatus = finished ? toStatus(finished.testStepResult.status) : 'unknown';
-      const durationMs = finished ? toMs(finished.testStepResult) : 0;
-      const error = finished?.testStepResult.message;
+      const recorded = stepEvidence?.get(testStep.id);
+      const common = {
+        status,
+        durationMs: finished ? toMs(finished.testStepResult) : 0,
+        ...(finished?.testStepResult.message ? { error: finished.testStepResult.message } : {}),
+        ...(recorded ? { evidence: recorded } : {}),
+      };
       if (testStep.hookId !== undefined) {
-        // Passing hooks are plumbing; only surface hooks that did not pass.
-        if (status === 'passed' || (status === 'unknown' && !started)) return [];
+        // Passing hooks are plumbing; only surface hooks that did not pass or that recorded evidence.
+        if (!recorded && (status === 'passed' || (status === 'unknown' && !started))) return [];
+        const hook = hooks.get(testStep.hookId);
+        const source = hookSource(hook);
         return [
           {
             kind: 'hook',
-            keyword: 'Hook',
-            text: hookNames.get(testStep.hookId) ?? 'hook',
-            status,
-            durationMs,
-            ...(error ? { error } : {}),
+            keyword: (hook?.type && HOOK_KEYWORDS[hook.type]) ?? 'Hook',
+            text: hook?.name ?? 'hook',
+            ...(source ? { source } : {}),
+            ...common,
           },
         ];
       }
       const pickleStep = testStep.pickleStepId ? pickleSteps.get(testStep.pickleStepId) : undefined;
       const gherkinStep = pickleStep ? gherkinSteps.get(pickleStep.astNodeIds[0] ?? '') : undefined;
-      const text = pickleStep?.text ?? '';
       const line = gherkinStep?.location.line;
-      if (status === 'undefined') issues.push(`Undefined step: "${text}" (${pickle.uri}:${line ?? '?'})`);
-      if (status === 'ambiguous') issues.push(`Ambiguous step: "${text}" (${pickle.uri}:${line ?? '?'})`);
       return [
         {
           kind: 'step',
           keyword: gherkinStep?.keyword.trim() ?? '',
-          text,
+          text: pickleStep?.text ?? '',
           ...(line !== undefined ? { line } : {}),
-          status,
-          durationMs,
-          ...(error ? { error } : {}),
+          ...common,
         },
       ];
     });

@@ -1,0 +1,4 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata: { name: another-name, description: Invalid fixture. }
+spec: {}
