@@ -92,6 +92,7 @@ sqlx = { version = "=0.8.6", default-features = false, features = [
     "runtime-tokio",
     "tls-rustls",
 ] }
+strum  = { version = "0.28", default-features = false, features = ["derive"] }
 thiserror = { version = "=2.0.20", default-features = false }
 tokio = { version = "=1.47.1", default-features = false, features = [
     "macros",

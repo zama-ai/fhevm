@@ -172,6 +172,7 @@ impl TestProxy {
         let mut config = Self::config(addr, &tls, endpoint_addresses);
         customize(&mut config);
         let (proxy, state) = Proxy::from_config(config).unwrap();
+        proxy.register_metrics();
         std::thread::spawn(move || proxy.run());
 
         let client = Client::builder()
