@@ -707,9 +707,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             .await;
             if let Err(HandlerError::Transient(error)) = &result {
                 if let Some(gap) = error.downcast_ref::<HistoryGap>() {
-                    // Empty blocks are delivered too. The separate catchup
-                    // queue can attach this link while the original delivery
-                    // waits for redelivery on the live/finalized queue.
                     // Persist intent before publication so replay admission
                     // accepts the repair. Retries reuse an ongoing absolute
                     // request without replacing any manual catchup.
@@ -733,6 +730,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                     )
                     .await
                     .map_err(|error| HandlerError::Transient(error.into()))?;
+                    // Missing history is a dependency wait. Keep the delivery
+                    // pending without opening the circuit breaker, so the
+                    // repair can be consumed on this same catchup queue.
+                    return Ok(AckDecision::Nack);
                 }
             }
             let decision = result?;
