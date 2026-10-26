@@ -93,9 +93,11 @@ sooner never sends one. The pod's `terminationGracePeriodSeconds` is the delay p
 ### Deployment requirement
 
 The proxy authenticates every request before forwarding it, but it does not protect its own
-connections from a client that holds them open. Pingora 0.9 caps neither the number of connections
-nor the time a client takes to send a request head, accepts request heads of up to 1 MiB, and waits
-up to 60 s for a TLS handshake. The proxy must therefore not be reachable directly from the
+connections from a client that holds them open. It closes a client connection that stays idle 15 s
+between two requests. Pingora 0.9 caps neither the number of connections nor the total time a
+client takes to send a request head: each read of it waits up to 60 s on a new connection and 15 s
+on a reused one, so a client that sends a byte at a time holds the connection. Pingora accepts
+request heads of up to 1 MiB, and waits up to 60 s for a TLS handshake. The proxy must therefore not be reachable directly from the
 internet. Put it behind one of:
 
 - an HTTP-aware layer that terminates the client's TLS connection, receives each request in full
@@ -106,6 +108,10 @@ internet. Put it behind one of:
 
 The proxy speaks HTTP/1.1 to its clients, so each request a connector holds open takes one
 connection: a per-client connection limit must allow the connector's concurrent PRF requests.
+
+A connector's pool must close its idle connections to the proxy sooner than the proxy does, for
+example after 10 s. Otherwise a request sent as the proxy closes the connection fails with a
+connection error, which the connector then has to retry.
 
 A TCP (layer 4) load balancer without an allowlist is not enough: it forwards slow and idle
 connections to the proxy unchanged. Every timeout of that layer must also exceed the connector's

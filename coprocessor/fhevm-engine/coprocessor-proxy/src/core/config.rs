@@ -88,14 +88,6 @@ pub struct Config {
     )]
     pub prf_service_idle_timeout: Duration,
 
-    /// How long the proxy waits for the client to send request bytes before dropping it.
-    #[arg(
-        long,
-        env = "COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT",
-        default_value = "30s",
-        value_parser = parse_non_zero_duration
-    )]
-    pub request_read_timeout: Duration,
     /// How long the proxy keeps accepting connections after `SIGTERM`, closing each one after its
     /// next response, before the shutdown grace period starts. Behind a Kubernetes Service, it must
     /// exceed the time the pod's removal takes to reach every node.
@@ -239,7 +231,6 @@ mod tests {
             ("COPROCESSOR_PROXY_PRF_SERVICE_CONNECT_TIMEOUT", "1s"),
             ("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "45s"),
             ("COPROCESSOR_PROXY_PRF_SERVICE_IDLE_TIMEOUT", "7s"),
-            ("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT", "12s"),
             ("COPROCESSOR_PROXY_SHUTDOWN_DELAY", "9s"),
             ("OTEL_SERVICE_NAME", "coprocessor-proxy-test"),
             ("COPROCESSOR_PROXY_LOG_LEVEL", "debug"),
@@ -277,7 +268,6 @@ mod tests {
         assert_eq!(config.prf_service_connect_timeout, Duration::from_secs(1));
         assert_eq!(config.prf_service_response_timeout, Duration::from_secs(45));
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(7));
-        assert_eq!(config.request_read_timeout, Duration::from_secs(12));
         assert_eq!(config.shutdown_delay, Duration::from_secs(9));
         assert_eq!(config.service_name, "coprocessor-proxy-test");
         assert_eq!(config.log_level, Level::DEBUG);

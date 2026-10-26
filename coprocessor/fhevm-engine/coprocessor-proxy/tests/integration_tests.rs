@@ -13,7 +13,7 @@ use common::{
     auth_header_expiring, auth_header_for, now, prf_path, rate_limited_path, sender,
     stub_attestation, stub_output,
 };
-use coprocessor_proxy::core::UNKNOWN_SIGNER_WAIT;
+use coprocessor_proxy::core::{CLIENT_IDLE_TIMEOUT, UNKNOWN_SIGNER_WAIT};
 use coprocessor_proxy::kms_tx_senders::WOKEN_POLL_SPACING;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
@@ -587,6 +587,45 @@ async fn test_refuses_an_unknown_signer_after_the_wait() {
 }
 
 #[tokio::test]
+async fn test_closes_client_connections_idle_between_requests() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let t = TestProxy::start(StubPrfService::start().await).await;
+    let path = prf_path(1);
+    let addr = t.addr;
+    let auth = auth_header(&sender(), &path, b"").await;
+    let mut stream = t.tls.connect(t.addr).await;
+
+    // A forwarded request, then one the proxy answers itself, on the same connection.
+    for (request, status) in [
+        (
+            format!("GET {path} HTTP/1.1\r\nHost: {addr}\r\nAuthorization: {auth}\r\n\r\n"),
+            "200",
+        ),
+        (format!("GET / HTTP/1.1\r\nHost: {addr}\r\n\r\n"), "404"),
+    ] {
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let response = read_one_response(&mut stream).await;
+        assert!(
+            response.starts_with(&format!("HTTP/1.1 {status}")),
+            "{response}"
+        );
+    }
+
+    let idle = Instant::now();
+    let mut byte = [0u8; 1];
+    let read = tokio::time::timeout(Duration::from_secs(20), stream.read(&mut byte)).await;
+    // The server closes, without a TLS `close_notify` or with one.
+    assert!(matches!(read, Ok(Ok(0) | Err(_))), "{read:?}");
+    let closed_after = idle.elapsed();
+    assert!(
+        closed_after >= CLIENT_IDLE_TIMEOUT - Duration::from_millis(500)
+            && closed_after < CLIENT_IDLE_TIMEOUT + Duration::from_secs(2),
+        "{closed_after:?}"
+    );
+}
+
+#[tokio::test]
 async fn test_counts_requests_by_route_and_status() {
     let t = TestProxy::start(StubPrfService::start().await).await;
     let count = |route: &str, status: &str| {
@@ -645,6 +684,35 @@ async fn send_raw(t: &TestProxy, request: &[u8]) -> StatusCode {
         .nth(1)
         .and_then(|status| StatusCode::from_bytes(status.as_bytes()).ok())
         .unwrap_or_else(|| panic!("unexpected response: {response}"))
+}
+
+/// Reads one response with a `Content-Length` body, leaving the connection open.
+async fn read_one_response(
+    stream: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+) -> String {
+    use tokio::io::AsyncReadExt;
+
+    let mut response = Vec::new();
+    let mut byte = [0u8; 1];
+    while !response.ends_with(b"\r\n\r\n") {
+        assert_eq!(
+            stream.read(&mut byte).await.unwrap(),
+            1,
+            "connection closed"
+        );
+        response.push(byte[0]);
+    }
+    let head = String::from_utf8_lossy(&response).to_ascii_lowercase();
+    let length: usize = head
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length: "))
+        .expect("content-length")
+        .trim()
+        .parse()
+        .unwrap();
+    let mut body = vec![0u8; length];
+    stream.read_exact(&mut body).await.unwrap();
+    String::from_utf8_lossy(&response).into_owned()
 }
 
 /// Sends raw request bytes over TLS and returns the whole response, read until the server closes,

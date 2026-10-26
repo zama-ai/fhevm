@@ -49,6 +49,10 @@ const PROXY_CONNECTION: HeaderName = HeaderName::from_static("proxy-connection")
 // those lack it: an unparsable request head (`400`) and `CONNECT` (`405`).
 const NO_STORE: &str = "no-store";
 
+/// How long a client connection can stay idle between two requests. Pingora otherwise waits for the
+/// next request on a reused connection without a limit.
+pub const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(15);
+
 /// How long a request signed by an unknown signer waits for a poll of the KMS tx-senders that
 /// started after it, before it is checked again.
 pub const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
@@ -110,10 +114,11 @@ impl ProxyHttp for Proxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
-        session.set_read_timeout(Some(self.config.request_read_timeout));
         // The client's next connection goes through the Service, to a replica that is not stopping.
         if self.draining.load(Ordering::Relaxed) {
             session.set_keepalive(None);
+        } else {
+            session.set_keepalive(Some(CLIENT_IDLE_TIMEOUT.as_secs()));
         }
         Ok(())
     }
