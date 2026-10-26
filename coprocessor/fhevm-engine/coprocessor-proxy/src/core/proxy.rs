@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::core::TlsConfig;
 use crate::{core::Config, kms_tx_senders::Follower, monitoring::health};
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use anyhow::{Context, anyhow};
@@ -71,9 +69,9 @@ impl<P: Provider> BackgroundService for Follower<P> {
     }
 }
 
-/// How long in-flight connections are given to finish once the graceful shutdown deadline (
-/// [`Config::shutdown_grace_period`]) has passed, before Pingora forcibly closes them. The chart's
-/// `terminationGracePeriodSeconds` (coprocessor-proxy-deployment.yaml) includes it.
+/// How long in-flight connections are given to finish once the shutdown grace period has passed,
+/// before Pingora forcibly closes them. The chart's `terminationGracePeriodSeconds`
+/// (coprocessor-proxy-deployment.yaml) includes it.
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
 
 impl Proxy {
@@ -94,7 +92,7 @@ impl Proxy {
                 .erased(),
             config.protocol_config_address,
             signers.clone(),
-            config.kms_registry_poll_interval,
+            config.kms_registry_refresh_interval,
         );
         let state = health::State::new(
             config.bind_address,
@@ -131,8 +129,14 @@ impl Proxy {
 
     /// Builds the Pingora server.
     fn build_server(self) -> anyhow::Result<Server> {
+        // The grace lets a request held for the whole response timeout complete.
+        let grace = self
+            .config
+            .prf_service_response_timeout
+            .as_millis()
+            .div_ceil(1000);
         let server_conf = ServerConf {
-            grace_period_seconds: Some(self.config.shutdown_grace_period.as_secs()),
+            grace_period_seconds: Some(grace as u64),
             graceful_shutdown_timeout_seconds: Some(GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS),
             ..ServerConf::default()
         };
@@ -140,9 +144,8 @@ impl Proxy {
         server.bootstrap();
 
         let listen_addr = self.config.bind_address.to_string();
-        let tls_config = &self.config.tls_config;
-        let cert_path = path_to_str(&tls_config.cert_path)?;
-        let key_path = path_to_str(&tls_config.key_path)?;
+        let cert_path = path_to_str(&self.config.tls_cert_path)?;
+        let key_path = path_to_str(&self.config.tls_key_path)?;
         let tls = TlsSettings::intermediate(cert_path, key_path)
             .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
         // OpenSSL silently drops a private key that does not match the certificate loaded after
@@ -174,6 +177,7 @@ fn path_to_str(path: &std::path::Path) -> anyhow::Result<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
     use rstest::rstest;
     use std::{fs, path::PathBuf};
 
@@ -211,14 +215,18 @@ mod tests {
     #[case::mismatched_key("tls.key", key_pem())]
     fn build_server_rejects_invalid_tls_material(#[case] overwrite: &str, #[case] content: String) {
         let dir = tls_dir(overwrite, &content);
-        let config = Config {
-            tls_config: TlsConfig {
-                cert_path: dir.join("tls.crt"),
-                key_path: dir.join("tls.key"),
-            },
-            prf_service_address: "127.0.0.1:1".parse().unwrap(),
-            ..Config::default()
-        };
+        let config = Config::parse_from([
+            "coprocessor-proxy".as_ref(),
+            "--tls-cert-path".as_ref(),
+            dir.join("tls.crt").as_os_str(),
+            "--tls-key-path".as_ref(),
+            dir.join("tls.key").as_os_str(),
+            "--ethereum-chain-id=1".as_ref(),
+            "--protocol-config-address=0x0000000000000000000000000000000000000000".as_ref(),
+            "--ethereum-rpc-url=http://localhost:8545".as_ref(),
+            "--coprocessor-signer-address=0x0000000000000000000000000000000000000000".as_ref(),
+            "--prf-service-address=127.0.0.1:1".as_ref(),
+        ]);
 
         let (proxy, _state) = Proxy::from_config(config).unwrap();
         let error = match proxy.build_server() {

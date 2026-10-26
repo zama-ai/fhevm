@@ -38,10 +38,9 @@ impl ProxyProcess {
         let log = fs::File::create(&log_path).unwrap();
         let mut child = Command::new(env!("CARGO_BIN_EXE_coprocessor-proxy"))
             .kill_on_drop(true)
-            .arg("start")
             .env("COPROCESSOR_PROXY_BIND_ADDRESS", addr.to_string())
-            .env("COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH", &tls.cert_path)
-            .env("COPROCESSOR_PROXY_TLS_CONFIG__KEY_PATH", &tls.key_path)
+            .env("COPROCESSOR_PROXY_TLS_CERT_PATH", &tls.cert_path)
+            .env("COPROCESSOR_PROXY_TLS_KEY_PATH", &tls.key_path)
             .env("COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID", CHAIN_ID.to_string())
             .env(
                 "COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS",
@@ -159,10 +158,7 @@ async fn sigterm_drains_a_held_request_and_exits_cleanly() {
     let mut proxy = ProxyProcess::start(
         &prf_service,
         &rpc,
-        &[
-            ("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "20s"),
-            ("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD", "5s"),
-        ],
+        &[("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "5s")],
     )
     .await;
     let path = prf_path(1);
@@ -209,7 +205,7 @@ async fn sigterm_keeps_serving_with_connection_close_for_the_shutdown_delay() {
         &rpc,
         &[
             ("COPROCESSOR_PROXY_SHUTDOWN_DELAY", "3s"),
-            ("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD", "1s"),
+            ("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "1s"),
         ],
     )
     .await;
@@ -275,7 +271,7 @@ async fn logs_never_carry_the_signed_authorization() {
             &rpc,
             &[
                 ("COPROCESSOR_PROXY_LOG_LEVEL", level),
-                ("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD", "1s"),
+                ("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "1s"),
             ],
         )
         .await;

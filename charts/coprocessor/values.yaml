@@ -1922,8 +1922,8 @@ coprocessorProxy:
     # More ingress rules for those pods, e.g. Prometheus scraping their metrics port.
     extraIngress: []
 
-  # Additional environment variables, e.g. COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL.
-  # coprocessor/fhevm-engine/coprocessor-proxy/config/proxy.toml lists every setting.
+  # Additional environment variables, e.g. COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL.
+  # `coprocessor-proxy --help` lists every setting and its variable.
   env: []
 
   tracing:

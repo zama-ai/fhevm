@@ -16,8 +16,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use clap::Parser;
 use coprocessor_proxy::{
-    core::{Config, Proxy, TlsConfig},
+    core::{Config, Proxy},
     monitoring::health,
 };
 use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
@@ -481,22 +482,21 @@ impl TestProxy {
         rpc: &FakeRpc,
         prf_service_address: Authority,
     ) -> Config {
-        Config {
-            bind_address: addr,
-            tls_config: TlsConfig {
-                cert_path: tls.cert_path.clone(),
-                key_path: tls.key_path.clone(),
-            },
-            ethereum_chain_id: CHAIN_ID,
-            protocol_config_address: PROTOCOL_CONFIG,
-            ethereum_rpc_url: rpc.url.clone(),
-            kms_registry_poll_interval: POLL_INTERVAL,
-            coprocessor_signer_address: AUDIENCE,
-            prf_service_address,
-            prf_service_connect_timeout: Duration::from_millis(500),
-            healthcheck_timeout: Duration::from_secs(2),
-            ..Config::default()
-        }
+        let mut config = Config::parse_from([
+            "coprocessor-proxy".to_string(),
+            format!("--bind-address={addr}"),
+            format!("--tls-cert-path={}", tls.cert_path.display()),
+            format!("--tls-key-path={}", tls.key_path.display()),
+            format!("--ethereum-chain-id={CHAIN_ID}"),
+            format!("--protocol-config-address={PROTOCOL_CONFIG}"),
+            format!("--ethereum-rpc-url={}", rpc.url),
+            format!("--coprocessor-signer-address={AUDIENCE}"),
+            format!("--prf-service-address={prf_service_address}"),
+            "--prf-service-connect-timeout=500ms".to_string(),
+            "--healthcheck-timeout=2s".to_string(),
+        ]);
+        config.kms_registry_refresh_interval = POLL_INTERVAL;
+        config
     }
 
     pub fn url(&self, route: &str) -> String {

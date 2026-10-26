@@ -62,8 +62,9 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      # The shutdown delay and grace period, the proxy's GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS (5 s,
-      # coprocessor-proxy/src/core/proxy.rs) to close what is left, and 5 s margin.
+      # The shutdown delay, the grace period (the proxy's prf-service response timeout), the proxy's
+      # GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS (5 s, coprocessor-proxy/src/core/proxy.rs) to close what is
+      # left, and 5 s margin.
       terminationGracePeriodSeconds: {{ add (int $proxy.shutdownDelaySeconds) (int $proxy.prfServiceResponseTimeoutSeconds) 5 5 }}
       {{- with $proxy.nodeSelector }}
       nodeSelector:
@@ -95,14 +96,12 @@ spec:
             periodSeconds: {{ .Values.commonConfig.stackVersionProbe.periodSeconds | default 10 }}
             failureThreshold: {{ .Values.commonConfig.stackVersionProbe.failureThreshold | default 30 }}
           {{- end }}
-          args:
-            - start
           env:
             - name: COPROCESSOR_PROXY_BIND_ADDRESS
               value: "0.0.0.0:{{ $proxy.ports.https }}"
-            - name: COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH
+            - name: COPROCESSOR_PROXY_TLS_CERT_PATH
               value: /etc/coprocessor-proxy/tls/tls.crt
-            - name: COPROCESSOR_PROXY_TLS_CONFIG__KEY_PATH
+            - name: COPROCESSOR_PROXY_TLS_KEY_PATH
               value: /etc/coprocessor-proxy/tls/tls.key
             - name: COPROCESSOR_PROXY_HEALTHCHECK_PORT
               value: {{ $proxy.ports.healthcheck | quote }}
@@ -110,8 +109,6 @@ spec:
               value: "0.0.0.0:{{ $proxy.ports.metrics }}"
             - name: COPROCESSOR_PROXY_SHUTDOWN_DELAY
               value: "{{ int $proxy.shutdownDelaySeconds }}s"
-            - name: COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD
-              value: "{{ int $proxy.prfServiceResponseTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID
               value: {{ $canonicalChainId | quote }}
             - name: COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS
@@ -138,7 +135,7 @@ spec:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
             {{- with $proxy.tracing.service }}
-            - name: COPROCESSOR_PROXY_SERVICE_NAME
+            - name: OTEL_SERVICE_NAME
               value: {{ . | quote }}
             {{- end }}
           {{- end }}

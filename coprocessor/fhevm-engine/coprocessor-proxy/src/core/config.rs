@@ -1,259 +1,170 @@
 use alloy::{primitives::Address, transports::http::reqwest::Url};
-use config::{Config as ConfigBuilder, Environment, File, FileFormat};
-use http::uri::Authority;
-use serde::{Deserialize, Deserializer};
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::{Path, PathBuf},
-    time::Duration,
+use clap::{
+    Arg, Command, Parser,
+    builder::TypedValueParser,
+    error::{Error, ErrorKind},
 };
+use http::uri::Authority;
+use std::{ffi::OsStr, net::SocketAddr, path::PathBuf, time::Duration};
 use tracing::Level;
 
-/// The prefix of the environment variables, with `__` between nested keys, e.g.
-/// `COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH`.
-const ENV_PREFIX: &str = "COPROCESSOR_PROXY";
-
-/// Configuration of the `Proxy` service.
-///
-/// It derives `Debug` for tests only: `ethereum_rpc_url` can carry an API key.
-#[derive(Clone, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Debug))]
+/// Configuration of the `Proxy` service, from command-line flags or environment variables.
+#[derive(Clone, Parser)]
+#[command(version, about = "Public HTTPS entry point of a coprocessor")]
 pub struct Config {
     /// The public bind address of the proxy.
-    #[serde(default = "default_bind_address")]
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_BIND_ADDRESS",
+        default_value = "0.0.0.0:8443"
+    )]
     pub bind_address: SocketAddr,
-    /// The TLS configuration of the proxy.
-    pub tls_config: TlsConfig,
+    /// The PEM certificate chain the proxy serves.
+    #[arg(long, env = "COPROCESSOR_PROXY_TLS_CERT_PATH")]
+    pub tls_cert_path: PathBuf,
+    /// The PEM private key of the certificate.
+    #[arg(long, env = "COPROCESSOR_PROXY_TLS_KEY_PATH")]
+    pub tls_key_path: PathBuf,
 
     /// The Ethereum chain id, part of the `FhevmSig` (RFC-038) EIP-712 domain.
+    #[arg(long, env = "COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID")]
     pub ethereum_chain_id: u64,
     /// The `ProtocolConfig` contract on Ethereum: part of the `FhevmSig` EIP-712 domain, and the
     /// source of the accepted signers, the KMS tx-senders.
+    #[arg(long, env = "COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS")]
     pub protocol_config_address: Address,
-    /// The Ethereum RPC the KMS tx-senders are read through. Never logged.
-    #[serde(deserialize_with = "deserialize_secret_url")]
+    /// The Ethereum RPC the KMS tx-senders are read through. Never logged: it can carry an API key.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_ETHEREUM_RPC_URL",
+        hide_env_values = true,
+        value_parser = SecretUrlParser
+    )]
     pub ethereum_rpc_url: Url,
     /// How often the latest finalized block is checked; the KMS tx-senders are read again when it
-    /// moved forward. The role of RFC-038's `KMS_REGISTRY_REFRESH_INTERVAL`.
-    #[serde(
-        deserialize_with = "deserialize_non_zero_duration",
-        default = "default_kms_registry_poll_interval"
+    /// moved forward. Unknown signers wake a poll; woken polls start at least 1 s apart. Each poll
+    /// is bounded at 30 s.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL",
+        default_value = "5s",
+        value_parser = parse_non_zero_duration
     )]
-    pub kms_registry_poll_interval: Duration,
+    pub kms_registry_refresh_interval: Duration,
     /// This coprocessor's registered signer address: the `audience` the accepted headers are
     /// signed for.
+    #[arg(long, env = "COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS")]
     pub coprocessor_signer_address: Address,
 
     /// The `host:port` address of prf-service, resolved once at startup: its Kubernetes Service,
     /// which routes to the ready pods.
-    #[serde(deserialize_with = "parse_prf_service_address")]
+    #[arg(long, env = "COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS")]
     pub prf_service_address: Authority,
     /// The timeout to establish a TCP connection to prf-service.
-    #[serde(
-        deserialize_with = "deserialize_non_zero_duration",
-        default = "default_prf_service_connect_timeout"
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_PRF_SERVICE_CONNECT_TIMEOUT",
+        default_value = "3s",
+        value_parser = parse_non_zero_duration
     )]
     pub prf_service_connect_timeout: Duration,
-    /// How long the proxy waits for a prf-service response before answering `504`.
-    #[serde(
-        deserialize_with = "deserialize_non_zero_duration",
-        default = "default_prf_service_response_timeout"
+    /// How long the proxy waits for a prf-service response before answering `504`. prf-service can
+    /// hold a request until its result is ready, so this must exceed how long the callers wait. It
+    /// is also the shutdown grace period, which in-flight requests get to complete.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT",
+        default_value = "120s",
+        value_parser = parse_non_zero_duration
     )]
     pub prf_service_response_timeout: Duration,
-    /// How long an idle pooled prf-service connection is kept before being closed.
-    #[serde(
-        deserialize_with = "deserialize_non_zero_duration",
-        default = "default_prf_service_idle_timeout"
+    /// How long an idle pooled prf-service connection is kept before being closed. Behind a
+    /// Service, a new connection can reach newly scaled prf-service pods.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_PRF_SERVICE_IDLE_TIMEOUT",
+        default_value = "10s",
+        value_parser = parse_non_zero_duration
     )]
     pub prf_service_idle_timeout: Duration,
 
     /// How long the proxy waits for the client to send request bytes before dropping it.
-    #[serde(
-        deserialize_with = "deserialize_non_zero_duration",
-        default = "default_request_read_timeout"
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT",
+        default_value = "30s",
+        value_parser = parse_non_zero_duration
     )]
     pub request_read_timeout: Duration,
     /// How long the proxy keeps accepting connections after `SIGTERM`, closing each one after its
-    /// next response, before the shutdown grace period starts.
-    #[serde(with = "humantime_serde", default)]
+    /// next response, before the shutdown grace period starts. Behind a Kubernetes Service, it must
+    /// exceed the time the pod's removal takes to reach every node.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_SHUTDOWN_DELAY",
+        default_value = "0s",
+        value_parser = humantime::parse_duration
+    )]
     pub shutdown_delay: Duration,
-    /// How long in-flight requests are given to complete after the shutdown delay.
-    #[serde(with = "humantime_serde", default = "default_shutdown_grace_period")]
-    pub shutdown_grace_period: Duration,
 
     /// The service name used for tracing.
-    #[serde(default = "default_service_name")]
+    #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "coprocessor-proxy")]
     pub service_name: String,
-    #[serde(deserialize_with = "deserialize_level", default = "default_log_level")]
+    #[arg(long, env = "COPROCESSOR_PROXY_LOG_LEVEL", default_value_t = Level::INFO)]
     pub log_level: Level,
     /// The port of `/healthz`, `/liveness` and `/version`.
-    #[serde(default = "default_healthcheck_port")]
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_HEALTHCHECK_PORT",
+        default_value_t = 8080
+    )]
     pub healthcheck_port: u16,
     /// The address of the Prometheus `/metrics` endpoint.
-    #[serde(default = "default_metrics_endpoint")]
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_METRICS_ENDPOINT",
+        default_value = "0.0.0.0:9100"
+    )]
     pub metrics_endpoint: SocketAddr,
-    /// The timeout to perform each external service connection healthcheck.
-    #[serde(
-        deserialize_with = "deserialize_non_zero_duration",
-        default = "default_healthcheck_timeout"
+    /// The timeout of the TLS listener's self-check.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_HEALTHCHECK_TIMEOUT",
+        default_value = "3s",
+        value_parser = parse_non_zero_duration
     )]
     pub healthcheck_timeout: Duration,
 }
 
-impl Config {
-    /// Loads the configuration from environment variables and optionally from a TOML file.
-    ///
-    /// Environment variables take precedence over file configuration.
-    pub fn from_env_and_file<P: AsRef<Path>>(path: Option<P>) -> anyhow::Result<Self> {
-        let mut builder = ConfigBuilder::builder();
-        if let Some(path) = path {
-            let path = path.as_ref();
-            let path = path
-                .to_str()
-                .ok_or_else(|| anyhow::anyhow!("Invalid config path {}", path.display()))?;
-            builder = builder.add_source(File::with_name(path).format(FileFormat::Toml));
-        }
-        builder = builder.add_source(
-            Environment::with_prefix(ENV_PREFIX)
-                .prefix_separator("_")
-                .separator("__")
-                .try_parsing(true),
-        );
-        Ok(builder.build()?.try_deserialize()?)
-    }
-}
-
-/// The TLS material used by the proxy to terminate TLS.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct TlsConfig {
-    /// The path of the PEM certificate chain.
-    pub cert_path: PathBuf,
-    /// The path of the PEM private key.
-    pub key_path: PathBuf,
-}
-
-fn parse_prf_service_address<'de, D>(d: D) -> Result<Authority, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let address = String::deserialize(d)?;
-    address.parse().map_err(|e| {
-        serde::de::Error::custom(format!("invalid prf-service address `{address}`: {e}"))
-    })
-}
-
-/// Deserializes a humantime `Duration` and rejects `0s`.
-fn deserialize_non_zero_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let duration: Duration = humantime_serde::deserialize(deserializer)?;
+fn parse_non_zero_duration(value: &str) -> Result<Duration, String> {
+    let duration = humantime::parse_duration(value).map_err(|e| e.to_string())?;
     if duration.is_zero() {
-        return Err(serde::de::Error::custom("duration must be greater than 0"));
+        return Err("duration must be greater than 0".to_string());
     }
     Ok(duration)
 }
 
-/// Parses a URL that can carry an API key: unlike `Url`'s own deserializer, the error leaves the
-/// value out.
-fn deserialize_secret_url<'de, D>(d: D) -> Result<Url, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    String::deserialize(d)?
-        .parse()
-        .map_err(|e| serde::de::Error::custom(format!("invalid URL: {e}")))
-}
+/// Parses a URL that can carry an API key: unlike clap's own errors, the error leaves the value
+/// out.
+#[derive(Clone)]
+struct SecretUrlParser;
 
-fn deserialize_level<'de, D>(d: D) -> Result<Level, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    String::deserialize(d)?
-        .parse()
-        .map_err(serde::de::Error::custom)
-}
+impl TypedValueParser for SecretUrlParser {
+    type Value = Url;
 
-fn default_service_name() -> String {
-    "coprocessor-proxy".to_string()
-}
-
-pub fn default_bind_address() -> SocketAddr {
-    SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), 8443)
-}
-
-fn default_kms_registry_poll_interval() -> Duration {
-    Duration::from_secs(5)
-}
-
-fn default_prf_service_connect_timeout() -> Duration {
-    Duration::from_secs(3)
-}
-
-// prf-service can hold a request until its result is ready: the response timeout must exceed how
-// long the callers wait, so only they give up on a held request. The shutdown grace covers such a
-// request.
-const HELD_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
-
-fn default_prf_service_response_timeout() -> Duration {
-    HELD_REQUEST_TIMEOUT
-}
-
-fn default_prf_service_idle_timeout() -> Duration {
-    Duration::from_secs(10)
-}
-
-fn default_request_read_timeout() -> Duration {
-    Duration::from_secs(30)
-}
-
-fn default_shutdown_grace_period() -> Duration {
-    HELD_REQUEST_TIMEOUT
-}
-
-fn default_log_level() -> Level {
-    Level::INFO
-}
-
-fn default_healthcheck_port() -> u16 {
-    8080
-}
-
-fn default_metrics_endpoint() -> SocketAddr {
-    SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 9100)
-}
-
-fn default_healthcheck_timeout() -> Duration {
-    Duration::from_secs(3)
-}
-
-// Default implementation for testing purpose
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            bind_address: default_bind_address(),
-            tls_config: TlsConfig {
-                cert_path: PathBuf::from("/etc/coprocessor-proxy/tls/tls.crt"),
-                key_path: PathBuf::from("/etc/coprocessor-proxy/tls/tls.key"),
-            },
-            ethereum_chain_id: 11155111,
-            protocol_config_address: Address::ZERO,
-            ethereum_rpc_url: "http://localhost:8545".parse().unwrap(),
-            kms_registry_poll_interval: default_kms_registry_poll_interval(),
-            coprocessor_signer_address: Address::ZERO,
-            prf_service_address: "prf-service:8090".parse().unwrap(),
-            prf_service_connect_timeout: default_prf_service_connect_timeout(),
-            prf_service_response_timeout: default_prf_service_response_timeout(),
-            prf_service_idle_timeout: default_prf_service_idle_timeout(),
-            request_read_timeout: default_request_read_timeout(),
-            shutdown_delay: Duration::ZERO,
-            shutdown_grace_period: default_shutdown_grace_period(),
-            service_name: default_service_name(),
-            log_level: default_log_level(),
-            healthcheck_port: default_healthcheck_port(),
-            metrics_endpoint: default_metrics_endpoint(),
-            healthcheck_timeout: default_healthcheck_timeout(),
-        }
+    fn parse_ref(&self, cmd: &Command, arg: Option<&Arg>, value: &OsStr) -> Result<Url, Error> {
+        let parsed = value
+            .to_str()
+            .ok_or_else(|| "not UTF-8".to_string())
+            .and_then(|value| value.parse::<Url>().map_err(|e| e.to_string()));
+        parsed.map_err(|reason| {
+            let arg = arg.map(ToString::to_string).unwrap_or_default();
+            Error::raw(
+                ErrorKind::ValueValidation,
+                format!("invalid URL for {arg}: {reason}\n"),
+            )
+            .with_cmd(cmd)
+        })
     }
 }
 
@@ -261,108 +172,103 @@ impl Default for Config {
 mod tests {
     use super::*;
     use serial_test::serial;
-    use std::{env, path::PathBuf};
+    use std::env;
 
-    fn example_config_path() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config/proxy.toml")
+    /// The program name and the flags without a default, the prf-service address last.
+    const REQUIRED: [&str; 8] = [
+        "coprocessor-proxy",
+        "--tls-cert-path=/etc/proxy/tls.crt",
+        "--tls-key-path=/etc/proxy/tls.key",
+        "--ethereum-chain-id=31444",
+        "--protocol-config-address=0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+        "--ethereum-rpc-url=https://rpc.example/v1/key",
+        "--coprocessor-signer-address=0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "--prf-service-address=prf-service:8090",
+    ];
+
+    /// Parses [`REQUIRED`] and `extra`, whose flags replace those of [`REQUIRED`].
+    fn parse(extra: &[&str]) -> Result<Config, Error> {
+        let flag = |arg: &&str| arg.split('=').next().unwrap().to_string();
+        let replaced: Vec<String> = extra.iter().map(flag).collect();
+        let required = REQUIRED.iter().filter(|arg| !replaced.contains(&flag(arg)));
+        Config::try_parse_from(required.chain(extra))
     }
 
-    fn cleanup_env_vars() {
-        unsafe {
-            env::remove_var("COPROCESSOR_PROXY_BIND_ADDRESS");
-            env::remove_var("COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH");
-            env::remove_var("COPROCESSOR_PROXY_TLS_CONFIG__KEY_PATH");
-            env::remove_var("COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID");
-            env::remove_var("COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS");
-            env::remove_var("COPROCESSOR_PROXY_ETHEREUM_RPC_URL");
-            env::remove_var("COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL");
-            env::remove_var("COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS");
-            env::remove_var("COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS");
-            env::remove_var("COPROCESSOR_PROXY_PRF_SERVICE_CONNECT_TIMEOUT");
-            env::remove_var("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT");
-            env::remove_var("COPROCESSOR_PROXY_PRF_SERVICE_IDLE_TIMEOUT");
-            env::remove_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT");
-            env::remove_var("COPROCESSOR_PROXY_SHUTDOWN_DELAY");
-            env::remove_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD");
-            env::remove_var("COPROCESSOR_PROXY_SERVICE_NAME");
-            env::remove_var("COPROCESSOR_PROXY_LOG_LEVEL");
-            env::remove_var("COPROCESSOR_PROXY_HEALTHCHECK_PORT");
-            env::remove_var("COPROCESSOR_PROXY_METRICS_ENDPOINT");
-            env::remove_var("COPROCESSOR_PROXY_HEALTHCHECK_TIMEOUT");
-        }
-    }
+    // Every test reads the environment, which `test_load_from_env` sets: they run one at a time.
 
     #[test]
     #[serial(config_tests)]
-    fn test_load_valid_config_from_file() {
-        cleanup_env_vars();
-        let default_config = Config::default();
-        let example_config = Config::from_env_and_file(Some(example_config_path())).unwrap();
-        assert_eq!(default_config, example_config);
+    fn test_defaults() {
+        let config = parse(&[]).unwrap();
+        assert_eq!(config.kms_registry_refresh_interval, Duration::from_secs(5));
+        assert_eq!(config.prf_service_connect_timeout, Duration::from_secs(3));
+        assert_eq!(
+            config.prf_service_response_timeout,
+            Duration::from_secs(120)
+        );
+        assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(10));
+        assert_eq!(config.shutdown_delay, Duration::ZERO);
+        assert_eq!(config.bind_address, "0.0.0.0:8443".parse().unwrap());
     }
 
     #[test]
     #[serial(config_tests)]
     fn test_load_from_env() {
-        cleanup_env_vars();
-        unsafe {
-            env::set_var("COPROCESSOR_PROXY_BIND_ADDRESS", "127.0.0.1:9443");
-            env::set_var(
-                "COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH",
-                "/etc/proxy/tls.crt",
-            );
-            env::set_var(
-                "COPROCESSOR_PROXY_TLS_CONFIG__KEY_PATH",
-                "/etc/proxy/tls.key",
-            );
-            env::set_var("COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID", "31444");
-            env::set_var(
+        let vars = [
+            ("COPROCESSOR_PROXY_BIND_ADDRESS", "127.0.0.1:9443"),
+            ("COPROCESSOR_PROXY_TLS_CERT_PATH", "/etc/proxy/tls.crt"),
+            ("COPROCESSOR_PROXY_TLS_KEY_PATH", "/etc/proxy/tls.key"),
+            ("COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID", "31444"),
+            (
                 "COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS",
                 "0xc0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
-            );
-            env::set_var(
+            ),
+            (
                 "COPROCESSOR_PROXY_ETHEREUM_RPC_URL",
                 "https://rpc.example/v1/key",
-            );
-            env::set_var("COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL", "2m");
-            env::set_var(
+            ),
+            ("COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL", "2m"),
+            (
                 "COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS",
                 "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
-            );
-            env::set_var(
+            ),
+            (
                 "COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS",
                 "prf-service-1:8090",
-            );
-            env::set_var("COPROCESSOR_PROXY_PRF_SERVICE_CONNECT_TIMEOUT", "1s");
-            env::set_var("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "45s");
-            env::set_var("COPROCESSOR_PROXY_PRF_SERVICE_IDLE_TIMEOUT", "7s");
-            env::set_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT", "12s");
-            env::set_var("COPROCESSOR_PROXY_SHUTDOWN_DELAY", "9s");
-            env::set_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD", "15s");
-            env::set_var("COPROCESSOR_PROXY_SERVICE_NAME", "coprocessor-proxy-test");
-            env::set_var("COPROCESSOR_PROXY_LOG_LEVEL", "debug");
-            env::set_var("COPROCESSOR_PROXY_HEALTHCHECK_PORT", "8081");
-            env::set_var("COPROCESSOR_PROXY_METRICS_ENDPOINT", "127.0.0.1:9101");
-            env::set_var("COPROCESSOR_PROXY_HEALTHCHECK_TIMEOUT", "7s");
+            ),
+            ("COPROCESSOR_PROXY_PRF_SERVICE_CONNECT_TIMEOUT", "1s"),
+            ("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "45s"),
+            ("COPROCESSOR_PROXY_PRF_SERVICE_IDLE_TIMEOUT", "7s"),
+            ("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT", "12s"),
+            ("COPROCESSOR_PROXY_SHUTDOWN_DELAY", "9s"),
+            ("OTEL_SERVICE_NAME", "coprocessor-proxy-test"),
+            ("COPROCESSOR_PROXY_LOG_LEVEL", "debug"),
+            ("COPROCESSOR_PROXY_HEALTHCHECK_PORT", "8081"),
+            ("COPROCESSOR_PROXY_METRICS_ENDPOINT", "127.0.0.1:9101"),
+            ("COPROCESSOR_PROXY_HEALTHCHECK_TIMEOUT", "7s"),
+        ];
+        for (name, value) in vars {
+            unsafe { env::set_var(name, value) };
         }
-
-        let config = Config::from_env_and_file::<&str>(None).unwrap();
+        let config = Config::try_parse_from(["coprocessor-proxy"]);
+        for (name, _) in vars {
+            unsafe { env::remove_var(name) };
+        }
+        let config = config.unwrap();
 
         assert_eq!(config.bind_address, "127.0.0.1:9443".parse().unwrap());
-        assert_eq!(
-            config.tls_config,
-            TlsConfig {
-                cert_path: PathBuf::from("/etc/proxy/tls.crt"),
-                key_path: PathBuf::from("/etc/proxy/tls.key"),
-            }
-        );
+        assert_eq!(config.tls_cert_path, PathBuf::from("/etc/proxy/tls.crt"));
+        assert_eq!(config.tls_key_path, PathBuf::from("/etc/proxy/tls.key"));
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(config.protocol_config_address, Address::repeat_byte(0xc0));
         assert_eq!(
             config.ethereum_rpc_url,
             "https://rpc.example/v1/key".parse().unwrap()
         );
-        assert_eq!(config.kms_registry_poll_interval, Duration::from_secs(120));
+        assert_eq!(
+            config.kms_registry_refresh_interval,
+            Duration::from_secs(120)
+        );
         assert_eq!(
             config.coprocessor_signer_address,
             Address::repeat_byte(0xa1)
@@ -373,60 +279,42 @@ mod tests {
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(7));
         assert_eq!(config.request_read_timeout, Duration::from_secs(12));
         assert_eq!(config.shutdown_delay, Duration::from_secs(9));
-        assert_eq!(config.shutdown_grace_period, Duration::from_secs(15));
         assert_eq!(config.service_name, "coprocessor-proxy-test");
         assert_eq!(config.log_level, Level::DEBUG);
         assert_eq!(config.healthcheck_port, 8081);
         assert_eq!(config.metrics_endpoint, "127.0.0.1:9101".parse().unwrap());
         assert_eq!(config.healthcheck_timeout, Duration::from_secs(7));
-
-        cleanup_env_vars();
     }
 
     #[test]
     #[serial(config_tests)]
     fn test_missing_required_field_fails() {
-        cleanup_env_vars();
-        let toml = r#"prf_service_address = "localhost:8090""#;
-        let tmp = std::env::temp_dir().join(format!("proxy-cfg-{}.toml", std::process::id()));
-        std::fs::write(&tmp, toml).unwrap();
-        assert!(Config::from_env_and_file(Some(&tmp)).is_err());
-        std::fs::remove_file(&tmp).ok();
+        let Err(err) = Config::try_parse_from(&REQUIRED[..7]) else {
+            panic!("a missing prf-service address must be refused");
+        };
+        assert_eq!(err.kind(), ErrorKind::MissingRequiredArgument);
     }
 
     #[test]
     #[serial(config_tests)]
     fn test_invalid_rpc_url_error_leaves_the_url_out() {
-        cleanup_env_vars();
-        unsafe {
-            // No scheme: a relative URL, refused.
-            env::set_var(
-                "COPROCESSOR_PROXY_ETHEREUM_RPC_URL",
-                "eth.example/v2/SECRET-KEY",
-            );
-        }
-        let Err(err) = Config::from_env_and_file(Some(example_config_path())) else {
+        // No scheme: a relative URL, refused.
+        let Err(err) = parse(&["--ethereum-rpc-url=eth.example/v2/SECRET-KEY"]) else {
             panic!("a relative RPC URL must be refused");
         };
-        let message = format!("{err:#}");
+        let message = err.to_string();
         assert!(message.contains("invalid URL"), "{message}");
         assert!(!message.contains("SECRET-KEY"), "{message}");
-        cleanup_env_vars();
     }
 
     #[test]
     #[serial(config_tests)]
-    fn test_zero_poll_interval_is_refused() {
-        cleanup_env_vars();
-        unsafe {
-            // The reader would poll the RPC without pause.
-            env::set_var("COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL", "0s");
-        }
-        let Err(err) = Config::from_env_and_file(Some(example_config_path())) else {
-            panic!("a zero poll interval must be refused");
+    fn test_zero_refresh_interval_is_refused() {
+        // The reader would poll the RPC without pause.
+        let Err(err) = parse(&["--kms-registry-refresh-interval=0s"]) else {
+            panic!("a zero refresh interval must be refused");
         };
-        let message = format!("{err:#}");
+        let message = err.to_string();
         assert!(message.contains("greater than 0"), "{message}");
-        cleanup_env_vars();
     }
 }

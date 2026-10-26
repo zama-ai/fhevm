@@ -334,8 +334,8 @@ services:
       COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID: ${CANONICAL_PROTOCOL_CONFIG_CHAIN_ID}
       COPROCESSOR_PROXY_ETHEREUM_RPC_URL: ${RPC_HTTP_URL}
       COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS: ${PROTOCOL_CONFIG_ADDRESS}
-      COPROCESSOR_PROXY_TLS_CONFIG__CERT_PATH: /etc/coprocessor-proxy/tls/tls.crt
-      COPROCESSOR_PROXY_TLS_CONFIG__KEY_PATH: /etc/coprocessor-proxy/tls/tls.key
+      COPROCESSOR_PROXY_TLS_CERT_PATH: /etc/coprocessor-proxy/tls/tls.crt
+      COPROCESSOR_PROXY_TLS_KEY_PATH: /etc/coprocessor-proxy/tls/tls.key
     volumes:
       - ../static/config/coprocessor-proxy:/etc/coprocessor-proxy/tls:ro
     # The proxy resolves the endpoint hostname once, at startup.

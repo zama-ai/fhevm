@@ -44,6 +44,6 @@ COPY --from=builder --chown=fhevm:fhevm /tmp/coprocessor-proxy /usr/local/bin/co
 
 USER fhevm:fhevm
 
-ENTRYPOINT ["/usr/local/bin/coprocessor-proxy", "start"]
+ENTRYPOINT ["/usr/local/bin/coprocessor-proxy"]
 
 FROM prod AS dev

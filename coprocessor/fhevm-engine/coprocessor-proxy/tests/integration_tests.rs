@@ -496,7 +496,7 @@ async fn test_refuses_everything_before_the_first_read() {
 /// Starts the proxy with a poll interval no test waits for: only an unknown signer makes it read.
 async fn start_without_polls() -> TestProxy {
     TestProxy::start_with_config(StubPrfService::start().await, |config| {
-        config.kms_registry_poll_interval = Duration::from_secs(600);
+        config.kms_registry_refresh_interval = Duration::from_secs(600);
     })
     .await
 }

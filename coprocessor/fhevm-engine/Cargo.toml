@@ -33,8 +33,6 @@ alloy-primitives = "1.6.1"
 async-trait = "0.1.88"
 axum = "0.7"
 bytes = "1.10"
-config = { version = "=0.15.19", default-features = false, features = ["toml"] }
-humantime-serde = "1.1.1"
 pingora = { version = "=0.9.0", default-features = false, features = [
     "openssl",
     "proxy",

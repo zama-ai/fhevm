@@ -28,8 +28,8 @@ must be signed for this coprocessor's signer address, `coprocessorProxy.coproces
 
 The proxy needs a `kubernetes.io/tls` secret that this chart does not create
 (`coprocessorProxy.tls.secretName`), with the certificate it serves. The chart configures the proxy
-through environment variables only. `coprocessor/fhevm-engine/coprocessor-proxy/config/proxy.toml`
-lists every setting; `coprocessorProxy.env` sets the others. The Service is a ClusterIP. Exposing it
+through environment variables only. `coprocessor-proxy --help` lists every setting and its
+variable; `coprocessorProxy.env` sets the others. The Service is a ClusterIP. Exposing it
 outside the cluster is left to the deployment, within the requirement below.
 
 The proxy resolves `prfServiceAddress` once, at startup. The Service routes each new connection
@@ -48,7 +48,7 @@ Set these to the prf-service **pod** ports, which may differ from the Service po
 and no other policy granting broader access: Kubernetes policies are additive.
 
 The proxy reads the signers at the latest finalized block. It checks that block every 5 s
-(`COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL`) after each poll completes, and reads the signers
+(`COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL`) after each poll completes, and reads the signers
 again when the block advances. Refresh latency includes RPC time and any delay in that RPC's
 finalized head. Each poll is bounded at 30 s; a failure retains the last set and retries on the
 next poll. Before the first successful read, readiness fails.
