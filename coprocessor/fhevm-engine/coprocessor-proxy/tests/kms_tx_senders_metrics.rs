@@ -1,5 +1,4 @@
 //! Separate process so other followers cannot overwrite the gauges under test.
-#![cfg(feature = "kms-tx-senders")]
 
 use alloy::{
     primitives::{Address, U256},
@@ -8,7 +7,7 @@ use alloy::{
     sol_types::SolCall,
     transports::mock::Asserter,
 };
-use fhevm_engine_common::kms_tx_senders::Follower;
+use coprocessor_proxy::kms_tx_senders::Follower;
 use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::getCurrentKmsContextIdCounterCall;
 use fhevm_sig_auth::RefreshableSigners;
 use std::time::Duration;

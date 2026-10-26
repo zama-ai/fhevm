@@ -109,8 +109,6 @@ jobs:
             runner: runs-on=${{ github.run_id }}/runner=16cpu-linux-x64/spot=false/volume=80gb
           - service: common
             package: fhevm-engine-common
-            # Builds and tests the KMS tx-sender reader too.
-            features: kms-tx-senders
             needs_localstack: false
             needs_foundry: false
             runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
@@ -230,7 +228,6 @@ jobs:
         SQLX_OFFLINE: 'true'
         TEST_GLOBAL_LOCALSTACK: ${{ matrix.needs_localstack && '1' || '0' }}
         TEST_PACKAGE: ${{ matrix.package }}
-        TEST_FEATURES: ${{ matrix.features }}
         IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
       run: |
         # Merge queue: leave unset so supported_types() defaults to full matrix.
@@ -239,7 +236,7 @@ jobs:
           export TFHE_WORKER_EVENT_TYPE_MATRIX=local
         fi
         cargo llvm-cov clean --workspace --profile coverage
-        cargo llvm-cov test -p "$TEST_PACKAGE" ${TEST_FEATURES:+--features "$TEST_FEATURES"} --profile coverage
+        cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage
       working-directory: coprocessor/fhevm-engine
 
     - name: Run tests with coverage (sharded)

@@ -2,12 +2,12 @@
 use crate::core::TlsConfig;
 use crate::{
     core::Config,
+    kms_tx_senders::Follower,
     monitoring::health::{self, endpoint_health_check},
 };
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
-use fhevm_engine_common::kms_tx_senders::Follower;
 use fhevm_sig_auth::{FhevmSigVerifier, RefreshableSigners};
 use http::uri::Authority;
 use pingora::{
@@ -35,7 +35,7 @@ pub struct Proxy {
     pub(super) config: Config,
     pub(super) verifier: FhevmSigVerifier<RefreshableSigners>,
     pub(super) endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
-    pub(super) kms_tx_senders: Arc<KmsTxSenders>,
+    pub(super) kms_tx_senders: Arc<Follower<DynProvider>>,
     /// Set during the shutdown delay: each client connection closes after its next response.
     pub(super) draining: Arc<AtomicBool>,
 }
@@ -65,17 +65,13 @@ impl ShutdownSignalWatch for DelayedShutdown {
     }
 }
 
-/// Runs the [`Follower`] that keeps the verifier's signers equal to the KMS tx-senders.
-pub(super) struct KmsTxSenders(pub(super) Follower<DynProvider>);
-
 #[async_trait]
-impl BackgroundService for KmsTxSenders {
+impl<P: Provider> BackgroundService for Follower<P> {
     async fn start(&self, mut shutdown: ShutdownWatch) {
-        self.0
-            .run(async move {
-                let _ = shutdown.changed().await;
-            })
-            .await;
+        self.run(async move {
+            let _ = shutdown.changed().await;
+        })
+        .await;
     }
 }
 
@@ -126,7 +122,7 @@ impl Proxy {
             verifier,
             config,
             endpoint_balancer,
-            kms_tx_senders: Arc::new(KmsTxSenders(follower)),
+            kms_tx_senders: Arc::new(follower),
             draining: Arc::default(),
         };
         Ok((proxy, state))

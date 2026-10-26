@@ -13,23 +13,23 @@ use alloy::{
     providers::Provider,
     transports::{RpcError, TransportError, TransportErrorKind},
 };
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
     self, IProtocolConfigBaseInstance,
 };
 use fhevm_sig_auth::RefreshableSigners;
-use prometheus::{register_int_gauge, IntGauge};
+use prometheus::{IntGauge, register_int_gauge};
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, LazyLock,
+        atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 use tokio::{
-    sync::{watch, Mutex},
+    sync::{Mutex, watch},
     time::Instant,
 };
 use tracing::{info, warn};
@@ -310,13 +310,13 @@ mod tests {
         },
         sol_types::SolCall,
         transports::{
-            mock::{Asserter, MockTransport},
             TransportError, TransportFut,
+            mock::{Asserter, MockTransport},
         },
     };
     use fhevm_host_bindings::i_protocol_config_base::IProtocolConfigBase::{
-        getCurrentKmsContextIdCounterCall, getKmsNodesForContextCall, isValidKmsContextCall,
-        KmsNode,
+        KmsNode, getCurrentKmsContextIdCounterCall, getKmsNodesForContextCall,
+        isValidKmsContextCall,
     };
     use fhevm_sig_auth::SignerAllowlist;
     use std::{
@@ -448,13 +448,13 @@ mod tests {
         }
 
         fn call(&mut self, request: RequestPacket) -> Self::Future {
-            if let RequestPacket::Single(call) = &request {
-                if call.method() == "eth_call" {
-                    let params = call
-                        .params()
-                        .map_or_else(String::new, |p| p.get().to_owned());
-                    self.params.lock().unwrap().push(params);
-                }
+            if let RequestPacket::Single(call) = &request
+                && call.method() == "eth_call"
+            {
+                let params = call
+                    .params()
+                    .map_or_else(String::new, |p| p.get().to_owned());
+                self.params.lock().unwrap().push(params);
             }
             let delay = *self.delay.lock().unwrap();
             let answer = self.transport.call(request);
@@ -659,7 +659,7 @@ mod tests {
                 start.elapsed()
             });
             // One poll, a spacing after the first, releases every miss.
-            for waited in futures::future::join_all(misses).await {
+            for waited in futures_util::future::join_all(misses).await {
                 assert_eq!(waited, WOKEN_POLL_SPACING);
             }
         });

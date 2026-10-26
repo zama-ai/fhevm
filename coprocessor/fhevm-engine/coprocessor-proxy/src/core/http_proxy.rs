@@ -173,7 +173,6 @@ impl ProxyHttp for Proxy {
             // yet, so it is checked again after one read before being refused.
             Err(AuthError::UnknownSigner(_)) => {
                 self.kms_tx_senders
-                    .0
                     .refresh_after_miss(UNKNOWN_SIGNER_WAIT)
                     .await;
                 self.verifier.verify_header(authorization, target)

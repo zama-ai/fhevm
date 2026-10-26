@@ -14,7 +14,7 @@ use common::{
     stub_attestation, stub_output,
 };
 use coprocessor_proxy::core::UNKNOWN_SIGNER_WAIT;
-use fhevm_engine_common::kms_tx_senders::WOKEN_POLL_SPACING;
+use coprocessor_proxy::kms_tx_senders::WOKEN_POLL_SPACING;
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 
