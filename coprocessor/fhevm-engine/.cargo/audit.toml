@@ -9,7 +9,10 @@
 # cargo-audit cannot restrict an ignore to a version. Keep the matching bans in
 # deny.toml and the CI `cargo deny check bans` step: they reject every vulnerable
 # root-bundle version, allowing only this exact shim below 1.0.10.
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0381"]
+# RUSTSEC-2026-0387 (crypto-bigint): no fix is reachable. Both copies come
+# through aws-sigv4 1.4.0, the newest release, which still pins crypto-bigint
+# 0.5. Remove this when the AWS SDK moves.
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0381", "RUSTSEC-2026-0387"]
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
 
