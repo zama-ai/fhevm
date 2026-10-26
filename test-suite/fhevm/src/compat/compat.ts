@@ -470,6 +470,15 @@ export const supportsCoprocessorProxy = (state: Pick<CompatState, "versions" | "
       override.group === "coprocessor" && (!override.services?.length || override.services.includes("coprocessor-proxy")),
   );
 
+/**
+ * Whether a stack runs coprocessor-proxy: its bundle includes the proxy, and the stack is not
+ * blue-green, where one proxy per fleet is a follow-up. Takes a state (`scenario`) or a stack spec
+ * (`blueGreen`).
+ */
+export const runsCoprocessorProxy = (
+  state: Pick<CompatState, "versions" | "overrides"> & { scenario?: { kind: string }; blueGreen?: unknown },
+) => state.scenario?.kind !== "blue-green" && !state.blueGreen && supportsCoprocessorProxy(state);
+
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });

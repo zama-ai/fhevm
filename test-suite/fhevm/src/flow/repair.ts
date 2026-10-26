@@ -1,7 +1,7 @@
 import {
   supportsConnectorHttp,
   supportsConsensusDetector,
-  supportsCoprocessorProxy,
+  runsCoprocessorProxy,
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
@@ -80,8 +80,9 @@ const supportsConnectorHttpForState = (state: { versions?: State["versions"]; ov
   !state.versions || supportsConnectorHttp({ versions: state.versions, overrides: state.overrides });
 type CoprocessorServicesState = { versions?: State["versions"]; overrides: LocalOverride[]; scenario?: State["scenario"] };
 const supportsCoprocessorProxyForState = (state: CoprocessorServicesState) =>
-  state.scenario?.kind !== "blue-green" &&
-  (!state.versions || supportsCoprocessorProxy({ versions: state.versions, overrides: state.overrides }));
+  state.versions
+    ? runsCoprocessorProxy({ versions: state.versions, overrides: state.overrides, scenario: state.scenario })
+    : state.scenario?.kind !== "blue-green";
 const kmsConnectorServices = (state: { versions?: State["versions"]; overrides: LocalOverride[] }) =>
   GROUP_BUILD_SERVICES["kms-connector"].filter(
     (service) => !KMS_CONNECTOR_HTTP_SERVICES.includes(service) || supportsConnectorHttpForState(state),

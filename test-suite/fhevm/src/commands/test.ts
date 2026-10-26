@@ -16,7 +16,7 @@ import {
   compatPolicyForState,
   supportsConnectorHttp,
   supportsCoprocessorDbStateRevert,
-  supportsCoprocessorProxy,
+  runsCoprocessorProxy,
 } from "../compat/compat";
 import { consumerOnlyHostListeners } from "../host-listener-mode";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
@@ -2191,11 +2191,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       : "CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION are not part of the resolved bundle (no kms-connector-endpoint / -proxy containers)";
 
   const coprocessorProxySkipReason = () => {
-    if (state.scenario.kind === "blue-green") {
-      return "blue-green stacks run without coprocessor-proxy";
+    if (runsCoprocessorProxy(state)) {
+      return undefined;
     }
-    return supportsCoprocessorProxy(state)
-      ? undefined
+    return state.scenario.kind === "blue-green"
+      ? "blue-green stacks run without coprocessor-proxy"
       : "COPROCESSOR_PROXY_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
   };
 

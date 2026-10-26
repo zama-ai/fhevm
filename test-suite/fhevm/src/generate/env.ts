@@ -9,7 +9,7 @@ import {
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
   supportsConnectorHttp,
-  supportsCoprocessorProxy,
+  runsCoprocessorProxy,
 } from "../compat/compat";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
@@ -530,7 +530,7 @@ const applyCoprocessorProxyTestSuiteEnv = (
   instanceEnvs: Record<string, Record<string, string>>,
   plan: StackSpec,
 ) => {
-  const supported = plan.coprocessor && !plan.blueGreen && supportsCoprocessorProxy(plan);
+  const supported = plan.coprocessor && runsCoprocessorProxy(plan);
   const indices = supported ? [...Array(plan.topology.count).keys()] : [];
   const instanceEnv = (index: number) => (index === 0 ? envs["coprocessor"] : instanceEnvs[`coprocessor.${index}`]);
   envs["test-suite"].COPROCESSOR_PROXY_URLS = indices

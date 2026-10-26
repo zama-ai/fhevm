@@ -7,6 +7,7 @@ import {
   supportsConnectorHttp,
   supportsConsensusDetector,
   supportsCoprocessorDbStateRevert,
+  runsCoprocessorProxy,
   supportsCoprocessorProxy,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -42,7 +43,8 @@ const KMS_CONNECTOR_KMS_GENERATION_READY =
 /** Number of KMS connector instances: one per party. */
 const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
 
-const COPROCESSOR_PROXY_SIGNERS_READ = /KMS tx-sender set updated/;
+/** The coprocessor-proxy's default `/healthz` port. */
+const COPROCESSOR_PROXY_HEALTHCHECK_PORT = 8080;
 
 /** gw-listener / kms-worker / tx-sender (+ endpoint and proxy when the bundle ships them) health containers across every KMS party. */
 export const kmsConnectorHealthContainers = (state: State): string[] => {
@@ -156,6 +158,33 @@ export const waitForLog = async (container: string, pattern: RegExp) => {
     }
     if (attempt === 90) {
       throw new ProbeTimeout(container, 180);
+    }
+    await Bun.sleep(2_000);
+  }
+};
+
+/**
+ * Waits until a coprocessor's proxy is ready: its `/healthz` answers 200 once the TLS listener
+ * answers and the KMS tx-senders have been read. The proxy image has no HTTP client, so the probe
+ * runs in the coprocessor's fake prf-service, on the same network.
+ */
+const waitForCoprocessorProxy = async (prefix: string) => {
+  const proxy = `${prefix}proxy`;
+  const url = `http://${proxy}:${COPROCESSOR_PROXY_HEALTHCHECK_PORT}/healthz`;
+  for (let attempt = 0; attempt <= 90; attempt += 1) {
+    const [inspect] = await dockerInspect(proxy);
+    if (inspect && containerFailure(inspect)) {
+      throw new ContainerCrashed(proxy, inspect.State.ExitCode || -1, "");
+    }
+    const probe = await run(["docker", "exec", `${prefix}prf-service-fake`, "wget", "-qO-", url], {
+      allowFailure: true,
+      timeoutMs: 10_000,
+    });
+    if (probe.code === 0) {
+      return;
+    }
+    if (attempt === 90) {
+      throw new ProbeTimeout(proxy, 180);
     }
     await Bun.sleep(2_000);
   }
@@ -319,14 +348,13 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
     await waitForContainer(`${prefix}transaction-sender`, "running");
   };
   const count = topologyForState(state).count;
-  const includeProxy = state.scenario.kind !== "blue-green" && supportsCoprocessorProxy(state);
+  const includeProxy = runsCoprocessorProxy(state);
   for (let index = 0; index < count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
     await waitCoreFleet(prefix, true);
     if (includeProxy) {
       await waitForContainer(`${prefix}prf-service-fake`, "healthy");
-      // The proxy image has no healthcheck; its reader logs this once the first read succeeded.
-      await waitForLog(`${prefix}proxy`, COPROCESSOR_PROXY_SIGNERS_READ);
+      await waitForCoprocessorProxy(prefix);
     }
     if (state.scenario.kind === "blue-green" && !state.scenario.gcs.deferredStart) {
       await waitCoreFleet(`${prefix}gcs-`, false);

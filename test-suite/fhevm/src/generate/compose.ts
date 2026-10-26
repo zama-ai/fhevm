@@ -16,6 +16,7 @@ import {
   compatPolicyForState,
   supportsConnectorHttp,
   supportsConsensusDetector,
+  runsCoprocessorProxy,
   supportsCoprocessorProxy,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -779,8 +780,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     ...(supportsHostListenerConsumer(plan) ? [] : ["coprocessor-host-listener-consumer"]),
     ...(supportsConsensusDetector(plan) ? [] : ["coprocessor-consensus-detector"]),
     ...(supportsUpgradeController(plan) ? [] : ["coprocessor-upgrade-controller"]),
-    // Blue-green stacks test the coprocessor fleets, not the proxy.
-    ...(supportsCoprocessorProxy(plan) && !plan.blueGreen ? [] : COPROCESSOR_PROXY_SERVICES),
+    ...(runsCoprocessorProxy(plan) ? [] : COPROCESSOR_PROXY_SERVICES),
   ]);
   const includeConsumer = supportsHostListenerConsumer(plan);
   const isBlueGreen = Boolean(plan.blueGreen);
