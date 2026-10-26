@@ -395,9 +395,11 @@ interface IProtocolConfig {
     // ID checks guard against rollback, not skipped calls.
     //
     // The contract does not track deployment mode on-chain. The mirror entry points target a replica
-    // only. The committee and owner entry points target a canonical deployment only. Nothing reverts
-    // when a caller uses the wrong entry points on the wrong deployment. This wrong use is unsupported
-    // operator misuse.
+    // only. The committee entry points and the define functions target a canonical deployment only.
+    // `destroyKmsContext` and `destroyKmsEpoch` apply to both: mirroring activates a new context
+    // without retiring the previous one, so a context destroyed on Ethereum stays live on a replica
+    // until it is destroyed there as well. Nothing reverts when a caller uses the wrong entry points
+    // on the wrong deployment. This wrong use is unsupported operator misuse.
     // -----------------------------------------------------------------------------------------
 
     /**

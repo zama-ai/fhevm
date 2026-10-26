@@ -420,7 +420,9 @@ interface IKMSGeneration {
     /**
      * @notice Get all materials available for a given key ID.
      * @param keyId The ID of the key.
-     * @return The key materials (storage URLs, key digests).
+     * @return The key materials: the storage URLs of the latest consensus that published material for
+     * the key (the migration consensus once a compressed key set was added, the keygen consensus
+     * otherwise), and the key digests, whose Server and Public entries come from the keygen consensus.
      */
     function getKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
 
