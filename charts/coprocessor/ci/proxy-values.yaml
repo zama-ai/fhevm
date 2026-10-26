@@ -21,4 +21,4 @@ coprocessorProxy:
   tls:
     secretName: coprocessor-proxy-tls
   coprocessorSignerAddress: "0x00000000000000000000000000000000000000a1"
-  endpointAddresses: ["prf-service-a:8090", "prf-service-b:8090"]
+  prfServiceAddress: "prf-service:8090"

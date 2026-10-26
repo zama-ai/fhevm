@@ -1897,27 +1897,26 @@ coprocessorProxy:
   # This coprocessor's signer address: the audience requests must be signed for (required).
   coprocessorSignerAddress:
 
-  # `host:port` of the endpoints the proxy forwards to (required): prf-service, which serves
-  # the PRF route, e.g. ["<release>-prf-service:8090"]. Each must answer `GET /healthz` with 200
-  # over HTTP/1.1 on that address (chart README).
-  endpointAddresses: []
+  # `host:port` of prf-service's Service, which serves the PRF route (required), e.g.
+  # "<release>-prf-service:8090". The Service routes each connection to a ready pod.
+  prfServiceAddress: ""
   # Must exceed the connector's PRF_RETRIEVAL_DEADLINE; also sets the SIGTERM drain grace.
   # Pingora waits this grace even when idle.
-  endpointResponseTimeoutSeconds: 120
+  prfServiceResponseTimeoutSeconds: 120
   # How long the proxy keeps serving after SIGTERM, asking each client to reconnect, before it
   # stops accepting connections. Must exceed the time the pod's removal from the Service takes to
   # reach every node. The pod's termination budget is this delay, the drain grace and 10 s.
   shutdownDelaySeconds: 10
 
-  # Ingress allowed from this release's proxy pods to the endpoints.
-  endpointNetworkPolicy:
+  # Ingress allowed from this release's proxy pods to prf-service.
+  prfServiceNetworkPolicy:
     enabled: true
-    # Labels of the endpoint pods (required when enabled): every prf-service pod in the namespace.
-    # Add `app.kubernetes.io/name: <release>-prf-service` to select one release's.
+    # Labels of the prf-service pods (required when enabled): every prf-service pod in the
+    # namespace. Add `app.kubernetes.io/name: <release>-prf-service` to select one release's.
     podSelector:
       app: coprocessor-prf-service
-    # Endpoint pod ports, which may differ from the Service ports in endpointAddresses: the PRF
-    # port of prf-service, which also answers `GET /healthz`.
+    # prf-service pod ports, which may differ from the Service port in prfServiceAddress: its PRF
+    # port.
     ports:
       - {port: 8090, protocol: TCP}
     # More ingress rules for those pods, e.g. Prometheus scraping their metrics port.

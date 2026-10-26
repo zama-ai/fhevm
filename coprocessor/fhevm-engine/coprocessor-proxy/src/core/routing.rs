@@ -1,5 +1,5 @@
 //! Default-deny routing of the interface: only the routes of [`ROUTES`], anything else is rejected
-//! before any endpoint connection.
+//! before any prf-service connection.
 //!
 //! The proxy checks the shape of a path only. The service behind a route checks the encoding of
 //! its path parameters.

@@ -67,7 +67,7 @@ pub fn prf_path(label_byte: u8) -> String {
     format!("/v1/prf/1/labels/{}/64", hex::encode([label_byte; 32]))
 }
 
-/// A path the stub endpoint answers `429` on.
+/// A path the stub prf-service answers `429` on.
 pub fn rate_limited_path() -> String {
     prf_path(RATE_LIMITED_LABEL_BYTE)
 }
@@ -105,18 +105,18 @@ pub async fn auth_header(signer: &PrivateKeySigner, path: &str, body: &[u8]) -> 
     auth_header_expiring(signer, path, body, now() + 60).await
 }
 
-/// The bytes the stub endpoint answers for `path`: deterministic, and not UTF-8.
+/// The bytes the stub prf-service answers for `path`: deterministic, and not UTF-8.
 pub fn stub_output(path: &str) -> Vec<u8> {
     keccak256(path.as_bytes()).repeat(4)
 }
 
-/// The `X-Prf-Attestation` the stub endpoint answers for `path`.
+/// The `X-Prf-Attestation` the stub prf-service answers for `path`.
 pub fn stub_attestation(path: &str) -> String {
     json!({"version": 1, "sns_ciphertext_digest": hex::encode(keccak256(stub_output(path)))})
         .to_string()
 }
 
-/// What the stub endpoint saw of the last request it answered.
+/// What the stub prf-service saw of the last request it answered.
 #[derive(Clone, Debug, Default)]
 pub struct SeenRequest {
     pub version: Option<Version>,
@@ -129,32 +129,21 @@ struct StubState {
     last: Mutex<SeenRequest>,
     /// The client addresses of the connections the requests came on.
     connections: Mutex<HashSet<SocketAddr>>,
-    /// The HTTP versions of the `/healthz` probes.
-    probe_versions: Mutex<Vec<Version>>,
     release: tokio::sync::Notify,
 }
 
-/// A stub prf-service endpoint over HTTP/1.1.
+/// A stub prf-service over HTTP/1.1.
 /// Test headers can delay, hold or interrupt a response.
-pub struct StubEndpoint {
+pub struct StubPrfService {
     pub addr: SocketAddr,
     state: Arc<StubState>,
     server: AbortHandle,
 }
 
-impl StubEndpoint {
+impl StubPrfService {
     pub async fn start() -> Self {
         let state = Arc::new(StubState::default());
         let app = Router::new()
-            .route(
-                "/healthz",
-                get(
-                    |State(state): State<Arc<StubState>>, version: Version| async move {
-                        state.probe_versions.lock().unwrap().push(version);
-                        "ok"
-                    },
-                ),
-            )
             .route("/v1/prf/:prf/labels/:label/:pad_length", get(prf))
             .with_state(Arc::clone(&state));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -188,17 +177,12 @@ impl StubEndpoint {
         self.state.last.lock().unwrap().clone()
     }
 
-    /// The HTTP versions of the `/healthz` probes received so far.
-    pub fn probe_versions(&self) -> Vec<Version> {
-        self.state.probe_versions.lock().unwrap().clone()
-    }
-
     /// The number of distinct connections the requests came on.
     pub fn connections(&self) -> usize {
         self.state.connections.lock().unwrap().len()
     }
 
-    /// Stops the endpoint for good: nothing listens on `addr` anymore.
+    /// Stops prf-service for good: nothing listens on `addr` anymore.
     pub async fn stop(&self) {
         self.server.abort();
         while tokio::net::TcpStream::connect(self.addr).await.is_ok() {
@@ -249,7 +233,7 @@ async fn prf(
         let chunks = futures_util::stream::once(async { Ok(first) }).chain(
             futures_util::stream::once(async {
                 tokio::time::sleep(Duration::from_millis(200)).await;
-                Err(std::io::Error::other("endpoint failed"))
+                Err(std::io::Error::other("prf-service failed"))
             }),
         );
         return (
@@ -431,51 +415,45 @@ fn answer(state: &mut RpcState, call: &Value) -> Response {
     Json(reply).into_response()
 }
 
-/// How often the test proxy probes its endpoints in the background.
-pub const ENDPOINT_HEALTHCHECK_FREQUENCY: Duration = Duration::from_millis(200);
-
 /// Runs a `Proxy` for the lifetime of one test.
 pub struct TestProxy {
     pub client: Client,
     pub addr: SocketAddr,
     pub tls: TestTls,
-    pub endpoints: Vec<StubEndpoint>,
+    pub prf_service: StubPrfService,
     pub rpc: FakeRpc,
     /// The healthcheck state of the proxy, to serve with `healthz_server::HttpServer`.
     pub state: health::State,
 }
 
 impl TestProxy {
-    pub async fn start(endpoints: Vec<StubEndpoint>) -> Self {
-        Self::start_with_config(endpoints, |_| {}).await
+    pub async fn start(prf_service: StubPrfService) -> Self {
+        Self::start_with_config(prf_service, |_| {}).await
     }
 
     /// Starts the proxy with the first KMS context holding [`sender`] only, and waits until it
     /// has read it.
     pub async fn start_with_config(
-        endpoints: Vec<StubEndpoint>,
+        prf_service: StubPrfService,
         customize: impl FnOnce(&mut Config),
     ) -> Self {
         let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
-        let t = Self::launch(rpc, endpoints, customize).await;
+        let t = Self::launch(rpc, prf_service, customize).await;
         t.wait_until_accepted(&sender()).await;
         t
     }
 
-    /// Starts the proxy reading `rpc` and forwarding to `endpoints`, without waiting for its
+    /// Starts the proxy reading `rpc` and forwarding to `prf_service`, without waiting for its
     /// first read.
     pub async fn launch(
         rpc: FakeRpc,
-        endpoints: Vec<StubEndpoint>,
+        prf_service: StubPrfService,
         customize: impl FnOnce(&mut Config),
     ) -> Self {
         let addr = free_addr();
         let tls = TestTls::generate(addr);
-        let addresses = endpoints
-            .iter()
-            .map(|e| e.addr.to_string().parse().unwrap())
-            .collect();
-        let mut config = Self::config(addr, &tls, &rpc, addresses);
+        let address = prf_service.addr.to_string().parse().unwrap();
+        let mut config = Self::config(addr, &tls, &rpc, address);
         customize(&mut config);
         let (proxy, state) = Proxy::from_config(config).unwrap();
         std::thread::spawn(move || proxy.run());
@@ -491,7 +469,7 @@ impl TestProxy {
             client,
             addr,
             tls,
-            endpoints,
+            prf_service,
             rpc,
             state,
         }
@@ -501,7 +479,7 @@ impl TestProxy {
         addr: SocketAddr,
         tls: &TestTls,
         rpc: &FakeRpc,
-        endpoint_addresses: Vec<Authority>,
+        prf_service_address: Authority,
     ) -> Config {
         Config {
             bind_address: addr,
@@ -514,9 +492,8 @@ impl TestProxy {
             ethereum_rpc_url: rpc.url.clone(),
             kms_registry_poll_interval: POLL_INTERVAL,
             coprocessor_signer_address: AUDIENCE,
-            endpoint_addresses,
-            endpoint_connect_timeout: Duration::from_millis(500),
-            endpoint_healthcheck_frequency: ENDPOINT_HEALTHCHECK_FREQUENCY,
+            prf_service_address,
+            prf_service_connect_timeout: Duration::from_millis(500),
             healthcheck_timeout: Duration::from_secs(2),
             ..Config::default()
         }
@@ -536,7 +513,7 @@ impl TestProxy {
 
     /// The code of the proxy's answer to a request signed by `signer` for a body it does not send:
     /// [`ACCEPTED`] once the proxy accepts `signer`, [`UNKNOWN_SIGNER`] before. The request never
-    /// reaches an endpoint.
+    /// reaches prf-service.
     pub async fn answer_code(&self, signer: &PrivateKeySigner) -> String {
         let path = prf_path(1);
         let response = self

@@ -5,7 +5,7 @@ mod common;
 
 use alloy::transports::http::reqwest::{Client, RequestBuilder, Response, StatusCode};
 use common::{
-    AUDIENCE, CHAIN_ID, FakeRpc, KmsContext, PROTOCOL_CONFIG, StubEndpoint, TestTls, auth_header,
+    AUDIENCE, CHAIN_ID, FakeRpc, KmsContext, PROTOCOL_CONFIG, StubPrfService, TestTls, auth_header,
     free_addr, prf_path, sender, stub_output,
 };
 use std::{
@@ -29,7 +29,7 @@ struct ProxyProcess {
 }
 
 impl ProxyProcess {
-    async fn start(endpoint: &StubEndpoint, rpc: &FakeRpc, env: &[(&str, &str)]) -> Self {
+    async fn start(prf_service: &StubPrfService, rpc: &FakeRpc, env: &[(&str, &str)]) -> Self {
         let addr = free_addr();
         let health = free_addr();
         let metrics = free_addr();
@@ -53,10 +53,9 @@ impl ProxyProcess {
                 AUDIENCE.to_string(),
             )
             .env(
-                "COPROCESSOR_PROXY_ENDPOINT_ADDRESSES",
-                endpoint.addr.to_string(),
+                "COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS",
+                prf_service.addr.to_string(),
             )
-            .env("COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY", "50ms")
             .envs(env.iter().copied())
             .env(
                 "COPROCESSOR_PROXY_HEALTHCHECK_PORT",
@@ -155,13 +154,13 @@ fn connection_header(response: &Response) -> &str {
 
 #[tokio::test]
 async fn sigterm_drains_a_held_request_and_exits_cleanly() {
-    let endpoint = StubEndpoint::start().await;
+    let prf_service = StubPrfService::start().await;
     let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
     let mut proxy = ProxyProcess::start(
-        &endpoint,
+        &prf_service,
         &rpc,
         &[
-            ("COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT", "20s"),
+            ("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "20s"),
             ("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD", "5s"),
         ],
     )
@@ -173,16 +172,16 @@ async fn sigterm_drains_a_held_request_and_exits_cleanly() {
         .header("x-stub-hold", "1");
     let reply = tokio::spawn(async move { request.send().await.unwrap() });
     tokio::time::timeout(Duration::from_secs(5), async {
-        while endpoint.hits() == 0 {
+        while prf_service.hits() == 0 {
             assert!(
                 !reply.is_finished(),
-                "request ended before reaching the endpoint"
+                "request ended before reaching prf-service"
             );
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
     })
     .await
-    .expect("request reached the endpoint");
+    .expect("request reached prf-service");
 
     proxy.sigterm().await;
     // Observe the real signal handler before releasing the request.
@@ -193,7 +192,7 @@ async fn sigterm_drains_a_held_request_and_exits_cleanly() {
         !reply.is_finished(),
         "request must remain held across SIGTERM"
     );
-    endpoint.release_held_request();
+    prf_service.release_held_request();
     let response = reply.await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.bytes().await.unwrap(), stub_output(&path));
@@ -203,10 +202,10 @@ async fn sigterm_drains_a_held_request_and_exits_cleanly() {
 
 #[tokio::test]
 async fn sigterm_keeps_serving_with_connection_close_for_the_shutdown_delay() {
-    let endpoint = StubEndpoint::start().await;
+    let prf_service = StubPrfService::start().await;
     let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
     let mut proxy = ProxyProcess::start(
-        &endpoint,
+        &prf_service,
         &rpc,
         &[
             ("COPROCESSOR_PROXY_SHUTDOWN_DELAY", "3s"),
@@ -269,10 +268,10 @@ async fn sigterm_keeps_serving_with_connection_close_for_the_shutdown_delay() {
 async fn logs_never_carry_the_signed_authorization() {
     // Pingora writes request headers at DEBUG, and the bytes it sends at TRACE.
     for level in ["DEBUG", "TRACE"] {
-        let endpoint = StubEndpoint::start().await;
+        let prf_service = StubPrfService::start().await;
         let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
         let mut proxy = ProxyProcess::start(
-            &endpoint,
+            &prf_service,
             &rpc,
             &[
                 ("COPROCESSOR_PROXY_LOG_LEVEL", level),

@@ -1,10 +1,10 @@
-{{- if and .Values.coprocessorProxy.enabled .Values.coprocessorProxy.endpointNetworkPolicy.enabled -}}
-{{- $policy := .Values.coprocessorProxy.endpointNetworkPolicy -}}
+{{- if and .Values.coprocessorProxy.enabled .Values.coprocessorProxy.prfServiceNetworkPolicy.enabled -}}
+{{- $policy := .Values.coprocessorProxy.prfServiceNetworkPolicy -}}
 {{- if not $policy.podSelector }}
-{{- fail "coprocessorProxy.endpointNetworkPolicy.podSelector must select the endpoint pods" }}
+{{- fail "coprocessorProxy.prfServiceNetworkPolicy.podSelector must select the prf-service pods" }}
 {{- end }}
 {{- if not $policy.ports }}
-{{- fail "coprocessorProxy.endpointNetworkPolicy.ports must list the endpoint pod ports" }}
+{{- fail "coprocessorProxy.prfServiceNetworkPolicy.ports must list the prf-service pod ports" }}
 {{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -12,7 +12,7 @@ metadata:
   labels:
     app: coprocessor-proxy
     app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
-  name: {{ include "coprocessorProxyName" . }}-endpoints
+  name: {{ include "coprocessorProxyName" . }}-prf-service
 spec:
   podSelector:
     matchLabels:

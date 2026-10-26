@@ -15,8 +15,8 @@
 {{- if not (or $protocolConfigChain.protocolConfigContractAddress $protocolConfigChain.protocolConfigContractAddressValueFrom) }}
 {{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with protocolConfigContractAddress or protocolConfigContractAddressValueFrom" $canonicalChainId) }}
 {{- end }}
-{{- if not $proxy.endpointAddresses }}
-{{- fail "coprocessorProxy.endpointAddresses must list the endpoints" }}
+{{- if not $proxy.prfServiceAddress }}
+{{- fail "coprocessorProxy.prfServiceAddress must be prf-service's host:port" }}
 {{- end }}
 {{- if not (or $protocolConfigChain.httpUrl $protocolConfigChain.httpUrlValueFrom) }}
 {{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with httpUrl or httpUrlValueFrom" $canonicalChainId) }}
@@ -64,7 +64,7 @@ spec:
       restartPolicy: Always
       # The shutdown delay and grace period, the proxy's GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS (5 s,
       # coprocessor-proxy/src/core/proxy.rs) to close what is left, and 5 s margin.
-      terminationGracePeriodSeconds: {{ add (int $proxy.shutdownDelaySeconds) (int $proxy.endpointResponseTimeoutSeconds) 5 5 }}
+      terminationGracePeriodSeconds: {{ add (int $proxy.shutdownDelaySeconds) (int $proxy.prfServiceResponseTimeoutSeconds) 5 5 }}
       {{- with $proxy.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -111,7 +111,7 @@ spec:
             - name: COPROCESSOR_PROXY_SHUTDOWN_DELAY
               value: "{{ int $proxy.shutdownDelaySeconds }}s"
             - name: COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD
-              value: "{{ int $proxy.endpointResponseTimeoutSeconds }}s"
+              value: "{{ int $proxy.prfServiceResponseTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_ETHEREUM_CHAIN_ID
               value: {{ $canonicalChainId | quote }}
             - name: COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS
@@ -130,10 +130,10 @@ spec:
               {{- end }}
             - name: COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS
               value: {{ required "coprocessorProxy.coprocessorSignerAddress must be set" $proxy.coprocessorSignerAddress | quote }}
-            - name: COPROCESSOR_PROXY_ENDPOINT_ADDRESSES
-              value: {{ $proxy.endpointAddresses | join "," | quote }}
-            - name: COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT
-              value: "{{ int $proxy.endpointResponseTimeoutSeconds }}s"
+            - name: COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS
+              value: {{ $proxy.prfServiceAddress | quote }}
+            - name: COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT
+              value: "{{ int $proxy.prfServiceResponseTimeoutSeconds }}s"
           {{- if $tracingEnabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}

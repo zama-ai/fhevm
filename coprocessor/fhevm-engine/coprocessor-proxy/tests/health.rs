@@ -1,10 +1,9 @@
 mod common;
 
 use alloy::transports::http::reqwest::{self, StatusCode};
-use axum::http::Version;
 use common::{
-    ENDPOINT_HEALTHCHECK_FREQUENCY, FakeRpc, KmsContext, StubEndpoint, TestProxy, TestTls,
-    free_addr, prf_path, sender, wait_for_listener,
+    FakeRpc, KmsContext, StubPrfService, TestProxy, TestTls, free_addr, prf_path, sender,
+    wait_for_listener,
 };
 use coprocessor_proxy::{core::Proxy, monitoring::health::State};
 use fhevm_engine_common::healthz_server::HttpServer;
@@ -47,64 +46,31 @@ async fn fetch_status(base_url: &str) -> anyhow::Result<(StatusCode, HealthRespo
 #[timeout(Duration::from_secs(300))]
 #[tokio::test]
 async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
-    // Start the `Proxy` with two endpoints, and its health server
-    let endpoints = vec![StubEndpoint::start().await, StubEndpoint::start().await];
-    let t = TestProxy::start(endpoints).await;
+    let t = TestProxy::start(StubPrfService::start().await).await;
     let cancel_token = CancellationToken::new();
     let base_url = serve_health(t.state.clone(), &cancel_token).await;
 
-    // Test `liveness` endpoint
     let response = reqwest::get(format!("{base_url}/liveness")).await?;
     assert_eq!(response.status(), StatusCode::OK);
 
-    // Test `version` endpoint
     let response = reqwest::get(format!("{base_url}/version")).await?;
     assert_eq!(response.status(), StatusCode::OK);
     let version: Value = response.json().await?;
     assert_eq!(version["name"], "coprocessor-proxy");
 
-    // Test the endpoint while everything is fine
     let (status_code, status) = fetch_status(&base_url).await?;
     assert_eq!(status_code, StatusCode::OK, "{status:?}");
     assert_eq!(status.status, "healthy");
     for check in ["tls_listener", "kms_tx_senders"] {
         assert_eq!(status.check(check), "ok", "{status:?}");
     }
-    // The endpoints' health is reported, not a readiness condition.
     assert_eq!(status.dependencies.len(), 2, "{status:?}");
     assert!(status.details.is_empty(), "{status:?}");
-    // The endpoints are probed over HTTP/1.1, the protocol of the proxied requests.
-    for endpoint in &t.endpoints {
-        let versions = endpoint.probe_versions();
-        assert!(
-            !versions.is_empty() && versions.iter().all(|v| *v == Version::HTTP_11),
-            "{versions:?}"
-        );
-    }
 
-    // Stop one endpoint: degraded but healthy, the other one is still able to serve
-    let (stopped, live) = (&t.endpoints[0], &t.endpoints[1]);
-    stopped.stop().await;
-    let (status_code, status) = wait_for_details(&base_url, &stopped.addr.to_string()).await?;
+    // Without prf-service the proxy stays ready: it answers the requests itself, retryable.
+    t.prf_service.stop().await;
+    let (status_code, status) = fetch_status(&base_url).await?;
     assert_eq!(status_code, StatusCode::OK, "{status:?}");
-    assert_eq!(status.status, "healthy");
-
-    // The proxy stops selecting the unhealthy endpoint
-    let (live_hits, stopped_hits) = (live.hits(), stopped.hits());
-    for _ in 0..10 {
-        let response = t.get(&prf_path(1)).await.send().await?;
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-    assert_eq!(live.hits(), live_hits + 10);
-    assert_eq!(stopped.hits(), stopped_hits);
-
-    // Stop the last endpoint: the proxy stays ready, it reports the endpoints in the details and
-    // answers the requests itself.
-    live.stop().await;
-    let (status_code, status) =
-        wait_for_details(&base_url, "No healthy endpoint available").await?;
-    assert_eq!(status_code, StatusCode::OK, "{status:?}");
-    assert_eq!(status.status, "healthy");
     let response = t.get(&prf_path(1)).await.send().await?;
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     let error: Value = response.json().await?;
@@ -121,11 +87,11 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
 async fn test_healthcheck_unreachable_tls_listener() -> anyhow::Result<()> {
     // Build the `Proxy` without starting it: its TLS listener is down. Pingora's server cannot
     // be stopped once started, so this case cannot be part of the test above.
-    let endpoint = StubEndpoint::start().await;
+    let prf_service = StubPrfService::start().await;
     let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
     let addr = free_addr();
     let tls = TestTls::generate(addr);
-    let config = TestProxy::config(addr, &tls, &rpc, vec![endpoint.addr.to_string().parse()?]);
+    let config = TestProxy::config(addr, &tls, &rpc, prf_service.addr.to_string().parse()?);
     let (_proxy, state) = Proxy::from_config(config)?;
     let cancel_token = CancellationToken::new();
     let base_url = serve_health(state, &cancel_token).await;
@@ -146,10 +112,10 @@ async fn test_healthcheck_unreachable_tls_listener() -> anyhow::Result<()> {
 #[timeout(Duration::from_secs(300))]
 #[tokio::test]
 async fn test_not_ready_before_the_first_read() -> anyhow::Result<()> {
-    let endpoint = StubEndpoint::start().await;
+    let prf_service = StubPrfService::start().await;
     let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
     rpc.set_failing(true);
-    let t = TestProxy::launch(rpc, vec![endpoint], |_| {}).await;
+    let t = TestProxy::launch(rpc, prf_service, |_| {}).await;
     let cancel_token = CancellationToken::new();
     let base_url = serve_health(t.state.clone(), &cancel_token).await;
 
@@ -165,23 +131,4 @@ async fn test_not_ready_before_the_first_read() -> anyhow::Result<()> {
 
     cancel_token.cancel();
     Ok(())
-}
-
-/// Polls `/healthz` until its details mention `needle`.
-async fn wait_for_details(
-    base_url: &str,
-    needle: &str,
-) -> anyhow::Result<(StatusCode, HealthResponse)> {
-    let deadline = tokio::time::Instant::now() + 20 * ENDPOINT_HEALTHCHECK_FREQUENCY;
-    loop {
-        let (status_code, status) = fetch_status(base_url).await?;
-        if status.details.contains(needle) {
-            return Ok((status_code, status));
-        }
-        anyhow::ensure!(
-            tokio::time::Instant::now() < deadline,
-            "`{needle}` not in the details after the deadline: {status:?}"
-        );
-        tokio::time::sleep(ENDPOINT_HEALTHCHECK_FREQUENCY / 2).await;
-    }
 }

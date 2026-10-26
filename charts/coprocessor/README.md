@@ -6,7 +6,7 @@ A helm chart to distribute and deploy the Zama fhevm coprocessor services.
 
 `coprocessorProxy` deploys the coprocessor's public HTTPS entry point. The proxy checks each
 request's `FhevmSig` signature (RFC-038) and forwards an accepted request unchanged, over HTTP/1.1,
-to the endpoints in `coprocessorProxy.endpointAddresses`. Its only route is the
+to prf-service's Service at `coprocessorProxy.prfServiceAddress`. Its only route is the
 PRF route, `GET` and `HEAD` `/v1/prf/{prf}/labels/{label}/{padLength}`, served by prf-service. The
 proxy checks the shape of the path, and prf-service the encoding of its parameters. The proxy
 forwards the `Authorization` header: prf-service recovers the signer from it for its per-connector
@@ -32,22 +32,19 @@ through environment variables only. `coprocessor/fhevm-engine/coprocessor-proxy/
 lists every setting; `coprocessorProxy.env` sets the others. The Service is a ClusterIP. Exposing it
 outside the cluster is left to the deployment, within the requirement below.
 
-Each endpoint must answer `GET /healthz` with `200` over HTTP/1.1 on its address in
-`endpointAddresses`: the proxy sends requests only to the endpoints that do. The healthz server of
-the other coprocessor services runs on its own port, so it does not meet this.
-
-With a ClusterIP Service as the endpoint address, each new connection can reach a different pod.
-Idle pooled connections close after 10 s without traffic.
+The proxy resolves `prfServiceAddress` once, at startup. The Service routes each new connection
+to a ready prf-service pod. Idle pooled connections close after 10 s without traffic, so new
+connections reach newly scaled pods.
 
 The proxy reads its TLS certificate at startup: a renewed secret takes effect after a pod restart.
 `commonConfig.env` applies to the proxy too, which is the internet-facing pod, so it must hold
 nothing the proxy should not.
 
-A NetworkPolicy allows this release's proxy pods to reach the endpoint pods selected by
-`endpointNetworkPolicy.podSelector`, on `endpointNetworkPolicy.ports` (TCP 8090 by default).
-Set these to the endpoint **pod** ports, which may differ from the Service ports in
-`endpointAddresses`. Add other required ingress, such as metrics scraping, to
-`endpointNetworkPolicy.extraIngress`. Isolation requires a CNI that enforces NetworkPolicy
+A NetworkPolicy allows this release's proxy pods to reach the prf-service pods selected by
+`prfServiceNetworkPolicy.podSelector`, on `prfServiceNetworkPolicy.ports` (TCP 8090 by default).
+Set these to the prf-service **pod** ports, which may differ from the Service port in
+`prfServiceAddress`. Add other required ingress, such as metrics scraping, to
+`prfServiceNetworkPolicy.extraIngress`. Isolation requires a CNI that enforces NetworkPolicy
 and no other policy granting broader access: Kubernetes policies are additive.
 
 The proxy reads the signers at the latest finalized block. It checks that block every 5 s
@@ -67,9 +64,9 @@ The NetworkPolicy matches the proxy pods in the release namespace only. When prf
 another namespace, add its own policy there.
 
 The readiness probe reports the proxy's own ability to serve. It passes once the TLS listener
-answers and the KMS tx-senders have been read. The health of each endpoint appears in the
-`/healthz` details but does not change readiness: without a healthy endpoint, every replica stays
-ready and answers `502` with `"code": "upstream_transient"` and `"retryable": true` itself. To
+answers and the KMS tx-senders have been read. It does not check prf-service: without a ready
+prf-service pod, every replica stays ready and answers `502` with `"code": "upstream_transient"`
+and `"retryable": true` itself. To
 check the TLS listener, each probe sends it `GET /` and expects `404`, counted in
 `coprocessor_proxy_requests_total{route="none",status="404"}`.
 
@@ -78,7 +75,7 @@ for the accepted set, or 0 before the first read. It advances only after applyin
 equal, older or failed RPC replies leave it unchanged. Its age includes the chain's normal
 finality delay. Readiness does not check ongoing signer freshness.
 
-prf-service holds a request until its output is ready, so `coprocessorProxy.endpointResponseTimeoutSeconds`
+prf-service holds a request until its output is ready, so `coprocessorProxy.prfServiceResponseTimeoutSeconds`
 (120 by default) must exceed the KMS connector's `PRF_RETRIEVAL_DEADLINE`. It is also the shutdown
 grace period.
 

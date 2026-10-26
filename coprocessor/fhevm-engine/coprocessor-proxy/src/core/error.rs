@@ -2,7 +2,6 @@
 
 use http::StatusCode;
 use serde::{Serialize, Serializer};
-use std::fmt::Display;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorCode {
@@ -73,14 +72,6 @@ impl ErrorResponse {
     }
 }
 
-impl Display for ErrorResponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.code.as_str(), self.message)
-    }
-}
-
-impl std::error::Error for ErrorResponse {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -96,7 +87,7 @@ mod tests {
     }
 
     #[test]
-    fn only_endpoint_failures_and_retryable_auth_failures_are_retryable() {
+    fn only_upstream_failures_and_retryable_auth_failures_are_retryable() {
         for (code, status, retryable) in [
             (ErrorCode::Malformed, 400, false),
             (ErrorCode::NotFound, 404, false),

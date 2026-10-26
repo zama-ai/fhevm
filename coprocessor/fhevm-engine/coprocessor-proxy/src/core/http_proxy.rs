@@ -60,7 +60,6 @@ const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path"
 pub struct RequestContext {
     started_at: Instant,
     route: Option<Route>,
-    endpoint: Option<String>,
     /// The sender authenticated by the `FhevmSig` header.
     sender: Option<Address>,
 }
@@ -94,11 +93,6 @@ impl Proxy {
     }
 }
 
-/// Empty key for the `.select` call (unused by the function).
-const SELECT_KEY: &[u8] = b"";
-/// Maximum number of iterations for the `.select` call.
-const MAX_SELECT_ITERATIONS: usize = 256;
-
 #[async_trait]
 impl ProxyHttp for Proxy {
     type CTX = RequestContext;
@@ -107,7 +101,6 @@ impl ProxyHttp for Proxy {
         RequestContext {
             started_at: Instant::now(),
             route: None,
-            endpoint: None,
             sender: None,
         }
     }
@@ -125,7 +118,7 @@ impl ProxyHttp for Proxy {
         Ok(())
     }
 
-    // Check the target, route, absence of a body and signature before any endpoint connection.
+    // Check the target, route, absence of a body and signature before any prf-service connection.
     async fn request_filter(
         &self,
         session: &mut Session,
@@ -135,7 +128,7 @@ impl ProxyHttp for Proxy {
         let req = session.req_header();
 
         // Pingora forwards the raw target, but its URI renders an absolute-form or non-UTF-8 target
-        // lossily: only a target identical to what reaches the endpoint can be authenticated.
+        // lossily: only a target identical to what reaches prf-service can be authenticated.
         let Some(target) = req
             .uri
             .path_and_query()
@@ -204,25 +197,15 @@ impl ProxyHttp for Proxy {
     async fn upstream_peer(
         &self,
         _session: &mut Session,
-        ctx: &mut Self::CTX,
+        _ctx: &mut Self::CTX,
     ) -> pingora::Result<Box<HttpPeer>> {
-        let Some(backend) = self
-            .endpoint_balancer
-            .select(SELECT_KEY, MAX_SELECT_ITERATIONS)
-        else {
-            return abort_with(ErrorResponse::new(
-                ErrorCode::UpstreamTransient,
-                "endpoint unavailable",
-            ));
-        };
-        ctx.endpoint = Some(backend.addr.to_string());
-
-        let mut peer = HttpPeer::new(backend.addr, false, String::new());
-        peer.options.connection_timeout = Some(self.config.endpoint_connect_timeout);
-        peer.options.total_connection_timeout = Some(self.config.endpoint_connect_timeout);
-        peer.options.read_timeout = Some(self.config.endpoint_response_timeout);
-        peer.options.write_timeout = Some(self.config.endpoint_response_timeout);
-        peer.options.idle_timeout = Some(self.config.endpoint_idle_timeout);
+        let config = &self.config;
+        let mut peer = HttpPeer::new(self.prf_service, false, String::new());
+        peer.options.connection_timeout = Some(config.prf_service_connect_timeout);
+        peer.options.total_connection_timeout = Some(config.prf_service_connect_timeout);
+        peer.options.read_timeout = Some(config.prf_service_response_timeout);
+        peer.options.write_timeout = Some(config.prf_service_response_timeout);
+        peer.options.idle_timeout = Some(config.prf_service_idle_timeout);
         Ok(Box::new(peer))
     }
 
@@ -261,42 +244,32 @@ impl ProxyHttp for Proxy {
                 can_reuse_downstream: false,
             };
         }
-        let error_code = match e.root_cause().downcast_ref::<ErrorResponse>() {
-            Some(error) => {
-                let status = error.code.http_status();
-                if let Err(e) = self.respond_with_error(session, error.clone(), None).await {
-                    error!("Failed to send error response to downstream: {e}");
-                }
-                status.as_u16()
+        // Keep upstream details in server logs; clients get a fixed error message.
+        let error_code = if *e.esource() == ErrorSource::Upstream {
+            // prf-service that cannot be connected to is unavailable, a timeout or not.
+            let (code, message) = match e.etype() {
+                ErrorType::ReadTimedout => (ErrorCode::Timeout, "prf-service timed out"),
+                _ => (ErrorCode::UpstreamTransient, "prf-service unavailable"),
+            };
+            let error = ErrorResponse::new(code, message);
+            let status = error.code.http_status();
+            if let Err(e) = self.respond_with_error(session, error, None).await {
+                error!("Failed to send error response to downstream: {e}");
             }
-            // Keep upstream details in server logs; clients get a fixed error message.
-            None if *e.esource() == ErrorSource::Upstream => {
-                // An endpoint that cannot be connected to is unavailable, a timeout or not.
-                let (code, message) = match e.etype() {
-                    ErrorType::ReadTimedout => (ErrorCode::Timeout, "endpoint timed out"),
-                    _ => (ErrorCode::UpstreamTransient, "endpoint unavailable"),
+            status.as_u16()
+        } else {
+            let code = default_error_code(e);
+            if code > 0 {
+                let mut header = ServerSession::generate_error(code);
+                let written = match header.insert_header(CACHE_CONTROL, NO_STORE) {
+                    Ok(()) => session.write_error_response(header, Bytes::new()).await,
+                    Err(e) => Err(e),
                 };
-                let error = ErrorResponse::new(code, message);
-                let status = error.code.http_status();
-                if let Err(e) = self.respond_with_error(session, error, None).await {
+                if let Err(e) = written {
                     error!("Failed to send error response to downstream: {e}");
                 }
-                status.as_u16()
             }
-            None => {
-                let code = default_error_code(e);
-                if code > 0 {
-                    let mut header = ServerSession::generate_error(code);
-                    let written = match header.insert_header(CACHE_CONTROL, NO_STORE) {
-                        Ok(()) => session.write_error_response(header, Bytes::new()).await,
-                        Err(e) => Err(e),
-                    };
-                    if let Err(e) = written {
-                        error!("Failed to send error response to downstream: {e}");
-                    }
-                }
-                code
-            }
+            code
         };
         FailToProxy {
             error_code,
@@ -325,7 +298,6 @@ impl ProxyHttp for Proxy {
             path = req.uri.path(),
             status,
             client,
-            endpoint = ctx.endpoint.as_deref().unwrap_or(""),
             sender = ctx.sender.map(|s| s.to_string()).unwrap_or_default(),
             duration_ms = ctx.started_at.elapsed().as_millis() as u64,
             error = e.map(|e| e.to_string()).unwrap_or_default(),
@@ -358,14 +330,6 @@ fn route_error_response(error: &RouteError) -> ErrorResponse {
     }
 }
 
-/// Aborts the proxying with an `ErrorResponse`.
-///
-/// The [`ErrorResponse`] is kept as the cause so `fail_to_proxy` can send it back to the client.
-fn abort_with<T>(error: ErrorResponse) -> pingora::Result<T> {
-    let etype = ErrorType::HTTPStatus(error.code.http_status().as_u16());
-    Error::e_because(etype, error.to_string(), error)
-}
-
 /// The status Pingora's default `fail_to_proxy` would answer.
 fn default_error_code(e: &Error) -> u16 {
     match (e.etype(), e.esource()) {
@@ -382,7 +346,7 @@ fn default_error_code(e: &Error) -> u16 {
     }
 }
 
-/// Headers that must not be forwarded to the endpoint: client-supplied forwarding information and
+/// Headers that must not be forwarded to prf-service: client-supplied forwarding information and
 /// the HTTP/1.1 hop-by-hop headers (RFC 9110 §7.6.1).
 const STRIPPED_HEADERS: [HeaderName; 13] = [
     X_FORWARDED_FOR,
@@ -410,15 +374,6 @@ pub fn sanitize_headers(req: &mut RequestHeader) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn error_response_is_recovered_from_the_pingora_error() {
-        let error = ErrorResponse::new(ErrorCode::UpstreamTransient, "endpoint unavailable");
-        let e: Box<Error> = abort_with::<()>(error.clone()).unwrap_err();
-        assert_eq!(e.etype(), &ErrorType::HTTPStatus(502));
-        assert_eq!(default_error_code(&e), 502);
-        assert_eq!(e.root_cause().downcast_ref::<ErrorResponse>(), Some(&error));
-    }
 
     #[test]
     fn only_expired_auth_rejection_is_retryable() {

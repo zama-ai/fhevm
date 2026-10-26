@@ -1,6 +1,6 @@
 // Stand-in for prf-service behind each coprocessor-proxy of the e2e stack, until prf-service ships.
-// Over HTTP/1.1, `GET /healthz` answers 200 and the RFC-038 PRF route, with prf-service's canonical
-// parameters, answers a fixed binary body with an `X-Prf-Attestation` header that holds its digest.
+// Over HTTP/1.1, the RFC-038 PRF route, with prf-service's canonical parameters, answers a fixed
+// binary body with an `X-Prf-Attestation` header that holds its digest.
 // A plain-HTTP port answers `GET /count` with how many PRF requests reached the fake, so the e2e
 // suite can check that a request the proxy rejects is never forwarded. Node 22.18+ runs this file
 // directly: `node fake-prf-service.ts`.
@@ -20,9 +20,7 @@ let prfRequests = 0;
 
 http
   .createServer((req, res) => {
-    if (req.method === 'GET' && req.url === '/healthz') {
-      res.writeHead(200).end();
-    } else if ((req.method === 'GET' || req.method === 'HEAD') && PRF_ROUTE.test(req.url ?? '')) {
+    if ((req.method === 'GET' || req.method === 'HEAD') && PRF_ROUTE.test(req.url ?? '')) {
       prfRequests += 1;
       res.writeHead(200, { 'content-type': 'application/octet-stream', 'x-prf-attestation': ATTESTATION }).end(OUTPUT);
     } else {

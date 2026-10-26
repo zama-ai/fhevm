@@ -44,33 +44,28 @@ pub struct Config {
     /// signed for.
     pub coprocessor_signer_address: Address,
 
-    /// The `host:port` addresses of the endpoints to forward requests to.
-    #[serde(deserialize_with = "parse_endpoint_addresses")]
-    pub endpoint_addresses: Vec<Authority>,
-    /// The timeout to establish a TCP connection to an endpoint.
+    /// The `host:port` address of prf-service, resolved once at startup: its Kubernetes Service,
+    /// which routes to the ready pods.
+    #[serde(deserialize_with = "parse_prf_service_address")]
+    pub prf_service_address: Authority,
+    /// The timeout to establish a TCP connection to prf-service.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
-        default = "default_endpoint_connect_timeout"
+        default = "default_prf_service_connect_timeout"
     )]
-    pub endpoint_connect_timeout: Duration,
-    /// How often the endpoints are probed in the background to filter which ones receive requests.
+    pub prf_service_connect_timeout: Duration,
+    /// How long the proxy waits for a prf-service response before answering `504`.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
-        default = "default_endpoint_healthcheck_frequency"
+        default = "default_prf_service_response_timeout"
     )]
-    pub endpoint_healthcheck_frequency: Duration,
-    /// How long the proxy waits for an endpoint response before answering `504`.
+    pub prf_service_response_timeout: Duration,
+    /// How long an idle pooled prf-service connection is kept before being closed.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
-        default = "default_endpoint_response_timeout"
+        default = "default_prf_service_idle_timeout"
     )]
-    pub endpoint_response_timeout: Duration,
-    /// How long an idle pooled endpoint connection is kept before being closed.
-    #[serde(
-        deserialize_with = "deserialize_non_zero_duration",
-        default = "default_endpoint_idle_timeout"
-    )]
-    pub endpoint_idle_timeout: Duration,
+    pub prf_service_idle_timeout: Duration,
 
     /// How long the proxy waits for the client to send request bytes before dropping it.
     #[serde(
@@ -122,8 +117,6 @@ impl Config {
             Environment::with_prefix(ENV_PREFIX)
                 .prefix_separator("_")
                 .separator("__")
-                .list_separator(",")
-                .with_list_parse_key("endpoint_addresses")
                 .try_parsing(true),
         );
         Ok(builder.build()?.try_deserialize()?)
@@ -139,24 +132,14 @@ pub struct TlsConfig {
     pub key_path: PathBuf,
 }
 
-fn parse_endpoint_addresses<'de, D>(d: D) -> Result<Vec<http::uri::Authority>, D::Error>
+fn parse_prf_service_address<'de, D>(d: D) -> Result<Authority, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let addresses = <Vec<String>>::deserialize(d)?;
-    if addresses.is_empty() {
-        return Err(serde::de::Error::custom(
-            "`endpoint_addresses` must contain at least one address",
-        ));
-    }
-    addresses
-        .iter()
-        .map(|address| {
-            address.parse().map_err(|e| {
-                serde::de::Error::custom(format!("invalid endpoint address `{address}`: {e}"))
-            })
-        })
-        .collect()
+    let address = String::deserialize(d)?;
+    address.parse().map_err(|e| {
+        serde::de::Error::custom(format!("invalid prf-service address `{address}`: {e}"))
+    })
 }
 
 /// Deserializes a humantime `Duration` and rejects `0s`.
@@ -203,24 +186,20 @@ fn default_kms_registry_poll_interval() -> Duration {
     Duration::from_secs(5)
 }
 
-fn default_endpoint_connect_timeout() -> Duration {
+fn default_prf_service_connect_timeout() -> Duration {
     Duration::from_secs(3)
 }
 
-fn default_endpoint_healthcheck_frequency() -> Duration {
-    Duration::from_secs(3)
-}
-
-// An endpoint can hold a request until its result is ready: the response timeout must exceed how
+// prf-service can hold a request until its result is ready: the response timeout must exceed how
 // long the callers wait, so only they give up on a held request. The shutdown grace covers such a
 // request.
 const HELD_REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
 
-fn default_endpoint_response_timeout() -> Duration {
+fn default_prf_service_response_timeout() -> Duration {
     HELD_REQUEST_TIMEOUT
 }
 
-fn default_endpoint_idle_timeout() -> Duration {
+fn default_prf_service_idle_timeout() -> Duration {
     Duration::from_secs(10)
 }
 
@@ -262,11 +241,10 @@ impl Default for Config {
             ethereum_rpc_url: "http://localhost:8545".parse().unwrap(),
             kms_registry_poll_interval: default_kms_registry_poll_interval(),
             coprocessor_signer_address: Address::ZERO,
-            endpoint_addresses: vec!["endpoint:8080".parse().unwrap()],
-            endpoint_connect_timeout: default_endpoint_connect_timeout(),
-            endpoint_healthcheck_frequency: default_endpoint_healthcheck_frequency(),
-            endpoint_response_timeout: default_endpoint_response_timeout(),
-            endpoint_idle_timeout: default_endpoint_idle_timeout(),
+            prf_service_address: "prf-service:8090".parse().unwrap(),
+            prf_service_connect_timeout: default_prf_service_connect_timeout(),
+            prf_service_response_timeout: default_prf_service_response_timeout(),
+            prf_service_idle_timeout: default_prf_service_idle_timeout(),
             request_read_timeout: default_request_read_timeout(),
             shutdown_delay: Duration::ZERO,
             shutdown_grace_period: default_shutdown_grace_period(),
@@ -299,11 +277,10 @@ mod tests {
             env::remove_var("COPROCESSOR_PROXY_ETHEREUM_RPC_URL");
             env::remove_var("COPROCESSOR_PROXY_KMS_REGISTRY_POLL_INTERVAL");
             env::remove_var("COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS");
-            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_ADDRESSES");
-            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_CONNECT_TIMEOUT");
-            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY");
-            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT");
-            env::remove_var("COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT");
+            env::remove_var("COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS");
+            env::remove_var("COPROCESSOR_PROXY_PRF_SERVICE_CONNECT_TIMEOUT");
+            env::remove_var("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT");
+            env::remove_var("COPROCESSOR_PROXY_PRF_SERVICE_IDLE_TIMEOUT");
             env::remove_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT");
             env::remove_var("COPROCESSOR_PROXY_SHUTDOWN_DELAY");
             env::remove_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD");
@@ -353,13 +330,12 @@ mod tests {
                 "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
             );
             env::set_var(
-                "COPROCESSOR_PROXY_ENDPOINT_ADDRESSES",
-                "endpoint-1:8080,endpoint-2:8080",
+                "COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS",
+                "prf-service-1:8090",
             );
-            env::set_var("COPROCESSOR_PROXY_ENDPOINT_CONNECT_TIMEOUT", "1s");
-            env::set_var("COPROCESSOR_PROXY_ENDPOINT_HEALTHCHECK_FREQUENCY", "500ms");
-            env::set_var("COPROCESSOR_PROXY_ENDPOINT_RESPONSE_TIMEOUT", "45s");
-            env::set_var("COPROCESSOR_PROXY_ENDPOINT_IDLE_TIMEOUT", "7s");
+            env::set_var("COPROCESSOR_PROXY_PRF_SERVICE_CONNECT_TIMEOUT", "1s");
+            env::set_var("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "45s");
+            env::set_var("COPROCESSOR_PROXY_PRF_SERVICE_IDLE_TIMEOUT", "7s");
             env::set_var("COPROCESSOR_PROXY_REQUEST_READ_TIMEOUT", "12s");
             env::set_var("COPROCESSOR_PROXY_SHUTDOWN_DELAY", "9s");
             env::set_var("COPROCESSOR_PROXY_SHUTDOWN_GRACE_PERIOD", "15s");
@@ -391,20 +367,10 @@ mod tests {
             config.coprocessor_signer_address,
             Address::repeat_byte(0xa1)
         );
-        assert_eq!(
-            config.endpoint_addresses,
-            vec![
-                "endpoint-1:8080".parse::<Authority>().unwrap(),
-                "endpoint-2:8080".parse::<Authority>().unwrap(),
-            ]
-        );
-        assert_eq!(config.endpoint_connect_timeout, Duration::from_secs(1));
-        assert_eq!(
-            config.endpoint_healthcheck_frequency,
-            Duration::from_millis(500)
-        );
-        assert_eq!(config.endpoint_response_timeout, Duration::from_secs(45));
-        assert_eq!(config.endpoint_idle_timeout, Duration::from_secs(7));
+        assert_eq!(config.prf_service_address, "prf-service-1:8090");
+        assert_eq!(config.prf_service_connect_timeout, Duration::from_secs(1));
+        assert_eq!(config.prf_service_response_timeout, Duration::from_secs(45));
+        assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(7));
         assert_eq!(config.request_read_timeout, Duration::from_secs(12));
         assert_eq!(config.shutdown_delay, Duration::from_secs(9));
         assert_eq!(config.shutdown_grace_period, Duration::from_secs(15));
@@ -421,7 +387,7 @@ mod tests {
     #[serial(config_tests)]
     fn test_missing_required_field_fails() {
         cleanup_env_vars();
-        let toml = r#"endpoint_addresses = ["localhost:8080"]"#;
+        let toml = r#"prf_service_address = "localhost:8090""#;
         let tmp = std::env::temp_dir().join(format!("proxy-cfg-{}.toml", std::process::id()));
         std::fs::write(&tmp, toml).unwrap();
         assert!(Config::from_env_and_file(Some(&tmp)).is_err());

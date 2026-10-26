@@ -195,8 +195,8 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
       -f ci/preview-env/coprocessor/values-coprocessor-proxy-e2e.yaml
       --set-string "coprocessorProxy.image.tag=$(jq -r .coprocessor_proxy <<<"${TAGS_JSON}")"
       --set-string "coprocessorProxy.coprocessorSignerAddress=${signer}"
-      --set-string "coprocessorProxy.endpointAddresses[0]=$(fake_service "${i}"):8080"
-      --set-json "coprocessorProxy.endpointNetworkPolicy.podSelector={\"app\":\"prf-service-fake\",\"fhevm.zama.ai/party\":\"${i}\"}"
+      --set-string "coprocessorProxy.prfServiceAddress=$(fake_service "${i}"):8080"
+      --set-json "coprocessorProxy.prfServiceNetworkPolicy.podSelector={\"app\":\"prf-service-fake\",\"fhevm.zama.ai/party\":\"${i}\"}"
     )
   fi
   helm upgrade --install "coprocessor-${i}" "${COPROCESSOR_CHART}" \

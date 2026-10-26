@@ -37,7 +37,6 @@ config = { version = "=0.15.19", default-features = false, features = ["toml"] }
 humantime-serde = "1.1.1"
 pingora = { version = "=0.9.0", default-features = false, features = [
     "openssl",
-    "lb",
     "proxy",
 ] }
 rcgen = { version = "0.14", default-features = false, features = [

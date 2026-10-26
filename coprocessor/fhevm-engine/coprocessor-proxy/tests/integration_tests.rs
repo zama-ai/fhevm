@@ -1,4 +1,4 @@
-//! End-to-end tests of the proxy against a stub prf-service endpoint.
+//! End-to-end tests of the proxy against a stub prf-service.
 
 mod common;
 
@@ -9,8 +9,8 @@ use alloy::{
 };
 use axum::http::Version;
 use common::{
-    ACCEPTED, FakeRpc, KmsContext, StubEndpoint, TestProxy, UNKNOWN_SIGNER, auth_header,
-    auth_header_expiring, auth_header_for, free_addr, now, prf_path, rate_limited_path, sender,
+    ACCEPTED, FakeRpc, KmsContext, StubPrfService, TestProxy, UNKNOWN_SIGNER, auth_header,
+    auth_header_expiring, auth_header_for, now, prf_path, rate_limited_path, sender,
     stub_attestation, stub_output,
 };
 use coprocessor_proxy::core::UNKNOWN_SIGNER_WAIT;
@@ -31,7 +31,7 @@ async fn assert_proxy_error(response: Response, status: StatusCode, code: &str, 
 
 #[tokio::test]
 async fn test_forwards_authenticated_requests_untouched() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let t = TestProxy::start(StubPrfService::start().await).await;
     let path = prf_path(1);
 
     let auth = auth_header(&sender(), &path, b"").await;
@@ -56,7 +56,7 @@ async fn test_forwards_authenticated_requests_untouched() {
     let body = response.bytes().await.unwrap();
     assert_eq!(keccak256(&body), keccak256(stub_output(&path)));
 
-    let seen = t.endpoints[0].last_request();
+    let seen = t.prf_service.last_request();
     assert_eq!(seen.version, Some(Version::HTTP_11));
     assert_eq!(seen.headers["host"], t.addr.to_string());
     // prf-service recovers the signer from the `FhevmSig` header.
@@ -81,7 +81,7 @@ async fn test_forwards_authenticated_requests_untouched() {
 
 #[tokio::test]
 async fn test_rejects_unauthenticated_requests() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let t = TestProxy::start(StubPrfService::start().await).await;
     let path = prf_path(1);
     let stranger = PrivateKeySigner::random();
     let other_coprocessor = Address::repeat_byte(0xa2);
@@ -136,12 +136,12 @@ async fn test_rejects_unauthenticated_requests() {
         let response = request.send().await.unwrap();
         assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, false).await;
     }
-    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
+    assert_eq!(t.prf_service.hits(), 0, "nothing must reach prf-service");
 }
 
 #[tokio::test]
 async fn test_rejects_targets_the_uri_does_not_reproduce() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let t = TestProxy::start(StubPrfService::start().await).await;
     let path = prf_path(1);
     let addr = t.addr;
     let auth = auth_header(&sender(), &path, b"").await;
@@ -169,7 +169,7 @@ async fn test_rejects_targets_the_uri_does_not_reproduce() {
         send_raw(&t, &request(&lossy)).await,
         StatusCode::BAD_REQUEST
     );
-    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
+    assert_eq!(t.prf_service.hits(), 0, "nothing must reach prf-service");
 
     // The same request in origin-form goes through.
     assert_eq!(
@@ -180,7 +180,7 @@ async fn test_rejects_targets_the_uri_does_not_reproduce() {
 
 #[tokio::test]
 async fn test_rejects_expired_headers_as_retryable() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let t = TestProxy::start(StubPrfService::start().await).await;
     let path = prf_path(1);
     let expired = auth_header_expiring(&sender(), &path, b"", now() - 120).await;
 
@@ -192,12 +192,12 @@ async fn test_rejects_expired_headers_as_retryable() {
         .await
         .unwrap();
     assert_proxy_error(response, StatusCode::UNAUTHORIZED, "auth_expired", true).await;
-    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
+    assert_eq!(t.prf_service.hits(), 0, "nothing must reach prf-service");
 }
 
 #[tokio::test]
 async fn test_default_deny_routing() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let t = TestProxy::start(StubPrfService::start().await).await;
     let label = "01".repeat(32);
 
     for (method, path, expected, code) in [
@@ -271,7 +271,7 @@ async fn test_default_deny_routing() {
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(response.headers()["cache-control"], "no-store");
     assert!(response.bytes().await.unwrap().is_empty());
-    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
+    assert_eq!(t.prf_service.hits(), 0, "nothing must reach prf-service");
 
     // The encoding of the parameters is prf-service's to check.
     let response = t
@@ -281,12 +281,12 @@ async fn test_default_deny_routing() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(t.endpoints[0].hits(), 1);
+    assert_eq!(t.prf_service.hits(), 1);
 }
 
 #[tokio::test]
 async fn test_rejects_request_bodies() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let t = TestProxy::start(StubPrfService::start().await).await;
     let path = prf_path(1);
     let addr = t.addr;
     let auth = auth_header(&sender(), &path, b"").await;
@@ -333,12 +333,12 @@ async fn test_rejects_request_bodies() {
         "{:?}",
         started.elapsed()
     );
-    assert_eq!(t.endpoints[0].hits(), 0, "nothing must reach the endpoint");
+    assert_eq!(t.prf_service.hits(), 0, "nothing must reach prf-service");
 }
 
 #[tokio::test]
-async fn test_passes_endpoint_answers_through() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+async fn test_passes_prf_service_answers_through() {
+    let t = TestProxy::start(StubPrfService::start().await).await;
 
     let response = t.get(&rate_limited_path()).await.send().await.unwrap();
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
@@ -352,9 +352,9 @@ async fn test_passes_endpoint_answers_through() {
 }
 
 #[tokio::test]
-async fn test_holds_requests_until_the_endpoint_answers() {
-    let t = TestProxy::start_with_config(vec![StubEndpoint::start().await], |config| {
-        config.endpoint_response_timeout = Duration::from_secs(4)
+async fn test_holds_requests_until_prf_service_answers() {
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.prf_service_response_timeout = Duration::from_secs(4)
     })
     .await;
     let path = prf_path(1);
@@ -372,7 +372,7 @@ async fn test_holds_requests_until_the_endpoint_answers() {
 
 #[tokio::test]
 async fn test_held_requests_complete_concurrently() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let t = TestProxy::start(StubPrfService::start().await).await;
     let path = prf_path(1);
 
     let held = (0..5).map(|_| async {
@@ -387,26 +387,13 @@ async fn test_held_requests_complete_concurrently() {
     for status in futures_util::future::join_all(held).await {
         assert_eq!(status, StatusCode::OK);
     }
-    assert!(t.endpoints[0].connections() > 1);
-}
-
-#[tokio::test]
-async fn test_load_balances_across_endpoints() {
-    let endpoints = vec![StubEndpoint::start().await, StubEndpoint::start().await];
-    let t = TestProxy::start(endpoints).await;
-
-    for _ in 0..10 {
-        let response = t.get(&prf_path(1)).await.send().await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-    assert_eq!(t.endpoints[0].hits() + t.endpoints[1].hits(), 10);
-    assert!(t.endpoints[0].hits() > 0 && t.endpoints[1].hits() > 0);
+    assert!(t.prf_service.connections() > 1);
 }
 
 #[tokio::test]
 async fn test_upstream_timeout() {
-    let t = TestProxy::start_with_config(vec![StubEndpoint::start().await], |config| {
-        config.endpoint_response_timeout = Duration::from_millis(100)
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.prf_service_response_timeout = Duration::from_millis(100)
     })
     .await;
 
@@ -423,13 +410,9 @@ async fn test_upstream_timeout() {
 }
 
 #[tokio::test]
-async fn test_unreachable_endpoint() {
-    // Bind a port and close it right away: nothing listens there.
-    let dead_addr = free_addr();
-    let t = TestProxy::start_with_config(vec![], |config| {
-        config.endpoint_addresses = vec![dead_addr.to_string().parse().unwrap()];
-    })
-    .await;
+async fn test_unreachable_prf_service() {
+    let t = TestProxy::start(StubPrfService::start().await).await;
+    t.prf_service.stop().await;
 
     let response = t.get(&prf_path(1)).await.send().await.unwrap();
     assert_eq!(response.headers()["connection"], "close");
@@ -443,8 +426,8 @@ async fn test_unreachable_endpoint() {
 }
 
 #[tokio::test]
-async fn test_endpoint_failure_mid_body_cuts_the_answer_short() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+async fn test_prf_service_failure_mid_body_cuts_the_answer_short() {
+    let t = TestProxy::start(StubPrfService::start().await).await;
     let path = prf_path(1);
 
     let mut response = t
@@ -455,7 +438,7 @@ async fn test_endpoint_failure_mid_body_cuts_the_answer_short() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    // The client gets what the endpoint sent, then the end of the connection: no error answer
+    // The client gets what prf-service sent, then the end of the connection: no error answer
     // inside the started body, and no answer that looks complete.
     let mut received = Vec::new();
     let end = loop {
@@ -470,7 +453,7 @@ async fn test_endpoint_failure_mid_body_cuts_the_answer_short() {
 
 #[tokio::test]
 async fn test_accepted_signers_follow_protocol_config() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let t = TestProxy::start(StubPrfService::start().await).await;
     let next = PrivateKeySigner::random();
 
     // A context switch: both node sets are accepted while both contexts are Active.
@@ -497,14 +480,14 @@ async fn test_accepted_signers_follow_protocol_config() {
 
 #[tokio::test]
 async fn test_refuses_everything_before_the_first_read() {
-    let endpoint = StubEndpoint::start().await;
+    let prf_service = StubPrfService::start().await;
     let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
     rpc.set_failing(true);
-    let t = TestProxy::launch(rpc, vec![endpoint], |_| {}).await;
+    let t = TestProxy::launch(rpc, prf_service, |_| {}).await;
 
     tokio::time::sleep(3 * common::POLL_INTERVAL).await;
     assert_eq!(t.answer_code(&sender()).await, UNKNOWN_SIGNER);
-    assert_eq!(t.endpoints[0].hits(), 0);
+    assert_eq!(t.prf_service.hits(), 0);
 
     t.rpc.set_failing(false);
     t.wait_until_accepted(&sender()).await;
@@ -512,7 +495,7 @@ async fn test_refuses_everything_before_the_first_read() {
 
 /// Starts the proxy with a poll interval no test waits for: only an unknown signer makes it read.
 async fn start_without_polls() -> TestProxy {
-    TestProxy::start_with_config(vec![StubEndpoint::start().await], |config| {
+    TestProxy::start_with_config(StubPrfService::start().await, |config| {
         config.kms_registry_poll_interval = Duration::from_secs(600);
     })
     .await
@@ -537,7 +520,7 @@ async fn test_reads_again_for_an_unknown_signer() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(t.endpoints[0].hits(), 1);
+    assert_eq!(t.prf_service.hits(), 1);
     // Released when the poll ended, within the spacing and one read.
     let waited = started.elapsed();
     assert!(
@@ -595,7 +578,7 @@ async fn test_refuses_an_unknown_signer_after_the_wait() {
     assert_eq!(response.headers()["www-authenticate"], "FhevmSig");
     assert!(!response.headers().contains_key("retry-after"));
     assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, false).await;
-    assert_eq!(t.endpoints[0].hits(), 0);
+    assert_eq!(t.prf_service.hits(), 0);
     let waited = started.elapsed();
     assert!(
         waited >= UNKNOWN_SIGNER_WAIT && waited < UNKNOWN_SIGNER_WAIT + Duration::from_secs(1),
@@ -605,7 +588,7 @@ async fn test_refuses_an_unknown_signer_after_the_wait() {
 
 #[tokio::test]
 async fn test_counts_requests_by_route_and_status() {
-    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+    let t = TestProxy::start(StubPrfService::start().await).await;
     let count = |route: &str, status: &str| {
         prometheus::gather()
             .iter()

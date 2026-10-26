@@ -450,7 +450,7 @@ const COPROCESSOR_PROXY_METRICS_PORT = 9100;
 /** Points instance `index`'s proxy at its own fake prf-service, for requests signed for `signer`. */
 const setCoprocessorProxyEnv = (env: Record<string, string>, index: number, signer: string) => {
   env.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS = signer;
-  env.COPROCESSOR_PROXY_ENDPOINT_ADDRESSES = `${toServiceName("prf-service-fake", index)}:${PRF_SERVICE_FAKE_PORT}`;
+  env.COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS = `${toServiceName("prf-service-fake", index)}:${PRF_SERVICE_FAKE_PORT}`;
 };
 
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */

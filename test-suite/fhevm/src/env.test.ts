@@ -142,15 +142,15 @@ describe("env", () => {
     expect(solo.componentEnvs.coprocessor.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS).toBe(
       templateEnvs["host-sc"].COPROCESSOR_SIGNER_ADDRESS_0,
     );
-    expect(solo.componentEnvs.coprocessor.COPROCESSOR_PROXY_ENDPOINT_ADDRESSES).toBe("coprocessor-prf-service-fake:8080");
+    expect(solo.componentEnvs.coprocessor.COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS).toBe("coprocessor-prf-service-fake:8080");
 
     const pair = await renderEnvMaps({ discovery: undefined }, stackSpecForState(stateFor(2)), templateEnvs, deriveWallet);
     const signers = pair.componentEnvs["host-sc"];
     expect(signers.COPROCESSOR_SIGNER_ADDRESS_0).not.toBe(signers.COPROCESSOR_SIGNER_ADDRESS_1);
     expect(pair.componentEnvs.coprocessor.COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS).toBe(signers.COPROCESSOR_SIGNER_ADDRESS_0);
-    expect(pair.componentEnvs.coprocessor.COPROCESSOR_PROXY_ENDPOINT_ADDRESSES).toBe("coprocessor-prf-service-fake:8080");
+    expect(pair.componentEnvs.coprocessor.COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS).toBe("coprocessor-prf-service-fake:8080");
     expect(pair.instanceEnvs["coprocessor.1"].COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS).toBe(signers.COPROCESSOR_SIGNER_ADDRESS_1);
-    expect(pair.instanceEnvs["coprocessor.1"].COPROCESSOR_PROXY_ENDPOINT_ADDRESSES).toBe("coprocessor1-prf-service-fake:8080");
+    expect(pair.instanceEnvs["coprocessor.1"].COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS).toBe("coprocessor1-prf-service-fake:8080");
   });
 
   test("points the e2e suite at every coprocessor's proxy, signing as KMS party 1's connector", async () => {

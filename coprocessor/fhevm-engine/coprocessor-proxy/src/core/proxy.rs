@@ -1,17 +1,11 @@
 #[cfg(test)]
 use crate::core::TlsConfig;
-use crate::{
-    core::Config,
-    kms_tx_senders::Follower,
-    monitoring::health::{self, endpoint_health_check},
-};
+use crate::{core::Config, kms_tx_senders::Follower, monitoring::health};
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use fhevm_sig_auth::{FhevmSigVerifier, RefreshableSigners};
-use http::uri::Authority;
 use pingora::{
-    lb::{LoadBalancer, selection::RoundRobin},
     listeners::tls::TlsSettings,
     prelude::Server,
     proxy::http_proxy_service_with_name,
@@ -22,6 +16,7 @@ use pingora::{
     services::background::{BackgroundService, GenBackgroundService},
 };
 use std::{
+    net::{SocketAddr, ToSocketAddrs},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -30,11 +25,12 @@ use std::{
 };
 use tracing::info;
 
-/// The `Proxy` service: sender authentication and load-balancing in front of the endpoints.
+/// The `Proxy` service: sender authentication in front of prf-service.
 pub struct Proxy {
     pub(super) config: Config,
     pub(super) verifier: FhevmSigVerifier<RefreshableSigners>,
-    pub(super) endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
+    /// [`Config::prf_service_address`], resolved.
+    pub(super) prf_service: SocketAddr,
     pub(super) kms_tx_senders: Arc<Follower<DynProvider>>,
     /// Set during the shutdown delay: each client connection closes after its next response.
     pub(super) draining: Arc<AtomicBool>,
@@ -83,22 +79,13 @@ const GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
 impl Proxy {
     /// Creates the `Proxy` from its configuration, and the `health::State` used to monitor it.
     pub fn from_config(config: Config) -> anyhow::Result<(Self, health::State)> {
-        let mut endpoint_balancer =
-            LoadBalancer::try_from_iter(config.endpoint_addresses.iter().map(Authority::as_str))
-                .context("Failed to resolve endpoint addresses")?;
-        info!(
-            "Resolved endpoints: {:?}",
-            endpoint_balancer
-                .backends()
-                .get_backend()
-                .iter()
-                .map(|b| b.addr.to_string())
-                .collect::<Vec<_>>()
-        );
-        endpoint_balancer.set_health_check(Box::new(endpoint_health_check(&config)?));
-        endpoint_balancer.health_check_frequency = Some(config.endpoint_healthcheck_frequency);
-        endpoint_balancer.parallel_health_check = true;
-        let endpoint_balancer = Arc::new(endpoint_balancer);
+        let address = config.prf_service_address.as_str();
+        let prf_service = address
+            .to_socket_addrs()
+            .ok()
+            .and_then(|mut resolved| resolved.next())
+            .with_context(|| format!("Failed to resolve the prf-service address {address}"))?;
+        info!("Resolved prf-service: {prf_service}");
 
         let signers = RefreshableSigners::default();
         let follower = Follower::new(
@@ -111,7 +98,6 @@ impl Proxy {
         );
         let state = health::State::new(
             config.bind_address,
-            Arc::clone(&endpoint_balancer),
             follower.loaded(),
             config.healthcheck_timeout,
         )?;
@@ -121,7 +107,7 @@ impl Proxy {
         let proxy = Self {
             verifier,
             config,
-            endpoint_balancer,
+            prf_service,
             kms_tx_senders: Arc::new(follower),
             draining: Arc::default(),
         };
@@ -164,11 +150,6 @@ impl Proxy {
         tls.check_private_key()
             .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
 
-        let endpoint_health_service = GenBackgroundService::new(
-            "BG endpoint health check".to_string(),
-            Arc::clone(&self.endpoint_balancer),
-        );
-        server.add_service(endpoint_health_service);
         server.add_service(GenBackgroundService::new(
             "BG KMS tx-senders".to_string(),
             Arc::clone(&self.kms_tx_senders),
@@ -235,7 +216,7 @@ mod tests {
                 cert_path: dir.join("tls.crt"),
                 key_path: dir.join("tls.key"),
             },
-            endpoint_addresses: vec!["127.0.0.1:1".parse().unwrap()],
+            prf_service_address: "127.0.0.1:1".parse().unwrap(),
             ..Config::default()
         };
 
