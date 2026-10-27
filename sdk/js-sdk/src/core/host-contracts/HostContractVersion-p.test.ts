@@ -59,20 +59,32 @@ describe('HostContractVersion cache', () => {
     const client = makeClient(readContract);
 
     await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
-      version: 'ACL v0.1.0',
+      contractName: 'ACL',
+      major: 0,
+      minor: 1,
+      patch: 0,
     });
     await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
-      version: 'KMSVerifier v0.1.0',
+      contractName: 'KMSVerifier',
+      major: 0,
+      minor: 1,
+      patch: 0,
     });
     expect(readContract).toHaveBeenCalledTimes(2);
 
     invalidateVersionCache(client, { address: ACL_ADDRESS });
 
     await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
-      version: 'ACL v0.2.0',
+      contractName: 'ACL',
+      major: 0,
+      minor: 2,
+      patch: 0,
     });
     await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
-      version: 'KMSVerifier v0.1.0',
+      contractName: 'KMSVerifier',
+      major: 0,
+      minor: 1,
+      patch: 0,
     });
     expect(readContract).toHaveBeenCalledTimes(3);
   });
@@ -87,20 +99,32 @@ describe('HostContractVersion cache', () => {
     const client = makeClient(readContract);
 
     await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
-      version: 'ACL v0.1.0',
+      contractName: 'ACL',
+      major: 0,
+      minor: 1,
+      patch: 0,
     });
     await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
-      version: 'KMSVerifier v0.1.0',
+      contractName: 'KMSVerifier',
+      major: 0,
+      minor: 1,
+      patch: 0,
     });
     expect(readContract).toHaveBeenCalledTimes(2);
 
     invalidateVersionCache();
 
     await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
-      version: 'ACL v0.2.0',
+      contractName: 'ACL',
+      major: 0,
+      minor: 2,
+      patch: 0,
     });
     await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
-      version: 'KMSVerifier v0.2.0',
+      contractName: 'KMSVerifier',
+      major: 0,
+      minor: 2,
+      patch: 0,
     });
     expect(readContract).toHaveBeenCalledTimes(4);
   });
