@@ -88,7 +88,7 @@ Once the DAO vote passes and the proposal executes, the on-chain `proposeCoproce
 | `env var <CHAIN>_RPC_URL is not set`                            | Export the RPC env var for that chain (names in `tasks/utils/environments.ts`). |
 | `--environment must be one of: devnet, testnet, mainnet, local` | Pass a valid `--environment`; `local` is only for the test-suite stack.         |
 | `is below the minimum window of chain X`                        | Raise `--duration` to that chain's floor (`30m` for Ethereum-class chains).     |
-| `chain tip is N s old`                                          | The RPC for that chain is behind; use another endpoint and re-run.              |
+| `chain tip is N s old`                                          | The RPC for that chain is far behind the chain; check or replace the endpoint.  |
 
 The task exits non-zero (and prints the calldata for inspection) if any host chain's `startBlock` is
 closer to its tip than `--buffer`. `npx hardhat help task:buildProposeCoprocessorUpgradeCalldata` prints the full

@@ -250,6 +250,21 @@ describe('prepareCoprocessorUpgrade task utils', function () {
       expect(bufferSatisfied(result, 3700)).to.equal(false);
     });
 
+    it('measures the DAO lead from the tip when the local clock runs behind it', async function () {
+      const result = await computeBlockWindow({
+        provider: stubChain(tip, tipTs, 12),
+        startEpochSeconds: tipTs + 3600,
+        durationSeconds: 1800,
+        bufferSeconds: 0,
+        fallbackBlockTimeSeconds: 12,
+        nowEpochSeconds: tipTs - 600,
+      });
+      expect(result.tipAgeSeconds).to.equal(-600);
+      // Measured from the clock, the lead would read 4200s; the tip caps it at the real 3600s.
+      expect(Math.abs(bufferLeadSeconds(result) - 3600)).to.be.at.most(12);
+      expect(bufferSatisfied(result, 3700)).to.equal(false);
+    });
+
     it('rejects a tip the RPC left behind', async function () {
       await expectRejection(
         computeBlockWindow({

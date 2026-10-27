@@ -7,8 +7,8 @@ const BLOCK_TIME_SAMPLE_SIZE = 1000;
 // Drift threshold: warn if observed differs from fallback by more than this fraction (0.2 = 20%).
 const BLOCK_TIME_DRIFT_WARN_FRACTION = 0.2;
 
-// A host tip older than this many block times means the RPC is behind, and every lead projected
-// from it would be inflated by the lag. The floor keeps sub-second chains tolerant of ordinary lag.
+// A host tip older than this many block times means the RPC is far behind the chain. The floor keeps
+// sub-second chains tolerant of ordinary lag.
 const STALE_TIP_BLOCK_TIMES = 10;
 const STALE_TIP_MIN_SECONDS = 60;
 
@@ -122,14 +122,13 @@ export async function computeBlockWindow(input: BlockWindowInput): Promise<Block
   const effectiveBlockTimeSeconds = sample.averageBlockTimeSeconds ?? input.fallbackBlockTimeSeconds;
   const usedFallback = sample.averageBlockTimeSeconds === null;
 
-  // The window is projected from the tip the RPC reports. If that tip is older than the chain's
-  // normal block cadence allows, the RPC is behind the chain and the projection would place the
-  // window earlier than intended, so stop here rather than propose from a stale view.
+  // A lagging tip does not move the window: its older block number and older timestamp cancel out in
+  // the projection. A tip this far behind still means the RPC is unhealthy, so stop rather than trust it.
   const tipAgeSeconds = now - sample.tipTimestamp;
   const maxTipAgeSeconds = Math.max(STALE_TIP_MIN_SECONDS, STALE_TIP_BLOCK_TIMES * effectiveBlockTimeSeconds);
   if (tipAgeSeconds > maxTipAgeSeconds) {
     throw new Error(
-      `chain tip is ${tipAgeSeconds}s old (block ${sample.tipBlock}, allowed ${Math.round(maxTipAgeSeconds)}s): the RPC is behind, use another endpoint`,
+      `chain tip is ${tipAgeSeconds}s old (block ${sample.tipBlock}, allowed ${Math.round(maxTipAgeSeconds)}s): the RPC is far behind the chain, check the endpoint`,
     );
   }
 
@@ -168,10 +167,10 @@ export async function computeBlockWindow(input: BlockWindowInput): Promise<Block
   };
 }
 
-// Wall-clock seconds until the chain is expected to reach startBlock. Measured from "now", not from
-// the tip, so an RPC that lags does not inflate the lead.
+// Seconds until the chain is expected to reach startBlock, measured from the later of the local clock
+// and the tip timestamp: neither a lagging RPC nor a local clock running behind can inflate the lead.
 export function bufferLeadSeconds(result: BlockWindowResult): number {
-  return result.startBlockEstimatedTimestamp - result.computedAtEpochSeconds;
+  return result.startBlockEstimatedTimestamp - Math.max(result.computedAtEpochSeconds, result.currentTipTimestamp);
 }
 
 // True iff startBlock is at least bufferSeconds away in wall-clock terms.
