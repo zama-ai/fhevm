@@ -36,10 +36,10 @@ import { readKmsSignersContextFromPermitExtraData } from '../host-contracts/read
 const PAD_WITNESS_VERSION = 0 as Uint8Number;
 
 /**
- * PRF instance identifier. Protocol-assigned and governance-maintained in the
- * `PaddedInputter` contract, which does not exist yet; `0` is a placeholder.
+ * PRF instance identifier. Protocol-assigned, global across host chains, and governance-maintained in the
+ * `PaddedInputter` contract, which v1.0 deploys with instance `1` (never `0`: an unset `prf` must be refused).
  */
-const PAD_PRF_INSTANCE = 0 as Uint16Number;
+const PAD_PRF_INSTANCE = 1 as Uint16Number;
 
 /** Upper bound on both the requested pad length and a package's bit length. */
 const MAX_PAD_LENGTH = 2048;
