@@ -181,34 +181,6 @@ function parseVersion(version: string): HostContractVersion {
 }
 
 /**
- * Returns `true` if the version is strictly before `major.minor` (patch ignored).
- */
-export function isVersionStrictlyBefore(
-  version: HostContractVersion,
-  before: { readonly major: number; readonly minor: number },
-): boolean {
-  if (version.major < before.major) {
-    return true;
-  }
-  if (version.major === before.major) {
-    return version.minor < before.minor;
-  }
-  return false;
-}
-
-/**
- * Returns `true` if the version equals `major.minor.patch` exactly.
- */
-export function isVersionEqual(
-  version: HostContractVersion,
-  otherVersion: { readonly major: number; readonly minor: number; readonly patch: number },
-): boolean {
-  return (
-    version.major === otherVersion.major && version.minor === otherVersion.minor && version.patch === otherVersion.patch
-  );
-}
-
-/**
  * Asserts that a {@link HostContractVersion} belongs to a specific contract.
  * Narrows the type to `HostContractVersion<name>` on success.
  *

@@ -55,8 +55,8 @@ function makeClient(protocolConfigVersion: string) {
 
 async function readContextAndEpoch(protocolConfigVersion: string) {
   const client = makeClient(protocolConfigVersion);
-  const fhevmContext = await resolveFhevmClientFrozenContext(client);
-  return getCurrentKmsContextAndEpoch(client, { protocolConfigAddress: PROTOCOL_CONFIG_ADDRESS, fhevmContext });
+  await resolveFhevmClientFrozenContext(client);
+  return getCurrentKmsContextAndEpoch(client, { protocolConfigAddress: PROTOCOL_CONFIG_ADDRESS });
 }
 
 beforeEach(() => {
@@ -66,10 +66,6 @@ beforeEach(() => {
 describe('ProtocolConfigReplica at the ProtocolConfig address', () => {
   it('accepts a replica and reads its context and epoch', async () => {
     await expect(readContextAndEpoch('ProtocolConfigReplica v0.4.0')).resolves.toEqual({ contextId: 7n, epochId: 3n });
-  });
-
-  it('still rejects a ProtocolConfig before v0.2.0', async () => {
-    await expect(readContextAndEpoch('ProtocolConfig v0.1.0')).rejects.toThrow('requires ProtocolConfig >= v0.2.0');
   });
 
   it('rejects another host contract', async () => {

@@ -1,6 +1,6 @@
 import type { EthereumModule } from '../modules/ethereum/types.js';
 import type { RelayerModule } from '../modules/relayer/types.js';
-import type { BytesHex, ChecksummedAddress, Uint256BigInt, UintNumber } from '../types/primitives.js';
+import type { BytesHex, ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
 import { sepolia } from '../chains/definitions/sepolia.js';
@@ -24,21 +24,11 @@ const v0Bytes = '0x00' as BytesHex;
 const v1Bytes = (contextId: bigint): BytesHex => `0x01${word(contextId)}` as BytesHex;
 const v2Bytes = (contextId: bigint, epochId: bigint): BytesHex => `0x02${word(contextId)}${word(epochId)}` as BytesHex;
 
-// The version basis each test resolves against. The KMSVerifier version is read
-// from the frozen context (NOT the on-chain `getVersion`), which is why none of the
-// tests below need a `getVersion` handler — reaching one would throw "No mocked
-// handler". Only the actual context reads (getContextSignersAndThresholdFromExtraData)
-// are mocked per-test.
-const fhevmContext = createFhevmClientFrozenContext({
-  hostContractVersions: {
-    KMSVerifier: {
-      contractName: 'KMSVerifier',
-      major: 0 as UintNumber,
-      minor: 4 as UintNumber,
-      patch: 0 as UintNumber,
-    },
-  },
-});
+// The reader does not branch on host contract versions, so an empty version
+// basis is enough. No test needs a `getVersion` handler — reaching one would
+// throw "No mocked handler". Only the actual context reads
+// (getContextSignersAndThresholdFromExtraData) are mocked per-test.
+const fhevmContext = createFhevmClientFrozenContext({});
 
 // Names of every on-chain function `readContract` was asked for, in call order.
 const calledFunctionNames = (readContract: { readonly mock: { readonly calls: readonly unknown[][] } }): string[] =>
