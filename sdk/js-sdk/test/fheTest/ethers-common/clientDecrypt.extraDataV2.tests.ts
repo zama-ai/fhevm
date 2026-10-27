@@ -3,7 +3,12 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { createUnsignedLegacyDecryptionPermitEip712 } from '@fhevm/sdk/actions/base';
 import { createLogger } from '../setupCommon.js';
-import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import {
+  getEthersTestConfig,
+  latestBlockTimestamp,
+  type CreateEthersDecryptClientFn,
+  type FheTestEthersConfig,
+} from '../setup-ethers.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -59,7 +64,7 @@ export function defineClientDecryptExtraDataV2Tests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
       });
 
       // 2. Force extraData to a (well-formed) v2 value. The eip712 is frozen, so rebuild it.

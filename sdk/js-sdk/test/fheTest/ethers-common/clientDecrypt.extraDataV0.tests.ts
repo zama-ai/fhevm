@@ -5,7 +5,12 @@ import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { createUnsignedLegacyDecryptionPermitEip712 } from '@fhevm/sdk/actions/base';
 import { fheTypeIdFromName, clearTypeFromHandle, createLogger } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
-import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import {
+  getEthersTestConfig,
+  latestBlockTimestamp,
+  type CreateEthersDecryptClientFn,
+  type FheTestEthersConfig,
+} from '../setup-ethers.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -62,7 +67,7 @@ export function defineClientDecryptExtraDataV0Tests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
       });
 
       // 2. Force extraData to the v0 sentinel. The eip712 is frozen, so rebuild it.

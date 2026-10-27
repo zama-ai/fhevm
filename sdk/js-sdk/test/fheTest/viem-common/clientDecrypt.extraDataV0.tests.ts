@@ -2,7 +2,12 @@ import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createUnsignedLegacyDecryptionPermitEip712 } from '@fhevm/sdk/actions/base';
-import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import {
+  getViemTestConfig,
+  latestBlockTimestamp,
+  type CreateViemDecryptClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { fheTypeIdFromName, clearTypeFromHandle, createLogger } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
@@ -71,7 +76,7 @@ export function defineClientDecryptExtraDataV0Tests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
       });
 
       // 2. Force extraData to the v0 sentinel. The eip712 is frozen, so rebuild it.
