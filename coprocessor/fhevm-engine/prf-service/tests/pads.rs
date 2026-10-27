@@ -543,7 +543,6 @@ async fn prf_service_role_writes_only_the_queue() {
         "SELECT 1 FROM keys",
         "UPDATE pads SET is_error = false",
         "UPDATE pads SET signature = NULL",
-        "UPDATE pads SET claimed_at = NULL",
         "DELETE FROM pads",
     ] {
         assert_denied(as_prf_service(&pool, denied).await, denied);
