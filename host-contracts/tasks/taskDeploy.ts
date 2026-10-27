@@ -655,6 +655,8 @@ task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
 //
 // Confirms the address is actually KMSGeneration before reading the request counters, so a
 // wrong code-bearing address cannot silently return a false green.
+//
+// Upgrade KMSGeneration before the KMS connectors, or an in-flight keygen stalls until abortKeygen.
 task('task:assertNoPendingKeyManagementRequest')
   .addOptionalParam(
     'address',

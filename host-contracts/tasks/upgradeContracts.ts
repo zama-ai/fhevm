@@ -531,6 +531,7 @@ task('task:prepareUpgradeProtocolConfig')
     await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
+// Upgrade KMSGeneration before the KMS connectors, or an in-flight keygen stalls until abortKeygen.
 task('task:upgradeKMSGeneration')
   .addParam(
     'currentImplementation',
@@ -556,6 +557,7 @@ task('task:upgradeKMSGeneration')
     await upgradeContract('KMSGeneration', 'KMS_GENERATION_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
+// Upgrade KMSGeneration before the KMS connectors, or an in-flight keygen stalls until abortKeygen.
 task('task:prepareUpgradeKMSGeneration')
   .addParam(
     'currentImplementation',
