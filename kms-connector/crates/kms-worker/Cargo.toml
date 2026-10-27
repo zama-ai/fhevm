@@ -45,6 +45,7 @@ mocktail.workspace = true
 rstest.workspace = true
 serial_test.workspace = true
 testcontainers.workspace = true
+tokio = { workspace = true, features = ["io-util", "net"] }
 toml.workspace = true
 tracing-test.workspace = true
 
