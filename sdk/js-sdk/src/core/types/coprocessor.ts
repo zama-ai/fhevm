@@ -59,7 +59,7 @@ export type CoprocessorEip712 = Prettify<{
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-export type InputVerifierContractData = HostContractData<'InputVerifier'> & {
+export type InputVerifierContractData = HostContractData & {
   readonly eip712Domain: CoprocessorEip712Domain;
   readonly gatewayChainId: Uint64BigInt;
   readonly coprocessorSigners: ChecksummedAddress[];
@@ -75,7 +75,7 @@ export type InputVerifierContractData = HostContractData<'InputVerifier'> & {
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-export type FhevmExecutorContractData = HostContractData<'FHEVMExecutor'> & {
+export type FhevmExecutorContractData = HostContractData & {
   readonly aclContractAddress: ChecksummedAddress;
   readonly inputVerifierContractAddress: ChecksummedAddress;
   readonly hcuLimitContractAddress: ChecksummedAddress;

@@ -1,7 +1,6 @@
 import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmExecutorContractData } from '../types/coprocessor.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import type { HostContractVersion } from '../types/hostContract.js';
 import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -15,7 +14,6 @@ const VERIFY_FUNC = Symbol('FhevmExecutorContractData.verify');
 
 class FhevmExecutorContractDataImpl implements FhevmExecutorContractData {
   readonly #owner: WeakRef<FhevmRuntime>;
-  readonly #version: HostContractVersion<'FHEVMExecutor'>;
   readonly #address: ChecksummedAddress;
   readonly #handleVersion: Uint8Number;
   readonly #aclContractAddress: ChecksummedAddress;
@@ -26,7 +24,6 @@ class FhevmExecutorContractDataImpl implements FhevmExecutorContractData {
     privateToken: symbol,
     owner: WeakRef<FhevmRuntime>,
     parameters: {
-      readonly version: HostContractVersion<'FHEVMExecutor'>;
       readonly address: ChecksummedAddress;
       readonly handleVersion: Uint8Number;
       readonly aclContractAddress: ChecksummedAddress;
@@ -37,7 +34,6 @@ class FhevmExecutorContractDataImpl implements FhevmExecutorContractData {
     if (privateToken !== PRIVATE_TOKEN) {
       throw new Error('Unauthorized');
     }
-    this.#version = Object.freeze({ ...parameters.version });
     this.#owner = owner;
     this.#address = parameters.address;
     this.#handleVersion = parameters.handleVersion;
@@ -45,10 +41,6 @@ class FhevmExecutorContractDataImpl implements FhevmExecutorContractData {
     this.#inputVerifierContractAddress = parameters.inputVerifierContractAddress;
     this.#hcuLimitContractAddress = parameters.hcuLimitContractAddress;
     Object.freeze(this);
-  }
-
-  public get version(): HostContractVersion<'FHEVMExecutor'> {
-    return this.#version;
   }
 
   public get address(): ChecksummedAddress {
@@ -84,7 +76,6 @@ class FhevmExecutorContractDataImpl implements FhevmExecutorContractData {
 
   public toJSON(): Record<string, unknown> {
     return {
-      version: this.#version,
       address: this.#address,
       aclContractAddress: this.#aclContractAddress,
       inputVerifierContractAddress: this.#inputVerifierContractAddress,
@@ -103,7 +94,6 @@ Object.freeze(FhevmExecutorContractDataImpl);
 export function createFhevmExecutorContractData(
   owner: WeakRef<FhevmRuntime>,
   parameters: {
-    readonly version: HostContractVersion<'FHEVMExecutor'>;
     readonly address: ChecksummedAddress;
     readonly aclContractAddress: ChecksummedAddress;
     readonly inputVerifierContractAddress: ChecksummedAddress;
@@ -111,11 +101,10 @@ export function createFhevmExecutorContractData(
     readonly handleVersion: Uint8Number;
   },
 ): FhevmExecutorContractData {
-  const { version, address, aclContractAddress, inputVerifierContractAddress, hcuLimitContractAddress, handleVersion } =
+  const { address, aclContractAddress, inputVerifierContractAddress, hcuLimitContractAddress, handleVersion } =
     parameters;
 
   return new FhevmExecutorContractDataImpl(PRIVATE_TOKEN, owner, {
-    version,
     address,
     aclContractAddress,
     inputVerifierContractAddress,
