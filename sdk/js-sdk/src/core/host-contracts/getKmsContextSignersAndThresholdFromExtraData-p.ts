@@ -1,8 +1,6 @@
 import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { KmsExtraData } from '../types/kms-p.js';
-import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
-import { isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import { CACHE_TTL_15MIN, createCachedFetch } from '../base/cachedFetch.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
 import { isUint8 } from '../base/uint.js';
@@ -20,7 +18,6 @@ type Context = {
 type Parameters = {
   readonly kmsVerifierAddress: ChecksummedAddress;
   readonly extraData: KmsExtraData;
-  readonly fhevmContext: FhevmClientFrozenContext;
 };
 
 type ReturnType = {
@@ -55,8 +52,6 @@ const cachedGetKmsContextSignersAndThresholdFromExtraData = createCachedFetch<Co
 /**
  * Reads the KMS signers and threshold for a given extraData context.
  *
- * Only available on KMSVerifier contracts >= v0.2.0. Throws on older versions.
- *
  * **Caching:** Cached per (runtime, address, contextId) with a short TTL
  * ({@link CACHE_TTL_15MIN}). The signers and threshold themselves are immutable per
  * context id, so they alone could be cached indefinitely — but this read also acts as
@@ -84,11 +79,6 @@ async function _getKmsContextSignersAndThresholdFromExtraData(
   context: Context,
   parameters: Parameters,
 ): Promise<ReturnType> {
-  const kmsVerifierVersion = parameters.fhevmContext.hostContractVersion('KMSVerifier');
-  if (isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 2 })) {
-    throw new Error('getContextSignersAndThresholdFromExtraData requires KMSVerifier >= v0.2.0');
-  }
-
   const trustedClient = getTrustedClient(context);
 
   const extraDataBytesHex = parameters.extraData.bytesHex;

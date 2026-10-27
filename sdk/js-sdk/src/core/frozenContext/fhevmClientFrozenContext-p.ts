@@ -1,5 +1,4 @@
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
-import type { HostContractName, HostContractVersion } from '../types/hostContract.js';
 import type { PubKeyCrsVersionResolution } from '../types/coreFhevmClient.js';
 import type { FhevmClientFrozenContext, fhevmClientFrozenContextBrand } from '../types/fhevmClientFrozenContext-p.js';
 import type { TfheVersion, TkmsVersion } from '../types/moduleVersions.js';
@@ -15,9 +14,8 @@ const PRIVATE_TOKEN = Symbol('FhevmClientFrozenContext.token');
 /**
  * The already-resolved versions used to build a {@link FhevmClientFrozenContext}.
  *
- * `hostContractVersions` and `pubKeyCrsVersion` are optional:
- * a context only needs to carry the versions a given operation actually
- * consumes. There is no `tfheVersion` / `tkmsVersion` field — this SDK release
+ * `pubKeyCrsVersion` is optional: a context only needs to carry the versions a
+ * given operation actually consumes. There is no `tfheVersion` / `tkmsVersion` field — this SDK release
  * ships a single TFHE and a single TKMS module, so
  * {@link FhevmClientFrozenContext.tfheVersion} / `.tkmsVersion` always report
  * {@link CANONICAL_WASM_VERSIONS} regardless of what this context resolved.
@@ -26,7 +24,6 @@ const PRIVATE_TOKEN = Symbol('FhevmClientFrozenContext.token');
  * (ideally in a single batched round-trip). This type performs no I/O.
  */
 export type CreateFhevmClientFrozenContextParameters = {
-  readonly hostContractVersions?: Partial<Record<HostContractName, HostContractVersion>> | undefined;
   readonly pubKeyCrsVersion?: PubKeyCrsVersionResolution | undefined;
 };
 
@@ -44,39 +41,15 @@ export type CreateFhevmClientFrozenContextParameters = {
 class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
   declare readonly [fhevmClientFrozenContextBrand]: never;
 
-  readonly #hostContractVersions: Readonly<Partial<Record<HostContractName, HostContractVersion>>>;
   readonly #pubKeyCrsVersion: PubKeyCrsVersionResolution | undefined;
 
   constructor(privateToken: symbol, parameters: CreateFhevmClientFrozenContextParameters) {
     if (privateToken !== PRIVATE_TOKEN) {
       throw new Error('Use createFhevmClientFrozenContext() instead');
     }
-    // Defensive copy so a later mutation of the caller's object can't alter the snapshot.
-    this.#hostContractVersions = Object.freeze({ ...(parameters.hostContractVersions ?? {}) });
     this.#pubKeyCrsVersion = parameters.pubKeyCrsVersion;
 
     Object.freeze(this);
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Host contract versions (raw on-chain getVersion() results)
-  //////////////////////////////////////////////////////////////////////////////
-
-  public hasHostContractVersion(name: HostContractName): boolean {
-    return this.#hostContractVersions[name] !== undefined;
-  }
-
-  /** @throws If `name`'s version was not resolved in this context. */
-  public hostContractVersion<name extends HostContractName>(name: name): HostContractVersion<name> {
-    const version = this.#hostContractVersions[name];
-    if (version === undefined) {
-      throw new Error(`FhevmClientFrozenContext: host contract version '${name}' was not resolved in this context.`);
-    }
-    return version as HostContractVersion<name>;
-  }
-
-  public tryHostContractVersion<name extends HostContractName>(name: name): HostContractVersion<name> | undefined {
-    return this.#hostContractVersions[name] as HostContractVersion<name> | undefined;
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -125,7 +98,6 @@ class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
 
   public toJSON(): Record<string, unknown> {
     return {
-      hostContractVersions: this.#hostContractVersions,
       pubKeyCrsVersion: this.#pubKeyCrsVersion,
       tfheVersion: this.tfheVersion,
       tkmsVersion: this.tkmsVersion,
@@ -154,10 +126,9 @@ export function createFhevmClientFrozenContext(
 /**
  * Returns a fully deep, independent copy of a {@link FhevmClientFrozenContext}.
  *
- * The clone shares **no references** with the source: the host-contract-versions
- * record and every {@link HostContractVersion} / version-resolution object inside
- * it are copied (these are flat records, so a spread is a complete copy; version
- * strings are immutable). Mutating any part of one context can never affect the
+ * The clone shares **no references** with the source: every version-resolution
+ * object is copied (these are flat records, so a spread is a complete copy;
+ * version strings are immutable). Mutating any part of one context can never affect the
  * other. The result is a new frozen context, built through the same
  * {@link createFhevmClientFrozenContext} path.
  *
@@ -168,23 +139,11 @@ export function cloneFhevmClientFrozenContext(value: FhevmClientFrozenContext): 
 
   // toJSON() exposes the full internal state (the exact constructor-parameter shape).
   const state = value.toJSON() as {
-    readonly hostContractVersions?: Partial<Record<HostContractName, HostContractVersion>> | undefined;
     readonly pubKeyCrsVersion?: PubKeyCrsVersionResolution | undefined;
     readonly relayerSupportsV3UserDecryptRoute: boolean;
   };
 
-  const hostContractVersions: Partial<Record<HostContractName, HostContractVersion>> = {};
-  const entries = Object.entries(state.hostContractVersions ?? {}) as Array<
-    [HostContractName, HostContractVersion | undefined]
-  >;
-  for (const [name, version] of entries) {
-    if (version !== undefined) {
-      hostContractVersions[name] = { ...version };
-    }
-  }
-
   return createFhevmClientFrozenContext({
-    hostContractVersions,
     pubKeyCrsVersion: state.pubKeyCrsVersion === undefined ? undefined : { ...state.pubKeyCrsVersion },
   });
 }
