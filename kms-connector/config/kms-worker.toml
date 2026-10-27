@@ -139,7 +139,7 @@ address = "0x0000000000000000000000000000000000000000"
 # ENV: KMS_CONNECTOR_DECRYPTION_CONTRACT__DOMAIN_NAME
 # domain_name = "Decryption"
 # EIP-712 domain version for Decryption contract (optional, defaults to "1")
-# ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
+# ENV: KMS_CONNECTOR_DECRYPTION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
 # Configuration of the GatewayConfig contract (required)

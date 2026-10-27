@@ -42,7 +42,7 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # decryption_polling = "500ms"
 
 # The polling interval for key management requests (optional, defaults to 30s)
-# ENV: KMS_CONNECTOR_KMS_GENERATION_POLLING (format: https://docs.rs/humantime/latest/humantime/)
+# ENV: KMS_CONNECTOR_KEY_MANAGEMENT_POLLING (format: https://docs.rs/humantime/latest/humantime/)
 # key_management_polling = "30s"
 
 # Maximum number of blocks per eth_getLogs RPC call (optional, defaults to 100)
@@ -53,12 +53,26 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_MAX_CONSECUTIVE_POLLING_ERRORS
 # max_consecutive_polling_errors = 20
 
+# Timeout of a single Gateway or Ethereum RPC call, until its whole response is received (optional, defaults to 10s)
+# It also bounds eth_getLogs: raise it, or lower get_logs_batch_size, if large block ranges time out.
+# ENV: KMS_CONNECTOR_RPC_CALL_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# rpc_call_timeout = "10s"
+
+# How long the Gateway head may stay the same before a warning is logged (optional, defaults to 10m)
+# The Gateway only produces blocks when it receives transactions: keep this above its longest quiet period.
+# ENV: KMS_CONNECTOR_GATEWAY_STALE_HEAD_THRESHOLD (format: https://docs.rs/humantime/latest/humantime/)
+# gateway_stale_head_threshold = "10m"
+
+# How long the Ethereum finalized block may stay the same before a warning is logged (optional, defaults to 20m)
+# ENV: KMS_CONNECTOR_ETHEREUM_STALE_HEAD_THRESHOLD (format: https://docs.rs/humantime/latest/humantime/)
+# ethereum_stale_head_threshold = "20m"
+
 # Block number to start processing decryption events from (optional, defaults to latest block if not set)
 # ENV: KMS_CONNECTOR_DECRYPTION_FROM_BLOCK_NUMBER
 # decryption_from_block_number = 1234
 
 # Block number to start processing KMS operation events from (optional, defaults to latest block if not set)
-# ENV: KMS_CONNECTOR_KMS_FROM_BLOCK_NUMBER
+# ENV: KMS_CONNECTOR_KMS_OPERATION_FROM_BLOCK_NUMBER
 # kms_operation_from_block_number = 1234
 
 # Configuration of the Decryption contract (required)
@@ -71,7 +85,7 @@ address = "0x0000000000000000000000000000000000000000"
 # ENV: KMS_CONNECTOR_DECRYPTION_CONTRACT__DOMAIN_NAME
 # domain_name = "Decryption"
 # EIP-712 domain version for Decryption contract (optional, defaults to "1")
-# ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
+# ENV: KMS_CONNECTOR_DECRYPTION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
 # Configuration of the KMSGeneration contract (required)
