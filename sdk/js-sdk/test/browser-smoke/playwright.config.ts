@@ -29,10 +29,12 @@ export default defineConfig({
     // bs-local.com is BrowserStack's dedicated domain that its Local tunnel
     // always routes back to this machine — unlike `localhost` (broken on iOS
     // Safari via BrowserStack Local) or a raw LAN IP (not reliably
-    // auto-tunneled on real devices).
+    // auto-tunneled on real devices). Only BrowserStack runs need it: local
+    // and CI runs use `localhost`, so they don't depend on public DNS
+    // resolving bs-local.com to 127.0.0.1.
     // HTTPS so the page is a secure context (see vite.config.ts); the cert is
     // self-signed, hence ignoreHTTPSErrors.
-    baseURL: 'https://bs-local.com:3333',
+    baseURL: `https://${process.env.BROWSERSTACK_CONFIG_FILE ? 'bs-local.com' : 'localhost'}:3333`,
     ignoreHTTPSErrors: true,
   },
   projects: [
