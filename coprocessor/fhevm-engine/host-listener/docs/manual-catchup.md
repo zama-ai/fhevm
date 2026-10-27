@@ -1,10 +1,11 @@
 # Persisted manual catchup
 
 `host_listener_consumer` can replay historical blocks while its live and finalized
-subscriptions continue. Deploy listener-core with catchup identities (#4116)
-and atomic WATCH before enabling this feature. Host-consumer declares delivery
-queues first, then registers its complete live/finalized contract set in one
-transaction, avoiding replay while only part of the contract set is visible.
+subscriptions continue. Deploy listener-core with catchup identities, the
+`last_in_catchup` marker (#4116), and atomic WATCH before enabling this feature.
+Host-consumer declares delivery queues first, then registers its complete
+live/finalized contract set in one transaction, avoiding replay while only part
+of the contract set is visible.
 
 ```sh
 --catchup-from-block=100 --catchup-up-to-block=200
@@ -24,16 +25,15 @@ Unfinalized replay can include blocks which can still reorg. Both modes are
 bounded replays, not requests to wait for future blocks.
 
 Clamping is persisted as `block_end` together with `observed_head` before the
-request is published, so completion detection uses the effective end. Retries
-and takeover keep that end even if a later observed head is different. A start
-above the observed head records `SKIPPED`, releases its lease and publishes no
-command. Clamping and skipping produce warning logs containing the request ID,
+request is published. Retries and takeover keep that end even if a later
+observed head is different. A start above the observed head records `SKIPPED`,
+releases its lease and publishes no command. Clamping and skipping produce warning logs containing the request ID,
 mode, original resolved bounds and observed head. Restarting with the same
 flags after SKIPPED creates a fresh request ID.
 
 Observed payloads can be stale, and core still applies its own head check. A
-lower head at core can therefore shorten the request again; this is not an
-acknowledgement of core's effective coverage.
+lower head at core can therefore shorten the request again. The last delivery's
+`last_in_catchup` marker identifies where core actually stopped.
 
 For outage recovery, relative flags alone may end before the outage workload
 when the first queued LIVE block is old. Use explicit absolute bounds from a
@@ -159,20 +159,21 @@ its queued deliveries remain accepted so another replica can finish draining.
 Matching replay flags reuse only ongoing requests; after `DONE`, explicitly
 starting with those flags creates a new request once a live reference is available.
 
-The handler caches each catchup's immutable `block_end` by `catchup_id` when it
-first receives a catchup payload. After successfully ingesting a block
-whose number equals that bound, it marks that request `DONE`. Any replica can
-record this observation, including one which does not own the command lease.
+After successfully ingesting a catchup payload with `last_in_catchup = true` and
+an admitted `catchup_id`, the handler marks that request `DONE`. It does not infer
+completion from the stored `block_end`. Core publishes the marked block after
+all other blocks of that request, even if it clamped the end further. Its
+`block_number` identifies the actual final block. Any replica can record this
+observation, including one which does not own the command lease.
 Failed ingestion does not mark completion; database errors during completion
 leave the delivery retryable. Suppressed requests cannot become `DONE`.
 
-This status is informative: other replicas can still be processing earlier
-deliveries. It relies on listener-core publishing the last block last.
-Consumer-side clamping makes the stored `block_end` the target of the published
-request. If core nevertheless clamps further because its head is lower, the
-request remains `ONGOING`. `consume_final_catchup()` continues reading the
-shared queue after an individual request completes; subscription cancellation
-or errors do not mark requests done.
+This status is informative: other replicas can still be processing or retrying
+earlier deliveries, and duplicates may arrive after the marked block. Payloads
+from older core versions default to `last_in_catchup = false` and do not mark
+requests done. `consume_final_catchup()` continues reading the shared queue after
+an individual request completes; subscription cancellation or errors do not mark
+requests done.
 
 ## Validation
 

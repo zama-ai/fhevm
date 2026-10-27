@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -580,7 +579,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             result
         }))
     };
-    let catchup_ends = Arc::new(RwLock::new(HashMap::new()));
     let handle_block = move |payload: BlockPayload, _cancel| {
         let is_catchup = matches!(
             payload.flow,
@@ -599,7 +597,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         let kms_cancel = kms_cancel.clone();
         let live_reference = live_reference.clone();
         let consumer_id = consumer_id.clone();
-        let catchup_ends = catchup_ends.clone();
         async move {
             // Paused (retired blue stack after cutover): no-op — ack and drop
             // the block without writing anything to the DB.
@@ -674,27 +671,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 return Ok(AckDecision::Ack);
             }
             let catchup_id = payload.catchup_id.filter(|_| is_catchup);
-            let catchup_end = if let Some(id) = catchup_id {
-                let cached = catchup_ends.read().await.get(&id).copied();
-                if cached.is_some() {
-                    cached
-                } else {
-                    let end = catchup::store::block_end(
-                        &db.pool().await,
-                        chain_id.as_i64(),
-                        &consumer_id,
-                        id,
-                    )
-                    .await
-                    .map_err(|error| HandlerError::Transient(error.into()))?;
-                    if let Some(end) = end {
-                        catchup_ends.write().await.insert(id, end);
-                    }
-                    end
-                }
-            } else {
-                None
-            };
             let result = ingest_payload(
                 &mut db,
                 &config,
@@ -741,9 +717,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             crate::catchup_test_control::after_ingest(&test_payload)
                 .map_err(|error| HandlerError::Transient(error.into()))?;
 
-            if let Some(id) =
-                catchup_id.filter(|_| catchup_end == Some(payload.block_number))
-            {
+            if let Some(id) = catchup_id.filter(|_| payload.last_in_catchup) {
                 if catchup::store::completed(
                     &db.pool().await,
                     chain_id.as_i64(),
