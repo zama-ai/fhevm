@@ -46,6 +46,7 @@
     "test:localstack:v11": "./test/scripts/localstack-run-tests.sh --chain localstack_v11 --fhevm-cli-profile v0.11.0-mainnet.json",
     "test:localstack:v12": "./test/scripts/localstack-run-tests.sh --chain localstack_v12 --fhevm-cli-profile v0.12.0-testnet.json",
     "test:localstack:v13": "./test/scripts/localstack-run-tests.sh --chain localstack_v13 --fhevm-cli-profile v0.13.0.json",
+    "test:localstack:v14": "./test/scripts/localstack-run-tests.sh --chain localstack_v14 --fhevm-cli-profile v0.14.4.json",
     "test:localcleartext:v12": "./test/scripts/localcleartext-run-tests.sh --foundry-profile=v12",
     "test:localcleartext:v13": "./test/scripts/localcleartext-run-tests.sh --foundry-profile=v13",
     "test:localcleartext:pack:v12": "./test/scripts/rebuild_sdk_and_pack.sh --build-profile=prod && ./test/scripts/localcleartext-run-tests.sh --use-pack --foundry-profile=v12",
