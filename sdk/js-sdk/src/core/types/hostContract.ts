@@ -22,7 +22,6 @@ export type HostContractVersion<hostContractName extends HostContractName = Host
   readonly patch: UintNumber;
 };
 
-export type HostContractData<hostContractName extends HostContractName> = {
-  readonly version: HostContractVersion<hostContractName>;
+export type HostContractData = {
   readonly address: ChecksummedAddress;
 };

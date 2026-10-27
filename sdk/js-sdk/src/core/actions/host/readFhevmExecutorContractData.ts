@@ -56,6 +56,7 @@ export async function readFhevmExecutorContractData(
   const inputVerifierContractAddress = res[3];
   const handleVersion = res[4];
 
+  // The version is not stored: `getVersion()` is only read to check that `address` is a FHEVMExecutor.
   assertIsHostContractVersionOf(contractVersion, 'FHEVMExecutor');
 
   if (!isUint8(handleVersion)) {
@@ -67,7 +68,6 @@ export async function readFhevmExecutorContractData(
   assertIsChecksummedAddress(inputVerifierContractAddress, {});
 
   const data = createFhevmExecutorContractData(new WeakRef(fhevm.runtime), {
-    version: contractVersion,
     address: fhevmExecutorAddress,
     aclContractAddress,
     inputVerifierContractAddress,

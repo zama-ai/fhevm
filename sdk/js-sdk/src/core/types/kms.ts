@@ -15,7 +15,7 @@ export type Kms = { readonly [kmsBrand]: never };
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-export type KmsVerifierContractData = HostContractData<'KMSVerifier'> & {
+export type KmsVerifierContractData = HostContractData & {
   readonly address: ChecksummedAddress;
   readonly eip712Domain: KmsEip712Domain;
   readonly gatewayChainId: Uint64BigInt;
