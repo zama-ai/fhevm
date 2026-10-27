@@ -124,7 +124,7 @@ The SDK writes `browserstackSetupConfig.json`, `playwright-browserstack-sdk.conf
 
 These explain the configuration choices. Read them before you change any of it.
 
-- **Use `bs-local.com`, not `localhost`.** BrowserStack Local always routes `bs-local.com` back to your machine. `localhost` doesn't work on iOS Safari, and a LAN IP isn't reliably tunneled on real devices. Vite binds on all interfaces and allows `bs-local.com` as a host.
+- **Use `bs-local.com`, not `localhost`.** BrowserStack Local always routes `bs-local.com` back to your machine. `localhost` doesn't work on iOS Safari, and a LAN IP isn't reliably tunneled on real devices. Vite binds to `127.0.0.1` only, since the pages it serves contain `MNEMONIC`. The tunnel reaches it there, and Vite allows `bs-local.com` as a host.
 - **COOP/COEP headers.** The dev servers send `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` so the page is cross-origin isolated, which the WASM multithreading needs.
 - **HTTPS over HTTP/1.1 for the smoke suite.** A secure context is needed for `crypto.subtle` and cross-origin isolation, so `server.ts` serves HTTPS with a self-signed certificate. It uses `node:https` because Vite's built-in HTTPS uses HTTP/2, which fails through the tunnel on Android Chrome (`ERR_HTTP2_PROTOCOL_ERROR`).
 - **`forceLocal: false` on mobile.** With `forceLocal: true`, all traffic, including relayer calls, goes through the tunnel and your machine. On real mobile devices that path was unreliable ("Failed to fetch"), so `browserstack-mobile.yml` turns it off. `browserstack-desktop.yml` keeps `forceLocal: true`.

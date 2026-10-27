@@ -11,9 +11,10 @@ export default defineConfig({
   envPrefix: ['MNEMONIC'],
   server: {
     port: 3333,
-    // Bind on all interfaces, not just loopback: BrowserStack Local's real
-    // devices navigate to bs-local.com, not `localhost`.
-    host: true,
+    // Loopback only: the served modules embed MNEMONIC (see envPrefix), so the
+    // server must not be reachable from the network. BrowserStack Local
+    // tunnels bs-local.com back to this loopback address.
+    host: '127.0.0.1',
     // Vite 7's DNS-rebinding protection blocks unrecognized Host headers;
     // bs-local.com is BrowserStack Local's dedicated tunnel-back domain (see
     // playwright.config.ts baseURL).
