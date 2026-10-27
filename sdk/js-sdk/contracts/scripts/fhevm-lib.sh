@@ -203,21 +203,21 @@ verify_balance() {
 # fhevm contracts workspace. On invalid input, prints an error and EXITS the
 # calling process with status 1 (fail-fast; intended for script entry).
 #
-# Supported: v12 | v13 | v16 | latest
+# Supported: v12 | v13 | v16 | v1 | latest
 #
 # Usage: fhevm_assert_foundry_profile <profile>
 fhevm_assert_foundry_profile() {
     local profile="$1"
     case "$profile" in
-        v12|v13|v16|latest)
+        v12|v13|v16|v1|latest)
             return 0
             ;;
         "")
-            echo "❌ Foundry profile is required (expected: v12 | v13 | v16 | latest)" >&2
+            echo "❌ Foundry profile is required (expected: v12 | v13 | v16 | v1 | latest)" >&2
             exit 1
             ;;
         *)
-            echo "❌ unsupported Foundry profile '$profile' (expected: v12 | v13 | v16 | latest)" >&2
+            echo "❌ unsupported Foundry profile '$profile' (expected: v12 | v13 | v16 | v1 | latest)" >&2
             exit 1
             ;;
     esac
@@ -228,7 +228,8 @@ fhevm_assert_foundry_profile() {
 # sdk/js-sdk/contracts/scripts/).
 #
 # Usage: fhevm_host_addresses_file <profile>
-#   <profile>: v12 | v13 | v16 | latest
+#   <profile>: v12 | v13 | v16 | v1 | latest
+#   (v1: src/v1.0.0/config/addresses.sol, read-only; its deploy checks it and never writes it)
 #
 #   addresses_file="$(fhevm_host_addresses_file v13)"
 fhevm_host_addresses_file() {
@@ -246,11 +247,14 @@ fhevm_host_addresses_file() {
         v16)
             printf '%s/src/v0.16.0/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
             ;;
+        v1)
+            printf '%s/src/v1.0.0/config/addresses.sol\n' "$contracts_dir"
+            ;;
         latest)
             printf '%s/src/latest/host-contracts/addresses/FHEVMHostAddresses.sol\n' "$contracts_dir"
             ;;
         *)
-            echo "fhevm_host_addresses_file: unsupported profile '$profile' (expected: v12 | v13 | v16 | latest)" >&2
+            echo "fhevm_host_addresses_file: unsupported profile '$profile' (expected: v12 | v13 | v16 | v1 | latest)" >&2
             return 1
             ;;
     esac
