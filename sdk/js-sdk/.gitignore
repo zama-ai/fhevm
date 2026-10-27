@@ -27,10 +27,12 @@ log
 *.log
 
 # BrowserStack SDK generated artifacts (bake in a machine-specific absolute
-# path and, for browserstackSetupConfig.json, plaintext credentials —
-# regenerated on every `bstack:*` run, never meant to be committed)
+# path and, for browserstackSetupConfig.json and the .temp.json config,
+# plaintext credentials — regenerated on every `bstack:*` run, never meant
+# to be committed)
 browserstackSetupConfig.json
 playwright-browserstack-sdk.config.ts
+playwright-browserstack-sdk.config.temp.json
 browserstack.err
 npm-debug.log*
 yarn-debug.log*
