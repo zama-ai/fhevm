@@ -56,6 +56,18 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_GRPC_REQUEST_RETRIES
 # grpc_request_retries = 3
 
+# Timeout to establish the connection to a KMS Core shard (optional, defaults to 5s)
+# ENV: KMS_CONNECTOR_KMS_CONNECT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# kms_connect_timeout = "5s"
+
+# Interval between HTTP/2 keepalive pings sent to the KMS Core, even when idle (optional, defaults to 10s)
+# ENV: KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL (format: https://docs.rs/humantime/latest/humantime/)
+# kms_keep_alive_interval = "10s"
+
+# Time to wait for a keepalive ping acknowledgement before closing the KMS Core connection (optional, defaults to 5s)
+# ENV: KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# kms_keep_alive_timeout = "5s"
+
 # The maximum number of decryption attempts before a decryption request is considered failed (optional, defaults to 20)
 # ENV: KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS
 # max_decryption_attempts = 20
