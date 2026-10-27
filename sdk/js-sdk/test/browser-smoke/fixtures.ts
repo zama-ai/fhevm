@@ -1,4 +1,26 @@
-import { test as base, type BrowserContext, type TestInfo } from '@playwright/test';
+import {
+  test as base,
+  type Browser,
+  type BrowserContext,
+  type BrowserContextOptions,
+  type PlaywrightTestArgs,
+  type PlaywrightTestOptions,
+  type PlaywrightWorkerArgs,
+  type PlaywrightWorkerOptions,
+  type TestInfo,
+  type TestType,
+} from '@playwright/test';
+
+/**
+ * `_combinedContextOptions` is the internal fixture Playwright's own
+ * `context` fixture passes to `newContext()`: every context option from the
+ * config (`baseURL`, `ignoreHTTPSErrors`, `viewport`, `contextOptions`, ...)
+ * merged into one object. It isn't in the public types, so declare it here.
+ */
+const baseTest = base as unknown as TestType<
+  PlaywrightTestArgs & PlaywrightTestOptions & { _combinedContextOptions: BrowserContextOptions },
+  PlaywrightWorkerArgs & PlaywrightWorkerOptions
+>;
 
 /**
  * BrowserStack real devices allow exactly one browser context per session.
@@ -15,15 +37,38 @@ import { test as base, type BrowserContext, type TestInfo } from '@playwright/te
  * timeout, so a slow allocation would eat the test body's budget and kill
  * the page mid-check even when the SDK itself succeeded.
  */
-export const test = base.extend<{}, {}>({
+export const test = baseTest.extend<{}, {}>({
   context: [
-    async ({ playwright, browserName, baseURL, ignoreHTTPSErrors }, use, testInfo) => {
-      const browser = await launchWhenTunnelReady(() => playwright[browserName].launch());
-      const context = await browser.newContext({ ...(baseURL !== undefined && { baseURL }), ignoreHTTPSErrors });
-      await use(context);
-      await markBrowserStackSessionStatus(context, testInfo);
-      await context.close();
-      await browser.close();
+    async (
+      { playwright, browserName, connectOptions, launchOptions, headless, channel, _combinedContextOptions },
+      use,
+      testInfo,
+    ) => {
+      const browser = await launchWhenTunnelReady((): Promise<Browser> => {
+        if (connectOptions) {
+          return playwright[browserName].connect(connectOptions.wsEndpoint, {
+            ...connectOptions,
+            headers: {
+              'x-playwright-launch-options': JSON.stringify({ ...launchOptions, headless, channel }),
+              ...connectOptions.headers,
+            },
+          });
+        }
+        // No arguments, like Playwright's own `browser` fixture: launch() picks up
+        // `launchOptions`, `headless` and `channel` from the config by itself.
+        return playwright[browserName].launch();
+      });
+      // Close the browser even if newContext() or the test throws: on a real
+      // device the session is otherwise held until BrowserStack's idleTimeout,
+      // blocking the retry under parallelsPerPlatform: 1.
+      try {
+        const context = await browser.newContext(_combinedContextOptions);
+        await use(context);
+        await markBrowserStackSessionStatus(context, testInfo);
+        await context.close();
+      } finally {
+        await browser.close();
+      }
     },
     { scope: 'test', timeout: 600_000 },
   ],
