@@ -13,7 +13,7 @@ import { asUint32Number } from '../../../base/uint.js';
 // payload and its EIP-712 signature travel as a plain ABI encoding, and each
 // share is instead the whole encrypted pad — one 32-byte cleartext PRF block
 // per ring element — XOR-masked with the first 32 bytes of the request's public
-// key (`CleartextInputVerifier.getPadShares`).
+// key (`CleartextPaddedInputter.getCleartextPadSharesMaterial`).
 //
 // Flat layout (no tuples, so ethers and viem encode it identically):
 //   abi.encode(uint32 packingFactor, bytes extraData, uint32 degree,
