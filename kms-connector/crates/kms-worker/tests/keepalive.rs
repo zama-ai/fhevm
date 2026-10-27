@@ -1,4 +1,4 @@
-use kms_worker::core::event_processor::KmsClient;
+use kms_worker::core::{Config, event_processor::KmsClient};
 use std::{
     net::SocketAddr,
     sync::{
@@ -103,7 +103,7 @@ async fn test_black_holed_connection_is_detected() -> anyhow::Result<()> {
     let server_addr = start_grpc_server().await?;
     let proxy = BlackHoleProxy::start(server_addr).await?;
 
-    let channel = KmsClient::connect_single_shard(0, &proxy.url()).await?;
+    let channel = KmsClient::connect_single_shard(0, &proxy.url(), &Config::default()).await?;
     let mut client = HealthClient::new(channel);
     check(&mut client).await?;
 
