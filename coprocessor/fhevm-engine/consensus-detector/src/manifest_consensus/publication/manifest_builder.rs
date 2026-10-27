@@ -549,6 +549,7 @@ pub(crate) async fn seal_block_content(
         UPDATE block_manifest_state
            SET block_content_digest = $3,
                block_handle_count = $4,
+               sealed_by_schema = public.stack_schema(),
                updated_at = NOW()
          WHERE host_chain_id = $1
            AND block_hash = $2

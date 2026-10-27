@@ -1857,11 +1857,13 @@ async fn seed_sealed_fallback(
         "INSERT INTO block_manifest_state
             (host_chain_id, block_number, block_hash, parent_block_hash,
              publication_cadence, block_content_digest, block_handle_count,
-             manifest_published, manifest_digest, manifest_publisher, manifest_published_at)
+             manifest_published, manifest_digest, manifest_publisher, manifest_published_at,
+             sealed_by_schema)
          VALUES ($1, $2, $3, $4, 1, $5, 1, $6,
                  CASE WHEN $6 THEN $5 END,
                  CASE WHEN $6 THEN decode(repeat('11', 20), 'hex') END,
-                 CASE WHEN $6 THEN NOW() END)",
+                 CASE WHEN $6 THEN NOW() END,
+                 public.stack_schema())",
     )
     .bind(DST_CHAIN_ID as i64)
     .bind(BLOCK_NUMBER as i64)

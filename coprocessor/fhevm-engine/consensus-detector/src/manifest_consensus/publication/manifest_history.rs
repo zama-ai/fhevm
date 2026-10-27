@@ -260,9 +260,10 @@ async fn insert_empty_lineage_block(
             parent_block_hash,
             publication_cadence,
             block_content_digest,
-            block_handle_count
+            block_handle_count,
+            sealed_by_schema
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 0)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 0, public.stack_schema())
         ON CONFLICT (consensus_epoch, host_chain_id, block_hash) DO NOTHING
         "#,
         consensus_epoch,

@@ -8,6 +8,7 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::chain_recovery::{
     is_halted, lock_history_tx, ListenerSource,
 };
+use fhevm_engine_common::database::GCS_SCHEMA;
 use host_listener::database::ingest::{ingest_block_logs, BlockLogs};
 use host_listener::database::tfhe_event_propagate::Database;
 use serial_test::serial;
@@ -97,17 +98,30 @@ async fn hash_block(pool: &PgPool, uploaded: bool) -> anyhow::Result<()> {
 }
 
 async fn seal_block(pool: &PgPool, published: bool) -> anyhow::Result<()> {
+    seal_block_as(pool, published, None, 1).await
+}
+
+/// `schema` names the sealing stack, `None` this one. `handles` is the sealed
+/// descriptor count, 0 for an empty block.
+async fn seal_block_as(
+    pool: &PgPool,
+    published: bool,
+    schema: Option<&str>,
+    handles: i64,
+) -> anyhow::Result<()> {
     let b = block();
     sqlx::query("INSERT INTO block_manifest_state
         (host_chain_id, block_number, block_hash, parent_block_hash, publication_cadence,
          block_content_digest, block_handle_count, manifest_published, manifest_digest,
-         manifest_publisher, manifest_published_at)
-        VALUES (42, 100, $1, $2, 1, $3, 1, $4,
+         manifest_publisher, manifest_published_at, sealed_by_schema)
+        VALUES (42, 100, $1, $2, 1, $3, $6, $4,
                 CASE WHEN $4 THEN $3 END,
                 CASE WHEN $4 THEN decode(repeat('11', 20), 'hex') END,
-                CASE WHEN $4 THEN NOW() END)")
+                CASE WHEN $4 THEN NOW() END,
+                COALESCE($5, public.stack_schema()))")
         .bind(b.hash.to_vec()).bind(b.parent_hash.to_vec())
-        .bind(vec![0x33u8; 32]).bind(published).execute(pool).await?;
+        .bind(vec![0x33u8; 32]).bind(published).bind(schema).bind(handles)
+        .execute(pool).await?;
     Ok(())
 }
 
@@ -522,9 +536,9 @@ async fn sealed_repair(
         sqlx::query("INSERT INTO block_manifest_state
             (host_chain_id, block_number, block_hash, parent_block_hash, publication_cadence,
              block_content_digest, block_handle_count, manifest_published, manifest_digest,
-             manifest_publisher, manifest_published_at)
+             manifest_publisher, manifest_published_at, sealed_by_schema)
             VALUES (42, 101, $1, $2, 1, $3, 0, TRUE, $3,
-                    decode(repeat('11', 20), 'hex'), NOW())")
+                    decode(repeat('11', 20), 'hex'), NOW(), public.stack_schema())")
             .bind(computed_handle(0xb2).to_vec()).bind(block().hash.to_vec())
             .bind(vec![0x44u8; 32]).execute(&pool).await?;
         // Older binaries cleared both fields when refreshing an unpublished
@@ -579,6 +593,105 @@ async fn a_failed_epoch_seal_does_not_contain_the_repair() -> anyhow::Result<()>
     );
     assert!(!is_halted(&pool).await?);
     Ok(())
+}
+
+/// A fresh schema holds no inventory for a block the other stack sealed, so the
+/// first ingestion is not a rewrite. Blue reads green's seal here. The
+/// comparison is the same either way.
+#[tokio::test]
+#[serial(db)]
+async fn a_seal_from_another_stack_does_not_contain_a_fresh_schema(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    seal_block_as(&pool, true, Some(GCS_SCHEMA), 1).await?;
+    let b = block();
+    let tx = computed_handle(0xe1);
+    let a = computed_handle(1);
+    ingest(
+        &mut db,
+        &b,
+        vec![
+            rpc_log(&trivial_encrypt(a), &b, tx, 0),
+            rpc_log(&allowed(a), &b, tx, 1),
+        ],
+        false,
+    )
+    .await?;
+    assert_eq!(computation_flags(&pool, a).await?, (true, false));
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+/// Partial local inventory does not show which stack sealed the block. A repair
+/// under the other stack's seal must still complete.
+#[tokio::test]
+#[serial(db)]
+async fn a_seal_from_another_stack_does_not_contain_a_partial_schema(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = partial_block().await?;
+    seal_block_as(&pool, true, Some(GCS_SCHEMA), 1).await?;
+    repair(&mut db, false).await?;
+    assert_eq!(
+        computation_flags(&pool, computed_handle(2)).await?,
+        (true, false)
+    );
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+/// Blue seals an empty block, then pruning removes its header. No local row
+/// survives, so local history cannot stand in for the seal. A replay that finds
+/// events there rewrites sealed inventory.
+#[tokio::test]
+#[serial(db)]
+async fn an_empty_seal_contains_the_first_event_repair() -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    ingest(&mut db, &block(), vec![], false).await?;
+    sqlx::query(
+        "UPDATE host_chain_blocks_valid SET block_status = 'finalized'",
+    )
+    .execute(&pool)
+    .await?;
+    seal_block_as(&pool, true, None, 0).await?;
+    prune_header(&db, &pool).await?;
+    let local: i64 = sqlx::query_scalar(
+        "SELECT (SELECT COUNT(*) FROM computations)
+              + (SELECT COUNT(*) FROM handle_producer_block)
+              + (SELECT COUNT(*) FROM host_chain_blocks_valid)
+              + (SELECT COUNT(*) FROM state_hash)",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(local, 0, "the seal is the only record of the block");
+    let b = block();
+    let tx = computed_handle(0xe1);
+    let a = computed_handle(1);
+    let replay = ingest(
+        &mut db,
+        &b,
+        vec![
+            rpc_log(&trivial_encrypt(a), &b, tx, 0),
+            rpc_log(&allowed(a), &b, tx, 1),
+        ],
+        true,
+    )
+    .await;
+    assert!(replay.is_err(), "events under an empty seal are a rewrite");
+    assert!(is_halted(&pool).await?);
+    Ok(())
+}
+
+/// Pruning removes the header, not the seal. The guard still contains a repair
+/// under this stack's own seal, with no state hash on record.
+#[tokio::test]
+#[serial(db)]
+async fn a_seal_contains_the_repair_after_header_pruning() -> anyhow::Result<()>
+{
+    let (mut db, pool, _instance) = partial_block().await?;
+    seal_block(&pool, true).await?;
+    prune_header(&db, &pool).await?;
+    assert!(repair(&mut db, false).await.is_err());
+    assert_contained(&pool).await
 }
 
 #[tokio::test]

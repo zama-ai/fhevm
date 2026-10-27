@@ -608,7 +608,8 @@ async fn exhausts_and_clears_current_manifest_publication_retries() {
     insert_manifest_state(&pool, 30, &block_hash, &[0x60; 32]).await;
     sqlx::query(
         "UPDATE block_manifest_state \
-            SET block_content_digest = $3, block_handle_count = 0 \
+            SET block_content_digest = $3, block_handle_count = 0, \
+                sealed_by_schema = public.stack_schema() \
           WHERE host_chain_id = $1 AND block_hash = $2",
     )
     .bind(CHAIN_ID)
@@ -666,7 +667,8 @@ async fn exhausts_and_clears_current_manifest_publication_retries() {
     insert_manifest_state(&pool, 60, &later_hash, &block_hash).await;
     sqlx::query(
         "UPDATE block_manifest_state \
-            SET block_content_digest = $3, block_handle_count = 0 \
+            SET block_content_digest = $3, block_handle_count = 0, \
+                sealed_by_schema = public.stack_schema() \
           WHERE host_chain_id = $1 AND block_hash = $2",
     )
     .bind(CHAIN_ID)
@@ -724,7 +726,8 @@ async fn successful_publication_retries_the_skipped_predecessor_once() {
     insert_manifest_state(&pool, 60, &published_hash, &skipped_hash).await;
     sqlx::query(
         "UPDATE block_manifest_state
-            SET block_content_digest = $3, block_handle_count = 0
+            SET block_content_digest = $3, block_handle_count = 0,
+                sealed_by_schema = public.stack_schema()
           WHERE host_chain_id = $1 AND block_hash IN ($2, $4)",
     )
     .bind(CHAIN_ID)
@@ -779,7 +782,8 @@ async fn later_success_retries_the_nearest_skip_then_older_ones_after_it_works()
     insert_manifest_state(&pool, 90, &published_15, &skip_10).await;
     sqlx::query(
         "UPDATE block_manifest_state
-            SET block_content_digest = $2, block_handle_count = 0
+            SET block_content_digest = $2, block_handle_count = 0,
+                sealed_by_schema = public.stack_schema()
           WHERE host_chain_id = $1",
     )
     .bind(CHAIN_ID)
@@ -867,7 +871,8 @@ async fn extra_skip_attempt_is_not_granted_again_after_bound_plus_one() {
     insert_manifest_state(&pool, 60, &published_hash, &skipped_hash).await;
     sqlx::query(
         "UPDATE block_manifest_state
-            SET block_content_digest = $3, block_handle_count = 0
+            SET block_content_digest = $3, block_handle_count = 0,
+                sealed_by_schema = public.stack_schema()
           WHERE host_chain_id = $1 AND block_hash IN ($2, $4)",
     )
     .bind(CHAIN_ID)
@@ -923,7 +928,8 @@ async fn definitive_publication_error_exhausts_past_the_skip_peel() {
     insert_manifest_state(&pool, 60, &published_hash, &skipped_hash).await;
     sqlx::query(
         "UPDATE block_manifest_state
-            SET block_content_digest = $3, block_handle_count = 0
+            SET block_content_digest = $3, block_handle_count = 0,
+                sealed_by_schema = public.stack_schema()
           WHERE host_chain_id = $1 AND block_hash IN ($2, $4)",
     )
     .bind(CHAIN_ID)
@@ -984,7 +990,8 @@ async fn seal_and_skip(pool: &PgPool, sealed: &[&[u8]], skipped: &[&[u8]]) {
     for hash in sealed {
         sqlx::query(
             "UPDATE block_manifest_state
-                SET block_content_digest = $3, block_handle_count = 0
+                SET block_content_digest = $3, block_handle_count = 0,
+                    sealed_by_schema = public.stack_schema()
               WHERE host_chain_id = $1 AND block_hash = $2",
         )
         .bind(CHAIN_ID)
@@ -1140,7 +1147,8 @@ async fn transient_manifest_publication_errors_exhaust_the_finite_retry_budget()
     insert_manifest_state(&pool, 60, &block_hash, &[0x65; 32]).await;
     sqlx::query(
         "UPDATE block_manifest_state \
-            SET block_content_digest = $3, block_handle_count = 0 \
+            SET block_content_digest = $3, block_handle_count = 0, \
+                sealed_by_schema = public.stack_schema() \
           WHERE host_chain_id = $1 AND block_hash = $2",
     )
     .bind(CHAIN_ID)

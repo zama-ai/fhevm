@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
+use fhevm_engine_common::database::{GCS_SCHEMA, GCS_SCHEMA_QUOTED};
 use fhevm_engine_common::gcs_activation::{EVENT_DRY_RUN_ROLLED_BACK, WORK_AVAILABLE_CHANNEL};
 use fhevm_engine_common::synthetic_input::SYNTHETIC_ZK_PROOF_ID_BASE;
 use fhevm_engine_common::utils::DatabaseURL;
@@ -2517,9 +2517,10 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
 ///      (`copy_synthetic_probe_digests`), read only by the manifest builder.
 ///   6. Merge every `gcs.<table>` marked [`CoprocessorTable::is_merged`] into
 ///      `public`, then restore the snapshotted `txn_is_sent` flags.
-///   7. DROP SCHEMA gcs CASCADE.
-///   8. Mark the GCS rows LIVE/completed.
-///   9. NOTIFY every service that the live stack version changed.
+///   7. Restamp green's manifest seals in `public` as blue's.
+///   8. DROP SCHEMA gcs CASCADE.
+///   9. Mark the GCS rows LIVE/completed.
+///   10. NOTIFY every service that the live stack version changed.
 ///
 /// After commit, any BCS write tx that was waiting on the shared lock acquires it,
 /// re-reads the bumped `versioning` row, finds its own binary older, and stops (see
@@ -2665,7 +2666,23 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover: preserved txn_is_sent for already-committed handles"
     );
 
-    // 7. Rename the gcs schema to "pre-cutover" instead of dropping it, so the
+    // 7. Green becomes blue, so its seals must read as blue's. Nothing reads the
+    //    gcs schema name after this transaction. `block_manifest_state` stays in
+    //    `public`, so step 6 merged nothing into it.
+    let restamped = sqlx::query(
+        "UPDATE public.block_manifest_state SET sealed_by_schema = 'public'
+          WHERE sealed_by_schema = $1",
+    )
+    .bind(GCS_SCHEMA)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    info!(
+        restamped,
+        "cutover: restamped green manifest seals as blue's"
+    );
+
+    // 8. Rename the gcs schema to "pre-cutover" instead of dropping it, so the
     //    dry-run data stays inspectable while the versioned name is freed for the
     //    next upgrade. Drop any prior snapshot first so the rename never collides.
     sqlx::query("DROP SCHEMA IF EXISTS \"pre-cutover\" CASCADE")
@@ -2678,7 +2695,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover: renamed gcs schema to pre-cutover"
     );
 
-    // 8. Flip every chain's FSM row.
+    // 9. Flip every chain's FSM row.
     sqlx::query!(
         "UPDATE public.upgrade_state
          SET state = 'LIVE', status = 'completed', updated_at = NOW()
@@ -2687,7 +2704,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .execute(&mut *tx)
     .await?;
 
-    // 9. Notify every service that the live stack version changed. Queued in
+    // 10. Notify every service that the live stack version changed. Queued in
     //    the SAME transaction as the `versioning` UPDATE above, so the notify
     //    is atomic with the version bump — it is only delivered if the cutover
     //    commits. On receipt, each service re-evaluates its mode (the green
