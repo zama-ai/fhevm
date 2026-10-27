@@ -398,8 +398,9 @@ interface IProtocolConfig {
     // only. The committee entry points and the define functions target a canonical deployment only.
     // `destroyKmsContext` and `destroyKmsEpoch` apply to both: mirroring activates a new context
     // without retiring the previous one, so a context destroyed on Ethereum stays live on a replica
-    // until it is destroyed there as well. Nothing reverts when a caller uses the wrong entry points
-    // on the wrong deployment. This wrong use is unsupported operator misuse.
+    // until it is destroyed there as well. Since the contract cannot tell the two modes apart, a call
+    // made on the wrong deployment does not revert, for example a mirror function called on Ethereum
+    // or a define function called on a replica. Making such a call is an operator error.
     // -----------------------------------------------------------------------------------------
 
     /**

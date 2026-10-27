@@ -442,6 +442,8 @@ Host tasks (host-contracts/, reads PROTOCOL_CONFIG_CONTRACT_ADDRESS):
   task:destroyKmsContext                          direct broadcast
   task:buildDestroyKmsEpochCalldata               DAO calldata, cancel/retire an epoch (--epoch-id)
   task:destroyKmsEpoch                            direct broadcast
+  (Destroying a context also retires its epochs, so no destroyKmsEpoch call is needed
+  after destroyKmsContext. Use destroyKmsEpoch only for an epoch whose context stays live.)
   task:kmsContextSwitchStatus                     read-only progress (--from-block!)
 
 Replica mirror tasks (host-contracts/, run on each non-canonical chain after canonical
