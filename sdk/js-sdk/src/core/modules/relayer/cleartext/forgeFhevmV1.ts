@@ -81,7 +81,7 @@ const cachedReadCleartextExecutorAddress = createCachedFetch<
     `${(relayerClient.chain.fhevm.contracts.acl.address as string).toLowerCase()}:${relayerClient.chain.id}`,
 });
 
-async function readCleartextExecutorAddress(
+export async function readCleartextExecutorAddress(
   relayerClient: RelayerClientWithRuntime,
   trustedClient: TrustedClient,
 ): Promise<ChecksummedAddress> {
