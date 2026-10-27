@@ -7,13 +7,10 @@ metadata:
     app: kms-connector-db-migration
     app.kubernetes.io/name: {{ include "kmsConnectorDbMigrationName" . }}
   namespace: {{ .Release.Namespace }}
-  {{- with .Values.kmsConnectorDbMigration.annotations }}
+  # Pre-install/pre-upgrade hook by default, so the services never start on a partially migrated DB
+  {{- $hookAnnotations := dict "helm.sh/hook" "pre-install,pre-upgrade" "helm.sh/hook-weight" "-1" "helm.sh/hook-delete-policy" "before-hook-creation" }}
   annotations:
-    "helm.sh/hook": "pre-install,pre-upgrade"
-    "helm.sh/hook-weight": "-1"
-    "helm.sh/hook-delete-policy": before-hook-creation
-    {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- merge (dict) (.Values.kmsConnectorDbMigration.annotations | default dict) $hookAnnotations | toYaml | nindent 4 }}
 spec:
   backoffLimit: 3
   template:

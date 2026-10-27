@@ -78,6 +78,27 @@ pub struct Config {
     /// Number of retries for GRPC requests sent to the KMS Core.
     #[serde(default = "default_grpc_request_retries")]
     pub grpc_request_retries: u8,
+    /// Timeout to establish the connection to a KMS Core shard.
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_kms_connect_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
+    pub kms_connect_timeout: Duration,
+    /// Interval between HTTP/2 keepalive pings sent to the KMS Core, even when the channel is idle.
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_kms_keep_alive_interval"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
+    pub kms_keep_alive_interval: Duration,
+    /// Time to wait for a keepalive ping acknowledgement before closing the KMS Core connection.
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_kms_keep_alive_timeout"
+    )]
+    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
+    pub kms_keep_alive_timeout: Duration,
     /// The maximum number of decryption attempts.
     #[serde(default = "default_max_decryption_attempts")]
     pub max_decryption_attempts: u16,
@@ -225,6 +246,18 @@ fn default_grpc_request_retries() -> u8 {
     3
 }
 
+fn default_kms_connect_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+fn default_kms_keep_alive_interval() -> Duration {
+    Duration::from_secs(10)
+}
+
+fn default_kms_keep_alive_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
 fn default_max_decryption_attempts() -> u16 {
     20
 }
@@ -301,6 +334,9 @@ impl Default for Config {
             }],
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
             grpc_request_retries: default_grpc_request_retries(),
+            kms_connect_timeout: default_kms_connect_timeout(),
+            kms_keep_alive_interval: default_kms_keep_alive_interval(),
+            kms_keep_alive_timeout: default_kms_keep_alive_timeout(),
             max_decryption_attempts: default_max_decryption_attempts(),
             s3_ciphertext_retrieval_attempts: default_s3_ciphertext_retrieval_attempts(),
             s3_connect_timeout: default_s3_connect_timeout(),
@@ -343,6 +379,9 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_HOST_CHAINS");
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES");
+            env::remove_var("KMS_CONNECTOR_KMS_CONNECT_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL");
+            env::remove_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
@@ -416,6 +455,9 @@ mod tests {
                 "http://localhost:50053,http://localhost:50054",
             );
             env::set_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES", "5");
+            env::set_var("KMS_CONNECTOR_KMS_CONNECT_TIMEOUT", "7s");
+            env::set_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL", "20s");
+            env::set_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT", "8s");
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
             env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4s");
@@ -475,6 +517,9 @@ mod tests {
             vec!["http://localhost:50053", "http://localhost:50054"]
         );
         assert_eq!(config.grpc_request_retries, 5);
+        assert_eq!(config.kms_connect_timeout.as_secs(), 7);
+        assert_eq!(config.kms_keep_alive_interval.as_secs(), 20);
+        assert_eq!(config.kms_keep_alive_timeout.as_secs(), 8);
         assert_eq!(config.max_decryption_attempts, 300);
         assert_eq!(config.s3_ciphertext_retrieval_attempts.get(), 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
