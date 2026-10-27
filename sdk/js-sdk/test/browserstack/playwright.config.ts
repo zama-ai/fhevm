@@ -7,7 +7,10 @@ const viteConfigPath = resolve(__dirname, 'vite.config.ts');
 
 export default defineConfig({
   testDir: './specs',
-  timeout: 300_000,
+  // Above the longest result.waitFor() in the specs (600s in verify-input),
+  // so a slow run reaches the spec's own failure path (settle delay, log dump)
+  // instead of being killed by a generic test timeout.
+  timeout: 660_000,
   // Same device constraints as test/browser-smoke/playwright.config.ts: one
   // worker keeps simultaneous connects within parallelsPerPlatform: 1. It also
   // keeps verify-input and user-decrypt from sending transactions from the
