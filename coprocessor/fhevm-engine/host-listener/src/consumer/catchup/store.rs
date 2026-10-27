@@ -375,26 +375,75 @@ pub async fn completed(
     Ok(updated.rows_affected() == 1)
 }
 
-/// Consult shared state on every delivery, rather than a per-pod snapshot.
-pub async fn accepts(
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RejectionReason {
+    MissingId,
+    UnknownId,
+    WrongChain,
+    WrongConsumer,
+    WrongFlow,
+    Suppressed,
+    Skipped,
+    Inactive,
+}
+
+impl RejectionReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingId => "missing_id",
+            Self::UnknownId => "unknown_id",
+            Self::WrongChain => "wrong_chain",
+            Self::WrongConsumer => "wrong_consumer",
+            Self::WrongFlow => "wrong_flow",
+            Self::Suppressed => "suppressed",
+            Self::Skipped => "skipped",
+            Self::Inactive => "inactive",
+        }
+    }
+}
+
+fn status_rejection_reason(status: Option<&str>) -> Option<RejectionReason> {
+    match status {
+        Some("ONGOING" | "DONE") => None,
+        Some("SUPPRESSED") => Some(RejectionReason::Suppressed),
+        Some("SKIPPED") => Some(RejectionReason::Skipped),
+        Some(_) => Some(RejectionReason::Inactive),
+        None => Some(RejectionReason::UnknownId),
+    }
+}
+
+/// Consult shared state on every delivery. None means the delivery is admitted;
+/// database errors remain retryable rather than being classified as rejections.
+pub async fn rejection_reason(
     pool: &PgPool,
     chain_id: i64,
     consumer_id: &str,
     id: Option<Uuid>,
     finalized: bool,
-) -> Result<bool> {
-    let Some(id) = id else { return Ok(false) };
-    Ok(sqlx::query_scalar!(
-        "SELECT EXISTS(SELECT 1 FROM host_consumer_catchups
-         WHERE id = $1 AND chain_id = $2 AND consumer_id = $3
-           AND finalized = $4 AND status IN ('ONGOING', 'DONE')) AS \"accepted!\"",
+) -> Result<Option<RejectionReason>> {
+    let Some(id) = id else {
+        return Ok(Some(RejectionReason::MissingId));
+    };
+    let row = sqlx::query!(
+        "SELECT chain_id, consumer_id, finalized, status
+         FROM host_consumer_catchups WHERE id = $1",
         id,
-        chain_id,
-        consumer_id,
-        finalized,
     )
-    .fetch_one(pool)
-    .await?)
+    .fetch_optional(pool)
+    .await?;
+    let Some(row) = row else {
+        return Ok(Some(RejectionReason::UnknownId));
+    };
+    if row.chain_id != chain_id {
+        return Ok(Some(RejectionReason::WrongChain));
+    }
+    if row.consumer_id != consumer_id {
+        return Ok(Some(RejectionReason::WrongConsumer));
+    }
+    if row.finalized != finalized {
+        return Ok(Some(RejectionReason::WrongFlow));
+    }
+    Ok(status_rejection_reason(Some(&row.status)))
 }
 
 /// Keep suppression serialized with the actual block writes. A delivery
@@ -404,7 +453,7 @@ pub async fn lock_for_ingest(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: i64,
     id: Uuid,
-) -> Result<bool, sqlx::Error> {
+) -> Result<Option<RejectionReason>, sqlx::Error> {
     let status = sqlx::query_scalar!(
         "SELECT status FROM host_consumer_catchups
              WHERE id = $1 AND chain_id = $2 FOR SHARE",
@@ -413,7 +462,7 @@ pub async fn lock_for_ingest(
     )
     .fetch_optional(&mut **tx)
     .await?;
-    Ok(matches!(status.as_deref(), Some("ONGOING" | "DONE")))
+    Ok(status_rejection_reason(status.as_deref()))
 }
 
 async fn write_transaction(

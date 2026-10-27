@@ -888,6 +888,68 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
     assert_eq!(request.consumer_id, first);
     let catchup_id =
         request.catchup_id.expect("catchup request carries its id");
+    if bounded && !unfinalized {
+        // Exercise actual delivery admission and its public Prometheus counter.
+        for (flow, id, reason) in [
+            (BlockFlow::FinalCatchup, None, "missing_id"),
+            (
+                BlockFlow::FinalCatchup,
+                Some(uuid::Uuid::now_v7()),
+                "unknown_id",
+            ),
+            (BlockFlow::Catchup, Some(catchup_id), "wrong_flow"),
+        ] {
+            let route = if flow == BlockFlow::Catchup {
+                routing::consumer_catchup_event_routing(first.clone())
+            } else {
+                routing::consumer_final_catchup_event_routing(first.clone())
+            };
+            publisher
+                .publish(&route, &block(900, flow, id, false))
+                .await
+                .unwrap();
+            loop {
+                let chain = chain_id.as_u64().to_string();
+                let flow = if flow == BlockFlow::Catchup {
+                    "catchup"
+                } else {
+                    "final_catchup"
+                };
+                let observed =
+                    prometheus::gather().iter().any(|family| {
+                        family.name()
+                            == "host_consumer_catchup_deliveries_rejected_total"
+                            && family.metric.iter().any(|metric| {
+                                metric.counter.as_ref().is_some_and(|counter| {
+                                    counter.value() >= 1.0
+                                }) && [
+                                    ("chain_id", chain.as_str()),
+                                    ("flow", flow),
+                                    ("reason", reason),
+                                ]
+                                .iter()
+                                .all(
+                                    |(name, value)| {
+                                        metric.label.iter().any(|label| {
+                                            label.name() == *name
+                                                && label.value() == *value
+                                        })
+                                    },
+                                )
+                            })
+                    });
+                if observed {
+                    break;
+                }
+                assert!(
+                    !run.is_finished(),
+                    "listener stopped after rejected delivery"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        }
+        assert_event_sets(&pool, chain_id, &[1000]).await;
+    }
     // Live advances before historical delivery finishes.
     publisher
         .publish(

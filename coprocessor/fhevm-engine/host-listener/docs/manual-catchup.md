@@ -80,6 +80,15 @@ its block, as is an ID delivered on the wrong catchup flow. Database failures re
 block's ingestion transaction, so an old-request block cannot commit after the
 suppression transaction has committed.
 
+Rejected replay deliveries increment
+`host_consumer_catchup_deliveries_rejected_total{chain_id,flow,reason}`.
+Reasons distinguish missing or unknown IDs, wrong chain, consumer or flow,
+suppression, skipped requests, and other inactive states. Logs include the
+catchup ID, block number, flow, chain and reason. Expected late deliveries for
+suppressed requests log at DEBUG; unexpected rejections log at WARN or ERROR. The transaction
+recheck reports rejections too, including suppression after initial admission.
+Database failures remain retryable errors and do not increment this counter.
+
 ## Publication and cancellation
 
 The database records command intent before publication. `request_pending` is
