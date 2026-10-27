@@ -7,7 +7,7 @@ import path from "node:path";
 
 import type { RolloutRunContext } from "../../src/commands/rollout-run";
 import { resolveRolloutSolidityRef } from "../../src/commands/rollout-solidity";
-import { parseContextAndEpoch } from "../../src/commands/kms-context-switch";
+import { type ContextAndEpoch, parseContextAndEpoch } from "../../src/commands/kms-context-switch";
 import { uint256ToId } from "../../src/utils/fs";
 import { castCall, resolveKmsGenerationTarget, waitForContainer } from "../../src/flow/readiness";
 import {
@@ -389,7 +389,10 @@ export const gatewayContractUpgradePlan = [
   ["task:upgradeGatewayConfig", "GatewayConfig"],
 ] as const;
 
-export const hostContractUpgradePlan = [["task:upgradeKMSGeneration", "KMSGeneration"]] as const;
+export const hostContractUpgradePlan = [
+  ["task:upgradeProtocolConfig", "ProtocolConfig"],
+  ["task:upgradeKMSGeneration", "KMSGeneration"],
+] as const;
 
 const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
   await ctx.snapshotContracts("gateway");
@@ -765,4 +768,35 @@ export default async function runMigration(ctx: RolloutRunContext) {
     await assertGreenForcedLegacy();
   }
 
+  logPhase("12 reshare the migrated key through an epoch rotation, then a context switch");
+  // Each KMS node checks the getKeyInfo record the connector supplies against the migrated record it holds.
+  const readKmsEpoch = async () =>
+    parseContextAndEpoch(await castCall(target.rpcUrl, target.configAddress!, "getCurrentKmsContextAndEpoch()(uint256,uint256)"));
+  const reshare = async (
+    label: string,
+    task: string,
+    activated: (before: ContextAndEpoch, current: ContextAndEpoch) => boolean,
+    afterBroadcast?: (before: ContextAndEpoch) => Promise<void>,
+  ) => {
+    const before = await readKmsEpoch();
+    await ctx.runHostContractTask(`npx hardhat ${task} --use-internal-proxy-address true`);
+    await afterBroadcast?.(before);
+    await waitUntil(`the ${label} reshared the migrated key and activated on chain`, async () =>
+      activated(before, await readKmsEpoch()), 600);
+    await migrationTest("public-decryption", { parallel: false });
+    await migrationTest("user-decryption", { parallel: false });
+    await runRetainedMaterial(await ctx.readState(), "verify", "release-migration");
+  };
+  await reshare("epoch rotation", "task:defineNewEpochForCurrentKmsContext", (before, current) =>
+    current.contextId === before.contextId && current.epochId !== before.epochId);
+  await reshare(
+    "context switch",
+    "task:defineNewKmsContextAndEpoch",
+    (before, current) => current.contextId !== before.contextId,
+    // The gateway only accepts decryptions for KMS contexts registered on GatewayConfig.
+    (before) =>
+      ctx.runGatewayContractTask("npx hardhat task:updateKmsContext --use-internal-proxy-address true", {
+        env: { KMS_CONTEXT_ID: (before.contextId + 1n).toString() },
+      }),
+  );
 }
