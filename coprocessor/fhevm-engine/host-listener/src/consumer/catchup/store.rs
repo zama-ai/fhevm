@@ -329,7 +329,7 @@ pub async fn cancelled(
     Ok(updated.rows_affected() == 1)
 }
 
-/// Bounds are frozen before first publication and can be cached by the handler.
+/// Read the effective end frozen before first publication.
 pub async fn block_end(
     pool: &PgPool,
     chain_id: i64,
