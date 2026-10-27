@@ -1,7 +1,7 @@
 import { test, expect } from '../../browser-smoke/fixtures.js';
 import { RESULT_SETTLE_DELAY_MS } from '../scripts/common.js';
 
-test('encrypt + on-chain verifyInput via FHETest.addEuint8', async ({ page }) => {
+test('encrypt + on-chain verifyInput via FHETest.setEuint8', async ({ page }) => {
   await page.goto('/test/browserstack/pages/verify-input.html');
 
   const result = page.locator('#result');

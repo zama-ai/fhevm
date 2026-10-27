@@ -15,7 +15,7 @@ Each suite has a spec in `specs/`, an HTML page in `pages/`, and an in-page scri
 | npm script | What it does | Needs `MNEMONIC` | Sends a transaction |
 | --- | --- | --- | --- |
 | `bstack:encrypt` | Creates an encrypt client, runs `init()` (loads TFHE WASM and fetches the global FHE key), and encrypts one value of each type (`bool`, `uint8` to `uint256`, `address`) with `encryptValues`. Checks that it gets back 8 handles and an input proof. Uses dummy contract and user addresses. | No | No |
-| `bstack:verify-input` | Encrypts a `uint8` and submits it to `FHETest.addEuint8()`. The contract checks the ZK input proof on-chain. Passes if the transaction succeeds. | Yes | Yes (pays gas) |
+| `bstack:verify-input` | Encrypts a `uint8` and submits it to `FHETest.setEuint8()`. The contract checks the ZK input proof on-chain. Passes if the transaction succeeds. | Yes | Yes (pays gas) |
 | `bstack:user-decrypt` | Makes sure the wallet owns an `ebool` handle on `FHETest`, and calls `initFheTest()` if it doesn't. Then it creates a decrypt client, generates a transport keypair (TKMS WASM), signs an EIP-712 decryption permit, and decrypts the handle through the relayer. The result must be `true`. | Yes | Only on the first run for a wallet |
 
 The `FHETest` address comes from `test/chains/chain-defaults.json` (`sepolia.fheTestAddress`). The page fetches that file from the dev server.

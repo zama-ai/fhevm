@@ -70,13 +70,15 @@ async function run() {
     log('[PASS] Encryption complete');
 
     //
-    // 6. Submit encrypted input to FHETest.addEuint8() on-chain
-    //    This internally calls TFHE.asEuint8(inputHandle, inputProof)
-    //    which verifies the ZK proof on-chain
+    // 6. Submit encrypted input to FHETest.setEuint8() on-chain
+    //    This internally calls FHE.fromExternal(inputHandle, inputProof)
+    //    which verifies the ZK proof on-chain. Unlike addEuint8, it doesn't
+    //    need an existing uint8 handle for the caller, so it works on a
+    //    fresh wallet.
     //
-    log('Submitting input to FHETest.addEuint8() on-chain...');
+    log('Submitting input to FHETest.setEuint8() on-chain...');
     const fheTestContract = new ethers.Contract(FHE_TEST_ADDRESS, FHETestABI, wallet);
-    const tx = await fheTestContract.getFunction('addEuint8')(
+    const tx = await fheTestContract.getFunction('setEuint8')(
       result.encryptedValue,
       result.inputProof,
       testValue, // clearValue: the contract tracks the expected cleartext alongside the handle
