@@ -1,5 +1,5 @@
 import type { ChecksummedAddress } from '../types/primitives.js';
-import type { HostContractName, HostContractVersion, HostContractVersionString } from '../types/hostContract.js';
+import type { HostContractName, HostContractVersion } from '../types/hostContract.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import { assertIsNonEmptyString } from '../base/string.js';
 import { getVersionAbi } from './abi-fragments/fragments.js';
@@ -173,7 +173,6 @@ function parseVersion(version: string): HostContractVersion {
   }
 
   return Object.freeze({
-    version: version as HostContractVersionString,
     contractName,
     major,
     minor,

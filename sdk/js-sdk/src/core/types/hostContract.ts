@@ -13,10 +13,7 @@ export type HostContractNameMap = {
 // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
 export type HostContractName = keyof HostContractNameMap & string;
 
-export type HostContractVersionString = `${string} v${string}.${string}.${string}`;
-
 export type HostContractVersion<hostContractName extends HostContractName = HostContractName> = {
-  readonly version: HostContractVersionString;
   readonly contractName: HostContractNameMap[hostContractName];
   readonly major: UintNumber;
   readonly minor: UintNumber;
