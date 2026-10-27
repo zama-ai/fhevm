@@ -14,7 +14,8 @@ export default defineConfig({
   // calls than that, so most queue for a device and their connection idles
   // out ("Socket idle from a long time") before one frees up. One worker
   // keeps requests serialized to match browserstackLocal's parallelsPerPlatform: 1.
-  workers: 1,
+  // Local and CI runs keep Playwright's default so they stay parallel.
+  ...(process.env.BROWSERSTACK_CONFIG_FILE ? { workers: 1 } : {}),
   // Real devices occasionally fail for infrastructure reasons unrelated to the
   // SDK (a session that takes longer than the test timeout to start, or
   // "page.goto: Failed to execute goto. Internal error." on iOS Safari), so
