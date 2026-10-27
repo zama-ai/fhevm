@@ -297,7 +297,7 @@ There are no exemplars; find traces by time/service and correlate requests using
 #### Metric Name: `kms_connector_gw_listener_event_listening_errors`
  - **Type**: Counter
  - **Labels**:
-   - `contract`: can be used to filter by contract (decryption, kmsgeneration).
+   - `contract`: can be used to filter by listener (decryption, ethereum).
  - **Description**: Counts the number of errors encountered by the GW listener while listening for events.
  - **Alarm**: If the counter increases over a period of time.
    - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.

@@ -42,7 +42,7 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # decryption_polling = "500ms"
 
 # The polling interval for key management requests (optional, defaults to 30s)
-# ENV: KMS_CONNECTOR_KMS_GENERATION_POLLING (format: https://docs.rs/humantime/latest/humantime/)
+# ENV: KMS_CONNECTOR_KEY_MANAGEMENT_POLLING (format: https://docs.rs/humantime/latest/humantime/)
 # key_management_polling = "30s"
 
 # Maximum number of blocks per eth_getLogs RPC call (optional, defaults to 100)
@@ -72,7 +72,7 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # decryption_from_block_number = 1234
 
 # Block number to start processing KMS operation events from (optional, defaults to latest block if not set)
-# ENV: KMS_CONNECTOR_KMS_FROM_BLOCK_NUMBER
+# ENV: KMS_CONNECTOR_KMS_OPERATION_FROM_BLOCK_NUMBER
 # kms_operation_from_block_number = 1234
 
 # Configuration of the Decryption contract (required)
@@ -85,7 +85,7 @@ address = "0x0000000000000000000000000000000000000000"
 # ENV: KMS_CONNECTOR_DECRYPTION_CONTRACT__DOMAIN_NAME
 # domain_name = "Decryption"
 # EIP-712 domain version for Decryption contract (optional, defaults to "1")
-# ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
+# ENV: KMS_CONNECTOR_DECRYPTION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
 # Configuration of the KMSGeneration contract (required)
