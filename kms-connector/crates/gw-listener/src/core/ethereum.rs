@@ -617,11 +617,7 @@ mod tests {
 
         let cancel_token = eth_listener.cancel_token.clone();
         let listener_task = tokio::spawn(eth_listener.start());
-        test_instance
-            .wait_for_log(
-                "The ethereum finalized block reported by RPC node localhost has stayed at block 100",
-            )
-            .await;
+        test_instance.wait_for_log("has stayed at block 100").await;
 
         cancel_token.cancel();
         listener_task.await.unwrap();

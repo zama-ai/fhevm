@@ -3,6 +3,7 @@ use alloy::transports::http::reqwest::Url;
 use prometheus::IntGauge;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
+use url::Host;
 
 /// Tracks the head reported by a chain's RPC node, and warns when it stops advancing.
 ///
@@ -11,7 +12,7 @@ use tracing::{info, warn};
 pub struct HeadTracker {
     chain: ChainName,
     /// The RPC node host, logged instead of the full URL, which may contain an API key.
-    rpc_host: String,
+    rpc_host: Option<Host>,
     /// How long the head may stay the same before a warning, and the delay between two warnings.
     stale_threshold: Duration,
     /// The highest head reported so far, and when it was first reported.
@@ -26,7 +27,7 @@ impl HeadTracker {
     pub fn new(chain: ChainName, rpc_url: &Url, stale_threshold: Duration) -> Self {
         Self {
             chain,
-            rpc_host: rpc_url.host_str().unwrap_or("unknown host").to_string(),
+            rpc_host: rpc_url.host().map(|host| host.to_owned()),
             stale_threshold,
             highest_head: None,
             warned_at: None,
@@ -52,7 +53,7 @@ impl HeadTracker {
                     info!(
                         "The {chain} {head_name} reported by RPC node {} advanced to block {head} \
                         after {}s",
-                        self.rpc_host,
+                        self.rpc_host(),
                         now.saturating_duration_since(advanced_at).as_secs(),
                     );
                 }
@@ -74,9 +75,16 @@ impl HeadTracker {
             "The {chain} {head_name} reported by RPC node {} has stayed at block {highest_head} \
             for {}s (latest reported: {head}, next block to poll: {next_block_to_poll}): either \
             {idle_cause} or the RPC node is lagging",
-            self.rpc_host,
+            self.rpc_host(),
             stale_for.as_secs(),
         );
+    }
+
+    /// The RPC node host, as logged.
+    fn rpc_host(&self) -> String {
+        self.rpc_host
+            .as_ref()
+            .map_or_else(|| "unknown host".to_string(), Host::to_string)
     }
 
     /// The name of the tracked head, and the cause other than a lagging RPC node for it to stall.
@@ -152,6 +160,7 @@ mod tests {
                 n => Err(format!("expected 2 stale head warnings, got {n}")),
             },
         );
+        // The stall is counted from when the head last advanced, not from the previous warning.
         assert!(logs_contain("for 120s"));
         assert!(logs_contain("rpc.example.com"));
         assert!(!logs_contain("api-key"));

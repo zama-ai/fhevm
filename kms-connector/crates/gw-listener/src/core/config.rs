@@ -143,14 +143,14 @@ fn default_rpc_call_timeout() -> Duration {
     Duration::from_secs(10)
 }
 
-/// The Gateway only produces blocks when it receives transactions, so this must exceed the longest
-/// quiet period expected on the chain.
 fn default_gateway_stale_head_threshold() -> Duration {
+    // The Gateway only produces blocks when it receives transactions, so this must exceed the
+    // longest quiet period expected on the chain.
     Duration::from_mins(10)
 }
 
-/// Ethereum finalizes a new block about every 6.4 minutes (one epoch).
 fn default_ethereum_stale_head_threshold() -> Duration {
+    // Ethereum finalizes a new block about every 6.4 minutes (one epoch).
     Duration::from_mins(20)
 }
 
