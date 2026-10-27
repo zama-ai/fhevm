@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
 use tokio::time::{interval_at, sleep, Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use fhevm_engine_common::drift_revert::SignalStatus as DriftStatus;
 
@@ -27,7 +27,8 @@ use primitives::event::BlockFlow;
 use crate::cmd::block_history::BlockSummary;
 use crate::consumer::metrics::{
     inc_blocks_duplicated, inc_blocks_missing, inc_blocks_processed,
-    inc_db_errors, observe_legacy_insert_delay_seconds, set_received_block,
+    inc_catchup_deliveries_rejected, inc_db_errors,
+    observe_legacy_insert_delay_seconds, set_received_block,
 };
 use crate::consumer::migration::spawn_id_migration;
 use crate::database::ingest::{
@@ -614,7 +615,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
 
             let drift_revert_is_over = if is_catchup {
                 let pool = db.pool().await;
-                if !catchup::store::accepts(
+                if let Some(reason) = catchup::store::rejection_reason(
                     &pool,
                     chain_id.as_u64() as i64,
                     &consumer_id,
@@ -624,6 +625,13 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 .await
                 .map_err(|error| HandlerError::Transient(error.into()))?
                 {
+                    record_catchup_rejection(
+                        &chain_id_str,
+                        payload.flow,
+                        payload.catchup_id,
+                        payload.block_number,
+                        reason,
+                    );
                     return Ok(AckDecision::Ack);
                 }
                 fhevm_engine_common::drift_revert::latest_signal_for_chain(
@@ -662,10 +670,20 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             )
             .await;
             if payload.chain_id != chain_id.as_u64() {
+                if is_catchup {
+                    inc_catchup_deliveries_rejected(
+                        &chain_id_str,
+                        payload.flow,
+                        catchup::store::RejectionReason::WrongChain.as_str(),
+                    );
+                }
                 error!(
                     payload_chain_id = payload.chain_id,
                     configured_chain_id = chain_id.as_u64(),
                     block_number = payload.block_number,
+                    catchup_id = ?payload.catchup_id,
+                    flow = ?payload.flow,
+                    reason = "wrong_chain",
                     "Block delivered for wrong chain — broker routing misconfigured; dropping"
                 );
                 return Ok(AckDecision::Ack);
@@ -829,6 +847,36 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             error!(error = %err, "Consumer stopped with an error");
             Err(err)
         }
+    }
+}
+
+fn record_catchup_rejection(
+    chain_id: &str,
+    flow: BlockFlow,
+    catchup_id: Option<uuid::Uuid>,
+    block_number: u64,
+    reason: catchup::store::RejectionReason,
+) {
+    inc_catchup_deliveries_rejected(chain_id, flow, reason.as_str());
+    if reason == catchup::store::RejectionReason::Suppressed {
+        // Late blocks after cancellation are expected and can be numerous.
+        debug!(
+            chain_id,
+            ?flow,
+            ?catchup_id,
+            block_number,
+            reason = reason.as_str(),
+            "Rejected catchup delivery"
+        );
+    } else {
+        warn!(
+            chain_id,
+            ?flow,
+            ?catchup_id,
+            block_number,
+            reason = reason.as_str(),
+            "Rejected catchup delivery"
+        );
     }
 }
 
@@ -1210,13 +1258,25 @@ async fn ingest_with_retry(
                 return Ok(IngestResult::Complete);
             };
             if let Some(id) = catchup_id {
-                if !catchup::store::lock_for_ingest(
+                if let Some(reason) = catchup::store::lock_for_ingest(
                     &mut tx,
                     chain_id.as_i64(),
                     id,
                 )
                 .await?
                 {
+                    let flow = if block_logs.finalized {
+                        BlockFlow::FinalCatchup
+                    } else {
+                        BlockFlow::Catchup
+                    };
+                    record_catchup_rejection(
+                        &chain_id.to_string(),
+                        flow,
+                        Some(id),
+                        block_logs.summary.number,
+                        reason,
+                    );
                     return Ok(IngestResult::Complete);
                 }
             }
