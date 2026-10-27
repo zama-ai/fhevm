@@ -3,7 +3,12 @@ import type { TransportKeyPair } from '@fhevm/sdk/actions/decrypt';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { createWalletClient, getAddress, http } from 'viem';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import {
+  getViemTestConfig,
+  latestBlockTimestamp,
+  type CreateViemDecryptClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import {
   decryptTestCases,
@@ -151,7 +156,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
       },
     ) {
       const account = opts.account ?? config.account;
-      const startTimestamp = opts.startTimestamp ?? Math.floor(Date.now() / 1000) - 5;
+      const startTimestamp = opts.startTimestamp ?? (await latestBlockTimestamp(config)) - 5;
       const durationDays = opts.durationDays ?? 1;
 
       const domain = {
@@ -255,7 +260,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
@@ -366,7 +371,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
       const transportKeyPair = await client.generateTransportKeyPair();
       const expiredPermit = await forgeV1Permit(client, transportKeyPair, {
         extraData: STALE_V11_EXTRA_DATA as Hex,
-        startTimestamp: Math.floor(Date.now() / 1000) - 3 * 86400,
+        startTimestamp: (await latestBlockTimestamp(config)) - 3 * 86400,
         durationDays: 1,
       });
 

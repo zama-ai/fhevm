@@ -2,7 +2,12 @@ import type { TransportKeyPair } from '@fhevm/sdk/actions/decrypt';
 import { ethers } from 'ethers';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import {
+  getEthersTestConfig,
+  latestBlockTimestamp,
+  type CreateEthersDecryptClientFn,
+  type FheTestEthersConfig,
+} from '../setup-ethers.js';
 import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, createLogger } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
 
@@ -143,7 +148,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
       },
     ) {
       const wallet = opts.wallet ?? config.wallet;
-      const startTimestamp = opts.startTimestamp ?? Math.floor(Date.now() / 1000) - 5;
+      const startTimestamp = opts.startTimestamp ?? (await latestBlockTimestamp(config)) - 5;
       const durationDays = opts.durationDays ?? 1;
 
       const domain = {
@@ -229,7 +234,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
       });
@@ -340,7 +345,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
       const transportKeyPair = await client.generateTransportKeyPair();
       const expiredPermit = await forgeV1Permit(client, transportKeyPair, {
         extraData: STALE_V11_EXTRA_DATA,
-        startTimestamp: Math.floor(Date.now() / 1000) - 3 * 86400,
+        startTimestamp: (await latestBlockTimestamp(config)) - 3 * 86400,
         durationDays: 1,
       });
 
