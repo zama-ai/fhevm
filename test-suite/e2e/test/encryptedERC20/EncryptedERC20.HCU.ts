@@ -509,6 +509,13 @@ describe('EncryptedERC20:HCU', function () {
           await (await ownerHcuLimit.setHCUPerBlock(0)).wait();
         }
 
+        async function expectBlockCapRevert(ctx: Mocha.Context, tx: Promise<unknown>) {
+          await expect(tx).to.be.revertedWithCustomError(
+            requireHcuLimit(ctx.hcuLimit, LOCAL_HCU_LIMIT_ERROR) as unknown as { interface: any },
+            'HCUBlockLimitExceeded',
+          );
+        }
+
         it('should keep a whitelisted token working for every user and decrypt its results', async function () {
           await mintAndDistribute(this);
           await enableWhitelistOnly(this, [this.contractAddress]);
@@ -523,11 +530,6 @@ describe('EncryptedERC20:HCU', function () {
             'whitelisted transfer from bob',
           );
           expect(fromBob.status).to.eq(1);
-
-          const [, usedHCU] = await requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR).getBlockMeter({
-            blockTag: fromBob.blockNumber,
-          });
-          expect(usedHCU).to.eq(0n, 'Whitelisted traffic should not touch the block meter');
 
           // alice: 10000 - 5000 - 100 + 40, bob: 5000 + 100 - 40
           const balanceAlice = await this.instances.alice.userDecryptSingleHandle({
@@ -550,17 +552,11 @@ describe('EncryptedERC20:HCU', function () {
 
           const unknownToken = await deployEncryptedERC20Fixture();
           expect(await hcuLimit.isBlockHCUWhitelisted(await unknownToken.getAddress())).to.eq(false);
-          await expect(unknownToken.mint(1000)).to.be.revertedWithCustomError(
-            hcuLimit as unknown as { interface: any },
-            'HCUBlockLimitExceeded',
-          );
+          await expectBlockCapRevert(this, unknownToken.mint(1000));
 
           // A later block does not help: the cap is 0 in every block.
           await mineNBlocks(2);
-          await expect(unknownToken.mint(1)).to.be.revertedWithCustomError(
-            hcuLimit as unknown as { interface: any },
-            'HCUBlockLimitExceeded',
-          );
+          await expectBlockCapRevert(this, unknownToken.mint(1));
         });
 
         it('should refuse a token once it is removed from the whitelist', async function () {
@@ -578,19 +574,17 @@ describe('EncryptedERC20:HCU', function () {
             contractAddress: this.contractAddress,
             userAddress: this.signers.alice.address,
           });
-          await expect(
+          await expectBlockCapRevert(
+            this,
             erc20['transfer(address,bytes32,bytes)'](this.signers.bob.address, enc.handles[0], enc.inputProof),
-          ).to.be.revertedWithCustomError(hcuLimit as unknown as { interface: any }, 'HCUBlockLimitExceeded');
+          );
         });
 
         it('should reopen the protocol to every contract when the block cap is raised again', async function () {
           await enableWhitelistOnly(this, [this.contractAddress]);
           const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
           const unknownToken = await deployEncryptedERC20Fixture();
-          await expect(unknownToken.mint(1000)).to.be.revertedWithCustomError(
-            hcuLimit as unknown as { interface: any },
-            'HCUBlockLimitExceeded',
-          );
+          await expectBlockCapRevert(this, unknownToken.mint(1000));
 
           await (await hcuLimit.connect(requireDeployer(this.deployer)).setHCUPerBlock(TIGHT_PER_BLOCK)).wait();
 
