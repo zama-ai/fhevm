@@ -11,7 +11,7 @@ use proxy::{
 };
 use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error};
+use tracing::error;
 
 fn main() -> ExitCode {
     if let Err(err) = run() {
@@ -34,7 +34,6 @@ fn run() -> anyhow::Result<()> {
         }
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref())?;
-            debug!("{config:?}");
 
             // The tonic OTLP exporter spawns its channel worker with `tokio::spawn` at build time,
             // so a runtime must be entered here. The worker then runs on this runtime's threads,

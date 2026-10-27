@@ -8,6 +8,7 @@ pub use deserialize::DeserializeConfig;
 pub use error::{Error, Result};
 pub use wallet::{AwsKmsConfig, KmsWallet, TestingPrivateKey};
 
+use alloy::transports::http::reqwest::Url;
 use serde::{
     Deserialize, Deserializer, Serializer,
     de::{IntoDeserializer, SeqAccess, Visitor, value::SeqAccessDeserializer},
@@ -54,6 +55,15 @@ where
         return Err(serde::de::Error::custom("duration must be greater than 0"));
     }
     Ok(duration)
+}
+
+/// Deserializes a URL without echoing it in the error, as RPC URLs may contain an API key.
+pub fn deserialize_url<'de, D>(deserializer: D) -> std::result::Result<Url, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let url = String::deserialize(deserializer)?;
+    Url::parse(&url).map_err(|e| serde::de::Error::custom(format!("invalid URL: {e}")))
 }
 
 /// Deserializes a `Vec<T>` field from either a single scalar `T` or a sequence of `T`.

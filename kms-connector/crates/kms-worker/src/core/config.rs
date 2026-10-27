@@ -9,7 +9,7 @@ use connector_utils::{
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size, deserialize_non_zero_duration,
+        default_database_pool_size, deserialize_non_zero_duration, deserialize_url,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
@@ -47,6 +47,7 @@ pub struct Config {
     pub events_batch_size: u8,
 
     /// The Gateway RPC endpoint.
+    #[serde(deserialize_with = "deserialize_url")]
     pub gateway_url: Url,
     /// The Chain ID of the Gateway.
     pub gateway_chain_id: u64,
@@ -58,6 +59,7 @@ pub struct Config {
     pub gateway_config_contract: ContractConfig,
 
     /// The Ethereum RPC endpoint.
+    #[serde(deserialize_with = "deserialize_url")]
     pub ethereum_url: Url,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
@@ -184,6 +186,7 @@ pub struct Config {
 #[cfg_attr(test, derive(Serialize))]
 pub struct HostChainConfig {
     /// The Host Chain RPC endpoint.
+    #[serde(deserialize_with = "deserialize_url")]
     pub url: Url,
     /// The Chain ID of the Host Chain.
     #[serde(alias = "chainId")]

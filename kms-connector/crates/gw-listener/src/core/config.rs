@@ -8,7 +8,7 @@ use connector_utils::{
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size, deserialize_non_zero_duration,
+        default_database_pool_size, deserialize_non_zero_duration, deserialize_url,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
@@ -29,6 +29,7 @@ pub struct Config {
     pub database_pool_size: u32,
 
     /// The Gateway RPC endpoint.
+    #[serde(deserialize_with = "deserialize_url")]
     pub gateway_url: Url,
     /// The Chain ID of the Gateway.
     pub gateway_chain_id: u64,
@@ -43,6 +44,7 @@ pub struct Config {
     pub protocol_config_contract: ContractConfig,
 
     /// The Ethereum RPC node endpoint.
+    #[serde(deserialize_with = "deserialize_url")]
     pub ethereum_url: Url,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
@@ -328,6 +330,26 @@ mod tests {
         assert_ne!(config.gateway_chain_id, example_config.gateway_chain_id);
         assert_ne!(config.service_name, example_config.service_name);
         assert_eq!(config, expected_config);
+
+        cleanup_env_vars();
+    }
+
+    #[tokio::test]
+    #[serial(config_tests)]
+    async fn test_invalid_url_error_hides_the_url() {
+        cleanup_env_vars();
+        // Missing scheme: an easy mistake, with an API key in the path as some providers require.
+        unsafe {
+            env::set_var(
+                "KMS_CONNECTOR_GATEWAY_URL",
+                "rpc.example.com/v2/secret-api-key",
+            );
+        }
+
+        let err = Config::from_env_and_file(Some(example_config_path())).unwrap_err();
+        let err = format!("{err:?}");
+        assert!(err.contains("invalid URL"), "{err}");
+        assert!(!err.contains("secret-api-key"), "{err}");
 
         cleanup_env_vars();
     }

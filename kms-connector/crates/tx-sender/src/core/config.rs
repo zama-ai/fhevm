@@ -11,6 +11,7 @@ use connector_utils::{
             deserialize_protocol_config_contract_config,
         },
         default_database_pool_size, deserialize_non_zero_duration, deserialize_pg_interval,
+        deserialize_url,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
@@ -39,6 +40,7 @@ pub struct Config {
     pub database_polling_timeout: Duration,
 
     /// The Gateway RPC endpoint.
+    #[serde(deserialize_with = "deserialize_url")]
     pub gateway_url: Url,
     /// The Chain ID of the Gateway.
     pub gateway_chain_id: u64,
@@ -47,6 +49,7 @@ pub struct Config {
     pub decryption_contract: ContractConfig,
 
     /// The Ethereum RPC endpoint.
+    #[serde(deserialize_with = "deserialize_url")]
     pub ethereum_url: Url,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
