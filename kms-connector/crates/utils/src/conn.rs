@@ -69,11 +69,11 @@ pub type WalletProviderFillers = JoinFill<
     WalletFiller<EthereumWallet>,
 >;
 
-/// The ceilings of a RPC connection: how many calls it may have in flight, and how long any single
-/// one of them may take.
+/// The ceilings of a RPC connection: how long any single call may take, and optionally how many
+/// calls it may have in flight.
 #[derive(Clone, Copy, Debug)]
 struct RpcCallBounds {
-    max_concurrent_calls: NonZeroUsize,
+    max_concurrent_calls: Option<NonZeroUsize>,
     call_timeout: Duration,
 }
 
@@ -88,12 +88,12 @@ pub async fn connect_to_rpc_node(
     .await
 }
 
-/// Tries to establish the connection with a RPC node, bounding the calls it may have in flight and
-/// the duration of each of them.
+/// Tries to establish the connection with a RPC node, bounding the duration of each call and, if
+/// `max_concurrent_calls` is set, the calls it may have in flight.
 pub async fn connect_to_rpc_node_with_bounds(
     rpc_node_url: Url,
     chain_id: u64,
-    max_concurrent_calls: NonZeroUsize,
+    max_concurrent_calls: Option<NonZeroUsize>,
     call_timeout: Duration,
 ) -> anyhow::Result<DefaultProvider> {
     let bounds = RpcCallBounds {
@@ -164,7 +164,12 @@ where
                 .map_err(|e| anyhow!("Failed to create the RPC HTTP client: {e}"))?;
             let transport = Http::with_client(http_client, rpc_node_url.clone());
             let is_local = transport.guess_local();
-            bounded_rpc_client(transport, is_local, bounds.max_concurrent_calls)
+            match bounds.max_concurrent_calls {
+                Some(max_concurrent_calls) => {
+                    bounded_rpc_client(transport, is_local, max_concurrent_calls)
+                }
+                None => ClientBuilder::default().transport(transport, is_local),
+            }
         }
         None => {
             let transport = Http::new(rpc_node_url.clone());
@@ -258,26 +263,34 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn bounded_calls_end_on_their_deadline() {
+    async fn calls_end_on_their_deadline() {
         const CALL_TIMEOUT: Duration = Duration::from_millis(200);
 
-        let (url, accept_loop) = black_hole_server().await;
-        let url = Url::parse(&url).unwrap();
-        let provider = connect_to_rpc_node_with_bounds(url, 1, NonZeroUsize::MIN, CALL_TIMEOUT)
-            .await
-            .expect("the bounded provider should have been built");
+        // With and without a limit on the calls in flight.
+        for max_concurrent_calls in [Some(NonZeroUsize::MIN), None] {
+            let (url, accept_loop) = black_hole_server().await;
+            let url = Url::parse(&url).unwrap();
+            let provider =
+                connect_to_rpc_node_with_bounds(url, 1, max_concurrent_calls, CALL_TIMEOUT)
+                    .await
+                    .expect("the bounded provider should have been built");
 
-        // Without the deadline, the silent node would leave this call pending forever.
-        let started = std::time::Instant::now();
-        let call = tokio::time::timeout(Duration::from_secs(5), provider.get_block_number())
-            .await
-            .expect("the call should have ended on its own deadline");
-        assert!(call.is_err(), "{call:?}");
+            // Without the deadline, the silent node would leave this call pending forever.
+            let started = std::time::Instant::now();
+            let call = tokio::time::timeout(Duration::from_secs(5), provider.get_block_number())
+                .await
+                .expect("the call should have ended on its own deadline");
+            let err = call.unwrap_err();
 
-        // And the deadline is what ended it, rather than the call failing on the spot.
-        assert!(started.elapsed() >= CALL_TIMEOUT, "{:?}", started.elapsed());
+            // And the deadline is what ended it, rather than the call failing on the spot.
+            assert!(started.elapsed() >= CALL_TIMEOUT, "{:?}", started.elapsed());
 
-        accept_loop.abort();
+            // The listeners log errors with their sources (`{:#}`), which say the call timed out.
+            let logged = format!("{:#}", anyhow::Error::from(err));
+            assert!(logged.contains("timed out"), "{logged}");
+
+            accept_loop.abort();
+        }
     }
 
     /// Guards the test above against a mocked node that would serialize the calls by itself.
