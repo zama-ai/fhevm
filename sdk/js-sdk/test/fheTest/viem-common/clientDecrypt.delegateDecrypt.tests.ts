@@ -2,7 +2,12 @@ import type { Account, Hex, PublicClient, Transport, Chain } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import {
+  getViemTestConfig,
+  latestBlockTimestamp,
+  type CreateViemDecryptClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { createWalletClient, http } from 'viem';
 import {
@@ -175,7 +180,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           transportKeyPair: keyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
-          startTimestamp: Math.floor(Date.now() / 1000) - 5,
+          startTimestamp: (await latestBlockTimestamp(config)) - 5,
           signerAddress: config.bob.account.address,
           signer: config.bob.account,
           delegatorAddress: config.alice.account.address,
@@ -240,7 +245,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
             transportKeyPair: transportKeyPair,
             contractAddresses: [config.fheTestAddress],
             durationSeconds: 24 * 3600,
-            startTimestamp: Math.floor(Date.now() / 1000) - 5,
+            startTimestamp: (await latestBlockTimestamp(config)) - 5,
             signerAddress: config.bob.account.address,
             signer: config.bob.account,
             delegatorAddress: config.alice.account.address,
@@ -314,7 +319,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           transportKeyPair: bobKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
-          startTimestamp: Math.floor(Date.now() / 1000) - 5,
+          startTimestamp: (await latestBlockTimestamp(config)) - 5,
           signerAddress: config.bob.account.address,
           signer: config.bob.account,
           delegatorAddress: config.alice.account.address,
