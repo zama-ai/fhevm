@@ -37,7 +37,20 @@ const baseTest = base as unknown as TestType<
  * timeout, so a slow allocation would eat the test body's budget and kill
  * the page mid-check even when the SDK itself succeeded.
  */
-export const test = baseTest.extend<{}, {}>({
+export const test = baseTest.extend<{}, { isMobileDevice: boolean }>({
+  /**
+   * Whether this worker's project targets a BrowserStack real mobile device.
+   * browserstack-node-sdk generates one project per platform and puts the
+   * platform's capabilities in `use.platformCaps`; mobile platforms carry a
+   * `deviceName`, desktop ones an `os`. False for local runs.
+   */
+  isMobileDevice: [
+    async ({}, use, workerInfo) => {
+      const { platformCaps } = workerInfo.project.use as { platformCaps?: { deviceName?: string } };
+      await use(platformCaps?.deviceName !== undefined);
+    },
+    { scope: 'worker' },
+  ],
   context: [
     async (
       { playwright, browserName, connectOptions, launchOptions, headless, channel, _combinedContextOptions },

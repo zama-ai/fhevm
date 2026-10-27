@@ -9,7 +9,7 @@ test.skip(
   'Explicit multithreaded coexistence smoke is Chromium-only.',
 );
 test.skip(
-  (process.env.BROWSERSTACK_CONFIG_FILE ?? '').includes('mobile'),
+  ({ isMobileDevice }) => isMobileDevice,
   'Multithreaded WASM worker-pool stress test is desktop-only; mobile devices are not a target for this scenario.',
 );
 
