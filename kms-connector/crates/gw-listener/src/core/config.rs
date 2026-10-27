@@ -151,7 +151,7 @@ fn default_gateway_stale_head_threshold() -> Duration {
 
 /// Ethereum finalizes a new block about every 6.4 minutes (one epoch).
 fn default_ethereum_stale_head_threshold() -> Duration {
-    Duration::from_secs(20 * 60)
+    Duration::from_mins(20)
 }
 
 // Default implementation for testing purpose
