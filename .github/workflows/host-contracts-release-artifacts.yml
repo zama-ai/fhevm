@@ -1,0 +1,94 @@
+name: host-contracts-release-artifacts
+
+# Builds the host contracts of a release once per host chain, with that chain's proxy addresses
+# from the public protocol registry compiled in, and attaches the result to the release: a
+# manifest with the runtime bytecode hash of every upgradeable contract, and the compiler build
+# info behind it. An implementation deployed on a chain can then be checked against the release by
+# hashing its code.
+
+permissions: {}
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build, e.g. v0.15.0"
+        type: string
+        required: true
+
+jobs:
+  build:
+    name: host-contracts-release-artifacts/build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: "write" # Required to upload release assets
+      id-token: "write" # Required for build provenance attestation
+      attestations: "write" # Required for build provenance attestation
+    concurrency:
+      group: host-contracts-release-artifacts-${{ github.event.release.tag_name || inputs.tag }}
+      cancel-in-progress: false
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    defaults:
+      run:
+        working-directory: ./host-contracts
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: "false"
+
+      - name: Check out protocol registry
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: zama-ai/protocol-registry
+          path: protocol-registry
+          persist-credentials: "false"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: '>=22.23.4 <23'
+
+      - name: Install safe-chain
+        shell: bash
+        run: |
+          # safe-chain v1.5.3 is distributed as an immutable GitHub release asset —
+          # its content is permanently fixed and cannot be modified after the tag is published.
+          # Verify immutability: curl -fsSL https://api.github.com/repos/AikidoSec/safe-chain/releases/tags/1.5.3 | grep immutable
+          curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
+
+      - name: Install dependencies
+        run: |
+          cp .env.example .env
+          npm ci --include=optional
+
+      - name: Build release artifacts for every host chain in the registry
+        env:
+          HARDHAT_NETWORK: hardhat
+          TS_NODE_TRANSPILE_ONLY: "true"
+        run: |
+          registry_commit="$(git -C ../protocol-registry rev-parse HEAD)"
+          for file in mainnet.json testnet.json; do
+            for chain in $(jq -r '.contracts[] | select(.type == "fhevm_acl") | .chain' "../protocol-registry/${file}" | sort -u); do
+              npx hardhat task:buildReleaseArtifacts \
+                --registry "../protocol-registry/${file}" \
+                --registry-ref "zama-ai/protocol-registry@${registry_commit}:${file}" \
+                --chain "${chain}" \
+                --out-dir "release-artifacts/${chain}"
+              tar -czf "host-contracts-${chain}.tar.gz" -C release-artifacts "${chain}"
+            done
+          done
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: host-contracts/host-contracts-*.tar.gz
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" host-contracts-*.tar.gz --clobber --repo "$GITHUB_REPOSITORY"

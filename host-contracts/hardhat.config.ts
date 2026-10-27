@@ -22,6 +22,7 @@ import './tasks/mirrorKmsContext';
 import './tasks/ownership';
 import './tasks/pauseContracts';
 import './tasks/prepareCoprocessorUpgrade';
+import './tasks/releaseArtifacts';
 import './tasks/removePauser';
 import './tasks/swapPauser';
 import './tasks/taskDeploy';

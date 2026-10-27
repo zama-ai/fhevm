@@ -39,3 +39,5 @@ foundry.lock
 
 # mock-coprocessor db
 scripts/mock-coprocessor/mock-coprocessor.db
+# Release artifacts built by task:buildReleaseArtifacts
+/release-artifacts
