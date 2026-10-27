@@ -4,7 +4,8 @@ use uuid::Uuid;
 use crate::store::client::PgClient;
 use crate::store::error::SqlResult;
 use crate::store::models::{
-    CancelOutcome, CatchupFlow, CatchupStatus, CoverageMerge, NewCatchupRequest, RequestAdmission,
+    CancelOutcome, CatchupFlow, CatchupRequestState, CatchupStatus, CoverageMerge,
+    NewCatchupRequest, RequestAdmission,
 };
 use primitives::utils::saturating_u64_to_i64;
 
@@ -35,7 +36,9 @@ impl CatchupRepository {
     /// The read-back is what turns a duplicate request into a true no-op.
     /// `DO NOTHING` prevents a duplicate row, not duplicate work — without
     /// `fanned_out_at` the read-back would return `ACTIVE` and the whole range
-    /// would be fanned out a second time.
+    /// would be fanned out a second time. It also returns the stored
+    /// `fanned_end`, which a redelivery must fan out to rather than to its own
+    /// head read.
     pub async fn admit_request(&self, request: &NewCatchupRequest) -> SqlResult<RequestAdmission> {
         let mut conn = self.client.get_app_connection().await?;
 
@@ -63,7 +66,7 @@ impl CatchupRepository {
 
         let row = sqlx::query!(
             r#"
-            SELECT status as "status: CatchupStatus", fanned_out_at
+            SELECT status as "status: CatchupStatus", fanned_out_at, fanned_end
             FROM catchup_requests
             WHERE chain_id = $1 AND catchup_id = $2
             "#,
@@ -74,7 +77,9 @@ impl CatchupRepository {
         .await?;
 
         Ok(match (row.status, row.fanned_out_at) {
-            (CatchupStatus::Active, None) => RequestAdmission::FanOut,
+            (CatchupStatus::Active, None) => RequestAdmission::FanOut {
+                fanned_end: row.fanned_end.map(|end| end as u64),
+            },
             (CatchupStatus::Active, Some(_)) => RequestAdmission::AlreadyFannedOut,
             (status, _) => RequestAdmission::AlreadyTerminal(status),
         })
@@ -103,11 +108,14 @@ impl CatchupRepository {
         Ok(())
     }
 
-    /// Merge one published sub-range into the request's coverage set, and
+    /// Merge one published range into the request's coverage set, and
     /// complete the request if that closed the span.
     ///
-    /// `block_start`/`block_end` are inclusive, matching the payload; the
-    /// half-open conversion happens here so no call site has to remember it.
+    /// `range` is inclusive, matching the payload; the half-open conversion
+    /// happens here so no call site has to remember it. `None` merges nothing
+    /// and only reads the state back: a range worker whose sub-range is just
+    /// `fanned_end` publishes no body, and still has to learn whether the
+    /// last block is due.
     ///
     /// Three properties carry this, and none of them are incidental:
     ///
@@ -127,16 +135,28 @@ impl CatchupRepository {
     /// Returns [`CoverageMerge::Completed`] exactly once per request: the
     /// `WHERE` clause stops matching the moment the status flips, so a later
     /// replay reports [`CoverageMerge::NotActive`].
+    ///
+    /// Returns [`CoverageMerge::LastBlockDue`] whenever the merge leaves every
+    /// block below `fanned_end` covered with the request still active. The row
+    /// lock serializes concurrent merges, so the merge that closes that body
+    /// sees it, and so does any retry after it until the last block is merged.
+    /// `fanned_end = block_start` is spelled out rather than left to the
+    /// containment of an empty range: a one-block request has an empty body.
     pub async fn record_coverage(
         &self,
         catchup_id: Uuid,
-        block_start: u64,
-        block_end: u64,
+        range: Option<(u64, u64)>,
     ) -> SqlResult<CoverageMerge> {
         let mut conn = self.client.get_app_connection().await?;
 
-        let lower = saturating_u64_to_i64(block_start);
-        let upper = saturating_u64_to_i64(block_end.saturating_add(1));
+        // An empty `int8range(0, 0)` unions as nothing.
+        let (lower, upper) = match range {
+            Some((start, end)) => (
+                saturating_u64_to_i64(start),
+                saturating_u64_to_i64(end.saturating_add(1)),
+            ),
+            None => (0, 0),
+        };
 
         let row = sqlx::query!(
             r#"
@@ -155,7 +175,12 @@ impl CatchupRepository {
                                    ELSE terminal_at
                                  END
              WHERE chain_id = $1 AND catchup_id = $2 AND status = 'ACTIVE'
-            RETURNING (status = 'COMPLETED') AS "just_completed!"
+            RETURNING (status = 'COMPLETED') AS "just_completed!",
+                      COALESCE(
+                          fanned_end = block_start
+                          OR covered @> int8range(block_start, fanned_end),
+                          FALSE
+                      ) AS "body_done!"
             "#,
             self.chain_id,
             catchup_id,
@@ -167,24 +192,26 @@ impl CatchupRepository {
 
         Ok(match row {
             Some(r) if r.just_completed => CoverageMerge::Completed,
+            Some(r) if r.body_done => CoverageMerge::LastBlockDue,
             Some(_) => CoverageMerge::Progressed,
             None => CoverageMerge::NotActive,
         })
     }
 
-    /// The fetcher's guard, run once per sub-range before any RPC.
+    /// The fetcher's guard, run once per sub-range before any RPC. Returns the
+    /// status and the completion target, which the range worker holds back.
     ///
     /// Primary key only: no `consumer_id` predicate. The `consumer_id` in a
     /// sub-range payload was stamped by the orchestrator off this very row, and
     /// a mismatch would return `None`, which the caller maps to *run the
     /// sub-range*. Ownership is checked on the cancel path, where the id
     /// genuinely arrives from outside.
-    pub async fn request_status(&self, catchup_id: Uuid) -> SqlResult<Option<CatchupStatus>> {
+    pub async fn request_state(&self, catchup_id: Uuid) -> SqlResult<Option<CatchupRequestState>> {
         let mut conn = self.client.get_app_connection().await?;
 
         let row = sqlx::query!(
             r#"
-            SELECT status as "status: CatchupStatus"
+            SELECT status as "status: CatchupStatus", fanned_end
             FROM catchup_requests
             WHERE chain_id = $1 AND catchup_id = $2
             "#,
@@ -194,7 +221,10 @@ impl CatchupRepository {
         .fetch_optional(&mut *conn)
         .await?;
 
-        Ok(row.map(|r| r.status))
+        Ok(row.map(|r| CatchupRequestState {
+            status: r.status,
+            fanned_end: r.fanned_end.map(|end| end as u64),
+        }))
     }
 
     /// Cancel a catchup request, creating the row if the cancel beat the

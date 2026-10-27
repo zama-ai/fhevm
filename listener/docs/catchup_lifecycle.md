@@ -92,21 +92,25 @@ sequenceDiagram
     ORC->>DB: mark fanned out
 
     loop each sub-range
-        FET->>DB: GUARD: still ACTIVE?
+        FET->>DB: GUARD: still ACTIVE? read fanned_end (1249)
         DB-->>FET: yes
-        FET->>OUT: fetch and publish the blocks
+        FET->>OUT: fetch and publish the blocks, holding back 1249
         FET->>DB: MERGE: record the delivered range
     end
 
-    Note over DB: the last merge sees full coverage<br/>and flips the row to COMPLETED
+    Note over DB: the merge that covers 1000..1248<br/>reports the last block is due
+    FET->>OUT: publish 1249, flagged last_in_catchup
+    FET->>DB: MERGE 1249: full coverage, flips the row to COMPLETED
 ```
 
-Two things worth reading off this:
+Three things worth reading off this:
 
 - Blocks reach the consumer **during** the loop, not at the end. A 250-block catchup arrives in
   three bursts.
-- The row is written twice by the planner (admit, mark-fanned-out) and once per sub-range by the
-  workers. Nothing else writes to it.
+- Block 1249 arrives last and flagged, whichever sub-range finishes last. See
+  [The last block](#the-last-block).
+- The row is written twice by the planner (admit, mark-fanned-out), once per sub-range by the
+  workers, and once more for the last block. Nothing else writes to it.
 
 ## The one table
 
@@ -186,7 +190,7 @@ they record about *why* the request stopped:
 | State | Meaning |
 |---|---|
 | `ACTIVE` | The consumer wants this replayed, and it is not finished. |
-| `COMPLETED` | Every block this request planned has been published. |
+| `COMPLETED` | Every block this request planned has been published, the flagged last block after all the others. |
 | `CANCELLED` | The consumer asked for it to stop. |
 | `SKIPPED` | The start block was above the chain head, so there was nothing to plan. |
 
@@ -206,14 +210,14 @@ The planner inserts the row, then reads it straight back.
 INSERT INTO catchup_requests (...) VALUES (...)
 ON CONFLICT (chain_id, catchup_id) DO NOTHING;
 
-SELECT status, fanned_out_at FROM catchup_requests WHERE chain_id = $1 AND catchup_id = $2;
+SELECT status, fanned_out_at, fanned_end FROM catchup_requests WHERE chain_id = $1 AND catchup_id = $2;
 ```
 
 `DO NOTHING` means the stored row always wins. What comes back decides what happens next:
 
 | Read-back | What the planner does |
 |---|---|
-| `ACTIVE`, not fanned out | Plan it: publish the sub-ranges. |
+| `ACTIVE`, not fanned out | Plan it: publish the sub-ranges, split up to the stored `fanned_end`. |
 | `ACTIVE`, already fanned out | Nothing. This is a duplicate request. |
 | Anything terminal | Nothing. It was cancelled or finished already. |
 
@@ -222,12 +226,12 @@ SELECT status, fanned_out_at FROM catchup_requests WHERE chain_id = $1 AND catch
 Every worker, once per sub-range, before touching the RPC node:
 
 ```sql
-SELECT status FROM catchup_requests WHERE chain_id = $1 AND catchup_id = $2;
+SELECT status, fanned_end FROM catchup_requests WHERE chain_id = $1 AND catchup_id = $2;
 ```
 
 | Result | What the worker does |
 |---|---|
-| `ACTIVE` | Run the sub-range. |
+| `ACTIVE` | Run the sub-range, holding back `fanned_end` if it contains it. |
 | Anything else | Ack and drop it. No RPC call, no blocks published. |
 | No row found | Run it anyway, and log a warning. |
 
@@ -245,7 +249,9 @@ UPDATE catchup_requests
    SET covered = covered + int8multirange(int8range($3, $4)),
        status  = CASE WHEN <covered now spans the whole target>
                       THEN 'COMPLETED' ELSE status END
- WHERE chain_id = $1 AND catchup_id = $2 AND status = 'ACTIVE';
+ WHERE chain_id = $1 AND catchup_id = $2 AND status = 'ACTIVE'
+RETURNING status = 'COMPLETED'                    AS just_completed,
+          <covered spans everything below fanned_end> AS body_done;
 ```
 
 This one deserves its own section: [How completion is detected](#how-completion-is-detected).
@@ -375,6 +381,48 @@ head.
 Because `fanned_end` is derived from the last sub-range the split produced, it is impossible for
 the calling code to pass the requested end by mistake — the wrong value is not in scope.
 
+`fanned_end` is fixed by the first delivery of the request. If the planner crashes mid-fan-out,
+its redelivery re-reads the head, but splits up to the stored `fanned_end` instead of its own
+read: a lower read would otherwise leave the blocks in between unplanned and the request
+`ACTIVE` forever.
+
+### The last block
+
+Sub-ranges finish in any order, so the last sub-range finishing tells the consumer nothing. To
+give it a reliable end, every sub-range holds back `fanned_end` and the merge reports when
+everything *below* it is covered. The worker whose merge reports that publishes `fanned_end`
+itself, flagged `last_in_catchup`, then merges it, which completes the request.
+
+```text
+ request 1..400, fanned_end = 400, four sub-ranges. Each publishes its blocks except 400.
+
+ S1 [1──100]        merge → covered {[1,101)}             below 400 not covered yet
+ S3 [201──300]      merge → covered {[1,101),[201,301)}   not yet
+ S4 [301──399]      merge → covered {.., [301,400)}       not yet   (400 held back)
+ S2 [101──200]      merge → covered {[1,400)}             ← everything below 400: last block due
+                    S2's worker publishes 400 ★ last_in_catchup = true
+                    merge [400,400] → covered {[1,401)}   → COMPLETED
+```
+
+The merges take the row lock one at a time, so exactly one of them sees the body finish, and it
+does so after every other block is published. The flagged block's number is also where the
+listener stopped: a consumer that asked for 1..10 000 with the head at 8 000 receives `8000 ★`.
+
+"Last block due" is read from the row's state, not fired once. If publishing ★ fails, the worker
+retries its sub-range, its merge reports the same thing again, and ★ is re-sent. A one-block
+request has an empty body, so its first merge reports the last block due straight away.
+
+What this does not promise:
+
+- **Nothing after ★.** Redelivery can still put duplicates after it, a second copy of ★
+  included. Consumers dedupe on `(block_number, block_hash)`.
+- **That a consumer processes ★ last.** A block that failed on the consumer side is retried
+  after newer ones. A consumer should fail ★ (transiently) while an earlier block of the same
+  `catchup_id` is still failing on its side.
+- **A ★ in every case.** None is sent for `SKIPPED`, `CANCELLED`, or a consumer with no filters
+  on the chain, so consumers still check their own state and re-request when something is
+  missing.
+
 ### Finding what is missing
 
 Because `covered` is a set, the gap is a subtraction. This is the query to run when a request is
@@ -441,8 +489,11 @@ longer wanted — it only ever executes the cancels and requests it is given.
 | What happens | What the system does |
 |---|---|
 | Consumer re-sends an id that already finished | Nothing. Admit reads `COMPLETED`, acks, publishes no sub-ranges. |
-| Planner crashes part-way through publishing | `fanned_out_at` is still `NULL`, so redelivery re-plans the whole request. Sub-ranges are re-published; the merge absorbs the overlap; consumers de-duplicate. Wasted work, never lost work. |
+| Planner crashes part-way through publishing | `fanned_out_at` is still `NULL`, so redelivery re-plans the whole request, up to the stored `fanned_end`. Sub-ranges are re-published; the merge absorbs the overlap; consumers de-duplicate. Wasted work, never lost work. |
 | Worker publishes blocks but the ack is lost | The sub-range is redelivered and re-run. The merge adds a range already in `covered`, which changes nothing. |
+| Publishing the last block fails | Transient: the sub-range is retried, its merge reports the last block due again, and it is re-sent. |
+| Worker crashes after publishing the last block, before merging it | The retry publishes it again. The consumer sees ★ twice, never zero times. |
+| Cancel lands after the last block is due | ★ still goes out; its merge finds the row `CANCELLED`. Consumers drop blocks of a cancelled id. |
 | Cancel arrives before the request | The cancel handler creates the row as `CANCELLED` with a `NULL` range. When the request arrives, Admit reads `CANCELLED` and publishes nothing. |
 | Cancel names someone else's request | Rejected, logged, counted. Still acked — retrying would not help. |
 | Start block is above the chain head | The request is written `SKIPPED` immediately. No sub-ranges, no work. |
@@ -462,10 +513,11 @@ query covers both flows and `sum by (flow)` splits them.
 | `listener_catchup_completed_total` | counter | Coverage closes a request. |
 | `listener_catchup_cancelled_total` | counter | A cancel takes effect. |
 | `listener_catchup_cancel_rejected_total` | counter | A cancel names another consumer's request. |
-| `listener_catchup_range_duration_seconds` | histogram | A sub-range finishes. |
+| `listener_catchup_range_duration_seconds` | histogram | A sub-range finishes, or a request's last block is published on its own. |
 | `listener_catchup_active_requests` | gauge | Polled from the database every 15s. |
 
 A healthy backfill shows `subranges_total` climbing, `range_duration_seconds` counting up to
-match, and `active_requests` returning to zero when it finishes. A request stuck `ACTIVE` with
+match (plus about one per request, for its last block), and `active_requests` returning to zero
+when it finishes. A request stuck `ACTIVE` with
 `active_requests` pinned above zero and no duration activity is the signal to run the gap query
 from [Finding what is missing](#finding-what-is-missing).

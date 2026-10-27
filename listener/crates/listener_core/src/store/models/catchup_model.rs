@@ -71,13 +71,30 @@ pub struct NewCatchupRequest {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RequestAdmission {
     /// The request is active and has not been fanned out yet.
-    FanOut,
+    ///
+    /// `fanned_end` is the completion target stored by the request's first
+    /// delivery, which a redelivery must fan out to instead of its own head
+    /// read. `None` only for an untracked request, which has no row.
+    FanOut { fanned_end: Option<u64> },
     /// The request is active but a previous delivery already published every
     /// sub-range. Publish nothing.
     AlreadyFannedOut,
     /// The request was retired before it started — a cancel beat the
     /// orchestrator here, or the split produced nothing.
     AlreadyTerminal(CatchupStatus),
+}
+
+/// What the fetcher's guard reads about a request, from
+/// [`CatchupRepository::request_state`].
+///
+/// [`CatchupRepository::request_state`]: crate::store::repositories::CatchupRepository::request_state
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CatchupRequestState {
+    pub status: CatchupStatus,
+    /// The completion target, and the one block a range worker holds back
+    /// until every other block of the request is published. `None` on a row
+    /// that never fanned out: `Skipped`, or a cancel that beat the request.
+    pub fanned_end: Option<u64>,
 }
 
 /// Verdict of [`CatchupRepository::cancel_request`].
@@ -105,11 +122,18 @@ pub enum CancelOutcome {
 /// [`CatchupRepository::record_coverage`]: crate::store::repositories::CatchupRepository::record_coverage
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CoverageMerge {
-    /// This sub-range closed the span — tick the completion counter exactly
-    /// once. The `RETURNING` is a single-fire edge, so a replay of the same
-    /// sub-range afterwards reports `NotActive`, not `Completed` again.
+    /// This merge closed the span — tick the completion counter exactly once.
+    /// The `RETURNING` is a single-fire edge, so a replay of the same merge
+    /// afterwards reports `NotActive`, not `Completed` again.
     Completed,
-    /// Progress recorded; blocks are still outstanding.
+    /// Every block below `fanned_end` is published and the request is still
+    /// active: publish `fanned_end`, flagged as the last block, then merge it.
+    ///
+    /// Read from the row's state, not fired once. Any merge that finds the
+    /// body covered reports it again, so a flagged publish that failed is
+    /// re-sent by the retry instead of being lost.
+    LastBlockDue,
+    /// Progress recorded; blocks below `fanned_end` are still outstanding.
     Progressed,
     /// The request is no longer `Active`, or never existed. No-op.
     NotActive,

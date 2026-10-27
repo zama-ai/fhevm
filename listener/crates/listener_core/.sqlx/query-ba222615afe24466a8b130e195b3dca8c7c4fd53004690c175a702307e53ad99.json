@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT status as \"status: CatchupStatus\", fanned_out_at\n            FROM catchup_requests\n            WHERE chain_id = $1 AND catchup_id = $2\n            ",
+  "query": "\n            SELECT status as \"status: CatchupStatus\", fanned_out_at, fanned_end\n            FROM catchup_requests\n            WHERE chain_id = $1 AND catchup_id = $2\n            ",
   "describe": {
     "columns": [
       {
@@ -24,6 +24,11 @@
         "ordinal": 1,
         "name": "fanned_out_at",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 2,
+        "name": "fanned_end",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -34,8 +39,9 @@
     },
     "nullable": [
       false,
+      true,
       true
     ]
   },
-  "hash": "a203ddb2c2871a5c9d1aae260991b6b20fd520859ae0a17d08a31831b8a876ef"
+  "hash": "ba222615afe24466a8b130e195b3dca8c7c4fd53004690c175a702307e53ad99"
 }

@@ -237,6 +237,15 @@ pub struct BlockPayload {
     /// published by a listener predating this field.
     #[serde(default)]
     pub catchup_id: Option<Uuid>,
+    /// Set on one block only: the last block of a tracked catchup (one with a
+    /// `catchup_id`), published once every other block of the request has
+    /// been. Its `block_number` is where the listener stopped, which is below
+    /// the requested end when the request reached past the head. Redelivery
+    /// can still place duplicates after it, including a second copy of it.
+    /// `false` on every other block and flow, and on payloads published by a
+    /// listener predating this field.
+    #[serde(default)]
+    pub last_in_catchup: bool,
 }
 
 // --- Debug-only Display impls (remove when no longer needed) ---
@@ -349,6 +358,7 @@ mod tests {
                 }],
             }],
             catchup_id: None,
+            last_in_catchup: false,
         }
     }
 
@@ -379,7 +389,8 @@ mod tests {
                     "data": "0x000102"
                 }]
             }],
-            "catchup_id": null
+            "catchup_id": null,
+            "last_in_catchup": false
         });
 
         assert_eq!(json, expected);
@@ -398,6 +409,30 @@ mod tests {
 
         let payload: BlockPayload = serde_json::from_value(json).unwrap();
         assert_eq!(payload.catchup_id, None);
+    }
+
+    /// Same rolling-deploy reason: a listener predating the flag never sets it.
+    #[test]
+    fn block_payload_without_last_in_catchup_reads_as_not_last() {
+        let mut json = serde_json::to_value(sample_payload()).unwrap();
+        json.as_object_mut().unwrap().remove("last_in_catchup");
+
+        let payload: BlockPayload = serde_json::from_value(json).unwrap();
+        assert!(!payload.last_in_catchup);
+    }
+
+    #[test]
+    fn block_payload_round_trips_the_last_block_flag() {
+        let mut payload = sample_payload();
+        payload.flow = BlockFlow::Catchup;
+        payload.catchup_id = Some(uuid::uuid!("0198c2f0-0000-7000-8000-000000000001"));
+        payload.last_in_catchup = true;
+
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["last_in_catchup"], json!(true));
+
+        let deserialized: BlockPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(deserialized, payload);
     }
 
     #[test]
@@ -446,6 +481,7 @@ mod tests {
             timestamp: 0,
             transactions: vec![],
             catchup_id: None,
+            last_in_catchup: false,
         };
 
         let json = serde_json::to_value(&payload).unwrap();

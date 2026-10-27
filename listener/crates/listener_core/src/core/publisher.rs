@@ -272,12 +272,16 @@ impl FilterIndex {
     /// a consumer can drop blocks from a catchup it has since cancelled. It is
     /// `Some` only on the [`BlockFlow::Catchup`] and [`BlockFlow::FinalCatchup`]
     /// paths — live, reorg and final blocks are not attributable to a request.
+    ///
+    /// `last_in_catchup` marks the block a range worker held back until every
+    /// other block of the request was published. `false` everywhere else.
     pub fn build_block_payloads(
         &self,
         fetched_block: &FetchedBlock,
         chain_id: u64,
         flow: BlockFlow,
         catchup_id: Option<Uuid>,
+        last_in_catchup: bool,
     ) -> Result<Vec<(String, BlockPayload)>, PublisherError> {
         let block = &fetched_block.block;
         let block_number = block.header.number;
@@ -357,6 +361,7 @@ impl FilterIndex {
                         timestamp,
                         transactions,
                         catchup_id,
+                        last_in_catchup,
                     },
                 )
             })
@@ -387,6 +392,8 @@ fn build_indexed_logs(receipt: &AnyTransactionReceipt) -> Vec<IndexedLog> {
 pub struct CatchupTarget<'a> {
     pub consumer_id: &'a str,
     pub catchup_id: Option<Uuid>,
+    /// This is the request's last block, published after all the others.
+    pub last_in_catchup: bool,
 }
 
 /// Orchestration function: fetch filters, build index, match, and publish.
@@ -452,7 +459,7 @@ pub async fn publish_block_events(
 
     // 3. Match transactions and build per-consumer payloads.
     //    PayloadBuildError propagated to caller — data may be stale, re-fetch can self-heal.
-    let payloads = filter_index.build_block_payloads(fetched_block, chain_id, flow, None)?;
+    let payloads = filter_index.build_block_payloads(fetched_block, chain_id, flow, None, false)?;
 
     // 4. For each consumer: verify queue exists, then publish.
     //    Per-consumer retry/stale semantics live in `publish_payload_to_consumer`.
@@ -514,8 +521,13 @@ pub async fn publish_final_block_events(
 
     // 3. Match transactions and build per-consumer payloads.
     //    PayloadBuildError propagated to caller — data may be stale, re-fetch can self-heal.
-    let payloads =
-        filter_index.build_block_payloads(fetched_block, chain_id, BlockFlow::Final, None)?;
+    let payloads = filter_index.build_block_payloads(
+        fetched_block,
+        chain_id,
+        BlockFlow::Final,
+        None,
+        false,
+    )?;
 
     // 4. For each consumer: verify queue exists, then publish.
     //    Per-consumer retry/stale semantics live in `publish_payload_to_consumer`.
@@ -557,6 +569,7 @@ pub async fn publish_catchup_block_events(
     let CatchupTarget {
         consumer_id,
         catchup_id,
+        last_in_catchup,
     } = target;
 
     // 1. Fetch this consumer's filters on this chain.
@@ -582,6 +595,7 @@ pub async fn publish_catchup_block_events(
         chain_id,
         BlockFlow::Catchup,
         catchup_id,
+        last_in_catchup,
     )?;
 
     // 3. Publish the target consumer's payload (if any) to catchup-event.
@@ -641,6 +655,7 @@ pub async fn publish_final_catchup_block_events(
     let CatchupTarget {
         consumer_id,
         catchup_id,
+        last_in_catchup,
     } = target;
 
     // 1. Fetch this consumer's FINAL filters on this chain.
@@ -666,6 +681,7 @@ pub async fn publish_final_catchup_block_events(
         chain_id,
         BlockFlow::FinalCatchup,
         catchup_id,
+        last_in_catchup,
     )?;
 
     // 3. Publish the target consumer's payload (if any) to final-catchup-event.
@@ -1284,12 +1300,14 @@ mod tests {
                     1,
                     BlockFlow::Catchup,
                     Some(catchup_id),
+                    false,
                 )
                 .expect("payload builds"),
         );
 
         assert_eq!(payload.flow, BlockFlow::Catchup);
         assert_eq!(payload.catchup_id, Some(catchup_id));
+        assert!(!payload.last_in_catchup);
     }
 
     #[test]
@@ -1304,12 +1322,31 @@ mod tests {
                     1,
                     BlockFlow::FinalCatchup,
                     Some(catchup_id),
+                    false,
                 )
                 .expect("payload builds"),
         );
 
         assert_eq!(payload.flow, BlockFlow::FinalCatchup);
         assert_eq!(payload.catchup_id, Some(catchup_id));
+        assert!(!payload.last_in_catchup);
+    }
+
+    #[test]
+    fn the_last_block_of_a_catchup_is_flagged() {
+        let index = FilterIndex::from_filters(vec![make_filter("consumer_a", None, None, None)]);
+        let catchup_id = Uuid::new_v4();
+
+        for flow in [BlockFlow::Catchup, BlockFlow::FinalCatchup] {
+            let payload = only_payload(
+                index
+                    .build_block_payloads(&empty_fetched_block(), 1, flow, Some(catchup_id), true)
+                    .expect("payload builds"),
+            );
+
+            assert!(payload.last_in_catchup, "flow {flow:?} must carry the flag");
+            assert_eq!(payload.catchup_id, Some(catchup_id));
+        }
     }
 
     /// Live, reorg and final blocks are not attributable to a catchup request,
@@ -1321,7 +1358,7 @@ mod tests {
         for flow in [BlockFlow::Live, BlockFlow::Reorged, BlockFlow::Final] {
             let payload = only_payload(
                 index
-                    .build_block_payloads(&empty_fetched_block(), 1, flow, None)
+                    .build_block_payloads(&empty_fetched_block(), 1, flow, None, false)
                     .expect("payload builds"),
             );
 

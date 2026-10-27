@@ -384,6 +384,24 @@ impl ListenerConsumer {
     /// by simply calling again on the next boot. If the listener itself dies
     /// part-way through fanning a request out, it fans the whole range out
     /// again on redelivery: blocks can arrive twice, never zero times.
+    ///
+    /// # Knowing the catch-up is done
+    ///
+    /// The listener sends exactly one logical block with
+    /// [`BlockPayload::last_in_catchup`] set, and only after every other block
+    /// of the request is in the stream. Its `block_number` is where the
+    /// listener actually stopped: below `block_end` if the range reached past
+    /// the chain head. A handler relying on it should:
+    ///
+    /// - dedupe on `(block_number, block_hash)`: redelivery can still put
+    ///   duplicates after the flagged block, including a second copy of it;
+    /// - fail the flagged block (transiently) while an earlier block of the
+    ///   same `catchup_id` is still failing on its side, so it is retried after
+    ///   that block rather than read as the end;
+    /// - not wait for it unconditionally: no block is flagged when the whole
+    ///   range is above the head, when the request is cancelled, or when this
+    ///   consumer has no filters on the chain. Keep checking your own state and
+    ///   request again, with a new id, if something is still missing.
     pub async fn request_catchup(
         &self,
         catchup_id: Uuid,
@@ -408,7 +426,8 @@ impl ListenerConsumer {
     /// inactive (`finality_active: false`).
     ///
     /// See [`request_catchup`](Self::request_catchup) for the `catchup_id`
-    /// contract.
+    /// contract and for how to know the replay is done; here the flagged last
+    /// block is capped at the finalized head instead of the chain head.
     pub async fn request_final_catchup(
         &self,
         catchup_id: Uuid,
@@ -1437,6 +1456,7 @@ mod tests {
             timestamp: 0,
             transactions: vec![],
             catchup_id: None,
+            last_in_catchup: false,
         };
         for _ in 1..=2 {
             publisher
@@ -1493,6 +1513,7 @@ mod tests {
             timestamp: 0,
             transactions: vec![],
             catchup_id: None,
+            last_in_catchup: false,
         };
         for _ in 1..=2 {
             publisher
