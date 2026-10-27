@@ -105,7 +105,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.4.0")));
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.4.1")));
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
@@ -1246,6 +1246,103 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         hcuLimit.setMaxHCUDepthPerTx(20_000_001);
     }
 
+    function test_setHCUPerBlockAcceptsZero() public {
+        vm.expectEmit(address(hcuLimit));
+        emit HCULimit.HCUPerBlockSet(0);
+        vm.prank(owner);
+        hcuLimit.setHCUPerBlock(0);
+        assertEq(hcuLimit.getGlobalHCUCapPerBlock(), 0);
+    }
+
+    function test_setMaxHCUPerTxIgnoresZeroBlockCap() public {
+        vm.startPrank(owner);
+        hcuLimit.setHCUPerBlock(0);
+        hcuLimit.setMaxHCUPerTx(30_000_000);
+        assertEq(hcuLimit.getMaxHCUPerTx(), 30_000_000);
+        hcuLimit.setMaxHCUPerTx(6_000_000);
+        assertEq(hcuLimit.getMaxHCUPerTx(), 6_000_000);
+        vm.expectRevert(HCULimit.MaxHCUPerTxBelowDepth.selector);
+        hcuLimit.setMaxHCUPerTx(4_999_999);
+        vm.stopPrank();
+    }
+
+    function test_setHCUPerBlockFromZeroStillEnforcesFloor() public {
+        vm.startPrank(owner);
+        hcuLimit.setHCUPerBlock(0);
+        vm.expectRevert(HCULimit.HCUPerBlockBelowMaxPerTx.selector);
+        hcuLimit.setHCUPerBlock(1);
+        hcuLimit.setHCUPerBlock(20_000_000);
+        vm.stopPrank();
+        assertEq(hcuLimit.getGlobalHCUCapPerBlock(), 20_000_000);
+    }
+
+    function test_zeroBlockCapRefusesCheapestOperationsFromNonWhitelistedCaller() public {
+        vm.prank(owner);
+        hcuLimit.setHCUPerBlock(0);
+
+        vm.startPrank(fhevmExecutor);
+        vm.expectRevert(HCULimit.HCUBlockLimitExceeded.selector);
+        hcuLimit.checkHCUForTrivialEncrypt(FheType.Bool, mockResult, address(0x1234));
+        vm.expectRevert(HCULimit.HCUBlockLimitExceeded.selector);
+        hcuLimit.checkHCUForCast(FheType.Uint8, mockLHS, mockResult, address(0x1234));
+        vm.expectRevert(HCULimit.HCUBlockLimitExceeded.selector);
+        hcuLimit.checkHCUForFheRand(FheType.Bool, mockResult, address(0x1234));
+        vm.stopPrank();
+    }
+
+    function test_zeroBlockCapStillRefusesNonWhitelistedCallerInLaterBlocks() public {
+        vm.prank(owner);
+        hcuLimit.setHCUPerBlock(0);
+
+        for (uint256 i; i < 3; ++i) {
+            vm.roll(block.number + 1);
+            vm.prank(fhevmExecutor);
+            vm.expectRevert(HCULimit.HCUBlockLimitExceeded.selector);
+            hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult, address(0x1234));
+        }
+    }
+
+    function test_zeroBlockCapLetsWhitelistedCallerRunUnderPerTxLimits() public {
+        address whitelisted = address(0xBEEF);
+        vm.startPrank(owner);
+        hcuLimit.addToBlockHCUWhitelist(whitelisted);
+        hcuLimit.setHCUPerBlock(0);
+        vm.stopPrank();
+
+        vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult, whitelisted);
+        (, uint48 usedHCU) = hcuLimit.getBlockMeter();
+        assertEq(usedHCU, 0);
+
+        hcuLimit.setHCUForTransaction(MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX);
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(HCULimit.HCUTransactionLimitExceeded.selector);
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x2001)), whitelisted);
+    }
+
+    function test_zeroBlockCapRefusesCallerRemovedFromWhitelist() public {
+        address account = address(0xBEEF);
+        vm.startPrank(owner);
+        hcuLimit.addToBlockHCUWhitelist(account);
+        hcuLimit.setHCUPerBlock(0);
+        hcuLimit.removeFromBlockHCUWhitelist(account);
+        vm.stopPrank();
+
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(HCULimit.HCUBlockLimitExceeded.selector);
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult, account);
+    }
+
+    function test_raisingBlockCapFromZeroReopensNonWhitelistedCallers() public {
+        vm.startPrank(owner);
+        hcuLimit.setHCUPerBlock(0);
+        hcuLimit.setHCUPerBlock(type(uint48).max);
+        vm.stopPrank();
+
+        vm.prank(fhevmExecutor);
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, mockResult, address(0x1234));
+    }
+
     function test_addToBlockHCUWhitelistRevertsIfAlreadyWhitelisted() public {
         address account = address(0xBEEF);
         vm.startPrank(owner);
@@ -1388,7 +1485,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(usedHCU, 0);
     }
 
-    function test_reinitializeV4SucceedsOnUpgradePath() public {
+    function test_reinitializeV5SucceedsOnUpgradePath() public {
         address proxyWithoutInitCall = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
             abi.encodeCall(EmptyUUPSProxy.initialize, ())
@@ -1399,7 +1496,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         UnsafeUpgrades.upgradeProxy(proxyWithoutInitCall, implementationWithoutInitCall, "");
 
         MockHCULimit upgraded = MockHCULimit(proxyWithoutInitCall);
-        upgraded.reinitializeV4();
+        upgraded.reinitializeV5();
         vm.stopPrank();
     }
 

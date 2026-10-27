@@ -18,7 +18,7 @@ If any of these limits is exceeded, the transaction will revert.
 
 ## HCU limit
 
-The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. The global per-block HCU cap is set on-chain by governance (via `HCULimit.setHCUPerBlock`) and is always greater than or equal to the per-transaction limit; you can read its current value from the deployed `HCULimit` contract (`getGlobalHCUCapPerBlock()`), and the current block's running total via `getBlockMeter()`. If any HCU limit is exceeded, the transaction will revert.
+The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. The global per-block HCU cap is set on-chain by governance (via `HCULimit.setHCUPerBlock`). It is either at least the per-transaction limit, or 0, in which case only whitelisted contracts can run FHE operations; you can read its current value from the deployed `HCULimit` contract (`getGlobalHCUCapPerBlock()`), and the current block's running total via `getBlockMeter()`. If any HCU limit is exceeded, the transaction will revert.
 
 To resolve a per-transaction revert, you must do one of the following:
 

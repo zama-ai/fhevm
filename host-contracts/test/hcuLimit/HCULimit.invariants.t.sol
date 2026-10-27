@@ -24,6 +24,7 @@ contract HCULimitInvariantHandler is Test {
     bool public whitelistViolation;
     bool public nonWhitelistedAccountingViolation;
     bool public resetViolation;
+    bool public whitelistOnlyViolation;
 
     constructor(HCULimit _hcuLimit, address _owner) {
         hcuLimit = _hcuLimit;
@@ -36,10 +37,15 @@ contract HCULimitInvariantHandler is Test {
     }
 
     function setCap(uint48 cap) external {
-        // Must satisfy invariant: hcuPerBlock >= maxHCUPerTx (20_000_000).
+        // A non-zero cap must satisfy hcuPerBlock >= maxHCUPerTx (20_000_000).
         cap = uint48(bound(uint256(cap), 20_000_000, uint256(type(uint48).max)));
         vm.prank(owner);
         hcuLimit.setHCUPerBlock(cap);
+    }
+
+    function setCapToZero() external {
+        vm.prank(owner);
+        hcuLimit.setHCUPerBlock(0);
     }
 
     function setCallerWhitelist(address caller, bool isWhitelisted) external {
@@ -102,6 +108,10 @@ contract HCULimitInvariantHandler is Test {
         }
         vm.stopPrank();
 
+        if (cap == 0 && !isWhitelisted && successes != 0) {
+            whitelistOnlyViolation = true;
+        }
+
         (, uint48 afterUsedHCU) = hcuLimit.getBlockMeter();
 
         if (afterUsedHCU < beforeUsedHCU) {
@@ -151,6 +161,7 @@ contract HCULimitInvariantTest is StdInvariant, Test {
         // 2) whitelisted callers never consume the public block meter.
         // 3) non-whitelisted accounting is consistent with successful casts.
         // 4) meter resets after block advancement.
+        // 5) with a zero cap, only whitelisted callers run operations.
         // This harness intentionally validates accounting invariants only, not cap-exhaustion behavior.
         _deployAndEtchACL();
 
@@ -173,13 +184,14 @@ contract HCULimitInvariantTest is StdInvariant, Test {
 
         targetContract(address(handler));
 
-        bytes4[] memory selectors = new bytes4[](6);
+        bytes4[] memory selectors = new bytes4[](7);
         selectors[0] = HCULimitInvariantHandler.setCap.selector;
         selectors[1] = HCULimitInvariantHandler.nonWhitelistedBurst.selector;
         selectors[2] = HCULimitInvariantHandler.whitelistedBurst.selector;
         selectors[3] = HCULimitInvariantHandler.mine.selector;
         selectors[4] = HCULimitInvariantHandler.setCallerWhitelist.selector;
         selectors[5] = HCULimitInvariantHandler.callerBurst.selector;
+        selectors[6] = HCULimitInvariantHandler.setCapToZero.selector;
 
         targetSelector(FuzzSelector({addr: address(handler), selectors: selectors}));
     }
@@ -198,6 +210,11 @@ contract HCULimitInvariantTest is StdInvariant, Test {
     function invariant_nonWhitelistedAccountingIsConsistent() public view {
         // Invariant: for non-whitelisted callers, meter growth equals successful op count times cast-op cost.
         assertFalse(handler.nonWhitelistedAccountingViolation());
+    }
+
+    function invariant_zeroCapAdmitsOnlyWhitelistedCallers() public view {
+        // Invariant: while the cap is zero, no operation from a non-whitelisted caller succeeds.
+        assertFalse(handler.whitelistOnlyViolation());
     }
 
     function invariant_meterResetsAfterMinedBlocks() public view {

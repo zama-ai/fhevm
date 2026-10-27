@@ -45,7 +45,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the transaction exceeds the maximum allowed depth of homomorphic complexity units.
     error HCUTransactionDepthLimitExceeded();
 
-    /// @notice Returned if hcuPerBlock < maxHCUPerTx.
+    /// @notice Returned if hcuPerBlock is non-zero and below maxHCUPerTx.
     error HCUPerBlockBelowMaxPerTx();
 
     /// @notice Returned if maxHCUPerTx < maxHCUDepthPerTx.
@@ -91,7 +91,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     uint256 private constant MINOR_VERSION = 4;
 
     /// @notice Patch version of the contract.
-    uint256 private constant PATCH_VERSION = 0;
+    uint256 private constant PATCH_VERSION = 1;
 
     /// @notice FHEVMExecutor address.
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
@@ -119,7 +119,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /// Constant used for making sure the version number used in the \`reinitializer\` modifier is
     /// identical between \`initializeFromEmptyProxy\` and the \`reinitializeVX\` method
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 6;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCU_LIMIT_STORAGE_LOCATION =
@@ -150,11 +150,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Re-initializes the contract from V3.
+     * @notice Re-initializes the contract from V4.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV5() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
 \n\n`;
 
@@ -370,7 +370,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     output +
     `    /**
      * @notice Sets the block-level HCU limit for non-whitelisted callers.
-     * @param hcuPerBlock New block-level cap.
+     * @param hcuPerBlock New block-level cap. 0 lets only whitelisted callers run FHE operations.
      */
     function setHCUPerBlock(uint48 hcuPerBlock) external onlyACLOwner {
         _setHCUPerBlock(hcuPerBlock);
@@ -571,11 +571,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Sets the global HCU cap per block.
      * @param hcuPerBlock New cap value.
-     * @dev Enforces hcuPerBlock >= maxHCUPerTx.
+     * @dev Enforces hcuPerBlock >= maxHCUPerTx unless hcuPerBlock is 0 (whitelisted callers only).
      */
     function _setHCUPerBlock(uint48 hcuPerBlock) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        if (hcuPerBlock < $.maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
+        if (hcuPerBlock != 0 && hcuPerBlock < $.maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
         $.globalHCUCapPerBlock = hcuPerBlock;
         emit HCUPerBlockSet(hcuPerBlock);
     }
@@ -595,11 +595,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Sets the per-transaction HCU limit.
      * @param maxHCUPerTx New transaction limit.
-     * @dev Enforces hcuPerBlock >= maxHCUPerTx and maxHCUPerTx >= maxHCUDepthPerTx.
+     * @dev Enforces hcuPerBlock >= maxHCUPerTx unless hcuPerBlock is 0, and maxHCUPerTx >= maxHCUDepthPerTx.
      */
     function _setMaxHCUPerTx(uint48 maxHCUPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        if ($.globalHCUCapPerBlock < maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
+        uint48 hcuPerBlock = $.globalHCUCapPerBlock;
+        if (hcuPerBlock != 0 && hcuPerBlock < maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
         if (maxHCUPerTx < $.maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
         $.maxHCUPerTx = maxHCUPerTx;
         emit MaxHCUPerTxSet(maxHCUPerTx);

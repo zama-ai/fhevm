@@ -32,6 +32,7 @@ const HCU_LIMIT_ABI = [
   'function removeFromBlockHCUWhitelist(address)',
   'function isBlockHCUWhitelisted(address) view returns (bool)',
   'error NotHostOwner(address)',
+  'error HCUBlockLimitExceeded()',
 ];
 
 type HcuLimitContract = {
@@ -485,6 +486,117 @@ describe('EncryptedERC20:HCU', function () {
 
         const [, usedHCUAfterRemoval] = await hcuLimit.getBlockMeter();
         expect(usedHCUAfterRemoval).to.be.greaterThan(0n, 'Should count HCU after whitelist removal');
+      });
+
+      describe('whitelist-only mode (block cap 0)', function () {
+        // A block cap of 0 is accepted from HCULimit v0.4.1 on.
+        beforeEach(async function () {
+          const version = await requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR).getVersion();
+          const [major, minor, patch] = version.replace('HCULimit v', '').split('.').map(Number);
+          if (major === 0 && (minor < 4 || (minor === 4 && patch < 1))) {
+            this.skip();
+          }
+        });
+
+        async function enableWhitelistOnly(ctx: Mocha.Context, whitelisted: string[]) {
+          const ownerHcuLimit = requireHcuLimit(ctx.hcuLimit, LOCAL_HCU_LIMIT_ERROR).connect(
+            requireDeployer(ctx.deployer),
+          );
+          // Same order as the governance proposal: whitelist first, so no listed contract is ever refused.
+          for (const account of whitelisted) {
+            await (await ownerHcuLimit.addToBlockHCUWhitelist(account)).wait();
+          }
+          await (await ownerHcuLimit.setHCUPerBlock(0)).wait();
+        }
+
+        it('should keep a whitelisted token working for every user and decrypt its results', async function () {
+          await mintAndDistribute(this);
+          await enableWhitelistOnly(this, [this.contractAddress]);
+
+          const fromAlice = requireReceipt(
+            await (await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100)).wait(),
+            'whitelisted transfer from alice',
+          );
+          expect(fromAlice.status).to.eq(1);
+          const fromBob = requireReceipt(
+            await (await sendEncryptedTransfer(this, 'bob', this.signers.alice.address, 40)).wait(),
+            'whitelisted transfer from bob',
+          );
+          expect(fromBob.status).to.eq(1);
+
+          const [, usedHCU] = await requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR).getBlockMeter({
+            blockTag: fromBob.blockNumber,
+          });
+          expect(usedHCU).to.eq(0n, 'Whitelisted traffic should not touch the block meter');
+
+          // alice: 10000 - 5000 - 100 + 40, bob: 5000 + 100 - 40
+          const balanceAlice = await this.instances.alice.userDecryptSingleHandle({
+            handle: await this.erc20.balanceOf(this.signers.alice.address),
+            contractAddress: this.contractAddress,
+            signer: this.signers.alice,
+          });
+          expect(balanceAlice).to.equal(4940n);
+          const balanceBob = await this.instances.bob.userDecryptSingleHandle({
+            handle: await this.erc20.balanceOf(this.signers.bob.address),
+            contractAddress: this.contractAddress,
+            signer: this.signers.bob,
+          });
+          expect(balanceBob).to.equal(5060n);
+        });
+
+        it('should refuse every FHE operation from a contract that is not whitelisted', async function () {
+          await enableWhitelistOnly(this, [this.contractAddress]);
+          const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
+
+          const unknownToken = await deployEncryptedERC20Fixture();
+          expect(await hcuLimit.isBlockHCUWhitelisted(await unknownToken.getAddress())).to.eq(false);
+          await expect(unknownToken.mint(1000)).to.be.revertedWithCustomError(
+            hcuLimit as unknown as { interface: any },
+            'HCUBlockLimitExceeded',
+          );
+
+          // A later block does not help: the cap is 0 in every block.
+          await mineNBlocks(2);
+          await expect(unknownToken.mint(1)).to.be.revertedWithCustomError(
+            hcuLimit as unknown as { interface: any },
+            'HCUBlockLimitExceeded',
+          );
+        });
+
+        it('should refuse a token once it is removed from the whitelist', async function () {
+          await mintAndDistribute(this);
+          await enableWhitelistOnly(this, [this.contractAddress]);
+          const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
+
+          await (
+            await hcuLimit.connect(requireDeployer(this.deployer)).removeFromBlockHCUWhitelist(this.contractAddress)
+          ).wait();
+
+          const erc20 = this.erc20.connect(this.signers.alice);
+          const enc = await this.instances.alice.encryptUint64({
+            value: 100,
+            contractAddress: this.contractAddress,
+            userAddress: this.signers.alice.address,
+          });
+          await expect(
+            erc20['transfer(address,bytes32,bytes)'](this.signers.bob.address, enc.handles[0], enc.inputProof),
+          ).to.be.revertedWithCustomError(hcuLimit as unknown as { interface: any }, 'HCUBlockLimitExceeded');
+        });
+
+        it('should reopen the protocol to every contract when the block cap is raised again', async function () {
+          await enableWhitelistOnly(this, [this.contractAddress]);
+          const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
+          const unknownToken = await deployEncryptedERC20Fixture();
+          await expect(unknownToken.mint(1000)).to.be.revertedWithCustomError(
+            hcuLimit as unknown as { interface: any },
+            'HCUBlockLimitExceeded',
+          );
+
+          await (await hcuLimit.connect(requireDeployer(this.deployer)).setHCUPerBlock(TIGHT_PER_BLOCK)).wait();
+
+          const receipt = requireReceipt(await (await unknownToken.mint(1000)).wait(), 'mint after reopening');
+          expect(receipt.status).to.eq(1);
+        });
       });
 
       it('should reject setHCUPerBlock from non-owner', async function () {
