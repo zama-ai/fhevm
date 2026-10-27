@@ -1,3 +1,4 @@
+mod acl;
 pub mod ciphertext;
 mod context;
 mod decryption;
@@ -8,6 +9,7 @@ mod processor;
 mod protocol_config;
 mod rpc;
 
+pub use acl::AclCheck;
 pub use ciphertext::CiphertextManager;
 pub use context::{ContextManager, DbContextManager};
 pub use decryption::DecryptionProcessor;

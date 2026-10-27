@@ -1,7 +1,9 @@
 // Shared setup for the kms-connector endpoint suites.
 import { expect } from 'chai';
+import type { Signer } from 'ethers';
 import { ethers } from 'hardhat';
 
+import { aclAddress } from '../instance';
 import { connectorHttpConfigured, endpointUrls, getVersion } from '../sdk/connector/connectorHttp';
 import { type KmsSignerSet, readKmsSignerSet } from '../sdk/connector/verify';
 
@@ -40,4 +42,23 @@ export async function waitBlocks(n: number): Promise<void> {
     if ((await ethers.provider.getBlockNumber()) >= target) return;
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
+}
+
+const DELEGATION_LIFETIME_SECONDS = 24 * 60 * 60;
+
+/** `delegator` delegates the user decryption of its `contractAddress` handles to `delegate`, for a day. */
+export async function delegateForUserDecryption(
+  delegator: Signer,
+  delegate: string,
+  contractAddress: string,
+): Promise<void> {
+  const acl = new ethers.Contract(
+    aclAddress,
+    ['function delegateForUserDecryption(address delegate, address contractAddress, uint64 expirationDate)'],
+    delegator,
+  );
+  const latestBlock = await ethers.provider.getBlock('latest');
+  const expirationDate = latestBlock!.timestamp + DELEGATION_LIFETIME_SECONDS;
+  const tx = await acl.getFunction('delegateForUserDecryption')(delegate, contractAddress, expirationDate);
+  await tx.wait();
 }
