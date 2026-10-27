@@ -1,10 +1,4 @@
-import type {
-  FhevmProtocolContext,
-  ProtocolVersion,
-  ProtocolVersionResolution,
-  PubKeyCrsVersion,
-  PubKeyCrsVersionResolution,
-} from '../types/coreFhevmClient.js';
+import type { PubKeyCrsVersion, PubKeyCrsVersionResolution } from '../types/coreFhevmClient.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import { mainnet } from '../chains/definitions/mainnet.js';
 import { sepolia } from '../chains/definitions/sepolia.js';
@@ -12,22 +6,8 @@ import { sepolia } from '../chains/definitions/sepolia.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * The FHEVM protocol version this SDK targets.
- *
- * The SDK does not resolve the protocol version from on-chain contract
- * versions: each SDK release targets a single protocol line, and every chain
- * is assumed to run it.
- */
-const FIXED_PROTOCOL_VERSION: ProtocolVersion = '0.15.0';
-
-const FIXED_PROTOCOL_VERSION_RESOLUTION: ProtocolVersionResolution = Object.freeze({
-  version: FIXED_PROTOCOL_VERSION,
-  comparator: 'eq',
-});
-
-/**
  * PubKey/CRS version produced when new key material is generated for the
- * protocol line this SDK targets ({@link FIXED_PROTOCOL_VERSION}).
+ * protocol line this SDK targets.
  */
 const GENERATED_PUB_KEY_CRS_VERSION: PubKeyCrsVersion = '1.6.1';
 
@@ -71,18 +51,8 @@ const PUB_KEY_CRS_VERSION_BY_RELAYER_URL: readonly PubKeyCrsVersionByRelayerUrlR
 ];
 
 /**
- * Returns the protocol context (protocol + PubKey/CRS versions) for a chain.
- *
- * The protocol version is always {@link FIXED_PROTOCOL_VERSION}; only the
- * PubKey/CRS version depends on the chain (via its relayer URL).
+ * Returns the PubKey/CRS version for a chain, keyed on its relayer URL.
  */
-export function protocolContextForChain(chain: FhevmChain): FhevmProtocolContext {
-  return Object.freeze({
-    protocolVersion: FIXED_PROTOCOL_VERSION_RESOLUTION,
-    pubKeyCrsVersion: pubKeyCrsVersionForChain(chain),
-  });
-}
-
 export function pubKeyCrsVersionForChain(chain: FhevmChain): PubKeyCrsVersionResolution {
   const relayerUrl = _normalizeRelayerUrl(chain.fhevm.relayerUrl);
   const knownByRelayerUrl = PUB_KEY_CRS_VERSION_BY_RELAYER_URL.find(
