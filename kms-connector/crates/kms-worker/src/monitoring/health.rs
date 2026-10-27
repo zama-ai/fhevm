@@ -1,3 +1,4 @@
+use crate::core::event_processor::kms_core_endpoint;
 use actix_web::http::StatusCode;
 use alloy::providers::Provider;
 use connector_utils::monitoring::health::{
@@ -113,8 +114,8 @@ impl KmsHealthClient {
     /// Connects the GRPC clients used to perform the healthcheck of the KMS Core connections.
     pub async fn connect(endpoints: &[String]) -> anyhow::Result<Self> {
         let mut inners = vec![];
-        for endpoint in endpoints {
-            let channel = Channel::from_shared(endpoint.clone())?.connect().await?;
+        for (i, endpoint) in endpoints.iter().enumerate() {
+            let channel = kms_core_endpoint(i, endpoint)?.connect().await?;
             inners.push(HealthClient::new(channel));
         }
         Ok(Self { inners })
