@@ -3,14 +3,7 @@ name: js-sdk-tests
 on:
   pull_request:
     branches:
-      - devex/js-sdk
-      - main
-    paths:
-      - ".github/workflows/js-sdk-*.yml"
-      - "sdk/js-sdk/**"
-  push:
-    branches:
-      - devex/js-sdk
+      - release/0.14.x
   workflow_dispatch:
     inputs:
       release:
@@ -22,8 +15,32 @@ on:
 permissions: {}
 
 jobs:
+  # Path filter: run-tests runs on PRs only when they touch the SDK.
+  check-changes:
+    name: js-sdk-tests/check-changes
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: "read" # Required to checkout repository code
+      pull-requests: "read" # Required to list the PR's changed files
+    outputs:
+      sdk: ${{ steps.filter.outputs.sdk }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: "false"
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            sdk:
+              - .github/workflows/js-sdk-*.yml
+              - sdk/js-sdk/**
+
   run-tests:
     name: js-sdk-tests/test
+    needs: check-changes
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.check-changes.outputs.sdk == 'true') }}
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     defaults:
       run:
@@ -112,3 +129,23 @@ jobs:
         run: |
           ulimit -n 65536
           npm run dod
+
+  # Required check on release/0.14.x: always reports, fails if run-tests failed.
+  run-tests-status:
+    name: js-sdk-tests/test (bpr)
+    needs: [check-changes, run-tests]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      NEEDS_RESULTS: ${{ join(needs.*.result, ' ') }}
+    steps:
+      - name: Check results
+        run: |
+          for result in $NEEDS_RESULTS; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "One or more jobs failed or were cancelled: $NEEDS_RESULTS"
+              exit 1
+            fi
+          done
+          echo "All jobs passed or were skipped: $NEEDS_RESULTS"

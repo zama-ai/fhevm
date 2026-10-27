@@ -54,10 +54,7 @@ const netCommands = [
 ];
 
 const localstackCommands = [
-  'npm run test:localstack:v11',
-  'npm run test:localstack:v12',
-  'npm run test:localstack:v13',
-  'npm run test:localstack',
+  'npm run test:localstack:v14',
 ];
 
 const longCommands = [...netCommands, ...localstackCommands];
