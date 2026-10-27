@@ -1,6 +1,5 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
-import type { ProtocolVersion } from '../../src/core/types/coreFhevmClient.js';
 import type { Logger } from '../../src/core/types/logger.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -49,7 +48,6 @@ export type FheTestBaseEnv = {
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
   readonly fheTestVersion: FheTestVersion;
-  readonly protocolVersion: ProtocolVersion;
   readonly fheEncryptionKeyTfheVersion: string;
 };
 
@@ -100,16 +98,6 @@ export function protocolEraOf(chainName: FheTestChainName): 12 | 13 | 14 | 16 {
     return 14;
   }
   return 13;
-}
-
-// ---------------------------------------------------------------------------
-// Protocol version per chain
-// ---------------------------------------------------------------------------
-
-// The SDK targets a single protocol line per release and reports it for every
-// chain, so the expected protocol version no longer depends on the chain.
-export function getExpectedProtocolVersion(_chainName: FheTestChainName): ProtocolVersion {
-  return '0.15.0';
 }
 
 // ---------------------------------------------------------------------------
@@ -560,7 +548,6 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     zamaApiKey,
     fheTestAddress,
     fheTestVersion,
-    protocolVersion: getExpectedProtocolVersion(chainName),
     fheEncryptionKeyTfheVersion: getFheEncryptionKeyTfheVersion(chainName),
   };
 

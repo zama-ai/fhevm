@@ -8,7 +8,6 @@ import type {
   FhevmOptions,
   NativeClient,
   OptionalNativeClient,
-  ProtocolVersionResolution,
   ResolvedFhevmOptions,
 } from '../types/coreFhevmClient.js';
 import type { FhevmRuntime, WithModule, WithModuleMap } from '../types/coreFhevmRuntime.js';
@@ -72,7 +71,6 @@ class CoreFhevmImpl<
   // Declared for TypeScript — defined at runtime via Object.defineProperties
   declare readonly uid: string;
   declare readonly chain: chain;
-  declare readonly protocolVersion: ProtocolVersionResolution;
   declare readonly tfheVersion: TfheVersion;
   declare readonly tkmsVersion: TkmsVersion;
   declare readonly options: ResolvedFhevmOptions;
@@ -121,16 +119,6 @@ class CoreFhevmImpl<
     Object.defineProperties(this, {
       uid: {
         get: () => this.#uid,
-        configurable: false,
-        enumerable: true,
-      },
-      protocolVersion: {
-        get: () => {
-          if (this.#frozenContext === undefined) {
-            throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
-          }
-          return this.#frozenContext.protocolVersion;
-        },
         configurable: false,
         enumerable: true,
       },
@@ -195,64 +183,6 @@ class CoreFhevmImpl<
         enumerable: false,
         writable: false,
       },
-      // [GET_PROTOCOL_VERSION]: {
-      //   value: (): ProtocolVersionResolution | undefined => this.#protocolVersion,
-      //   configurable: false,
-      //   enumerable: false,
-      //   writable: false,
-      // },
-      // [GET_TFHE_VERSION]: {
-      //   value: (): TfheVersion | undefined => this.#tfheVersion,
-      //   configurable: false,
-      //   enumerable: false,
-      //   writable: false,
-      // },
-      // [GET_TKMS_VERSION]: {
-      //   value: (): TkmsVersion | undefined => this.#tkmsVersion,
-      //   configurable: false,
-      //   enumerable: false,
-      //   writable: false,
-      // },
-      // [SET_PROTOCOL_VERSION]: {
-      //   value: (protocolVersion: ProtocolVersionResolution): void => {
-      //     if (
-      //       this.#protocolVersion !== undefined &&
-      //       !_sameProtocolVersionResolution(this.#protocolVersion, protocolVersion)
-      //     ) {
-      //       throw new Error(
-      //         `Protocol version already resolved as ${_formatProtocolVersionResolution(
-      //           this.#protocolVersion,
-      //         )}; cannot set ${_formatProtocolVersionResolution(protocolVersion)}.`,
-      //       );
-      //     }
-      //     this.#protocolVersion = protocolVersion;
-      //   },
-      //   configurable: false,
-      //   enumerable: false,
-      //   writable: false,
-      // },
-      // [SET_TFHE_VERSION]: {
-      //   value: (tfheVersion: TfheVersion): void => {
-      //     if (this.#tfheVersion !== undefined && this.#tfheVersion !== tfheVersion) {
-      //       throw new Error(`TFHE version already resolved as ${this.#tfheVersion}; cannot set ${tfheVersion}.`);
-      //     }
-      //     this.#tfheVersion = tfheVersion;
-      //   },
-      //   configurable: false,
-      //   enumerable: false,
-      //   writable: false,
-      // },
-      // [SET_TKMS_VERSION]: {
-      //   value: (tkmsVersion: TkmsVersion): void => {
-      //     if (this.#tkmsVersion !== undefined && this.#tkmsVersion !== tkmsVersion) {
-      //       throw new Error(`TKMS version already resolved as ${this.#tkmsVersion}; cannot set ${tkmsVersion}.`);
-      //     }
-      //     this.#tkmsVersion = tkmsVersion;
-      //   },
-      //   configurable: false,
-      //   enumerable: false,
-      //   writable: false,
-      // },
       [GET_FROZEN_CONTEXT]: {
         value: (): FhevmClientFrozenContext | undefined => this.#frozenContext,
         configurable: false,
@@ -439,61 +369,6 @@ export function asFhevmClientWith<
   assertIsFhevmClientWith(fhevm, moduleName);
   return fhevm;
 }
-
-////////////////////////////////////////////////////////////////////////////////
-
-// export function asFhevmWithProtocolVersion<
-//   chain extends FhevmChain | undefined = FhevmChain | undefined,
-//   runtime extends FhevmRuntime = FhevmRuntime,
-//   client extends OptionalNativeClient = NativeClient,
-// >(
-//   fhevm: FhevmBase<chain, runtime, client>,
-// ): Fhevm<chain & FhevmChain, runtime, client & NativeClient> & WithProtocolVersion {
-//   assertIsFhevmBaseClient(fhevm);
-//   const f = fhevm as Fhevm<chain & FhevmChain, runtime, client & NativeClient> & WithProtocolVersion;
-//   if (getResolvedProtocolVersion(f) === undefined) {
-//     throw new Error(UNRESOLVED_PROTOCOL_VERSION_MESSAGE);
-//   }
-//   return f;
-// }
-
-// export function asFhevmWithTfheVersion<
-//   chain extends FhevmChain | undefined = FhevmChain | undefined,
-//   runtime extends FhevmRuntime = FhevmRuntime,
-//   client extends OptionalNativeClient = NativeClient,
-// >(
-//   fhevm: FhevmBase<chain, runtime, client>,
-// ): Fhevm<chain & FhevmChain, runtime & WithModule<'encrypt'>, client & NativeClient> & WithTfheVersion {
-//   const f = asFhevmClientWith(fhevm, 'encrypt') as Fhevm<
-//     chain & FhevmChain,
-//     runtime & WithModule<'encrypt'>,
-//     client & NativeClient
-//   > &
-//     WithTfheVersion;
-//   if (getFrozenContext(f) === undefined) {
-//     throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
-//   }
-//   return f;
-// }
-
-// export function asFhevmWithTkmsVersion<
-//   chain extends FhevmChain | undefined = FhevmChain | undefined,
-//   runtime extends FhevmRuntime = FhevmRuntime,
-//   client extends OptionalNativeClient = NativeClient,
-// >(
-//   fhevm: FhevmBase<chain, runtime, client>,
-// ): Fhevm<chain & FhevmChain, runtime & WithModule<'decrypt'>, client & NativeClient> & WithTkmsVersion {
-//   const f = asFhevmClientWith(fhevm, 'decrypt') as Fhevm<
-//     chain & FhevmChain,
-//     runtime & WithModule<'decrypt'>,
-//     client & NativeClient
-//   > &
-//     WithTkmsVersion;
-//   if (getFrozenContext(f) === undefined) {
-//     throw new Error(UNRESOLVED_FHEVM_CONTEXT_MESSAGE);
-//   }
-//   return f;
-// }
 
 ////////////////////////////////////////////////////////////////////////////////
 

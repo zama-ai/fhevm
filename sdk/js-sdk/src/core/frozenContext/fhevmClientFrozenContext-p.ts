@@ -1,10 +1,6 @@
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
 import type { HostContractName, HostContractVersion } from '../types/hostContract.js';
-import type {
-  FhevmProtocolContext,
-  ProtocolVersionResolution,
-  PubKeyCrsVersionResolution,
-} from '../types/coreFhevmClient.js';
+import type { PubKeyCrsVersionResolution } from '../types/coreFhevmClient.js';
 import type { FhevmClientFrozenContext, fhevmClientFrozenContextBrand } from '../types/fhevmClientFrozenContext-p.js';
 import type { TfheVersion, TkmsVersion } from '../types/moduleVersions.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
@@ -19,7 +15,7 @@ const PRIVATE_TOKEN = Symbol('FhevmClientFrozenContext.token');
 /**
  * The already-resolved versions used to build a {@link FhevmClientFrozenContext}.
  *
- * `hostContractVersions`, `protocolVersion`, and `pubKeyCrsVersion` are optional:
+ * `hostContractVersions` and `pubKeyCrsVersion` are optional:
  * a context only needs to carry the versions a given operation actually
  * consumes. There is no `tfheVersion` / `tkmsVersion` field — this SDK release
  * ships a single TFHE and a single TKMS module, so
@@ -31,7 +27,6 @@ const PRIVATE_TOKEN = Symbol('FhevmClientFrozenContext.token');
  */
 export type CreateFhevmClientFrozenContextParameters = {
   readonly hostContractVersions?: Partial<Record<HostContractName, HostContractVersion>> | undefined;
-  readonly protocolVersion?: ProtocolVersionResolution | undefined;
   readonly pubKeyCrsVersion?: PubKeyCrsVersionResolution | undefined;
 };
 
@@ -50,7 +45,6 @@ class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
   declare readonly [fhevmClientFrozenContextBrand]: never;
 
   readonly #hostContractVersions: Readonly<Partial<Record<HostContractName, HostContractVersion>>>;
-  readonly #protocolVersion: ProtocolVersionResolution | undefined;
   readonly #pubKeyCrsVersion: PubKeyCrsVersionResolution | undefined;
 
   constructor(privateToken: symbol, parameters: CreateFhevmClientFrozenContextParameters) {
@@ -59,7 +53,6 @@ class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
     }
     // Defensive copy so a later mutation of the caller's object can't alter the snapshot.
     this.#hostContractVersions = Object.freeze({ ...(parameters.hostContractVersions ?? {}) });
-    this.#protocolVersion = parameters.protocolVersion;
     this.#pubKeyCrsVersion = parameters.pubKeyCrsVersion;
 
     Object.freeze(this);
@@ -87,26 +80,6 @@ class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
   }
 
   //////////////////////////////////////////////////////////////////////////////
-  // Protocol version
-  //////////////////////////////////////////////////////////////////////////////
-
-  public get hasProtocolVersion(): boolean {
-    return this.#protocolVersion !== undefined;
-  }
-
-  /** @throws If the protocol version was not resolved in this context. */
-  public get protocolVersion(): ProtocolVersionResolution {
-    if (this.#protocolVersion === undefined) {
-      throw new Error('FhevmClientFrozenContext: protocolVersion was not resolved in this context.');
-    }
-    return this.#protocolVersion;
-  }
-
-  public get tryProtocolVersion(): ProtocolVersionResolution | undefined {
-    return this.#protocolVersion;
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
   // PubKey/CRS version
   //////////////////////////////////////////////////////////////////////////////
 
@@ -124,27 +97,6 @@ class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
 
   public get tryPubKeyCrsVersion(): PubKeyCrsVersionResolution | undefined {
     return this.#pubKeyCrsVersion;
-  }
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Protocol context (protocol + PubKey/CRS bundle)
-  //////////////////////////////////////////////////////////////////////////////
-
-  public get hasProtocolContext(): boolean {
-    return this.#protocolVersion !== undefined && this.#pubKeyCrsVersion !== undefined;
-  }
-
-  /**
-   * The {@link FhevmProtocolContext} bundle (protocol + PubKey/CRS versions),
-   * as consumed by the WASM version resolver.
-   *
-   * @throws If either the protocol or PubKey/CRS version was not resolved.
-   */
-  public get protocolContext(): FhevmProtocolContext {
-    return Object.freeze({
-      protocolVersion: this.protocolVersion,
-      pubKeyCrsVersion: this.pubKeyCrsVersion,
-    });
   }
 
   //////////////////////////////////////////////////////////////////////////////
@@ -174,7 +126,6 @@ class FhevmClientFrozenContextImpl implements FhevmClientFrozenContext {
   public toJSON(): Record<string, unknown> {
     return {
       hostContractVersions: this.#hostContractVersions,
-      protocolVersion: this.#protocolVersion,
       pubKeyCrsVersion: this.#pubKeyCrsVersion,
       tfheVersion: this.tfheVersion,
       tkmsVersion: this.tkmsVersion,
@@ -218,7 +169,6 @@ export function cloneFhevmClientFrozenContext(value: FhevmClientFrozenContext): 
   // toJSON() exposes the full internal state (the exact constructor-parameter shape).
   const state = value.toJSON() as {
     readonly hostContractVersions?: Partial<Record<HostContractName, HostContractVersion>> | undefined;
-    readonly protocolVersion?: ProtocolVersionResolution | undefined;
     readonly pubKeyCrsVersion?: PubKeyCrsVersionResolution | undefined;
     readonly relayerSupportsV3UserDecryptRoute: boolean;
   };
@@ -235,7 +185,6 @@ export function cloneFhevmClientFrozenContext(value: FhevmClientFrozenContext): 
 
   return createFhevmClientFrozenContext({
     hostContractVersions,
-    protocolVersion: state.protocolVersion === undefined ? undefined : { ...state.protocolVersion },
     pubKeyCrsVersion: state.pubKeyCrsVersion === undefined ? undefined : { ...state.pubKeyCrsVersion },
   });
 }
