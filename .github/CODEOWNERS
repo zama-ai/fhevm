@@ -8,6 +8,11 @@
 /shared/fhevm-sig-auth/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
 /shared/user-decryption-signature/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
 /test-suite/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
+/docs/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
+/ci/preview-env/ @zama-ai/fhevm-devs @zama-ai/mpc-devs
+/.github/workflows/preview-env-*.yml @zama-ai/fhevm-devs @zama-ai/mpc-devs
+/.github/workflows/test-suite-*.yml @zama-ai/fhevm-devs @zama-ai/mpc-devs
+/.github/workflows/shared-crates-tests.yml @zama-ai/fhevm-devs @zama-ai/mpc-devs
 
 # Protocol Contracts Team ownership
 /protocol-contracts/ @zama-ai/fhevm-protocol-contracts
@@ -28,6 +33,9 @@
 
 # MPC Team ownership
 /kms-connector/ @zama-ai/mpc-devs
+/charts/kms-connector/ @zama-ai/mpc-devs
+/.github/workflows/kms-connector-*.yml @zama-ai/mpc-devs
+/.github/workflows/gateway-stress-tool-docker-build.yml @zama-ai/mpc-devs
 /test-suite/gateway-stress/ @zama-ai/mpc-devs
 
 # Production Dockerfiles should be reviewed by members of fhevm-devops
