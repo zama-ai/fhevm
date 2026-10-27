@@ -342,7 +342,7 @@ describe('EncryptedERC20:HCU', function () {
           hcuLimit.getMaxHCUDepthPerTx(),
           hcuLimit.isBlockHCUWhitelisted(this.contractAddress),
         ]);
-        // Narrowest-first when lowering: hcuPerBlock >= maxHCUPerTx >= maxHCUDepthPerTx
+        // Narrowest-first when lowering: maxHCUPerTx >= maxHCUDepthPerTx
         const ownerHcuLimit = hcuLimit.connect(deployer);
         await (await ownerHcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX)).wait();
         await (await ownerHcuLimit.setMaxHCUPerTx(TIGHT_MAX_PER_TX)).wait();
@@ -489,11 +489,11 @@ describe('EncryptedERC20:HCU', function () {
       });
 
       describe('whitelist-only mode (block cap 0)', function () {
-        // A block cap of 0 is accepted from HCULimit v0.4.1 on.
+        // A block cap of 0 is accepted from HCULimit v0.5.0 on.
         beforeEach(async function () {
           const version = await requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR).getVersion();
-          const [major, minor, patch] = version.replace('HCULimit v', '').split('.').map(Number);
-          if (major === 0 && (minor < 4 || (minor === 4 && patch < 1))) {
+          const [major, minor] = version.replace('HCULimit v', '').split('.').map(Number);
+          if (major === 0 && minor < 5) {
             this.skip();
           }
         });

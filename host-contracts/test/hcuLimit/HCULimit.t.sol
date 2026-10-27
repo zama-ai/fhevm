@@ -105,7 +105,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.4.1")));
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.5.0")));
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
@@ -1225,19 +1225,18 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(hcuLimit.getGlobalHCUCapPerBlock(), 25_000_000);
     }
 
-    function test_setHCUPerBlockRevertsIfBelowMaxPerTx() public {
+    function test_setHCUPerBlockAcceptsValueBelowMaxPerTx() public {
         vm.prank(owner);
-        vm.expectRevert(HCULimit.HCUPerBlockBelowMaxPerTx.selector);
         hcuLimit.setHCUPerBlock(42);
+        assertEq(hcuLimit.getGlobalHCUCapPerBlock(), 42);
     }
 
-    function test_setMaxHCUPerTxRevertsIfAboveBlockCap() public {
-        // Lower the block cap first, then try to set maxHCUPerTx above it.
+    function test_setMaxHCUPerTxAcceptsValueAboveBlockCap() public {
         vm.startPrank(owner);
         hcuLimit.setHCUPerBlock(25_000_000);
-        vm.expectRevert(HCULimit.HCUPerBlockBelowMaxPerTx.selector);
         hcuLimit.setMaxHCUPerTx(25_000_001);
         vm.stopPrank();
+        assertEq(hcuLimit.getMaxHCUPerTx(), 25_000_001);
     }
 
     function test_setMaxHCUDepthPerTxRevertsIfAboveMaxPerTx() public {
@@ -1254,7 +1253,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(hcuLimit.getGlobalHCUCapPerBlock(), 0);
     }
 
-    function test_setMaxHCUPerTxIgnoresZeroBlockCap() public {
+    function test_setMaxHCUPerTxWorksWhileBlockCapIsZero() public {
         vm.startPrank(owner);
         hcuLimit.setHCUPerBlock(0);
         hcuLimit.setMaxHCUPerTx(30_000_000);
@@ -1264,16 +1263,6 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.expectRevert(HCULimit.MaxHCUPerTxBelowDepth.selector);
         hcuLimit.setMaxHCUPerTx(4_999_999);
         vm.stopPrank();
-    }
-
-    function test_setHCUPerBlockFromZeroStillEnforcesFloor() public {
-        vm.startPrank(owner);
-        hcuLimit.setHCUPerBlock(0);
-        vm.expectRevert(HCULimit.HCUPerBlockBelowMaxPerTx.selector);
-        hcuLimit.setHCUPerBlock(1);
-        hcuLimit.setHCUPerBlock(20_000_000);
-        vm.stopPrank();
-        assertEq(hcuLimit.getGlobalHCUCapPerBlock(), 20_000_000);
     }
 
     function test_zeroBlockCapRefusesCheapestOperationsFromNonWhitelistedCaller() public {

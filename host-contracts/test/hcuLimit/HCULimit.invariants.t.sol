@@ -37,8 +37,8 @@ contract HCULimitInvariantHandler is Test {
     }
 
     function setCap(uint48 cap) external {
-        // A non-zero cap must satisfy hcuPerBlock >= maxHCUPerTx (20_000_000).
-        cap = uint48(bound(uint256(cap), 20_000_000, uint256(type(uint48).max)));
+        // Non-zero caps; setCapToZero covers whitelist-only mode.
+        cap = uint48(bound(uint256(cap), 1, uint256(type(uint48).max)));
         vm.prank(owner);
         hcuLimit.setHCUPerBlock(cap);
     }

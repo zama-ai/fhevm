@@ -45,9 +45,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the transaction exceeds the maximum allowed depth of homomorphic complexity units.
     error HCUTransactionDepthLimitExceeded();
 
-    /// @notice Returned if hcuPerBlock is non-zero and below maxHCUPerTx.
-    error HCUPerBlockBelowMaxPerTx();
-
     /// @notice Returned if maxHCUPerTx < maxHCUDepthPerTx.
     error MaxHCUPerTxBelowDepth();
 
@@ -88,10 +85,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 4;
+    uint256 private constant MINOR_VERSION = 5;
 
     /// @notice Patch version of the contract.
-    uint256 private constant PATCH_VERSION = 1;
+    uint256 private constant PATCH_VERSION = 0;
 
     /// @notice FHEVMExecutor address.
     address private constant FHEVM_EXECUTOR_ADDRESS = fhevmExecutorAdd;
@@ -571,11 +568,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Sets the global HCU cap per block.
      * @param hcuPerBlock New cap value.
-     * @dev Enforces hcuPerBlock >= maxHCUPerTx unless hcuPerBlock is 0 (whitelisted callers only).
      */
     function _setHCUPerBlock(uint48 hcuPerBlock) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        if (hcuPerBlock != 0 && hcuPerBlock < $.maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
         $.globalHCUCapPerBlock = hcuPerBlock;
         emit HCUPerBlockSet(hcuPerBlock);
     }
@@ -595,12 +590,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Sets the per-transaction HCU limit.
      * @param maxHCUPerTx New transaction limit.
-     * @dev Enforces hcuPerBlock >= maxHCUPerTx unless hcuPerBlock is 0, and maxHCUPerTx >= maxHCUDepthPerTx.
+     * @dev Enforces maxHCUPerTx >= maxHCUDepthPerTx.
      */
     function _setMaxHCUPerTx(uint48 maxHCUPerTx) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        uint48 hcuPerBlock = $.globalHCUCapPerBlock;
-        if (hcuPerBlock != 0 && hcuPerBlock < maxHCUPerTx) revert HCUPerBlockBelowMaxPerTx();
         if (maxHCUPerTx < $.maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
         $.maxHCUPerTx = maxHCUPerTx;
         emit MaxHCUPerTxSet(maxHCUPerTx);
