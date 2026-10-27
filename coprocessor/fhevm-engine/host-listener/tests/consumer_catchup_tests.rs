@@ -45,6 +45,11 @@ async fn startup_clamps_to_observed_final_head_and_marks_the_effective_end_done(
 }
 
 #[tokio::test]
+async fn startup_completes_from_core_last_marker_below_stored_end() {
+    exercise_startup(Startup::CoreClampedCatchup, false).await;
+}
+
+#[tokio::test]
 async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
     use broker::{AsyncHandlerPayloadClassified, Topic};
     use host_listener::consumer::catchup::store;
@@ -115,7 +120,7 @@ async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
         // no LIVE/FINAL delivery may provide the missing history.
         publisher.publish(
             &routing::consumer_final_event_routing(identity.clone()),
-            &event_block(chain_id.as_u64(), 1000, BlockFlow::Final, None),
+            &event_block(chain_id.as_u64(), 1000, BlockFlow::Final, None, false),
         ).await.unwrap();
         wait_for_events(&pool, chain_id, &[1000]).await;
         let request = requests.recv().await.unwrap();
@@ -126,7 +131,7 @@ async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
         for number in 902..=906 {
             publisher.publish(
                 &replay_routing,
-                &event_block(chain_id.as_u64(), number, BlockFlow::FinalCatchup, Some(id)),
+                &event_block(chain_id.as_u64(), number, BlockFlow::FinalCatchup, Some(id), number == 906),
             ).await.unwrap();
         }
         // Five blocked deliveries would open the transient-error circuit
@@ -149,7 +154,7 @@ async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
         assert_ne!(repair_id, id);
         publisher.publish(
             &replay_routing,
-            &event_block(chain_id.as_u64(), 901, BlockFlow::FinalCatchup, Some(repair_id)),
+            &event_block(chain_id.as_u64(), 901, BlockFlow::FinalCatchup, Some(repair_id), true),
         ).await.unwrap();
 
         wait_for_events(&pool, chain_id, &[901, 902, 903, 904, 905, 906, 1000]).await;
@@ -180,6 +185,7 @@ enum Startup {
     NoFlags,
     NewCatchup,
     ClampedCatchup,
+    CoreClampedCatchup,
     SameCatchup,
 }
 
@@ -200,9 +206,9 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         let identity = format!("host-listener-consumer.{}", chain_id.as_u64());
         let manual = match startup {
             Startup::NoFlags => ManualCatchupArgs::default(),
-            Startup::NewCatchup | Startup::ClampedCatchup | Startup::SameCatchup => ManualCatchupArgs {
+            Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup | Startup::SameCatchup => ManualCatchupArgs {
                 catchup_from_block: Some(-100),
-                catchup_up_to_block: matches!(startup, Startup::ClampedCatchup).then_some(2100),
+                catchup_up_to_block: matches!(startup, Startup::ClampedCatchup | Startup::CoreClampedCatchup).then_some(2100),
                 catchup_unfinalized: false,
                 no_override_catchup: true,
             },
@@ -231,7 +237,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         for (_, start, end) in &expected {
             seed_history(&pool, chain_id.as_i64(), &[start - 1, end - 1]).await;
         }
-        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup) {
+        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup) {
             seed_history(&pool, chain_id.as_i64(), &[1899, 1998]).await;
         }
         seed_history(&pool, chain_id.as_i64(), &[1799, 1999]).await;
@@ -279,28 +285,28 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         // FINAL supplies the eligible replay head independently of LIVE.
         publisher.publish(
             &routing::consumer_final_event_routing(identity.clone()),
-            &event_block(chain_id.as_u64(), 2000, BlockFlow::Final, None),
+            &event_block(chain_id.as_u64(), 2000, BlockFlow::Final, None, false),
         ).await.unwrap();
         let mut blocks = vec![2000];
         wait_for_events(&pool, chain_id, &blocks).await;
         let mut pending_requests = Vec::new();
-        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup) && previous_requests {
+        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup) && previous_requests {
             let request = requests.recv().await.unwrap();
             assert!(expected.iter().any(|(id, _, _)| Some(*id) == request.catchup_id),
                 "retained requests must resume while the new range waits for a live block");
             pending_requests.push(request);
         }
-        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup)
+        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup)
             || (matches!(startup, Startup::NoFlags) && !previous_requests)
         {
             publisher.publish(
                 &routing::consumer_new_event_routing(identity.clone()),
-                &event_block(chain_id.as_u64(), 2000, BlockFlow::Live, None),
+                &event_block(chain_id.as_u64(), 2000, BlockFlow::Live, None, false),
             ).await.unwrap();
         }
         // Resuming existing requests needs no new live reference. A new request
         // resolves relative bounds against this startup's first live block.
-        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup) {
+        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup) {
             let id = loop {
                 let id: Option<uuid::Uuid> = sqlx::query_scalar(
                     "SELECT id FROM host_consumer_catchups WHERE chain_id = $1 AND consumer_id = $2 AND requested_from = -100 AND requested_to = $3",
@@ -309,7 +315,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
                 assert!(!run.is_finished(), "listener stopped before creating catchup");
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             };
-            expected.push((id, 1900, if matches!(startup, Startup::ClampedCatchup) { 2000 } else { 1999 }));
+            expected.push((id, 1900, if matches!(startup, Startup::ClampedCatchup | Startup::CoreClampedCatchup) { 2000 } else { 1999 }));
         }
         let mut actual = Vec::new();
         for _ in 0..expected.len() {
@@ -320,9 +326,12 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
             assert_eq!(request.consumer_id, identity);
             let id = request.catchup_id.unwrap();
             actual.push((id, request.block_start, request.block_end));
-            for number in [request.block_start, request.block_end] {
+            // Core may stop below our sampled head. Its marker carries the
+            // actual end; the stored request remains unchanged.
+            let end = request.block_end - u64::from(matches!(startup, Startup::CoreClampedCatchup));
+            for number in [request.block_start, end] {
                 let fail_ingestion = matches!(startup, Startup::SameCatchup)
-                    && !previous_requests && number == request.block_end;
+                    && !previous_requests && number == end;
                 if fail_ingestion {
                     sqlx::raw_sql(
                         "CREATE SEQUENCE catchup_ingest_failures;
@@ -337,7 +346,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
                 }
                 publisher.publish(
                     &routing::consumer_final_catchup_event_routing(identity.clone()),
-                    &event_block(chain_id.as_u64(), number, BlockFlow::FinalCatchup, Some(id)),
+                    &event_block(chain_id.as_u64(), number, BlockFlow::FinalCatchup, Some(id), number == end),
                 ).await.unwrap();
                 if fail_ingestion {
                     // Sequence increments survive rollback, proving ingestion
@@ -357,7 +366,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
                 }
                 if !blocks.contains(&number) { blocks.push(number); }
                 wait_for_events(&pool, chain_id, &blocks).await;
-                let expected_status = if number == request.block_end { "DONE" } else { "ONGOING" };
+                let expected_status = if number == end { "DONE" } else { "ONGOING" };
                 loop {
                     let status: String = sqlx::query_scalar(
                         "SELECT status FROM host_consumer_catchups WHERE id = $1",
@@ -394,7 +403,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
             assert!(claimed, "the coordinator must acquire the barrier lease");
             publisher.publish(
                 &routing::consumer_final_catchup_event_routing(identity.clone()),
-                &event_block(chain_id.as_u64(), number, BlockFlow::FinalCatchup, Some(barrier)),
+                &event_block(chain_id.as_u64(), number, BlockFlow::FinalCatchup, Some(barrier), true),
             ).await.unwrap();
             blocks.push(number);
             wait_for_events(&pool, chain_id, &blocks).await;
@@ -565,6 +574,7 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
                         number,
                         if id == b { BlockFlow::Catchup } else { BlockFlow::FinalCatchup },
                         Some(id),
+                        false,
                     ),
                 )
                 .await
@@ -575,7 +585,7 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
         seed_history(&pool, chain_id.as_i64(), &[999]).await;
         publisher.publish(
             &routing::consumer_final_event_routing(identity.clone()),
-            &event_block(chain_id.as_u64(), 1000, BlockFlow::Final, None),
+            &event_block(chain_id.as_u64(), 1000, BlockFlow::Final, None, false),
         ).await.unwrap();
         wait_for_events(&pool, chain_id, &[900, 920, 1000]).await;
         // Simulate takeover while this process still has the old local token.
@@ -594,7 +604,7 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
             "the old coordinator must publish the barrier, not the new owner's pending request");
         publisher.publish(
             &routing::consumer_final_catchup_event_routing(identity.clone()),
-            &event_block(chain_id.as_u64(), 1000, BlockFlow::FinalCatchup, Some(barrier)),
+            &event_block(chain_id.as_u64(), 1000, BlockFlow::FinalCatchup, Some(barrier), true),
         ).await.unwrap();
         loop {
             let status: String = sqlx::query_scalar("SELECT status FROM host_consumer_catchups WHERE id = $1")
@@ -640,6 +650,7 @@ async fn no_flags_resume_all_retained_requests_and_observe_another_replicas_repl
                         number,
                         if id == b { BlockFlow::Catchup } else { BlockFlow::FinalCatchup },
                         Some(id),
+                        false,
                     ),
                 )
                 .await
@@ -842,14 +853,20 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
     )));
     let run = tokio::spawn(run_consumer(config));
     let publisher = broker.publisher("").await.unwrap();
-    let block = |number, flow, catchup_id| {
-        event_block(chain_id.as_u64(), number, flow, catchup_id)
+    let block = |number, flow, catchup_id, last_in_catchup| {
+        event_block(
+            chain_id.as_u64(),
+            number,
+            flow,
+            catchup_id,
+            last_in_catchup,
+        )
     };
     let first = watch_rx.recv().await.unwrap();
     publisher
         .publish(
             &routing::consumer_new_event_routing(first.clone()),
-            &block(1000, BlockFlow::Live, None),
+            &block(1000, BlockFlow::Live, None, false),
         )
         .await
         .unwrap();
@@ -858,7 +875,7 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
         publisher
             .publish(
                 &routing::consumer_final_event_routing(first.clone()),
-                &block(1000, BlockFlow::Final, None),
+                &block(1000, BlockFlow::Final, None, false),
             )
             .await
             .unwrap();
@@ -875,14 +892,14 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
     publisher
         .publish(
             &replay_routing(first.clone()),
-            &block(900, replay_flow, Some(catchup_id)),
+            &block(900, replay_flow, Some(catchup_id), false),
         )
         .await
         .unwrap();
     publisher
         .publish(
             &routing::consumer_new_event_routing(first.clone()),
-            &block(1001, BlockFlow::Live, None),
+            &block(1001, BlockFlow::Live, None, false),
         )
         .await
         .unwrap();
@@ -894,7 +911,7 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
         publisher
             .publish(
                 &routing::consumer_final_event_routing(first.clone()),
-                &block(end, BlockFlow::Final, Some(catchup_id)),
+                &block(end, BlockFlow::Final, Some(catchup_id), true),
             )
             .await
             .unwrap();
@@ -908,12 +925,56 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
         .unwrap();
         assert_eq!(status, "ONGOING");
     }
+    // Reaching the stored end without core's marker cannot complete a catchup.
+    publisher
+        .publish(
+            &replay_routing(first.clone()),
+            &block(end, replay_flow, Some(catchup_id), false),
+        )
+        .await
+        .unwrap();
+    wait_for_events(&pool, chain_id, &[900, end, 1000, 1001]).await;
+    let observer =
+        consumer::ListenerConsumer::new(&broker, chain_id.as_u64(), &first);
+    loop {
+        let status = observer.group_status().await.unwrap();
+        let suffix = if unfinalized {
+            ".catchup-event"
+        } else {
+            ".final-catchup-event"
+        };
+        if status.iter().any(|(topic, groups)| {
+            topic.ends_with(suffix)
+                && !groups.is_empty()
+                && groups
+                    .iter()
+                    .all(|group| group.pending == 0 && group.lag == Some(0))
+        }) {
+            break;
+        }
+        assert!(
+            !run.is_finished(),
+            "listener stopped before acknowledging the unmarked end"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let status: String = sqlx::query_scalar(
+        "SELECT status FROM host_consumer_catchups WHERE id = $1",
+    )
+    .bind(catchup_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        status, "ONGOING",
+        "an unmarked end block must not complete replay"
+    );
     // Out-of-order chunks and duplicate deliveries must preserve both event sets.
-    for number in [end, 925, 900, end] {
+    for number in [925, 900, end, end] {
         publisher
             .publish(
                 &replay_routing(first.clone()),
-                &block(number, replay_flow, Some(catchup_id)),
+                &block(number, replay_flow, Some(catchup_id), number == end),
             )
             .await
             .unwrap();
@@ -947,7 +1008,7 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
     publisher
         .publish(
             &routing::consumer_new_event_routing(first.clone()),
-            &block(1002, BlockFlow::Live, None),
+            &block(1002, BlockFlow::Live, None, false),
         )
         .await
         .unwrap();
@@ -961,7 +1022,7 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
     publisher
         .publish(
             &routing::consumer_final_event_routing(first.clone()),
-            &block(910, BlockFlow::Final, None),
+            &block(910, BlockFlow::Final, None, false),
         )
         .await
         .unwrap();
@@ -979,7 +1040,7 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
     publisher
         .publish(
             &routing::consumer_final_catchup_event_routing(first.clone()),
-            &block(909, BlockFlow::FinalCatchup, Some(repair_id)),
+            &block(909, BlockFlow::FinalCatchup, Some(repair_id), true),
         )
         .await
         .unwrap();
@@ -987,7 +1048,7 @@ async fn exercise_catchup(bounded: bool, unfinalized: bool) {
         publisher
             .publish(
                 &replay_routing(first.clone()),
-                &block(900, replay_flow, Some(catchup_id)),
+                &block(900, replay_flow, Some(catchup_id), false),
             )
             .await
             .unwrap();
@@ -1046,6 +1107,7 @@ fn event_block(
     number: u64,
     flow: BlockFlow,
     catchup_id: Option<uuid::Uuid>,
+    last_in_catchup: bool,
 ) -> BlockPayload {
     use alloy::{
         primitives::{Address, B256, U256},
@@ -1078,6 +1140,7 @@ fn event_block(
         ),
         timestamp: 1_700_000_000,
         catchup_id,
+        last_in_catchup,
         transactions: vec![TransactionPayload {
             from: caller,
             to: Some(Address::repeat_byte(1)),

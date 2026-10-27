@@ -390,6 +390,7 @@ mod tests {
             timestamp: 0,
             transactions: vec![],
             catchup_id: None,
+            last_in_catchup: false,
         };
         reference.observe(&payload).await;
         payload.flow = BlockFlow::Reorged;
