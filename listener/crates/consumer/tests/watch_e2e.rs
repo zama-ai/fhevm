@@ -232,6 +232,7 @@ fn sample_block_payload(flow: BlockFlow, chain_id: u64, block_number: u64) -> Bl
         timestamp: 1_700_000_000,
         transactions: vec![],
         catchup_id: None,
+        last_in_catchup: false,
     }
 }
 

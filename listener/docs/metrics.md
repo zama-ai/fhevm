@@ -54,7 +54,7 @@ label: `catchup` (clamped to the chain head, fans out onto `range-catchup`) and
 | `listener_catchup_iterations_total` | Counter | `chain_id`, `flow` | CatchupPayloads received on a principal catchup queue (orchestrator invocations). Counts deliveries, so a redelivered request counts again. |
 | `listener_catchup_skipped_above_head_total` | Counter | `chain_id`, `flow` | Orchestrator skips: `block_start` was above the current head. The request is recorded `SKIPPED` and nothing is fanned out. |
 | `listener_catchup_subranges_total` | Counter | `chain_id`, `flow` | Sub-ranges fanned out by the orchestrator. Counts messages published, so a re-fan after a crash mid-fanout counts again. |
-| `listener_catchup_range_duration_seconds` | Histogram | `chain_id`, `flow` | Wall-clock time to fetch and publish a single catchup sub-range. Records both successful and failed sub-ranges. |
+| `listener_catchup_range_duration_seconds` | Histogram | `chain_id`, `flow` | Wall-clock time to fetch and publish a single catchup sub-range. Records both successful and failed sub-ranges, and also the last block of a tracked request, which is published on its own once the rest is out. |
 | `listener_catchup_subrange_discarded_total` | Counter | `chain_id`, `flow` | Sub-ranges dropped before any RPC call because their request was already cancelled or skipped. |
 | `listener_catchup_completed_total` | Counter | `chain_id`, `flow` | Requests that covered every block they fanned out and moved to `COMPLETED`. Counts requests, not sub-ranges, and fires exactly once per request. |
 | `listener_catchup_cancelled_total` | Counter | `chain_id`, `flow` | Requests moved to `CANCELLED` by their owner. Re-cancelling an already-terminal request is idempotent and not counted. |

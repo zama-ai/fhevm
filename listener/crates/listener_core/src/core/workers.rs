@@ -105,7 +105,32 @@ fn subrange_verdict(lookup: RequestLookup) -> SubrangeVerdict {
 /// [`RequestAdmission::AlreadyTerminal`] covers a request the consumer already
 /// cancelled, possibly before this delivery was even processed.
 fn should_fan_out(admission: &RequestAdmission) -> bool {
-    matches!(admission, RequestAdmission::FanOut)
+    matches!(admission, RequestAdmission::FanOut { .. })
+}
+
+/// The end this delivery must fan out to instead of the one it computed, if
+/// they differ.
+///
+/// The first delivery of a request stores its `fanned_end`, and completion is
+/// measured against it. A redelivery after a crash mid-fanout reads the head
+/// again: a lower read would never publish the blocks up to the stored target,
+/// a higher one would publish blocks past it, and either way the request would
+/// not complete when its blocks are out. A stored end below `block_start` can
+/// only come from an id reused for a different range; that delivery keeps its
+/// own split.
+fn stored_fanout_end(
+    admission: &RequestAdmission,
+    request: &CatchupPayload,
+    subranges: &[CatchupPayload],
+) -> Option<u64> {
+    let RequestAdmission::FanOut {
+        fanned_end: Some(stored),
+    } = *admission
+    else {
+        return None;
+    };
+    let computed = subranges.last().map(|sub| sub.block_end);
+    (computed != Some(stored) && stored >= request.block_start).then_some(stored)
 }
 
 /// Which counter a cancel outcome increments, if any.
@@ -122,7 +147,28 @@ fn cancel_metric(outcome: &CancelOutcome) -> Option<&'static str> {
     }
 }
 
-/// Decide whether a catchup sub-range should still be fetched.
+/// What a range worker does with a sub-range, decided before any RPC call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SubrangePlan {
+    /// Drop it: the request reached a terminal state.
+    Discard,
+    /// Publish all of it and credit nothing: there is no row to hold the last
+    /// block back for (an untracked payload, or a request never written).
+    Whole,
+    /// Publish the blocks below `last_block` and credit them. `last_block` is
+    /// published by whichever worker's merge finds every other block covered.
+    Tracked { catchup_id: Uuid, last_block: u64 },
+}
+
+/// The part of a sub-range published with it: its blocks below the request's
+/// last block, which is held back. `None` when there are none, e.g. a
+/// sub-range that is just the last block.
+fn body_range(block_start: u64, block_end: u64, last_block: u64) -> Option<(u64, u64)> {
+    let end = block_end.min(last_block.checked_sub(1)?);
+    (block_start <= end).then_some((block_start, end))
+}
+
+/// Read a sub-range's request and decide what to fetch.
 ///
 /// Runs before any RPC call, so a cancelled request costs one indexed read per
 /// outstanding sub-range instead of a full parallel fetch.
@@ -131,27 +177,35 @@ fn cancel_metric(outcome: &CancelOutcome) -> Option<&'static str> {
 /// here would turn an ownership mismatch into [`RequestLookup::Missing`],
 /// which resolves to *run* — inverting the guard instead of tightening it.
 /// Ownership is enforced on the cancel path, where the id comes from outside.
-async fn catchup_subrange_is_live(
+async fn catchup_subrange_plan(
     listener: &EvmListener,
     payload: &CatchupPayload,
     flow: CatchupFlow,
-) -> Result<bool, HandlerError> {
-    let lookup = match payload.catchup_id {
-        None => RequestLookup::Untracked,
+) -> Result<SubrangePlan, HandlerError> {
+    let (lookup, last_block) = match payload.catchup_id {
+        None => (RequestLookup::Untracked, None),
         Some(catchup_id) => {
-            let status = listener
-                .catchup_request_status(catchup_id)
+            let state = listener
+                .catchup_request_state(catchup_id)
                 .await
                 .map_err(|e| classify(e, listener.chain_id()))?;
-            match status {
-                Some(status) => RequestLookup::Found(status),
-                None => RequestLookup::Missing,
+            match state {
+                Some(state) => (RequestLookup::Found(state.status), state.fanned_end),
+                None => (RequestLookup::Missing, None),
             }
         }
     };
 
     match subrange_verdict(lookup) {
-        SubrangeVerdict::Run => Ok(true),
+        SubrangeVerdict::Run => Ok(match (payload.catchup_id, last_block) {
+            (Some(catchup_id), Some(last_block)) => SubrangePlan::Tracked {
+                catchup_id,
+                last_block,
+            },
+            // Untracked. An active row always stores its target, so a tracked
+            // request lands here only if that ever stops being true.
+            _ => SubrangePlan::Whole,
+        }),
         SubrangeVerdict::RunUnconfirmed => {
             warn!(
                 catchup_id = ?payload.catchup_id,
@@ -160,7 +214,7 @@ async fn catchup_subrange_is_live(
                 block_end = payload.block_end,
                 "Catchup sub-range references an unknown request — running it anyway",
             );
-            Ok(true)
+            Ok(SubrangePlan::Whole)
         }
         SubrangeVerdict::Discard(status) => {
             metrics::counter!(
@@ -177,42 +231,40 @@ async fn catchup_subrange_is_live(
                 ?status,
                 "Discarding catchup sub-range: request is no longer active",
             );
-            Ok(false)
+            Ok(SubrangePlan::Discard)
         }
     }
 }
 
-/// Credit a published sub-range to its request's coverage set — the set of
+/// Credit published blocks to their request's coverage set — the set of
 /// blocks published so far, which completes the request once it spans
-/// `block_start..=fanned_end`.
+/// `block_start..=fanned_end` — and report what the request needs next.
 ///
 /// Runs **after** the publishes, never before. Merging first would mark a
 /// request complete for blocks that a crash then prevents from being emitted;
 /// merging after means a crash simply replays the sub-range, and the union
 /// absorbs the repeat.
 ///
+/// `range` is `None` when the sub-range published nothing because it is only
+/// the last block: the merge then just reads whether the last block is due.
+///
 /// A merge failure is transient on purpose. Acking here would lose the
 /// coverage permanently and strand the request `ACTIVE` forever, whereas a
 /// replay costs one redundant fetch of an already-idempotent sub-range.
 async fn record_subrange_coverage(
     listener: &EvmListener,
-    catchup_id: Option<Uuid>,
-    block_start: u64,
-    block_end: u64,
+    catchup_id: Uuid,
+    range: Option<(u64, u64)>,
     flow: CatchupFlow,
-) -> Result<(), HandlerError> {
-    // Untracked sub-range from a consumer predating `catchup_id`: nothing to
-    // credit, and no row to complete.
-    let Some(catchup_id) = catchup_id else {
-        return Ok(());
-    };
-
+) -> Result<CoverageMerge, HandlerError> {
     let merge = listener
-        .record_catchup_coverage(catchup_id, block_start, block_end)
+        .record_catchup_coverage(catchup_id, range)
         .await
         .map_err(|e| classify(e, listener.chain_id()))?;
 
     match merge {
+        // The caller publishes the last block, and logs it.
+        CoverageMerge::LastBlockDue => {}
         CoverageMerge::Completed => {
             metrics::counter!(
                 "listener_catchup_completed_total",
@@ -222,33 +274,102 @@ async fn record_subrange_coverage(
             .increment(1);
             info!(
                 %catchup_id,
-                block_start,
-                block_end,
+                ?range,
                 ?flow,
                 "Catchup request complete: every fanned-out block has been published",
             );
         }
         CoverageMerge::Progressed => {
-            debug!(
-                %catchup_id,
-                block_start,
-                block_end,
-                "Recorded catchup sub-range coverage",
-            );
+            debug!(%catchup_id, ?range, "Recorded catchup sub-range coverage");
         }
         // Cancelled mid-flight, already completed, or a replay after
         // completion. The blocks went out either way, so this is not an error.
         CoverageMerge::NotActive => {
             debug!(
                 %catchup_id,
-                block_start,
-                block_end,
+                ?range,
                 "Published catchup sub-range for a request that is no longer active",
             );
         }
     }
 
-    Ok(())
+    Ok(merge)
+}
+
+/// Fetch a range and publish it in order through the flow's pipeline.
+async fn publish_range(
+    listener: &EvmListener,
+    payload: CatchupPayload,
+    last_block: Option<u64>,
+    flow: CatchupFlow,
+) -> Result<(), HandlerError> {
+    let run = match flow {
+        CatchupFlow::Catchup => listener.run_range_catchup(payload, last_block).await,
+        CatchupFlow::FinalCatchup => listener.run_final_range_catchup(payload, last_block).await,
+    };
+    run.map_err(|e| classify(e, listener.chain_id()))
+}
+
+/// The range worker shared by both flows: publish a sub-range, credit it, and
+/// publish the request's last block once every other block is out.
+///
+/// For a tracked request each sub-range holds back its copy of `fanned_end`.
+/// Whichever worker's merge reports [`CoverageMerge::LastBlockDue`] — every
+/// block below it published, the request still active — fetches it, publishes
+/// it flagged `last_in_catchup`, and merges it, which completes the request.
+/// The merge's row lock orders the workers, so the flagged block enters the
+/// stream after every other block of the request.
+///
+/// A failure anywhere returns transient and replays the sub-range. Because
+/// `LastBlockDue` is read from the row, the replay sees it again and re-sends
+/// a last block that did not go out. A cancel landing after `LastBlockDue`
+/// still lets the flagged block out; its merge then finds the request inactive.
+async fn run_catchup_subrange(
+    listener: &EvmListener,
+    payload: CatchupPayload,
+    flow: CatchupFlow,
+) -> Result<AckDecision, HandlerError> {
+    let (catchup_id, last_block) = match catchup_subrange_plan(listener, &payload, flow).await? {
+        SubrangePlan::Discard => return Ok(AckDecision::Ack),
+        SubrangePlan::Whole => {
+            publish_range(listener, payload, None, flow).await?;
+            return Ok(AckDecision::Ack);
+        }
+        SubrangePlan::Tracked {
+            catchup_id,
+            last_block,
+        } => (catchup_id, last_block),
+    };
+
+    let body = body_range(payload.block_start, payload.block_end, last_block);
+    if let Some((block_start, block_end)) = body {
+        let body_payload = CatchupPayload {
+            block_start,
+            block_end,
+            ..payload.clone()
+        };
+        publish_range(listener, body_payload, None, flow).await?;
+    }
+
+    let merge = record_subrange_coverage(listener, catchup_id, body, flow).await?;
+    if matches!(merge, CoverageMerge::LastBlockDue) {
+        info!(
+            %catchup_id,
+            last_block,
+            ?flow,
+            "Catchup body published: publishing the last block",
+        );
+        let last = CatchupPayload {
+            block_start: last_block,
+            block_end: last_block,
+            ..payload
+        };
+        publish_range(listener, last, Some(last_block), flow).await?;
+        record_subrange_coverage(listener, catchup_id, Some((last_block, last_block)), flow)
+            .await?;
+    }
+
+    Ok(AckDecision::Ack)
 }
 
 /// Classify a [`FilterError`] as transient or permanent.
@@ -909,6 +1030,19 @@ impl Handler for CatchupHandler {
             return Ok(AckDecision::Ack);
         }
 
+        let subranges = match stored_fanout_end(&admission, &request, &subranges) {
+            Some(stored_end) => {
+                info!(
+                    consumer_id = %request.consumer_id,
+                    catchup_id = ?request.catchup_id,
+                    stored_end,
+                    "Catchup orchestrator: redelivery fans out to the stored target"
+                );
+                self.listener.split_catchup_request(&request, stored_end)
+            }
+            None => subranges,
+        };
+
         // Publish each sub-range to range-catchup. Bubble any broker error
         // out as transient so the broker retries the orchestrator message.
         for sub in &subranges {
@@ -1055,6 +1189,19 @@ impl Handler for FinalCatchupHandler {
             return Ok(AckDecision::Ack);
         }
 
+        let subranges = match stored_fanout_end(&admission, &request, &subranges) {
+            Some(stored_end) => {
+                info!(
+                    consumer_id = %request.consumer_id,
+                    catchup_id = ?request.catchup_id,
+                    stored_end,
+                    "Final catchup orchestrator: redelivery fans out to the stored target"
+                );
+                self.listener.split_catchup_request(&request, stored_end)
+            }
+            None => subranges,
+        };
+
         // Publish each sub-range to range-final-catchup. Bubble any broker
         // error out as transient so the broker retries the orchestrator message.
         for sub in &subranges {
@@ -1106,7 +1253,8 @@ impl Handler for FinalCatchupHandler {
 ///
 /// Consumes bounded sub-payloads produced by [`FinalCatchupHandler`] and runs
 /// [`EvmListener::run_final_range_catchup`] for each: parallel fetch +
-/// in-order publish on `{consumer_id}.final-catchup-event`.
+/// in-order publish on `{consumer_id}.final-catchup-event`. A tracked
+/// request's last block is published last; see [`run_catchup_subrange`].
 ///
 /// Defensively re-validates the payload — sub-payloads cross the broker
 /// boundary, and the broker is the trust boundary. Errors classified through
@@ -1164,29 +1312,7 @@ impl Handler for RangeFinalCatchupHandler {
             return Ok(AckDecision::Ack);
         }
 
-        if !catchup_subrange_is_live(&self.listener, &payload, CatchupFlow::FinalCatchup).await? {
-            return Ok(AckDecision::Ack);
-        }
-
-        // Captured before the run consumes the payload.
-        let (catchup_id, block_start, block_end) =
-            (payload.catchup_id, payload.block_start, payload.block_end);
-
-        self.listener
-            .run_final_range_catchup(payload)
-            .await
-            .map_err(|e| classify(e, self.listener.chain_id()))?;
-
-        record_subrange_coverage(
-            &self.listener,
-            catchup_id,
-            block_start,
-            block_end,
-            CatchupFlow::FinalCatchup,
-        )
-        .await?;
-
-        Ok(AckDecision::Ack)
+        run_catchup_subrange(&self.listener, payload, CatchupFlow::FinalCatchup).await
     }
 }
 
@@ -1196,7 +1322,8 @@ impl Handler for RangeFinalCatchupHandler {
 ///
 /// Consumes bounded sub-payloads produced by [`CatchupHandler`] and runs
 /// [`EvmListener::run_range_catchup`] for each: parallel fetch +
-/// in-order publish on `{consumer_id}.catchup-event`.
+/// in-order publish on `{consumer_id}.catchup-event`. A tracked request's
+/// last block is published last; see [`run_catchup_subrange`].
 ///
 /// Defensively re-validates the payload — sub-payloads cross the broker
 /// boundary, and the broker is the trust boundary. Errors classified through
@@ -1239,29 +1366,7 @@ impl Handler for RangeCatchupHandler {
             return Ok(AckDecision::Dead);
         }
 
-        if !catchup_subrange_is_live(&self.listener, &payload, CatchupFlow::Catchup).await? {
-            return Ok(AckDecision::Ack);
-        }
-
-        // Captured before the run consumes the payload.
-        let (catchup_id, block_start, block_end) =
-            (payload.catchup_id, payload.block_start, payload.block_end);
-
-        self.listener
-            .run_range_catchup(payload)
-            .await
-            .map_err(|e| classify(e, self.listener.chain_id()))?;
-
-        record_subrange_coverage(
-            &self.listener,
-            catchup_id,
-            block_start,
-            block_end,
-            CatchupFlow::Catchup,
-        )
-        .await?;
-
-        Ok(AckDecision::Ack)
+        run_catchup_subrange(&self.listener, payload, CatchupFlow::Catchup).await
     }
 }
 
@@ -1276,7 +1381,7 @@ impl Handler for RangeCatchupHandler {
 ///
 /// Retiring a request is a single UPDATE. Nothing is fetched, nothing is
 /// published, and no sub-range is chased down — outstanding sub-ranges
-/// discover the flipped row themselves at [`catchup_subrange_is_live`].
+/// discover the flipped row themselves at [`catchup_subrange_plan`].
 ///
 /// **Every outcome Acks.** A cancel that is rejected or redundant is not a
 /// transient failure: classifying it as one would retry it forever and walk
@@ -1414,11 +1519,120 @@ mod tests {
         );
     }
 
+    // ── Held-back last block ────────────────────────────────────────────
+
+    #[test]
+    fn a_sub_range_below_the_last_block_publishes_all_of_it() {
+        assert_eq!(body_range(101, 200, 400), Some((101, 200)));
+    }
+
+    #[test]
+    fn a_sub_range_ending_on_the_last_block_holds_it_back() {
+        assert_eq!(body_range(301, 400, 400), Some((301, 399)));
+    }
+
+    /// A one-block request, or a final sub-range of one block: nothing to
+    /// publish before the merge decides whether the last block is due.
+    #[test]
+    fn a_sub_range_that_is_only_the_last_block_has_no_body() {
+        assert_eq!(body_range(400, 400, 400), None);
+    }
+
+    #[test]
+    fn a_last_block_of_zero_has_no_body() {
+        assert_eq!(body_range(0, 0, 0), None);
+    }
+
+    /// Sub-ranges are split to `fanned_end`, so this only guards the clamp.
+    #[test]
+    fn a_sub_range_past_the_last_block_stops_below_it() {
+        assert_eq!(body_range(301, 450, 400), Some((301, 399)));
+        assert_eq!(body_range(401, 450, 400), None);
+    }
+
     // ── Orchestrator admission ──────────────────────────────────────────
 
     #[test]
     fn a_freshly_admitted_request_fans_out() {
-        assert!(should_fan_out(&RequestAdmission::FanOut));
+        assert!(should_fan_out(&RequestAdmission::FanOut {
+            fanned_end: Some(500)
+        }));
+        assert!(should_fan_out(&RequestAdmission::FanOut {
+            fanned_end: None
+        }));
+    }
+
+    fn range(block_start: u64, block_end: u64) -> CatchupPayload {
+        CatchupPayload {
+            consumer_id: "gw".to_string(),
+            block_start,
+            block_end,
+            catchup_id: None,
+            sub_range_seq: None,
+        }
+    }
+
+    fn fan_out_to(fanned_end: Option<u64>) -> RequestAdmission {
+        RequestAdmission::FanOut { fanned_end }
+    }
+
+    #[test]
+    fn a_first_delivery_keeps_its_own_split() {
+        let split = [range(1, 100), range(101, 150)];
+        assert_eq!(
+            stored_fanout_end(&fan_out_to(Some(150)), &range(1, 1000), &split),
+            None
+        );
+    }
+
+    /// The crash-mid-fanout redelivery read a lower head than the first
+    /// delivery. Keeping its split would never publish 121-150.
+    #[test]
+    fn a_redelivery_that_read_a_lower_head_fans_out_to_the_stored_end() {
+        let split = [range(1, 100), range(101, 120)];
+        assert_eq!(
+            stored_fanout_end(&fan_out_to(Some(150)), &range(1, 1000), &split),
+            Some(150)
+        );
+    }
+
+    #[test]
+    fn a_redelivery_that_read_a_higher_head_fans_out_to_the_stored_end() {
+        let split = [range(1, 100), range(101, 200)];
+        assert_eq!(
+            stored_fanout_end(&fan_out_to(Some(150)), &range(1, 1000), &split),
+            Some(150)
+        );
+    }
+
+    /// The redelivery found the whole range above its head read, but the
+    /// first delivery had already stored an `ACTIVE` target.
+    #[test]
+    fn a_redelivery_with_an_empty_split_fans_out_to_the_stored_end() {
+        assert_eq!(
+            stored_fanout_end(&fan_out_to(Some(150)), &range(1, 1000), &[]),
+            Some(150)
+        );
+    }
+
+    #[test]
+    fn an_untracked_request_keeps_its_own_split() {
+        let split = [range(1, 100)];
+        assert_eq!(
+            stored_fanout_end(&fan_out_to(None), &range(1, 1000), &split),
+            None
+        );
+    }
+
+    /// Only an id reused for another range can store an end below this
+    /// request's start. Splitting to it would build an inverted range.
+    #[test]
+    fn a_stored_end_below_the_start_is_ignored() {
+        let split = [range(500, 600)];
+        assert_eq!(
+            stored_fanout_end(&fan_out_to(Some(100)), &range(500, 600), &split),
+            None
+        );
     }
 
     /// This is the whole point of `fanned_out_at`: the second delivery of

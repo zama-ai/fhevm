@@ -5,7 +5,8 @@ pub mod final_block_model;
 
 pub use block_model::{Block, BlockStatus, NewDatabaseBlock, UpsertResult};
 pub use catchup_model::{
-    CancelOutcome, CatchupFlow, CatchupStatus, CoverageMerge, NewCatchupRequest, RequestAdmission,
+    CancelOutcome, CatchupFlow, CatchupRequestState, CatchupStatus, CoverageMerge,
+    NewCatchupRequest, RequestAdmission,
 };
 pub use filter_model::{Filter, FilterType};
 pub use final_block_model::{FinalBlock, NewFinalBlock};
