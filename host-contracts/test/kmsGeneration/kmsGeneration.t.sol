@@ -1563,6 +1563,15 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         return digests;
     }
 
+    /// @dev A production legacy key: Server + Public. Its Public digest equals the migration's,
+    /// since the migration keeps the public key.
+    function _mockLegacyKeyDigests() internal pure returns (IKMSGeneration.KeyDigest[] memory) {
+        IKMSGeneration.KeyDigest[] memory digests = new IKMSGeneration.KeyDigest[](2);
+        digests[0] = _mockKeyDigests()[0];
+        digests[1] = _mockCompressedKeyDigests()[0];
+        return digests;
+    }
+
     /// @dev Hash + sign + prank + call keygenResponse with compressed digests.
     function _doCompressedKeygenResponse(uint256 prepKeygenId, uint256 keyId, uint256 pk, address sender) internal {
         IKMSGeneration.KeyDigest[] memory digests = _mockCompressedKeyDigests();
@@ -1702,7 +1711,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     }
 
     function test_abortMigrationAfterRequestEmissionAllowsRetry() public {
-        (, uint256 keyId) = _runFullKeygenCycle();
+        (uint256 originalPrepId, uint256 keyId) = _runFullKeygenCycle();
         _switchToMultiSignerContext();
 
         vm.prank(owner);
@@ -1714,6 +1723,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doPrepKeygenResponse(migrationPrepId, kmsPk2, kmsTxSender2);
         _doCompressedKeygenResponse(migrationPrepId, migrationRequestId, kmsPk0, kmsTxSender0);
         _doCompressedKeygenResponse(migrationPrepId, migrationRequestId, kmsPk1, kmsTxSender1);
+        assertEq(kmsGeneration.getKeyInfo(keyId).prepKeygenId, originalPrepId);
 
         vm.prank(owner);
         kmsGeneration.abortKeygen(migrationPrepId);
@@ -1721,6 +1731,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _doCompressedKeygenResponse(migrationPrepId, migrationRequestId, kmsPk2, kmsTxSender2);
         (, IKMSGeneration.KeyDigest[] memory digestsAfterAbort) = kmsGeneration.getKeyMaterials(keyId);
         assertEq(digestsAfterAbort.length, 1);
+        assertEq(kmsGeneration.getKeyInfo(keyId).prepKeygenId, originalPrepId);
 
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, keyId);
@@ -1736,6 +1747,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         (, IKMSGeneration.KeyDigest[] memory digestsAfterRetry) = kmsGeneration.getKeyMaterials(keyId);
         assertEq(digestsAfterRetry.length, 2);
         assertEq(uint256(digestsAfterRetry[1].keyType), uint256(IKMSGeneration.KeyType.CompressedKeySet));
+        assertEq(kmsGeneration.getKeyInfo(keyId).prepKeygenId, retryPrepId);
     }
 
     function test_revertMigrationKeygenForUngeneratedOrAbortedKey() public {
@@ -1752,6 +1764,32 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.KeyAborted.selector, KEY_COUNTER_BASE + 1));
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, KEY_COUNTER_BASE + 1);
+    }
+
+    function test_getKeyInfoDescribesMigratedRecordAfterMigration() public {
+        vm.prank(owner);
+        kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
+        uint256 prepKeygenId = PREP_KEYGEN_COUNTER_BASE + 1;
+        uint256 keyId = KEY_COUNTER_BASE + 1;
+        _doPrepKeygenResponse(prepKeygenId, kmsPk0, kmsTxSender0);
+        _doCompressedKeygenResponse(prepKeygenId, keyId, _mockLegacyKeyDigests(), kmsPk0, kmsTxSender0);
+
+        (uint256 migrationPrepId, ) = _runFullMigrationCycle(keyId);
+
+        IKMSGeneration.KeyInfo memory info = kmsGeneration.getKeyInfo(keyId);
+        assertEq(info.prepKeygenId, migrationPrepId);
+        assertEq(info.keyId, keyId);
+        assertEq(uint256(info.paramsType), uint256(IKMSGeneration.ParamsType.Default));
+        IKMSGeneration.KeyDigest[] memory compressedDigests = _mockCompressedKeyDigests();
+        assertEq(info.keyDigests.length, 2);
+        assertEq(uint256(info.keyDigests[0].keyType), uint256(IKMSGeneration.KeyType.Public));
+        assertEq(info.keyDigests[0].digest, compressedDigests[0].digest);
+        assertEq(uint256(info.keyDigests[1].keyType), uint256(IKMSGeneration.KeyType.CompressedKeySet));
+        assertEq(info.keyDigests[1].digest, compressedDigests[1].digest);
+
+        (, IKMSGeneration.KeyDigest[] memory materialDigests) = kmsGeneration.getKeyMaterials(keyId);
+        assertEq(materialDigests.length, 3);
+        assertEq(uint256(materialDigests[0].keyType), uint256(IKMSGeneration.KeyType.Server));
     }
 
     function test_revertSecondMigrationForSameKey() public {
