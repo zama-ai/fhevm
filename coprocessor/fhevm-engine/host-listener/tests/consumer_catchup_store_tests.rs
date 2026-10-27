@@ -57,12 +57,26 @@ async fn flow_is_part_of_identity_and_delivery_admission() {
             .unwrap(),
             Some(id)
         );
-        assert!(store::accepts(&pool, 1, "host.1", Some(id), is_finalized)
-            .await
-            .unwrap());
-        assert!(!store::accepts(&pool, 1, "host.1", Some(id), !is_finalized)
-            .await
-            .unwrap());
+        assert!(store::rejection_reason(
+            &pool,
+            1,
+            "host.1",
+            Some(id),
+            is_finalized
+        )
+        .await
+        .unwrap()
+        .is_none());
+        assert!(store::rejection_reason(
+            &pool,
+            1,
+            "host.1",
+            Some(id),
+            !is_finalized
+        )
+        .await
+        .unwrap()
+        .is_some());
     }
     let claimed = store::take_request_ownership(&pool, 1, "host.1", false)
         .await
@@ -98,12 +112,14 @@ async fn flow_is_part_of_identity_and_delivery_admission() {
         .unwrap(),
         Some(b)
     );
-    assert!(!store::accepts(&pool, 1, "host.1", Some(a), true)
+    assert!(store::rejection_reason(&pool, 1, "host.1", Some(a), true)
         .await
-        .unwrap());
-    assert!(store::accepts(&pool, 1, "host.1", Some(b), false)
+        .unwrap()
+        .is_some());
+    assert!(store::rejection_reason(&pool, 1, "host.1", Some(b), false)
         .await
-        .unwrap());
+        .unwrap()
+        .is_none());
     let pending = store::renew(
         &pool,
         &claimed.iter().map(|r| r.id).collect::<Vec<_>>(),
@@ -461,9 +477,10 @@ async fn completion_is_scoped_idempotent_and_does_not_override_suppression() {
         assert_eq!(commands[0].id, b, "only ongoing requests are resumed");
     }
     assert!(
-        store::accepts(&pool, 1, "host.1", Some(a), true)
+        store::rejection_reason(&pool, 1, "host.1", Some(a), true)
             .await
-            .unwrap(),
+            .unwrap()
+            .is_none(),
         "completion must allow earlier deliveries to drain"
     );
     store::ensure_requested(
@@ -489,9 +506,10 @@ async fn completion_is_scoped_idempotent_and_does_not_override_suppression() {
     .await
     .unwrap();
     assert_eq!((status.as_str(), pending), ("SUPPRESSED", true));
-    assert!(!store::accepts(&pool, 1, "host.1", Some(b), true)
+    assert!(store::rejection_reason(&pool, 1, "host.1", Some(b), true)
         .await
-        .unwrap());
+        .unwrap()
+        .is_some());
 }
 
 #[tokio::test]
@@ -580,12 +598,14 @@ async fn suppression_waits_for_ingestion_and_prechecked_old_blocks_cannot_commit
             finalized: true,
         };
         let mut tx = db.new_transaction().await.unwrap().unwrap();
-        if !store::lock_for_ingest(&mut tx, chain.as_i64(), request)
+        let reason = store::lock_for_ingest(&mut tx, chain.as_i64(), request)
             .await
-            .unwrap()
-        {
+            .unwrap();
+        if request == id {
+            assert_eq!(reason, Some(store::RejectionReason::Suppressed));
             continue;
         }
+        assert_eq!(reason, None);
         ingest_block_logs_in_transaction(
             chain,
             &db,
@@ -661,18 +681,22 @@ async fn replicas_reuse_the_first_id_and_relative_bounds() {
         (resumed[0].id, resumed[0].block_start, resumed[0].block_end),
         (id, rows[0].block_start, rows[0].block_end)
     );
-    assert!(store::accepts(&pool, 1, "host.1", Some(id), true)
+    assert!(store::rejection_reason(&pool, 1, "host.1", Some(id), true)
         .await
-        .unwrap());
-    assert!(!store::accepts(&pool, 2, "host.1", Some(id), true)
+        .unwrap()
+        .is_none());
+    assert!(store::rejection_reason(&pool, 2, "host.1", Some(id), true)
         .await
-        .unwrap());
-    assert!(!store::accepts(&pool, 1, "other", Some(id), true)
+        .unwrap()
+        .is_some());
+    assert!(store::rejection_reason(&pool, 1, "other", Some(id), true)
         .await
-        .unwrap());
-    assert!(!store::accepts(&pool, 1, "host.1", None, true)
+        .unwrap()
+        .is_some());
+    assert!(store::rejection_reason(&pool, 1, "host.1", None, true)
         .await
-        .unwrap());
+        .unwrap()
+        .is_some());
 }
 
 #[tokio::test]
@@ -708,9 +732,10 @@ async fn replacement_persists_cancellation_and_no_override_preserves_other_ids()
     .unwrap()
     .unwrap();
     assert_ne!(a, b);
-    assert!(store::accepts(&pool, 1, "host.1", Some(a), true)
+    assert!(store::rejection_reason(&pool, 1, "host.1", Some(a), true)
         .await
-        .unwrap());
+        .unwrap()
+        .is_none());
     let c = store::ensure_requested(
         &pool,
         1,
@@ -727,12 +752,14 @@ async fn replacement_persists_cancellation_and_no_override_preserves_other_ids()
     assert_eq!(pending.len(), 3);
     assert!(pending[..2].iter().all(|r| r.cancel_pending));
     assert_eq!(pending[2].id, c, "cancel commands precede new replay");
-    assert!(!store::accepts(&pool, 1, "host.1", Some(a), true)
+    assert!(store::rejection_reason(&pool, 1, "host.1", Some(a), true)
         .await
-        .unwrap());
-    assert!(!store::accepts(&pool, 1, "host.1", Some(b), true)
+        .unwrap()
+        .is_some());
+    assert!(store::rejection_reason(&pool, 1, "host.1", Some(b), true)
         .await
-        .unwrap());
+        .unwrap()
+        .is_some());
     // Simulate a crash after publishing a cancel but before recording its ACK.
     assert_eq!(
         pending_commands(&pool, 1, "host.1", false)
@@ -772,9 +799,10 @@ async fn replacement_persists_cancellation_and_no_override_preserves_other_ids()
     .unwrap()
     .unwrap();
     assert_ne!(a, next);
-    assert!(!store::accepts(&pool, 1, "host.1", Some(c), true)
+    assert!(store::rejection_reason(&pool, 1, "host.1", Some(c), true)
         .await
-        .unwrap());
+        .unwrap()
+        .is_some());
 }
 
 #[tokio::test]
@@ -805,9 +833,12 @@ async fn waiting_for_a_reference_and_empty_startup_leave_intent_untouched() {
     .await
     .unwrap()
     .is_none());
-    assert!(store::accepts(&pool, 1, "host.1", Some(first), true)
-        .await
-        .unwrap());
+    assert!(
+        store::rejection_reason(&pool, 1, "host.1", Some(first), true)
+            .await
+            .unwrap()
+            .is_none()
+    );
     // A no-flags startup reads commands and never calls ensure_requested.
     assert_eq!(
         pending_commands(&pool, 1, "host.1", true)
@@ -833,9 +864,12 @@ async fn waiting_for_a_reference_and_empty_startup_leave_intent_untouched() {
     .unwrap()
     .unwrap();
     assert_ne!(first, other);
-    assert!(store::accepts(&pool, 1, "host.1", Some(first), true)
-        .await
-        .unwrap());
+    assert!(
+        store::rejection_reason(&pool, 1, "host.1", Some(first), true)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -954,9 +988,10 @@ async fn skipped_requests_are_terminal_without_publication_but_matching_flags_ca
         "SELECT status, owner_id, observed_head, request_pending FROM host_consumer_catchups WHERE id = $1",
     ).bind(id).fetch_one(&pool).await.unwrap();
     assert_eq!(row, ("SKIPPED".into(), None, Some(90), false));
-    assert!(!store::accepts(&pool, 1, "host.1", Some(id), true)
+    assert!(store::rejection_reason(&pool, 1, "host.1", Some(id), true)
         .await
-        .unwrap());
+        .unwrap()
+        .is_some());
     assert!(!store::completed(&pool, 1, "host.1", id, false)
         .await
         .unwrap());
@@ -1032,5 +1067,107 @@ async fn a_stale_owner_cannot_clamp_or_skip_its_successors_request() {
             .await
             .unwrap(),
         Some(150)
+    );
+}
+
+#[tokio::test]
+async fn delivery_rejections_distinguish_identity_scope_flow_and_status() {
+    use store::RejectionReason;
+
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
+    let id = store::ensure_requested(
+        &pool,
+        1,
+        "host.1",
+        &args(10, Some(20), true),
+        Some(100),
+        None,
+        false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    for (chain, consumer, request, finalized, expected) in [
+        (1, "host.1", None, true, Some(RejectionReason::MissingId)),
+        (
+            1,
+            "host.1",
+            Some(uuid::Uuid::now_v7()),
+            true,
+            Some(RejectionReason::UnknownId),
+        ),
+        (
+            2,
+            "host.1",
+            Some(id),
+            true,
+            Some(RejectionReason::WrongChain),
+        ),
+        (
+            1,
+            "other",
+            Some(id),
+            true,
+            Some(RejectionReason::WrongConsumer),
+        ),
+        (
+            1,
+            "host.1",
+            Some(id),
+            false,
+            Some(RejectionReason::WrongFlow),
+        ),
+        (1, "host.1", Some(id), true, None),
+    ] {
+        assert_eq!(
+            store::rejection_reason(&pool, chain, consumer, request, finalized)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+    for (status, expected) in [
+        ("ONGOING", None),
+        ("DONE", None),
+        ("SUPPRESSED", Some(RejectionReason::Suppressed)),
+        ("SKIPPED", Some(RejectionReason::Skipped)),
+    ] {
+        sqlx::query(
+            "UPDATE host_consumer_catchups SET status = $2 WHERE id = $1",
+        )
+        .bind(id)
+        .bind(status)
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            store::rejection_reason(&pool, 1, "host.1", Some(id), true)
+                .await
+                .unwrap(),
+            expected
+        );
+        // The transaction recheck must explain rejections after initial admission too.
+        let mut tx = pool.begin().await.unwrap();
+        assert_eq!(
+            store::lock_for_ingest(&mut tx, 1, id).await.unwrap(),
+            expected
+        );
+        tx.rollback().await.unwrap();
+    }
+    let mut tx = pool.begin().await.unwrap();
+    assert_eq!(
+        store::lock_for_ingest(&mut tx, 1, uuid::Uuid::now_v7())
+            .await
+            .unwrap(),
+        Some(RejectionReason::UnknownId)
+    );
+    tx.rollback().await.unwrap();
+    pool.close().await;
+    assert!(
+        store::rejection_reason(&pool, 1, "host.1", Some(id), true)
+            .await
+            .is_err(),
+        "database failures must remain errors, not acknowledged rejections"
     );
 }
