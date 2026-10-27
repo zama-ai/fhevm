@@ -1,13 +1,12 @@
 use crate::core::{
     config::Config,
     event_processor::{
-        CiphertextManager, HostRpcClient, ProcessingError, RequestCheckError, RequestCheckKind,
-        ciphertext::VerifiedCiphertexts,
+        AclCheck, CiphertextManager, HostRpcClient, ProcessingError, RequestCheckError,
+        RequestCheckKind, ciphertext::VerifiedCiphertexts,
     },
 };
 use alloy::{
     consensus::Transaction,
-    hex,
     primitives::{Address, B256, Bytes, FixedBytes, U256, map::DefaultHashBuilder},
     providers::Provider,
     sol_types::{Eip712Domain, SolCall},
@@ -18,13 +17,13 @@ use connector_utils::types::{
     u256_to_request_id,
 };
 use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, HandleEntry, UserDecryptionRequest_3 as UserDecryptionRequestV2,
+    self, DecryptionInstance, UserDecryptionRequest_3 as UserDecryptionRequestV2,
     delegatedUserDecryptionRequestCall, userDecryptionRequest_1Call as userDecryptionRequestCall,
 };
-use futures::{
-    future::try_join_all,
-    stream::{FuturesUnordered, StreamExt},
+use fhevm_host_bindings::acl::ACL::{
+    isAllowedCall, isAllowedForDecryptionCall, isHandleDelegatedForUserDecryptionCall,
 };
+use futures::future::try_join_all;
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::{
     Eip712DomainMsg, PublicDecryptionRequest, SigningSchemeType, UserDecryptionRequest,
@@ -83,6 +82,17 @@ where
         }
     }
 
+    /// Returns the client of the host chain `chain_id`.
+    fn host_client(&self, chain_id: u64) -> Result<&HostRpcClient<HP>, RequestCheckError> {
+        self.host_clients.get(&chain_id).ok_or_else(|| {
+            RequestCheckError::recoverable(
+                RequestCheckKind::Acl,
+                ErrorCode::UpstreamTransient,
+                anyhow!("No ACL contract config found for chain id {chain_id}"),
+            )
+        })
+    }
+
     #[tracing::instrument(skip_all)]
     pub async fn check_ciphertexts_allowed_for_public_decryption(
         &self,
@@ -90,27 +100,29 @@ where
     ) -> Result<(), RequestCheckError> {
         info!("Starting ACL check for {} handles...", handles.len());
 
-        try_join_all(handles.iter().map(|handle| async move {
-            let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
+        // Public decryption handles can span multiple host chains: one multicall per chain
+        let mut checks_by_chain: HashMap<u64, Vec<AclCheck>> = HashMap::new();
+        for &handle in handles {
+            let chain_id = extract_chain_id_from_handle(&handle).map_err(|e| {
                 RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
             })?;
-            let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
-                RequestCheckError::recoverable(
-                    RequestCheckKind::Acl,
-                    ErrorCode::UpstreamTransient,
-                    anyhow!("No ACL contract config found for chain id {ct_chain_id}"),
-                )
-            })?;
-
-            if !host_client.is_allowed_for_decryption(*handle).await? {
-                return Err(RequestCheckError::recoverable(
-                    RequestCheckKind::Acl,
-                    ErrorCode::AclDenied,
-                    anyhow!("Decryption is not allowed for {handle}"),
-                ));
-            }
-            Ok(())
-        }))
+            checks_by_chain
+                .entry(chain_id)
+                .or_default()
+                .push(AclCheck::AllowedForDecryption(isAllowedForDecryptionCall {
+                    handle,
+                }));
+        }
+        try_join_all(
+            checks_by_chain
+                .into_iter()
+                .map(|(chain_id, checks)| async move {
+                    let host_client = self.host_client(chain_id)?;
+                    let calls = checks.iter().flat_map(AclCheck::abi_encode).collect();
+                    let results = host_client.acl_multicall(calls).await?;
+                    AclCheck::verify_all(&checks, &results)
+                }),
+        )
         .await?;
 
         info!("ACL check passed for {} handles!", handles.len());
@@ -157,158 +169,69 @@ where
                 }
             };
 
-        let contracts_chain_id = u64::try_from(contracts_chain_id).map_err(|e| {
-            RequestCheckError::irrecoverable(
+        let chain_id = extract_single_chain_id(handles)?;
+        if contracts_chain_id != U256::from(chain_id) {
+            return Err(RequestCheckError::irrecoverable(
                 RequestCheckKind::Acl,
                 ErrorCode::Unprocessable,
-                anyhow!("Invalid contracts chain id {contracts_chain_id}: {e}"),
-            )
-        })?;
-        let signature_host_client =
-            self.host_clients.get(&contracts_chain_id).ok_or_else(|| {
-                RequestCheckError::recoverable(
-                    RequestCheckKind::Acl,
-                    ErrorCode::UpstreamTransient,
-                    anyhow!("No ACL contract config found for chain id {contracts_chain_id}"),
-                )
-            })?;
-
+                anyhow!(
+                    "Contracts chain id {contracts_chain_id} differs from handles chain id {chain_id}"
+                ),
+            ));
+        }
+        let host_client = self.host_client(chain_id)?;
         let contracts_map = HashMap::<FixedBytes<32>, Address, DefaultHashBuilder>::from_iter(
             ct_handle_contract_pairs
                 .iter()
                 .map(|c| (c.ctHandle, c.contractAddress)),
         );
-        let contracts_map_ref = &contracts_map;
+        let handle_contract_pairs = handles
+            .iter()
+            .map(|handle| {
+                let contract_address = contracts_map.get(handle.as_slice()).ok_or_else(|| {
+                    RequestCheckError::irrecoverable(
+                        RequestCheckKind::Acl,
+                        ErrorCode::Unprocessable,
+                        anyhow!("Could not find contract address for handle {handle}"),
+                    )
+                })?;
+                Ok((*handle, *contract_address))
+            })
+            .collect::<Result<Vec<_>, RequestCheckError>>()?;
 
-        let acl_checks = try_join_all(handles.iter().map(|handle| async move {
-            let ct_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
-                RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
-            })?;
-            let host_client = self.host_clients.get(&ct_chain_id).ok_or_else(|| {
-                RequestCheckError::recoverable(
-                    RequestCheckKind::Acl,
-                    ErrorCode::UpstreamTransient,
-                    anyhow!("No ACL contract config found for chain id {ct_chain_id}"),
-                )
-            })?;
-            let contract_address = contracts_map_ref.get(handle.as_slice()).ok_or_else(|| {
-                RequestCheckError::irrecoverable(
-                    RequestCheckKind::Acl,
-                    ErrorCode::Unprocessable,
-                    anyhow!("Could not find contract address for handle {handle}"),
-                )
-            })?;
-
-            if let Some(delegator_addr) = delegator_address {
-                self.inner_acl_check_for_delegated_user_decryption(
-                    host_client,
-                    *handle,
-                    user_address,
-                    *contract_address,
-                    delegator_addr,
-                )
-                .await
-            } else {
-                self.inner_acl_check_for_user_decryption(
-                    host_client,
-                    *handle,
-                    user_address,
-                    *contract_address,
-                )
-                .await
+        let mut checks = vec![AclCheck::signature_not_invalidated(
+            user_address,
+            start_timestamp,
+        )];
+        if let Some(delegator) = delegator_address {
+            for (handle, contract_address) in handle_contract_pairs {
+                checks.push(AclCheck::Delegated(
+                    isHandleDelegatedForUserDecryptionCall {
+                        delegator,
+                        delegate: user_address,
+                        contractAddress: contract_address,
+                        handle,
+                    },
+                ));
             }
-        }));
-        tokio::try_join!(
-            biased;
-            self.inner_signature_invalidation_check(
-                signature_host_client,
-                user_address,
-                start_timestamp,
-            ),
-            acl_checks,
-        )?;
+        } else {
+            for (handle, contract_address) in handle_contract_pairs {
+                checks.push(AclCheck::Allowed(isAllowedCall {
+                    handle,
+                    account: user_address,
+                }));
+                checks.push(AclCheck::Allowed(isAllowedCall {
+                    handle,
+                    account: contract_address,
+                }));
+            }
+        }
+        let calls = checks.iter().flat_map(AclCheck::abi_encode).collect();
+        let results = host_client.acl_multicall(calls).await?;
+        AclCheck::verify_all(&checks, &results)?;
 
         info!("ACL check passed for {} handles!", handles.len());
         Ok(())
-    }
-
-    async fn inner_acl_check_for_delegated_user_decryption(
-        &self,
-        host_client: &HostRpcClient<HP>,
-        handle: FixedBytes<32>,
-        user_address: Address,
-        contract_address: Address,
-        delegator_address: Address,
-    ) -> Result<(), RequestCheckError> {
-        let is_delegated = host_client
-            .is_handle_delegated_for_user_decryption(
-                delegator_address,
-                user_address,
-                contract_address,
-                handle,
-            )
-            .await?;
-
-        if !is_delegated {
-            return Err(RequestCheckError::recoverable(
-                RequestCheckKind::Acl,
-                ErrorCode::AclDenied,
-                anyhow!(
-                    "{user_address} is not a delegate of {delegator_address} for contract \
-                    {contract_address} and handle {handle}!",
-                ),
-            ));
-        }
-
-        Ok(())
-    }
-
-    /// Verify that a `UserDecryptionRequestV2` is internally consistent before the ACL phase:
-    /// every handle resolves to the same host chain id. Returns that shared chain id.
-    fn validate_handles_and_extract_chain_id(
-        request: &UserDecryptionRequestV2,
-    ) -> Result<u64, RequestCheckError> {
-        let chain_id = request
-            .handles
-            .first()
-            .ok_or_else(|| {
-                RequestCheckError::irrecoverable(
-                    RequestCheckKind::Acl,
-                    ErrorCode::Unprocessable,
-                    anyhow!("request contains no handles"),
-                )
-            })
-            .map(|h| extract_chain_id_from_handle(&h.handle))?
-            .map_err(|e| {
-                RequestCheckError::irrecoverable(RequestCheckKind::Acl, ErrorCode::Unprocessable, e)
-            })?;
-
-        for h in request.handles.iter() {
-            match extract_chain_id_from_handle(&h.handle) {
-                Ok(id) if id == chain_id => (),
-                Ok(other) => {
-                    return Err(RequestCheckError::irrecoverable(
-                        RequestCheckKind::Acl,
-                        ErrorCode::Unprocessable,
-                        anyhow!(
-                            "user decryption request handles span multiple chains ({chain_id}, {other})",
-                        ),
-                    ));
-                }
-                Err(e) => {
-                    return Err(RequestCheckError::irrecoverable(
-                        RequestCheckKind::Acl,
-                        ErrorCode::Unprocessable,
-                        anyhow!(
-                            "Failed to extract chain_id from handle {}: {e}",
-                            hex::encode(h.handle),
-                        ),
-                    ));
-                }
-            }
-        }
-
-        Ok(chain_id)
     }
 
     /// RFC016 unified user decryption check — verifies the full ACL authorization for a
@@ -333,7 +256,7 @@ where
             request.handles.len()
         );
 
-        let chain_id = Self::validate_handles_and_extract_chain_id(request)?;
+        let chain_id = extract_single_chain_id(request.handles.iter().map(|h| &h.handle))?;
 
         let payload = &request.payload;
 
@@ -372,13 +295,7 @@ where
             ));
         }
 
-        let host_client = self.host_clients.get(&chain_id).ok_or_else(|| {
-            RequestCheckError::recoverable(
-                RequestCheckKind::Acl,
-                ErrorCode::UpstreamTransient,
-                anyhow!("No ACL contract config found for chain id {chain_id}"),
-            )
-        })?;
+        let host_client = self.host_client(chain_id)?;
 
         // RFC-012: EIP-712 signature verification with ecrecover → ERC-1271 fallback.
         // The domain takes name/version/verifyingContract from `self.domain` (already validated
@@ -394,10 +311,9 @@ where
         };
         let digest = compute_user_decrypt_digest(payload, &domain);
 
-        // Signature verification, invalidation, and per-handle ACL checks are all independent
-        // host-chain reads. Fire them concurrently so the smart-account happy path is faster.
-        // `biased;` polls branches in order so tests can deterministically craft the mock-queue
-        // order.
+        // The signature verification and the ACL reads are independent host-chain reads. Fire
+        // them concurrently so the smart-account happy path is faster. `biased;` polls branches
+        // in order so tests can deterministically craft the mock-queue order.
         tokio::try_join!(
             biased;
             host_client.verify_signature(
@@ -406,26 +322,7 @@ where
                 payload.signature.as_ref(),
                 self.erc1271_gas_limit,
             ),
-            self.inner_signature_invalidation_check(
-                host_client,
-                payload.userAddress,
-                start,
-            ),
-            try_join_all(request.handles.iter().map(|handle_entry| async move {
-                tokio::try_join!(
-                    biased;
-                    self.inner_ownership_check_for_user_decryption_v2(
-                        host_client,
-                        handle_entry,
-                        payload.userAddress,
-                    ),
-                    self.inner_allowed_contracts_check_for_user_decryption_v2(
-                        host_client,
-                        handle_entry.handle,
-                        &payload.allowedContracts,
-                    ),
-                )
-            })),
+            self.inner_acl_check_for_user_decryption_v2(host_client, request, start),
         )?;
 
         info!(
@@ -435,141 +332,49 @@ where
         Ok(())
     }
 
-    /// RFC016 per-handle ownership check. Direct path (`ownerAddress == userAddress`) calls
-    /// `isAllowed(handle, userAddress)`; delegated path calls
-    /// `isHandleDelegatedForUserDecryption(ownerAddress, userAddress, contractAddress, handle)`.
-    async fn inner_ownership_check_for_user_decryption_v2(
+    /// RFC016 ACL checks, batched in a single `ACL.multicall`:
+    /// - signature invalidation: `startTimestamp >= ACL.decryptionSignatureInvalidatedBefore(userAddress)`
+    /// - per-handle ownership: direct `isAllowed(handle, userAddress)` if `ownerAddress == userAddress`,
+    ///   else `isHandleDelegatedForUserDecryption(ownerAddress, userAddress, contractAddress, handle)`
+    /// - per-handle contract allowance: any `isAllowed(handle, c)` for `c ∈ allowedContracts`,
+    ///   no-op in permissive mode (empty list)
+    async fn inner_acl_check_for_user_decryption_v2(
         &self,
         host_client: &HostRpcClient<HP>,
-        entry: &HandleEntry,
-        user_address: Address,
-    ) -> Result<(), RequestCheckError> {
-        let handle_hex = hex::encode(entry.handle);
-        if entry.ownerAddress == user_address {
-            let user_allowed = host_client.is_allowed(entry.handle, user_address).await?;
-            if !user_allowed {
-                return Err(RequestCheckError::recoverable(
-                    RequestCheckKind::Acl,
-                    ErrorCode::AclDenied,
-                    anyhow!("{user_address} is not allowed to decrypt {handle_hex}"),
-                ));
-            }
-        } else {
-            let is_delegated = host_client
-                .is_handle_delegated_for_user_decryption(
-                    entry.ownerAddress,
-                    user_address,
-                    entry.contractAddress,
-                    entry.handle,
-                )
-                .await?;
-            if !is_delegated {
-                return Err(RequestCheckError::recoverable(
-                    RequestCheckKind::Acl,
-                    ErrorCode::AclDenied,
-                    anyhow!(
-                        "{user_address} is not a delegate of {} for contract {} and handle {handle_hex}",
-                        entry.ownerAddress,
-                        entry.contractAddress,
-                    ),
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    /// RFC016 per-handle `allowedContracts` check — succeeds if at least one contract in the list
-    /// has `isAllowed(handle, contract)` returning true. Returns `Ok(())` without any RPC call in
-    /// permissive mode (empty list) so callers can invoke it unconditionally.
-    async fn inner_allowed_contracts_check_for_user_decryption_v2(
-        &self,
-        host_client: &HostRpcClient<HP>,
-        handle: FixedBytes<32>,
-        allowed_contracts: &[Address],
-    ) -> Result<(), RequestCheckError> {
-        if allowed_contracts.is_empty() {
-            return Ok(());
-        }
-
-        let mut calls: FuturesUnordered<_> = allowed_contracts
-            .iter()
-            .map(|c| async move { (c, host_client.is_allowed(handle, *c).await) })
-            .collect();
-
-        // All calls run concurrently; short-circuit on the first positive, dropping `calls`
-        // to cancel the remaining in-flight requests.
-        let mut rejections = Vec::with_capacity(allowed_contracts.len());
-        while let Some((contract, result)) = calls.next().await {
-            match result {
-                Ok(true) => return Ok(()),
-                Ok(false) => rejections.push(format!("{contract}: not allowed")),
-                Err(e) => rejections.push(format!("{contract}: {e}")),
-            }
-        }
-
-        // No contract returned true (all denied, all RPC calls failed, or a mix of both).
-        Err(RequestCheckError::recoverable(
-            RequestCheckKind::Acl,
-            ErrorCode::AclDenied,
-            anyhow!(
-                "No contract in allowedContracts is allowed to decrypt handle {handle} ({rejections:?})",
-            ),
-        ))
-    }
-
-    /// Signature invalidation check. Rejects if `startTimestamp < invalidationTs`, meaning the
-    /// user has invalidated all signatures issued before `invalidationTs`.
-    async fn inner_signature_invalidation_check(
-        &self,
-        host_client: &HostRpcClient<HP>,
-        user_address: Address,
+        request: &UserDecryptionRequestV2,
         start_timestamp: U256,
     ) -> Result<(), RequestCheckError> {
-        let invalidation_ts = host_client
-            .decryption_signature_invalidated_before(user_address)
-            .await?;
-        if start_timestamp < invalidation_ts {
-            return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::Signature,
-                ErrorCode::UserSignatureRejected,
-                anyhow!(
-                    "Signature invalidated: startTimestamp {start_timestamp} < \
-                     invalidatedBefore {invalidation_ts} for userAddress {user_address}"
-                ),
-            ));
-        }
-        Ok(())
-    }
+        let user_address = request.payload.userAddress;
+        let allowed_contracts = &request.payload.allowedContracts;
 
-    async fn inner_acl_check_for_user_decryption(
-        &self,
-        host_client: &HostRpcClient<HP>,
-        handle: FixedBytes<32>,
-        user_address: Address,
-        contract_address: Address,
-    ) -> Result<(), RequestCheckError> {
-        let (user_allowed, contract_allowed) = tokio::try_join!(
-            biased;
-            host_client.is_allowed(handle, user_address),
-            host_client.is_allowed(handle, contract_address),
-        )?;
-
-        if !user_allowed {
-            return Err(RequestCheckError::recoverable(
-                RequestCheckKind::Acl,
-                ErrorCode::AclDenied,
-                anyhow!("{user_address} is not allowed to decrypt {handle}!"),
-            ));
+        let mut checks = vec![AclCheck::signature_not_invalidated(
+            user_address,
+            start_timestamp,
+        )];
+        for entry in request.handles.iter() {
+            checks.push(if entry.ownerAddress == user_address {
+                AclCheck::Allowed(isAllowedCall {
+                    handle: entry.handle,
+                    account: user_address,
+                })
+            } else {
+                AclCheck::Delegated(isHandleDelegatedForUserDecryptionCall {
+                    delegator: entry.ownerAddress,
+                    delegate: user_address,
+                    contractAddress: entry.contractAddress,
+                    handle: entry.handle,
+                })
+            });
+            if !allowed_contracts.is_empty() {
+                checks.push(AclCheck::AnyAllowed {
+                    handle: entry.handle,
+                    accounts: allowed_contracts.clone(),
+                });
+            }
         }
-        if !contract_allowed {
-            return Err(RequestCheckError::recoverable(
-                RequestCheckKind::Acl,
-                ErrorCode::AclDenied,
-                anyhow!("{contract_address} is not allowed to decrypt {handle}!"),
-            ));
-        }
-
-        Ok(())
+        let calls = checks.iter().flat_map(AclCheck::abi_encode).collect();
+        let results = host_client.acl_multicall(calls).await?;
+        AclCheck::verify_all(&checks, &results)
     }
 
     pub async fn prepare_decryption_request(
@@ -666,6 +471,44 @@ where
     }
 }
 
+/// Verifies that every handle resolves to the same host chain id, and returns that chain id.
+///
+/// Mixed-chain requests are rejected.
+fn extract_single_chain_id<'a>(
+    handles: impl IntoIterator<Item = &'a B256>,
+) -> Result<u64, RequestCheckError> {
+    let mut chain_id = None;
+    for handle in handles {
+        let handle_chain_id = extract_chain_id_from_handle(handle).map_err(|e| {
+            RequestCheckError::irrecoverable(
+                RequestCheckKind::Acl,
+                ErrorCode::Unprocessable,
+                anyhow!("Failed to extract chain_id from handle {handle}: {e}"),
+            )
+        })?;
+        match chain_id {
+            None => chain_id = Some(handle_chain_id),
+            Some(expected) if expected != handle_chain_id => {
+                return Err(RequestCheckError::irrecoverable(
+                    RequestCheckKind::Acl,
+                    ErrorCode::Unprocessable,
+                    anyhow!(
+                        "decryption request handles span multiple chains ({expected}, {handle_chain_id})",
+                    ),
+                ));
+            }
+            Some(_) => (),
+        }
+    }
+    chain_id.ok_or_else(|| {
+        RequestCheckError::irrecoverable(
+            RequestCheckKind::Acl,
+            ErrorCode::Unprocessable,
+            anyhow!("request contains no handles"),
+        )
+    })
+}
+
 fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
     // relayer-sdk <=0.4.2 sends 0x00 but verifies the KMS signature against empty extraData.
     if extra_data.as_ref() == [0x00] {
@@ -694,6 +537,7 @@ mod tests {
     use super::*;
     use crate::core::event_processor::ProcessingErrorKind;
     use alloy::{
+        hex,
         providers::{ProviderBuilder, mock::Asserter},
         rpc::types::Transaction as RpcTransaction,
         signers::{SignerSync, local::PrivateKeySigner},
@@ -702,8 +546,9 @@ mod tests {
     use connector_utils::tests::rand::{
         rand_address, rand_digest, rand_handle, rand_public_key, rand_u256,
     };
+    use connector_utils::tests::setup::acl_multicall_response;
     use fhevm_gateway_bindings::decryption::{
-        Decryption::CtHandleContractPair,
+        Decryption::{CtHandleContractPair, HandleEntry},
         IDecryption::{
             ContractsInfo, DelegationAccounts, RequestValidity, RequestValiditySeconds,
             UserDecryptionRequestPayload,
@@ -807,11 +652,70 @@ mod tests {
 
         match mock_response {
             PubDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
-            PubDecryptACLMock::Success(val) => asserter.push_success(&val.abi_encode()),
+            PubDecryptACLMock::Success(val) => {
+                asserter.push_success(&acl_multicall_response(vec![val.abi_encode()]))
+            }
         }
 
         let result = decryption_processor
             .check_ciphertexts_allowed_for_public_decryption(&handles)
+            .await
+            .map_err(RequestCheckError::record);
+
+        match expected {
+            ExpectedOutcome::Ok => {
+                result.unwrap();
+            }
+            _ => assert_kind(&result, &expected),
+        }
+    }
+
+    #[rstest]
+    #[case::all_allowed(true, ExpectedOutcome::Ok)]
+    #[case::other_chain_not_allowed(false, ExpectedOutcome::Recoverable)]
+    #[tokio::test]
+    async fn check_ciphertexts_allowed_for_public_decryption_multi_chain(
+        #[case] other_chain_allowed: bool,
+        #[case] expected: ExpectedOutcome,
+    ) {
+        let handle = rand_handle();
+        // Same handle with a different chain id (bytes 22..30).
+        let mut other_chain_handle = handle;
+        other_chain_handle[29] ^= 0xFF;
+
+        // Each host chain has its own mocked RPC node, and receives its own multicall.
+        let asserter = Asserter::new();
+        let other_asserter = Asserter::new();
+        let host_clients = [(handle, &asserter), (other_chain_handle, &other_asserter)]
+            .into_iter()
+            .map(|(handle, asserter)| {
+                let chain_id = extract_chain_id_from_handle(&handle).unwrap();
+                let provider = ProviderBuilder::new()
+                    .disable_recommended_fillers()
+                    .connect_mocked_client(asserter.clone());
+                let acl_contract = ACL::new(Address::default(), provider);
+                (chain_id, HostRpcClient::new(chain_id, acl_contract))
+            })
+            .collect();
+        let gateway_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(Asserter::new());
+        let decryption_processor = DecryptionProcessor::new(
+            &Config::default(),
+            gateway_provider.clone(),
+            host_clients,
+            CiphertextManager::for_test(gateway_provider),
+        );
+        asserter.push_success(&acl_multicall_response(vec![
+            true.abi_encode(),
+            true.abi_encode(),
+        ]));
+        other_asserter.push_success(&acl_multicall_response(vec![
+            other_chain_allowed.abi_encode(),
+        ]));
+
+        let result = decryption_processor
+            .check_ciphertexts_allowed_for_public_decryption(&[handle, other_chain_handle, handle])
             .await
             .map_err(RequestCheckError::record);
 
@@ -903,9 +807,11 @@ mod tests {
                 user_allowed,
                 contract_allowed,
             } => {
-                asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
-                asserter.push_success(&user_allowed.abi_encode());
-                asserter.push_success(&contract_allowed.abi_encode());
+                asserter.push_success(&acl_multicall_response(vec![
+                    U256::ZERO.abi_encode(), // invalidation check: not invalidated
+                    user_allowed.abi_encode(),
+                    contract_allowed.abi_encode(),
+                ]));
             }
         }
 
@@ -968,8 +874,10 @@ mod tests {
         match mock_response {
             DelegatedUserDecryptACLMock::Failure(msg) => asserter.push_failure_msg(msg),
             DelegatedUserDecryptACLMock::Success { is_delegated } => {
-                asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
-                asserter.push_success(&is_delegated.abi_encode());
+                asserter.push_success(&acl_multicall_response(vec![
+                    U256::ZERO.abi_encode(), // invalidation check: not invalidated
+                    is_delegated.abi_encode(),
+                ]));
             }
         }
 
@@ -1063,32 +971,24 @@ mod tests {
             .abi_encode()
         };
 
-        let passes = match mock {
-            InvalidationMock::Zero => {
-                asserter.push_success(&U256::ZERO.abi_encode());
-                true
-            }
-            InvalidationMock::AboveStart => {
-                asserter.push_success(&U256::from(u64::MAX).abi_encode());
-                false
-            }
-            InvalidationMock::EqualToStart => {
-                asserter.push_success(&start.abi_encode());
-                true
-            }
-            InvalidationMock::TransportError => {
-                asserter.push_failure_msg("transport error");
-                false
-            }
+        let invalidation_ts = match mock {
+            InvalidationMock::Zero => Some(U256::ZERO),
+            InvalidationMock::AboveStart => Some(U256::from(u64::MAX)),
+            InvalidationMock::EqualToStart => Some(start),
+            InvalidationMock::TransportError => None,
         };
-
-        if passes {
-            if delegated {
-                asserter.push_success(&true.abi_encode()); // isHandleDelegatedForUserDecryption
-            } else {
-                asserter.push_success(&true.abi_encode()); // isAllowed(handle, user)
-                asserter.push_success(&true.abi_encode()); // isAllowed(handle, contract)
-            }
+        match invalidation_ts {
+            // The ACL checks always pass.
+            Some(ts) if delegated => asserter.push_success(&acl_multicall_response(vec![
+                ts.abi_encode(),
+                true.abi_encode(), // isHandleDelegatedForUserDecryption
+            ])),
+            Some(ts) => asserter.push_success(&acl_multicall_response(vec![
+                ts.abi_encode(),
+                true.abi_encode(), // isAllowed(handle, user)
+                true.abi_encode(), // isAllowed(handle, contract)
+            ])),
+            None => asserter.push_failure_msg("transport error"),
         }
 
         let result = processor
@@ -1252,27 +1152,19 @@ mod tests {
         const START_OFFSET_SECS: i64 = -3600;
         let start = U256::from((Utc::now().timestamp() + START_OFFSET_SECS) as u64);
 
-        let passes = match mock {
-            InvalidationMock::Zero => {
-                asserter.push_success(&U256::ZERO.abi_encode());
-                true
-            }
-            InvalidationMock::AboveStart => {
-                asserter.push_success(&U256::from(u64::MAX).abi_encode());
-                false
-            }
-            InvalidationMock::EqualToStart => {
-                asserter.push_success(&start.abi_encode());
-                true
-            }
-            InvalidationMock::TransportError => {
-                asserter.push_failure_msg("transport error");
-                false
-            }
+        let invalidation_ts = match mock {
+            InvalidationMock::Zero => Some(U256::ZERO),
+            InvalidationMock::AboveStart => Some(U256::from(u64::MAX)),
+            InvalidationMock::EqualToStart => Some(start),
+            InvalidationMock::TransportError => None,
         };
-
-        if passes {
-            asserter.push_success(&true.abi_encode()); // ownership: direct path passes
+        match invalidation_ts {
+            // Ownership: direct path passes.
+            Some(ts) => asserter.push_success(&acl_multicall_response(vec![
+                ts.abi_encode(),
+                true.abi_encode(),
+            ])),
+            None => asserter.push_failure_msg("transport error"),
         }
 
         let request = make_v2_request(
@@ -1298,7 +1190,7 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // Ownership check (empty allowedContracts → 1 RPC per test)
+    // Ownership check (empty allowedContracts → 1 ACL multicall per test)
     // -------------------------------------------------------------------------
     enum OwnershipMock {
         DirectPath(Option<bool>),
@@ -1336,9 +1228,12 @@ mod tests {
             OwnershipMock::DirectPath(r) => (user_address, r),
             OwnershipMock::DelegatedPath(r) => (rand_address(), r),
         };
-        asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
         match acl_response {
-            Some(v) => asserter.push_success(&v.abi_encode()),
+            // Invalidation check: not invalidated.
+            Some(v) => asserter.push_success(&acl_multicall_response(vec![
+                U256::ZERO.abi_encode(),
+                v.abi_encode(),
+            ])),
             None => asserter.push_failure_msg("transport error"),
         }
 
@@ -1365,19 +1260,17 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
-    // Allowed contracts check (direct ownership always passes → 2 RPCs)
-    //
-    // Two `isAllowed` calls are made concurrently via `tokio::try_join!`. The Asserter
-    // serves responses in FIFO order, and poll ordering between the two futures is
-    // guaranteed by the `biased` annotation.
+    // Allowed contracts check (direct ownership always passes → 1 `isAllowed` call for the user,
+    // plus 1 per allowed contract, batched with the invalidation check in a single ACL multicall)
     // -------------------------------------------------------------------------
     #[rstest]
-    #[case::transport_error(None, ExpectedOutcome::Recoverable)]
-    #[case::at_least_one_allowed(Some(true), ExpectedOutcome::Ok)]
-    #[case::none_allowed(Some(false), ExpectedOutcome::Recoverable)]
+    #[case::single_allowed(vec![true], ExpectedOutcome::Ok)]
+    #[case::single_denied(vec![false], ExpectedOutcome::Recoverable)]
+    #[case::last_of_many_allowed(vec![false, false, true], ExpectedOutcome::Ok)]
+    #[case::none_of_many_allowed(vec![false, false], ExpectedOutcome::Recoverable)]
     #[tokio::test]
     async fn check_user_decryption_request_v2_allowed_contracts(
-        #[case] contract_response: Option<bool>,
+        #[case] contract_responses: Vec<bool>,
         #[case] expected: ExpectedOutcome,
     ) {
         let asserter = Asserter::new();
@@ -1385,19 +1278,17 @@ mod tests {
         let user_signer = PrivateKeySigner::random();
         let processor = setup_test_processor(asserter.clone(), handle);
 
-        asserter.push_success(&U256::ZERO.abi_encode()); // invalidation check: not invalidated
-        asserter.push_success(&true.abi_encode()); // ownership always passes
-        match contract_response {
-            Some(v) => asserter.push_success(&v.abi_encode()),
-            None => asserter.push_failure_msg("transport error"),
-        }
+        // Invalidation check: not invalidated, and ownership always passes.
+        let mut results = vec![U256::ZERO.abi_encode(), true.abi_encode()];
+        results.extend(contract_responses.iter().map(|v| v.abi_encode()));
+        asserter.push_success(&acl_multicall_response(results));
 
         let request = make_v2_request(
             handle,
             user_signer.address(),
             user_signer.address(),
             &user_signer,
-            vec![rand_address()],
+            contract_responses.iter().map(|_| rand_address()).collect(),
             -3600,
             86400,
         );
@@ -1480,13 +1371,14 @@ mod tests {
 
         // Mock the host RPC sequence:
         //   1. isValidSignature → magic value (left-aligned in a 32-byte word)
-        //   2. invalidation → 0
-        //   3. ownership: isAllowed → true
+        //   2. ACL multicall: invalidation → 0, ownership: isAllowed → true
         let mut magic_word = [0u8; 32];
         magic_word[..4].copy_from_slice(&ERC1271_MAGIC_VALUE);
         asserter.push_success(&magic_word); // isValidSignature
-        asserter.push_success(&U256::ZERO.abi_encode()); // invalidation
-        asserter.push_success(&true.abi_encode()); // ownership
+        asserter.push_success(&acl_multicall_response(vec![
+            U256::ZERO.abi_encode(),
+            true.abi_encode(),
+        ]));
 
         processor
             .check_user_decryption_request_v2(&request)
