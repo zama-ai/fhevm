@@ -27,7 +27,7 @@ Options:
   --ethlib viem            Run only the viem test suite.
   --ethlib ethers,viem     Run both suites (default).
   --ethlib none            Start Anvil + deploy only; wait for Anvil to exit (no tests run).
-  --foundry-profile <name> Required Foundry profile to use. Expected: v12 or v13.
+  --foundry-profile <name> Required Foundry profile to use. Expected: v12, v13 or v16.
   --use-pack               Use vitest-manual-pack.config.ts instead of vitest.config.ts.
   --skip-fhetest           Deploy only the FHEVM stack, not TFHETest.sol (FHETest).
   --verbose                Print Anvil logs to the console instead of redirecting to a file.
@@ -118,13 +118,13 @@ case "$LIB" in
 esac
 
 case "$PROFILE" in
-    v12|v13) ;;
+    v12|v13|v16) ;;
     "")
-        echo "Error: --foundry-profile is required. Expected: v12 or v13." >&2
+        echo "Error: --foundry-profile is required. Expected: v12, v13 or v16." >&2
         exit 1
         ;;
     *)
-        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v12 or v13." >&2
+        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v12, v13 or v16." >&2
         exit 1
         ;;
 esac

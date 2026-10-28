@@ -135,6 +135,10 @@ Two rules make encryption work:
 The input proof is bound to both `contractAddress` and `userAddress`. If either differs when you submit the transaction, on-chain verification fails. Encrypt with the exact contract and sender you will transact with.
 {% endhint %}
 
+This is the input-proof flow, supported by every FHEVM chain. The SDK also has an
+experimental RFC-030 pad-based flow on a separate client; see
+[Encryption → Pad-based encryption](encryption.md#pad-based-encryption-transciphering).
+
 Pass the results straight to your contract call — each encrypted value maps to an
 `externalEuintXX` / `externalEbool` argument, and the proof is the trailing
 `bytes` argument:
