@@ -2730,6 +2730,7 @@ dependencies = [
  "humantime",
  "indexmap 2.14.0",
  "moka",
+ "nonce-manager",
  "prometheus",
  "rand 0.10.2",
  "reqwest",
@@ -4059,6 +4060,17 @@ dependencies = [
  "smallvec",
  "tagptr",
  "uuid",
+]
+
+[[package]]
+name = "nonce-manager"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "async-trait",
+ "dashmap",
+ "futures-util",
+ "tracing",
 ]
 
 [[package]]

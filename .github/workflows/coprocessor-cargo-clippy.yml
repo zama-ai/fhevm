@@ -38,6 +38,7 @@ jobs:
               - shared/block-manifest/**
               - shared/ciphertext-attestation/**
               - shared/fhevm-sig-auth/**
+              - shared/nonce-manager/**
   cargo-clippy:
     name: coprocessor-cargo-clippy/cargo-clippy
     needs: check-changes
