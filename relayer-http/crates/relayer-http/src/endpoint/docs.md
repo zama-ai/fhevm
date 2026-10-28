@@ -132,7 +132,8 @@ One body for every error:
 Connector codes that can come back this way, with the status the connector assigns them (`kms-connector-api`):
 `malformed` 400, `unsupported_attestation_type` 400 (only reachable if the relayer and connector crates disagree:
 the relayer rejects other schemes before the fan-out with `400 malformed "attestationType: must be …"`),
-`sender_authentication_failed` 401 (the relayer's API key is wrong for that node), `acl_denied` 403,
+`sender_authentication_failed` 401 (the node rejects the relayer's `FhevmSig`: key not allowed or wrong audience),
+`auth_expired` 401 (the node found the `FhevmSig` expired, even after re-signing: clock drift), `acl_denied` 403,
 `user_signature_rejected` 403, `user_decryption_expired` 403 (the signed validity interval ended; not retried), `ciphertext_not_found` 404 (the ciphertext is not committed yet),
 `kms_context_destroyed` 410, `kms_context_invalid` 412, `unprocessable` 422, `rate_limited` 429,
 `copro_consensus_failed` 502, `upstream_transient` 502, `overloaded` 503, `timeout` 504, `unknown` 500.
@@ -228,7 +229,7 @@ Unit tests next to every function (types, validation rules, conversions, error m
 `mod.rs` that drive the router in memory with the mock connector: the success envelopes, every 400 case, 404, 405,
 the oversized body, the dominant-error mapping, shutdown, the probes, and the log lines of three requests (success,
 validation failure, unparsable body) captured through a thread-local JSON subscriber: every `request …` line has
-the four identifiers, with the expected values at each step. `cargo test -p relayer-http endpoint`.
+the four identifiers, with the expected values at each step. `cargo nextest run -p relayer-http endpoint`.
 
 Manual smoke, with the API key env vars set:
 
