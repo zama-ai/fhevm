@@ -1637,6 +1637,33 @@ async fn cleanup_orphaned_dependence_chains(
     Ok(())
 }
 
+/// Retire the seals blue wrote over the upgrade window, per step 7 of [`execute_cutover`].
+///
+/// Step 4 deleted blue's in-window rows and the merge put green's there, so blue's
+/// seals over those blocks commit rows that are gone. Step 8 gives green's seals the
+/// same `public` name, so the live stack would read blue's as its own and halt.
+///
+/// Retire, do not delete: the row keeps `manifest_published`, which peers may hold,
+/// and the CHECK refuses an empty stamp. The epoch keeps green's seals out if the
+/// two steps ever swap.
+async fn retire_bcs_window_seals(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+    let retired = sqlx::query(
+        "UPDATE public.block_manifest_state b SET sealed_by_schema = 'retired-bcs'
+           FROM public.upgrade_state u
+          WHERE b.sealed_by_schema = 'public'
+            AND b.host_chain_id = u.host_chain_id AND b.block_number >= u.start_block
+            AND u.stack_role = 'GCS' AND u.start_block IS NOT NULL
+            AND b.consensus_epoch = (SELECT consensus_epoch
+                                       FROM public.blue_green_consensus_epoch
+                                      WHERE singleton)",
+    )
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+    info!(retired, "cutover: retired blue's in-window manifest seals");
+    Ok(())
+}
+
 /// Delete the gateway/zkproof-input side's BCS leftovers at cutover. Green re-verifies
 /// proofs to the *same* input handles but *different* ciphertext bytes (the
 /// re-randomization strategy switches at cutover), so blue's input ciphertexts must not
@@ -2517,10 +2544,11 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
 ///      (`copy_synthetic_probe_digests`), read only by the manifest builder.
 ///   6. Merge every `gcs.<table>` marked [`CoprocessorTable::is_merged`] into
 ///      `public`, then restore the snapshotted `txn_is_sent` flags.
-///   7. Restamp green's manifest seals in `public` as blue's.
-///   8. DROP SCHEMA gcs CASCADE.
-///   9. Mark the GCS rows LIVE/completed.
-///   10. NOTIFY every service that the live stack version changed.
+///   7. Retire blue's in-window manifest seals.
+///   8. Restamp green's manifest seals in `public` as blue's.
+///   9. DROP SCHEMA gcs CASCADE.
+///   10. Mark the GCS rows LIVE/completed.
+///   11. NOTIFY every service that the live stack version changed.
 ///
 /// After commit, any BCS write tx that was waiting on the shared lock acquires it,
 /// re-reads the bumped `versioning` row, finds its own binary older, and stops (see
@@ -2666,7 +2694,10 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover: preserved txn_is_sent for already-committed handles"
     );
 
-    // 7. Green becomes blue, so its seals must read as blue's. Nothing reads the
+    // 7. Retire blue's in-window seals. Step 4 deleted the rows they commit.
+    retire_bcs_window_seals(&mut tx).await?;
+
+    // 8. Green becomes blue, so its seals must read as blue's. Nothing reads the
     //    gcs schema name after this transaction. `block_manifest_state` stays in
     //    `public`, so step 6 merged nothing into it.
     let restamped = sqlx::query(
@@ -2682,7 +2713,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover: restamped green manifest seals as blue's"
     );
 
-    // 8. Rename the gcs schema to "pre-cutover" instead of dropping it, so the
+    // 9. Rename the gcs schema to "pre-cutover" instead of dropping it, so the
     //    dry-run data stays inspectable while the versioned name is freed for the
     //    next upgrade. Drop any prior snapshot first so the rename never collides.
     sqlx::query("DROP SCHEMA IF EXISTS \"pre-cutover\" CASCADE")
@@ -2695,7 +2726,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         "cutover: renamed gcs schema to pre-cutover"
     );
 
-    // 9. Flip every chain's FSM row.
+    // 10. Flip every chain's FSM row.
     sqlx::query!(
         "UPDATE public.upgrade_state
          SET state = 'LIVE', status = 'completed', updated_at = NOW()
@@ -2704,7 +2735,7 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
     .execute(&mut *tx)
     .await?;
 
-    // 10. Notify every service that the live stack version changed. Queued in
+    // 11. Notify every service that the live stack version changed. Queued in
     //    the SAME transaction as the `versioning` UPDATE above, so the notify
     //    is atomic with the version bump — it is only delivered if the cutover
     //    commits. On receipt, each service re-evaluates its mode (the green
@@ -4303,6 +4334,82 @@ mod tests {
         .await
         .expect("schema lookup");
         assert!(!schema_exists, "cutover should drop the gcs schema");
+    }
+
+    /// Cutover retires blue's in-window seals and nothing else: not blue's earlier
+    /// seals, not green's, and not a chain outside the upgrade.
+    #[tokio::test]
+    async fn cutover_retires_only_the_blue_seals_inside_the_window() {
+        let (_db, pool) = test_pool().await;
+
+        sqlx::query(
+            "UPDATE blue_green_consensus_epoch SET consensus_epoch = 'blue' WHERE singleton",
+        )
+        .execute(&pool)
+        .await
+        .expect("set blue's epoch");
+
+        // The upgrade covers chain 12345 from block 100. Chain 999 is outside it.
+        sqlx::query(
+            "INSERT INTO upgrade_state (
+                 stack_role, state, status, proposal_id, version, start_block, end_block,
+                 host_chain_id, proposal_block, updated_at
+             ) VALUES ('GCS', 'UpgradeAuthorized', 'in_progress', $1, '0.15.0', 100, 200,
+                       12345, 100, NOW())",
+        )
+        .bind(vec![7u8; 32])
+        .execute(&pool)
+        .await
+        .expect("seed upgrade_state");
+
+        // The last row is this step running after step 8: green's seal already
+        // reads `public`, and only the epoch tells it from blue's.
+        let seals: [(&str, &str, i64, i64, &str); 5] = [
+            ("blue in-window", "blue", 12345, 101, "public"),
+            ("blue pre-window", "blue", 12345, 99, "public"),
+            ("green in-window", "green", 12345, 101, GCS_SCHEMA),
+            ("blue, other chain", "blue", 999, 101, "public"),
+            ("green, already promoted", "green", 12345, 102, "public"),
+        ];
+        for (i, (label, epoch, chain, block, stamp)) in seals.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO block_manifest_state (
+                     consensus_epoch, host_chain_id, block_number, block_hash,
+                     parent_block_hash, publication_cadence, block_content_digest,
+                     block_handle_count, sealed_by_schema
+                 ) VALUES ($1, $2, $3, $4, $5, 1, $6, 0, $7)",
+            )
+            .bind(epoch)
+            .bind(chain)
+            .bind(block)
+            .bind(vec![i as u8 + 1; 32])
+            .bind(vec![0u8; 32])
+            .bind(vec![0xAAu8; 32])
+            .bind(*stamp)
+            .execute(&pool)
+            .await
+            .unwrap_or_else(|e| panic!("seed {label}: {e}"));
+        }
+
+        let mut tx = pool.begin().await.expect("begin");
+        retire_bcs_window_seals(&mut tx).await.expect("retire");
+        tx.commit().await.expect("commit");
+
+        for (i, (label, _, _, _, stamp)) in seals.iter().enumerate() {
+            let after: String = sqlx::query_scalar(
+                "SELECT sealed_by_schema FROM block_manifest_state WHERE block_hash = $1",
+            )
+            .bind(vec![i as u8 + 1; 32])
+            .fetch_one(&pool)
+            .await
+            .unwrap_or_else(|e| panic!("read {label}: {e}"));
+            let expected = if *label == "blue in-window" {
+                "retired-bcs"
+            } else {
+                stamp
+            };
+            assert_eq!(after, expected, "{label}");
+        }
     }
 
     async fn test_pool() -> (test_harness::instance::DBInstance, Pool<Postgres>) {
