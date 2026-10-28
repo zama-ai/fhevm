@@ -9,5 +9,7 @@
 # earlier pins       v0.15.0-3, then v0.15.0-6 (some comments in the sources still say v0.15.0-3)
 #
 # copied from        zama-ai/fhevm-mocks, branch devex/alexb/v1.0/new
-# commit             8b91ae54ab3ff256aed5797644e9b48d06726f96 (8b91ae5)
+# commit             585442e02963def49e0aba469eb69dd811e79c5a (585442e)
 # package            host-contracts-cleartext/v1.0/pkg/src  (@fhevm/host-contracts-cleartext 1.0.0-0, generation v1.0)
+# sync history       8b91ae5 (initial copy), then 585442e (CleartextPaddedInputter.sol, shared/LibCleartextPad.sol,
+#                    shared/CleartextArithmeticBase.sol: tech-spec#547 per-share signatures, #553 little-endian block index)
