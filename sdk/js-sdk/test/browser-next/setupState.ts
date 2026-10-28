@@ -1,5 +1,7 @@
-// Shares state between globalSetup and globalTeardown. Playwright runs both in
-// the same Node process, so module-level state persists across them.
+/**
+ * Shares state between globalSetup and globalTeardown. Playwright runs both in
+ * the same Node process, so module-level state persists across them.
+ */
 
 import type { Server } from 'node:http';
 import type { AnvilHandle } from '../infra/anvil/anvils.js';
