@@ -2011,7 +2011,7 @@ async fn test_demote_retire_sweep_and_retention_loop() {
     );
 }
 
-async fn chain_state(pool: &sqlx::PgPool, dcid: &[u8]) -> (String, Option<Uuid>, i32) {
+pub(super) async fn chain_state(pool: &sqlx::PgPool, dcid: &[u8]) -> (String, Option<Uuid>, i32) {
     sqlx::query_as(
         "SELECT status, worker_id, dependency_count FROM dependence_chain \
          WHERE dependence_chain_id = $1",

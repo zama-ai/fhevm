@@ -9,8 +9,9 @@ use host_listener::database::tfhe_event_propagate::{
 };
 use sqlx::types::time::PrimitiveDateTime;
 
+use crate::daemon_cli::Args;
 use crate::tests::utils::{
-    decrypt_ciphertexts, default_dependence_cache_size, setup_test_app,
+    decrypt_ciphertexts, default_dependence_cache_size, setup_test_app_with,
     wait_until_all_allowed_handles_computed, DecryptionResult, TestInstance,
 };
 
@@ -23,7 +24,13 @@ pub struct EventHarness {
 }
 
 pub async fn setup_event_harness() -> Result<EventHarness, Box<dyn std::error::Error>> {
-    let app = setup_test_app().await?;
+    setup_event_harness_with(|_| {}).await
+}
+
+pub async fn setup_event_harness_with(
+    customize: impl FnOnce(&mut Args),
+) -> Result<EventHarness, Box<dyn std::error::Error>> {
+    let app = setup_test_app_with(customize).await?;
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(2)
         .connect(app.db_url())
@@ -120,6 +127,19 @@ pub async fn insert_event(
     event: TfheContractEvents,
     is_allowed: bool,
 ) -> Result<(), sqlx::Error> {
+    insert_event_in_chain(listener_db, tx, tx_id, tx_id, event, is_allowed).await
+}
+
+/// [`insert_event`] for a transaction that joins the dependence chain `chain`
+/// instead of starting its own.
+pub async fn insert_event_in_chain(
+    listener_db: &ListenerDatabase,
+    tx: &mut Transaction<'_>,
+    tx_id: Handle,
+    chain: Handle,
+    event: TfheContractEvents,
+    is_allowed: bool,
+) -> Result<(), sqlx::Error> {
     let log = log_with_tx(tx_id, tfhe_event(event));
     // Fixtures insert one event at a time rather than using ordered block
     // ingestion. Reconstruct the same transaction-local minted set from rows
@@ -144,7 +164,7 @@ pub async fn insert_event(
         block_number: 0,
         block_hash: Handle::ZERO,
         block_timestamp: PrimitiveDateTime::MAX,
-        dependence_chain: tx_id,
+        dependence_chain: chain,
         tx_depth_size: 0,
         log_index: log.log_index,
         operand_boundary_mask: Some(operand_boundary_mask),

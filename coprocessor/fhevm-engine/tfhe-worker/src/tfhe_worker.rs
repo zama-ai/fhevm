@@ -32,6 +32,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use time::PrimitiveDateTime;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn, Instrument};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -2449,8 +2450,9 @@ pub const NO_READINESS: Readiness = ();
 pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
+    shutdown: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    run_tfhe_worker_inner(args, health_check, NO_READINESS).await
+    run_tfhe_worker_inner(args, health_check, NO_READINESS, shutdown).await
 }
 
 /// Benchmark-harness entry point: identical to [`run_tfhe_worker`] but
@@ -2460,14 +2462,16 @@ pub async fn run_tfhe_worker_with_readiness(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
     readiness: Option<ReadinessSignal>,
+    shutdown: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    run_tfhe_worker_inner(args, health_check, readiness).await
+    run_tfhe_worker_inner(args, health_check, readiness, shutdown).await
 }
 
 async fn run_tfhe_worker_inner(
     args: crate::daemon_cli::Args,
     health_check: crate::health_check::HealthCheck,
     mut readiness: Readiness,
+    shutdown: CancellationToken,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Determine worker ID to use for the lifetime of this process
     // In case of a failure in tfhe_worker_cycle, the same id must be reused to quickly unlock any held locks
@@ -2535,7 +2539,7 @@ async fn run_tfhe_worker_inner(
         });
     }
 
-    loop {
+    while !shutdown.is_cancelled() {
         // here we log the errors and make sure we retry
         if let Err(cycle_error) = tfhe_worker_cycle(
             &args,
@@ -2544,9 +2548,16 @@ async fn run_tfhe_worker_inner(
             start_block_state.clone(),
             health_check.clone(),
             &mut readiness,
+            &shutdown,
         )
         .await
         {
+            // A stopping worker returns instead of exiting for a restart:
+            // embedded callers drop their database while it stops.
+            if shutdown.is_cancelled() {
+                warn!(target: "tfhe_worker", error = %cycle_error, "Error while shutting down; owned chains expire with the lock TTL");
+                break;
+            }
             WORKER_ERRORS_COUNTER.inc();
             if cycle_error.is_fatal_connection() {
                 error!(target: "tfhe_worker", error = %cycle_error, "Fatal DB connection error; exiting for k8s restart");
@@ -2555,7 +2566,21 @@ async fn run_tfhe_worker_inner(
             }
             error!(target: "tfhe_worker", { error = %cycle_error }, "Error in background worker, retrying shortly");
         }
-        tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
+        tokio::select! {
+            _ = shutdown.cancelled() => {}
+            _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)) => {}
+        }
+    }
+    Ok(())
+}
+
+/// Hands this worker's chains back so other workers can take them now
+/// instead of after `--dcid-ttl-sec`. A replacement process cannot release
+/// them at its startup: it gets a fresh `worker_id` unless `--worker-id` is set.
+async fn release_owned_locks_on_exit(dcid_mngr: &mut dependence_chain::LockMngr) {
+    if let Err(error) = dcid_mngr.release_all_owned_locks().await {
+        warn!(target: "tfhe_worker", { error = %error },
+            "could not release owned locks on exit; they expire with the lock TTL");
     }
 }
 
@@ -2578,6 +2603,7 @@ async fn tfhe_worker_cycle(
     start_block_state: Arc<AtomicI64>,
     health_check: crate::health_check::HealthCheck,
     readiness: &mut Readiness,
+    shutdown: &CancellationToken,
 ) -> Result<(), CoprocessorError> {
     let db_url = resolve_database_url_from_option(args.database_url.clone())
         .map_err(|e| CoprocessorError::Other(e.into()))?;
@@ -2721,6 +2747,11 @@ async fn tfhe_worker_cycle(
     // a worker with only frozen work does not spin.
     let mut consecutive_fully_frozen_picks: u32 = 0;
     loop {
+        if shutdown.is_cancelled() {
+            info!(target: "tfhe_worker", "Shutting down — releasing owned chains");
+            release_owned_locks_on_exit(&mut dcid_mngr).await;
+            return Ok(());
+        }
         // GCS gating: skip the iteration entirely until the activation
         // watcher has populated `start_block` in `upgrade_state` for
         // `stack_role='GCS'`. Once that's observed, the schema-isolated
@@ -2738,6 +2769,9 @@ async fn tfhe_worker_cycle(
         if !immediately_poll_more_work {
             consecutive_fully_frozen_picks = 0;
             tokio::select! {
+                // A stop wins over a notification that is ready at the same time.
+                biased;
+                _ = shutdown.cancelled() => continue,
                 notification = listener.try_recv() => {
                     match notification? {
                         Some(_) => {
@@ -2795,15 +2829,7 @@ async fn tfhe_worker_cycle(
             WriteGuard::Proceed(trx) => trx,
             WriteGuard::Stop => {
                 info!(target: "tfhe_worker", "Cutover completed — BCS worker exiting cycle");
-                // Hand back what this worker holds instead of leaving up to
-                // `--dependence-chains-per-batch` chains to be reclaimed by
-                // work-stealing after `--dcid-ttl-sec`. The startup release
-                // cannot cover this: it filters on `worker_id`, which is a
-                // fresh UUID per process unless `--worker-id` is configured.
-                if let Err(error) = dcid_mngr.release_all_owned_locks().await {
-                    warn!(target: "tfhe_worker", { error = %error },
-                        "could not release owned locks on exit; they expire with the lock TTL");
-                }
+                release_owned_locks_on_exit(&mut dcid_mngr).await;
                 return Ok(());
             }
             WriteGuard::Skip => {
@@ -3036,7 +3062,10 @@ async fn tfhe_worker_cycle(
                 // notifications pending the select below would return
                 // immediately — hammering a Postgres whose distress caused
                 // the failure.
-                tokio::time::sleep(tokio::time::Duration::from_millis(5000)).await;
+                tokio::select! {
+                    _ = shutdown.cancelled() => {}
+                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(5000)) => {}
+                }
                 immediately_poll_more_work = false;
                 continue;
             }
