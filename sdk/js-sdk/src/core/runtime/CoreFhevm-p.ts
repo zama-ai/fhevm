@@ -110,7 +110,7 @@ class CoreFhevmImpl<
     this.#trustedClient =
       parameters.client !== undefined ? createTrustedClient(parameters.client, ownerToken) : undefined;
     this.#chain = parameters.chain;
-    this.#options = resolveOptions(parameters.options);
+    this.#options = resolveOptions(parameters.options, ownerToken);
     this.#initFns = new Set();
     this.#readyPromise = undefined;
 
@@ -639,9 +639,18 @@ function extendCoreFhevm<T extends Fhevm<FhevmChain | undefined, FhevmRuntime, O
 
 ////////////////////////////////////////////////////////////////////////////////
 
-function resolveOptions(options: FhevmOptions | undefined): ResolvedFhevmOptions {
+function resolveOptions(options: FhevmOptions | undefined, ownerToken: symbol): ResolvedFhevmOptions {
+  // The native keyVerification client is wrapped like the host-chain one.
+  const keyVerification = options?.keyVerification;
   return Object.freeze<ResolvedFhevmOptions>({
     batchRpcCalls: options?.batchRpcCalls ?? false,
+    keyVerification:
+      keyVerification === undefined
+        ? undefined
+        : Object.freeze({
+            chain: keyVerification.chain,
+            trustedClient: createTrustedClient(keyVerification.client, ownerToken),
+          }),
   });
 }
 

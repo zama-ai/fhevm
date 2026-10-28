@@ -12,7 +12,7 @@ import { decryptActions } from './decorators/decrypt.js';
 export function createFhevmCleartextClient<chain extends FhevmChain, publicClient extends PublicClient>(parameters: {
   readonly publicClient: publicClient;
   readonly chain: chain;
-  readonly options?: FhevmOptions | undefined;
+  readonly options?: FhevmOptions<PublicClient> | undefined;
 }): FhevmClient<chain, WithAll, publicClient> {
   const c = createFhevmCleartextBaseClient(parameters);
 

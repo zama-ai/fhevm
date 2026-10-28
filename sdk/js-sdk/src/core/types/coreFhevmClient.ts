@@ -2,25 +2,54 @@ import type { FhevmChain } from './fhevmChain.js';
 import type { FhevmRuntime } from './coreFhevmRuntime.js';
 import type { FheEncryptionKeyBytes } from './fheEncryptionKey.js';
 import type { TfheVersion, TkmsVersion } from './moduleVersions.js';
+import type { TrustedClient } from '../modules/ethereum/types.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type FhevmBaseOptions = {
+/**
+ * Options shared by every client. `client` is the adapter's native client
+ * type (viem `PublicClient`, ethers `ContractRunner`), the one taken by
+ * `keyVerification`.
+ */
+export type FhevmBaseOptions<client extends NativeClient = NativeClient> = {
   readonly batchRpcCalls?: boolean | undefined;
+  /**
+   * Required to fetch the FHE public key and CRS (encryption,
+   * `fetchFheEncryptionKeyBytes`) when the host chain is not Ethereum. Applies
+   * to every client, as every client can fetch them and every fetch is
+   * verified.
+   */
+  readonly keyVerification?: FhevmKeyVerification<client> | undefined;
 };
 
-export type FhevmEncryptOptions = FhevmBaseOptions & {
+export type FhevmEncryptOptions<client extends NativeClient = NativeClient> = FhevmBaseOptions<client> & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
 };
 
-export type FhevmDecryptOptions = FhevmBaseOptions;
+export type FhevmDecryptOptions<client extends NativeClient = NativeClient> = FhevmBaseOptions<client>;
 
-export type FhevmOptions = FhevmBaseOptions & {
+export type FhevmOptions<client extends NativeClient = NativeClient> = FhevmBaseOptions<client> & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
+};
+
+/**
+ * An Ethereum chain definition (one that defines `kmsGeneration`) and a client
+ * connected to it. Used only to read `KMSGeneration` when the host chain is
+ * not Ethereum; every other read goes through the host-chain client.
+ */
+export type FhevmKeyVerification<client extends NativeClient = NativeClient> = {
+  readonly chain: FhevmChain;
+  readonly client: client;
+};
+
+export type ResolvedFhevmKeyVerification = {
+  readonly chain: FhevmChain;
+  readonly trustedClient: TrustedClient;
 };
 
 export type ResolvedFhevmOptions = {
   readonly batchRpcCalls: boolean;
+  readonly keyVerification: ResolvedFhevmKeyVerification | undefined;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
