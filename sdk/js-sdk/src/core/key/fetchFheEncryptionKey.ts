@@ -21,18 +21,19 @@ export async function fetchFheEncryptionKeyWasm(
   const runtime = context.runtime;
   const logger = runtime.config.logger;
 
-  // Ensure a bytes fetch is in-flight
-  globalFheEncryptionKeyCache.ensureBytes({
+  const entry = globalFheEncryptionKeyCache.getOrCreate({
     owner: runtime,
+    key: relayerUrl,
     relayerUrl,
-    fetcher: async () => {
+    fill: async () => {
       logger?.debug?.(
         `Fetching FHE encryption key/CRS bytes from relayer "${relayerUrl}" (chainId=${context.chain.id}).`,
       );
       try {
         const bytes = await runtime.relayer.fetchFheEncryptionKeyBytes(
           { relayerUrl, chainId: context.chain.id },
-          parameters,
+          // Caller-provided options override runtime config defaults (e.g. auth)
+          { ...parameters, options: { auth: runtime.config.auth, ...parameters.options } },
         );
         logger?.debug?.(`Fetched FHE encryption key/CRS bytes from relayer "${relayerUrl}".`);
         return bytes;
@@ -41,27 +42,10 @@ export async function fetchFheEncryptionKeyWasm(
         throw e;
       }
     },
-    metadata: { chainId: context.chain.id, relayerUrl },
   });
 
-  // Upgrade bytes → wasm (chains from pending bytes if still in-flight)
-  globalFheEncryptionKeyCache.ensureWasm({
-    owner: runtime,
-    relayerUrl,
-    deserializeFn: (bytes) =>
-      deserializeFheEncryptionKey(context, { keyBytes: bytes, fhevmContext: parameters.fhevmContext }),
-  });
-
-  const entry = globalFheEncryptionKeyCache.get(relayerUrl);
-  if (entry === undefined) {
-    throw new Error('Failed to fetch global FHE PKE params');
-  }
-
-  await entry.ready;
-
-  if (entry.resolvedKind !== 'wasm') {
-    throw new Error('Expected wasm params but got ' + JSON.stringify(entry.resolvedKind));
-  }
-
-  return entry.value as FheEncryptionKeyWasm;
+  // Deserialized once per entry, from its bytes (pending or resolved).
+  return entry.wasm((bytes) =>
+    deserializeFheEncryptionKey(context, { keyBytes: bytes, fhevmContext: parameters.fhevmContext }),
+  );
 }

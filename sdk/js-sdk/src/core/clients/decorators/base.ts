@@ -181,7 +181,10 @@ export type BaseActions = {
   readonly parseSignedDecryptionPermit: (
     parameters: ParseSignedDecryptionPermitParameters,
   ) => Promise<ParseSignedDecryptionPermitReturnType>;
-  /** Fetches the ~50MB FHE public encryption key from the relayer and caches it. */
+  /**
+   * Fetches the FHE public encryption key (~33KB) and CRS (~4.6MB) from the
+   * relayer and caches them.
+   */
   readonly fetchFheEncryptionKeyBytes: (
     parameters?: FetchFheEncryptionKeyBytesParameters,
   ) => Promise<FetchFheEncryptionKeyBytesReturnType>;
