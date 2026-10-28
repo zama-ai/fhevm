@@ -40,6 +40,8 @@ abstract contract CleartextArithmeticBase is ICleartextArithmetic {
     error CleartextErrorUnsupportedNaryOp(Operators op);
     error CleartextErrorNotABoolean(uint256 value);
     error CleartextErrorPlaintextTooWide(uint256 value, FheType fheType);
+    error CleartextErrorPadPackageWrongChain(uint64 chainId);
+    error CleartextErrorPadPackageLabelMismatch(bytes32 label, bytes32 expectedLabel);
 
     /// @inheritdoc IPlaintexts
     /// @dev Guarded like every `record*` above: a handle minted on another chain names a slot in THIS
@@ -99,6 +101,25 @@ abstract contract CleartextArithmeticBase is ICleartextArithmetic {
         LibFhevmHandle.checkChainId(handle);
     }
 
+    /**
+     * @dev RFC-030's coprocessor step 1, before anything is unmasked: the input package must name the chain this runs
+     *      on, and its label must be the hash of its witness. PaddedInputter enforces both on-chain, so on an honest
+     *      chain this never fails; the coprocessor repeats them as defence in depth, so that a package submitted to
+     *      one chain, or a forged one reusing its label, is never unmasked through a compromised chain. The hash
+     *      check is the load-bearing one: the label selects the pad and only the witness ties it to a chain, so a
+     *      foreign label under a local `chainId` passes the chain check alone. This contract stands in for the
+     *      coprocessor, so it repeats both.
+     *      Specified in https://github.com/zama-ai/tech-spec/blob/950587724a33f72066e864a8934ee0909144d147/rfcs/030-pad-based-input.md#L597
+     *
+     *      `virtual` for the same reason as `_checkHandleChainId`.
+     */
+    function _checkPadPackage(bytes memory inputPackage) internal view virtual {
+        uint64 chainId = LibCleartextPad.packageChainId(inputPackage);
+        if (chainId != block.chainid) revert CleartextErrorPadPackageWrongChain(chainId);
+        (bytes32 label, bytes32 expectedLabel) = LibCleartextPad.packageLabels(inputPackage);
+        if (label != expectedLabel) revert CleartextErrorPadPackageLabelMismatch(label, expectedLabel);
+    }
+
     // -----------------------------------------------------------------------
     // record* entry points (see ICleartextArithmetic) — compute + persist
     //
@@ -133,7 +154,9 @@ abstract contract CleartextArithmeticBase is ICleartextArithmetic {
         // fresh compute handle stamped 0xff like any computation.
         if (uint8(result[21]) == 0xff) {
             // `inputHandle` is then the external handle, a digest carrying no chain id, so it is not
-            // checked. `inputProof` is the input package, already validated by PaddedInputter.
+            // checked. `inputProof` is the input package, already validated by PaddedInputter; its chain
+            // and label are checked again, as the coprocessor does.
+            _checkPadPackage(inputProof);
             cleartext = LibCleartextPad.unmaskPart(inputHandle, inputProof, inputType);
         } else {
             _checkHandleChainId(inputHandle);
