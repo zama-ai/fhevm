@@ -179,7 +179,7 @@ impl<'a> Scheduler<'a> {
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
                     // Cycle members can be ready after their edges are dropped.
-                    // Honour their deferral in the initial dispatch too.
+                    // Honor their deferral in the initial dispatch too.
                     if tx.is_uncomputable {
                         continue;
                     }

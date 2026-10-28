@@ -87,7 +87,7 @@ async fn deferred_cycles_skip_dispatch_preserve_other_work_and_retry() {
 
         schedule(&mut graph, &sks, &cpk, max_locality).await;
 
-        // The initial-ready branch must honour the same deferral flag as the
+        // The initial-ready branch must honor the same deferral flag as the
         // dependent-ready branch. Dispatching a component takes its inner graph.
         for (index, node_count) in deferred {
             assert_eq!(graph.graph[index].graph.graph.node_count(), node_count);
@@ -122,7 +122,7 @@ async fn deferred_cycles_skip_dispatch_preserve_other_work_and_retry() {
             .get_intermediate_handles()
             .contains(&(handle(0x01), handle(0x22))));
 
-        // Materialise the real producer, then use its actual bytes on retry.
+        // Materialize the real producer, then use its actual bytes on retry.
         let mut original = build(vec![(0x00, vec![trivial(0x01)])]);
         original.resolve_dependences(&HashSet::new()).unwrap();
         schedule(&mut original, &sks, &cpk, max_locality).await;
