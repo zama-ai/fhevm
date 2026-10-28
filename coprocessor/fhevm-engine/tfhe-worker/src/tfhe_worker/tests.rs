@@ -140,3 +140,158 @@ async fn cross_transaction_cycle_leaves_work_pending_for_retry(
     pool.close().await;
     Ok(())
 }
+
+/// Exercise real chain acquisition and the worker's no-progress release path.
+/// A blocked consumer must leave its original producer eligible for the next
+/// acquisition, then resolve its dependencies on the following retry.
+#[tokio::test]
+#[serial(db)]
+async fn cross_transaction_cycle_deferral_allows_original_producer_to_run(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let instance = setup_test_db(ImportMode::None).await?;
+    let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+    let args = crate::daemon_cli::Args::parse_from(["tfhe_worker"]);
+    let health = crate::health_check::HealthCheck::new(instance.db_url.clone());
+    let mut locks = dependence_chain::LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        30,
+        false,
+        None,
+        None,
+        None,
+    );
+
+    // The original producer t0 is outside this batch. t1 consumes its h1;
+    // t2 consumes t1's h3 and independently produces the same constant h1.
+    for (transaction, output, op, dependencies, scalar) in [
+        (
+            0x11,
+            0x03,
+            SupportedFheOperations::FheAdd,
+            vec![handle(0x01), handle(0x01)],
+            false,
+        ),
+        (
+            0x22,
+            0x01,
+            SupportedFheOperations::FheTrivialEncrypt,
+            vec![vec![0; 32], vec![4]],
+            true,
+        ),
+        (
+            0x22,
+            0x04,
+            SupportedFheOperations::FheAdd,
+            vec![handle(0x01), handle(0x03)],
+            false,
+        ),
+    ] {
+        sqlx::query(
+            "INSERT INTO computations (
+                output_handle, transaction_id, dependence_chain_id, dependencies,
+                fhe_operation, is_scalar, is_allowed, is_completed, host_chain_id
+             ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, FALSE, 42)",
+        )
+        .bind(handle(output))
+        .bind(handle(transaction))
+        .bind(handle(0x11))
+        .bind(dependencies)
+        .bind(op as i16)
+        .bind(scalar)
+        .execute(&pool)
+        .await?;
+    }
+
+    // Force the blocked consumer to be chosen before its producer.
+    for (chain, age) in [(0x11, 20_i64), (0x00, 10_i64)] {
+        sqlx::query("INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at) VALUES ($1, 'updated', clock_timestamp() - make_interval(secs => $2))")
+            .bind(handle(chain)).bind(age as f64).execute(&pool).await?;
+    }
+    sqlx::query("INSERT INTO computations (output_handle, transaction_id, dependence_chain_id, dependencies, fhe_operation, is_scalar, is_allowed, is_completed, host_chain_id) VALUES ($1, $2, $2, $3, $4, TRUE, TRUE, FALSE, 42)")
+        .bind(handle(0x01)).bind(handle(0x00)).bind(vec![vec![0_u8; 32], vec![4_u8]])
+        .bind(SupportedFheOperations::FheTrivialEncrypt as i16).execute(&pool).await?;
+
+    let mut tx = pool.begin().await?;
+    let (mut components, _, has_work) = query_for_work(&args, &health, &mut tx, &mut locks).await?;
+    assert!(has_work);
+    let mut graph = DFComponentGraph::default();
+    graph.build(&mut components)?;
+    // The worker uploads recorded results even if resolve_dependences returns
+    // an error. On the old scheduler this persisted CyclicDependence forever.
+    let _ = graph.resolve_dependences(&HashSet::new());
+    assert!(!upload_transaction_graph_results(&mut graph, &mut tx, &mut locks).await?);
+    tx.commit().await?;
+
+    let states: Vec<(bool, bool, Option<String>)> =
+        sqlx::query_as("SELECT is_error, is_completed, error_message FROM computations")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(states.len(), 4);
+    assert!(
+        states
+            .iter()
+            .all(|(error, completed, message)| { !error && !completed && message.is_none() }),
+        "deferred computations must have no persisted error or completion: {states:?}"
+    );
+
+    // Deferring the no-progress chain must allow the producer to run.
+    locks.release_current_lock(false, true).await?;
+    let (next_chain, _) = locks.acquire_next_lock().await?;
+    assert_eq!(next_chain, Some(handle(0x00)));
+    let mut producer_tx = pool.begin().await?;
+    let (producer_components, _, has_work) =
+        query_for_work(&args, &health, &mut producer_tx, &mut locks).await?;
+    assert!(has_work);
+    assert!(producer_components
+        .iter()
+        .all(|c| c.transaction_id == handle(0x00)));
+    // The graph/DB checks intentionally keep bytes opaque, as in the PR test.
+    let mut completed = DFComponentGraph::default();
+    completed.results.push(scheduler::dfg::types::DFGTxResult {
+        transaction_id: handle(0x00),
+        handle: handle(0x01),
+        compressed_ct: Ok(CompressedCiphertext {
+            ct_type: 4,
+            ct_bytes: vec![],
+        }),
+    });
+    assert!(upload_transaction_graph_results(&mut completed, &mut producer_tx, &mut locks).await?);
+    producer_tx.commit().await?;
+    locks.release_current_lock(true, false).await?;
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+
+    // The next work query must select both transactions again.
+    let mut tx = pool.begin().await?;
+    let (mut components, _, has_work) = query_for_work(&args, &health, &mut tx, &mut locks).await?;
+    assert!(has_work);
+    let selected: HashSet<_> = components
+        .iter()
+        .map(|c| c.transaction_id.clone())
+        .collect();
+    assert_eq!(selected, HashSet::from([handle(0x11), handle(0x22)]));
+
+    let mut retry = DFComponentGraph::default();
+    retry.build(&mut components)?;
+    let needed: Vec<_> = retry.needed_map.keys().cloned().collect();
+    let ciphertexts = query_ciphertexts(&needed, &mut tx, false).await?;
+    let fetched: HashSet<_> = ciphertexts.keys().cloned().collect();
+    assert!(fetched.contains(&handle(0x01)));
+    for (handle, (ct_type, ct_bytes)) in ciphertexts {
+        retry.add_input(
+            &handle,
+            &DFGTxInput::Compressed((CompressedCiphertext { ct_type, ct_bytes }, true)),
+        )?;
+    }
+    retry.resolve_dependences(&fetched)?;
+    assert!(retry.get_results().is_empty());
+    assert!(retry
+        .graph
+        .graph()
+        .node_weights()
+        .all(|c| !c.is_uncomputable));
+    tx.rollback().await?;
+    locks.release_current_lock(false, false).await?;
+    pool.close().await;
+    Ok(())
+}

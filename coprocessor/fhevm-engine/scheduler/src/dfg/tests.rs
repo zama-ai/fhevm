@@ -1,11 +1,14 @@
 use super::*;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
-fn handle(value: u8) -> Handle {
-    vec![value; 32]
+pub(super) fn handle(value: u8) -> Handle {
+    let mut result = vec![value; 32];
+    result[30] = 4; // euint32
+    result[31] = 0;
+    result
 }
 
-fn trivial(output: u8) -> DFGOp {
+pub(super) fn trivial(output: u8) -> DFGOp {
     DFGOp {
         output_handle: handle(output),
         fhe_op: SupportedFheOperations::FheTrivialEncrypt,
@@ -17,7 +20,7 @@ fn trivial(output: u8) -> DFGOp {
     }
 }
 
-fn add(output: u8, lhs: u8, rhs: u8) -> DFGOp {
+pub(super) fn add(output: u8, lhs: u8, rhs: u8) -> DFGOp {
     DFGOp {
         output_handle: handle(output),
         fhe_op: SupportedFheOperations::FheAdd,
@@ -29,7 +32,7 @@ fn add(output: u8, lhs: u8, rhs: u8) -> DFGOp {
     }
 }
 
-fn build(transactions: Vec<(u8, Vec<DFGOp>)>) -> DFComponentGraph {
+pub(super) fn build(transactions: Vec<(u8, Vec<DFGOp>)>) -> DFComponentGraph {
     let mut components = vec![];
     for (tx, ops) in transactions {
         let (nodes, _) = build_component_nodes(ops, &handle(tx)).expect("valid transaction");
@@ -40,7 +43,7 @@ fn build(transactions: Vec<(u8, Vec<DFGOp>)>) -> DFComponentGraph {
     graph
 }
 
-fn alias_transactions() -> Vec<(u8, Vec<DFGOp>)> {
+pub(super) fn alias_transactions() -> Vec<(u8, Vec<DFGOp>)> {
     vec![
         // t0 originally produced h1, but belongs to another, unprocessed chain.
         (0x11, vec![add(0x03, 0x01, 0x01)]),
