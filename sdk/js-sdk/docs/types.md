@@ -97,7 +97,8 @@ There are two lifecycle stages of an encrypted value, which share the same
 
 - **External** — freshly produced by `encryptValue` / `encryptValues`, not yet
   verified on-chain. Aliases: `ExternalEbool`, `ExternalEuint8`, … These are what
-  you pass to a contract alongside an `inputProof`.
+  you pass to a contract alongside an `inputProof` (or, with pad-based
+  `encryptValue[s]Transci`, an `inputPackage`).
 - **Computed / verified** — the on-chain result of FHE operations, already
   trusted. These are what you read back and decrypt.
 

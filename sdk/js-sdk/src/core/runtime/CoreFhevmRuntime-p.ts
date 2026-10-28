@@ -4,6 +4,7 @@ import type { RelayerModule } from '../modules/relayer/types.js';
 import type { EncryptModule } from '../modules/encrypt/types.js';
 import type { FhevmRuntime, FhevmRuntimeConfig, WithModuleMap } from '../types/coreFhevmRuntime.js';
 import type { DecryptModule } from '../modules/decrypt/types.js';
+import type { EncryptTransciModule } from '../modules/encryptTransci/types.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 import { uid } from '../base/uid.js';
 
@@ -39,7 +40,7 @@ function createExtendFn<T extends FhevmRuntime>(selfRuntime: T, moduleSlots: Map
     // Call factory to get { moduleName: moduleFunctions }
     const module = moduleFactory(selfRuntime);
 
-    // Extract the single key (e.g. "decrypt", "encrypt")
+    // Extract the single key (e.g. "decrypt", "encrypt", "encryptTransci")
     const keys = Object.keys(module);
     if (keys.length !== 1 || keys[0] === undefined) {
       throw new Error('Factory must return exactly one key');
@@ -86,7 +87,7 @@ function createExtendFn<T extends FhevmRuntime>(selfRuntime: T, moduleSlots: Map
 // Owner token: captured in verify() closure, verified by assertIsFhevmRuntime
 //
 // Extension mechanism:
-// - Empty placeholders (#encrypt, #decrypt, #relayer) created at construction
+// - Empty placeholders (#encrypt, #encryptTransci, #decrypt) created at construction
 // - extend() fills a placeholder exactly once, then freezes it
 // - Throws if a placeholder is already filled (no double-extend)
 //
@@ -111,6 +112,7 @@ class CoreFhevmRuntimeImpl {
 
   // Optional modules
   readonly #encrypt: ModulePlaceholder<EncryptModule> = {};
+  readonly #encryptTransci: ModulePlaceholder<EncryptTransciModule> = {};
   readonly #decrypt: ModulePlaceholder<DecryptModule> = {};
 
   // Methods
@@ -134,6 +136,7 @@ class CoreFhevmRuntimeImpl {
     };
     const decrypt = this.#decrypt;
     const encrypt = this.#encrypt;
+    const encryptTransci = this.#encryptTransci;
 
     this.verify = (token: symbol) => {
       if (token !== ownerToken) {
@@ -144,6 +147,7 @@ class CoreFhevmRuntimeImpl {
     const slots = new Map<ModuleName, { placeholder: object; factory?: unknown }>([
       ['decrypt', { placeholder: decrypt }],
       ['encrypt', { placeholder: encrypt }],
+      ['encryptTransci', { placeholder: encryptTransci }],
     ]);
 
     this.extend = createExtendFn(this, slots) as unknown as FhevmRuntime['extend'];
@@ -177,6 +181,10 @@ class CoreFhevmRuntimeImpl {
 
   public get encrypt(): EncryptModule {
     return asModule(this.#encrypt, 'encrypt');
+  }
+
+  public get encryptTransci(): EncryptTransciModule {
+    return asModule(this.#encryptTransci, 'encryptTransci');
   }
 }
 
@@ -228,6 +236,19 @@ export function assertIsFhevmRuntime(
 export function verifyFhevmRuntime(value: unknown, ownerToken: symbol): asserts value is FhevmRuntime {
   assertIsFhevmRuntime(value, {});
   (value as CoreFhevmRuntimeImpl).verify(ownerToken);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Returns `true` if `fhevmRuntime` has been extended with the `moduleName`
+ * module. Unlike {@link assertIsFhevmRuntimeWith}, it never throws.
+ */
+export function hasFhevmRuntimeModule<K extends keyof WithModuleMap>(
+  fhevmRuntime: FhevmRuntime,
+  moduleName: K,
+): fhevmRuntime is FhevmRuntime & WithModuleMap[K] {
+  return isFhevmRuntime(fhevmRuntime) && (fhevmRuntime as unknown as CoreFhevmRuntimeImpl).hasModule(moduleName);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
