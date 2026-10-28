@@ -1527,6 +1527,21 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(hcuLimit.getContractQuota(auction), PARTNER_QUOTA);
     }
 
+    function test_ownerKeepsOneContractStoppedInAPausedQuotaOfItsOwn() public {
+        address abused = address(0xBAD);
+        uint16 jail = 7;
+        _setUpPartner();
+        _setQuotaPerBlock(jail, 1);
+        _pause(owner, jail);
+        _assign(jail, abused);
+
+        _expectQuotaPaused(abused, jail);
+        // No admin can reach it: grants only take contracts from the default quota.
+        vm.prank(PARTNER_ADMIN);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.ContractNotInQuota.selector, abused, DEFAULT_QUOTA));
+        hcuLimit.grantQuota(PARTNER_QUOTA, abused);
+    }
+
     function test_pauserCannotCallOwnerOnlyQuotaSetters() public {
         address pauser = _mockPauser(address(0x9A));
         vm.startPrank(pauser);
