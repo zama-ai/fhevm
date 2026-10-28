@@ -113,13 +113,16 @@ async fn load(
     // schema. `sealed_by_schema` records that stack. Skip a seal the other
     // stack wrote: it covers tables this stack cannot read. Pruning the
     // header does not drop this stack's own seal.
+    //
+    // `stack_schema()` has a FROM clause, so Postgres calls it per row.
+    // `(SELECT ...)` makes it an InitPlan that runs once.
     sqlx::query_as(
         "WITH RECURSIVE manifest_coverage AS (
              SELECT b.block_number AS root_number, b.block_hash AS root_hash,
                     b.consensus_epoch, b.block_number, b.block_hash,
                     ((b.block_handle_count IS NOT NULL OR b.block_content_digest IS NOT NULL
                       OR b.manifest_published)
-                     AND b.sealed_by_schema = public.stack_schema()) AS committed
+                     AND b.sealed_by_schema = (SELECT public.stack_schema())) AS committed
              FROM block_manifest_state b
              WHERE b.host_chain_id = $1 AND b.block_number = ANY($2)
                AND NOT EXISTS (SELECT 1 FROM public.consensus_epoch_history e
@@ -128,18 +131,18 @@ async fn load(
                    WHERE h.chain_id = b.host_chain_id AND h.block_hash = b.block_hash
                      AND h.block_status = 'orphaned')
                AND (((b.block_handle_count IS NOT NULL OR b.block_content_digest IS NOT NULL)
-                     AND b.sealed_by_schema = public.stack_schema())
+                     AND b.sealed_by_schema = (SELECT public.stack_schema()))
                     OR EXISTS(SELECT 1 FROM block_manifest_state published
                         WHERE published.host_chain_id = $1
                           AND published.consensus_epoch = b.consensus_epoch
                           AND published.block_number >= b.block_number
                           AND published.manifest_published
-                          AND published.sealed_by_schema = public.stack_schema()))
+                          AND published.sealed_by_schema = (SELECT public.stack_schema())))
              UNION ALL
              SELECT parent.root_number, parent.root_hash, child.consensus_epoch,
                     child.block_number, child.block_hash,
                     (child.manifest_published
-                     AND child.sealed_by_schema = public.stack_schema())
+                     AND child.sealed_by_schema = (SELECT public.stack_schema()))
              FROM manifest_coverage parent JOIN block_manifest_state child
                ON child.host_chain_id = $1 AND child.consensus_epoch = parent.consensus_epoch
               AND child.parent_block_hash = parent.block_hash AND child.block_number > parent.block_number
