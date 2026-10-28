@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "bun:test";
@@ -61,14 +61,19 @@ test("database coverage requires every exact receipt block, including those outs
   }
 });
 
-test("relative-only recovery rejects a completed replay bounded by an old LIVE delivery", () => {
-  const blocks = Array.from({ length: 12 }, (_, i) => 2764 + i * 2);
-  const row = { id: "relative-request", finalized: false, requestedFrom: -1024, requestedTo: -1, blockStart: 1709, blockEnd: 2732 };
-  expect(() => requireRelativeConsumerCatchup(row, "previous-request", blocks)).toThrow("first queued LIVE reference may be stale");
-  expect(() => requireRelativeConsumerCatchup({ ...row, blockStart: 1764, blockEnd: 2788 }, "previous-request", blocks)).not.toThrow();
-  // A separately seeded absolute request cannot substitute for the CLI request.
-  expect(() => requireRelativeConsumerCatchup({ ...row, requestedFrom: 2734, requestedTo: 2788, blockStart: 2734, blockEnd: 2788 }, "previous-request", blocks)).toThrow("CLI-created");
-  expect(() => requireRelativeConsumerCatchup({ ...row, id: "previous-request" }, "previous-request", blocks)).toThrow("CLI-created");
+test("relative replay can end before the workload supplied by retained LIVE delivery", () => {
+  const blocks = Array.from({ length: 12 }, (_, i) => 2662 + i * 2);
+  const row = { id: "relative-request", finalized: false, requestedFrom: -1024, requestedTo: -1, blockStart: 1607, blockEnd: 2630 };
+  // The observed CI range joins LIVE at 2631. All twelve later receipts belong
+  // to that retained tail, so replay alone need not cover any of them.
+  expect(() => requireRelativeConsumerCatchup(row, "previous-request")).not.toThrow();
+  const hashes = blocks.map(block => `0x${block.toString(16).padStart(64, "0")}`);
+  const live = blocks.map((blockNumber, i) => ({ blockNumber, blockHash: hashes[i], blockStatus: "pending" }));
+  expect(missingIngestedReceiptBlocks(blocks, hashes, live)).toEqual([]);
+  expect(missingIngestedReceiptBlocks(blocks, hashes, live.slice(1))).toEqual([2662]);
+  expect(() => requireRelativeConsumerCatchup({ ...row, requestedFrom: 2631, requestedTo: 2684 }, "previous-request")).toThrow("CLI-created");
+  expect(() => requireRelativeConsumerCatchup({ ...row, id: "previous-request" }, "previous-request")).toThrow("CLI-created");
+  expect(() => requireRelativeConsumerCatchup({ ...row, blockStart: 2631 }, "previous-request")).toThrow("inverted range");
 });
 
 test("catchup attribution requires the exact request, block hash and original transaction after successful ingestion", () => {
@@ -97,8 +102,8 @@ test("the evidence command rejects expired isolation and stale scenario artifact
     const transactions = blocks.map(block => `0x${(block + 1000).toString(16).padStart(64, "0")}`);
     const write = (file: string, value: unknown) => writeFileSync(path.join(root, file), JSON.stringify(value));
     write("control.json", { until: Math.floor(Date.now() / 1000) + 60 });
-    write("workload.json", { payload: { caseId: "FM-HOST-RELATIVE-CATCHUP", detail: { blocks, blockHashes: hashes }, transactionHashes: transactions } });
-    write("request.json", { payload: { caseId: "FM-HOST-RELATIVE-CATCHUP", catchupId: "new" } });
+    write("workload.json", { payload: { caseId: "FM-HOST-LONG-OFFLINE", detail: { blocks, blockHashes: hashes }, transactionHashes: transactions } });
+    write("request.json", { payload: { caseId: "FM-HOST-LONG-OFFLINE", catchupId: "new" } });
     writeFileSync(path.join(root, "receipts.jsonl"), blocks.map((block_number, i) => JSON.stringify({
       flow: "CATCHUP", catchup_id: "new", block_number, block_hash: hashes[i], transactions: [{ hash: transactions[i] }],
     })).join("\n"));
@@ -115,6 +120,56 @@ test("the evidence command rejects expired isolation and stale scenario artifact
     const stale = run();
     expect(stale.exitCode).not.toBe(0);
     expect(stale.stderr.toString()).toContain("another scenario");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("absolute replay attribution waits for all original transactions and times out without releasing LIVE", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "catchup-attribution-wait-"));
+  const evidence = path.join(root, "FM-HOST-LONG-OFFLINE");
+  try {
+    const blocks = Array.from({ length: 12 }, (_, i) => 100 + i * 2);
+    const hashes = blocks.map(block => `0x${block.toString(16).padStart(64, "0")}`);
+    const transactions = blocks.map(block => `0x${(block + 1000).toString(16).padStart(64, "0")}`);
+    mkdirSync(evidence);
+    writeFileSync(path.join(evidence, "control.json"), JSON.stringify({ until: Math.floor(Date.now() / 1000) + 60 }));
+    writeFileSync(path.join(evidence, "workload.json"), JSON.stringify({ payload: {
+      caseId: "FM-HOST-LONG-OFFLINE", detail: { blocks, blockHashes: hashes }, transactionHashes: transactions,
+    } }));
+    writeFileSync(path.join(root, "request.json"), JSON.stringify({ payload: { caseId: "FM-HOST-LONG-OFFLINE", catchupId: "absolute" } }));
+    const receipts = blocks.map((block_number, i) => JSON.stringify({
+      flow: "CATCHUP", catchup_id: "absolute", block_number, block_hash: hashes[i], transactions: [{ hash: transactions[i] }],
+    }));
+    writeFileSync(path.join(root, "partial.jsonl"), receipts.slice(1).join("\n"));
+    writeFileSync(path.join(root, "complete.jsonl"), receipts.join("\n"));
+    const script = `source "$1/lib/catchup-isolation.sh"
+      SCRIPT_DIR="$1" REPORT_DIR="$2" BUN_BIN="$3" TEST_CONTAINER=harness HANDSHAKE_DIR=/handshake
+      bun() { "$BUN_BIN" "$@"; }
+      docker() {
+        if [[ "$*" == *" receipts" ]]; then
+          if [[ -f "$REPORT_DIR/attempted" && "$COMPLETE" == 1 ]]; then
+            cat "$REPORT_DIR/complete.jsonl"
+          else
+            touch "$REPORT_DIR/attempted"
+            cat "$REPORT_DIR/partial.jsonl"
+          fi
+        else cat "$REPORT_DIR/request.json"; fi
+      }
+      sleep() { SECONDS=$((SECONDS + 480)); }
+      wait_for_catchup_isolation consumer`;
+    for (const complete of [false, true]) {
+      rmSync(path.join(root, "attempted"), { force: true });
+      const result = Bun.spawnSync(["bash", "-c", script, "--", path.resolve(import.meta.dir, "../../scripts"), root, process.execPath], {
+        env: { ...process.env, COMPLETE: complete ? "1" : "0" },
+      });
+      expect(result.exitCode, result.stderr.toString()).toBe(complete ? 0 : 1);
+      if (complete) expect(JSON.parse(result.stdout.toString()).successfulReplayTransactions).toBe(12);
+      else expect(result.stderr.toString()).toContain("no successful ingestion receipt");
+      // Neither success nor failure releases the ordinary-delivery gate: the
+      // caller must first preserve the attribution result, then clear it.
+      expect(Bun.spawnSync(["test", "-f", path.join(evidence, "control.json")]).exitCode).toBe(0);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

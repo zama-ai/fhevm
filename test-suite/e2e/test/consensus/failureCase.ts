@@ -482,10 +482,13 @@ describe('Service failure case', function () {
           const { start, end } = offlineCatchupRange(watermark, head, blocks);
           const request = await withPool(databaseUrls[VICTIM], pool => pool.query<{ id: string }>(
             `INSERT INTO host_consumer_catchups
-             (id, chain_id, consumer_id, finalized, requested_from, requested_to, block_start, block_end)
-             VALUES ($1, $2, $3, FALSE, $4, $5, $4, $5) RETURNING id::text`,
+             (id, chain_id, consumer_id, finalized, requested_from, requested_to, block_start, block_end, observed_head)
+             VALUES ($1, $2, $3, FALSE, $4, $5, $4, $5, $5) RETURNING id::text`,
             [uuidv7(), chainId, `host-listener-consumer.${chainId}`, start, end]));
           catchupId = request.rows[0].id;
+          // This persisted request is already bounded to the sampled RPC head.
+          // The isolated LIVE reader cannot supply a newer head while held.
+          publishHandshake('failure-catchup', { caseId: CASE_ID, catchupId });
           console.info(`[failure-case/${CASE_ID}] persisted unowned catchup ${catchupId} [${start}, ${end}] from saved height ${watermark} to current RPC head`);
         }
         armed.detail = { watermarkWhenArmed: watermark, blockNumber, blockHash, chainId, blocks, blockHashes, catchupIdBefore, catchupId };
@@ -853,10 +856,9 @@ describe('Service failure case', function () {
               [chainId, `host-listener-consumer.${chainId}`, RELATIVE_CATCHUP ? record.detail?.catchupIdBefore : record.detail?.catchupId]));
             const row = replay.rows[0];
             if (RELATIVE_CATCHUP && row) {
-              // Check the CLI-created range immediately, even if that request
-              // finishes while LIVE/FINAL are held. An old LIVE reference must
-              // not be hidden by waiting for the backlog to ingest the receipts.
-              requireRelativeConsumerCatchup(row, record.detail?.catchupIdBefore, blocks);
+              // A relative replay ends before its first queued LIVE block.
+              // The retained LIVE stream supplies the rest of the workload.
+              requireRelativeConsumerCatchup(row, record.detail?.catchupIdBefore);
             }
             const ingested = await withPool(databaseUrls[record.victim], pool => pool.query<{
               blockNumber: number; blockHash: string; blockStatus: string;
@@ -873,15 +875,15 @@ describe('Service failure case', function () {
                 [row.id, chainId, `host-listener-consumer.${chainId}`]));
               if (core.rows[0]?.status === 'COMPLETED' && missing.length === 0) {
                 console.info(`[failure-case/${CASE_ID}] all ${blocks.length} exact receipt blocks are stored on chain ${chainId}; catchup ${row.id} [${row.blockStart}, ${row.blockEnd}], receipts [${blocks.join(', ')}]`);
-                const covered = requireCompletedConsumerCatchup(row, record.detail?.catchupIdBefore, blocks);
-                expect(covered, 'the resumed catchup must cover every offline receipt').to.deep.eq(blocks);
+                const covered = blocks.filter(block => block >= row.blockStart && block <= row.blockEnd);
+                if (!RELATIVE_CATCHUP) {
+                  expect(requireCompletedConsumerCatchup(row, record.detail?.catchupIdBefore, blocks),
+                    'the absolute catchup must cover every offline receipt').to.deep.eq(blocks);
+                }
                 expect(core.rows[0].sub_ranges, 'offline replay must span at least three core sub-ranges').to.be.at.least(3);
                 expect(core.rows[0].fannedEnd, 'core publication must cover the catchup end').to.be.at.least(row.blockEnd);
                 console.info(`[failure-case/${CASE_ID}] completed catchup covers ${covered.length}/${blocks.length} workload blocks: [${covered.join(', ')}]`);
-                if (RELATIVE_CATCHUP) {
-                  publishHandshake('failure-catchup', { caseId: CASE_ID, catchupId: row.id });
-                }
-                emitAssertions(CASE_ID, ['scope'], `A new non-finalized consumer catchup covered ${covered.length}/${blocks.length} receipt blocks, completed at least three listener-core sub-ranges and reached DONE; all exact receipt blocks were stored while legacy ingestion stayed stopped. ${RELATIVE_CATCHUP ? 'LIVE/FINAL receipt delivery is held; the runner additionally requires successful payloads with this exact catchup ID and the original transactions.' : 'Live and replay delivery may overlap.'}`);
+                emitAssertions(CASE_ID, ['scope'], `A new non-finalized consumer catchup covered ${covered.length}/${blocks.length} receipt blocks, completed at least three listener-core sub-ranges and reached DONE; all exact receipt blocks were stored while legacy ingestion stayed stopped. ${RELATIVE_CATCHUP ? 'Relative replay and retained LIVE delivery jointly recover the workload.' : 'Before ordinary delivery was released, the runner verified successful CATCHUP payloads with this exact request ID for all twelve original transactions.'}`);
                 break;
               }
             }

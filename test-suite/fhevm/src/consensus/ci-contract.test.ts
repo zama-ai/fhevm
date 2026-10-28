@@ -181,10 +181,10 @@ test("GPU pressure opts into hook builds only when selected and retains one-devi
   expect(workflow.jobs.gpu.steps.find((step: any) => step.run === "./scripts/run-gpu-pressure.sh").if).toContain("gpu-pressure");
 });
 
-test("relative catchup regression is routed through backlog with the private ingestion gate enabled", () => {
-  const row = inventory.cases.find(entry => entry.id === "FM-HOST-RELATIVE-CATCHUP")!;
+test("absolute catchup regression is routed through backlog with the private ingestion gate enabled", () => {
+  const row = inventory.cases.find(entry => entry.id === "FM-HOST-LONG-OFFLINE")!;
   expect(row.capabilities).toContain("broker-failpoints");
-  expect(row.runner).toBe("scripts/run-failure-matrix.sh --case FM-HOST-RELATIVE-CATCHUP");
+  expect(row.runner).toBe("scripts/run-failure-matrix.sh --case FM-HOST-LONG-OFFLINE");
   expect(workflow.on.workflow_dispatch.inputs.selection.options).toContain(row.id);
   const plan = Bun.spawnSync([process.execPath, "scripts/consensus-inventory.ts", "plan", row.id], { cwd: cli });
   expect(plan.exitCode, plan.stderr.toString()).toBe(0);
@@ -192,4 +192,8 @@ test("relative catchup regression is routed through backlog with the private ing
   expect(jobs).toHaveLength(1);
   expect(jobs[0].leg).toBe("backlog");
   expect(jobs[0].capabilities).toContain("broker-failpoints");
+  const relative = inventory.cases.find(entry => entry.id === "FM-HOST-RELATIVE-CATCHUP")!;
+  expect(relative.capabilities).not.toContain("broker-failpoints");
+  const collection = workflow.jobs.consensus.steps.find((step: any) => step.name === "Aggregate this leg's results against the plan").run;
+  expect(collection).toContain('../../.fhevm/runtime/failure-matrix');
 });
