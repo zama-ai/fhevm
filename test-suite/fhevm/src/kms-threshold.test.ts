@@ -314,11 +314,13 @@ describe("buildKmsConnectorOverride (--override kms-connector)", () => {
     });
 
   test("without an override every party runs the resolved published image (no build specs)", async () => {
-    const services = (await buildKmsConnectorOverride(thresholdSpec([]))).services;
-    for (const [name, service] of Object.entries(services)) {
+    const doc = await buildKmsConnectorOverride(thresholdSpec([]));
+    for (const [name, service] of Object.entries(doc.services)) {
       expect(service.build, name).toBeUndefined();
       expect(String(service.image), name).not.toContain("fhevm-local");
     }
+    // Nothing is built, so no zama-ai/kms token is needed.
+    expect(doc.secrets).toBeUndefined();
   });
 
   test("override retags every party to the one locally built image; only party 1 builds it", async () => {
@@ -330,6 +332,14 @@ describe("buildKmsConnectorOverride (--override kms-connector)", () => {
     // Same image tag, no per-party rebuild: maybeBuild builds by base service name once.
     expect(clone.image).toBe(base.image);
     expect(clone.build).toBeUndefined();
+  });
+
+  test("a local build receives the zama-ai/kms token as a BuildKit secret from the environment", async () => {
+    const doc = await buildKmsConnectorOverride(thresholdSpec([{ group: "kms-connector" }]));
+    expect((doc.services["kms-connector-gw-listener"].build as Record<string, unknown>).secrets).toEqual([
+      "BLOCKCHAIN_ACTIONS_TOKEN",
+    ]);
+    expect(doc.secrets).toEqual({ BLOCKCHAIN_ACTIONS_TOKEN: { environment: "BLOCKCHAIN_ACTIONS_TOKEN" } });
   });
 });
 

@@ -39,6 +39,8 @@ jobs:
             - kms-connector/connector-db/**
             - kms-connector/crates/**
             - kms-connector/Cargo.*
+            - kms-connector/.cargo/**
+            - .github/actions/kms-git-auth/**
             - gateway-contracts/rust_bindings/**
             - host-contracts/rust_bindings/**
             - shared/user-decryption-signature/**
@@ -67,6 +69,11 @@ jobs:
           token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
           persist-credentials: 'false'
 
+      - name: Authenticate zama-ai/kms git dependencies
+        uses: ./.github/actions/kms-git-auth
+        with:
+          token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+
       - name: Setup common environment variables
         env:
           GH_WORKSPACE: ${{ github.workspace }}
@@ -84,6 +91,16 @@ jobs:
           command: |
             echo "Logging into ghcr.io..."
             echo "$GHCR_PASSWORD" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+      - name: Login to Chainguard Registry
+        uses: zama-ai/ci-templates/.github/actions/retry@542103e14b9ae6a9aea27787b8724b3b35bb3918 # v1.0.9
+        env:
+          CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+          CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+        with:
+          command: |
+            echo "Logging into cgr.dev..."
+            echo "$CGR_PASSWORD" | docker login cgr.dev -u "$CGR_USERNAME" --password-stdin
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
