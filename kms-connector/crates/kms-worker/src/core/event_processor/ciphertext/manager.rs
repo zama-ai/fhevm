@@ -204,7 +204,7 @@ fn compare_onchain(
 ) -> anyhow::Result<()> {
     if onchain.keyId != material.key_id {
         return Err(anyhow!(
-            "on-chain tuple mismatch on `key_id`: onchain {}, attested {}",
+            "on-chain tuple mismatch on `key_id`: onchain {:#066x}, attested {:#066x}",
             onchain.keyId,
             material.key_id
         ));

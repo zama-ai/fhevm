@@ -561,7 +561,7 @@ where
                     "No snsCtMaterials found, cannot proceed without a valid key_id"
                 ))
             })?;
-        info!("Extracted key_id {key_id} from snsCtMaterials[0]");
+        info!("Extracted key_id 0x{key_id} from snsCtMaterials[0]");
 
         let parsed_extra_data =
             parse_extra_data(extra_data).map_err(ProcessingError::Irrecoverable)?;
@@ -629,7 +629,7 @@ where
             .collect();
 
         info!(
-            "Processing {} ciphertexts, key_id: {}, FHE types: {:?}",
+            "Processing {} ciphertexts, key_id: 0x{}, FHE types: {:?}",
             sns_ciphertext_materials.len(),
             key_id,
             fhe_types,
