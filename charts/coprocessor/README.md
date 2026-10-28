@@ -62,8 +62,9 @@ epochs) plus up to one refresh interval.
 The KMS connector serves a new context as soon as its own RPC node reports the activation block
 finalized. An unknown signer wakes a poll and waits at most 3 s before being checked again.
 Concurrent misses share the poll; an in-flight poll can delay the next one, and woken polls start
-at least 1 s apart. A signer still unknown gets `401 auth_unknown_signer` with `retryable: true`:
-its context's activation may not have reached the proxy's RPC yet, and RFC-038 has connectors retry. Any signature that recovers an
+at least 1 s apart. A signer still unknown gets `401 auth_unknown_signer` with `retryable: false`,
+as in RFC-038's error table. Connectors still retry it, since its context's activation may not have
+reached the proxy's RPC yet. Any signature that recovers an
 unknown address can trigger this path, including one signed for another audience, path or body.
 
 The NetworkPolicy matches the proxy pods in the release namespace only. When prf-service runs in

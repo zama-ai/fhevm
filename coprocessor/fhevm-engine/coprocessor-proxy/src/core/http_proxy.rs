@@ -85,7 +85,14 @@ impl Proxy {
         header.insert_header(CONTENT_LENGTH, body.len().to_string())?;
         header.insert_header(CACHE_CONTROL, NO_STORE)?;
         if status == StatusCode::UNAUTHORIZED {
-            header.insert_header(WWW_AUTHENTICATE, fhevm_sig_auth::SCHEME)?;
+            // A `HEAD` answer has no body, so the challenge carries the code too (RFC-038, as in
+            // RFC 9449). The codes are fixed identifiers, so they need no escaping.
+            let challenge = format!(
+                "{} error=\"{}\"",
+                fhevm_sig_auth::SCHEME,
+                error.code.as_str()
+            );
+            header.insert_header(WWW_AUTHENTICATE, challenge)?;
         }
         if let Some((name, value)) = extra_header {
             header.insert_header(name, value)?;
@@ -310,13 +317,13 @@ impl ProxyHttp for Proxy {
     }
 }
 
-/// Converts an `AuthError` into an `ErrorResponse` with its `auth_*` code. Two are worth retrying: an
-/// expired header, after re-signing, and an unknown signer, whose KMS context activation the proxy
-/// may not have read yet (RFC-038's retry step).
+/// Converts an `AuthError` into an `ErrorResponse` with its `auth_*` code. Only an expired header is
+/// retryable, after re-signing. An unknown signer is not, as in RFC-038's error table, although
+/// connectors still retry it in their retry step.
 fn auth_error_response(error: &AuthError) -> ErrorResponse {
     let code = ErrorCode::Auth {
         code: error.code(),
-        retryable: matches!(error, AuthError::Expired | AuthError::UnknownSigner(_)),
+        retryable: matches!(error, AuthError::Expired),
     };
     ErrorResponse::new(code, error.to_string())
 }
@@ -381,14 +388,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_expired_and_unknown_signer_auth_rejections_are_retryable() {
+    fn only_expired_auth_rejections_are_retryable() {
         let expired = auth_error_response(&AuthError::Expired);
         assert_eq!(expired.code.as_str(), "auth_expired");
         assert!(expired.retryable);
 
         let unknown = auth_error_response(&AuthError::UnknownSigner(Address::ZERO));
         assert_eq!(unknown.code.as_str(), "auth_unknown_signer");
-        assert!(unknown.retryable);
+        assert!(!unknown.retryable);
 
         let missing = auth_error_response(&AuthError::Missing);
         assert_eq!(missing.code.as_str(), "auth_missing");

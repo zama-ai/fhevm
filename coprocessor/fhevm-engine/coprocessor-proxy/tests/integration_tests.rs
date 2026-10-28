@@ -120,7 +120,10 @@ async fn test_rejects_unauthenticated_requests() {
         ),
     ] {
         let response = request.send().await.unwrap();
-        assert_eq!(response.headers()["www-authenticate"], "FhevmSig");
+        assert_eq!(
+            response.headers()["www-authenticate"],
+            format!("FhevmSig error=\"{auth_code}\"").as_str()
+        );
         assert_proxy_error(response, StatusCode::UNAUTHORIZED, auth_code, false).await;
     }
 
@@ -140,7 +143,7 @@ async fn test_rejects_unauthenticated_requests() {
         ),
     ] {
         let response = request.send().await.unwrap();
-        assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, true).await;
+        assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, false).await;
     }
     assert_eq!(t.prf_service.hits(), 0, "nothing must reach prf-service");
 }
@@ -314,7 +317,12 @@ async fn test_rejects_request_bodies() {
                 .await
                 .to_ascii_lowercase();
             assert!(response.starts_with("http/1.1 401"), "{response}");
-            // A `HEAD` answer has no body.
+            // A `HEAD` answer has no body, so its code is only in the challenge.
+            assert!(
+                response
+                    .contains("\r\nwww-authenticate: fhevmsig error=\"auth_body_mismatch\"\r\n"),
+                "{response}"
+            );
             if method == "GET" {
                 assert!(response.contains("auth_body_mismatch"), "{response}");
             }
@@ -585,9 +593,12 @@ async fn test_refuses_an_unknown_signer_after_the_wait() {
         .send()
         .await
         .unwrap();
-    assert_eq!(response.headers()["www-authenticate"], "FhevmSig");
+    assert_eq!(
+        response.headers()["www-authenticate"],
+        format!("FhevmSig error=\"{UNKNOWN_SIGNER}\"").as_str()
+    );
     assert!(!response.headers().contains_key("retry-after"));
-    assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, true).await;
+    assert_proxy_error(response, StatusCode::UNAUTHORIZED, UNKNOWN_SIGNER, false).await;
     assert_eq!(t.prf_service.hits(), 0);
     let waited = started.elapsed();
     assert!(
