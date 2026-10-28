@@ -1484,10 +1484,10 @@ cases:
 
   - id: FM-HOST-LONG-OFFLINE
     family: failure-matrix
-    property: One isolated host consumer recovers twelve named receipt blocks through a persisted non-finalized request from its saved height to the current RPC head across multiple four-block core sub-ranges, preserving every canonical value and accepting fresh work.
+    property: One isolated host consumer recovers twelve named receipt blocks through a persisted non-finalized request from its saved height to the current RPC head while ordinary receipt delivery is held across multiple four-block core sub-ranges, preserving every canonical value and accepting fresh work.
     topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu, gpu] }
     services: [host-listener-consumer, listener-core]
-    capabilities: [docker-socket, service-control, anvil-control]
+    capabilities: [docker-socket, service-control, anvil-control, broker-failpoints]
     workload: Twelve receipt-identified persisted-operand computations, followed by fresh work; observed listener-core catchup and worker bounds are four.
     fault: { mechanism: listener-offline-multiple-pages, stage: identified work queued while the service is held, observation: service-control acknowledgment plus all named targets pending before recovery }
     participants: { compute: all, submit: all, quorum: required }
@@ -1496,22 +1496,22 @@ cases:
       - liveness: every original target completes after recovery and fresh work also progresses
       - bytes: every retained output has canonical byte and digest agreement with exactly one stored row per operator
       - quorum: every original output reaches authorized distinct-sender quorum
-      - scope: the exact persisted recovery request covers every receipt, reaches DONE and completes at least three listener-core sub-ranges; all twelve exact receipt blocks are stored in the victim database
+      - scope: the exact persisted recovery request covers every receipt, reaches DONE and completes at least three listener-core sub-ranges; all twelve exact receipt blocks are stored in the victim database and successful CATCHUP payloads with that exact ID contain all twelve original transactions
       - safety: no target is lost or duplicated; legacy ingestion stays stopped and live configuration matches the bounded batch/page profile
       - correctness: every retained and fresh value decrypts to the independent fixture model
     timeout_s: 2400
-    cleanup: [restore all held ingestion paths and original worker ownership]
+    cleanup: [remove and verify the private ingestion gate; restore all held ingestion paths and original worker ownership]
     runner: scripts/run-failure-matrix.sh --case FM-HOST-LONG-OFFLINE
     ci: { leg: backlog, backend: cpu }
-    artifacts: [case-results, workload-handshake, service-identities, run-identity]
+    artifacts: [case-results, workload-handshake, service-identities, catchup-isolation, run-identity]
     acceptance: required
 
   - id: FM-HOST-RELATIVE-CATCHUP
     family: failure-matrix
-    property: One isolated host consumer recovers twelve named receipt blocks using only relative startup flags, with LIVE/FINAL receipt ingestion held across multiple four-block core sub-ranges, preserving every canonical value and accepting fresh work.
+    property: One isolated host consumer recovers twelve named receipt blocks using relative startup replay followed by retained LIVE delivery, preserving every canonical value and accepting fresh work.
     topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu, gpu] }
     services: [host-listener-consumer, listener-core]
-    capabilities: [docker-socket, service-control, anvil-control, broker-failpoints]
+    capabilities: [docker-socket, service-control, anvil-control]
     workload: Twelve receipt-identified persisted-operand computations, followed by fresh work; observed listener-core catchup and worker bounds are four.
     fault: { mechanism: relative-replay-with-stale-live-backlog, stage: identified work queued while the service is held, observation: service-control acknowledgment plus all named targets pending before recovery }
     participants: { compute: all, submit: all, quorum: required }
@@ -1520,11 +1520,11 @@ cases:
       - liveness: every original target completes after recovery and fresh work also progresses
       - bytes: every retained output has canonical byte and digest agreement with exactly one stored row per operator
       - quorum: every original output reaches authorized distinct-sender quorum
-      - scope: the new CLI-created relative request covers every receipt, reaches DONE and completes at least three core sub-ranges; successful CATCHUP payloads with that exact ID contain all twelve original transactions
+      - scope: the new CLI-created relative request reaches DONE and completes at least three core sub-ranges; replay and retained LIVE delivery together store all twelve exact receipt blocks
       - safety: no target is lost or duplicated; legacy ingestion stays stopped and live configuration matches the bounded batch/page profile
       - correctness: every retained and fresh value decrypts to the independent fixture model
     timeout_s: 2400
-    cleanup: [remove and verify the private ingestion gate; restore all held ingestion paths and original worker ownership]
+    cleanup: [restore all held ingestion paths and original worker ownership]
     runner: scripts/run-failure-matrix.sh --case FM-HOST-RELATIVE-CATCHUP
     ci: { leg: backlog, backend: cpu }
     artifacts: [case-results, workload-handshake, service-identities, run-identity]

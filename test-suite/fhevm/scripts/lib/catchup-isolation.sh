@@ -1,8 +1,8 @@
-# Private E2E control for the relative-flags-only replay scenario.
+# Private E2E control for the absolute-range replay scenario.
 # The marker is shared with the host supervisor so timeout cleanup can remove
 # the gate even if the child runner is killed before its own cleanup executes.
 install_catchup_isolation() {
-  local target="$1" workload="$2" evidence="$REPORT_DIR/FM-HOST-RELATIVE-CATCHUP"
+  local target="$1" workload="$2" evidence="$REPORT_DIR/FM-HOST-LONG-OFFLINE"
   mkdir -p "$evidence" || return 1
   printf '%s\n' "$workload" > "$evidence/workload.json" || return 1
   jq -e --argjson until "$(($(date +%s) + 2400))" '
@@ -18,11 +18,25 @@ install_catchup_isolation() {
 }
 
 verify_catchup_isolation() {
-  local target="$1" evidence="$REPORT_DIR/FM-HOST-RELATIVE-CATCHUP"
+  local target="$1" evidence="$REPORT_DIR/FM-HOST-LONG-OFFLINE"
   docker exec "$target" host_listener_consumer --catchup-test-control receipts > "$evidence/receipts.jsonl" || return 1
   docker exec "$TEST_CONTAINER" cat "$HANDSHAKE_DIR/failure-catchup.json" > "$evidence/request.json" || return 1
   bun "$SCRIPT_DIR/verify-catchup-isolation.ts" "$evidence" | tee "$evidence/verification.json"
   return "${PIPESTATUS[0]}"
+}
+
+# Keep the ordinary-delivery gate closed until every original transaction has a
+# successful ingestion receipt from the exact persisted request.
+wait_for_catchup_isolation() {
+  local target="$1" evidence="$REPORT_DIR/FM-HOST-LONG-OFFLINE" deadline=$((SECONDS + 480))
+  until verify_catchup_isolation "$target" > "$evidence/verification.log" 2> "$evidence/verification-error.log"; do
+    if (( SECONDS >= deadline )); then
+      cat "$evidence/verification-error.log" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  cat "$evidence/verification.log"
 }
 
 restore_catchup_isolation() {
