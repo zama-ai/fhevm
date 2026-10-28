@@ -4,7 +4,10 @@
 [advisories]
 # RUSTSEC-2023-0071 (rsa): no fix released. Reached only via sqlx-mysql, which we
 # never compile (postgres-only).
-ignore = ["RUSTSEC-2023-0071"]
+# RUSTSEC-2026-0387 (crypto-bigint): no fix is reachable. Both copies come
+# through aws-sigv4 1.4.0, the newest release, which still pins crypto-bigint
+# 0.5. Remove this when the AWS SDK moves.
+ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2026-0387"]
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
 
