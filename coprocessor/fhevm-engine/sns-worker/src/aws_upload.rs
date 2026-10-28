@@ -1741,7 +1741,8 @@ mod tests {
     }
 
     #[tokio::test]
-    #[serial(s3)]
+    // Shares the local database fixture with the migration tests.
+    #[serial(db)]
     #[cfg(not(feature = "gpu"))]
     async fn legacy_partial_ct128_without_bytes_uploads_ct64_and_preserves_legacy_s3_format(
     ) -> anyhow::Result<()> {
@@ -1755,12 +1756,15 @@ mod tests {
 
         let localstack = localstack::start_localstack().await?;
         let endpoint_url = format!("http://127.0.0.1:{}", localstack.host_port);
-        std::env::set_var("AWS_ENDPOINT_URL", endpoint_url);
-        std::env::set_var("AWS_REGION", "us-east-1");
-        std::env::set_var("AWS_ACCESS_KEY_ID", "test");
-        std::env::set_var("AWS_SECRET_ACCESS_KEY", "test");
-
-        let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
+        // Do not redirect migration workers through process-wide AWS_* state.
+        let aws_conf = aws_config::defaults(BehaviorVersion::latest())
+            .endpoint_url(endpoint_url)
+            .region(aws_sdk_s3::config::Region::new("us-east-1"))
+            .credentials_provider(aws_sdk_s3::config::Credentials::new(
+                "test", "test", None, None, "test",
+            ))
+            .load()
+            .await;
         let client = aws_sdk_s3::Client::new(&aws_conf);
         let bucket_ct64 = "legacy-partial-ct64";
         let bucket_ct128 = "legacy-partial-ct128-not-created";
