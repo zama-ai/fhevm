@@ -118,6 +118,9 @@ on:
         required: true
       CGR_PASSWORD:
         required: true
+      # Read access to the private zama-ai/kms git dependencies, only needed with `build: true`.
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: false
     inputs: *shared_inputs
 
 permissions: {}
@@ -343,6 +346,10 @@ jobs:
 
       - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
+        env:
+          # Read access to the private zama-ai/kms git dependencies, for `--build` of the
+          # connector. Must be explicit: the `gh auth token` fallback would return GH_TOKEN.
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           args=(--scenario "$SCENARIO")
           if [ -n "${LOCK_FILE:-}" ]; then
