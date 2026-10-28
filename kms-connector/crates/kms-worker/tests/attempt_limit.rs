@@ -183,9 +183,15 @@ async fn test_request_exceeding_handle_limit_is_rejected(
         .build();
 
     const MAX_HANDLES_PER_DECRYPTION: NonZeroU16 = NonZeroU16::new(2).unwrap();
-    let sns_cts: Vec<_> = (0..=MAX_HANDLES_PER_DECRYPTION.get())
+    let mut sns_cts: Vec<_> = (0..=MAX_HANDLES_PER_DECRYPTION.get())
         .map(|_| rand_sns_ct())
         .collect();
+    // Use the same host chain for all handles, so the request can only be rejected because of the
+    // handle limit (and not because it spans multiple chains)
+    let chain_id_bytes: [u8; 8] = sns_cts[0].ctHandle[22..30].try_into()?;
+    for sns_ct in sns_cts.iter_mut().skip(1) {
+        sns_ct.ctHandle[22..30].copy_from_slice(&chain_id_bytes);
+    }
     let insert_options = InsertRequestOptions::new()
         .with_sns_ct_materials(sns_cts.clone())
         .with_tx_hash(rand_digest());
