@@ -8,9 +8,9 @@ do not need to have seen fhevm-mocks.
 Nothing outside this folder has been changed yet. No foundry profile, no deploy script and no test-runner
 entry exists for it. Section 7 lists that wiring.
 
-Paths written `fhevm-mocks:<path>` are files in `zama-ai/fhevm-mocks` at commit `8b91ae5`, under
+Paths written `fhevm-mocks:<path>` are files in `zama-ai/fhevm-mocks` at commit `585442e`, under
 `host-contracts-cleartext/v1.0/` unless they start with `/`. You can read any of them with
-`git -C <fhevm-mocks checkout> show 8b91ae5:host-contracts-cleartext/v1.0/<path>`.
+`git -C <fhevm-mocks checkout> show 585442e:host-contracts-cleartext/v1.0/<path>`.
 
 ---
 
@@ -18,7 +18,8 @@ Paths written `fhevm-mocks:<path>` are files in `zama-ai/fhevm-mocks` at commit 
 
 | | |
 |---|---|
-| copied from | `zama-ai/fhevm-mocks`, branch `devex/alexb/v1.0/new`, commit `8b91ae54ab3ff256aed5797644e9b48d06726f96` |
+| copied from | `zama-ai/fhevm-mocks`, branch `devex/alexb/v1.0/new`, commit `585442e02963def49e0aba469eb69dd811e79c5a` |
+| sync history | Initial copy at `8b91ae5`. Re-synced at `585442e`: `cleartext/CleartextPaddedInputter.sol`, `cleartext/shared/LibCleartextPad.sol` and `cleartext/shared/CleartextArithmeticBase.sol` changed (fhevm-mocks `e7008bd` pad block index little-endian, tech-spec#553; `82819de` pad decryption responses signed per share, tech-spec#547; `277da6f` docs; `585442e` the cleartext coprocessor re-checks a pad package's chain and label). No other file under `pkg/src` changed. |
 | package | `host-contracts-cleartext/v1.0/pkg/src/` (npm `@fhevm/host-contracts-cleartext` `1.0.0-0`) |
 | vendored upstream | `zama-ai/fhevm` `host-contracts/contracts` @ `10702a23009147252950a69059968b8a20599549`, labelled `v1.0.0-0-g10702a230` (fhevm `main`, no upstream tag yet). Source: `fhevm-mocks:pkg/package.json` → `fhevm.vendoredFrom` |
 | local patches on the vendored copy | `ACL.sol`, `ProtocolConfig.sol`, `ProtocolConfigReplica.sol`, `FHEVMExecutor.sol`, `PaddedInputter.sol` (same field; see commit `b0d98bf` in fhevm-mocks for the reasons) |
