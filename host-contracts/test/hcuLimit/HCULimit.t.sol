@@ -49,6 +49,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     address internal constant PARTNER_ADMIN = address(0xAD);
     uint16 internal constant LOW_QUOTA = 20;
     uint16 internal constant HIGH_QUOTA = 21;
+    address internal constant LOW = address(0xA1);
+    address internal constant HIGH = address(0xB1);
 
     bytes32 mockLHS = bytes32(uint256(int256(-1)));
     bytes32 mockRHS = bytes32(uint256(int256(-2)));
@@ -1602,35 +1604,31 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
     function test_lowTierIsRefusedOnceChainLoadPassesItsThreshold() public {
         // 1,000,000 HCU of capacity draining 100,000 per block; tier 1 is refused above 200,000 of load.
-        address low = address(0xA1);
-        address high = address(0xB1);
-        _setUpTiers(low, high);
+        _setUpTiers();
 
-        _add(low, 0x1001);
-        _add(low, 0x1002);
-        _expectChainLoadTooHigh(low, LOW_QUOTA, 1, 0x1003);
+        _add(LOW, 0x1001);
+        _add(LOW, 0x1002);
+        _expectChainLoadTooHigh(LOW, LOW_QUOTA, 1, 0x1003);
         // The default tier still has room up to the full capacity.
-        _add(high, 0x1004);
+        _add(HIGH, 0x1004);
         (, , uint48 load) = hcuLimit.getCapacity();
         assertEq(load, 3 * 84_000);
 
         // The default tier's addition pushed tier 1's wait from one block to two.
         vm.roll(block.number + 1);
-        _expectChainLoadTooHigh(low, LOW_QUOTA, 1, 0x1005);
+        _expectChainLoadTooHigh(LOW, LOW_QUOTA, 1, 0x1005);
         vm.roll(block.number + 1);
-        _add(low, 0x1006);
+        _add(LOW, 0x1006);
     }
 
     function test_otherTiersLoadRefusesTheLowTier() public {
-        address low = address(0xA1);
-        address high = address(0xB1);
-        _setUpTiers(low, high);
+        _setUpTiers();
 
-        _add(high, 0x1001);
-        _add(high, 0x1002);
-        _add(high, 0x1003);
+        _add(HIGH, 0x1001);
+        _add(HIGH, 0x1002);
+        _add(HIGH, 0x1003);
         // 336,000 after the operation, 136,000 above tier 1's threshold: two blocks of decay.
-        _expectChainLoadTooHigh(low, LOW_QUOTA, 2, 0x1004);
+        _expectChainLoadTooHigh(LOW, LOW_QUOTA, 2, 0x1004);
     }
 
     function test_unmeteredQuotaStillChargesTheCapacity() public {
@@ -1643,57 +1641,64 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     }
 
     function test_refusedOperationSpendsNeitherMeter() public {
-        address low = address(0xA1);
-        address high = address(0xB1);
-        _setUpTiers(low, high);
+        _setUpTiers();
         _setQuotaPerBlock(LOW_QUOTA, 1_000_000);
-        _add(high, 0x1001);
-        _add(high, 0x1002);
-        _add(high, 0x1003);
+        _add(HIGH, 0x1001);
+        _add(HIGH, 0x1002);
+        _add(HIGH, 0x1003);
 
-        _expectChainLoadTooHigh(low, LOW_QUOTA, 2, 0x1004);
+        _expectChainLoadTooHigh(LOW, LOW_QUOTA, 2, 0x1004);
         (, , uint48 used) = hcuLimit.getQuota(LOW_QUOTA);
         assertEq(used, 0);
 
         _setQuotaPerBlock(HIGH_QUOTA, 100_000);
         vm.roll(block.number + 1);
-        _add(high, 0x1005);
-        _expectQuotaExceeded(high, HIGH_QUOTA, 1, 0x1006);
+        _add(HIGH, 0x1005);
+        _expectQuotaExceeded(HIGH, HIGH_QUOTA, 1, 0x1006);
         (, , uint48 load) = hcuLimit.getCapacity();
         assertEq(load, 3 * 84_000 - 100_000 + 84_000);
     }
 
-    function test_quotaErrorReportsTheLongerWaitWhenBothMetersRefuse() public {
-        // The second addition is 68,000 over both: 2 blocks for the quota, 68 for the capacity.
+    function test_theLongerWaitNamesTheErrorWhenBothMetersRefuse() public {
+        // The second addition is 68,000 over both meters, which drain at different rates.
         _setQuota(DEFAULT_QUOTA, 100_000, 50_000);
         _setCapacity(100_000, 1_000);
         _add(address(0x1234), 0x1001);
-        _expectQuotaExceeded(address(0x1234), DEFAULT_QUOTA, 68, 0x1002);
+        _expectChainLoadTooHigh(address(0x1234), DEFAULT_QUOTA, 68, 0x1002);
+
+        _setQuota(DEFAULT_QUOTA, 100_000, 1_000);
+        _setCapacity(100_000, 50_000);
+        _expectQuotaExceeded(address(0x1234), DEFAULT_QUOTA, 68, 0x1003);
     }
 
     function test_retunedTierAppliesToAllItsQuotas() public {
-        address low = address(0xA1);
         address lowSibling = address(0xA2);
-        _setUpTiers(low, address(0xB1));
+        _setUpTiers();
         _assign(LOW_QUOTA, lowSibling);
         _setTier(1, 1_000);
 
-        _add(low, 0x1001);
+        _add(LOW, 0x1001);
         _expectChainLoadTooHigh(lowSibling, LOW_QUOTA, 1, 0x1002);
         _setTier(1, 5_000);
         _add(lowSibling, 0x1003);
     }
 
     function test_tierSetToZeroStopsItsQuotas() public {
-        address low = address(0xA1);
-        _setUpTiers(low, address(0xB1));
+        _setUpTiers();
         _setTier(1, 0);
-        _expectChainLoadTooHigh(low, LOW_QUOTA, type(uint256).max, 0x1001);
+        _expectTierStopped(LOW, LOW_QUOTA);
+    }
+
+    function test_tierThresholdsApplyOnlyWhileTheCapacityIsMetered() public {
+        _setUpTiers();
+        _setTier(1, 0);
+        _setCapacity(type(uint48).max, type(uint48).max);
+        _add(LOW, 0x1001);
     }
 
     function test_capacitySetToZeroStopsEveryOperation() public {
         _setCapacity(0, 0);
-        _expectChainLoadTooHigh(address(0x1234), DEFAULT_QUOTA, type(uint256).max, 0x1001);
+        _expectTierStopped(address(0x1234), DEFAULT_QUOTA);
     }
 
     function test_setQuotaTierRefusesATierWithoutThreshold() public {
@@ -1729,16 +1734,16 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.stopPrank();
     }
 
-    /// @dev Capacity of 1,000,000 HCU draining 100,000 per block. `low` is in an unmetered quota of tier 1, refused
-    ///      above 2,000 basis points (200,000 HCU of load); `high` in an unmetered quota of the default tier.
-    function _setUpTiers(address low, address high) internal {
+    /// @dev Capacity of 1,000,000 HCU draining 100,000 per block. LOW is in an unmetered quota of tier 1, refused
+    ///      above 2,000 basis points (200,000 HCU of load); HIGH in an unmetered quota of the default tier.
+    function _setUpTiers() internal {
         _setCapacity(1_000_000, 100_000);
         _setTier(1, 2_000);
         _setQuota(LOW_QUOTA, type(uint48).max, type(uint48).max);
         _setQuota(HIGH_QUOTA, type(uint48).max, type(uint48).max);
         _setQuotaTier(LOW_QUOTA, 1);
-        _assign(LOW_QUOTA, low);
-        _assign(HIGH_QUOTA, high);
+        _assign(LOW_QUOTA, LOW);
+        _assign(HIGH_QUOTA, HIGH);
     }
 
     function _setCapacity(uint48 maxHCU, uint48 decayPerBlock) internal {
@@ -1761,6 +1766,12 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.prank(owner);
         hcuLimit.setQuotaTier(quotaId, tier);
         assertEq(hcuLimit.getQuotaTier(quotaId), tier);
+    }
+
+    function _expectTierStopped(address caller, uint16 quotaId) internal {
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUTierStopped.selector, caller, quotaId));
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x9002)), caller);
     }
 
     /// @dev Expects one 84,000 HCU addition by `caller` to be refused by the chain's load with `retryAfterBlocks`.

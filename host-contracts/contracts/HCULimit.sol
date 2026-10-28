@@ -28,19 +28,24 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @param account Contract that ran the operation.
     /// @param quotaId Quota the contract is assigned to.
     /// @param retryAfterBlocks Blocks of decay after which this operation fits, if nothing else spends the quota;
-    ///        type(uint256).max if the operation alone exceeds the maximum. When the chain's load is also above the
-    ///        tier's threshold, the longer of the two waits. Later operations of the same transaction can need more,
-    ///        so clients simulate again after waiting.
+    ///        type(uint256).max if the operation alone exceeds the maximum. Later operations of the same
+    ///        transaction can need more, so clients simulate again after waiting.
     error HCUQuotaExceeded(address account, uint16 quotaId, uint256 retryAfterBlocks);
 
-    /// @notice Returned when the operation fits the contract's quota, but would take the chain's load over the threshold
-    ///         of the quota's tier.
+    /// @notice Returned when the operation would take the chain's load over the threshold of the quota's tier, and the
+    ///         load needs a longer wait than the quota.
     /// @param account Contract that ran the operation.
     /// @param quotaId Quota the contract is assigned to.
     /// @param retryAfterBlocks Blocks of decay after which this operation fits, if no contract adds load meanwhile;
     ///        type(uint256).max if the operation alone exceeds the threshold. Other contracts keep adding load, so
     ///        the wait can be longer.
     error HCUChainLoadTooHigh(address account, uint16 quotaId, uint256 retryAfterBlocks);
+
+    /// @notice Returned when the quota's tier admits no load: its threshold is 0, or the capacity is stopped. Retrying
+    ///         fails until the owner moves the quota or changes the threshold or the capacity.
+    /// @param account Contract that ran the operation.
+    /// @param quotaId Quota the contract is assigned to.
+    error HCUTierStopped(address account, uint16 quotaId);
 
     /// @notice Returned when the contract's quota has a maximum of 0. Retrying fails until the contract is moved
     ///         or the owner resizes the quota.
@@ -1809,14 +1814,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Sets the load above which a tier's operations are refused, in basis points of the capacity's maximum.
-     *         10000 admits operations until the capacity is full; 0 stops the tier.
+     *         10000 admits operations until the capacity is full; 0 stops the tier. Thresholds apply only while the
+     *         capacity is metered.
      */
     function setTier(uint8 tier, uint16 maxLoadBps) external onlyACLOwner {
         _setTier(tier, maxLoadBps);
     }
 
     /**
-     * @notice Moves a quota to a tier whose threshold is above 0.
+     * @notice Moves a quota to a tier. A tier whose threshold is 0 is refused, so a mistyped tier cannot stop a quota.
      */
     function setQuotaTier(uint16 quotaId, uint8 tier) external onlyACLOwner {
         HCULimitStorage storage $ = _getHCULimitStorage();
@@ -2062,30 +2068,44 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint16 quotaId = $.contractQuota[caller];
         Quota storage quota = $.quotas[quotaId];
         if (quota.paused) revert HCUQuotaPaused(caller, quotaId);
-        if (quota.maxHCU == 0) revert HCUQuotaStopped(caller, quotaId);
+        uint48 maxHCU = quota.maxHCU;
+        if (maxHCU == 0) revert HCUQuotaStopped(caller, quotaId);
         uint256 used;
         uint256 quotaWait;
-        if (quota.maxHCU != NO_CAP) {
-            (used, quotaWait) = _meter(quota.usedHCU, quota.lastBlock, quota.decayPerBlock, quota.maxHCU, opHCU);
+        if (maxHCU != NO_CAP) {
+            (used, quotaWait) = _meter(quota.usedHCU, quota.lastBlock, quota.decayPerBlock, maxHCU, opHCU);
         }
         // An unmetered quota still charges the capacity, so the capacity sees all load.
-        Capacity storage capacity = $.capacity;
-        uint256 load;
-        uint256 loadWait;
-        if (capacity.maxHCU != NO_CAP) {
-            uint256 threshold = (uint256(capacity.maxHCU) * $.tierMaxLoadBps[quota.tier]) / MAX_BPS;
-            (load, loadWait) = _meter(capacity.usedHCU, capacity.lastBlock, capacity.decayPerBlock, threshold, opHCU);
-        }
-        if (quotaWait != 0) revert HCUQuotaExceeded(caller, quotaId, quotaWait > loadWait ? quotaWait : loadWait);
-        if (loadWait != 0) revert HCUChainLoadTooHigh(caller, quotaId, loadWait);
-        if (quota.maxHCU != NO_CAP) {
+        (uint256 load, uint256 loadWait) = _chainLoad(quota.tier, opHCU, caller, quotaId);
+        // The meter with the longer wait names the error, so waiting that long clears both.
+        if (loadWait > quotaWait) revert HCUChainLoadTooHigh(caller, quotaId, loadWait);
+        if (quotaWait != 0) revert HCUQuotaExceeded(caller, quotaId, quotaWait);
+        if (maxHCU != NO_CAP) {
             quota.usedHCU = uint48(used);
             quota.lastBlock = uint48(block.number);
         }
+        Capacity storage capacity = $.capacity;
         if (capacity.maxHCU != NO_CAP) {
             capacity.usedHCU = uint48(load);
             capacity.lastBlock = uint48(block.number);
         }
+    }
+
+    /// @dev Returns the chain's load after decay plus `opHCU`, and the blocks of decay before it fits the threshold of
+    ///      `tier`; (0, 0) while the capacity is unmetered.
+    function _chainLoad(
+        uint8 tier,
+        uint256 opHCU,
+        address caller,
+        uint16 quotaId
+    ) private view returns (uint256 load, uint256 retryAfterBlocks) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        Capacity storage capacity = $.capacity;
+        uint48 maxLoad = capacity.maxHCU;
+        if (maxLoad == NO_CAP) return (0, 0);
+        uint256 threshold = (uint256(maxLoad) * $.tierMaxLoadBps[tier]) / MAX_BPS;
+        if (threshold == 0) revert HCUTierStopped(caller, quotaId);
+        return _meter(capacity.usedHCU, capacity.lastBlock, capacity.decayPerBlock, threshold, opHCU);
     }
 
     /**
