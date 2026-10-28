@@ -218,7 +218,7 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
         );
     }
 
-    function test_reinitializeV4SucceedsOnUpgradeFromProtocolConfig() public {
+    function test_reinitializeV4OnUpgradeFromProtocolConfigKeepsStateAndMirrors() public {
         ProtocolConfig pc = _setupCanonical();
 
         (uint256 contextId, uint256 epochId) = pc.getCurrentKmsContextAndEpoch();
@@ -243,6 +243,12 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         protocolConfigReplica.reinitializeV4();
+
+        vm.prank(owner);
+        protocolConfigReplica.mirrorKmsEpoch(contextId, epochId + 1);
+        (newContextId, newEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
+        assertEq(newContextId, contextId);
+        assertEq(newEpochId, epochId + 1);
     }
 
     function test_revertReinitializeV4OnFreshReplica() public {

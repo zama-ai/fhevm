@@ -53,9 +53,25 @@ abstract contract HostContractsDeployerTestUtils is Test {
         );
     bytes32 internal constant EIP712_CRSGEN_TYPE_HASH =
         keccak256("CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest,bytes extraData)");
+    bytes32 internal constant EIP712_CONTEXT_CREATION_TYPE_HASH =
+        keccak256(
+            "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)"
+        );
+    bytes32 internal constant EIP712_EPOCH_ACTIVATION_TYPE_HASH =
+        keccak256(
+            "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)"
+        );
+    bytes32 internal constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
+        keccak256("ContextDestructionConfirmation(uint256 destroyedContextId,bytes extraData)");
+    bytes32 internal constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
+        keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
 
     /// @dev Shared ProtocolConfig handle bound by each suite's setUp; used by the hoisted EIP-712 helpers below.
     ProtocolConfig internal protocolConfig;
+
+    /// @dev nodeConfigHash of each context defined through `_defineNewKmsContextAndEpoch`. A Pending
+    ///      context has no getter for its nodes or thresholds, so the helper records what it defined.
+    mapping(uint256 contextId => bytes32) internal nodeConfigHashes;
 
     function _deployACL(address owner) internal returns (ACL aclProxy, address aclImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxyACL());
@@ -338,11 +354,10 @@ abstract contract HostContractsDeployerTestUtils is Test {
         }
     }
 
-    /// @dev Projection of _makeKmsNodeParams onto the stored KmsNode shape, for getKmsNodesForContext assertions.
-    function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory nodes) {
-        KmsNodeParams[] memory params = _makeKmsNodeParams(count);
-        nodes = new KmsNode[](count);
-        for (uint256 i = 0; i < count; i++) {
+    /// @dev Projection of `params` onto the stored KmsNode shape.
+    function _toKmsNodes(KmsNodeParams[] memory params) internal pure returns (KmsNode[] memory nodes) {
+        nodes = new KmsNode[](params.length);
+        for (uint256 i = 0; i < params.length; i++) {
             nodes[i] = KmsNode({
                 txSenderAddress: params[i].txSenderAddress,
                 signerAddress: params[i].signerAddress,
@@ -362,19 +377,6 @@ abstract contract HostContractsDeployerTestUtils is Test {
         return PREP_KEYGEN_COUNTER_BASE + (keyId - KEY_COUNTER_BASE);
     }
 
-    function _computeProtocolConfigDomainSeparator() internal view returns (bytes32) {
-        return
-            keccak256(
-                abi.encode(
-                    EIP712_DOMAIN_TYPE_HASH,
-                    keccak256(bytes("ProtocolConfig")),
-                    keccak256(bytes("1")),
-                    block.chainid,
-                    address(protocolConfig)
-                )
-            );
-    }
-
     /// @dev Shared keygen struct-hash builder, parameterized by EIP-712 domain separator.
     function _hashKeygenWithDomain(
         bytes32 domainSeparator,
@@ -383,22 +385,21 @@ abstract contract HostContractsDeployerTestUtils is Test {
         IKMSGeneration.KeyDigest[] memory keyDigests,
         bytes memory extraData
     ) internal pure returns (bytes32) {
+        bytes32 structHash = keccak256(
+            abi.encode(EIP712_KEYGEN_TYPE_HASH, prepKeygenId, keyId, _hashKeyDigests(keyDigests), keccak256(extraData))
+        );
+        return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
+    }
+
+    /// @dev EIP-712 hash of a KeyDigest[] array.
+    function _hashKeyDigests(IKMSGeneration.KeyDigest[] memory keyDigests) internal pure returns (bytes32) {
         bytes32[] memory digestHashes = new bytes32[](keyDigests.length);
         for (uint256 i = 0; i < keyDigests.length; i++) {
             digestHashes[i] = keccak256(
                 abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
             );
         }
-        bytes32 structHash = keccak256(
-            abi.encode(
-                EIP712_KEYGEN_TYPE_HASH,
-                prepKeygenId,
-                keyId,
-                keccak256(abi.encodePacked(digestHashes)),
-                keccak256(extraData)
-            )
-        );
-        return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
+        return keccak256(abi.encodePacked(digestHashes));
     }
 
     /// @dev Shared crsgen struct-hash builder, parameterized by EIP-712 domain separator.
@@ -421,67 +422,243 @@ abstract contract HostContractsDeployerTestUtils is Test {
         return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
     }
 
-    function _hashProtocolConfigKeygen(
-        uint256 prepKeygenId,
-        uint256 keyId,
-        IKMSGeneration.KeyDigest[] memory keyDigests,
-        bytes memory extraData
-    ) internal view returns (bytes32) {
-        return
-            _hashKeygenWithDomain(_computeProtocolConfigDomainSeparator(), prepKeygenId, keyId, keyDigests, extraData);
+    function _hashProtocolConfigTypedData(bytes32 structHash) internal view returns (bytes32) {
+        bytes32 domainSeparator = keccak256(
+            abi.encode(
+                EIP712_DOMAIN_TYPE_HASH,
+                keccak256(bytes("ProtocolConfig")),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(protocolConfig)
+            )
+        );
+        return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
     }
 
-    function _hashProtocolConfigCrsgen(
-        uint256 crsId,
-        uint256 maxBitLength,
-        bytes memory crsDigest,
+    function _hashContextCreation(
+        uint256 previousContextId,
+        uint256 newContextId,
+        bytes32 nodeConfigHash,
         bytes memory extraData
     ) internal view returns (bytes32) {
         return
-            _hashCrsgenWithDomain(_computeProtocolConfigDomainSeparator(), crsId, maxBitLength, crsDigest, extraData);
+            _hashProtocolConfigTypedData(
+                keccak256(
+                    abi.encode(
+                        EIP712_CONTEXT_CREATION_TYPE_HASH,
+                        previousContextId,
+                        newContextId,
+                        nodeConfigHash,
+                        keccak256(extraData)
+                    )
+                )
+            );
+    }
+
+    function _hashEpochActivation(
+        uint256 contextId,
+        uint256 previousEpochId,
+        uint256 epochId,
+        bytes32 epochMaterialHash,
+        bytes memory extraData
+    ) internal view returns (bytes32) {
+        return
+            _hashProtocolConfigTypedData(
+                keccak256(
+                    abi.encode(
+                        EIP712_EPOCH_ACTIVATION_TYPE_HASH,
+                        contextId,
+                        previousEpochId,
+                        epochId,
+                        epochMaterialHash,
+                        keccak256(extraData)
+                    )
+                )
+            );
+    }
+
+    function _hashContextDestruction(
+        uint256 destroyedContextId,
+        bytes memory extraData
+    ) internal view returns (bytes32) {
+        return
+            _hashProtocolConfigTypedData(
+                keccak256(abi.encode(EIP712_CONTEXT_DESTRUCTION_TYPE_HASH, destroyedContextId, keccak256(extraData)))
+            );
+    }
+
+    function _hashEpochDestruction(uint256 destroyedEpochId, bytes memory extraData) internal view returns (bytes32) {
+        return
+            _hashProtocolConfigTypedData(
+                keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData)))
+            );
+    }
+
+    /// @dev nodeConfigHash of ContextCreationConfirmation, over the params projected onto the stored KmsNode shape.
+    function _hashNodeConfig(
+        KmsNodeParams[] memory params,
+        KmsThresholds memory thresholds
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encode(_toKmsNodes(params), thresholds));
+    }
+
+    /// @dev epochMaterialHash of EpochActivationConfirmation. CRS entries encode the raw digest bytes.
+    function _hashEpochMaterial(
+        IProtocolConfig.EpochKeyResult[] memory keys,
+        IProtocolConfig.EpochCrsResult[] memory crsList
+    ) internal pure returns (bytes32) {
+        bytes32[] memory keyHashes = new bytes32[](keys.length);
+        for (uint256 i = 0; i < keys.length; i++) {
+            keyHashes[i] = keccak256(
+                abi.encode(keys[i].prepKeygenId, keys[i].keyId, _hashKeyDigests(keys[i].keyDigests))
+            );
+        }
+        bytes32[] memory crsHashes = new bytes32[](crsList.length);
+        for (uint256 i = 0; i < crsList.length; i++) {
+            crsHashes[i] = keccak256(abi.encode(crsList[i].crsId, crsList[i].maxBitLength, crsList[i].crsDigest));
+        }
+        return keccak256(abi.encode(keyHashes, crsHashes));
     }
 
     function _defineNewKmsContextAndEpoch(KmsNodeParams[] memory nodes, KmsThresholds memory thresholds) internal {
-        PcrValues[] memory pcrValues = new PcrValues[](0);
-        protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, "", pcrValues);
+        _defineNewKmsContextAndEpoch(nodes, thresholds, "", new PcrValues[](0));
     }
 
-    function _confirmContextCreation(uint256 contextId, address txSender) internal {
-        vm.prank(txSender);
-        protocolConfig.confirmKmsContextCreation(contextId);
+    function _defineNewKmsContextAndEpoch(
+        KmsNodeParams[] memory nodes,
+        KmsThresholds memory thresholds,
+        string memory softwareVersion,
+        PcrValues[] memory pcrValues
+    ) internal {
+        protocolConfig.defineNewKmsContextAndEpoch(nodes, thresholds, softwareVersion, pcrValues);
+        nodeConfigHashes[protocolConfig.getCurrentKmsContextIdCounter()] = _hashNodeConfig(nodes, thresholds);
+    }
+
+    /// @dev Signs ContextCreationConfirmation with the latest active context as previousContextId.
+    function _signContextCreation(
+        uint256 contextId,
+        uint256 pk,
+        bytes memory extraData
+    ) internal view returns (bytes memory) {
+        return
+            _computeSignature(
+                pk,
+                _hashContextCreation(
+                    protocolConfig.getCurrentKmsContextId(),
+                    contextId,
+                    nodeConfigHashes[contextId],
+                    extraData
+                )
+            );
+    }
+
+    function _confirmContextCreation(uint256 contextId, uint256 pk, bytes memory extraData) internal {
+        protocolConfig.confirmKmsContextCreation(contextId, _signContextCreation(contextId, pk, extraData), extraData);
+    }
+
+    function _confirmContextDestruction(uint256 contextId, uint256 pk, bytes memory extraData) internal {
+        protocolConfig.confirmKmsContextDestruction(
+            contextId,
+            _signContextDestruction(contextId, pk, extraData),
+            extraData
+        );
+    }
+
+    function _confirmEpochDestruction(uint256 epochId, uint256 pk, bytes memory extraData) internal {
+        protocolConfig.confirmKmsEpochDestruction(epochId, _signEpochDestruction(epochId, pk, extraData), extraData);
+    }
+
+    /// @dev One key result `keyId` and one CRS result `crsId`.
+    function _buildEpochResults(
+        uint256 keyId,
+        uint256 crsId
+    )
+        internal
+        pure
+        returns (IProtocolConfig.EpochKeyResult[] memory keys, IProtocolConfig.EpochCrsResult[] memory crsList)
+    {
+        keys = new IProtocolConfig.EpochKeyResult[](1);
+        keys[0] = IProtocolConfig.EpochKeyResult({
+            prepKeygenId: _prepKeygenIdForKeyId(keyId),
+            keyId: keyId,
+            keyDigests: _mockKeyDigests()
+        });
+
+        crsList = new IProtocolConfig.EpochCrsResult[](1);
+        crsList[0] = IProtocolConfig.EpochCrsResult({crsId: crsId, maxBitLength: 4096, crsDigest: hex"deadbeef"});
+    }
+
+    /// @dev Signs EpochActivationConfirmation with the latest active epoch as previousEpochId.
+    function _signEpochActivation(
+        uint256 contextId,
+        uint256 epochId,
+        uint256 pk,
+        IProtocolConfig.EpochKeyResult[] memory keys,
+        IProtocolConfig.EpochCrsResult[] memory crsList,
+        bytes memory extraData
+    ) internal view returns (bytes memory) {
+        (, uint256 previousEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+        return
+            _computeSignature(
+                pk,
+                _hashEpochActivation(contextId, previousEpochId, epochId, _hashEpochMaterial(keys, crsList), extraData)
+            );
     }
 
     /// @dev Setup helper that drives a pending epoch to Active for suites that need a usable KMS context.
     ///      Callers need only the active epoch, not a specific payload, so this submits constant material.
-    ///      Tests that assert on the payload use `_confirmEpochWithMaterial` in the ProtocolConfig suite instead.
-    function _confirmEpochActivation(uint256 contextId, uint256 epochId, uint256 pk, address txSender) internal {
-        bytes memory extraData = abi.encodePacked(uint8(0x02), contextId, epochId);
+    function _confirmEpochActivationWithDummyMaterial(uint256 contextId, uint256 epochId, uint256 pk) internal {
+        // An empty `keys` or `crsList` reverts with EmptyEpochActivationResults, so supply one deterministic
+        // result of each kind with constant ids. Every signer produces the same epochMaterialHash.
+        // The ids need not exist in KMSGeneration because confirmEpochActivation checks only signer recovery.
+        _confirmEpochActivation(contextId, epochId, pk, KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
+    }
 
-        // An empty `keys` or `crsList` reverts with EmptyEpochActivationAttestation, so supply one deterministic
-        // self-signed attestation of each kind with constant ids. Every signer produces the same dataHash. The ids
-        // need not exist in KMSGeneration because confirmEpochActivation checks only signer recovery.
-        IKMSGeneration.KeyDigest[] memory keyDigests = _mockKeyDigests();
-        uint256 keyId = KEY_COUNTER_BASE + 1;
-        uint256 prepKeygenId = _prepKeygenIdForKeyId(keyId);
+    /// @dev Confirms `epochId` for `pk` with one key result `keyId` and one CRS result `crsId`.
+    function _confirmEpochActivation(
+        uint256 contextId,
+        uint256 epochId,
+        uint256 pk,
+        uint256 keyId,
+        uint256 crsId
+    ) internal {
+        (
+            IProtocolConfig.EpochKeyResult[] memory keys,
+            IProtocolConfig.EpochCrsResult[] memory crsList
+        ) = _buildEpochResults(keyId, crsId);
+        _submitEpochActivation(contextId, epochId, pk, keys, crsList);
+    }
 
-        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
-        keys[0] = IProtocolConfig.EpochKeyResult({
-            prepKeygenId: prepKeygenId,
-            keyId: keyId,
-            keyDigests: keyDigests,
-            signature: _computeSignature(pk, _hashProtocolConfigKeygen(prepKeygenId, keyId, keyDigests, extraData))
-        });
+    /// @dev Signs `keys` and `crsList` for `pk` with empty extraData and submits them.
+    function _submitEpochActivation(
+        uint256 contextId,
+        uint256 epochId,
+        uint256 pk,
+        IProtocolConfig.EpochKeyResult[] memory keys,
+        IProtocolConfig.EpochCrsResult[] memory crsList
+    ) internal {
+        protocolConfig.confirmEpochActivation(
+            epochId,
+            keys,
+            crsList,
+            _signEpochActivation(contextId, epochId, pk, keys, crsList, ""),
+            ""
+        );
+    }
 
-        uint256 crsId = CRS_COUNTER_BASE + 1;
-        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
-        crsList[0] = IProtocolConfig.EpochCrsResult({
-            crsId: crsId,
-            maxBitLength: 4096,
-            crsDigest: hex"deadbeef",
-            signature: _computeSignature(pk, _hashProtocolConfigCrsgen(crsId, 4096, hex"deadbeef", extraData))
-        });
+    function _signContextDestruction(
+        uint256 contextId,
+        uint256 pk,
+        bytes memory extraData
+    ) internal view returns (bytes memory) {
+        return _computeSignature(pk, _hashContextDestruction(contextId, extraData));
+    }
 
-        vm.prank(txSender);
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList);
+    function _signEpochDestruction(
+        uint256 epochId,
+        uint256 pk,
+        bytes memory extraData
+    ) internal view returns (bytes memory) {
+        return _computeSignature(pk, _hashEpochDestruction(epochId, extraData));
     }
 }

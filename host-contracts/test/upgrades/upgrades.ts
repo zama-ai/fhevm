@@ -1,14 +1,11 @@
 import { expect } from 'chai';
 import { ethers, upgrades } from 'hardhat';
 
+import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { ACL, ACLUpgradedExample } from '../../types';
 import { getSigners, initSigners } from '../signers';
 import { buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from '../tasks/taskHelpers';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
-
-const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
-const CRS_COUNTER_BASE = BigInt(5) << BigInt(248);
-const INITIALIZABLE_STORAGE = '0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00';
 
 describe('Upgrades', function () {
   before(async function () {
@@ -66,32 +63,30 @@ describe('Upgrades', function () {
     await expectThresholds(pc2);
   });
 
-  it('upgrades a ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
-    const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
-    const replicaFactory = await ethers.getContractFactory('ProtocolConfigReplica', this.signers.fred);
-    const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
-    const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
-      call: {
-        fn: 'initializeFromEmptyProxy',
-        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
-      },
+  // These tests run the plugin storage layout check against v0.15. State after reinitializeV4 is covered in Foundry.
+  async function deployV015ProtocolConfig(fred: any, emptyUUPSFactory: any) {
+    const factory = await ethers.getContractFactory('ProtocolConfigV015LayoutExample', fred);
+    const pc = await upgrades.upgradeProxy(await deployEmptyProxy(emptyUUPSFactory), factory, {
+      call: 'initializeFromEmptyProxy',
     });
     await pc.waitForDeployment();
-    const [contextId, epochId] = await pc.getCurrentKmsContextAndEpoch();
-    // Existing replica proxies run the v0.15 ProtocolConfig, which is at initialized version 4.
-    await ethers.provider.send('hardhat_setStorageAt', [
-      await pc.getAddress(),
-      INITIALIZABLE_STORAGE,
-      ethers.toBeHex(4, 32),
-    ]);
+    return pc;
+  }
 
-    const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV4' } });
+  it('upgrades a v0.15 ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
+    const pc = await deployV015ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
+    const factory = await ethers.getContractFactory('ProtocolConfigReplica', this.signers.fred);
+    const replica = await upgrades.upgradeProxy(pc, factory, { call: 'reinitializeV4' });
     await replica.waitForDeployment();
     expect(await replica.getVersion()).to.equal('ProtocolConfigReplica v0.4.0');
-    expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId]);
+  });
 
-    await (await replica.mirrorKmsEpoch(contextId, epochId + 1n)).wait();
-    expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId + 1n]);
+  it('upgrades a v0.15 ProtocolConfig proxy in place to ProtocolConfig', async function () {
+    const pc = await deployV015ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
+    const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
+    const canonical = await upgrades.upgradeProxy(pc, factory, { call: 'reinitializeV4' });
+    await canonical.waitForDeployment();
+    expect(await canonical.getVersion()).to.equal('ProtocolConfig v0.4.0');
   });
 
   it('deploy upgradeable KMSGeneration', async function () {
