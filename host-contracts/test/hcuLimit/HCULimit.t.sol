@@ -47,6 +47,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     uint16 internal constant DEFAULT_QUOTA = 0;
     uint16 internal constant PARTNER_QUOTA = 12;
     address internal constant PARTNER_ADMIN = address(0xAD);
+    uint16 internal constant LOW_QUOTA = 20;
+    uint16 internal constant HIGH_QUOTA = 21;
 
     bytes32 mockLHS = bytes32(uint256(int256(-1)));
     bytes32 mockRHS = bytes32(uint256(int256(-2)));
@@ -1586,6 +1588,193 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         (uint48 maxHCU, uint48 decayPerBlock, ) = upgraded.getQuota(DEFAULT_QUOTA);
         assertEq(maxHCU, 123_456);
         assertEq(decayPerBlock, 123_456);
+        (maxHCU, , ) = upgraded.getCapacity();
+        assertEq(maxHCU, type(uint48).max);
+        assertEq(upgraded.getTier(0), 10_000);
+    }
+
+    function test_initializeLeavesCapacityUnmeteredAndTheDefaultTierFull() public view {
+        (uint48 maxHCU, , ) = hcuLimit.getCapacity();
+        assertEq(maxHCU, type(uint48).max);
+        assertEq(hcuLimit.getTier(0), 10_000);
+        assertEq(hcuLimit.getQuotaTier(PARTNER_QUOTA), 0);
+    }
+
+    function test_lowTierIsRefusedOnceChainLoadPassesItsThreshold() public {
+        // 1,000,000 HCU of capacity draining 100,000 per block; tier 1 is refused above 200,000 of load.
+        address low = address(0xA1);
+        address high = address(0xB1);
+        _setUpTiers(low, high);
+
+        _add(low, 0x1001);
+        _add(low, 0x1002);
+        _expectChainLoadTooHigh(low, LOW_QUOTA, 1, 0x1003);
+        // The default tier still has room up to the full capacity.
+        _add(high, 0x1004);
+        (, , uint48 load) = hcuLimit.getCapacity();
+        assertEq(load, 3 * 84_000);
+
+        // The default tier's addition pushed tier 1's wait from one block to two.
+        vm.roll(block.number + 1);
+        _expectChainLoadTooHigh(low, LOW_QUOTA, 1, 0x1005);
+        vm.roll(block.number + 1);
+        _add(low, 0x1006);
+    }
+
+    function test_otherTiersLoadRefusesTheLowTier() public {
+        address low = address(0xA1);
+        address high = address(0xB1);
+        _setUpTiers(low, high);
+
+        _add(high, 0x1001);
+        _add(high, 0x1002);
+        _add(high, 0x1003);
+        // 336,000 after the operation, 136,000 above tier 1's threshold: two blocks of decay.
+        _expectChainLoadTooHigh(low, LOW_QUOTA, 2, 0x1004);
+    }
+
+    function test_unmeteredQuotaStillChargesTheCapacity() public {
+        // setUp leaves the default quota unmetered.
+        _setCapacity(100_000, 100_000);
+        _add(address(0x1234), 0x1001);
+        (, , uint48 load) = hcuLimit.getCapacity();
+        assertEq(load, 84_000);
+        _expectChainLoadTooHigh(address(0x1234), DEFAULT_QUOTA, 1, 0x1002);
+    }
+
+    function test_refusedOperationSpendsNeitherMeter() public {
+        address low = address(0xA1);
+        address high = address(0xB1);
+        _setUpTiers(low, high);
+        _setQuotaPerBlock(LOW_QUOTA, 1_000_000);
+        _add(high, 0x1001);
+        _add(high, 0x1002);
+        _add(high, 0x1003);
+
+        _expectChainLoadTooHigh(low, LOW_QUOTA, 2, 0x1004);
+        (, , uint48 used) = hcuLimit.getQuota(LOW_QUOTA);
+        assertEq(used, 0);
+
+        _setQuotaPerBlock(HIGH_QUOTA, 100_000);
+        vm.roll(block.number + 1);
+        _add(high, 0x1005);
+        _expectQuotaExceeded(high, HIGH_QUOTA, 1, 0x1006);
+        (, , uint48 load) = hcuLimit.getCapacity();
+        assertEq(load, 3 * 84_000 - 100_000 + 84_000);
+    }
+
+    function test_quotaErrorReportsTheLongerWaitWhenBothMetersRefuse() public {
+        // The second addition is 68,000 over both: 2 blocks for the quota, 68 for the capacity.
+        _setQuota(DEFAULT_QUOTA, 100_000, 50_000);
+        _setCapacity(100_000, 1_000);
+        _add(address(0x1234), 0x1001);
+        _expectQuotaExceeded(address(0x1234), DEFAULT_QUOTA, 68, 0x1002);
+    }
+
+    function test_retunedTierAppliesToAllItsQuotas() public {
+        address low = address(0xA1);
+        address lowSibling = address(0xA2);
+        _setUpTiers(low, address(0xB1));
+        _assign(LOW_QUOTA, lowSibling);
+        _setTier(1, 1_000);
+
+        _add(low, 0x1001);
+        _expectChainLoadTooHigh(lowSibling, LOW_QUOTA, 1, 0x1002);
+        _setTier(1, 5_000);
+        _add(lowSibling, 0x1003);
+    }
+
+    function test_tierSetToZeroStopsItsQuotas() public {
+        address low = address(0xA1);
+        _setUpTiers(low, address(0xB1));
+        _setTier(1, 0);
+        _expectChainLoadTooHigh(low, LOW_QUOTA, type(uint256).max, 0x1001);
+    }
+
+    function test_capacitySetToZeroStopsEveryOperation() public {
+        _setCapacity(0, 0);
+        _expectChainLoadTooHigh(address(0x1234), DEFAULT_QUOTA, type(uint256).max, 0x1001);
+    }
+
+    function test_setQuotaTierRefusesATierWithoutThreshold() public {
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidTier.selector, uint8(9)));
+        hcuLimit.setQuotaTier(LOW_QUOTA, 9);
+    }
+
+    function test_setTierRefusesAboveTenThousandBasisPoints() public {
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidTier.selector, uint8(1)));
+        hcuLimit.setTier(1, 10_001);
+    }
+
+    function test_setCapacityRefusesOnlyOneOfMaximumAndDecayAtZero() public {
+        vm.startPrank(owner);
+        vm.expectRevert(HCULimit.InvalidCapacity.selector);
+        hcuLimit.setCapacity(100_000, 0);
+        vm.expectRevert(HCULimit.InvalidCapacity.selector);
+        hcuLimit.setCapacity(0, 100_000);
+        vm.stopPrank();
+    }
+
+    function test_pauserCannotSetCapacityOrTiers() public {
+        address pauser = _mockPauser(address(0x9A));
+        vm.startPrank(pauser);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
+        hcuLimit.setCapacity(0, 0);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
+        hcuLimit.setTier(1, 0);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
+        hcuLimit.setQuotaTier(PARTNER_QUOTA, 0);
+        vm.stopPrank();
+    }
+
+    /// @dev Capacity of 1,000,000 HCU draining 100,000 per block. `low` is in an unmetered quota of tier 1, refused
+    ///      above 2,000 basis points (200,000 HCU of load); `high` in an unmetered quota of the default tier.
+    function _setUpTiers(address low, address high) internal {
+        _setCapacity(1_000_000, 100_000);
+        _setTier(1, 2_000);
+        _setQuota(LOW_QUOTA, type(uint48).max, type(uint48).max);
+        _setQuota(HIGH_QUOTA, type(uint48).max, type(uint48).max);
+        _setQuotaTier(LOW_QUOTA, 1);
+        _assign(LOW_QUOTA, low);
+        _assign(HIGH_QUOTA, high);
+    }
+
+    function _setCapacity(uint48 maxHCU, uint48 decayPerBlock) internal {
+        vm.expectEmit(address(hcuLimit));
+        emit HCULimit.CapacitySet(maxHCU, decayPerBlock, owner);
+        vm.prank(owner);
+        hcuLimit.setCapacity(maxHCU, decayPerBlock);
+    }
+
+    function _setTier(uint8 tier, uint16 maxLoadBps) internal {
+        vm.expectEmit(address(hcuLimit));
+        emit HCULimit.TierSet(tier, maxLoadBps, owner);
+        vm.prank(owner);
+        hcuLimit.setTier(tier, maxLoadBps);
+    }
+
+    function _setQuotaTier(uint16 quotaId, uint8 tier) internal {
+        vm.expectEmit(address(hcuLimit));
+        emit HCULimit.QuotaTierSet(quotaId, tier, owner);
+        vm.prank(owner);
+        hcuLimit.setQuotaTier(quotaId, tier);
+        assertEq(hcuLimit.getQuotaTier(quotaId), tier);
+    }
+
+    /// @dev Expects one 84,000 HCU addition by `caller` to be refused by the chain's load with `retryAfterBlocks`.
+    function _expectChainLoadTooHigh(
+        address caller,
+        uint16 quotaId,
+        uint256 retryAfterBlocks,
+        uint256 resultId
+    ) internal {
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(
+            abi.encodeWithSelector(HCULimit.HCUChainLoadTooHigh.selector, caller, quotaId, retryAfterBlocks)
+        );
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(resultId), caller);
     }
 
     /// @dev A quota that allows `hcuPerBlock` HCU per block: maximum and decay per block both `hcuPerBlock`.

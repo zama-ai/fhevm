@@ -13,6 +13,7 @@ To do so, there is a contract named `HCULimit`, which monitors HCU consumption a
 - **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order. Exceeding it reverts with `HCUTransactionDepthLimitExceeded`.
 - **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel. Exceeding it reverts with `HCUTransactionLimitExceeded`.
 - **HCU quota**: Limits the HCU that the contracts sharing a quota can use at once (a maximum) and on average (a decay per block). Exceeding it reverts with `HCUQuotaExceeded`; a stopped quota reverts with `HCUQuotaStopped`, and a paused quota with `HCUQuotaPaused`.
+- **Chain capacity and tiers** (off unless governance sets a capacity): Limits the HCU load of all contracts on the chain together. Each quota belongs to a tier, and a tier's operations are refused once the chain's load passes the tier's threshold. Exceeding it reverts with `HCUChainLoadTooHigh`.
 - **Depth across transactions** (off unless governance enables it): Caps the sequential HCU depth that builds up over a chain of dependent transactions. Exceeding it reverts with `HCUCrossTxDepthLimitExceeded`.
 
 If any of these limits is exceeded, the transaction will revert.
@@ -58,6 +59,18 @@ Three roles manage quotas, following OpenZeppelin's role admins (`AccessControl`
 | Pauser      | `pauseQuota(quotaId)`                                             | Stops every contract in a quota. The quota keeps its size and contracts, and its admin cannot move them until governance unpauses it.                               |
 
 A quota admin can add contracts only while the default quota is stopped (`DefaultQuotaNotStopped` otherwise), so joining a quota never leaves a contract with less room than it had. It can send any contract of its quota back to the default quota, including one governance assigned. It cannot resize its quota or take a contract from another quota. You can read a quota's admin with `getQuotaAdmin(quotaId)` and whether it is paused with `isQuotaPaused(quotaId)`.
+
+### Chain capacity and tiers
+
+Governance can set a capacity for the whole chain with `setCapacity(maxHCU, decayPerBlock)`: the HCU load the coprocessors absorb, and how much of it they drain per block. Every FHE operation adds its HCU to this load, whatever its quota, including a quota that is not metered. The load decays like a quota's usage. A maximum of `type(uint48).max` leaves the capacity off, as it is after the upgrade.
+
+Each quota belongs to a tier, tier 0 until governance moves it with `setQuotaTier(quotaId, tier)`. Governance sets each tier's threshold with `setTier(tier, maxLoadBps)`, in basis points of the capacity's maximum. An operation is refused when the chain's load after it would pass its tier's threshold. Tier 0 starts at 10,000, the full capacity.
+
+A threshold caps the chain's shared load, not a tier's share of throughput. With tiers at 10,000 and 2,000, contracts in the 2,000 tier are refused once the load passes one fifth of the capacity, while contracts in the 10,000 tier run until the capacity is full. Lower tiers are refused first as load rises. When the chain is quiet, a contract in any tier can use the whole drain rate, up to its own quota.
+
+If you hit `HCUChainLoadTooHigh(account, quotaId, retryAfterBlocks)`, your quota still has room but the chain is busy. `retryAfterBlocks` assumes no other contract adds load meanwhile, so wait at least that many blocks, simulate again, and repeat. It is `type(uint256).max` when one operation alone exceeds the tier's threshold, including a threshold of 0. When both your quota and the chain's load refuse an operation, the error is `HCUQuotaExceeded` with the longer of the two waits.
+
+You can read the capacity and its current load with `getCapacity()`, a tier's threshold with `getTier(tier)` and a quota's tier with `getQuotaTier(quotaId)`.
 
 ### Depth across transactions
 
