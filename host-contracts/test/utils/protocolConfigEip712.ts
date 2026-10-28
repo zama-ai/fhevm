@@ -69,7 +69,7 @@ const KEY_DIGEST_TYPES: Record<string, TypedDataField[]> = {
   ],
 };
 
-export async function protocolConfigDomain(pc: ProtocolConfig): Promise<TypedDataDomain> {
+async function protocolConfigDomain(pc: ProtocolConfig): Promise<TypedDataDomain> {
   const { chainId } = await pc.runner!.provider!.getNetwork();
   return { name: 'ProtocolConfig', version: '1', chainId, verifyingContract: await pc.getAddress() };
 }
@@ -79,7 +79,7 @@ const abi = AbiCoder.defaultAbiCoder();
 // keccak256(abi.encode(KmsNode[] nodes, KmsThresholds thresholds)). The encode types come from the
 // ProtocolConfig ABI, so the tuple layout cannot drift from the contract. KmsNode is the projection of
 // KmsNodeParams that ProtocolConfig stores, and the encoder drops the fields KmsNode does not have.
-function nodeConfigHash(
+function hashNodeConfig(
   iface: ProtocolConfigInterface,
   params: KmsNodeParamsStruct[],
   thresholds: KmsThresholdsStruct,
@@ -91,26 +91,26 @@ function nodeConfigHash(
 
 // keccak256(abi.encode(prepKeygenId, keyId, keyDigestsHash)), where keyDigestsHash is the EIP-712 hash of
 // the KeyDigest[] array.
-function keyHash(key: IProtocolConfig.EpochKeyResultStruct): string {
+function hashKeyResult(key: IProtocolConfig.EpochKeyResultStruct): string {
   const keyDigestHashes = key.keyDigests.map((d) => TypedDataEncoder.hashStruct('KeyDigest', KEY_DIGEST_TYPES, d));
   const keyDigestsHash = keccak256(solidityPacked(['bytes32[]'], [keyDigestHashes]));
   return keccak256(abi.encode(['uint256', 'uint256', 'bytes32'], [key.prepKeygenId, key.keyId, keyDigestsHash]));
 }
 
-// keccak256(abi.encode(crsId, maxBitLength, crsDigest)). Unlike keyHash, crsDigest is ABI-encoded as raw
+// keccak256(abi.encode(crsId, maxBitLength, crsDigest)). Unlike hashKeyResult, crsDigest is ABI-encoded as raw
 // dynamic bytes, not hashed first.
-function crsHash(crs: IProtocolConfig.EpochCrsResultStruct): string {
+function hashCrsResult(crs: IProtocolConfig.EpochCrsResultStruct): string {
   return keccak256(abi.encode(['uint256', 'uint256', 'bytes'], [crs.crsId, crs.maxBitLength, crs.crsDigest]));
 }
 
-function epochMaterialHash(
+function hashEpochMaterial(
   keys: IProtocolConfig.EpochKeyResultStruct[],
   crsList: IProtocolConfig.EpochCrsResultStruct[],
 ): string {
-  return keccak256(abi.encode(['bytes32[]', 'bytes32[]'], [keys.map(keyHash), crsList.map(crsHash)]));
+  return keccak256(abi.encode(['bytes32[]', 'bytes32[]'], [keys.map(hashKeyResult), crsList.map(hashCrsResult)]));
 }
 
-export function signConfirmation<T extends ConfirmationType>(
+function signConfirmation<T extends ConfirmationType>(
   signer: Signer,
   domain: TypedDataDomain,
   primaryType: T,
@@ -122,7 +122,7 @@ export function signConfirmation<T extends ConfirmationType>(
 // Signs each signer's ContextCreationConfirmation for the pending context `contextId`, defined by `nodes`
 // and `thresholds`, and submits it from the signer account. The previous context is the active one.
 // Returns the epoch ID of the NewKmsEpoch emitted once the creation quorum is reached.
-export async function submitContextCreationConfirmations(
+export async function confirmContextCreation(
   pc: ProtocolConfig,
   signers: Signer[],
   contextId: bigint,
@@ -132,7 +132,7 @@ export async function submitContextCreationConfirmations(
 ): Promise<bigint | undefined> {
   const domain = await protocolConfigDomain(pc);
   const previousContextId = await pc.getCurrentKmsContextId();
-  const configHash = nodeConfigHash(pc.interface, nodes, thresholds);
+  const configHash = hashNodeConfig(pc.interface, nodes, thresholds);
   let epochId: bigint | undefined;
   for (const signer of signers) {
     const signature = await signConfirmation(signer, domain, 'ContextCreationConfirmation', {
@@ -149,7 +149,7 @@ export async function submitContextCreationConfirmations(
 
 // Signs each signer's EpochActivationConfirmation over `keys` and `crsList` and submits it from the signer
 // account. `contextId` and `epochId` identify the epoch to activate. The previous epoch is the active one.
-export async function submitEpochActivationConfirmations(
+export async function confirmEpochActivation(
   pc: ProtocolConfig,
   signers: Signer[],
   contextId: bigint,
@@ -160,7 +160,7 @@ export async function submitEpochActivationConfirmations(
 ): Promise<void> {
   const domain = await protocolConfigDomain(pc);
   const [, previousEpochId] = await pc.getCurrentKmsContextAndEpoch();
-  const materialHash = epochMaterialHash(keys, crsList);
+  const materialHash = hashEpochMaterial(keys, crsList);
   for (const signer of signers) {
     const signature = await signConfirmation(signer, domain, 'EpochActivationConfirmation', {
       contextId,
@@ -170,6 +170,80 @@ export async function submitEpochActivationConfirmations(
       extraData,
     });
     await (await pc.connect(signer).confirmEpochActivation(epochId, keys, crsList, signature, extraData)).wait();
+  }
+}
+
+// One key result and one CRS result. An empty `keys` or `crsList` reverts with EmptyEpochActivationResults.
+// The ids need not exist in KMSGeneration, because confirmEpochActivation checks only the signer.
+export const DUMMY_EPOCH_MATERIAL: {
+  keys: IProtocolConfig.EpochKeyResultStruct[];
+  crsList: IProtocolConfig.EpochCrsResultStruct[];
+} = {
+  keys: [{ prepKeygenId: 1n, keyId: 1n, keyDigests: [{ keyType: 0, digest: '0x01020304' }] }],
+  crsList: [{ crsId: 1n, maxBitLength: 4096n, crsDigest: '0x01020304' }],
+};
+
+// Defines a new KMS context from the `pc` runner, which must be the owner. Returns the new context ID.
+export async function defineNewKmsContext(
+  pc: ProtocolConfig,
+  nodes: KmsNodeParamsStruct[],
+  thresholds: KmsThresholdsStruct,
+): Promise<bigint> {
+  const receipt = await (await pc.defineNewKmsContextAndEpoch(nodes, thresholds, '', [])).wait();
+  const contextId = findEventArg(pc, receipt!.logs, 'NewKmsContext', 'contextId');
+  if (contextId === undefined) {
+    throw new Error('NewKmsContext not emitted');
+  }
+  return contextId;
+}
+
+// Confirms the creation of the pending context `contextId` and activates its epoch over
+// DUMMY_EPOCH_MATERIAL. `signers` must reach both quorums. Returns the activated epoch ID.
+export async function activateDefinedKmsContext(
+  pc: ProtocolConfig,
+  signers: Signer[],
+  contextId: bigint,
+  nodes: KmsNodeParamsStruct[],
+  thresholds: KmsThresholdsStruct,
+): Promise<bigint> {
+  const epochId = await confirmContextCreation(pc, signers, contextId, nodes, thresholds);
+  if (epochId === undefined) {
+    throw new Error('Context creation quorum did not emit NewKmsEpoch');
+  }
+  const { keys, crsList } = DUMMY_EPOCH_MATERIAL;
+  await confirmEpochActivation(pc, signers, contextId, epochId, keys, crsList);
+  return epochId;
+}
+
+// Signs each signer's ContextDestructionConfirmation and submits it from the signer account.
+export async function confirmContextDestruction(
+  pc: ProtocolConfig,
+  signers: Signer[],
+  destroyedContextId: bigint,
+): Promise<void> {
+  const domain = await protocolConfigDomain(pc);
+  for (const signer of signers) {
+    const signature = await signConfirmation(signer, domain, 'ContextDestructionConfirmation', {
+      destroyedContextId,
+      extraData: '0x',
+    });
+    await (await pc.connect(signer).confirmKmsContextDestruction(destroyedContextId, signature, '0x')).wait();
+  }
+}
+
+// Signs each signer's EpochDestructionConfirmation and submits it from the signer account.
+export async function confirmEpochDestruction(
+  pc: ProtocolConfig,
+  signers: Signer[],
+  destroyedEpochId: bigint,
+): Promise<void> {
+  const domain = await protocolConfigDomain(pc);
+  for (const signer of signers) {
+    const signature = await signConfirmation(signer, domain, 'EpochDestructionConfirmation', {
+      destroyedEpochId,
+      extraData: '0x',
+    });
+    await (await pc.connect(signer).confirmKmsEpochDestruction(destroyedEpochId, signature, '0x')).wait();
   }
 }
 

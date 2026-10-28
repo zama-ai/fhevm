@@ -291,7 +291,7 @@ async fn test_process_crsgen_response() -> anyhow::Result<()> {
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_new_kms_context_response_fails_without_signature() -> anyhow::Result<()> {
+async fn test_process_new_kms_context_response_fails_without_kms_signature() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
 
     let cancel_token = CancellationToken::new();
@@ -325,7 +325,7 @@ async fn test_new_kms_context_response_fails_without_signature() -> anyhow::Resu
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_epoch_result_response_fails_without_signature() -> anyhow::Result<()> {
+async fn test_process_epoch_result_response_fails_without_kms_signature() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_bc_setup().await?;
 
     let cancel_token = CancellationToken::new();

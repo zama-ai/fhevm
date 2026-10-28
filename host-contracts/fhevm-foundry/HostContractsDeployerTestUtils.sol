@@ -65,6 +65,10 @@ abstract contract HostContractsDeployerTestUtils is Test {
         keccak256("ContextDestructionConfirmation(uint256 destroyedContextId,bytes extraData)");
     bytes32 internal constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
         keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
+    /// @dev OZ Initializable storage slot, where the initialized version lives.
+    bytes32 internal constant INITIALIZABLE_STORAGE =
+        0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
+    bytes internal constant EMPTY_EXTRA_DATA = "";
 
     /// @dev Shared ProtocolConfig handle bound by each suite's setUp; used by the hoisted EIP-712 helpers below.
     ProtocolConfig internal protocolConfig;
@@ -556,16 +560,20 @@ abstract contract HostContractsDeployerTestUtils is Test {
         protocolConfig.confirmKmsContextCreation(contextId, _signContextCreation(contextId, pk, extraData), extraData);
     }
 
-    function _confirmContextDestruction(uint256 contextId, uint256 pk, bytes memory extraData) internal {
+    function _confirmContextDestruction(uint256 destroyedContextId, uint256 pk, bytes memory extraData) internal {
         protocolConfig.confirmKmsContextDestruction(
-            contextId,
-            _signContextDestruction(contextId, pk, extraData),
+            destroyedContextId,
+            _signContextDestruction(destroyedContextId, pk, extraData),
             extraData
         );
     }
 
-    function _confirmEpochDestruction(uint256 epochId, uint256 pk, bytes memory extraData) internal {
-        protocolConfig.confirmKmsEpochDestruction(epochId, _signEpochDestruction(epochId, pk, extraData), extraData);
+    function _confirmEpochDestruction(uint256 destroyedEpochId, uint256 pk, bytes memory extraData) internal {
+        protocolConfig.confirmKmsEpochDestruction(
+            destroyedEpochId,
+            _signEpochDestruction(destroyedEpochId, pk, extraData),
+            extraData
+        );
     }
 
     /// @dev One key result `keyId` and one CRS result `crsId`.
@@ -614,6 +622,17 @@ abstract contract HostContractsDeployerTestUtils is Test {
         _confirmEpochActivation(contextId, epochId, pk, KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
     }
 
+    /// @dev Confirms the creation, then the activation, of a pending context whose `count` signers use the
+    ///      keys of `_makeKmsNodeParams`: (i + 1) * 0x100.
+    function _activatePendingContextWithDefaultSigners(uint256 contextId, uint256 epochId, uint256 count) internal {
+        for (uint256 i = 0; i < count; i++) {
+            _confirmContextCreation(contextId, (i + 1) * 0x100, EMPTY_EXTRA_DATA);
+        }
+        for (uint256 i = 0; i < count; i++) {
+            _confirmEpochActivationWithDummyMaterial(contextId, epochId, (i + 1) * 0x100);
+        }
+    }
+
     /// @dev Confirms `epochId` for `pk` with one key result `keyId` and one CRS result `crsId`.
     function _confirmEpochActivation(
         uint256 contextId,
@@ -626,11 +645,11 @@ abstract contract HostContractsDeployerTestUtils is Test {
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _buildEpochResults(keyId, crsId);
-        _submitEpochActivation(contextId, epochId, pk, keys, crsList);
+        _confirmEpochActivationWithResults(contextId, epochId, pk, keys, crsList);
     }
 
     /// @dev Signs `keys` and `crsList` for `pk` with empty extraData and submits them.
-    function _submitEpochActivation(
+    function _confirmEpochActivationWithResults(
         uint256 contextId,
         uint256 epochId,
         uint256 pk,
@@ -647,18 +666,18 @@ abstract contract HostContractsDeployerTestUtils is Test {
     }
 
     function _signContextDestruction(
-        uint256 contextId,
+        uint256 destroyedContextId,
         uint256 pk,
         bytes memory extraData
     ) internal view returns (bytes memory) {
-        return _computeSignature(pk, _hashContextDestruction(contextId, extraData));
+        return _computeSignature(pk, _hashContextDestruction(destroyedContextId, extraData));
     }
 
     function _signEpochDestruction(
-        uint256 epochId,
+        uint256 destroyedEpochId,
         uint256 pk,
         bytes memory extraData
     ) internal view returns (bytes memory) {
-        return _computeSignature(pk, _hashEpochDestruction(epochId, extraData));
+        return _computeSignature(pk, _hashEpochDestruction(destroyedEpochId, extraData));
     }
 }

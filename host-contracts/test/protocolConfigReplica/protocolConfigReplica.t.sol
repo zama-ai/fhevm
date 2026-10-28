@@ -18,8 +18,6 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
     ProtocolConfigReplica internal protocolConfigReplica;
 
     address internal constant owner = address(456);
-    bytes32 internal constant INITIALIZABLE_STORAGE =
-        0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
 
     /// @dev Bootstraps a replica on the same active context and epoch as a fresh canonical deploy.
     function _setupReplica() internal {

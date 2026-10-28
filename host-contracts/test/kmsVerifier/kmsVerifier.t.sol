@@ -109,15 +109,6 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         _confirmEpochActivationWithDummyMaterial(contextId, epochId, pk);
     }
 
-    function _activatePendingThreeNodeContext(uint256 contextId, uint256 epochId) internal {
-        _confirmContextCreation(contextId, privateKeySigner0, "");
-        _confirmContextCreation(contextId, privateKeySigner1, "");
-        _confirmContextCreation(contextId, privateKeySigner2, "");
-        _confirmEpochActivationWithDummyMaterial(contextId, epochId, privateKeySigner0);
-        _confirmEpochActivationWithDummyMaterial(contextId, epochId, privateKeySigner1);
-        _confirmEpochActivationWithDummyMaterial(contextId, epochId, privateKeySigner2);
-    }
-
     function _buildSingleSignerProof(
         uint256 signerKey,
         bytes memory extraData
@@ -150,7 +141,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(3), thresholds);
-        _activatePendingThreeNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2);
+        _activatePendingContextWithDefaultSigners(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, 3);
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 2);
     }
 
@@ -404,7 +395,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         t2.publicDecryption = 2;
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(3), t2);
-        _activatePendingThreeNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2);
+        _activatePendingContextWithDefaultSigners(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, 3);
         uint256 historicalCtx = protocolConfig.getCurrentKmsContextId();
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 2);
 

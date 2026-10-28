@@ -8,11 +8,11 @@ import type { KMSGeneration } from '../../types';
 import type { KmsNodeParamsStruct, KmsThresholdsStruct } from '../../types/contracts/ProtocolConfig';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 import {
-  findEventArg,
-  protocolConfigDomain,
-  signConfirmation,
-  submitContextCreationConfirmations,
-  submitEpochActivationConfirmations,
+  DUMMY_EPOCH_MATERIAL,
+  activateDefinedKmsContext,
+  confirmContextCreation,
+  confirmEpochActivation,
+  defineNewKmsContext,
 } from '../utils/protocolConfigEip712';
 
 export const HOST_ENV_FILE = path.join(__dirname, '../../addresses/.env.host');
@@ -208,7 +208,7 @@ export async function confirmContextCreationBySigners(
   extraData = '0x',
 ): Promise<bigint | undefined> {
   const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress);
-  return submitContextCreationConfirmations(pc, signerSigners, contextId, nodes, thresholds, extraData);
+  return confirmContextCreation(pc, signerSigners, contextId, nodes, thresholds, extraData);
 }
 
 // Submits each signer's EpochActivationConfirmation over one key result and one CRS result.
@@ -222,47 +222,8 @@ export async function confirmEpochActivationBySigners(
   extraData = '0x',
 ): Promise<void> {
   const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress);
-  const keys = [{ prepKeygenId: 1n, keyId: 1n, keyDigests: [{ keyType: 0, digest: '0x01020304' }] }];
-  const crsList = [{ crsId: 1n, maxBitLength: 4096n, crsDigest: '0x01020304' }];
-  await submitEpochActivationConfirmations(pc, signerSigners, contextId, epochId, keys, crsList, extraData);
-}
-
-// Signs the signer's ContextDestructionConfirmation and submits it from the signer account.
-export async function confirmContextDestructionBySigner(
-  proxyAddress: string,
-  signerSigner: Signer,
-  destroyedContextId: bigint,
-): Promise<void> {
-  const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress, signerSigner);
-  const signature = await signConfirmation(
-    signerSigner,
-    await protocolConfigDomain(pc),
-    'ContextDestructionConfirmation',
-    {
-      destroyedContextId,
-      extraData: '0x',
-    },
-  );
-  await (await pc.confirmKmsContextDestruction(destroyedContextId, signature, '0x')).wait();
-}
-
-// Signs the signer's EpochDestructionConfirmation and submits it from the signer account.
-export async function confirmEpochDestructionBySigner(
-  proxyAddress: string,
-  signerSigner: Signer,
-  destroyedEpochId: bigint,
-): Promise<void> {
-  const pc = await ethers.getContractAt('ProtocolConfig', proxyAddress, signerSigner);
-  const signature = await signConfirmation(
-    signerSigner,
-    await protocolConfigDomain(pc),
-    'EpochDestructionConfirmation',
-    {
-      destroyedEpochId,
-      extraData: '0x',
-    },
-  );
-  await (await pc.confirmKmsEpochDestruction(destroyedEpochId, signature, '0x')).wait();
+  const { keys, crsList } = DUMMY_EPOCH_MATERIAL;
+  await confirmEpochActivation(pc, signerSigners, contextId, epochId, keys, crsList, extraData);
 }
 
 // Rotates the canonical ProtocolConfig to a fresh KMS context that reuses `committee`, driving the full
@@ -274,24 +235,7 @@ export async function rotateToNewKmsContext(
   committee: ControllableKmsCommittee,
 ): Promise<bigint> {
   const asOwner = await ethers.getContractAt('ProtocolConfig', proxyAddress, ownerSigner);
-  const defineTx = await asOwner.defineNewKmsContextAndEpoch(committee.nodes, committee.thresholds, '', []);
-  const defineReceipt = await defineTx.wait();
-  const contextId = findEventArg(asOwner, defineReceipt!.logs, 'NewKmsContext', 'contextId');
-  if (contextId === undefined) {
-    throw new Error('NewKmsContext not emitted');
-  }
-
-  const epochId = await confirmContextCreationBySigners(
-    proxyAddress,
-    committee.signerSigners,
-    contextId,
-    committee.nodes,
-    committee.thresholds,
-  );
-  if (epochId === undefined) {
-    throw new Error('Context creation quorum did not emit NewKmsEpoch');
-  }
-  await confirmEpochActivationBySigners(proxyAddress, committee.signerSigners, contextId, epochId);
-
+  const contextId = await defineNewKmsContext(asOwner, committee.nodes, committee.thresholds);
+  await activateDefinedKmsContext(asOwner, committee.signerSigners, contextId, committee.nodes, committee.thresholds);
   return contextId;
 }

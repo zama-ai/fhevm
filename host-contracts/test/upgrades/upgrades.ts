@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import type { Signer } from 'ethers';
 import { ethers, upgrades } from 'hardhat';
 
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
@@ -64,8 +65,8 @@ describe('Upgrades', function () {
   });
 
   // These tests run the plugin storage layout check against v0.15. State after reinitializeV4 is covered in Foundry.
-  async function deployV015ProtocolConfig(fred: any, emptyUUPSFactory: any) {
-    const factory = await ethers.getContractFactory('ProtocolConfigV015LayoutExample', fred);
+  async function deployV015ProtocolConfig(deployer: Signer, emptyUUPSFactory: any) {
+    const factory = await ethers.getContractFactory('ProtocolConfigV015LayoutExample', deployer);
     const pc = await upgrades.upgradeProxy(await deployEmptyProxy(emptyUUPSFactory), factory, {
       call: 'initializeFromEmptyProxy',
     });
@@ -73,20 +74,16 @@ describe('Upgrades', function () {
     return pc;
   }
 
-  it('upgrades a v0.15 ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
-    const pc = await deployV015ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
-    const factory = await ethers.getContractFactory('ProtocolConfigReplica', this.signers.fred);
-    const replica = await upgrades.upgradeProxy(pc, factory, { call: 'reinitializeV4' });
-    await replica.waitForDeployment();
-    expect(await replica.getVersion()).to.equal('ProtocolConfigReplica v0.4.0');
-  });
-
-  it('upgrades a v0.15 ProtocolConfig proxy in place to ProtocolConfig', async function () {
-    const pc = await deployV015ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
-    const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
-    const canonical = await upgrades.upgradeProxy(pc, factory, { call: 'reinitializeV4' });
-    await canonical.waitForDeployment();
-    expect(await canonical.getVersion()).to.equal('ProtocolConfig v0.4.0');
+  it('upgrades a v0.15 ProtocolConfig proxy in place to ProtocolConfigReplica and ProtocolConfig', async function () {
+    for (const [factory, version] of [
+      [await ethers.getContractFactory('ProtocolConfigReplica', this.signers.fred), 'ProtocolConfigReplica v0.4.0'],
+      [await ethers.getContractFactory('ProtocolConfig', this.signers.fred), 'ProtocolConfig v0.4.0'],
+    ] as const) {
+      const pc = await deployV015ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
+      const upgraded = await upgrades.upgradeProxy(pc, factory, { call: 'reinitializeV4' });
+      await upgraded.waitForDeployment();
+      expect(await upgraded.getVersion()).to.equal(version);
+    }
   });
 
   it('deploy upgradeable KMSGeneration', async function () {

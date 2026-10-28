@@ -209,17 +209,6 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _confirmEpochActivationWithDummyMaterial(contextId, epochId, pk1);
     }
 
-    function _activatePendingFourNodeContext(uint256 contextId, uint256 epochId) internal {
-        _confirmContextCreation(contextId, kmsPk0, "");
-        _confirmContextCreation(contextId, kmsPk1, "");
-        _confirmContextCreation(contextId, kmsPk2, "");
-        _confirmContextCreation(contextId, kmsPk3, "");
-        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk0);
-        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk1);
-        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk2);
-        _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk3);
-    }
-
     function _primaryStorageUrls() internal pure returns (string[] memory urls) {
         urls = new string[](1);
         urls[0] = "https://s0.example.com";
@@ -231,7 +220,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         KmsThresholds memory thresholds = KmsThresholds({publicDecryption: 3, userDecryption: 3, kmsGen: 3, mpc: 3});
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(nodes, thresholds);
-        _activatePendingFourNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2);
+        _activatePendingContextWithDefaultSigners(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, 4);
     }
 
     /// @dev Hash + sign + prank + call prepKeygenResponse for a single KMS node.
@@ -729,7 +718,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk0, kmsPk1);
+        _activatePendingContextWithDefaultSigners(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, 2);
 
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
@@ -753,7 +742,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk0, kmsPk1);
+        _activatePendingContextWithDefaultSigners(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, 2);
 
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
@@ -781,7 +770,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
-        _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk0, kmsPk1);
+        _activatePendingContextWithDefaultSigners(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, 2);
 
         vm.prank(owner);
         kmsGeneration.crsgenRequest(4096, IKMSGeneration.ParamsType.Default);

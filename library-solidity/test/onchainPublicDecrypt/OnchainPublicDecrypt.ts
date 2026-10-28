@@ -4,16 +4,7 @@ import type { Signer } from 'ethers';
 import * as fs from 'fs';
 import { ethers } from 'hardhat';
 
-import {
-  CRS_COUNTER_BASE,
-  KEY_COUNTER_BASE,
-  PREP_KEYGEN_COUNTER_BASE,
-} from '@fhevm/host-contracts/tasks/utils/kmsGenerationConstants';
-import {
-  findEventArg,
-  submitContextCreationConfirmations,
-  submitEpochActivationConfirmations,
-} from '@fhevm/host-contracts/test/utils/protocolConfigEip712';
+import { activateDefinedKmsContext, defineNewKmsContext } from '@fhevm/host-contracts/test/utils/protocolConfigEip712';
 import type { ProtocolConfig } from '@fhevm/host-contracts/types';
 import type { KmsNodeParamsStruct, KmsThresholdsStruct } from '@fhevm/host-contracts/types/contracts/ProtocolConfig';
 
@@ -176,35 +167,9 @@ async function activateNewKmsContext(
   thresholds: KmsThresholdsStruct,
   signerAccounts: Signer[],
 ) {
-  const txNewConfig = await protocolConfig.connect(deployer).defineNewKmsContextAndEpoch(nodes, thresholds, '', []);
-  const newConfigReceipt = await txNewConfig.wait();
-  const contextId = findEventArg(protocolConfig, newConfigReceipt!.logs, 'NewKmsContext', 'contextId')!;
-  const epochId = await submitContextCreationConfirmations(
-    protocolConfig,
-    signerAccounts,
-    contextId,
-    nodes,
-    thresholds,
-  );
-  if (epochId === undefined) {
-    throw new Error('Context creation quorum did not emit NewKmsEpoch');
-  }
-  // An empty `keys` or `crsList` reverts with EmptyEpochActivationResults, so supply one result of each.
-  // The constant ids need not exist in KMSGeneration, because confirmEpochActivation checks only the signer.
-  const keyMaterial = {
-    prepKeygenId: PREP_KEYGEN_COUNTER_BASE + 1n,
-    keyId: KEY_COUNTER_BASE + 1n,
-    keyDigests: [{ keyType: 0, digest: '0x01020304' }],
-  };
-  const crsMaterial = { crsId: CRS_COUNTER_BASE + 1n, maxBitLength: 4096n, crsDigest: '0x01020304' };
-  await submitEpochActivationConfirmations(
-    protocolConfig,
-    signerAccounts,
-    contextId,
-    epochId,
-    [keyMaterial],
-    [crsMaterial],
-  );
+  const asOwner = protocolConfig.connect(deployer);
+  const contextId = await defineNewKmsContext(asOwner, nodes, thresholds);
+  await activateDefinedKmsContext(asOwner, signerAccounts, contextId, nodes, thresholds);
 }
 
 async function getPublicDecryptionFromReceipt(
