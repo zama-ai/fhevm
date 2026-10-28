@@ -4,15 +4,13 @@ use alloy::{
     network::{Ethereum, TransactionBuilder},
     primitives::Address,
     providers::{
-        fillers::{
-            BlobGasFiller, CachedNonceManager, ChainIdFiller, GasFiller, JoinFill, NonceManager,
-        },
+        fillers::{BlobGasFiller, ChainIdFiller, GasFiller, JoinFill, NonceManager},
         PendingTransactionBuilder, Provider,
     },
     rpc::types::{TransactionReceipt, TransactionRequest},
     transports::{TransportErrorKind, TransportResult},
 };
-use futures_util::lock::Mutex;
+use nonce_manager::NonceManagerNonOptimistic;
 use tracing::{debug, warn};
 
 use crate::config::DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT;
@@ -29,7 +27,7 @@ where
     P: Provider<Ethereum>,
 {
     provider: P,
-    nonce_manager: Arc<Mutex<CachedNonceManager>>,
+    nonce_manager: Arc<NonceManagerNonOptimistic>,
     signer_address: Option<Address>,
 }
 
@@ -50,18 +48,9 @@ where
         tx: impl Into<TransactionRequest>,
     ) -> TransportResult<PendingTransactionBuilder<Ethereum>> {
         let mut tx = tx.into();
-        if let Some(signer_address) = self.signer_address {
-            let nonce_manager = self.nonce_manager.lock().await;
-            let nonce = nonce_manager
-                .get_next_nonce(&self.provider, signer_address)
-                .await?;
-            tx.nonce = Some(nonce);
-        }
+        let nonce = self.assign_nonce(&mut tx).await?;
         let res = self.provider.send_transaction(tx).await;
-        if res.is_err() {
-            // Reset the nonce manager if the transaction sending failed.
-            *self.nonce_manager.lock().await = Default::default();
-        }
+        self.finish_nonce(nonce, &res).await;
         res
     }
 
@@ -71,22 +60,51 @@ where
         timeout: Duration,
     ) -> TransportResult<TransactionReceipt> {
         let mut tx = tx.into();
-        if let Some(signer_address) = self.signer_address {
-            let nonce_manager = self.nonce_manager.lock().await;
-            let nonce = nonce_manager
-                .get_next_nonce(&self.provider, signer_address)
-                .await?;
-            tx.nonce = Some(nonce);
-        }
+        let nonce = self.assign_nonce(&mut tx).await?;
         let res = tokio::time::timeout(timeout, self.provider.send_transaction_sync(tx))
             .await
             .map_err(|_| TransportErrorKind::custom_str("eth_sendRawTransactionSync timeout"))
             .flatten();
-        if res.is_err() {
-            // Reset the nonce manager if the transaction sending failed.
-            *self.nonce_manager.lock().await = Default::default();
-        }
+        // Settle the reservation outside the timed future, including local timeouts.
+        self.finish_nonce(nonce, &res).await;
         res
+    }
+
+    async fn assign_nonce(&self, tx: &mut TransactionRequest) -> TransportResult<Option<u64>> {
+        if let Some(address) = self.signer_address {
+            let nonce = self
+                .nonce_manager
+                .get_next_nonce(&self.provider, address)
+                .await?;
+            tx.nonce = Some(nonce);
+            Ok(Some(nonce))
+        } else {
+            Ok(None)
+        }
+    }
+
+    async fn finish_nonce<T>(&self, nonce: Option<u64>, result: &TransportResult<T>) {
+        let (Some(address), Some(nonce)) = (self.signer_address, nonce) else {
+            return;
+        };
+        // Nodes use different RPC codes for the same nonce rejection. "Already
+        // known" retires the nonce locally; the operation still returns an error.
+        let retire = match result {
+            Ok(_) => true,
+            Err(err) => err.as_error_resp().is_some_and(|response| {
+                let message = response.message.to_ascii_lowercase();
+                matches!(response.code, -32000 | -32003 | -32603)
+                    && (message.starts_with("nonce too low")
+                        || message.starts_with("already known"))
+            }),
+        };
+        if retire {
+            self.nonce_manager.confirm_nonce(address, nonce).await;
+        } else {
+            // This preserves other in-flight allocations. It does not reconcile
+            // an ambiguous broadcast, which may have reached the node already.
+            self.nonce_manager.release_nonce(address, nonce).await;
+        }
     }
 
     /// If `txn_request.gas` is set, overprovision it by the given percent.
@@ -156,5 +174,233 @@ where
 
     pub fn inner(&self) -> &P {
         &self.provider
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::{primitives::B256, providers::RootProvider, transports::mock::Asserter};
+    use tokio::sync::{mpsc, oneshot};
+
+    type ObservedSend = (u64, oneshot::Sender<TransportResult<TransactionReceipt>>);
+
+    fn receipt() -> TransactionReceipt {
+        serde_json::from_value(serde_json::json!({
+            "type": "0x2",
+            "transactionHash": B256::ZERO,
+            "from": Address::ZERO,
+            "gasUsed": "0x0",
+            "cumulativeGasUsed": "0x0",
+            "status": "0x1",
+            "logs": [],
+            "logsBloom": alloy::primitives::Bloom::ZERO,
+        }))
+        .unwrap()
+    }
+
+    #[derive(Clone)]
+    struct ControlledProvider {
+        root: RootProvider,
+        sends: mpsc::UnboundedSender<ObservedSend>,
+    }
+
+    #[async_trait::async_trait]
+    impl Provider for ControlledProvider {
+        fn root(&self) -> &RootProvider {
+            &self.root
+        }
+
+        async fn send_transaction_sync(
+            &self,
+            tx: TransactionRequest,
+        ) -> TransportResult<TransactionReceipt> {
+            let (reply, result) = oneshot::channel();
+            self.sends
+                .send((tx.nonce.expect("nonce assigned"), reply))
+                .unwrap();
+            result.await.expect("test supplies send outcome")
+        }
+
+        async fn send_transaction(
+            &self,
+            tx: TransactionRequest,
+        ) -> TransportResult<PendingTransactionBuilder<Ethereum>> {
+            self.send_transaction_sync(tx).await?;
+            Ok(PendingTransactionBuilder::new(
+                self.root.clone(),
+                B256::ZERO,
+            ))
+        }
+    }
+
+    fn setup() -> (
+        NonceManagedProvider<ControlledProvider>,
+        mpsc::UnboundedReceiver<ObservedSend>,
+    ) {
+        let asserter = Asserter::new();
+        asserter.push_success(&"0xa");
+        let (sends, receiver) = mpsc::unbounded_channel();
+        let provider = ControlledProvider {
+            root: alloy::providers::ProviderBuilder::default().connect_mocked_client(asserter),
+            sends,
+        };
+        (
+            NonceManagedProvider::new(provider, Some(Address::ZERO)),
+            receiver,
+        )
+    }
+
+    fn send(
+        provider: NonceManagedProvider<ControlledProvider>,
+    ) -> tokio::task::JoinHandle<TransportResult<TransactionReceipt>> {
+        tokio::spawn(async move {
+            provider
+                .send_transaction_sync(TransactionRequest::default(), Duration::from_secs(5))
+                .await
+        })
+    }
+
+    async fn next_send(receiver: &mut mpsc::UnboundedReceiver<ObservedSend>) -> ObservedSend {
+        tokio::time::timeout(Duration::from_secs(5), receiver.recv())
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn failed_send_reuses_its_nonce_without_resetting_other_in_flight_sends() {
+        let (provider, mut receiver) = setup();
+        let first = send(provider.clone());
+        let (first_nonce, first_reply) = next_send(&mut receiver).await;
+        let second = send(provider.clone());
+        let (second_nonce, second_reply) = next_send(&mut receiver).await;
+        assert_eq!((first_nonce, second_nonce), (10, 11));
+
+        first_reply
+            .send(Err(TransportErrorKind::custom_str("send rejected")))
+            .unwrap();
+        assert!(first.await.unwrap().is_err());
+
+        let retry = send(provider.clone());
+        let (retry_nonce, retry_reply) = next_send(&mut receiver).await;
+        assert_eq!(retry_nonce, first_nonce);
+        retry_reply.send(Ok(receipt())).unwrap();
+        retry.await.unwrap().unwrap();
+
+        let fresh = send(provider.clone());
+        let (fresh_nonce, fresh_reply) = next_send(&mut receiver).await;
+        assert_eq!(
+            fresh_nonce, 12,
+            "nonce 11 remains reserved by the second send"
+        );
+        fresh_reply.send(Ok(receipt())).unwrap();
+        fresh.await.unwrap().unwrap();
+        second_reply.send(Ok(receipt())).unwrap();
+        second.await.unwrap().unwrap();
+        let state = provider
+            .nonce_manager
+            .get_account_details(Address::ZERO)
+            .await
+            .unwrap();
+        assert!(state.locked_nonces.is_empty());
+        assert!(state.available_nonces.is_empty());
+    }
+
+    #[tokio::test]
+    async fn local_timeout_settles_the_reservation_outside_the_cancelled_rpc() {
+        let (provider, mut receiver) = setup();
+        let sender = provider.clone();
+        let attempt = tokio::spawn(async move {
+            sender
+                .send_transaction_sync(TransactionRequest::default(), Duration::ZERO)
+                .await
+        });
+        let (nonce, reply) = next_send(&mut receiver).await;
+        let error = attempt.await.unwrap().unwrap_err();
+        assert_eq!(error.to_string(), "eth_sendRawTransactionSync timeout");
+        assert!(reply.is_closed(), "RPC future must have been cancelled");
+        let state = provider
+            .nonce_manager
+            .get_account_details(Address::ZERO)
+            .await
+            .unwrap();
+        assert!(state.locked_nonces.is_empty());
+        assert_eq!(state.available_nonces, [nonce].into());
+
+        let retry = send(provider);
+        let (retry_nonce, reply) = next_send(&mut receiver).await;
+        assert_eq!(retry_nonce, nonce);
+        reply.send(Ok(receipt())).unwrap();
+        retry.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn known_nonce_errors_retire_the_nonce_but_preserve_the_operation_error() {
+        for (code, message) in [-32000, -32003, -32603]
+            .into_iter()
+            .flat_map(|code| ["nonce too low", "already known"].map(|message| (code, message)))
+        {
+            let (provider, mut receiver) = setup();
+            let attempt = send(provider.clone());
+            let (nonce, reply) = next_send(&mut receiver).await;
+            let error = alloy::transports::RpcError::ErrorResp(
+                serde_json::from_value(serde_json::json!({"code": code, "message": message}))
+                    .unwrap(),
+            );
+            reply.send(Err(error)).unwrap();
+            assert!(attempt.await.unwrap().is_err());
+            let retry = send(provider);
+            let (next_nonce, reply) = next_send(&mut receiver).await;
+            assert_eq!(next_nonce, nonce + 1);
+            reply.send(Ok(receipt())).unwrap();
+            retry.await.unwrap().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn other_rpc_errors_release_the_nonce_for_retry() {
+        for (code, message) in [
+            (-32000, "nonce too high"),
+            (-32003, "replacement transaction underpriced"),
+            (-32603, "execution reverted: nonce too low"),
+            (-32602, "nonce too low"),
+        ] {
+            let (provider, mut receiver) = setup();
+            let attempt = send(provider.clone());
+            let (nonce, reply) = next_send(&mut receiver).await;
+            let error = alloy::transports::RpcError::ErrorResp(
+                serde_json::from_value(serde_json::json!({"code": code, "message": message}))
+                    .unwrap(),
+            );
+            reply.send(Err(error)).unwrap();
+            assert!(attempt.await.unwrap().is_err());
+
+            let retry = send(provider);
+            let (retry_nonce, reply) = next_send(&mut receiver).await;
+            assert_eq!(retry_nonce, nonce);
+            reply.send(Ok(receipt())).unwrap();
+            retry.await.unwrap().unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn asynchronous_send_releases_failures_and_retires_successes() {
+        let (provider, mut receiver) = setup();
+        for (expected_nonce, fail) in [(10, true), (10, false), (11, false)] {
+            let sender = provider.clone();
+            let attempt = tokio::spawn(async move {
+                sender.send_transaction(TransactionRequest::default()).await
+            });
+            let (nonce, reply) = next_send(&mut receiver).await;
+            assert_eq!(nonce, expected_nonce);
+            let result = if fail {
+                Err(TransportErrorKind::custom_str("send rejected"))
+            } else {
+                Ok(receipt())
+            };
+            reply.send(result).unwrap();
+            assert_eq!(attempt.await.unwrap().is_err(), fail);
+        }
     }
 }
