@@ -15,6 +15,7 @@
 - [Introduction](#introduction)
 - [Main features](#main-features)
 - [Getting Started](#getting-started)
+  - [Building](#building)
 - [Configuration](#configuration)
   - [Configuration Precedence](#configuration-precedence)
   - [S3 Configuration](#s3-configuration)
@@ -31,6 +32,16 @@ All services consist of a single binary. The service can be started via its `sta
 ./gw-listener start --config config/gw-listener.toml
 
 KMS_CONNECTOR_DATABASE_URL="postgres://postgres:postgres@localhost" ./gw-listener start
+```
+
+### Building
+
+Some dependencies (`kms-grpc`, `bc2wrap`, ...) are git dependencies on the private [zama-ai/kms](https://github.com/zama-ai/kms) repository, so building requires read access to it.
+
+Cargo fetches them with the git CLI (see [`.cargo/config.toml`](./.cargo/config.toml)), so git needs credentials for `https://github.com`. With the GitHub CLI, run once:
+
+```bash
+gh auth setup-git
 ```
 
 ## Configuration

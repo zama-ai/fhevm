@@ -172,11 +172,28 @@ export const removeProjectResources = async (kind: "container" | "volume" | "net
   }
 };
 
+/**
+ * Returns the token the kms-connector build needs to fetch its private zama-ai/kms git
+ * dependencies (passed as a BuildKit secret): `BLOCKCHAIN_ACTIONS_TOKEN` when set, otherwise
+ * the `gh` CLI token.
+ */
+const blockchainActionsTokenEnv = async (): Promise<Record<string, string>> => {
+  const token =
+    process.env.BLOCKCHAIN_ACTIONS_TOKEN || (await run(["gh", "auth", "token"], { allowFailure: true })).stdout.trim();
+  if (!token) {
+    throw new PreflightError(
+      "Building kms-connector needs read access to the private zama-ai/kms repository: set BLOCKCHAIN_ACTIONS_TOKEN or run `gh auth login`.",
+    );
+  }
+  return { BLOCKCHAIN_ACTIONS_TOKEN: token };
+};
+
 /** Builds one compose component for the selected services. */
 const composeBuild = async (component: string, services: string[], env?: Record<string, string>) => {
+  const secretEnv = component === "kms-connector" ? await blockchainActionsTokenEnv() : {};
   try {
     await runStreaming([...dockerArgs(component), "build", ...services], {
-      env: await composeEnv(component, env),
+      env: await composeEnv(component, { ...secretEnv, ...env }),
     });
   } catch (error) {
     throw new ContainerStartError(component, error instanceof Error ? error.message : String(error));
