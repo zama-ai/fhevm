@@ -121,6 +121,9 @@ on:
         required: true
       CGR_PASSWORD:
         required: true
+      # Read access to the private zama-ai/kms git dependencies, only needed with `build: true`.
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: false
     inputs: *shared_inputs
 
 permissions: {}
