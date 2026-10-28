@@ -45,6 +45,8 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     uint256 internal MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000;
 
     uint16 internal constant DEFAULT_QUOTA = 0;
+    uint16 internal constant PARTNER_QUOTA = 12;
+    address internal constant PARTNER_ADMIN = address(0xAD);
 
     bytes32 mockLHS = bytes32(uint256(int256(-1)));
     bytes32 mockRHS = bytes32(uint256(int256(-2)));
@@ -1412,127 +1414,117 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     function test_setQuotaAdminRefusesTheDefaultQuota() public {
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, DEFAULT_QUOTA));
-        hcuLimit.setQuotaAdmin(DEFAULT_QUOTA, address(0xAD));
+        hcuLimit.setQuotaAdmin(DEFAULT_QUOTA, PARTNER_ADMIN);
     }
 
     function test_quotaAdminGrantsAndRevokesContractsOfItsQuota() public {
-        address admin = address(0xAD);
         address auction = address(0xA1);
-        _stopDefaultQuota();
-        _setQuotaPerBlock(12, 1_000_000);
-        _setAdmin(12, admin);
+        _setUpPartner();
 
         vm.expectEmit(address(hcuLimit));
-        emit HCULimit.ContractQuotaAssigned(auction, 12, admin);
-        vm.prank(admin);
-        hcuLimit.grantQuota(12, auction);
-        assertEq(hcuLimit.getContractQuota(auction), 12);
+        emit HCULimit.ContractQuotaAssigned(PARTNER_QUOTA, auction, PARTNER_ADMIN);
+        _grant(auction);
+        assertEq(hcuLimit.getContractQuota(auction), PARTNER_QUOTA);
         _add(auction, 0x1001);
 
         vm.expectEmit(address(hcuLimit));
-        emit HCULimit.ContractQuotaAssigned(auction, DEFAULT_QUOTA, admin);
-        vm.prank(admin);
-        hcuLimit.revokeQuota(12, auction);
+        emit HCULimit.ContractQuotaAssigned(DEFAULT_QUOTA, auction, PARTNER_ADMIN);
+        vm.prank(PARTNER_ADMIN);
+        hcuLimit.revokeQuota(PARTNER_QUOTA, auction);
         vm.prank(fhevmExecutor);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUQuotaStopped.selector, auction, DEFAULT_QUOTA));
         hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x1002)), auction);
     }
 
+    function test_quotaAdminRevokesAContractTheOwnerAssigned() public {
+        address wrapper = address(0xB1);
+        _setUpPartner();
+        _assign(PARTNER_QUOTA, wrapper);
+
+        vm.prank(PARTNER_ADMIN);
+        hcuLimit.revokeQuota(PARTNER_QUOTA, wrapper);
+        assertEq(hcuLimit.getContractQuota(wrapper), DEFAULT_QUOTA);
+    }
+
     function test_grantQuotaRefusesWhileTheDefaultQuotaIsNotStopped() public {
         // setUp leaves the default quota unmetered: moving a contract out of it could leave it with less room.
-        address admin = address(0xAD);
-        _setQuotaPerBlock(12, 1_000_000);
-        _setAdmin(12, admin);
+        _setQuotaPerBlock(PARTNER_QUOTA, 1_000_000);
+        _setAdmin(PARTNER_QUOTA, PARTNER_ADMIN);
 
-        vm.prank(admin);
+        vm.prank(PARTNER_ADMIN);
         vm.expectRevert(HCULimit.DefaultQuotaNotStopped.selector);
-        hcuLimit.grantQuota(12, address(0xA1));
+        hcuLimit.grantQuota(PARTNER_QUOTA, address(0xA1));
     }
 
     function test_grantQuotaOnlyTakesContractsFromTheDefaultQuota() public {
-        address admin = address(0xAD);
         address other = address(0xB1);
-        _stopDefaultQuota();
+        _setUpPartner();
         _setQuotaPerBlock(5, 1_000_000);
-        _setQuotaPerBlock(12, 1_000_000);
-        _setAdmin(12, admin);
         _assign(5, other);
 
-        vm.prank(admin);
+        vm.prank(PARTNER_ADMIN);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.ContractNotInQuota.selector, other, DEFAULT_QUOTA));
-        hcuLimit.grantQuota(12, other);
+        hcuLimit.grantQuota(PARTNER_QUOTA, other);
     }
 
     function test_revokeQuotaOnlyReleasesContractsOfItsQuota() public {
-        address admin = address(0xAD);
         address other = address(0xB1);
+        _setUpPartner();
         _setQuotaPerBlock(5, 1_000_000);
-        _setAdmin(12, admin);
         _assign(5, other);
 
-        vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.ContractNotInQuota.selector, other, uint16(12)));
-        hcuLimit.revokeQuota(12, other);
+        vm.prank(PARTNER_ADMIN);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.ContractNotInQuota.selector, other, PARTNER_QUOTA));
+        hcuLimit.revokeQuota(PARTNER_QUOTA, other);
     }
 
     function test_grantQuotaRefusesAStoppedQuota() public {
-        address admin = address(0xAD);
-        _stopDefaultQuota();
-        _setAdmin(12, admin);
+        _setUpPartner();
+        _setQuota(PARTNER_QUOTA, 0, 0);
 
-        vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, uint16(12)));
-        hcuLimit.grantQuota(12, address(0xA1));
+        vm.prank(PARTNER_ADMIN);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.InvalidQuota.selector, PARTNER_QUOTA));
+        hcuLimit.grantQuota(PARTNER_QUOTA, address(0xA1));
     }
 
     function test_quotaAdminCannotActOnAnotherQuota() public {
-        address admin = address(0xAD);
-        _stopDefaultQuota();
+        _setUpPartner();
         _setQuotaPerBlock(13, 1_000_000);
-        _setAdmin(12, admin);
 
-        vm.startPrank(admin);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, uint16(13), admin));
+        vm.startPrank(PARTNER_ADMIN);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, uint16(13), PARTNER_ADMIN));
         hcuLimit.grantQuota(13, address(0xA1));
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, uint16(13), admin));
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, uint16(13), PARTNER_ADMIN));
         hcuLimit.revokeQuota(13, address(0xA1));
         vm.stopPrank();
     }
 
     function test_pausedQuotaFreezesItsMembersForItsAdmin() public {
-        address admin = address(0xAD);
         address auction = address(0xA1);
-        _stopDefaultQuota();
-        _setQuotaPerBlock(12, 1_000_000);
-        _setAdmin(12, admin);
-        vm.prank(admin);
-        hcuLimit.grantQuota(12, auction);
-        _pause(_mockPauser(address(0x9A)), 12);
+        _setUpPartner();
+        _grant(auction);
+        _pause(_mockPauser(address(0x9A)), PARTNER_QUOTA);
 
         // The admin can neither move its contracts out to escape the pause nor add others to it.
-        vm.startPrank(admin);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.QuotaPaused.selector, uint16(12)));
-        hcuLimit.revokeQuota(12, auction);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.QuotaPaused.selector, uint16(12)));
-        hcuLimit.grantQuota(12, address(0xA2));
+        vm.startPrank(PARTNER_ADMIN);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.QuotaMembershipPaused.selector, PARTNER_QUOTA));
+        hcuLimit.revokeQuota(PARTNER_QUOTA, auction);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.QuotaMembershipPaused.selector, PARTNER_QUOTA));
+        hcuLimit.grantQuota(PARTNER_QUOTA, address(0xA2));
         vm.stopPrank();
     }
 
     function test_removedAdminLosesItsRightsAndItsContractsStay() public {
-        address admin = address(0xAD);
         address auction = address(0xA1);
-        _stopDefaultQuota();
-        _setQuotaPerBlock(12, 1_000_000);
-        _setAdmin(12, admin);
-        vm.prank(admin);
-        hcuLimit.grantQuota(12, auction);
+        _setUpPartner();
+        _grant(auction);
 
-        _setAdmin(12, address(0));
-        assertEq(hcuLimit.getQuotaAdmin(12), address(0));
-        vm.prank(admin);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, uint16(12), admin));
-        hcuLimit.revokeQuota(12, auction);
-        assertEq(hcuLimit.getContractQuota(auction), 12);
+        _setAdmin(PARTNER_QUOTA, address(0));
+        assertEq(hcuLimit.getQuotaAdmin(PARTNER_QUOTA), address(0));
+        vm.prank(PARTNER_ADMIN);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, PARTNER_QUOTA, PARTNER_ADMIN));
+        hcuLimit.revokeQuota(PARTNER_QUOTA, auction);
+        assertEq(hcuLimit.getContractQuota(auction), PARTNER_QUOTA);
     }
 
     function test_pauserCannotCallOwnerOnlyQuotaSetters() public {
@@ -1543,7 +1535,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
         hcuLimit.assignQuota(DEFAULT_QUOTA, address(0xBEEF));
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
-        hcuLimit.setQuotaAdmin(12, pauser);
+        hcuLimit.setQuotaAdmin(PARTNER_QUOTA, pauser);
         vm.stopPrank();
     }
 
@@ -1554,10 +1546,10 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.startPrank(stranger);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.NotPauser.selector, stranger));
         hcuLimit.pauseQuota(DEFAULT_QUOTA);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, uint16(12), stranger));
-        hcuLimit.grantQuota(12, address(0xBEEF));
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, uint16(12), stranger));
-        hcuLimit.revokeQuota(12, address(0xBEEF));
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, PARTNER_QUOTA, stranger));
+        hcuLimit.grantQuota(PARTNER_QUOTA, address(0xBEEF));
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotQuotaAdmin.selector, PARTNER_QUOTA, stranger));
+        hcuLimit.revokeQuota(PARTNER_QUOTA, address(0xBEEF));
         vm.stopPrank();
     }
 
@@ -1602,13 +1594,25 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
     function _assign(uint16 quotaId, address account) internal {
         vm.expectEmit(address(hcuLimit));
-        emit HCULimit.ContractQuotaAssigned(account, quotaId, owner);
+        emit HCULimit.ContractQuotaAssigned(quotaId, account, owner);
         vm.prank(owner);
         hcuLimit.assignQuota(quotaId, account);
     }
 
     function _stopDefaultQuota() internal {
         _setQuota(DEFAULT_QUOTA, 0, 0);
+    }
+
+    /// @dev A partner's quota with an admin, and a stopped default quota so the admin can add contracts.
+    function _setUpPartner() internal {
+        _stopDefaultQuota();
+        _setQuotaPerBlock(PARTNER_QUOTA, 1_000_000);
+        _setAdmin(PARTNER_QUOTA, PARTNER_ADMIN);
+    }
+
+    function _grant(address account) internal {
+        vm.prank(PARTNER_ADMIN);
+        hcuLimit.grantQuota(PARTNER_QUOTA, account);
     }
 
     function _setAdmin(uint16 quotaId, address admin) internal {

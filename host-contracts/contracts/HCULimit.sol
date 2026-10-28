@@ -50,7 +50,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     error NotQuotaAdmin(uint16 quotaId, address sender);
 
     /// @notice Returned when a quota admin moves a contract into or out of a paused quota.
-    error QuotaPaused(uint16 quotaId);
+    error QuotaMembershipPaused(uint16 quotaId);
 
     /// @notice Returned when the contract is not in the quota it is moved out of.
     error ContractNotInQuota(address account, uint16 quotaId);
@@ -59,8 +59,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ///         contract may then have more room in the default quota than in the admin's quota.
     error DefaultQuotaNotStopped();
 
-    /// @notice Returned when only one of a quota's maximum and decay is 0, when assigning or granting a contract to a
-    ///         quota whose maximum is 0 other than the default quota, or when setting an admin for the default quota.
+    /// @notice Returned when:
+    ///         - only one of a quota's maximum and decay is 0;
+    ///         - a contract is assigned or granted to a quota whose maximum is 0, other than the default quota;
+    ///         - an admin is set for the default quota.
     error InvalidQuota(uint16 quotaId);
 
     /// @notice Returned if the transaction exceeds the maximum allowed homomorphic complexity units.
@@ -109,7 +111,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     event QuotaPauseSet(uint16 indexed quotaId, bool paused, address indexed setBy);
 
     /// @notice Emitted when a contract is assigned to a quota, by the owner or the quota's admin.
-    event ContractQuotaAssigned(address indexed account, uint16 indexed quotaId, address indexed setBy);
+    event ContractQuotaAssigned(uint16 indexed quotaId, address indexed account, address indexed setBy);
 
     /// @notice Emitted when the per-transaction HCU depth limit is updated.
     /// @param maxHCUDepthPerTx New depth limit.
@@ -211,7 +213,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     modifier onlyQuotaAdmin(uint16 quotaId) {
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (msg.sender != $.quotaAdmins[quotaId]) revert NotQuotaAdmin(quotaId, msg.sender);
-        if ($.quotas[quotaId].paused) revert QuotaPaused(quotaId);
+        if ($.quotas[quotaId].paused) revert QuotaMembershipPaused(quotaId);
         _;
     }
 
@@ -1747,8 +1749,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Names the address that moves contracts between the default quota and this quota, as an
-     *         OpenZeppelin role admin grants and revokes its role. address(0) removes the admin.
+     * @notice Names the address that moves contracts between the default quota and this quota.
+     *         address(0) removes the admin.
      */
     function setQuotaAdmin(uint16 quotaId, address admin) external onlyACLOwner {
         if (quotaId == DEFAULT_QUOTA) revert InvalidQuota(quotaId);
@@ -2029,7 +2031,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     function _assignQuota(uint16 quotaId, address account) private {
         _getHCULimitStorage().contractQuota[account] = quotaId;
-        emit ContractQuotaAssigned(account, quotaId, msg.sender);
+        emit ContractQuotaAssigned(quotaId, account, msg.sender);
     }
 
     function _setQuotaPaused(uint16 quotaId, bool paused) private {

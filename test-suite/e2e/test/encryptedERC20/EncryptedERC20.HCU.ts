@@ -37,7 +37,7 @@ const HCU_LIMIT_ABI = [
   'error NotPauser(address)',
   'error HCUQuotaStopped(address, uint16)',
   'error HCUQuotaPaused(address, uint16)',
-  'error QuotaPaused(uint16)',
+  'error QuotaMembershipPaused(uint16)',
 ];
 
 type HcuLimitContract = {
@@ -392,6 +392,10 @@ describe('EncryptedERC20:HCU', function () {
         await (await ownerHcuLimit.setQuota(UNCAPPED_QUOTA, savedUncappedMax, savedUncappedDecay)).wait();
         await (await ownerHcuLimit.setMaxHCUPerTx(savedMaxHCUPerTx)).wait();
         await (await ownerHcuLimit.setMaxHCUDepthPerTx(savedMaxHCUDepthPerTx)).wait();
+        // The partner quota starts unused, unpaused and without an admin.
+        await (await ownerHcuLimit.unpauseQuota(PARTNER_QUOTA)).wait();
+        await (await ownerHcuLimit.setQuotaAdmin(PARTNER_QUOTA, ethers.ZeroAddress)).wait();
+        await (await ownerHcuLimit.setQuota(PARTNER_QUOTA, 0, 0)).wait();
       });
 
       it('should accumulate HCU across users until the block cap is exhausted', async function () {
@@ -535,7 +539,7 @@ describe('EncryptedERC20:HCU', function () {
         await expect(this.erc20.mint(1)).to.be.revertedWithCustomError(errors, 'HCUQuotaPaused');
         await expect(partnerHcuLimit.revokeQuota(PARTNER_QUOTA, this.contractAddress)).to.be.revertedWithCustomError(
           errors,
-          'QuotaPaused',
+          'QuotaMembershipPaused',
         );
         await (await ownerHcuLimit.unpauseQuota(PARTNER_QUOTA)).wait();
 

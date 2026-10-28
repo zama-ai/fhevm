@@ -51,13 +51,13 @@ Options include:
 
 Three roles manage quotas, following OpenZeppelin's role admins (`AccessControl`) and closed targets (`AccessManager`):
 
-| Role        | Functions                                                    | What it does                                                                                                        |
-| ----------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Governance  | `setQuota`, `setQuotaAdmin`, `assignQuota`, `unpauseQuota`   | Sizes every quota, names each quota's admin, moves any contract to any quota, lifts a pause.                        |
-| Quota admin | `grantQuota(quotaId, contract)`, `revokeQuota(quotaId, contract)` | A partner's address: moves its contracts from the default quota into its quota and back, without a governance proposal. |
-| Pauser      | `pauseQuota(quotaId)`                                        | Stops every contract in a quota. The quota keeps its size and contracts, and its admin cannot move them until governance unpauses it. |
+| Role        | Functions                                                         | What it does                                                                                                                                                        |
+| ----------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Governance  | `setQuota`, `setQuotaAdmin`, `assignQuota`, `unpauseQuota`        | Sizes every quota, names each quota's admin, moves any contract to any quota, lifts a pause.                                                                        |
+| Quota admin | `grantQuota(quotaId, contract)`, `revokeQuota(quotaId, contract)` | A partner's address: moves contracts from the default quota into its quota, and any contract of its quota back to the default quota, without a governance proposal. |
+| Pauser      | `pauseQuota(quotaId)`                                             | Stops every contract in a quota. The quota keeps its size and contracts, and its admin cannot move them until governance unpauses it.                               |
 
-A quota admin can add contracts only while the default quota is stopped (`DefaultQuotaNotStopped` otherwise), so joining a quota never leaves a contract with less room than it had. It cannot resize its quota or take a contract from another quota. You can read a quota's admin with `getQuotaAdmin(quotaId)` and whether it is paused with `isQuotaPaused(quotaId)`.
+A quota admin can add contracts only while the default quota is stopped (`DefaultQuotaNotStopped` otherwise), so joining a quota never leaves a contract with less room than it had. It can send any contract of its quota back to the default quota, including one governance assigned. It cannot resize its quota or take a contract from another quota. You can read a quota's admin with `getQuotaAdmin(quotaId)` and whether it is paused with `isQuotaPaused(quotaId)`.
 
 ### Depth across transactions
 
@@ -74,14 +74,14 @@ The per-transaction depth limit restarts at every transaction. A chain of depend
 
 ### Boolean operations (`ebool`)
 
-| Function name  | HCU (scalar) | HCU (non-scalar) |
-| -------------- | ------------ | ---------------- |
-| `and`          | 22,000       | 25,000           |
-| `or`           | 22,000       | 24,000           |
-| `xor`          | 2,000        | 22,000           |
-| `not`          |      -       | 2                |
-| `select`       |      -       | 55,000           |
-| `randEbool`    |      -       | 19,000           | 
+| Function name | HCU (scalar) | HCU (non-scalar) |
+| ------------- | ------------ | ---------------- |
+| `and`         | 22,000       | 25,000           |
+| `or`          | 22,000       | 24,000           |
+| `xor`         | 2,000        | 22,000           |
+| `not`         | -            | 2                |
+| `select`      | -            | 55,000           |
+| `randEbool`   | -            | 19,000           |
 
 ---
 
@@ -91,176 +91,176 @@ HCU increase with the bit-width of the encrypted integer type. Below are the det
 
 #### **8-bit Encrypted integers (`euint8`)**
 
-| Function name  | HCU (scalar) | HCU (non-scalar) |
-| -------------- | ------------ | ---------------- |
-| `add`          | 84,000       | 88,000           |
-| `sub`          | 84,000       | 91,000           |
-| `mul`          | 122,000      | 150,000          |
-| `div`          | 210,000      | -                |
-| `rem`          | 440,000      | -                |
-| `and`          | 31,000       | 31,000           |
-| `or`           | 30,000       | 30,000           |
-| `xor`          | 31,000       | 31,000           |
-| `shr`          | 32,000       | 91,000           |
-| `shl`          | 32,000       | 92,000           |
-| `rotr`         | 31,000       | 93,000           |
-| `rotl`         | 31,000       | 91,000           |
-| `eq`           | 55,000       | 55,000           |
-| `ne`           | 55,000       | 55,000           |
-| `ge`           | 52,000       | 63,000           |
-| `gt`           | 52,000       | 59,000           |
-| `le`           | 58,000       | 58,000           |
-| `lt`           | 52,000       | 59,000           |
-| `min`          | 84,000       | 119,000          |
-| `max`          | 89,000       | 121,000          |
-| `neg`          | -            | 79,000           |
-| `not`          | -            | 9                |
-| `select`       | -            | 55,000           |
-| `mulDiv`       | 495,000      | 524,000          |
-| `randEuint8`   | -            | 23,000           |
-| `randEuint8(bound)` | -       | 23,000           |
+| Function name       | HCU (scalar) | HCU (non-scalar) |
+| ------------------- | ------------ | ---------------- |
+| `add`               | 84,000       | 88,000           |
+| `sub`               | 84,000       | 91,000           |
+| `mul`               | 122,000      | 150,000          |
+| `div`               | 210,000      | -                |
+| `rem`               | 440,000      | -                |
+| `and`               | 31,000       | 31,000           |
+| `or`                | 30,000       | 30,000           |
+| `xor`               | 31,000       | 31,000           |
+| `shr`               | 32,000       | 91,000           |
+| `shl`               | 32,000       | 92,000           |
+| `rotr`              | 31,000       | 93,000           |
+| `rotl`              | 31,000       | 91,000           |
+| `eq`                | 55,000       | 55,000           |
+| `ne`                | 55,000       | 55,000           |
+| `ge`                | 52,000       | 63,000           |
+| `gt`                | 52,000       | 59,000           |
+| `le`                | 58,000       | 58,000           |
+| `lt`                | 52,000       | 59,000           |
+| `min`               | 84,000       | 119,000          |
+| `max`               | 89,000       | 121,000          |
+| `neg`               | -            | 79,000           |
+| `not`               | -            | 9                |
+| `select`            | -            | 55,000           |
+| `mulDiv`            | 495,000      | 524,000          |
+| `randEuint8`        | -            | 23,000           |
+| `randEuint8(bound)` | -            | 23,000           |
 
 #### **16-bit Encrypted integers (`euint16`)**
 
-| Function name   | HCU (scalar) | HCU (non-scalar) |
-| --------------- | ------------ | ---------------- |
-| `add`           | 93,000       | 93,000           |
-| `sub`           | 93,000       | 93,000           |
-| `mul`           | 193,000      | 222,000          |
-| `div`           | 302,000      | -                |
-| `rem`           | 580,000      | -                |
-| `and`           | 31,000       | 31,000           |
-| `or`            | 30,000       | 31,000           |
-| `xor`           | 31,000       | 31,000           |
-| `shr`           | 32,000       | 123,000          |
-| `shl`           | 32,000       | 125,000          |
-| `rotr`          | 31,000       | 125,000          |
-| `rotl`          | 31,000       | 125,000          |
-| `eq`            | 55,000       | 83,000           |
-| `ne`            | 55,000       | 83,000           |
-| `ge`            | 55,000       | 84,000           |
-| `gt`            | 55,000       | 84,000           |
-| `le`            | 58,000       | 83,000           |
-| `lt`            | 58,000       | 84,000           |
-| `min`           | 88,000       | 146,000          |
-| `max`           | 89,000       | 145,000          |
-| `neg`           | -            | 93,000           |
-| `not`           | -            | 16               |
-| `select`        | -            | 55,000           |
-| `mulDiv`        | 703,000      | 766,000          |
-| `randEuint16`   | -            | 23,000           |
-| `randEuint16(bound)` | -       | 23,000           |
+| Function name        | HCU (scalar) | HCU (non-scalar) |
+| -------------------- | ------------ | ---------------- |
+| `add`                | 93,000       | 93,000           |
+| `sub`                | 93,000       | 93,000           |
+| `mul`                | 193,000      | 222,000          |
+| `div`                | 302,000      | -                |
+| `rem`                | 580,000      | -                |
+| `and`                | 31,000       | 31,000           |
+| `or`                 | 30,000       | 31,000           |
+| `xor`                | 31,000       | 31,000           |
+| `shr`                | 32,000       | 123,000          |
+| `shl`                | 32,000       | 125,000          |
+| `rotr`               | 31,000       | 125,000          |
+| `rotl`               | 31,000       | 125,000          |
+| `eq`                 | 55,000       | 83,000           |
+| `ne`                 | 55,000       | 83,000           |
+| `ge`                 | 55,000       | 84,000           |
+| `gt`                 | 55,000       | 84,000           |
+| `le`                 | 58,000       | 83,000           |
+| `lt`                 | 58,000       | 84,000           |
+| `min`                | 88,000       | 146,000          |
+| `max`                | 89,000       | 145,000          |
+| `neg`                | -            | 93,000           |
+| `not`                | -            | 16               |
+| `select`             | -            | 55,000           |
+| `mulDiv`             | 703,000      | 766,000          |
+| `randEuint16`        | -            | 23,000           |
+| `randEuint16(bound)` | -            | 23,000           |
 
 #### **32-bit Encrypted Integers (`euint32`)**
 
-| Function name   | HCU (scalar) | HCU (non-scalar) |
-| --------------- | ------------ | ---------------- |
-| `add`           | 95,000       | 125,000          |
-| `sub`           | 95,000       | 125,000          |
-| `mul`           | 265,000      | 328,000          |
-| `div`           | 438,000      | -                |
-| `rem`           | 792,000      | -                |
-| `and`           | 32,000       | 32,000           |
-| `or`            | 32,000       | 32,000           |
-| `xor`           | 32,000       | 32,000           |
-| `shr`           | 32,000       | 163,000          |
-| `shl`           | 32,000       | 162,000          |
-| `rotr`          | 32,000       | 160,000          |
-| `rotl`          | 32,000       | 163,000          |
-| `eq`            | 82,000       | 86,000           |
-| `ne`            | 83,000       | 85,000           |
-| `ge`            | 84,000       | 118,000          |
-| `gt`            | 84,000       | 118,000          |
-| `le`            | 84,000       | 117,000          |
-| `lt`            | 83,000       | 117,000          |
-| `min`           | 117,000      | 182,000          |
-| `max`           | 117,000      | 180,000          |
-| `neg`           | -            | 131,000          |
-| `not`           | -            | 32               |
-| `select`        | -            | 55,000           |
-| `mulDiv`        | 1,080,000    | 1,311,000        |
-| `randEuint32`   | -            | 24,000           |
-| `randEuint32(bound)` | -       | 24,000           |
+| Function name        | HCU (scalar) | HCU (non-scalar) |
+| -------------------- | ------------ | ---------------- |
+| `add`                | 95,000       | 125,000          |
+| `sub`                | 95,000       | 125,000          |
+| `mul`                | 265,000      | 328,000          |
+| `div`                | 438,000      | -                |
+| `rem`                | 792,000      | -                |
+| `and`                | 32,000       | 32,000           |
+| `or`                 | 32,000       | 32,000           |
+| `xor`                | 32,000       | 32,000           |
+| `shr`                | 32,000       | 163,000          |
+| `shl`                | 32,000       | 162,000          |
+| `rotr`               | 32,000       | 160,000          |
+| `rotl`               | 32,000       | 163,000          |
+| `eq`                 | 82,000       | 86,000           |
+| `ne`                 | 83,000       | 85,000           |
+| `ge`                 | 84,000       | 118,000          |
+| `gt`                 | 84,000       | 118,000          |
+| `le`                 | 84,000       | 117,000          |
+| `lt`                 | 83,000       | 117,000          |
+| `min`                | 117,000      | 182,000          |
+| `max`                | 117,000      | 180,000          |
+| `neg`                | -            | 131,000          |
+| `not`                | -            | 32               |
+| `select`             | -            | 55,000           |
+| `mulDiv`             | 1,080,000    | 1,311,000        |
+| `randEuint32`        | -            | 24,000           |
+| `randEuint32(bound)` | -            | 24,000           |
 
 #### **64-bit Encrypted integers (`euint64`)**
 
-| Function name   | HCU (scalar) | HCU (non-scalar) |
-| --------------- | ------------ | ---------------- |
-| `add`           | 133,000      | 162,000          |
-| `sub`           | 133,000      | 162,000          |
-| `mul`           | 365,000      | 596,000          |
-| `div`           | 715,000      | -                |
-| `rem`           | 1,153,000    | -                |
-| `and`           | 34,000       | 34,000           |
-| `or`            | 34,000       | 34,000           |
-| `xor`           | 34,000       | 34,000           |
-| `shr`           | 34,000       | 209,000          |
-| `shl`           | 34,000       | 208,000          |
-| `rotr`          | 34,000       | 209,000          |
-| `rotl`          | 34,000       | 209,000          |
-| `eq`            | 83,000       | 120,000          |
-| `ne`            | 84,000       | 118,000          |
-| `ge`            | 116,000      | 152,000          |
-| `gt`            | 117,000      | 152,000          |
-| `le`            | 119,000      | 149,000          |
-| `lt`            | 118,000      | 146,000          |
-| `min`           | 150,000      | 219,000          |
-| `max`           | 149,000      | 218,000          |
-| `neg`           | -            | 131,000          |
-| `not`           | -            | 63               |
-| `select`        | -            | 55,000           |
-| `mulDiv`        | 1,921,000    | 2,911,000        |
-| `randEuint64`   | -            | 24,000           |
-| `randEuint64(bound)` | -       | 24,000           |
+| Function name        | HCU (scalar) | HCU (non-scalar) |
+| -------------------- | ------------ | ---------------- |
+| `add`                | 133,000      | 162,000          |
+| `sub`                | 133,000      | 162,000          |
+| `mul`                | 365,000      | 596,000          |
+| `div`                | 715,000      | -                |
+| `rem`                | 1,153,000    | -                |
+| `and`                | 34,000       | 34,000           |
+| `or`                 | 34,000       | 34,000           |
+| `xor`                | 34,000       | 34,000           |
+| `shr`                | 34,000       | 209,000          |
+| `shl`                | 34,000       | 208,000          |
+| `rotr`               | 34,000       | 209,000          |
+| `rotl`               | 34,000       | 209,000          |
+| `eq`                 | 83,000       | 120,000          |
+| `ne`                 | 84,000       | 118,000          |
+| `ge`                 | 116,000      | 152,000          |
+| `gt`                 | 117,000      | 152,000          |
+| `le`                 | 119,000      | 149,000          |
+| `lt`                 | 118,000      | 146,000          |
+| `min`                | 150,000      | 219,000          |
+| `max`                | 149,000      | 218,000          |
+| `neg`                | -            | 131,000          |
+| `not`                | -            | 63               |
+| `select`             | -            | 55,000           |
+| `mulDiv`             | 1,921,000    | 2,911,000        |
+| `randEuint64`        | -            | 24,000           |
+| `randEuint64(bound)` | -            | 24,000           |
 
 #### **128-bit Encrypted integers (`euint128`)**
 
-| Function name    | HCU (scalar) | HCU (non-scalar) |
-| ---------------- | ------------ | ---------------- |
-| `add`            | 172,000      | 259,000          |
-| `sub`            | 172,000      | 260,000          |
-| `mul`            | 696,000      | 1,686,000        |
-| `div`            | 1,225,000    | -                |
-| `rem`            | 1,943,000    | -                |
-| `and`            | 37,000       | 37,000           |
-| `or`             | 37,000       | 37,000           |
-| `xor`            | 37,000       | 37,000           |
-| `shr`            | 37,000       | 272,000          |
-| `shl`            | 37,000       | 272,000          |
-| `rotr`           | 37,000       | 283,000          |
-| `rotl`           | 37,000       | 278,000          |
-| `eq`             | 117,000      | 122,000          |
-| `ne`             | 117,000      | 122,000          |
-| `ge`             | 149,000      | 210,000          |
-| `gt`             | 150,000      | 218,000          |
-| `le`             | 150,000      | 218,000          |
-| `lt`             | 149,000      | 215,000          |
-| `min`            | 186,000      | 289,000          |
-| `max`            | 180,000      | 290,000          |
-| `neg`            | -            | 168,000          |
-| `not`            | -            | 130              |
-| `select`         | -            | 57,000           |
-| `randEuint128`   | -            | 25,000           |
-| `randEuint128(bound)` | -       | 25,000           |
+| Function name         | HCU (scalar) | HCU (non-scalar) |
+| --------------------- | ------------ | ---------------- |
+| `add`                 | 172,000      | 259,000          |
+| `sub`                 | 172,000      | 260,000          |
+| `mul`                 | 696,000      | 1,686,000        |
+| `div`                 | 1,225,000    | -                |
+| `rem`                 | 1,943,000    | -                |
+| `and`                 | 37,000       | 37,000           |
+| `or`                  | 37,000       | 37,000           |
+| `xor`                 | 37,000       | 37,000           |
+| `shr`                 | 37,000       | 272,000          |
+| `shl`                 | 37,000       | 272,000          |
+| `rotr`                | 37,000       | 283,000          |
+| `rotl`                | 37,000       | 278,000          |
+| `eq`                  | 117,000      | 122,000          |
+| `ne`                  | 117,000      | 122,000          |
+| `ge`                  | 149,000      | 210,000          |
+| `gt`                  | 150,000      | 218,000          |
+| `le`                  | 150,000      | 218,000          |
+| `lt`                  | 149,000      | 215,000          |
+| `min`                 | 186,000      | 289,000          |
+| `max`                 | 180,000      | 290,000          |
+| `neg`                 | -            | 168,000          |
+| `not`                 | -            | 130              |
+| `select`              | -            | 57,000           |
+| `randEuint128`        | -            | 25,000           |
+| `randEuint128(bound)` | -            | 25,000           |
 
 #### **256-bit Encrypted integers (`euint256`)**
 
-| Function name    | HCU (scalar) | HCU (non-scalar) |
-| ---------------- | ------------ | ---------------- |
-| `and`            | 38,000       | 38,000           |
-| `or`             | 38,000       | 38,000           |
-| `xor`            | 39,000       | 39,000           |
-| `shr`            | 38,000       | 369,000          |
-| `shl`            | 39,000       | 378,000          |
-| `rotr`           | 40,000       | 375,000          |
-| `rotl`           | 38,000       | 378,000          |
-| `eq`             | 118,000      | 152,000          |
-| `ne`             | 117,000      | 150,000          |
-| `neg`            | -            | 269,000          |
-| `not`            | -            | 130              |
-| `select`         | -            | 108,000          |
-| `randEuint256`   | -            | 30,000           |
-| `randEuint256(bound)` | -       | 30,000           |
+| Function name         | HCU (scalar) | HCU (non-scalar) |
+| --------------------- | ------------ | ---------------- |
+| `and`                 | 38,000       | 38,000           |
+| `or`                  | 38,000       | 38,000           |
+| `xor`                 | 39,000       | 39,000           |
+| `shr`                 | 38,000       | 369,000          |
+| `shl`                 | 39,000       | 378,000          |
+| `rotr`                | 40,000       | 375,000          |
+| `rotl`                | 38,000       | 378,000          |
+| `eq`                  | 118,000      | 152,000          |
+| `ne`                  | 117,000      | 150,000          |
+| `neg`                 | -            | 269,000          |
+| `not`                 | -            | 130              |
+| `select`              | -            | 108,000          |
+| `randEuint256`        | -            | 30,000           |
+| `randEuint256(bound)` | -            | 30,000           |
 
 #### N-ary operations (`sum`, `isIn`)
 
@@ -302,9 +302,9 @@ For `isIn` on `eaddress`, see the n-ary table above.
 
 ## Additional Operations
 
-| Function name    | HCU           |
-| ---------------- | ------------- |
-| `cast`           | 32            |
-| `trivialEncrypt` | 32            |
+| Function name    | HCU |
+| ---------------- | --- |
+| `cast`           | 32  |
+| `trivialEncrypt` | 32  |
 
 `mulDiv` is priced as a multiplication plus a division on the doubled width (`mulDiv` on `euint64` costs about a `mul` plus a `div` on 128 bits), which is why it is the most expensive binary operator.

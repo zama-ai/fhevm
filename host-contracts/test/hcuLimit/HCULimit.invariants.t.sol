@@ -56,6 +56,7 @@ contract HCULimitInvariantHandler is Test {
         caller = _sanitizeCaller(caller);
         uint16 before = hcuLimit.getContractQuota(caller);
         bool paused = hcuLimit.isQuotaPaused(PARTNER_QUOTA);
+        (uint48 defaultMax, , ) = hcuLimit.getQuota(DEFAULT_QUOTA);
         vm.prank(PARTNER_ADMIN);
         if (grant) {
             try hcuLimit.grantQuota(PARTNER_QUOTA, caller) {} catch {}
@@ -64,8 +65,9 @@ contract HCULimitInvariantHandler is Test {
         }
         uint16 afterMove = hcuLimit.getContractQuota(caller);
         if (afterMove == before) return;
+        // A grant only succeeds while the default quota is stopped, so joining never gives a contract less room.
         bool allowed = grant
-            ? before == DEFAULT_QUOTA && afterMove == PARTNER_QUOTA
+            ? before == DEFAULT_QUOTA && afterMove == PARTNER_QUOTA && defaultMax == 0
             : before == PARTNER_QUOTA && afterMove == DEFAULT_QUOTA;
         if (paused || !allowed) adminMoveViolation = true;
     }
