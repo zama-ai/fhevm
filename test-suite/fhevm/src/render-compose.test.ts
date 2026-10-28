@@ -72,6 +72,12 @@ const relayerOverrideState: State = {
   overrides: [{ group: "relayer" }],
 };
 
+const kmsConnectorOverrideState: State = {
+  ...state,
+  overrides: [{ group: "kms-connector" }],
+  scenario: testDefaultScenario(),
+};
+
 const gatewayContractsOverrideState: State = {
   ...state,
   overrides: [{ group: "gateway-contracts" }],
@@ -126,6 +132,21 @@ describe("render-compose", () => {
   test("exports the active state dir to compose env", async () => {
     await withTempStateDir(async (stateDir) => {
       expect((await composeEnv("coprocessor")).FHEVM_STATE_DIR).toBe(stateDir);
+    });
+  });
+
+  test("passes the zama-ai/kms token secret to a centralized kms-connector local build", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await generateComposeOverrides(kmsConnectorOverrideState, stackSpecForState(kmsConnectorOverrideState));
+      const doc = YAML.parse(await readFile(composePath("kms-connector"), "utf8")) as {
+        services: Record<string, { build?: { secrets?: string[] } }>;
+        secrets?: unknown;
+      };
+      expect(doc.services["kms-connector-gw-listener"]?.build?.secrets).toEqual(["BLOCKCHAIN_ACTIONS_TOKEN"]);
+      expect(doc.services["kms-connector-db-migration"]?.build?.secrets).toBeUndefined();
+      expect(doc.secrets).toEqual({ BLOCKCHAIN_ACTIONS_TOKEN: { environment: "BLOCKCHAIN_ACTIONS_TOKEN" } });
     });
   });
 

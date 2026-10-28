@@ -78,6 +78,14 @@ const buildSpec = (context: string, dockerfile: string, extra: Record<string, un
   dockerfile: resolveComposePath(dockerfile),
   ...extra,
 });
+// The connector services fetch private zama-ai/kms git dependencies: the build reads a token from
+// this BuildKit secret, filled from the env var of the same name (see `composeBuild`).
+const BLOCKCHAIN_ACTIONS_TOKEN_SECRET = "BLOCKCHAIN_ACTIONS_TOKEN";
+/** Declares the zama-ai/kms token secret when one of the connector services is built locally. */
+const kmsConnectorSecrets = (services: ComposeDoc["services"]) =>
+  Object.values(services).some((service) => service.build)
+    ? { secrets: { [BLOCKCHAIN_ACTIONS_TOKEN_SECRET]: { environment: BLOCKCHAIN_ACTIONS_TOKEN_SECRET } } }
+    : {};
 const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknown>>> = {
   coprocessor: {
     "coprocessor-db-migration": buildSpec("../../..", "coprocessor/fhevm-engine/Dockerfile.workspace", {
@@ -114,14 +122,17 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     }),
     "kms-connector-gw-listener": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "gw-listener",
+      secrets: [BLOCKCHAIN_ACTIONS_TOKEN_SECRET],
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
     "kms-connector-kms-worker": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "kms-worker",
+      secrets: [BLOCKCHAIN_ACTIONS_TOKEN_SECRET],
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
     "kms-connector-tx-sender": buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
       target: "tx-sender",
+      secrets: [BLOCKCHAIN_ACTIONS_TOKEN_SECRET],
       args: { RUST_IMAGE_VERSION: "1.91.0" },
     }),
   },
@@ -440,7 +451,7 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
     }
     services[name] = next;
   }
-  return { services };
+  return { services, ...(component === "kms-connector" ? kmsConnectorSecrets(services) : {}) };
 };
 
 /** Builds a host-node compose override for an extra host chain. */

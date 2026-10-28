@@ -22,9 +22,17 @@ COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY kms-connector ./kms-connector
 
 # Build with improved caching
+# The zama-ai/kms git dependencies are private: the BLOCKCHAIN_ACTIONS_TOKEN secret is exposed to
+# git through GIT_CONFIG_* env vars, so it never lands in a layer or a .gitconfig.
 WORKDIR /app/kms-connector
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/kms-connector/target,sharing=locked \
+    --mount=type=secret,id=BLOCKCHAIN_ACTIONS_TOKEN \
+    if [ -s /run/secrets/BLOCKCHAIN_ACTIONS_TOKEN ]; then \
+      export GIT_CONFIG_COUNT=1; \
+      export GIT_CONFIG_KEY_0="url.https://x-access-token:$(cat /run/secrets/BLOCKCHAIN_ACTIONS_TOKEN)@github.com/zama-ai/kms.insteadOf"; \
+      export GIT_CONFIG_VALUE_0="https://github.com/zama-ai/kms"; \
+    fi && \
     git config --global --add safe.directory /app && \
     cargo fetch && \
     cargo build --profile=${CARGO_PROFILE} -p gw-listener && \
