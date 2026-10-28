@@ -13,6 +13,7 @@ import { EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { ProtocolConfig, ProtocolConfigReplica } from '../../types';
 import {
+  buildConnectorUrls,
   buildControllableKmsCommittee,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
@@ -46,12 +47,14 @@ describe('KMS mirror tasks', function () {
       expect(args.contextId).to.equal(liveContextId);
       expect(args.epochId).to.equal(liveEpochId);
       expect(args.nodes.length).to.equal(committee.nodes.length);
+      const connectorUrls = buildConnectorUrls(committee.nodes.length);
       committee.nodes.forEach((node, i) => {
         expect(args.nodes[i]).to.deep.equal({
           txSenderAddress: node.txSenderAddress,
           signerAddress: node.signerAddress,
           ipAddress: node.ipAddress,
           storageUrl: node.storageUrl,
+          connectorUrl: connectorUrls[i],
         });
       });
       expect(args.thresholds.publicDecryption).to.equal(BigInt(committee.thresholds.publicDecryption));
@@ -108,6 +111,7 @@ describe('KMS mirror tasks', function () {
           args.nodes[i].signerAddress,
           args.nodes[i].ipAddress,
           args.nodes[i].storageUrl,
+          args.nodes[i].connectorUrl,
         ]);
       });
       expect(decoded[3].publicDecryption).to.equal(args.thresholds.publicDecryption);
@@ -181,6 +185,8 @@ describe('KMS mirror tasks', function () {
       const [mirroredContextId, mirroredEpochId] = await replica.getCurrentKmsContextAndEpoch();
       expect(mirroredContextId).to.equal(switchArgs.contextId);
       expect(mirroredEpochId).to.equal(switchArgs.epochId);
+      const mirroredNodes = await replica.getKmsNodesForContext(switchArgs.contextId);
+      expect(mirroredNodes.map((n) => n.connectorUrl)).to.deep.equal(buildConnectorUrls(committee.nodes.length));
 
       // Now drive a same-set rotation on canonical and mirror just the epoch.
       const asCanonicalOwner = (await ethers.getContractAt(

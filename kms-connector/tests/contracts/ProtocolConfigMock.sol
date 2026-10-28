@@ -66,6 +66,7 @@ contract ProtocolConfigMock {
 
     function defineNewKmsContextAndEpoch(
         KmsNodeParams[] calldata kmsNodeParams,
+        string[] calldata,
         KmsThresholds calldata thresholds,
         string calldata softwareVersion,
         PcrValues[] calldata pcrValues

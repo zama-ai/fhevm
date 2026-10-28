@@ -69,6 +69,14 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     // ERC-7201 namespaced storage
     // -----------------------------------------------------------------------------------------
 
+    /// @dev A `KmsNode` without `connectorUrl`, as an element of the ordered committee.
+    struct KmsCommitteeEntry {
+        address txSenderAddress;
+        address signerAddress;
+        string ipAddress;
+        string storageUrl;
+    }
+
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfig
     struct ProtocolConfigStorage {
         /// @notice On the canonical, the monotonic allocation counter for KMS context IDs: the latest
@@ -76,13 +84,17 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         ///         On a replica, every activation sets it to `latestActiveKmsContextId`, which can lower it.
         ///         A replica upgraded from v0.15 can hold a higher value until its first activation.
         uint256 currentKmsContextId;
-        /// @notice KMS nodes per context.
-        mapping(uint256 contextId => KmsNode[]) kmsNodesForContext;
+        /// @notice KMS committee per context, in definition order.
+        /// @dev Array elements occupy consecutive slots, so the element type cannot grow. A new field
+        ///      would overlap the next element. The full `KmsNode` lives in `kmsNodeByTxSenderForContext`.
+        mapping(uint256 contextId => KmsCommitteeEntry[]) kmsNodesForContext;
         /// @notice Tx sender lookup per context.
         mapping(uint256 contextId => mapping(address txSender => bool isRegistered)) isKmsTxSenderForContext;
         /// @notice Signer lookup per context.
         mapping(uint256 contextId => mapping(address signer => bool isRegistered)) isKmsSignerForContext;
         /// @notice KmsNode by tx sender per context.
+        /// @dev Each mapping value has its own slot range, so `KmsNode` can grow in place. A value
+        ///      stored before ProtocolConfig v0.4.0 reads an empty `connectorUrl`.
         mapping(uint256 contextId => mapping(address txSender => KmsNode node)) kmsNodeByTxSenderForContext;
         /// @notice Signer addresses per context, in insertion order.
         mapping(uint256 contextId => address[]) kmsSignerAddressesForContext;
@@ -216,7 +228,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     /// @inheritdoc IProtocolConfigBase
     function getKmsNodesForContext(uint256 kmsContextId) external view virtual returns (KmsNode[] memory) {
         _requireValidContext(kmsContextId);
-        return _getProtocolConfigStorage().kmsNodesForContext[kmsContextId];
+        return _getKmsNodes(kmsContextId);
     }
 
     /// @inheritdoc IProtocolConfigBase
@@ -372,6 +384,18 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
+     * @dev The committee of `contextId` in definition order, read from `kmsNodeByTxSenderForContext`.
+     */
+    function _getKmsNodes(uint256 contextId) internal view returns (KmsNode[] memory nodes) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        KmsCommitteeEntry[] storage entries = $.kmsNodesForContext[contextId];
+        nodes = new KmsNode[](entries.length);
+        for (uint256 i = 0; i < entries.length; i++) {
+            nodes[i] = $.kmsNodeByTxSenderForContext[contextId][entries[i].txSenderAddress];
+        }
+    }
+
+    /**
      * @dev Validates the node count, and `thresholds` against it.
      */
     function _checkKmsThresholds(uint256 nodeCount, KmsThresholds calldata thresholds) internal pure {
@@ -407,7 +431,14 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
             revert KmsSignerAlreadyRegistered(node.signerAddress);
         }
 
-        $.kmsNodesForContext[contextId].push(node);
+        $.kmsNodesForContext[contextId].push(
+            KmsCommitteeEntry({
+                txSenderAddress: node.txSenderAddress,
+                signerAddress: node.signerAddress,
+                ipAddress: node.ipAddress,
+                storageUrl: node.storageUrl
+            })
+        );
         $.isKmsTxSenderForContext[contextId][node.txSenderAddress] = true;
         $.isKmsSignerForContext[contextId][node.signerAddress] = true;
         $.kmsNodeByTxSenderForContext[contextId][node.txSenderAddress] = node;
@@ -492,6 +523,8 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
 
     /**
      * @dev Hash of a context's node set and thresholds, signed in ContextCreationConfirmation.
+     *      It covers each node's `connectorUrl`, so a replica submitter cannot swap a URL without
+     *      invalidating the signatures.
      */
     function _nodeConfigHash(KmsNode[] memory nodes, KmsThresholds memory thresholds) internal pure returns (bytes32) {
         return keccak256(abi.encode(nodes, thresholds));

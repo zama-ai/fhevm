@@ -52,6 +52,7 @@ function computeContextInfoHash(
 // Reads canonical's active KMS context for `mirrorKmsContextAndEpoch`. It reads the `NewKmsContext`
 // event at the block the context anchor records and checks the event against the anchor hash, which
 // also covers the software version and PCR values. The nodes and thresholds come from that checked event.
+// The event carries no connector URLs, so they come from the stored node set.
 export async function readCanonicalContextSwitch(
   hre: HardhatRuntimeEnvironment,
   options: {
@@ -127,11 +128,12 @@ export async function readCanonicalContextSwitch(
   return {
     contextId: snapshot.currentKmsContextId,
     epochId: snapshot.currentEpochId,
-    nodes: event.args.kmsNodeParams.map(({ txSenderAddress, signerAddress, ipAddress, storageUrl }) => ({
+    nodes: event.args.kmsNodeParams.map(({ txSenderAddress, signerAddress, ipAddress, storageUrl }, i) => ({
       txSenderAddress,
       signerAddress,
       ipAddress,
       storageUrl,
+      connectorUrl: snapshot.kmsNodes[i].connectorUrl,
     })),
     thresholds: eventThresholds,
   };

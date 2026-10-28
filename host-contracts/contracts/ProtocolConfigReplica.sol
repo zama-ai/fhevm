@@ -60,7 +60,7 @@ contract ProtocolConfigReplica is
      *      Later canonical updates use the submit functions or the owner mirror functions.
      * @param canonicalContextId The active Ethereum KMS context ID to preserve.
      * @param canonicalEpochId The active Ethereum epoch ID to preserve.
-     * @param canonicalNodes The active Ethereum KMS node set.
+     * @param canonicalNodes The active Ethereum KMS node set, including each `connectorUrl`.
      * @param canonicalThresholds The active Ethereum thresholds.
      * @param canonicalChainId The chain ID of the canonical ProtocolConfig, in its EIP-712 domain.
      * @param canonicalProtocolConfig The canonical ProtocolConfig address, in its EIP-712 domain.
@@ -331,7 +331,7 @@ contract ProtocolConfigReplica is
         KmsThresholds calldata thresholds
     ) private {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        KmsNode[] storage storedNodes = $.kmsNodesForContext[contextId];
+        KmsCommitteeEntry[] storage storedNodes = $.kmsNodesForContext[contextId];
         for (uint256 i = 0; i < storedNodes.length; i++) {
             address txSender = storedNodes[i].txSenderAddress;
             delete $.isKmsTxSenderForContext[contextId][txSender];

@@ -53,7 +53,7 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaTestBase {
         protocolConfigReplica.mirrorKmsContextAndEpoch(
             CTX1 + 1,
             EPOCH1 + 1,
-            _toKmsNodes(_makeKmsNodeParams(2)),
+            _toKmsNodes(_makeKmsNodeParams(2), _makeConnectorUrls(2)),
             _defaultThresholds()
         );
 
@@ -86,7 +86,7 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaTestBase {
         _setupReplica();
         uint256 contextId = CTX1 + 4;
         uint256 epochId = EPOCH1 + 4;
-        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2));
+        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2), _makeConnectorUrls(2));
         KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.expectEmit(true, true, false, true, address(protocolConfigReplica));
@@ -101,6 +101,12 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaTestBase {
         assertTrue(protocolConfigReplica.isValidKmsContext(contextId));
         assertTrue(protocolConfigReplica.isValidEpochForContext(contextId, epochId));
         assertEq(protocolConfigReplica.getKmsSignersForContext(contextId).length, 2);
+        for (uint256 i = 0; i < nodes.length; i++) {
+            assertEq(
+                abi.encode(protocolConfigReplica.getKmsNodeForContext(contextId, nodes[i].txSenderAddress)),
+                abi.encode(nodes[i])
+            );
+        }
     }
 
     function test_mirrorKmsContextAndEpochAllowsGap() public {
@@ -113,7 +119,7 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaTestBase {
         protocolConfigReplica.mirrorKmsContextAndEpoch(
             gappedContextId,
             gappedEpochId,
-            _toKmsNodes(_makeKmsNodeParams(2)),
+            _toKmsNodes(_makeKmsNodeParams(2), _makeConnectorUrls(2)),
             _defaultThresholds()
         );
 
@@ -141,6 +147,57 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaTestBase {
         );
         protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1 + 3, EPOCH1 + 2, _nodes(SEED2), _thresholds());
         vm.stopPrank();
+    }
+
+    function test_recoverOverExistingIdKeepsTxSenderWithNewUrl() public {
+        _setupReplica();
+        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(N), _makeConnectorUrls(N));
+        nodes[0].connectorUrl = "https://kms-connector-0.new.example.com";
+        nodes[1].connectorUrl = "";
+
+        vm.prank(owner);
+        protocolConfigReplica.recoverKmsState(
+            CTX1,
+            EPOCH1 + 1,
+            nodes,
+            _thresholds(),
+            new uint256[](0),
+            new uint256[](0)
+        );
+
+        assertEq(abi.encode(protocolConfigReplica.getKmsNodesForContext(CTX1)), abi.encode(nodes));
+        for (uint256 i = 0; i < N; i++) {
+            assertEq(
+                abi.encode(protocolConfigReplica.getKmsNodeForContext(CTX1, nodes[i].txSenderAddress)),
+                abi.encode(nodes[i])
+            );
+        }
+    }
+
+    function test_recoverOverExistingIdWithFewerNodesClearsDroppedNode() public {
+        _setupReplica();
+        KmsNode[] memory oldNodes = _toKmsNodes(_makeKmsNodeParams(N), _makeConnectorUrls(N));
+        KmsNode[] memory nodes = new KmsNode[](N - 1);
+        for (uint256 i = 0; i < N - 1; i++) {
+            nodes[i] = oldNodes[i];
+        }
+        address droppedTxSender = oldNodes[N - 1].txSenderAddress;
+
+        vm.prank(owner);
+        protocolConfigReplica.recoverKmsState(
+            CTX1,
+            EPOCH1 + 1,
+            nodes,
+            _thresholds(),
+            new uint256[](0),
+            new uint256[](0)
+        );
+
+        assertEq(abi.encode(protocolConfigReplica.getKmsNodesForContext(CTX1)), abi.encode(nodes));
+        KmsNode memory emptyNode;
+        assertEq(abi.encode(protocolConfigReplica.getKmsNodeForContext(CTX1, droppedTxSender)), abi.encode(emptyNode));
+        assertFalse(protocolConfigReplica.isKmsTxSenderForContext(CTX1, droppedTxSender));
+        assertFalse(protocolConfigReplica.isKmsSignerForContext(CTX1, oldNodes[N - 1].signerAddress));
     }
 
     function test_recoveryFromLateActivation() public {
@@ -395,7 +452,7 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaTestBase {
 
     function test_revertMirrorKmsContextAndEpochNotOwner() public {
         _setupReplica();
-        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2));
+        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2), _makeConnectorUrls(2));
         KmsThresholds memory thresholds = _defaultThresholds();
 
         vm.prank(address(0x999));

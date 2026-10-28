@@ -496,6 +496,8 @@ describe("buildHostScSwapEnv / buildGatewayScSwapEnv (node swap)", () => {
     KMS_NODE_IP_4: "http://kms-core-5:50005",
     KMS_NODE_STORAGE_URL_3: "http://object-store/kms-public",
     KMS_NODE_STORAGE_URL_4: "http://object-store/kms-public",
+    KMS_NODE_CONNECTOR_URL_3: "https://kms-connector-4-proxy:8443",
+    KMS_NODE_CONNECTOR_URL_4: "https://kms-connector-5-proxy:8443",
     KMS_NODE_PARTY_ID_3: "4",
     KMS_NODE_PARTY_ID_4: "5",
     KMS_NODE_MPC_IDENTITY_3: "kms-core-4",
@@ -527,6 +529,7 @@ describe("buildHostScSwapEnv / buildGatewayScSwapEnv (node swap)", () => {
     expect(swap.KMS_SIGNER_ADDRESS_3).toBe("0xsigner5");
     expect(swap.KMS_TX_SENDER_ADDRESS_3).toBe("0xtx5");
     expect(swap.KMS_NODE_IP_3).toBe("http://kms-core-5:50005");
+    expect(swap.KMS_NODE_CONNECTOR_URL_3).toBe("https://kms-connector-5-proxy:8443");
     expect(swap.KMS_NODE_MPC_IDENTITY_3).toBe("kms-core-5"); // physical core is the spare
     expect(swap.KMS_NODE_CA_CERT_3).toBe("cert5");
     expect(swap.KMS_NODE_STORAGE_PREFIX_3).toBe("PUB-p5");

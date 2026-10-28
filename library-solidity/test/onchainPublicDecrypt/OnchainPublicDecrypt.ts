@@ -176,7 +176,10 @@ async function activateNewKmsContext(
   thresholds: KmsThresholdsStruct,
   signerAccounts: Signer[],
 ) {
-  const txNewConfig = await protocolConfig.connect(deployer).defineNewKmsContextAndEpoch(nodes, thresholds, '', []);
+  const connectorUrls = nodes.map((_, i) => `https://kms-connector-${i}.example.com`);
+  const txNewConfig = await protocolConfig
+    .connect(deployer)
+    .defineNewKmsContextAndEpoch(nodes, connectorUrls, thresholds, '', []);
   const newConfigReceipt = await txNewConfig.wait();
   const contextId = findEventArg(protocolConfig, newConfigReceipt!.logs, 'NewKmsContext', 'contextId')!;
   const epochId = await submitContextCreationConfirmations(
@@ -184,6 +187,7 @@ async function activateNewKmsContext(
     signerAccounts,
     contextId,
     nodes,
+    connectorUrls,
     thresholds,
   );
   if (epochId === undefined) {

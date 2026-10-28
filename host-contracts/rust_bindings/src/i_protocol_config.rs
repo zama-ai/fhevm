@@ -524,6 +524,7 @@ interface IProtocolConfig {
         address signerAddress;
         string ipAddress;
         string storageUrl;
+        string connectorUrl;
     }
     struct KmsNodeParams {
         address txSenderAddress;
@@ -560,6 +561,7 @@ interface IProtocolConfig {
     error InvalidKmsEpoch(uint256 epochId);
     error InvalidNullThreshold(string thresholdName);
     error InvalidProposalId();
+    error KmsConnectorUrlsLengthMismatch(uint256 nodeCount, uint256 connectorUrlCount);
     error KmsContextCreationAlreadyConfirmed(address signer, uint256 kmsContextId);
     error KmsContextCreationUnauthorized(address signer, uint256 kmsContextId);
     error KmsContextNotPending(uint256 kmsContextId);
@@ -595,7 +597,7 @@ interface IProtocolConfig {
     function confirmKmsContextDestruction(uint256 destroyedContextId, bytes memory signature, bytes memory extraData) external;
     function confirmKmsEpochDestruction(uint256 destroyedEpochId, bytes memory signature, bytes memory extraData) external;
     function defineNewEpochForCurrentKmsContext() external;
-    function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
+    function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, string[] memory connectorUrls, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
     function destroyKmsContext(uint256 kmsContextId) external;
     function destroyKmsEpoch(uint256 epochId) external;
     function getCurrentKmsContextAndEpoch() external view returns (uint256 contextId, uint256 epochId);
@@ -835,6 +837,11 @@ interface IProtocolConfig {
         ]
       },
       {
+        "name": "connectorUrls",
+        "type": "string[]",
+        "internalType": "string[]"
+      },
+      {
         "name": "thresholds",
         "type": "tuple",
         "internalType": "struct KmsThresholds",
@@ -1058,6 +1065,11 @@ interface IProtocolConfig {
             "name": "storageUrl",
             "type": "string",
             "internalType": "string"
+          },
+          {
+            "name": "connectorUrl",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       }
@@ -1097,6 +1109,11 @@ interface IProtocolConfig {
           },
           {
             "name": "storageUrl",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "connectorUrl",
             "type": "string",
             "internalType": "string"
           }
@@ -2054,6 +2071,22 @@ interface IProtocolConfig {
     "type": "error",
     "name": "InvalidProposalId",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "KmsConnectorUrlsLengthMismatch",
+    "inputs": [
+      {
+        "name": "nodeCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "connectorUrlCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
@@ -3030,7 +3063,7 @@ struct EpochKeyResult { uint256 prepKeygenId; uint256 keyId; IKMSGeneration.KeyD
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; string storageUrl; }
+struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; string storageUrl; string connectorUrl; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3043,6 +3076,8 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
         pub ipAddress: alloy::sol_types::private::String,
         #[allow(missing_docs)]
         pub storageUrl: alloy::sol_types::private::String,
+        #[allow(missing_docs)]
+        pub connectorUrl: alloy::sol_types::private::String,
     }
     #[allow(
         non_camel_case_types,
@@ -3059,11 +3094,13 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
             alloy::sol_types::sol_data::Address,
             alloy::sol_types::sol_data::String,
             alloy::sol_types::sol_data::String,
+            alloy::sol_types::sol_data::String,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
             alloy::sol_types::private::Address,
             alloy::sol_types::private::Address,
+            alloy::sol_types::private::String,
             alloy::sol_types::private::String,
             alloy::sol_types::private::String,
         );
@@ -3087,6 +3124,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     value.signerAddress,
                     value.ipAddress,
                     value.storageUrl,
+                    value.connectorUrl,
                 )
             }
         }
@@ -3099,6 +3137,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     signerAddress: tuple.1,
                     ipAddress: tuple.2,
                     storageUrl: tuple.3,
+                    connectorUrl: tuple.4,
                 }
             }
         }
@@ -3122,6 +3161,9 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     ),
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
                         &self.storageUrl,
+                    ),
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.connectorUrl,
                     ),
                 )
             }
@@ -3197,7 +3239,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "KmsNode(address txSenderAddress,address signerAddress,string ipAddress,string storageUrl)",
+                    "KmsNode(address txSenderAddress,address signerAddress,string ipAddress,string storageUrl,string connectorUrl)",
                 )
             }
             #[inline]
@@ -3229,6 +3271,10 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                             &self.storageUrl,
                         )
                         .0,
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.connectorUrl,
+                        )
+                        .0,
                 ]
                     .concat()
             }
@@ -3249,6 +3295,9 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     )
                     + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.storageUrl,
+                    )
+                    + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.connectorUrl,
                     )
             }
             #[inline]
@@ -3273,6 +3322,10 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                 );
                 <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.storageUrl,
+                    out,
+                );
+                <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.connectorUrl,
                     out,
                 );
             }
@@ -5250,6 +5303,103 @@ error InvalidProposalId();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `KmsConnectorUrlsLengthMismatch(uint256,uint256)` and selector `0x0e7e40f5`.
+```solidity
+error KmsConnectorUrlsLengthMismatch(uint256 nodeCount, uint256 connectorUrlCount);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct KmsConnectorUrlsLengthMismatch {
+        #[allow(missing_docs)]
+        pub nodeCount: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub connectorUrlCount: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Uint<256>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<KmsConnectorUrlsLengthMismatch>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: KmsConnectorUrlsLengthMismatch) -> Self {
+                (value.nodeCount, value.connectorUrlCount)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for KmsConnectorUrlsLengthMismatch {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    nodeCount: tuple.0,
+                    connectorUrlCount: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for KmsConnectorUrlsLengthMismatch {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "KmsConnectorUrlsLengthMismatch(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [14u8, 126u8, 64u8, 245u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.nodeCount),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.connectorUrlCount),
+                )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -9135,9 +9285,9 @@ function defineNewEpochForCurrentKmsContext() external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `defineNewKmsContextAndEpoch((address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])` and selector `0x976c98b5`.
+    /**Function with signature `defineNewKmsContextAndEpoch((address,address,string,string,int32,string,bytes,string)[],string[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])` and selector `0x7b23ba0c`.
 ```solidity
-function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
+function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, string[] memory connectorUrls, KmsThresholds memory thresholds, string memory softwareVersion, PcrValues[] memory pcrValues) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9145,6 +9295,10 @@ function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsTh
         #[allow(missing_docs)]
         pub kmsNodeParams: alloy::sol_types::private::Vec<
             <KmsNodeParams as alloy::sol_types::SolType>::RustType,
+        >,
+        #[allow(missing_docs)]
+        pub connectorUrls: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::String,
         >,
         #[allow(missing_docs)]
         pub thresholds: <KmsThresholds as alloy::sol_types::SolType>::RustType,
@@ -9155,7 +9309,7 @@ function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsTh
             <PcrValues as alloy::sol_types::SolType>::RustType,
         >,
     }
-    ///Container type for the return parameters of the [`defineNewKmsContextAndEpoch((address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])`](defineNewKmsContextAndEpochCall) function.
+    ///Container type for the return parameters of the [`defineNewKmsContextAndEpoch((address,address,string,string,int32,string,bytes,string)[],string[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])`](defineNewKmsContextAndEpochCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct defineNewKmsContextAndEpochReturn {}
@@ -9172,6 +9326,7 @@ function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsTh
             #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<KmsNodeParams>,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::String>,
                 KmsThresholds,
                 alloy::sol_types::sol_data::String,
                 alloy::sol_types::sol_data::Array<PcrValues>,
@@ -9181,6 +9336,7 @@ function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsTh
                 alloy::sol_types::private::Vec<
                     <KmsNodeParams as alloy::sol_types::SolType>::RustType,
                 >,
+                alloy::sol_types::private::Vec<alloy::sol_types::private::String>,
                 <KmsThresholds as alloy::sol_types::SolType>::RustType,
                 alloy::sol_types::private::String,
                 alloy::sol_types::private::Vec<
@@ -9205,6 +9361,7 @@ function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsTh
                 fn from(value: defineNewKmsContextAndEpochCall) -> Self {
                     (
                         value.kmsNodeParams,
+                        value.connectorUrls,
                         value.thresholds,
                         value.softwareVersion,
                         value.pcrValues,
@@ -9218,9 +9375,10 @@ function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsTh
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         kmsNodeParams: tuple.0,
-                        thresholds: tuple.1,
-                        softwareVersion: tuple.2,
-                        pcrValues: tuple.3,
+                        connectorUrls: tuple.1,
+                        thresholds: tuple.2,
+                        softwareVersion: tuple.3,
+                        pcrValues: tuple.4,
                     }
                 }
             }
@@ -9272,6 +9430,7 @@ function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsTh
         impl alloy_sol_types::SolCall for defineNewKmsContextAndEpochCall {
             type Parameters<'a> = (
                 alloy::sol_types::sol_data::Array<KmsNodeParams>,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::String>,
                 KmsThresholds,
                 alloy::sol_types::sol_data::String,
                 alloy::sol_types::sol_data::Array<PcrValues>,
@@ -9284,8 +9443,8 @@ function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsTh
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "defineNewKmsContextAndEpoch((address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])";
-            const SELECTOR: [u8; 4] = [151u8, 108u8, 152u8, 181u8];
+            const SIGNATURE: &'static str = "defineNewKmsContextAndEpoch((address,address,string,string,int32,string,bytes,string)[],string[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])";
+            const SELECTOR: [u8; 4] = [123u8, 35u8, 186u8, 12u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -9298,6 +9457,9 @@ function defineNewKmsContextAndEpoch(KmsNodeParams[] memory kmsNodeParams, KmsTh
                     <alloy::sol_types::sol_data::Array<
                         KmsNodeParams,
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeParams),
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::String,
+                    > as alloy_sol_types::SolType>::tokenize(&self.connectorUrls),
                     <KmsThresholds as alloy_sol_types::SolType>::tokenize(
                         &self.thresholds,
                     ),
@@ -13595,9 +13757,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [110u8, 192u8, 242u8, 63u8],
             [113u8, 215u8, 109u8, 174u8],
             [121u8, 149u8, 143u8, 198u8],
+            [123u8, 35u8, 186u8, 12u8],
             [126u8, 170u8, 200u8, 242u8],
             [148u8, 71u8, 207u8, 212u8],
-            [151u8, 108u8, 152u8, 181u8],
             [151u8, 111u8, 62u8, 185u8],
             [157u8, 27u8, 27u8, 225u8],
             [166u8, 66u8, 186u8, 15u8],
@@ -13630,9 +13792,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(confirmKmsContextCreation),
             ::core::stringify!(confirmEpochActivation),
             ::core::stringify!(confirmKmsContextDestruction),
+            ::core::stringify!(defineNewKmsContextAndEpoch),
             ::core::stringify!(getKmsSigners),
             ::core::stringify!(isKmsSignerForContext),
-            ::core::stringify!(defineNewKmsContextAndEpoch),
             ::core::stringify!(getCurrentKmsContextId),
             ::core::stringify!(getCurrentKmsContextIdCounter),
             ::core::stringify!(confirmKmsEpochDestruction),
@@ -13665,9 +13827,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <confirmKmsContextCreationCall as alloy_sol_types::SolCall>::SIGNATURE,
             <confirmEpochActivationCall as alloy_sol_types::SolCall>::SIGNATURE,
             <confirmKmsContextDestructionCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <defineNewKmsContextAndEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getKmsSignersCall as alloy_sol_types::SolCall>::SIGNATURE,
             <isKmsSignerForContextCall as alloy_sol_types::SolCall>::SIGNATURE,
-            <defineNewKmsContextAndEpochCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentKmsContextIdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCurrentKmsContextIdCounterCall as alloy_sol_types::SolCall>::SIGNATURE,
             <confirmKmsEpochDestructionCall as alloy_sol_types::SolCall>::SIGNATURE,
@@ -13997,6 +14159,17 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     confirmKmsContextDestruction
                 },
                 {
+                    fn defineNewKmsContextAndEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <defineNewKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::defineNewKmsContextAndEpoch)
+                    }
+                    defineNewKmsContextAndEpoch
+                },
+                {
                     fn getKmsSigners(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -14017,17 +14190,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigCalls::isKmsSignerForContext)
                     }
                     isKmsSignerForContext
-                },
-                {
-                    fn defineNewKmsContextAndEpoch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <defineNewKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::defineNewKmsContextAndEpoch)
-                    }
-                    defineNewKmsContextAndEpoch
                 },
                 {
                     fn getCurrentKmsContextId(
@@ -14375,6 +14537,17 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     confirmKmsContextDestruction
                 },
                 {
+                    fn defineNewKmsContextAndEpoch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
+                        <defineNewKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigCalls::defineNewKmsContextAndEpoch)
+                    }
+                    defineNewKmsContextAndEpoch
+                },
+                {
                     fn getKmsSigners(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
@@ -14395,17 +14568,6 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigCalls::isKmsSignerForContext)
                     }
                     isKmsSignerForContext
-                },
-                {
-                    fn defineNewKmsContextAndEpoch(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IProtocolConfigCalls> {
-                        <defineNewKmsContextAndEpochCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IProtocolConfigCalls::defineNewKmsContextAndEpoch)
-                    }
-                    defineNewKmsContextAndEpoch
                 },
                 {
                     fn getCurrentKmsContextId(
@@ -14967,6 +15129,8 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[allow(missing_docs)]
         InvalidProposalId(InvalidProposalId),
         #[allow(missing_docs)]
+        KmsConnectorUrlsLengthMismatch(KmsConnectorUrlsLengthMismatch),
+        #[allow(missing_docs)]
         KmsContextCreationAlreadyConfirmed(KmsContextCreationAlreadyConfirmed),
         #[allow(missing_docs)]
         KmsContextCreationUnauthorized(KmsContextCreationUnauthorized),
@@ -15010,6 +15174,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [6u8, 140u8, 141u8, 64u8],
             [7u8, 128u8, 32u8, 190u8],
             [9u8, 146u8, 247u8, 173u8],
+            [14u8, 126u8, 64u8, 245u8],
             [22u8, 167u8, 39u8, 120u8],
             [23u8, 211u8, 233u8, 72u8],
             [24u8, 122u8, 234u8, 168u8],
@@ -15042,6 +15207,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(EmptyKmsNodes),
             ::core::stringify!(KmsLifecycleOperationInFlight),
             ::core::stringify!(InvalidProposalId),
+            ::core::stringify!(KmsConnectorUrlsLengthMismatch),
             ::core::stringify!(KmsSignerSetExceedsProofFormatLimit),
             ::core::stringify!(ZeroGwStartBlock),
             ::core::stringify!(LatestActiveKmsContextCannotBeDestroyed),
@@ -15074,6 +15240,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <EmptyKmsNodes as alloy_sol_types::SolError>::SIGNATURE,
             <KmsLifecycleOperationInFlight as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidProposalId as alloy_sol_types::SolError>::SIGNATURE,
+            <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::SIGNATURE,
             <KmsSignerSetExceedsProofFormatLimit as alloy_sol_types::SolError>::SIGNATURE,
             <ZeroGwStartBlock as alloy_sol_types::SolError>::SIGNATURE,
             <LatestActiveKmsContextCannotBeDestroyed as alloy_sol_types::SolError>::SIGNATURE,
@@ -15126,7 +15293,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 29usize;
+        const COUNT: usize = 30usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -15168,6 +15335,9 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::InvalidProposalId(_) => {
                     <InvalidProposalId as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::KmsConnectorUrlsLengthMismatch(_) => {
+                    <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::KmsContextCreationAlreadyConfirmed(_) => {
                     <KmsContextCreationAlreadyConfirmed as alloy_sol_types::SolError>::SELECTOR
@@ -15268,6 +15438,17 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigErrors::InvalidProposalId)
                     }
                     InvalidProposalId
+                },
+                {
+                    fn KmsConnectorUrlsLengthMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::KmsConnectorUrlsLengthMismatch)
+                    }
+                    KmsConnectorUrlsLengthMismatch
                 },
                 {
                     fn KmsSignerSetExceedsProofFormatLimit(
@@ -15613,6 +15794,17 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigErrors::InvalidProposalId)
                     }
                     InvalidProposalId
+                },
+                {
+                    fn KmsConnectorUrlsLengthMismatch(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::KmsConnectorUrlsLengthMismatch)
+                    }
+                    KmsConnectorUrlsLengthMismatch
                 },
                 {
                     fn KmsSignerSetExceedsProofFormatLimit(
@@ -15985,6 +16177,11 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                         inner,
                     )
                 }
+                Self::KmsConnectorUrlsLengthMismatch(inner) => {
+                    <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::KmsContextCreationAlreadyConfirmed(inner) => {
                     <KmsContextCreationAlreadyConfirmed as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -16142,6 +16339,12 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                 }
                 Self::InvalidProposalId(inner) => {
                     <InvalidProposalId as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::KmsConnectorUrlsLengthMismatch(inner) => {
+                    <KmsConnectorUrlsLengthMismatch as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -16844,6 +17047,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             kmsNodeParams: alloy::sol_types::private::Vec<
                 <KmsNodeParams as alloy::sol_types::SolType>::RustType,
             >,
+            connectorUrls: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::String,
+            >,
             thresholds: <KmsThresholds as alloy::sol_types::SolType>::RustType,
             softwareVersion: alloy::sol_types::private::String,
             pcrValues: alloy::sol_types::private::Vec<
@@ -16853,6 +17059,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.call_builder(
                 &defineNewKmsContextAndEpochCall {
                     kmsNodeParams,
+                    connectorUrls,
                     thresholds,
                     softwareVersion,
                     pcrValues,
