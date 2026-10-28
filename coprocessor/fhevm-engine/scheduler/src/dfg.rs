@@ -1,6 +1,9 @@
 pub mod scheduler;
 pub mod types;
 
+#[cfg(test)]
+mod tests;
+
 use std::{
     collections::{HashMap, HashSet},
     sync::atomic::AtomicUsize,
@@ -418,33 +421,41 @@ impl DFComponentGraph {
                 sccs.push(scc.to_vec());
             }
         });
-        if !sccs.is_empty() {
-            for scc in sccs {
-                error!(target: "scheduler", { cycle_size = ?scc.len() },
-		       "Dependence cycle detected");
-                for idx in scc {
-                    let idx = digraph
-                        .node_weight(idx)
-                        .ok_or(SchedulerError::DataflowGraphError)?;
-                    let tx = self
-                        .graph
-                        .node_weight_mut(*idx)
-                        .ok_or(SchedulerError::DataflowGraphError)?;
-                    tx.is_uncomputable = true;
-                    error!(target: "scheduler", { transaction_id = ?hex::encode(tx.transaction_id.clone()) },
-		       "Transaction is part of a dependence cycle");
-                    for (_, op) in tx.graph.graph.node_references() {
-                        self.results.push(DFGTxResult {
-                            transaction_id: tx.transaction_id.clone(),
-                            handle: op.result_handle.to_vec(),
-                            compressed_ct: Err(SchedulerError::CyclicDependence.into()),
-                        });
-                    }
+        // A cross-transaction cycle can come from batch composition: t0
+        // produces h, t1 consumes h, and t2 consumes t1's output and produces
+        // h again. If t0 is absent from this batch and h is not yet in the DB,
+        // t2 looks like h's only producer, creating a false t1 <-> t2 cycle.
+        // Defer its members until the original producer's bytes are available.
+        // MissingInputs leaves no error stamp in the worker, and omitting the
+        // cycle's edges lets unrelated work in this batch continue.
+        let mut in_cycle: HashSet<NodeIndex> = HashSet::new();
+        for scc in sccs {
+            warn!(target: "scheduler", { cycle_size = ?scc.len() },
+                  "cross-transaction dependence cycle from batch composition; deferring its transactions");
+            for idx in scc {
+                let idx = digraph
+                    .node_weight(idx)
+                    .ok_or(SchedulerError::DataflowGraphError)?;
+                in_cycle.insert(*idx);
+                let tx = self
+                    .graph
+                    .node_weight_mut(*idx)
+                    .ok_or(SchedulerError::DataflowGraphError)?;
+                tx.is_uncomputable = true;
+                warn!(target: "scheduler", { transaction_id = ?hex::encode(tx.transaction_id.clone()) },
+                      "transaction deferred: part of a batch-composition dependence cycle");
+                for (_, op) in tx.graph.graph.node_references() {
+                    self.results.push(DFGTxResult {
+                        transaction_id: tx.transaction_id.clone(),
+                        handle: op.result_handle.to_vec(),
+                        compressed_ct: Err(SchedulerError::MissingInputs.into()),
+                    });
                 }
             }
-            return Err(SchedulerError::CyclicDependence.into());
         }
-        for (producer, consumer) in remaining.iter() {
+        for (producer, consumer) in remaining.iter().filter(|(producer, consumer)| {
+            !in_cycle.contains(producer) && !in_cycle.contains(consumer)
+        }) {
             if self.graph.add_edge(*producer, *consumer, ()).is_err() {
                 let prod = self
                     .graph

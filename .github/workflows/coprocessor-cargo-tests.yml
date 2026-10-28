@@ -143,7 +143,12 @@ jobs:
           export TFHE_WORKER_EVENT_TYPE_MATRIX=local
         fi
         cargo llvm-cov clean --workspace --profile coverage
-        cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage
+        test_packages=(-p "$TEST_PACKAGE")
+        if [ "$TEST_PACKAGE" = "tfhe-worker" ]; then
+          # Dependency unit tests are not run by testing the worker alone.
+          test_packages+=(-p scheduler)
+        fi
+        cargo llvm-cov test "${test_packages[@]}" --profile coverage
       working-directory: coprocessor/fhevm-engine
 
     - name: Export LCOV coverage data

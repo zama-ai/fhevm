@@ -25,6 +25,9 @@ use std::time::{Duration, SystemTime};
 use time::PrimitiveDateTime;
 use tracing::{debug, error, info, warn, Instrument};
 
+#[cfg(test)]
+mod tests;
+
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
 lazy_static! {
