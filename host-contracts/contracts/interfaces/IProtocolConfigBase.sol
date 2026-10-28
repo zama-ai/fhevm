@@ -98,6 +98,8 @@ interface IProtocolConfigBase {
      * @notice Checks whether a KMS context exists and has not been destroyed.
      * @dev Unlike `isValidKmsContext`, this returns true for a Pending or Created context, so it
      *      distinguishes an in-flight context switch from a destroyed or never-issued context.
+     *      The v0.14 upgrade gave a state only to the context that was active at that upgrade,
+     *      so this returns false for older contexts.
      * @param kmsContextId The context ID to check.
      * @return True if the context exists and is not destroyed.
      */
