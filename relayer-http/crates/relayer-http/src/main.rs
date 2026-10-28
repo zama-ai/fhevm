@@ -26,7 +26,7 @@ async fn main() -> ExitCode {
     };
     logging::init(&config.log);
     let shutdown = CancellationToken::new();
-    let app = match App::new(&config, shutdown.clone()) {
+    let app = match App::new(&config, shutdown.clone()).await {
         Ok(app) => app,
         Err(e) => {
             error!(error = %e, "startup failed");
