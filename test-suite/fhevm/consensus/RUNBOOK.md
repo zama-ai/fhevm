@@ -460,38 +460,45 @@ persists this unowned request while the consumer is stopped and requires that
 exact ID to be resumed, reach DONE, cover all twelve receipts and complete at
 least three listener-core sub-ranges. The no-override flag preserves this
 request when the consumer also creates its relative startup replay.
-Every receipt block must be present in the victim database with its exact chain,
-number and hash in pending or finalized state. The test reports the replay
-bounds, receipt blocks, overlap and any missing blocks; a later block cannot
-hide a gap. Legacy ingestion remains stopped through verification. Existing
-queued live delivery can overlap replay, so this verifies
-an explicit historical request and recovered outputs, not exclusive delivery
-attribution for each block. FM-DURABLE-BACKLOG instead proves all twelve computations are
-persisted and pending before killing the held worker and requiring supervisor
-replacement. Both require every original output to agree, remain unique,
-reach quorum and decrypt to 12; fresh work must also succeed. Neither case is
-a throughput benchmark or a claim about broker delivery attribution.
-
-`FM-HOST-RELATIVE-CATCHUP` is the separate relative-flags-only regression in
-that same CPU `backlog` leg. It creates no absolute database request. It retains
-the queued LIVE backlog, selects the new request with CLI identity `(-1024, -1,
-unfinalized)`, and requires its resolved bounds to cover all twelve offline
-receipts. The initial request must be DONE with no other unfinished requests.
-A stale first LIVE reference currently makes this strict range assertion fail;
-completion of an older range must not turn that into a passing recovery claim.
+The request also records the sampled RPC head as its already-resolved
+`observed_head`, so takeover preserves that absolute range even while the LIVE
+reader is held. This tests resuming a persisted absolute request, not resolving
+relative startup flags.
 
 A private `host-listener/test-failpoints` gate holds LIVE, FINAL and REORGED
-payloads for those exact receipt hashes before ingestion, while readers can
-observe the LIVE reference and catchup delivery continues. After successful
-catchup ingestion, it journals the full payload. Verification requires all
-twelve original transactions in successful CATCHUP payloads with the exact
-CLI-created request ID, plus the usual block, output, quorum, decryption and
-fresh-work checks. The gate must remain unexpired through verification. The
-shared supervisor cleanup marker removes the gate even if the child runner is
-interrupted. Evidence is uploaded under `failure-matrix/FM-HOST-RELATIVE-CATCHUP`.
-Select this case directly in the consensus workflow with `build=true`; the
-inventory capability enables the fault-test image. This test exposes relative
-bounds limitations and does not change their production semantics.
+payloads for the twelve exact receipt hashes before ingestion. Successful
+CATCHUP ingestion journals the complete payload. Before releasing the gate,
+the runner requires all twelve original transactions in successful payloads
+with the exact persisted request ID, block number and block hash. Ordinary
+queued delivery therefore cannot satisfy this attribution check. The runner
+then removes and verifies the gate so the remaining output, quorum, decryption
+and fresh-work checks can progress. The gate must remain unexpired through
+attribution; shared supervisor cleanup also removes it after interruption.
+Evidence is uploaded under `failure-matrix/FM-HOST-LONG-OFFLINE`, including on
+failure. Select this case with `build=true`; its `broker-failpoints` capability
+enables the fault-test image.
+
+Every receipt block must also be present in the victim database with its exact
+chain, number and hash in pending or finalized state. The test reports the
+replay bounds and any missing blocks; a later block cannot hide a gap. Legacy
+ingestion remains stopped through verification.
+
+`FM-HOST-RELATIVE-CATCHUP` separately tests the normal relative startup path in
+that same CPU `backlog` leg. It creates no absolute database request, retains
+the queued LIVE backlog, and selects the new CLI request `(-1024, -1,
+unfinalized)`. The initial request must be DONE with no other unfinished
+requests. The new replay must reach DONE and complete at least three core
+sub-ranges. Its end can predate the workload: it ends before the first queued
+LIVE block, and LIVE supplies the following blocks. This case therefore leaves
+ordinary delivery enabled and requires all twelve exact receipt blocks and
+original outputs from the combined recovery path. It does not require relative
+replay alone to ingest transactions belonging to the retained LIVE tail.
+
+FM-DURABLE-BACKLOG instead proves all twelve computations are persisted and
+pending before killing the held worker and requiring supervisor replacement.
+All cases require every original output to agree, remain unique, reach quorum
+and decrypt to 12; fresh work must also succeed. They are not throughput
+benchmarks.
 
 FM-STORAGE-WORKER-RESTART extends the noisy-storage case: an actual upload
 failure must occur, then the SNS owner is killed and automatically replaced

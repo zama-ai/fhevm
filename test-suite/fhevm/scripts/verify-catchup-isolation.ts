@@ -11,7 +11,7 @@ if (!Number.isSafeInteger(control.until) || control.until <= Math.floor(Date.now
 }
 const workload = read("workload.json").payload;
 const request = read("request.json").payload;
-if (request.caseId !== "FM-HOST-RELATIVE-CATCHUP" || workload.caseId !== request.caseId) {
+if (request.caseId !== "FM-HOST-LONG-OFFLINE" || workload.caseId !== request.caseId) {
   throw new Error("catchup evidence belongs to another scenario");
 }
 const receipts = readFileSync(path.join(root, "receipts.jsonl"), "utf8")

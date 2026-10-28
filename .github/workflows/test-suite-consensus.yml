@@ -635,6 +635,7 @@ jobs:
           cp -r ../../.fhevm/runtime/object-integrity /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/artifact-recovery-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/host-rpc-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
+          cp -r ../../.fhevm/runtime/failure-matrix /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/broker-redelivery /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/storage-pressure-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/submission-partition /tmp/consensus-artifacts/ 2>/dev/null || true

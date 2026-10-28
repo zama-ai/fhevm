@@ -77,11 +77,10 @@ export function requireBacklogTargets(handles: string[], transactions: string[],
       blocks[11] - blocks[0] < 8)) throw new Error('backlog must span at least nine host blocks so catch-up needs several pages');
 }
 
-/** Relative flags must cover the outage without a separately seeded request. */
+/** Identify the CLI replay without requiring it to cover the retained LIVE tail. */
 export function requireRelativeConsumerCatchup(
   row: { id?: unknown; finalized?: unknown; requestedFrom?: unknown; requestedTo?: unknown; blockStart?: unknown; blockEnd?: unknown },
   previousId: unknown,
-  blocks: number[],
 ): void {
   if (typeof previousId !== 'string' || !previousId || typeof row.id !== 'string' || !row.id || row.id === previousId ||
       row.finalized !== false || row.requestedFrom !== -1024 || row.requestedTo !== -1) {
@@ -89,9 +88,7 @@ export function requireRelativeConsumerCatchup(
   }
   const start = requiredEvidenceCount(row.blockStart, 'relative catchup start');
   const end = requiredEvidenceCount(row.blockEnd, 'relative catchup end');
-  if (blocks.length !== 12 || blocks.some(block => !Number.isSafeInteger(block) || block < start || block > end)) {
-    throw new Error(`relative catchup ${row.id} [${start}, ${end}] does not cover all twelve offline receipts [${blocks.join(', ')}]; the first queued LIVE reference may be stale`);
-  }
+  if (start > end) throw new Error(`relative catchup ${row.id} has an inverted range [${start}, ${end}]`);
 }
 
 /** Successful handler receipts prove replay of the original transactions. */

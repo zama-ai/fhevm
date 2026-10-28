@@ -636,9 +636,9 @@ run_cell_body() {
     fi
   fi
 
-  if [[ "$case_id" == FM-HOST-RELATIVE-CATCHUP ]]; then
+  if [[ "$case_id" == FM-HOST-LONG-OFFLINE ]]; then
     docker exec "$service" host_listener_consumer --catchup-test-control empty || {
-      cr_record "$case_id" INVALID cleanup=not_required started_at="$started" detail="relative replay requires a clean host-listener/test-failpoints image"
+      cr_record "$case_id" INVALID cleanup=not_required started_at="$started" detail="absolute replay requires a clean host-listener/test-failpoints image"
       return 1
     }
   fi
@@ -917,7 +917,7 @@ run_cell_body() {
   fi
 
   # Kill the paused process only after the selected work is proven pending.
-  if [[ "$case_id" == FM-HOST-RELATIVE-CATCHUP ]]; then
+  if [[ "$case_id" == FM-HOST-LONG-OFFLINE ]]; then
     install_catchup_isolation "$service" "$workload_json" || return 1
     record+=("artifact=catchup_isolation=$REPORT_DIR/$case_id")
   fi
@@ -994,16 +994,19 @@ run_cell_body() {
     cell_out="$(cat "$FM_ARM_OUTPUT")"
     rm -f "$FM_ARM_OUTPUT"
   fi
+  if [[ "$case_id" == FM-HOST-LONG-OFFLINE && "$verify_status" == 0 ]]; then
+    # Prove the original transactions were ingested by this absolute replay
+    # before releasing ordinary delivery for the fresh-work checks.
+    if ! wait_for_catchup_isolation "$service"; then
+      verify_status=1
+      cell_out="absolute catchup ingestion attribution failed (see catchup isolation artifacts)"
+    elif ! restore_catchup_isolation; then
+      verify_status=1
+      cell_out="could not release ordinary delivery after catchup attribution"
+    fi
+  fi
   if [[ "$verify_status" == 0 ]]; then
     run_phase cell_out "$case_id" "$workload" verify || verify_status=$?
-  fi
-  if [[ "$case_id" == FM-HOST-RELATIVE-CATCHUP ]]; then
-    # Capture successful replay payloads even when the range assertion fails.
-    # The complete scenario and the attribution check must both succeed.
-    if ! verify_catchup_isolation "$service" && [[ "$verify_status" == 0 ]]; then
-      verify_status=1
-      cell_out="relative catchup ingestion attribution failed (see catchup isolation artifacts)"
-    fi
   fi
   if [[ "$verify_status" == 0 && "$case_id" == FM-CONSENSUS-DETECTOR ]] && ! verify_detector_receipt; then
     verify_status=1
