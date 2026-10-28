@@ -1,16 +1,17 @@
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { FhevmBase, OptionalNativeClient } from '../types/coreFhevmClient.js';
 import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { deserializeFheEncryptionKey } from './deserializeFheEncryptionKey.js';
-import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
+import {
+  fetchVerifiedFheEncryptionKeyBytes,
+  getFheEncryptionKeyEntry,
+} from './fetchVerifiedFheEncryptionKeyBytes-p.js';
 
 export async function fetchFheEncryptionKeyWasm(
-  context: {
-    readonly chain: FhevmChain;
-    readonly runtime: WithEncrypt;
-  },
+  context: FhevmBase<FhevmChain, WithEncrypt, OptionalNativeClient>,
   parameters: {
     readonly options?: RelayerKeyUrlOptions | undefined;
     readonly ignoreCache?: boolean | undefined;
@@ -21,20 +22,13 @@ export async function fetchFheEncryptionKeyWasm(
   const runtime = context.runtime;
   const logger = runtime.config.logger;
 
-  const entry = globalFheEncryptionKeyCache.getOrCreate({
-    owner: runtime,
-    key: relayerUrl,
-    relayerUrl,
-    fill: async () => {
+  const entry = await getFheEncryptionKeyEntry(context, {
+    fetcher: async () => {
       logger?.debug?.(
         `Fetching FHE encryption key/CRS bytes from relayer "${relayerUrl}" (chainId=${context.chain.id}).`,
       );
       try {
-        const bytes = await runtime.relayer.fetchFheEncryptionKeyBytes(
-          { relayerUrl, chainId: context.chain.id },
-          // Caller-provided options override runtime config defaults (e.g. auth)
-          { ...parameters, options: { auth: runtime.config.auth, ...parameters.options } },
-        );
+        const bytes = await fetchVerifiedFheEncryptionKeyBytes(context, parameters);
         logger?.debug?.(`Fetched FHE encryption key/CRS bytes from relayer "${relayerUrl}".`);
         return bytes;
       } catch (e) {

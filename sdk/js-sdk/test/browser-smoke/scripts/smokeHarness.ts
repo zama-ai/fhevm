@@ -13,6 +13,8 @@ import type { ZkProof } from '../../../src/core/types/zkProof-p.js';
 import { setFhevmRuntimeConfig } from '../../../src/ethers/index.js';
 import { createLogger } from './common.js';
 import { getEthersRuntime } from '../../../src/ethers/internal/runtime.js';
+import { PRIVATE_ETHERS_TOKEN } from '../../../src/ethers/internal/ethers-p.js';
+import { createCoreFhevm } from '../../../src/core/runtime/CoreFhevm-p.js';
 import { encryptModule } from '../../../src/core/modules/encrypt/module/index.js';
 import { decryptModule } from '../../../src/core/modules/decrypt/module/index.js';
 import { defineFhevmChain } from '../../../src/core/chains/utils.js';
@@ -241,7 +243,9 @@ const DUMMY_USER_ADDRESS = '0x857Ca72A957920Fa0FB138602995839866Bd4005';
 /**
  * A self-contained dummy chain (no live provider/relayer needed). The Zk proof
  * builder only reads `id`, the ACL address, and `relayerUrl`; the key itself is
- * injected into the global cache before building.
+ * injected into the global cache before building. `kmsGeneration` makes the
+ * chain one the key check can verify against (never read here): every key
+ * lookup checks the client's key-verification config.
  */
 export function makeDummyChain(relayerUrl: string): FhevmChain {
   return defineFhevmChain({
@@ -251,6 +255,7 @@ export function makeDummyChain(relayerUrl: string): FhevmChain {
         acl: { address: DUMMY_CONTRACT_ADDRESS },
         inputVerifier: { address: DUMMY_USER_ADDRESS },
         kmsVerifier: { address: '0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11' },
+        kmsGeneration: { address: '0x77389113d7000EcBCfc2bDed57202f5f46109934' },
         protocolConfig: undefined, // To be filled
       },
       relayerUrl,
@@ -322,7 +327,10 @@ export async function buildUint64Proof(runtime: WithEncrypt, chain: FhevmChain):
   const builder = createZkProofBuilder();
   builder.addUint64(42n);
   return builder.build(
-    { chain, runtime },
+    // No host-chain client: the key is already cached (see loadAndCacheKey),
+    // so build() only checks the chain's key-verification config, then reads
+    // the cached key with no fetch and no KMSGeneration read.
+    createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain, runtime }),
     {
       contractAddress: DUMMY_CONTRACT_ADDRESS,
       userAddress: DUMMY_USER_ADDRESS,

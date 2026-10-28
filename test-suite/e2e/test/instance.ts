@@ -1,7 +1,7 @@
 import { network } from 'hardhat';
 import { vars } from 'hardhat/config';
 
-import { FhevmSdk } from './sdk/fhevm-sdk/sdk';
+import { type FheEncryptionKeyBytes, FhevmSdk } from './sdk/fhevm-sdk/sdk';
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
 
@@ -86,6 +86,9 @@ if (!relayerUrl) throw new Error('RELAYER_URL is required');
 const apiKey = process.env.ZAMA_FHEVM_API_KEY ?? vars.get('ZAMA_FHEVM_API_KEY', '');
 const auth = apiKey ? { __type: 'ApiKeyHeader' as const, value: apiKey } : undefined;
 
+// Host-chain KMSGeneration: the SDK reads FHE key / CRS digests from it.
+const kmsGenerationAddress = process.env.KMS_GENERATION_CONTRACT_ADDRESS;
+
 export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {
   const instances: FhevmInstances = {} as FhevmInstances;
   await Promise.all(
@@ -96,7 +99,7 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
   return instances;
 };
 
-export const createInstance = async () => {
+export const createInstance = async (overrides: { readonly fheEncryptionKey?: FheEncryptionKeyBytes } = {}) => {
   const cfg = {
     verifyingContractAddressDecryption,
     verifyingContractAddressInputVerification,
@@ -104,11 +107,13 @@ export const createInstance = async () => {
     inputVerifierContractAddress: inputAdd,
     aclContractAddress: aclAddress,
     ...(protocolConfigAddress ? { protocolConfigAddress } : {}),
+    ...(kmsGenerationAddress ? { kmsGenerationAddress } : {}),
     rpcUrl: (network.config as { url: string }).url,
     relayerUrl,
     gatewayChainId: gatewayChainID,
     chainId: hostChainID,
     ...(auth ? { auth } : {}),
+    ...overrides,
   };
   return FhevmSdk.create(cfg);
 };

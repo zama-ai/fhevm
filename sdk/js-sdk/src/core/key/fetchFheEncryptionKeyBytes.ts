@@ -1,39 +1,29 @@
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { FhevmBase, OptionalNativeClient } from '../types/coreFhevmClient.js';
 import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
-import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
+import {
+  fetchVerifiedFheEncryptionKeyBytes,
+  getFheEncryptionKeyEntry,
+} from './fetchVerifiedFheEncryptionKeyBytes-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function fetchFheEncryptionKeyBytes(
-  context: {
-    readonly chain: FhevmChain;
-    readonly runtime: FhevmRuntime;
-  },
+  context: FhevmBase<FhevmChain, FhevmRuntime, OptionalNativeClient>,
   parameters: {
     readonly fhevmContext: FhevmClientFrozenContext;
     readonly options?: RelayerKeyUrlOptions | undefined;
     readonly ignoreCache?: boolean | undefined;
   },
 ): Promise<FheEncryptionKeyBytes> {
-  const relayerUrl = context.chain.fhevm.relayerUrl;
-  const runtime = context.runtime;
-
-  const entry = globalFheEncryptionKeyCache.getOrCreate({
-    owner: runtime,
-    key: relayerUrl,
-    relayerUrl,
-    fill: () =>
-      runtime.relayer.fetchFheEncryptionKeyBytes(
-        { relayerUrl, chainId: context.chain.id },
-        // Caller-provided options override runtime config defaults (e.g. auth)
-        { ...parameters, options: { auth: runtime.config.auth, ...parameters.options } },
-      ),
+  const entry = await getFheEncryptionKeyEntry(context, {
+    fetcher: () => fetchVerifiedFheEncryptionKeyBytes(context, parameters),
   });
 
-  // The bytes as fetched, even once the entry holds the wasm key: a
-  // re-serialization may re-encode them (tfhe upgrades old versions).
+  // The verified bytes as fetched, even once the entry holds the wasm key: a
+  // re-serialization may differ and no longer match the KMSGeneration digest.
   return entry.bytes;
 }

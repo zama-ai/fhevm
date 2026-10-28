@@ -231,7 +231,14 @@ export type RelayerModule = Prettify<
     FetchUserDecryptModuleFunction &
     FetchPublicDecryptModuleFunction &
     FetchDelegatedUserDecryptModuleFunction &
-    FetchFeaturesModuleFunction
+    FetchFeaturesModuleFunction & {
+      /**
+       * `true` when the module serves placeholder key / CRS bytes (cleartext
+       * mode, no FHE): they are not checked against KMSGeneration. Every other
+       * module's key material is checked before use.
+       */
+      readonly servesPlaceholderFheEncryptionKey?: boolean | undefined;
+    }
 >;
 
 // Relayer is a base module. It does not take any runtime argument

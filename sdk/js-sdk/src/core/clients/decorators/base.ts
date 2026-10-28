@@ -183,7 +183,7 @@ export type BaseActions = {
   ) => Promise<ParseSignedDecryptionPermitReturnType>;
   /**
    * Fetches the FHE public encryption key (~33KB) and CRS (~4.6MB) from the
-   * relayer and caches them.
+   * relayer and caches them. Returns a copy of the cached bytes.
    */
   readonly fetchFheEncryptionKeyBytes: (
     parameters?: FetchFheEncryptionKeyBytesParameters,

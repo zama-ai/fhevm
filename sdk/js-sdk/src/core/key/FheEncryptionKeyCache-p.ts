@@ -1,4 +1,5 @@
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FheEncryptionKeyWasm, FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -14,9 +15,9 @@ type FailureStage = 'fetch' | 'conversion to wasm';
  */
 export class FheEncryptionKeyEntry {
   /**
-   * The bytes, as fetched or provided. Kept once the wasm key is
+   * The verified bytes, as fetched or provided. Kept once the wasm key is
    * deserialized: a re-serialization can re-encode them (tfhe upgrades old
-   * serialization versions), and no longer be the bytes the relayer served.
+   * serialization versions), and no longer match the KMSGeneration digest.
    */
   readonly bytes: Promise<FheEncryptionKeyBytes>;
   readonly #onFailure: (stage: FailureStage, error: unknown) => void;
@@ -55,9 +56,10 @@ type CreateEntryParameters = {
 };
 
 /**
- * Cache for FHE public key parameters, keyed by relayer URL: one
- * {@link FheEncryptionKeyEntry} per slot. A slot is filled once and only ever
- * emptied (`remove`, or a failed entry); the entries themselves never change.
+ * Cache for FHE public key parameters, keyed by
+ * {@link getFheEncryptionKeyCacheKey}: one {@link FheEncryptionKeyEntry} per
+ * slot. A slot is filled once and only ever emptied (`remove`, or a failed
+ * entry); the entries themselves never change.
  */
 export class FheEncryptionKeyCache {
   readonly #cache = new Map<string, FheEncryptionKeyEntry>();
@@ -95,8 +97,10 @@ export class FheEncryptionKeyCache {
   }
 
   /**
-   * Seeds the relayer URL's slot with caller-provided bytes
-   * (`options.fheEncryptionKey`). No-op if the slot holds an entry.
+   * Test only: seeds the cache with bytes that are NOT checked against
+   * KMSGeneration, under the key of a verifying client (the relayer URL). SDK
+   * code fills the cache only with verified bytes (see
+   * `getFheEncryptionKeyEntry`). No-op if the slot holds an entry.
    */
   setBytes(owner: FhevmRuntime, relayerUrl: string, bytes: FheEncryptionKeyBytes): void {
     this.getOrCreate({ owner, key: relayerUrl, relayerUrl, fill: () => Promise.resolve(bytes) });
@@ -144,3 +148,19 @@ function _assertRelayerUrlMatch(actualRelayerUrl: string, expectedRelayerUrl: st
 ////////////////////////////////////////////////////////////////////////////////
 
 export const globalFheEncryptionKeyCache = new FheEncryptionKeyCache();
+
+/**
+ * The client's key in `globalFheEncryptionKeyCache`, which every client
+ * shares. The relayer URL for a client whose key is checked against
+ * KMSGeneration; `cleartext:<relayerUrl>` for one whose relayer module serves
+ * placeholder bytes (cleartext), which are never checked: cleartext clients
+ * share them among themselves, and a real client on the same relayer URL can
+ * never read them, nor a cleartext client the real key.
+ */
+export function getFheEncryptionKeyCacheKey(client: {
+  readonly chain: FhevmChain;
+  readonly runtime: FhevmRuntime;
+}): string {
+  const relayerUrl = client.chain.fhevm.relayerUrl;
+  return client.runtime.relayer.servesPlaceholderFheEncryptionKey === true ? `cleartext:${relayerUrl}` : relayerUrl;
+}
