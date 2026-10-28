@@ -25,6 +25,7 @@ jobs:
       # Each output indicates if a specific crate was modified
       changes-ciphertext-attestation: ${{ steps.filter.outputs.ciphertext-attestation }}
       changes-block-manifest: ${{ steps.filter.outputs.block-manifest }}
+      changes-nonce-manager: ${{ steps.filter.outputs.nonce-manager }}
       changes-user-decryption-signature: ${{ steps.filter.outputs.user-decryption-signature }}
       changes-fhevm-sig-auth: ${{ steps.filter.outputs.fhevm-sig-auth }}
       changes-gateway-contracts-bindings: ${{ steps.filter.outputs.gateway-contracts-bindings }}
@@ -38,6 +39,9 @@ jobs:
       with:
         # Define paths that trigger specific component workflows
         filters: |
+          nonce-manager:
+            - shared/nonce-manager/**
+            - .github/workflows/shared-crates-tests.yml
           ciphertext-attestation:
             # The `client` feature depends on the gateway bindings by path, so a change there
             # must re-run this crate's tests too.
@@ -110,6 +114,17 @@ jobs:
     defaults:
       run:
         working-directory: shared/block-manifest
+    steps: *shared-crate-test-steps
+
+  test-nonce-manager:
+    name: test-nonce-manager
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-nonce-manager == 'true' }}
+    permissions: *shared-crate-test-permissions
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shared/nonce-manager
     steps: *shared-crate-test-steps
 
   test-ciphertext-attestation:
