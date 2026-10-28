@@ -36,7 +36,7 @@ never bundled:
 
 | Import path                  | Contains                                                                 |
 | ---------------------------- | ------------------------------------------------------------------------ |
-| `@fhevm/sdk/actions/encrypt` | `encryptValue`, `encryptValues`, `generateZkProof`                        |
+| `@fhevm/sdk/actions/encrypt` | `encryptValue`, `encryptValues`, `generateZkProof`, `encryptValueTransci`, `encryptValuesTransci` |
 | `@fhevm/sdk/actions/decrypt` | `decryptValue`, `decryptValues`, `decryptValuesFromPairs`, `generateTransportKeyPair`, `canDecryptValue`, `canDecryptValues`, `canDecryptValuesFromPairs` |
 | `@fhevm/sdk/actions/base`    | `decryptPublicValue`, `decryptPublicValues`, `decryptPublicValuesWithSignatures`, `canDecryptPublicValue`, `canDecryptPublicValues`, `fetchEncryptedValues`, `signLegacyDecryptionPermit`, `signUnifiedDecryptionPermit`, `canUseUnifiedDecryptionPermit`, `createUnsignedLegacyDecryptionPermitEip712`, `createUnsignedUnifiedDecryptionPermitEip712` |
 | `@fhevm/sdk/actions/chain`   | `signDecryptionPermit` (`@deprecated`), `serializeSignedDecryptionPermit`, `parseSignedDecryptionPermit`, `serializeTransportKeyPair`, `parseTransportKeyPair`, `fetchFheEncryptionKeyBytes` |
@@ -52,11 +52,34 @@ const encrypted = await encryptValues(client, {
   userAddress,
   values: [{ type: 'uint32', value: 42 }],
 });
+// encrypted.encryptedValues, encrypted.inputProof
 ```
+
+`encryptValues` / `encryptValue` produce a ZK-proven input (`inputProof`). They
+need an encrypt client (`createFhevmEncryptClient`, TFHE WASM).
 
 `generateZkProof` exposes the first half of the encryption pipeline — the local
 ZK proof, before the Relayer signs it. Pair it with `fetchEncryptedValues` from
 `actions/base` to split proof generation from proof verification.
+
+RFC-030 pad-based encryption ("transciphering", experimental) has its own
+actions, which need an encrypt-transciphering client
+(`createFhevmEncryptTransciClient`, TKMS WASM):
+
+```ts
+import { encryptValuesTransci } from '@fhevm/sdk/actions/encrypt';
+
+const encrypted = await encryptValuesTransci(client, {
+  contractAddress,
+  userAddress,
+  values: [{ type: 'uint32', value: 42 }],
+  signedPermit, // v2 (unified) permit signed by userAddress
+});
+// encrypted.encryptedValues, encrypted.inputPackage
+```
+
+The permit authenticates the pad decryption request that fetches the one-time
+pad. See [Encryption → the signed permit](encryption.md#the-signed-permit).
 
 ## Decrypt actions
 

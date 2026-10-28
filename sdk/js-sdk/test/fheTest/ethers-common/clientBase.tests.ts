@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { ethers } from 'ethers';
-import { sepolia as fhevmSepolia } from '@fhevm/sdk/chains';
 import { getEthersTestConfig, type CreateEthersBaseClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
 import { clearKeyCache, readKeyFromCache, writeKeyToCache } from '../keyCache.js';
 import { createLogger } from '../setupCommon.js';
@@ -41,12 +40,12 @@ export function defineClientBaseTests(parameters: {
 
     it('should create a base client with sepolia chain', () => {
       const client = parameters.createFhevmBaseClient({
-        chain: fhevmSepolia,
+        chain: config.fhevmChain,
         provider: config.provider,
       });
       expect(client).toBeDefined();
-      expect(client.chain).toBe(fhevmSepolia);
-      expect(client.chain.id).toBe(11_155_111);
+      expect(client.chain).toBe(config.fhevmChain);
+      expect(client.chain.id).toBe(config.fhevmChain.id);
       expect(client.client).toBe(config.provider);
     });
 
@@ -97,11 +96,11 @@ export function defineClientBaseTests(parameters: {
     it('should accept a custom provider', () => {
       const customProvider = new ethers.JsonRpcProvider('https://ethereum-sepolia-rpc.publicnode.com');
       const client = parameters.createFhevmBaseClient({
-        chain: fhevmSepolia,
+        chain: config.fhevmChain,
         provider: customProvider,
       });
       expect(client).toBeDefined();
-      expect(client.chain.id).toBe(11_155_111);
+      expect(client.chain.id).toBe(config.fhevmChain.id);
       expect(client.client).toBe(customProvider);
     });
 

@@ -11,6 +11,7 @@ import type {
   Bytes32,
   Bytes32Hex,
   Bytes32HexNo0x,
+  BytesHex,
   TypedValueOfBase,
   Uint64BigInt,
   Uint8Number,
@@ -21,12 +22,20 @@ import type {
 
 // Brand
 declare const encryptedValueBrand: unique symbol;
-declare const inputBrand: unique symbol;
+declare const externalBrand: unique symbol;
 declare const computedBrand: unique symbol;
+declare const inputBrand: unique symbol;
 
 export type EncryptedValueBrand = { readonly [encryptedValueBrand]: never };
-export type InputBrand = { readonly [inputBrand]: never };
+export type ExternalBrand = { readonly [externalBrand]: never };
 export type ComputedBrand = { readonly [computedBrand]: never };
+export type InputBrand = { readonly [inputBrand]: never };
+
+////////////////////////////////////////////////////////////////////////////////
+
+export type ExternalHandleBytes32 = Bytes32 & EncryptedValueBrand & ExternalBrand;
+export type ExternalHandleBytes32Hex = Bytes32Hex & EncryptedValueBrand & ExternalBrand;
+export type ExternalHandleBytes32HexNo0x = Bytes32HexNo0x & EncryptedValueBrand & ExternalBrand;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -43,13 +52,17 @@ export type ComputedHandleBytes32HexNo0x = Bytes32HexNo0x & EncryptedValueBrand 
 ////////////////////////////////////////////////////////////////////////////////
 
 // Branded bytes
-export type HandleBytes32 = ComputedHandleBytes32 | InputHandleBytes32;
-export type HandleBytes32Hex = ComputedHandleBytes32Hex | InputHandleBytes32Hex;
-export type HandleBytes32HexNo0x = ComputedHandleBytes32HexNo0x | InputHandleBytes32HexNo0x;
+export type HandleBytes32 = ComputedHandleBytes32 | ExternalHandleBytes32 | InputHandleBytes32;
+export type HandleBytes32Hex = ComputedHandleBytes32Hex | ExternalHandleBytes32Hex | InputHandleBytes32Hex;
+export type HandleBytes32HexNo0x =
+  | ComputedHandleBytes32HexNo0x
+  | ExternalHandleBytes32HexNo0x
+  | InputHandleBytes32HexNo0x;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// Base interface — class implements this
+// Base interface of a computed handle — `FhevmHandleImpl` implements this.
+// Layout: hash21 (bytes 0..20) | 0xFF (byte 21) | chainId (bytes 22..29) | fheTypeId (30) | version (31)
 export interface HandleBaseV0 {
   readonly bytes32Hex: HandleBytes32Hex;
   readonly bytes32: HandleBytes32;
@@ -60,11 +73,8 @@ export interface HandleBaseV0 {
   readonly fheType: FheType;
   readonly clearType: ValueTypeName;
   readonly version: Uint8Number;
-  readonly index: Uint8Number;
   readonly encryptionBits: EncryptionBits;
   readonly solidityPrimitiveTypeName: SolidityPrimitiveTypeName;
-  readonly isComputed: boolean;
-  readonly isExternal: boolean;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -80,18 +90,55 @@ export interface ComputedHandleOfTypeBaseV0<etype extends FheType> extends Handl
   readonly bytes32Hex: ComputedHandleBytes32Hex;
   readonly bytes32: ComputedHandleBytes32;
   readonly bytes32HexNo0x: ComputedHandleBytes32HexNo0x;
-  readonly isComputed: true;
-  readonly isExternal: false;
+}
+
+// Base interface of an RFC-030 external handle — `FhevmExternalHandleImpl` implements this.
+// Layout: packageDigest[0..28] (hash29) | inputIndex (29) | fheTypeId (30) | version (31).
+// No chain id: an external handle is only a typed index into its input package.
+export interface ExternalHandleBaseV0 {
+  readonly bytes32Hex: ExternalHandleBytes32Hex;
+  readonly bytes32: ExternalHandleBytes32;
+  readonly bytes32HexNo0x: ExternalHandleBytes32HexNo0x;
+  /** Bytes 0..28: the first 29 bytes of the input package digest. */
+  readonly hash29: BytesHex;
+  /** Byte 29: index of the value in its input package. */
+  readonly index: Uint8Number;
+  readonly fheTypeId: FheTypeId;
+  readonly fheType: FheType;
+  readonly clearType: ValueTypeName;
+  readonly version: Uint8Number;
+  readonly encryptionBits: EncryptionBits;
+  readonly solidityPrimitiveTypeName: SolidityPrimitiveTypeName;
 }
 
 // External typed base
-export interface InputHandleOfTypeBaseV0<etype extends FheType> extends HandleOfTypeBaseV0<etype> {
+export interface ExternalHandleOfTypeBaseV0<etype extends FheType> extends ExternalHandleBaseV0 {
+  readonly fheTypeId: FheTypeToIdMap[etype];
+  readonly fheType: etype;
+}
+
+// Base interface of a ZKPoK input handle — `FhevmInputHandleImpl` implements this.
+// Layout: hash21 (bytes 0..20) | inputIndex (21) | chainId (bytes 22..29) | fheTypeId (30) | version (31).
+export interface InputHandleBaseV0 {
   readonly bytes32Hex: InputHandleBytes32Hex;
   readonly bytes32: InputHandleBytes32;
   readonly bytes32HexNo0x: InputHandleBytes32HexNo0x;
+  readonly hash21: Bytes21Hex;
+  /** Byte 21: index of the value in its ZK proof (0..254). */
   readonly index: Uint8Number;
-  readonly isComputed: false;
-  readonly isExternal: true;
+  readonly chainId: Uint64BigInt;
+  readonly fheTypeId: FheTypeId;
+  readonly fheType: FheType;
+  readonly clearType: ValueTypeName;
+  readonly version: Uint8Number;
+  readonly encryptionBits: EncryptionBits;
+  readonly solidityPrimitiveTypeName: SolidityPrimitiveTypeName;
+}
+
+// Input typed base
+export interface InputHandleOfTypeBaseV0<etype extends FheType> extends InputHandleBaseV0 {
+  readonly fheTypeId: FheTypeToIdMap[etype];
+  readonly fheType: etype;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -99,18 +146,31 @@ export interface InputHandleOfTypeBaseV0<etype extends FheType> extends HandleOf
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * An encrypted FHE value (`handle` in `FHE.sol` / FHEVM whitepaper).
- * Either a {@link ComputedHandle} (verified, on-chain) or an
- * {@link InputHandle} (unverified input). Narrowable via `isExternal`.
+ * An encrypted FHE value (`handle` in `FHE.sol` / FHEVM whitepaper): a
+ * {@link ComputedHandle}, verified and on-chain. External handles produced by
+ * encryption have a different layout and are a separate type,
+ * {@link ExternalHandle}.
  */
-export type Handle<etype extends FheType = FheType> = ComputedHandle<etype> | InputHandle<etype>;
+export type Handle<etype extends FheType = FheType> = ComputedHandle<etype>;
 
 /** A computed encrypted value — verified on-chain, result of an FHE operation. */
 export type ComputedHandle<etype extends FheType = FheType> = {
   [K in etype]: ComputedHandleOfTypeBaseV0<K>;
 }[etype];
 
-/** An unverified encrypted value (`inputHandle` in `FHE.sol`). */
+/**
+ * An RFC-030 external handle (`externalEuintXX` in `FHE.sol`): a typed index
+ * into an input package, passed to `FHE.fromExternal` together with the package.
+ */
+export type ExternalHandle<etype extends FheType = FheType> = {
+  [K in etype]: ExternalHandleOfTypeBaseV0<K>;
+}[etype];
+
+/**
+ * A ZKPoK input handle (`externalEuintXX` in `FHE.sol`): the handle of one value
+ * of a ZK-proven ciphertext list, passed to `FHE.fromExternal` together with
+ * the input proof.
+ */
 export type InputHandle<etype extends FheType = FheType> = {
   [K in etype]: InputHandleOfTypeBaseV0<K>;
 }[etype];
