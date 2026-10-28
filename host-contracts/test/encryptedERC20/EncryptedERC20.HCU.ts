@@ -127,7 +127,7 @@ describe('EncryptedERC20:HCU', function () {
     const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
     await ownerHcuLimit.setQuota(0, 1_000_000_000, 1_000_000_000);
     await ownerHcuLimit.setQuota(1, MAX_UINT48, MAX_UINT48);
-    await ownerHcuLimit.assignQuota(this.contractAddress, 1);
+    await ownerHcuLimit.assignQuota(1, this.contractAddress);
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);

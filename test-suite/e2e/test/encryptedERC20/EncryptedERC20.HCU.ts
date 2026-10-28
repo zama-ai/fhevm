@@ -26,11 +26,18 @@ const HCU_LIMIT_ABI = [
   'function getMaxHCUPerTx() view returns (uint48)',
   'function getMaxHCUDepthPerTx() view returns (uint48)',
   'function setQuota(uint16, uint48, uint48)',
-  'function assignQuota(address, uint16)',
-  'function lowerQuota(uint16, uint48, uint48)',
+  'function setQuotaAdmin(uint16, address)',
+  'function assignQuota(uint16, address)',
+  'function grantQuota(uint16, address)',
+  'function revokeQuota(uint16, address)',
+  'function pauseQuota(uint16)',
+  'function unpauseQuota(uint16)',
   'function setMaxHCUPerTx(uint48)',
   'function setMaxHCUDepthPerTx(uint48)',
   'error NotPauser(address)',
+  'error HCUQuotaStopped(address, uint16)',
+  'error HCUQuotaPaused(address, uint16)',
+  'error QuotaPaused(uint16)',
 ];
 
 type HcuLimitContract = {
@@ -45,18 +52,19 @@ type HcuLimitContract = {
     maxHCU: bigint | number,
     decayPerBlock: bigint | number,
   ): Promise<ContractTransactionResponse>;
-  assignQuota(account: string, quotaId: number): Promise<ContractTransactionResponse>;
-  lowerQuota(
-    quotaId: number,
-    maxHCU: bigint | number,
-    decayPerBlock: bigint | number,
-  ): Promise<ContractTransactionResponse>;
+  setQuotaAdmin(quotaId: number, admin: string): Promise<ContractTransactionResponse>;
+  assignQuota(quotaId: number, account: string): Promise<ContractTransactionResponse>;
+  grantQuota(quotaId: number, account: string): Promise<ContractTransactionResponse>;
+  revokeQuota(quotaId: number, account: string): Promise<ContractTransactionResponse>;
+  pauseQuota(quotaId: number): Promise<ContractTransactionResponse>;
+  unpauseQuota(quotaId: number): Promise<ContractTransactionResponse>;
   setMaxHCUPerTx(value: bigint | number): Promise<ContractTransactionResponse>;
   setMaxHCUDepthPerTx(value: bigint | number): Promise<ContractTransactionResponse>;
 };
 
 const DEFAULT_QUOTA = 0;
 const UNCAPPED_QUOTA = 1;
+const PARTNER_QUOTA = 2;
 const NO_CAP = 2n ** 48n - 1n;
 
 // Quotas replaced the global block cap in HCULimit v0.5.0; getVersion() returns e.g. "HCULimit v0.5.0".
@@ -469,7 +477,7 @@ describe('EncryptedERC20:HCU', function () {
         expect(mintReceipt.status).to.eq(1, 'Mint should succeed');
 
         const uncapTx = await ownerHcuLimit.setQuota(UNCAPPED_QUOTA, NO_CAP, NO_CAP);
-        const assignTx = await ownerHcuLimit.assignQuota(this.contractAddress, UNCAPPED_QUOTA);
+        const assignTx = await ownerHcuLimit.assignQuota(UNCAPPED_QUOTA, this.contractAddress);
         await ethers.provider.send('evm_mine');
         await waitForTransactionReceipt(uncapTx.hash);
         await waitForTransactionReceipt(assignTx.hash);
@@ -488,7 +496,7 @@ describe('EncryptedERC20:HCU', function () {
         const [, , usedHCUUncapped] = await hcuLimit.getQuota(DEFAULT_QUOTA);
         expect(usedHCUUncapped).to.eq(0n, 'A contract in an uncapped quota should not count HCU');
 
-        const reassignTx = await ownerHcuLimit.assignQuota(this.contractAddress, DEFAULT_QUOTA);
+        const reassignTx = await ownerHcuLimit.assignQuota(DEFAULT_QUOTA, this.contractAddress);
         await ethers.provider.send('evm_mine');
         await waitForTransactionReceipt(reassignTx.hash);
 
@@ -503,10 +511,42 @@ describe('EncryptedERC20:HCU', function () {
         expect(usedHCUDefault).to.be.greaterThan(0n, 'Should count HCU in the default quota');
       });
 
-      it('should reject lowerQuota from a non-owner non-pauser', async function () {
+      it('should let a quota admin move its contract into and out of its quota', async function () {
+        const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
+        const errors = hcuLimit as unknown as { interface: any };
+        const ownerHcuLimit = hcuLimit.connect(requireDeployer(this.deployer));
+        // Alice plays a partner: the owner gives her a quota and makes her its admin.
+        const partnerHcuLimit = hcuLimit.connect(this.signers.alice);
+
+        // Admins add contracts only while the default quota is stopped; afterEach restores it.
+        await (await ownerHcuLimit.setQuota(DEFAULT_QUOTA, 0, 0)).wait();
+        await (await ownerHcuLimit.setQuota(PARTNER_QUOTA, NO_CAP, NO_CAP)).wait();
+        await (await ownerHcuLimit.setQuotaAdmin(PARTNER_QUOTA, this.signers.alice.address)).wait();
+        await expect(this.erc20.mint(10000)).to.be.revertedWithCustomError(errors, 'HCUQuotaStopped');
+
+        await (await partnerHcuLimit.grantQuota(PARTNER_QUOTA, this.contractAddress)).wait();
+        expect(await hcuLimit.getContractQuota(this.contractAddress)).to.eq(BigInt(PARTNER_QUOTA));
+        await (await this.erc20.mint(10000)).wait();
+        const transfer = await sendEncryptedTransfer(this, 'alice', this.signers.bob.address, 100);
+        expect(requireReceipt(await transfer.wait(), 'partner transfer').status).to.eq(1);
+
+        // A pause stops the quota's contracts and freezes its members for the admin.
+        await (await ownerHcuLimit.pauseQuota(PARTNER_QUOTA)).wait();
+        await expect(this.erc20.mint(1)).to.be.revertedWithCustomError(errors, 'HCUQuotaPaused');
+        await expect(partnerHcuLimit.revokeQuota(PARTNER_QUOTA, this.contractAddress)).to.be.revertedWithCustomError(
+          errors,
+          'QuotaPaused',
+        );
+        await (await ownerHcuLimit.unpauseQuota(PARTNER_QUOTA)).wait();
+
+        await (await partnerHcuLimit.revokeQuota(PARTNER_QUOTA, this.contractAddress)).wait();
+        await expect(this.erc20.mint(1)).to.be.revertedWithCustomError(errors, 'HCUQuotaStopped');
+      });
+
+      it('should reject pauseQuota from a non-owner non-pauser', async function () {
         const hcuLimit = requireHcuLimit(this.hcuLimit, LOCAL_HCU_LIMIT_ERROR);
         const aliceHcuLimit = hcuLimit.connect(this.signers.alice);
-        await expect(aliceHcuLimit.lowerQuota(DEFAULT_QUOTA, 1_000_000, 1_000_000)).to.be.revertedWithCustomError(
+        await expect(aliceHcuLimit.pauseQuota(DEFAULT_QUOTA)).to.be.revertedWithCustomError(
           hcuLimit as unknown as { interface: any },
           'NotPauser',
         );
