@@ -1,7 +1,8 @@
 use crate::types::handle::extract_chain_id_from_handle;
 use alloy::{
-    primitives::{Address, B256},
+    primitives::{Address, B256, Bytes},
     providers::{ProviderBuilder, RootProvider, mock::Asserter},
+    sol_types::SolCall,
 };
 use fhevm_host_bindings::acl::ACL::{self, ACLInstance};
 use std::collections::HashMap;
@@ -14,6 +15,12 @@ pub fn erc1271_magic_response() -> Vec<u8> {
     let mut word = vec![0u8; 32];
     word[..4].copy_from_slice(&[0x16, 0x26, 0xba, 0x7e]);
     word
+}
+
+/// ABI-encodes the response of an `ACL.multicall` call returning `results`, which are themselves
+/// ABI-encoded responses of the batched ACL calls.
+pub fn acl_multicall_response(results: Vec<Vec<u8>>) -> Vec<u8> {
+    ACL::multicallCall::abi_encode_returns(&results.into_iter().map(Bytes::from).collect())
 }
 
 /// Inits a mock host chain ACL contracts map.

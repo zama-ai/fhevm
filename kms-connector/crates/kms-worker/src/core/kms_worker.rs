@@ -284,7 +284,7 @@ impl
             let provider = connect_to_rpc_node_with_bounds(
                 host_chain.url.clone(),
                 host_chain.chain_id,
-                config.host_rpc_max_concurrent_calls,
+                Some(config.host_rpc_max_concurrent_calls),
                 config.host_rpc_call_timeout,
             )
             .await?;
@@ -299,7 +299,7 @@ impl
         }
 
         let kms_client = KmsClient::connect(&config).await?;
-        let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
+        let kms_health_client = KmsHealthClient::connect(&config).await?;
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 

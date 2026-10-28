@@ -18,8 +18,8 @@ use connector_utils::{
         },
         rand::rand_digest,
         setup::{
-            DbInstance, S3_CT_HANDLE, S3Instance, TestInstanceBuilder, erc1271_magic_response,
-            init_host_chains_acl_contracts_mock,
+            DbInstance, S3_CT_HANDLE, S3Instance, TestInstanceBuilder, acl_multicall_response,
+            erc1271_magic_response, init_host_chains_acl_contracts_mock,
         },
     },
     types::ProtocolEventKind,
@@ -81,30 +81,31 @@ async fn test_request_processing(#[case] event_type: TestEventType) -> anyhow::R
     info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain.
-    // Per attempt: Public → 1 bool; Legacy user → 1 U256 (invalidation) + 2 bools;
+    // Per attempt (ACL reads batched in one multicall): Public → 1 bool;
+    // Legacy user → 1 U256 (invalidation) + 2 bools;
     // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership).
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => {
-            vec![true.abi_encode(); MAX_DECRYPTION_ATTEMPTS as usize]
+            vec![acl_multicall_response(vec![true.abi_encode()]); MAX_DECRYPTION_ATTEMPTS as usize]
         }
         TestEventType::UserDecryptionV2 => (0..MAX_DECRYPTION_ATTEMPTS)
             .flat_map(|_| {
                 vec![
                     erc1271_magic_response(),
-                    U256::ZERO.abi_encode(),
-                    true.abi_encode(),
+                    acl_multicall_response(vec![U256::ZERO.abi_encode(), true.abi_encode()]),
                 ]
             })
             .collect(),
-        TestEventType::UserDecryption => (0..MAX_DECRYPTION_ATTEMPTS)
-            .flat_map(|_| {
-                vec![
+        TestEventType::UserDecryption => {
+            vec![
+                acl_multicall_response(vec![
                     U256::ZERO.abi_encode(),
                     true.abi_encode(),
                     true.abi_encode(),
-                ]
-            })
-            .collect(),
+                ]);
+                MAX_DECRYPTION_ATTEMPTS as usize
+            ]
+        }
         _ => vec![],
     };
     let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);

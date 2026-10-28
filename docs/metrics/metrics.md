@@ -200,6 +200,90 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
 
 ## kms-connector
 
+### HTTP decryption: proxy and endpoint
+
+Metrics are served at `/metrics`. Routes: `/v1/public-decrypt`, `/v1/user-decrypt`, `/version`, `unmatched`.
+Exclude `/version` probes when measuring decryption traffic. Proxy metrics start after header parsing;
+TLS failures and incomplete headers are not counted. Requests still in progress when the process exits
+are not recorded.
+
+#### Metric Name: `kms_connector_proxy_http_requests_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `route`: the API route, `/v1/public-decrypt`, `/v1/user-decrypt` or `/version`, or `unmatched` for any other path.
+   - `status`: HTTP response status; `0` means no response status.
+   - `code`: API `ErrorCode` value of an error written by the proxy, `upstream` for responses passed through from the endpoint without body inspection, `not_found`, `method_not_allowed`, `transport_error` or `cancelled`.
+ - **Description**: One count per completed or cancelled request.
+ - **Alarm**: Sustained decryption 5xx responses; break down by code, especially `timeout` and `upstream_transient`. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
+   - **Recommendation**: `sum by (code) (increase(kms_connector_proxy_http_requests_counter{route=~"/v1/(public|user)-decrypt", status=~"5.."}[5m])) > 5`.
+
+#### Metric Name: `kms_connector_endpoint_http_requests_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `route`, `status`: see [description](#metric-name-kms_connector_proxy_http_requests_counter)
+   - `code`: API `ErrorCode` value, `success`, `not_found`, `method_not_allowed`, `cancelled` or `unclassified`.
+ - **Description**: One count per completed or cancelled request. Endpoint completion does not guarantee client delivery.
+ - **Alarm**: Sustained decryption 5xx responses; break down by code, especially `overloaded` and `timeout`. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
+   - **Recommendation**: `sum by (code) (increase(kms_connector_endpoint_http_requests_counter{route=~"/v1/(public|user)-decrypt", status=~"5.."}[5m])) > 5`.
+
+#### Metric Name: `kms_connector_proxy_http_request_latency_seconds`
+ - **Type**: Histogram
+ - **Labels**:
+   - `route`: see [description](#metric-name-kms_connector_proxy_http_requests_counter)
+ - **Description**: Request duration in seconds, including failures and cancellations. Bucket bounds: 0.01–60 seconds, covering the endpoint's default 30-second decryption timeout and the proxy's default 60-second endpoint response timeout.
+ - **Alarm**: p95 above 80% of the endpoint's `decryption_timeout` for 5 minutes, with sufficient traffic. The proxy waits on the endpoint, so the endpoint's threshold applies.
+   - **Recommendation**: with the default 30-second timeout, `histogram_quantile(0.95, sum by (le, route) (rate(kms_connector_proxy_http_request_latency_seconds_bucket{route=~"/v1/(public|user)-decrypt"}[5m]))) > 24`.
+
+#### Metric Name: `kms_connector_endpoint_http_request_latency_seconds`
+ - **Type**: Histogram
+ - **Labels**:
+   - `route`: see [description](#metric-name-kms_connector_proxy_http_requests_counter)
+ - **Description**: see [description](#metric-name-kms_connector_proxy_http_request_latency_seconds)
+ - **Alarm**: see [description](#metric-name-kms_connector_proxy_http_request_latency_seconds)
+   - **Recommendation**: with the default 30-second timeout, `histogram_quantile(0.95, sum by (le, route) (rate(kms_connector_endpoint_http_request_latency_seconds_bucket{route=~"/v1/(public|user)-decrypt"}[5m]))) > 24`.
+
+#### Metric Name: `kms_connector_proxy_http_requests_in_flight`
+ - **Type**: Gauge
+ - **Description**: Active requests after header parsing, of every route; decremented when the request completes or is cancelled.
+ - **Alarm**: Diagnostic only; compare with traffic and latency.
+
+#### Metric Name: `kms_connector_endpoint_http_requests_in_flight`
+ - **Type**: Gauge
+ - **Description**: see [description](#metric-name-kms_connector_proxy_http_requests_in_flight)
+ - **Alarm**: Diagnostic only; compare with traffic and latency.
+
+#### Metric Name: `kms_connector_endpoint_decryptions_in_flight`
+ - **Type**: Gauge
+ - **Description**: Used admission permits, read from the semaphore on each scrape. Duplicate requests each hold a permit.
+ - **Alarm**: Utilization above 90% of [`kms_connector_endpoint_max_in_flight_decryptions`](#metric-name-kms_connector_endpoint_max_in_flight_decryptions) for 5 minutes, together with increasing overload responses.
+   - **Recommendation**: `max(kms_connector_endpoint_decryptions_in_flight / kms_connector_endpoint_max_in_flight_decryptions) > 0.9` for 5 minutes, and `sum(increase(kms_connector_endpoint_http_requests_counter{code="overloaded"}[5m])) > 0`.
+
+#### Metric Name: `kms_connector_endpoint_max_in_flight_decryptions`
+ - **Type**: Gauge
+ - **Description**: Total admission permits, i.e. the configured maximum number of in-flight decryption requests.
+
+#### Metric Name: `kms_connector_endpoint_decryption_lookup_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `route`: `/v1/public-decrypt` or `/v1/user-decrypt`.
+   - `outcome`: `served` returns an existing response; `stored` submits new work; `retried` submits work after an old error; `already_in_progress` joins existing work, possibly skipping an old error.
+ - **Description**: Counts the committed decryption lookups.
+ - **Alarm**: Diagnostic only. Worker metrics cannot isolate HTTP work because they lack a source label.
+
+#### Metric Name: `kms_connector_endpoint_decryption_wait_latency_seconds`
+ - **Type**: Histogram
+ - **Labels**:
+   - `route`: `/v1/public-decrypt` or `/v1/user-decrypt`.
+ - **Description**: Seconds waiting for a response and reading its database row, for waits ending with a response (including API errors); existing responses served directly are not waited for. Timeouts, listener disruptions and cancellations are left out so they do not mask the response latency: the request counter counts them by `code`.
+ - **Alarm**: Diagnostic only; use request timeout and server-error alarms.
+
+#### Collection and traces
+
+Enable `kmsConnectorProxy.serviceMonitor.enabled` and `kmsConnectorEndpoint.serviceMonitor.enabled`
+in deployment overrides, and `kmsConnectorProxy.tracing.enabled` and `kmsConnectorEndpoint.tracing.enabled`
+for traces. Verify healthy Prometheus targets and changing counters in Grafana.
+There are no exemplars; find traces by time/service and correlate requests using `decryption_id`.
+
 ### gw-listener
 
 #### Metric Name: `kms_connector_gw_listener_event_received_counter`
@@ -213,10 +297,26 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
 #### Metric Name: `kms_connector_gw_listener_event_listening_errors`
  - **Type**: Counter
  - **Labels**:
-   - `contract`: can be used to filter by contract (decryption, kmsgeneration).
+   - `contract`: can be used to filter by listener (decryption, ethereum).
  - **Description**: Counts the number of errors encountered by the GW listener while listening for events.
  - **Alarm**: If the counter increases over a period of time.
    - **Recommendation**: more than 60 failures in 1 minute, i.e. `sum(increase(counter[1m])) > 60`.
+
+#### Metric Name: `kms_connector_gw_listener_rpc_head_block`
+ - **Type**: Gauge
+ - **Labels**:
+   - `chain`: can be used to filter by chain (gateway, ethereum).
+ - **Description**: The latest head reported by the chain's RPC node: the latest block for the Gateway, the finalized block for Ethereum.
+ - **Alarm**: If the gauge stays the same over a period of time. This catches both a lagging RPC node and a listener that no longer gets the head from it, e.g. because its RPC calls keep failing or it is stuck on a DB query. The Gateway only produces blocks when it receives transactions, so a quiet chain also triggers this alarm.
+   - **Recommendation**: unchanged for 10 minutes on the Gateway, i.e. `changes(gauge{chain="gateway"}[10m]) == 0`, and for 20 minutes on Ethereum.
+
+#### Metric Name: `kms_connector_gw_listener_last_polled_block`
+ - **Type**: Gauge
+ - **Labels**:
+   - `chain`: see [description](#metric-name-kms_connector_gw_listener_rpc_head_block)
+ - **Description**: The end of the last block range the GW listener has polled and stored in DB. It is only set once the listener has stored a block range since it started. If the listener re-polls older blocks, e.g. with `decryption_from_block_number` set, it can be lower than the last block stored in DB.
+ - **Alarm**: If the GW listener falls behind the head reported by the RPC node, e.g. because `eth_getLogs` or the DB keeps failing. A lagging RPC node does not trigger this alarm, as the listener keeps up with the stale head: see [`kms_connector_gw_listener_rpc_head_block`](#metric-name-kms_connector_gw_listener_rpc_head_block) for that case.
+   - **Recommendation**: more than 100 blocks behind on the Gateway for 5 minutes, i.e. `kms_connector_gw_listener_rpc_head_block{chain="gateway"} - kms_connector_gw_listener_last_polled_block{chain="gateway"} > 100` for 5m.
 
 ### kms-worker
 

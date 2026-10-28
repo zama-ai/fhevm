@@ -12,7 +12,10 @@ use connector_utils::{
         pick_free_port,
     },
 };
-use kms_worker::monitoring::health::{HealthStatus, KmsHealthClient, State};
+use kms_worker::{
+    core::Config,
+    monitoring::health::{HealthStatus, KmsHealthClient, State},
+};
 use rstest::rstest;
 use std::{net::SocketAddr, str::FromStr, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -30,8 +33,11 @@ async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
         .with_kms(kms_instance)
         .build();
 
-    let kms_health_client =
-        KmsHealthClient::connect(&[test_instance.kms_url().to_string()]).await?;
+    let config = Config {
+        kms_core_endpoints: vec![test_instance.kms_url().to_string()],
+        ..Default::default()
+    };
+    let kms_health_client = KmsHealthClient::connect(&config).await?;
     let state = State::new(
         test_instance.db().clone(),
         test_instance.provider().clone(),
