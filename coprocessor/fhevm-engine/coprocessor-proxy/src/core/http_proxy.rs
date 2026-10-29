@@ -9,8 +9,8 @@ use http::{
     HeaderValue, StatusCode,
     header::{
         ALLOW, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED,
-        HeaderName, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, UPGRADE, VIA,
-        WWW_AUTHENTICATE,
+        HeaderName, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, RETRY_AFTER, TE, TRAILER, UPGRADE,
+        VIA, WWW_AUTHENTICATE,
     },
 };
 use pingora::{
@@ -30,8 +30,8 @@ use tracing::{error, info};
 static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "coprocessor_proxy_requests_counter",
-        "Requests answered by the proxy, by route and status",
-        &["route", "status"]
+        "Requests answered by the proxy, by route, status and authenticated signer",
+        &["route", "status", "signer"]
     )
     .unwrap()
 });
@@ -59,6 +59,10 @@ pub const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long a request signed by an unknown signer waits for a poll of the KMS tx-senders that
 /// started after it, before it is checked again.
 pub const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
+
+/// The window [`Config::max_requests_per_signer`](crate::core::Config) counts requests in. A
+/// refused request is told to retry after it.
+pub const SIGNER_RATE_INTERVAL: Duration = Duration::from_secs(1);
 
 const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path";
 
@@ -199,6 +203,17 @@ impl ProxyHttp for Proxy {
             }
         };
         ctx.sender = Some(sender);
+
+        // A request for an output already stored still costs a signature check and a database
+        // read, so each signer's request rate is limited too (RFC-038).
+        let requests = self.signer_requests.observe(&sender, 1);
+        if requests > self.config.max_requests_per_signer.get() as isize {
+            let error = ErrorResponse::new(ErrorCode::ConcurrencyLimited, "signer rate limit");
+            let retry_after = SIGNER_RATE_INTERVAL.as_secs().to_string();
+            self.respond_with_error(session, error, Some((RETRY_AFTER, &retry_after)))
+                .await?;
+            return Ok(true);
+        }
         Ok(false)
     }
 
@@ -301,15 +316,16 @@ impl ProxyHttp for Proxy {
             .unwrap_or_default();
 
         let route = ctx.route.map_or("none", Route::as_str);
+        let sender = ctx.sender.map(|s| s.to_checksum(None)).unwrap_or_default();
         REQUESTS
-            .with_label_values(&[route, &status.to_string()])
+            .with_label_values(&[route, &status.to_string(), &sender])
             .inc();
 
         info!(
             path = req.uri.path(),
             status,
             client,
-            sender = ctx.sender.map(|s| s.to_string()).unwrap_or_default(),
+            sender,
             duration_ms = ctx.started_at.elapsed().as_millis() as u64,
             error = e.map(|e| e.to_string()).unwrap_or_default(),
             "Proxied request"

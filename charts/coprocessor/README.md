@@ -86,6 +86,14 @@ prf-service holds a request until its output is ready, so `coprocessorProxy.prfS
 (120 by default) must exceed the KMS connector's `PRF_RETRIEVAL_DEADLINE`. It is also the shutdown
 grace period.
 
+A request for an output prf-service has already stored still costs a signature check and a
+database read, so each replica limits how many requests per second one signer can send:
+`coprocessorProxy.maxRequestsPerSigner` (200 by default). Requests above the limit get `429` with
+`"code": "concurrency_limited"`, `"retryable": true` and `Retry-After: 1`, and never reach
+prf-service. The limit applies per replica and is not divided by `replicas`: keep-alive keeps a
+connector on one replica. The `signer` label of `coprocessor_proxy_requests_counter` names the
+authenticated signer, so its `status="429"` series show which connector was limited.
+
 Kubernetes sends `SIGTERM` when it starts removing the pod from the Service, and each node keeps
 routing new connections to the pod until that removal reaches it. So on `SIGTERM` the proxy keeps
 serving for `coprocessorProxy.shutdownDelaySeconds` (10 by default): it accepts new connections and

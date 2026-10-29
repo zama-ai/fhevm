@@ -131,6 +131,8 @@ spec:
               value: {{ $proxy.prfServiceAddress | quote }}
             - name: COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT
               value: "{{ int $proxy.prfServiceResponseTimeoutSeconds }}s"
+            - name: COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER
+              value: {{ int $proxy.maxRequestsPerSigner | quote }}
           {{- if $tracingEnabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}

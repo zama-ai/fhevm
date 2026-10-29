@@ -3015,6 +3015,7 @@ dependencies = [
  "http 1.3.1",
  "humantime",
  "pingora",
+ "pingora-limits",
  "prometheus",
  "rcgen",
  "rstest",
@@ -6325,6 +6326,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "21e1baa2fffc859944e0c42d1955412858ac80f1e6ad175c6c3d93693c990d60"
 dependencies = [
  "crc32fast",
+]
+
+[[package]]
+name = "pingora-limits"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f17248f7a1586c1f1244481f058a70e4d44707d8f936bf0b2323c8c85c40c8c0"
+dependencies = [
+ "ahash",
 ]
 
 [[package]]

@@ -13,6 +13,8 @@ pub enum ErrorCode {
         code: &'static str,
         retryable: bool,
     },
+    /// The signer sent more requests than its rate limit allows.
+    ConcurrencyLimited,
     UpstreamTransient,
     Timeout,
 }
@@ -24,6 +26,7 @@ impl ErrorCode {
             Self::Auth { .. } => StatusCode::UNAUTHORIZED,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
+            Self::ConcurrencyLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::UpstreamTransient => StatusCode::BAD_GATEWAY,
             Self::Timeout => StatusCode::GATEWAY_TIMEOUT,
         }
@@ -35,6 +38,7 @@ impl ErrorCode {
             Self::NotFound => "not_found",
             Self::MethodNotAllowed => "method_not_allowed",
             Self::Auth { code, .. } => code,
+            Self::ConcurrencyLimited => "concurrency_limited",
             Self::UpstreamTransient => "upstream_transient",
             Self::Timeout => "timeout",
         }
@@ -43,7 +47,7 @@ impl ErrorCode {
     pub fn retryable(self) -> bool {
         match self {
             Self::Auth { retryable, .. } => retryable,
-            Self::UpstreamTransient | Self::Timeout => true,
+            Self::ConcurrencyLimited | Self::UpstreamTransient | Self::Timeout => true,
             Self::Malformed | Self::NotFound | Self::MethodNotAllowed => false,
         }
     }
@@ -87,7 +91,7 @@ mod tests {
     }
 
     #[test]
-    fn only_upstream_failures_and_retryable_auth_failures_are_retryable() {
+    fn only_rate_limits_upstream_failures_and_retryable_auth_failures_are_retryable() {
         for (code, status, retryable) in [
             (ErrorCode::Malformed, 400, false),
             (ErrorCode::NotFound, 404, false),
@@ -100,6 +104,7 @@ mod tests {
                 401,
                 false,
             ),
+            (ErrorCode::ConcurrencyLimited, 429, true),
             (ErrorCode::UpstreamTransient, 502, true),
             (ErrorCode::Timeout, 504, true),
         ] {

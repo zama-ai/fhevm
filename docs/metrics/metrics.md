@@ -220,7 +220,8 @@ tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest fina
  - **Labels**:
    - `route`: `prf` for the PRF route, `none` for any other path.
    - `status`: HTTP response status; `0` means no response status.
- - **Description**: One count per request the proxy answered. `502` means prf-service could not be reached or failed, `504` that it timed out.
+   - `signer`: the authenticated signer, EIP-55 checksummed; empty when the request was not authenticated.
+ - **Description**: One count per request the proxy answered. `502` means prf-service could not be reached or failed, `504` that it timed out, `429` that the signer exceeded its request rate (`COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER`).
  - **Alarm**: Sustained prf-service failures. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
     - **Recommendation**: `sum(increase(coprocessor_proxy_requests_counter{status=~"502|504"}[5m])) > 5`.
 

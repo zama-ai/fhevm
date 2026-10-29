@@ -18,6 +18,7 @@ clap.workspace = true
 http.workspace = true
 humantime.workspace = true
 pingora.workspace = true
+pingora-limits.workspace = true
 prometheus.workspace = true
 serde.workspace = true
 serde_json.workspace = true

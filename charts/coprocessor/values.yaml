@@ -1908,6 +1908,9 @@ coprocessorProxy:
   # stops accepting connections. Must exceed the time the pod's removal from the Service takes to
   # reach every node. The pod's termination budget is this delay, the drain grace and 10 s.
   shutdownDelaySeconds: 10
+  # Requests per second each signer (KMS connector) can send to one replica; more get `429`.
+  # Per replica, not divided by `replicas`: keep-alive keeps a connector on one replica.
+  maxRequestsPerSigner: 200
 
   # Ingress allowed from this release's proxy pods to prf-service.
   prfServiceNetworkPolicy:

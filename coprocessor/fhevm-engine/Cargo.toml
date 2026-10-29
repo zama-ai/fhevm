@@ -37,6 +37,7 @@ pingora = { version = "=0.9.0", default-features = false, features = [
     "openssl",
     "proxy",
 ] }
+pingora-limits = "=0.9.0"
 rcgen = { version = "0.14", default-features = false, features = [
     "aws_lc_rs",
     "crypto",

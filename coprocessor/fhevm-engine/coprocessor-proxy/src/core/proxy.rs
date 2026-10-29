@@ -1,4 +1,8 @@
-use crate::{core::Config, kms_tx_senders::Follower, monitoring::health};
+use crate::{
+    core::{Config, SIGNER_RATE_INTERVAL},
+    kms_tx_senders::Follower,
+    monitoring::health,
+};
 use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
@@ -13,6 +17,7 @@ use pingora::{
     },
     services::background::{BackgroundService, GenBackgroundService},
 };
+use pingora_limits::rate::Rate;
 use std::{
     net::{SocketAddr, ToSocketAddrs},
     sync::{
@@ -30,6 +35,8 @@ pub struct Proxy {
     /// [`Config::prf_service_address`], resolved.
     pub(super) prf_service: SocketAddr,
     pub(super) kms_tx_senders: Arc<Follower<DynProvider>>,
+    /// The authenticated requests of each signer, per [`SIGNER_RATE_INTERVAL`].
+    pub(super) signer_requests: Rate,
     /// Set during the shutdown delay: each client connection closes after its next response.
     pub(super) draining: Arc<AtomicBool>,
 }
@@ -107,6 +114,7 @@ impl Proxy {
             config,
             prf_service,
             kms_tx_senders: Arc::new(follower),
+            signer_requests: Rate::new(SIGNER_RATE_INTERVAL),
             draining: Arc::default(),
         };
         Ok((proxy, state))

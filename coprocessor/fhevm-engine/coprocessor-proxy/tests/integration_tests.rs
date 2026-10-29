@@ -13,10 +13,13 @@ use common::{
     auth_header_expiring, auth_header_for, now, prf_path, rate_limited_path, sender,
     stub_attestation, stub_output,
 };
-use coprocessor_proxy::core::{CLIENT_IDLE_TIMEOUT, UNKNOWN_SIGNER_WAIT};
+use coprocessor_proxy::core::{CLIENT_IDLE_TIMEOUT, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT};
 use coprocessor_proxy::kms_tx_senders::WOKEN_POLL_SPACING;
 use serde_json::{Value, json};
-use std::time::{Duration, Instant};
+use std::{
+    num::NonZeroU32,
+    time::{Duration, Instant},
+};
 
 /// Checks an error the proxy wrote itself: its status, RFC-033 body, and that it is not cached.
 async fn assert_proxy_error(response: Response, status: StatusCode, code: &str, retryable: bool) {
@@ -608,6 +611,62 @@ async fn test_refuses_an_unknown_signer_after_the_wait() {
 }
 
 #[tokio::test]
+async fn test_limits_each_signers_request_rate() {
+    let other = PrivateKeySigner::random();
+    let rpc = FakeRpc::start(vec![KmsContext::active(&[
+        sender().address(),
+        other.address(),
+    ])])
+    .await;
+    let t = TestProxy::launch(rpc, StubPrfService::start().await, |config| {
+        config.max_requests_per_signer = NonZeroU32::new(2).unwrap();
+    })
+    .await;
+    t.wait_until_accepted(&sender()).await;
+    t.wait_until_accepted(&other).await;
+
+    // Five requests sent within one window span at most two windows, so one of them gets a third.
+    let path = prf_path(1);
+    let started = Instant::now();
+    let mut forwarded = 0;
+    let refused = loop {
+        assert!(forwarded < 5, "no request was refused");
+        let response = t.get(&path).await.send().await.unwrap();
+        if response.status() != StatusCode::OK {
+            break response;
+        }
+        forwarded += 1;
+    };
+    assert!(started.elapsed() < SIGNER_RATE_INTERVAL);
+    assert!(forwarded >= 2, "{forwarded}");
+    assert_eq!(refused.headers()["retry-after"], "1");
+    assert!(!refused.headers().contains_key("www-authenticate"));
+    assert_proxy_error(
+        refused,
+        StatusCode::TOO_MANY_REQUESTS,
+        "concurrency_limited",
+        true,
+    )
+    .await;
+    assert_eq!(
+        t.prf_service.hits(),
+        forwarded,
+        "a refused request is not forwarded"
+    );
+
+    // The limit is per signer.
+    let response = t
+        .client
+        .get(t.url(&path))
+        .header("authorization", auth_header(&other, &path, b"").await)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(t.prf_service.hits(), forwarded + 1);
+}
+
+#[tokio::test]
 async fn test_closes_client_connections_idle_between_requests() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -647,9 +706,10 @@ async fn test_closes_client_connections_idle_between_requests() {
 }
 
 #[tokio::test]
-async fn test_counts_requests_by_route_and_status() {
+async fn test_counts_requests_by_route_status_and_signer() {
     let t = TestProxy::start(StubPrfService::start().await).await;
-    let count = |route: &str, status: &str| {
+    let signer = sender().address().to_checksum(None);
+    let count = |route: &str, status: &str, signer: &str| {
         prometheus::gather()
             .iter()
             .filter(|family| family.name() == "coprocessor_proxy_requests_counter")
@@ -664,11 +724,13 @@ async fn test_counts_requests_by_route_and_status() {
                 };
                 label("route").as_deref() == Some(route)
                     && label("status").as_deref() == Some(status)
+                    && label("signer").as_deref() == Some(signer)
             })
             .map(|metric| metric.get_counter().value())
             .sum::<f64>()
     };
-    let (ok, not_found) = (count("prf", "200"), count("none", "404"));
+    // An unauthenticated request has no signer.
+    let (ok, not_found) = (count("prf", "200", &signer), count("none", "404", ""));
 
     assert_eq!(
         t.get(&prf_path(1)).await.send().await.unwrap().status(),
@@ -680,14 +742,14 @@ async fn test_counts_requests_by_route_and_status() {
     );
     // Pingora's `logging` hook counts a request after its answer has reached the client.
     let deadline = Instant::now() + Duration::from_secs(2);
-    while count("prf", "200") <= ok || count("none", "404") <= not_found {
+    while count("prf", "200", &signer) <= ok || count("none", "404", "") <= not_found {
         assert!(
             Instant::now() < deadline,
             "prf/200 {} -> {}, none/404 {} -> {}",
             ok as u64,
-            count("prf", "200") as u64,
+            count("prf", "200", &signer) as u64,
             not_found as u64,
-            count("none", "404") as u64
+            count("none", "404", "") as u64
         );
         tokio::time::sleep(Duration::from_millis(10)).await;
     }

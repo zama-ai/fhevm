@@ -5,7 +5,7 @@ use clap::{
     error::{Error, ErrorKind},
 };
 use http::uri::Authority;
-use std::{ffi::OsStr, net::SocketAddr, path::PathBuf, time::Duration};
+use std::{ffi::OsStr, net::SocketAddr, num::NonZeroU32, path::PathBuf, time::Duration};
 use tracing::Level;
 
 /// Configuration of the `Proxy` service, from command-line flags or environment variables.
@@ -55,6 +55,14 @@ pub struct Config {
     /// signed for.
     #[arg(long, env = "COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS")]
     pub coprocessor_signer_address: Address,
+    /// How many requests a signer can send to this proxy replica per second; more are answered
+    /// `429`. A connector keeps its connection, so its replica, between requests.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER",
+        default_value = "200"
+    )]
+    pub max_requests_per_signer: NonZeroU32,
 
     /// The `host:port` address of prf-service, resolved once at startup: its Kubernetes Service,
     /// which routes to the ready pods.
@@ -200,6 +208,7 @@ mod tests {
         );
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(10));
         assert_eq!(config.shutdown_delay, Duration::ZERO);
+        assert_eq!(config.max_requests_per_signer.get(), 200);
         assert_eq!(config.bind_address, "0.0.0.0:8443".parse().unwrap());
     }
 
@@ -224,6 +233,7 @@ mod tests {
                 "COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS",
                 "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
             ),
+            ("COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER", "50"),
             (
                 "COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS",
                 "prf-service-1:8090",
@@ -264,6 +274,7 @@ mod tests {
             config.coprocessor_signer_address,
             Address::repeat_byte(0xa1)
         );
+        assert_eq!(config.max_requests_per_signer.get(), 50);
         assert_eq!(config.prf_service_address, "prf-service-1:8090");
         assert_eq!(config.prf_service_connect_timeout, Duration::from_secs(1));
         assert_eq!(config.prf_service_response_timeout, Duration::from_secs(45));
@@ -306,5 +317,15 @@ mod tests {
         };
         let message = err.to_string();
         assert!(message.contains("greater than 0"), "{message}");
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn test_zero_max_requests_per_signer_is_refused() {
+        // Every authenticated request would be refused.
+        let Err(err) = parse(&["--max-requests-per-signer=0"]) else {
+            panic!("a zero request limit must be refused");
+        };
+        assert_eq!(err.kind(), ErrorKind::ValueValidation);
     }
 }
