@@ -1947,23 +1947,6 @@ export const applyVersionLock = async (
   console.log(`[rollout] ${label} versions=${changedKeys.join(", ") || "(none)"}`);
 };
 
-/** Re-reads deployed contract addresses after contract runbook tasks mutate proxies. */
-export const refreshDiscovery = async () => {
-  const state = await loadState();
-  if (!state || !(await projectContainers()).length) {
-    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
-  }
-  await ensureRuntimeArtifacts(state, "rollout discovery");
-  const contracts = await discoverContracts(state);
-  const discovery = await ensureDiscovery(state);
-  discovery.gateway = contracts.gateway;
-  discovery.hosts = { ...discovery.hosts, ...contracts.hosts };
-  validateDiscovery(state);
-  await saveState(state);
-  await generateRuntime(state, stackSpecForState(state));
-  console.log("[rollout] discovery refreshed");
-};
-
 const waitForRelayer = async () => {
   await waitForContainer("fhevm-relayer-db", "healthy");
   await waitForContainer("fhevm-relayer", "running");
