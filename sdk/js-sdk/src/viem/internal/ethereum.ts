@@ -1,4 +1,4 @@
-import type { PublicClient, WalletClient } from 'viem';
+import type { AbiParameter, PublicClient, WalletClient } from 'viem';
 import type {
   DecodeParameters,
   DecodeReturnType,
@@ -23,7 +23,7 @@ import type {
 import type { Bytes32Hex, BytesHex } from '../../core/types/primitives.js';
 import { BaseError, ExecutionRevertedError, hashTypedData as viemHashTypedData } from 'viem';
 import { recoverTypedDataAddress as viemRecoverTypedDataAddress } from 'viem';
-import { encodePacked as viemEncodePacked, encodeAbiParameters, decodeAbiParameters } from 'viem';
+import { encodePacked as viemEncodePacked, encodeAbiParameters, decodeAbiParameters, parseAbiParameters } from 'viem';
 import { asChecksummedAddress } from '../../core/base/address.js';
 import { trustedClientToViemPublicClient } from './viem-p.js';
 
@@ -51,8 +51,7 @@ export function encodePacked(parameters: EncodePackedParameters): EncodePackedRe
 ////////////////////////////////////////////////////////////////////////////////
 
 export function encode(parameters: EncodeParameters): EncodeReturnType {
-  const abiParameters = parameters.types.map((type) => ({ type }));
-  return encodeAbiParameters(abiParameters, parameters.values) as BytesHex;
+  return encodeAbiParameters(_abiParameters(parameters.types), parameters.values) as BytesHex;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -60,8 +59,12 @@ export function encode(parameters: EncodeParameters): EncodeReturnType {
 ////////////////////////////////////////////////////////////////////////////////
 
 export function decode(parameters: DecodeParameters): DecodeReturnType {
-  const abiParameters = parameters.types.map((type) => ({ type }));
-  return [...decodeAbiParameters(abiParameters, parameters.encodedData as `0x${string}`)];
+  return [...decodeAbiParameters(_abiParameters(parameters.types), parameters.encodedData as `0x${string}`)];
+}
+
+/** Solidity type strings as viem ABI parameters, tuples such as `(bytes32,bytes)[]` included (as ethers accepts). */
+function _abiParameters(types: readonly string[]): readonly AbiParameter[] {
+  return types.flatMap((type) => parseAbiParameters(type));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
