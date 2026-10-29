@@ -52,6 +52,11 @@ endpoint_addresses = ["kms-connector-endpoint-1:8080", "kms-connector-endpoint-2
 # ENV: KMS_CONNECTOR_REQUEST_READ_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # request_read_timeout = "30s"
 
+# Maximum number of requests per second accepted from each sender (optional, defaults to 100).
+# `GET /version` and requests failing authentication are not counted.
+# ENV: KMS_CONNECTOR_RATE_LIMIT_PER_SECOND
+# rate_limit_per_second = 100
+
 # How long in-flight requests are given to complete after SIGTERM (optional, defaults to "60s").
 # ENV: KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD (format: https://docs.rs/humantime/latest/humantime/)
 # shutdown_grace_period = "60s"
