@@ -330,7 +330,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
 
         // Mark the context destroyed, clear its epoch (if any), and wipe context-creation bookkeeping.
-        $.destroyedContexts[kmsContextId] = true;
         $.contextState[kmsContextId] = ContextState.None;
         // A confirmed switch created this context's epoch as the latest-issued one: clear it whether
         // it is still Pending or already Active, so no live epoch is left pointing at a destroyed
