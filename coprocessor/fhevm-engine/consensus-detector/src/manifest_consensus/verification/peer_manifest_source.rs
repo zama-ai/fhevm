@@ -5,7 +5,7 @@ use std::{
 
 use alloy_primitives::{Address, B256, U256};
 use block_manifest::{ManifestVersion, MAX_MANIFEST_BYTES};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::manifest_consensus::peer_http;
 use crate::manifest_consensus::ExecutionError;
@@ -88,7 +88,7 @@ enum Probe {
     Present,
     Absent,
     /// The origin refuses the method. The caller retries with another one.
-    MethodRefused,
+    Refused,
 }
 
 /// Reads peer manifests over HTTP from the registered URL, the channel the
@@ -127,23 +127,24 @@ impl HttpPeerManifestSource {
         }
         match status {
             reqwest::StatusCode::NOT_FOUND => Ok(Probe::Absent),
-            reqwest::StatusCode::METHOD_NOT_ALLOWED => Ok(Probe::MethodRefused),
-            // Every other status is an error, so a bucket that answers 403 for
-            // an absent key never passes as the end of the revision set.
+            // A bucket that grants reads alone answers 403 for a key it does
+            // not hold, and some origins refuse `HEAD`. A ranged `GET` decides.
+            reqwest::StatusCode::FORBIDDEN | reqwest::StatusCode::METHOD_NOT_ALLOWED => {
+                Ok(Probe::Refused)
+            }
             _ => Err(ExecutionError::S3TransientError(format!(
                 "peer manifest probe {object_key} at {url} returned {status}"
             ))),
         }
     }
 
-    async fn object_exists(&self, url: &str, object_key: &str) -> Result<bool, ExecutionError> {
+    async fn probe_object(&self, url: &str, object_key: &str) -> Result<Probe, ExecutionError> {
         match self
             .send_probe(self.http.head(url), url, object_key)
             .await?
         {
-            Probe::Present => return Ok(true),
-            Probe::Absent => return Ok(false),
-            Probe::MethodRefused => {}
+            Probe::Refused => {}
+            probe => return Ok(probe),
         }
         // An origin may serve GET alone. One byte answers the same question and
         // still reads no manifest.
@@ -151,13 +152,7 @@ impl HttpPeerManifestSource {
             .http
             .get(url)
             .header(reqwest::header::RANGE, "bytes=0-0");
-        match self.send_probe(ranged, url, object_key).await? {
-            Probe::Present => Ok(true),
-            Probe::Absent => Ok(false),
-            Probe::MethodRefused => Err(ExecutionError::S3TransientError(format!(
-                "peer manifest probe {object_key} at {url} refuses HEAD and GET"
-            ))),
-        }
+        self.send_probe(ranged, url, object_key).await
     }
 
     /// One probe, refused once the listing budget is gone.
@@ -167,7 +162,7 @@ impl HttpPeerManifestSource {
         request: &PeerDownloadRequest,
         prefix: &str,
         revision: u64,
-    ) -> Result<bool, ExecutionError> {
+    ) -> Result<Probe, ExecutionError> {
         let spent = || {
             ExecutionError::S3TransientError(format!(
                 "peer manifest revision probe of {} ran past {MANIFEST_LIST_BUDGET:?}",
@@ -180,7 +175,7 @@ impl HttpPeerManifestSource {
         }
         let object_key = format!("{prefix}{revision}");
         let url = peer_http::object_url(&request.s3_bucket_url, &object_key);
-        tokio::time::timeout(remaining, self.object_exists(&url, &object_key))
+        tokio::time::timeout(remaining, self.probe_object(&url, &object_key))
             .await
             .map_err(|_| spent())?
     }
@@ -200,11 +195,31 @@ impl HttpPeerManifestSource {
     ) -> Result<Vec<u64>, ExecutionError> {
         let deadline = Instant::now() + MANIFEST_LIST_BUDGET;
         let above = first.saturating_add(1);
-        let holds_first = self.probe_within(deadline, request, prefix, first).await?;
+        let holds_first = match self.probe_within(deadline, request, prefix, first).await? {
+            Probe::Present => true,
+            Probe::Absent => false,
+            // This peer may hold the manifest and grant no way to read it, so
+            // name it once. A refusal above `first` is what a bucket that
+            // grants reads alone answers for a key it does not hold.
+            Probe::Refused => {
+                warn!(
+                    bucket_url = request.s3_bucket_url,
+                    revision = first,
+                    "peer refused the probe of its first revision; reading it as absent"
+                );
+                false
+            }
+        };
         let mut held = Vec::new();
-        if self.probe_within(deadline, request, prefix, above).await? {
+        if matches!(
+            self.probe_within(deadline, request, prefix, above).await?,
+            Probe::Present
+        ) {
             let beyond = above.saturating_add(1);
-            if self.probe_within(deadline, request, prefix, beyond).await? {
+            if matches!(
+                self.probe_within(deadline, request, prefix, beyond).await?,
+                Probe::Present
+            ) {
                 return Err(ExecutionError::InternalError(format!(
                     "peer manifests from {} hold revision {beyond}, above the pair this reader reads",
                     request.s3_bucket_url
@@ -315,6 +330,16 @@ mod tests {
         }
 
         async fn holding(held: HashSet<u64>, head_status: StatusCode) -> Self {
+            Self::answering(held, head_status, StatusCode::NOT_FOUND).await
+        }
+
+        /// What the origin answers for a key it does not hold. A bucket that
+        /// grants reads alone answers 403, not 404.
+        async fn answering(
+            held: HashSet<u64>,
+            head_status: StatusCode,
+            absent_status: StatusCode,
+        ) -> Self {
             let probes = Arc::new(AtomicUsize::new(0));
             let counter = Arc::clone(&probes);
             let held = Arc::new(held);
@@ -333,15 +358,11 @@ mod tests {
                         if head_status != StatusCode::OK {
                             return (head_status, Vec::new());
                         }
-                        let status = if held {
-                            StatusCode::OK
-                        } else {
-                            StatusCode::NOT_FOUND
-                        };
+                        let status = if held { StatusCode::OK } else { absent_status };
                         return (status, Vec::new());
                     }
                     if !held {
-                        return (StatusCode::NOT_FOUND, Vec::new());
+                        return (absent_status, Vec::new());
                     }
                     if method == Method::GET {
                         counter.fetch_add(1, Ordering::SeqCst);
@@ -452,7 +473,20 @@ mod tests {
 
     #[tokio::test]
     async fn a_refused_head_falls_back_to_a_ranged_get() {
-        let origin = PeerOrigin::start(1, StatusCode::METHOD_NOT_ALLOWED).await;
+        for refusal in [StatusCode::METHOD_NOT_ALLOWED, StatusCode::FORBIDDEN] {
+            let origin = PeerOrigin::start(1, refusal).await;
+            let source = HttpPeerManifestSource::new(reqwest::Client::new());
+            let keys = source.list_manifests(&origin.request(None)).await.unwrap();
+
+            assert_eq!(revisions_of(&keys), vec![0], "{refusal}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_bucket_that_forbids_a_missing_key_still_lists_what_it_holds() {
+        // Refusing this peer would drop a manifest that it serves.
+        let origin =
+            PeerOrigin::answering(HashSet::from([0]), StatusCode::OK, StatusCode::FORBIDDEN).await;
         let source = HttpPeerManifestSource::new(reqwest::Client::new());
         let keys = source.list_manifests(&origin.request(None)).await.unwrap();
 
@@ -460,18 +494,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_forbidden_probe_is_an_error_not_the_end_of_the_set() {
-        let origin = PeerOrigin::start(1, StatusCode::FORBIDDEN).await;
+    async fn a_peer_that_refuses_every_read_lists_nothing() {
+        // The peer counts as missing either way, so an error here would only
+        // spend the retries of the task on a grant that never arrives.
+        let origin =
+            PeerOrigin::answering(HashSet::new(), StatusCode::FORBIDDEN, StatusCode::FORBIDDEN)
+                .await;
         let source = HttpPeerManifestSource::new(reqwest::Client::new());
-        let error = source
+
+        assert!(source
             .list_manifests(&origin.request(None))
             .await
-            .expect_err("403 must not read as an empty peer");
-
-        assert!(
-            matches!(error, ExecutionError::S3TransientError(_)),
-            "{error}"
-        );
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
