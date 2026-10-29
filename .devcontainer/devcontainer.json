@@ -4,7 +4,7 @@
         "ghcr.io/devcontainers/features/rust:1": {},
         "ghcr.io/devcontainers/features/docker-in-docker:2": {},
         "ghcr.io/devcontainers/features/common-utils:2": {},
-        "ghcr.io/devcontainers/features/node:1": {}
+        "ghcr.io/devcontainers/features/node:1": { "version": "22" }
     },
     "postCreateCommand": "./.devcontainer/post_create_command.sh",
     "customizations": {
