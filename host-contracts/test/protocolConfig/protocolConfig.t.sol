@@ -509,7 +509,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _activatePendingContextWithDefaultSigners(newContextId, EPOCH_COUNTER_BASE + 3, 1);
 
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestroyed(firstContextId);
+        emit IProtocolConfigBase.KmsContextDestroyed(firstContextId);
         vm.prank(owner);
         protocolConfig.destroyKmsContext(firstContextId);
         assertFalse(protocolConfig.isValidKmsContext(firstContextId));
@@ -525,7 +525,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 currentId = protocolConfig.getCurrentKmsContextId();
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.LatestActiveKmsContextCannotBeDestroyed.selector, currentId)
+            abi.encodeWithSelector(IProtocolConfigBase.LatestActiveKmsContextCannotBeDestroyed.selector, currentId)
         );
         protocolConfig.destroyKmsContext(currentId);
     }
@@ -704,7 +704,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsEpochDestroyed(oldEpochId);
+        emit IProtocolConfigBase.KmsEpochDestroyed(oldEpochId);
         vm.prank(owner);
         protocolConfig.destroyKmsEpoch(oldEpochId);
 
@@ -716,7 +716,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.LatestActiveKmsEpochCannotBeDestroyed.selector, currentEpochId)
+            abi.encodeWithSelector(IProtocolConfigBase.LatestActiveKmsEpochCannotBeDestroyed.selector, currentEpochId)
         );
         protocolConfig.destroyKmsEpoch(currentEpochId);
     }
@@ -741,7 +741,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsEpochDestroyed(pendingEpochId);
+        emit IProtocolConfigBase.KmsEpochDestroyed(pendingEpochId);
         vm.prank(owner);
         protocolConfig.destroyKmsEpoch(pendingEpochId);
 
@@ -865,7 +865,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestroyed(pendingContextId);
+        emit IProtocolConfigBase.KmsContextDestroyed(pendingContextId);
         vm.prank(owner);
         protocolConfig.destroyKmsContext(pendingContextId);
 
