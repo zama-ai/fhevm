@@ -9,6 +9,14 @@ ignore = [
     # Temporary 0.14.x release exception: h2 unbounded empty DATA frames.
     # Covers both locked h2 versions; remove after migrating both to >=0.4.16.
     "RUSTSEC-2026-0258",
+    # Temporary 0.14.x hotfix exception: crypto-bigint 0.4.9 (AWS SigV4/P-256)
+    # and 0.5.5 (AWS SigV4/RustCrypto/k256) have no compatible patched release.
+    # Moving to >=0.7.6 requires an upstream crypto dependency migration or a
+    # separate backport. This accepts unresolved timing leakage risk in signing;
+    # these dependencies are not assumed to handle only public data.
+    # Remove once both versions are replaced by patched implementations.
+    # https://rustsec.org/advisories/RUSTSEC-2026-0387.html
+    "RUSTSEC-2026-0387",
 ]
 # RUSTSEC-2025-0111 impacts only testcontainers
 informational_warnings = ["unmaintained"]

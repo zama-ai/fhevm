@@ -24,6 +24,9 @@ use tracing::{error, info, warn};
 
 use super::{DFComponentGraph, DFGraph, OpNode};
 
+#[cfg(all(test, not(feature = "gpu")))]
+mod tests;
+
 const OPERATION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
 
@@ -175,6 +178,11 @@ impl<'a> Scheduler<'a> {
                         .graph
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
+                    // Cycle members can be ready after their edges are dropped.
+                    // Honor their deferral in the initial dispatch too.
+                    if tx.is_uncomputable {
+                        continue;
+                    }
                     args.push((
                         std::mem::take(&mut tx.graph),
                         std::mem::take(&mut tx.inputs),

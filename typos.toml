@@ -13,6 +13,7 @@ extend-exclude = [
     "cache/",
 
     # Generated code
+    "listener/recipe.json", # cargo-chef metadata embeds manifests and lockfiles
     "rust_bindings/",
     "typechain-types/",
     "codegen/",
