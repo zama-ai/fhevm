@@ -193,14 +193,27 @@ export const removeProjectResources = async (kind: "container" | "volume" | "net
   }
 };
 
+// Read once and removed from the environment: every process the CLI starts inherits
+// `process.env`, and only the kms-connector build needs this token.
+const blockchainActionsToken = process.env.BLOCKCHAIN_ACTIONS_TOKEN;
+delete process.env.BLOCKCHAIN_ACTIONS_TOKEN;
+
 /**
  * Returns the token the kms-connector build needs to fetch its private zama-ai/kms git
  * dependencies (passed as a BuildKit secret): `BLOCKCHAIN_ACTIONS_TOKEN` when set, otherwise
  * the `gh` CLI token.
  */
 const blockchainActionsTokenEnv = async (): Promise<Record<string, string>> => {
-  const token =
-    process.env.BLOCKCHAIN_ACTIONS_TOKEN || (await run(["gh", "auth", "token"], { allowFailure: true })).stdout.trim();
+  if (blockchainActionsToken) {
+    return { BLOCKCHAIN_ACTIONS_TOKEN: blockchainActionsToken };
+  }
+  if (process.env.GITHUB_ACTIONS === "true") {
+    // In a workflow, `gh auth token` returns the job's GH_TOKEN, which cannot read zama-ai/kms.
+    throw new PreflightError(
+      "Building kms-connector in GitHub Actions needs BLOCKCHAIN_ACTIONS_TOKEN: pass the BLOCKCHAIN_ACTIONS_TOKEN secret to this step.",
+    );
+  }
+  const token = (await run(["gh", "auth", "token"], { allowFailure: true })).stdout.trim();
   if (!token) {
     throw new PreflightError(
       "Building kms-connector needs read access to the private zama-ai/kms repository: set BLOCKCHAIN_ACTIONS_TOKEN or run `gh auth login`.",
