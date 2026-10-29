@@ -13,7 +13,7 @@ use alloy::{
     },
     rpc::{
         client::{ClientBuilder, RpcClient},
-        json_rpc::{Response, ResponsePacket, ResponsePayload},
+        json_rpc::{ErrorPayload, Response, ResponsePacket, ResponsePayload},
     },
     transports::{
         IntoBoxTransport, RpcError, TransportError, TransportErrorKind, TransportFut,
@@ -338,27 +338,32 @@ fn redact_errors(call: TransportFut<'static>, url_secrets: UrlSecrets) -> Transp
 }
 
 /// Redacts the message and data of a JSON-RPC error response.
-///
-/// The data is only rewritten if it holds a secret, so revert data is left as is. If the
-/// redacted data is no longer valid JSON, it is dropped rather than kept with the secret.
 fn redact_failure(mut response: Response, url_secrets: &UrlSecrets) -> Response {
     if let ResponsePayload::Failure(payload) = &mut response.payload {
-        let message = url_secrets.redact(&payload.message);
-        if message != payload.message {
-            payload.message = message.into();
-        }
-        if let Some(data) = &payload.data {
-            let redacted = url_secrets.redact(data.get());
-            if redacted != data.get() {
-                payload.data = RawValue::from_string(redacted).ok();
-            }
-        }
+        redact_error_payload(payload, url_secrets);
     }
     response
 }
 
+/// Redacts the message and data of a JSON-RPC error.
+///
+/// The data is only rewritten if it holds a secret, so revert data is left as is. If the
+/// redacted data is no longer valid JSON, it is dropped rather than kept with the secret.
+fn redact_error_payload(payload: &mut ErrorPayload, url_secrets: &UrlSecrets) {
+    let message = url_secrets.redact(&payload.message);
+    if message != payload.message {
+        payload.message = message.into();
+    }
+    if let Some(data) = &payload.data {
+        let redacted = url_secrets.redact(data.get());
+        if redacted != data.get() {
+            payload.data = RawValue::from_string(redacted).ok();
+        }
+    }
+}
+
 /// Strips the URL that `reqwest` errors carry and print in their `Display` and `Debug` output,
-/// and redacts the response bodies kept by the other errors.
+/// and redacts the response bodies and JSON-RPC errors kept by the other errors.
 fn redact_error(err: TransportError, url_secrets: &UrlSecrets) -> TransportError {
     match err {
         RpcError::Transport(TransportErrorKind::Custom(source)) => {
@@ -371,10 +376,31 @@ fn redact_error(err: TransportError, url_secrets: &UrlSecrets) -> TransportError
             TransportErrorKind::http_error(http_err.status, url_secrets.redact(&http_err.body))
         }
         RpcError::DeserError { err, text } => RpcError::DeserError {
-            err,
+            err: redact_serde_error(err, url_secrets),
             text: url_secrets.redact(&text),
         },
+        // alloy reads a body that is only the error object of a JSON-RPC response as an error
+        // response.
+        RpcError::ErrorResp(mut payload) => {
+            redact_error_payload(&mut payload, url_secrets);
+            RpcError::ErrorResp(payload)
+        }
         err => err,
+    }
+}
+
+/// Redacts the message of a serde error, which quotes the value it could not read, e.g. a
+/// JSON-RPC `error` sent as a string rather than an object.
+///
+/// The error is only rebuilt if its message holds a secret.
+fn redact_serde_error(err: serde_json::Error, url_secrets: &UrlSecrets) -> serde_json::Error {
+    let message = err.to_string();
+    let redacted = url_secrets.redact(&message);
+    if redacted == message {
+        err
+    } else {
+        // The message already ends with the line and column of the error.
+        serde::de::Error::custom(redacted)
     }
 }
 
@@ -529,10 +555,20 @@ mod tests {
             ("200 OK", format!("Cannot POST /v2/{API_KEY}")),
             // ... and turns a JSON-RPC error response into an error...
             ("200 OK", json_rpc_error(format!("/v2/{API_KEY}"))),
-            // ... keeping its data as raw JSON, where an escape may come right before the key.
+            // ... keeping its data as raw JSON, where an escape may come right before the key...
             (
                 "200 OK",
                 json_rpc_error(format!(r"invalid key:\n{API_KEY}")),
+            ),
+            // ... and does the same with a body that is only the error object of a response.
+            (
+                "200 OK",
+                format!(r#"{{"code":-32600,"message":"invalid key {API_KEY}"}}"#),
+            ),
+            // The error of a response that alloy cannot read quotes the part it could not read.
+            (
+                "200 OK",
+                format!(r#"{{"jsonrpc":"2.0","id":0,"error":"invalid key {API_KEY}"}}"#),
             ),
         ];
         for (status, body) in cases {
