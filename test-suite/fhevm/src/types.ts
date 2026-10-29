@@ -157,6 +157,11 @@ export type BlueGreenScenario = {
  */
 export type BlueGreenBootstrap = {
   tag: string;
+  /**
+   * `deferred` boots the relayer at the release too and leaves the upgrade to the test, which runs
+   * the steps itself (`Stack.upgrade`) with checks in between.
+   */
+  upgrade?: "deferred";
 };
 
 export type ResolvedBlueGreenScenarioFleet = {

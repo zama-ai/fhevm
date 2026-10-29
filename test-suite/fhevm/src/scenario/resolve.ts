@@ -723,11 +723,14 @@ const parseBootstrap = (block: unknown, sourceLabel: string): BlueGreenBootstrap
   if (block === null || typeof block !== "object" || Array.isArray(block)) {
     throw new Error(`${sourceLabel} must be a map with tag`);
   }
-  const { tag } = block as Record<string, unknown>;
+  const { tag, upgrade } = block as Record<string, unknown>;
   if (typeof tag !== "string" || !tag.trim()) {
     throw new Error(`${sourceLabel}.tag must be a non-empty release tag`);
   }
-  return { tag: tag.trim() };
+  if (upgrade !== undefined && upgrade !== "deferred") {
+    throw new Error(`${sourceLabel}.upgrade must be deferred when set`);
+  }
+  return { tag: tag.trim(), ...(upgrade ? { upgrade } : {}) };
 };
 
 /** Applies defaults and resolves derived fields. */

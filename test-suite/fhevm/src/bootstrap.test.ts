@@ -1,15 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
 import {
-  BOOTSTRAP_SUSPENDED_GROUPS,
   CANONICAL_HOST_CONTRACT_UPGRADES,
   GATEWAY_CONTRACT_UPGRADES,
   HOST_CONTRACT_UPGRADES,
   bootstrapBootOverrides,
   bootstrapBootVersions,
   bootstrapPhaseEnv,
+  bootstrapSuspendedGroups,
+  checkUpgradeSteps,
   contractUpgradeCommand,
+  upgradeOrder,
 } from "./flow/bootstrap";
+import type { State } from "./types";
 
 describe("blue-green bootstrap", () => {
   const bundle = {
@@ -27,6 +30,7 @@ describe("blue-green bootstrap", () => {
       CONNECTOR_ENDPOINT_VERSION: "main",
       CONNECTOR_PROXY_VERSION: "main",
       RELAYER_VERSION: "main",
+      RELAYER_MIGRATE_VERSION: "main",
       COPROCESSOR_TFHE_WORKER_VERSION: "main",
       TEST_SUITE_VERSION: "main",
     },
@@ -45,11 +49,19 @@ describe("blue-green bootstrap", () => {
       CONNECTOR_KMS_WORKER_VERSION: "v0.14.2-0",
       CONNECTOR_TX_SENDER_VERSION: "v0.14.2-0",
       RELAYER_VERSION: "main",
+      RELAYER_MIGRATE_VERSION: "main",
       COPROCESSOR_TFHE_WORKER_VERSION: "main",
       TEST_SUITE_VERSION: "main",
     });
     expect(boot.sources).toEqual(["preset=latest-main", "bootstrap=v0.14.2-0"]);
     expect(bundle.env.CONNECTOR_PROXY_VERSION).toBe("main");
+  });
+
+  test("a deferred upgrade also pins the relayer, which the test then upgrades as a step", () => {
+    const boot = bootstrapBootVersions(bundle, { tag: "v0.14.2-0", upgrade: "deferred" }).env;
+    expect(boot.RELAYER_VERSION).toBe("v0.14.2-0");
+    expect(boot.RELAYER_MIGRATE_VERSION).toBe("v0.14.2-0");
+    expect(boot.TEST_SUITE_VERSION).toBe("main");
   });
 
   test("suspends only the overrides of the pinned components", () => {
@@ -62,12 +74,47 @@ describe("blue-green bootstrap", () => {
       { group: "relayer" as const },
       { group: "test-suite" as const },
     ];
-    expect(bootstrapBootOverrides(overrides).map((override) => override.group)).toEqual([
-      "coprocessor",
-      "relayer",
-      "test-suite",
+    const kept = (upgrade?: "deferred") =>
+      bootstrapBootOverrides(overrides, { tag: "v0.14.2-0", upgrade }).map((override) => override.group);
+    expect(kept()).toEqual(["coprocessor", "relayer", "test-suite"]);
+    expect(kept("deferred")).toEqual(["coprocessor", "test-suite"]);
+    expect(bootstrapSuspendedGroups({ tag: "v0.14.2-0" })).toEqual([
+      "gateway-contracts",
+      "host-contracts",
+      "kms-connector",
+      "listener-core",
     ]);
-    expect(BOOTSTRAP_SUSPENDED_GROUPS).toEqual(["gateway-contracts", "host-contracts", "kms-connector", "listener-core"]);
+  });
+
+  const scenario = (upgrade?: "deferred") =>
+    ({
+      kind: "blue-green",
+      kms: { parties: 2 },
+      bootstrap: { tag: "v0.14.2-0", upgrade },
+    }) as unknown as State["scenario"];
+
+  test("upgrades in production order and adds the relayer only when the test drives the upgrade", () => {
+    expect(upgradeOrder(scenario())).toEqual(["contracts", "kms-operator:1", "kms-operator:2", "listener-core", "green"]);
+    expect(upgradeOrder(scenario("deferred"))).toEqual([
+      "contracts",
+      "relayer",
+      "kms-operator:1",
+      "kms-operator:2",
+      "listener-core",
+      "green",
+    ]);
+  });
+
+  test("rejects a step list before any step runs", () => {
+    const order = upgradeOrder(scenario("deferred"));
+    const check = (completed: string[], steps: string[]) => () => checkUpgradeSteps(order, completed, steps);
+    expect(check([], ["contracts", "relayer", "kms-operator:1"])).not.toThrow();
+    expect(check(["contracts", "relayer", "kms-operator:1"], ["kms-operator:2", "listener-core", "green"])).not.toThrow();
+    expect(check([], ["kms-operator:3"])).toThrow("unknown upgrade step kms-operator:3");
+    expect(check([], ["contracts", "contracts"])).toThrow("upgrade step contracts already ran or is listed twice");
+    expect(check(["contracts"], ["contracts"])).toThrow("already ran");
+    expect(check([], ["relayer", "kms-operator:1"])).toThrow("kms-operator:1 needs the contracts step first");
+    expect(check(["contracts", "relayer", "kms-operator:1"], ["green"])).toThrow("green needs kms-operator:2 first");
   });
 
   test("advances one deployment unit per phase and restores optional connector services", () => {
