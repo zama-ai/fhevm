@@ -5,7 +5,7 @@ import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { deserializeFheEncryptionKey } from './deserializeFheEncryptionKey.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
-import { ensureFheEncryptionKeyDownload } from './fetchFheEncryptionKeyBytes.js';
+import { ensureFheEncryptionKeyDownload } from './ensureFheEncryptionKeyDownload.js';
 
 export async function fetchFheEncryptionKeyWasm(
   context: {

@@ -3,12 +3,11 @@ import type { RelayerModule } from '../modules/relayer/types.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { Auth } from '../types/auth.js';
 import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
-import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
 import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
 import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
-import { encryptModule } from '../modules/encrypt/module/index.js';
+import { encryptModule } from '../modules/encrypt/mock.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 import { fetchFheEncryptionKeyWasm } from './fetchFheEncryptionKey.js';
 
@@ -21,9 +20,8 @@ const fhevmContext = createFhevmClientFrozenContext({});
 
 const runtimeAuth: Auth = { type: 'ApiKeyHeader', value: 'runtime-secret' };
 // Stop after the download: the key is not under test.
-const fetchFheEncryptionKeyBytes = vi.fn<RelayerModule['fetchFheEncryptionKeyBytes']>(() =>
-  Promise.reject(new Error('stop after the download')),
-);
+const stopAfterDownload = () => Promise.reject(new Error('stop after the download'));
+const fetchFheEncryptionKeyBytes = vi.fn<RelayerModule['fetchFheEncryptionKeyBytes']>(stopAfterDownload);
 const runtime = createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
   ethereum: {} as EthereumModule,
   relayer: { fetchFheEncryptionKeyBytes } as unknown as RelayerModule,
@@ -32,7 +30,8 @@ const runtime = createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
 
 beforeEach(() => {
   globalFheEncryptionKeyCache.clear();
-  fetchFheEncryptionKeyBytes.mockClear();
+  fetchFheEncryptionKeyBytes.mockReset();
+  fetchFheEncryptionKeyBytes.mockImplementation(stopAfterDownload);
 });
 
 describe('fetchFheEncryptionKeyWasm', () => {
@@ -47,13 +46,9 @@ describe('fetchFheEncryptionKeyWasm', () => {
   });
 
   it('gives a second runtime the key another runtime loaded, from one download', async () => {
-    const json = JSON.parse(readFileSync(new URL('../../../test/keys/key.1.6.1.json', import.meta.url), 'utf-8')) as {
-      publicKeyBytes: { id: string; bytes: string };
-      crsBytes: { id: string; capacity: number; bytes: string };
-    };
     const keyBytes = {
-      publicKeyBytes: { id: json.publicKeyBytes.id, bytes: Buffer.from(json.publicKeyBytes.bytes, 'base64') },
-      crsBytes: { ...json.crsBytes, bytes: Buffer.from(json.crsBytes.bytes, 'base64') },
+      publicKeyBytes: { id: 'key-id', bytes: new Uint8Array([1, 2, 3]) },
+      crsBytes: { id: 'crs-id', capacity: 2048, bytes: new Uint8Array([4, 5, 6]) },
       metadata: { relayerUrl: chain.fhevm.relayerUrl, chainId: chain.id },
     } as unknown as FheEncryptionKeyBytes;
     fetchFheEncryptionKeyBytes.mockImplementationOnce(async () => keyBytes);
