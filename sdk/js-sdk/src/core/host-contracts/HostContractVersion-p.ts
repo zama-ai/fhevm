@@ -1,10 +1,9 @@
-import type { ChecksummedAddress } from '../types/primitives.js';
+import type { ChecksummedAddress, UintNumber } from '../types/primitives.js';
 import type { HostContractName, HostContractVersion } from '../types/hostContract.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import { assertIsNonEmptyString } from '../base/string.js';
 import { getVersionAbi } from './abi-fragments/fragments.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
-import { assertIsUintNumber } from '../base/uint.js';
 import { CACHE_TTL_24H, createCachedFetch } from '../base/cachedFetch.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -137,46 +136,27 @@ async function _getVersion(context: Context, parameters: Parameters): Promise<Ho
 function parseVersion(version: string): HostContractVersion {
   const err = `Invalid version format: "${version}". Expected "<contractName> v<major>.<minor>.<patch>".`;
 
-  // Split on " v" to separate contract name from semver
-  const vIndex = version.lastIndexOf(' v');
-  if (vIndex < 1) {
+  const match = /^(.+) v(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (match === null) {
     throw new Error(err);
   }
 
-  const contractName = version.slice(0, vIndex);
-  const semver = version.slice(vIndex + 2);
-
-  const parts = semver.split('.');
-  if (parts.length !== 3) {
-    throw new Error(err);
-  }
-
-  const [majorStr, minorStr, patchStr] = parts;
+  const [, contractName, majorStr, minorStr, patchStr] = match as unknown as [string, string, string, string, string];
   const major = Number(majorStr);
   const minor = Number(minorStr);
   const patch = Number(patchStr);
 
-  assertIsUintNumber(major, {});
-  assertIsUintNumber(minor, {});
-  assertIsUintNumber(patch, {});
-
-  if (
-    contractName !== 'ACL' &&
-    contractName !== 'FHEVMExecutor' &&
-    contractName !== 'InputVerifier' &&
-    contractName !== 'KMSVerifier' &&
-    contractName !== 'HCULimit' &&
-    contractName !== 'ProtocolConfig' &&
-    contractName !== 'ProtocolConfigReplica'
-  ) {
+  if (!Number.isSafeInteger(major) || !Number.isSafeInteger(minor) || !Number.isSafeInteger(patch)) {
     throw new Error(err);
   }
 
   return Object.freeze({
-    contractName,
-    major,
-    minor,
-    patch,
+    // The contract name is not validated here; callers narrow it with
+    // `assertIsHostContractVersionOf`.
+    contractName: contractName as HostContractVersion['contractName'],
+    major: major as UintNumber,
+    minor: minor as UintNumber,
+    patch: patch as UintNumber,
   });
 }
 
