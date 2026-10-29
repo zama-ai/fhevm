@@ -1,7 +1,7 @@
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use connector_utils::{
     config::{
-        ContractConfig, DeserializeConfig,
+        ContractConfig, DatabaseUrl, DeserializeConfig,
         contract::{
             default_decryption_contract_config, default_gateway_config_contract_config,
             default_kms_generation_contract_config, default_protocol_config_contract_config,
@@ -24,7 +24,7 @@ use std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
 #[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
-    pub database_url: String,
+    pub database_url: DatabaseUrl,
     /// The size of the database connection pool.
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
@@ -317,7 +317,7 @@ impl DeserializeConfig for Config {}
 impl Default for Config {
     fn default() -> Self {
         Self {
-            database_url: "postgres://postgres:postgres@localhost/kms-connector".to_string(),
+            database_url: "postgres://postgres:postgres@localhost/kms-connector".into(),
             database_pool_size: default_database_pool_size(),
             db_fast_event_polling: default_db_fast_event_polling(),
             db_long_event_polling: default_db_long_event_polling(),

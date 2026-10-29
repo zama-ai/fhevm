@@ -1,6 +1,6 @@
 use connector_utils::{
     config::{
-        DeserializeConfig, default_database_pool_size, deserialize_non_zero_duration,
+        DatabaseUrl, DeserializeConfig, default_database_pool_size, deserialize_non_zero_duration,
         deserialize_one_or_many,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
@@ -18,7 +18,7 @@ use std::{
 #[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
-    pub database_url: String,
+    pub database_url: DatabaseUrl,
     /// The size of the database connection pool.
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
@@ -103,7 +103,7 @@ fn default_max_allowed_contracts() -> usize {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            database_url: "postgres://postgres:postgres@localhost/kms-connector".to_string(),
+            database_url: "postgres://postgres:postgres@localhost/kms-connector".into(),
             database_pool_size: default_database_pool_size(),
             http_endpoint: default_http_endpoint(),
             max_in_flight_decryptions: default_max_in_flight_decryptions(),
@@ -180,7 +180,7 @@ mod tests {
         let config = Config::from_env_and_file::<&str>(None).unwrap();
 
         assert_eq!(
-            config.database_url,
+            config.database_url.as_str(),
             "postgres://postgres:postgres@localhost"
         );
         assert_eq!(config.database_pool_size, 4);

@@ -22,7 +22,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
         .with_db(DbInstance::setup_container().await?)
         .build();
     let config = Config {
-        database_url: test_instance.db_url().to_string(),
+        database_url: test_instance.db_url().into(),
         database_pool_size: 3,
         http_endpoint: SocketAddr::from_str(&format!("127.0.0.1:{}", pick_free_port()))?,
         supported_chain_ids: vec![31337],

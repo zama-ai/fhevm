@@ -1,11 +1,13 @@
 pub mod contract;
 mod deserialize;
 mod error;
+mod secret_url;
 mod wallet;
 
 pub use contract::ContractConfig;
 pub use deserialize::DeserializeConfig;
 pub use error::{Error, Result};
+pub use secret_url::DatabaseUrl;
 pub use wallet::{AwsKmsConfig, KmsWallet, TestingPrivateKey};
 
 use alloy::transports::http::reqwest::Url;

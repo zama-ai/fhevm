@@ -1,5 +1,5 @@
 use crate::{
-    config::KmsWallet,
+    config::{DatabaseUrl, KmsWallet},
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
 };
 use alloy::{
@@ -46,12 +46,15 @@ pub const CONNECTION_RETRY_NUMBER: usize = 5;
 pub const CONNECTION_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 /// Tries to establish the connection with Postgres database.
-pub async fn connect_to_db(db_url: &str, db_pool_size: u32) -> anyhow::Result<Pool<Postgres>> {
+pub async fn connect_to_db(
+    db_url: &DatabaseUrl,
+    db_pool_size: u32,
+) -> anyhow::Result<Pool<Postgres>> {
     for i in 1..=CONNECTION_RETRY_NUMBER {
         info!("Attempting connection to DB... ({i}/{CONNECTION_RETRY_NUMBER})");
 
         let options = PgPoolOptions::new().max_connections(db_pool_size);
-        match options.connect(db_url).await {
+        match options.connect(db_url.as_str()).await {
             Ok(db_pool) => {
                 info!("Connected to Postgres database successfully");
                 return Ok(db_pool);
@@ -63,38 +66,7 @@ pub async fn connect_to_db(db_url: &str, db_pool_size: u32) -> anyhow::Result<Po
             tokio::time::sleep(CONNECTION_RETRY_DELAY).await;
         }
     }
-    Err(anyhow!(
-        "Could not connect to Postgres DB at url {}",
-        redact_db_url(db_url)
-    ))
-}
-
-/// Strips the password, the query parameters, which may hold one too, and the fragment from a DB
-/// URL.
-///
-/// Returns `<redacted>` for anything but a `postgres://` URL, e.g. a libpq key/value connection
-/// string, which may hold a password anywhere, and for a URL whose userinfo was misread.
-fn redact_db_url(db_url: &str) -> String {
-    let redacted = "<redacted>".to_string();
-    let Ok(mut url) = Url::parse(db_url) else {
-        return redacted;
-    };
-    let is_postgres = matches!(url.scheme(), "postgres" | "postgresql");
-    // An unencoded `/`, `?` or `#` in the password ends the authority early: the `@` before the
-    // host then lands in the path, query or fragment, and parts of the password are read as the
-    // host, port, path, query or fragment.
-    let userinfo_misread = [Some(url.path()), url.query(), url.fragment()]
-        .into_iter()
-        .flatten()
-        .any(|part| part.contains('@'));
-    // `set_password` fails for URLs without a host.
-    let password_kept = url.password().is_some() && url.set_password(None).is_err();
-    if !is_postgres || userinfo_misread || password_kept {
-        return redacted;
-    }
-    url.set_query(None);
-    url.set_fragment(None);
-    url.to_string()
+    Err(anyhow!("Could not connect to Postgres DB at url {db_url}"))
 }
 
 /// The default `Filler`s for an `alloy::Provider`.
@@ -230,7 +202,7 @@ where
 }
 
 /// What replaces a secret in redacted text.
-const REDACTED: &str = "<redacted>";
+pub(crate) const REDACTED: &str = "<redacted>";
 
 /// The parts of a RPC node URL that may hold an API key: the userinfo, the path segments and the
 /// query values, raw and percent-decoded.
@@ -681,51 +653,5 @@ mod tests {
         assert!(display.contains("error sending request"), "{display}");
         assert!(!display.contains(API_KEY), "{display}");
         assert!(!debug.contains(API_KEY), "{debug}");
-    }
-
-    #[test]
-    fn db_url_is_redacted() {
-        let redacted = |db_url| redact_db_url(db_url);
-        assert_eq!(
-            redacted("postgres://user:secret@db:5432/kms"),
-            "postgres://user@db:5432/kms"
-        );
-        // libpq also reads the password from the query parameters.
-        assert_eq!(
-            redacted("postgres://user@db/kms?sslmode=require&password=secret"),
-            "postgres://user@db/kms"
-        );
-        assert_eq!(redacted("postgres://db/kms#frag"), "postgres://db/kms");
-        assert_eq!(
-            redacted("postgresql://user:pw@[::1]:5432/kms"),
-            "postgresql://user@[::1]:5432/kms"
-        );
-        // Unix socket: no host in the URL.
-        assert_eq!(
-            redacted("postgres:///kms?host=/var/run/postgresql"),
-            "postgres:///kms"
-        );
-        // An unencoded `@` alone is read right: the last `@` of the authority ends the userinfo.
-        assert_eq!(
-            redacted("postgres://user:p@ss@db/kms"),
-            "postgres://user@db/kms"
-        );
-        // Unencoded `/`, `?` and `#` in the password end the userinfo early, also when an `@`
-        // before them makes the start of the password look like a host.
-        for db_url in [
-            "postgres://user:#secret@db/kms",
-            "postgres://user:/secret@db/kms",
-            "postgres://user:?secret@db/kms",
-            "postgres://user:123#secret@db/kms",
-            "postgres://user:12/secret@db/kms",
-            "postgres://user:sec@ret/secret@db/kms",
-            "postgres://user:sec@ret?secret@db/kms",
-            "postgres://user:sec@ret#secret@db/kms",
-        ] {
-            assert_eq!(redacted(db_url), "<redacted>", "{db_url}");
-        }
-        // A libpq key/value string parses as a URL with a `db:` scheme.
-        assert_eq!(redacted("db:5432 user=admin password=secret"), "<redacted>");
-        assert_eq!(redacted("host=db password=secret"), "<redacted>");
     }
 }
