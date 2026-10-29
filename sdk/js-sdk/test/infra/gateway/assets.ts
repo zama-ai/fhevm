@@ -1,11 +1,13 @@
-// Serves the SDK's raw WASM/worker assets so the browser can fetch them same-origin
-// (via the gateway) for the URL-based wasm-load modes (verified-blob / *-direct-url /
-// auto). Same-origin keeps it COEP-compatible; embedded-base64 never needs this.
-//
-// The SDK requests assets by VERSIONED filename (the `filename` field in its asset
-// metadata), e.g. `tfhe_bg.v1.6.1.wasm` / `tfhe-worker.v1.6.1.mjs`. On disk those live
-// under the SDK's wasm dir as `<module>/v<version>/<base>.<ext>`. This maps one to the
-// other (and refuses anything that doesn't match, so a URL can't escape the dir).
+/**
+ * Serves the SDK's raw WASM/worker assets so the browser can fetch them same-origin
+ * (via the gateway) for the URL-based wasm-load modes (verified-blob / *-direct-url /
+ * auto). Same-origin keeps it COEP-compatible; embedded-base64 never needs this.
+ *
+ * The SDK requests assets by VERSIONED filename (the `filename` field in its asset
+ * metadata), e.g. `tfhe_bg.v1.6.1.wasm` / `tfhe-worker.v1.6.1.mjs`. On disk those live
+ * under the SDK's wasm dir as `<module>/v<version>/<base>.<ext>`. This maps one to the
+ * other (and refuses anything that doesn't match, so a URL can't escape the dir).
+ */
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

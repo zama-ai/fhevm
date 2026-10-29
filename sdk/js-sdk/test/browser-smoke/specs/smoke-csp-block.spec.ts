@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures.js';
 
 test("client.init() throws when page CSP omits 'wasm-unsafe-eval'", async ({ page }) => {
   await page.goto('/test/browser-smoke/pages/smoke-csp-block.html');

@@ -2,7 +2,11 @@
 # permanently specified in this file.
 
 [advisories]
-ignore = []
+# RUSTSEC-2026-0387 (crypto-bigint 0.5.5): no fix is reachable. It comes in through
+# alloy -> k256/elliptic-curve 0.13, which pins crypto-bigint 0.5; the fix is only in
+# 0.7.6+. Low-risk timing side channel, also ignored in kms-connector and coprocessor.
+# Tracked in https://github.com/zama-ai/fhevm-internal/issues/2256
+ignore = ["RUSTSEC-2026-0387"]
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
 

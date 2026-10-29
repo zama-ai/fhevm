@@ -4,8 +4,9 @@
 [advisories]
 # RUSTSEC-2023-0071 (rsa): no fix released. Reached only via sqlx-mysql, which we
 # never compile (postgres-only).
-# RUSTSEC-2026-0387 (crypto-bigint 0.4.9, 0.5.5): pre-existing on main, pulled in by aws-sigv4
-# 1.4.0 (directly and through p256 0.11).
+# RUSTSEC-2026-0387 (crypto-bigint): no fix is reachable. Both copies come
+# through aws-sigv4 1.4.0, the newest release, which still pins crypto-bigint
+# 0.5. Remove this when the AWS SDK moves.
 # RUSTSEC-2026-0391, -0398, -0403 (zstd 0.13.3, zstd-safe 7.3.0): pingora-header-serde 0.9.0, the
 # latest Pingora, pins them. It only (de)serializes pingora-cache metadata, and coprocessor-proxy
 # never enables the cache, so this zstd never runs.

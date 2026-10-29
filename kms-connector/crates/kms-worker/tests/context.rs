@@ -17,8 +17,8 @@ use connector_utils::{
         },
         rand::{rand_digest, rand_handle},
         setup::{
-            DbInstance, TestInstance, TestInstanceBuilder, erc1271_magic_response,
-            init_host_chains_acl_contracts_mock,
+            DbInstance, TestInstance, TestInstanceBuilder, acl_multicall_response,
+            erc1271_magic_response, init_host_chains_acl_contracts_mock,
         },
     },
     types::{DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT, extra_data::ExtraData, u256_to_request_id},
@@ -81,30 +81,31 @@ async fn test_decryption_context_not_found(
     info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain ACL to ALLOW decryption.
-    // Per attempt: Public → 1 bool; Legacy user → 1 U256 (invalidation) + 2 bools;
+    // Per attempt (ACL reads batched in one multicall): Public → 1 bool;
+    // Legacy user → 1 U256 (invalidation) + 2 bools;
     // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership).
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => {
-            vec![true.abi_encode(); MAX_DECRYPTION_ATTEMPTS as usize]
+            vec![acl_multicall_response(vec![true.abi_encode()]); MAX_DECRYPTION_ATTEMPTS as usize]
         }
         TestEventType::UserDecryptionV2 => (0..MAX_DECRYPTION_ATTEMPTS)
             .flat_map(|_| {
                 vec![
                     erc1271_magic_response(),
-                    U256::ZERO.abi_encode(),
-                    true.abi_encode(),
+                    acl_multicall_response(vec![U256::ZERO.abi_encode(), true.abi_encode()]),
                 ]
             })
             .collect(),
-        TestEventType::UserDecryption => (0..MAX_DECRYPTION_ATTEMPTS)
-            .flat_map(|_| {
-                vec![
+        TestEventType::UserDecryption => {
+            vec![
+                acl_multicall_response(vec![
                     U256::ZERO.abi_encode(),
                     true.abi_encode(),
                     true.abi_encode(),
-                ]
-            })
-            .collect(),
+                ]);
+                MAX_DECRYPTION_ATTEMPTS as usize
+            ]
+        }
         _ => vec![],
     };
     let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
@@ -202,22 +203,20 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
     info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain ACL to ALLOW decryption (1 attempt only, irrecoverable error).
-    // Per attempt: Public → 1 bool; Legacy user → 1 U256 (invalidation) + 2 bools;
+    // Per attempt (ACL reads batched in one multicall): Public → 1 bool;
+    // Legacy user → 1 U256 (invalidation) + 2 bools;
     // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership).
     let acl_responses = match event_type {
-        TestEventType::PublicDecryption => vec![true.abi_encode()],
+        TestEventType::PublicDecryption => vec![acl_multicall_response(vec![true.abi_encode()])],
         TestEventType::UserDecryptionV2 => vec![
             erc1271_magic_response(),
+            acl_multicall_response(vec![U256::ZERO.abi_encode(), true.abi_encode()]),
+        ],
+        TestEventType::UserDecryption => vec![acl_multicall_response(vec![
             U256::ZERO.abi_encode(),
             true.abi_encode(),
-        ],
-        TestEventType::UserDecryption => {
-            vec![
-                U256::ZERO.abi_encode(),
-                true.abi_encode(),
-                true.abi_encode(),
-            ]
-        }
+            true.abi_encode(),
+        ])],
         _ => vec![],
     };
     let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);

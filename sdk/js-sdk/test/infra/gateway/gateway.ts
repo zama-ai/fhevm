@@ -1,21 +1,23 @@
-// Framework-agnostic same-origin test gateway (Option B).
-//
-// The browser only ever talks to the page origin; this gateway proxies, per
-// "slot" (one per chain/WASM version), both:
-//   - `rpc`     -> an anvil RPC endpoint
-//   - `relayer` -> a mini-relayer serving the keys for that version
-//
-// It is pure: it maps a normalized request to a normalized response and touches
-// no Node/Web server API directly. Thin adapters (see nodeAdapter.ts and the Next
-// route) bridge it to each platform, so every environment mounts the same core.
-//
-// URL layout (mountPrefix defaults to `/__gw`):
-//   {origin}/__gw/<slot>/rpc                   -> anvil JSON-RPC (proxied)
-//   {origin}/__gw/<slot>/relayer/v2/keyurl     -> keyurl JSON (byte URLs same-origin)
-//   {origin}/__gw/<slot>/relayer/key/pub       -> raw public-key bytes
-//   {origin}/__gw/<slot>/relayer/key/crs       -> raw CRS bytes
-//
-// The SDK is configured with relayerUrl = `{origin}/__gw/<slot>/relayer`.
+/**
+ * Framework-agnostic same-origin test gateway (Option B).
+ *
+ * The browser only ever talks to the page origin; this gateway proxies, per
+ * "slot" (one per chain/WASM version), both:
+ *   - `rpc`     -> an anvil RPC endpoint
+ *   - `relayer` -> a mini-relayer serving the keys for that version
+ *
+ * It is pure: it maps a normalized request to a normalized response and touches
+ * no Node/Web server API directly. Thin adapters (see nodeAdapter.ts and the Next
+ * route) bridge it to each platform, so every environment mounts the same core.
+ *
+ * URL layout (mountPrefix defaults to `/__gw`):
+ *   {origin}/__gw/<slot>/rpc                   -> anvil JSON-RPC (proxied)
+ *   {origin}/__gw/<slot>/relayer/v2/keyurl     -> keyurl JSON (byte URLs same-origin)
+ *   {origin}/__gw/<slot>/relayer/key/pub       -> raw public-key bytes
+ *   {origin}/__gw/<slot>/relayer/key/crs       -> raw CRS bytes
+ *
+ * The SDK is configured with relayerUrl = `{origin}/__gw/<slot>/relayer`.
+ */
 
 import { buildKeyUrlResponse, loadKeyFile } from './keyRelayer.js';
 import { readWasmAsset } from './assets.js';

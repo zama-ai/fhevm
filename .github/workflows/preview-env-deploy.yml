@@ -707,7 +707,9 @@ jobs:
     # twice (DryRunStarted, then after cutover), so allow a second suite.
     timeout-minutes: 360
     permissions:
+      id-token: write # Required for Tailscale OIDC
       pull-requests: write # Required to comment on the PR with connection info
+    environment: preview-env
     env:
       # Job-specific: topology from check-labels, image tags from resolve-tags,
       # version/chart pins from overrides_json.
@@ -760,8 +762,8 @@ jobs:
       - name: Setup preview tooling
         uses: ./.github/actions/setup-preview-tooling
         with:
-          ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          ts-oauth-client-id: ${{ secrets.TS_FHEVM_CI_OAUTH_CLIENT_ID }}
+          ts-oauth-audience: ${{ secrets.TS_FHEVM_CI_OAUTH_AUDIENCE }}
           ts-tags: tag:fhevm-ci
           tailscale-hostname: ${{ env.TAILSCALE_HOSTNAME }}
           harbor-url: ${{ secrets.HARBOR_URL }}
