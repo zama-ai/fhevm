@@ -1,7 +1,6 @@
 use std::{collections::HashSet, fmt, sync::Arc, time::Duration};
 
 use alloy_primitives::{Address, U256};
-use aws_sdk_s3::Client;
 #[cfg(test)]
 use block_manifest::ManifestVersion;
 use futures::stream::{self, FuturesUnordered, StreamExt, TryStreamExt};
@@ -33,12 +32,8 @@ use super::metrics::{
     DRIFT_LOCALIZATION_INCOMPLETE, PEER_MANIFEST_ARCHIVED, PEER_MANIFEST_DOWNLOAD_FAILURE,
     VERIFICATION_FAILURE, VERIFICATION_OUTCOMES,
 };
-#[cfg(test)]
-use super::peer_manifest_source::S3PeerManifestSource;
-#[cfg(test)]
-use super::peer_manifest_source::{s3_bucket_location, S3BucketLocation};
 use super::peer_manifest_source::{
-    PeerDownloadRequest, PeerManifestObject, PeerManifestSource, PeerManifestSources,
+    HttpPeerManifestSource, PeerDownloadRequest, PeerManifestObject, PeerManifestSource,
 };
 use super::verification_evidence::{persist_verification_evidence, VerificationAttemptEvidence};
 use super::verification_utils::{
@@ -102,12 +97,11 @@ pub(crate) struct VerificationRunResult {
 pub(crate) fn spawn_peer_manifest_downloader(
     pool: PgPool,
     token: CancellationToken,
-    client: Arc<Client>,
     work_gate: Arc<ManifestWorkGate>,
     verification_delay: Duration,
 ) -> JoinHandle<Result<(), ExecutionError>> {
     // Each request sets its own timeout, so the client sets none.
-    let source = PeerManifestSources::new(client, reqwest::Client::new());
+    let source = HttpPeerManifestSource::new(reqwest::Client::new());
     tokio::spawn(run_peer_manifest_downloader(
         pool,
         token,

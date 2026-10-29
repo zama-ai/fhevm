@@ -1,21 +1,14 @@
 //! What the two HTTP peer readers share.
 //!
 //! Manifests and ct64 objects live in the same peer store and arrive over the
-//! same channel, so the URL shape, the reader choice and the response rules are
-//! one set of answers, held here rather than once per reader.
+//! same channel, so the URL shape and the response rules are one set of
+//! answers, held here rather than once per reader.
 
-use crate::manifest_consensus::verification::peer_manifest_source::s3_bucket_location;
 use crate::manifest_consensus::ExecutionError;
 
 /// An object's URL under a peer's registered base.
 pub(crate) fn object_url(base_url: &str, object_key: &str) -> String {
     format!("{}/{object_key}", base_url.trim_end_matches('/'))
-}
-
-/// Whether a registered URL names a bucket, and so keeps the S3 reader. A URL
-/// that names only a host goes over HTTP.
-pub(crate) fn reads_s3(bucket_url: &str) -> bool {
-    s3_bucket_location(bucket_url).is_ok()
 }
 
 /// A response that carries the object, or the reason it does not.
