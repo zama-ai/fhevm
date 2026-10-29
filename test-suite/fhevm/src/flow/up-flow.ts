@@ -1326,7 +1326,7 @@ const logBootstrap = (state: Pick<State, "bootstrapPending" | "versions" | "scen
   }
   const deferred = isDeferredBootstrap(state.scenario);
   console.log(
-    `[bootstrap] contracts, KMS core/connector, listener-core${deferred ? " and relayer" : ""} boot at ` +
+    `[bootstrap] contracts, KMS core/connector${deferred ? ", listener-core and relayer" : " and listener-core"} boot at ` +
       `${state.versions.env.HOST_VERSION} (core ${state.versions.env.CORE_VERSION}); ` +
       (deferred
         ? "the test runs the upgrade steps and starts Green"
