@@ -20,7 +20,8 @@
                 "diffEditor.ignoreTrimWhitespace": false,
                 "editor.formatOnSave": true,
                 "rust-analyzer.linkedProjects": [
-                    "coprocessor/fhevm-engine/Cargo.toml"
+                    "coprocessor/fhevm-engine/Cargo.toml",
+                    "host-contracts/rust_bindings/Cargo.toml"
                 ],
                 "rust-analyzer.cargo.extraEnv": {
                     "SQLX_OFFLINE": "true"
