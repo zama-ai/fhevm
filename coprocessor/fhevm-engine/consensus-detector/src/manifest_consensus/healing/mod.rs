@@ -62,7 +62,7 @@ use super::{ExecutionError, ManifestWorkGate};
 mod download;
 mod metrics;
 
-use download::{Ct64Source, DownloadedCt64, S3Ct64Source};
+use download::{Ct64Source, Ct64Sources, DownloadedCt64};
 
 /// pg_notify channel emitted on `drifted_handle` insert/update.
 pub(crate) const EVENT_HEALING_WORK: &str = "event_healing_work";
@@ -136,7 +136,8 @@ pub(crate) fn spawn_healing_worker(
     tokio::spawn(run_healing_worker(
         pool,
         token,
-        S3Ct64Source::new(client),
+        // Each request sets its own timeout, so the client sets none.
+        Ct64Sources::new(client, reqwest::Client::new()),
         work_gate,
         settings,
     ))
