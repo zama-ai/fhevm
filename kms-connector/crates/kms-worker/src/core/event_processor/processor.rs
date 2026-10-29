@@ -136,6 +136,10 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
         match &event.kind {
             ProtocolEventKind::PublicDecryption(req) => {
                 self.decryption_processor
+                    .check_handle_count(req.snsCtMaterials.len())
+                    .map_err(RequestCheckError::record)?;
+
+                self.decryption_processor
                     .check_ciphertexts_allowed_for_public_decryption(&req.snsCtMaterials)
                     .await
                     .map_err(RequestCheckError::record)?;
@@ -150,6 +154,10 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .await
             }
             ProtocolEventKind::UserDecryption(req) => {
+                self.decryption_processor
+                    .check_handle_count(req.snsCtMaterials.len())
+                    .map_err(RequestCheckError::record)?;
+
                 // No need to check decryption is done for user decrypt, as MPC parties don't
                 // communicate between each other for user decrypt
 
@@ -180,6 +188,10 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .await
             }
             ProtocolEventKind::UserDecryptionV2(req) => {
+                self.decryption_processor
+                    .check_handle_count(req.handles.len().max(req.snsCtMaterials.len()))
+                    .map_err(RequestCheckError::record)?;
+
                 // The RFC016 event carries the full payload, so unlike the legacy path we don't
                 // need to re-fetch the transaction calldata.
                 self.decryption_processor

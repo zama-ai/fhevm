@@ -365,12 +365,12 @@ impl PublicDecryptionResponse {
         grpc_response: GrpcPublicDecryptionResponse,
     ) -> anyhow::Result<Self> {
         let payload = grpc_response.payload.ok_or_else(|| {
-            anyhow!("Received empty payload for public decryption {decryption_id}")
+            anyhow!("Received empty payload for public decryption {decryption_id:#066x}")
         })?;
 
         for pt in &payload.plaintexts {
             debug!(
-                "Public decryption result type: {:?} for request {}",
+                "Public decryption result type: {:?} for request {:#066x}",
                 pt.fhe_type, decryption_id
             );
         }
@@ -392,9 +392,9 @@ impl UserDecryptionResponse {
         decryption_id: U256,
         grpc_response: GrpcUserDecryptionResponse,
     ) -> anyhow::Result<Self> {
-        let payload = grpc_response
-            .payload
-            .ok_or_else(|| anyhow!("Received empty payload for user decryption {decryption_id}"))?;
+        let payload = grpc_response.payload.ok_or_else(|| {
+            anyhow!("Received empty payload for user decryption {decryption_id:#066x}")
+        })?;
 
         // Serialize all signcrypted ciphertexts
         let serialized_response_payload = bc2wrap::serialize(&payload)
@@ -402,7 +402,7 @@ impl UserDecryptionResponse {
 
         for ct in &payload.signcrypted_ciphertexts {
             debug!(
-                "User decryption result type: {:?} for request {}",
+                "User decryption result type: {:?} for request {:#066x}",
                 ct.fhe_type, decryption_id
             );
         }
@@ -492,26 +492,26 @@ impl Display for KmsResponseKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             KmsResponseKind::PublicDecryption(r) => {
-                write!(f, "PublicDecryptionResponse #{}", r.decryption_id)
+                write!(f, "PublicDecryptionResponse #{:#066x}", r.decryption_id)
             }
             KmsResponseKind::UserDecryption(r) => {
-                write!(f, "UserDecryptionResponse #{}", r.decryption_id)
+                write!(f, "UserDecryptionResponse #{:#066x}", r.decryption_id)
             }
             KmsResponseKind::PrepKeygen(r) => {
-                write!(f, "PrepKeygenResponse #{}", r.prep_keygen_id)
+                write!(f, "PrepKeygenResponse #{:#066x}", r.prep_keygen_id)
             }
             KmsResponseKind::Keygen(r) => {
-                write!(f, "KeygenResponse #{}", r.key_id)
+                write!(f, "KeygenResponse #{:#066x}", r.key_id)
             }
             KmsResponseKind::Crsgen(r) => {
-                write!(f, "CrsgenResponse #{}", r.crs_id)
+                write!(f, "CrsgenResponse #{:#066x}", r.crs_id)
             }
             KmsResponseKind::NewKmsContext(r) => {
-                write!(f, "NewKmsContextResponse #{}", r.context_id)
+                write!(f, "NewKmsContextResponse #{:#066x}", r.context_id)
             }
             KmsResponseKind::EpochResult(r) => write!(
                 f,
-                "EpochResultResponse context #{} epoch #{}",
+                "EpochResultResponse context #{:#066x} epoch #{:#066x}",
                 r.context_id, r.epoch_id
             ),
         }

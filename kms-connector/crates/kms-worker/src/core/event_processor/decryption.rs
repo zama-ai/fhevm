@@ -51,6 +51,9 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider, C> {
 
     /// Gas cap for the `IERC1271.isValidSignature` static call (RFC-012).
     erc1271_gas_limit: u64,
+
+    /// The maximum number of handles a single decryption request can contain.
+    max_handles_per_decryption: usize,
 }
 
 impl<GP, HP, C> DecryptionProcessor<GP, HP, C>
@@ -83,7 +86,22 @@ where
             host_clients,
             ciphertext_manager,
             erc1271_gas_limit: config.erc1271_gas_limit,
+            max_handles_per_decryption: config.max_handles_per_decryption.get() as usize,
         }
+    }
+
+    /// Rejects decryption requests containing more handles than the configured limit.
+    pub fn check_handle_count(&self, handle_count: usize) -> Result<(), RequestCheckError> {
+        if handle_count > self.max_handles_per_decryption {
+            return Err(RequestCheckError::irrecoverable(
+                RequestCheckKind::HandleLimit,
+                anyhow!(
+                    "Request contains {handle_count} handles, exceeding the limit of {}",
+                    self.max_handles_per_decryption
+                ),
+            ));
+        }
+        Ok(())
     }
 
     #[tracing::instrument(skip_all)]
@@ -561,7 +579,7 @@ where
                     "No snsCtMaterials found, cannot proceed without a valid key_id"
                 ))
             })?;
-        info!("Extracted key_id {key_id} from snsCtMaterials[0]");
+        info!("Extracted key_id 0x{key_id} from snsCtMaterials[0]");
 
         let parsed_extra_data =
             parse_extra_data(extra_data).map_err(ProcessingError::Irrecoverable)?;
@@ -629,7 +647,7 @@ where
             .collect();
 
         info!(
-            "Processing {} ciphertexts, key_id: {}, FHE types: {:?}",
+            "Processing {} ciphertexts, key_id: 0x{}, FHE types: {:?}",
             sns_ciphertext_materials.len(),
             key_id,
             fhe_types,
@@ -713,6 +731,7 @@ mod tests {
     };
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
+    use std::num::NonZeroU16;
     use user_decryption_signature::{
         ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
     };
@@ -782,6 +801,34 @@ mod tests {
             kms_decryption_extra_data(&Bytes::from_static(&[0x01, 0x02])),
             vec![0x01, 0x02]
         );
+    }
+
+    #[rstest]
+    #[case::below_limit(1, ExpectedOutcome::Ok)]
+    #[case::at_limit(2, ExpectedOutcome::Ok)]
+    #[case::above_limit(3, ExpectedOutcome::Irrecoverable)]
+    #[test]
+    fn check_handle_count(#[case] handle_count: usize, #[case] expected: ExpectedOutcome) {
+        let config = Config {
+            max_handles_per_decryption: NonZeroU16::new(2).unwrap(),
+            ..Default::default()
+        };
+        let decryption_processor =
+            setup_test_processor_with_config(Asserter::new(), &rand_sns_ct(), config);
+
+        let result = decryption_processor
+            .check_handle_count(handle_count)
+            .map_err(RequestCheckError::record);
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            ExpectedOutcome::Recoverable => {
+                assert!(matches!(result, Err(ProcessingError::Recoverable(_))))
+            }
+            ExpectedOutcome::Irrecoverable => {
+                assert!(matches!(result, Err(ProcessingError::Irrecoverable(_))))
+            }
+        }
     }
 
     enum PubDecryptACLMock {

@@ -121,7 +121,7 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
 
         match anchor_logs.as_slice() {
             [] => Err(anyhow!(
-                "No event found at anchor {} for previous context {}",
+                "No event found at anchor {} for previous context {:#066x}",
                 previous_context_anchor.emissionBlockNumber,
                 new_context_event.previousContextId
             )),
