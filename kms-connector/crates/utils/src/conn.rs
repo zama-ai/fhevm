@@ -79,9 +79,13 @@ fn redact_db_url(db_url: &str) -> String {
         return redacted;
     };
     let is_postgres = matches!(url.scheme(), "postgres" | "postgresql");
-    // An unencoded `/`, `?` or `#` in the password ends the userinfo early: the user is then read
-    // as the host, and the password as part of the path, query or fragment.
-    let userinfo_misread = db_url.contains('@') && url.username().is_empty();
+    // An unencoded `/`, `?` or `#` in the password ends the authority early: the `@` before the
+    // host then lands in the path, query or fragment, and parts of the password are read as the
+    // host, port, path, query or fragment.
+    let userinfo_misread = [Some(url.path()), url.query(), url.fragment()]
+        .into_iter()
+        .flatten()
+        .any(|part| part.contains('@'));
     // `set_password` fails for URLs without a host.
     let password_kept = url.password().is_some() && url.set_password(None).is_err();
     if !is_postgres || userinfo_misread || password_kept {
@@ -625,13 +629,22 @@ mod tests {
             redacted("postgres:///kms?host=/var/run/postgresql"),
             "postgres:///kms"
         );
-        // Unencoded `/`, `?` and `#` in the password end the userinfo early.
+        // An unencoded `@` alone is read right: the last `@` of the authority ends the userinfo.
+        assert_eq!(
+            redacted("postgres://user:p@ss@db/kms"),
+            "postgres://user@db/kms"
+        );
+        // Unencoded `/`, `?` and `#` in the password end the userinfo early, also when an `@`
+        // before them makes the start of the password look like a host.
         for db_url in [
             "postgres://user:#secret@db/kms",
             "postgres://user:/secret@db/kms",
             "postgres://user:?secret@db/kms",
             "postgres://user:123#secret@db/kms",
             "postgres://user:12/secret@db/kms",
+            "postgres://user:sec@ret/secret@db/kms",
+            "postgres://user:sec@ret?secret@db/kms",
+            "postgres://user:sec@ret#secret@db/kms",
         ] {
             assert_eq!(redacted(db_url), "<redacted>", "{db_url}");
         }
