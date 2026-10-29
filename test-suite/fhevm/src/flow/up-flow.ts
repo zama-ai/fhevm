@@ -2585,7 +2585,7 @@ export const upgradeThresholdKmsNode = async (
 
   const targetVersion = lockedState.versions.env.CORE_VERSION;
   if (!targetVersion?.trim()) {
-    throw new PreflightError("upgradeKmsNodes requires CORE_VERSION in its lock file");
+    throw new PreflightError("upgradeKmsNode requires CORE_VERSION in its lock file");
   }
   const versionByNodeId = Object.fromEntries(
     Array.from({ length: state.scenario.kms.parties }, (_, index) => {
