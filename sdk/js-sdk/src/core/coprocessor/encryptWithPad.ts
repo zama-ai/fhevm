@@ -1,4 +1,4 @@
-import type { WithEncryptTransci } from '../types/coreFhevmRuntime.js';
+import type { WithEncryptWithPad } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type {
   Bytes32Hex,
@@ -24,7 +24,7 @@ import { readKmsSignersContextFromPermitExtraData } from '../host-contracts/read
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// RFC-030 pad-based input encryption ("transciphering").
+// RFC-030 pad-based input encryption.
 //
 // Each call masks one input package with a fresh one-time pad: it forms a witness with a fresh nonce,
 // derives the witness label, and requests the pad bits from the KMS via a pad
@@ -60,7 +60,7 @@ const PAD_PACKAGE_TYPE = 0x00;
 
 type Context = {
   readonly chain: FhevmChain;
-  readonly runtime: WithEncryptTransci;
+  readonly runtime: WithEncryptWithPad;
   readonly client: NonNullable<object>;
   readonly options: { readonly batchRpcCalls: boolean };
 };
@@ -89,13 +89,13 @@ type ReturnType = {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function encryptTransci(context: Context, parameters: Parameters): Promise<ReturnType> {
+export async function encryptWithPad(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { contractAddress, userAddress, values, fhevmContext, options } = parameters;
 
   const signedPermit = parameters.signedPermit as SignedDecryptionPermitV2;
   assertIsSignedDecryptionPermit(signedPermit, {});
   if ((signedPermit.version as number) !== 2) {
-    throw new Error(`encryptTransci requires a v2 permit, got v${signedPermit.version}`);
+    throw new Error(`encryptWithPad requires a v2 permit, got v${signedPermit.version}`);
   }
   signedPermit.assertNotExpired();
 
@@ -152,7 +152,7 @@ export async function encryptTransci(context: Context, parameters: Parameters): 
   ]);
 
   // 5. Verify the responses against the context signers and reconstruct the pad.
-  const pads = await context.runtime.encryptTransci.reconstructPads({
+  const pads = await context.runtime.encryptWithPad.reconstructPads({
     responses: padDecryptResponses,
     witnesses: [witness],
     extraData,
@@ -202,7 +202,7 @@ export async function encryptTransci(context: Context, parameters: Parameters): 
 /** Sum of the parts' bit widths, each rounded up to a whole byte (RFC-030 packing). */
 function _computePadLength(values: readonly TypedValue[]): Uint16Number {
   if (values.length === 0) {
-    throw new Error('encryptTransci requires at least one value.');
+    throw new Error('encryptWithPad requires at least one value.');
   }
   if (values.length > 255) {
     throw new Error(`Too many values: ${values.length} (max 255).`);

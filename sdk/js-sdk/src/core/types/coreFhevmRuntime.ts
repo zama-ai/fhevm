@@ -3,10 +3,10 @@ import type { RelayerModule } from '../modules/relayer/types.js';
 import type { EncryptModule, EncryptModuleFactory, WithEncryptModule } from '../modules/encrypt/types.js';
 import type { DecryptModule, DecryptModuleFactory, WithDecryptModule } from '../modules/decrypt/types.js';
 import type {
-  EncryptTransciModule,
-  EncryptTransciModuleFactory,
-  WithEncryptTransciModule,
-} from '../modules/encryptTransci/types.js';
+  EncryptWithPadModule,
+  EncryptWithPadModuleFactory,
+  WithEncryptWithPadModule,
+} from '../modules/encryptWithPad/types.js';
 import type { Logger } from './logger.js';
 import type { Auth } from './auth.js';
 import type { WasmAssetLoadMode } from './wasmAssets.js';
@@ -33,7 +33,7 @@ interface FhevmRuntime_Base {
 
   extend(factory: EncryptModuleFactory): this & { readonly encrypt: EncryptModule };
 
-  extend(factory: EncryptTransciModuleFactory): this & { readonly encryptTransci: EncryptTransciModule };
+  extend(factory: EncryptWithPadModuleFactory): this & { readonly encryptWithPad: EncryptWithPadModule };
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -41,7 +41,7 @@ interface FhevmRuntime_Base {
 export type WithModuleMap = {
   readonly decrypt: WithDecryptModule;
   readonly encrypt: WithEncryptModule;
-  readonly encryptTransci: WithEncryptTransciModule;
+  readonly encryptWithPad: WithEncryptWithPadModule;
 };
 
 export type FhevmRuntime<Extensions extends object = object> = FhevmRuntime_Base & Extensions;
@@ -50,6 +50,6 @@ export type FhevmRuntime<Extensions extends object = object> = FhevmRuntime_Base
 export type WithModule<M extends keyof WithModuleMap> = FhevmRuntime<WithModuleMap[M]>;
 export type WithDecrypt = FhevmRuntime<WithDecryptModule>;
 export type WithEncrypt = FhevmRuntime<WithEncryptModule>;
-export type WithEncryptTransci = FhevmRuntime<WithEncryptTransciModule>;
+export type WithEncryptWithPad = FhevmRuntime<WithEncryptWithPadModule>;
 
 export type WithAll = FhevmRuntime<WithEncryptModule & WithDecryptModule>;

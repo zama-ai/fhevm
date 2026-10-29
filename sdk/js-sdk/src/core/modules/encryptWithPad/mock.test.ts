@@ -11,7 +11,7 @@ import type { PadDecryptResponse, PadShare, PadWitness } from '../relayer/types.
 import { describe, expect, it } from 'vitest';
 import { decodeAbiParameters, encodeAbiParameters, parseAbiParameters, recoverTypedDataAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { encryptTransciModule } from './mock.js';
+import { encryptWithPadModule } from './mock.js';
 import { createKmsEip712Domain } from '../../kms/createKmsEip712Domain.js';
 import {
   kmsPadDecryptResponseEip712PrimaryType,
@@ -25,7 +25,7 @@ import {
 } from '../relayer/cleartext/padDecryptResponse.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/encryptTransci/mock.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/encryptWithPad/mock.test.ts
 //
 // RFC-030 response processing against the cleartext share encoding: every
 // share is the whole encrypted pad (one 32-byte block per ring element),
@@ -134,10 +134,10 @@ function session(byte: string): BytesHex {
 }
 
 // The mock module only reads `runtime.ethereum` in `reconstructPads`.
-const { encryptTransci } = encryptTransciModule({ ethereum } as unknown as FhevmRuntime);
+const { encryptWithPad } = encryptWithPadModule({ ethereum } as unknown as FhevmRuntime);
 
 function run(responses: readonly PadDecryptResponse[], witnesses: readonly PadWitness[]) {
-  return encryptTransci.reconstructPads({
+  return encryptWithPad.reconstructPads({
     responses,
     witnesses,
     extraData: EXTRA_DATA,

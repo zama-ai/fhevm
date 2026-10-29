@@ -12,9 +12,9 @@ import type {
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// EncryptTransciModule
+// EncryptWithPadModule
 //
-// RFC-030 pad-based input encryption ("transciphering"). No TFHE: the pad is
+// RFC-030 pad-based input encryption. No TFHE: the pad is
 // obtained from the KMS and the values are masked client-side. The module
 // owns the client-side processing of the pad decryption responses, which is
 // built on the TKMS WASM (ML-KEM transport key, threshold share decoding), and
@@ -63,11 +63,11 @@ export type ReconstructPadsModuleFunction = {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type WithEncryptTransciModule = {
-  readonly encryptTransci: EncryptTransciModule;
+export type WithEncryptWithPadModule = {
+  readonly encryptWithPad: EncryptWithPadModule;
 };
 
-export type EncryptTransciModule = Prettify<
+export type EncryptWithPadModule = Prettify<
   InitTkmsModuleFunction &
     GetTkmsModuleInfoFunction &
     ReconstructPadsModuleFunction &
@@ -76,6 +76,6 @@ export type EncryptTransciModule = Prettify<
     GetTkmsPublicKeyHexModuleFunction
 >;
 
-export type EncryptTransciModuleFactory = (runtime: FhevmRuntime) => {
-  readonly encryptTransci: EncryptTransciModule;
+export type EncryptWithPadModuleFactory = (runtime: FhevmRuntime) => {
+  readonly encryptWithPad: EncryptWithPadModule;
 };

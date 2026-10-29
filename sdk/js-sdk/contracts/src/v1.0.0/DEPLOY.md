@@ -373,8 +373,8 @@ These are implemented in `DeployV1.verify` in Appendix A. The full list is in `f
   consistently (§5).
 - **SDK support of v1.0 behaviour is not verified.** Two cases are untested: the js-sdk resolving and using a
   standalone `PaddedInputter` proxy (in v0.16.0 the pad flow is inside FHEVMExecutor), and the version strings above
-  (e.g. `KMSVerifier v0.5.0`, `ACL v0.6.0`). Check `src/core/host-contracts/` and the transciphering
-  (`encryptTransci`, `fetchPadShares`) code paths before relying on them.
+  (e.g. `KMSVerifier v0.5.0`, `ACL v0.6.0`). Check `src/core/host-contracts/` and the pad-based encryption
+  (`encryptWithPad`, `fetchPadShares`) code paths before relying on them.
 - **The provenance label differs from the task brief.** The committed pin is fhevm `10702a23` (`v1.0.0-0-g10702a230`) with 5
   declared local patches, not tag v0.15.0-3. Stale "v0.15.0-3" comments remain in some sources.
 - **Compiler.** This repo auto-selects the newest installed solc (0.8.33 here). fhevm-mocks pins 0.8.24/cancun.

@@ -3,7 +3,7 @@ import type {
   createFhevmBaseClient as createViemFhevmBaseClient,
   createFhevmDecryptClient as createViemFhevmDecryptClient,
   createFhevmEncryptClient as createViemFhevmEncryptClient,
-  createFhevmEncryptTransciClient as createViemFhevmEncryptTransciClient,
+  createFhevmEncryptWithPadClient as createViemFhevmEncryptWithPadClient,
 } from '@fhevm/sdk/viem';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
@@ -55,11 +55,11 @@ export type CreateViemEncryptClientFn = (
   },
 ) => ReturnType<typeof createViemFhevmEncryptClient>;
 
-export type CreateViemEncryptTransciClientFn = (
+export type CreateViemEncryptWithPadClientFn = (
   params: CreateViemClientParameters & {
     readonly options?: FhevmEncryptOptions | undefined;
   },
-) => ReturnType<typeof createViemFhevmEncryptTransciClient>;
+) => ReturnType<typeof createViemFhevmEncryptWithPadClient>;
 
 export type CreateViemDecryptClientFn = (
   params: CreateViemClientParameters & {

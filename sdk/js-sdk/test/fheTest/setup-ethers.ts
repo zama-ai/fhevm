@@ -3,7 +3,7 @@ import type {
   createFhevmBaseClient as createEthersFhevmBaseClient,
   createFhevmDecryptClient as createEthersFhevmDecryptClient,
   createFhevmEncryptClient as createEthersFhevmEncryptClient,
-  createFhevmEncryptTransciClient as createEthersFhevmEncryptTransciClient,
+  createFhevmEncryptWithPadClient as createEthersFhevmEncryptWithPadClient,
 } from '@fhevm/sdk/ethers';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
@@ -73,11 +73,11 @@ export type CreateEthersEncryptClientFn = (
   },
 ) => ReturnType<typeof createEthersFhevmEncryptClient>;
 
-export type CreateEthersEncryptTransciClientFn = (
+export type CreateEthersEncryptWithPadClientFn = (
   params: CreateEthersClientParameters & {
     readonly options?: FhevmEncryptOptions | undefined;
   },
-) => ReturnType<typeof createEthersFhevmEncryptTransciClient>;
+) => ReturnType<typeof createEthersFhevmEncryptWithPadClient>;
 
 export type CreateEthersDecryptClientFn = (
   params: CreateEthersClientParameters & {

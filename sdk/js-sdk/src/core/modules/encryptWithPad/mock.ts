@@ -4,7 +4,7 @@ import type { EthereumModule } from '../ethereum/types.js';
 import type { PadShare } from '../relayer/types.js';
 import type { GetTkmsPublicKeyHexParameters, SerializeTkmsPrivateKeyParameters } from '../decrypt/types.js';
 import type {
-  EncryptTransciModuleFactory,
+  EncryptWithPadModuleFactory,
   ReconstructedPads,
   ReconstructPadsModuleParameters,
   ReconstructPadsParameters,
@@ -23,16 +23,16 @@ import {
 import { generateTkmsPrivateKey, getTkmsPublicKeyHex, serializeTkmsPrivateKey } from '../decrypt/mock.js';
 
 //////////////////////////////////////////////////////////////////////////////
-// encryptTransciModule (cleartext)
+// encryptWithPadModule (cleartext)
 //
 // No TKMS WASM: the cleartext relayer returns cleartext-encoded pad shares.
 // Transport keys are the cleartext decrypt mock's keys, so a key pair
 // generated here is interchangeable with one from the cleartext decrypt module.
 //////////////////////////////////////////////////////////////////////////////
 
-export const encryptTransciModule: EncryptTransciModuleFactory = (runtime: FhevmRuntime) => {
+export const encryptWithPadModule: EncryptWithPadModuleFactory = (runtime: FhevmRuntime) => {
   return Object.freeze({
-    encryptTransci: Object.freeze({
+    encryptWithPad: Object.freeze({
       initTkmsModule: () => Promise.resolve(),
       getTkmsModuleInfo: () => {
         throw new Error('Not yet implemented');
