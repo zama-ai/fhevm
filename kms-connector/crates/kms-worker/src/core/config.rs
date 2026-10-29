@@ -1,7 +1,7 @@
-use alloy::{primitives::Address, transports::http::reqwest::Url};
+use alloy::primitives::Address;
 use connector_utils::{
     config::{
-        ContractConfig, DatabaseUrl, DeserializeConfig,
+        ContractConfig, DatabaseUrl, DeserializeConfig, RpcUrl,
         contract::{
             default_decryption_contract_config, default_gateway_config_contract_config,
             default_kms_generation_contract_config, default_protocol_config_contract_config,
@@ -9,7 +9,7 @@ use connector_utils::{
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size, deserialize_non_zero_duration, deserialize_url,
+        default_database_pool_size, deserialize_non_zero_duration,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
@@ -17,7 +17,7 @@ use connector_utils::{
 #[cfg(test)]
 use serde::Serialize;
 use serde::{Deserialize, Deserializer};
-use std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
+use std::{net::SocketAddr, num::NonZeroUsize, time::Duration};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -47,8 +47,7 @@ pub struct Config {
     pub events_batch_size: u8,
 
     /// The Gateway RPC endpoint.
-    #[serde(deserialize_with = "deserialize_url")]
-    pub gateway_url: Url,
+    pub gateway_url: RpcUrl,
     /// The Chain ID of the Gateway.
     pub gateway_chain_id: u64,
     /// The `Decryption` contract configuration (on Gateway).
@@ -59,8 +58,7 @@ pub struct Config {
     pub gateway_config_contract: ContractConfig,
 
     /// The Ethereum RPC endpoint.
-    #[serde(deserialize_with = "deserialize_url")]
-    pub ethereum_url: Url,
+    pub ethereum_url: RpcUrl,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
     /// The `KMSGeneration` contract configuration (on Ethereum).
@@ -186,8 +184,7 @@ pub struct Config {
 #[cfg_attr(test, derive(Serialize))]
 pub struct HostChainConfig {
     /// The Host Chain RPC endpoint.
-    #[serde(deserialize_with = "deserialize_url")]
-    pub url: Url,
+    pub url: RpcUrl,
     /// The Chain ID of the Host Chain.
     #[serde(alias = "chainId")]
     pub chain_id: u64,
@@ -322,16 +319,16 @@ impl Default for Config {
             db_fast_event_polling: default_db_fast_event_polling(),
             db_long_event_polling: default_db_long_event_polling(),
             events_batch_size: default_events_batch_size(),
-            gateway_url: Url::from_str("http://localhost:8545").unwrap(),
+            gateway_url: "http://localhost:8545".parse().unwrap(),
             gateway_chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
             gateway_config_contract: default_gateway_config_contract_config(),
-            ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
+            ethereum_url: "http://localhost:8545".parse().unwrap(),
             ethereum_chain_id: 11155111, // Sepolia
             kms_generation_contract: default_kms_generation_contract_config(),
             protocol_config_contract: default_protocol_config_contract_config(),
             host_chains: vec![HostChainConfig {
-                url: Url::from_str("http://localhost:8545").unwrap(),
+                url: "http://localhost:8545".parse().unwrap(),
                 chain_id: 12345,
                 acl_address: Address::default(),
             }],
@@ -480,14 +477,11 @@ mod tests {
 
         // Verify values
         assert_eq!(config.events_batch_size, 15);
-        assert_eq!(
-            config.gateway_url,
-            Url::from_str("http://localhost:9545").unwrap()
-        );
+        assert_eq!(config.gateway_url, "http://localhost:9545".parse().unwrap());
         assert_eq!(config.gateway_chain_id, 31888);
         assert_eq!(
             config.ethereum_url,
-            Url::from_str("http://localhost:9546").unwrap()
+            "http://localhost:9546".parse().unwrap()
         );
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(
@@ -509,7 +503,7 @@ mod tests {
         assert_eq!(
             config.host_chains,
             vec![HostChainConfig {
-                url: Url::from_str("http://localhost:9545").unwrap(),
+                url: "http://localhost:9545".parse().unwrap(),
                 chain_id: 31888,
                 acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
                     .unwrap()
@@ -617,7 +611,7 @@ mod tests {
         assert_eq!(
             config.host_chains,
             vec![HostChainConfig {
-                url: Url::from_str("http://localhost:9545").unwrap(),
+                url: "http://localhost:9545".parse().unwrap(),
                 chain_id: 31888,
                 acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
                     .unwrap()

@@ -1,5 +1,5 @@
 use crate::{
-    config::{DatabaseUrl, KmsWallet},
+    config::{DatabaseUrl, KmsWallet, RpcUrl},
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
 };
 use alloy::{
@@ -95,7 +95,7 @@ struct RpcCallBounds {
 
 /// Tries to establish the connection with a RPC node.
 pub async fn connect_to_rpc_node(
-    rpc_node_url: Url,
+    rpc_node_url: RpcUrl,
     chain_id: u64,
 ) -> anyhow::Result<DefaultProvider> {
     connect_to_rpc_node_inner(rpc_node_url, None, || {
@@ -107,7 +107,7 @@ pub async fn connect_to_rpc_node(
 /// Tries to establish the connection with a RPC node, bounding the duration of each call and, if
 /// `max_concurrent_calls` is set, the calls it may have in flight.
 pub async fn connect_to_rpc_node_with_bounds(
-    rpc_node_url: Url,
+    rpc_node_url: RpcUrl,
     chain_id: u64,
     max_concurrent_calls: Option<NonZeroUsize>,
     call_timeout: Duration,
@@ -124,7 +124,7 @@ pub async fn connect_to_rpc_node_with_bounds(
 
 /// Tries to establish the connection with a RPC node, with a `WalletFiller`.
 pub async fn connect_to_rpc_node_with_wallet(
-    rpc_node_url: Url,
+    rpc_node_url: RpcUrl,
     chain_id: u64,
     wallet: KmsWallet,
 ) -> anyhow::Result<WalletProvider> {
@@ -157,7 +157,7 @@ fn bounded_rpc_client<T: IntoBoxTransport>(
 
 /// Tries to establish the connection with a RPC node.
 async fn connect_to_rpc_node_inner<L, F>(
-    rpc_node_url: Url,
+    rpc_node_url: RpcUrl,
     bounds: Option<RpcCallBounds>,
     provider_builder_new: impl Fn() -> ProviderBuilder<L, F>,
 ) -> anyhow::Result<F::Provider>
@@ -178,12 +178,12 @@ where
                 .timeout(bounds.call_timeout)
                 .build()
                 .map_err(|e| anyhow!("Failed to create the RPC HTTP client: {e}"))?;
-            Http::with_client(http_client, rpc_node_url.clone())
+            Http::with_client(http_client, rpc_node_url.as_url().clone())
         }
-        None => Http::new(rpc_node_url.clone()),
+        None => Http::new(rpc_node_url.as_url().clone()),
     };
     let is_local = transport.guess_local();
-    let url_secrets = UrlSecrets::new(&rpc_node_url);
+    let url_secrets = UrlSecrets::new(rpc_node_url.as_url());
     let transport = ServiceBuilder::new()
         .map_future(move |call| redact_errors(call, url_secrets.clone()))
         .service(transport);
@@ -193,10 +193,7 @@ where
     };
 
     let provider = provider_builder_new().connect_client(client);
-    info!(
-        "Connected to RPC node successfully ({})",
-        rpc_node_url.host_str().unwrap_or("unexpected URL format")
-    );
+    info!("Connected to RPC node successfully ({rpc_node_url})");
 
     Ok(provider)
 }
@@ -460,7 +457,7 @@ mod tests {
             let (url, accept_loop) = black_hole_server().await;
             let url = Url::parse(&format!("{url}/v2/{API_KEY}")).unwrap();
             let provider =
-                connect_to_rpc_node_with_bounds(url, 1, max_concurrent_calls, CALL_TIMEOUT)
+                connect_to_rpc_node_with_bounds(url.into(), 1, max_concurrent_calls, CALL_TIMEOUT)
                     .await
                     .expect("the bounded provider should have been built");
 
@@ -505,7 +502,7 @@ mod tests {
         drop(listener);
 
         let url = Url::parse(&format!("http://{address}/v2/{API_KEY}")).unwrap();
-        let provider = connect_to_rpc_node(url, 1)
+        let provider = connect_to_rpc_node(url.into(), 1)
             .await
             .expect("the provider should have been built");
 
@@ -546,7 +543,7 @@ mod tests {
         for (status, body) in cases {
             let (url, server) = answering_server(status, body).await;
             let url = Url::parse(&format!("{url}/v2/{API_KEY}")).unwrap();
-            let provider = connect_to_rpc_node(url, 1).await.unwrap();
+            let provider = connect_to_rpc_node(url.into(), 1).await.unwrap();
 
             let err = provider.get_block_number().await.unwrap_err();
             let (display, debug) = (format!("{err}"), format!("{err:?}"));
@@ -567,7 +564,7 @@ mod tests {
         );
         let (url, server) = answering_server("200 OK", body).await;
         let url = Url::parse(&format!("{url}/v2/{API_KEY}/c379")).unwrap();
-        let provider = connect_to_rpc_node(url, 1).await.unwrap();
+        let provider = connect_to_rpc_node(url.into(), 1).await.unwrap();
 
         let err = provider.get_block_number().await.unwrap_err();
         let error_resp = err.as_error_resp().expect("a JSON-RPC error response");

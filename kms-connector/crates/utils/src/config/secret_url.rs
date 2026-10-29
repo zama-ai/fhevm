@@ -1,9 +1,9 @@
 use crate::conn::REDACTED;
 use alloy::transports::http::reqwest::Url;
-use serde::Deserialize;
 #[cfg(debug_assertions)]
 use serde::Serialize;
-use std::fmt;
+use serde::{Deserialize, Deserializer};
+use std::{fmt, str::FromStr};
 
 /// A Postgres connection URL, which holds the DB password.
 ///
@@ -58,6 +58,81 @@ impl fmt::Debug for DatabaseUrl {
 impl From<&str> for DatabaseUrl {
     fn from(value: &str) -> Self {
         Self(value.to_string())
+    }
+}
+
+/// A RPC node URL. Some providers put the API key in its userinfo, path or query.
+///
+/// The [`Display`](fmt::Display) and [`Debug`] implementations print the scheme, host and port,
+/// and `<redacted>` in place of each other part the URL has, e.g.
+/// `https://<redacted>@rpc.example.com/<redacted>?<redacted>`. A malformed URL is rejected at
+/// deserialization without being echoed in the error.
+#[derive(Clone, PartialEq)]
+#[cfg_attr(debug_assertions, derive(Serialize), serde(transparent))]
+pub struct RpcUrl(Url);
+
+impl RpcUrl {
+    /// Returns the URL with its secrets, to connect to the node.
+    pub fn as_url(&self) -> &Url {
+        &self.0
+    }
+}
+
+impl fmt::Display for RpcUrl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let url = &self.0;
+        let Some(host) = url.host_str() else {
+            return f.write_str(REDACTED);
+        };
+        write!(f, "{}://", url.scheme())?;
+        if !url.username().is_empty() || url.password().is_some() {
+            write!(f, "{REDACTED}@")?;
+        }
+        f.write_str(host)?;
+        if let Some(port) = url.port() {
+            write!(f, ":{port}")?;
+        }
+        f.write_str("/")?;
+        if !matches!(url.path(), "" | "/") {
+            f.write_str(REDACTED)?;
+        }
+        if url.query().is_some() {
+            write!(f, "?{REDACTED}")?;
+        }
+        if url.fragment().is_some() {
+            write!(f, "#{REDACTED}")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Debug for RpcUrl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("RpcUrl")
+            .field(&format_args!("{self}"))
+            .finish()
+    }
+}
+
+impl From<Url> for RpcUrl {
+    fn from(value: Url) -> Self {
+        Self(value)
+    }
+}
+
+impl FromStr for RpcUrl {
+    type Err = <Url as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Url::parse(s).map(Self)
+    }
+}
+
+impl<'de> Deserialize<'de> for RpcUrl {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(|e| serde::de::Error::custom(format!("invalid URL: {e}")))
     }
 }
 
@@ -119,5 +194,47 @@ mod tests {
             db_url.as_str(),
             "postgres://user:secret@db/kms?password=secret"
         );
+    }
+
+    #[test]
+    fn rpc_url_is_redacted() {
+        let redacted = |rpc_url: &str| rpc_url.parse::<RpcUrl>().unwrap().to_string();
+        assert_eq!(redacted("http://localhost:8545"), "http://localhost:8545/");
+        assert_eq!(
+            redacted("https://user:secret@rpc.example.com/v2/secret?key=secret#secret"),
+            "https://<redacted>@rpc.example.com/<redacted>?<redacted>#<redacted>"
+        );
+        assert_eq!(
+            redacted("https://:secret@rpc.example.com"),
+            "https://<redacted>@rpc.example.com/"
+        );
+        assert_eq!(
+            redacted("https://rpc.example.com:8443/secret/"),
+            "https://rpc.example.com:8443/<redacted>"
+        );
+        assert_eq!(
+            redacted("wss://[::1]/?apikey=secret"),
+            "wss://[::1]/?<redacted>"
+        );
+        // No host to keep.
+        assert_eq!(redacted("unix:/secret"), "<redacted>");
+    }
+
+    #[test]
+    fn rpc_url_debug_is_redacted() {
+        let rpc_url: RpcUrl = "https://rpc.example.com/v2/secret".parse().unwrap();
+        assert_eq!(
+            format!("{rpc_url:?}"),
+            "RpcUrl(https://rpc.example.com/<redacted>)"
+        );
+        assert_eq!(rpc_url.as_url().path(), "/v2/secret");
+    }
+
+    #[test]
+    fn invalid_rpc_url_is_not_echoed() {
+        let err = serde_json::from_str::<RpcUrl>(r#""rpc.example.com/v2/secret""#).unwrap_err();
+        let err = err.to_string();
+        assert!(err.contains("invalid URL"), "{err}");
+        assert!(!err.contains("secret"), "{err}");
     }
 }

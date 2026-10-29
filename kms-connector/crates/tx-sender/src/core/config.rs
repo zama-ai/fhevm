@@ -1,9 +1,8 @@
-use alloy::transports::http::reqwest::Url;
 #[cfg(test)]
 use connector_utils::config::serialize_pg_interval;
 use connector_utils::{
     config::{
-        AwsKmsConfig, ContractConfig, DatabaseUrl, DeserializeConfig, Error, KmsWallet,
+        AwsKmsConfig, ContractConfig, DatabaseUrl, DeserializeConfig, Error, KmsWallet, RpcUrl,
         TestingPrivateKey,
         contract::{
             default_decryption_contract_config, default_kms_generation_contract_config,
@@ -12,7 +11,6 @@ use connector_utils::{
             deserialize_protocol_config_contract_config,
         },
         default_database_pool_size, deserialize_non_zero_duration, deserialize_pg_interval,
-        deserialize_url,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
@@ -21,7 +19,7 @@ use connector_utils::{
 use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use sqlx::postgres::types::PgInterval;
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 /// Configuration of the `TransactionSender`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -41,8 +39,7 @@ pub struct Config {
     pub database_polling_timeout: Duration,
 
     /// The Gateway RPC endpoint.
-    #[serde(deserialize_with = "deserialize_url")]
-    pub gateway_url: Url,
+    pub gateway_url: RpcUrl,
     /// The Chain ID of the Gateway.
     pub gateway_chain_id: u64,
     /// The `Decryption` contract configuration (on Gateway).
@@ -50,8 +47,7 @@ pub struct Config {
     pub decryption_contract: ContractConfig,
 
     /// The Ethereum RPC endpoint.
-    #[serde(deserialize_with = "deserialize_url")]
-    pub ethereum_url: Url,
+    pub ethereum_url: RpcUrl,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
     /// The number of confirmations required for Ethereum transactions to be considered confirmed.
@@ -249,10 +245,10 @@ impl Default for Config {
             database_url: "postgres://postgres:postgres@localhost/kms-connector".into(),
             database_pool_size: default_database_pool_size(),
             database_polling_timeout: default_database_polling_timeout(),
-            gateway_url: Url::from_str("http://localhost:8545").unwrap(),
+            gateway_url: "http://localhost:8545".parse().unwrap(),
             gateway_chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
-            ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
+            ethereum_url: "http://localhost:8545".parse().unwrap(),
             ethereum_chain_id: 11155111, // Sepolia
             ethereum_tx_required_confirmations: default_ethereum_tx_required_confirmations(),
             ethereum_tx_get_receipt_timeout: default_ethereum_tx_get_receipt_timeout(),
@@ -370,14 +366,11 @@ mod tests {
         let config = Config::from_env_and_file::<&str>(None).unwrap();
 
         // Verify values
-        assert_eq!(
-            config.gateway_url,
-            Url::from_str("http://localhost:9545").unwrap()
-        );
+        assert_eq!(config.gateway_url, "http://localhost:9545".parse().unwrap());
         assert_eq!(config.gateway_chain_id, 31888);
         assert_eq!(
             config.ethereum_url,
-            Url::from_str("http://localhost:9546").unwrap()
+            "http://localhost:9546".parse().unwrap()
         );
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(config.ethereum_tx_required_confirmations, 32);

@@ -42,7 +42,7 @@ async fn traces_of_a_refused_call(filters: Box<dyn Layer<Registry> + Send + Sync
         .local_addr()
         .unwrap();
     let url = Url::parse(&format!("http://{address}/v2/{API_KEY}")).unwrap();
-    let provider = connect_to_rpc_node(url, 1).await.unwrap();
+    let provider = connect_to_rpc_node(url.into(), 1).await.unwrap();
     provider.get_block_number().await.unwrap_err();
 
     String::from_utf8(traces.0.lock().unwrap().clone()).unwrap()

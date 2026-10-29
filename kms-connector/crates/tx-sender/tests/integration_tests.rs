@@ -474,7 +474,7 @@ async fn start_test_tx_sender(
         gas_multiplier_percent: 130,
     };
     let gw_provider = connect_to_rpc_node_with_wallet(
-        test_instance.anvil_http_endpoint(),
+        test_instance.anvil_http_endpoint().into(),
         *CHAIN_ID as u64,
         KmsWallet::from_private_key_str(DEPLOYER_PRIVATE_KEY, Some(*CHAIN_ID as u64))?,
     )
@@ -496,7 +496,7 @@ async fn start_test_tx_sender(
     };
 
     let eth_provider = connect_to_rpc_node_with_wallet(
-        test_instance.anvil_http_endpoint(),
+        test_instance.anvil_http_endpoint().into(),
         *CHAIN_ID as u64,
         KmsWallet::from_private_key_str(DEPLOYER_PRIVATE_KEY, Some(*CHAIN_ID as u64))?,
     )

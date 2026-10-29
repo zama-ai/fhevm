@@ -115,7 +115,7 @@ where
 
         let mut head_tracker = HeadTracker::new(
             ChainName::Gateway,
-            &self.config.gateway_url,
+            self.config.gateway_url.as_url(),
             self.config.gateway_stale_head_threshold,
         );
         let mut ticker = tokio::time::interval(poll_interval);

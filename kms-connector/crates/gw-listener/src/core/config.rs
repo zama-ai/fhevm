@@ -1,14 +1,13 @@
-use alloy::transports::http::reqwest::Url;
 use connector_utils::{
     config::{
-        ContractConfig, DatabaseUrl, DeserializeConfig,
+        ContractConfig, DatabaseUrl, DeserializeConfig, RpcUrl,
         contract::{
             default_decryption_contract_config, default_kms_generation_contract_config,
             default_protocol_config_contract_config, deserialize_decryption_contract_config,
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size, deserialize_non_zero_duration, deserialize_url,
+        default_database_pool_size, deserialize_non_zero_duration,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
@@ -16,7 +15,7 @@ use connector_utils::{
 use serde::Deserialize;
 #[cfg(test)]
 use serde::Serialize;
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 /// Configuration of the `GatewayListener`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -29,8 +28,7 @@ pub struct Config {
     pub database_pool_size: u32,
 
     /// The Gateway RPC endpoint.
-    #[serde(deserialize_with = "deserialize_url")]
-    pub gateway_url: Url,
+    pub gateway_url: RpcUrl,
     /// The Chain ID of the Gateway.
     pub gateway_chain_id: u64,
     /// The `Decryption` contract configuration.
@@ -44,8 +42,7 @@ pub struct Config {
     pub protocol_config_contract: ContractConfig,
 
     /// The Ethereum RPC node endpoint.
-    #[serde(deserialize_with = "deserialize_url")]
-    pub ethereum_url: Url,
+    pub ethereum_url: RpcUrl,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
 
@@ -162,9 +159,9 @@ impl Default for Config {
         Self {
             database_url: "postgres://postgres:postgres@localhost/kms-connector".into(),
             database_pool_size: default_database_pool_size(),
-            gateway_url: Url::from_str("http://localhost:8545").unwrap(),
+            gateway_url: "http://localhost:8545".parse().unwrap(),
             gateway_chain_id: 54321,
-            ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
+            ethereum_url: "http://localhost:8545".parse().unwrap(),
             ethereum_chain_id: 11155111,
             decryption_contract: default_decryption_contract_config(),
             kms_generation_contract: default_kms_generation_contract_config(),
@@ -255,10 +252,7 @@ mod tests {
         let config = Config::from_env_and_file::<&str>(None).unwrap();
 
         // Verify values
-        assert_eq!(
-            config.gateway_url,
-            Url::from_str("http://localhost:9545").unwrap()
-        );
+        assert_eq!(config.gateway_url, "http://localhost:9545".parse().unwrap());
         assert_eq!(config.gateway_chain_id, 31888);
         assert_eq!(
             config.decryption_contract.address,
@@ -274,7 +268,7 @@ mod tests {
         );
         assert_eq!(
             config.ethereum_url,
-            Url::from_str("http://localhost:9545").unwrap()
+            "http://localhost:9545".parse().unwrap()
         );
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(config.service_name, "kms-connector-test");

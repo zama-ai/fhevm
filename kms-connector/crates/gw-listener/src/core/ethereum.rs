@@ -209,7 +209,7 @@ where
 
         let mut head_tracker = HeadTracker::new(
             ChainName::Ethereum,
-            &self.config.ethereum_url,
+            self.config.ethereum_url.as_url(),
             self.config.ethereum_stale_head_threshold,
         );
         let mut ticker = tokio::time::interval(self.config.key_management_polling);
