@@ -7,6 +7,7 @@ mod wallet;
 pub use contract::ContractConfig;
 pub use deserialize::DeserializeConfig;
 pub use error::{Error, Result};
+pub(crate) use secret_url::REDACTED;
 pub use secret_url::{DatabaseUrl, RpcUrl};
 pub use wallet::{AwsKmsConfig, KmsWallet, TestingPrivateKey};
 

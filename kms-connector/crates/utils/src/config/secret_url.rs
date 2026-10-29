@@ -1,16 +1,19 @@
-use crate::conn::REDACTED;
 use alloy::transports::http::reqwest::Url;
 #[cfg(debug_assertions)]
 use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use std::{fmt, str::FromStr};
 
+/// What replaces a secret in redacted text.
+pub(crate) const REDACTED: &str = "<redacted>";
+
 /// A Postgres connection URL, which holds the DB password.
 ///
 /// The [`Display`](fmt::Display) and [`Debug`] implementations print the URL without its
-/// password, its query parameters, which may hold one too, and its fragment. They print
-/// `<redacted>` for anything but a `postgres://` URL, e.g. a libpq key/value connection string,
-/// which may hold a password anywhere, and for a URL whose userinfo was misread.
+/// password and its fragment, and with `<redacted>` in place of its query parameters, which may
+/// hold a password too, or override the host, port, user or database. They print `<redacted>`
+/// for anything but a `postgres://` URL, e.g. a libpq key/value connection string, which may hold
+/// a password anywhere, and for a URL whose userinfo was misread.
 #[derive(Clone, Deserialize, PartialEq)]
 #[cfg_attr(debug_assertions, derive(Serialize))]
 #[serde(transparent)]
@@ -41,9 +44,14 @@ impl fmt::Display for DatabaseUrl {
         if !is_postgres || userinfo_misread || password_kept {
             return f.write_str(REDACTED);
         }
+        let has_query = url.query().is_some();
         url.set_query(None);
         url.set_fragment(None);
-        write!(f, "{url}")
+        write!(f, "{url}")?;
+        if has_query {
+            write!(f, "?{REDACTED}")?;
+        }
+        Ok(())
     }
 }
 
@@ -150,7 +158,7 @@ mod tests {
         // libpq also reads the password from the query parameters.
         assert_eq!(
             redacted("postgres://user@db/kms?sslmode=require&password=secret"),
-            "postgres://user@db/kms"
+            "postgres://user@db/kms?<redacted>"
         );
         assert_eq!(redacted("postgres://db/kms#frag"), "postgres://db/kms");
         assert_eq!(
@@ -160,7 +168,7 @@ mod tests {
         // Unix socket: no host in the URL.
         assert_eq!(
             redacted("postgres:///kms?host=/var/run/postgresql"),
-            "postgres:///kms"
+            "postgres:///kms?<redacted>"
         );
         // An unencoded `@` alone is read right: the last `@` of the authority ends the userinfo.
         assert_eq!(
@@ -189,7 +197,10 @@ mod tests {
     #[test]
     fn db_url_debug_is_redacted() {
         let db_url = DatabaseUrl::from("postgres://user:secret@db/kms?password=secret");
-        assert_eq!(format!("{db_url:?}"), "DatabaseUrl(postgres://user@db/kms)");
+        assert_eq!(
+            format!("{db_url:?}"),
+            "DatabaseUrl(postgres://user@db/kms?<redacted>)"
+        );
         assert_eq!(
             db_url.as_str(),
             "postgres://user:secret@db/kms?password=secret"

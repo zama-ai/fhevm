@@ -1,5 +1,5 @@
 use crate::{
-    config::{DatabaseUrl, KmsWallet, RpcUrl},
+    config::{DatabaseUrl, KmsWallet, REDACTED, RpcUrl},
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
 };
 use alloy::{
@@ -28,6 +28,7 @@ use percent_encoding::percent_decode_str;
 use serde_json::value::RawValue;
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
 use std::{
+    borrow::Cow,
     num::NonZeroUsize,
     sync::{Arc, Once},
     time::Duration,
@@ -198,11 +199,13 @@ where
     Ok(provider)
 }
 
-/// What replaces a secret in redacted text.
-pub(crate) const REDACTED: &str = "<redacted>";
+/// URL parts shorter than this are not taken for secrets, except the password. API keys are
+/// longer, while short parts such as `v2`, `eth` or `1` also occur as words of error messages and
+/// as JSON values.
+const MIN_SECRET_LEN: usize = 8;
 
 /// The parts of a RPC node URL that may hold an API key: the userinfo, the path segments and the
-/// query values, raw and percent-decoded.
+/// query values, raw and percent-decoded, except those shorter than [`MIN_SECRET_LEN`].
 ///
 /// They are replaced in the error messages and bodies the node sends back, in case it echoes the
 /// request URL.
@@ -212,38 +215,53 @@ struct UrlSecrets(Arc<[String]>);
 impl UrlSecrets {
     fn new(url: &Url) -> Self {
         // `Url` returns these parts percent-encoded.
-        let userinfo_and_path_segments = [url.username(), url.password().unwrap_or_default()]
-            .into_iter()
+        let userinfo_and_path_segments = std::iter::once(url.username())
             .chain(url.path_segments().into_iter().flatten())
-            .flat_map(|part| {
-                let decoded = percent_decode_str(part).decode_utf8().ok();
-                std::iter::once(part.to_string()).chain(decoded.map(|decoded| decoded.into_owned()))
-            });
-        let raw_query_values = url
+            .filter(|part| part.len() >= MIN_SECRET_LEN)
+            .chain(url.password())
+            .flat_map(|part| with_decoded(part, false));
+        let query_values = url
             .query()
             .into_iter()
             .flat_map(|query| query.split('&'))
-            .filter_map(|param| param.split_once('=').map(|(_, value)| value.to_string()));
-        let decoded_query_values = url.query_pairs().map(|(_, value)| value.into_owned());
+            // A parameter without `=` is a bare value, e.g. `?<key>`.
+            .map(|param| param.split_once('=').map_or(param, |(_, value)| value))
+            .filter(|value| value.len() >= MIN_SECRET_LEN)
+            .flat_map(|value| with_decoded(value, true));
         let mut secrets: Vec<String> = userinfo_and_path_segments
-            .chain(raw_query_values)
-            .chain(decoded_query_values)
+            .chain(query_values)
             .filter(|part| !part.is_empty())
             .collect();
-        // Longest first, so that a part containing another one is replaced as a whole.
-        secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
+        // Longest first, so that a part containing another one is replaced as a whole. Equal
+        // parts end up next to each other, for `dedup`.
+        secrets.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
         secrets.dedup();
         Self(secrets.into())
     }
 
     /// Replaces the secrets in `text` where they stand as whole tokens, i.e. not inside a longer
-    /// run of ASCII letters and digits. Short parts such as a `v2` path segment are then replaced
-    /// without touching other words, or hex data such as the revert data of a JSON-RPC error.
+    /// run of ASCII letters and digits, so that hex data such as the revert data of a JSON-RPC
+    /// error is left intact.
     fn redact(&self, text: &str) -> String {
         self.0
             .iter()
             .fold(text.to_string(), |text, secret| redact_token(&text, secret))
     }
+}
+
+/// Returns a percent-encoded URL `part` and its decoded form, if valid UTF-8. In a query
+/// (`in_query`), a `+` also decodes to a space.
+fn with_decoded(part: &str, in_query: bool) -> impl Iterator<Item = String> + use<> {
+    let encoded = if in_query {
+        Cow::Owned(part.replace('+', " "))
+    } else {
+        Cow::Borrowed(part)
+    };
+    let decoded = percent_decode_str(&encoded)
+        .decode_utf8()
+        .ok()
+        .map(Cow::into_owned);
+    std::iter::once(part.to_string()).chain(decoded)
 }
 
 /// Replaces each occurrence of `token` in `text` that is not inside a longer run of ASCII letters
@@ -317,7 +335,8 @@ fn redact_failure(mut response: Response, url_secrets: &UrlSecrets) -> Response 
 /// Redacts the message and data of a JSON-RPC error.
 ///
 /// The data is only rewritten if it holds a secret, so revert data is left as is. If the
-/// redacted data is no longer valid JSON, it is dropped rather than kept with the secret.
+/// redacted data is no longer valid JSON, it is dropped with a warning rather than kept with the
+/// secret.
 fn redact_error_payload(payload: &mut ErrorPayload, url_secrets: &UrlSecrets) {
     let message = url_secrets.redact(&payload.message);
     if message != payload.message {
@@ -326,7 +345,14 @@ fn redact_error_payload(payload: &mut ErrorPayload, url_secrets: &UrlSecrets) {
     if let Some(data) = &payload.data {
         let redacted = url_secrets.redact(data.get());
         if redacted != data.get() {
-            payload.data = RawValue::from_string(redacted).ok();
+            payload.data = RawValue::from_string(redacted)
+                .inspect_err(|e| {
+                    warn!(
+                        "Dropped the data of a JSON-RPC error, no longer valid JSON once the RPC \
+                         URL is redacted: {e}"
+                    )
+                })
+                .ok();
         }
     }
 }
@@ -563,7 +589,7 @@ mod tests {
             r#"{{"jsonrpc":"2.0","id":0,"error":{{"code":3,"message":"execution reverted: {API_KEY}","data":"{revert_data}"}}}}"#
         );
         let (url, server) = answering_server("200 OK", body).await;
-        let url = Url::parse(&format!("{url}/v2/{API_KEY}/c379")).unwrap();
+        let url = Url::parse(&format!("{url}/v2/{API_KEY}/08c379a0")).unwrap();
         let provider = connect_to_rpc_node(url.into(), 1).await.unwrap();
 
         let err = provider.get_block_number().await.unwrap_err();
@@ -579,35 +605,64 @@ mod tests {
 
     #[test]
     fn url_secrets_are_redacted_as_whole_tokens() {
-        let url = Url::parse("https://user:pw@rpc.example.com/v2/k3y?apikey=a%2Bb").unwrap();
+        let url =
+            Url::parse("https://user:pw@rpc.example.com/v2/k3yk3yk3y?apikey=a%2Bbcdefgh").unwrap();
         let secrets = UrlSecrets::new(&url);
         let redacted = |text| secrets.redact(text);
 
         assert_eq!(
-            redacted("Cannot POST /v2/k3y?apikey=a%2Bb"),
-            "Cannot POST /<redacted>/<redacted>?apikey=<redacted>"
+            redacted("Cannot POST /v2/k3yk3yk3y?apikey=a%2Bbcdefgh"),
+            "Cannot POST /v2/<redacted>?apikey=<redacted>"
         );
-        // The query value is also redacted percent-decoded, and the userinfo as well.
+        // The query value is also redacted percent-decoded, and the password as well.
         assert_eq!(
-            redacted("key a+b of user:pw"),
-            "key <redacted> of <redacted>:<redacted>"
+            redacted("key a+bcdefgh of user:pw"),
+            "key <redacted> of user:<redacted>"
         );
         // Not inside longer words or hex data.
-        assert_eq!(redacted("v20 k3yz 0xk3y"), "v20 k3yz 0xk3y");
+        assert_eq!(redacted("k3yk3yk3yz 0xk3yk3yk3y"), "k3yk3yk3yz 0xk3yk3yk3y");
         // But right after an escape, in JSON or percent-encoded text.
         assert_eq!(
-            redacted(r#""key:\nk3y" "key\u0020k3y" Cannot POST %2Fv2%2Fk3y"#),
-            r#""key:\n<redacted>" "key\u0020<redacted>" Cannot POST %2F<redacted>%2F<redacted>"#
+            redacted(r#""key:\nk3yk3yk3y" "key\u0020k3yk3yk3y" Cannot POST %2Fv2%2Fk3yk3yk3y"#),
+            r#""key:\n<redacted>" "key\u0020<redacted>" Cannot POST %2Fv2%2F<redacted>"#
         );
         // The userinfo and path segments are also redacted percent-decoded.
-        let url = Url::parse("https://us%2Ber:p%40ss@rpc.example.com/v2/k%2B3y").unwrap();
+        let url = Url::parse("https://us%2Bername:p%40ss@rpc.example.com/v2/k%2B3yk3yk3y").unwrap();
         assert_eq!(
-            UrlSecrets::new(&url).redact("key k+3y of us+er:p@ss"),
+            UrlSecrets::new(&url).redact("key k+3yk3yk3y of us+ername:p@ss"),
             "key <redacted> of <redacted>:<redacted>"
         );
         // An occurrence that is not a token does not hide a following one that is.
-        let secrets = UrlSecrets::new(&Url::parse("https://rpc.example.com/ab-ab").unwrap());
-        assert_eq!(secrets.redact("xab-ab-ab"), "xab-<redacted>");
+        let secrets = UrlSecrets::new(&Url::parse("https://rpc.example.com/abcd-abcd").unwrap());
+        assert_eq!(secrets.redact("xabcd-abcd-abcd"), "xabcd-<redacted>");
+    }
+
+    #[test]
+    fn short_url_parts_are_not_secrets() {
+        let url = Url::parse("https://rpc.ankr.com/eth/k3yk3yk3y?chain=1").unwrap();
+        assert_eq!(
+            UrlSecrets::new(&url).redact("the method eth_call does not exist on chain 1"),
+            "the method eth_call does not exist on chain 1"
+        );
+    }
+
+    #[test]
+    fn bare_query_values_are_secrets() {
+        let url = Url::parse("https://rpc.example.com/?k3yk3yk3y&x=1").unwrap();
+        assert_eq!(
+            UrlSecrets::new(&url).redact("Cannot POST /?k3yk3yk3y&x=1"),
+            "Cannot POST /?<redacted>&x=1"
+        );
+    }
+
+    #[test]
+    fn url_secrets_are_deduplicated() {
+        let url =
+            Url::parse("https://rpc.example.com/?a=secretkey1&b=secretkey2&c=secretkey1").unwrap();
+        assert_eq!(
+            UrlSecrets::new(&url).0.as_ref(),
+            ["secretkey1", "secretkey2"]
+        );
     }
 
     /// Starts a server answering every request with `status` and `body`.

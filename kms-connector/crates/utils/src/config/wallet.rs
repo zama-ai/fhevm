@@ -1,4 +1,4 @@
-use crate::config::{Error, Result};
+use crate::config::{Error, REDACTED, Result};
 use alloy::{
     hex::decode,
     network::{EthereumWallet, IntoWallet},
@@ -45,7 +45,7 @@ impl TestingPrivateKey {
 
 impl std::fmt::Debug for TestingPrivateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("PrivateKey(<redacted>)")
+        write!(f, "PrivateKey({REDACTED})")
     }
 }
 
