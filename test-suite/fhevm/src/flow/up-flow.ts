@@ -1319,13 +1319,18 @@ export const applyBootstrap = (
   };
 };
 
-const logBootstrap = (state: Pick<State, "bootstrapPending" | "versions">) => {
-  if (state.bootstrapPending) {
-    console.log(
-      `[bootstrap] contracts, KMS core/connector and listener-core boot at ${state.versions.env.HOST_VERSION} ` +
-        `(core ${state.versions.env.CORE_VERSION}); upgraded to the bundle once the operators ingest the keys, then Green starts`,
-    );
+const logBootstrap = (state: Pick<State, "bootstrapPending" | "versions" | "scenario">) => {
+  if (!state.bootstrapPending) {
+    return;
   }
+  const deferred = state.scenario.kind === "blue-green" && state.scenario.bootstrap?.upgrade === "deferred";
+  console.log(
+    `[bootstrap] contracts, KMS core/connector, listener-core${deferred ? " and relayer" : ""} boot at ` +
+      `${state.versions.env.HOST_VERSION} (core ${state.versions.env.CORE_VERSION}); ` +
+      (deferred
+        ? "the test runs the upgrade steps and starts Green"
+        : "upgraded to the bundle once the operators ingest the keys, then Green starts"),
+  );
 };
 
 /** Builds a synthetic state object for dry-run previews. */
@@ -1364,7 +1369,7 @@ const bootstrapState = async (options: UpOptions) => {
   assertSupportedBundleScenario({ versions: boot.versions, overrides: boot.overrides, scenario });
   await assertSchemaCompatibility(resolved.bundle, options.overrides, scenario, options.allowSchemaMismatch);
   await ensureLockSnapshot(resolved.lockPath, resolved.bundle);
-  logBootstrap(boot);
+  logBootstrap({ ...boot, scenario });
   return {
     target: resolved.bundle.target,
     lockPath: resolved.lockPath,

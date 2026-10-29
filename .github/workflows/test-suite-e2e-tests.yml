@@ -370,6 +370,9 @@ jobs:
 
       - name: Selected e2e suite
         working-directory: test-suite/fhevm
+        env:
+          # Upgrade profiles build the connector mid-test, like `--build` at boot.
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }} # zizmor: ignore[secrets-outside-env] Same secret and trust boundary as the boot step of this job: dispatches, callers, and same-repo PRs with the e2e label.
         run: |
           args=("$TEST_PROFILE")
           ./fhevm-cli test "${args[@]}"
