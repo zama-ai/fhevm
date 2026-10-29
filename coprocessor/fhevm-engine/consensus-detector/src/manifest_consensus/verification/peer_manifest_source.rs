@@ -317,19 +317,14 @@ fn internal(message: impl Into<String>) -> ExecutionError {
     ExecutionError::InternalError(message.into())
 }
 
-/// Longest run of consecutive revisions the source accepts for one block. The
-/// search is logarithmic, so this bound costs requests only when a block really
-/// carries that many revisions.
-const MAX_HTTP_REVISION_RUN: u64 = 1024;
-
 /// A probe reads no body, and the listing runs inside the caller's own budget,
 /// so one slow peer must not consume it.
 const MANIFEST_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The search makes one probe at a time, so a slow peer can spend more than the
+/// The probes run one after the other, so a slow peer can spend more than the
 /// caller allows the whole listing. Deriving this from the caller's own bound
-/// keeps the search stopping first, with an error that names the budget,
-/// instead of the caller cancelling mid-search.
+/// keeps the listing stopping first, with an error that names the budget,
+/// instead of the caller cancelling mid-probe.
 const MANIFEST_LIST_BUDGET: Duration =
     super::peer_downloader::PEER_LIST_TIMEOUT.saturating_sub(Duration::from_secs(5));
 
@@ -424,7 +419,7 @@ impl HttpPeerManifestSource {
     ) -> Result<bool, ExecutionError> {
         let spent = || {
             ExecutionError::S3TransientError(format!(
-                "peer manifest revision search from {} ran past {MANIFEST_LIST_BUDGET:?}",
+                "peer manifest revision probe of {} ran past {MANIFEST_LIST_BUDGET:?}",
                 request.s3_bucket_url
             ))
         };
@@ -439,72 +434,28 @@ impl HttpPeerManifestSource {
             .map_err(|_| spent())?
     }
 
-    /// The first revision at or above `first` that the peer does not hold.
+    /// Whether the peer holds `first`, once `first + 1` is proved absent.
     ///
-    /// The revisions of one block are consecutive, so the held set is a run and
-    /// only its end has to be found. The step doubles until it passes the end,
-    /// then the remaining interval halves. A block with one revision costs two
-    /// probes, and a run of `n` costs `O(log n)`.
-    async fn run_end(
+    /// A block carries one revision today. A second one would be invisible to
+    /// this reader, and one above an absent `first` would pin the peer to a
+    /// stale manifest for good. The probe past `first` refuses both. It reads
+    /// that one revision only, so a peer that skips a revision still passes.
+    async fn single_revision(
         &self,
         request: &PeerDownloadRequest,
         prefix: &str,
         first: u64,
-    ) -> Result<u64, ExecutionError> {
+    ) -> Result<bool, ExecutionError> {
         let deadline = Instant::now() + MANIFEST_LIST_BUDGET;
-        let end = self
-            .run_end_within(deadline, request, prefix, first)
-            .await?;
-        // Probing finds the end of a run, so a hole would hide every revision
-        // above it, and the archived floor could never pass the hole. One probe
-        // past the end turns that silence into a fault.
-        if self
-            .probe_within(deadline, request, prefix, end.saturating_add(1))
-            .await?
-        {
+        let held = self.probe_within(deadline, request, prefix, first).await?;
+        let above = first.saturating_add(1);
+        if self.probe_within(deadline, request, prefix, above).await? {
             return Err(ExecutionError::InternalError(format!(
-                "peer manifest revisions from {} skip revision {end}",
+                "peer manifests from {} hold revision {above}, which this reader does not read",
                 request.s3_bucket_url
             )));
         }
-        Ok(end)
-    }
-
-    async fn run_end_within(
-        &self,
-        deadline: Instant,
-        request: &PeerDownloadRequest,
-        prefix: &str,
-        first: u64,
-    ) -> Result<u64, ExecutionError> {
-        if !self.probe_within(deadline, request, prefix, first).await? {
-            return Ok(first);
-        }
-        let mut step = 1u64;
-        let (present, absent) = loop {
-            if step > MAX_HTTP_REVISION_RUN {
-                return Err(ExecutionError::S3TransientError(format!(
-                    "peer manifest revisions from {} exceed {MAX_HTTP_REVISION_RUN} consecutive revisions above {first}",
-                    request.s3_bucket_url
-                )));
-            }
-            let probe = first.saturating_add(step);
-            if !self.probe_within(deadline, request, prefix, probe).await? {
-                break (first.saturating_add(step / 2), probe);
-            }
-            step = step.saturating_mul(2);
-        };
-        // `present` is held and `absent` is not, so the end lies between them.
-        let (mut present, mut absent) = (present, absent);
-        while absent - present > 1 {
-            let middle = present + (absent - present) / 2;
-            if self.probe_within(deadline, request, prefix, middle).await? {
-                present = middle;
-            } else {
-                absent = middle;
-            }
-        }
-        Ok(absent)
+        Ok(held)
     }
 
     async fn get_object(&self, url: &str, object_key: &str) -> Result<Vec<u8>, ExecutionError> {
@@ -542,16 +493,14 @@ impl PeerManifestSource for HttpPeerManifestSource {
         let first = request
             .highest_archived_revision
             .map_or(0, |archived| archived.saturating_add(1));
-        let end = self.run_end(request, &prefix, first).await?;
-        // Newest first, which is the order the caller falls back through.
-        let mut keys = Vec::new();
-        for revision in (first..end).rev() {
-            let object_key = format!("{prefix}{revision}");
-            if request.considers_object(&object_key, revision) {
-                keys.push(object_key);
-            }
+        if !self.single_revision(request, &prefix, first).await? {
+            return Ok(Vec::new());
         }
-        Ok(keys)
+        let object_key = format!("{prefix}{first}");
+        if !request.considers_object(&object_key, first) {
+            return Ok(Vec::new());
+        }
+        Ok(vec![object_key])
     }
 
     async fn fetch_manifest(
@@ -723,16 +672,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn one_revision_costs_three_probes() {
+    async fn one_revision_costs_two_probes() {
         let origin = PeerOrigin::start(1, StatusCode::OK).await;
         let source = HttpPeerManifestSource::new(reqwest::Client::new());
         let keys = source.list_manifests(&origin.request(None)).await.unwrap();
 
         assert_eq!(revisions_of(&keys), vec![0]);
-        // One probe finds revision 0, the next ends the set, the third proves
-        // the set has no hole. A listing that walked the whole budget would
-        // cost far more against every peer.
-        assert_eq!(origin.probes.load(Ordering::SeqCst), 3);
+        // One probe finds revision 0 and the next proves the peer holds no
+        // more. A listing that walked the whole budget would cost far more
+        // against every peer.
+        assert_eq!(origin.probes.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]
@@ -746,45 +695,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_hole_in_the_revision_sequence_is_an_error() {
-        // Revision 1 is missing, so the run ends at 1 while revision 2 is still
-        // held. Reporting revision 0 would pin this peer to a stale manifest
-        // for good, because the archived floor can never pass the hole.
-        let origin = PeerOrigin::holding(HashSet::from([0, 2]), StatusCode::OK).await;
-        let source = HttpPeerManifestSource::new(reqwest::Client::new());
-        let error = source
-            .list_manifests(&origin.request(None))
-            .await
-            .expect_err("a hole must not read as the end of the set");
+    async fn a_revision_above_the_first_is_an_error() {
+        // A second revision would go unread, and a revision above an absent
+        // first would pin this peer to a stale manifest for good. Both must
+        // name themselves instead of reading as an empty set.
+        for held in [HashSet::from([0, 1]), HashSet::from([1])] {
+            let origin = PeerOrigin::holding(held, StatusCode::OK).await;
+            let source = HttpPeerManifestSource::new(reqwest::Client::new());
+            let error = source
+                .list_manifests(&origin.request(None))
+                .await
+                .expect_err("a revision above the first must not be ignored");
 
-        assert!(matches!(error, ExecutionError::InternalError(_)), "{error}");
+            assert!(matches!(error, ExecutionError::InternalError(_)), "{error}");
+        }
     }
 
     #[tokio::test]
-    async fn a_long_run_is_found_in_logarithmic_probes() {
-        let origin = PeerOrigin::start(100, StatusCode::OK).await;
-        let source = HttpPeerManifestSource::new(reqwest::Client::new());
-        let keys = source.list_manifests(&origin.request(None)).await.unwrap();
-
-        assert_eq!(revisions_of(&keys).first(), Some(&99));
-        assert_eq!(keys.len(), 100);
-        assert!(
-            origin.probes.load(Ordering::SeqCst) <= 16,
-            "{} probes for a run of 100",
-            origin.probes.load(Ordering::SeqCst)
-        );
-    }
-
-    #[tokio::test]
-    async fn the_archived_floor_bounds_the_run() {
-        let origin = PeerOrigin::start(5, StatusCode::OK).await;
+    async fn the_archived_floor_picks_the_revision_above_it() {
+        let origin = PeerOrigin::start(4, StatusCode::OK).await;
         let source = HttpPeerManifestSource::new(reqwest::Client::new());
         let keys = source
             .list_manifests(&origin.request(Some(2)))
             .await
             .unwrap();
 
-        assert_eq!(revisions_of(&keys), vec![4, 3]);
+        assert_eq!(revisions_of(&keys), vec![3]);
     }
 
     #[tokio::test]
