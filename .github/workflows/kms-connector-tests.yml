@@ -41,6 +41,8 @@ jobs:
             - kms-connector/connector-db/**
             - kms-connector/crates/**
             - kms-connector/Cargo.*
+            - kms-connector/.cargo/**
+            - .github/actions/kms-git-auth/**
             - gateway-contracts/rust_bindings/**
             - host-contracts/rust_bindings/**
           # Shared crates are tested on their own (`shared-crates-tests`): only check that the connector still
@@ -70,6 +72,11 @@ jobs:
           submodules: true
           token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
           persist-credentials: 'false'
+
+      - name: Authenticate zama-ai/kms git dependencies
+        uses: ./.github/actions/kms-git-auth
+        with:
+          token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
 
       - name: Setup Rust
         uses: ./.github/actions/setup_rust
@@ -105,6 +112,11 @@ jobs:
           submodules: true
           token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
           persist-credentials: 'false'
+
+      - name: Authenticate zama-ai/kms git dependencies
+        uses: ./.github/actions/kms-git-auth
+        with:
+          token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
 
       - name: Setup common environment variables
         env:
