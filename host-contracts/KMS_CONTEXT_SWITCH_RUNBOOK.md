@@ -304,7 +304,9 @@ host-contracts README. Use the mirror tasks for every rotation after that.
   task earlier than that and it still sees the pre-rotation state, stopping with
   `Replica … is already at context <id>, which is >= canonical's <id>`. That message means
   **"canonical's rotation is not finalized yet"**, not "nothing to do" — wait and re-run.
-  Pass `--block-number` to pin the read to a specific canonical height instead.
+  Pass `--block-number` to pin the read to a specific canonical height that is already finalized.
+  Heights above the latest finalized block are rejected; wait for finalization and re-run.
+  The tasks also re-fetch the selected block after reading and abort if its hash changed.
 - **No committee metadata to collect.** Unlike §4, there is no questionnaire and no
   `committee.env`: everything the replica needs is read back from canonical. Only two
   connection parameters are required (`--canonical-rpc-url`,
