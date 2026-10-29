@@ -325,7 +325,7 @@ describe("rollout runbook", () => {
         },
       });
       await receipt.start("rollout.ts");
-      await expect(receipt.record("upgrade-kms-node", "KMS node 2", { docker: true })).rejects.toThrow(
+      await expect(receipt.record("upgrade-kms-operator", "KMS operator 2", { docker: true })).rejects.toThrow(
         "Required Docker snapshot failed: daemon unavailable",
       );
 
