@@ -7,18 +7,12 @@ import type {
   GetTfheModuleInfoParameters,
   InitTfheModuleParameters,
   ParseTFHEProvenCompactCiphertextListParameters,
-  SerializeFheEncryptionCrsParameters,
-  SerializeFheEncryptionKeyParameters,
-  SerializeFheEncryptionPublicKeyParameters,
 } from '../types.js';
 import {
   buildWithProofPacked,
   deserializeFheEncryptionCrs,
   deserializeFheEncryptionPublicKey,
   parseTFHEProvenCompactCiphertextList,
-  serializeFheEncryptionCrs,
-  serializeFheEncryptionKey,
-  serializeFheEncryptionPublicKey,
 } from './api-p.js';
 import { getTfheModuleInfo, initTfheModule } from './init-p.js';
 
@@ -36,12 +30,6 @@ export const encryptModule: EncryptModuleFactory = (runtime: FhevmRuntime) => {
       parseTFHEProvenCompactCiphertextList: (args: ParseTFHEProvenCompactCiphertextListParameters) =>
         parseTFHEProvenCompactCiphertextList(runtime, args),
       buildWithProofPacked: (args: BuildWithProofPackedParameters) => buildWithProofPacked(runtime, args),
-      serializeFheEncryptionKey: (args: SerializeFheEncryptionKeyParameters) =>
-        serializeFheEncryptionKey(runtime, args),
-      serializeFheEncryptionPublicKey: (args: SerializeFheEncryptionPublicKeyParameters) =>
-        serializeFheEncryptionPublicKey(runtime, args),
-      serializeFheEncryptionCrs: (args: SerializeFheEncryptionCrsParameters) =>
-        serializeFheEncryptionCrs(runtime, args),
       deserializeFheEncryptionPublicKey: (args: DeserializeFheEncryptionPublicKeyParameters) =>
         deserializeFheEncryptionPublicKey(runtime, args),
       deserializeFheEncryptionCrs: (args: DeserializeFheEncryptionCrsParameters) =>
