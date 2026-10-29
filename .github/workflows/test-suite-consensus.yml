@@ -59,6 +59,8 @@ on:
           - byte-agreement
           - bridge
           - backlog
+          - FM-HOST-LONG-OFFLINE
+          - FM-HOST-RELATIVE-CATCHUP
           - object-integrity
           - host-rpc
           - ingestion-recovery
@@ -519,12 +521,14 @@ jobs:
       - name: Durable backlog and paginated host replay
         if: ${{ matrix.leg == 'backlog' }}
         working-directory: test-suite/fhevm
+        env:
+          SELECTED_CASES: ${{ join(matrix.cases, ' ') }}
         run: |
-          # Run both even if the first fails: a NOT_RUN second case would hide
-          # which of the two broke.
+          # Run every selected case even if an earlier one fails.
           status=0
-          ./scripts/run-failure-matrix.sh --case FM-HOST-LONG-OFFLINE || status=1
-          ./scripts/run-failure-matrix.sh --case FM-DURABLE-BACKLOG || status=1
+          for case_id in $SELECTED_CASES; do
+            ./scripts/run-failure-matrix.sh --case "$case_id" || status=1
+          done
           exit "$status"
 
       - name: Bridge dependency byte agreement
@@ -631,6 +635,7 @@ jobs:
           cp -r ../../.fhevm/runtime/object-integrity /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/artifact-recovery-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/host-rpc-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
+          cp -r ../../.fhevm/runtime/failure-matrix /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/broker-redelivery /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/storage-pressure-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/submission-partition /tmp/consensus-artifacts/ 2>/dev/null || true

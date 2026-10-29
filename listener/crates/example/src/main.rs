@@ -5,8 +5,8 @@
 //! the chain work; this binary is *only* a downstream — no RPC, no DB.
 //!
 //! Two cleanly separated subsets watch the same token:
-//!  - [`live_events`] — head-of-chain + historical catchup, driven by a
-//!    hand-built `FilterCommand` (the low-level control-plane style).
+//!  - [`live_events`] — head-of-chain + historical catchup, using atomic
+//!    contract registration through `register_contracts()`.
 //!    Log tags: `LIVE`, `LIVE-CATCHUP`.
 //!  - [`final_events`] — finalized-only + final catchup, driven by the
 //!    high-level contract API. Log tags: `FINAL`, `FINAL-CATCHUP`.

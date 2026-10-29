@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE host_consumer_catchups\n         SET status = 'DONE', request_pending = FALSE, owner_id = NULL, lease_until = NULL\n         WHERE id = $1 AND chain_id = $2 AND consumer_id = $3\n           AND status = 'ONGOING'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "af465b298ebdf9beb68ba8a43c8e27ccbb64628089456fad92cef9a28a313cd6"
+}
