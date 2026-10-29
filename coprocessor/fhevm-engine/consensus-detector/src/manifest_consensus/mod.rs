@@ -28,6 +28,7 @@ pub mod drift_injection;
 pub(crate) mod healing;
 pub(crate) mod lineage;
 pub(crate) mod manifest_archive;
+pub(crate) mod peer_http;
 pub(crate) mod publication;
 pub(crate) mod storage;
 pub(crate) mod verification;

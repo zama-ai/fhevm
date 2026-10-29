@@ -1,4 +1,8 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::HashSet,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use alloy_primitives::{Address, B256, U256};
 use aws_sdk_s3::Client;
@@ -6,6 +10,7 @@ use block_manifest::{ManifestVersion, MAX_MANIFEST_BYTES};
 use tracing::{debug, info};
 use url::Url;
 
+use crate::manifest_consensus::peer_http;
 use crate::manifest_consensus::ExecutionError;
 
 const MAX_LIST_PAGES_PER_ATTEMPT: usize = 10;
@@ -312,14 +317,550 @@ fn internal(message: impl Into<String>) -> ExecutionError {
     ExecutionError::InternalError(message.into())
 }
 
+/// Longest run of consecutive revisions the source accepts for one block. The
+/// search is logarithmic, so this bound costs requests only when a block really
+/// carries that many revisions.
+const MAX_HTTP_REVISION_RUN: u64 = 1024;
+
+/// A probe reads no body, and the listing runs inside the caller's own budget,
+/// so one slow peer must not consume it.
+const MANIFEST_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The search makes one probe at a time, so a slow peer can spend more than the
+/// caller allows the whole listing. Deriving this from the caller's own bound
+/// keeps the search stopping first, with an error that names the budget,
+/// instead of the caller cancelling mid-search.
+const MANIFEST_LIST_BUDGET: Duration =
+    super::peer_downloader::PEER_LIST_TIMEOUT.saturating_sub(Duration::from_secs(5));
+
+/// A manifest is larger than a probe, so the body read waits longer.
+const MANIFEST_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// What one probe of an object says about it.
+enum Probe {
+    Present,
+    Absent,
+    /// The origin refuses the method. The caller retries with another one.
+    MethodRefused,
+}
+
+/// Reads peer manifests over HTTP from the registered URL, the channel the
+/// state-hash poll already uses.
+///
+/// S3 needs a bucket name and credentials in the publisher's account, which
+/// independent operators cannot grant. A CDN URL carries no bucket name either.
+/// The reader checks the publisher's signature, so the transport carries no
+/// integrity.
+pub(super) struct HttpPeerManifestSource {
+    http: reqwest::Client,
+}
+
+impl HttpPeerManifestSource {
+    pub(super) fn new(http: reqwest::Client) -> Self {
+        Self { http }
+    }
+
+    async fn send_probe(
+        &self,
+        probe: reqwest::RequestBuilder,
+        url: &str,
+        object_key: &str,
+    ) -> Result<Probe, ExecutionError> {
+        let response = probe
+            .timeout(MANIFEST_PROBE_TIMEOUT)
+            .send()
+            .await
+            .map_err(|err| {
+                ExecutionError::S3TransientError(format!(
+                    "failed to probe peer manifest {object_key} at {url}: {err}"
+                ))
+            })?;
+        let status = response.status();
+        if status.is_success() {
+            return Ok(Probe::Present);
+        }
+        match status {
+            reqwest::StatusCode::NOT_FOUND => Ok(Probe::Absent),
+            reqwest::StatusCode::METHOD_NOT_ALLOWED => Ok(Probe::MethodRefused),
+            // Every other status is an error, so a bucket that answers 403 for
+            // an absent key never passes as the end of the revision set.
+            _ => Err(ExecutionError::S3TransientError(format!(
+                "peer manifest probe {object_key} at {url} returned {status}"
+            ))),
+        }
+    }
+
+    async fn object_exists(&self, url: &str, object_key: &str) -> Result<bool, ExecutionError> {
+        match self
+            .send_probe(self.http.head(url), url, object_key)
+            .await?
+        {
+            Probe::Present => return Ok(true),
+            Probe::Absent => return Ok(false),
+            Probe::MethodRefused => {}
+        }
+        // An origin may serve GET alone. One byte answers the same question and
+        // still reads no manifest.
+        let ranged = self
+            .http
+            .get(url)
+            .header(reqwest::header::RANGE, "bytes=0-0");
+        match self.send_probe(ranged, url, object_key).await? {
+            Probe::Present => Ok(true),
+            Probe::Absent => Ok(false),
+            Probe::MethodRefused => Err(ExecutionError::S3TransientError(format!(
+                "peer manifest probe {object_key} at {url} refuses HEAD and GET"
+            ))),
+        }
+    }
+
+    /// One probe, refused once the listing budget is gone.
+    async fn probe_within(
+        &self,
+        deadline: Instant,
+        request: &PeerDownloadRequest,
+        prefix: &str,
+        revision: u64,
+    ) -> Result<bool, ExecutionError> {
+        let spent = || {
+            ExecutionError::S3TransientError(format!(
+                "peer manifest revision search from {} ran past {MANIFEST_LIST_BUDGET:?}",
+                request.s3_bucket_url
+            ))
+        };
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(spent());
+        }
+        let object_key = format!("{prefix}{revision}");
+        let url = peer_http::object_url(&request.s3_bucket_url, &object_key);
+        tokio::time::timeout(remaining, self.object_exists(&url, &object_key))
+            .await
+            .map_err(|_| spent())?
+    }
+
+    /// The first revision at or above `first` that the peer does not hold.
+    ///
+    /// The revisions of one block are consecutive, so the held set is a run and
+    /// only its end has to be found. The step doubles until it passes the end,
+    /// then the remaining interval halves. A block with one revision costs two
+    /// probes, and a run of `n` costs `O(log n)`.
+    async fn run_end(
+        &self,
+        request: &PeerDownloadRequest,
+        prefix: &str,
+        first: u64,
+    ) -> Result<u64, ExecutionError> {
+        let deadline = Instant::now() + MANIFEST_LIST_BUDGET;
+        let end = self
+            .run_end_within(deadline, request, prefix, first)
+            .await?;
+        // Probing finds the end of a run, so a hole would hide every revision
+        // above it, and the archived floor could never pass the hole. One probe
+        // past the end turns that silence into a fault.
+        if self
+            .probe_within(deadline, request, prefix, end.saturating_add(1))
+            .await?
+        {
+            return Err(ExecutionError::InternalError(format!(
+                "peer manifest revisions from {} skip revision {end}",
+                request.s3_bucket_url
+            )));
+        }
+        Ok(end)
+    }
+
+    async fn run_end_within(
+        &self,
+        deadline: Instant,
+        request: &PeerDownloadRequest,
+        prefix: &str,
+        first: u64,
+    ) -> Result<u64, ExecutionError> {
+        if !self.probe_within(deadline, request, prefix, first).await? {
+            return Ok(first);
+        }
+        let mut step = 1u64;
+        let (present, absent) = loop {
+            if step > MAX_HTTP_REVISION_RUN {
+                return Err(ExecutionError::S3TransientError(format!(
+                    "peer manifest revisions from {} exceed {MAX_HTTP_REVISION_RUN} consecutive revisions above {first}",
+                    request.s3_bucket_url
+                )));
+            }
+            let probe = first.saturating_add(step);
+            if !self.probe_within(deadline, request, prefix, probe).await? {
+                break (first.saturating_add(step / 2), probe);
+            }
+            step = step.saturating_mul(2);
+        };
+        // `present` is held and `absent` is not, so the end lies between them.
+        let (mut present, mut absent) = (present, absent);
+        while absent - present > 1 {
+            let middle = present + (absent - present) / 2;
+            if self.probe_within(deadline, request, prefix, middle).await? {
+                present = middle;
+            } else {
+                absent = middle;
+            }
+        }
+        Ok(absent)
+    }
+
+    async fn get_object(&self, url: &str, object_key: &str) -> Result<Vec<u8>, ExecutionError> {
+        let object = format!("peer manifest {object_key} from {url}");
+        let response = self
+            .http
+            .get(url)
+            .timeout(MANIFEST_FETCH_TIMEOUT)
+            .send()
+            .await
+            .map_err(|err| {
+                ExecutionError::S3TransientError(format!("failed to request {object}: {err}"))
+            })?;
+        let response = peer_http::check_status(response, &object)?;
+        peer_http::read_capped(response, MAX_MANIFEST_BYTES, &object, || {
+            ExecutionError::PeerManifestTooLarge(format!(
+                "{object} exceeds {MAX_MANIFEST_BYTES} bytes"
+            ))
+        })
+        .await
+    }
+}
+
+impl PeerManifestSource for HttpPeerManifestSource {
+    async fn list_manifests(
+        &self,
+        request: &PeerDownloadRequest,
+    ) -> Result<Vec<String>, ExecutionError> {
+        let prefix = manifest_prefix(request);
+        debug!(
+            publisher = %request.publisher,
+            bucket_url = request.s3_bucket_url,
+            "Probing numbered peer manifest revisions over HTTP"
+        );
+        let first = request
+            .highest_archived_revision
+            .map_or(0, |archived| archived.saturating_add(1));
+        let end = self.run_end(request, &prefix, first).await?;
+        // Newest first, which is the order the caller falls back through.
+        let mut keys = Vec::new();
+        for revision in (first..end).rev() {
+            let object_key = format!("{prefix}{revision}");
+            if request.considers_object(&object_key, revision) {
+                keys.push(object_key);
+            }
+        }
+        Ok(keys)
+    }
+
+    async fn fetch_manifest(
+        &self,
+        request: &PeerDownloadRequest,
+        object_key: &str,
+    ) -> Result<PeerManifestObject, ExecutionError> {
+        let url = peer_http::object_url(&request.s3_bucket_url, object_key);
+        let signed_bytes = self.get_object(&url, object_key).await?;
+        info!(
+            url,
+            object_key,
+            bytes = signed_bytes.len(),
+            "Downloaded peer manifest"
+        );
+        Ok(PeerManifestObject {
+            object_key: object_key.to_owned(),
+            signed_bytes,
+        })
+    }
+}
+
+/// Picks the reader each registered URL supports. A URL naming a bucket keeps
+/// the S3 path, so today's stores still work. A URL naming only a host goes
+/// over HTTP.
+pub(super) struct PeerManifestSources {
+    s3: S3PeerManifestSource,
+    http: HttpPeerManifestSource,
+}
+
+impl PeerManifestSources {
+    pub(super) fn new(client: Arc<Client>, http: reqwest::Client) -> Self {
+        Self {
+            s3: S3PeerManifestSource::new(client),
+            http: HttpPeerManifestSource::new(http),
+        }
+    }
+}
+
+impl PeerManifestSource for PeerManifestSources {
+    async fn list_manifests(
+        &self,
+        request: &PeerDownloadRequest,
+    ) -> Result<Vec<String>, ExecutionError> {
+        if peer_http::reads_s3(&request.s3_bucket_url) {
+            self.s3.list_manifests(request).await
+        } else {
+            self.http.list_manifests(request).await
+        }
+    }
+
+    async fn fetch_manifest(
+        &self,
+        request: &PeerDownloadRequest,
+        object_key: &str,
+    ) -> Result<PeerManifestObject, ExecutionError> {
+        if peer_http::reads_s3(&request.s3_bucket_url) {
+            self.s3.fetch_manifest(request, object_key).await
+        } else {
+            self.http.fetch_manifest(request, object_key).await
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{s3_bucket_location, S3BucketLocation};
+    use std::collections::HashSet;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    use alloy_primitives::{Address, B256, U256};
+    use axum::http::{Method, StatusCode, Uri};
+    use axum::Router;
+    use block_manifest::ManifestVersion;
+    use tokio::net::TcpListener;
+
+    use super::{
+        s3_bucket_location, HttpPeerManifestSource, PeerDownloadRequest, PeerManifestSource,
+        S3BucketLocation,
+    };
+    use crate::manifest_consensus::peer_http;
+    use crate::manifest_consensus::ExecutionError;
 
     fn loc(bucket: &str, key_prefix: &str) -> S3BucketLocation {
         S3BucketLocation {
             bucket: bucket.into(),
             key_prefix: key_prefix.into(),
+        }
+    }
+
+    /// A peer origin that holds a run of revisions and counts what it is asked.
+    ///
+    /// `probes` counts every request that reads no manifest, which is what the
+    /// listing is charged for. `head_status` lets a test refuse `HEAD`, as an
+    /// origin that serves `GET` alone does.
+    struct PeerOrigin {
+        base_url: String,
+        probes: Arc<AtomicUsize>,
+    }
+
+    impl PeerOrigin {
+        async fn start(revisions: u64, head_status: StatusCode) -> Self {
+            Self::holding((0..revisions).collect(), head_status).await
+        }
+
+        async fn holding(held: HashSet<u64>, head_status: StatusCode) -> Self {
+            let probes = Arc::new(AtomicUsize::new(0));
+            let counter = Arc::clone(&probes);
+            let held = Arc::new(held);
+            let app = Router::new().fallback(move |method: Method, uri: Uri| {
+                let counter = Arc::clone(&counter);
+                let held = Arc::clone(&held);
+                async move {
+                    let held = uri
+                        .path()
+                        .rsplit('/')
+                        .next()
+                        .and_then(|revision| revision.parse::<u64>().ok())
+                        .is_some_and(|revision| held.contains(&revision));
+                    if method == Method::HEAD {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        if head_status != StatusCode::OK {
+                            return (head_status, Vec::new());
+                        }
+                        let status = if held {
+                            StatusCode::OK
+                        } else {
+                            StatusCode::NOT_FOUND
+                        };
+                        return (status, Vec::new());
+                    }
+                    if !held {
+                        return (StatusCode::NOT_FOUND, Vec::new());
+                    }
+                    if method == Method::GET {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                    }
+                    (StatusCode::OK, MANIFEST_BODY.to_vec())
+                }
+            });
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base_url = format!("http://{}", listener.local_addr().unwrap());
+            tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            Self { base_url, probes }
+        }
+
+        fn request(&self, highest_archived_revision: Option<u64>) -> PeerDownloadRequest {
+            PeerDownloadRequest {
+                publisher: Address::ZERO,
+                s3_bucket_url: self.base_url.clone(),
+                version: ManifestVersion::V1,
+                consensus_epoch: "1/block_1".to_owned(),
+                coprocessor_context_id: U256::from(1),
+                host_chain_id: 1,
+                publication_block_number: 1,
+                publication_block_hash: B256::ZERO,
+                highest_archived_revision,
+                rejected_object_keys: HashSet::new(),
+            }
+        }
+    }
+
+    const MANIFEST_BODY: &[u8] = b"signed-manifest";
+
+    fn revisions_of(keys: &[String]) -> Vec<u64> {
+        keys.iter()
+            .map(|key| key.rsplit('/').next().unwrap().parse().unwrap())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn one_revision_costs_three_probes() {
+        let origin = PeerOrigin::start(1, StatusCode::OK).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let keys = source.list_manifests(&origin.request(None)).await.unwrap();
+
+        assert_eq!(revisions_of(&keys), vec![0]);
+        // One probe finds revision 0, the next ends the set, the third proves
+        // the set has no hole. A listing that walked the whole budget would
+        // cost far more against every peer.
+        assert_eq!(origin.probes.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn an_empty_peer_costs_two_probes() {
+        let origin = PeerOrigin::start(0, StatusCode::OK).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let keys = source.list_manifests(&origin.request(None)).await.unwrap();
+
+        assert!(keys.is_empty());
+        assert_eq!(origin.probes.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn a_hole_in_the_revision_sequence_is_an_error() {
+        // Revision 1 is missing, so the run ends at 1 while revision 2 is still
+        // held. Reporting revision 0 would pin this peer to a stale manifest
+        // for good, because the archived floor can never pass the hole.
+        let origin = PeerOrigin::holding(HashSet::from([0, 2]), StatusCode::OK).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let error = source
+            .list_manifests(&origin.request(None))
+            .await
+            .expect_err("a hole must not read as the end of the set");
+
+        assert!(matches!(error, ExecutionError::InternalError(_)), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_long_run_is_found_in_logarithmic_probes() {
+        let origin = PeerOrigin::start(100, StatusCode::OK).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let keys = source.list_manifests(&origin.request(None)).await.unwrap();
+
+        assert_eq!(revisions_of(&keys).first(), Some(&99));
+        assert_eq!(keys.len(), 100);
+        assert!(
+            origin.probes.load(Ordering::SeqCst) <= 16,
+            "{} probes for a run of 100",
+            origin.probes.load(Ordering::SeqCst)
+        );
+    }
+
+    #[tokio::test]
+    async fn the_archived_floor_bounds_the_run() {
+        let origin = PeerOrigin::start(5, StatusCode::OK).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let keys = source
+            .list_manifests(&origin.request(Some(2)))
+            .await
+            .unwrap();
+
+        assert_eq!(revisions_of(&keys), vec![4, 3]);
+    }
+
+    #[tokio::test]
+    async fn a_refused_head_falls_back_to_a_ranged_get() {
+        let origin = PeerOrigin::start(1, StatusCode::METHOD_NOT_ALLOWED).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let keys = source.list_manifests(&origin.request(None)).await.unwrap();
+
+        assert_eq!(revisions_of(&keys), vec![0]);
+    }
+
+    #[tokio::test]
+    async fn a_forbidden_probe_is_an_error_not_the_end_of_the_set() {
+        let origin = PeerOrigin::start(1, StatusCode::FORBIDDEN).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let error = source
+            .list_manifests(&origin.request(None))
+            .await
+            .expect_err("403 must not read as an empty peer");
+
+        assert!(
+            matches!(error, ExecutionError::S3TransientError(_)),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_returns_the_signed_bytes() {
+        let origin = PeerOrigin::start(1, StatusCode::OK).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let request = origin.request(None);
+        let keys = source.list_manifests(&request).await.unwrap();
+        let object = source.fetch_manifest(&request, &keys[0]).await.unwrap();
+
+        assert_eq!(object.object_key, keys[0]);
+        assert_eq!(object.signed_bytes, MANIFEST_BODY);
+    }
+
+    #[tokio::test]
+    async fn a_missing_object_key_reports_not_found() {
+        let origin = PeerOrigin::start(0, StatusCode::OK).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let error = source
+            .fetch_manifest(&origin.request(None), "manifests/v_1/revision/0")
+            .await
+            .expect_err("an absent manifest is not found");
+
+        assert!(
+            matches!(error, ExecutionError::S3ObjectNotFound(_)),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn routes_each_registered_url_to_the_reader_it_supports() {
+        for url in [
+            "http://localhost:4566/peer-ct128/operator-1",
+            "https://peer-ct128.s3.eu-west-1.amazonaws.com",
+            "s3://coprocessor-bucket-1",
+        ] {
+            assert!(peer_http::reads_s3(url), "{url}");
+        }
+        // A CDN host names no bucket, so only the HTTP reader can serve it.
+        assert!(!peer_http::reads_s3("https://coprocessor-3.dev.zama.cloud"));
+    }
+
+    #[test]
+    fn joins_an_object_key_onto_the_registered_base() {
+        for base in [
+            "https://coprocessor-3.dev.zama.cloud",
+            "https://coprocessor-3.dev.zama.cloud/",
+        ] {
+            assert_eq!(
+                peer_http::object_url(base, "manifests/v_1/revision/0"),
+                "https://coprocessor-3.dev.zama.cloud/manifests/v_1/revision/0"
+            );
         }
     }
 

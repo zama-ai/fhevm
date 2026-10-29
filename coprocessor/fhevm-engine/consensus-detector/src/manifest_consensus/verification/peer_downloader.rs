@@ -34,9 +34,11 @@ use super::metrics::{
     VERIFICATION_FAILURE, VERIFICATION_OUTCOMES,
 };
 #[cfg(test)]
+use super::peer_manifest_source::S3PeerManifestSource;
+#[cfg(test)]
 use super::peer_manifest_source::{s3_bucket_location, S3BucketLocation};
 use super::peer_manifest_source::{
-    PeerDownloadRequest, PeerManifestObject, PeerManifestSource, S3PeerManifestSource,
+    PeerDownloadRequest, PeerManifestObject, PeerManifestSource, PeerManifestSources,
 };
 use super::verification_evidence::{persist_verification_evidence, VerificationAttemptEvidence};
 use super::verification_utils::{
@@ -50,7 +52,7 @@ use crate::manifest_consensus::manifest_archive::{
 
 const DOWNLOAD_POLL_MARGIN: Duration = Duration::from_millis(100);
 const DOWNLOAD_CLAIM: Duration = Duration::from_secs(5 * 60);
-const PEER_LIST_TIMEOUT: Duration = Duration::from_secs(30);
+pub(super) const PEER_LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const PEER_OBJECT_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_REVISION_CANDIDATES_PER_ATTEMPT: usize = 5;
 /// Peers downloaded at once within one verification attempt.
@@ -104,7 +106,8 @@ pub(crate) fn spawn_peer_manifest_downloader(
     work_gate: Arc<ManifestWorkGate>,
     verification_delay: Duration,
 ) -> JoinHandle<Result<(), ExecutionError>> {
-    let source = S3PeerManifestSource::new(client);
+    // Each request sets its own timeout, so the client sets none.
+    let source = PeerManifestSources::new(client, reqwest::Client::new());
     tokio::spawn(run_peer_manifest_downloader(
         pool,
         token,
