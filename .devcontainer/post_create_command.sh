@@ -7,6 +7,10 @@ sudo apt update
 sudo apt upgrade -y
 sudo apt install -y protobuf-compiler build-essential libssl-dev pkg-config openssl vim git-lfs postgresql-client cmake
 
+# Git LFS.
+git lfs install
+git lfs pull
+
 # Cargo dependencies.
 cargo install sqlx-cli
 
