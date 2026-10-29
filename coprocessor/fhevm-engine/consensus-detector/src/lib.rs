@@ -589,7 +589,31 @@ where
     if members.is_empty() {
         return Err(anyhow::anyhow!("no coprocessor signers at block {block}"));
     }
+    // Named, not refused: the attempt still runs, so this operator still
+    // records the Abort that ends it at the deadline.
+    for (signer, url) in &members {
+        if let Err(error) = usable_member_url(url) {
+            error!(
+                %signer,
+                url,
+                %error,
+                "registered s3BucketUrl is unusable; an operator must re-register it"
+            );
+        }
+    }
     Ok(decision::members_of(&members))
+}
+
+/// The state-hash poll and the manifest reader both fetch over HTTP. Any other
+/// scheme never recovers, so name it here instead of leaving it to the timeout.
+fn usable_member_url(url: &str) -> anyhow::Result<()> {
+    let scheme = url::Url::parse(url)?.scheme().to_owned();
+    if !matches!(scheme.as_str(), "http" | "https") {
+        return Err(anyhow::anyhow!(
+            "scheme \"{scheme}\" cannot serve the state-hash reads"
+        ));
+    }
+    Ok(())
 }
 
 /// One pass over every host-chain track plus the Gateway track: resets tracks on
@@ -1168,6 +1192,18 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn member_url_must_be_fetchable_over_http() {
+        for url in [
+            "http://object-store-2:9000/coproc-2",
+            "https://peer-bucket.s3.eu-west-3.amazonaws.com",
+            "https://coprocessor-3.dev.zama.cloud",
+        ] {
+            usable_member_url(url).unwrap_or_else(|error| panic!("{url}: {error}"));
+        }
+        assert!(usable_member_url("s3://peer-bucket").is_err());
+    }
 
     const GW: i64 = 54321;
 
