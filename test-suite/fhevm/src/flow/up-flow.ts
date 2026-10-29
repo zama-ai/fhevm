@@ -1947,23 +1947,6 @@ export const applyVersionLock = async (
   console.log(`[rollout] ${label} versions=${changedKeys.join(", ") || "(none)"}`);
 };
 
-/** Re-reads deployed contract addresses after contract runbook tasks mutate proxies. */
-export const refreshDiscovery = async () => {
-  const state = await loadState();
-  if (!state || !(await projectContainers()).length) {
-    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
-  }
-  await ensureRuntimeArtifacts(state, "rollout discovery");
-  const contracts = await discoverContracts(state);
-  const discovery = await ensureDiscovery(state);
-  discovery.gateway = contracts.gateway;
-  discovery.hosts = { ...discovery.hosts, ...contracts.hosts };
-  validateDiscovery(state);
-  await saveState(state);
-  await generateRuntime(state, stackSpecForState(state));
-  console.log("[rollout] discovery refreshed");
-};
-
 const waitForRelayer = async () => {
   await waitForContainer("fhevm-relayer-db", "healthy");
   await waitForContainer("fhevm-relayer", "running");
@@ -2589,11 +2572,11 @@ export const upgradeThresholdKmsNode = async (
   }
   if (!Number.isInteger(nodeId) || nodeId < 1 || nodeId > state.scenario.kms.committeeSize) {
     throw new PreflightError(
-      `upgradeKmsNode expects a serving node id between 1 and ${state.scenario.kms.committeeSize}; received ${nodeId}`,
+      `upgrade kms-core expects a serving node id between 1 and ${state.scenario.kms.committeeSize}; received ${nodeId}`,
     );
   }
   if (!state.completedSteps.includes("base")) {
-    throw new PreflightError("upgradeKmsNode requires a stack that has completed the base step");
+    throw new PreflightError("upgrade kms-core requires a stack that has completed the base step");
   }
 
   await operations.ensureRuntimeArtifacts(state, "upgrade");
@@ -2602,7 +2585,7 @@ export const upgradeThresholdKmsNode = async (
 
   const targetVersion = lockedState.versions.env.CORE_VERSION;
   if (!targetVersion?.trim()) {
-    throw new PreflightError("upgradeKmsNodes requires CORE_VERSION in its lock file");
+    throw new PreflightError("upgrade kms-core requires CORE_VERSION in its lock file");
   }
   const versionByNodeId = Object.fromEntries(
     Array.from({ length: state.scenario.kms.parties }, (_, index) => {
