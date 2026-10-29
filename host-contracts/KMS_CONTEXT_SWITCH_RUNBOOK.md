@@ -652,6 +652,11 @@ done
 n=$NUM_KMS_NODES
 [ "$n" -eq "$((3 * MPC_THRESHOLD + 1))" ] || fail "n must be 3*MPC_THRESHOLD+1"
 
+# The KMS core ingests only MPC_THRESHOLD: a threshold of t or less lets t corrupt nodes meet it.
+for v in PUBLIC_DECRYPTION_THRESHOLD USER_DECRYPTION_THRESHOLD KMS_GEN_THRESHOLD; do
+  [ "${!v}" -gt "$MPC_THRESHOLD" ] || fail "$v must be greater than MPC_THRESHOLD (got ${!v})"
+done
+
 # Gateway spelling must be present and equal to its host twin.
 [ "${KMS_GENERATION_THRESHOLD:-}" = "$KMS_GEN_THRESHOLD" ] ||
   fail "KMS_GENERATION_THRESHOLD (gateway spelling) must equal KMS_GEN_THRESHOLD"
