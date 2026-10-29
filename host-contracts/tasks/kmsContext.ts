@@ -1,10 +1,11 @@
-import { Interface } from 'ethers';
+import { Interface, type Result } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig } from '../types';
 import { buildProtocolConfigContextArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+import { toJsonString } from './utils/upgradeProposal';
 
 // This file defines tasks to drive a KMS context switch / epoch rotation on the canonical (Ethereum)
 // ProtocolConfig: build the `defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext` /
@@ -75,7 +76,17 @@ export function encodeDefineNewKmsContextAndEpoch(iface: Interface): EncodedCall
   const args = buildProtocolConfigContextArgs();
   const functionSignature = iface.getFunction('defineNewKmsContextAndEpoch')!.format('sighash');
   const calldata = iface.encodeFunctionData('defineNewKmsContextAndEpoch', args);
-  const decodedArgs = iface.decodeFunctionData('defineNewKmsContextAndEpoch', calldata).toArray();
+  // Key each struct by field name, so a reviewer can tell a tx-sender from a signer.
+  const [nodes, thresholds, softwareVersion, pcrValues] = iface.decodeFunctionData(
+    'defineNewKmsContextAndEpoch',
+    calldata,
+  );
+  const decodedArgs = [
+    nodes.map((node: Result) => node.toObject()),
+    thresholds.toObject(),
+    softwareVersion,
+    pcrValues.map((pcr: Result) => pcr.toObject()),
+  ];
   return { functionSignature, calldata, decodedArgs };
 }
 
@@ -134,6 +145,7 @@ task(
       '  target:',
       target ?? `<unresolved — set ${PROTOCOL_CONFIG_ADDRESS_ENV_VAR} or pass --use-internal-proxy-address>`,
     );
+    console.log('  decodedArgs:', toJsonString(encoded.decodedArgs));
     console.log('  calldata:', encoded.calldata);
   });
 

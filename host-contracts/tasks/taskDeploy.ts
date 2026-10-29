@@ -823,7 +823,7 @@ task(
   )
   .addOptionalParam(
     'blockNumber',
-    "Canonical block height to pin the snapshot to. Defaults to the latest finalized block; pass the artifact's blockNumber to reproduce a prior export for DAO review.",
+    "Canonical block height to pin the snapshot to; must already be finalized. Defaults to the latest finalized block; pass the artifact's blockNumber to reproduce a prior export for DAO review.",
     undefined,
     types.int,
   )
@@ -840,7 +840,7 @@ task(
     // readCanonicalSnapshot needs the ProtocolConfig artifact for its ABI; compile so the export
     // also works from a clean checkout.
     await hre.run('compile:specific', { contract: 'contracts' });
-    const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
+    const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl, undefined, { cacheTimeout: -1 });
     const snapshot = await readCanonicalSnapshot(hre, {
       canonicalProvider,
       canonicalProtocolConfigAddress,
