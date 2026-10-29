@@ -4,7 +4,7 @@ import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import {
   getViemTestConfig,
   latestBlockTimestamp,
-  type CreateViemEncryptTransciClientFn,
+  type CreateViemEncryptWithPadClientFn,
   type FheTestViemConfig,
 } from '../setup-viem.js';
 import { clearTypeFromHandle, createLogger, encryptTestCases, isBytes32Hex } from '../setupCommon.js';
@@ -19,11 +19,11 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-export function defineClientEncryptTransciEncryptTests(parameters: {
+export function defineClientEncryptWithPadEncryptTests(parameters: {
   readonly runIf: boolean;
-  readonly createFhevmEncryptTransciClient: CreateViemEncryptTransciClientFn;
+  readonly createFhevmEncryptWithPadClient: CreateViemEncryptWithPadClientFn;
 }): void {
-  describe.runIf(parameters.runIf)('EncryptTransci', () => {
+  describe.runIf(parameters.runIf)('EncryptWithPad', () => {
     let config: FheTestViemConfig;
 
     beforeAll(() => {
@@ -39,9 +39,9 @@ export function defineClientEncryptTransciEncryptTests(parameters: {
 
     // RFC-030: each encryption fetches its one-time pad from the KMS through a
     // pad decryption request authenticated by a v2 (unified) permit.
-    // The encrypt-transciphering client generates the transport key pair itself:
+    // The encrypt-with-pad client generates the transport key pair itself:
     // no decrypt client is needed to encrypt.
-    async function signPadPermit(client: ReturnType<typeof parameters.createFhevmEncryptTransciClient>) {
+    async function signPadPermit(client: ReturnType<typeof parameters.createFhevmEncryptWithPadClient>) {
       const transportKeyPair = await client.generateTransportKeyPair();
       return client.signUnifiedDecryptionPermit({
         transportKeyPair,
@@ -59,13 +59,13 @@ export function defineClientEncryptTransciEncryptTests(parameters: {
     // └─────────────────────────────────────────────────────────────────────┘
 
     it('should encrypt all types in a single call', async () => {
-      const client = parameters.createFhevmEncryptTransciClient({
+      const client = parameters.createFhevmEncryptWithPadClient({
         chain: config.fhevmChain,
         publicClient: config.publicClient,
       });
       await client.ready;
 
-      const result = await client.encryptValuesTransci({
+      const result = await client.encryptValuesWithPad({
         contractAddress: config.fheTestAddress,
         userAddress: config.account.address,
         values: encryptTestCases,
@@ -94,13 +94,13 @@ export function defineClientEncryptTransciEncryptTests(parameters: {
 
     for (const tc of encryptTestCases) {
       it(`should encrypt ${tc.type}`, async () => {
-        const client = parameters.createFhevmEncryptTransciClient({
+        const client = parameters.createFhevmEncryptWithPadClient({
           chain: config.fhevmChain,
           publicClient: config.publicClient,
         });
         await client.ready;
 
-        const result = await client.encryptValueTransci({
+        const result = await client.encryptValueWithPad({
           contractAddress: config.fheTestAddress,
           userAddress: config.account.address,
           value: tc,

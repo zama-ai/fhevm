@@ -5,10 +5,10 @@ import { ensureFrozenContext } from '../../frozenContext/ensureFrozenContext-p.j
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function _initEncryptTransci(fhevm: FhevmBase<FhevmChain>): Promise<void> {
-  const f = asFhevmClientWith(fhevm, 'encryptTransci');
+export async function _initEncryptWithPad(fhevm: FhevmBase<FhevmChain>): Promise<void> {
+  const f = asFhevmClientWith(fhevm, 'encryptWithPad');
 
   await ensureFrozenContext(f);
 
-  await f.runtime.encryptTransci.initTkmsModule();
+  await f.runtime.encryptWithPad.initTkmsModule();
 }

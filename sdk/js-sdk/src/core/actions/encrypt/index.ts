@@ -12,13 +12,13 @@ export { type EncryptValueParameters, type EncryptValueReturnType, encryptValue 
 export { type EncryptValuesParameters, type EncryptValuesReturnType, encryptValues } from './encryptValues.js';
 
 export {
-  type EncryptValueTransciParameters,
-  type EncryptValueTransciReturnType,
-  encryptValueTransci,
-} from './encryptValueTransci.js';
+  type EncryptValueWithPadParameters,
+  type EncryptValueWithPadReturnType,
+  encryptValueWithPad,
+} from './encryptValueWithPad.js';
 
 export {
-  type EncryptValuesTransciParameters,
-  type EncryptValuesTransciReturnType,
-  encryptValuesTransci,
-} from './encryptValuesTransci.js';
+  type EncryptValuesWithPadParameters,
+  type EncryptValuesWithPadReturnType,
+  encryptValuesWithPad,
+} from './encryptValuesWithPad.js';

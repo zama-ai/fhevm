@@ -4,12 +4,12 @@ import type {
   GetTkmsPublicKeyHexParameters,
   SerializeTkmsPrivateKeyParameters,
 } from '../../decrypt/types.js';
-import type { EncryptTransciModuleFactory } from '../types.js';
+import type { EncryptWithPadModuleFactory } from '../types.js';
 import { getTkmsModuleInfo, initTkmsModule } from '../../decrypt/module/init-p.js';
 import { generateTkmsPrivateKey, getTkmsPublicKeyHex, serializeTkmsPrivateKey } from '../../decrypt/module/api-p.js';
 
 //////////////////////////////////////////////////////////////////////////////
-// encryptTransciModule
+// encryptWithPadModule
 //
 // Shares the TKMS WASM instance with the decrypt module (one instance per
 // runtime), including its transport key functions: a key pair generated here
@@ -20,9 +20,9 @@ import { generateTkmsPrivateKey, getTkmsPublicKeyHex, serializeTkmsPrivateKey } 
 // lives in the mock module.
 //////////////////////////////////////////////////////////////////////////////
 
-export const encryptTransciModule: EncryptTransciModuleFactory = (runtime: FhevmRuntime) => {
+export const encryptWithPadModule: EncryptWithPadModuleFactory = (runtime: FhevmRuntime) => {
   return Object.freeze({
-    encryptTransci: Object.freeze({
+    encryptWithPad: Object.freeze({
       initTkmsModule: async () => {
         await initTkmsModule(runtime);
       },
