@@ -299,7 +299,7 @@ pub(crate) async fn start(
         pool.clone(),
         cancel.child_token(),
         config.clone(),
-        Arc::clone(&client),
+        client,
         signer,
         Arc::clone(&work_gate),
     );
@@ -308,7 +308,6 @@ pub(crate) async fn start(
     let handle = verification::peer_downloader::spawn_peer_manifest_downloader(
         pool.clone(),
         cancel.child_token(),
-        Arc::clone(&client),
         Arc::clone(&work_gate),
         config.manifest_consensus.verification_delay,
     );
@@ -317,7 +316,6 @@ pub(crate) async fn start(
     let handle = healing::spawn_healing_worker(
         pool,
         cancel.child_token(),
-        client,
         work_gate,
         healing::HealingSettings {
             batch_size: config.manifest_consensus.healing_batch_size,
