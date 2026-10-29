@@ -521,9 +521,10 @@ npx hardhat task:kmsContextSwitchStatus --network <network> --from-block <recent
 #       active one) | same-set-rotation (new epoch under the same active context)
 # contextState: PENDING (lists outstanding new tx-senders + the n-t old-side target)
 #               CREATED (creation quorum reached, epoch still PENDING)
-# epochState:   PENDING | ACTIVE ("fully live")
-# aborted:      true + reason if governance destroyed the pending context/epoch
-#               (destroyKmsContext / destroyKmsEpoch)
+# epochState:   PENDING | DESTROYED (an activated epoch shows as flow: idle)
+# aborted:      true + reason if governance destroyed the pending context or epoch
+#               (context-destroyed via destroyKmsContext, epoch-destroyed via destroyKmsEpoch)
+# fullyLive:    true when the active context and epoch are valid and nothing is in flight
 ```
 
 ### B.2 Verify a party's claimed parameters (coordinator-side)
