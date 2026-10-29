@@ -1,6 +1,6 @@
 import type { Prettify } from '../../types/utils.js';
 import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
-import type { Bytes32Hex, BytesHex, ChecksummedAddress, Uint64BigInt } from '../../types/primitives.js';
+import type { Bytes32Hex, BytesHex, ChecksummedAddress, Uint32Number, Uint64BigInt } from '../../types/primitives.js';
 import type { PadDecryptResponse, PadWitness } from '../relayer/types.js';
 import type {
   GenerateTkmsPrivateKeyModuleFunction,
@@ -21,6 +21,35 @@ import type {
 // the generation of the transport key pair the pad shares are encrypted to.
 //
 ////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+// PadDecryptResponsePayload (decrypted content of a PadDecryptResponse)
+////////////////////////////////////////////////////////////////////////////////
+
+/** One node's share of one pad, keyed by label and signed on its own (`PadShare` in RFC-030). */
+export type PadShare = {
+  readonly label: Bytes32Hex;
+  /** Versioned, encoded ring elements: a version byte, then the elements it defines. */
+  readonly rawShares: BytesHex;
+  /** This node's 1-indexed evaluation point. */
+  readonly partyId: Uint32Number;
+  /** The sharing polynomial degree `t`. */
+  readonly degree: Uint32Number;
+  /** The KMS context, selecting the signer set. */
+  readonly contextId: Bytes32Hex;
+  /** 16 bytes: opaque id of the MPC session that produced the share. */
+  readonly sessionId: BytesHex;
+  /** Versioned, unstructured metadata. */
+  readonly extraData: BytesHex;
+  /** EIP-712 signature over the share's `PadShareVerification`. */
+  readonly signature: BytesHex;
+};
+
+/** The decrypted content of a pad decryption response (`PadDecryptResponsePayload` in RFC-030). */
+export type PadDecryptResponsePayload = {
+  /** One per pad in the request; order carries no meaning. */
+  readonly shares: readonly PadShare[];
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 // reconstructPadsFunction

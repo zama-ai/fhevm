@@ -136,7 +136,7 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
         kmsDecryptEip712Message: signedPermit.eip712.message,
         kmsDecryptEip712Signature: signedPermit.signature,
         witnessVersion: PAD_WITNESS_VERSION,
-        prf: PAD_PRF_INSTANCE,
+        prfId: PAD_PRF_INSTANCE,
         chainId,
         witnesses: [witness],
       },
