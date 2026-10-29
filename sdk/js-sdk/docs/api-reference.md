@@ -5,17 +5,17 @@ in TypeScript. Guides for each area are linked at the point of use.
 
 ## Entry points
 
-| Import path                  | Provides                                                        |
-| ---------------------------- | -------------------------------------------------------------- |
-| `@fhevm/sdk/ethers`          | Client factories + runtime config, ethers v6 adapter           |
-| `@fhevm/sdk/viem`            | Client factories + runtime config, viem adapter                |
-| `@fhevm/sdk/chains`          | Built-in chains and `defineFhevmChain`                         |
-| `@fhevm/sdk/types`           | Public type exports and encrypted-value helpers                |
-| `@fhevm/sdk/actions/base`    | Public-decrypt and proof-fetch actions                         |
-| `@fhevm/sdk/actions/encrypt` | Encrypt actions                                                |
-| `@fhevm/sdk/actions/decrypt` | Private-decrypt actions                                        |
-| `@fhevm/sdk/actions/chain`   | Permit / key / serialization actions                           |
-| `@fhevm/sdk/actions/host`    | Host-contract read actions                                     |
+| Import path                  | Provides                                             |
+| ---------------------------- | ---------------------------------------------------- |
+| `@fhevm/sdk/ethers`          | Client factories + runtime config, ethers v6 adapter |
+| `@fhevm/sdk/viem`            | Client factories + runtime config, viem adapter      |
+| `@fhevm/sdk/chains`          | Built-in chains and `defineFhevmChain`               |
+| `@fhevm/sdk/types`           | Public type exports and encrypted-value helpers      |
+| `@fhevm/sdk/actions/base`    | Public-decrypt and proof-fetch actions               |
+| `@fhevm/sdk/actions/encrypt` | Encrypt actions                                      |
+| `@fhevm/sdk/actions/decrypt` | Private-decrypt actions                              |
+| `@fhevm/sdk/actions/chain`   | Permit / key / serialization actions                 |
+| `@fhevm/sdk/actions/host`    | Host-contract read actions                           |
 
 The ethers and viem entry points export the same symbols; only the native
 connection object differs (`provider` vs `publicClient`).
@@ -42,12 +42,7 @@ type FhevmRuntimeConfig = {
   readonly auth?: Auth | undefined;
 };
 
-type WasmAssetLoadMode =
-  | 'embedded-base64'
-  | 'verified-blob'
-  | 'precheck-direct-url'
-  | 'trusted-direct-url'
-  | 'auto';
+type WasmAssetLoadMode = 'embedded-base64' | 'verified-blob' | 'precheck-direct-url' | 'trusted-direct-url' | 'auto';
 ```
 
 ### Runtime init helpers
@@ -55,7 +50,7 @@ type WasmAssetLoadMode =
 ```ts
 function initFhevmRuntime(): Promise<void>;
 function initFhevmEncryptRuntime(): Promise<void>;
-function initFhevmEncryptTransciRuntime(): Promise<void>; // TKMS WASM, pad-based encryption
+function initFhevmEncryptWithPadRuntime(): Promise<void>; // TKMS WASM, pad-based encryption
 function initFhevmDecryptRuntime(): Promise<void>;
 ```
 
@@ -79,11 +74,11 @@ function createFhevmEncryptClient(parameters: {
   readonly options?: FhevmEncryptOptions | undefined;
 }): FhevmEncryptClient;
 
-function createFhevmEncryptTransciClient(parameters: {
+function createFhevmEncryptWithPadClient(parameters: {
   readonly provider: ContractRunner;
   readonly chain: FhevmChain;
   readonly options?: FhevmEncryptOptions | undefined;
-}): FhevmEncryptTransciClient; // RFC-030 pad-based encryption (experimental)
+}): FhevmEncryptWithPadClient; // RFC-030 pad-based encryption (experimental)
 
 function createFhevmDecryptClient(parameters: {
   readonly provider: ContractRunner;
@@ -102,7 +97,7 @@ The viem forms replace `provider: ContractRunner` with
 `publicClient: PublicClient`. The cleartext entry points
 (`@fhevm/sdk/ethers/cleartext`, `@fhevm/sdk/viem/cleartext`) export the same
 factories with a `Cleartext` infix, including
-`createFhevmCleartextEncryptTransciClient`. See [Clients](clients.md).
+`createFhevmCleartextEncryptWithPadClient`. See [Clients](clients.md).
 
 ### Factory options
 
@@ -136,18 +131,18 @@ readonly protocolVersion: ProtocolVersionResolution;
 
 ### Method availability
 
-| Method                              | Base | Encrypt | Encrypt Transci | Decrypt | Full |
-| ----------------------------------- | :--: | :-----: | :-------------: | :-----: | :--: |
-| `encryptValue` / `encryptValues`    |      |   ✅    |                 |         |  ✅  |
-| `encryptValueTransci` / `encryptValuesTransci` |  |      |       ✅        |         |      |
-| `decryptValue` / `decryptValues` / `decryptValuesFromPairs` |  |  |       |  ✅  | ✅ |
-| `generateTransportKeyPair`          |      |         |       ✅        |   ✅    |  ✅  |
-| `decryptPublicValue(s)`             |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
-| `decryptPublicValuesWithSignatures` |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
-| `signLegacyDecryptionPermit` / `signUnifiedDecryptionPermit` | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `signDecryptionPermit` (`@deprecated`, alias for `signLegacyDecryptionPermit`) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `serialize`/`parse` permit + key    |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
-| `fetchFheEncryptionKeyBytes`        |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
+| Method                                                                         | Base | Encrypt | Encrypt WithPad | Decrypt | Full |
+| ------------------------------------------------------------------------------ | :--: | :-----: | :-------------: | :-----: | :--: |
+| `encryptValue` / `encryptValues`                                               |      |   ✅    |                 |         |  ✅  |
+| `encryptValueWithPad` / `encryptValuesWithPad`                                 |      |         |       ✅        |         |      |
+| `decryptValue` / `decryptValues` / `decryptValuesFromPairs`                    |      |         |                 |   ✅    |  ✅  |
+| `generateTransportKeyPair`                                                     |      |         |       ✅        |   ✅    |  ✅  |
+| `decryptPublicValue(s)`                                                        |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
+| `decryptPublicValuesWithSignatures`                                            |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
+| `signLegacyDecryptionPermit` / `signUnifiedDecryptionPermit`                   |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
+| `signDecryptionPermit` (`@deprecated`, alias for `signLegacyDecryptionPermit`) |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
+| `serialize`/`parse` permit + key                                               |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
+| `fetchFheEncryptionKeyBytes`                                                   |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
 
 The `canDecrypt*` permission checks are not client methods. `canDecryptValue`,
 `canDecryptValues`, and `canDecryptValuesFromPairs` come from
@@ -181,11 +176,11 @@ Valid `type` strings: `'bool' | 'uint8' | 'uint16' | 'uint32' | 'uint64' | 'uint
 
 ### Pad-based encryption methods
 
-On `createFhevmEncryptTransciClient` only. See
-[Encryption → Pad-based encryption](encryption.md#pad-based-encryption-transciphering).
+On `createFhevmEncryptWithPadClient` only. See
+[Encryption → Pad-based encryption](encryption.md#pad-based-encryption).
 
 ```ts
-encryptValuesTransci(parameters: {
+encryptValuesWithPad(parameters: {
   readonly values: ReadonlyArray<{ readonly type: string; readonly value: boolean | bigint | number | string }>;
   readonly contractAddress: string;
   readonly userAddress: string;
@@ -193,7 +188,7 @@ encryptValuesTransci(parameters: {
   readonly options?: RelayerCommonOptions | undefined;
 }): Promise<{ readonly encryptedValues: readonly EncryptedValue[]; readonly inputPackage: BytesHex }>;
 
-encryptValueTransci(parameters: {
+encryptValueWithPad(parameters: {
   readonly value: { readonly type: string; readonly value: boolean | bigint | number | string };
   readonly contractAddress: string;
   readonly userAddress: string;
@@ -376,11 +371,11 @@ See [Actions](actions.md) for import paths and examples.
 encryptValue(fhevm, parameters);
 encryptValues(fhevm, parameters);
 generateZkProof(fhevm, parameters);
-encryptValueTransci(fhevm, parameters);
-encryptValuesTransci(fhevm, parameters);
+encryptValueWithPad(fhevm, parameters);
+encryptValuesWithPad(fhevm, parameters);
 
 // @fhevm/sdk/actions/decrypt
-generateTransportKeyPair(fhevm); // decrypt, full, or encrypt-transciphering client
+generateTransportKeyPair(fhevm); // decrypt, full, or encrypt-with-pad client
 decryptValue(fhevm, parameters);
 decryptValues(fhevm, parameters);
 decryptValuesFromPairs(fhevm, parameters);
@@ -509,7 +504,7 @@ type AuthApiKeyCookie = { type: 'ApiKeyCookie'; cookie?: string; value: string }
 type AuthType = Auth['type'];
 ```
 
-Pad-based encryption (`encryptValue[s]Transci`) takes the plain
+Pad-based encryption (`encryptValue[s]WithPad`) takes the plain
 `RelayerCommonOptions`. Per-operation option types add an `onProgress?` callback:
 `RelayerInputProofOptions` (encrypt), `RelayerUserDecryptOptions` /
 `RelayerDelegatedUserDecryptOptions` (private decrypt),
@@ -527,5 +522,7 @@ the full catalog and handling patterns.
 - [Getting started](getting-started.md)
 - [Clients](clients.md) · [Encryption](encryption.md) · [Decryption](decryption.md)
 - [Chains](chains.md) · [Runtime configuration](runtime-configuration.md) · [Types](types.md)
+
 ```
 
+```

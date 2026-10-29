@@ -6,15 +6,15 @@ leaves your application.
 
 The SDK offers two encryption paths, each on its own client:
 
-| Path | Client | Methods | Contract input | WASM |
-| ---- | ------ | ------- | -------------- | ---- |
-| **Input proof** (ZKPoK, default) | `createFhevmClient`, `createFhevmEncryptClient` | `encryptValue`, `encryptValues` | `inputProof` | TFHE (~4.9 MB) |
-| **Pad-based** (RFC-030 transciphering, experimental) | `createFhevmEncryptTransciClient` | `encryptValueTransci`, `encryptValuesTransci` | `inputPackage` | TKMS (~600 KB) |
+| Path                                 | Client                                          | Methods                                       | Contract input | WASM           |
+| ------------------------------------ | ----------------------------------------------- | --------------------------------------------- | -------------- | -------------- |
+| **Input proof** (ZKPoK, default)     | `createFhevmClient`, `createFhevmEncryptClient` | `encryptValue`, `encryptValues`               | `inputProof`   | TFHE (~4.9 MB) |
+| **Pad-based** (RFC-030 experimental) | `createFhevmEncryptWithPadClient`               | `encryptValueWithPad`, `encryptValuesWithPad` | `inputPackage` | TKMS (~600 KB) |
 
 Use the input-proof path unless you are targeting pad-based inputs: it is the
 flow every deployed FHEVM chain verifies, and it is unchanged from previous SDK
 versions. The rest of this page up to
-[Pad-based encryption](#pad-based-encryption-transciphering) describes it.
+[Pad-based encryption](#pad-based-encryption) describes it.
 
 ## The two methods
 
@@ -72,16 +72,16 @@ The `type` field uses **Solidity value-type names**, not Fully Homomorphic
 Encryption (FHE) names. Each maps to
 an on-chain `externalEuintXX` / `externalEbool` / `externalEaddress`.
 
-| `type`      | Accepted JS value      | Maps to on-chain    |
-| ----------- | ---------------------- | ------------------- |
-| `'bool'`    | `boolean` / `number` / `bigint` | `externalEbool`     |
-| `'uint8'`   | `number` / `bigint`    | `externalEuint8`    |
-| `'uint16'`  | `number` / `bigint`    | `externalEuint16`   |
-| `'uint32'`  | `number` / `bigint`    | `externalEuint32`   |
-| `'uint64'`  | `number` / `bigint`    | `externalEuint64`   |
-| `'uint128'` | `number` / `bigint`    | `externalEuint128`  |
-| `'uint256'` | `number` / `bigint`    | `externalEuint256`  |
-| `'address'` | `string` (hex address) | `externalEaddress`  |
+| `type`      | Accepted JS value               | Maps to on-chain   |
+| ----------- | ------------------------------- | ------------------ |
+| `'bool'`    | `boolean` / `number` / `bigint` | `externalEbool`    |
+| `'uint8'`   | `number` / `bigint`             | `externalEuint8`   |
+| `'uint16'`  | `number` / `bigint`             | `externalEuint16`  |
+| `'uint32'`  | `number` / `bigint`             | `externalEuint32`  |
+| `'uint64'`  | `number` / `bigint`             | `externalEuint64`  |
+| `'uint128'` | `number` / `bigint`             | `externalEuint128` |
+| `'uint256'` | `number` / `bigint`             | `externalEuint256` |
+| `'address'` | `string` (hex address)          | `externalEaddress` |
 
 There is no `uint160` type — an encrypted Ethereum address is `'address'`. There
 is no encrypted `bytes` type. `euint4` has been removed.
@@ -196,7 +196,7 @@ offline and submit it later), use the standalone actions `generateZkProof` (from
 [`@fhevm/sdk/actions/encrypt`](actions.md)) and `fetchEncryptedValues` (from
 [`@fhevm/sdk/actions/base`](actions.md)).
 
-## Pad-based encryption (transciphering)
+## Pad-based encryption
 
 RFC-030 pad-based inputs mask the plaintext with a one-time pad that only the
 user can obtain from the KMS. No TFHE ciphertext, zero-knowledge proof, or
@@ -204,18 +204,18 @@ coprocessor signature is involved, so the client loads the TKMS WASM instead of
 the TFHE one.
 
 {% hint style="warning" %}
-Pad-based encryption is experimental. The SDK only decodes the cleartext pad-share encoding for now, so it works against the v0.16 cleartext host contracts (`createFhevmCleartextEncryptTransciClient`), not against deployed chains.
+Pad-based encryption is experimental. The SDK only decodes the cleartext pad-share encoding for now, so it works against the v0.16 cleartext host contracts (`createFhevmCleartextEncryptWithPadClient`), not against deployed chains.
 {% endhint %}
 
 ### The client and its methods
 
 ```ts
-import { createFhevmEncryptTransciClient } from '@fhevm/sdk/ethers'; // or '@fhevm/sdk/viem'
+import { createFhevmEncryptWithPadClient } from '@fhevm/sdk/ethers'; // or '@fhevm/sdk/viem'
 
-const client = createFhevmEncryptTransciClient({ chain, provider });
+const client = createFhevmEncryptWithPadClient({ chain, provider });
 await client.ready;
 
-const encrypted = await client.encryptValuesTransci({
+const encrypted = await client.encryptValuesWithPad({
   contractAddress: '0xYourContract…',
   userAddress: '0xYourWallet…',
   values: [
@@ -229,7 +229,7 @@ encrypted.encryptedValues; // readonly EncryptedValue[] — one per input, same 
 encrypted.inputPackage; // BytesHex — one package for the whole batch
 ```
 
-`encryptValueTransci` is the single-value form; it takes `value` and returns
+`encryptValueWithPad` is the single-value form; it takes `value` and returns
 `encryptedValue` and `inputPackage`. Both accept the same
 [supported input types](#supported-input-types) as the input-proof path.
 
@@ -253,7 +253,7 @@ const signedPermit = await client.signUnifiedDecryptionPermit({
 ```
 
 The permit must be version 2, signed by `userAddress`, and not expired; a legacy
-(v1) permit is rejected. The encrypt-transciphering client generates the
+(v1) permit is rejected. The encrypt-with-pad client generates the
 transport key pair itself (`generateTransportKeyPair`), so no decrypt client is
 needed to encrypt. A key pair it generates is interchangeable with one from a
 decrypt client: you can reuse it to decrypt with a decrypt client from the same
@@ -261,8 +261,8 @@ adapter.
 
 ### Binding, limits, and the contract call
 
-- **`contractAddress`** is the witness *consumer* (the contract that will call
-  `FHE.fromExternal`) and **`userAddress`** is the witness *submitter* (the
+- **`contractAddress`** is the witness _consumer_ (the contract that will call
+  `FHE.fromExternal`) and **`userAddress`** is the witness _submitter_ (the
   account that sends the transaction). If either differs at submission time,
   `fromExternal` reverts.
 - A package holds between 1 and 255 values. Each value is padded to whole
@@ -280,7 +280,7 @@ The optional `options` object takes the plain Relayer request options
 
 1. **Build a witness** — submitter (`userAddress`), consumer
    (`contractAddress`), chain id, an expiration timestamp (one week), and a
-   fresh random nonce. Its hash is the pad *label*.
+   fresh random nonce. Its hash is the pad _label_.
 2. **Fetch the pad** — a pad decryption request, authenticated by your signed
    permit, asks the KMS for exactly as many pad bits as the values need. Each KMS
    node returns a signed share; the SDK checks the signatures against the
@@ -296,6 +296,5 @@ Because every package uses a fresh nonce, a pad is never reused.
 
 - [Decryption](decryption.md) — read encrypted values back to plaintext, and sign the permit pad-based encryption needs.
 - [Types](types.md) — the encrypted-value and typed-value type system.
-- [Actions](actions.md) — the standalone `generateZkProof` (encrypt) / `fetchEncryptedValues` (base) functions, and the `*Transci` encrypt actions.
+- [Actions](actions.md) — the standalone `generateZkProof` (encrypt) / `fetchEncryptedValues` (base) functions, and the `*WithPad` encrypt actions.
 - [Error handling](error-handling.md) — `EncryptionError`, `ZkProofError`, `TooManyHandlesError`.
-

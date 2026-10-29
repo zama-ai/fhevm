@@ -15,17 +15,17 @@ therefore **which methods they expose**. Pick the narrowest one your page needs 
 a page that only reads public values should never download the 4.9 MB encryption
 module.
 
-| Factory                      | Encrypts | Decrypts | WASM loaded              |
-| ---------------------------- | :------: | :------: | ----------------------- |
-| `createFhevmClient`          |    ✅    |    ✅    | TFHE (~4.9 MB) + TKMS (~600 KB) |
-| `createFhevmEncryptClient`   |    ✅    |    —     | TFHE (~4.9 MB)          |
-| `createFhevmEncryptTransciClient` | ✅ (pad-based) | — | TKMS (~600 KB)     |
-| `createFhevmDecryptClient`   |    —     |    ✅    | TKMS (~600 KB)          |
-| `createFhevmBaseClient`      |    —     |    —     | None                    |
+| Factory                           |    Encrypts    | Decrypts | WASM loaded                     |
+| --------------------------------- | :------------: | :------: | ------------------------------- |
+| `createFhevmClient`               |       ✅       |    ✅    | TFHE (~4.9 MB) + TKMS (~600 KB) |
+| `createFhevmEncryptClient`        |       ✅       |    —     | TFHE (~4.9 MB)                  |
+| `createFhevmEncryptWithPadClient` | ✅ (pad-based) |    —     | TKMS (~600 KB)                  |
+| `createFhevmDecryptClient`        |       —        |    ✅    | TKMS (~600 KB)                  |
+| `createFhevmBaseClient`           |       —        |    —     | None                            |
 
 "Encrypts" means the input-proof methods (`encryptValue` / `encryptValues`),
-except for `createFhevmEncryptTransciClient`, which exposes only the RFC-030
-pad-based methods (`encryptValueTransci` / `encryptValuesTransci`, experimental).
+except for `createFhevmEncryptWithPadClient`, which exposes only the RFC-030
+pad-based methods (`encryptValueWithPad` / `encryptValuesWithPad`, experimental).
 See [Encryption](encryption.md) for the two paths.
 
 "Decrypts" above covers **private** decryption (`decryptValue`). Reading
@@ -110,10 +110,10 @@ const client = createFhevmClient({
 });
 ```
 
-| Option            | Type                    | Applies to        | Purpose                                                            |
-| ----------------- | ----------------------- | ----------------- | ----------------------------------------------------------------- |
-| `batchRpcCalls`   | `boolean`               | all clients       | Coalesce the client's contract reads into batched RPC calls.      |
-| `fheEncryptionKey`| `FheEncryptionKeyBytes` | encrypt / full    | Provide a pre-fetched FHE public key to skip the network fetch.   |
+| Option             | Type                    | Applies to     | Purpose                                                         |
+| ------------------ | ----------------------- | -------------- | --------------------------------------------------------------- |
+| `batchRpcCalls`    | `boolean`               | all clients    | Coalesce the client's contract reads into batched RPC calls.    |
+| `fheEncryptionKey` | `FheEncryptionKeyBytes` | encrypt / full | Provide a pre-fetched FHE public key to skip the network fetch. |
 
 The encryption-key cache is covered in
 [Runtime configuration](runtime-configuration.md).
@@ -136,14 +136,14 @@ await client.ready; // resolves versions, downloads + compiles WASM, once
 
 Every client exposes a small set of lifecycle members:
 
-| Member            | Type               | Description                                                     |
-| ----------------- | ------------------ | -------------------------------------------------------------- |
-| `init()`          | `() => Promise<void>` | Preload and compile the client's WASM modules.              |
-| `ready`           | `Promise<void>`    | Resolves once the client is ready to use.                      |
-| `uid`             | `string`           | Stable identifier for this client instance.                    |
-| `chain`           | `FhevmChain`       | The chain definition the client was created with.              |
-| `protocolVersion` | resolution object  | The resolved FHEVM protocol version for the chain.             |
-| `extend(actions)` | function           | Attach additional action methods (advanced / internal).        |
+| Member            | Type                  | Description                                             |
+| ----------------- | --------------------- | ------------------------------------------------------- |
+| `init()`          | `() => Promise<void>` | Preload and compile the client's WASM modules.          |
+| `ready`           | `Promise<void>`       | Resolves once the client is ready to use.               |
+| `uid`             | `string`              | Stable identifier for this client instance.             |
+| `chain`           | `FhevmChain`          | The chain definition the client was created with.       |
+| `protocolVersion` | resolution object     | The resolved FHEVM protocol version for the chain.      |
+| `extend(actions)` | function              | Attach additional action methods (advanced / internal). |
 
 Calling `init()` twice is safe — module initialization is cached per WASM
 version. A given WASM version is owned by a single client instance; creating a
@@ -175,13 +175,13 @@ const client = createFhevmDecryptClient({ chain: sepolia, provider });
 ```
 
 A page that encrypts with RFC-030 pad-based inputs instead uses the
-transciphering client:
+pad-based encryption client:
 
 ```ts
-import { createFhevmEncryptTransciClient } from '@fhevm/sdk/ethers';
+import { createFhevmEncryptWithPadClient } from '@fhevm/sdk/ethers';
 
-const client = createFhevmEncryptTransciClient({ chain, provider });
-// exposes encryptValueTransci / encryptValuesTransci / generateTransportKeyPair (+ public-decrypt + permit helpers)
+const client = createFhevmEncryptWithPadClient({ chain, provider });
+// exposes encryptValueWithPad / encryptValuesWithPad / generateTransportKeyPair (+ public-decrypt + permit helpers)
 ```
 
 Each downloads only the WASM it needs. See [Encryption](encryption.md) and
@@ -193,5 +193,7 @@ Each downloads only the WASM it needs. See [Encryption](encryption.md) and
 - [Decryption](decryption.md) — private decryption, public values, delegation.
 - [Runtime configuration](runtime-configuration.md) — threads, WASM loading, version pinning.
 - [API reference](api-reference.md) — full factory and method signatures.
+
 ```
 
+```

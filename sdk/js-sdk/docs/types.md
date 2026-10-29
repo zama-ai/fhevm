@@ -24,16 +24,16 @@ Two parallel vocabularies describe the same data at different stages:
   These name the encrypted form on-chain. They appear in the branded handle
   aliases (`Euint32`, `Ebool`, …).
 
-| Value type  | FHE type    | Decrypted JS value |
-| ----------- | ----------- | ------------------ |
-| `bool`      | `ebool`     | `boolean`          |
-| `uint8`     | `euint8`    | `number`           |
-| `uint16`    | `euint16`   | `number`           |
-| `uint32`    | `euint32`   | `number`           |
-| `uint64`    | `euint64`   | `bigint`           |
-| `uint128`   | `euint128`  | `bigint`           |
-| `uint256`   | `euint256`  | `bigint`           |
-| `address`   | `eaddress`  | checksummed string |
+| Value type | FHE type   | Decrypted JS value |
+| ---------- | ---------- | ------------------ |
+| `bool`     | `ebool`    | `boolean`          |
+| `uint8`    | `euint8`   | `number`           |
+| `uint16`   | `euint16`  | `number`           |
+| `uint32`   | `euint32`  | `number`           |
+| `uint64`   | `euint64`  | `bigint`           |
+| `uint128`  | `euint128` | `bigint`           |
+| `uint256`  | `euint256` | `bigint`           |
+| `address`  | `eaddress` | checksummed string |
 
 There is no `uint160` (an encrypted address is `eaddress`), no encrypted `bytes`
 type, and `euint4` has been removed.
@@ -62,7 +62,9 @@ type TypedValue =
 Because it is discriminated on `type`, narrowing gives you the right value type:
 
 ```ts
-const d = await client.decryptValue({ /* … */ });
+const d = await client.decryptValue({
+  /* … */
+});
 
 if (d.type === 'bool') {
   d.value; // boolean
@@ -98,7 +100,7 @@ There are two lifecycle stages of an encrypted value, which share the same
 - **External** — freshly produced by `encryptValue` / `encryptValues`, not yet
   verified on-chain. Aliases: `ExternalEbool`, `ExternalEuint8`, … These are what
   you pass to a contract alongside an `inputProof` (or, with pad-based
-  `encryptValue[s]Transci`, an `inputPackage`).
+  `encryptValue[s]WithPad`, an `inputPackage`).
 - **Computed / verified** — the on-chain result of FHE operations, already
   trusted. These are what you read back and decrypt.
 
@@ -168,5 +170,7 @@ type SignedDecryptionPermit = {
 - [Decryption](decryption.md) — where `TypedValue`, `TransportKeyPair`, and permits come together.
 - [API reference](api-reference.md) — the complete exported type list.
 - [Glossary](GLOSSARY.md) — canonical naming across the SDK and protocol.
+
 ```
 
+```

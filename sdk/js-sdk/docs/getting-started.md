@@ -137,7 +137,7 @@ The input proof is bound to both `contractAddress` and `userAddress`. If either 
 
 This is the input-proof flow, supported by every FHEVM chain. The SDK also has an
 experimental RFC-030 pad-based flow on a separate client; see
-[Encryption → Pad-based encryption](encryption.md#pad-based-encryption-transciphering).
+[Encryption → Pad-based encryption](encryption.md#pad-based-encryption).
 
 Pass the results straight to your contract call — each encrypted value maps to an
 `externalEuintXX` / `externalEbool` argument, and the proof is the trailing
@@ -230,5 +230,7 @@ npx tsx ./examples/node-ethers/test-run.ts
 - [Runtime configuration](runtime-configuration.md) — threads, WASM loading, and
   browser headers.
 - [Migration](migration.md) — moving from `@zama-fhe/relayer-sdk`.
+
 ```
 
+```
