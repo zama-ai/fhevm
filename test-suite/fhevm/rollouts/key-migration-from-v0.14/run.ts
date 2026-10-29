@@ -12,6 +12,7 @@ import { withRolloutSupervisor } from "../../src/consensus/rollout-supervision";
 import { type ContextAndEpoch, parseContextAndEpoch } from "../../src/commands/kms-context-switch";
 import { resolveRolloutSolidityRef } from "../../src/commands/rollout-solidity";
 import type { Stack } from "../../src/commands/stack";
+import type { State } from "../../src/types";
 import { castCall, resolveKmsGenerationTarget, waitForContainer } from "../../src/flow/readiness";
 import {
   COPROCESSOR_DB_CONTAINER,
@@ -21,6 +22,7 @@ import {
   defaultHostChainKey,
   OBJECT_STORE_EXTERNAL_URL,
   REPO_ROOT,
+  STATE_DIR,
 } from "../../src/layout";
 import {
   kmsConnectorDbName,
@@ -335,38 +337,40 @@ const assertGreenWorkersParked = async () => {
   }
 };
 
-/** Fails fast on a stack this test cannot drive, and returns what it needs from the scenario. */
-const keyMigrationScenario = async (stack: Stack) => {
-  const state = await stack.readState();
-  const scenario = state.scenario;
+/** The scenario shape this test drives: a deferred 0.14 bootstrap with the fleet sizes above. */
+export const assertKeyMigrationScenario = (scenario: State["scenario"]) => {
   if (
     scenario.kind !== "blue-green" ||
     scenario.bootstrap?.upgrade !== "deferred" ||
     scenario.bcs.source.mode !== "registry" ||
     scenario.topology.count !== OPERATOR_COUNT ||
     scenario.kms.parties !== CONNECTOR_PARTIES ||
-    !state.bootstrapPending ||
-    state.bootstrapPending.completed?.length
+    scenario.gcs.env.FORCE_LEGACY_SERVER_KEY !== "true"
   ) {
-    throw new Error("key-migration-from-v0.14 needs a fresh `up --scenario key-migration-from-v0.14` (or its -gpu variant)");
+    throw new Error("key-migration-from-v0.14 needs the key-migration-from-v0.14 scenario or its -gpu variant");
+  }
+  return { baselineTag: scenario.bootstrap.tag, blueTag: scenario.bcs.source.tag };
+};
+
+/** Fails fast on a stack this test cannot drive, and returns what it needs from it. */
+const keyMigrationStack = async (stack: Stack) => {
+  const state = await stack.readState();
+  const tags = assertKeyMigrationScenario(state.scenario);
+  if (!state.bootstrapPending || state.bootstrapPending.completed?.length) {
+    throw new Error("key-migration-from-v0.14 needs a freshly booted stack; re-run `fhevm-cli up`");
   }
   // Green runs with the production chart's serving mode: legacy material until the operator flips it.
   const chart = YAML.parse(await Bun.file(path.join(REPO_ROOT, "charts/coprocessor/values.yaml")).text());
-  if (chart?.commonConfig?.forceLegacyServerKey !== true || scenario.gcs.env.FORCE_LEGACY_SERVER_KEY !== "true") {
-    throw new Error("Green must mirror the coprocessor chart's commonConfig.forceLegacyServerKey, which this test expects to be true");
+  if (chart?.commonConfig?.forceLegacyServerKey !== true) {
+    throw new Error("the coprocessor chart no longer forces the legacy server key; update this test and its scenarios");
   }
-  return {
-    state,
-    baselineTag: scenario.bootstrap.tag,
-    blueTag: scenario.bcs.source.tag,
-    targetCoreVersion: state.bootstrapPending.target.env.CORE_VERSION!,
-  };
+  return { state, ...tags, targetCoreVersion: state.bootstrapPending.target.env.CORE_VERSION! };
 };
 
-export default async function keyMigration(stack: Stack) {
+export const runKeyMigrationProfile = async (stack: Stack) => {
   const migrationFault = process.env.RFC029_MIGRATION_FAULT ?? "none";
   if (!["none", "lagging-recipient", "application-interruption", "download-interrupt", "download-wrong-digest", "download-malformed", "download-wrong-key"].includes(migrationFault)) throw new Error(`unsupported migration fault ${migrationFault}`);
-  const { state, baselineTag, blueTag, targetCoreVersion } = await keyMigrationScenario(stack);
+  const { state, baselineTag, blueTag, targetCoreVersion } = await keyMigrationStack(stack);
   // Threshold Test keys use drift noise reduction, which CUDA does not support, so the GPU
   // scenario generates the baseline key with the Default parameters.
   const gpuContinuation = state.scenario.kms.fheParams === "Default";
@@ -457,12 +461,12 @@ export default async function keyMigration(stack: Stack) {
   }
 
   logPhase("04 upgrade every remaining KMS operator to 0.15 and establish listener boundaries");
-  for (const operator of [2, 3, 4] as const) {
+  for (const operator of kmsPartyIds(CONNECTOR_PARTIES).slice(1)) {
     await stack.upgrade(`kms-operator:${operator}`);
     const operatorBoundary = await mineHostBlock();
     await waitForConnectorBoundary(operator, operatorBoundary, mixedConnectorImages);
   }
-  await assertKmsCoreVersions([1, 2, 3, 4], targetCoreVersion);
+  await assertKmsCoreVersions(kmsPartyIds(CONNECTOR_PARTIES), targetCoreVersion);
   const expectedConnectorImages = (await connectorObservation(1)).images;
   assertConnectorUpgraded(baselineConnectorImages, expectedConnectorImages);
   const migrationBoundary = await mineHostBlock();
@@ -495,9 +499,9 @@ export default async function keyMigration(stack: Stack) {
   if (process.env.RFC029_RETIRED_WRITERS === "1") {
     logPhase("07b reject retired compute and publication with original prepared work");
     const env = { RETIRED_OPERATOR_COUNT: String(OPERATOR_COUNT) };
-    await withRolloutSupervisor(stack.stateDir(), "hold-retired-writers.sh", ["sns-worker"], env, async () => {
+    await withRolloutSupervisor(STATE_DIR, "hold-retired-writers.sh", ["sns-worker"], env, async () => {
       await runRetainedMaterial(await stack.readState(), "retired-sns", "release-migration");
-      await withRolloutSupervisor(stack.stateDir(), "hold-retired-writers.sh", ["tfhe-worker"], env, async () => {
+      await withRolloutSupervisor(STATE_DIR, "hold-retired-writers.sh", ["tfhe-worker"], env, async () => {
         await runRetainedMaterial(await stack.readState(), "retired-tfhe", "release-migration");
         for (let checkpoint = 0; checkpoint < 3; checkpoint++) {
           await runRetainedMaterial(await stack.readState(), "retired-check", "release-migration");
@@ -560,13 +564,13 @@ export default async function keyMigration(stack: Stack) {
     const names = (await run(["docker", "ps", "-a", "--format", "{{.Names}}"])).stdout.trim().split(/\r?\n/)
       .filter(name => /^coprocessor1-gcs-host-listener(?:-[a-zA-Z0-9-]+)?$/.test(name));
     if (names.length < 3) throw new Error("cannot identify every live listener role for the held recipient");
-    if (migrationFault === "lagging-recipient") await withHeldRecipient(stack.stateDir(), names, generateMaterial);
-    else if (migrationFault.startsWith("download-")) await withRolloutSupervisor(stack.stateDir(), "hold-key-download.sh", names, {
+    if (migrationFault === "lagging-recipient") await withHeldRecipient(STATE_DIR, names, generateMaterial);
+    else if (migrationFault.startsWith("download-")) await withRolloutSupervisor(STATE_DIR, "hold-key-download.sh", names, {
       MIGRATION_KEY_HEX: keyIdHex, MIGRATION_DATABASE: coprocessorDatabaseName(1),
       MIGRATION_DOWNLOAD_MODE: migrationFault.slice("download-".length),
       POSTGRES_PASSWORD: DEFAULT_POSTGRES_PASSWORD,
     }, generateMaterial);
-    else await withRolloutSupervisor(stack.stateDir(), "interrupt-key-application.sh", names, {
+    else await withRolloutSupervisor(STATE_DIR, "interrupt-key-application.sh", names, {
       MIGRATION_KEY_HEX: keyIdHex, MIGRATION_DATABASE: coprocessorDatabaseName(1),
       POSTGRES_PASSWORD: DEFAULT_POSTGRES_PASSWORD,
     }, generateMaterial);
@@ -614,7 +618,7 @@ export default async function keyMigration(stack: Stack) {
   if (gpuContinuation) {
     logPhase("11 consume migrated compressed keys on GPU, then repeat after a worker restart");
     const since = new Date().toISOString();
-    await withRolloutSupervisor(stack.stateDir(), "hold-migration-gpu.sh", [], {
+    await withRolloutSupervisor(STATE_DIR, "hold-migration-gpu.sh", [], {
       RFC029_GPU_IMAGES: process.env.RFC029_GPU_IMAGES!,
     }, async () => {
       for (const checkpoint of ["initial load", "restart"]) {
@@ -663,4 +667,4 @@ export default async function keyMigration(stack: Stack) {
         env: { KMS_CONTEXT_ID: (before.contextId + 1n).toString() },
       }),
   );
-}
+};

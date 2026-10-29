@@ -7,6 +7,7 @@ import {
   assertConnectorUpgraded,
   assertOperatorMaterialAgreement,
 } from "../rollouts/key-migration-from-v0.14/checks";
+import { assertKeyMigrationScenario } from "../rollouts/key-migration-from-v0.14/run";
 import { parseBlueGreenScenario, resolveBlueGreenScenario } from "./scenario/resolve";
 
 const material = (overrides: Partial<OperatorMaterial> = {}): OperatorMaterial => ({
@@ -29,33 +30,12 @@ describe("key migration from v0.14", () => {
     return resolveBlueGreenScenario(file, parseBlueGreenScenario(await Bun.file(file).text(), name));
   };
 
-  test("boots 0.14 Blue and defers the upgrade and the locally built Green with the legacy safeguard", async () => {
+  test("both scenarios fit the test, and only the GPU one generates a Default-parameter key", async () => {
     for (const name of ["key-migration-from-v0.14", "key-migration-from-v0.14-gpu"]) {
-      const resolved = await scenario(name);
-      expect(resolved.bootstrap).toEqual({ tag: "v0.14.2-0", upgrade: "deferred" });
-      expect(resolved.bcs.source).toEqual({ mode: "registry", tag: "v0.14.2-0" });
-      expect(resolved.gcs.source).toEqual({ mode: "local" });
-      expect(resolved.gcs.env.FORCE_LEGACY_SERVER_KEY).toBe("true");
-      expect(resolved.gcs.deferredStart).toBe(true);
-      expect(resolved.topology).toEqual({ count: 2, threshold: 2 });
-      expect(resolved.hostChains).toHaveLength(2);
+      expect(assertKeyMigrationScenario(await scenario(name))).toEqual({ baselineTag: "v0.14.2-0", blueTag: "v0.14.2-0" });
     }
-    expect((await scenario("key-migration-from-v0.14")).kms).toEqual({
-      parties: 4,
-      threshold: 1,
-      committeeSize: 4,
-      fheParams: "Test",
-    });
-  });
-
-  test("selects Default parameters at baseline creation for the GPU phase", async () => {
-    expect((await scenario("key-migration-from-v0.14-gpu")).kms).toEqual({
-      parties: 4,
-      threshold: 1,
-      committeeSize: 4,
-      fheParams: "Default",
-      insecureTestKeygen: true,
-    });
+    expect((await scenario("key-migration-from-v0.14")).kms.fheParams).toBe("Test");
+    expect((await scenario("key-migration-from-v0.14-gpu")).kms).toMatchObject({ fheParams: "Default", insecureTestKeygen: true });
   });
 
   test("blocks a mixed connector deployment", () => {

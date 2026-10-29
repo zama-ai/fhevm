@@ -8,7 +8,6 @@ import { runContractTask } from "../flow/contracts";
 import { waitForTestSuite } from "../flow/readiness";
 import { composeUp } from "../flow/runtime-compose";
 import { upgradeBootstrappedStack } from "../flow/up-flow";
-import { STATE_DIR } from "../layout";
 import { loadState } from "../state/state";
 import type { State } from "../types";
 import { type RolloutReceipt, createRolloutReceipt } from "./rollout-receipt";
@@ -30,7 +29,6 @@ export type Stack = {
   runGatewayContractTask(command: string, options?: ContractTaskOptions): Promise<void>;
   runHostContractTask(command: string, options?: ContractTaskOptions): Promise<void>;
   readState(): Promise<State>;
-  stateDir(): string;
 };
 
 const readState = async () => {
@@ -45,7 +43,12 @@ const createStack = (receipt: RolloutReceipt): Stack => ({
   async upgrade(...steps) {
     const state = await readState();
     await upgradeBootstrappedStack(state, steps);
-    await receipt.record("upgrade", steps.join(", "), { docker: true, versions: state.versions.env });
+    await receipt.record("upgrade", steps.join(", "), {
+      docker: true,
+      // A KMS operator's versions reach `versions` only once every operator runs them.
+      details: { kmsCoreVersionByNodeId: state.kmsCoreVersionByNodeId },
+      versions: state.versions.env,
+    });
   },
   async test(profile, options = {}) {
     console.log("[test-suite] recreate container to load current generated env");
@@ -73,9 +76,6 @@ const createStack = (receipt: RolloutReceipt): Stack => ({
     });
   },
   readState,
-  stateDir() {
-    return STATE_DIR;
-  },
 });
 
 /** Runs a test that drives the stack, recording the stack before it and the outcome. */

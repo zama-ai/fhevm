@@ -192,6 +192,7 @@ import {
   bootstrapPhaseEnv,
   checkUpgradeSteps,
   contractUpgradeCommand,
+  isDeferredBootstrap,
   upgradeOrder,
 } from "./bootstrap";
 import { pause, runContractTask, snapshotContractSources, unpause } from "./contracts";
@@ -1323,7 +1324,7 @@ const logBootstrap = (state: Pick<State, "bootstrapPending" | "versions" | "scen
   if (!state.bootstrapPending) {
     return;
   }
-  const deferred = state.scenario.kind === "blue-green" && state.scenario.bootstrap?.upgrade === "deferred";
+  const deferred = isDeferredBootstrap(state.scenario);
   console.log(
     `[bootstrap] contracts, KMS core/connector, listener-core${deferred ? " and relayer" : ""} boot at ` +
       `${state.versions.env.HOST_VERSION} (core ${state.versions.env.CORE_VERSION}); ` +
@@ -2244,7 +2245,7 @@ const upgradeKmsCluster = async (state: State, group: "kms" | "kms-core", lockFi
  */
 const completeBootstrap = async (state: State) => {
   const pending = state.bootstrapPending;
-  if (!pending || (state.scenario.kind === "blue-green" && state.scenario.bootstrap?.upgrade === "deferred")) {
+  if (!pending || isDeferredBootstrap(state.scenario)) {
     await generateRuntime(state, stackSpecForState(state));
     return;
   }
@@ -2359,12 +2360,14 @@ export const upgradeBootstrappedStack = async (state: State, steps: readonly Upg
     console.log("[bootstrap] stack upgraded to the bundle; starting the Green fleet");
     // The marker stays until Green runs, so a failed start is retried by `up --resume` rather
     // than left deferred for good.
-    await startDeferredGreen(deferredGreenOperations);
+    await startDeferredGreen();
     Object.assign(state, await loadState());
     delete state.bootstrapPending;
     await saveState(state);
   };
 
+  // Resuming after a crash between the last operator and the HTTP start: `green` returns before
+  // the check that follows each step.
   await startConnectorHttpOnceOperatorsAreDone();
   for (const step of steps) {
     if (step === "green") {

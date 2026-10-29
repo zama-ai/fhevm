@@ -440,7 +440,7 @@ export const createRolloutReceipt = (
     await fs.writeFile(receiptJsonlPath(), "");
     await fs.writeFile(
       receiptMarkdownPath(),
-      [`# Stack Test Receipt`, ``, `- test: \`${name}\``, `- started: ${new Date().toISOString()}`, ""].join(
+      [`# Rollout Receipt`, ``, `- test: \`${name}\``, `- started: ${new Date().toISOString()}`, ""].join(
         "\n",
       ),
     );

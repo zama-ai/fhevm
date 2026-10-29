@@ -22,7 +22,7 @@ from the candidate revision; the historical validation report is not a substitut
 | --- | --- | --- |
 | Inventory consensus and failure modes | Manually dispatch `test-suite-consensus` on the candidate ref with `selection=full` and `build=true`. For local runs, follow [preparation](#preparing-and-running-a-campaign) and the workflow's build-receipt and aggregation sequence. | Every required inventory case at its required backend, including GPU and lower-layer gates, with successful cleanup. `standard`, `smoke`, or `build=false` cannot provide the full verdict. |
 | Blue/green continuity and faults | Fresh `blue-green-two-of-three-multi-chain` stack for the ordinary flow and each [quiet-success](#bluegreen-continuity-and-quiet-hosts), [host-withholding](#one-missing-host-upgrade-report), [host-divergence](#divergent-host-commitment-during-upgrade), [detector-interruption](#detector-interruption-before-report-publication) and [controller-boundary](#upgrade-interruption-boundaries-separate-stateful-runs) arm. | Eight receipts: ordinary flow, quiet success, both host-report faults, detector interruption, and each of the three controller boundaries. These are outside inventory `full`. |
-| Existing-key migration and retained material | Stateful migration runbook with [explicit candidate pins](#key-migration-lagging-recipient-and-candidate-selection). Run the healthy software-replacement/retired-writer/GPU continuation, then separate fresh rollouts for lagging recipient, application interruption and each of the four [download faults](#key-download-faults). | Rollout receipts, original key/input/object preservation, each observed fault and recovery, and GPU continuation evidence. REG-06 supplies separate parser/replay database coverage, not another live rollout. |
+| Existing-key migration and retained material | The `key-migration-from-v0.14` test profile on a fresh `key-migration-from-v0.14` stack ([lagging recipient](#key-migration-lagging-recipient)). Run the healthy retired-writer run and the GPU continuation, then separate fresh runs for lagging recipient, application interruption and each of the four [download faults](#key-download-faults). | Rollout receipts, original key/input/object preservation, each observed fault and recovery, and GPU continuation evidence. REG-06 supplies separate parser/replay database coverage, not another live rollout. |
 
 Before provisioning, record the exact baseline, candidate, companion versions,
 topology and build features. Fault-hook builds are campaign artifacts; they are
@@ -404,7 +404,7 @@ claim to freeze every listener before it consumes the atomic notification;
 that ordering is not under the controller's ownership. These stateful upgrade
 runs remain outside the consensus workflow inventory. Their completed execution is recorded separately in the [completion report](VALIDATION-2026-09-24.md).
 
-## Key migration: lagging recipient and candidate selection
+## Key migration: lagging recipient
 
 
 The `key-migration-from-v0.14` test profile accepts the optional
@@ -753,8 +753,8 @@ rollout stack until recovery is completed.
 
 The key-migration test compiles its application fixtures against the Solidity
 library of the scenario's `bootstrap.tag`. That tag must exist in the local Git
-clone. The runner resolves it to an immutable commit before
-boot, reapplies the library after every test-container recreation, and records
+clone. The test resolves it to an immutable commit when it
+starts, reapplies the library after every test-container recreation, and records
 the commit, library tree, and archive SHA-256 in `fixture-solidity` receipts.
 Only the test container's library and compiled fixtures change; production
 contracts, candidate binaries, and checkout sources keep their selected versions.
@@ -922,8 +922,8 @@ services are restored on normal completion or parent loss. These are retirement
 checks for compute and object publication, not Gateway submission faults.
 
 For repeat rollout validation, use a fresh stack for each download fault.
-One healthy rollout should enable software replacement, retired-writer checks
-and the GPU continuation together. Run the lagging-recipient,
+One healthy run should enable the retired-writer checks; the GPU continuation
+needs its own `key-migration-from-v0.14-gpu` stack. Run the lagging-recipient,
 application-interruption and four download fault modes separately. The required
 REG-06 inventory gate covers parser staging and decoded-event idempotency in an
 isolated database; those checks do not require another live broker campaign.

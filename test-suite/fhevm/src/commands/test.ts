@@ -2308,11 +2308,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "key-migration-from-v0.14") {
       // Imported here: the stack handle runs its checks through this module.
-      const [{ runStackTest }, { default: keyMigration }] = await Promise.all([
+      const [{ runStackTest }, { runKeyMigrationProfile }] = await Promise.all([
         import("./stack"),
         import("../../rollouts/key-migration-from-v0.14/run"),
       ]);
-      return runStackTest(name, keyMigration);
+      return runStackTest(name, runKeyMigrationProfile);
     }
     if (name === "blue-green") {
       return runBlueGreenProfile(state, options);

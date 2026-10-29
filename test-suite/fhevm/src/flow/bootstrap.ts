@@ -44,13 +44,17 @@ export const bootstrapBootVersions = (bundle: VersionBundle, bootstrap: BlueGree
 export const bootstrapBootOverrides = (overrides: LocalOverride[], bootstrap: BlueGreenBootstrap) =>
   overrides.filter((override) => !bootstrapSuspendedGroups(bootstrap).includes(override.group));
 
+/** True when the scenario boots at its `bootstrap` release and leaves the upgrade to the test. */
+export const isDeferredBootstrap = (scenario: State["scenario"]) =>
+  scenario.kind === "blue-green" && scenario.bootstrap?.upgrade === "deferred";
+
 /** One unit of the bootstrap upgrade; a test that defers the upgrade runs them itself. */
 export type UpgradeStep = "contracts" | "relayer" | `kms-operator:${number}` | "listener-core" | "green";
 
 /** The production order. The relayer is a step only when deferred; otherwise it boots at the bundle. */
 export const upgradeOrder = (scenario: State["scenario"]): UpgradeStep[] => [
   "contracts",
-  ...(scenario.kind === "blue-green" && scenario.bootstrap?.upgrade === "deferred" ? (["relayer"] as const) : []),
+  ...(isDeferredBootstrap(scenario) ? (["relayer"] as const) : []),
   ...kmsPartyIds(scenario.kms.parties).map((id) => `kms-operator:${id}` as const),
   "listener-core",
   "green",
