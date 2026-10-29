@@ -16,29 +16,29 @@ Paths written `fhevm-mocks:<path>` are files in `zama-ai/fhevm-mocks` at commit 
 
 ## 1. Provenance
 
-| | |
-|---|---|
-| copied from | `zama-ai/fhevm-mocks`, branch `devex/alexb/v1.0/new`, commit `c71685cb2712028107b997959cbe4f2f67e325b9` |
-| sync history | Initial copy at `8b91ae5`. Re-synced at `585442e`: `cleartext/CleartextPaddedInputter.sol`, `cleartext/shared/LibCleartextPad.sol` and `cleartext/shared/CleartextArithmeticBase.sol` changed (fhevm-mocks `e7008bd` pad block index little-endian, tech-spec#553; `82819de` pad decryption responses signed per share, tech-spec#547; `277da6f` docs; `585442e` the cleartext coprocessor re-checks a pad package's chain and label). Re-synced at `c71685c`: `cleartext/CleartextPaddedInputter.sol` changed (every node's pad decryption response built in one view call, `getCleartextPadResponsesMaterial`; `cleartextDecryptPadPayload` added; `cleartextEncryptPadPayload` and `padDecryptResponseDigest` removed; `PadDecryptRequestPayload.prf` renamed `prfId`). No other file under `pkg/src` changed. |
-| package | `host-contracts-cleartext/v1.0/pkg/src/` (npm `@fhevm/host-contracts-cleartext` `1.0.0-0`) |
-| vendored upstream | `zama-ai/fhevm` `host-contracts/contracts` @ `10702a23009147252950a69059968b8a20599549`, labelled `v1.0.0-0-g10702a230` (fhevm `main`, no upstream tag yet). Source: `fhevm-mocks:pkg/package.json` → `fhevm.vendoredFrom` |
-| local patches on the vendored copy | `ACL.sol`, `ProtocolConfig.sol`, `ProtocolConfigReplica.sol`, `FHEVMExecutor.sol`, `PaddedInputter.sol` (same field; see commit `b0d98bf` in fhevm-mocks for the reasons) |
-| older pin | The generation was first vendored at fhevm tag **v0.15.0-3**, then v0.15.0-6, then moved to the commit above. Several comments still say "v0.15.0-3", for example `cleartext/shared/LibFhevmCoprocessorConfig.sol` and `fhevm-mocks:README.md` §1. The committed pin is the commit above. |
+|                                    |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| copied from                        | `zama-ai/fhevm-mocks`, branch `devex/alexb/v1.0/new`, commit `c71685cb2712028107b997959cbe4f2f67e325b9`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| sync history                       | Initial copy at `8b91ae5`. Re-synced at `585442e`: `cleartext/CleartextPaddedInputter.sol`, `cleartext/shared/LibCleartextPad.sol` and `cleartext/shared/CleartextArithmeticBase.sol` changed (fhevm-mocks `e7008bd` pad block index little-endian, tech-spec#553; `82819de` pad decryption responses signed per share, tech-spec#547; `277da6f` docs; `585442e` the cleartext coprocessor re-checks a pad package's chain and label). Re-synced at `c71685c`: `cleartext/CleartextPaddedInputter.sol` changed (every node's pad decryption response built in one view call, `getCleartextPadResponsesMaterial`; `cleartextDecryptPadPayload` added; `cleartextEncryptPadPayload` and `padDecryptResponseDigest` removed; `PadDecryptRequestPayload.prf` renamed `prfId`). No other file under `pkg/src` changed. |
+| package                            | `host-contracts-cleartext/v1.0/pkg/src/` (npm `@fhevm/host-contracts-cleartext` `1.0.0-0`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| vendored upstream                  | `zama-ai/fhevm` `host-contracts/contracts` @ `10702a23009147252950a69059968b8a20599549`, labelled `v1.0.0-0-g10702a230` (fhevm `main`, no upstream tag yet). Source: `fhevm-mocks:pkg/package.json` → `fhevm.vendoredFrom`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| local patches on the vendored copy | `ACL.sol`, `ProtocolConfig.sol`, `ProtocolConfigReplica.sol`, `FHEVMExecutor.sol`, `PaddedInputter.sol` (same field; see commit `b0d98bf` in fhevm-mocks for the reasons)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| older pin                          | The generation was first vendored at fhevm tag **v0.15.0-3**, then v0.15.0-6, then moved to the commit above. Several comments still say "v0.15.0-3", for example `cleartext/shared/LibFhevmCoprocessorConfig.sol` and `fhevm-mocks:README.md` §1. The committed pin is the commit above.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 `sha.txt` records the same facts. Its first line is the upstream fhevm commit, the same convention as
 `../v0.12.0/sha.txt` and `../v0.16.0/sha.txt`.
 
 ## 2. What is in the folder (60 files + this notice)
 
-| path | files | origin (`fhevm-mocks:pkg/src/…`) | notes |
-|---|---|---|---|
-| `host-contracts/contracts/` | 30 | `contracts/` | Vendored upstream host contracts, byte-identical to the source. The 3 LayerZero-dependent bridge sources are left out (see below). |
-| `host-contracts/addresses/FHEVMHostAddresses.sol` | 1 | `addresses/FHEVMHostAddresses.sol` | The `*Add` aliases every contract imports. **One import rewritten** (see below). |
-| `config/addresses.sol` | 1 | *new*, the file `fhevm-config-1.0.0/addresses.sol` resolves to | The 12 real `*_ADDRESS` constants. Committed with the canonical local set (§4). It is **regenerated per deployer/nonce**. |
-| `cleartext/` (+ `shared/`, `shared/interfaces/`) | 27 | `cleartext/` | The cleartext implementations and their libraries. Relative imports rewritten. |
-| `erc1967/ERC1967Proxy.sol` | 1 | `erc1967/ERC1967Proxy.sol` | A thin wrapper over OZ 5.1.0 `ERC1967Proxy`. Unchanged. |
-| `upgrade/ACLOwner.sol` | 1 | `upgrade/ACLOwner.sol` | The standing owner of the stack (new in this deploy flow). Unchanged. |
-| `sha.txt` | 1 | — | Provenance. |
+| path                                              | files | origin (`fhevm-mocks:pkg/src/…`)                               | notes                                                                                                                              |
+| ------------------------------------------------- | ----- | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `host-contracts/contracts/`                       | 30    | `contracts/`                                                   | Vendored upstream host contracts, byte-identical to the source. The 3 LayerZero-dependent bridge sources are left out (see below). |
+| `host-contracts/addresses/FHEVMHostAddresses.sol` | 1     | `addresses/FHEVMHostAddresses.sol`                             | The `*Add` aliases every contract imports. **One import rewritten** (see below).                                                   |
+| `config/addresses.sol`                            | 1     | _new_, the file `fhevm-config-1.0.0/addresses.sol` resolves to | The 12 real `*_ADDRESS` constants. Committed with the canonical local set (§4). It is **regenerated per deployer/nonce**.          |
+| `cleartext/` (+ `shared/`, `shared/interfaces/`)  | 27    | `cleartext/`                                                   | The cleartext implementations and their libraries. Relative imports rewritten.                                                     |
+| `erc1967/ERC1967Proxy.sol`                        | 1     | `erc1967/ERC1967Proxy.sol`                                     | A thin wrapper over OZ 5.1.0 `ERC1967Proxy`. Unchanged.                                                                            |
+| `upgrade/ACLOwner.sol`                            | 1     | `upgrade/ACLOwner.sol`                                         | The standing owner of the stack (new in this deploy flow). Unchanged.                                                              |
+| `sha.txt`                                         | 1     | —                                                              | Provenance.                                                                                                                        |
 
 ### Adaptations to the source
 
@@ -52,6 +52,7 @@ All edits are path-only. No Solidity logic was touched.
 
    Imports inside `host-contracts/contracts/` (`"../addresses/FHEVMHostAddresses.sol"`) already resolve and are
    untouched.
+
 2. **The config remapping replaced by a relative import.** Upstream fhevm-mocks has
    `import {...} from "fhevm-config-1.0.0/addresses.sol";` in `FHEVMHostAddresses.sol`, resolved by a remapping
    (`fhevm-mocks:remappings.txt`: `fhevm-config-1.0.0/=internal/placeholders/`, overridden at deploy time with
@@ -61,7 +62,7 @@ All edits are path-only. No Solidity logic was touched.
    remapping can resolve would break `forge build` for every existing profile until `foundry.toml` were edited.
    With the relative import the folder compiles with the current config, as the siblings do. They commit a
    real-address `FHEVMHostAddresses.sol`, and their deploy regenerates it.
-   *Alternative, not done:* revert that one import to `fhevm-config-1.0.0/addresses.sol` and add
+   _Alternative, not done:_ revert that one import to `fhevm-config-1.0.0/addresses.sol` and add
    `"fhevm-config-1.0.0/=./src/v1.0.0/config/"` to **every** profile's `remappings` (default, v12, v13, v16 and the new one).
 3. **Left out:** `contracts/bridge/{ConfidentialBridge,HandlesSender,HandlesReceiver}.sol`. They import
    `@layerzerolabs/*`, which this repo does not have. fhevm-mocks never compiles them either (`skip` in
@@ -139,23 +140,23 @@ So the order is fixed: compute the addresses, write `config/addresses.sol`, comp
 
 Every address is `CREATE(deployer, N + offset)`, where `N` is the deployer's nonce when the deploy starts:
 
-| offset | contract created | constant in `config/addresses.sol` | canonical address (deployer `0x8B8f…0DF4`, N = 0) |
-|---|---|---|---|
-| +0 | `EmptyUUPSProxyACL` (impl. of the ACL proxy) | — | `0x34e3eD8472e409dbF8FDf933cA996DC75e4Be126` |
-| +1 | `ERC1967Proxy` → **ACL** | `ACL_ADDRESS` | `0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D` |
-| +2 | `EmptyUUPSProxy` (shared impl. of every other proxy) | — | `0xCD3ab3bd6bcc0c0bf3E27912a92043e817B1cf69` |
-| +3 | `ERC1967Proxy` → **FHEVMExecutor** | `FHEVM_EXECUTOR_ADDRESS` | `0xe3a9105a3a932253A70F126eb1E3b589C643dD24` |
-| +4 | `ERC1967Proxy` → **KMSVerifier** | `KMS_VERIFIER_ADDRESS` | `0x901F8942346f7AB3a01F6D7613119Bca447Bb030` |
-| +5 | `ERC1967Proxy` → **InputVerifier** | `INPUT_VERIFIER_ADDRESS` | `0x36772142b74871f255CbD7A3e89B401d3e45825f` |
-| +6 | `ERC1967Proxy` → **HCULimit** | `HCU_LIMIT_ADDRESS` | `0x233ff88A48c172d29F675403e6A8e302b0F032D9` |
-| +7 | `ERC1967Proxy` → **ProtocolConfig** | `PROTOCOL_CONFIG_ADDRESS` | `0x44aA028fd264C76BF4A8f8B4d8A5272f6AE25CAc` |
-| +8 | `ERC1967Proxy` → **KMSGeneration** | `KMS_GENERATION_ADDRESS` | `0x216be43148dB537BeddBC268163deb1a802b5553` |
-| +9 | `ERC1967Proxy` → **PaddedInputter** (RFC-030, new in v1.0) | `PADDED_INPUTTER_ADDRESS` | `0xded0D2a71268DC12622BdD1b55d68a1CB5662327` |
-| +10 | `ERC1967Proxy` → **CleartextArithmetic** | `CLEARTEXT_ARITHMETIC_ADDRESS` | `0x6933Afcf0F4bCE1A611baD0A6FaafF0337a7ba1E` |
-| +11 | `ERC1967Proxy` → **CleartextDB** | `CLEARTEXT_DB_ADDRESS` | `0x590e3330386Fa042843773541aaBb3a45EC3164D` |
-| +12 | **PauserSet** (immutable, no proxy) | `PAUSER_SET_ADDRESS` | `0xcF5De2DbC4Ea85426db47845537A90ec4e6316E2` |
-| +13 | `ERC1967Proxy` → **ProtocolConfigReplica** | `PROTOCOL_CONFIG_REPLICA_ADDRESS` | `0x492e52843AE2eCF9daae6B951E12C3614Ee115C1` |
-| +14 | **ACLOwner** (no contract references it, so it is not in the file) | — | `0xc8D844BcF85739dCCC1DDB972Ba35A3e39402F3F` |
+| offset | contract created                                                   | constant in `config/addresses.sol` | canonical address (deployer `0x8B8f…0DF4`, N = 0) |
+| ------ | ------------------------------------------------------------------ | ---------------------------------- | ------------------------------------------------- |
+| +0     | `EmptyUUPSProxyACL` (impl. of the ACL proxy)                       | —                                  | `0x34e3eD8472e409dbF8FDf933cA996DC75e4Be126`      |
+| +1     | `ERC1967Proxy` → **ACL**                                           | `ACL_ADDRESS`                      | `0x50157CFfD6bBFA2DECe204a89ec419c23ef5755D`      |
+| +2     | `EmptyUUPSProxy` (shared impl. of every other proxy)               | —                                  | `0xCD3ab3bd6bcc0c0bf3E27912a92043e817B1cf69`      |
+| +3     | `ERC1967Proxy` → **FHEVMExecutor**                                 | `FHEVM_EXECUTOR_ADDRESS`           | `0xe3a9105a3a932253A70F126eb1E3b589C643dD24`      |
+| +4     | `ERC1967Proxy` → **KMSVerifier**                                   | `KMS_VERIFIER_ADDRESS`             | `0x901F8942346f7AB3a01F6D7613119Bca447Bb030`      |
+| +5     | `ERC1967Proxy` → **InputVerifier**                                 | `INPUT_VERIFIER_ADDRESS`           | `0x36772142b74871f255CbD7A3e89B401d3e45825f`      |
+| +6     | `ERC1967Proxy` → **HCULimit**                                      | `HCU_LIMIT_ADDRESS`                | `0x233ff88A48c172d29F675403e6A8e302b0F032D9`      |
+| +7     | `ERC1967Proxy` → **ProtocolConfig**                                | `PROTOCOL_CONFIG_ADDRESS`          | `0x44aA028fd264C76BF4A8f8B4d8A5272f6AE25CAc`      |
+| +8     | `ERC1967Proxy` → **KMSGeneration**                                 | `KMS_GENERATION_ADDRESS`           | `0x216be43148dB537BeddBC268163deb1a802b5553`      |
+| +9     | `ERC1967Proxy` → **PaddedInputter** (RFC-030, new in v1.0)         | `PADDED_INPUTTER_ADDRESS`          | `0xded0D2a71268DC12622BdD1b55d68a1CB5662327`      |
+| +10    | `ERC1967Proxy` → **CleartextArithmetic**                           | `CLEARTEXT_ARITHMETIC_ADDRESS`     | `0x6933Afcf0F4bCE1A611baD0A6FaafF0337a7ba1E`      |
+| +11    | `ERC1967Proxy` → **CleartextDB**                                   | `CLEARTEXT_DB_ADDRESS`             | `0x590e3330386Fa042843773541aaBb3a45EC3164D`      |
+| +12    | **PauserSet** (immutable, no proxy)                                | `PAUSER_SET_ADDRESS`               | `0xcF5De2DbC4Ea85426db47845537A90ec4e6316E2`      |
+| +13    | `ERC1967Proxy` → **ProtocolConfigReplica**                         | `PROTOCOL_CONFIG_REPLICA_ADDRESS`  | `0x492e52843AE2eCF9daae6B951E12C3614Ee115C1`      |
+| +14    | **ACLOwner** (no contract references it, so it is not in the file) | —                                  | `0xc8D844BcF85739dCCC1DDB972Ba35A3e39402F3F`      |
 
 Sources:
 
@@ -200,38 +201,38 @@ also the deployer (`fhevm-mocks:pkg/forge/script/FhevmDeployScript.s.sol`). The 
 
 ### Transaction list (all from the deployer; nonce = N + k)
 
-| k | transaction | arguments |
-|---|---|---|
-| 0 | create `EmptyUUPSProxyACL` | — |
-| 1 | create `ERC1967Proxy(impl = <k0>, data = EmptyUUPSProxyACL.initialize(deployer))` | the ACL's initial owner is the deployer; must equal `ACL_ADDRESS` |
-| 2 | create `EmptyUUPSProxy` | — (bakes `ACL_ADDRESS` for `onlyACLOwner` upgrades) |
-| 3…11 | create `ERC1967Proxy(impl = <k2>, data = EmptyUUPSProxy.initialize())`, 9 times, in this order: FHEVMExecutor, KMSVerifier, InputVerifier, HCULimit, ProtocolConfig, KMSGeneration, PaddedInputter, CleartextArithmetic, CleartextDB | each must equal its constant |
-| 12 | create `PauserSet` | no args; must equal `PAUSER_SET_ADDRESS` |
-| 13 | create `ERC1967Proxy(impl = <k2>, EmptyUUPSProxy.initialize())` → ProtocolConfigReplica | must equal `PROTOCOL_CONFIG_REPLICA_ADDRESS` |
-| 14 | create `ACLOwner(initialOwner = deployer, aclAddress = ACL_ADDRESS)` | address is free |
-| 15 | `PauserSet.addPauser(<ACLOwner>)` | **must** happen while the deployer still owns ACL (`onlyACLOwner`). Add any extra pausers here too (see §8) |
-| 16 | `ACL.transferOwnership(<ACLOwner>)` | Ownable2Step offer |
-| 17 | `ACLOwner.acceptACLOwnership()` | ACL owner is now `ACLOwner`; `ACLOwner.owner()` is the deployer |
+| k     | transaction                                                                                                                                                                                                                                                             | arguments                                                                                                                                                                                                                 |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | create `EmptyUUPSProxyACL`                                                                                                                                                                                                                                              | —                                                                                                                                                                                                                         |
+| 1     | create `ERC1967Proxy(impl = <k0>, data = EmptyUUPSProxyACL.initialize(deployer))`                                                                                                                                                                                       | the ACL's initial owner is the deployer; must equal `ACL_ADDRESS`                                                                                                                                                         |
+| 2     | create `EmptyUUPSProxy`                                                                                                                                                                                                                                                 | — (bakes `ACL_ADDRESS` for `onlyACLOwner` upgrades)                                                                                                                                                                       |
+| 3…11  | create `ERC1967Proxy(impl = <k2>, data = EmptyUUPSProxy.initialize())`, 9 times, in this order: FHEVMExecutor, KMSVerifier, InputVerifier, HCULimit, ProtocolConfig, KMSGeneration, PaddedInputter, CleartextArithmetic, CleartextDB                                    | each must equal its constant                                                                                                                                                                                              |
+| 12    | create `PauserSet`                                                                                                                                                                                                                                                      | no args; must equal `PAUSER_SET_ADDRESS`                                                                                                                                                                                  |
+| 13    | create `ERC1967Proxy(impl = <k2>, EmptyUUPSProxy.initialize())` → ProtocolConfigReplica                                                                                                                                                                                 | must equal `PROTOCOL_CONFIG_REPLICA_ADDRESS`                                                                                                                                                                              |
+| 14    | create `ACLOwner(initialOwner = deployer, aclAddress = ACL_ADDRESS)`                                                                                                                                                                                                    | address is free                                                                                                                                                                                                           |
+| 15    | `PauserSet.addPauser(<ACLOwner>)`                                                                                                                                                                                                                                       | **must** happen while the deployer still owns ACL (`onlyACLOwner`). Add any extra pausers here too (see §8)                                                                                                               |
+| 16    | `ACL.transferOwnership(<ACLOwner>)`                                                                                                                                                                                                                                     | Ownable2Step offer                                                                                                                                                                                                        |
+| 17    | `ACLOwner.acceptACLOwnership()`                                                                                                                                                                                                                                         | ACL owner is now `ACLOwner`; `ACLOwner.owner()` is the deployer                                                                                                                                                           |
 | 18…28 | create 11 implementations: `CleartextACL`, `CleartextFHEVMExecutor`, `CleartextKMSVerifier`, `CleartextInputVerifier`, `CleartextHCULimit`, `ProtocolConfig`, `KMSGeneration`, `CleartextPaddedInputter`, `CleartextArithmetic`, `CleartextDB`, `ProtocolConfigReplica` | addresses free; note `ProtocolConfig` and `KMSGeneration` are the **vendored** contracts: v1.0 has no cleartext variant of them, unlike `../v0.16.0/cleartext/CleartextProtocolConfig.sol` / `CleartextKMSGeneration.sol` |
-| 29 | `ACLOwner.upgrade(Op[11])`, one atomic tx (≈3.4 M gas); each `Op = (proxy, implementation, initData)`, executed as `proxy.upgradeToAndCall(implementation, initData)` | see the table below |
+| 29    | `ACLOwner.upgrade(Op[11])`, one atomic tx (≈3.4 M gas); each `Op = (proxy, implementation, initData)`, executed as `proxy.upgradeToAndCall(implementation, initData)`                                                                                                   | see the table below                                                                                                                                                                                                       |
 
 The deployer ends at nonce N + 30. That was observed in the simulation.
 
 ### The 11 `ACLOwner.upgrade` ops (order as in `FhevmDeployScript._materialize`)
 
-| # | proxy | implementation | initData |
-|---|---|---|---|
-| 0 | ACL | `CleartextACL` | `ACL.initializeFromEmptyProxy()` (keeps the current owner) |
-| 1 | FHEVMExecutor | `CleartextFHEVMExecutor` | `FHEVMExecutor.initializeFromEmptyProxy()` |
-| 2 | KMSVerifier | `CleartextKMSVerifier` | `KMSVerifier.initializeFromEmptyProxy(address verifyingContractSource = DECRYPTION_ADDRESS, uint64 chainIDSource = GATEWAY_CHAIN_ID)` (no signers: since v13 they live in ProtocolConfig) |
-| 3 | InputVerifier | `CleartextInputVerifier` | `InputVerifier.initializeFromEmptyProxy(address verifyingContractSource = INPUT_VERIFICATION_ADDRESS, uint64 chainIDSource = GATEWAY_CHAIN_ID, address[] initialSigners = coprocessorSigners, uint256 initialThreshold = COPROCESSOR_THRESHOLD)` |
-| 4 | HCULimit | `CleartextHCULimit` | `HCULimit.initializeFromEmptyProxy(uint48 hcuCapPerBlock = 281474976710655, uint48 maxHCUDepthPerTx = 5000000, uint48 maxHCUPerTx = 20000000)` |
-| 5 | ProtocolConfig | `ProtocolConfig` | `ProtocolConfig.initializeFromEmptyProxy(KmsNodeParams[] nodes, KmsThresholds thresholds, string softwareVersion = "0.0.0-cleartext", PcrValues[] pcrValues = [])` (activates KMS context `0x07…01` and epoch `0x08…01`) |
-| 6 | KMSGeneration | `KMSGeneration` | `KMSGeneration.initializeFromEmptyProxy()` |
-| 7 | PaddedInputter | `CleartextPaddedInputter` | `PaddedInputter.initializeFromEmptyProxy(uint16[] initialPrfInstances = [1])` (RFC-030 PRF instance `CLEARTEXT_PAD_PRF_INSTANCE = 1`, never 0) |
-| 8 | CleartextArithmetic | `CleartextArithmetic` | `CleartextArithmetic.initializeFromEmptyProxy()` |
-| 9 | CleartextDB | `CleartextDB` | `CleartextDB.initializeFromEmptyProxy(address initialWriter = CLEARTEXT_ARITHMETIC_ADDRESS)` |
-| 10 | ProtocolConfigReplica | `ProtocolConfigReplica` | `ProtocolConfigReplica.initializeFromCanonical(uint256 kmsContextId = KMS_CONTEXT_COUNTER_BASE + 1 = 0x07<<248 + 1, uint256 epochId = EPOCH_COUNTER_BASE + 1 = 0x08<<248 + 1, KmsNodeParams[] nodes, KmsThresholds thresholds)` with the **same** nodes and thresholds as op 5 |
+| #   | proxy                 | implementation            | initData                                                                                                                                                                                                                                                                       |
+| --- | --------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0   | ACL                   | `CleartextACL`            | `ACL.initializeFromEmptyProxy()` (keeps the current owner)                                                                                                                                                                                                                     |
+| 1   | FHEVMExecutor         | `CleartextFHEVMExecutor`  | `FHEVMExecutor.initializeFromEmptyProxy()`                                                                                                                                                                                                                                     |
+| 2   | KMSVerifier           | `CleartextKMSVerifier`    | `KMSVerifier.initializeFromEmptyProxy(address verifyingContractSource = DECRYPTION_ADDRESS, uint64 chainIDSource = GATEWAY_CHAIN_ID)` (no signers: since v13 they live in ProtocolConfig)                                                                                      |
+| 3   | InputVerifier         | `CleartextInputVerifier`  | `InputVerifier.initializeFromEmptyProxy(address verifyingContractSource = INPUT_VERIFICATION_ADDRESS, uint64 chainIDSource = GATEWAY_CHAIN_ID, address[] initialSigners = coprocessorSigners, uint256 initialThreshold = COPROCESSOR_THRESHOLD)`                               |
+| 4   | HCULimit              | `CleartextHCULimit`       | `HCULimit.initializeFromEmptyProxy(uint48 hcuCapPerBlock = 281474976710655, uint48 maxHCUDepthPerTx = 5000000, uint48 maxHCUPerTx = 20000000)`                                                                                                                                 |
+| 5   | ProtocolConfig        | `ProtocolConfig`          | `ProtocolConfig.initializeFromEmptyProxy(KmsNodeParams[] nodes, KmsThresholds thresholds, string softwareVersion = "0.0.0-cleartext", PcrValues[] pcrValues = [])` (activates KMS context `0x07…01` and epoch `0x08…01`)                                                       |
+| 6   | KMSGeneration         | `KMSGeneration`           | `KMSGeneration.initializeFromEmptyProxy()`                                                                                                                                                                                                                                     |
+| 7   | PaddedInputter        | `CleartextPaddedInputter` | `PaddedInputter.initializeFromEmptyProxy(uint16[] initialPrfInstances = [1])` (RFC-030 PRF instance `CLEARTEXT_PAD_PRF_INSTANCE = 1`, never 0)                                                                                                                                 |
+| 8   | CleartextArithmetic   | `CleartextArithmetic`     | `CleartextArithmetic.initializeFromEmptyProxy()`                                                                                                                                                                                                                               |
+| 9   | CleartextDB           | `CleartextDB`             | `CleartextDB.initializeFromEmptyProxy(address initialWriter = CLEARTEXT_ARITHMETIC_ADDRESS)`                                                                                                                                                                                   |
+| 10  | ProtocolConfigReplica | `ProtocolConfigReplica`   | `ProtocolConfigReplica.initializeFromCanonical(uint256 kmsContextId = KMS_CONTEXT_COUNTER_BASE + 1 = 0x07<<248 + 1, uint256 epochId = EPOCH_COUNTER_BASE + 1 = 0x08<<248 + 1, KmsNodeParams[] nodes, KmsThresholds thresholds)` with the **same** nodes and thresholds as op 5 |
 
 Encode each initializer against the **declaring** contract (`ACL`, `FHEVMExecutor`, `HCULimit`, `PaddedInputter`,
 …), not the cleartext subclass. solc cannot form a function pointer to an inherited member through the derived type.
@@ -239,20 +240,20 @@ The selector is the same.
 
 ### Bootstrap values (`fhevm-mocks:pkg/forge/src/_internal/LocalHostBootstrap.sol`, generated from `/cleartext-config.json`)
 
-| value | fhevm-mocks default | js-sdk siblings today (`scripts/fhevm-deploy.sh`) |
-|---|---|---|
-| gateway chain id (`GATEWAY_CHAIN_ID`) | `100733346448153` (`uint48(keccak256("fhevm.cheat.chainId cleartext gateway"))`) | **`654321`**, also hard-coded in `test/chains/localcleartext.ts` (`gateway.id`) and `test/infra/config.ts` |
-| `DECRYPTION_ADDRESS` (KMSVerifier EIP-712 verifyingContract, domain name `"Decryption"`) | `0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721` | same |
-| `INPUT_VERIFICATION_ADDRESS` (InputVerifier EIP-712 verifyingContract, domain name `"InputVerification"`) | `0x6189F6c0c3E40B4a3c72ec86262295D78d845297` | same |
-| coprocessor signers (`m/44'/60'/0'/2/i` of `test test test test test test test future home engine virtual motion`, i = 0..3) | `0x6727b56B5D1E990C75fE5dCd572D084fc5DC35cb`, `0xF1CDC3ebe04A063EAbfaf5c3129494F6049Ee229`, `0x46A03377bcBE895407ee4842b63f3249bc8327BD`, `0xFd0ea258B3D2b153DD76CAC0E2270574Da8f18E8` | same pool (4 signers) |
-| coprocessor threshold | `4` | `1` |
-| KMS signers (`m/44'/60'/0'/3/i`, i = 0..3) | `0x649c125E183640141C2AC329673A22dF9FA81b3C`, `0xDB05A2EdF583E3b1644A59434a163aD178595EAf`, `0x03D684498fB1D52286D09Dd42e720c89b55C63c3`, `0x8252dD4D1350BCd34f419aBD05f8cfA146d71C5D` | same pool (4 nodes) |
-| KMS tx senders (`m/44'/60'/0'/4/i`) | `0x4c41862B9eb691CA197E97a53219E5d860d9dDbB`, `0x822D412944cE9CD7C92f96F162307cF4c9f88F15`, `0xA47E4a9AeaB93C7c2aC8fd5c4E4eC5cB70DD5F8f`, `0xed3C9f5a6d4D8c00A375B8c79dbDF0f69BAAe547` | same |
-| `KmsNodeParams[i]` other fields | `ipAddress "127.0.0.<i+1>"`, `storageUrl "s3://kms-bucket-<i+1>"`, `partyId i+1`, `mpcIdentity "kms-core-<i+1>-cleartext-core-<i+1>"`, `caCert 0x`, `storagePrefix "cleartext-<i+1>"` | — |
-| KMS thresholds `{publicDecryption, userDecryption, kmsGen, mpc}` | all `4` (= node count) | all `1` |
-| KMS `softwareVersion` / `pcrValues` | `"0.0.0-cleartext"` / `[]` | — |
-| HCU | cap/block `281474976710655`, depth/tx `5000000`, per tx `20000000` | same |
-| PaddedInputter PRF instances | `[1]` | n/a (v0.16.0 has no PaddedInputter proxy) |
+| value                                                                                                                        | fhevm-mocks default                                                                                                                                                                    | js-sdk siblings today (`scripts/fhevm-deploy.sh`)                                                          |
+| ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| gateway chain id (`GATEWAY_CHAIN_ID`)                                                                                        | `100733346448153` (`uint48(keccak256("fhevm.cheat.chainId cleartext gateway"))`)                                                                                                       | **`654321`**, also hard-coded in `test/chains/localcleartext.ts` (`gateway.id`) and `test/infra/config.ts` |
+| `DECRYPTION_ADDRESS` (KMSVerifier EIP-712 verifyingContract, domain name `"Decryption"`)                                     | `0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721`                                                                                                                                           | same                                                                                                       |
+| `INPUT_VERIFICATION_ADDRESS` (InputVerifier EIP-712 verifyingContract, domain name `"InputVerification"`)                    | `0x6189F6c0c3E40B4a3c72ec86262295D78d845297`                                                                                                                                           | same                                                                                                       |
+| coprocessor signers (`m/44'/60'/0'/2/i` of `test test test test test test test future home engine virtual motion`, i = 0..3) | `0x6727b56B5D1E990C75fE5dCd572D084fc5DC35cb`, `0xF1CDC3ebe04A063EAbfaf5c3129494F6049Ee229`, `0x46A03377bcBE895407ee4842b63f3249bc8327BD`, `0xFd0ea258B3D2b153DD76CAC0E2270574Da8f18E8` | same pool (4 signers)                                                                                      |
+| coprocessor threshold                                                                                                        | `4`                                                                                                                                                                                    | `1`                                                                                                        |
+| KMS signers (`m/44'/60'/0'/3/i`, i = 0..3)                                                                                   | `0x649c125E183640141C2AC329673A22dF9FA81b3C`, `0xDB05A2EdF583E3b1644A59434a163aD178595EAf`, `0x03D684498fB1D52286D09Dd42e720c89b55C63c3`, `0x8252dD4D1350BCd34f419aBD05f8cfA146d71C5D` | same pool (4 nodes)                                                                                        |
+| KMS tx senders (`m/44'/60'/0'/4/i`)                                                                                          | `0x4c41862B9eb691CA197E97a53219E5d860d9dDbB`, `0x822D412944cE9CD7C92f96F162307cF4c9f88F15`, `0xA47E4a9AeaB93C7c2aC8fd5c4E4eC5cB70DD5F8f`, `0xed3C9f5a6d4D8c00A375B8c79dbDF0f69BAAe547` | same                                                                                                       |
+| `KmsNodeParams[i]` other fields                                                                                              | `ipAddress "127.0.0.<i+1>"`, `storageUrl "s3://kms-bucket-<i+1>"`, `partyId i+1`, `mpcIdentity "kms-core-<i+1>-cleartext-core-<i+1>"`, `caCert 0x`, `storagePrefix "cleartext-<i+1>"`  | —                                                                                                          |
+| KMS thresholds `{publicDecryption, userDecryption, kmsGen, mpc}`                                                             | all `4` (= node count)                                                                                                                                                                 | all `1`                                                                                                    |
+| KMS `softwareVersion` / `pcrValues`                                                                                          | `"0.0.0-cleartext"` / `[]`                                                                                                                                                             | —                                                                                                          |
+| HCU                                                                                                                          | cap/block `281474976710655`, depth/tx `5000000`, per tx `20000000`                                                                                                                     | same                                                                                                       |
+| PaddedInputter PRF instances                                                                                                 | `[1]`                                                                                                                                                                                  | n/a (v0.16.0 has no PaddedInputter proxy)                                                                  |
 
 **Recommendation for the js-sdk mock suite:** keep `GATEWAY_CHAIN_ID = 654321`, or the EIP-712 domains will not
 match `test/chains/localcleartext.ts` and every signature will fail. Thresholds of 1 or 4 both work. The js-sdk
@@ -309,20 +310,20 @@ Use the v0.16.0 path as the template: `scripts/fhevm-deploy.sh` → `scripts/v0.
 
 ## 8. Differences from the closest sibling deploy (`v0.16.0`, `scripts/v0.16.0/libraries/DeployLib.sol`)
 
-| | v0.16.0 (current) | v1.0.0 |
-|---|---|---|
-| pinned nonces | 0..9 | 0..13 (+14 ACLOwner) |
-| PaddedInputter | abstract, inherited by FHEVMExecutor (no own address) | **own proxy at +9**, `CleartextPaddedInputter`, init `[1]` |
-| `0xded0D2a71268DC12622BdD1b55d68a1CB5662327` (nonce 9) | **PauserSet** | **PaddedInputter**. PauserSet moves to nonce 12 (`0xcF5De2Db…16E2`) |
-| CleartextArithmetic / CleartextDB | not separate contracts | own proxies at +10 / +11; CleartextDB writer = CleartextArithmetic |
-| ProtocolConfigReplica | not deployed (source present) | proxy at +13, `initializeFromCanonical(...)` |
-| ProtocolConfig / KMSGeneration impl | `CleartextProtocolConfig` / `CleartextKMSGeneration` | vendored `ProtocolConfig` / `KMSGeneration` |
-| upgrade mechanism | deployer EOA calls `upgradeToAndCall` per proxy | standing `ACLOwner`; one atomic `ACLOwner.upgrade(ops)` |
-| final ACL owner | deployer EOA | **ACLOwner** (`ACLOwner.owner()` = deployer). Later owner-gated calls (`addPauser`, `defineNewKmsContextAndEpoch`, HCU setters…) must go through `ACLOwner.execute(target, data)` |
-| pausers | `NUM_PAUSERS=2` from the pausers mnemonic index 2 | ACLOwner, plus optional `PAUSER_ADDRESS_0` in fhevm-mocks. Add the env pausers at k = 15, **before** the ownership transfer, or later via `ACLOwner.execute` |
-| empty-proxy deployer | `EMPTY_UUPS_MNEMONIC` declared (unused by DeployLib) | not used |
-| address file regenerated | `src/v0.16.0/host-contracts/addresses/FHEVMHostAddresses.sol` (lowercase `*Add`) | `src/v1.0.0/config/addresses.sol` (`*_ADDRESS`; `FHEVMHostAddresses.sol` aliases them) |
-| cleartext markers | — | `IS_CLEARTEXT()` on CleartextACL, CleartextHCULimit, CleartextArithmetic; `CleartextACL.CLEARTEXT_PROTOCOL_VERSION() == 1000000` |
+|                                                        | v0.16.0 (current)                                                                | v1.0.0                                                                                                                                                                            |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| pinned nonces                                          | 0..9                                                                             | 0..13 (+14 ACLOwner)                                                                                                                                                              |
+| PaddedInputter                                         | abstract, inherited by FHEVMExecutor (no own address)                            | **own proxy at +9**, `CleartextPaddedInputter`, init `[1]`                                                                                                                        |
+| `0xded0D2a71268DC12622BdD1b55d68a1CB5662327` (nonce 9) | **PauserSet**                                                                    | **PaddedInputter**. PauserSet moves to nonce 12 (`0xcF5De2Db…16E2`)                                                                                                               |
+| CleartextArithmetic / CleartextDB                      | not separate contracts                                                           | own proxies at +10 / +11; CleartextDB writer = CleartextArithmetic                                                                                                                |
+| ProtocolConfigReplica                                  | not deployed (source present)                                                    | proxy at +13, `initializeFromCanonical(...)`                                                                                                                                      |
+| ProtocolConfig / KMSGeneration impl                    | `CleartextProtocolConfig` / `CleartextKMSGeneration`                             | vendored `ProtocolConfig` / `KMSGeneration`                                                                                                                                       |
+| upgrade mechanism                                      | deployer EOA calls `upgradeToAndCall` per proxy                                  | standing `ACLOwner`; one atomic `ACLOwner.upgrade(ops)`                                                                                                                           |
+| final ACL owner                                        | deployer EOA                                                                     | **ACLOwner** (`ACLOwner.owner()` = deployer). Later owner-gated calls (`addPauser`, `defineNewKmsContextAndEpoch`, HCU setters…) must go through `ACLOwner.execute(target, data)` |
+| pausers                                                | `NUM_PAUSERS=2` from the pausers mnemonic index 2                                | ACLOwner, plus optional `PAUSER_ADDRESS_0` in fhevm-mocks. Add the env pausers at k = 15, **before** the ownership transfer, or later via `ACLOwner.execute`                      |
+| empty-proxy deployer                                   | `EMPTY_UUPS_MNEMONIC` declared (unused by DeployLib)                             | not used                                                                                                                                                                          |
+| address file regenerated                               | `src/v0.16.0/host-contracts/addresses/FHEVMHostAddresses.sol` (lowercase `*Add`) | `src/v1.0.0/config/addresses.sol` (`*_ADDRESS`; `FHEVMHostAddresses.sol` aliases them)                                                                                            |
+| cleartext markers                                      | —                                                                                | `IS_CLEARTEXT()` on CleartextACL, CleartextHCULimit, CleartextArithmetic; `CleartextACL.CLEARTEXT_PROTOCOL_VERSION() == 1000000`                                                  |
 
 ## 9. Post-deploy checks
 
@@ -332,19 +333,19 @@ These are implemented in `DeployV1.verify` in Appendix A. The full list is in `f
 - `cast call <ACL> "CLEARTEXT_PROTOCOL_VERSION()(uint256)"` returns `1000000`.
 - `getVersion()`, as in `fhevm-mocks:pkg/ts/versions.ts`. Cleartext subclasses report their base name:
 
-  | contract | version string |
-  |---|---|
-  | ACL | `ACL v0.6.0` |
-  | FHEVMExecutor | `FHEVMExecutor v0.7.0` |
-  | KMSVerifier | `KMSVerifier v0.5.0` |
-  | InputVerifier | `InputVerifier v0.3.0` |
-  | HCULimit | `HCULimit v0.4.0` |
-  | ProtocolConfig | `ProtocolConfig v0.3.0` |
-  | KMSGeneration | `KMSGeneration v0.3.0` |
-  | PaddedInputter | `PaddedInputter v0.1.0` |
-  | CleartextArithmetic | `CleartextArithmetic v0.6.0` |
-  | CleartextDB | `CleartextDB v0.1.0` |
-  | PauserSet | `PauserSet v0.1.0` |
+  | contract              | version string                 |
+  | --------------------- | ------------------------------ |
+  | ACL                   | `ACL v0.6.0`                   |
+  | FHEVMExecutor         | `FHEVMExecutor v0.7.0`         |
+  | KMSVerifier           | `KMSVerifier v0.5.0`           |
+  | InputVerifier         | `InputVerifier v0.3.0`         |
+  | HCULimit              | `HCULimit v0.4.0`              |
+  | ProtocolConfig        | `ProtocolConfig v0.3.0`        |
+  | KMSGeneration         | `KMSGeneration v0.3.0`         |
+  | PaddedInputter        | `PaddedInputter v0.1.0`        |
+  | CleartextArithmetic   | `CleartextArithmetic v0.6.0`   |
+  | CleartextDB           | `CleartextDB v0.1.0`           |
+  | PauserSet             | `PauserSet v0.1.0`             |
   | ProtocolConfigReplica | `ProtocolConfigReplica v0.3.0` |
 
 - Wiring:
