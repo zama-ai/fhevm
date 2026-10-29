@@ -300,6 +300,7 @@ interface IKMSGeneration {
 
     /**
      * @notice Trigger a fresh FHE key generation or produce compressed material for an existing key.
+     * @dev Must not be called during a KMS context or epoch rotation.
      * @param paramsType The type of FHE parameters to use.
      * @param existingKeyId Zero for a fresh key, or the active key whose compressed material is requested.
      */
@@ -322,6 +323,7 @@ interface IKMSGeneration {
 
     /**
      * @notice Trigger a CRS generation.
+     * @dev Must not be called during a KMS context or epoch rotation.
      * @param maxBitLength The max bit length for generating the CRS.
      * @param paramsType The type of parameters to use.
      */
