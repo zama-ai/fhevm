@@ -28,6 +28,7 @@ humantime-serde.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
+percent-encoding.workspace = true
 prometheus.workspace = true
 rustls.workspace = true
 serde.workspace = true

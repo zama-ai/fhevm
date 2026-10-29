@@ -24,6 +24,7 @@ use alloy::{
     },
 };
 use anyhow::anyhow;
+use percent_encoding::percent_decode_str;
 use serde_json::value::RawValue;
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
 use std::{
@@ -241,16 +242,21 @@ struct UrlSecrets(Arc<[String]>);
 
 impl UrlSecrets {
     fn new(url: &Url) -> Self {
+        // `Url` returns these parts percent-encoded.
+        let userinfo_and_path_segments = [url.username(), url.password().unwrap_or_default()]
+            .into_iter()
+            .chain(url.path_segments().into_iter().flatten())
+            .flat_map(|part| {
+                let decoded = percent_decode_str(part).decode_utf8().ok();
+                std::iter::once(part.to_string()).chain(decoded.map(|decoded| decoded.into_owned()))
+            });
         let raw_query_values = url
             .query()
             .into_iter()
             .flat_map(|query| query.split('&'))
             .filter_map(|param| param.split_once('=').map(|(_, value)| value.to_string()));
         let decoded_query_values = url.query_pairs().map(|(_, value)| value.into_owned());
-        let mut secrets: Vec<String> = [url.username(), url.password().unwrap_or_default()]
-            .into_iter()
-            .chain(url.path_segments().into_iter().flatten())
-            .map(str::to_string)
+        let mut secrets: Vec<String> = userinfo_and_path_segments
             .chain(raw_query_values)
             .chain(decoded_query_values)
             .filter(|part| !part.is_empty())
@@ -273,6 +279,9 @@ impl UrlSecrets {
 
 /// Replaces each occurrence of `token` in `text` that is not inside a longer run of ASCII letters
 /// and digits.
+///
+/// The letter or digit that ends an escape, such as the `n` of a JSON `\n` or the `F` of a
+/// percent-encoded `%2F`, does not count as part of such a run.
 fn redact_token(text: &str, token: &str) -> String {
     let is_word = |c: char| c.is_ascii_alphanumeric();
     let mut redacted = String::with_capacity(text.len());
@@ -280,7 +289,9 @@ fn redact_token(text: &str, token: &str) -> String {
     while let Some(offset) = text[from..].find(token) {
         let start = from + offset;
         let end = start + token.len();
-        let bounded = !text[..start].chars().next_back().is_some_and(is_word)
+        let before = &text[..start];
+        let bounded = (!before.chars().next_back().is_some_and(is_word)
+            || ends_with_escape(before))
             && !text[end..].chars().next().is_some_and(is_word);
         if bounded {
             redacted.push_str(&text[copied..start]);
@@ -293,6 +304,17 @@ fn redact_token(text: &str, token: &str) -> String {
     }
     redacted.push_str(&text[copied..]);
     redacted
+}
+
+/// Whether `text` ends with an escape whose last character is a letter or digit: a JSON escape
+/// such as `\n` or `\u0020`, or a percent-encoded byte such as `%2F`.
+fn ends_with_escape(text: &str) -> bool {
+    match text.as_bytes() {
+        [.., b'\\', b'b' | b'f' | b'n' | b'r' | b't'] => true,
+        [.., b'%', high, low] => high.is_ascii_hexdigit() && low.is_ascii_hexdigit(),
+        [.., b'\\', b'u', a, b, c, d] => [a, b, c, d].iter().all(|digit| digit.is_ascii_hexdigit()),
+        _ => false,
+    }
 }
 
 /// Strips the RPC node URL, which may contain an API key, from the errors of a call, and from the
@@ -494,17 +516,24 @@ mod tests {
 
     #[tokio::test]
     async fn echoed_api_keys_are_redacted() {
-        let json_rpc_error = format!(
-            r#"{{"jsonrpc":"2.0","id":0,"error":{{"code":-32600,"message":"invalid key {API_KEY}","data":"/v2/{API_KEY}"}}}}"#
-        );
+        let json_rpc_error = |data: String| {
+            format!(
+                r#"{{"jsonrpc":"2.0","id":0,"error":{{"code":-32600,"message":"invalid key {API_KEY}","data":"{data}"}}}}"#
+            )
+        };
         let cases = [
             // alloy keeps the body of an HTTP error...
             ("404 Not Found", format!("Cannot POST /v2/{API_KEY}")),
-            ("401 Unauthorized", json_rpc_error.clone()),
+            ("401 Unauthorized", json_rpc_error(format!("/v2/{API_KEY}"))),
             // ... and of a response that is not JSON-RPC...
             ("200 OK", format!("Cannot POST /v2/{API_KEY}")),
-            // ... and turns a JSON-RPC error response into an error.
-            ("200 OK", json_rpc_error),
+            // ... and turns a JSON-RPC error response into an error...
+            ("200 OK", json_rpc_error(format!("/v2/{API_KEY}"))),
+            // ... keeping its data as raw JSON, where an escape may come right before the key.
+            (
+                "200 OK",
+                json_rpc_error(format!(r"invalid key:\n{API_KEY}")),
+            ),
         ];
         for (status, body) in cases {
             let (url, server) = answering_server(status, body).await;
@@ -560,6 +589,17 @@ mod tests {
         );
         // Not inside longer words or hex data.
         assert_eq!(redacted("v20 k3yz 0xk3y"), "v20 k3yz 0xk3y");
+        // But right after an escape, in JSON or percent-encoded text.
+        assert_eq!(
+            redacted(r#""key:\nk3y" "key\u0020k3y" Cannot POST %2Fv2%2Fk3y"#),
+            r#""key:\n<redacted>" "key\u0020<redacted>" Cannot POST %2F<redacted>%2F<redacted>"#
+        );
+        // The userinfo and path segments are also redacted percent-decoded.
+        let url = Url::parse("https://us%2Ber:p%40ss@rpc.example.com/v2/k%2B3y").unwrap();
+        assert_eq!(
+            UrlSecrets::new(&url).redact("key k+3y of us+er:p@ss"),
+            "key <redacted> of <redacted>:<redacted>"
+        );
         // An occurrence that is not a token does not hide a following one that is.
         let secrets = UrlSecrets::new(&Url::parse("https://rpc.example.com/ab-ab").unwrap());
         assert_eq!(secrets.redact("xab-ab-ab"), "xab-<redacted>");
