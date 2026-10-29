@@ -6,6 +6,7 @@ import type { FhevmClient } from '../../core/types/fhevmClient.js';
 import { createFhevmBaseClient } from './createFhevmBaseClient.js';
 import { encryptActions } from './decorators/encrypt.js';
 import { decryptActions } from './decorators/decrypt.js';
+import { encryptWithPadActions } from './decorators/encryptWithPad.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -16,5 +17,5 @@ export function createFhevmClient<chain extends FhevmChain, provider extends Eth
 }): FhevmClient<chain, WithAll, provider> {
   const c = createFhevmBaseClient(parameters);
 
-  return c.extend(decryptActions).extend(encryptActions);
+  return c.extend(decryptActions).extend(encryptActions).extend(encryptWithPadActions);
 }
