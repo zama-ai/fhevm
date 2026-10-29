@@ -249,7 +249,10 @@ library DeployV1 {
         // bootstrap
         address[] memory cop = InputVerifier(inputVerifierAdd).getCoprocessorSigners();
         require(cop.length == 4 && cop[0] == LocalHostBootstrap.coprocessorSigners()[0], "coprocessor signers");
-        require(InputVerifier(inputVerifierAdd).getThreshold() == LocalHostBootstrap.COPROCESSOR_THRESHOLD, "cop thr");
+        require(
+            InputVerifier(inputVerifierAdd).getThreshold() == LocalHostBootstrap.COPROCESSOR_THRESHOLD,
+            "coprocessor threshold"
+        );
         address[] memory kms = ProtocolConfig(protocolConfigAdd).getKmsSigners();
         require(kms.length == 4 && kms[3] == LocalHostBootstrap.kmsSigners()[3], "kms signers");
         require(
@@ -268,7 +271,10 @@ library DeployV1 {
         require(HCULimit(hcuLimitAdd).getMaxHCUPerTx() == LocalHostBootstrap.MAX_HCU_PER_TX, "maxHCUPerTx");
         (, string memory n1,, uint256 c1, address v1,,) = IEIP712Domain(kmsVerifierAdd).eip712Domain();
         require(keccak256(bytes(n1)) == keccak256("Decryption"), "KMSVerifier domain name");
-        require(c1 == LocalHostBootstrap.GATEWAY_CHAIN_ID && v1 == LocalHostBootstrap.DECRYPTION_ADDRESS, "kmsv dom");
+        require(
+            c1 == LocalHostBootstrap.GATEWAY_CHAIN_ID && v1 == LocalHostBootstrap.DECRYPTION_ADDRESS,
+            "KMSVerifier domain"
+        );
         (, string memory n2,, uint256 c2, address v2,,) = IEIP712Domain(inputVerifierAdd).eip712Domain();
         require(keccak256(bytes(n2)) == keccak256("InputVerification"), "InputVerifier domain name");
         require(
