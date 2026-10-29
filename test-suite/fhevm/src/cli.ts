@@ -3,8 +3,6 @@
  */
 import { defineCommand, renderUsage, runCommand } from "citty";
 
-import { printRolloutReceipt } from "./commands/rollout-receipt";
-import { runRolloutRunbook } from "./commands/rollout-run";
 import { listTestProfiles, test } from "./commands/test";
 import { PreflightError, formatCliError } from "./errors";
 import {
@@ -300,26 +298,6 @@ const root = defineCommand({
         }
         const { lockPath } = await resolveBundle(parsed, process.env);
         console.log(lockPath);
-      },
-    }),
-    rollout: defineCommand({
-      meta: { name: "rollout", description: "Execute and inspect stateful rollout runbooks." },
-      subCommands: {
-        run: defineCommand({
-          meta: { name: "run", description: "Execute a TypeScript rollout runbook against the local stack." },
-          args: {
-            runbook: { type: "positional", description: "Path to the rollout runbook script.", required: true },
-          },
-          async run({ args }) {
-            await runRolloutRunbook(asString(args.runbook) ?? "");
-          },
-        }),
-        receipt: defineCommand({
-          meta: { name: "receipt", description: "Print the markdown receipt of the most recent rollout run." },
-          async run() {
-            await printRolloutReceipt();
-          },
-        }),
       },
     }),
     test: defineCommand({

@@ -101,6 +101,7 @@ const TEST_PROFILE_NAMES = [
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
   "heavy",
+  "key-migration-from-v0.14",
   "kms-context-switch",
   "kms-generation",
   "kms-generation-abort",
@@ -193,6 +194,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
   "kms-generation-abort":
     "Abort an in-flight keygen and crsgen, prove the contract and every kms-connector retire the requests, then prove the pipeline recovers with a fresh keygen/crsgen to full activation. Disruptive: rotates the active key/CRS — run last or re-up afterwards.",
+  "key-migration-from-v0.14":
+    "Upgrade a 0.14 stack to this branch step by step with checks in between, then migrate the existing key to compressed material and reshare it (requires --scenario key-migration-from-v0.14; the GPU phase needs key-migration-from-v0.14-gpu and RFC029_GPU_IMAGES). Disruptive + single-run: re-up between runs.",
   "kms-context-switch":
     "Drive the full KMS-context lifecycle on the host ProtocolConfig (requires --scenario five-party-swap-threshold-kms). Runs, in order: a same-committee context switch (NewKmsContext) and an epoch rotation (NewKmsEpoch), proving the KMS reshares, activates, and still decrypts under each; destruction of the retired context and epoch (destroyKmsContext / destroyKmsEpoch), proving every layer retires them — reverts for non-owner/current/unknown/already-destroyed ids, on-chain invalidation without moving the active pointer, per-party DestroyMpcContext/DestroyMpcEpoch forwarding and cache invalidation (the spare, which never held the material, acks the context destroy but fails the epoch destroy — both benign; the context-to-epoch cascade reaches committee caches only), and the current context/epoch still serving; a further switch after the destroy; a stuck-rotation abort (single-in-flight revert + Pending-epoch destroy) and recovery; and finally a genuine node swap — stop the dropped node's tx-sender before the switch, promote the spare, and force it into the 2t+1 quorum. The input-proof app smoke runs at baseline, while a switch is pending, and after each transition. Disruptive + single-run: it advances the context/epoch and destroys the retired ones, so it must start from a pristine stack — re-up between runs.",
 };
@@ -2302,6 +2305,14 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     if (name === "kms-context-switch") {
       return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
+    }
+    if (name === "key-migration-from-v0.14") {
+      // Imported here: the stack handle runs its checks through this module.
+      const [{ runStackTest }, { default: keyMigration }] = await Promise.all([
+        import("./stack"),
+        import("../../rollouts/key-migration-from-v0.14/run"),
+      ]);
+      return runStackTest(name, keyMigration);
     }
     if (name === "blue-green") {
       return runBlueGreenProfile(state, options);

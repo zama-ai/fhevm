@@ -1,14 +1,17 @@
-import { probeSoftwareCandidate, assertSoftwareCandidateRunning } from "./software-upgrade";
-import { runRetainedMaterial } from "../../src/consensus/retained-material-run";
-import { withRolloutSupervisor } from "../../src/consensus/rollout-supervision";
-import { withHeldRecipient } from "./held-recipient";
+/**
+ * Upgrades a 0.14 stack to this branch one step at a time, with checks in between, then migrates
+ * the existing key to compressed material and reshares it. Runs as the `key-migration-from-v0.14`
+ * test profile on the `key-migration-from-v0.14` scenario, or its `-gpu` variant for the GPU phase.
+ */
 import { createHash } from "node:crypto";
 import path from "node:path";
+import YAML from "yaml";
 
-import type { RolloutRunContext } from "../../src/commands/rollout-run";
-import { resolveRolloutSolidityRef } from "../../src/commands/rollout-solidity";
+import { runRetainedMaterial } from "../../src/consensus/retained-material-run";
+import { withRolloutSupervisor } from "../../src/consensus/rollout-supervision";
 import { type ContextAndEpoch, parseContextAndEpoch } from "../../src/commands/kms-context-switch";
-import { uint256ToId } from "../../src/utils/fs";
+import { resolveRolloutSolidityRef } from "../../src/commands/rollout-solidity";
+import type { Stack } from "../../src/commands/stack";
 import { castCall, resolveKmsGenerationTarget, waitForContainer } from "../../src/flow/readiness";
 import {
   COPROCESSOR_DB_CONTAINER,
@@ -25,23 +28,16 @@ import {
   kmsPartyIds,
   kmsPublicPrefix,
 } from "../../src/kms-party";
-import { hostReachableRpcUrl } from "../../src/utils/fs";
+import { hostReachableRpcUrl, uint256ToId } from "../../src/utils/fs";
 import { run, runStreaming } from "../../src/utils/process";
 import {
   type ConnectorObservation,
   type OperatorMaterial,
   assertConnectorMigrationReady,
-  assertLocalConnectorUpgrade,
+  assertConnectorUpgraded,
   assertOperatorMaterialAgreement,
 } from "./checks";
-import {
-  assertMigrationCandidateCheckout,
-  migrationBaselineVersions,
-  migrationPhaseVersions,
-  migrationTargetSha,
-  migrationVersions,
-  versionSources,
-} from "./versions";
+import { withHeldRecipient } from "./held-recipient";
 
 const CONNECTOR_PARTIES = 4;
 const OPERATOR_COUNT = 2;
@@ -50,7 +46,7 @@ const KEY_WORKERS = ["tfhe-worker", "zkproof-worker", "sns-worker"] as const;
 const EAGER_KEY_WORKERS = ["zkproof-worker", "sns-worker"] as const;
 const ACTIVE_MIGRATION_SERVICES = ["host-listener", "host-listener-poller", "host-listener-consumer", ...KEY_WORKERS];
 
-const logPhase = (label: string) => console.log(`\n[GPU key migration] ${label}`);
+const logPhase = (label: string) => console.log(`\n[key migration] ${label}`);
 
 const sqlScalar = async (database: string, sql: string): Promise<string> => {
   const result = await run([
@@ -99,40 +95,6 @@ export const activeKeyStateSql =
   "sequence_number || '|' || COALESCE(chain_id::text, 'NULL') || '|' || " +
   "COALESCE(encode(block_hash, 'hex'), 'NULL') || '|' || count(*) OVER () " +
   "FROM keys ORDER BY sequence_number DESC LIMIT 1;";
-
-const hostChains = `hostChains:
-  - key: host
-    chainId: "12345"
-    rpcPort: 8545
-  - key: chain-b
-    chainId: "67890"
-    rpcPort: 8547`;
-
-const kmsTopology = (gpuContinuation: boolean) => `kms:
-  mode: threshold
-  parties: ${CONNECTOR_PARTIES}
-  threshold: 1
-  fheParams: ${gpuContinuation ? "Default" : "Test"}${gpuContinuation ? "\n  insecureTestKeygen: true" : ""}`;
-
-export const migrationScenario = (baselineTag: string, gpuContinuation = false) => `version: 1
-kind: blue-green
-name: RFC 029 0.14 to 0.15 key migration
-${hostChains}
-topology:
-  count: ${OPERATOR_COUNT}
-  threshold: ${OPERATOR_COUNT}
-bcs:
-  source:
-    mode: registry
-    tag: ${JSON.stringify(baselineTag)}
-gcs:
-  source:
-    mode: local
-  deferredStart: true
-  env:
-    FORCE_LEGACY_SERVER_KEY: "true"
-${kmsTopology(gpuContinuation)}
-`;
 
 const connectorObservation = async (party: number): Promise<ConnectorObservation> => {
   const database = kmsConnectorDbName(party);
@@ -373,130 +335,63 @@ const assertGreenWorkersParked = async () => {
   }
 };
 
-const contractUpgradeCommand = (task: string, contract: string) =>
-  [
-    `npx hardhat ${task}`,
-    `--current-implementation previous-contracts/${contract}.sol:${contract}`,
-    `--new-implementation contracts/${contract}.sol:${contract}`,
-    "--verify-contract false",
-    "--use-internal-proxy-address true",
-  ].join(" ");
-
-export const gatewayContractUpgradePlan = [
-  ["task:upgradeDecryption", "Decryption"],
-  ["task:upgradeCiphertextCommits", "CiphertextCommits"],
-  ["task:upgradeInputVerification", "InputVerification"],
-  ["task:upgradeGatewayConfig", "GatewayConfig"],
-] as const;
-
-export const hostContractUpgradePlan = [
-  ["task:upgradeProtocolConfig", "ProtocolConfig"],
-  ["task:upgradeKMSGeneration", "KMSGeneration"],
-] as const;
-
-const upgradeContracts = async (ctx: RolloutRunContext, targetLock: string) => {
-  await ctx.snapshotContracts("gateway");
-  await ctx.snapshotContracts("host");
-  await ctx.applyVersionLock("RFC 029 contract sources", {
-    lockFile: targetLock,
-    allowedVersionKeys: ["GATEWAY_VERSION", "HOST_VERSION"],
-    overrides: [{ group: "gateway-contracts" }, { group: "host-contracts" }],
-  });
-
-  // Upgrade consumers of the removed priority-coprocessor getters before GatewayConfig removes them.
-  for (const [task, contract] of gatewayContractUpgradePlan) {
-    await ctx.runGatewayContractTask(contractUpgradeCommand(task, contract));
+/** Fails fast on a stack this test cannot drive, and returns what it needs from the scenario. */
+const keyMigrationScenario = async (stack: Stack) => {
+  const state = await stack.readState();
+  const scenario = state.scenario;
+  if (
+    scenario.kind !== "blue-green" ||
+    scenario.bootstrap?.upgrade !== "deferred" ||
+    scenario.bcs.source.mode !== "registry" ||
+    scenario.topology.count !== OPERATOR_COUNT ||
+    scenario.kms.parties !== CONNECTOR_PARTIES ||
+    !state.bootstrapPending ||
+    state.bootstrapPending.completed?.length
+  ) {
+    throw new Error("key-migration-from-v0.14 needs a fresh `up --scenario key-migration-from-v0.14` (or its -gpu variant)");
   }
-  for (const [task, contract] of hostContractUpgradePlan) {
-    await ctx.runHostContractTask(contractUpgradeCommand(task, contract));
+  // Green runs with the production chart's serving mode: legacy material until the operator flips it.
+  const chart = YAML.parse(await Bun.file(path.join(REPO_ROOT, "charts/coprocessor/values.yaml")).text());
+  if (chart?.commonConfig?.forceLegacyServerKey !== true || scenario.gcs.env.FORCE_LEGACY_SERVER_KEY !== "true") {
+    throw new Error("Green must mirror the coprocessor chart's commonConfig.forceLegacyServerKey, which this test expects to be true");
   }
+  return {
+    state,
+    baselineTag: scenario.bootstrap.tag,
+    blueTag: scenario.bcs.source.tag,
+    targetCoreVersion: state.bootstrapPending.target.env.CORE_VERSION!,
+  };
 };
 
-export default async function runMigration(ctx: RolloutRunContext) {
+export default async function keyMigration(stack: Stack) {
   const migrationFault = process.env.RFC029_MIGRATION_FAULT ?? "none";
-  // Threshold Test keys use drift noise reduction, which CUDA does not support.
-  // Select the production parameter family before seeding any retained ciphertexts.
-  const gpuContinuation = process.env.RFC029_GPU_CONTINUATION === "1";
   if (!["none", "lagging-recipient", "application-interruption", "download-interrupt", "download-wrong-digest", "download-malformed", "download-wrong-key"].includes(migrationFault)) throw new Error(`unsupported migration fault ${migrationFault}`);
-  const versions = migrationVersions();
+  const { state, baselineTag, blueTag, targetCoreVersion } = await keyMigrationScenario(stack);
+  // Threshold Test keys use drift noise reduction, which CUDA does not support, so the GPU
+  // scenario generates the baseline key with the Default parameters.
+  const gpuContinuation = state.scenario.kms.fheParams === "Default";
+  if (gpuContinuation && !process.env.RFC029_GPU_IMAGES) throw new Error("the GPU phase requires the package-migration image receipt in RFC029_GPU_IMAGES");
   // Run the same baseline-compatible dApps throughout the migration. Current
   // Solidity can call executor methods that did not exist before the upgrade.
-  const solidityLibraryRevision = await resolveRolloutSolidityRef(versions.baselineTag);
-  const migrationTest: RolloutRunContext["test"] = (profile, options = {}) =>
-    ctx.test(profile, { ...options, solidityLibraryRevision });
-  const softwareBaseline = process.env.RFC029_SOFTWARE_BASELINE_TAG;
-  if (softwareBaseline === versions.baselineTag) throw new Error("software-only baseline and target tags must differ");
-  const targetSha = migrationTargetSha();
-  const checkout = (await run(["bash", "-c", 'source "$1"; sr_revision "$2"', "migration-source",
-    path.join(REPO_ROOT, "test-suite/fhevm/scripts/lib/source-revision.sh"), REPO_ROOT])).stdout.trim();
-  if (process.env.RFC029_ACCEPTANCE_MODE === "candidate") assertMigrationCandidateCheckout(targetSha, checkout);
-  console.log(`[migration source] target=${targetSha} checkout=${checkout} baseline=${versions.baselineTag}`);
-  await Bun.write(path.join(ctx.stateDir(), "rollout", "migration-source.json"), JSON.stringify({
-    mode: process.env.RFC029_ACCEPTANCE_MODE ?? "historical", targetSha, checkout, baselineTag: versions.baselineTag,
-    baselineSourceSha: process.env.RFC029_BASELINE_SOURCE_SHA ?? null,
-    note: "Actual runtime image identities and resolved locks are recorded in the rollout receipt; a baseline tag is not a release-tip attestation.",
-  }, null, 2));
-  const targetSnapshotLock = await ctx.resolveVersionLock("rfc029-target-snapshot", {
-    target: "sha",
-    sha: targetSha,
-    versions: {},
-    sources: versionSources,
-  });
-  const targetSnapshot = (await Bun.file(targetSnapshotLock).json()) as {
-    env: Record<string, string>;
-    sources: string[];
-  };
-  const baselineLock = await ctx.writeVersionLock("rfc029-00-baseline", {
-    target: "sha",
-    versions: migrationBaselineVersions(targetSnapshot.env, versions.baseline),
-    sources: targetSnapshot.sources,
-  });
-  const baselineSnapshot = (await Bun.file(baselineLock).json()) as { env: Record<string, string> };
-  const phaseVersions = migrationPhaseVersions(baselineSnapshot.env, targetSnapshot.env);
-  const contractLock = await ctx.writeVersionLock("rfc029-01-contract", {
-    target: "sha",
-    versions: phaseVersions.contract,
-    sources: targetSnapshot.sources,
-  });
-  const relayerLock = await ctx.writeVersionLock("rfc029-02-relayer", {
-    target: "sha",
-    versions: phaseVersions.relayer,
-    sources: targetSnapshot.sources,
-  });
-  const connectorLock = await ctx.writeVersionLock("rfc029-03-kms", {
-    target: "sha",
-    versions: phaseVersions.connector,
-    sources: targetSnapshot.sources,
-  });
-  const listenerCoreLock = await ctx.writeVersionLock("rfc029-04-listener-core", {
-    target: "sha",
-    versions: phaseVersions.listenerCore,
-    sources: targetSnapshot.sources,
-  });
-  const scenario = path.join(ctx.stateDir(), "rollout", "rfc029-v014-to-v015.yaml");
-  await Bun.write(scenario, migrationScenario(softwareBaseline ?? versions.baselineTag, gpuContinuation));
+  const solidityLibraryRevision = await resolveRolloutSolidityRef(baselineTag);
+  const migrationTest = (profile: string) => stack.test(profile, { solidityLibraryRevision });
 
-  logPhase(`00 boot 0.14 and generate the legacy ${gpuContinuation ? "Default" : "Test"} key`);
-  await ctx.up({
-    lockFile: baselineLock,
-    scenario,
-    overrides: [{ group: "test-suite" }],
-  });
+  logPhase(`00 check the 0.14 stack and its legacy ${gpuContinuation ? "Default" : "Test"} key`);
   await assertGreenAbsent();
-  await assertActiveImageTag(softwareBaseline ?? versions.baselineTag);
+  await assertActiveImageTag(blueTag);
   for (let operator = 0; operator < OPERATOR_COUNT; operator += 1) {
-    const state = await sqlScalar(
+    const keyState = await sqlScalar(
       coprocessorDatabaseName(operator),
       "SELECT (sks_key IS NOT NULL)::int || '|' || " +
         "(compressed_xof_keyset IS NOT NULL)::int FROM keys ORDER BY sequence_number DESC LIMIT 1;",
     );
-    if (state !== "1|0") {
-      throw new Error(`operator ${operator} did not start with legacy-only key material: ${state}`);
+    if (keyState !== "1|0") {
+      throw new Error(`operator ${operator} did not start with legacy-only key material: ${keyState}`);
     }
   }
-  await migrationTest("input-proof-compute-decrypt", { parallel: false });
+  await migrationTest("input-proof-compute-decrypt");
 
-  await runRetainedMaterial(await ctx.readState(), "seed", "release-migration");
+  await runRetainedMaterial(await stack.readState(), "seed", "release-migration");
 
   const originalKeyStates = await Promise.all(
     Array.from({ length: OPERATOR_COUNT }, (_, operator) =>
@@ -504,39 +399,19 @@ export default async function runMigration(ctx: RolloutRunContext) {
     ),
   );
 
-  if (softwareBaseline) {
-    logPhase("00b replace distinct compatible release binaries without a protocol cutover");
-    const evidence = await probeSoftwareCandidate(ctx.stateDir(), versions.baselineTag, OPERATOR_COUNT);
-    const versionRows = await Promise.all(Array.from({ length: OPERATOR_COUNT }, (_, operator) =>
-      sqlScalar(coprocessorDatabaseName(operator), "SELECT row_to_json(v)::text FROM versioning v")));
-    await ctx.upgradeRuntimeGroup("coprocessor", { lockFile: baselineLock, bcsTag: versions.baselineTag });
-    await assertGreenAbsent();
-    await assertActiveImageTag(versions.baselineTag);
-    await assertSoftwareCandidateRunning(evidence);
-    for (let operator = 0; operator < OPERATOR_COUNT; operator++) {
-      if (await sqlScalar(coprocessorDatabaseName(operator), "SELECT row_to_json(v)::text FROM versioning v") !== versionRows[operator]) {
-        throw new Error("software-only replacement changed protocol versioning state");
-      }
-    }
-    await runRetainedMaterial(await ctx.readState(), "verify", "release-migration");
-  }
-
-
-
-  logPhase("01 upgrade every changed Gateway and Host contract without invoking migration");
-  await upgradeContracts(ctx, contractLock);
-  await migrationTest("input-proof-compute-decrypt", { parallel: false });
-  await migrationTest("public-decryption", { parallel: false });
-  await migrationTest("user-decryption", { parallel: false });
+  logPhase("01 upgrade every Gateway and Host contract without invoking migration");
+  await stack.upgrade("contracts");
+  await migrationTest("input-proof-compute-decrypt");
+  await migrationTest("public-decryption");
+  await migrationTest("user-decryption");
 
   logPhase("02 upgrade Relayer after contracts and before runtime consumers");
-  await ctx.upgradeRuntimeGroup("relayer", { lockFile: relayerLock });
-  await migrationTest("input-proof-compute-decrypt", { parallel: false });
-  const state = await ctx.readState();
+  await stack.upgrade("relayer");
+  await migrationTest("input-proof-compute-decrypt");
   const hostKey = defaultHostChainKey(state.scenario.hostChains);
   const hostChain = state.scenario.hostChains.find((chain) => chain.key === hostKey);
   if (!hostChain) {
-    throw new Error(`default host chain ${hostKey} is missing from the rollout scenario`);
+    throw new Error(`default host chain ${hostKey} is missing from the scenario`);
   }
   const hostChainId = hostChain.chainId;
   const hostRpc = hostReachableRpcUrl(state.discovery!.endpoints.hosts[hostKey]!.http);
@@ -549,28 +424,22 @@ export default async function runMigration(ctx: RolloutRunContext) {
   const deploymentBoundary = await currentHostBlock();
 
   logPhase("03 upgrade one KMS Core and Connector pair and prove a mixed fleet blocks migration");
-  // This scenario creates one context/epoch and performs no rotation before the upgrade.
-  // Read its association from ProtocolConfig; storage IDs cannot establish ownership.
+  // This scenario creates one context/epoch and performs no rotation before the upgrade, so every
+  // party must hold the material of the active one, which the upgrade hands to the 0.15 core.
   const target = resolveKmsGenerationTarget(state);
   if (!target.configAddress) throw new Error("KMS migration requires ProtocolConfig discovery");
   const active = parseContextAndEpoch(await castCall(target.rpcUrl, target.configAddress, "getCurrentKmsContextAndEpoch()(uint256,uint256)"));
-  const migration = [{ contextId: uint256ToId(active.contextId), epochIds: [uint256ToId(active.epochId)] }];
   for (const party of kmsPartyIds(CONNECTOR_PARTIES)) {
-    for (const [type, id] of [["Context", migration[0]!.contextId], ["PrssSetupCombined", migration[0]!.epochIds[0]!]]) {
+    for (const [type, id] of [["Context", uint256ToId(active.contextId)], ["PrssSetupCombined", uint256ToId(active.epochId)]]) {
       const response = await fetch(`${OBJECT_STORE_EXTERNAL_URL}/kms-public/PRIV-p${party}/${type}/${id}`, { method: "HEAD", signal: AbortSignal.timeout(30_000) });
       if (!response.ok) throw new Error(`KMS party ${party} lacks the on-chain ${type} ${id}: HTTP ${response.status}`);
     }
   }
-  await Bun.write(path.join(ctx.stateDir(), "rollout", "kms-epoch-migration.json"), JSON.stringify(migration, null, 2));
   const baselineConnectorImages = (await connectorObservation(1)).images;
-  await ctx.upgradeKmsOperators([1], {
-    lockFile: connectorLock,
-    migration,
-    overrides: [{ group: "kms-connector" }],
-  });
-  await assertKmsCoreVersions([1], phaseVersions.connector.CORE_VERSION!);
+  await stack.upgrade("kms-operator:1");
+  await assertKmsCoreVersions([1], targetCoreVersion);
   const mixedConnectorImages = (await connectorObservation(1)).images;
-  assertLocalConnectorUpgrade(baselineConnectorImages, mixedConnectorImages);
+  assertConnectorUpgraded(baselineConnectorImages, mixedConnectorImages);
   const firstOperatorBoundary = await mineHostBlock();
   await waitForConnectorBoundary(1, firstOperatorBoundary, mixedConnectorImages);
   let mixedBlocked = false;
@@ -588,18 +457,14 @@ export default async function runMigration(ctx: RolloutRunContext) {
   }
 
   logPhase("04 upgrade every remaining KMS operator to 0.15 and establish listener boundaries");
-  for (const operator of [2, 3, 4]) {
-    await ctx.upgradeKmsOperators([operator], {
-      lockFile: connectorLock,
-      migration,
-      overrides: [{ group: "kms-connector" }],
-    });
+  for (const operator of [2, 3, 4] as const) {
+    await stack.upgrade(`kms-operator:${operator}`);
     const operatorBoundary = await mineHostBlock();
     await waitForConnectorBoundary(operator, operatorBoundary, mixedConnectorImages);
   }
-  await assertKmsCoreVersions([1, 2, 3, 4], phaseVersions.connector.CORE_VERSION!);
+  await assertKmsCoreVersions([1, 2, 3, 4], targetCoreVersion);
   const expectedConnectorImages = (await connectorObservation(1)).images;
-  assertLocalConnectorUpgrade(baselineConnectorImages, expectedConnectorImages);
+  assertConnectorUpgraded(baselineConnectorImages, expectedConnectorImages);
   const migrationBoundary = await mineHostBlock();
   await waitUntil("all connector listeners reached the migration boundary", async () => {
     try {
@@ -612,35 +477,35 @@ export default async function runMigration(ctx: RolloutRunContext) {
       throw error;
     }
   }, 300);
-  await migrationTest("input-proof-compute-decrypt", { parallel: false });
-  await migrationTest("public-decryption", { parallel: false });
-  await migrationTest("user-decryption", { parallel: false });
+  await migrationTest("input-proof-compute-decrypt");
+  await migrationTest("public-decryption");
+  await migrationTest("user-decryption");
 
   logPhase("05 upgrade listener-core before the 0.15 coprocessor fleet");
-  await ctx.upgradeRuntimeGroup("listener-core", { lockFile: listenerCoreLock });
+  await stack.upgrade("listener-core");
 
   logPhase("06 start 0.15 Green, still forced to use the legacy representation");
-  await ctx.startDeferredGreen();
+  await stack.upgrade("green");
   await assertGreenForcedLegacy();
   await assertGreenWorkersParked();
 
   logPhase("07 cut over from 0.14 Blue to 0.15 Green through the existing Blue/Green flow");
-  await migrationTest("blue-green", { parallel: false });
+  await migrationTest("blue-green");
 
   if (process.env.RFC029_RETIRED_WRITERS === "1") {
     logPhase("07b reject retired compute and publication with original prepared work");
     const env = { RETIRED_OPERATOR_COUNT: String(OPERATOR_COUNT) };
-    await withRolloutSupervisor(ctx.stateDir(), "hold-retired-writers.sh", ["sns-worker"], env, async () => {
-      await runRetainedMaterial(await ctx.readState(), "retired-sns", "release-migration");
-      await withRolloutSupervisor(ctx.stateDir(), "hold-retired-writers.sh", ["tfhe-worker"], env, async () => {
-        await runRetainedMaterial(await ctx.readState(), "retired-tfhe", "release-migration");
+    await withRolloutSupervisor(stack.stateDir(), "hold-retired-writers.sh", ["sns-worker"], env, async () => {
+      await runRetainedMaterial(await stack.readState(), "retired-sns", "release-migration");
+      await withRolloutSupervisor(stack.stateDir(), "hold-retired-writers.sh", ["tfhe-worker"], env, async () => {
+        await runRetainedMaterial(await stack.readState(), "retired-tfhe", "release-migration");
         for (let checkpoint = 0; checkpoint < 3; checkpoint++) {
-          await runRetainedMaterial(await ctx.readState(), "retired-check", "release-migration");
+          await runRetainedMaterial(await stack.readState(), "retired-check", "release-migration");
           if (checkpoint < 2) await Bun.sleep(15_000);
         }
       });
     });
-    await runRetainedMaterial(await ctx.readState(), "retired-recover", "release-migration");
+    await runRetainedMaterial(await stack.readState(), "retired-recover", "release-migration");
   }
 
   logPhase("08 request compressed material for the existing active key");
@@ -656,7 +521,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
   const migrationRequestBoundary = await currentHostBlock();
   const paramsType = state.scenario.kms.fheParams === "Test" ? 1 : 0;
   const generateMaterial = async () => {
-    await ctx.runHostContractTask(
+    await stack.runHostContractTask(
       `npx hardhat task:triggerKeygen --params-type ${paramsType} --existing-key-id ${keyId} --use-internal-proxy-address true`,
     );
 
@@ -695,13 +560,13 @@ export default async function runMigration(ctx: RolloutRunContext) {
     const names = (await run(["docker", "ps", "-a", "--format", "{{.Names}}"])).stdout.trim().split(/\r?\n/)
       .filter(name => /^coprocessor1-gcs-host-listener(?:-[a-zA-Z0-9-]+)?$/.test(name));
     if (names.length < 3) throw new Error("cannot identify every live listener role for the held recipient");
-    if (migrationFault === "lagging-recipient") await withHeldRecipient(ctx.stateDir(), names, generateMaterial);
-    else if (migrationFault.startsWith("download-")) await withRolloutSupervisor(ctx.stateDir(), "hold-key-download.sh", names, {
+    if (migrationFault === "lagging-recipient") await withHeldRecipient(stack.stateDir(), names, generateMaterial);
+    else if (migrationFault.startsWith("download-")) await withRolloutSupervisor(stack.stateDir(), "hold-key-download.sh", names, {
       MIGRATION_KEY_HEX: keyIdHex, MIGRATION_DATABASE: coprocessorDatabaseName(1),
       MIGRATION_DOWNLOAD_MODE: migrationFault.slice("download-".length),
       POSTGRES_PASSWORD: DEFAULT_POSTGRES_PASSWORD,
     }, generateMaterial);
-    else await withRolloutSupervisor(ctx.stateDir(), "interrupt-key-application.sh", names, {
+    else await withRolloutSupervisor(stack.stateDir(), "interrupt-key-application.sh", names, {
       MIGRATION_KEY_HEX: keyIdHex, MIGRATION_DATABASE: coprocessorDatabaseName(1),
       POSTGRES_PASSWORD: DEFAULT_POSTGRES_PASSWORD,
     }, generateMaterial);
@@ -739,24 +604,23 @@ export default async function runMigration(ctx: RolloutRunContext) {
   await restartActiveKeyWorkers("Green");
   await assertGreenForcedLegacy();
   await assertWorkerRepresentation("Green", EAGER_KEY_WORKERS, "legacy", activeRestartedAt);
-  await migrationTest("input-proof-compute-decrypt", { parallel: false });
+  await migrationTest("input-proof-compute-decrypt");
   await assertWorkerRepresentation("Green", ["tfhe-worker"], "legacy", activeRestartedAt);
 
   logPhase("10 verify normal 0.15 encryption and decryption remain functional");
-  await migrationTest("public-decryption", { parallel: false });
-  await migrationTest("user-decryption", { parallel: false });
-  await runRetainedMaterial(await ctx.readState(), "verify", "release-migration");
+  await migrationTest("public-decryption");
+  await migrationTest("user-decryption");
+  await runRetainedMaterial(await stack.readState(), "verify", "release-migration");
   if (gpuContinuation) {
-    if (!process.env.RFC029_GPU_IMAGES) throw new Error("GPU continuation requires the package-migration image receipt");
     logPhase("11 consume migrated compressed keys on GPU, then repeat after a worker restart");
     const since = new Date().toISOString();
-    await withRolloutSupervisor(ctx.stateDir(), "hold-migration-gpu.sh", [], {
-      RFC029_GPU_IMAGES: process.env.RFC029_GPU_IMAGES,
+    await withRolloutSupervisor(stack.stateDir(), "hold-migration-gpu.sh", [], {
+      RFC029_GPU_IMAGES: process.env.RFC029_GPU_IMAGES!,
     }, async () => {
       for (const checkpoint of ["initial load", "restart"]) {
         const boundary = checkpoint === "initial load" ? since : new Date().toISOString();
         if (checkpoint === "restart") await restartActiveKeyWorkers("Green");
-        await runRetainedMaterial(await ctx.readState(), "verify", "release-migration", true);
+        await runRetainedMaterial(await stack.readState(), "verify", "release-migration", true);
         await assertWorkerRepresentation("Green", KEY_WORKERS, "compressed-xof", boundary);
         for (let operator = 0; operator < OPERATOR_COUNT; operator++) {
           if (await sqlScalar(coprocessorDatabaseName(operator), activeKeyStateSql) !== originalKeyStates[operator]) {
@@ -779,13 +643,13 @@ export default async function runMigration(ctx: RolloutRunContext) {
     afterBroadcast?: (before: ContextAndEpoch) => Promise<void>,
   ) => {
     const before = await readKmsEpoch();
-    await ctx.runHostContractTask(`npx hardhat ${task} --use-internal-proxy-address true`);
+    await stack.runHostContractTask(`npx hardhat ${task} --use-internal-proxy-address true`);
     await afterBroadcast?.(before);
     await waitUntil(`the ${label} reshared the migrated key and activated on chain`, async () =>
       activated(before, await readKmsEpoch()), 600);
-    await migrationTest("public-decryption", { parallel: false });
-    await migrationTest("user-decryption", { parallel: false });
-    await runRetainedMaterial(await ctx.readState(), "verify", "release-migration");
+    await migrationTest("public-decryption");
+    await migrationTest("user-decryption");
+    await runRetainedMaterial(await stack.readState(), "verify", "release-migration");
   };
   await reshare("epoch rotation", "task:defineNewEpochForCurrentKmsContext", (before, current) =>
     current.contextId === before.contextId && current.epochId !== before.epochId);
@@ -795,7 +659,7 @@ export default async function runMigration(ctx: RolloutRunContext) {
     (before, current) => current.contextId !== before.contextId,
     // The gateway only accepts decryptions for KMS contexts registered on GatewayConfig.
     (before) =>
-      ctx.runGatewayContractTask("npx hardhat task:updateKmsContext --use-internal-proxy-address true", {
+      stack.runGatewayContractTask("npx hardhat task:updateKmsContext --use-internal-proxy-address true", {
         env: { KMS_CONTEXT_ID: (before.contextId + 1n).toString() },
       }),
   );

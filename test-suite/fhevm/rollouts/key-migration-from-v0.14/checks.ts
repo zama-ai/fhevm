@@ -5,7 +5,8 @@ export type ConnectorObservation = {
   party: number;
 };
 
-export const assertLocalConnectorUpgrade = (
+/** Each `image|imageId` of the upgraded party must differ from the one it ran before. */
+export const assertConnectorUpgraded = (
   baselineImages: readonly string[],
   upgradedImages: readonly string[],
 ) => {
@@ -13,9 +14,9 @@ export const assertLocalConnectorUpgrade = (
     throw new Error("connector gate blocked: upgraded service image list is incomplete");
   }
   for (let index = 0; index < upgradedImages.length; index += 1) {
-    const [configuredImage, imageId] = upgradedImages[index]!.split("|");
-    if (!configuredImage?.endsWith(":fhevm-local") || !imageId || upgradedImages[index] === baselineImages[index]) {
-      throw new Error(`connector gate blocked: party 1 service ${index} did not reach its locally built image`);
+    const [, imageId] = upgradedImages[index]!.split("|");
+    if (!imageId || upgradedImages[index] === baselineImages[index]) {
+      throw new Error(`connector gate blocked: party 1 service ${index} still runs its previous image`);
     }
   }
 };

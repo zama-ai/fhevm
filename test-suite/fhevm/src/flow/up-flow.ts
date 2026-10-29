@@ -1925,31 +1925,6 @@ const applyRuntimeUpgradeLock = (
     removeRuntimeUpgradeOverrides(state.overrides, group),
   );
 
-/** Applies an ordered rollout version lock without restarting runtime services. */
-export const applyVersionLock = async (
-  label: string,
-  lockFile: string,
-  allowedVersionKeys: readonly string[],
-  options: { overrides?: LocalOverride[] } = {},
-) => {
-  const state = await loadState();
-  if (!state || !(await projectContainers()).length) {
-    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
-  }
-  await ensureRuntimeArtifacts(state, "rollout version lock");
-  const { changedKeys, state: nextState } = await buildLockedState(
-    label,
-    state,
-    lockFile,
-    allowedVersionKeys,
-    mergeLocalOverrides(state.overrides, options.overrides),
-  );
-  await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
-  await saveState(nextState);
-  await generateRuntime(nextState, stackSpecForState(nextState));
-  console.log(`[rollout] ${label} versions=${changedKeys.join(", ") || "(none)"}`);
-};
-
 const waitForRelayer = async () => {
   await waitForContainer("fhevm-relayer-db", "healthy");
   await waitForContainer("fhevm-relayer", "running");
@@ -2377,9 +2352,9 @@ export const upgradeBootstrappedStack = async (state: State, steps: readonly Upg
     state.overrides = pending.overrides;
     await saveState(state);
     console.log("[bootstrap] stack upgraded to the bundle; starting the Green fleet");
-    // Green was built alongside Blue in the coprocessor step. The marker stays until Green runs,
-    // so a failed start is retried by `up --resume` rather than left deferred for good.
-    await startDeferredGreen(deferredGreenOperations, { rebuild: false });
+    // The marker stays until Green runs, so a failed start is retried by `up --resume` rather
+    // than left deferred for good.
+    await startDeferredGreen(deferredGreenOperations);
     Object.assign(state, await loadState());
     delete state.bootstrapPending;
     await saveState(state);
@@ -2442,10 +2417,7 @@ const deferredGreenOperations: DeferredGreenOperations = {
 };
 
 /** Builds and starts a Green fleet that was intentionally absent during prerequisite migration. */
-export const startDeferredGreen = async (
-  operations: DeferredGreenOperations = deferredGreenOperations,
-  options: { rebuild?: boolean } = {},
-) => {
+export const startDeferredGreen = async (operations: DeferredGreenOperations = deferredGreenOperations) => {
   const state = await operations.loadState();
   if (!state || state.scenario.kind !== "blue-green" || !state.scenario.gcs.deferredStart) {
     throw new PreflightError("startDeferredGreen requires a running Blue-Green scenario with gcs.deferredStart=true");
@@ -2476,7 +2448,8 @@ export const startDeferredGreen = async (
 
   try {
     await operations.generateRuntime(nextState, stackSpecForState(nextState));
-    await operations.maybeBuild("coprocessor", nextState, { force: options.rebuild ?? true, persistState: false });
+    // Green was built alongside Blue in the coprocessor step.
+    await operations.maybeBuild("coprocessor", nextState, { persistState: false });
     await operations.composeUp("coprocessor", migrationServices, { forceRecreate: true });
     for (const service of migrationServices) {
       await operations.waitForContainer(service, "complete");

@@ -466,6 +466,18 @@ jobs:
             snapshot_logs "${prefix} - Endpoint" "${prefix}-endpoint"
           done
 
+      - name: Upload stack test receipt
+        # Written by profiles that change the stack between checks, such as key-migration-from-v0.14.
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: stack-test-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.TEST_PROFILE }}
+          path: |
+            .fhevm/rollout/receipt.md
+            .fhevm/rollout/receipt.jsonl
+          include-hidden-files: true
+          if-no-files-found: ignore
+
       - name: Cleanup
         working-directory: test-suite/fhevm
         if: always()

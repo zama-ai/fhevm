@@ -5,8 +5,7 @@ import { PreflightError } from "../errors";
 import { projectContainers } from "../flow/runtime-compose";
 import { kmsConnectorDbName } from "../kms-party";
 import { STATE_DIR } from "../layout";
-import type { VersionBundle } from "../types";
-import { ensureDir, readJson } from "../utils/fs";
+import { ensureDir } from "../utils/fs";
 import { run } from "../utils/process";
 
 type VersionChange = { key: string; from?: string; to?: string };
@@ -25,7 +24,6 @@ type ReceiptEntry = {
   kind: string;
   title: string;
   details?: Record<string, unknown>;
-  lockFile?: string;
   versionChanges?: VersionChange[];
   containers?: ReceiptContainer[];
   dockerInspectError?: string;
@@ -382,9 +380,6 @@ const compact = (value: string) => (value.length > 120 ? `${value.slice(0, 117)}
 
 const markdownEntry = (entry: ReceiptEntry) => {
   const lines = [`\n## ${entry.seq}. ${entry.kind}: ${entry.title}`, `- at: ${entry.at}`];
-  if (entry.lockFile) {
-    lines.push(`- lock: \`${entry.lockFile}\``);
-  }
   if (entry.versionChanges?.length) {
     lines.push("", "Version changes:", "", "| key | from | to |", "| --- | --- | --- |");
     for (const change of entry.versionChanges) {
@@ -437,7 +432,7 @@ export const createRolloutReceipt = (
   let started = false;
   let currentEnv: Record<string, string> | undefined;
 
-  const start = async (script: string) => {
+  const start = async (name: string) => {
     await ensureDir(receiptDir());
     started = true;
     seq = 0;
@@ -445,7 +440,7 @@ export const createRolloutReceipt = (
     await fs.writeFile(receiptJsonlPath(), "");
     await fs.writeFile(
       receiptMarkdownPath(),
-      [`# Stateful Rollout Receipt`, ``, `- runbook: \`${script}\``, `- started: ${new Date().toISOString()}`, ""].join(
+      [`# Stack Test Receipt`, ``, `- test: \`${name}\``, `- started: ${new Date().toISOString()}`, ""].join(
         "\n",
       ),
     );
@@ -459,17 +454,17 @@ export const createRolloutReceipt = (
       details?: Record<string, unknown>;
       docker?: boolean;
       diagnostics?: boolean;
-      lockFile?: string;
+      /** The stack's versions after this entry; the receipt lists what changed since the last one. */
+      versions?: Record<string, string>;
     } = {},
   ) => {
     if (!started) {
       await start("(unknown)");
     }
 
-    const lock = options.lockFile ? await readJson<VersionBundle>(options.lockFile) : undefined;
-    const changes = lock ? versionChanges(currentEnv, lock.env) : undefined;
-    if (lock) {
-      currentEnv = lock.env;
+    const changes = options.versions ? versionChanges(currentEnv, options.versions) : undefined;
+    if (options.versions) {
+      currentEnv = options.versions;
     }
     const docker = options.docker || options.diagnostics
       ? await (operations.inspectContainers ?? inspectContainers)()
@@ -481,7 +476,6 @@ export const createRolloutReceipt = (
       kind,
       title,
       details: options.details,
-      lockFile: options.lockFile,
       versionChanges: changes,
       containers: docker?.containers,
       dockerInspectError: docker?.error,
@@ -499,15 +493,3 @@ export const createRolloutReceipt = (
 };
 
 export type RolloutReceipt = ReturnType<typeof createRolloutReceipt>;
-
-export const printRolloutReceipt = async () => {
-  const file = receiptMarkdownPath();
-  try {
-    process.stdout.write(await fs.readFile(file, "utf8"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new PreflightError(`No rollout receipt found at ${file}`);
-    }
-    throw error;
-  }
-};

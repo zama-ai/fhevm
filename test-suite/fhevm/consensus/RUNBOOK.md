@@ -407,7 +407,7 @@ runs remain outside the consensus workflow inventory. Their completed execution 
 ## Key migration: lagging recipient and candidate selection
 
 
-The existing stateful rollout accepts the optional
+The `key-migration-from-v0.14` test profile accepts the optional
 `RFC029_MIGRATION_FAULT=lagging-recipient`. It stops the second operator's Green
 host-listener roles before requesting compressed material for the existing key.
 It requires generation and operator 0's activation to complete while the held
@@ -416,11 +416,11 @@ the hold must let that operator apply the original activation through normal
 catch-up. Existing final checks then compare material/event bindings, unchanged
 key IDs and legacy bytes, restart the workers and decrypt through legacy serving.
 
-Run this only on a fresh rollout stack:
+Run this only on a fresh stack:
 
 ```sh
-RFC029_MIGRATION_FAULT=lagging-recipient ./fhevm-cli rollout run \
-  rollouts/v0.14-to-v0.15-gpu-key-migration/run.ts
+./fhevm-cli up --scenario key-migration-from-v0.14 --build
+RFC029_MIGRATION_FAULT=lagging-recipient ./fhevm-cli test key-migration-from-v0.14
 ```
 
 The outage is owned by a child supervisor whose stdin closes if the CLI exits;
@@ -430,13 +430,8 @@ arm covers delayed application/catch-up, not a mid-download kill, malformed
 material, duplicate activation or GPU consumption of compressed material.
 The force-legacy safeguard remains in place.
 
-Historical rollout defaults are still historical. Set
-`RFC029_ACCEPTANCE_MODE=candidate`, an explicit full `RFC029_TARGET_FHEVM_SHA`,
-and an explicit `RFC029_BASELINE_FHEVM_TAG` for candidate work. Candidate mode
-refuses the historical target and implicit baseline. Record the baseline's
-resolved source and image digests: supplying a tag does not prove it represents
-the latest release branch. The rollout receipt, resolved locks and actual
-locally built Green revision must agree before claiming candidate acceptance.
+The test upgrades from the scenario's `bootstrap.tag` to the checked-out branch.
+The receipt records the images and versions each step actually ran.
 
 ## CPU scheduling diversity
 
@@ -756,9 +751,9 @@ rollout stack until recovery is completed.
 
 ### Retained material and migrated-key GPU continuation
 
-The key-migration rollout compiles its application fixtures against the Solidity
-library from `RFC029_BASELINE_FHEVM_TAG` (default `v0.14.1`). That ref must exist
-in the local Git clone. The runner resolves it to an immutable commit before
+The key-migration test compiles its application fixtures against the Solidity
+library of the scenario's `bootstrap.tag`. That tag must exist in the local Git
+clone. The runner resolves it to an immutable commit before
 boot, reapplies the library after every test-container recreation, and records
 the commit, library tree, and archive SHA-256 in `fixture-solidity` receipts.
 Only the test container's library and compiled fixtures change; production
@@ -783,7 +778,7 @@ runtime artifacts, so a fresh stack starts from a fresh seed. The profile also
 installs its dry-run evidence trigger with drop-and-recreate semantics, so a
 run killed before its cleanup does not block the next one.
 
-The `v0.14-to-v0.15-gpu-key-migration` rollout seeds an additional fixture while
+The `key-migration-from-v0.14` test seeds an additional fixture while
 actual baseline release images are running. Its final CPU restart consumes that
 fixture. This tests release-produced object lookup and retained input use, not
 just serialization of synthetic historical bytes.
@@ -796,12 +791,12 @@ build environment, run:
 # Uses the native build receipt and immutable image IDs. GPU_RUNTIME_BASE can
 # select a compatible public runtime where private-registry access is absent.
 ./scripts/gpu-consensus-workers.sh package-migration
-export RFC029_GPU_CONTINUATION=1
 export RFC029_GPU_IMAGES="$FHEVM_STATE_DIR/runtime/gpu-consensus-workers/migration-images.json"
-# Run the ordinary v0.14-to-v0.15-gpu-key-migration rollout with these variables.
+./fhevm-cli up --scenario key-migration-from-v0.14-gpu --build
+./fhevm-cli test key-migration-from-v0.14
 ```
 
-The GPU continuation selects `Default` parameters and explicitly sets
+The `-gpu` scenario selects `Default` parameters and explicitly sets
 `kms.insecureTestKeygen: true`. Threshold `Test` parameters use drift noise
 reduction unsupported by CUDA; secure preprocessing with `Default` is too
 expensive for this campaign. In this isolated mode a per-party gRPC adapter
@@ -911,20 +906,7 @@ and no second application. These are explicitly lower-layer parser/idempotency
 checks; the live HTTP arms do not claim an authenticated malformed payload or a
 second broker-delivery campaign.
 
-### Compatible software replacement and retired writers
-
-Set `RFC029_SOFTWARE_BASELINE_TAG=v0.14.0-7` to prepend a compatible software
-replacement to the migration rollout (whose target baseline defaults to
-`v0.14.1`). The release binaries are pulled and inspected before replacement:
-all five observed service roles must report the same compiled `0.14.0` protocol
-identity, and at least one binary hash must differ. Released 0.14 uses
-`STACK_VERSION` for this decision; it does not expose the later numeric
-consensus-version flag. The ordinary CLI group-upgrade path must adopt the exact
-candidate images without starting Green or changing the versioning singleton.
-Retained inputs/objects and fresh values must still work. The later ordinary
-blue/green phase separately requires a strictly newer compiled numeric consensus
-version and a real promotion. This is a concrete release-pair compatibility
-check, not a certification of every patch release or hypothetical downgrade.
+### Retired writers
 
 Set `RFC029_RETIRED_WRITERS=1` to challenge the actual old release after promotion.
 An owned supervisor stops promoted SNS workers and restarts the retired SNS
@@ -966,8 +948,8 @@ Unversioned source tags use the current repository naming convention.
 
 KMS 0.15 needs an explicit context-to-epoch mapping to migrate existing PRSS
 storage. The key-migration rollout reads the active association from
-`ProtocolConfig`, checks that each party has the corresponding legacy context
-and PRSS objects, and records it in `rollout/kms-epoch-migration.json`. This
+`ProtocolConfig` and checks that each party has the corresponding legacy context
+and PRSS objects. This
 scenario creates one context and epoch; it does not rotate epochs before the
 upgrade and is not coverage for migrating a multi-epoch deployment.
 

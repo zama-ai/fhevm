@@ -190,29 +190,24 @@ The lock file must contain every version key. Example:
 If you also pass `--target`, it must match the lock file. Otherwise the CLI infers the target from the lock file itself.
 The lock file replaces only the version resolution step — preflight, boot pipeline, and everything else run normally.
 
-## Stateful Rollout Runbooks
+## Upgrade tests
 
-Release rollouts are executable TypeScript runbooks under `rollouts/`. A runbook boots one baseline stack, performs each upgrade step in order, preserves chain/database/container state, and runs rollout-safe e2e coverage after each step:
+An upgrade test is a test profile that changes the stack between its checks. It runs on a Blue-Green scenario whose `bootstrap` block boots the contracts, KMS core and connector, listener-core and relayer at a previous release and sets `upgrade: deferred`, so `up` leaves the upgrade to the test:
 
 ```sh
-./fhevm-cli rollout run ./rollouts/v0.14-to-v0.15-gpu-key-migration/run.ts
+./fhevm-cli up --scenario key-migration-from-v0.14 --build
+./fhevm-cli test key-migration-from-v0.14
 ```
 
-Use `./fhevm-cli rollout receipt` to print the markdown receipt of the most recent rollout run.
+The profile drives the stack through a `Stack` handle (`src/commands/stack.ts`):
 
-Runbooks use the same primitives an operator needs during a release:
+- `stack.upgrade(...steps)` runs bootstrap upgrade steps in the order given: `contracts`, `relayer`, `kms-operator:<n>` for each KMS operator, `listener-core`, then `green`, which starts the deferred Green fleet. The whole list is checked first: an unknown or repeated step, an operator before `contracts`, or `green` before every other step fails before anything changes. Without `upgrade: deferred`, `up` runs the same steps in this order itself.
+- `stack.test(profile)` runs another test profile against the current state.
+- `stack.runHostContractTask(...)` and `stack.runGatewayContractTask(...)` run contract tasks from the deploy images.
 
-- `ctx.up(...)` starts the old baseline once.
-- `ctx.writeVersionLock(...)` writes explicit version locks from the runbook: every version key comes from the runbook.
-- `ctx.resolveVersionLock(...)` writes a lock over the resolved current stack, changing only the keys the runbook names. The surrounding stack is resolved once per run, so every lock derived this way shares one snapshot.
-- `ctx.applyVersionLock(...)` applies version changes that do not restart runtime services, then regenerates env/compose.
-- `ctx.runHostContractTask(...)` and `ctx.runGatewayContractTask(...)` run contract migration/upgrade tasks from the selected deploy images.
-- `ctx.upgradeRuntimeGroup(...)` restarts selected runtime components in place and runs their DB migrations when present.
-- `ctx.test(...)` runs the rollout-safe e2e profile after each state.
+Each action is recorded in `.fhevm/rollout/receipt.md` and `receipt.jsonl`, with the container images and the version changes since the previous entry. The e2e workflow uploads both files.
 
-`rollout-standard` is intentionally narrow: it covers encrypted input, FHE compute/write paths, user decrypt, delegated user decrypt, public decrypt, and ERC20 transfer coverage. Broader profiles such as `multi-chain-isolation`, HCU, pause/unpause, DB revert, and drift recovery stay available as explicit tests but are not part of the per-step rollout gate.
-
-The `test-suite-stateful-rollout` workflow executes a checked-in runbook through manual dispatch with a path relative to `test-suite/fhevm`.
+`rollout-standard` is intentionally narrow: it covers encrypted input, FHE compute/write paths, user decrypt, delegated user decrypt, public decrypt, and ERC20 transfer coverage. Broader profiles such as `multi-chain-isolation`, HCU, pause/unpause, DB revert, and drift recovery stay available as explicit tests.
 
 ## Version Override via Environment Variables
 
@@ -530,7 +525,7 @@ If a runtime override is already active and you only want to rebuild and restart
 
 ## Coprocessor Scenarios
 
-Use `--scenario <name-or-file>` for consensus and stateful rollout runs. Bundled presets resolve by filename stem, and explicit file paths still work. The scenario file is the source of truth for:
+Use `--scenario <name-or-file>` for consensus and upgrade test runs. Bundled presets resolve by filename stem, and explicit file paths still work. The scenario file is the source of truth for:
 
 - coprocessor count and threshold
 - per-instance source mode: `inherit`, `registry`, or `local`
