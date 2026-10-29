@@ -314,7 +314,9 @@ host-contracts README. Use the mirror tasks for every rotation after that.
   task earlier than that and it still sees the pre-rotation state, stopping with
   `Replica … is already at context <id>, which is >= canonical's <id>`. That message means
   **"canonical's rotation is not finalized yet"**, not "nothing to do" — wait and re-run.
-  Pass `--block-number` to pin the read to a specific canonical height instead.
+  Pass `--block-number` to pin the read to a specific canonical height that is already finalized.
+  Heights above the latest finalized block are rejected; wait for finalization and re-run.
+  The tasks also re-fetch the selected block after reading and abort if its hash changed.
 - **No committee metadata to collect.** Unlike §4, there is no questionnaire and no
   `committee.env`: everything the replica needs is read back from canonical. Only two
   connection parameters are required (`--canonical-rpc-url`,
@@ -550,9 +552,10 @@ npx hardhat task:kmsContextSwitchStatus --network <network> --from-block <recent
 #       active one) | same-set-rotation (new epoch under the same active context)
 # contextState: PENDING (lists outstanding new tx-senders + the n-t old-side target)
 #               CREATED (creation quorum reached, epoch still PENDING)
-# epochState:   PENDING | ACTIVE ("fully live")
-# aborted:      true + reason if governance destroyed the pending context/epoch
-#               (destroyKmsContext / destroyKmsEpoch)
+# epochState:   PENDING | DESTROYED (an activated epoch shows as flow: idle)
+# aborted:      true + reason if governance destroyed the pending context or epoch
+#               (context-destroyed via destroyKmsContext, epoch-destroyed via destroyKmsEpoch)
+# fullyLive:    true when the active context and epoch are valid and nothing is in flight
 ```
 
 ### B.2 Verify a party's claimed parameters (coordinator-side)
@@ -682,6 +685,11 @@ done
 
 n=$NUM_KMS_NODES
 [ "$n" -eq "$((3 * MPC_THRESHOLD + 1))" ] || fail "n must be 3*MPC_THRESHOLD+1"
+
+# The KMS core ingests only MPC_THRESHOLD: a threshold of t or less lets t corrupt nodes meet it.
+for v in PUBLIC_DECRYPTION_THRESHOLD USER_DECRYPTION_THRESHOLD KMS_GEN_THRESHOLD; do
+  [ "${!v}" -gt "$MPC_THRESHOLD" ] || fail "$v must be greater than MPC_THRESHOLD (got ${!v})"
+done
 
 # Gateway spelling must be present and equal to its host twin.
 [ "${KMS_GENERATION_THRESHOLD:-}" = "$KMS_GEN_THRESHOLD" ] ||

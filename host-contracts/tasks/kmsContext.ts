@@ -1,10 +1,11 @@
-import { Interface } from 'ethers';
+import { Interface, type Result } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig } from '../types';
 import { buildProtocolConfigContextArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+import { toJsonString } from './utils/upgradeProposal';
 
 // This file defines tasks to drive a KMS context switch / epoch rotation on the canonical (Ethereum)
 // ProtocolConfig: build the `defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext` /
@@ -67,7 +68,17 @@ export function encodeDefineNewKmsContextAndEpoch(iface: Interface): EncodedCall
   const args = buildProtocolConfigContextArgs();
   const functionSignature = iface.getFunction('defineNewKmsContextAndEpoch')!.format('sighash');
   const calldata = iface.encodeFunctionData('defineNewKmsContextAndEpoch', args);
-  const decodedArgs = iface.decodeFunctionData('defineNewKmsContextAndEpoch', calldata).toArray();
+  // Key each struct by field name, so a reviewer can tell a tx-sender from a signer.
+  const [nodes, thresholds, softwareVersion, pcrValues] = iface.decodeFunctionData(
+    'defineNewKmsContextAndEpoch',
+    calldata,
+  );
+  const decodedArgs = [
+    nodes.map((node: Result) => node.toObject()),
+    thresholds.toObject(),
+    softwareVersion,
+    pcrValues.map((pcr: Result) => pcr.toObject()),
+  ];
   return { functionSignature, calldata, decodedArgs };
 }
 
@@ -126,6 +137,7 @@ task(
       '  target:',
       target ?? `<unresolved — set ${PROTOCOL_CONFIG_ADDRESS_ENV_VAR} or pass --use-internal-proxy-address>`,
     );
+    console.log('  decodedArgs:', toJsonString(encoded.decodedArgs));
     console.log('  calldata:', encoded.calldata);
   });
 
@@ -247,7 +259,7 @@ task(
 ////////////////////////////////////////////////////////////////////////////////
 
 type ContextState = 'PENDING' | 'CREATED' | 'ACTIVE';
-type EpochState = 'PENDING' | 'ACTIVE';
+type EpochState = 'PENDING' | 'ACTIVE' | 'DESTROYED';
 
 export interface KmsContextSwitchStatus {
   protocolConfig: string;
@@ -257,7 +269,8 @@ export interface KmsContextSwitchStatus {
   activeEpochId: bigint;
   flow: 'idle' | 'context-switch' | 'same-set-rotation';
   aborted: boolean;
-  abortReason: string | null;
+  abortReason: 'context-destroyed' | 'epoch-destroyed' | null;
+  // True when the active context and epoch are valid and no switch or rotation is in flight.
   fullyLive: boolean;
 
   // Context-switch creation phase (undefined for same-set / idle).
@@ -367,6 +380,11 @@ export async function inspectKmsContextSwitch(
   } else {
     // Nothing in flight: the latest-issued context and epoch are already the active ones.
     status.flow = 'idle';
+  }
+
+  // A switch or rotation that activated or was aborted is no longer in flight. An abort never
+  // touches the active context and epoch: the contract refuses to destroy the latest active ones.
+  if (status.flow === 'idle' || status.aborted || status.epochState === 'ACTIVE') {
     status.fullyLive =
       activeContextId > 0n && activeEpochId > 0n && (await pc.isValidEpochForContext(activeContextId, activeEpochId));
   }
@@ -474,6 +492,17 @@ async function fillSameSetRotation(
   checksum: (address: string) => string,
 ): Promise<void> {
   status.flow = 'same-set-rotation';
+
+  // destroyKmsEpoch aborts the rotation. The contract has no getter for the epoch state, so the
+  // task looks for the KmsEpochDestroyed event instead. That event is always inside the scanned
+  // window: the NewKmsEpoch event that revealed this rotation is in the window, and the
+  // destruction comes after it.
+  const destroyed = await pc.queryFilter(pc.filters.KmsEpochDestroyed(pendingEpochId), fromBlock, toBlock);
+  if (destroyed.length > 0) {
+    status.aborted = true;
+    status.abortReason = 'epoch-destroyed';
+  }
+
   // The signer set is unchanged, so the active context's signers are the expected confirmers.
   const epochSigners: string[] = await pc.getKmsSignersForContext(status.activeContextId);
   await fillEpochActivation(pc, status, pendingEpochId, epochSigners.map(checksum), fromBlock, toBlock, checksum);
@@ -511,10 +540,13 @@ async function fillEpochActivation(
   // signers disagree on the reshared key/CRS material and the epoch cannot activate as-is.
   status.epochConfirmationsDiverged = Object.keys(byDataHash).length > 1;
 
-  status.epochState = status.activeEpochId === pendingEpochId ? 'ACTIVE' : 'PENDING';
-  if (status.epochState === 'ACTIVE') {
+  // Both abort paths clear the pending epoch: destroyKmsEpoch clears it directly, and
+  // destroyKmsContext clears it together with its context.
+  if (status.activeEpochId === pendingEpochId) {
+    status.epochState = 'ACTIVE';
     status.contextState = 'ACTIVE';
-    status.fullyLive = await pc.isValidEpochForContext(status.activeContextId, status.activeEpochId);
+  } else {
+    status.epochState = status.aborted ? 'DESTROYED' : 'PENDING';
   }
 }
 
@@ -547,14 +579,16 @@ function printStatus(status: KmsContextSwitchStatus): void {
         'new tx senders confirmed:',
         `${status.newTxSendersConfirmed?.length}/${status.newTxSenders?.length}`,
       );
-      if (status.newTxSendersOutstanding && status.newTxSendersOutstanding.length > 0) {
+      // After an abort there is nobody left to chase, so this printout skips the outstanding lists
+      // and the advice on what blocks the operation.
+      if (!status.aborted && status.newTxSendersOutstanding && status.newTxSendersOutstanding.length > 0) {
         console.log('  outstanding new tx senders:', status.newTxSendersOutstanding.join(', '));
       }
       console.log(
         'previous tx senders confirmed:',
         `${status.previousConfirmationCount} (need >= ${status.previousTxSenderThreshold} = n - t)`,
       );
-      if (status.stuckBelowPreviousThreshold) {
+      if (!status.aborted && status.stuckBelowPreviousThreshold) {
         console.log('  ⚠ stuck below the (n - t) old-side confirmation target');
       }
       console.log('creation quorum reached:', status.contextCreationQuorumReached);
@@ -569,11 +603,16 @@ function printStatus(status: KmsContextSwitchStatus): void {
     console.log('pendingEpochId:', status.pendingEpochId.toString());
     console.log('epochState:', status.epochState);
     console.log('epoch signers confirmed:', `${status.epochSignersConfirmed?.length}/${status.epochSigners?.length}`);
-    if (status.epochSignersOutstanding && status.epochSignersOutstanding.length > 0) {
+    if (!status.aborted && status.epochSignersOutstanding && status.epochSignersOutstanding.length > 0) {
       console.log('  outstanding epoch signers:', status.epochSignersOutstanding.join(', '));
     }
     if (status.epochConfirmationsDiverged) {
-      console.log('  ⚠ signers confirmed different data hashes; epoch cannot activate until they agree');
+      // A split vote stays visible after an abort, since it is the usual reason for one.
+      console.log(
+        status.aborted
+          ? '  ⚠ signers confirmed different data hashes'
+          : '  ⚠ signers confirmed different data hashes; epoch cannot activate until they agree',
+      );
     }
   }
 

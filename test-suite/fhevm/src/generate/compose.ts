@@ -184,12 +184,22 @@ const coprocessorBuildSpec = (target: string, e2ePublicRuntime = false) =>
     },
   });
 
+// The connector services fetch private zama-ai/kms git dependencies: the build reads a token from
+// this BuildKit secret, filled from the env var of the same name (see `composeBuild`).
+const BLOCKCHAIN_ACTIONS_TOKEN_SECRET = "BLOCKCHAIN_ACTIONS_TOKEN";
+/** Declares the zama-ai/kms token secret when one of the connector services is built locally. */
+const kmsConnectorSecrets = (services: ComposeDoc["services"]) =>
+  Object.values(services).some((service) => service.build)
+    ? { secrets: { [BLOCKCHAIN_ACTIONS_TOKEN_SECRET]: { environment: BLOCKCHAIN_ACTIONS_TOKEN_SECRET } } }
+    : {};
+
 // The connector DB migration has its own Dockerfile and does not use the
 // connector workspace runtime base. Only the long-lived connector
 // services receive the E2E-only public-runtime switch.
 const kmsConnectorBuildSpec = (target: string, e2ePublicRuntime = false) =>
   buildSpec("../../..", "kms-connector/Dockerfile.workspace", {
     target,
+    secrets: [BLOCKCHAIN_ACTIONS_TOKEN_SECRET],
     args: {
       RUST_IMAGE_VERSION: KMS_CONNECTOR_RUST_IMAGE_VERSION,
       BUILD_ID: LOCAL_SOURCE_REVISION,
@@ -964,7 +974,7 @@ export const buildKmsConnectorOverride = async (plan: StackSpec) => {
       services[serviceName] = next;
     }
   }
-  return { services };
+  return { services, ...kmsConnectorSecrets(services) };
 };
 
 /** The universal test-runner service that consensus restart and fault tests drive. */
@@ -1072,7 +1082,7 @@ const buildComposeOverride = async (component: string, plan: StackSpec) => {
   if (component === "test-suite") {
     applyDockerSocketRuntime(services);
   }
-  return { services };
+  return { services, ...(component === "kms-connector" ? kmsConnectorSecrets(services) : {}) };
 };
 
 /** Builds a host-node compose override for an extra host chain. */

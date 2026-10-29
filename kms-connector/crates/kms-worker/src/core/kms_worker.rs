@@ -295,7 +295,7 @@ impl
         }
 
         let kms_client = KmsClient::connect(&config).await?;
-        let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
+        let kms_health_client = KmsHealthClient::connect(&config).await?;
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 

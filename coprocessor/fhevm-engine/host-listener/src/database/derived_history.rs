@@ -104,6 +104,10 @@ async fn load(
     // is SHA-256 of zero bytes (consensus-detector's EMPTY_BLOCK_STATE_HASH).
     // Still inspect headers so discovering FHE events in a block committed as
     // empty is detected even when its computations were already present.
+    //
+    // Rollback drops the green schema. A failed epoch keeps its seal in
+    // `public`, but loses the rows this counts. The listener then adds those
+    // rows again, and the guard sees a rewrite. Omit that seal.
     sqlx::query_as(
         "WITH RECURSIVE manifest_coverage AS (
              SELECT b.block_number AS root_number, b.block_hash AS root_hash,
@@ -112,6 +116,8 @@ async fn load(
                      OR b.manifest_published) AS committed
              FROM block_manifest_state b
              WHERE b.host_chain_id = $1 AND b.block_number = ANY($2)
+               AND NOT EXISTS (SELECT 1 FROM public.consensus_epoch_history e
+                   WHERE e.consensus_epoch = b.consensus_epoch AND e.outcome = 'failed')
                AND NOT EXISTS (SELECT 1 FROM host_chain_blocks_valid h
                    WHERE h.chain_id = b.host_chain_id AND h.block_hash = b.block_hash
                      AND h.block_status = 'orphaned')
