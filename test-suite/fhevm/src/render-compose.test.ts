@@ -540,6 +540,22 @@ describe("render-compose", () => {
     });
   });
 
+  test("passes the zama-ai/kms token secret to a centralized kms-connector local build", async () => {
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(kmsConnectorOverrideState, stackSpecForState(kmsConnectorOverrideState));
+      const doc = YAML.parse(await readFile(composePath("kms-connector"), "utf8")) as {
+        services: Record<string, { build?: { secrets?: string[] } }>;
+        secrets?: unknown;
+      };
+      expect(doc.services["kms-connector-gw-listener"]?.build?.secrets).toEqual(["BLOCKCHAIN_ACTIONS_TOKEN"]);
+      expect(doc.services["kms-connector-db-migration"]?.build?.secrets).toBeUndefined();
+      expect(doc.secrets).toEqual({ BLOCKCHAIN_ACTIONS_TOKEN: { environment: "BLOCKCHAIN_ACTIONS_TOKEN" } });
+    });
+  });
+
   test("builds overridden services for the host platform and keeps the pins of published ones", async () => {
     // On an amd64 host, CI included, the pin and the host platform agree.
     const arch = Object.getOwnPropertyDescriptor(process, "arch")!;

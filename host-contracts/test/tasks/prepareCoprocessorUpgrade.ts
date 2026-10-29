@@ -7,17 +7,22 @@ import {
   bufferLeadSeconds,
   bufferSatisfied,
   computeBlockWindow,
+  parseIsoTimestampToEpochSeconds,
   readChainTip,
 } from '../../tasks/utils/blockWindow';
 import {
   type CoprocessorUpgradeInputs,
   type GatewayReport,
   type HostReport,
+  type NetworkReader,
   PROPOSE_UPGRADE_ABI,
+  assertRpcChainId,
   assertWindowCoversFinality,
   bufferViolations,
   encodeProposeCoprocessorUpgrade,
+  isReleaseTag,
   parseCoprocessorUpgradeInputs,
+  redactRpcUrl,
   resolveEnvironment,
 } from '../../tasks/utils/coprocessorUpgradeProposal';
 
@@ -44,6 +49,7 @@ function makeResult(startBlock: number, endBlock: number): BlockWindowResult {
 function makeHostReport(chainId: number, startBlock: number, endBlock: number, bufferOk = true): HostReport {
   return {
     chainId,
+    label: `chain-${chainId}`,
     rpcUrl: 'https://example.invalid',
     result: makeResult(startBlock, endBlock),
     bufferOk,
@@ -79,6 +85,24 @@ async function expectRejection(promise: Promise<unknown>, pattern: RegExp): Prom
   }
   expect(String(error)).to.match(pattern);
 }
+
+function stubNetworkReader(chainId: bigint | Error): NetworkReader {
+  return {
+    async getNetwork() {
+      if (chainId instanceof Error) throw chainId;
+      return { chainId };
+    },
+  } as unknown as NetworkReader;
+}
+
+const TESTNET_PARAMS = {
+  environment: 'testnet',
+  startTime: '2026-07-01T12:00:00Z',
+  duration: '30m',
+  buffer: '1h',
+  proposalId: '5',
+  softwareVersion: 'v0.14.0',
+};
 
 function stubBlockReader(tipBlock: number, tipTimestamp: number | null): BlockReader {
   return {
@@ -189,7 +213,46 @@ describe('prepareCoprocessorUpgrade task utils', function () {
       expect(inputs.bufferSeconds).to.equal(3600);
       expect(inputs.proposalId).to.equal(5n);
       expect(inputs.hostChains.map((c) => c.chainId)).to.deep.equal([11155111, 80002, 560048, 97]);
+      expect(inputs.hostChains[0].label).to.equal('sepolia');
       expect(inputs.gateway.rpcUrl).to.equal('https://gw.testnet.invalid');
+      expect(inputs.softwareVersion).to.equal('v0.14.0');
+    });
+
+    it('resolves the ProtocolConfig chain and the gateway identity from the registry', function () {
+      process.env.GATEWAY_TESTNET_RPC_URL = 'https://gw.testnet.invalid';
+      const inputs = parseCoprocessorUpgradeInputs(TESTNET_PARAMS);
+      expect(inputs.canonicalChainId).to.equal(11155111);
+      expect(inputs.gateway.label).to.equal('gateway-testnet');
+      expect(inputs.gateway.chainId).to.equal(10901);
+    });
+
+    it('takes the first scenario chain as the ProtocolConfig chain and labels unnamed chains (local)', function () {
+      process.env.LOCAL_GATEWAY_RPC_URL = 'http://gw.local.invalid';
+      process.env.LOCAL_HOST_CHAINS = JSON.stringify([
+        { chainId: 777, rpcUrl: 'http://a.invalid', fallbackBlockTimeSeconds: 1 },
+        { chainId: 778, label: 'polygon-preview', rpcUrl: 'http://b.invalid', fallbackBlockTimeSeconds: 1 },
+      ]);
+      const inputs = parseCoprocessorUpgradeInputs({ ...TESTNET_PARAMS, environment: 'local' });
+      expect(inputs.canonicalChainId).to.equal(777);
+      expect(inputs.hostChains.map((c) => c.label)).to.deep.equal(['chain-777', 'polygon-preview']);
+      expect(inputs.gateway.chainId).to.equal(undefined);
+    });
+
+    it('trims the software version and rejects one that is not a release tag', function () {
+      process.env.GATEWAY_TESTNET_RPC_URL = 'https://gw.testnet.invalid';
+      expect(
+        parseCoprocessorUpgradeInputs({ ...TESTNET_PARAMS, softwareVersion: ' v0.15.0 ' }).softwareVersion,
+      ).to.equal('v0.15.0');
+      expect(() => parseCoprocessorUpgradeInputs({ ...TESTNET_PARAMS, softwareVersion: 'v0-15-0' })).to.throw(
+        /not a release tag/,
+      );
+    });
+
+    it('rejects a start time without a time zone', function () {
+      process.env.GATEWAY_TESTNET_RPC_URL = 'https://gw.testnet.invalid';
+      expect(() => parseCoprocessorUpgradeInputs({ ...TESTNET_PARAMS, startTime: '2026-07-01T12:00:00' })).to.throw(
+        /no time zone/,
+      );
     });
 
     it('rejects an unknown environment', function () {
@@ -297,6 +360,7 @@ describe('prepareCoprocessorUpgrade task utils', function () {
   describe('assertWindowCoversFinality', function () {
     const chain = (chainId: number, minWindowSeconds = 0) => ({
       chainId,
+      label: `chain-${chainId}`,
       rpcUrl: 'https://x.invalid',
       fallbackBlockTimeSeconds: 12,
       minWindowSeconds,
@@ -325,6 +389,62 @@ describe('prepareCoprocessorUpgrade task utils', function () {
       };
       expect(() => parseCoprocessorUpgradeInputs(params)).to.throw(/below the minimum window of chain 11155111/);
       expect(parseCoprocessorUpgradeInputs({ ...params, duration: '30m' }).durationSeconds).to.equal(1800);
+    });
+  });
+
+  describe('parseIsoTimestampToEpochSeconds', function () {
+    it('accepts Z and explicit offsets', function () {
+      const expected = Date.UTC(2026, 6, 1, 12, 0, 0) / 1000;
+      expect(parseIsoTimestampToEpochSeconds('2026-07-01T12:00:00Z')).to.equal(expected);
+      expect(parseIsoTimestampToEpochSeconds('2026-07-01T14:00:00+02:00')).to.equal(expected);
+    });
+
+    it('rejects a timestamp without a time zone (it would be read as local time)', function () {
+      expect(() => parseIsoTimestampToEpochSeconds('2026-07-01T12:00:00')).to.throw(/no time zone/);
+    });
+  });
+
+  describe('isReleaseTag', function () {
+    it('accepts release tags with or without the v prefix and a pre-release suffix', function () {
+      for (const tag of ['v0.15.0', '0.15.0', 'v0.15.0-rc.1']) {
+        expect(isReleaseTag(tag), tag).to.equal(true);
+      }
+    });
+
+    it('rejects shapes the coprocessor would parse as zeros', function () {
+      for (const tag of ['v0-15-0', 'v0.15', '0.15.0.1', 'latest', '']) {
+        expect(isReleaseTag(tag), tag).to.equal(false);
+      }
+    });
+  });
+
+  describe('assertRpcChainId', function () {
+    it('passes when the RPC reports the registry chain id', async function () {
+      await assertRpcChainId(stubNetworkReader(1n), 1, 'ethereum');
+    });
+
+    it('rejects an RPC that serves another chain', async function () {
+      await expectRejection(
+        assertRpcChainId(stubNetworkReader(137n), 1, 'ethereum'),
+        /reports chain id 137, expected 1/,
+      );
+    });
+
+    it('reports a dead RPC as an RPC problem', async function () {
+      await expectRejection(
+        assertRpcChainId(stubNetworkReader(new Error('ECONNREFUSED')), 1, 'ethereum'),
+        /did not answer eth_chainId/,
+      );
+    });
+  });
+
+  describe('redactRpcUrl', function () {
+    it('keeps the scheme and host only', function () {
+      expect(redactRpcUrl('https://eth-mainnet.g.alchemy.com/v2/SECRET-KEY?x=1')).to.equal(
+        'https://eth-mainnet.g.alchemy.com',
+      );
+      expect(redactRpcUrl('https://user:pw@rpc.invalid:8545/path')).to.equal('https://rpc.invalid:8545');
+      expect(redactRpcUrl('not a url')).to.equal('<unparsable url>');
     });
   });
 });

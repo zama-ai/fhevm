@@ -1,0 +1,25 @@
+# The zama-ai/kms git dependencies of the kms-connector are private: cargo fetches them with
+# the git CLI (see kms-connector/.cargo/config.toml), so git needs a token for them.
+name: Authenticate zama-ai/kms git dependencies
+description: Rewrite https://github.com/zama-ai/kms URLs to use the given token.
+
+inputs:
+  token:
+    description: Token with read access to zama-ai/kms.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Authenticate zama-ai/kms git dependencies
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.token }}
+      run: |
+        if [[ -z "$TOKEN" ]]; then
+          echo "::error::No token with read access to zama-ai/kms (is BLOCKCHAIN_ACTIONS_TOKEN available to this workflow?)"
+          exit 1
+        fi
+        git config --global \
+          url."https://x-access-token:${TOKEN}@github.com/zama-ai/kms".insteadOf \
+          "https://github.com/zama-ai/kms"
