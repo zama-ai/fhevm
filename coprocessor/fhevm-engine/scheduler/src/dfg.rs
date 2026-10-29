@@ -345,9 +345,17 @@ impl DFComponentGraph {
                             dependence_pairs.push((*prod_idx, consumer));
                         }
                     } else if producer.len() > 1 {
-                        error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()),
-							  count =  ?producer.len() },
-				   "Handle collision for computation output");
+                        // Repeated operations can share a handle across
+                        // transactions. Do not choose an arbitrary producer:
+                        // it may itself depend on this consumer. Fetch the
+                        // persisted input, or leave it missing for a retry.
+                        self.needed_map
+                            .entry(i.clone())
+                            .and_modify(|uses| uses.push(consumer))
+                            .or_insert(vec![consumer]);
+                        warn!(target: "scheduler", { output_handle = ?hex::encode(i),
+                                                      count = ?producer.len() },
+                              "Multiple producers for input handle; requiring persisted ciphertext");
                     } else if producer.is_empty() {
                         error!(target: "scheduler", { output_handle = ?hex::encode(i.clone()) },
 				   "Missing producer for handle");

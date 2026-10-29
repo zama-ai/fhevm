@@ -11,6 +11,176 @@ fn handle(value: u8) -> Handle {
     handle
 }
 
+/// Uses real chain acquisition, work selection and DB lookup. A completed
+/// original producer is excluded, but repeated internal operations in pending
+/// transactions remain in the batch and must not hide the persisted input.
+#[tokio::test]
+#[serial(db)]
+async fn multiple_producers_fetch_persisted_input_from_completed_transaction(
+) -> Result<(), Box<dyn std::error::Error>> {
+    let instance = setup_test_db(ImportMode::None).await?;
+    let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+    let args = crate::daemon_cli::Args::parse_from(["tfhe_worker"]);
+    let health = crate::health_check::HealthCheck::new(instance.db_url.clone());
+    let mut locks = dependence_chain::LockMngr::new_with_conf(
+        Uuid::new_v4(),
+        pool.clone(),
+        30,
+        false,
+        None,
+        None,
+        None,
+    );
+    sqlx::query(
+        "INSERT INTO dependence_chain (dependence_chain_id, status) VALUES ($1, 'updated')",
+    )
+    .bind(handle(0x00))
+    .execute(&pool)
+    .await?;
+    let mut seven = vec![0; 32];
+    seven[31] = 7;
+    // All transactions inherit t0's chain. t1 consumes its stored Z and b;
+    // t2 and t3 both repeat Z and consume t1's R, producing the same X.
+    for (transaction, output, op, dependencies, scalar, allowed, completed) in [
+        (
+            0x00,
+            0x01,
+            SupportedFheOperations::FheTrivialEncrypt,
+            vec![vec![0; 32], vec![4]],
+            true,
+            true,
+            true,
+        ),
+        (
+            0x00,
+            0x02,
+            SupportedFheOperations::FheTrivialEncrypt,
+            vec![seven, vec![4]],
+            true,
+            true,
+            true,
+        ),
+        (
+            0x11,
+            0x03,
+            SupportedFheOperations::FheAdd,
+            vec![handle(0x01), handle(0x02)],
+            false,
+            true,
+            false,
+        ),
+        (
+            0x22,
+            0x01,
+            SupportedFheOperations::FheTrivialEncrypt,
+            vec![vec![0; 32], vec![4]],
+            true,
+            false,
+            true,
+        ),
+        (
+            0x22,
+            0x04,
+            SupportedFheOperations::FheAdd,
+            vec![handle(0x01), handle(0x03)],
+            false,
+            true,
+            false,
+        ),
+        (
+            0x33,
+            0x01,
+            SupportedFheOperations::FheTrivialEncrypt,
+            vec![vec![0; 32], vec![4]],
+            true,
+            false,
+            true,
+        ),
+        (
+            0x33,
+            0x04,
+            SupportedFheOperations::FheAdd,
+            vec![handle(0x01), handle(0x03)],
+            false,
+            true,
+            false,
+        ),
+    ] {
+        sqlx::query(
+            "INSERT INTO computations (
+                output_handle, transaction_id, dependence_chain_id, dependencies,
+                fhe_operation, is_scalar, is_allowed, is_completed, host_chain_id
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 42)",
+        )
+        .bind(handle(output))
+        .bind(handle(transaction))
+        .bind(handle(0x00))
+        .bind(dependencies)
+        .bind(op as i16)
+        .bind(scalar)
+        .bind(allowed)
+        .bind(completed)
+        .execute(&pool)
+        .await?;
+    }
+    // Fetch and graph construction treat ciphertext bytes as opaque. The
+    // scheduler's execution regression exercises real compressed ciphertexts.
+    for output in [0x01, 0x02] {
+        sqlx::query(
+            "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
+             VALUES ($1, $2, $3, 4)",
+        )
+        .bind(handle(output))
+        .bind(vec![output])
+        .bind(current_ciphertext_version())
+        .execute(&pool)
+        .await?;
+    }
+    let mut tx = pool.begin().await?;
+    let (mut components, _, has_work) = query_for_work(&args, &health, &mut tx, &mut locks).await?;
+    assert!(has_work);
+    assert_eq!(
+        components
+            .iter()
+            .map(|c| c.transaction_id.clone())
+            .collect::<HashSet<_>>(),
+        HashSet::from([handle(0x11), handle(0x22), handle(0x33)])
+    );
+    let mut graph = DFComponentGraph::default();
+    graph.build(&mut components)?;
+    assert_eq!(graph.produced[&handle(0x01)].len(), 2);
+    let needed: Vec<_> = graph.needed_map.keys().cloned().collect();
+    let cts = query_ciphertexts(&needed, &mut tx, false).await?;
+    let fetched: HashSet<_> = cts.keys().cloned().collect();
+    assert_eq!(fetched, HashSet::from([handle(0x01), handle(0x02)]));
+    for (h, (ct_type, ct_bytes)) in cts {
+        graph.add_input(
+            &h,
+            &DFGTxInput::Compressed((CompressedCiphertext { ct_type, ct_bytes }, true)),
+        )?;
+    }
+    graph.resolve_dependences(&fetched)?;
+    assert!(graph.get_results().is_empty());
+    assert_eq!(graph.graph.edge_count(), 2);
+    let consumer = graph
+        .graph
+        .graph()
+        .node_weights()
+        .find(|c| c.transaction_id == handle(0x11))
+        .unwrap();
+    for h in [0x01, 0x02] {
+        let Some(DFGTxInput::Compressed((input, true))) = &consumer.inputs[&handle(h)] else {
+            panic!("the consumer must receive the persisted input {h}");
+        };
+        assert_eq!(input.ct_type, 4);
+        assert_eq!(input.ct_bytes, vec![h]);
+    }
+    tx.rollback().await?;
+    locks.release_all_owned_locks().await?;
+    pool.close().await;
+    Ok(())
+}
+
 /// Exercise the production work query, result upload and ciphertext fetch.
 /// No FHE execution is needed to check that a false cycle leaves its rows
 /// pending and can be resolved after the original producer reaches storage.

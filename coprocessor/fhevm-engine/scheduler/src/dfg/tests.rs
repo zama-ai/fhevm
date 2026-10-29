@@ -52,6 +52,72 @@ pub(super) fn alias_transactions() -> Vec<(u8, Vec<DFGOp>)> {
     ]
 }
 
+pub(super) fn multiple_producer_transactions() -> Vec<(u8, Vec<DFGOp>)> {
+    let repeated_constant = || {
+        let mut op = trivial(0x01);
+        op.is_allowed = false;
+        op
+    };
+    let mut subtract = add(0x05, 0x03, 0x01);
+    subtract.fhe_op = SupportedFheOperations::FheSub;
+    vec![
+        (0x11, vec![add(0x03, 0x01, 0x02)]),
+        (0x22, vec![repeated_constant(), add(0x04, 0x01, 0x03)]),
+        (0x33, vec![repeated_constant(), subtract]),
+    ]
+}
+
+#[test]
+fn multiple_producers_resolve_persisted_input_without_back_edges() {
+    // Both later transactions repeat h1 and depend on the first transaction's
+    // h3. Choosing either of them as h1's producer would create a false cycle.
+    let mut graph = build(multiple_producer_transactions());
+    graph.resolve_dependences(&HashSet::new()).unwrap();
+    assert!(graph.get_results().is_empty());
+    assert!(graph
+        .graph
+        .graph()
+        .node_weights()
+        .all(|tx| !tx.is_uncomputable));
+    assert_eq!(graph.graph.edge_count(), 2);
+    for edge in graph.graph.edge_references() {
+        assert_eq!(graph.graph[edge.source()].transaction_id, handle(0x11));
+        assert!([handle(0x22), handle(0x33)].contains(&graph.graph[edge.target()].transaction_id));
+    }
+
+    // A later attempt must accept the original producer's persisted bytes,
+    // even though both repeated operations remain in the selected batch.
+    let mut retry = build(multiple_producer_transactions());
+    let canonical_bytes = vec![0x42];
+    retry
+        .add_input(
+            &handle(0x01),
+            &DFGTxInput::Compressed((
+                CompressedCiphertext {
+                    ct_type: 4,
+                    ct_bytes: canonical_bytes.clone(),
+                },
+                true,
+            )),
+        )
+        .unwrap();
+    retry
+        .resolve_dependences(&HashSet::from([handle(0x01)]))
+        .unwrap();
+    let consumer = retry
+        .graph
+        .graph()
+        .node_weights()
+        .find(|tx| tx.transaction_id == handle(0x11))
+        .unwrap();
+    let Some(DFGTxInput::Compressed((input, true))) = &consumer.inputs[&handle(0x01)] else {
+        panic!("the consumer must receive the persisted input");
+    };
+    assert_eq!(input.ct_bytes, canonical_bytes);
+    assert_eq!(retry.graph.edge_count(), 2);
+    assert!(retry.get_results().is_empty());
+}
+
 #[test]
 fn cross_transaction_cycle_defers_its_members_instead_of_condemning_them() {
     let mut transactions = alias_transactions();

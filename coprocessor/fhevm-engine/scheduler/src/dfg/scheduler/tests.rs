@@ -1,5 +1,7 @@
 use super::*;
-use crate::dfg::tests::{add, alias_transactions, build, handle, trivial};
+use crate::dfg::tests::{
+    add, alias_transactions, build, handle, multiple_producer_transactions, trivial,
+};
 use crate::dfg::DFGOp;
 use daggy::petgraph::visit::IntoNodeReferences;
 use fhevm_engine_common::keys::{
@@ -42,8 +44,7 @@ fn decrypt(compressed: &CompressedCiphertext, cks: &tfhe::ClientKey) -> u32 {
     value.decrypt(cks)
 }
 
-#[tokio::test]
-async fn deferred_cycles_skip_dispatch_preserve_other_work_and_retry() {
+fn generate_keys() -> (tfhe::ClientKey, tfhe::ServerKey, tfhe::CompactPublicKey) {
     // Fresh CPU keys using the worker's compute, compression and rerandomisation
     // parameters. No noise-squashing key or global environment changes needed.
     let config = tfhe::ConfigBuilder::with_custom_parameters(TFHE_PARAMS)
@@ -58,13 +59,17 @@ async fn deferred_cycles_skip_dispatch_preserve_other_work_and_retry() {
         .num_threads(32)
         .build()
         .unwrap();
-    let (cks, sks, cpk) = keygen_pool.install(|| {
+    keygen_pool.install(|| {
         let cks = tfhe::ClientKey::generate(config);
         let sks = tfhe::ServerKey::new(&cks);
         let cpk = tfhe::CompactPublicKey::new(&cks);
         (cks, sks, cpk)
-    });
+    })
+}
 
+#[tokio::test]
+async fn deferred_cycles_skip_dispatch_preserve_other_work_and_retry() {
+    let (cks, sks, cpk) = generate_keys();
     for max_locality in [false, true] {
         let mut transactions = pending_transactions();
         let mut independent = trivial(0x09);
@@ -155,5 +160,84 @@ async fn deferred_cycles_skip_dispatch_preserve_other_work_and_retry() {
         assert!(retry
             .get_intermediate_handles()
             .contains(&(handle(0x01), handle(0x22))));
+    }
+}
+
+#[tokio::test]
+async fn multiple_producers_retry_with_canonical_input() {
+    let (cks, sks, cpk) = generate_keys();
+    let mut b = trivial(0x02);
+    let mut plaintext = vec![0; 32];
+    plaintext[31] = 7;
+    b.inputs[0] = DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(plaintext));
+    let mut original = build(vec![(0x00, vec![trivial(0x01), b])]);
+    original.resolve_dependences(&HashSet::new()).unwrap();
+    schedule(&mut original, &sks, &cpk, false).await;
+    let persisted: HashMap<_, _> = original
+        .get_results()
+        .into_iter()
+        .map(|r| (r.handle, r.compressed_ct.unwrap()))
+        .collect();
+
+    for max_locality in [false, true] {
+        let mut pending = multiple_producer_transactions();
+        pending.push((0x99, vec![trivial(0x09)]));
+        let mut graph = build(pending);
+        graph
+            .add_input(
+                &handle(0x02),
+                &DFGTxInput::Compressed((persisted[&handle(0x02)].clone(), true)),
+            )
+            .unwrap();
+        graph
+            .resolve_dependences(&HashSet::from([handle(0x02)]))
+            .unwrap();
+        schedule(&mut graph, &sks, &cpk, max_locality).await;
+        let mut missing = HashSet::new();
+        let mut successes = vec![];
+        for result in graph.get_results() {
+            match result.compressed_ct {
+                Ok(ct) => successes.push((result.handle, decrypt(&ct, &cks))),
+                Err(error) => {
+                    assert!(matches!(
+                        error.downcast_ref::<SchedulerError>(),
+                        Some(SchedulerError::MissingInputs)
+                    ));
+                    missing.insert((result.transaction_id, result.handle));
+                }
+            }
+        }
+        assert_eq!(successes, vec![(handle(0x09), 0)]);
+        let expected = vec![
+            (handle(0x11), handle(0x03)),
+            (handle(0x22), handle(0x04)),
+            (handle(0x33), handle(0x05)),
+        ];
+        assert!(expected.iter().all(|output| missing.contains(output)));
+
+        let mut retry = build(multiple_producer_transactions());
+        for (h, ct) in &persisted {
+            retry
+                .add_input(h, &DFGTxInput::Compressed((ct.clone(), true)))
+                .unwrap();
+        }
+        retry
+            .resolve_dependences(&persisted.keys().cloned().collect())
+            .unwrap();
+        schedule(&mut retry, &sks, &cpk, max_locality).await;
+        let mut completed = vec![];
+        for result in retry.get_results() {
+            let ct = result
+                .compressed_ct
+                .expect("stored input must unblock all transactions despite repeated producers");
+            assert_eq!(decrypt(&ct, &cks), 7);
+            completed.push((result.transaction_id, result.handle));
+        }
+        completed.sort();
+        assert_eq!(completed, expected);
+        let intermediate = retry.get_intermediate_handles();
+        for tx in [0x22, 0x33] {
+            assert!(intermediate.contains(&(handle(0x01), handle(tx))));
+        }
     }
 }
