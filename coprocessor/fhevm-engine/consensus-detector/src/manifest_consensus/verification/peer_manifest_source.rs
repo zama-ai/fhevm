@@ -185,26 +185,35 @@ impl HttpPeerManifestSource {
             .map_err(|_| spent())?
     }
 
-    /// Whether the peer holds `first`, once `first + 1` is proved absent.
+    /// The revisions the peer holds at `first` and just above it, newest first.
     ///
-    /// A block carries one revision today. A second one would be invisible to
-    /// this reader, and one above an absent `first` would pin the peer to a
-    /// stale manifest for good. The probe past `first` refuses both. It reads
-    /// that one revision only, so a peer that skips a revision still passes.
-    async fn single_revision(
+    /// A block carries one revision today, so a pair covers every set. An
+    /// absent `first` does not end the set: the revision above it supersedes
+    /// the missing one. A peer that holds `above` gets one more probe, which
+    /// names a publisher that outgrew this pair. A peer that skips a revision
+    /// gets no such probe, so {0, 2} reads as 0 alone.
+    async fn held_revisions(
         &self,
         request: &PeerDownloadRequest,
         prefix: &str,
         first: u64,
-    ) -> Result<bool, ExecutionError> {
+    ) -> Result<Vec<u64>, ExecutionError> {
         let deadline = Instant::now() + MANIFEST_LIST_BUDGET;
-        let held = self.probe_within(deadline, request, prefix, first).await?;
         let above = first.saturating_add(1);
+        let holds_first = self.probe_within(deadline, request, prefix, first).await?;
+        let mut held = Vec::new();
         if self.probe_within(deadline, request, prefix, above).await? {
-            return Err(ExecutionError::InternalError(format!(
-                "peer manifests from {} hold revision {above}, which this reader does not read",
-                request.s3_bucket_url
-            )));
+            let beyond = above.saturating_add(1);
+            if self.probe_within(deadline, request, prefix, beyond).await? {
+                return Err(ExecutionError::InternalError(format!(
+                    "peer manifests from {} hold revision {beyond}, above the pair this reader reads",
+                    request.s3_bucket_url
+                )));
+            }
+            held.push(above);
+        }
+        if holds_first {
+            held.push(first);
         }
         Ok(held)
     }
@@ -244,14 +253,14 @@ impl PeerManifestSource for HttpPeerManifestSource {
         let first = request
             .highest_archived_revision
             .map_or(0, |archived| archived.saturating_add(1));
-        if !self.single_revision(request, &prefix, first).await? {
-            return Ok(Vec::new());
+        let mut keys = Vec::new();
+        for revision in self.held_revisions(request, &prefix, first).await? {
+            let object_key = format!("{prefix}{revision}");
+            if request.considers_object(&object_key, revision) {
+                keys.push(object_key);
+            }
         }
-        let object_key = format!("{prefix}{first}");
-        if !request.considers_object(&object_key, first) {
-            return Ok(Vec::new());
-        }
-        Ok(vec![object_key])
+        Ok(keys)
     }
 
     async fn fetch_manifest(
@@ -394,20 +403,39 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_revision_above_the_first_is_an_error() {
-        // A second revision would go unread, and a revision above an absent
-        // first would pin this peer to a stale manifest for good. Both must
-        // name themselves instead of reading as an empty set.
-        for held in [HashSet::from([0, 1]), HashSet::from([1])] {
-            let origin = PeerOrigin::holding(held, StatusCode::OK).await;
-            let source = HttpPeerManifestSource::new(reqwest::Client::new());
-            let error = source
-                .list_manifests(&origin.request(None))
-                .await
-                .expect_err("a revision above the first must not be ignored");
+    async fn a_missing_first_revision_does_not_hide_the_one_above_it() {
+        // Revision 1 supersedes the missing revision 0. A refusal here would
+        // spend the retries of the task on evidence that is already present.
+        let origin = PeerOrigin::holding(HashSet::from([1]), StatusCode::OK).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let keys = source.list_manifests(&origin.request(None)).await.unwrap();
 
-            assert!(matches!(error, ExecutionError::InternalError(_)), "{error}");
-        }
+        assert_eq!(revisions_of(&keys), vec![1]);
+    }
+
+    #[tokio::test]
+    async fn both_revisions_of_the_pair_are_listed_newest_first() {
+        // The caller falls back through this order.
+        let origin = PeerOrigin::start(2, StatusCode::OK).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let keys = source.list_manifests(&origin.request(None)).await.unwrap();
+
+        assert_eq!(revisions_of(&keys), vec![1, 0]);
+        assert_eq!(origin.probes.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn a_revision_above_the_pair_is_an_error() {
+        // A result of 1 and 0 would leave this peer on older evidence, and say
+        // nothing.
+        let origin = PeerOrigin::start(3, StatusCode::OK).await;
+        let source = HttpPeerManifestSource::new(reqwest::Client::new());
+        let error = source
+            .list_manifests(&origin.request(None))
+            .await
+            .expect_err("a revision above the pair must not be ignored");
+
+        assert!(matches!(error, ExecutionError::InternalError(_)), "{error}");
     }
 
     #[tokio::test]
