@@ -5,6 +5,7 @@ import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { deserializeFheEncryptionKey } from './deserializeFheEncryptionKey.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
+import { ensureFheEncryptionKeyDownload } from './fetchFheEncryptionKeyBytes.js';
 
 export async function fetchFheEncryptionKeyWasm(
   context: {
@@ -19,30 +20,9 @@ export async function fetchFheEncryptionKeyWasm(
 ): Promise<FheEncryptionKeyWasm> {
   const relayerUrl = context.chain.fhevm.relayerUrl;
   const runtime = context.runtime;
-  const logger = runtime.config.logger;
 
   // Ensure a bytes fetch is in-flight
-  globalFheEncryptionKeyCache.ensureBytes({
-    owner: runtime,
-    relayerUrl,
-    fetcher: async () => {
-      logger?.debug?.(
-        `Fetching FHE encryption key/CRS bytes from relayer "${relayerUrl}" (chainId=${context.chain.id}).`,
-      );
-      try {
-        const bytes = await runtime.relayer.fetchFheEncryptionKeyBytes(
-          { relayerUrl, chainId: context.chain.id },
-          parameters,
-        );
-        logger?.debug?.(`Fetched FHE encryption key/CRS bytes from relayer "${relayerUrl}".`);
-        return bytes;
-      } catch (e) {
-        logger?.error?.(`Failed to fetch FHE encryption key/CRS bytes from relayer "${relayerUrl}".`, e);
-        throw e;
-      }
-    },
-    metadata: { chainId: context.chain.id, relayerUrl },
-  });
+  ensureFheEncryptionKeyDownload(context, parameters);
 
   // Upgrade bytes → wasm (chains from pending bytes if still in-flight)
   globalFheEncryptionKeyCache.ensureWasm({
