@@ -5,13 +5,15 @@ use broker::redis::{StreamManager, id_before};
 pub use broker::{AckDecision, Broker, HandlerError};
 use broker::{BrokerError, CancellationToken, Consumer, Handler, Message, Topic};
 use primitives::event::{
-    BlockPayload, CatchupPayload, FilterCommand, FilterCommandValidationError, FilterType,
+    BlockPayload, CancelCatchupPayload, CatchupPayload, FilterCommand,
+    FilterCommandValidationError, FilterType,
 };
 use primitives::routing;
 use primitives::utils::chain_id_to_namespace;
 use std::future::Future;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{info, warn};
+use uuid::Uuid;
 
 pub use crate::error::ConsumerError;
 use crate::options::{CatchupConsumerOptions, LiveConsumerOptions};
@@ -246,6 +248,10 @@ impl ListenerConsumer {
     }
 
     /// Cancel only the catchup flow. The live flow keeps running.
+    ///
+    /// This stops *this client* consuming catchup events. It does not retire
+    /// the request on the listener — for that, use
+    /// [`cancel_catchup_request`](Self::cancel_catchup_request).
     pub fn cancel_catchup(&self) {
         self.catchup_cancel.cancel();
     }
@@ -257,6 +263,10 @@ impl ListenerConsumer {
     }
 
     /// Cancel only the final catchup flow. The other flows keep running.
+    ///
+    /// This stops *this client* consuming final catchup events. It does not
+    /// retire the request on the listener — for that, use
+    /// [`cancel_final_catchup_request`](Self::cancel_final_catchup_request).
     pub fn cancel_final_catchup(&self) {
         self.final_catchup_cancel.cancel();
     }
@@ -361,21 +371,45 @@ impl ListenerConsumer {
     /// its `range-catchup` workers; the resulting events are delivered on
     /// `{consumer_id}.catchup-event` and consumed via
     /// [`consume_catchup`](Self::consume_catchup).
+    ///
+    /// `catchup_id` is supplied by the caller and identifies this request for
+    /// its whole lifetime. It must be a UUIDv7 — mint it with
+    /// [`Uuid::now_v7`]; any other version is rejected with
+    /// [`ConsumerError::InvalidCatchupPayload`] before anything is published.
+    /// Store it durably before calling: it is the only
+    /// handle that can later
+    /// [`cancel_catchup_request`](Self::cancel_catchup_request) the request.
+    /// Re-sending an id the listener has already fanned out or finished is a
+    /// no-op, so a crash between persisting the id and this call is recovered
+    /// by simply calling again on the next boot. If the listener itself dies
+    /// part-way through fanning a request out, it fans the whole range out
+    /// again on redelivery: blocks can arrive twice, never zero times.
+    ///
+    /// # Knowing the catch-up is done
+    ///
+    /// The listener sends exactly one logical block with
+    /// [`BlockPayload::last_in_catchup`] set, and only after every other block
+    /// of the request is in the stream. Its `block_number` is where the
+    /// listener actually stopped: below `block_end` if the range reached past
+    /// the chain head. A handler relying on it should:
+    ///
+    /// - dedupe on `(block_number, block_hash)`: redelivery can still put
+    ///   duplicates after the flagged block, including a second copy of it;
+    /// - fail the flagged block (transiently) while an earlier block of the
+    ///   same `catchup_id` is still failing on its side, so it is retried after
+    ///   that block rather than read as the end;
+    /// - not wait for it unconditionally: no block is flagged when the whole
+    ///   range is above the head, when the request is cancelled, or when this
+    ///   consumer has no filters on the chain. Keep checking your own state and
+    ///   request again, with a new id, if something is still missing.
     pub async fn request_catchup(
         &self,
+        catchup_id: Uuid,
         block_start: u64,
         block_end: u64,
     ) -> Result<(), ConsumerError> {
-        let mut payload = CatchupPayload {
-            consumer_id: self.consumer_id.clone(),
-            block_start,
-            block_end,
-        };
-        payload.validate()?;
-        let namespace = chain_id_to_namespace(self.chain_id);
-        let publisher = self.broker.publisher(&namespace).await?;
-        publisher.publish(routing::CATCHUP, &payload).await?;
-        Ok(())
+        self.publish_catchup_request(catchup_id, block_start, block_end, routing::CATCHUP)
+            .await
     }
 
     /// Request a historical replay of **finalized** blocks
@@ -390,20 +424,106 @@ impl ListenerConsumer {
     ///
     /// Requests are dropped by the listener when its finality flow is
     /// inactive (`finality_active: false`).
+    ///
+    /// See [`request_catchup`](Self::request_catchup) for the `catchup_id`
+    /// contract and for how to know the replay is done; here the flagged last
+    /// block is capped at the finalized head instead of the chain head.
     pub async fn request_final_catchup(
         &self,
+        catchup_id: Uuid,
         block_start: u64,
         block_end: u64,
+    ) -> Result<(), ConsumerError> {
+        self.publish_catchup_request(catchup_id, block_start, block_end, routing::FINAL_CATCHUP)
+            .await
+    }
+
+    /// Cancel a catch-up previously requested with
+    /// [`request_catchup`](Self::request_catchup).
+    ///
+    /// The listener marks the request cancelled and stops fetching within one
+    /// sub-range. Blocks already in flight may still be delivered; they carry
+    /// the cancelled `catchup_id` on [`BlockPayload::catchup_id`] so a handler
+    /// can drop them.
+    ///
+    /// Cancelling an id twice, or an id that never existed, is a no-op. An id
+    /// that is not a UUIDv7 is rejected with
+    /// [`ConsumerError::InvalidCancelCatchupPayload`] before anything is
+    /// published.
+    /// Cancelling an id owned by a different consumer is rejected by the
+    /// listener and recorded there — this call still returns `Ok`.
+    ///
+    /// This retires the request on the listener. To stop *this client* from
+    /// consuming catchup events without touching the listener, use
+    /// [`cancel_catchup`](Self::cancel_catchup).
+    pub async fn cancel_catchup_request(&self, catchup_id: Uuid) -> Result<(), ConsumerError> {
+        self.publish_catchup_cancel(catchup_id, routing::CANCEL_CATCHUP)
+            .await
+    }
+
+    /// Cancel a final catch-up previously requested with
+    /// [`request_final_catchup`](Self::request_final_catchup).
+    ///
+    /// See [`cancel_catchup_request`](Self::cancel_catchup_request) for the
+    /// semantics.
+    pub async fn cancel_final_catchup_request(
+        &self,
+        catchup_id: Uuid,
+    ) -> Result<(), ConsumerError> {
+        self.publish_catchup_cancel(catchup_id, routing::CANCEL_FINAL_CATCHUP)
+            .await
+    }
+
+    async fn publish_catchup_request(
+        &self,
+        catchup_id: Uuid,
+        block_start: u64,
+        block_end: u64,
+        routing_key: &'static str,
     ) -> Result<(), ConsumerError> {
         let mut payload = CatchupPayload {
             consumer_id: self.consumer_id.clone(),
             block_start,
             block_end,
+            catchup_id: Some(catchup_id),
+            sub_range_seq: None,
         };
         payload.validate()?;
         let namespace = chain_id_to_namespace(self.chain_id);
         let publisher = self.broker.publisher(&namespace).await?;
-        publisher.publish(routing::FINAL_CATCHUP, &payload).await?;
+        publisher.publish(routing_key, &payload).await?;
+        info!(
+            %catchup_id,
+            consumer_id = %self.consumer_id,
+            chain_id = self.chain_id,
+            block_start,
+            block_end,
+            routing_key,
+            "Requested catchup"
+        );
+        Ok(())
+    }
+
+    async fn publish_catchup_cancel(
+        &self,
+        catchup_id: Uuid,
+        routing_key: &'static str,
+    ) -> Result<(), ConsumerError> {
+        let mut payload = CancelCatchupPayload {
+            consumer_id: self.consumer_id.clone(),
+            catchup_id,
+        };
+        payload.validate()?;
+        let namespace = chain_id_to_namespace(self.chain_id);
+        let publisher = self.broker.publisher(&namespace).await?;
+        publisher.publish(routing_key, &payload).await?;
+        info!(
+            %catchup_id,
+            consumer_id = %self.consumer_id,
+            chain_id = self.chain_id,
+            routing_key,
+            "Requested catchup cancellation"
+        );
         Ok(())
     }
 
@@ -1335,6 +1455,8 @@ mod tests {
             parent_hash: B256::ZERO,
             timestamp: 0,
             transactions: vec![],
+            catchup_id: None,
+            last_in_catchup: false,
         };
         for _ in 1..=2 {
             publisher
@@ -1390,6 +1512,8 @@ mod tests {
             parent_hash: B256::ZERO,
             timestamp: 0,
             transactions: vec![],
+            catchup_id: None,
+            last_in_catchup: false,
         };
         for _ in 1..=2 {
             publisher

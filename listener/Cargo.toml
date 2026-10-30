@@ -27,6 +27,7 @@ tokio-util   = "0.7.15"
 tracing      = "0.1.41"
 futures      = "0.3.31"
 metrics      = "0.24"
+uuid         = { version = "1", features = ["v4", "v7", "serde"] }
 
 [profile.release]
 opt-level = 3
