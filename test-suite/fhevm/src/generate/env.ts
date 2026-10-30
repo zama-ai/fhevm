@@ -585,9 +585,9 @@ export const renderEnvMaps = async (
   Object.assign(instanceEnvs, buildKmsConnectorInstanceEnvs(envs, kmsParties));
 
   // Propagate SNS-worker S3 migration configuration.
-  // These are carried in version locks (see rollouts/.../versions.ts) so that
-  // rollout phases can request "concurrent" etc. without touching the compose
-  // command line (old pre-feature binaries must not see new --flags).
+  // These are carried in version locks so that an upgrade can request "concurrent"
+  // etc. without touching the compose command line (old pre-feature binaries must
+  // not see new --flags).
   // We write them into the coprocessor env files (base + all instance + chain copies)
   // so the clap parser (with env=) in the new binary picks them up.
   const migrationMode = plan.versions.env.S3_MIGRATION_MODE ?? "no";

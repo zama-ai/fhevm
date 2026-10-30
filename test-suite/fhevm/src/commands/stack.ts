@@ -10,9 +10,9 @@ import { composeUp } from "../flow/runtime-compose";
 import { upgradeBootstrappedStack } from "../flow/up-flow";
 import { loadState } from "../state/state";
 import type { State } from "../types";
-import { type RolloutReceipt, createRolloutReceipt } from "./rollout-receipt";
+import { type RolloutReceipt, startRolloutReceipt } from "./rollout-receipt";
 import { prepareRolloutSolidity } from "./rollout-solidity";
-import { test as runTest } from "./test";
+import type { test } from "./test";
 
 type StackTestOptions = {
   /** Commit whose Solidity library the fixtures compile against, for a stack on an older host ABI. */
@@ -23,7 +23,7 @@ type ContractTaskOptions = {
 };
 
 export type Stack = {
-  /** Runs bootstrap upgrade steps in order, after checking the whole list against `upgradeOrder`. */
+  /** Runs the next bootstrap upgrade steps, after checking that the list continues `upgradeOrder`. */
   upgrade(first: UpgradeStep, ...rest: UpgradeStep[]): Promise<void>;
   test(profile: string, options?: StackTestOptions): Promise<void>;
   runGatewayContractTask(command: string, options?: ContractTaskOptions): Promise<void>;
@@ -39,7 +39,7 @@ const readState = async () => {
   return state;
 };
 
-const createStack = (receipt: RolloutReceipt): Stack => ({
+const createStack = (receipt: RolloutReceipt, runTest: typeof test): Stack => ({
   async upgrade(...steps) {
     const state = await readState();
     await upgradeBootstrappedStack(state, steps);
@@ -79,15 +79,18 @@ const createStack = (receipt: RolloutReceipt): Stack => ({
 });
 
 /** Runs a test that drives the stack, recording the stack before it and the outcome. */
-export const runStackTest = async (name: string, run: (stack: Stack) => Promise<void>) => {
-  const receipt = createRolloutReceipt();
-  await receipt.start(name);
+export const runStackTest = async (
+  name: string,
+  run: (stack: Stack) => Promise<void>,
+  runTest: typeof test,
+) => {
+  const receipt = await startRolloutReceipt(name);
   try {
     await receipt.record("boot", "stack before the test", {
       docker: true,
       versions: (await readState()).versions.env,
     });
-    await run(createStack(receipt));
+    await run(createStack(receipt, runTest));
     await receipt.record("complete", `${name} passed`);
   } catch (error) {
     try {

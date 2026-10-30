@@ -4,8 +4,6 @@
  * test profile on the `key-migration-from-v0.14` scenario, or its `-gpu` variant for the GPU phase.
  */
 import { createHash } from "node:crypto";
-import path from "node:path";
-import YAML from "yaml";
 
 import { runRetainedMaterial } from "../../src/consensus/retained-material-run";
 import { withRolloutSupervisor } from "../../src/consensus/rollout-supervision";
@@ -21,7 +19,6 @@ import {
   coprocessorDatabaseName,
   defaultHostChainKey,
   OBJECT_STORE_EXTERNAL_URL,
-  REPO_ROOT,
   STATE_DIR,
 } from "../../src/layout";
 import {
@@ -358,11 +355,6 @@ const keyMigrationStack = async (stack: Stack) => {
   const tags = assertKeyMigrationScenario(state.scenario);
   if (!state.bootstrapPending || state.bootstrapPending.completed?.length) {
     throw new Error("key-migration-from-v0.14 needs a freshly booted stack; re-run `fhevm-cli up`");
-  }
-  // Green runs with the production chart's serving mode: legacy material until the operator flips it.
-  const chart = YAML.parse(await Bun.file(path.join(REPO_ROOT, "charts/coprocessor/values.yaml")).text());
-  if (chart?.commonConfig?.forceLegacyServerKey !== true) {
-    throw new Error("the coprocessor chart no longer forces the legacy server key; update this test and its scenarios");
   }
   return { state, ...tags, targetCoreVersion: state.bootstrapPending.target.env.CORE_VERSION! };
 };

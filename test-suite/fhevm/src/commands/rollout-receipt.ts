@@ -425,27 +425,20 @@ const markdownEntry = (entry: ReceiptEntry) => {
   return `${lines.join("\n")}\n`;
 };
 
-export const createRolloutReceipt = (
+/** Starts a fresh receipt for the test `name` and returns its recorder. */
+export const startRolloutReceipt = async (
+  name: string,
   operations: { inspectContainers?: typeof inspectContainers } = {},
 ) => {
   let seq = 0;
-  let started = false;
   let currentEnv: Record<string, string> | undefined;
-
-  const start = async (name: string) => {
-    await ensureDir(receiptDir());
-    started = true;
-    seq = 0;
-    currentEnv = undefined;
-    await fs.writeFile(receiptJsonlPath(), "");
-    await fs.writeFile(
-      receiptMarkdownPath(),
-      [`# Rollout Receipt`, ``, `- test: \`${name}\``, `- started: ${new Date().toISOString()}`, ""].join(
-        "\n",
-      ),
-    );
-    console.log(`[receipt] writing ${receiptMarkdownPath()}`);
-  };
+  await ensureDir(receiptDir());
+  await fs.writeFile(receiptJsonlPath(), "");
+  await fs.writeFile(
+    receiptMarkdownPath(),
+    [`# Rollout Receipt`, ``, `- test: \`${name}\``, `- started: ${new Date().toISOString()}`, ""].join("\n"),
+  );
+  console.log(`[receipt] writing ${receiptMarkdownPath()}`);
 
   const record = async (
     kind: string,
@@ -458,10 +451,6 @@ export const createRolloutReceipt = (
       versions?: Record<string, string>;
     } = {},
   ) => {
-    if (!started) {
-      await start("(unknown)");
-    }
-
     const changes = options.versions ? versionChanges(currentEnv, options.versions) : undefined;
     if (options.versions) {
       currentEnv = options.versions;
@@ -489,7 +478,7 @@ export const createRolloutReceipt = (
     }
   };
 
-  return { record, start };
+  return { record };
 };
 
-export type RolloutReceipt = ReturnType<typeof createRolloutReceipt>;
+export type RolloutReceipt = Awaited<ReturnType<typeof startRolloutReceipt>>;

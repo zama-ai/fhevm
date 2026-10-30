@@ -4,7 +4,7 @@ import {
   failureDiagnosticContainerNames,
   diagnosticLogArgs,
   diagnosticLogOutput,
-  createRolloutReceipt,
+  startRolloutReceipt,
   formatStateHashComparison,
   kmsConnectorPartyIds,
   receiptJsonlPath,
@@ -16,8 +16,7 @@ import { withTempStateDir } from "./test-state";
 describe("rollout receipt", () => {
   test("writes a receipt with the version changes since the previous entry", async () => {
     await withTempStateDir(async () => {
-      const receipt = createRolloutReceipt();
-      await receipt.start("key-migration-from-v0.14");
+      const receipt = await startRolloutReceipt("key-migration-from-v0.14");
       await receipt.record("boot", "stack before the test", { versions: { RELAYER_VERSION: "old" } });
       await receipt.record("upgrade", "relayer", { versions: { RELAYER_VERSION: "new" } });
 
@@ -121,12 +120,11 @@ describe("rollout receipt", () => {
 
   test("records a failed required Docker snapshot before rejecting it", async () => {
     await withTempStateDir(async () => {
-      const receipt = createRolloutReceipt({
+      const receipt = await startRolloutReceipt("key-migration-from-v0.14", {
         async inspectContainers() {
           return { containers: [], error: "daemon unavailable" };
         },
       });
-      await receipt.start("key-migration-from-v0.14");
       await expect(receipt.record("upgrade-kms-operator", "KMS operator 2", { docker: true })).rejects.toThrow(
         "Required Docker snapshot failed: daemon unavailable",
       );

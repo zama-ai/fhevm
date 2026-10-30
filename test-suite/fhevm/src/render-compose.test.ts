@@ -967,7 +967,8 @@ version: 1
 kind: blue-green
 gcs:
   source: { mode: local }
-  deferredStart: true
+bootstrap:
+  tag: v0.14.2-0
 `),
     );
     const deferredState: State = { ...state, scenario: deferredScenario };

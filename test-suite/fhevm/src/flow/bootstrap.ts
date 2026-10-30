@@ -60,29 +60,24 @@ export const upgradeOrder = (scenario: State["scenario"]): UpgradeStep[] => [
   "green",
 ];
 
-/** Rejects the whole list before any step runs, so a typo cannot leave the stack half upgraded. */
+/**
+ * Requires `steps` to continue `order` from the first step not yet run, and rejects the whole list
+ * before any step runs, so a typo cannot leave the stack half upgraded.
+ */
 export const checkUpgradeSteps = (
-  order: readonly string[],
+  order: readonly UpgradeStep[],
   completed: readonly string[],
-  steps: readonly string[],
+  steps: readonly UpgradeStep[],
 ) => {
-  const done = new Set(completed);
-  for (const step of steps) {
-    if (!order.includes(step)) {
-      throw new PreflightError(`unknown upgrade step ${step}; expected one of ${order.join(", ")}`);
+  const remaining = order.filter((step) => !completed.includes(step));
+  steps.forEach((step, index) => {
+    if (step !== remaining[index]) {
+      throw new PreflightError(
+        `upgrade step ${step} is out of order; the next step is ${remaining[index] ?? "none, the upgrade is complete"} ` +
+          `(order: ${order.join(", ")})`,
+      );
     }
-    if (done.has(step)) {
-      throw new PreflightError(`upgrade step ${step} already ran or is listed twice`);
-    }
-    if (step.startsWith("kms-operator:") && !done.has("contracts")) {
-      throw new PreflightError(`upgrade step ${step} needs the contracts step first`);
-    }
-    const missing = step === "green" ? order.find((other) => other !== "green" && !done.has(other)) : undefined;
-    if (missing) {
-      throw new PreflightError(`upgrade step green needs ${missing} first`);
-    }
-    done.add(step);
-  }
+  });
 };
 
 /** `env` with the `keys` the target defines taken from it. */

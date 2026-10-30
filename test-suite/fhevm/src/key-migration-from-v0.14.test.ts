@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
+import YAML from "yaml";
 
 import {
   type OperatorMaterial,
@@ -36,6 +37,12 @@ describe("key migration from v0.14", () => {
     }
     expect((await scenario("key-migration-from-v0.14")).kms.fheParams).toBe("Test");
     expect((await scenario("key-migration-from-v0.14-gpu")).kms).toMatchObject({ fheParams: "Default", insecureTestKeygen: true });
+  });
+
+  test("Green serves like the production chart: legacy material until the operator flips it", async () => {
+    // The scenarios set FORCE_LEGACY_SERVER_KEY="true", checked above; flipping the chart means updating them and the test.
+    const chart = YAML.parse(await Bun.file(path.join(import.meta.dir, "../../../charts/coprocessor/values.yaml")).text());
+    expect(chart.commonConfig.forceLegacyServerKey).toBe(true);
   });
 
   test("blocks a mixed connector deployment", () => {

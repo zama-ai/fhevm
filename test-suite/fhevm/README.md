@@ -201,7 +201,7 @@ An upgrade test is a test profile that changes the stack between its checks. It 
 
 The profile drives the stack through a `Stack` handle (`src/commands/stack.ts`):
 
-- `stack.upgrade(...steps)` runs bootstrap upgrade steps in the order given: `contracts`, `relayer`, `kms-operator:<n>` for each KMS operator, `listener-core`, then `green`, which starts the deferred Green fleet. The whole list is checked first: an unknown or repeated step, an operator before `contracts`, or `green` before every other step fails before anything changes. Without `upgrade: deferred`, `up` runs the same steps in this order itself.
+- `stack.upgrade(...steps)` runs the next bootstrap upgrade steps. They must continue the order `contracts`, `relayer`, `kms-operator:<n>` for each KMS operator, `listener-core`, then `green`, which starts the deferred Green fleet; a list that does not fails before anything changes. A test can upgrade a few steps, run checks, then upgrade the rest. Without `upgrade: deferred`, `up` runs the same order itself, except `relayer`, which then boots at the bundle.
 - `stack.test(profile)` runs another test profile against the current state.
 - `stack.runHostContractTask(...)` and `stack.runGatewayContractTask(...)` run contract tasks from the deploy images.
 

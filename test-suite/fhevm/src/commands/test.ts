@@ -16,7 +16,10 @@ import { compatPolicyForState, supportsConnectorHttp, supportsCoprocessorDbState
 import { consumerOnlyHostListeners } from "../host-listener-mode";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
+import { runKeyMigrationProfile } from "../../rollouts/key-migration-from-v0.14/run";
+import { isDeferredBootstrap } from "../flow/bootstrap";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
+import { runStackTest } from "./stack";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 
 import { PreflightError, formatCliError } from "../errors";
@@ -198,6 +201,22 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
     "Upgrade a 0.14 stack to this branch step by step with checks in between, then migrate the existing key to compressed material and reshare it (requires --scenario key-migration-from-v0.14; the GPU phase needs key-migration-from-v0.14-gpu and RFC029_GPU_IMAGES). Disruptive + single-run: re-up between runs.",
   "kms-context-switch":
     "Drive the full KMS-context lifecycle on the host ProtocolConfig (requires --scenario five-party-swap-threshold-kms). Runs, in order: a same-committee context switch (NewKmsContext) and an epoch rotation (NewKmsEpoch), proving the KMS reshares, activates, and still decrypts under each; destruction of the retired context and epoch (destroyKmsContext / destroyKmsEpoch), proving every layer retires them — reverts for non-owner/current/unknown/already-destroyed ids, on-chain invalidation without moving the active pointer, per-party DestroyMpcContext/DestroyMpcEpoch forwarding and cache invalidation (the spare, which never held the material, acks the context destroy but fails the epoch destroy — both benign; the context-to-epoch cascade reaches committee caches only), and the current context/epoch still serving; a further switch after the destroy; a stuck-rotation abort (single-in-flight revert + Pending-epoch destroy) and recovery; and finally a genuine node swap — stop the dropped node's tx-sender before the switch, promote the spare, and force it into the 2t+1 quorum. The input-proof app smoke runs at baseline, while a switch is pending, and after each transition. Disruptive + single-run: it advances the context/epoch and destroys the retired ones, so it must start from a pristine stack — re-up between runs.",
+};
+
+/** Profiles that drive a stack whose scenario defers the bootstrap upgrade to the test. */
+const DEFERRED_BOOTSTRAP_PROFILES = ["key-migration-from-v0.14"];
+
+/**
+ * Refuses other profiles on a stack still at its `bootstrap` release: they would run against the
+ * previous release while claiming to test the bundle. Checked at the command, not in `test`, which
+ * the upgrade profile itself calls between steps.
+ */
+export const assertProfileFitsStack = (testName: string | undefined, state: State | undefined) => {
+  if (state?.bootstrapPending && isDeferredBootstrap(state.scenario) && !DEFERRED_BOOTSTRAP_PROFILES.includes(testName ?? "")) {
+    throw new PreflightError(
+      `This stack is still at its bootstrap release and waits for ${DEFERRED_BOOTSTRAP_PROFILES.join(" or ")} to upgrade it`,
+    );
+  }
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -2307,12 +2326,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
     }
     if (name === "key-migration-from-v0.14") {
-      // Imported here: the stack handle runs its checks through this module.
-      const [{ runStackTest }, { runKeyMigrationProfile }] = await Promise.all([
-        import("./stack"),
-        import("../../rollouts/key-migration-from-v0.14/run"),
-      ]);
-      return runStackTest(name, runKeyMigrationProfile);
+      return runStackTest(name, runKeyMigrationProfile, test);
     }
     if (name === "blue-green") {
       return runBlueGreenProfile(state, options);

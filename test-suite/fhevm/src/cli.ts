@@ -3,8 +3,9 @@
  */
 import { defineCommand, renderUsage, runCommand } from "citty";
 
-import { listTestProfiles, test } from "./commands/test";
+import { assertProfileFitsStack, listTestProfiles, test } from "./commands/test";
 import { PreflightError, formatCliError } from "./errors";
+import { loadState } from "./state/state";
 import {
   clean,
   down,
@@ -319,6 +320,7 @@ const root = defineCommand({
           listTestProfiles();
           return;
         }
+        assertProfileFitsStack(testName, await loadState());
         await test(testName, {
           grep: asString(args.grep),
           network: asString(args.network) ?? "staging",

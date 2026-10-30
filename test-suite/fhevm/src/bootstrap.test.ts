@@ -10,6 +10,7 @@ import {
   bootstrapSuspendedGroups,
   checkUpgradeSteps,
   contractUpgradeCommand,
+  type UpgradeStep,
   upgradeOrder,
 } from "./flow/bootstrap";
 import type { State } from "./types";
@@ -105,16 +106,19 @@ describe("blue-green bootstrap", () => {
     ]);
   });
 
-  test("rejects a step list before any step runs", () => {
+  test("accepts steps only when they continue the order, and rejects the whole list first", () => {
     const order = upgradeOrder(scenario("deferred"));
-    const check = (completed: string[], steps: string[]) => () => checkUpgradeSteps(order, completed, steps);
+    const check = (completed: string[], steps: UpgradeStep[]) => () => checkUpgradeSteps(order, completed, steps);
     expect(check([], ["contracts", "relayer", "kms-operator:1"])).not.toThrow();
-    expect(check(["contracts", "relayer", "kms-operator:1"], ["kms-operator:2", "listener-core", "green"])).not.toThrow();
-    expect(check([], ["kms-operator:3"])).toThrow("unknown upgrade step kms-operator:3");
-    expect(check([], ["contracts", "contracts"])).toThrow("upgrade step contracts already ran or is listed twice");
-    expect(check(["contracts"], ["contracts"])).toThrow("already ran");
-    expect(check([], ["relayer", "kms-operator:1"])).toThrow("kms-operator:1 needs the contracts step first");
-    expect(check(["contracts", "relayer", "kms-operator:1"], ["green"])).toThrow("green needs kms-operator:2 first");
+    // Progress also records contract sub-units; only the steps count.
+    expect(check(["gateway:Decryption", "contracts", "relayer", "kms-operator:1"], ["kms-operator:2", "listener-core", "green"])).not.toThrow();
+    expect(check([], ["relayer"])).toThrow("upgrade step relayer is out of order; the next step is contracts");
+    expect(check([], ["contracts", "contracts"])).toThrow("the next step is relayer");
+    expect(check(["contracts"], ["contracts"])).toThrow("the next step is relayer");
+    expect(check([], ["contracts", "relayer", "kms-operator:3"])).toThrow("the next step is kms-operator:1");
+    expect(check(order.filter((step) => step !== "green"), ["green", "green"])).toThrow(
+      "the next step is none, the upgrade is complete",
+    );
   });
 
   test("advances one deployment unit per phase and restores optional connector services", () => {
