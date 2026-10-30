@@ -51,14 +51,14 @@ npx hardhat task:buildProposeCoprocessorUpgradeCalldata \
   --software-version v0.15.0
 ```
 
-| Flag                 | Value                                                                                                                            |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `--environment`      | `devnet`, `testnet`, or `mainnet`.                                                                                               |
-| `--start-time`       | ISO 8601 with an explicit time zone, `Z` or an offset: `2026-07-01T12:00:00Z` or `2026-07-01T14:00:00+02:00` (the same instant). |
-| `--duration`         | Window length, e.g. `30m`.                                                                                                       |
-| `--buffer`           | DAO lead time, e.g. `2h`.                                                                                                        |
-| `--proposal-id`      | Any positive integer never used before on this `ProtocolConfig` (completed and aborted ids stay reserved on the coprocessors).   |
-| `--software-version` | The coprocessor release tag, `vMAJOR.MINOR.PATCH`, e.g. `v0.15.0`. Must match the green binaries' `STACK_VERSION`.               |
+| Flag                 | Value                                                                                                                                                                                                   |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--environment`      | `devnet`, `testnet`, or `mainnet`.                                                                                                                                                                      |
+| `--start-time`       | ISO 8601 with an explicit time zone, `Z` or an offset: `2026-07-01T12:00:00Z` or `2026-07-01T14:00:00+02:00` (the same instant).                                                                        |
+| `--duration`         | Window length, e.g. `30m`. At least the floor of every chain in the environment (`30m` where Ethereum, Sepolia or Hoodi is included): the dry run cannot start before the chain finalizes `startBlock`. |
+| `--buffer`           | DAO lead time, e.g. `2h`.                                                                                                                                                                               |
+| `--proposal-id`      | Any positive integer never used before on this `ProtocolConfig` (completed and aborted ids stay reserved on the coprocessors).                                                                          |
+| `--software-version` | The coprocessor release tag, `vMAJOR.MINOR.PATCH`, e.g. `v0.15.0`. Must match the green binaries' `STACK_VERSION`.                                                                                      |
 
 ## Step 2 — Copy the proposal action
 
@@ -88,7 +88,8 @@ Once the DAO vote passes and the proposal executes, the on-chain `proposeCoproce
 | `DAO buffer violated for: chain X — short by 22m`                | Re-run with `--start-time` pushed forward by at least that amount.                    |
 | `env var <CHAIN>_RPC_URL is not set`                             | Export the RPC env var for that chain (names in `tasks/utils/environments.ts`).       |
 | `--environment must be one of: devnet, testnet, mainnet, local`  | Pass a valid `--environment`; `local` is only for the test-suite stack.               |
-| `duration too short for chain block time`                        | Use at least `1m` for `--duration`.                                                   |
+| `is below the minimum window of chain X`                         | Raise `--duration` to that chain's floor (`30m` for Ethereum-class chains).           |
+| `chain tip is N s old`                                           | The RPC for that chain is far behind the chain; check or replace the endpoint.        |
 | `has no time zone`                                               | Append `Z` or an offset to `--start-time`.                                            |
 | `No ProtocolConfig address configured`                           | Set `PROTOCOL_CONFIG_CONTRACT_ADDRESS` or pass `--use-internal-proxy-address true`.   |
 | `is not a release tag`                                           | Pass the release tag, e.g. `v0.15.0`.                                                 |
