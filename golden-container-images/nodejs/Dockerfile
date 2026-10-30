@@ -1,32 +1,17 @@
-ARG NODE_VERSION=22.14.0-alpine3.21
+ARG NODE_VERSION=22.23.4
 
-# Builder
-FROM node:${NODE_VERSION} AS builder
+FROM cgr.dev/zama.ai/node:${NODE_VERSION}-dev AS prod
 
 USER root
 
-RUN apk add --no-cache \
-    kubectl \
-    bash && \
-    rm -rf /var/cache/apk/*
-
-RUN mkdir -p /app && \
+# Contract commands need Bash, npm and kubectl at runtime.
+RUN apk add --no-cache bash kubectl-1.34-default && \
     addgroup -g 10001 fhevm && \
     adduser -D -u 10000 -G fhevm fhevm && \
-    mkdir -p /app /home/fhevm
+    mkdir -p /app /home/fhevm && \
+    chown -R fhevm:fhevm /app /home/fhevm
 
-# Runtime
-FROM node:${NODE_VERSION} AS prod
-
-COPY --from=builder /lib/ /lib/
-COPY --from=builder /bin/bash /bin/bash
-COPY --from=builder /usr/lib/ /usr/lib/
-COPY --from=builder /usr/bin/kubectl /usr/bin/
-COPY --from=builder /etc/group /etc/group
-COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder --chown=fhevm:fhevm /home/fhevm /home/fhevm
-COPY --from=builder --chown=fhevm:fhevm /app /app
-
+WORKDIR /app
 USER fhevm:fhevm
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
