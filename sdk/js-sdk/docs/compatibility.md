@@ -125,7 +125,7 @@ KMS `0.12.7` generated the PubKey/CRS in December 2025.
 
 ## TFHE WASM API surface
 
-Experimental RFC-030 pad-based encryption (`createFhevmEncryptTransciClient`)
+Experimental RFC-030 pad-based encryption (`createFhevmEncryptWithPadClient`)
 does not use the TFHE WASM; it relies on the KMS WASM only.
 
 | Protocol                                             | TFHE                 | Types                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Functions                                                                      |

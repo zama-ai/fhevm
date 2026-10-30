@@ -193,7 +193,7 @@ export function assertIsTransportKeyPair(
 
 /**
  * The TKMS key functions needed to generate a transport key pair, provided by
- * both the decrypt module and the encryptTransci module.
+ * both the decrypt module and the encryptWithPad module.
  */
 export type TransportKeyPairGenerator = Pick<
   DecryptModule,

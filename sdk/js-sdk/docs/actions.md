@@ -34,13 +34,13 @@ the action just takes `client` as the extra first argument.
 Actions are grouped by concern, each a separate import path so unused groups are
 never bundled:
 
-| Import path                  | Contains                                                                 |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| `@fhevm/sdk/actions/encrypt` | `encryptValue`, `encryptValues`, `generateZkProof`, `encryptValueTransci`, `encryptValuesTransci` |
-| `@fhevm/sdk/actions/decrypt` | `decryptValue`, `decryptValues`, `decryptValuesFromPairs`, `generateTransportKeyPair`, `canDecryptValue`, `canDecryptValues`, `canDecryptValuesFromPairs` |
+| Import path                  | Contains                                                                                                                                                                                                                                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `@fhevm/sdk/actions/encrypt` | `encryptValue`, `encryptValues`, `generateZkProof`, `encryptValueWithPad`, `encryptValuesWithPad`                                                                                                                                                                                                                                                      |
+| `@fhevm/sdk/actions/decrypt` | `decryptValue`, `decryptValues`, `decryptValuesFromPairs`, `generateTransportKeyPair`, `canDecryptValue`, `canDecryptValues`, `canDecryptValuesFromPairs`                                                                                                                                                                                              |
 | `@fhevm/sdk/actions/base`    | `decryptPublicValue`, `decryptPublicValues`, `decryptPublicValuesWithSignatures`, `canDecryptPublicValue`, `canDecryptPublicValues`, `fetchEncryptedValues`, `signLegacyDecryptionPermit`, `signUnifiedDecryptionPermit`, `canUseUnifiedDecryptionPermit`, `createUnsignedLegacyDecryptionPermitEip712`, `createUnsignedUnifiedDecryptionPermitEip712` |
-| `@fhevm/sdk/actions/chain`   | `signDecryptionPermit` (`@deprecated`), `serializeSignedDecryptionPermit`, `parseSignedDecryptionPermit`, `serializeTransportKeyPair`, `parseTransportKeyPair`, `fetchFheEncryptionKeyBytes` |
-| `@fhevm/sdk/actions/host`    | `resolveFhevmConfig`, `isAllowedForDecryption`, `persistAllowed`          |
+| `@fhevm/sdk/actions/chain`   | `signDecryptionPermit` (`@deprecated`), `serializeSignedDecryptionPermit`, `parseSignedDecryptionPermit`, `serializeTransportKeyPair`, `parseTransportKeyPair`, `fetchFheEncryptionKeyBytes`                                                                                                                                                           |
+| `@fhevm/sdk/actions/host`    | `resolveFhevmConfig`, `isAllowedForDecryption`, `persistAllowed`                                                                                                                                                                                                                                                                                       |
 
 ## Encrypt actions
 
@@ -62,14 +62,14 @@ need an encrypt client (`createFhevmEncryptClient`, TFHE WASM).
 ZK proof, before the Relayer signs it. Pair it with `fetchEncryptedValues` from
 `actions/base` to split proof generation from proof verification.
 
-RFC-030 pad-based encryption ("transciphering", experimental) has its own
-actions, which need an encrypt-transciphering client
-(`createFhevmEncryptTransciClient`, TKMS WASM):
+RFC-030 pad-based encryption (experimental) has its own
+actions, which need an encrypt-with-pad client
+(`createFhevmEncryptWithPadClient`, TKMS WASM):
 
 ```ts
-import { encryptValuesTransci } from '@fhevm/sdk/actions/encrypt';
+import { encryptValuesWithPad } from '@fhevm/sdk/actions/encrypt';
 
-const encrypted = await encryptValuesTransci(client, {
+const encrypted = await encryptValuesWithPad(client, {
   contractAddress,
   userAddress,
   values: [{ type: 'uint32', value: 42 }],
@@ -168,5 +168,7 @@ These are lower-level building blocks most apps never call directly.
 - [Encryption](encryption.md) and [Decryption](decryption.md) — the method-style guides.
 - [Clients](clients.md) — which methods each client exposes.
 - [API reference](api-reference.md) — full action signatures.
+
 ```
 
+```

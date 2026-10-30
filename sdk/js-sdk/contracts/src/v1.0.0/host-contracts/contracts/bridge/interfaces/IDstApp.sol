@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+pragma solidity ^0.8.24;
+
+/**
+ * @title   IDstApp
+ * @notice Interface implemented by confidential destination apps to receive bridged payloads.
+ * @dev `onConfidentialBridgeReceived` is invoked from `ConfidentialBridge.lzCompose` inside a dedicated
+ *      `lzCompose` transaction, after transient ACL allowance has been granted to the
+ *      destination app for every derived handle in `dstHandleList`. Apps should treat
+ *      `srcHandleList` entries as opaque bytes blobs (they are source-chain handles,
+ *      not usable on this chain) and operate on `dstHandleList` entries by index.
+ * @dev     The {ConfidentialOAppReceiver} base contract implements this interface.
+ */
+interface IDstApp {
+    /**
+     * @notice Receive a bridged payload from a source chain.
+     * @dev **SECURITY WARNING**: When `onConfidentialBridgeReceived` is called, the implementing app MUST verify that:
+     *      (1) `msg.sender` is the `ConfidentialBridge`, and
+     *      (2) `srcApp` on the `srcEid` source chain has been registered as a trusted peer by the app.
+     *      Failing to enforce both checks is a security vulnerability: any caller could otherwise invoke
+     *      this callback, or a malicious/unauthorized source app could deliver forged payloads and handles,
+     *      leading to spoofed cross-chain messages and app-level state corruption.
+     * @param srcEid          The LayerZero endpoint id of the source chain.
+     * @param srcApp          The source app that initiated the bridge on the source chain,
+     *                        as bytes32. For EVM source chains this is a left-zero-padded
+     *                        20-byte address (`address(uint160(uint256(srcApp)))` to
+     *                        convert). For non-EVM source chains (e.g. Solana) this carries
+     *                        the full 32-byte native program/account identifier.
+     * @param payload         The opaque app-level payload (as encoded by the source app).
+     * @param srcHandleList   The list of source-chain handles, in the order the source app
+     *                        passed them to `ConfidentialBridge.send`. Treat as opaque bytes32.
+     * @param dstHandleList   The list of destination-chain handles derived from
+     *                        `srcHandleList`, one-to-one by index. The ConfidentialBridge has
+     *                        already granted transient ACL allowance to this app for each.
+     * @param guid            The LayerZero message GUID of the cross-chain transfer. Lets
+     *                        apps correlate this delivery with the source-side send (which
+     *                        emits the same GUID via `ConfidentialBridge`'s `BridgeHandle`).
+     *
+     * @dev Reverting from `onConfidentialBridgeReceived` reverts only the lzCompose transaction. Bridge state
+     *      from the lzReceive step (derivations + `HandleBridged` events) is already
+     *      committed on-chain and the coprocessor's association is unaffected.
+     *      Note that `lzCompose` can be retried. If the app determines the source app is
+     *      untrusted, it should revert here to prevent app-level state changes.
+     */
+    function onConfidentialBridgeReceived(
+        uint32 srcEid,
+        bytes32 srcApp,
+        bytes calldata payload,
+        bytes32[] calldata srcHandleList,
+        bytes32[] calldata dstHandleList,
+        bytes32 guid
+    ) external;
+}

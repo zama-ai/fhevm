@@ -3,7 +3,7 @@ import type {
   createFhevmBaseClient as createEthersFhevmBaseClient,
   createFhevmDecryptClient as createEthersFhevmDecryptClient,
   createFhevmEncryptClient as createEthersFhevmEncryptClient,
-  createFhevmEncryptTransciClient as createEthersFhevmEncryptTransciClient,
+  createFhevmEncryptWithPadClient as createEthersFhevmEncryptWithPadClient,
 } from '@fhevm/sdk/ethers';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
@@ -73,11 +73,11 @@ export type CreateEthersEncryptClientFn = (
   },
 ) => ReturnType<typeof createEthersFhevmEncryptClient>;
 
-export type CreateEthersEncryptTransciClientFn = (
+export type CreateEthersEncryptWithPadClientFn = (
   params: CreateEthersClientParameters & {
     readonly options?: FhevmEncryptOptions | undefined;
   },
-) => ReturnType<typeof createEthersFhevmEncryptTransciClient>;
+) => ReturnType<typeof createEthersFhevmEncryptWithPadClient>;
 
 export type CreateEthersDecryptClientFn = (
   params: CreateEthersClientParameters & {
@@ -152,4 +152,16 @@ export function areAllEthersTestConfigsCleartext(): boolean {
 
 export function isMultichain(): boolean {
   return getEthersTestConfigs().length > 1;
+}
+
+/**
+ * The latest block's timestamp, in seconds. Permit start times are checked against the chain's clock, which on an
+ * idle anvil lags the wall clock, so a permit built from `Date.now()` can look like it starts in the future.
+ */
+export async function latestBlockTimestamp(config: Pick<FheTestEthersConfig, 'provider'>): Promise<number> {
+  const block = await config.provider.getBlock('latest');
+  if (block === null) {
+    throw new Error('Unable to read the latest block');
+  }
+  return block.timestamp;
 }

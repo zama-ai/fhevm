@@ -9,16 +9,28 @@ export { type GenerateZkProofParameters, type GenerateZkProofReturnType, generat
 
 export { type EncryptValueParameters, type EncryptValueReturnType, encryptValue } from './encryptValue.js';
 
+export {
+  type EncryptValueWithZkProofParameters,
+  type EncryptValueWithZkProofReturnType,
+  encryptValueWithZkProof,
+} from './encryptValueWithZkProof.js';
+
 export { type EncryptValuesParameters, type EncryptValuesReturnType, encryptValues } from './encryptValues.js';
 
 export {
-  type EncryptValueTransciParameters,
-  type EncryptValueTransciReturnType,
-  encryptValueTransci,
-} from './encryptValueTransci.js';
+  type EncryptValuesWithZkProofParameters,
+  type EncryptValuesWithZkProofReturnType,
+  encryptValuesWithZkProof,
+} from './encryptValuesWithZkProof.js';
 
 export {
-  type EncryptValuesTransciParameters,
-  type EncryptValuesTransciReturnType,
-  encryptValuesTransci,
-} from './encryptValuesTransci.js';
+  type EncryptValueWithPadParameters,
+  type EncryptValueWithPadReturnType,
+  encryptValueWithPad,
+} from './encryptValueWithPad.js';
+
+export {
+  type EncryptValuesWithPadParameters,
+  type EncryptValuesWithPadReturnType,
+  encryptValuesWithPad,
+} from './encryptValuesWithPad.js';

@@ -3,7 +3,7 @@ import type {
   createFhevmBaseClient as createViemFhevmBaseClient,
   createFhevmDecryptClient as createViemFhevmDecryptClient,
   createFhevmEncryptClient as createViemFhevmEncryptClient,
-  createFhevmEncryptTransciClient as createViemFhevmEncryptTransciClient,
+  createFhevmEncryptWithPadClient as createViemFhevmEncryptWithPadClient,
 } from '@fhevm/sdk/viem';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
@@ -55,11 +55,11 @@ export type CreateViemEncryptClientFn = (
   },
 ) => ReturnType<typeof createViemFhevmEncryptClient>;
 
-export type CreateViemEncryptTransciClientFn = (
+export type CreateViemEncryptWithPadClientFn = (
   params: CreateViemClientParameters & {
     readonly options?: FhevmEncryptOptions | undefined;
   },
-) => ReturnType<typeof createViemFhevmEncryptTransciClient>;
+) => ReturnType<typeof createViemFhevmEncryptWithPadClient>;
 
 export type CreateViemDecryptClientFn = (
   params: CreateViemClientParameters & {
@@ -139,4 +139,13 @@ export function areAllViemTestConfigsCleartext(): boolean {
 
 export function isMultichain(): boolean {
   return getViemTestConfigs().length > 1;
+}
+
+/**
+ * The latest block's timestamp, in seconds. Permit start times are checked against the chain's clock, which on an
+ * idle anvil lags the wall clock, so a permit built from `Date.now()` can look like it starts in the future.
+ */
+export async function latestBlockTimestamp(config: Pick<FheTestViemConfig, 'publicClient'>): Promise<number> {
+  const block = await config.publicClient.getBlock();
+  return Number(block.timestamp);
 }
