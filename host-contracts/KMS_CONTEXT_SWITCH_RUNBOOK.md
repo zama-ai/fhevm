@@ -302,7 +302,9 @@ host-contracts README. Use the mirror tasks for every rotation after that.
   task earlier than that and it still sees the pre-rotation state, stopping with
   `Replica … is already at context <id>, which is >= canonical's <id>`. That message means
   **"canonical's rotation is not finalized yet"**, not "nothing to do" — wait and re-run.
-  Pass `--block-number` to pin the read to a specific canonical height instead.
+  Pass `--block-number` to pin the read to a specific canonical height that is already finalized.
+  Heights above the latest finalized block are rejected; wait for finalization and re-run.
+  The tasks also re-fetch the selected block after reading and abort if its hash changed.
 - **No committee metadata to collect.** Unlike §4, there is no questionnaire and no
   `committee.env`: everything the replica needs is read back from canonical. Only two
   connection parameters are required (`--canonical-rpc-url`,
@@ -651,6 +653,11 @@ done
 
 n=$NUM_KMS_NODES
 [ "$n" -eq "$((3 * MPC_THRESHOLD + 1))" ] || fail "n must be 3*MPC_THRESHOLD+1"
+
+# The KMS core ingests only MPC_THRESHOLD: a threshold of t or less lets t corrupt nodes meet it.
+for v in PUBLIC_DECRYPTION_THRESHOLD USER_DECRYPTION_THRESHOLD KMS_GEN_THRESHOLD; do
+  [ "${!v}" -gt "$MPC_THRESHOLD" ] || fail "$v must be greater than MPC_THRESHOLD (got ${!v})"
+done
 
 # Gateway spelling must be present and equal to its host twin.
 [ "${KMS_GENERATION_THRESHOLD:-}" = "$KMS_GEN_THRESHOLD" ] ||

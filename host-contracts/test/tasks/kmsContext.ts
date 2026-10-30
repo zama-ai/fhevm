@@ -134,6 +134,17 @@ describe('KMS context tasks', function () {
       expect(decoded[1][3]).to.equal(BigInt(DEFAULT_THRESHOLDS.mpc));
       expect(decoded[2]).to.equal('v0.14.0');
       expect(decoded[3][0][0]).to.equal('0xaa');
+
+      // The printed args carry field names, so a swapped tx-sender and signer is visible.
+      const [labeledNodes, labeledThresholds] = encoded.decodedArgs as [
+        Record<string, unknown>[],
+        Record<string, unknown>,
+      ];
+      expect(labeledNodes[0]).to.include({
+        txSenderAddress: nodes[0].txSenderAddress,
+        signerAddress: nodes[0].signerAddress,
+      });
+      expect(labeledThresholds).to.include({ publicDecryption: BigInt(DEFAULT_THRESHOLDS.publicDecryption) });
     });
 
     it('derives the new context id as the allocation counter + 1 from a live ProtocolConfig', async function () {

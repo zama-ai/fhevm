@@ -12,7 +12,8 @@ use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
     VersionResponse,
 };
-use std::time::Duration;
+use proxy::core::RATE_LIMIT_INTERVAL;
+use std::{num::NonZeroU32, time::Duration};
 
 #[tokio::test]
 async fn test_forwards_authenticated_requests_untouched() {
@@ -270,6 +271,55 @@ async fn test_passes_endpoint_errors_through() {
     let error: ErrorResponse = response.json().await.unwrap();
     assert_eq!(error.code, ErrorCode::Overloaded);
     assert!(error.retryable);
+}
+
+#[tokio::test]
+async fn test_rate_limits_each_sender() {
+    let endpoint = StubEndpoint::start().await;
+    let t = TestProxy::start_with_config(
+        vec![endpoint.addr.to_string().parse().unwrap()],
+        vec![endpoint],
+        |config| config.rate_limit_per_second = NonZeroU32::new(2).unwrap(),
+    )
+    .await;
+    let route = PUBLIC_DECRYPTION_ROUTE;
+
+    // Neither `GET /version` nor unauthenticated requests count against the limit.
+    for _ in 0..3 {
+        let response = t.get(VERSION_ROUTE).await.send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = t.client.post(t.url(route)).body("{}").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    let mut accepted = 0;
+    for _ in 0..10 {
+        let response = t.post(route, "{}").await.send().await.unwrap();
+        if response.status() == StatusCode::OK {
+            accepted += 1;
+            continue;
+        }
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            response.headers()["retry-after"].to_str().unwrap(),
+            RATE_LIMIT_INTERVAL.as_secs().to_string()
+        );
+        let error: ErrorResponse = response.json().await.unwrap();
+        assert_eq!(error.code, ErrorCode::RateLimited);
+        assert!(error.retryable);
+    }
+    // At most 2 per window, and the 10 requests can straddle a window boundary.
+    assert!((2..=4).contains(&accepted), "{accepted} requests accepted");
+    assert_eq!(
+        t.endpoints[0].hits(),
+        accepted,
+        "rejections must not reach the endpoint"
+    );
+
+    // The sender is accepted again once the window has passed.
+    tokio::time::sleep(RATE_LIMIT_INTERVAL + Duration::from_millis(100)).await;
+    let response = t.post(route, "{}").await.send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
 #[tokio::test]

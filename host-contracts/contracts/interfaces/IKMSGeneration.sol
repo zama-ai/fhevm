@@ -300,6 +300,7 @@ interface IKMSGeneration {
 
     /**
      * @notice Trigger a fresh FHE key generation or produce compressed material for an existing key.
+     * @dev Must not be called during a KMS context or epoch rotation.
      * @param paramsType The type of FHE parameters to use.
      * @param existingKeyId Zero for a fresh key, or the active key whose compressed material is requested.
      */
@@ -322,6 +323,7 @@ interface IKMSGeneration {
 
     /**
      * @notice Trigger a CRS generation.
+     * @dev Must not be called during a KMS context or epoch rotation.
      * @param maxBitLength The max bit length for generating the CRS.
      * @param paramsType The type of parameters to use.
      */
@@ -426,6 +428,9 @@ interface IKMSGeneration {
 
     /**
      * @notice Get the full completed-key record for a given key ID, in a single call.
+     * @dev After a compressed key migration, this describes the migrated record KMS nodes are expected
+     * to hold: the migration's preprocessing ID, without the legacy `Server` digest that
+     * {getKeyMaterials} keeps.
      * @param keyId The ID of the key.
      * @return The key record (prepKeygenId, keyId, paramsType, key digests).
      */

@@ -25,7 +25,7 @@ import {
 import { type KmsSignerSet, verifyPublicDecryptQuorum } from '../sdk/connector/verify';
 import { type Signers, getSigners, initSigners } from '../signers';
 import { FhevmInstances } from '../types';
-import { connectorSetup, waitBlocks } from './setup';
+import { connectorSetup, delegateForUserDecryption, waitBlocks } from './setup';
 
 const ASYNC_TIMEOUT_MS = 4 * 60 * 1000;
 // Blocks to wait after an on-chain ACL change before the kms-workers' host reads observe it.
@@ -61,7 +61,7 @@ describe('Connector HTTP negative', function () {
   before(async function () {
     this.timeout(180_000);
     ({ kms } = await connectorSetup(this));
-    await initSigners(2);
+    await initSigners(3);
     signers = await getSigners();
     instances = await createInstances(signers);
 
@@ -152,6 +152,26 @@ describe('Connector HTTP negative', function () {
     it('test connector endpoint negative user decrypt with an allowedContracts list excluding the handle contract is acl_denied', async function () {
       this.timeout(ASYNC_TIMEOUT_MS);
       const body = await userRequest(await aliceContract.xUint8(), { allowedContracts: [bobContractAddress] });
+      const out = await fanOutUntilSettled<UserDecryptionResponse>(USER_DECRYPT_ROUTE, body);
+      expectErrorOnEveryParty(out.results, { status: 403, code: 'acl_denied' });
+    });
+
+    it('test connector endpoint negative user decrypt of a handle delegated to someone else is acl_denied', async function () {
+      this.timeout(ASYNC_TIMEOUT_MS);
+      await delegateForUserDecryption(signers.alice, signers.bob.address, aliceContractAddress);
+      await waitBlocks(PROPAGATION_BLOCKS);
+
+      // carol names alice as owner of a handle alice can decrypt and delegated to bob only. The
+      // request is denied only if the connector checks carol's delegation, not alice's access.
+      const handle = await aliceContract.xUint32();
+      const body = await userRequest(
+        handle,
+        {
+          handles: [{ handle, contractAddress: aliceContractAddress, ownerAddress: signers.alice.address }],
+          userAddress: signers.carol.address,
+        },
+        signers.carol,
+      );
       const out = await fanOutUntilSettled<UserDecryptionResponse>(USER_DECRYPT_ROUTE, body);
       expectErrorOnEveryParty(out.results, { status: 403, code: 'acl_denied' });
     });

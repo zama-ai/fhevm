@@ -1,5 +1,6 @@
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
-import type { FhevmRuntime, WithDecrypt } from '../types/coreFhevmRuntime.js';
+import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { DecryptModule } from '../modules/decrypt/types.js';
 import type { Bytes, BytesHex } from '../types/primitives.js';
 import type { TkmsPrivateKey } from '../types/tkms-p.js';
 import type { NativeClient, OptionalNativeClient } from '../types/coreFhevmClient.js';
@@ -190,23 +191,34 @@ export function assertIsTransportKeyPair(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/** Generates a fresh {@link TransportKeyPair}. */
+/**
+ * The TKMS key functions needed to generate a transport key pair, provided by
+ * both the decrypt module and the encryptTransci module.
+ */
+export type TransportKeyPairGenerator = Pick<
+  DecryptModule,
+  'generateTkmsPrivateKey' | 'serializeTkmsPrivateKey' | 'getTkmsPublicKeyHex'
+>;
+
+/** Generates a fresh {@link TransportKeyPair}, bound to `context.runtime`. */
 export async function generateTransportKeyPair(
   context: {
-    readonly runtime: WithDecrypt;
+    readonly runtime: FhevmRuntime;
     readonly chain: FhevmChain;
     readonly client: NativeClient;
   },
   parameters: {
     readonly fhevmContext: FhevmClientFrozenContext;
+    readonly generator: TransportKeyPairGenerator;
   },
 ): Promise<TransportKeyPair & { readonly tkmsVersion: string }> {
-  const tkmsVersion = parameters.fhevmContext.tkmsVersion;
+  const { fhevmContext, generator } = parameters;
+  const tkmsVersion = fhevmContext.tkmsVersion;
 
-  const tkmsPrivateKey = await context.runtime.decrypt.generateTkmsPrivateKey();
+  const tkmsPrivateKey = await generator.generateTkmsPrivateKey();
   try {
-    const tkmsPrivateKeyBytes = await context.runtime.decrypt.serializeTkmsPrivateKey({ tkmsPrivateKey });
-    const tkmsPublicKeyBytesHex = await context.runtime.decrypt.getTkmsPublicKeyHex({ tkmsPrivateKey });
+    const tkmsPrivateKeyBytes = await generator.serializeTkmsPrivateKey({ tkmsPrivateKey });
+    const tkmsPublicKeyBytesHex = await generator.getTkmsPublicKeyHex({ tkmsPrivateKey });
     // A freshly generated key pair always carries a resolved tkmsVersion, so we
     // narrow away the `undefined` the impl's getter allows for the general case.
     return new TransportKeyPairImpl(PRIVATE_TOKEN, context.runtime, {

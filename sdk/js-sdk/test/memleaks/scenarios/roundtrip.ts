@@ -1,5 +1,5 @@
 import { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from '../../../src/ethers/index.js';
-import { createLogger } from '../../fheTest/setupCommon.js';
+import { createLogger, fheTypeIdFromName } from '../../fheTest/setupCommon.js';
 import { createTfheMemoryReader, createTkmsMemoryReader } from '../support/wasmMemory.js';
 import type { Scenario } from './scenario.js';
 
@@ -73,15 +73,22 @@ export const roundtripScenario: Scenario = {
         throw new Error(`FHETest.setEuint8 transaction failed: ${tx.hash}`);
       }
 
+      // RFC-030: `fromExternal` mints a fresh compute handle in the transaction;
+      // decrypt the handle FHETest stored, not the external handle.
+      const computeHandle: string = await config.fheTestContract.getHandleOf!(
+        config.wallet.address,
+        fheTypeIdFromName('euint8'),
+      );
+
       const [privateValue] = await client.decryptValues({
-        encryptedValues: [encrypted.encryptedValue],
+        encryptedValues: [computeHandle],
         contractAddress: config.fheTestAddress,
         signedPermit,
         transportKeyPair,
       });
       assertClearValueMatches('private decrypt', privateValue?.value, clearValue);
 
-      const [publicValue] = await client.decryptPublicValues({ encryptedValues: [encrypted.encryptedValue] });
+      const [publicValue] = await client.decryptPublicValues({ encryptedValues: [computeHandle] });
       assertClearValueMatches('public decrypt', publicValue?.value, clearValue);
     };
 

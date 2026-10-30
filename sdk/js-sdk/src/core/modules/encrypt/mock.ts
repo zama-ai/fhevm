@@ -7,23 +7,16 @@ import type { FhevmRuntime } from '../../types/coreFhevmRuntime.js';
 import type {
   FheEncryptionCrs,
   FheEncryptionCrsBrand,
-  FheEncryptionKeyBytes,
   FheEncryptionPublicKey,
   FheEncryptionPublicKeyBrand,
 } from '../../types/fheEncryptionKey.js';
-import type { Bytes, BytesHex, UintNumber } from '../../types/primitives.js';
+import type { BytesHex, UintNumber } from '../../types/primitives.js';
 import { CANONICAL_WASM_VERSIONS } from '../../runtime/WasmVersions-p.js';
 import type {
   BuildWithProofPackedParameters,
   BuildWithProofPackedReturnType,
   ParseTFHEProvenCompactCiphertextListParameters,
   ParseTFHEProvenCompactCiphertextListReturnType,
-  SerializeFheEncryptionCrsParameters,
-  SerializeFheEncryptionCrsReturnType,
-  SerializeFheEncryptionKeyParameters,
-  SerializeFheEncryptionKeyReturnType,
-  SerializeFheEncryptionPublicKeyParameters,
-  SerializeFheEncryptionPublicKeyReturnType,
   EncryptModuleFactory,
   DeserializeFheEncryptionPublicKeyParameters as DeserializeFheEncryptionPublicKeyParameters,
   DeserializeFheEncryptionPublicKeyReturnType as DeserializeFheEncryptionPublicKeyReturnType,
@@ -33,7 +26,6 @@ import type {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const GET_NATIVE_FUNC = Symbol('CleartextTFHELib.getNative');
 const PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN = Symbol('CleartextTFHELib.token');
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -44,16 +36,14 @@ class CleartextTfheCompactPublicKeyImpl implements FheEncryptionPublicKey {
   declare readonly [FheEncryptionPublicKeyBrand]: never;
 
   readonly #id: string;
-  readonly #tfheCompactPublicKeyWasmType: Bytes;
   readonly #tfheVersion: TfheVersion;
 
-  constructor(token: symbol, id: string, tfheVersion: TfheVersion, publicEncKeyMlKem512Wasm: Bytes) {
+  constructor(token: symbol, id: string, tfheVersion: TfheVersion) {
     if (token !== PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN) {
       throw new Error('Unauthorized');
     }
     this.#id = id;
     this.#tfheVersion = tfheVersion;
-    this.#tfheCompactPublicKeyWasmType = publicEncKeyMlKem512Wasm;
   }
 
   public get id(): string {
@@ -62,16 +52,6 @@ class CleartextTfheCompactPublicKeyImpl implements FheEncryptionPublicKey {
 
   public get tfheVersion(): TfheVersion {
     return this.#tfheVersion;
-  }
-
-  public static [GET_NATIVE_FUNC](key: unknown, token: symbol): Bytes {
-    if (token !== PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN) {
-      throw new Error('Unauthorized');
-    }
-    if (!(key instanceof CleartextTfheCompactPublicKeyImpl)) {
-      throw new Error('Unauthorized');
-    }
-    return key.#tfheCompactPublicKeyWasmType;
   }
 }
 
@@ -85,22 +65,14 @@ class CleartextTfheCompactPkeCrsImpl implements FheEncryptionCrs {
   readonly #id: string;
   readonly #tfheVersion: TfheVersion;
   readonly #capacity: UintNumber;
-  readonly #compactPublicKeyWasmType: Bytes;
 
-  constructor(
-    token: symbol,
-    id: string,
-    tfheVersion: TfheVersion,
-    capacity: UintNumber,
-    compactPublicKeyWasmType: Bytes,
-  ) {
+  constructor(token: symbol, id: string, tfheVersion: TfheVersion, capacity: UintNumber) {
     if (token !== PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN) {
       throw new Error('Unauthorized');
     }
     this.#id = id;
     this.#tfheVersion = tfheVersion;
     this.#capacity = capacity;
-    this.#compactPublicKeyWasmType = compactPublicKeyWasmType;
   }
 
   public get id(): string {
@@ -113,16 +85,6 @@ class CleartextTfheCompactPkeCrsImpl implements FheEncryptionCrs {
 
   public get capacity(): UintNumber {
     return this.#capacity;
-  }
-
-  public static [GET_NATIVE_FUNC](key: unknown, token: symbol): Bytes {
-    if (token !== PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN) {
-      throw new Error('Unauthorized');
-    }
-    if (!(key instanceof CleartextTfheCompactPkeCrsImpl)) {
-      throw new Error('Unauthorized');
-    }
-    return key.#compactPublicKeyWasmType;
   }
 }
 
@@ -175,108 +137,6 @@ export async function buildWithProofPacked(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// serializeFheEncryptionKey
-////////////////////////////////////////////////////////////////////////////////
-
-export async function serializeFheEncryptionKey(
-  parameters: SerializeFheEncryptionKeyParameters,
-): Promise<SerializeFheEncryptionKeyReturnType> {
-  const { fheEncryptionKey: publicEncryptionParams } = parameters;
-
-  const tfheCompactPublicKeyImpl = publicEncryptionParams.publicKey;
-  const tfheCompactPkeCrsImpl = publicEncryptionParams.crs;
-
-  if (!(tfheCompactPublicKeyImpl instanceof CleartextTfheCompactPublicKeyImpl)) {
-    throw new Error('Invalid tfhePublicKey');
-  }
-  if (!(tfheCompactPkeCrsImpl instanceof CleartextTfheCompactPkeCrsImpl)) {
-    throw new Error('Invalid tfheCrs');
-  }
-
-  const tfhePublicKeyBytes: Bytes = CleartextTfheCompactPublicKeyImpl[GET_NATIVE_FUNC](
-    tfheCompactPublicKeyImpl,
-    PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN,
-  );
-  const tfheCrsBytes: Bytes = CleartextTfheCompactPkeCrsImpl[GET_NATIVE_FUNC](
-    tfheCompactPkeCrsImpl,
-    PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN,
-  );
-
-  const keyBytes: FheEncryptionKeyBytes = Object.freeze({
-    publicKeyBytes: Object.freeze({
-      id: publicEncryptionParams.publicKey.id,
-      bytes: tfhePublicKeyBytes,
-    }),
-    crsBytes: Object.freeze({
-      id: publicEncryptionParams.crs.id,
-      capacity: publicEncryptionParams.crs.capacity,
-      bytes: tfheCrsBytes,
-    }),
-    metadata: Object.freeze({
-      relayerUrl: publicEncryptionParams.metadata.relayerUrl,
-      chainId: publicEncryptionParams.metadata.chainId,
-    }),
-  });
-
-  return keyBytes;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// serializeFheEncryptionPublicKey
-////////////////////////////////////////////////////////////////////////////////
-
-export async function serializeFheEncryptionPublicKey(
-  parameters: SerializeFheEncryptionPublicKeyParameters,
-): Promise<SerializeFheEncryptionPublicKeyReturnType> {
-  const { publicKey: tfhePublicKey } = parameters;
-
-  const tfheCompactPublicKeyImpl = tfhePublicKey;
-
-  if (!(tfheCompactPublicKeyImpl instanceof CleartextTfheCompactPublicKeyImpl)) {
-    throw new Error('Invalid tfhePublicKey');
-  }
-
-  const tfhePublicKeyBytes: Bytes = CleartextTfheCompactPublicKeyImpl[GET_NATIVE_FUNC](
-    tfheCompactPublicKeyImpl,
-    PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN,
-  );
-
-  return Object.freeze({
-    id: tfhePublicKey.id,
-    bytes: tfhePublicKeyBytes,
-    tfheVersion: tfheCompactPublicKeyImpl.tfheVersion,
-  });
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// serializeFheEncryptionCrs
-////////////////////////////////////////////////////////////////////////////////
-
-export async function serializeFheEncryptionCrs(
-  parameters: SerializeFheEncryptionCrsParameters,
-): Promise<SerializeFheEncryptionCrsReturnType> {
-  const { crs: tfheCrs } = parameters;
-
-  const tfheCompactPkeCrsImpl = tfheCrs;
-
-  if (!(tfheCompactPkeCrsImpl instanceof CleartextTfheCompactPkeCrsImpl)) {
-    throw new Error('Invalid tfheCrs');
-  }
-
-  const tfheCrsBytes: Bytes = CleartextTfheCompactPkeCrsImpl[GET_NATIVE_FUNC](
-    tfheCompactPkeCrsImpl,
-    PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN,
-  );
-
-  return Object.freeze({
-    id: tfheCrs.id,
-    capacity: tfheCrs.capacity,
-    bytes: tfheCrsBytes,
-    tfheVersion: tfheCompactPkeCrsImpl.tfheVersion,
-  });
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // deserializeFheEncryptionCrs
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -290,7 +150,6 @@ export async function deserializeFheEncryptionCrs(
     globalFheCrsBytes.id,
     CANONICAL_WASM_VERSIONS.tfhe,
     globalFheCrsBytes.capacity,
-    globalFheCrsBytes.bytes,
   );
 }
 
@@ -307,7 +166,6 @@ export async function deserializeFheEncryptionPublicKey(
     PRIVATE_CLEARTEXT_TFHE_LIB_TOKEN,
     globalFhePublicKeyBytes.id,
     CANONICAL_WASM_VERSIONS.tfhe,
-    globalFhePublicKeyBytes.bytes,
   );
 }
 
@@ -324,9 +182,6 @@ export const encryptModule: EncryptModuleFactory = (_runtime: FhevmRuntime) => {
       },
       parseTFHEProvenCompactCiphertextList,
       buildWithProofPacked,
-      serializeFheEncryptionKey,
-      serializeFheEncryptionPublicKey,
-      serializeFheEncryptionCrs,
       deserializeFheEncryptionPublicKey,
       deserializeFheEncryptionCrs,
     }),
