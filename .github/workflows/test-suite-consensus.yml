@@ -61,6 +61,7 @@ on:
           - backlog
           - object-integrity
           - host-rpc
+          - sender-rpc
           - ingestion-recovery
           - broker-redelivery
           - storage-pressure
@@ -498,6 +499,19 @@ jobs:
             ./scripts/run-artifact-ingestion-recovery.sh "${mode,,}"
           done
 
+      - name: Sender RPC nonce rejection and accepted timeout recovery
+        if: ${{ matrix.leg == 'sender-rpc' }}
+        working-directory: test-suite/fhevm
+        env:
+          SELECTED_CASES: ${{ join(matrix.cases, ' ') }}
+        run: |
+          status=0
+          for case_id in $SELECTED_CASES; do
+            mode="${case_id#FM-SENDER-RPC-}"
+            ./scripts/run-sender-rpc-recovery.sh "${mode,,}" || status=1
+          done
+          exit "$status"
+
       - name: Host RPC retry and paginated catch-up
         if: ${{ matrix.leg == 'host-rpc' }}
         working-directory: test-suite/fhevm
@@ -631,6 +645,7 @@ jobs:
           cp -r ../../.fhevm/runtime/object-integrity /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/artifact-recovery-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/host-rpc-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
+          cp -r ../../.fhevm/runtime/sender-rpc-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/broker-redelivery /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/storage-pressure-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/submission-partition /tmp/consensus-artifacts/ 2>/dev/null || true
