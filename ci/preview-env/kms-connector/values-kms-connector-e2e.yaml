@@ -80,3 +80,8 @@ kmsConnectorProxy:
   # test-suite trusts a single CA.
   tls:
     secretName: kms-connector-proxy-tls
+  # Raised from the 100 req/s default (per sender, per proxy replica) so benchmarks
+  # run against the preview env are not throttled by the proxy.
+  env:
+    - name: KMS_CONNECTOR_RATE_LIMIT_PER_SECOND
+      value: "2000"
