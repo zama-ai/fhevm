@@ -26,9 +26,13 @@ WORKDIR /app/coprocessor/fhevm-engine
 # NOTE: We use a cache mount for the target directory to enable incremental compilation.
 # Because cache mounts are NOT committed to the image layer, we must copy the binary
 # to a non-mounted path (/tmp) during the same RUN instruction for COPY --from to work.
-# No sccache: with RUSTC_WRAPPER=sccache, cc also runs the vendored OpenSSL's per-file assembler
-# probes through sccache, whose answers vary. OpenSSL then mixes AVX and non-AVX AES-GCM code and
-# writes TLS records with wrong tags.
+# No sccache: with RUSTC_WRAPPER=sccache, cc also runs the vendored OpenSSL's assembler probes,
+# `cc ... -o /dev/null`, through sccache. Up to v0.15.0, sccache writes a cached output to a
+# temporary file next to the target and renames it over the target: as root, it replaces /dev/null,
+# and probes running meanwhile fail and fall back to non-AVX code. OpenSSL then mixes AVX and
+# non-AVX AES-GCM code and writes TLS records with wrong tags. Same bug as a non-root user:
+# https://github.com/mozilla/sccache/issues/2288. sccache v0.16.0 skips outputs to /dev/null; the
+# rust-glibc golden image pins v0.15.0.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
     cargo fetch && \
