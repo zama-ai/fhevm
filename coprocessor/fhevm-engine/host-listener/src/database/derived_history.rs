@@ -27,6 +27,7 @@ struct Inventory {
 
 pub(super) struct CommittedInventory {
     chain_id: i64,
+    gcs_mode: bool,
     before: BTreeMap<(i64, Option<Vec<u8>>), Inventory>,
 }
 
@@ -35,6 +36,7 @@ impl CommittedInventory {
     pub async fn capture(
         tx: &mut Transaction<'_, Postgres>,
         chain_id: i64,
+        gcs_mode: bool,
         block_numbers: &[i64],
         handles: &[Vec<u8>],
     ) -> Result<Self, sqlx::Error> {
@@ -49,12 +51,16 @@ impl CommittedInventory {
         .bind(handles)
         .fetch_all(tx.as_mut())
         .await?;
-        let before = load(tx, chain_id, &candidates)
+        let before = load(tx, chain_id, gcs_mode, &candidates)
             .await?
             .into_iter()
             .map(|row| ((row.block_number, row.block_hash.clone()), row))
             .collect();
-        Ok(Self { chain_id, before })
+        Ok(Self {
+            chain_id,
+            gcs_mode,
+            before,
+        })
     }
 
     pub async fn changed_block(
@@ -66,7 +72,7 @@ impl CommittedInventory {
         }
         let numbers: Vec<_> =
             self.before.keys().map(|(number, _)| *number).collect();
-        for after in load(tx, self.chain_id, &numbers).await? {
+        for after in load(tx, self.chain_id, self.gcs_mode, &numbers).await? {
             if self
                 .before
                 .get(&(after.block_number, after.block_hash.clone()))
@@ -82,6 +88,7 @@ impl CommittedInventory {
 async fn load(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: i64,
+    gcs_mode: bool,
     block_numbers: &[i64],
 ) -> Result<Vec<Inventory>, sqlx::Error> {
     // Ingestion only adds computation/producer rows and upgrades eligibility.
@@ -105,9 +112,14 @@ async fn load(
     // Still inspect headers so discovering FHE events in a block committed as
     // empty is detected even when its computations were already present.
     //
-    // Rollback drops the green schema. A failed epoch keeps its seal in
-    // `public`, but loses the rows this counts. The listener then adds those
-    // rows again, and the guard sees a rewrite. Omit that seal.
+    // A seal lives in shared `public`. The rows it commits live where its
+    // epoch's stack writes: a completed epoch's in `public`, merged there at
+    // cutover, and the pending epoch's in Green's schema. A failed epoch's
+    // rows are gone, dropped with its schema at rollback. Count a seal only on
+    // the stack that holds its rows. The outcome decides, not the selector:
+    // Green starts with Blue's epoch selected. A cutover also replaces the
+    // previous epoch's rows from the successor's window start, so a seal
+    // there commits rows that are gone (`drift_superseded`).
     sqlx::query_as(
         "WITH RECURSIVE manifest_coverage AS (
              SELECT b.block_number AS root_number, b.block_hash AS root_hash,
@@ -116,8 +128,13 @@ async fn load(
                      OR b.manifest_published) AS committed
              FROM block_manifest_state b
              WHERE b.host_chain_id = $1 AND b.block_number = ANY($2)
-               AND NOT EXISTS (SELECT 1 FROM public.consensus_epoch_history e
-                   WHERE e.consensus_epoch = b.consensus_epoch AND e.outcome = 'failed')
+               AND EXISTS (SELECT 1 FROM public.consensus_epoch_history e
+                   WHERE e.consensus_epoch = b.consensus_epoch
+                     AND CASE WHEN $3 THEN e.outcome = 'pending'
+                              ELSE e.outcome IN ('initial', 'succeeded')
+                                   AND NOT public.drift_superseded(
+                                       b.consensus_epoch, b.host_chain_id, b.block_number)
+                         END)
                AND NOT EXISTS (SELECT 1 FROM host_chain_blocks_valid h
                    WHERE h.chain_id = b.host_chain_id AND h.block_hash = b.block_hash
                      AND h.block_status = 'orphaned')
@@ -164,6 +181,7 @@ async fn load(
     )
     .bind(chain_id)
     .bind(block_numbers)
+    .bind(gcs_mode)
     .fetch_all(tx.as_mut())
     .await
 }

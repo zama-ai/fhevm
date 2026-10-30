@@ -8,6 +8,8 @@ use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::chain_recovery::{
     is_halted, lock_history_tx, ListenerSource,
 };
+use fhevm_engine_common::database::{GCS_SCHEMA, GCS_SCHEMA_QUOTED};
+use fhevm_engine_common::versioning::StackMode;
 use host_listener::database::ingest::{ingest_block_logs, BlockLogs};
 use host_listener::database::tfhe_event_propagate::Database;
 use serial_test::serial;
@@ -108,6 +110,37 @@ async fn seal_block(pool: &PgPool, published: bool) -> anyhow::Result<()> {
                 CASE WHEN $4 THEN NOW() END)")
         .bind(b.hash.to_vec()).bind(b.parent_hash.to_vec())
         .bind(vec![0x33u8; 32]).bind(published).execute(pool).await?;
+    Ok(())
+}
+
+/// The helper of #4650's tests. `schema` names the sealing stack, `None` this
+/// one. Green's seal is in Green's pending epoch: the epoch, not a stamp, tells
+/// the stacks apart. `handles` is the sealed descriptor count, 0 for an empty
+/// block.
+async fn seal_block_as(
+    pool: &PgPool,
+    published: bool,
+    schema: Option<&str>,
+    handles: i64,
+) -> anyhow::Result<()> {
+    seal_block(pool, published).await?;
+    sqlx::query(
+        "UPDATE block_manifest_state SET block_handle_count = $1 WHERE block_number = 100",
+    )
+    .bind(handles)
+    .execute(pool)
+    .await?;
+    if schema == Some(GCS_SCHEMA) {
+        sqlx::query(
+            "INSERT INTO consensus_epoch_history
+                 (consensus_epoch, proposal_id, proposal_block, consensus_version, outcome)
+             VALUES ($1, decode(repeat('02', 32), 'hex'), 40, 2, 'pending')",
+        )
+        .bind(GREEN_EPOCH)
+        .execute(pool)
+        .await?;
+        move_seal_to_green_epoch(pool).await?;
+    }
     Ok(())
 }
 
@@ -579,6 +612,319 @@ async fn a_failed_epoch_seal_does_not_contain_the_repair() -> anyhow::Result<()>
     );
     assert!(!is_halted(&pool).await?);
     Ok(())
+}
+
+/// The tables upgrade-controller duplicates into Green's schema
+/// (`COPROCESSOR_TABLES` rows marked `duplicated`).
+const GREEN_TABLES: &[&str] = &[
+    "ciphertexts",
+    "ciphertexts128",
+    "ciphertext_digest",
+    "computations",
+    "pbs_computations",
+    "verify_proofs",
+    "dependence_chain",
+    "state_hash",
+    "input_handles",
+    "host_chain_blocks_valid",
+    "gw_listener_last_block",
+    "host_listener_poller_state",
+    "transactions",
+    "allowed_handles",
+    "kms_key_activation_events",
+    "kms_crs_activation_events",
+    "fallback_granted_events",
+    "handle_bridged_events",
+    "host_chain_consumer_blocks",
+    "bridge_handle_events",
+    "delegate_user_decrypt",
+    "drift_revert_signal",
+    "handle_producer_block",
+    "blue_green_consensus_epoch",
+];
+
+const GREEN_EPOCH: &str = "2/block_40";
+
+/// Start Green as upgrade-controller does: empty copies of Blue's tables, and
+/// Blue's epoch until the upgrade allocates Green's.
+async fn start_green(
+    pool: &PgPool,
+    instance: &DBInstance,
+) -> anyhow::Result<Database> {
+    sqlx::query(&format!("CREATE SCHEMA {GCS_SCHEMA_QUOTED}"))
+        .execute(pool)
+        .await?;
+    for table in GREEN_TABLES {
+        sqlx::query(&format!(
+            "CREATE TABLE {GCS_SCHEMA_QUOTED}.{table} (LIKE public.{table} INCLUDING ALL)"
+        ))
+        .execute(pool)
+        .await?;
+    }
+    sqlx::query(&format!(
+        "INSERT INTO {GCS_SCHEMA_QUOTED}.blue_green_consensus_epoch
+         SELECT * FROM public.blue_green_consensus_epoch"
+    ))
+    .execute(pool)
+    .await?;
+    Database::new_with_stack_mode(
+        &instance.db_url,
+        ChainId::try_from(42u64)?,
+        128,
+        StackMode::new(true),
+    )
+    .await
+}
+
+/// Record the upgrade's epoch, with a window from `start_block`, as
+/// `outcome`. A pending epoch is also selected by Green.
+async fn upgrade_epoch(
+    pool: &PgPool,
+    outcome: &str,
+    start_block: i64,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history
+             (consensus_epoch, proposal_id, proposal_block, consensus_version,
+              outcome, completed_at)
+         VALUES ($1, decode(repeat('02', 32), 'hex'), 40, 2, $2,
+                 CASE WHEN $2 <> 'pending' THEN NOW() END)",
+    )
+    .bind(GREEN_EPOCH)
+    .bind(outcome)
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "INSERT INTO consensus_epoch_block_window
+             (consensus_epoch, host_chain_id, start_block, consensus_deadline_block)
+         VALUES ($1, 42, $2, 500)",
+    )
+    .bind(GREEN_EPOCH)
+    .bind(start_block)
+    .execute(pool)
+    .await?;
+    if outcome == "pending" {
+        sqlx::query(&format!(
+            "UPDATE {GCS_SCHEMA_QUOTED}.blue_green_consensus_epoch SET consensus_epoch = $1"
+        ))
+        .bind(GREEN_EPOCH)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
+async fn move_seal_to_green_epoch(pool: &PgPool) -> anyhow::Result<()> {
+    sqlx::query("UPDATE block_manifest_state SET consensus_epoch = $1")
+        .bind(GREEN_EPOCH)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+/// Blue seals block 100 over its own rows. Green then ingests the block into
+/// its empty schema: its first copy, not a rewrite of what Blue sealed. Before
+/// allocation Green's selector still names Blue's epoch, so the epoch selector
+/// alone cannot tell the two seals apart.
+async fn green_ingests_a_block_blue_sealed(
+    allocated: bool,
+) -> anyhow::Result<()> {
+    let (_blue, pool, instance) = partial_block().await?;
+    seal_block(&pool, true).await?;
+    let mut green = start_green(&pool, &instance).await?;
+    if allocated {
+        upgrade_epoch(&pool, "pending", 50).await?;
+    }
+    ingest(&mut green, &block(), partial_logs(), false).await?;
+    assert!(!is_halted(&pool).await?);
+    let green_rows: i64 = sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM {GCS_SCHEMA_QUOTED}.computations"
+    ))
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(green_rows, 2);
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn green_ingests_a_block_blue_sealed_before_allocation(
+) -> anyhow::Result<()> {
+    green_ingests_a_block_blue_sealed(false).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn green_ingests_a_block_blue_sealed_after_allocation(
+) -> anyhow::Result<()> {
+    green_ingests_a_block_blue_sealed(true).await
+}
+
+/// Green's own seal still freezes Green's rows.
+#[tokio::test]
+#[serial(db)]
+async fn a_green_seal_contains_a_green_repair() -> anyhow::Result<()> {
+    let (_blue, pool, instance) = setup().await?;
+    let mut green = start_green(&pool, &instance).await?;
+    upgrade_epoch(&pool, "pending", 50).await?;
+    ingest(&mut green, &block(), partial_logs(), false).await?;
+    seal_block(&pool, true).await?;
+    move_seal_to_green_epoch(&pool).await?;
+    assert!(repair(&mut green, false).await.is_err());
+    assert!(is_halted(&pool).await?);
+    Ok(())
+}
+
+/// Green's seal commits Green's rows, not Blue's.
+#[tokio::test]
+#[serial(db)]
+async fn a_green_seal_does_not_contain_a_blue_repair() -> anyhow::Result<()> {
+    let (mut blue, pool, instance) = partial_block().await?;
+    let _green = start_green(&pool, &instance).await?;
+    upgrade_epoch(&pool, "pending", 50).await?;
+    seal_block(&pool, true).await?;
+    move_seal_to_green_epoch(&pool).await?;
+    repair(&mut blue, false).await?;
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+/// Cutover replaces Blue's rows from the window start with Green's. A Blue
+/// seal there commits rows that are gone, and stops containing the live stack.
+/// Before the window it still commits rows the live stack holds.
+async fn live_repair_under_a_blue_seal_after_cutover(
+    start_block: i64,
+    contained: bool,
+) -> anyhow::Result<()> {
+    let (mut live, pool, _instance) = partial_block().await?;
+    seal_block(&pool, true).await?;
+    upgrade_epoch(&pool, "succeeded", start_block).await?;
+    sqlx::query("UPDATE blue_green_consensus_epoch SET consensus_epoch = $1")
+        .bind(GREEN_EPOCH)
+        .execute(&pool)
+        .await?;
+    let repaired = repair(&mut live, false).await;
+    if contained {
+        assert!(repaired.is_err());
+        assert_contained(&pool).await
+    } else {
+        repaired?;
+        assert!(!is_halted(&pool).await?);
+        Ok(())
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn cutover_releases_a_blue_seal_inside_the_window() -> anyhow::Result<()>
+{
+    live_repair_under_a_blue_seal_after_cutover(50, false).await
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn a_blue_seal_before_the_window_contains_after_cutover(
+) -> anyhow::Result<()> {
+    live_repair_under_a_blue_seal_after_cutover(101, true).await
+}
+
+/// A fresh schema holds no inventory for a block the other stack sealed, so the
+/// first ingestion is not a rewrite. Blue reads green's seal here. The
+/// comparison is the same either way.
+#[tokio::test]
+#[serial(db)]
+async fn a_seal_from_another_stack_does_not_contain_a_fresh_schema(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    seal_block_as(&pool, true, Some(GCS_SCHEMA), 1).await?;
+    let b = block();
+    let tx = computed_handle(0xe1);
+    let a = computed_handle(1);
+    ingest(
+        &mut db,
+        &b,
+        vec![
+            rpc_log(&trivial_encrypt(a), &b, tx, 0),
+            rpc_log(&allowed(a), &b, tx, 1),
+        ],
+        false,
+    )
+    .await?;
+    assert_eq!(computation_flags(&pool, a).await?, (true, false));
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+/// Partial local inventory does not show which stack sealed the block. A repair
+/// under the other stack's seal must still complete.
+#[tokio::test]
+#[serial(db)]
+async fn a_seal_from_another_stack_does_not_contain_a_partial_schema(
+) -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = partial_block().await?;
+    seal_block_as(&pool, true, Some(GCS_SCHEMA), 1).await?;
+    repair(&mut db, false).await?;
+    assert_eq!(
+        computation_flags(&pool, computed_handle(2)).await?,
+        (true, false)
+    );
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+/// Blue seals an empty block, then pruning removes its header. No local row
+/// survives, so local history cannot stand in for the seal. A replay that finds
+/// events there rewrites sealed inventory.
+#[tokio::test]
+#[serial(db)]
+async fn an_empty_seal_contains_the_first_event_repair() -> anyhow::Result<()> {
+    let (mut db, pool, _instance) = setup().await?;
+    ingest(&mut db, &block(), vec![], false).await?;
+    sqlx::query(
+        "UPDATE host_chain_blocks_valid SET block_status = 'finalized'",
+    )
+    .execute(&pool)
+    .await?;
+    seal_block_as(&pool, true, None, 0).await?;
+    prune_header(&db, &pool).await?;
+    let local: i64 = sqlx::query_scalar(
+        "SELECT (SELECT COUNT(*) FROM computations)
+              + (SELECT COUNT(*) FROM handle_producer_block)
+              + (SELECT COUNT(*) FROM host_chain_blocks_valid)
+              + (SELECT COUNT(*) FROM state_hash)",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(local, 0, "the seal is the only record of the block");
+    let b = block();
+    let tx = computed_handle(0xe1);
+    let a = computed_handle(1);
+    let replay = ingest(
+        &mut db,
+        &b,
+        vec![
+            rpc_log(&trivial_encrypt(a), &b, tx, 0),
+            rpc_log(&allowed(a), &b, tx, 1),
+        ],
+        true,
+    )
+    .await;
+    assert!(replay.is_err(), "events under an empty seal are a rewrite");
+    assert!(is_halted(&pool).await?);
+    Ok(())
+}
+
+/// Pruning removes the header, not the seal. The guard still contains a repair
+/// under this stack's own seal, with no state hash on record.
+#[tokio::test]
+#[serial(db)]
+async fn a_seal_contains_the_repair_after_header_pruning() -> anyhow::Result<()>
+{
+    let (mut db, pool, _instance) = partial_block().await?;
+    seal_block(&pool, true).await?;
+    prune_header(&db, &pool).await?;
+    assert!(repair(&mut db, false).await.is_err());
+    assert_contained(&pool).await
 }
 
 #[tokio::test]
