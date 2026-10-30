@@ -1,7 +1,26 @@
-ARG NODE_VERSION=22.22.2-alpine3.22
+ARG NODE_VERSION=22.23.4
+
+FROM cgr.dev/zama.ai/node:${NODE_VERSION}-dev AS base
+
+USER root
+
+# E2E commands need shell utilities and the Docker client at runtime too.
+RUN apk add --no-cache \
+    bash \
+    curl \
+    docker-cli \
+    wget \
+    vim \
+    jq \
+    python-3.12 \
+    build-base && \
+    addgroup -g 10001 fhevm && \
+    adduser -D -u 10000 -G fhevm fhevm && \
+    mkdir -p /app /home/fhevm && \
+    chown -R fhevm:fhevm /app /home/fhevm
 
 # --- Builder Stage ---
-FROM node:${NODE_VERSION} AS builder
+FROM base AS builder
 
 # SDK_SOURCE selects how @fhevm/sdk is provided to test-suite/e2e (it isn't
 # declared in package.json — install-sdk.sh installs it in place):
@@ -13,21 +32,6 @@ ARG SDK_SOURCE=local
 ARG SDK_VERSION=
 
 WORKDIR /app
-
-RUN apk add --no-cache \
-    bash \
-    curl \
-    docker-cli \
-    wget \
-    vim \
-    jq \
-    python3 \
-    build-base && \
-    rm -rf /var/cache/apk/*
-
-RUN addgroup -g 10001 fhevm && \
-    adduser -D -u 10000 -G fhevm fhevm && \
-    mkdir -p /app /home/fhevm
 
 # Copy only dependency manifests first for better cache reuse
 COPY package.json package-lock.json ./
@@ -67,7 +71,7 @@ RUN npx hardhat compile
 # workspaces), so it gets its own stage. `pnpm deploy` produces a
 # self-contained folder (package + resolved prod node_modules, no store
 # symlinks) suitable for copying into the runtime stage.
-FROM node:${NODE_VERSION} AS cli-builder
+FROM base AS cli-builder
 
 # pnpm prompts before purging an out-of-sync modules dir; CI=true makes it
 # non-interactive.
@@ -83,19 +87,7 @@ RUN pnpm install --frozen-lockfile --filter cli-fhevm-sdk... && \
     pnpm --filter cli-fhevm-sdk deploy --prod --legacy /out/fhevm-cli
 
 # --- Runtime Stage ---
-FROM node:${NODE_VERSION} AS prod
-
-COPY --from=builder /lib/ /lib/
-COPY --from=builder /bin/ /bin/
-COPY --from=builder /usr/bin /usr/bin
-COPY --from=builder /usr/lib/ /usr/lib/
-COPY --from=builder /etc/group /etc/group
-COPY --from=builder /etc/passwd /etc/passwd
-
-# Fault/recovery consensus tests run from this container against the
-# explicitly mounted Docker socket. Install the client in the runtime stage as
-# well: copied builder binaries alone are not a stable Docker CLI contract.
-RUN apk add --no-cache bash docker-cli
+FROM base AS prod
 
 COPY --from=builder --chown=fhevm:fhevm /home/fhevm /home/fhevm
 COPY --from=builder --chown=fhevm:fhevm /app /app
