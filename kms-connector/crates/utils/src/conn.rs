@@ -1,5 +1,5 @@
 use crate::{
-    config::KmsWallet,
+    config::{DatabaseUrl, KmsWallet, RpcUrl},
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
 };
 use alloy::{
@@ -13,14 +13,20 @@ use alloy::{
     },
     rpc::client::{ClientBuilder, RpcClient},
     transports::{
-        IntoBoxTransport, TransportFut,
-        http::{Client, Http, reqwest::Url},
+        IntoBoxTransport, RpcError, TransportErrorKind, TransportFut,
+        http::{Client, Http, reqwest},
     },
 };
 use anyhow::anyhow;
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
-use std::{num::NonZeroUsize, sync::Once, time::Duration};
+use std::{
+    fmt,
+    num::NonZeroUsize,
+    sync::{Arc, Once},
+    time::Duration,
+};
 use tower::{
+    ServiceBuilder,
     limit::{GlobalConcurrencyLimitLayer, concurrency::future::ResponseFuture},
     util::MapFutureLayer,
 };
@@ -33,12 +39,15 @@ pub const CONNECTION_RETRY_NUMBER: usize = 5;
 pub const CONNECTION_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 /// Tries to establish the connection with Postgres database.
-pub async fn connect_to_db(db_url: &str, db_pool_size: u32) -> anyhow::Result<Pool<Postgres>> {
+pub async fn connect_to_db(
+    db_url: &DatabaseUrl,
+    db_pool_size: u32,
+) -> anyhow::Result<Pool<Postgres>> {
     for i in 1..=CONNECTION_RETRY_NUMBER {
         info!("Attempting connection to DB... ({i}/{CONNECTION_RETRY_NUMBER})");
 
         let options = PgPoolOptions::new().max_connections(db_pool_size);
-        match options.connect(db_url).await {
+        match options.connect_with(db_url.connect_options().clone()).await {
             Ok(db_pool) => {
                 info!("Connected to Postgres database successfully");
                 return Ok(db_pool);
@@ -79,7 +88,7 @@ struct RpcCallBounds {
 
 /// Tries to establish the connection with a RPC node.
 pub async fn connect_to_rpc_node(
-    rpc_node_url: Url,
+    rpc_node_url: RpcUrl,
     chain_id: u64,
 ) -> anyhow::Result<DefaultProvider> {
     connect_to_rpc_node_inner(rpc_node_url, None, || {
@@ -91,7 +100,7 @@ pub async fn connect_to_rpc_node(
 /// Tries to establish the connection with a RPC node, bounding the duration of each call and, if
 /// `max_concurrent_calls` is set, the calls it may have in flight.
 pub async fn connect_to_rpc_node_with_bounds(
-    rpc_node_url: Url,
+    rpc_node_url: RpcUrl,
     chain_id: u64,
     max_concurrent_calls: Option<NonZeroUsize>,
     call_timeout: Duration,
@@ -108,7 +117,7 @@ pub async fn connect_to_rpc_node_with_bounds(
 
 /// Tries to establish the connection with a RPC node, with a `WalletFiller`.
 pub async fn connect_to_rpc_node_with_wallet(
-    rpc_node_url: Url,
+    rpc_node_url: RpcUrl,
     chain_id: u64,
     wallet: KmsWallet,
 ) -> anyhow::Result<WalletProvider> {
@@ -141,7 +150,7 @@ fn bounded_rpc_client<T: IntoBoxTransport>(
 
 /// Tries to establish the connection with a RPC node.
 async fn connect_to_rpc_node_inner<L, F>(
-    rpc_node_url: Url,
+    rpc_node_url: RpcUrl,
     bounds: Option<RpcCallBounds>,
     provider_builder_new: impl Fn() -> ProviderBuilder<L, F>,
 ) -> anyhow::Result<F::Provider>
@@ -156,35 +165,70 @@ where
             .unwrap()
     });
 
-    let client = match bounds {
+    let rpc_node_url = Arc::new(rpc_node_url);
+    let transport = match bounds {
         Some(bounds) => {
             let http_client = Client::builder()
                 .timeout(bounds.call_timeout)
                 .build()
                 .map_err(|e| anyhow!("Failed to create the RPC HTTP client: {e}"))?;
-            let transport = Http::with_client(http_client, rpc_node_url.clone());
-            let is_local = transport.guess_local();
-            match bounds.max_concurrent_calls {
-                Some(max_concurrent_calls) => {
-                    bounded_rpc_client(transport, is_local, max_concurrent_calls)
-                }
-                None => ClientBuilder::default().transport(transport, is_local),
-            }
+            Http::with_client(http_client, rpc_node_url.as_url().clone())
         }
-        None => {
-            let transport = Http::new(rpc_node_url.clone());
-            let is_local = transport.guess_local();
-            ClientBuilder::default().transport(transport, is_local)
-        }
+        None => Http::new(rpc_node_url.as_url().clone()),
+    };
+    let is_local = transport.guess_local();
+    let call_rpc_url = Arc::clone(&rpc_node_url);
+    let transport = ServiceBuilder::new()
+        .map_future(move |call| redact_errors(call, Arc::clone(&call_rpc_url)))
+        .service(transport);
+    let client = match bounds.and_then(|bounds| bounds.max_concurrent_calls) {
+        Some(max_concurrent_calls) => bounded_rpc_client(transport, is_local, max_concurrent_calls),
+        None => ClientBuilder::default().transport(transport, is_local),
     };
 
     let provider = provider_builder_new().connect_client(client);
-    info!(
-        "Connected to RPC node successfully ({})",
-        rpc_node_url.host_str().unwrap_or("unexpected URL format")
-    );
+    info!("Connected to RPC node successfully ({rpc_node_url})");
 
     Ok(provider)
+}
+
+/// Strips the URL that a `reqwest` error carries and prints, which may contain an API key, and
+/// names the node by its redacted URL instead.
+fn redact_errors(call: TransportFut<'static>, rpc_url: Arc<RpcUrl>) -> TransportFut<'static> {
+    Box::pin(async move {
+        call.await.map_err(|err| match err {
+            RpcError::Transport(TransportErrorKind::Custom(source)) => {
+                match source.downcast::<reqwest::Error>() {
+                    Ok(source) => TransportErrorKind::custom(RpcRequestError {
+                        rpc_url,
+                        source: source.without_url(),
+                    }),
+                    Err(source) => RpcError::Transport(TransportErrorKind::Custom(source)),
+                }
+            }
+            err => err,
+        })
+    })
+}
+
+/// A failed HTTP request to a RPC node.
+#[derive(Debug)]
+struct RpcRequestError {
+    rpc_url: Arc<RpcUrl>,
+    source: reqwest::Error,
+}
+
+impl fmt::Display for RpcRequestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "request to {} failed: {}", self.rpc_url, self.source)
+    }
+}
+
+impl std::error::Error for RpcRequestError {
+    /// Returns the cause of the reqwest error, whose own message is already part of this one.
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.source()
+    }
 }
 
 static INSTALL_CRYPTO_PROVIDER_ONCE: Once = Once::new();
@@ -196,7 +240,11 @@ mod tests {
     use alloy::{
         primitives::U64,
         providers::Provider,
-        transports::mock::{Asserter, MockTransport},
+        transports::{
+            TransportError,
+            http::reqwest::Url,
+            mock::{Asserter, MockTransport},
+        },
     };
     use futures::future::join_all;
     use std::sync::{
@@ -269,9 +317,9 @@ mod tests {
         // With and without a limit on the calls in flight.
         for max_concurrent_calls in [Some(NonZeroUsize::MIN), None] {
             let (url, accept_loop) = black_hole_server().await;
-            let url = Url::parse(&url).unwrap();
+            let url = Url::parse(&format!("{url}/v2/{API_KEY}")).unwrap();
             let provider =
-                connect_to_rpc_node_with_bounds(url, 1, max_concurrent_calls, CALL_TIMEOUT)
+                connect_to_rpc_node_with_bounds(url.into(), 1, max_concurrent_calls, CALL_TIMEOUT)
                     .await
                     .expect("the bounded provider should have been built");
 
@@ -281,6 +329,7 @@ mod tests {
                 .await
                 .expect("the call should have ended on its own deadline");
             let err = call.unwrap_err();
+            assert_no_api_key(&err);
 
             // And the deadline is what ended it, rather than the call failing on the spot.
             assert!(started.elapsed() >= CALL_TIMEOUT, "{:?}", started.elapsed());
@@ -305,5 +354,38 @@ mod tests {
         assert!(calls_res.iter().all(|r| r.is_ok()), "{calls_res:?}");
 
         assert_eq!(in_flight.max.load(Ordering::SeqCst), CALLS);
+    }
+
+    #[tokio::test]
+    async fn refused_calls_do_not_log_the_api_key() {
+        // A bound socket that does not listen refuses connections, and keeps its port from other
+        // tests while it lives.
+        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+        socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+        let address = socket.local_addr().unwrap();
+
+        let url = Url::parse(&format!("http://{address}/v2/{API_KEY}")).unwrap();
+        let provider = connect_to_rpc_node(url.into(), 1)
+            .await
+            .expect("the provider should have been built");
+
+        assert_no_api_key(&provider.get_block_number().await.unwrap_err());
+        drop(socket);
+    }
+
+    /// An API key, put in the URL path as some RPC providers require.
+    const API_KEY: &str = "secret-api-key";
+
+    /// Asserts that the error of a failed HTTP call does not contain `API_KEY`, and names the node
+    /// by its redacted URL, followed by why the call failed.
+    fn assert_no_api_key(err: &TransportError) {
+        let chain = std::iter::successors(Some(err as &dyn std::error::Error), |err| err.source())
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(": ");
+        let (display, debug) = (err.to_string(), format!("{err:?}"));
+        assert!(!chain.contains(API_KEY), "{chain}");
+        assert!(!debug.contains(API_KEY), "{debug}");
+        assert!(display.contains("/<redacted> failed: "), "{display}");
     }
 }
