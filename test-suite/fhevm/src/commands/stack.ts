@@ -42,7 +42,24 @@ const readState = async () => {
 const createStack = (receipt: RolloutReceipt, runTest: typeof test): Stack => ({
   async upgrade(...steps) {
     const state = await readState();
-    await upgradeBootstrappedStack(state, steps);
+    try {
+      await upgradeBootstrappedStack(state, steps);
+    } catch (error) {
+      // Steps before the failing one changed the stack; record where it stopped before rethrowing.
+      try {
+        await receipt.record("upgrade-failed", steps.join(", "), {
+          details: {
+            error: error instanceof Error ? error.message : String(error),
+            completed: state.bootstrapPending?.completed,
+            kmsCoreVersionByNodeId: state.kmsCoreVersionByNodeId,
+          },
+          versions: state.versions.env,
+        });
+      } catch (recordError) {
+        console.error("[receipt] failed to record the upgrade failure", recordError);
+      }
+      throw error;
+    }
     await receipt.record("upgrade", steps.join(", "), {
       docker: true,
       // A KMS operator's versions reach `versions` only once every operator runs them.

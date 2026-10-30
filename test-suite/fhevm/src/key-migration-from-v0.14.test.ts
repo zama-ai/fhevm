@@ -54,12 +54,12 @@ describe("key migration from v0.14", () => {
     ).toThrow("connector service images differ across parties");
   });
 
-  test("requires every service of the first upgraded connector party to change image", () => {
-    expect(() => assertConnectorUpgraded(["repo:legacy|sha-a"], ["repo:legacy|sha-a"])).toThrow(
-      "still runs its previous image",
-    );
-    expect(() => assertConnectorUpgraded(["repo:legacy|sha-a"], ["repo:target|"])).toThrow("still runs its previous image");
-    expect(() => assertConnectorUpgraded(["repo:legacy|sha-a"], ["repo:target|sha-b"])).not.toThrow();
+  test("requires every service of the first upgraded connector party to run the image the upgrade deploys", () => {
+    const check = (upgraded: string) => () => assertConnectorUpgraded(["repo:legacy|sha-a"], [upgraded], ["fhevm-local"]);
+    expect(check("repo:legacy|sha-a")).toThrow("still runs its previous image");
+    expect(check("repo:fhevm-local|")).toThrow("still runs its previous image");
+    expect(check("repo:main-tag|sha-b")).toThrow("runs repo:main-tag, not tag fhevm-local");
+    expect(check("repo:fhevm-local|sha-b")).not.toThrow();
   });
 
   test("blocks a connector behind the deployment boundary", () => {

@@ -12,6 +12,7 @@ import { resolveRolloutSolidityRef } from "../../src/commands/rollout-solidity";
 import type { Stack } from "../../src/commands/stack";
 import type { State } from "../../src/types";
 import { castCall, resolveKmsGenerationTarget, waitForContainer } from "../../src/flow/readiness";
+import { LOCAL_BUILD_TAG } from "../../src/generate/compose";
 import {
   COPROCESSOR_DB_CONTAINER,
   DEFAULT_POSTGRES_PASSWORD,
@@ -41,6 +42,13 @@ import { withHeldRecipient } from "./held-recipient";
 const CONNECTOR_PARTIES = 4;
 const OPERATOR_COUNT = 2;
 const CONNECTOR_SERVICES = ["db-migration", "gw-listener", "kms-worker", "tx-sender"] as const;
+// The version key of each service in CONNECTOR_SERVICES, in the same order.
+const CONNECTOR_VERSION_KEYS = [
+  "CONNECTOR_DB_MIGRATION_VERSION",
+  "CONNECTOR_GW_LISTENER_VERSION",
+  "CONNECTOR_KMS_WORKER_VERSION",
+  "CONNECTOR_TX_SENDER_VERSION",
+] as const;
 const KEY_WORKERS = ["tfhe-worker", "zkproof-worker", "sns-worker"] as const;
 const EAGER_KEY_WORKERS = ["zkproof-worker", "sns-worker"] as const;
 const ACTIVE_MIGRATION_SERVICES = ["host-listener", "host-listener-poller", "host-listener-consumer", ...KEY_WORKERS];
@@ -356,13 +364,20 @@ const keyMigrationStack = async (stack: Stack) => {
   if (!state.bootstrapPending || state.bootstrapPending.completed?.length) {
     throw new Error("key-migration-from-v0.14 needs a freshly booted stack; re-run `fhevm-cli up`");
   }
-  return { state, ...tags, targetCoreVersion: state.bootstrapPending.target.env.CORE_VERSION! };
+  const { target, overrides } = state.bootstrapPending;
+  const connectorBuiltLocally = overrides.some((override) => override.group === "kms-connector");
+  return {
+    state,
+    ...tags,
+    targetCoreVersion: target.env.CORE_VERSION!,
+    targetConnectorTags: CONNECTOR_VERSION_KEYS.map((key) => (connectorBuiltLocally ? LOCAL_BUILD_TAG : target.env[key]!)),
+  };
 };
 
 export const runKeyMigrationProfile = async (stack: Stack) => {
   const migrationFault = process.env.RFC029_MIGRATION_FAULT ?? "none";
   if (!["none", "lagging-recipient", "application-interruption", "download-interrupt", "download-wrong-digest", "download-malformed", "download-wrong-key"].includes(migrationFault)) throw new Error(`unsupported migration fault ${migrationFault}`);
-  const { state, baselineTag, blueTag, targetCoreVersion } = await keyMigrationStack(stack);
+  const { state, baselineTag, blueTag, targetCoreVersion, targetConnectorTags } = await keyMigrationStack(stack);
   // Threshold Test keys use drift noise reduction, which CUDA does not support, so the GPU
   // scenario generates the baseline key with the Default parameters.
   const gpuContinuation = state.scenario.kms.fheParams === "Default";
@@ -435,7 +450,7 @@ export const runKeyMigrationProfile = async (stack: Stack) => {
   await stack.upgrade("kms-operator:1");
   await assertKmsCoreVersions([1], targetCoreVersion);
   const mixedConnectorImages = (await connectorObservation(1)).images;
-  assertConnectorUpgraded(baselineConnectorImages, mixedConnectorImages);
+  assertConnectorUpgraded(baselineConnectorImages, mixedConnectorImages, targetConnectorTags);
   const firstOperatorBoundary = await mineHostBlock();
   await waitForConnectorBoundary(1, firstOperatorBoundary, mixedConnectorImages);
   let mixedBlocked = false;
@@ -460,7 +475,7 @@ export const runKeyMigrationProfile = async (stack: Stack) => {
   }
   await assertKmsCoreVersions(kmsPartyIds(CONNECTOR_PARTIES), targetCoreVersion);
   const expectedConnectorImages = (await connectorObservation(1)).images;
-  assertConnectorUpgraded(baselineConnectorImages, expectedConnectorImages);
+  assertConnectorUpgraded(baselineConnectorImages, expectedConnectorImages, targetConnectorTags);
   const migrationBoundary = await mineHostBlock();
   await waitUntil("all connector listeners reached the migration boundary", async () => {
     try {
