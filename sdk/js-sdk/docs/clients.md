@@ -107,11 +107,46 @@ const client = createFhevmClient({
 | Option            | Type                    | Applies to        | Purpose                                                            |
 | ----------------- | ----------------------- | ----------------- | ----------------------------------------------------------------- |
 | `batchRpcCalls`   | `boolean`               | all clients       | Coalesce the client's contract reads into batched RPC calls.      |
-| `fheEncryptionKey`| `FheEncryptionKeyBytes` | encrypt / full    | Provide a pre-fetched FHE public key to skip the network fetch.   |
+| `fheEncryptionKey`| `FheEncryptionKeyBytes` | encrypt / full    | Provide a pre-fetched FHE public key to skip the network fetch. Checked like a downloaded key before use. |
+| `keyVerification` | `{ chain, publicClient }` (viem) / `{ chain, provider }` (ethers) | encrypt / full | Required when the host chain is not Ethereum: an Ethereum chain definition and a client for it, used to verify the FHE public key and CRS. |
 | `moduleVersions`  | `FhevmModuleVersions`   | varies by client  | Pin specific TFHE/TKMS WASM versions instead of the defaults.     |
 
 Module version pinning and the encryption-key cache are covered in
 [Runtime configuration](runtime-configuration.md).
+
+### Key verification
+
+The Relayer returns the URLs of the FHE public key and CRS. Before using or
+caching them, the SDK checks their digests (SHAKE256) and ids against the
+active ones the KMS nodes recorded in the `KMSGeneration` contract. A Relayer
+serving another key could otherwise read the encrypted inputs. Key material
+that fails the check is never cached nor used: encryption throws
+`FheEncryptionKeyVerificationError`.
+
+`KMSGeneration` exists only on Ethereum. On Ethereum (`mainnet`, `sepolia`), the
+check reads it through the client's own `publicClient` / `provider`. On any other
+host chain, `keyVerification` is required, otherwise creating an encrypt or full
+client throws `FhevmConfigError`:
+
+```ts
+import { createPublicClient, http } from 'viem';
+import { mainnet as viemMainnet } from 'viem/chains';
+import { mainnet, polygon } from '@fhevm/sdk/chains';
+
+const client = createFhevmClient({
+  chain: polygon,
+  publicClient, // Polygon: every host-chain read
+  options: {
+    keyVerification: {
+      chain: mainnet, // carries the KMSGeneration address
+      publicClient: createPublicClient({ chain: viemMainnet, transport: http(ETHEREUM_RPC_URL) }),
+    },
+  },
+});
+```
+
+Use `sepolia` for `polygonAmoy`. The check runs when the key is first fetched
+(about five Ethereum reads) and is not repeated while the key is cached.
 
 ## Loading and lifecycle
 

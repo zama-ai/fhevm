@@ -4,6 +4,7 @@ import type { EncryptionBits, FheType } from '../types/fheType.js';
 import type { ZkProofBuilder } from '../types/zkProofBuilder-p.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { ResolvedFhevmOptions } from '../types/coreFhevmClient.js';
 import type {
   TypedValue,
   Uint32ValueLike,
@@ -31,6 +32,8 @@ import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
 type Context = {
   readonly chain: FhevmChain;
   readonly runtime: WithEncrypt;
+  readonly options: ResolvedFhevmOptions;
+  readonly client: NonNullable<object> | undefined;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -122,6 +122,11 @@ export class FheEncryptionKeyCache {
 
   ////////////////////////////////////////////////////////////////////////////////
 
+  /**
+   * Test only: seeds the cache with bytes that are NOT checked against
+   * KMSGeneration. SDK code fills the cache only through `ensureBytes` with
+   * `fetchVerifiedFheEncryptionKeyBytes` as the fetcher.
+   */
   setBytes(owner: FhevmRuntime, relayerUrl: string, bytes: FheEncryptionKeyBytes): void {
     // First write wins: if an entry already exists (resolved or in-flight),
     // skip to avoid creating a closure over the 50MB bytes unnecessarily.

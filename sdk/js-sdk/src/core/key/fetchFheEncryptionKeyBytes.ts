@@ -1,10 +1,12 @@
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { ResolvedFhevmOptions } from '../types/coreFhevmClient.js';
 import type { FheEncryptionKeyBytes, FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { FetchFheEncryptionKeyBytesParameters } from '../modules/relayer/types.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
+import { fetchVerifiedFheEncryptionKeyBytes } from './fetchVerifiedFheEncryptionKeyBytes-p.js';
 import { serializeFheEncryptionKeyWasm } from './serializeFheEncryptionKey.js';
 import { asFhevmRuntimeWith } from '../runtime/CoreFhevmRuntime-p.js';
 
@@ -14,6 +16,8 @@ export async function fetchFheEncryptionKeyBytes(
   context: {
     readonly chain: FhevmChain;
     readonly runtime: FhevmRuntime;
+    readonly options: ResolvedFhevmOptions;
+    readonly client: NonNullable<object> | undefined;
   },
   parameters: {
     readonly fhevmContext: FhevmClientFrozenContext;
@@ -34,8 +38,7 @@ export async function fetchFheEncryptionKeyBytes(
   globalFheEncryptionKeyCache.ensureBytes({
     owner: runtime,
     relayerUrl,
-    fetcher: () =>
-      runtime.relayer.fetchFheEncryptionKeyBytes({ relayerUrl, chainId: context.chain.id }, relayerParameters),
+    fetcher: () => fetchVerifiedFheEncryptionKeyBytes(context, relayerParameters),
     metadata: { chainId: context.chain.id, relayerUrl },
   });
 
