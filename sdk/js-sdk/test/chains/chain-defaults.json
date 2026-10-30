@@ -97,5 +97,10 @@
     "rpcUrl": "https://rpc.hoodi.ethpandaops.io",
     "fheTestAddress": "0x7553CB9124f974Ee475E5cE45482F90d5B6076BC",
     "fheTestVersion": "v2"
+  },
+  "bsc_testnet": {
+    "rpcUrl": "https://bsc-testnet-rpc.publicnode.com",
+    "fheTestAddress": "0x",
+    "fheTestVersion": "v2"
   }
 }
