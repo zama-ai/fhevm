@@ -102,6 +102,9 @@ pub struct Config {
     /// The maximum number of decryption attempts.
     #[serde(default = "default_max_decryption_attempts")]
     pub max_decryption_attempts: u16,
+    /// The maximum number of handles a single decryption request can contain.
+    #[serde(default = "default_max_handles_per_decryption")]
+    pub max_handles_per_decryption: NonZeroUsize,
 
     /// Number of attempts for S3 ciphertext retrieval.
     #[serde(default = "default_s3_ciphertext_retrieval_attempts")]
@@ -262,6 +265,10 @@ fn default_max_decryption_attempts() -> u16 {
     20
 }
 
+fn default_max_handles_per_decryption() -> NonZeroUsize {
+    NonZeroUsize::new(50).unwrap()
+}
+
 fn default_s3_ciphertext_retrieval_attempts() -> NonZeroUsize {
     NonZeroUsize::new(3).unwrap()
 }
@@ -338,6 +345,7 @@ impl Default for Config {
             kms_keep_alive_interval: default_kms_keep_alive_interval(),
             kms_keep_alive_timeout: default_kms_keep_alive_timeout(),
             max_decryption_attempts: default_max_decryption_attempts(),
+            max_handles_per_decryption: default_max_handles_per_decryption(),
             s3_ciphertext_retrieval_attempts: default_s3_ciphertext_retrieval_attempts(),
             s3_connect_timeout: default_s3_connect_timeout(),
             s3_head_timeout: default_s3_head_timeout(),
@@ -383,6 +391,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL");
             env::remove_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
+            env::remove_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION");
             env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_S3_HEAD_TIMEOUT");
@@ -459,6 +468,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL", "20s");
             env::set_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT", "8s");
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
+            env::set_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION", "10");
             env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4s");
             env::set_var("KMS_CONNECTOR_S3_HEAD_TIMEOUT", "6s");
@@ -521,6 +531,7 @@ mod tests {
         assert_eq!(config.kms_keep_alive_interval.as_secs(), 20);
         assert_eq!(config.kms_keep_alive_timeout.as_secs(), 8);
         assert_eq!(config.max_decryption_attempts, 300);
+        assert_eq!(config.max_handles_per_decryption.get(), 10);
         assert_eq!(config.s3_ciphertext_retrieval_attempts.get(), 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
         assert_eq!(config.s3_head_timeout.as_secs(), 6);
@@ -544,6 +555,7 @@ mod tests {
             "KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS",
             "KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE",
             "KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS",
+            "KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION",
         ] {
             cleanup_env_vars();
             unsafe { env::set_var(ceiling, "0") }
