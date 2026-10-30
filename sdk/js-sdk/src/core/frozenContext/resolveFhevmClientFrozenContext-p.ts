@@ -6,44 +6,25 @@ import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext
 import { addressToChecksummedAddress, asAddress } from '../base/address.js';
 import { executeWithBatching } from '../base/promise.js';
 import { assertIsHostContractVersionOf, getHostContractVersion } from '../host-contracts/HostContractVersion-p.js';
-import { protocolContextForChain } from '../runtime/ProtocolVersionResolver-p.js';
+import { pubKeyCrsVersionForChain } from '../runtime/ProtocolVersionResolver-p.js';
 import { createFhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Resolves the **complete** version basis of a client into an immutable
- * {@link FhevmClientFrozenContext}, captured in a single pass:
- *
- * - the host-contract versions — ACL, InputVerifier, KMSVerifier,
- * - the derived protocol + PubKey/CRS versions.
+ * Resolves the version basis of a client into an immutable
+ * {@link FhevmClientFrozenContext}: the PubKey/CRS version, derived purely from
+ * the chain (`pubKeyCrsVersionForChain`).
  *
  * TFHE / TKMS are not part of this basis: this SDK release ships a single
  * module for each, so {@link FhevmClientFrozenContext.tfheVersion} /
  * `.tkmsVersion` always report that canonical version directly, with nothing
  * to resolve or store here.
  *
- * ### One capture, every tier
- *
- * The full basis is resolved regardless of the client's current tier — a base or
- * encrypt-only client resolves the decrypt-side versions too. This is deliberate:
- * it captures every version at a **single moment**, so a later `extend()` (e.g.
- * encrypt → encrypt+decrypt) reuses the already-resolved values instead of
- * reading the chain a second time. A second, later read could straddle a contract
- * upgrade and mix versions from two moments into one basis — the exact drift this
- * context exists to prevent — and capturing everything up front is what lets us
- * skip block-number pinning (and its reorg exposure) entirely.
- *
- * Resolving the full basis is cheap: over a base-only resolution it adds just the
- * InputVerifier / KMSVerifier `getVersion()` reads (TTL-cached, and batched into
- * the same call here); protocol / PubKey-CRS are pure table lookups. It does
- * **not** load any WASM — module *loading* stays per-tier.
- *
- * ### Independent of client init state
- *
- * Every value is read fresh from chain (`getHostContractVersion`) or derived
- * purely (`protocolContextForChain`); the resolver never consults the
- * client's init-time memoized `getResolved*` values.
+ * It also reads `getVersion()` on the configured host contracts (ACL,
+ * InputVerifier, KMSVerifier and, if configured, ProtocolConfig), in one batched
+ * call, to check that each address points at the expected contract. The
+ * versions themselves are not stored: the SDK does not branch on them.
  *
  * @internal
  */
@@ -63,12 +44,7 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
       ? undefined
       : addressToChecksummedAddress(asAddress(fhevm.chain.fhevm.contracts.protocolConfig.address));
 
-  // Design note — reads are intentionally NOT pinned to a block number.
-  // All protocol contracts (ACL, KMSVerifier, InputVerifier, ProtocolConfig, …)
-  // are upgraded together in a single atomic transaction that bumps every
-  // `getVersion()` in one step, so this batch either all observes the pre-upgrade
-  // versions or all observes the post-upgrade ones — never a mixed, half-applied
-  // state. Capturing the whole basis in one call is what keeps it coherent.
+  // Identity check only: each `getVersion()` result must name the expected contract.
   const [aclVersion, inputVerifierVersion, kmsVerifierVersion, protocolConfigVersion] =
     (await executeWithBatching<unknown>(
       [
@@ -86,19 +62,10 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
   assertIsHostContractVersionOf(inputVerifierVersion, 'InputVerifier');
   assertIsHostContractVersionOf(kmsVerifierVersion, 'KMSVerifier');
   if (protocolConfigVersion !== undefined) {
-    assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig');
+    assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig', 'ProtocolConfigReplica');
   }
 
-  const protocolContext = protocolContextForChain(fhevm.chain);
-
   return createFhevmClientFrozenContext({
-    hostContractVersions: {
-      ACL: aclVersion,
-      InputVerifier: inputVerifierVersion,
-      KMSVerifier: kmsVerifierVersion,
-      ...(protocolConfigVersion === undefined ? {} : { ProtocolConfig: protocolConfigVersion }),
-    },
-    protocolVersion: protocolContext.protocolVersion,
-    pubKeyCrsVersion: protocolContext.pubKeyCrsVersion,
+    pubKeyCrsVersion: pubKeyCrsVersionForChain(fhevm.chain),
   });
 }

@@ -1,5 +1,4 @@
-import type { FhevmProtocolContext, ProtocolVersionResolution, PubKeyCrsVersionResolution } from './coreFhevmClient.js';
-import type { HostContractName, HostContractVersion } from './hostContract.js';
+import type { PubKeyCrsVersionResolution } from './coreFhevmClient.js';
 import type { TfheVersion, TkmsVersion } from './moduleVersions.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -16,22 +15,18 @@ export declare const fhevmClientFrozenContextBrand: unique symbol;
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * An immutable, self-consistent snapshot of the **version basis** a single FHEVM
- * operation resolves against: the raw host-contract versions (ACL, KMSVerifier,
- * InputVerifier, ProtocolConfig, …) plus the versions derived from them
- * (protocol, PubKey/CRS, TFHE, TKMS).
+ * An immutable snapshot of the **version basis** a single FHEVM operation
+ * resolves against: the PubKey/CRS, TFHE and TKMS versions.
  *
  * ### Why this exists
  *
- * These versions are otherwise read from several places with mismatched
- * lifetimes: `protocol`/`tfhe`/`tkms` are resolved once per client and frozen,
- * while the host-contract `getVersion()` reads are TTL-cached, so they can drift
- * out of sync within a single client (e.g. a KMSVerifier read refreshing past
- * the protocol version the loaded WASM was selected for). This object is the
- * single source of truth: resolve the needed subset once, freeze it, and thread
- * it through every internal function **instead of** passing individual
- * `TfheVersion` / `TkmsVersion` / protocol-version arguments. Everything then
- * branches off one coherent snapshot.
+ * This object is the single source of truth for those versions: resolve them
+ * once, freeze them, and thread the snapshot through every internal function
+ * **instead of** passing individual `TfheVersion` / `TkmsVersion` arguments.
+ * Everything then branches off one coherent snapshot.
+ *
+ * The SDK does not branch on host contract versions: each release targets a
+ * single protocol line, so no host-contract `getVersion()` result is stored here.
  *
  * ### IMPORTANT — a public action must never call another public action
  *
@@ -61,7 +56,7 @@ export declare const fhevmClientFrozenContextBrand: unique symbol;
  * ### Partial resolution
  *
  * A context may carry only the versions an operation needs. The plain accessors
- * for those (`protocolVersion`, `hostContractVersion(name)`, …) **throw** if the
+ * for those (`pubKeyCrsVersion`) **throw** if the
  * requested version was not resolved, so a miss-scoped call fails fast rather
  * than silently proceeding on an absent value. Use the `has*` predicates or the
  * `try*` accessors to probe without throwing.
@@ -74,24 +69,6 @@ export type FhevmClientFrozenContext = {
   readonly [fhevmClientFrozenContextBrand]: never;
 
   //////////////////////////////////////////////////////////////////////////////
-  // Host contract versions (raw on-chain getVersion() results)
-  //////////////////////////////////////////////////////////////////////////////
-
-  hasHostContractVersion(name: HostContractName): boolean;
-  /** @throws If `name`'s version was not resolved in this context. */
-  hostContractVersion<name extends HostContractName>(name: name): HostContractVersion<name>;
-  tryHostContractVersion<name extends HostContractName>(name: name): HostContractVersion<name> | undefined;
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Protocol version
-  //////////////////////////////////////////////////////////////////////////////
-
-  readonly hasProtocolVersion: boolean;
-  /** @throws If the protocol version was not resolved in this context. */
-  readonly protocolVersion: ProtocolVersionResolution;
-  readonly tryProtocolVersion: ProtocolVersionResolution | undefined;
-
-  //////////////////////////////////////////////////////////////////////////////
   // PubKey/CRS version
   //////////////////////////////////////////////////////////////////////////////
 
@@ -99,14 +76,6 @@ export type FhevmClientFrozenContext = {
   /** @throws If the PubKey/CRS version was not resolved in this context. */
   readonly pubKeyCrsVersion: PubKeyCrsVersionResolution;
   readonly tryPubKeyCrsVersion: PubKeyCrsVersionResolution | undefined;
-
-  //////////////////////////////////////////////////////////////////////////////
-  // Protocol context (protocol + PubKey/CRS bundle)
-  //////////////////////////////////////////////////////////////////////////////
-
-  readonly hasProtocolContext: boolean;
-  /** @throws If either the protocol or PubKey/CRS version was not resolved. */
-  readonly protocolContext: FhevmProtocolContext;
 
   //////////////////////////////////////////////////////////////////////////////
   // TFHE / TKMS module versions

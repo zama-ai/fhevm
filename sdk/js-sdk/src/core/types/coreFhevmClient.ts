@@ -29,15 +29,6 @@ export type NativeClient = NonNullable<object>;
 export type OptionalNativeClient = NativeClient | undefined;
 export type OptionalFhevmChain = FhevmChain | undefined;
 
-/**
- * Semver-compatible FHEVM protocol version.
- *
- * The protocol version describes the on-chain FHEVM protocol used by a given
- * chain.
- *
- * Example: `'0.14.0'`.
- */
-export type ProtocolVersion = string;
 export type PubKeyCrsVersion = string;
 
 /**
@@ -74,23 +65,13 @@ export type VersionResolution<version extends string> = {
   readonly comparator: VersionResolutionComparator;
 };
 
-export type ProtocolVersionResolution = VersionResolution<ProtocolVersion>;
 export type PubKeyCrsVersionResolution = VersionResolution<PubKeyCrsVersion>;
 
-export type FhevmProtocolContext = {
-  readonly protocolVersion: ProtocolVersionResolution;
-  readonly pubKeyCrsVersion: PubKeyCrsVersionResolution;
-};
-
-export type WithProtocolVersion = {
-  readonly protocolVersion: ProtocolVersionResolution;
-};
-
-export type WithTfheVersion = WithProtocolVersion & {
+export type WithTfheVersion = {
   readonly tfheVersion: TfheVersion;
 };
 
-export type WithTkmsVersion = WithProtocolVersion & {
+export type WithTkmsVersion = {
   readonly tkmsVersion: TkmsVersion;
 };
 
@@ -120,7 +101,6 @@ export interface Fhevm<
   runtime extends FhevmRuntime = FhevmRuntime,
   client extends OptionalNativeClient = NativeClient,
 > extends FhevmBase<chain, runtime, client> {
-  readonly protocolVersion: ProtocolVersionResolution;
   readonly extend: <const actions extends Record<string, unknown>, extendedRuntime extends FhevmRuntime>(
     actionsFactory: (client: FhevmBase<chain, FhevmRuntime, client>) => FhevmExtension<actions, extendedRuntime>,
   ) => this & actions & { readonly runtime: extendedRuntime };

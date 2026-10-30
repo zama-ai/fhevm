@@ -142,7 +142,6 @@ Every client exposes a small set of lifecycle members:
 | `ready`           | `Promise<void>`    | Resolves once the client is ready to use.                      |
 | `uid`             | `string`           | Stable identifier for this client instance.                    |
 | `chain`           | `FhevmChain`       | The chain definition the client was created with.              |
-| `protocolVersion` | resolution object  | The resolved FHEVM protocol version for the chain.             |
 | `extend(actions)` | function           | Attach additional action methods (advanced / internal).        |
 
 Calling `init()` twice is safe — module initialization is cached per WASM
