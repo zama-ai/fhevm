@@ -1,5 +1,22 @@
 # Release Notes
 
+## v0.14.5 (unreleased)
+
+### For SDK users
+
+#### Added
+
+- **Custom query parameters for relayer requests.** `RelayerCommonOptions` now accepts a
+  `query: Record<string, string>` field next to `headers`. Its entries are appended,
+  percent-encoded, to the URL of job requests (submission and polling) and the key-URL
+  lookup. `headers` remains the preferred option; use `query` only when a proxy in front of
+  the relayer strips custom headers before they reach it.
+
+#### Changed
+
+- **A query string or fragment in `relayerUrl`, which was dropped silently, now throws an
+  error.**
+
 ## v1.2.1 (2026-07-29)
 
 ### For SDK users

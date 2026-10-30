@@ -410,12 +410,30 @@ Accepted as the `options` field on every network method. All fields optional.
 type RelayerCommonOptions = {
   readonly auth?: Auth | undefined;
   readonly headers?: Record<string, string> | undefined;
+  readonly query?: Record<string, string> | undefined;
   readonly debug?: boolean | undefined;
   readonly fetchRetries?: number | undefined;
   readonly fetchRetryDelayInMilliseconds?: number | undefined;
   readonly signal?: AbortSignal | undefined;
   readonly timeout?: number | undefined;
 };
+```
+
+`query` entries are appended, percent-encoded, to the URL of job requests
+(submission and polling) and the key-URL lookup. Prefer `headers`; fall back
+to `query` only when a proxy in front of the relayer strips custom headers
+before they reach it.
+
+`Auth` (and its variants) are exported from `@fhevm/sdk/types`. Zama's hosted
+relayer accepts only `ApiKeyHeader` (the default `x-api-key` header); a
+self-hosted relayer may accept any of the three:
+
+```ts
+type Auth = AuthBearerToken | AuthApiKeyHeader | AuthApiKeyCookie;
+type AuthBearerToken = { type: 'BearerToken'; token: string };
+type AuthApiKeyHeader = { type: 'ApiKeyHeader'; header?: string; value: string }; // header defaults to 'x-api-key'
+type AuthApiKeyCookie = { type: 'ApiKeyCookie'; cookie?: string; value: string }; // cookie defaults to 'x-api-key'
+type AuthType = Auth['type'];
 ```
 
 Per-operation option types add an `onProgress?` callback:
