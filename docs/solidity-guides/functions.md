@@ -601,7 +601,7 @@ function isUserDecryptable(bytes32 handle, address user, address contractAddress
 function isAccountDenied(address account) internal view returns (bool)
 ```
 
-Returns whether the given account is on the deny list. The deny list is per chain. A denied account cannot call `allow`, `allowForDecryption` or `allowTransient`. It can still receive permissions, compute on and user-decrypt the handles it can access, and bridge them to another chain.
+Returns whether the given account is on the deny list of the current chain. The deny list stops a denied dApp from producing new handles: it cannot call `allow`, `allowForDecryption` or `allowTransient`. It does not restrict access to existing handles, including bridging.
 
 ## Confidential bridge
 
