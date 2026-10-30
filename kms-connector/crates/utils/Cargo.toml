@@ -15,7 +15,7 @@ bc2wrap.workspace = true
 tfhe.workspace = true
 
 actix-web.workspace = true
-alloy = { workspace = true, features = ["json-rpc"] }
+alloy.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 aws-config.workspace = true
@@ -28,7 +28,6 @@ humantime-serde.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
-percent-encoding.workspace = true
 prometheus.workspace = true
 rustls.workspace = true
 serde.workspace = true
@@ -50,6 +49,7 @@ toml = { workspace = true, optional = true }
 
 [dev-dependencies]
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
+alloy = { workspace = true, features = ["json-rpc"] }
 serial_test.workspace = true
 toml.workspace = true
 

@@ -2617,7 +2617,6 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
- "percent-encoding",
  "prometheus",
  "rand 0.9.2",
  "rustls",

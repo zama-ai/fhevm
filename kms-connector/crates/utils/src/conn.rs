@@ -1,5 +1,5 @@
 use crate::{
-    config::{DatabaseUrl, KmsWallet, REDACTED, RpcUrl},
+    config::{DatabaseUrl, KmsWallet, RpcUrl},
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
 };
 use alloy::{
@@ -11,28 +11,15 @@ use alloy::{
             WalletFiller,
         },
     },
-    rpc::{
-        client::{ClientBuilder, RpcClient},
-        json_rpc::{ErrorPayload, Response, ResponsePacket, ResponsePayload},
-    },
+    rpc::client::{ClientBuilder, RpcClient},
     transports::{
-        IntoBoxTransport, RpcError, TransportError, TransportErrorKind, TransportFut,
-        http::{
-            Client, Http,
-            reqwest::{self, Url},
-        },
+        IntoBoxTransport, RpcError, TransportErrorKind, TransportFut,
+        http::{Client, Http, reqwest},
     },
 };
 use anyhow::anyhow;
-use percent_encoding::percent_decode_str;
-use serde_json::value::RawValue;
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
-use std::{
-    borrow::Cow,
-    num::NonZeroUsize,
-    sync::{Arc, Once},
-    time::Duration,
-};
+use std::{num::NonZeroUsize, sync::Once, time::Duration};
 use tower::{
     ServiceBuilder,
     limit::{GlobalConcurrencyLimitLayer, concurrency::future::ResponseFuture},
@@ -184,9 +171,9 @@ where
         None => Http::new(rpc_node_url.as_url().clone()),
     };
     let is_local = transport.guess_local();
-    let url_secrets = UrlSecrets::new(rpc_node_url.as_url());
+    let call_rpc_url = rpc_node_url.clone();
     let transport = ServiceBuilder::new()
-        .map_future(move |call| redact_errors(call, url_secrets.clone()))
+        .map_future(move |call| redact_errors(call, call_rpc_url.clone()))
         .service(transport);
     let client = match bounds.and_then(|bounds| bounds.max_concurrent_calls) {
         Some(max_concurrent_calls) => bounded_rpc_client(transport, is_local, max_concurrent_calls),
@@ -199,204 +186,31 @@ where
     Ok(provider)
 }
 
-/// URL parts shorter than this are not taken for secrets, except the password. API keys are
-/// longer, while short parts such as `v2`, `eth` or `1` also occur as words of error messages and
-/// as JSON values.
-const MIN_SECRET_LEN: usize = 8;
-
-/// The parts of a RPC node URL that may hold an API key: the userinfo, the path segments and the
-/// query values, raw and percent-decoded, except those shorter than [`MIN_SECRET_LEN`].
-///
-/// They are replaced in the error messages and bodies the node sends back, in case it echoes the
-/// request URL.
-#[derive(Clone)]
-struct UrlSecrets(Arc<[String]>);
-
-impl UrlSecrets {
-    fn new(url: &Url) -> Self {
-        // `Url` returns these parts percent-encoded.
-        let userinfo_and_path_segments = std::iter::once(url.username())
-            .chain(url.path_segments().into_iter().flatten())
-            .filter(|part| part.len() >= MIN_SECRET_LEN)
-            .chain(url.password())
-            .flat_map(|part| with_decoded(part, false));
-        let query_values = url
-            .query()
-            .into_iter()
-            .flat_map(|query| query.split('&'))
-            // A parameter without `=` is a bare value, e.g. `?<key>`.
-            .map(|param| param.split_once('=').map_or(param, |(_, value)| value))
-            .filter(|value| value.len() >= MIN_SECRET_LEN)
-            .flat_map(|value| with_decoded(value, true));
-        let mut secrets: Vec<String> = userinfo_and_path_segments
-            .chain(query_values)
-            .filter(|part| !part.is_empty())
-            .collect();
-        // Longest first, so that a part containing another one is replaced as a whole. Equal
-        // parts end up next to each other, for `dedup`.
-        secrets.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
-        secrets.dedup();
-        Self(secrets.into())
-    }
-
-    /// Replaces the secrets in `text` where they stand as whole tokens, i.e. not inside a longer
-    /// run of ASCII letters and digits, so that hex data such as the revert data of a JSON-RPC
-    /// error is left intact.
-    fn redact(&self, text: &str) -> String {
-        self.0
-            .iter()
-            .fold(text.to_string(), |text, secret| redact_token(&text, secret))
-    }
-}
-
-/// Returns a percent-encoded URL `part` and its decoded form, if valid UTF-8. In a query
-/// (`in_query`), a `+` also decodes to a space.
-fn with_decoded(part: &str, in_query: bool) -> impl Iterator<Item = String> + use<> {
-    let encoded = if in_query {
-        Cow::Owned(part.replace('+', " "))
-    } else {
-        Cow::Borrowed(part)
-    };
-    let decoded = percent_decode_str(&encoded)
-        .decode_utf8()
-        .ok()
-        .map(Cow::into_owned);
-    std::iter::once(part.to_string()).chain(decoded)
-}
-
-/// Replaces each occurrence of `token` in `text` that is not inside a longer run of ASCII letters
-/// and digits.
-///
-/// The letter or digit that ends an escape, such as the `n` of a JSON `\n` or the `F` of a
-/// percent-encoded `%2F`, does not count as part of such a run.
-fn redact_token(text: &str, token: &str) -> String {
-    let is_word = |c: char| c.is_ascii_alphanumeric();
-    let mut redacted = String::with_capacity(text.len());
-    let (mut copied, mut from) = (0, 0);
-    while let Some(offset) = text[from..].find(token) {
-        let start = from + offset;
-        let end = start + token.len();
-        let before = &text[..start];
-        let bounded = (!before.chars().next_back().is_some_and(is_word)
-            || ends_with_escape(before))
-            && !text[end..].chars().next().is_some_and(is_word);
-        if bounded {
-            redacted.push_str(&text[copied..start]);
-            redacted.push_str(REDACTED);
-            (copied, from) = (end, end);
-        } else {
-            // A token-bounded occurrence may still start inside this one.
-            from = start + text[start..].chars().next().map_or(1, char::len_utf8);
-        }
-    }
-    redacted.push_str(&text[copied..]);
-    redacted
-}
-
-/// Whether `text` ends with an escape whose last character is a letter or digit: a JSON escape
-/// such as `\n` or `\u0020`, or a percent-encoded byte such as `%2F`.
-fn ends_with_escape(text: &str) -> bool {
-    match text.as_bytes() {
-        [.., b'\\', b'b' | b'f' | b'n' | b'r' | b't'] => true,
-        [.., b'%', high, low] => high.is_ascii_hexdigit() && low.is_ascii_hexdigit(),
-        [.., b'\\', b'u', a, b, c, d] => [a, b, c, d].iter().all(|digit| digit.is_ascii_hexdigit()),
-        _ => false,
-    }
-}
-
-/// Strips the RPC node URL, which may contain an API key, from the errors of a call, and from the
-/// JSON-RPC error responses that alloy turns into errors later on.
-fn redact_errors(call: TransportFut<'static>, url_secrets: UrlSecrets) -> TransportFut<'static> {
+/// Strips the URL that a `reqwest` error carries and prints, which may contain an API key, and
+/// names the node by its redacted URL instead.
+fn redact_errors(call: TransportFut<'static>, rpc_url: RpcUrl) -> TransportFut<'static> {
     Box::pin(async move {
-        match call.await {
-            Ok(ResponsePacket::Single(response)) => Ok(ResponsePacket::Single(redact_failure(
-                response,
-                &url_secrets,
-            ))),
-            Ok(ResponsePacket::Batch(responses)) => Ok(ResponsePacket::Batch(
-                responses
-                    .into_iter()
-                    .map(|response| redact_failure(response, &url_secrets))
-                    .collect(),
-            )),
-            Err(err) => Err(redact_error(err, &url_secrets)),
-        }
+        call.await.map_err(|err| match err {
+            RpcError::Transport(TransportErrorKind::Custom(source)) => {
+                match source.downcast::<reqwest::Error>() {
+                    Ok(source) => TransportErrorKind::custom(RpcRequestError {
+                        rpc_url,
+                        source: source.without_url(),
+                    }),
+                    Err(source) => RpcError::Transport(TransportErrorKind::Custom(source)),
+                }
+            }
+            err => err,
+        })
     })
 }
 
-/// Redacts the message and data of a JSON-RPC error response.
-fn redact_failure(mut response: Response, url_secrets: &UrlSecrets) -> Response {
-    if let ResponsePayload::Failure(payload) = &mut response.payload {
-        redact_error_payload(payload, url_secrets);
-    }
-    response
-}
-
-/// Redacts the message and data of a JSON-RPC error.
-///
-/// The data is only rewritten if it holds a secret, so revert data is left as is. If the
-/// redacted data is no longer valid JSON, it is dropped with a warning rather than kept with the
-/// secret.
-fn redact_error_payload(payload: &mut ErrorPayload, url_secrets: &UrlSecrets) {
-    let message = url_secrets.redact(&payload.message);
-    if message != payload.message {
-        payload.message = message.into();
-    }
-    if let Some(data) = &payload.data {
-        let redacted = url_secrets.redact(data.get());
-        if redacted != data.get() {
-            payload.data = RawValue::from_string(redacted)
-                .inspect_err(|e| {
-                    warn!(
-                        "Dropped the data of a JSON-RPC error, no longer valid JSON once the RPC \
-                         URL is redacted: {e}"
-                    )
-                })
-                .ok();
-        }
-    }
-}
-
-/// Strips the URL that `reqwest` errors carry and print in their `Display` and `Debug` output,
-/// and redacts the response bodies and JSON-RPC errors kept by the other errors.
-fn redact_error(err: TransportError, url_secrets: &UrlSecrets) -> TransportError {
-    match err {
-        RpcError::Transport(TransportErrorKind::Custom(source)) => {
-            match source.downcast::<reqwest::Error>() {
-                Ok(reqwest_err) => TransportErrorKind::custom(reqwest_err.without_url()),
-                Err(source) => RpcError::Transport(TransportErrorKind::Custom(source)),
-            }
-        }
-        RpcError::Transport(TransportErrorKind::HttpError(http_err)) => {
-            TransportErrorKind::http_error(http_err.status, url_secrets.redact(&http_err.body))
-        }
-        RpcError::DeserError { err, text } => RpcError::DeserError {
-            err: redact_serde_error(err, url_secrets),
-            text: url_secrets.redact(&text),
-        },
-        // alloy reads a body that is only the error object of a JSON-RPC response as an error
-        // response.
-        RpcError::ErrorResp(mut payload) => {
-            redact_error_payload(&mut payload, url_secrets);
-            RpcError::ErrorResp(payload)
-        }
-        err => err,
-    }
-}
-
-/// Redacts the message of a serde error, which quotes the value it could not read, e.g. a
-/// JSON-RPC `error` sent as a string rather than an object.
-///
-/// The error is only rebuilt if its message holds a secret.
-fn redact_serde_error(err: serde_json::Error, url_secrets: &UrlSecrets) -> serde_json::Error {
-    let message = err.to_string();
-    let redacted = url_secrets.redact(&message);
-    if redacted == message {
-        err
-    } else {
-        // The message already ends with the line and column of the error.
-        serde::de::Error::custom(redacted)
-    }
+/// A failed HTTP request to a RPC node.
+#[derive(Debug, thiserror::Error)]
+#[error("request to {rpc_url} failed")]
+struct RpcRequestError {
+    rpc_url: RpcUrl,
+    source: reqwest::Error,
 }
 
 static INSTALL_CRYPTO_PROVIDER_ONCE: Once = Once::new();
@@ -408,7 +222,11 @@ mod tests {
     use alloy::{
         primitives::U64,
         providers::Provider,
-        transports::mock::{Asserter, MockTransport},
+        transports::{
+            TransportError,
+            http::reqwest::Url,
+            mock::{Asserter, MockTransport},
+        },
     };
     use futures::future::join_all;
     use std::sync::{
@@ -535,175 +353,21 @@ mod tests {
         assert_no_api_key(&provider.get_block_number().await.unwrap_err());
     }
 
-    #[tokio::test]
-    async fn echoed_api_keys_are_redacted() {
-        let json_rpc_error = |data: String| {
-            format!(
-                r#"{{"jsonrpc":"2.0","id":0,"error":{{"code":-32600,"message":"invalid key {API_KEY}","data":"{data}"}}}}"#
-            )
-        };
-        let cases = [
-            // alloy keeps the body of an HTTP error...
-            ("404 Not Found", format!("Cannot POST /v2/{API_KEY}")),
-            ("401 Unauthorized", json_rpc_error(format!("/v2/{API_KEY}"))),
-            // ... and of a response that is not JSON-RPC...
-            ("200 OK", format!("Cannot POST /v2/{API_KEY}")),
-            // ... and turns a JSON-RPC error response into an error...
-            ("200 OK", json_rpc_error(format!("/v2/{API_KEY}"))),
-            // ... keeping its data as raw JSON, where an escape may come right before the key...
-            (
-                "200 OK",
-                json_rpc_error(format!(r"invalid key:\n{API_KEY}")),
-            ),
-            // ... and does the same with a body that is only the error object of a response.
-            (
-                "200 OK",
-                format!(r#"{{"code":-32600,"message":"invalid key {API_KEY}"}}"#),
-            ),
-            // The error of a response that alloy cannot read quotes the part it could not read.
-            (
-                "200 OK",
-                format!(r#"{{"jsonrpc":"2.0","id":0,"error":"invalid key {API_KEY}"}}"#),
-            ),
-        ];
-        for (status, body) in cases {
-            let (url, server) = answering_server(status, body).await;
-            let url = Url::parse(&format!("{url}/v2/{API_KEY}")).unwrap();
-            let provider = connect_to_rpc_node(url.into(), 1).await.unwrap();
-
-            let err = provider.get_block_number().await.unwrap_err();
-            let (display, debug) = (format!("{err}"), format!("{err:?}"));
-            assert!(display.contains(REDACTED), "{status}: {display}");
-            assert!(!display.contains(API_KEY), "{status}: {display}");
-            assert!(!debug.contains(API_KEY), "{status}: {debug}");
-
-            server.abort();
-        }
-    }
-
-    #[tokio::test]
-    async fn revert_data_is_kept() {
-        // `Error(string)` revert data, with a URL path segment found inside it.
-        let revert_data = "0x08c379a0";
-        let body = format!(
-            r#"{{"jsonrpc":"2.0","id":0,"error":{{"code":3,"message":"execution reverted: {API_KEY}","data":"{revert_data}"}}}}"#
-        );
-        let (url, server) = answering_server("200 OK", body).await;
-        let url = Url::parse(&format!("{url}/v2/{API_KEY}/08c379a0")).unwrap();
-        let provider = connect_to_rpc_node(url.into(), 1).await.unwrap();
-
-        let err = provider.get_block_number().await.unwrap_err();
-        let error_resp = err.as_error_resp().expect("a JSON-RPC error response");
-        assert_eq!(error_resp.message, "execution reverted: <redacted>");
-        assert_eq!(
-            error_resp.as_revert_data().unwrap().to_string(),
-            revert_data
-        );
-
-        server.abort();
-    }
-
-    #[test]
-    fn url_secrets_are_redacted_as_whole_tokens() {
-        let url =
-            Url::parse("https://user:pw@rpc.example.com/v2/k3yk3yk3y?apikey=a%2Bbcdefgh").unwrap();
-        let secrets = UrlSecrets::new(&url);
-        let redacted = |text| secrets.redact(text);
-
-        assert_eq!(
-            redacted("Cannot POST /v2/k3yk3yk3y?apikey=a%2Bbcdefgh"),
-            "Cannot POST /v2/<redacted>?apikey=<redacted>"
-        );
-        // The query value is also redacted percent-decoded, and the password as well.
-        assert_eq!(
-            redacted("key a+bcdefgh of user:pw"),
-            "key <redacted> of user:<redacted>"
-        );
-        // Not inside longer words or hex data.
-        assert_eq!(redacted("k3yk3yk3yz 0xk3yk3yk3y"), "k3yk3yk3yz 0xk3yk3yk3y");
-        // But right after an escape, in JSON or percent-encoded text.
-        assert_eq!(
-            redacted(r#""key:\nk3yk3yk3y" "key\u0020k3yk3yk3y" Cannot POST %2Fv2%2Fk3yk3yk3y"#),
-            r#""key:\n<redacted>" "key\u0020<redacted>" Cannot POST %2Fv2%2F<redacted>"#
-        );
-        // The userinfo and path segments are also redacted percent-decoded.
-        let url = Url::parse("https://us%2Bername:p%40ss@rpc.example.com/v2/k%2B3yk3yk3y").unwrap();
-        assert_eq!(
-            UrlSecrets::new(&url).redact("key k+3yk3yk3y of us+ername:p@ss"),
-            "key <redacted> of <redacted>:<redacted>"
-        );
-        // An occurrence that is not a token does not hide a following one that is.
-        let secrets = UrlSecrets::new(&Url::parse("https://rpc.example.com/abcd-abcd").unwrap());
-        assert_eq!(secrets.redact("xabcd-abcd-abcd"), "xabcd-<redacted>");
-    }
-
-    #[test]
-    fn short_url_parts_are_not_secrets() {
-        let url = Url::parse("https://rpc.ankr.com/eth/k3yk3yk3y?chain=1").unwrap();
-        assert_eq!(
-            UrlSecrets::new(&url).redact("the method eth_call does not exist on chain 1"),
-            "the method eth_call does not exist on chain 1"
-        );
-    }
-
-    #[test]
-    fn bare_query_values_are_secrets() {
-        let url = Url::parse("https://rpc.example.com/?k3yk3yk3y&x=1").unwrap();
-        assert_eq!(
-            UrlSecrets::new(&url).redact("Cannot POST /?k3yk3yk3y&x=1"),
-            "Cannot POST /?<redacted>&x=1"
-        );
-    }
-
-    #[test]
-    fn url_secrets_are_deduplicated() {
-        let url =
-            Url::parse("https://rpc.example.com/?a=secretkey1&b=secretkey2&c=secretkey1").unwrap();
-        assert_eq!(
-            UrlSecrets::new(&url).0.as_ref(),
-            ["secretkey1", "secretkey2"]
-        );
-    }
-
-    /// Starts a server answering every request with `status` and `body`.
-    ///
-    /// Returns the URL of the server, and the handle of its accept loop to abort.
-    async fn answering_server(
-        status: &'static str,
-        body: String,
-    ) -> (String, tokio::task::JoinHandle<()>) {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let accept_loop = tokio::spawn(async move {
-            while let Ok((mut stream, _)) = listener.accept().await {
-                let mut request = [0; 4096];
-                // The request fits in one read: it is only read for the client to send it.
-                let read = stream.read(&mut request).await.unwrap();
-                assert!(
-                    read > 0,
-                    "the client closed the connection without a request"
-                );
-                let response = format!(
-                    "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                    body.len()
-                );
-                stream.write_all(response.as_bytes()).await.unwrap();
-            }
-        });
-        (url, accept_loop)
-    }
-
     /// An API key, put in the URL path as some RPC providers require.
     const API_KEY: &str = "secret-api-key";
 
-    /// Asserts that the error of a failed HTTP call does not contain `API_KEY`.
+    /// Asserts that the error of a failed HTTP call names the node by its redacted URL, and does
+    /// not contain `API_KEY`.
     fn assert_no_api_key(err: &TransportError) {
-        let (display, debug) = (format!("{err}"), format!("{err:?}"));
+        let chain = std::iter::successors(Some(err as &dyn std::error::Error), |err| err.source())
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(": ");
+        let debug = format!("{err:?}");
+        assert!(chain.contains("/<redacted> failed"), "{chain}");
         // Guards against an error that would not come from the HTTP client at all.
-        assert!(display.contains("error sending request"), "{display}");
-        assert!(!display.contains(API_KEY), "{display}");
+        assert!(chain.contains("error sending request"), "{chain}");
+        assert!(!chain.contains(API_KEY), "{chain}");
         assert!(!debug.contains(API_KEY), "{debug}");
     }
 }
