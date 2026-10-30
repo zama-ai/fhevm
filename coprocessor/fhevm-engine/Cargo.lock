@@ -2873,6 +2873,7 @@ dependencies = [
  "anyhow",
  "aws-config",
  "aws-sdk-s3",
+ "axum 0.7.9",
  "block-manifest",
  "ciphertext-attestation",
  "clap",

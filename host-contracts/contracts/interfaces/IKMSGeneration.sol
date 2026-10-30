@@ -300,6 +300,7 @@ interface IKMSGeneration {
 
     /**
      * @notice Trigger a fresh FHE key generation or produce compressed material for an existing key.
+     * @dev Must not be called during a KMS context or epoch rotation.
      * @param paramsType The type of FHE parameters to use.
      * @param existingKeyId Zero for a fresh key, or the active key whose compressed material is requested.
      */
@@ -322,6 +323,7 @@ interface IKMSGeneration {
 
     /**
      * @notice Trigger a CRS generation.
+     * @dev Must not be called during a KMS context or epoch rotation.
      * @param maxBitLength The max bit length for generating the CRS.
      * @param paramsType The type of parameters to use.
      */
@@ -420,7 +422,9 @@ interface IKMSGeneration {
     /**
      * @notice Get all materials available for a given key ID.
      * @param keyId The ID of the key.
-     * @return The key materials (storage URLs, key digests).
+     * @return The key materials: the storage URLs of the latest consensus that published material for
+     * the key (the migration consensus once a compressed key set was added, the keygen consensus
+     * otherwise), and the key digests, whose Server and Public entries come from the keygen consensus.
      */
     function getKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
 

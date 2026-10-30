@@ -1,14 +1,12 @@
-////////////////////////////////////////////////////////////////////////////////
-// KmsPadDecryptResponseEip712Types (RFC-030)
-////////////////////////////////////////////////////////////////////////////////
-
-// The EIP-712 type each KMS node signs over its pad decryption response payload.
-//
-// RFC-030 names this struct but does not pin its EIP-712 encoding yet; the
-// field names, types and order below follow the RFC's Solidity struct
-// verbatim and must be kept in sync with it as the spec settles.
-//
-// CRITICAL: Field order is authoritative — it determines the EIP-712 type hash.
+/**
+ * The EIP-712 type each KMS node signs over its pad decryption response payload (RFC-030).
+ *
+ * RFC-030 names this struct but does not pin its EIP-712 encoding yet; the
+ * field names, types and order below follow the RFC's Solidity struct
+ * verbatim and must be kept in sync with it as the spec settles.
+ *
+ * CRITICAL: Field order is authoritative — it determines the EIP-712 type hash.
+ */
 export const kmsPadDecryptResponseEip712Types = {
   EIP712Domain: [
     { name: 'name', type: 'string' },

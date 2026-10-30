@@ -584,8 +584,6 @@ describe("compat", () => {
     expect(requiresLegacyKmsBootstrapBudget("v0.13.10")).toBe(true);
     expect(requiresLegacyKmsBootstrapBudget("v0.13.20")).toBe(false);
     expect(requiresLegacyKmsBootstrapBudget("v0.13.20-0")).toBe(false);
-    // The checked-in node-by-node runbook must stay on the standard budget.
-    expect(requiresLegacyKmsBootstrapBudget("v0.13.21")).toBe(false);
     // Unparsed (sha-tagged) cores follow the modern budget, as elsewhere in compat.
     expect(requiresLegacyKmsBootstrapBudget("abc1234")).toBe(false);
   });

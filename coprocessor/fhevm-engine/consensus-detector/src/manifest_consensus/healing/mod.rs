@@ -44,7 +44,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use alloy_primitives::{keccak256, Address, U256};
-use aws_sdk_s3::Client;
 use futures::future::join_all;
 use sqlx::{postgres::PgListener, PgPool};
 use tokio::task::JoinHandle;
@@ -62,7 +61,7 @@ use super::{ExecutionError, ManifestWorkGate};
 mod download;
 mod metrics;
 
-use download::{Ct64Source, DownloadedCt64, S3Ct64Source};
+use download::{Ct64Source, DownloadedCt64, HttpCt64Source};
 
 /// pg_notify channel emitted on `drifted_handle` insert/update.
 pub(crate) const EVENT_HEALING_WORK: &str = "event_healing_work";
@@ -129,14 +128,14 @@ struct RegistryPeer {
 pub(crate) fn spawn_healing_worker(
     pool: PgPool,
     token: CancellationToken,
-    client: Arc<Client>,
     work_gate: Arc<ManifestWorkGate>,
     settings: HealingSettings,
 ) -> JoinHandle<Result<(), ExecutionError>> {
     tokio::spawn(run_healing_worker(
         pool,
         token,
-        S3Ct64Source::new(client),
+        // Each request sets its own timeout, so the client sets none.
+        HttpCt64Source::new(reqwest::Client::new()),
         work_gate,
         settings,
     ))
