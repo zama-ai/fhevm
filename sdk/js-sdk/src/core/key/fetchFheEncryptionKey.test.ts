@@ -6,10 +6,18 @@ import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
 import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
+import { createCoreFhevm } from '../runtime/CoreFhevm-p.js';
 import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 import { encryptModule } from '../modules/encrypt/mock.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 import { fetchFheEncryptionKeyWasm } from './fetchFheEncryptionKey.js';
+
+// The key check is not under test here (see verifyFheEncryptionKeyBytes-p.test.ts).
+vi.mock('./verifyFheEncryptionKeyBytes-p.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./verifyFheEncryptionKeyBytes-p.js')>()),
+  assertKeyVerificationConfig: () => undefined,
+  verifyFheEncryptionKeyBytes: async (_context: unknown, bytes: FheEncryptionKeyBytes) => bytes,
+}));
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/key/fetchFheEncryptionKey.test.ts
@@ -27,6 +35,7 @@ const runtime = createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
   relayer: { fetchFheEncryptionKeyBytes } as unknown as RelayerModule,
   config: { auth: runtimeAuth },
 }).extend(encryptModule);
+const client = createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain, runtime });
 
 beforeEach(() => {
   globalFheEncryptionKeyCache.clear();
@@ -36,9 +45,7 @@ beforeEach(() => {
 
 describe('fetchFheEncryptionKeyWasm', () => {
   it('sends the runtime auth when it starts the key download', async () => {
-    await expect(fetchFheEncryptionKeyWasm({ chain, runtime }, { fhevmContext })).rejects.toThrow(
-      'stop after the download',
-    );
+    await expect(fetchFheEncryptionKeyWasm(client, { fhevmContext })).rejects.toThrow('stop after the download');
     expect(fetchFheEncryptionKeyBytes).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ options: { auth: runtimeAuth } }),
@@ -58,17 +65,21 @@ describe('fetchFheEncryptionKeyWasm', () => {
       config: {},
     }).extend(encryptModule);
 
-    const key = await fetchFheEncryptionKeyWasm({ chain, runtime }, { fhevmContext });
-    expect(await fetchFheEncryptionKeyWasm({ chain, runtime: otherRuntime }, { fhevmContext })).toBe(key);
+    const key = await fetchFheEncryptionKeyWasm(client, { fhevmContext });
+    expect(
+      await fetchFheEncryptionKeyWasm(createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain, runtime: otherRuntime }), {
+        fhevmContext,
+      }),
+    ).toBe(key);
     expect(fetchFheEncryptionKeyBytes).toHaveBeenCalledTimes(1);
   });
 
   it('sends the caller auth instead of the runtime auth when the caller passes one', async () => {
     const callerAuth: Auth = { type: 'BearerToken', token: 'caller-token' };
 
-    await expect(
-      fetchFheEncryptionKeyWasm({ chain, runtime }, { fhevmContext, options: { auth: callerAuth } }),
-    ).rejects.toThrow('stop after the download');
+    await expect(fetchFheEncryptionKeyWasm(client, { fhevmContext, options: { auth: callerAuth } })).rejects.toThrow(
+      'stop after the download',
+    );
     expect(fetchFheEncryptionKeyBytes).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ options: { auth: callerAuth } }),

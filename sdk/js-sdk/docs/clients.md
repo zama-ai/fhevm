@@ -113,10 +113,85 @@ const client = createFhevmClient({
 | Option            | Type                    | Applies to        | Purpose                                                            |
 | ----------------- | ----------------------- | ----------------- | ----------------------------------------------------------------- |
 | `batchRpcCalls`   | `boolean`               | all clients       | Coalesce the client's contract reads into batched RPC calls.      |
-| `fheEncryptionKey`| `FheEncryptionKeyBytes` | encrypt / full    | Provide a pre-fetched FHE public key to skip the network fetch.   |
+| `fheEncryptionKey`| `FheEncryptionKeyBytes` | encrypt / full    | Preloads the public key and CRS so the client skips the download. Checked once, before the client is ready (see [Key verification](#key-verification)). |
+| `keyVerification` | `FhevmKeyVerification` (`{ chain, client }`) | all clients | Required when the host chain is not Ethereum: an Ethereum chain definition and a client for it, used to verify the FHE public key and CRS. |
 
 The encryption-key cache is covered in
 [Runtime configuration](runtime-configuration.md).
+
+### Key verification
+
+- The SDK checks the FHE public key and CRS against `KMSGeneration` on Ethereum
+  before using them, whether downloaded or passed as `fheEncryptionKey`.
+- Every client needs the check. Not on Ethereum? Set
+  `options.keyVerification = { chain, client }`. Without it, creating an
+  encrypt client fails; other clients (base, decrypt) fail on their first key
+  fetch.
+- The key is downloaded once and shared; each client checks it with its own
+  settings.
+- A key that fails the check is never used. A downloaded one is fetched again
+  on the next call.
+- A client whose own key fails the check keeps failing with the same error and
+  never uses the Relayer's key instead. Create a new client with a valid key,
+  or without one.
+- Network errors are thrown as they are; the next call retries.
+- Cleartext mode serves a placeholder key and skips the check.
+
+The Relayer returns the URLs of the FHE public key and CRS. Before using them,
+the SDK checks their digests (SHAKE256), and ids when the Relayer serves a
+32-byte hex id, against the active ones the KMS nodes recorded in the
+`KMSGeneration` contract (label ids served by v0.14 Relayers are skipped; the
+digest alone binds the bytes to the active key). A Relayer serving another key
+could otherwise read the encrypted inputs. A key that fails the check is never
+used and is not kept: encryption throws `FheEncryptionKeyVerificationError`.
+
+`fheEncryptionKey` (optional) preloads the public key and CRS so the client
+skips the download. Before the client is ready, the SDK checks it. If it
+equals the key already cached for the Relayer, the cached key is used, checked
+by this client. Otherwise it is checked against the active key in
+`KMSGeneration`. If the check fails, `ready` of an encrypt client rejects with
+`FheEncryptionKeyVerificationError` (other clients fail on their first key
+fetch), and every later key fetch of the client throws the same error, with no
+RPC call: the client drops its copy, keeps only the error, and never uses the
+Relayer's key instead.
+If it passes, it replaces the cached key, which is stale (only one key
+is active at a time), and the client drops its copy; later key fetches use the
+cache or go to the Relayer.
+Its `metadata.relayerUrl` must equal the chain's `relayerUrl` exactly, else
+creating the client throws `FhevmConfigError`.
+The client keeps a copy of these bytes, and `fetchFheEncryptionKeyBytes()`
+returns a copy of the cached ones.
+
+The key is downloaded once per Relayer and shared by all clients; each client
+checks it once.
+
+`KMSGeneration` exists only on Ethereum. On Ethereum (`mainnet`, `sepolia`), the
+check reads it through the client's own `publicClient` / `provider`. On any other
+host chain, `keyVerification` is required. Without it, creating an encrypt or full
+client throws `FhevmConfigError`; a base or decrypt client is created, and throws
+`FhevmConfigError` when it fetches the key (`fetchFheEncryptionKeyBytes`):
+
+```ts
+import { createPublicClient, http } from 'viem';
+import { mainnet as viemMainnet } from 'viem/chains';
+import { mainnet, polygon } from '@fhevm/sdk/chains';
+
+const client = createFhevmClient({
+  chain: polygon,
+  publicClient, // Polygon: every host-chain read
+  options: {
+    keyVerification: {
+      chain: mainnet, // carries the KMSGeneration address
+      client: createPublicClient({ chain: viemMainnet, transport: http(ETHEREUM_RPC_URL) }),
+    },
+  },
+});
+```
+
+`client` has the adapter's client type: a viem `PublicClient`, or an ethers
+`ContractRunner` (e.g. a `JsonRpcProvider`). Use `sepolia` for `polygonAmoy`.
+The check runs when a client first fetches the key (about five Ethereum reads)
+and is not repeated for that client while the key is cached.
 
 ## Loading and lifecycle
 

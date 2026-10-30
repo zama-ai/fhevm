@@ -63,25 +63,25 @@ type CreateEthersClientParameters = {
 
 export type CreateEthersBaseClientFn = (
   params: CreateEthersClientParameters & {
-    readonly options?: FhevmOptions | undefined;
+    readonly options?: FhevmOptions<ethers.ContractRunner> | undefined;
   },
 ) => ReturnType<typeof createEthersFhevmBaseClient>;
 
 export type CreateEthersEncryptClientFn = (
   params: CreateEthersClientParameters & {
-    readonly options?: FhevmEncryptOptions | undefined;
+    readonly options?: FhevmEncryptOptions<ethers.ContractRunner> | undefined;
   },
 ) => ReturnType<typeof createEthersFhevmEncryptClient>;
 
 export type CreateEthersEncryptTransciClientFn = (
   params: CreateEthersClientParameters & {
-    readonly options?: FhevmEncryptOptions | undefined;
+    readonly options?: FhevmEncryptOptions<ethers.ContractRunner> | undefined;
   },
 ) => ReturnType<typeof createEthersFhevmEncryptTransciClient>;
 
 export type CreateEthersDecryptClientFn = (
   params: CreateEthersClientParameters & {
-    readonly options?: FhevmDecryptOptions | undefined;
+    readonly options?: FhevmDecryptOptions<ethers.ContractRunner> | undefined;
   },
 ) => ReturnType<typeof createEthersFhevmDecryptClient>;
 
