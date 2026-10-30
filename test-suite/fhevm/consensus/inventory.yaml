@@ -57,7 +57,7 @@ selections:
   harness: [harness]
   rust-regression: [rust-regression]
   smoke: [byte-agreement]
-  standard: [ingestion-recovery, harness, rust-regression, byte-agreement, degraded, fork, failure-matrix, failure-matrix-db, crash-retry, bridge, cpu-scheduling, backlog, object-integrity, host-rpc, broker-redelivery, storage-pressure, submission-partition]
+  standard: [ingestion-recovery, harness, rust-regression, byte-agreement, degraded, fork, failure-matrix, failure-matrix-db, crash-retry, bridge, cpu-scheduling, backlog, object-integrity, host-rpc, sender-rpc, broker-redelivery, storage-pressure, submission-partition]
   full:
     - ingestion-recovery
     - harness
@@ -74,6 +74,7 @@ selections:
     - backlog
     - object-integrity
     - host-rpc
+    - sender-rpc
     - broker-redelivery
     - storage-pressure
     - submission-partition
@@ -1883,4 +1884,52 @@ cases:
     runner: scripts/run-artifact-ingestion-recovery.sh cursor
     ci: { leg: ingestion-recovery, backend: cpu }
     artifacts: [case-results, rpc-request-evidence, workload-handshake, run-identity]
+    acceptance: required
+
+  - id: FM-SENDER-RPC-NONCE-LOW
+    family: failure-matrix
+    property: The original named submission backlog drains after nonce errors without exhausting its finite retry budget.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu] }
+    services: [transaction-sender]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: Twelve receipt-identified host computations with complete material and victim submission pending, followed by fresh work.
+    fault: { mechanism: scoped-sender-rpc-nonce-low, stage: material submission, observation: "Three synthetic nonce-too-low errors for each named material, followed by normal forwarding." }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: every named material is ready and unsent with zero finite retries before the fault
+      - fault: proxy evidence proves the selected fault reached every original handle
+      - bytes: all original outputs agree across all three computing operators
+      - liveness: all original victim rows and fresh work complete after RPC recovery
+      - quorum: all original and fresh outputs reach three authorized distinct senders
+      - safety: all original rows remain unique and preserve their finite retry budgets
+      - correctness: every original and fresh handle decrypts to the fixture result
+    timeout_s: 1800
+    cleanup: [restore original sender arguments and image, stop owned proxy]
+    runner: scripts/run-sender-rpc-recovery.sh nonce-low
+    ci: { leg: sender-rpc, backend: cpu }
+    artifacts: [case-results, sender-rpc-evidence, sender-image, workload-handshake, run-identity]
+    acceptance: required
+
+  - id: FM-SENDER-RPC-ACCEPTED-TIMEOUT
+    family: failure-matrix
+    property: Original material submissions reconcile successful upstream transactions whose responses were lost.
+    topology: { scenario: three-of-three-backlog, operators: 3, threshold: 3, backends: [cpu] }
+    services: [transaction-sender]
+    capabilities: [docker-socket, service-control, anvil-control]
+    workload: Twelve receipt-identified host computations with complete material and victim submission pending, followed by fresh work.
+    fault: { mechanism: scoped-sender-rpc-accepted-timeout, stage: material submission, observation: "Forward each named material to the real node, retain its successful receipt, and withhold the response until the client times out." }
+    participants: { compute: all, submit: all, quorum: required }
+    assertions:
+      - precondition: every named material is ready and unsent with zero finite retries before the fault
+      - fault: proxy evidence proves the selected fault reached every original handle
+      - bytes: all original outputs agree across all three computing operators
+      - liveness: all original victim rows and fresh work complete after RPC recovery
+      - quorum: all original and fresh outputs reach three authorized distinct senders
+      - safety: all original rows remain unique and preserve their finite retry budgets
+      - correctness: every original and fresh handle decrypts to the fixture result
+    timeout_s: 1800
+    cleanup: [restore original sender arguments and image, stop owned proxy]
+    runner: scripts/run-sender-rpc-recovery.sh accepted-timeout
+    ci: { leg: sender-rpc, backend: cpu }
+    artifacts: [case-results, sender-rpc-evidence, sender-image, workload-handshake, run-identity]
     acceptance: required
