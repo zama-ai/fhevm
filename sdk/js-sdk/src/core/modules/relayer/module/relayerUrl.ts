@@ -10,7 +10,6 @@ import { removePrefix, removeSuffix } from '../../../base/string.js';
  *   - parses as a URL
  *   - protocol is `http:` or `https:`
  *   - contains no userinfo (`user:pass@host`)
- *   - contains no query string or fragment (they would corrupt path concatenation)
  *   - if `hasAuth` is true, requires `https:` unless the host is localhost
  *
  * Normalization (via WHATWG `URL`):
@@ -18,6 +17,7 @@ import { removePrefix, removeSuffix } from '../../../base/string.js';
  *   - default ports collapsed (`:443` for https, `:80` for http)
  *   - path percent-encoded canonically
  *   - bare-origin URLs get a single trailing `/` (`https://x` → `https://x/`)
+ *   - query string and fragment dropped, with a warning (use `options.query` instead)
  *
  * Throws {@link InvalidUrlError} on any failure so the caller surfaces a
  * uniform error type.
@@ -50,13 +50,15 @@ export function validateRelayerBaseUrl(relayerUrl: unknown, hasAuth: boolean): U
     );
   }
 
-  if (parsed.search !== '' || parsed.hash !== '') {
-    throw new InvalidUrlError(
-      {
-        message: `Invalid relayerUrl: must not contain a query string or fragment (got '${parsed.search}${parsed.hash}'). Use options.query to add query parameters.`,
-      },
-      {},
+  // Patch releases keep the old behavior: drop the query and fragment instead of throwing.
+  // The warning leaves out the value, which may hold a secret (`?apikey=...`).
+  // Check `href`, not `search` / `hash`, which are '' for a bare trailing `?` or `#`.
+  if (parsed.href.includes('?') || parsed.href.includes('#')) {
+    console.warn(
+      'relayerUrl contains a query string or fragment, which is ignored. Use options.query to add query parameters.',
     );
+    parsed.search = '';
+    parsed.hash = '';
   }
 
   if (hasAuth && parsed.protocol === 'http:') {
@@ -115,9 +117,12 @@ export function normalizeRelayerQuery(query: unknown): Readonly<Record<string, s
  * for errors, logs and callbacks, so they show the endpoint, not per-request metadata.
  */
 export function appendRelayerQuery(url: string, query: Readonly<Record<string, string>> | undefined): string {
-  assert(!url.includes('?'));
   const search = Object.entries(query ?? {})
     .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
     .join('&');
-  return search === '' ? url : `${url}?${search}`;
+  if (search === '') {
+    return url;
+  }
+  assert(!url.includes('?'));
+  return `${url}?${search}`;
 }

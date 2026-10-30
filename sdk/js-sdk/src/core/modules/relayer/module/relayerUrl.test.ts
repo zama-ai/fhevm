@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { InvalidUrlError } from '../../../base/errors/InvalidUrlError.js';
 import {
   appendRelayerQuery,
@@ -98,6 +98,23 @@ describe('validateRelayerBaseUrl', () => {
     expect(parsed.pathname.endsWith('/')).toBe(true);
   });
 
+  it.each([
+    { input: 'https://relayer.example.com/api?apikey=SECRET', expectedHref: 'https://relayer.example.com/api/' },
+    { input: 'https://relayer.example.com/api#SECRET', expectedHref: 'https://relayer.example.com/api/' },
+    { input: 'https://relayer.example.com/api?', expectedHref: 'https://relayer.example.com/api/' },
+    { input: 'https://relayer.example.com/api#', expectedHref: 'https://relayer.example.com/api/' },
+  ])('drops the query and fragment of $input with a warning', ({ input, expectedHref }) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(validateRelayerBaseUrl(input, false).href).toBe(expectedHref);
+      for (const args of warn.mock.calls) {
+        expect(args.join(' ')).not.toContain('SECRET');
+      }
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   //////////////////////////////////////////////////////////////////////////////
   // Cases that throw
   //////////////////////////////////////////////////////////////////////////////
@@ -116,18 +133,6 @@ describe('validateRelayerBaseUrl', () => {
       input: 'https://user:pass@relayer.example.com/',
       hasAuth: false,
       errorMatch: /credentials/,
-    },
-    {
-      name: 'has query string',
-      input: 'https://relayer.example.com/api?label=x',
-      hasAuth: false,
-      errorMatch: /query string or fragment \(got '\?label=x'\)/,
-    },
-    {
-      name: 'has fragment',
-      input: 'https://relayer.example.com/api#f',
-      hasAuth: false,
-      errorMatch: /query string or fragment \(got '#f'\)/,
     },
     {
       name: 'http + hasAuth + non-localhost',
@@ -257,6 +262,10 @@ describe('appendRelayerQuery', () => {
       `${url}?zama_sdk_version=1.2.3&zama_sdk_operation=decrypt%20values`,
     );
     expect(appendRelayerQuery(url, { 'a&b': 'c=d' })).toBe(`${url}?a%26b=c%3Dd`);
+  });
+
+  it('returns the url unchanged without a query, even if it contains a "?"', () => {
+    expect(appendRelayerQuery(`${url}/job?1`, undefined)).toBe(`${url}/job?1`);
   });
 
   it('throws when the url already has a query string', () => {

@@ -1258,11 +1258,14 @@ export class RelayerAsyncRequest {
       this._fhevmAuth, // -> the API key
     );
 
+    // Build the URL outside the `try`, so an internal error is not reported as a fetch failure.
+    const fetchUrl = appendRelayerQuery(this._url, this._query);
+
     this._state.fetching = true;
 
     let response;
     try {
-      response = await fetch(appendRelayerQuery(this._url, this._query), init);
+      response = await fetch(fetchUrl, init);
     } catch (cause) {
       this._state.fetching = false;
 
@@ -1329,11 +1332,14 @@ export class RelayerAsyncRequest {
       this._fhevmAuth,
     );
 
+    // Build the URL outside the `try`, so an internal error is not reported as a fetch failure.
+    const fetchUrl = appendRelayerQuery(`${this._url}/${this.jobId}`, this._query);
+
     this._state.fetching = true;
 
     let response;
     try {
-      response = await fetch(appendRelayerQuery(`${this._url}/${this.jobId}`, this._query), init);
+      response = await fetch(fetchUrl, init);
     } catch (cause) {
       this._state.fetching = false;
       // Warning: `terminated` can be `true` here!

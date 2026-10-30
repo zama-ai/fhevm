@@ -46,11 +46,12 @@ export async function fetchFheEncryptionKeySource(
   assert(relayerBaseUrl.pathname.endsWith('/'));
   // Keep `url` query-less so errors and logs show the endpoint, not per-request metadata.
   const url = buildRelayerUrlString(relayerBaseUrl, 'v2/keyurl');
+  const fetchUrl = appendRelayerQuery(url, query);
 
   let response;
   try {
     response = await fetchWithRetry({
-      url: appendRelayerQuery(url, query),
+      url: fetchUrl,
       init,
       retries: options?.fetchRetries,
       retryDelayMs: options?.fetchRetryDelayInMilliseconds,
