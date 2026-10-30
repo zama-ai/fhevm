@@ -1,7 +1,7 @@
 use alloy::transports::http::reqwest::Url;
 use anyhow::bail;
 use serde::{Deserialize, Deserializer};
-use sqlx::postgres::PgConnectOptions;
+use sqlx::{ConnectOptions, postgres::PgConnectOptions};
 use std::{fmt, str::FromStr};
 
 /// What replaces a secret in redacted text.
@@ -52,7 +52,7 @@ impl FromStr for DatabaseUrl {
             );
         }
         Ok(Self {
-            options: raw.parse()?,
+            options: PgConnectOptions::from_url(&url)?,
             raw: raw.to_string(),
         })
     }
