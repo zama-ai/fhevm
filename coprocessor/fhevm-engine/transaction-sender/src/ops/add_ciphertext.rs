@@ -6,7 +6,9 @@ use crate::{
     REVIEW,
 };
 
-use super::common::{try_extract_non_retryable_config_error, try_into_array};
+use super::common::{
+    is_retryable_nonce_error, try_extract_non_retryable_config_error, try_into_array,
+};
 use super::{begin_live_write, TransactionOperation};
 use alloy::{
     network::{Ethereum, TransactionBuilder},
@@ -90,10 +92,12 @@ where
                 return Ok(());
             }
             Err(e) => {
-                // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
+                // Nonce recovery must not consume the job's finite retry budget.
+                // Keep the existing transport and local signer retry policies too.
                 // Local usage are included as they might be transient due to external AWS KMS signers.
                 if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
                     || matches!(&e, RpcError::LocalUsageError(_))
+                    || is_retryable_nonce_error(&e)
                 {
                     ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                     warn!(
