@@ -23,6 +23,8 @@ first initialized after cloning.
   receipts, replacements, or fees.
 - Reconcile uncertain submissions, existing pending transactions, and incorrect
   initial RPC nonce responses when those cases require recovery. The allocator
-  does not re-seed an initialized account or repair a wrongly high initial seed.
+  offers explicit `restore_nonces` and `reconcile_nonce` APIs for callers with
+  durable submission tracking. Restore before allocation; reconcile only after
+  a definite nonce rejection, preserving all other active reservations.
 
 Error classification, retry budgets, and backoff belong to each sender.

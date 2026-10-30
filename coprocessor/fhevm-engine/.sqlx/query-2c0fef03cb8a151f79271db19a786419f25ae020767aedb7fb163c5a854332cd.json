@@ -1,0 +1,146 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM verify_proofs WHERE sender_status NOT IN ('COMPLETED', 'STOPPED')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "zk_proof_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "contract_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "user_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "input",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "handles",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 6,
+        "name": "retry_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "last_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "verified_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "last_retry_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "extra_data",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 13,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 14,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 15,
+        "name": "sender_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "sender_status_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "sender_attempt_no",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 18,
+        "name": "sender_next_action_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 19,
+        "name": "sender_last_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 20,
+        "name": "sender_tx_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 21,
+        "name": "sender_raw_tx",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2c0fef03cb8a151f79271db19a786419f25ae020767aedb7fb163c5a854332cd"
+}

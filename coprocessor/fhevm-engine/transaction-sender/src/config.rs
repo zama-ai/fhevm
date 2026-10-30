@@ -22,6 +22,7 @@ pub struct ConfigSettings {
     pub add_ciphertexts_db_channel: String,
     pub verify_proof_resp_batch_limit: u32,
     pub verify_proof_resp_max_retries: u32,
+    /// Legacy configuration accepted for compatibility. Exhausted sender jobs now remain STOPPED.
     pub verify_proof_remove_after_max_retries: bool,
 
     pub add_ciphertexts_batch_limit: u32,

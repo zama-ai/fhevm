@@ -1,11 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
 use alloy::{
-    network::{Ethereum, TransactionBuilder},
-    primitives::Address,
+    consensus::{transaction::SignerRecoverable, Transaction, TxEnvelope},
+    eips::eip2718::{Decodable2718, Encodable2718},
+    network::{Ethereum, EthereumWallet, TransactionBuilder},
+    primitives::{Address, B256},
     providers::{
         fillers::{BlobGasFiller, ChainIdFiller, GasFiller, JoinFill, NonceManager},
-        PendingTransactionBuilder, Provider,
+        PendingTransactionBuilder, Provider, ProviderBuilder,
     },
     rpc::types::{TransactionReceipt, TransactionRequest},
     transports::{TransportErrorKind, TransportResult},
@@ -18,6 +20,26 @@ use crate::config::DEFAULT_GAS_LIMIT_OVERPROVISION_PERCENT;
 pub type FillersWithoutNonceManagement =
     JoinFill<GasFiller, JoinFill<BlobGasFiller, ChainIdFiller>>;
 
+/// A locally signed transaction. Persist this before any broadcast.
+#[derive(Clone, Debug)]
+pub struct PreparedTransaction {
+    pub raw: Vec<u8>,
+    pub hash: B256,
+    pub nonce: u64,
+}
+
+impl PreparedTransaction {
+    pub fn decode(raw: Vec<u8>) -> TransportResult<Self> {
+        let envelope =
+            TxEnvelope::decode_2718(&mut raw.as_slice()).map_err(TransportErrorKind::custom)?;
+        Ok(Self {
+            hash: *envelope.tx_hash(),
+            nonce: envelope.nonce(),
+            raw,
+        })
+    }
+}
+
 /// A wrapper around an `alloy` provider that sends transactions with the correct nonce.
 /// Note that the given provider by the user must not have nonce management enabled, as this
 /// is done by the `NonceManagedProvider` itself.
@@ -29,6 +51,7 @@ where
     provider: P,
     nonce_manager: Arc<NonceManagerNonOptimistic>,
     signer_address: Option<Address>,
+    prepared_nonce_seed: Arc<tokio::sync::OnceCell<()>>,
 }
 
 impl<P> NonceManagedProvider<P>
@@ -40,7 +63,12 @@ where
             provider,
             nonce_manager: Default::default(),
             signer_address,
+            prepared_nonce_seed: Default::default(),
         }
+    }
+
+    pub fn signer_address(&self) -> Option<Address> {
+        self.signer_address
     }
 
     pub async fn send_transaction(
@@ -68,6 +96,118 @@ where
         // Settle the reservation outside the timed future, including local timeouts.
         self.finish_nonce(nonce, &res).await;
         res
+    }
+
+    /// Fill and sign locally using the sender's signer, without broadcasting.
+    pub async fn prepare_transaction(
+        &self,
+        tx: TransactionRequest,
+        percent: u32,
+        signer: crate::AbstractSigner,
+    ) -> TransportResult<PreparedTransaction>
+    where
+        P: Clone,
+    {
+        let mut tx = self.overprovision_gas_limit(tx, percent).await?;
+        if let Some(address) = self.signer_address {
+            self.prepared_nonce_seed
+                .get_or_try_init(|| async {
+                    self.nonce_manager
+                        .restore_nonces(&self.provider, address, &[])
+                        .await?;
+                    // A second confirmed read catches a stale initial seed before any broadcast.
+                    // This initialization runs once, before concurrent tracked allocation.
+                    self.nonce_manager
+                        .reconcile_nonce(&self.provider, address)
+                        .await?;
+                    Ok::<_, alloy::transports::TransportError>(())
+                })
+                .await?;
+        }
+        let nonce = self.assign_nonce(&mut tx).await?;
+        let filled = ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(EthereumWallet::from(signer))
+            .connect_provider(self.provider.clone())
+            .fill(tx)
+            .await;
+        let result = filled.and_then(|filled| {
+            let envelope = filled
+                .try_into_envelope()
+                .map_err(TransportErrorKind::custom)?;
+            PreparedTransaction::decode(envelope.encoded_2718())
+        });
+        if result.is_err() {
+            if let (Some(address), Some(nonce)) = (self.signer_address, nonce) {
+                self.nonce_manager.release_nonce(address, nonce).await;
+            }
+        }
+        result
+    }
+
+    pub async fn broadcast_prepared(
+        &self,
+        tx: &PreparedTransaction,
+        timeout: Duration,
+    ) -> TransportResult<TransactionReceipt> {
+        // The caller settles the reservation only after reconciling the outcome.
+        tokio::time::timeout(timeout, self.provider.send_raw_transaction_sync(&tx.raw))
+            .await
+            .map_err(|_| TransportErrorKind::custom_str("eth_sendRawTransactionSync timeout"))?
+    }
+
+    pub async fn reconcile_nonce(&self) -> TransportResult<u64> {
+        let address = self.signer_address.ok_or_else(|| {
+            TransportErrorKind::custom_str("nonce reconciliation requires a signing account")
+        })?;
+        self.nonce_manager
+            .reconcile_nonce(&self.provider, address)
+            .await
+    }
+
+    pub async fn settle_prepared(&self, tx: &PreparedTransaction, mined: bool) {
+        if let Some(address) = self.signer_address {
+            if mined {
+                self.nonce_manager.confirm_nonce(address, tx.nonce).await;
+            } else {
+                self.nonce_manager.release_nonce(address, tx.nonce).await;
+            }
+        }
+    }
+
+    /// Call once under exclusive sender ownership, before allocating new nonces.
+    pub async fn restore_prepared(&self, transactions: &[Vec<u8>]) -> TransportResult<()> {
+        if transactions.is_empty() {
+            return Ok(());
+        }
+        let mut nonces = Vec::new();
+        let chain_id = self.get_chain_id().await?;
+        for raw in transactions {
+            let envelope =
+                TxEnvelope::decode_2718(&mut raw.as_slice()).map_err(TransportErrorKind::custom)?;
+            if envelope.chain_id() != Some(chain_id)
+                || Some(
+                    envelope
+                        .recover_signer()
+                        .map_err(TransportErrorKind::custom)?,
+                ) != self.signer_address
+            {
+                return Err(TransportErrorKind::custom_str(
+                    "persisted submission belongs to a different chain or signing account",
+                ));
+            }
+            nonces.push(envelope.nonce());
+        }
+        if let Some(address) = self.signer_address {
+            self.nonce_manager
+                .restore_nonces(&self.provider, address, &nonces)
+                .await?;
+            self.nonce_manager
+                .reconcile_nonce(&self.provider, address)
+                .await?;
+            let _ = self.prepared_nonce_seed.set(());
+        }
+        Ok(())
     }
 
     async fn assign_nonce(&self, tx: &mut TransactionRequest) -> TransportResult<Option<u64>> {

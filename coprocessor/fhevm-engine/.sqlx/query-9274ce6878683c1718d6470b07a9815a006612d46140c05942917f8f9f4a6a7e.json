@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM verify_proofs WHERE zk_proof_id = $1 AND sender_raw_tx IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9274ce6878683c1718d6470b07a9815a006612d46140c05942917f8f9f4a6a7e"
+}

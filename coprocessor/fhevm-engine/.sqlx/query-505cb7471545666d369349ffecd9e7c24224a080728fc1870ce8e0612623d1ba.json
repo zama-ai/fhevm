@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE verify_proofs SET sender_status = 'STOPPED', sender_status_updated_at = NOW(),\n                 sender_next_action_at = NULL, sender_last_error = COALESCE(last_error, 'retry budget exhausted')\n             WHERE retry_count >= $1 AND sender_status IN ('QUEUED', 'RETRY_WAIT')\n               AND (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))\n               AND sender_raw_tx IS NULL AND zk_proof_id < $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "505cb7471545666d369349ffecd9e7c24224a080728fc1870ce8e0612623d1ba"
+}

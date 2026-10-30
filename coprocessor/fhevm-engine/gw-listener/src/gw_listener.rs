@@ -697,7 +697,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                  handles = $2,
                  retry_count = 0,
                  last_error = NULL,
-                 last_retry_at = NULL
+                 last_retry_at = NULL,
+                 sender_status = CASE WHEN sender_raw_tx IS NULL THEN 'COMPLETED' ELSE sender_status END,
+                 sender_attempt_no = sender_attempt_no + CASE WHEN sender_raw_tx IS NULL THEN 1 ELSE 0 END,
+                 sender_status_updated_at = NOW()
              WHERE zk_proof_id = $1
                AND verified IS DISTINCT FROM TRUE
                AND (verified = FALSE OR handles IS NULL)",
@@ -720,11 +723,11 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         .await?;
 
         if missing_ciphertexts == 0 {
-            sqlx::query(
+            sqlx::query!(
                 "DELETE FROM verify_proofs
-                 WHERE zk_proof_id = $1 AND verified IS DISTINCT FROM TRUE",
+                 WHERE zk_proof_id = $1 AND verified IS DISTINCT FROM TRUE AND sender_raw_tx IS NULL",
+                zk_proof_id,
             )
-            .bind(zk_proof_id)
             .execute(tx.as_mut())
             .await?;
             debug!(
@@ -789,7 +792,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             return Ok(());
         };
         let result = sqlx::query!(
-            "DELETE FROM verify_proofs WHERE zk_proof_id = $1 AND verified IS DISTINCT FROM TRUE",
+            "DELETE FROM verify_proofs WHERE zk_proof_id = $1 AND verified IS DISTINCT FROM TRUE AND sender_raw_tx IS NULL",
             zk_proof_id,
         )
         .execute(tx.as_mut())

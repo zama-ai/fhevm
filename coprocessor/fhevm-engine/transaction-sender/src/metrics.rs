@@ -93,8 +93,10 @@ pub fn spawn_gauge_update_routine(period: std::time::Duration, db_pool: PgPool) 
                 }
             }
 
-            match sqlx::query_scalar(
-                "SELECT COUNT(*) FROM verify_proofs WHERE verified = TRUE OR (verified = FALSE AND handles IS NOT NULL)",
+            match sqlx::query_scalar!(
+                r#"SELECT COUNT(*) AS "count!" FROM verify_proofs
+                   WHERE sender_status <> 'COMPLETED'
+                     AND (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL) OR sender_raw_tx IS NOT NULL)"#,
             )
             .fetch_one(&db_pool)
             .await

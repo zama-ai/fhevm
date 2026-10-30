@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT sender_raw_tx AS \"raw!\" FROM verify_proofs WHERE sender_raw_tx IS NOT NULL\n         UNION ALL SELECT sender_raw_tx AS \"raw!\" FROM ciphertext_digest WHERE sender_raw_tx IS NOT NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "raw!",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "27c5e71760d9a8cf00bac0070fe9eb066c76309d9047620a6e85b15f7cd1eeec"
+}

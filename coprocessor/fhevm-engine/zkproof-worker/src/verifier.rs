@@ -607,11 +607,18 @@ async fn execute_verify_proof_routine(
             if is_replay {
                 if verified {
                     sqlx::query!(
-                        "DELETE FROM verify_proofs WHERE zk_proof_id = $1",
+                        "DELETE FROM verify_proofs WHERE zk_proof_id = $1 AND sender_raw_tx IS NULL",
                         request_id,
                     )
                     .execute(&mut *txn)
                     .await?;
+                    // Publication may still have an uncertain receipt. Finish local replay
+                    // without deleting the signed transaction that sender recovery needs.
+                    sqlx::query!(
+                        "UPDATE verify_proofs SET verified = TRUE, verified_at = NOW()
+                         WHERE zk_proof_id = $1 AND sender_raw_tx IS NOT NULL",
+                        request_id,
+                    ).execute(&mut *txn).await?;
                 } else {
                     sqlx::query!(
                         "UPDATE verify_proofs

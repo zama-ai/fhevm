@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE verify_proofs SET verified = TRUE, verified_at = NOW()\n                         WHERE zk_proof_id = $1 AND sender_raw_tx IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f6ccdf508e7065fd9a098bb26aafa02f8d826c576ea4c114865aff6a323587be"
+}

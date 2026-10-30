@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM verify_proofs\n            WHERE sender_status = 'COMPLETED' AND verified = TRUE AND sender_raw_tx IS NULL\n              AND sender_status_updated_at < NOW() - INTERVAL '1 day'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "993cd961b28119c83311aef1715fb583f77e7753b4abff11381be63d03418b75"
+}

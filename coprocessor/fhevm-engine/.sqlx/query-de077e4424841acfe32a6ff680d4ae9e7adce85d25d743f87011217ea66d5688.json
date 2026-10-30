@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ciphertext_digest SET sender_status = 'STOPPED',\n                sender_status_updated_at = NOW(), sender_next_action_at = NULL,\n                sender_last_error = COALESCE(txn_last_error, 'retry budget exhausted')\n                WHERE txn_is_sent = FALSE AND txn_limited_retries_count >= $1\n                  AND sender_status IN ('QUEUED', 'RETRY_WAIT') AND sender_raw_tx IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "de077e4424841acfe32a6ff680d4ae9e7adce85d25d743f87011217ea66d5688"
+}

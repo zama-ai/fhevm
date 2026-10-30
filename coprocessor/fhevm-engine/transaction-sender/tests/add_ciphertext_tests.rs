@@ -409,17 +409,18 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
         TestEnvironment::new_with_config(signer_type, conf, force_per_test_localstack).await?;
 
     // Create a provider with a random wallet without funds.
-    let wallet: EthereumWallet = PrivateKeySigner::random().into();
+    let unfunded = PrivateKeySigner::random();
+    let wallet: EthereumWallet = unfunded.clone().into();
     let provider = NonceManagedProvider::new(
         env.http_sender_inner_with(wallet)?,
-        Some(env.wallet.default_signer().address()),
+        Some(unfunded.address()),
     );
 
     let txn_sender = TransactionSender::new(
         env.db_pool.clone(),
         PrivateKeySigner::random().address(),
         PrivateKeySigner::random().address(),
-        env.signer.clone(),
+        transaction_sender::make_abstract_signer(unfunded),
         provider.clone(),
         env.cancel_token.clone(),
         env.conf.clone(),
