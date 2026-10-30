@@ -17,7 +17,7 @@ import { devnet } from '../chains/devnet.js';
 import { polygon_devnet } from '../chains/polygon_devnet.js';
 import { ingen_trex_cleartext } from '../chains/ingen_trex_cleartext.js';
 import { hoodi_cleartext } from '../chains/hoodi_cleartext.js';
-import { mainnet, sepolia, sepolia as testnet } from '@fhevm/sdk/chains';
+import { mainnet, sepolia, sepolia as testnet, bscTestnet } from '@fhevm/sdk/chains';
 import { localcleartext_legacy } from '../chains/localcleartext_legacy.js';
 
 // ---------------------------------------------------------------------------
@@ -41,6 +41,7 @@ export const FHE_TEST_CHAIN_NAMES = [
   'polygon_devnet',
   'ingen_trex_cleartext',
   'hoodi_cleartext',
+  'bsc_testnet',
 ] as const;
 
 export type FheTestChainName = (typeof FHE_TEST_CHAIN_NAMES)[number];
@@ -85,6 +86,7 @@ export function isRealDeployedChain(chainName: FheTestChainName): boolean {
     chainName === 'testnet' ||
     chainName === 'mainnet' ||
     chainName === 'devnet' ||
+    chainName === 'bsc_testnet' ||
     chainName === 'polygon_devnet'
   );
 }
@@ -104,6 +106,9 @@ export function protocolEraOf(chainName: FheTestChainName): 11 | 12 | 13 | 14 {
     return 12;
   }
   if (chainName === 'localstack' || chainName === 'localstack_v14') {
+    return 14;
+  }
+  if (chainName === 'bsc_testnet') {
     return 14;
   }
   return 13;
@@ -130,6 +135,7 @@ const PROTOCOL_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, ProtocolVersi
   polygon_devnet: '0.13.0',
   ingen_trex_cleartext: '0.12.0',
   hoodi_cleartext: '0.11.0',
+  bsc_testnet: '0.14.0',
 };
 
 export function getExpectedProtocolVersion(chainName: FheTestChainName): ProtocolVersion {
@@ -159,6 +165,7 @@ const TFHE_VERSION_BY_CHAIN: Readonly<Record<FheTestChainName, TfheVersion | und
   localstack: '1.6.2',
   localstack_v13: '1.6.2',
   localstack_v14: '1.6.2',
+  bsc_testnet: '1.6.2',
 };
 
 /** Returns the TFHE wasm version for a given test chain, or `undefined` for cleartext chains. */
@@ -169,6 +176,7 @@ export function getTfheVersion(chainName: FheTestChainName): TfheVersion | undef
 const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestChainName, string>>> = {
   sepolia: '1.4.0-alpha.3',
   testnet: '1.4.0-alpha.3',
+  bsc_testnet: '1.4.0-alpha.3',
   localcleartext: 'cleartext',
   localcleartext_legacy: 'cleartext',
   localcleartext_v12: 'cleartext',
@@ -578,6 +586,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     mainnet,
     devnet,
     testnet,
+    bsc_testnet: bscTestnet,
   };
   const fhevmChain = chainMap[chainName];
   if (!fhevmChain) {

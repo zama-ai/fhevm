@@ -14,6 +14,7 @@ import {
   sepolia as viemSepolia,
   anvil as viemAnvil,
   polygonAmoy as viemPolygonAmoy,
+  bscTestnet as viemBscTestnet,
 } from 'viem/chains';
 import { isCleartext, prepareChains } from './setupCommon.js';
 
@@ -71,17 +72,25 @@ function _buildConfigs(): FheTestViemConfig[] {
   return envs.map(_buildConfig);
 }
 
+// Public host chains, keyed by chain id
+const VIEM_CHAINS_BY_ID: ReadonlyMap<number, Chain> = new Map<number, Chain>(
+  [viemMainnet, viemSepolia, viemPolygonAmoy, viemBscTestnet].map((chain) => [chain.id, chain]),
+);
+
+function _resolveViemChain(env: FheTestBaseEnv): Chain {
+  const publicChain = VIEM_CHAINS_BY_ID.get(env.fhevmChain.id);
+  if (publicChain !== undefined) {
+    return publicChain;
+  }
+  // Local stacks run on anvil with a custom chain id
+  if (env.chainName.startsWith('localstack')) {
+    return { ...viemAnvil, id: env.fhevmChain.id };
+  }
+  return viemAnvil;
+}
+
 function _buildConfig(env: FheTestBaseEnv): FheTestViemConfig {
-  const viemChain =
-    env.chainName === 'mainnet'
-      ? viemMainnet
-      : env.chainName === 'sepolia' || env.chainName === 'devnet' || env.chainName === 'testnet'
-        ? viemSepolia
-        : env.chainName === 'polygon_devnet'
-          ? viemPolygonAmoy
-          : env.chainName.startsWith('localstack')
-            ? { ...viemAnvil, id: env.fhevmChain.id }
-            : viemAnvil;
+  const viemChain = _resolveViemChain(env);
 
   const account = mnemonicToAccount(env.mnemonic);
   const bobAccount = mnemonicToAccount(env.mnemonic, {
