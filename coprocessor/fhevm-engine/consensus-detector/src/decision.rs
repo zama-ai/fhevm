@@ -14,11 +14,15 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 /// Separates this signature from every other hash this signer produces.
-const DOMAIN: &[u8] = b"fhevm/upgrade-decision/v1";
+///
+/// The record format (this constant and the types below) is public so that an
+/// external verifier reads the exact serde the writer used; the checking and
+/// writing logic stays private so a verifier cannot lean on it.
+pub const DOMAIN: &[u8] = b"fhevm/upgrade-decision/v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum Decision {
+pub enum Decision {
     Quorum,
     Abort,
 }
@@ -27,7 +31,7 @@ pub(crate) enum Decision {
 /// The bucket travels with the address, so a member that `GatewayConfig` drops
 /// mid-attempt stays readable.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Member {
+pub struct Member {
     pub address: String,
     pub url: String,
 }
@@ -36,7 +40,7 @@ pub(crate) struct Member {
 /// blocks it agreed on, so a restart emits the cutover notifications from the
 /// record itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Payload {
+pub struct Payload {
     pub proposal_id: String,
     pub proposal_block: i64,
     /// The release of the attempt. An operator on another image signs different
@@ -50,7 +54,7 @@ pub(crate) struct Payload {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Record {
+pub struct Record {
     #[serde(flatten)]
     pub payload: Payload,
     pub signature: String,
@@ -67,7 +71,7 @@ impl Payload {
 
     /// Identity of the set. Two operators can hold different buckets for one
     /// member, so only the addresses decide whether records describe one attempt.
-    pub(crate) fn addresses(&self) -> Vec<&str> {
+    pub fn addresses(&self) -> Vec<&str> {
         self.members.iter().map(|m| m.address.as_str()).collect()
     }
 }
@@ -97,7 +101,7 @@ impl Record {
 }
 
 impl Member {
-    pub(crate) fn parsed_address(&self) -> Option<Address> {
+    pub fn parsed_address(&self) -> Option<Address> {
         hex::decode(&self.address)
             .ok()
             .and_then(|raw| <[u8; 20]>::try_from(raw.as_slice()).ok())
@@ -105,7 +109,7 @@ impl Member {
     }
 }
 
-pub(crate) fn name_of(address: Address) -> String {
+pub fn name_of(address: Address) -> String {
     hex::encode(address.as_slice())
 }
 
@@ -122,7 +126,7 @@ pub(crate) fn members_of(members: &[(Address, String)]) -> Vec<Member> {
     members
 }
 
-pub(crate) fn key(proposal_id: &[u8], proposal_block: i64) -> String {
+pub fn key(proposal_id: &[u8], proposal_block: i64) -> String {
     format!(
         "decision/proposal={}/attempt={proposal_block}/outcome.json",
         hex::encode(proposal_id)
