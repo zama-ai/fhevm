@@ -5513,6 +5513,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pingora-limits"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f17248f7a1586c1f1244481f058a70e4d44707d8f936bf0b2323c8c85c40c8c0"
+dependencies = [
+ "ahash",
+]
+
+[[package]]
 name = "pingora-load-balancing"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5896,6 +5905,7 @@ dependencies = [
  "kms-connector-api",
  "opentelemetry",
  "pingora",
+ "pingora-limits",
  "rcgen",
  "rstest",
  "rustls",
@@ -5911,9 +5921,9 @@ dependencies = [
 
 [[package]]
 name = "pulldown-cmark"
-version = "0.13.3"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c3a14896dfa883796f1cb410461aef38810ea05f2b2c33c5aded3649095fdad"
+checksum = "278e9268c93b9e498a2da46c34d90ba93a3255eb99009646398f34bc73ab36eb"
 dependencies = [
  "bitflags",
  "memchr",
