@@ -1,6 +1,4 @@
 use alloy::transports::http::reqwest::Url;
-#[cfg(debug_assertions)]
-use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use std::{fmt, str::FromStr};
 
@@ -15,7 +13,6 @@ pub(crate) const REDACTED: &str = "<redacted>";
 /// for anything but a `postgres://` URL, e.g. a libpq key/value connection string, which may hold
 /// a password anywhere, and for a URL whose userinfo was misread.
 #[derive(Clone, Deserialize, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
 #[serde(transparent)]
 pub struct DatabaseUrl(String);
 
@@ -76,7 +73,6 @@ impl From<&str> for DatabaseUrl {
 /// `https://<redacted>@rpc.example.com/<redacted>?<redacted>`. A malformed URL is rejected at
 /// deserialization without being echoed in the error.
 #[derive(Clone, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize), serde(transparent))]
 pub struct RpcUrl(Url);
 
 impl RpcUrl {

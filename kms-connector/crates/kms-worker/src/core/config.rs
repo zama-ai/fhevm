@@ -14,14 +14,11 @@ use connector_utils::{
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-#[cfg(test)]
-use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use std::{net::SocketAddr, num::NonZeroUsize, time::Duration};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
     pub database_url: DatabaseUrl,
@@ -33,14 +30,12 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_db_fast_event_polling"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub db_fast_event_polling: Duration,
     /// The timeout for polling the database for long events (prep keygen for ex).
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_db_long_event_polling"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub db_long_event_polling: Duration,
     /// The limit number of events to fetch from the database.
     #[serde(default = "default_events_batch_size")]
@@ -83,21 +78,18 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_kms_connect_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub kms_connect_timeout: Duration,
     /// Interval between HTTP/2 keepalive pings sent to the KMS Core, even when the channel is idle.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_kms_keep_alive_interval"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub kms_keep_alive_interval: Duration,
     /// Time to wait for a keepalive ping acknowledgement before closing the KMS Core connection.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_kms_keep_alive_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub kms_keep_alive_timeout: Duration,
     /// The maximum number of decryption attempts.
     #[serde(default = "default_max_decryption_attempts")]
@@ -111,21 +103,18 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_s3_connect_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_connect_timeout: Duration,
     /// Timeout of a single attestation `HEAD` on a Coprocessor bucket.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_s3_head_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_head_timeout: Duration,
     /// Timeout of a single ciphertext `GET`.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_s3_get_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_get_timeout: Duration,
     /// Ceiling on the attestation `HEAD`s in flight on a single Coprocessor bucket, across all
     /// requests.
@@ -142,7 +131,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_copro_registry_refresh"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub copro_registry_refresh: Duration,
 
     /// Ceiling on the calls a single host chain endpoint may have in flight, across all requests.
@@ -153,7 +141,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_host_rpc_call_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub host_rpc_call_timeout: Duration,
 
     /// Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
@@ -175,13 +162,11 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_healthcheck_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
 /// Configuration of a single Host Chain.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct HostChainConfig {
     /// The Host Chain RPC endpoint.
     pub url: RpcUrl,

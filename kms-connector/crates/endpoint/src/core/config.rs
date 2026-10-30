@@ -6,8 +6,6 @@ use connector_utils::{
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
 };
 use serde::Deserialize;
-#[cfg(test)]
-use serde::Serialize;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::Duration,
@@ -15,7 +13,6 @@ use std::{
 
 /// Configuration of the `Endpoint` service.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
     pub database_url: DatabaseUrl,
@@ -34,14 +31,12 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_decryption_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub decryption_timeout: Duration,
     /// How long an irrecoverable decryption error is reused before reprocessing.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_error_serve_window"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub error_serve_window: Duration,
     /// The maximum accepted size of a JSON request body.
     #[serde(default = "default_max_body_bytes")]
@@ -65,7 +60,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_healthcheck_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 

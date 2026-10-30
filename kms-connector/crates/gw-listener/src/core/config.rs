@@ -13,13 +13,10 @@ use connector_utils::{
     tasks::default_task_limit,
 };
 use serde::Deserialize;
-#[cfg(test)]
-use serde::Serialize;
 use std::{net::SocketAddr, time::Duration};
 
 /// Configuration of the `GatewayListener`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
     pub database_url: DatabaseUrl,
@@ -60,7 +57,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_healthcheck_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 
     /// The polling interval for decryption requests.
@@ -68,14 +64,12 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_decryption_polling"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub decryption_polling: Duration,
     /// The polling interval for key management requests.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_key_management_polling"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub key_management_polling: Duration,
 
     /// The maximum number of blocks to fetch per `eth_getLogs` request.
@@ -91,7 +85,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_rpc_call_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub rpc_call_timeout: Duration,
 
     /// How long the Gateway head reported by the RPC node may stay the same before a warning.
@@ -99,7 +92,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_gateway_stale_head_threshold"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub gateway_stale_head_threshold: Duration,
     /// How long the Ethereum finalized block reported by the RPC node may stay the same before a
     /// warning.
@@ -107,7 +99,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_ethereum_stale_head_threshold"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub ethereum_stale_head_threshold: Duration,
 
     /// Optional block number to start processing decryption events from.
