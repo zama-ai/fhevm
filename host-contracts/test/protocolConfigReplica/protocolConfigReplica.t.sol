@@ -18,8 +18,6 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
     ProtocolConfigReplica internal protocolConfigReplica;
 
     address internal constant owner = address(456);
-    bytes32 internal constant INITIALIZABLE_STORAGE =
-        0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
 
     /// @dev Bootstraps a replica on the same active context and epoch as a fresh canonical deploy.
     function _setupReplica() internal {
@@ -218,7 +216,7 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
         );
     }
 
-    function test_reinitializeV4SucceedsOnUpgradeFromProtocolConfig() public {
+    function test_reinitializeV4OnUpgradeFromProtocolConfigKeepsStateAndMirrors() public {
         ProtocolConfig pc = _setupCanonical();
 
         (uint256 contextId, uint256 epochId) = pc.getCurrentKmsContextAndEpoch();
@@ -243,6 +241,12 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         protocolConfigReplica.reinitializeV4();
+
+        vm.prank(owner);
+        protocolConfigReplica.mirrorKmsEpoch(contextId, epochId + 1);
+        (newContextId, newEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
+        assertEq(newContextId, contextId);
+        assertEq(newEpochId, epochId + 1);
     }
 
     function test_revertReinitializeV4OnFreshReplica() public {

@@ -3,20 +3,13 @@ use alloy::{
     hex,
     providers::Provider,
     rpc::types::{TransactionReceipt, TransactionRequest},
-    sol_types::SolValue,
 };
 use anyhow::anyhow;
 use connector_utils::types::{
     CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponseKind, NewKmsContextResponse,
     PrepKeygenResponse,
 };
-use fhevm_host_bindings::{
-    kms_generation::KMSGeneration::KMSGenerationInstance,
-    protocol_config::{
-        IProtocolConfig::{EpochCrsResult, EpochKeyResult},
-        ProtocolConfig::ProtocolConfigInstance,
-    },
-};
+use fhevm_host_bindings::kms_generation::KMSGeneration::KMSGenerationInstance;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
@@ -27,7 +20,6 @@ where
 {
     provider: P,
     kms_generation_contract: KMSGenerationInstance<P>,
-    protocol_config_contract: ProtocolConfigInstance<P>,
     config: EthereumSenderConfig,
 }
 
@@ -61,13 +53,11 @@ where
     pub fn new(
         provider: P,
         kms_generation_contract: KMSGenerationInstance<P>,
-        protocol_config_contract: ProtocolConfigInstance<P>,
         inner_config: EthereumSenderConfig,
     ) -> Self {
         Self {
             provider,
             kms_generation_contract,
-            protocol_config_contract,
             config: inner_config,
         }
     }
@@ -147,29 +137,24 @@ where
         &self,
         response: NewKmsContextResponse,
     ) -> Result<TransactionReceipt, Error> {
-        let call_builder = self
-            .protocol_config_contract
-            .confirmKmsContextCreation(response.context_id);
-
-        let call = call_builder.into_transaction_request();
-        self.send_tx_with_retry(call).await
+        // `confirmKmsContextCreation` reverts without a KMS core signature.
+        Err(Error::Irrecoverable(anyhow!(
+            "Cannot confirm KMS context #{:#066x}: the KMS core signature is not available yet \
+            (planning-blockchain#1369)",
+            response.context_id
+        )))
     }
 
     pub async fn send_epoch_result_response(
         &self,
         response: EpochResultResponse,
     ) -> Result<TransactionReceipt, Error> {
-        let keys = <Vec<EpochKeyResult> as SolValue>::abi_decode(&response.keys)
-            .map_err(|e| Error::Irrecoverable(anyhow!("Failed to decode epoch keys: {e}")))?;
-        let crs_list = <Vec<EpochCrsResult> as SolValue>::abi_decode(&response.crs_list)
-            .map_err(|e| Error::Irrecoverable(anyhow!("Failed to decode epoch crs_list: {e}")))?;
-
-        let call_builder =
-            self.protocol_config_contract
-                .confirmEpochActivation(response.epoch_id, keys, crs_list);
-
-        let call = call_builder.into_transaction_request();
-        self.send_tx_with_retry(call).await
+        // `confirmEpochActivation` reverts without a KMS core signature.
+        Err(Error::Irrecoverable(anyhow!(
+            "Cannot confirm epoch #{:#066x} activation: the KMS core signature is not available \
+            yet (planning-blockchain#1369)",
+            response.epoch_id
+        )))
     }
 
     /// Sends the requested transaction with retries.
@@ -248,7 +233,6 @@ where
         Self {
             provider: self.provider.clone(),
             kms_generation_contract: self.kms_generation_contract.clone(),
-            protocol_config_contract: self.protocol_config_contract.clone(),
             config: self.config.clone(),
         }
     }
@@ -318,7 +302,6 @@ mod tests {
         let tx_sender = EthereumTransactionSender::new(
             mock_provider.clone(),
             KMSGenerationInstance::new(Address::default(), mock_provider.clone()),
-            ProtocolConfigInstance::new(Address::default(), mock_provider.clone()),
             EthereumSenderConfig {
                 tx_retries: 1,
                 trace_reverted_tx: true,
