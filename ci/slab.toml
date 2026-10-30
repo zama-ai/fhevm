@@ -117,3 +117,12 @@ instance_type = "c7i.8xlarge"
 region = "eu-west-3"
 image_id = "ami-0a56cf46caf2fd41c"
 instance_type = "c6i.12xlarge"
+
+# Security-audit PoC (draft PR, do not merge): proves that a repo-supplied
+# Terraform profile executes commands on the Slab server itself (audit F1) and
+# that the result is readable back through the instance ID (audit F2).
+# The script creates no cloud resource.
+[backend.terraform.slab-f1-poc]
+script_path = "ci/terraform_scripts/slab_f1_poc/terraform.tf"
+instance_type = "none"
+user = "ubuntu"

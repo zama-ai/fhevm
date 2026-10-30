@@ -1,0 +1,42 @@
+# Security-audit PoC (draft PR, do not merge): proves that a repo-supplied
+# Terraform profile runs commands on the Slab server itself (audit F1) and
+# that the result is readable back through the instance ID the runner action
+# reports (audit F2).
+#
+# Expected outcome: the "Start remote instance" step logs
+# `terraform instance started with ID: uid=...(...)...` — the output of `id`
+# executed on the Slab host — then fails ~30 min later with "instance was not
+# able to register itself in GitHub", because this profile spawns no runner.
+# The failure path auto-stops the "instance" (a terraform destroy no-op).
+name: slab-f1-poc
+
+permissions: {}
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ci/terraform_scripts/slab_f1_poc/**
+      - .github/workflows/slab-f1-poc.yml
+
+jobs:
+  slab-f1-poc:
+    name: slab-f1-poc/start
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      # Secrets are available only for zama-ai organization members.
+      SECRETS_AVAILABLE: ${{ secrets.JOB_SECRET != '' }}
+    steps:
+      - name: Start remote instance
+        id: start-remote-instance
+        if: env.SECRETS_AVAILABLE == 'true'
+        uses: zama-ai/slab-github-runner@d4a5bb6e2a4b8aa19a10f596d7f142006a7e2c21 # v1.6.3
+        with:
+          mode: start
+          github-token: ${{ secrets.SLAB_ACTION_TOKEN }}
+          slab-url: ${{ secrets.SLAB_BASE_URL }}
+          job-secret: ${{ secrets.JOB_SECRET }}
+          backend: terraform
+          profile: slab-f1-poc
