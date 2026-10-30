@@ -1,7 +1,7 @@
 use connector_utils::{
     config::{
-        DeserializeConfig, default_database_pool_size, deserialize_non_zero_duration,
-        deserialize_one_or_many,
+        DeserializeConfig, default_database_pool_size, default_max_handles_per_decryption,
+        deserialize_non_zero_duration, deserialize_one_or_many,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
 };
@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    num::NonZeroUsize,
     time::Duration,
 };
 
@@ -50,6 +51,9 @@ pub struct Config {
     /// `MAX_USER_DECRYPT_CONTRACT_ADDRESSES` of the `Decryption` gateway contract.
     #[serde(default = "default_max_allowed_contracts")]
     pub max_allowed_contracts: usize,
+    /// The maximum number of handles a single decryption request can contain.
+    #[serde(default = "default_max_handles_per_decryption")]
+    pub max_handles_per_decryption: NonZeroUsize,
     /// The host chain ids accepted in ciphertext handles.
     #[serde(deserialize_with = "deserialize_one_or_many")]
     pub supported_chain_ids: Vec<u64>,
@@ -111,6 +115,7 @@ impl Default for Config {
             error_serve_window: default_error_serve_window(),
             max_body_bytes: default_max_body_bytes(),
             max_allowed_contracts: default_max_allowed_contracts(),
+            max_handles_per_decryption: default_max_handles_per_decryption(),
             supported_chain_ids: vec![11155111],
             service_name: default_service_name(),
             monitoring_endpoint: default_monitoring_endpoint(),
@@ -139,6 +144,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_ERROR_SERVE_WINDOW");
             env::remove_var("KMS_CONNECTOR_MAX_BODY_BYTES");
             env::remove_var("KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS");
+            env::remove_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION");
             env::remove_var("KMS_CONNECTOR_SUPPORTED_CHAIN_IDS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_MONITORING_ENDPOINT");
@@ -171,6 +177,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_ERROR_SERVE_WINDOW", "7d");
             env::set_var("KMS_CONNECTOR_MAX_BODY_BYTES", "2048");
             env::set_var("KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS", "3");
+            env::set_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION", "20");
             env::set_var("KMS_CONNECTOR_SUPPORTED_CHAIN_IDS", "1,31337");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
             env::set_var("KMS_CONNECTOR_MONITORING_ENDPOINT", "127.0.0.1:9101");
@@ -190,6 +197,7 @@ mod tests {
         assert_eq!(config.error_serve_window, Duration::from_hours(7 * 24));
         assert_eq!(config.max_body_bytes, 2048);
         assert_eq!(config.max_allowed_contracts, 3);
+        assert_eq!(config.max_handles_per_decryption.get(), 20);
         assert_eq!(config.supported_chain_ids, vec![1, 31337]);
         assert_eq!(config.service_name, "kms-connector-test");
         assert_eq!(

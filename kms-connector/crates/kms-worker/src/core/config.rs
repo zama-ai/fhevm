@@ -9,7 +9,8 @@ use connector_utils::{
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size, deserialize_non_zero_duration,
+        default_database_pool_size, default_max_handles_per_decryption,
+        deserialize_non_zero_duration,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
@@ -263,10 +264,6 @@ fn default_kms_keep_alive_timeout() -> Duration {
 
 fn default_max_decryption_attempts() -> u16 {
     20
-}
-
-fn default_max_handles_per_decryption() -> NonZeroUsize {
-    NonZeroUsize::new(50).unwrap()
 }
 
 fn default_s3_ciphertext_retrieval_attempts() -> NonZeroUsize {
