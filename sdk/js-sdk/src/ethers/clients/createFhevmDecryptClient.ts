@@ -16,6 +16,10 @@ export function createFhevmDecryptClient<
   readonly chain: chain;
   readonly options?: FhevmDecryptOptions<EthersT.ContractRunner> | undefined;
 }): FhevmDecryptClient<chain, WithDecrypt, provider> {
-  const c = createFhevmBaseClient(parameters);
+  const c = createFhevmBaseClient({
+    ...parameters,
+    // Decrypt clients never use the key: do not keep a copy of it.
+    options: parameters.options === undefined ? undefined : { ...parameters.options, fheEncryptionKey: undefined },
+  });
   return c.extend(decryptActions);
 }
