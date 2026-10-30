@@ -31,6 +31,18 @@ contract MockHCULimit is HCULimit {
     function setLegacyGlobalCapForTest(uint48 cap) external {
         _getHCULimitStorage().globalHCUCapPerBlock = cap;
     }
+
+    function setAllowlistActivatedForTest(bool activated) external {
+        _getHCULimitStorage().isAllowlistActivated = activated;
+    }
+
+    function setAllowlistedForTest(address account) external {
+        _getHCULimitStorage().isAllowlisted[account] = true;
+    }
+
+    function setBlockHCUWhitelistedForTest(address account) external {
+        _getHCULimitStorage().blockHCUWhitelist[account] = true;
+    }
 }
 
 contract HCULimitTest is Test, SupportedTypesConstants {
@@ -51,6 +63,12 @@ contract HCULimitTest is Test, SupportedTypesConstants {
     uint16 internal constant HIGH_QUOTA = 21;
     address internal constant LOW = address(0xA1);
     address internal constant HIGH = address(0xB1);
+    uint16 internal constant ALLOWLIST_QUOTA = 1;
+    uint16 internal constant BLOCK_WHITELIST_QUOTA = 2;
+    address internal constant ALLOWED = address(0xC1);
+    address internal constant ALLOWED_EXEMPT = address(0xC2);
+    address internal constant EXEMPT_ONLY = address(0xC3);
+    address internal constant UNKNOWN = address(0xC4);
 
     bytes32 mockLHS = bytes32(uint256(int256(-1)));
     bytes32 mockRHS = bytes32(uint256(int256(-2)));
@@ -109,7 +127,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.5.0")));
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.6.0")));
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
@@ -1572,27 +1590,106 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.stopPrank();
     }
 
-    function test_reinitializeV5CopiesGlobalCapIntoDefaultQuota() public {
-        address proxyWithoutInitCall = UnsafeUpgrades.deployUUPSProxy(
-            address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, ())
-        );
+    function test_reinitializeV6CopiesGlobalCapIntoDefaultQuota() public {
+        _upgradeFromV5(false);
 
-        address implementationWithoutInitCall = address(new MockHCULimit());
-        vm.startPrank(owner);
-        UnsafeUpgrades.upgradeProxy(proxyWithoutInitCall, implementationWithoutInitCall, "");
-
-        MockHCULimit upgraded = MockHCULimit(proxyWithoutInitCall);
-        upgraded.setLegacyGlobalCapForTest(123_456);
-        upgraded.reinitializeV5();
-        vm.stopPrank();
-
-        (uint48 maxHCU, uint48 decayPerBlock, ) = upgraded.getQuota(DEFAULT_QUOTA);
-        assertEq(maxHCU, 123_456);
-        assertEq(decayPerBlock, 123_456);
-        (maxHCU, , ) = upgraded.getCapacity();
+        (uint48 maxHCU, uint48 decayPerBlock, ) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        assertEq(maxHCU, 100_000);
+        assertEq(decayPerBlock, 100_000);
+        (maxHCU, , ) = hcuLimit.getQuota(ALLOWLIST_QUOTA);
+        assertEq(maxHCU, 0);
+        (maxHCU, , ) = hcuLimit.getCapacity();
         assertEq(maxHCU, type(uint48).max);
-        assertEq(upgraded.getTier(0), 10_000);
+        assertEq(hcuLimit.getTier(0), 10_000);
+    }
+
+    function test_reinitializeV6WithTheAllowlistActiveStopsTheDefaultQuota() public {
+        _upgradeFromV5(true);
+
+        (uint48 maxHCU, uint48 decayPerBlock, ) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        assertEq(maxHCU, 0);
+        assertEq(decayPerBlock, 0);
+        (maxHCU, decayPerBlock, ) = hcuLimit.getQuota(ALLOWLIST_QUOTA);
+        assertEq(maxHCU, 100_000);
+        assertEq(decayPerBlock, 100_000);
+        (maxHCU, , ) = hcuLimit.getQuota(BLOCK_WHITELIST_QUOTA);
+        assertEq(maxHCU, type(uint48).max);
+        (maxHCU, , ) = hcuLimit.getCapacity();
+        assertEq(maxHCU, type(uint48).max);
+        assertEq(hcuLimit.getTier(0), 10_000);
+    }
+
+    function test_allowlistedContractsKeepTheLimitsTheyHadUntilAssigned() public {
+        _upgradeFromV5(true);
+        assertEq(hcuLimit.getContractQuota(ALLOWED), ALLOWLIST_QUOTA);
+        assertEq(hcuLimit.getContractQuota(ALLOWED_EXEMPT), BLOCK_WHITELIST_QUOTA);
+        assertEq(hcuLimit.getContractQuota(EXEMPT_ONLY), DEFAULT_QUOTA);
+        assertEq(hcuLimit.getContractQuota(UNKNOWN), DEFAULT_QUOTA);
+
+        // Allowlisted contracts share the old global cap of 100,000 HCU per block.
+        _add(ALLOWED, 0x1001);
+        (, , uint48 used) = hcuLimit.getQuota(ALLOWLIST_QUOTA);
+        assertEq(used, 84_000);
+        _expectQuotaExceeded(ALLOWED, ALLOWLIST_QUOTA, 1, 0x1002);
+        // Block-whitelisted ones skipped that cap, and stay unmetered.
+        _add(ALLOWED_EXEMPT, 0x1003);
+        _add(ALLOWED_EXEMPT, 0x1004);
+        // Contracts the allowlist refused stay refused, block-whitelisted or not.
+        _expectQuotaStopped(UNKNOWN, DEFAULT_QUOTA);
+        _expectQuotaStopped(EXEMPT_ONLY, DEFAULT_QUOTA);
+    }
+
+    function test_assignmentTakesPrecedenceOverTheAllowlist() public {
+        _upgradeFromV5(true);
+        _setQuotaPerBlock(PARTNER_QUOTA, 1_000_000);
+        _assign(PARTNER_QUOTA, ALLOWED);
+
+        assertEq(hcuLimit.getContractQuota(ALLOWED), PARTNER_QUOTA);
+        _add(ALLOWED, 0x1001);
+        (, , uint48 used) = hcuLimit.getQuota(PARTNER_QUOTA);
+        assertEq(used, 84_000);
+
+        // Back in the default quota, the allowlist routes it again.
+        _assign(DEFAULT_QUOTA, ALLOWED);
+        assertEq(hcuLimit.getContractQuota(ALLOWED), ALLOWLIST_QUOTA);
+    }
+
+    function test_quotaAdminCannotTakeAnAllowlistedContract() public {
+        _upgradeFromV5(true);
+        _setQuotaPerBlock(PARTNER_QUOTA, 1_000_000);
+        _setAdmin(PARTNER_QUOTA, PARTNER_ADMIN);
+
+        vm.prank(PARTNER_ADMIN);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.ContractNotInQuota.selector, ALLOWED, DEFAULT_QUOTA));
+        hcuLimit.grantQuota(PARTNER_QUOTA, ALLOWED);
+
+        _grant(UNKNOWN);
+        assertEq(hcuLimit.getContractQuota(UNKNOWN), PARTNER_QUOTA);
+    }
+
+    function test_stoppingTheAllowlistQuotaStopsContractsNobodyAssigned() public {
+        _upgradeFromV5(true);
+        _setQuota(ALLOWLIST_QUOTA, 0, 0);
+
+        _expectQuotaStopped(ALLOWED, ALLOWLIST_QUOTA);
+    }
+
+    function test_openingTheDefaultQuotaEndsTheAllowlistRouting() public {
+        _upgradeFromV5(true);
+        _setQuotaPerBlock(DEFAULT_QUOTA, 1_000_000);
+
+        assertEq(hcuLimit.getContractQuota(ALLOWED), DEFAULT_QUOTA);
+        _add(ALLOWED, 0x1001);
+        (, , uint48 used) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        assertEq(used, 84_000);
+    }
+
+    function test_inactiveAllowlistRoutesNothing() public {
+        _upgradeFromV5(false);
+        _stopDefaultQuota();
+
+        assertEq(hcuLimit.getContractQuota(ALLOWED), DEFAULT_QUOTA);
+        _expectQuotaStopped(ALLOWED, DEFAULT_QUOTA);
     }
 
     function test_initializeLeavesCapacityUnmeteredAndTheDefaultTierFull() public view {
@@ -1812,6 +1909,37 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         emit HCULimit.ContractQuotaAssigned(quotaId, account, owner);
         vm.prank(owner);
         hcuLimit.assignQuota(quotaId, account);
+    }
+
+    /// @dev Replaces the proxy under test with one upgraded from V5: a global cap of 100,000 HCU per block, ALLOWED and
+    ///      ALLOWED_EXEMPT allowlisted, ALLOWED_EXEMPT and EXEMPT_ONLY block-whitelisted.
+    function _upgradeFromV5(bool allowlistActivated) internal {
+        address upgradedProxy = UnsafeUpgrades.deployUUPSProxy(
+            address(new EmptyUUPSProxy()),
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
+        );
+        vm.startPrank(owner);
+        UnsafeUpgrades.upgradeProxy(upgradedProxy, address(new MockHCULimit()), "");
+        MockHCULimit upgraded = MockHCULimit(upgradedProxy);
+        upgraded.setLegacyGlobalCapForTest(100_000);
+        upgraded.setAllowlistActivatedForTest(allowlistActivated);
+        upgraded.setAllowlistedForTest(ALLOWED);
+        upgraded.setAllowlistedForTest(ALLOWED_EXEMPT);
+        upgraded.setBlockHCUWhitelistedForTest(ALLOWED_EXEMPT);
+        upgraded.setBlockHCUWhitelistedForTest(EXEMPT_ONLY);
+        upgraded.reinitializeV6();
+        // A deployed V5 already has these limits; the upgrade keeps them.
+        upgraded.setMaxHCUPerTx(20_000_000);
+        upgraded.setMaxHCUDepthPerTx(5_000_000);
+        vm.stopPrank();
+        hcuLimit = upgraded;
+    }
+
+    /// @dev Expects one 84,000 HCU addition by `caller` to revert because its quota is stopped.
+    function _expectQuotaStopped(address caller, uint16 quotaId) internal {
+        vm.prank(fhevmExecutor);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.HCUQuotaStopped.selector, caller, quotaId));
+        hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, mockLHS, mockRHS, bytes32(uint256(0x9002)), caller);
     }
 
     function _stopDefaultQuota() internal {

@@ -8,8 +8,8 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
     // FHEVMExecutor declarations whose only revert sites were removed as unreachable
     // dead code (see issue #1370). No deployed call path can emit these selectors.
     FHEVMExecutor: ["error InvalidByteLength(uint8,uint256)", "error SecondOperandIsNotScalar()"],
-    // HCU quotas replace the global block cap and its whitelist. reinitializeV5 carries a set cap
-    // into the default quota; the upgrade proposal assigns any whitelisted contract to a quota that is not metered.
+    // HCU quotas replace the global block cap and its whitelist. reinitializeV6 carries a set cap into the default
+    // quota, or, with the allowlist active, into the quota where allowlisted contracts nobody assigned keep computing.
     HCULimit: [
       "error AlreadyBlockHCUWhitelisted(address)",
       "error HCUBlockLimitExceeded()",

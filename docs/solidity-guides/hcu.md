@@ -29,7 +29,7 @@ To resolve a per-transaction revert, you must do one of the following:
 
 ### Quotas and transaction estimation
 
-Every contract that calls `FHEVMExecutor` belongs to one quota. Contracts start in the default quota (`0`); a contract moves to another quota when governance assigns it (`assignQuota`) or when that quota's admin grants it (`grantQuota`). Here, the contract is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA.
+Every contract that calls `FHEVMExecutor` belongs to one quota. Contracts start in the default quota (`0`); a contract moves to another quota when governance assigns it (`assignQuota`) or when that quota's admin grants it (`grantQuota`). Here, the contract is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA. On a chain where the 0.14 allowlist was active, an allowlisted contract nobody assigned yet computes in quota `1`, shared at the old per-block cap, or in quota `2`, unmetered, if it was also on the block HCU whitelist. `getContractQuota` returns that quota, and only governance moves such a contract.
 
 A quota has a maximum and a decay per block, like the depth limit across transactions below. Every FHE operation adds its HCU to the quota's usage, usage decreases by the decay every block, and an operation fits while usage stays at or below the maximum. The maximum sets the largest burst; the decay sets the sustained rate. A quota whose maximum is `type(uint48).max` is not metered. A quota's maximum and decay are both 0 (stopped) or both non-zero.
 
