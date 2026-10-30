@@ -9,16 +9,9 @@ use opentelemetry_otlp::SpanExporter;
 use opentelemetry_sdk::{Resource, propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tracing::{Dispatch, Level, Metadata, Subscriber};
+use tracing::Dispatch;
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{
-    EnvFilter, Layer,
-    filter::{FilterFn, filter_fn},
-    fmt,
-    layer::SubscriberExt,
-    registry::LookupSpan,
-    util::SubscriberInitExt,
-};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Returns a default tracing dispatcher.
 ///
@@ -27,7 +20,7 @@ use tracing_subscriber::{
 pub fn default_dispatcher() -> Dispatch {
     tracing_subscriber::registry()
         .with(fmt::layer())
-        .with(log_filters(env_filter()))
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .into()
 }
 
@@ -48,7 +41,7 @@ pub fn init_otlp_setup(service_name: String) -> anyhow::Result<()> {
 
     tracing_subscriber::registry()
         .with(fmt::layer())
-        .with(log_filters(env_filter()))
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .with(OpenTelemetryLayer::new(trace_provider.tracer("otlp-layer")))
         .init();
 
@@ -56,28 +49,6 @@ pub fn init_otlp_setup(service_name: String) -> anyhow::Result<()> {
     global::set_tracer_provider(trace_provider);
 
     Ok(())
-}
-
-/// The log filter set by `RUST_LOG`, defaulting to `info`.
-fn env_filter() -> EnvFilter {
-    EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
-}
-
-/// The filters of every tracing subscriber of the app: `env_filter`, which `hide_rpc_urls`
-/// overrides.
-pub fn log_filters<S>(env_filter: EnvFilter) -> impl Layer<S>
-where
-    S: Subscriber + for<'span> LookupSpan<'span>,
-{
-    env_filter.and_then(hide_rpc_urls())
-}
-
-/// Drops the debug and trace spans and events of `alloy_transport_http`, whatever `RUST_LOG` says:
-/// its request spans hold the full RPC node URL, which may contain an API key.
-fn hide_rpc_urls() -> FilterFn<impl Fn(&Metadata<'_>) -> bool> {
-    filter_fn(|metadata| {
-        !(metadata.target().starts_with("alloy_transport_http") && *metadata.level() > Level::INFO)
-    })
 }
 
 /// The content type header for Prometheus text-based metrics format.
