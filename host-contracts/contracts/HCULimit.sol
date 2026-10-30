@@ -218,7 +218,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @dev The first five uint48 fields pack into a single 256-bit slot (5 × 48 = 240 bits). The
     ///      cross-transaction fields and the quotas are appended after the mapping to keep the existing layout.
     struct HCULimitStorage {
-        /// @notice Unused since quotas replaced the global block cap; reinitializeV6 copies it into the default or allowlist quota.
+        /// @notice Unused since quotas replaced the global block cap; reinitializeV6 copies it into a quota.
         uint48 globalHCUCapPerBlock;
         /// @notice Unused since quotas replaced the global block cap.
         uint48 usedBlockHCU;
@@ -234,7 +234,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         /// @notice Whether the allowlist restricted FHE computation when quotas replaced it. No setter; while true and
         ///         the default quota is stopped, allowlisted contracts nobody assigned keep computing (see _quotaOf).
         bool isAllowlistActivated;
-        /// @notice Contracts the allowlist admitted. No setter since quotas replaced it.
+        /// @notice Contracts the allowlist admitted. No setter since quotas replaced it; an entry is deleted when its
+        ///         contract moves to the default quota.
         mapping(address account => bool allowed) isAllowlisted;
         /// @notice Unused since quota admins replaced allowlisters.
         mapping(address account => bool authorized) allowlisters;
@@ -308,10 +309,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Re-initializes the contract from V5, which has the allowlist, or from V4.
-     * @dev Quotas replace the global block cap, its whitelist and the allowlist, and each contract keeps the limits it
-     *      had. With the allowlist active, the default quota is stopped, so unknown contracts stay refused, and
-     *      allowlisted contracts share the global cap in the allowlist quota, or are unmetered if also block-whitelisted.
-     *      Otherwise the default quota gets the global cap. The cap becomes maximum and decay per block, which allows the
+     * @dev Quotas replace the global block cap, its whitelist and the allowlist. With the allowlist active, the default
+     *      quota is stopped, so unknown contracts stay refused, and allowlisted contracts share the global cap in the
+     *      allowlist quota, or are unmetered if also block-whitelisted. Otherwise the default quota gets the global cap,
+     *      and the upgrade proposal assigns any block-whitelisted contract to a quota that is not metered. The cap becomes maximum and decay per block, which allows the
      *      same HCU per block. The capacity starts unmetered and the default tier admits up to full capacity, so tiers
      *      change nothing until the owner sets the capacity.
      */
@@ -1858,10 +1859,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Names the address that moves contracts between the default quota and this quota.
-     *         address(0) removes the admin.
+     *         address(0) removes the admin. The default quota and the quotas that replaced the allowlist take none.
      */
     function setQuotaAdmin(uint16 quotaId, address admin) external onlyACLOwner {
-        if (quotaId == DEFAULT_QUOTA) revert InvalidQuota(quotaId);
+        if (quotaId <= BLOCK_WHITELIST_QUOTA) revert InvalidQuota(quotaId);
         _getHCULimitStorage().quotaAdmins[quotaId] = admin;
         emit QuotaAdminSet(quotaId, admin);
     }
@@ -2118,9 +2119,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /// @dev Returns the quota a contract computes in: the one it is assigned to, else, while the default quota is
-    ///      stopped and the allowlist was active, the quota that replaced the allowlist for it. The allowlist and the
-    ///      block whitelist have no setters, so this routing ends as contracts get assigned, or when the owner stops the
-    ///      allowlist quotas.
+    ///      stopped and the allowlist was active, the quota that replaced the allowlist for it.
     function _quotaOf(address account) private view returns (uint16) {
         HCULimitStorage storage $ = _getHCULimitStorage();
         uint16 quotaId = $.contractQuota[account];
@@ -2207,8 +2206,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         emit TierSet(tier, maxLoadBps, msg.sender);
     }
 
+    /// @dev A contract sent to the default quota also leaves the allowlist, so that the allowlist cannot route it again.
     function _assignQuota(uint16 quotaId, address account) private {
-        _getHCULimitStorage().contractQuota[account] = quotaId;
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        $.contractQuota[account] = quotaId;
+        if (quotaId == DEFAULT_QUOTA) delete $.isAllowlisted[account];
         emit ContractQuotaAssigned(quotaId, account, msg.sender);
     }
 

@@ -17,8 +17,9 @@ contract HCULimitInvariantHandler is Test {
     address internal immutable fhevmExecutor;
 
     uint16 internal constant DEFAULT_QUOTA = 0;
-    uint16 internal constant UNCAPPED_QUOTA = 1;
-    uint16 internal constant PARTNER_QUOTA = 2;
+    // Quotas 1 and 2 replace the allowlist and take no admin.
+    uint16 internal constant UNCAPPED_QUOTA = 3;
+    uint16 internal constant PARTNER_QUOTA = 4;
     address internal constant DEFAULT_CALLER = address(0xBEEF);
     address internal constant UNCAPPED_CALLER = address(0xCAFE);
     address internal constant PARTNER_ADMIN = address(0xAD);
@@ -52,7 +53,8 @@ contract HCULimitInvariantHandler is Test {
     }
 
     function setPaused(uint8 rawQuota, bool paused) external {
-        uint16 quotaId = uint16(bound(uint256(rawQuota), 0, 2));
+        uint16[3] memory quotaIds = [DEFAULT_QUOTA, UNCAPPED_QUOTA, PARTNER_QUOTA];
+        uint16 quotaId = quotaIds[bound(uint256(rawQuota), 0, 2)];
         vm.prank(owner);
         if (paused) hcuLimit.pauseQuota(quotaId);
         else hcuLimit.unpauseQuota(quotaId);
