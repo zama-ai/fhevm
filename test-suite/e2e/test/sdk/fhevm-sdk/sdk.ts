@@ -28,10 +28,11 @@ const CLEARTEXT = false;
  * Reads the canonical host's KMSGeneration address. The SDK checks the FHE key
  * / CRS against it and throws FhevmConfigError without it. The fhevm CLI
  * exports it on host-contracts >= v0.13 only; older hosts keep KMSGeneration
- * on the gateway, which this check does not support.
+ * on the gateway, which this check does not support. `fallback` is the
+ * network default, used when the variable is unset.
  */
-export function requireKmsGenerationAddress(): string {
-  const address = process.env.KMS_GENERATION_CONTRACT_ADDRESS;
+export function requireKmsGenerationAddress(fallback?: string): string {
+  const address = process.env.KMS_GENERATION_CONTRACT_ADDRESS || fallback;
   if (!address) {
     throw new Error(
       'KMS_GENERATION_CONTRACT_ADDRESS is required: the SDK checks the FHE key / CRS against the ' +
