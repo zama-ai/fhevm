@@ -478,6 +478,11 @@ async function _digestsOf(bytes: FheEncryptionKeyBytes, logger: Logger | undefin
         `Cannot hash the FHE public key and CRS in a worker (${result.error.message}): hashing them on the calling thread.`,
       );
     }
+    // A concurrent check of the same bytes may have hashed them meanwhile.
+    const hashed = digestsByBytes.get(bytes);
+    if (hashed !== undefined && !(hashed instanceof Promise)) {
+      return hashed;
+    }
   } else if (memo !== undefined) {
     return memo;
   }

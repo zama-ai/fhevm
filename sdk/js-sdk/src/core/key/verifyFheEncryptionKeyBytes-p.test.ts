@@ -1933,4 +1933,28 @@ describe('verifyFheEncryptionKeyBytes hashing', () => {
     await verifyFheEncryptionKeyBytes(client, bytes);
     expect(digestsWorkerRuns() - workerRuns).toBe(1);
   });
+
+  it('hashes a bytes object once on the calling thread for concurrent checks', async () => {
+    // The worker probe answers false once every check awaits it.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.mocked(isBlobWorkerSupported).mockImplementationOnce(async () => {
+      await gate;
+      return false;
+    });
+    const { client, rpcLog } = makeClient({ chain: ethereumChain, handlers: hashedHandlers() });
+    const bytes = keyBytes();
+    const hashers = shake.hashers;
+
+    const verified = Promise.all(Array.from({ length: 3 }, () => verifyFheEncryptionKeyBytes(client, bytes)));
+    await vi.waitFor(() => {
+      expect(rpcLog.filter((entry) => entry === 'end:getCrsMaterials')).toHaveLength(3);
+    });
+    release();
+    await verified;
+    // One hasher for the public key, one for the CRS.
+    expect(shake.hashers - hashers).toBe(2);
+  });
 });
