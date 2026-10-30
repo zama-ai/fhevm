@@ -322,7 +322,7 @@ jobs:
   # ---------------------------------------------------------------------------
   # CPU stack legs, one job per (leg, scenario) from the plan.
   # ---------------------------------------------------------------------------
-  consensus: # zizmor: ignore[secrets-outside-env] Manual dispatch is the authorization boundary; PRs cannot trigger this job.
+  consensus:
     name: consensus/${{ matrix.leg }}/${{ matrix.scenario }}/${{ matrix.shard }}
     needs: [plan, harness]
     # `cpu-matrix` excludes every leg whose cases declare a hardware capability,
@@ -705,7 +705,7 @@ jobs:
           # This remains one physical device, as exercised by the GPU cases.
           profile: single-h100
 
-  gpu: # zizmor: ignore[secrets-outside-env] Manual dispatch is the authorization boundary; PRs cannot trigger this job.
+  gpu:
     name: consensus/gpu
     needs: [plan, gpu-setup-instance]
     if: ${{ needs.gpu-setup-instance.result == 'success' && needs.gpu-setup-instance.outputs.runner-name != '' }}

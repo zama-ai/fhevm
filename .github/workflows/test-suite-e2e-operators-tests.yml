@@ -67,7 +67,7 @@ jobs:
           backend: aws
           profile: bench
 
-  operators-e2e-test: # zizmor: ignore[secrets-outside-env] Manual dispatch is the authorization boundary; PRs cannot trigger this job.
+  operators-e2e-test:
     name: test-suite-e2e-operators-tests/operators-e2e-test
     if: ${{ github.event_name == 'workflow_dispatch' }}
     permissions:
