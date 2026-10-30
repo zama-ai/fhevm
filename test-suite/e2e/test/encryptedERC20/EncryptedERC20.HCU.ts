@@ -63,8 +63,8 @@ type HcuLimitContract = {
 };
 
 const DEFAULT_QUOTA = 0;
-const UNCAPPED_QUOTA = 1;
-const PARTNER_QUOTA = 2;
+const UNCAPPED_QUOTA = 3;
+const PARTNER_QUOTA = 4;
 const NO_CAP = 2n ** 48n - 1n;
 
 // Quotas replaced the global block cap in HCULimit v0.5.0; getVersion() returns e.g. "HCULimit v0.5.0".

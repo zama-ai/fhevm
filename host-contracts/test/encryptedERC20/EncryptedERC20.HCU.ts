@@ -126,8 +126,8 @@ describe('EncryptedERC20:HCU', function () {
 
     const ownerHcuLimit = this.hcuLimit.connect(this.signers.fred);
     await ownerHcuLimit.setQuota(0, 1_000_000_000, 1_000_000_000);
-    await ownerHcuLimit.setQuota(1, MAX_UINT48, MAX_UINT48);
-    await ownerHcuLimit.assignQuota(1, this.contractAddress);
+    await ownerHcuLimit.setQuota(3, MAX_UINT48, MAX_UINT48);
+    await ownerHcuLimit.assignQuota(3, this.contractAddress);
 
     const input = this.instances.alice.createEncryptedInput(this.contractAddress, this.signers.alice.address);
     input.add64(1337);
@@ -141,7 +141,7 @@ describe('EncryptedERC20:HCU', function () {
     expect(receipt?.status).to.eq(1);
 
     const [, , defaultUsedHCU] = await this.hcuLimit.getQuota(0);
-    const [, , uncappedUsedHCU] = await this.hcuLimit.getQuota(1);
+    const [, , uncappedUsedHCU] = await this.hcuLimit.getQuota(3);
     expect(defaultUsedHCU).to.eq(0n);
     expect(uncappedUsedHCU).to.eq(0n);
   });
