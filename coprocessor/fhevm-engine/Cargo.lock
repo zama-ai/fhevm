@@ -3015,7 +3015,6 @@ dependencies = [
  "futures-util",
  "http 1.3.1",
  "humantime",
- "openssl",
  "pingora",
  "pingora-limits",
  "prometheus",
@@ -3031,6 +3030,7 @@ dependencies = [
  "tower 0.5.2",
  "tracing",
  "tracing-subscriber",
+ "x509-parser",
 ]
 
 [[package]]

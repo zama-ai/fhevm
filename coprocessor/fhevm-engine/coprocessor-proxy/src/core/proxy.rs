@@ -7,7 +7,6 @@ use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use fhevm_sig_auth::{FhevmSigVerifier, RefreshableSigners};
-use openssl::{asn1::Asn1Time, x509::X509};
 use pingora::{
     listeners::tls::TlsSettings,
     prelude::Server,
@@ -198,9 +197,12 @@ fn path_to_str(path: &std::path::Path) -> anyhow::Result<&str> {
 /// The Unix time at which the served certificate, the first of the chain in `cert_path`, expires.
 fn certificate_not_after(cert_path: &str) -> anyhow::Result<i64> {
     let pem = std::fs::read(cert_path).with_context(|| format!("Failed to read {cert_path}"))?;
-    let cert = X509::from_pem(&pem).with_context(|| format!("Failed to parse {cert_path}"))?;
-    let until_expiry = Asn1Time::from_unix(0)?.diff(cert.not_after())?;
-    Ok(i64::from(until_expiry.days) * 86_400 + i64::from(until_expiry.secs))
+    let (_, pem) = x509_parser::pem::parse_x509_pem(&pem)
+        .with_context(|| format!("No PEM certificate in {cert_path}"))?;
+    let cert = pem
+        .parse_x509()
+        .with_context(|| format!("Failed to parse {cert_path}"))?;
+    Ok(cert.validity().not_after.timestamp())
 }
 
 #[cfg(test)]

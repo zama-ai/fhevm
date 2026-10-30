@@ -17,7 +17,6 @@ bytes.workspace = true
 clap.workspace = true
 http.workspace = true
 humantime.workspace = true
-openssl.workspace = true
 pingora.workspace = true
 pingora-limits.workspace = true
 prometheus.workspace = true
@@ -26,6 +25,7 @@ serde_json.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+x509-parser.workspace = true
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["json-rpc"] }
