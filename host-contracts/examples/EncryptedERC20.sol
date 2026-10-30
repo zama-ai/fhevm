@@ -77,7 +77,7 @@ contract EncryptedERC20 is Ownable2Step {
         externalEuint64 encryptedAmount,
         bytes calldata inputProof
     ) public virtual returns (bool) {
-        transfer(to, FHE.fromExternal(encryptedAmount, inputProof));
+        _transfer(to, FHE.fromExternal(encryptedAmount, inputProof));
         return true;
     }
 
@@ -85,11 +85,9 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param to The recipient address
     /// @param amount The encrypted amount to transfer
     /// @return bool indicating success of the transfer
-    function transfer(address to, euint64 amount) public virtual returns (bool) {
+    function transfer(address to, euint64 amount) external virtual returns (bool) {
         require(FHE.isSenderAllowed(amount));
-        /// @dev Makes sure the owner has enough tokens
-        ebool canTransfer = FHE.le(amount, balances[msg.sender]);
-        _transfer(msg.sender, to, amount, canTransfer);
+        _transfer(to, amount);
         return true;
     }
 
@@ -110,7 +108,7 @@ contract EncryptedERC20 is Ownable2Step {
         externalEuint64 encryptedAmount,
         bytes calldata inputProof
     ) public virtual returns (bool) {
-        approve(spender, FHE.fromExternal(encryptedAmount, inputProof));
+        _approve(spender, FHE.fromExternal(encryptedAmount, inputProof));
         return true;
     }
 
@@ -118,11 +116,9 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param spender The address authorized to spend
     /// @param amount The amount to approve
     /// @return bool indicating success of the approval
-    function approve(address spender, euint64 amount) public virtual returns (bool) {
+    function approve(address spender, euint64 amount) external virtual returns (bool) {
         require(FHE.isSenderAllowed(amount));
-        address owner = msg.sender;
-        _approve(owner, spender, amount);
-        emit Approval(owner, spender);
+        _approve(spender, amount);
         return true;
     }
 
@@ -146,7 +142,7 @@ contract EncryptedERC20 is Ownable2Step {
         externalEuint64 encryptedAmount,
         bytes calldata inputProof
     ) public virtual returns (bool) {
-        transferFrom(from, to, FHE.fromExternal(encryptedAmount, inputProof));
+        _transferFrom(from, to, FHE.fromExternal(encryptedAmount, inputProof));
         return true;
     }
 
@@ -155,12 +151,33 @@ contract EncryptedERC20 is Ownable2Step {
     /// @param to The address to transfer to
     /// @param amount The amount to transfer
     /// @return bool indicating success of the transfer
-    function transferFrom(address from, address to, euint64 amount) public virtual returns (bool) {
+    function transferFrom(address from, address to, euint64 amount) external virtual returns (bool) {
         require(FHE.isSenderAllowed(amount));
+        _transferFrom(from, to, amount);
+        return true;
+    }
+
+    /// @notice Transfers an encrypted amount from the caller to `to`.
+    /// @dev The calling entrypoint must verify the input or check the caller's permission.
+    function _transfer(address to, euint64 amount) internal virtual {
+        ebool canTransfer = FHE.le(amount, balances[msg.sender]);
+        _transfer(msg.sender, to, amount, canTransfer);
+    }
+
+    /// @notice Sets the caller's allowance for `spender` and emits an approval event.
+    /// @dev The calling entrypoint must verify the input or check the caller's permission.
+    function _approve(address spender, euint64 amount) internal virtual {
+        address owner = msg.sender;
+        _approve(owner, spender, amount);
+        emit Approval(owner, spender);
+    }
+
+    /// @notice Transfers an encrypted amount using the caller's allowance.
+    /// @dev The calling entrypoint must verify the input or check the caller's permission.
+    function _transferFrom(address from, address to, euint64 amount) internal virtual {
         address spender = msg.sender;
         ebool isTransferable = _updateAllowance(from, spender, amount);
         _transfer(from, to, amount, isTransferable);
-        return true;
     }
 
     /// @notice Internal function to approve a spender to use a specific amount.
