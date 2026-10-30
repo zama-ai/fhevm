@@ -385,6 +385,9 @@ export async function submitUnifiedRequest(
 async function pollOnce(cfg: UnifiedConfig, jobId: string): Promise<PollResult> {
   const url = `${relayerBaseUrl(cfg.relayerUrl)}/v3/user-decrypt/${jobId}`;
   const resp = await fetch(url, { headers: httpHeaders(cfg, false) });
+  if (resp.status === 401 || resp.status === 403) {
+    throw new Error(`Relayer authentication failed while polling user decryption (HTTP ${resp.status})`);
+  }
   const body = await readJson(resp);
   const status = typeof body.status === 'string' ? body.status.toLowerCase() : '';
   if (status === 'succeeded') {
