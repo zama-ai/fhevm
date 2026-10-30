@@ -108,9 +108,9 @@ struct CtHandleContractPair {
 struct HandleEntry {
     /// @notice The handle of the ciphertext.
     bytes32 handle;
-    /// @notice The contract expected to hold `isAllowed(handle, contractAddress)` —
-    /// used as the third argument to `isHandleDelegatedForUserDecryption` and required
-    /// for every handle, including direct-access handles where `ownerAddress == userAddress`.
+    /// @notice The contract used as the third argument to `isHandleDelegatedForUserDecryption`.
+    /// Only checked for delegated access. For direct access (`ownerAddress == userAddress`),
+    /// the only contract binding comes from `allowedContracts`.
     address contractAddress;
     /// @notice The delegator's address — the address with `isAllowed` on the handle.
     /// Equals `userAddress` for direct access.
