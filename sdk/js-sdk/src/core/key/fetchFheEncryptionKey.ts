@@ -5,6 +5,7 @@ import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { deserializeFheEncryptionKey } from './deserializeFheEncryptionKey.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
+import { ensureFheEncryptionKeyDownload } from './ensureFheEncryptionKeyDownload.js';
 
 export async function fetchFheEncryptionKeyWasm(
   context: {
@@ -21,12 +22,7 @@ export async function fetchFheEncryptionKeyWasm(
   const runtime = context.runtime;
 
   // Ensure a bytes fetch is in-flight
-  globalFheEncryptionKeyCache.ensureBytes({
-    owner: runtime,
-    relayerUrl,
-    fetcher: () => runtime.relayer.fetchFheEncryptionKeyBytes({ relayerUrl, chainId: context.chain.id }, parameters),
-    metadata: { chainId: context.chain.id, relayerUrl },
-  });
+  ensureFheEncryptionKeyDownload(context, parameters);
 
   // Upgrade bytes → wasm (chains from pending bytes if still in-flight)
   globalFheEncryptionKeyCache.ensureWasm({
