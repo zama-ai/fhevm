@@ -1,4 +1,5 @@
 mod common;
+mod support;
 
 use alloy::network::TxSigner;
 use alloy::providers::Provider;
@@ -10,9 +11,13 @@ use rand::{random, Rng};
 use rstest::*;
 use serial_test::serial;
 use std::time::Duration;
+use support::{Fault, FaultProxy};
 use test_harness::db_utils::{insert_ciphertext_digest, insert_random_keys_and_host_chain};
 use tokio::time::sleep;
-use transaction_sender::{ConfigSettings, NonceManagedProvider, TransactionSender};
+use transaction_sender::{
+    gateway_http_client, ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider,
+    TransactionSender,
+};
 
 #[rstest]
 #[case::private_key(SignerType::PrivateKey)]
@@ -692,5 +697,136 @@ async fn stop_retrying_add_ciphertext_on_gw_config_error(
 
     env.cancel_token.cancel();
     run_handle.await??;
+    Ok(())
+}
+
+#[rstest]
+// Estimate-stage errors preserve the budget without falsely retiring a nonce
+// that was never broadcast. Send-stage cases cover reusable nonce reservations.
+#[case::estimate_nonce_too_low("eth_estimateGas", "nonce too low")]
+#[case::estimate_nonce_too_high("eth_estimateGas", "nonce too high")]
+#[case::estimate_already_known("eth_estimateGas", "already known")]
+#[case::estimate_underpriced("eth_estimateGas", "replacement transaction underpriced")]
+#[case::send_nonce_too_high("eth_sendRawTransactionSync", "nonce too high")]
+#[case::send_underpriced("eth_sendRawTransactionSync", "replacement transaction underpriced")]
+#[tokio::test]
+#[serial(db)]
+async fn nonce_failures_preserve_ciphertext_retry_budget_and_recover(
+    #[case] method: &str,
+    #[case] message: &str,
+) -> anyhow::Result<()> {
+    let conf = ConfigSettings {
+        add_ciphertexts_max_retries: 3,
+        error_sleep_initial_secs: 1,
+        error_sleep_max_secs: 4,
+        graceful_shutdown_timeout: Duration::from_secs(5),
+        ..Default::default()
+    };
+    let env = TestEnvironment::new_with_config(SignerType::PrivateKey, conf, false).await?;
+    let deploy = env.http_provider()?;
+    let ciphertext = CiphertextCommits::deploy(&deploy, false).await?;
+    let proxy = FaultProxy::start(env.http_endpoint_url()).await?;
+    let url = proxy.url();
+    let inner = alloy::providers::ProviderBuilder::default()
+        .filler(FillersWithoutNonceManagement::default())
+        .wallet(env.wallet.clone())
+        .connect_reqwest(gateway_http_client(&url)?, url);
+    let provider = NonceManagedProvider::new(inner, Some(env.wallet.default_signer().address()));
+    let sender = TransactionSender::new(
+        env.db_pool.clone(),
+        PrivateKeySigner::random().address(),
+        *ciphertext.address(),
+        env.signer.clone(),
+        provider,
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let (host_chain_id, key_id) = insert_random_keys_and_host_chain(&env.db_pool).await?;
+    let handle = random::<[u8; 32]>();
+    insert_ciphertext_digest(
+        &env.db_pool,
+        host_chain_id,
+        key_id,
+        &handle,
+        &random::<[u8; 32]>(),
+        &random::<[u8; 32]>(),
+        2, // One limited retry left: the unfixed sender stops after one failure.
+    )
+    .await?;
+    proxy.set_fault(
+        method,
+        Fault::RpcError {
+            code: -32000,
+            message: message.into(),
+        },
+        None,
+    );
+    let initial_calls = proxy.calls(method);
+    let started = tokio::time::Instant::now();
+    let run = tokio::spawn(async move { sender.run().await });
+    loop {
+        let (limited, unlimited, sent, timestamp_recorded): (i32, i32, bool, bool) =
+            sqlx::query_as(
+                "SELECT txn_limited_retries_count, txn_unlimited_retries_count,
+                    txn_is_sent, txn_last_error_at IS NOT NULL
+             FROM ciphertext_digest WHERE handle = $1",
+            )
+            .bind(handle.as_slice())
+            .fetch_one(&env.db_pool)
+            .await?;
+        assert_eq!(
+            limited, 2,
+            "nonce failures consumed the finite retry budget"
+        );
+        assert!(!sent, "an RPC nonce error must not mark the job complete");
+        assert!(!run.is_finished());
+        if proxy.calls(method) - initial_calls >= 4 && unlimited >= 4 {
+            assert!(
+                timestamp_recorded,
+                "retry scheduling/diagnostic timestamp was not recorded"
+            );
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(35),
+            "nonce failure was not retried repeatedly"
+        );
+        sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        started.elapsed() >= Duration::from_secs(7),
+        "operation backoff was bypassed"
+    );
+
+    proxy.clear_all_faults();
+    let txn_hash = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            let (sent, limited, txn_hash): (bool, i32, Option<Vec<u8>>) = sqlx::query_as(
+                "SELECT txn_is_sent, txn_limited_retries_count, txn_hash
+                 FROM ciphertext_digest WHERE handle = $1",
+            )
+            .bind(handle.as_slice())
+            .fetch_one(&env.db_pool)
+            .await?;
+            assert_eq!(limited, 2);
+            if sent {
+                break anyhow::Ok(txn_hash.expect("successful submission records its hash"));
+            }
+            sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await??;
+    let receipt = deploy
+        .get_transaction_receipt(alloy::primitives::B256::from_slice(&txn_hash))
+        .await?
+        .expect("original job completed on chain");
+    assert!(receipt.status());
+    assert_eq!(receipt.to, Some(*ciphertext.address()));
+
+    env.cancel_token.cancel();
+    tokio::time::timeout(Duration::from_secs(10), run).await???;
     Ok(())
 }
