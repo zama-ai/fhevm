@@ -16,6 +16,7 @@ use serde::{Serialize, Serializer};
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    num::NonZeroU32,
     path::PathBuf,
     time::Duration,
 };
@@ -84,6 +85,9 @@ pub struct Config {
     )]
     #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub request_read_timeout: Duration,
+    /// The maximum number of requests per second accepted from each sender.
+    #[serde(default = "default_rate_limit_per_second")]
+    pub rate_limit_per_second: NonZeroU32,
     /// How long in-flight requests are given to complete after `SIGTERM`.
     #[serde(with = "humantime_serde", default = "default_shutdown_grace_period")]
     pub shutdown_grace_period: Duration,
@@ -186,6 +190,10 @@ fn default_request_read_timeout() -> Duration {
     Duration::from_secs(30)
 }
 
+fn default_rate_limit_per_second() -> NonZeroU32 {
+    NonZeroU32::new(100).unwrap()
+}
+
 fn default_shutdown_grace_period() -> Duration {
     Duration::from_secs(60)
 }
@@ -213,6 +221,7 @@ impl Default for Config {
             endpoint_idle_timeout: default_endpoint_idle_timeout(),
             max_body_bytes: default_max_body_bytes(),
             request_read_timeout: default_request_read_timeout(),
+            rate_limit_per_second: default_rate_limit_per_second(),
             shutdown_grace_period: default_shutdown_grace_period(),
             service_name: default_service_name(),
             monitoring_endpoint: default_monitoring_endpoint(),
@@ -258,6 +267,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_ENDPOINT_IDLE_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_MAX_BODY_BYTES");
             env::remove_var("KMS_CONNECTOR_REQUEST_READ_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_RATE_LIMIT_PER_SECOND");
             env::remove_var("KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_MONITORING_ENDPOINT");
@@ -305,6 +315,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_ENDPOINT_IDLE_TIMEOUT", "7s");
             env::set_var("KMS_CONNECTOR_MAX_BODY_BYTES", "2048");
             env::set_var("KMS_CONNECTOR_REQUEST_READ_TIMEOUT", "12s");
+            env::set_var("KMS_CONNECTOR_RATE_LIMIT_PER_SECOND", "1500");
             env::set_var("KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD", "15s");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
             env::set_var("KMS_CONNECTOR_MONITORING_ENDPOINT", "127.0.0.1:9101");
@@ -347,6 +358,7 @@ mod tests {
         assert_eq!(config.endpoint_idle_timeout, Duration::from_secs(7));
         assert_eq!(config.max_body_bytes, 2048);
         assert_eq!(config.request_read_timeout, Duration::from_secs(12));
+        assert_eq!(config.rate_limit_per_second.get(), 1500);
         assert_eq!(config.shutdown_grace_period, Duration::from_secs(15));
         assert_eq!(config.service_name, "kms-connector-test");
         assert_eq!(
