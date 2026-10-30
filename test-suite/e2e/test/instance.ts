@@ -1,7 +1,7 @@
 import { network } from 'hardhat';
 import { vars } from 'hardhat/config';
 
-import { type FheEncryptionKeyBytes, FhevmSdk } from './sdk/fhevm-sdk/sdk';
+import { type FheEncryptionKeyBytes, FhevmSdk, requireKmsGenerationAddress } from './sdk/fhevm-sdk/sdk';
 import type { Signers } from './signers';
 import { FhevmInstances } from './types';
 
@@ -87,7 +87,7 @@ const apiKey = process.env.ZAMA_FHEVM_API_KEY ?? vars.get('ZAMA_FHEVM_API_KEY', 
 const auth = apiKey ? { __type: 'ApiKeyHeader' as const, value: apiKey } : undefined;
 
 // Host-chain KMSGeneration: the SDK reads FHE key / CRS digests from it.
-const kmsGenerationAddress = process.env.KMS_GENERATION_CONTRACT_ADDRESS;
+const kmsGenerationAddress = requireKmsGenerationAddress();
 
 export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {
   const instances: FhevmInstances = {} as FhevmInstances;
@@ -107,7 +107,7 @@ export const createInstance = async (overrides: { readonly fheEncryptionKey?: Fh
     inputVerifierContractAddress: inputAdd,
     aclContractAddress: aclAddress,
     ...(protocolConfigAddress ? { protocolConfigAddress } : {}),
-    ...(kmsGenerationAddress ? { kmsGenerationAddress } : {}),
+    kmsGenerationAddress,
     rpcUrl: (network.config as { url: string }).url,
     relayerUrl,
     gatewayChainId: gatewayChainID,

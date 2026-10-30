@@ -24,6 +24,23 @@ export type FheEncryptionKeyBytes = Awaited<ReturnType<FhevmClient['fetchFheEncr
 
 const CLEARTEXT = false;
 
+/**
+ * Reads the canonical host's KMSGeneration address. The SDK checks the FHE key
+ * / CRS against it and throws FhevmConfigError without it. The fhevm CLI
+ * exports it on host-contracts >= v0.13 only; older hosts keep KMSGeneration
+ * on the gateway, which this check does not support.
+ */
+export function requireKmsGenerationAddress(): string {
+  const address = process.env.KMS_GENERATION_CONTRACT_ADDRESS;
+  if (!address) {
+    throw new Error(
+      'KMS_GENERATION_CONTRACT_ADDRESS is required: the SDK checks the FHE key / CRS against the ' +
+        'canonical host KMSGeneration contract (host-contracts >= v0.13; older hosts are not supported)',
+    );
+  }
+  return address;
+}
+
 export class FhevmSdk implements SdkInstance {
   #fullClient: FhevmClient;
   #auth: Auth | undefined;

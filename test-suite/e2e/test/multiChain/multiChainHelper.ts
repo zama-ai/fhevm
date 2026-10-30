@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import { ethers as hardhatEthers } from 'hardhat';
 import { vars } from 'hardhat/config';
 
-import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
+import { FhevmSdk, requireKmsGenerationAddress } from '../sdk/fhevm-sdk/sdk';
 import type { ManagedWallet } from './freshDeployers';
 import { wrapWithNonceManager } from './freshDeployers';
 
@@ -50,7 +50,7 @@ function parseHostChains(): ChainConfig[] {
     kmsVerifierAddress: requireEnv('KMS_VERIFIER_CONTRACT_ADDRESS'),
     inputVerifierAddress: requireEnv('INPUT_VERIFIER_CONTRACT_ADDRESS'),
     protocolConfigAddress: optionalEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
-    kmsGenerationAddress: optionalEnv('KMS_GENERATION_CONTRACT_ADDRESS'),
+    kmsGenerationAddress: requireKmsGenerationAddress(),
   };
   const chains: ChainConfig[] = [primary];
   for (let i = 1; ; i++) {
@@ -117,9 +117,8 @@ type KeyVerification = NonNullable<Parameters<typeof FhevmSdk.create>[0]['keyVer
  * KMSGeneration lives on the primary (Ethereum) host only. Other hosts read the
  * FHE key / CRS digests from it through the primary chain def and client.
  */
-function primaryKeyVerification(): KeyVerification | undefined {
+function primaryKeyVerification(): KeyVerification {
   const primary = HOST_CHAINS[0];
-  if (!primary.kmsGenerationAddress) return undefined;
   return {
     chain: defineFhevmChain({
       id: primary.chainId,
