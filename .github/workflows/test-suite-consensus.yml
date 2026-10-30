@@ -208,7 +208,7 @@ jobs:
           CONSENSUS_ORACLE_TEST_DATABASE_URL: postgres://postgres@127.0.0.1:5432/postgres
           TS_NODE_TRANSPILE_ONLY: "true"
           NODE_OPTIONS: --no-experimental-strip-types
-        run: npx --no-install mocha --require ts-node/register test/consensus/faultAuditDatabase.test.ts test/consensus/bridgeEvidence.test.ts test/consensus/inputEvidenceDatabase.test.ts test/consensus/upgradeEvidenceSql.test.ts test/consensus/keyApplicationGate.test.ts test/consensus/hostReportGateDatabase.test.ts
+        run: npx --no-install mocha --require ts-node/register test/consensus/faultAuditDatabase.test.ts test/consensus/bridgeEvidence.test.ts test/consensus/inputEvidenceDatabase.test.ts test/consensus/upgradeEvidenceSql.test.ts test/consensus/keyApplicationGate.test.ts test/consensus/hostReportGateDatabase.test.ts test/consensus/disposableOracleDatabase.test.ts
 
       - name: Typecheck and unit test the CLI
         working-directory: test-suite/fhevm

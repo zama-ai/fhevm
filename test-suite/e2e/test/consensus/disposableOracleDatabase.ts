@@ -16,7 +16,9 @@ export async function createDisposableOracleDatabase(
     closed = true;
     try {
       try { if (child) await child.end(); }
-      finally { if (owned) await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); }
+      // Pool shutdown may finish before the server observes every disconnect.
+      // Let those sessions drain instead of sending fatal errors to retiring clients.
+      finally { if (owned) await admin.query(`DROP DATABASE "${name}"`); }
     } finally { await admin.end(); }
   };
   try {

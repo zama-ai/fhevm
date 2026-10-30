@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import type { Pool, PoolConfig } from 'pg';
+import { Pool, type PoolConfig } from 'pg';
 import { createDisposableOracleDatabase } from './disposableOracleDatabase';
 
 function fixture(fail: 'create' | 'connection' | 'setup' | 'close' | undefined) {
@@ -65,5 +65,29 @@ describe('Disposable SQL fixture ownership', () => {
     try { await owned.close(); } catch { /* shutdown error remains visible */ }
     expect(calls.filter(call => call.startsWith('admin:DROP DATABASE'))).to.have.length(1);
     expect(calls.at(-1)).to.eq('admin:end');
+  });
+});
+
+const adminUrl = process.env.CONSENSUS_ORACLE_TEST_DATABASE_URL;
+(adminUrl ? describe : describe.skip)('Disposable SQL fixture connection shutdown', () => {
+  it('allows a retiring reader to disconnect without force-terminating it', async () => {
+    const database = await createDisposableOracleDatabase(adminUrl!);
+    const reader = new Pool({ connectionString: database.databaseUrl, max: 1, connectionTimeoutMillis: 10_000 });
+    const errors: Error[] = [];
+    reader.on('error', error => errors.push(error));
+    await reader.query('SELECT 1');
+    // pg-pool can resolve end() before every backend has observed the socket
+    // close. Keep a reader alive briefly to exercise that server-side window.
+    const retiring = new Promise<void>((resolve, reject) => {
+      setTimeout(() => { reader.end().then(resolve, reject); }, 50);
+    });
+    try {
+      await database.close();
+      await retiring;
+      expect(errors.map(error => error.message)).to.deep.eq([]);
+    } finally {
+      await retiring;
+      await database.close();
+    }
   });
 });
