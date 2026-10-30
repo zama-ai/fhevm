@@ -16,7 +16,9 @@ import { fetchFheEncryptionKeyWasm } from './fetchFheEncryptionKey.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 const chain = { id: 12345, fhevm: { relayerUrl: 'https://relayer.test' } } as unknown as FhevmChain;
-const fhevmContext = createFhevmClientFrozenContext({});
+// v0.14 deserializes the key with the TFHE WASM version resolved in the
+// context.
+const fhevmContext = createFhevmClientFrozenContext({ tfheVersion: '1.6.2' });
 
 const runtimeAuth: Auth = { type: 'ApiKeyHeader', value: 'runtime-secret' };
 // Stop after the download: the key is not under test.
