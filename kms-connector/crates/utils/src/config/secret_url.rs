@@ -1,52 +1,79 @@
 use alloy::transports::http::reqwest::Url;
+use anyhow::bail;
 use serde::{Deserialize, Deserializer};
+use sqlx::postgres::PgConnectOptions;
 use std::{fmt, str::FromStr};
 
 /// What replaces a secret in redacted text.
 pub(crate) const REDACTED: &str = "<redacted>";
 
-/// A Postgres connection URL, which holds the DB password.
+/// A Postgres connection URL, parsed into the options sqlx connects with.
 ///
-/// The [`Display`](fmt::Display) and [`Debug`] implementations print the URL without its
-/// password and its fragment, and with `<redacted>` in place of its query parameters, which may
-/// hold a password too, or override the host, port, user or database. They print `<redacted>`
-/// for anything but a `postgres://` URL, e.g. a libpq key/value connection string, which may hold
-/// a password anywhere, and for a URL whose userinfo was misread.
-#[derive(Clone, Deserialize, PartialEq)]
-#[serde(transparent)]
-pub struct DatabaseUrl(String);
+/// [`Display`](fmt::Display) and [`Debug`] print the user, host, port and database it connects
+/// to, without the password, e.g. `postgres://user@db:5432/kms`.
+#[derive(Clone)]
+pub struct DatabaseUrl {
+    options: PgConnectOptions,
+    /// The configured URL, only used to compare two of them.
+    raw: String,
+}
 
 impl DatabaseUrl {
-    /// Returns the URL with its password, to connect to the DB.
-    pub fn as_str(&self) -> &str {
-        &self.0
+    /// Returns the options to connect with, password included.
+    pub fn connect_options(&self) -> &PgConnectOptions {
+        &self.options
+    }
+}
+
+impl FromStr for DatabaseUrl {
+    type Err = anyhow::Error;
+
+    fn from_str(raw: &str) -> Result<Self, Self::Err> {
+        let url = Url::parse(raw)?;
+        if !matches!(url.scheme(), "postgres" | "postgresql") {
+            bail!("expected a `postgres://` URL");
+        }
+        // An unencoded `/`, `?` or `#` in the password ends the authority early: the `@` before
+        // the host then lands in the path, query or fragment, and parts of the password would be
+        // read as the host or the database.
+        if [Some(url.path()), url.query(), url.fragment()]
+            .into_iter()
+            .flatten()
+            .any(|part| part.contains('@'))
+        {
+            bail!("percent-encode the `/`, `?` or `#` in the password");
+        }
+        Ok(Self {
+            options: raw.parse()?,
+            raw: raw.to_string(),
+        })
+    }
+}
+
+impl<'de> Deserialize<'de> for DatabaseUrl {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(|e| serde::de::Error::custom(format!("invalid DB URL: {e}")))
+    }
+}
+
+impl PartialEq for DatabaseUrl {
+    fn eq(&self, other: &Self) -> bool {
+        self.raw == other.raw
     }
 }
 
 impl fmt::Display for DatabaseUrl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Ok(mut url) = Url::parse(&self.0) else {
-            return f.write_str(REDACTED);
-        };
-        let is_postgres = matches!(url.scheme(), "postgres" | "postgresql");
-        // An unencoded `/`, `?` or `#` in the password ends the authority early: the `@` before
-        // the host then lands in the path, query or fragment, and parts of the password are read
-        // as the host, port, path, query or fragment.
-        let userinfo_misread = [Some(url.path()), url.query(), url.fragment()]
-            .into_iter()
-            .flatten()
-            .any(|part| part.contains('@'));
-        // `set_password` fails for URLs without a host.
-        let password_kept = url.password().is_some() && url.set_password(None).is_err();
-        if !is_postgres || userinfo_misread || password_kept {
-            return f.write_str(REDACTED);
+        let options = &self.options;
+        write!(f, "postgres://{}@", options.get_username())?;
+        match options.get_socket() {
+            Some(socket) => write!(f, "{}", socket.display())?,
+            None => write!(f, "{}:{}", options.get_host(), options.get_port())?,
         }
-        let has_query = url.query().is_some();
-        url.set_query(None);
-        url.set_fragment(None);
-        write!(f, "{url}")?;
-        if has_query {
-            write!(f, "?{REDACTED}")?;
+        if let Some(database) = options.get_database() {
+            write!(f, "/{database}")?;
         }
         Ok(())
     }
@@ -57,12 +84,6 @@ impl fmt::Debug for DatabaseUrl {
         f.debug_tuple("DatabaseUrl")
             .field(&format_args!("{self}"))
             .finish()
-    }
-}
-
-impl From<&str> for DatabaseUrl {
-    fn from(value: &str) -> Self {
-        Self(value.to_string())
     }
 }
 
@@ -146,34 +167,38 @@ mod tests {
 
     #[test]
     fn db_url_is_redacted() {
-        let redacted = |db_url: &str| DatabaseUrl::from(db_url).to_string();
+        let redacted = |db_url: &str| db_url.parse::<DatabaseUrl>().unwrap().to_string();
         assert_eq!(
             redacted("postgres://user:secret@db:5432/kms"),
             "postgres://user@db:5432/kms"
         );
-        // libpq also reads the password from the query parameters.
+        // The query parameters can hold the password, and override the rest.
         assert_eq!(
-            redacted("postgres://user@db/kms?sslmode=require&password=secret"),
-            "postgres://user@db/kms?<redacted>"
+            redacted(
+                "postgres://user@db:5432/kms?password=secret&host=other&port=6543&user=admin&dbname=prod"
+            ),
+            "postgres://admin@other:6543/prod"
         );
-        assert_eq!(redacted("postgres://db/kms#frag"), "postgres://db/kms");
         assert_eq!(
             redacted("postgresql://user:pw@[::1]:5432/kms"),
-            "postgresql://user@[::1]:5432/kms"
+            "postgres://user@[::1]:5432/kms"
         );
-        // Unix socket: no host in the URL.
         assert_eq!(
-            redacted("postgres:///kms?host=/var/run/postgresql"),
-            "postgres:///kms?<redacted>"
+            redacted("postgres:///kms?user=app&host=/var/run/postgresql"),
+            "postgres://app@/var/run/postgresql/kms"
         );
         // An unencoded `@` alone is read right: the last `@` of the authority ends the userinfo.
         assert_eq!(
-            redacted("postgres://user:p@ss@db/kms"),
-            "postgres://user@db/kms"
+            redacted("postgres://user:p@ss@db:5432/kms"),
+            "postgres://user@db:5432/kms"
         );
-        // Unencoded `/`, `?` and `#` in the password end the userinfo early, also when an `@`
-        // before them makes the start of the password look like a host.
+    }
+
+    #[test]
+    fn misread_db_urls_are_rejected() {
         for db_url in [
+            // Unencoded `/`, `?` and `#` in the password end the userinfo early, also when an `@`
+            // before them makes the start of the password look like a host.
             "postgres://user:#secret@db/kms",
             "postgres://user:/secret@db/kms",
             "postgres://user:?secret@db/kms",
@@ -182,24 +207,36 @@ mod tests {
             "postgres://user:sec@ret/secret@db/kms",
             "postgres://user:sec@ret?secret@db/kms",
             "postgres://user:sec@ret#secret@db/kms",
+            // libpq key/value strings, the first of which sqlx would read as a `db:` URL.
+            "db:5432 user=admin password=secret",
+            "host=db password=secret",
         ] {
-            assert_eq!(redacted(db_url), "<redacted>", "{db_url}");
+            let err = db_url.parse::<DatabaseUrl>().unwrap_err().to_string();
+            assert!(!err.contains("secret"), "{db_url}: {err}");
         }
-        // A libpq key/value string parses as a URL with a `db:` scheme.
-        assert_eq!(redacted("db:5432 user=admin password=secret"), "<redacted>");
-        assert_eq!(redacted("host=db password=secret"), "<redacted>");
     }
 
     #[test]
     fn db_url_debug_is_redacted() {
-        let db_url = DatabaseUrl::from("postgres://user:secret@db/kms?password=secret");
+        let db_url: DatabaseUrl = "postgres://user:secret@db:5432/kms?password=secret"
+            .parse()
+            .unwrap();
         assert_eq!(
             format!("{db_url:?}"),
-            "DatabaseUrl(postgres://user@db/kms?<redacted>)"
+            "DatabaseUrl(postgres://user@db:5432/kms)"
         );
+    }
+
+    #[test]
+    fn db_urls_compare_as_configured() {
+        let db_url = |raw: &str| raw.parse::<DatabaseUrl>().unwrap();
         assert_eq!(
-            db_url.as_str(),
-            "postgres://user:secret@db/kms?password=secret"
+            db_url("postgres://user:pw@db:5432/kms"),
+            db_url("postgres://user:pw@db:5432/kms")
+        );
+        assert_ne!(
+            db_url("postgres://user:pw@db:5432/kms"),
+            db_url("postgres://user:other@db:5432/kms")
         );
     }
 

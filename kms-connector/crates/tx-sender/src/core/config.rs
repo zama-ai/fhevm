@@ -229,7 +229,9 @@ fn default_ethereum_tx_required_confirmations() -> u64 {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            database_url: "postgres://postgres:postgres@localhost/kms-connector".into(),
+            database_url: "postgres://postgres:postgres@localhost/kms-connector"
+                .parse()
+                .unwrap(),
             database_pool_size: default_database_pool_size(),
             database_polling_timeout: default_database_polling_timeout(),
             gateway_url: "http://localhost:8545".parse().unwrap(),

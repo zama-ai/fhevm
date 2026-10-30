@@ -148,7 +148,9 @@ fn default_ethereum_stale_head_threshold() -> Duration {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            database_url: "postgres://postgres:postgres@localhost/kms-connector".into(),
+            database_url: "postgres://postgres:postgres@localhost/kms-connector"
+                .parse()
+                .unwrap(),
             database_pool_size: default_database_pool_size(),
             gateway_url: "http://localhost:8545".parse().unwrap(),
             gateway_chain_id: 54321,

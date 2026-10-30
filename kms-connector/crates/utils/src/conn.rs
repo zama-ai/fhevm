@@ -42,7 +42,7 @@ pub async fn connect_to_db(
         info!("Attempting connection to DB... ({i}/{CONNECTION_RETRY_NUMBER})");
 
         let options = PgPoolOptions::new().max_connections(db_pool_size);
-        match options.connect(db_url.as_str()).await {
+        match options.connect_with(db_url.connect_options().clone()).await {
             Ok(db_pool) => {
                 info!("Connected to Postgres database successfully");
                 return Ok(db_pool);

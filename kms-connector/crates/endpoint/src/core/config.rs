@@ -97,7 +97,9 @@ fn default_max_allowed_contracts() -> usize {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            database_url: "postgres://postgres:postgres@localhost/kms-connector".into(),
+            database_url: "postgres://postgres:postgres@localhost/kms-connector"
+                .parse()
+                .unwrap(),
             database_pool_size: default_database_pool_size(),
             http_endpoint: default_http_endpoint(),
             max_in_flight_decryptions: default_max_in_flight_decryptions(),
@@ -174,8 +176,8 @@ mod tests {
         let config = Config::from_env_and_file::<&str>(None).unwrap();
 
         assert_eq!(
-            config.database_url.as_str(),
-            "postgres://postgres:postgres@localhost"
+            config.database_url,
+            "postgres://postgres:postgres@localhost".parse().unwrap()
         );
         assert_eq!(config.database_pool_size, 4);
         assert_eq!(config.http_endpoint, "127.0.0.1:9090".parse().unwrap());

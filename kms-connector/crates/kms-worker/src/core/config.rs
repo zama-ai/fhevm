@@ -299,7 +299,9 @@ impl DeserializeConfig for Config {}
 impl Default for Config {
     fn default() -> Self {
         Self {
-            database_url: "postgres://postgres:postgres@localhost/kms-connector".into(),
+            database_url: "postgres://postgres:postgres@localhost/kms-connector"
+                .parse()
+                .unwrap(),
             database_pool_size: default_database_pool_size(),
             db_fast_event_polling: default_db_fast_event_polling(),
             db_long_event_polling: default_db_long_event_polling(),
