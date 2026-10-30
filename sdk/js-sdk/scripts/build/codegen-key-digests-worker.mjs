@@ -21,7 +21,7 @@
 // single IIFE). It keeps noble's MIT notice.
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -245,7 +245,8 @@ async function main() {
   console.log(`[codegen-key-digests] ${check ? 'checked' : 'generated'} ${rel}`);
 }
 
-// Run as a script, not when imported by the unit tests.
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Run as a script, not when imported by the unit tests. realpath: a symlinked
+// path must not skip the check silently.
+if (process.argv[1] !== undefined && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await main();
 }
