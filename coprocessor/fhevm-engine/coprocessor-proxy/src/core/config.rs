@@ -5,7 +5,13 @@ use clap::{
     error::{Error, ErrorKind},
 };
 use http::uri::Authority;
-use std::{ffi::OsStr, net::SocketAddr, num::NonZeroU32, path::PathBuf, time::Duration};
+use std::{
+    ffi::OsStr,
+    net::SocketAddr,
+    num::{NonZeroU32, NonZeroUsize},
+    path::PathBuf,
+    time::Duration,
+};
 use tracing::Level;
 
 /// Configuration of the `Proxy` service, from command-line flags or environment variables.
@@ -56,7 +62,8 @@ pub struct Config {
     #[arg(long, env = "COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS")]
     pub coprocessor_signer_address: Address,
     /// How many requests a signer can send to this proxy replica per second; more are answered
-    /// `429`. A connector keeps its connection, so its replica, between requests.
+    /// `429`. A connector spreads its connections over the replicas, so its limit across them is
+    /// about this times the replica count.
     #[arg(
         long,
         env = "COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER",
@@ -106,6 +113,10 @@ pub struct Config {
         value_parser = humantime::parse_duration
     )]
     pub shutdown_delay: Duration,
+    /// The worker threads of the proxy service. TLS handshakes, signature checks and forwarding
+    /// all run on them, as does the readiness self-check's request.
+    #[arg(long, env = "COPROCESSOR_PROXY_THREADS", default_value = "1")]
+    pub threads: NonZeroUsize,
 
     /// The service name used for tracing.
     #[arg(long, env = "OTEL_SERVICE_NAME", default_value = "coprocessor-proxy")]
@@ -208,6 +219,7 @@ mod tests {
         );
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(10));
         assert_eq!(config.shutdown_delay, Duration::ZERO);
+        assert_eq!(config.threads.get(), 1);
         assert_eq!(config.max_requests_per_signer.get(), 200);
         assert_eq!(config.bind_address, "0.0.0.0:8443".parse().unwrap());
     }
@@ -242,6 +254,7 @@ mod tests {
             ("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "45s"),
             ("COPROCESSOR_PROXY_PRF_SERVICE_IDLE_TIMEOUT", "7s"),
             ("COPROCESSOR_PROXY_SHUTDOWN_DELAY", "9s"),
+            ("COPROCESSOR_PROXY_THREADS", "4"),
             ("OTEL_SERVICE_NAME", "coprocessor-proxy-test"),
             ("COPROCESSOR_PROXY_LOG_LEVEL", "debug"),
             ("COPROCESSOR_PROXY_HEALTHCHECK_PORT", "8081"),
@@ -280,6 +293,7 @@ mod tests {
         assert_eq!(config.prf_service_response_timeout, Duration::from_secs(45));
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(7));
         assert_eq!(config.shutdown_delay, Duration::from_secs(9));
+        assert_eq!(config.threads.get(), 4);
         assert_eq!(config.service_name, "coprocessor-proxy-test");
         assert_eq!(config.log_level, Level::DEBUG);
         assert_eq!(config.healthcheck_port, 8081);

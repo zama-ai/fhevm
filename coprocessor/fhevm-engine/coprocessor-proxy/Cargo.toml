@@ -17,6 +17,7 @@ bytes.workspace = true
 clap.workspace = true
 http.workspace = true
 humantime.workspace = true
+openssl.workspace = true
 pingora.workspace = true
 pingora-limits.workspace = true
 prometheus.workspace = true

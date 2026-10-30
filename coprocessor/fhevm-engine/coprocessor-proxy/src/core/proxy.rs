@@ -7,6 +7,7 @@ use alloy::providers::{DynProvider, Provider, ProviderBuilder};
 use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use fhevm_sig_auth::{FhevmSigVerifier, RefreshableSigners};
+use openssl::{asn1::Asn1Time, x509::X509};
 use pingora::{
     listeners::tls::TlsSettings,
     prelude::Server,
@@ -18,15 +19,25 @@ use pingora::{
     services::background::{BackgroundService, GenBackgroundService},
 };
 use pingora_limits::rate::Rate;
+use prometheus::{IntGauge, register_int_gauge};
 use std::{
     net::{SocketAddr, ToSocketAddrs},
     sync::{
-        Arc,
+        Arc, LazyLock,
         atomic::{AtomicBool, Ordering},
     },
     time::Duration,
 };
 use tracing::info;
+
+/// Read at startup only: a renewed certificate is served, and reported, after a restart.
+static TLS_CERTIFICATE_NOT_AFTER: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "coprocessor_proxy_tls_certificate_not_after_seconds",
+        "Unix timestamp at which the served TLS certificate expires"
+    )
+    .unwrap()
+});
 
 /// The `Proxy` service: sender authentication in front of prf-service.
 pub struct Proxy {
@@ -144,6 +155,7 @@ impl Proxy {
             .as_millis()
             .div_ceil(1000);
         let server_conf = ServerConf {
+            threads: self.config.threads.get(),
             grace_period_seconds: Some(grace as u64),
             graceful_shutdown_timeout_seconds: Some(GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS),
             ..ServerConf::default()
@@ -160,6 +172,7 @@ impl Proxy {
         // it, so check their consistency explicitly to fail fast.
         tls.check_private_key()
             .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
+        TLS_CERTIFICATE_NOT_AFTER.set(certificate_not_after(cert_path)?);
 
         server.add_service(GenBackgroundService::new(
             "BG KMS tx-senders".to_string(),
@@ -180,6 +193,14 @@ impl Proxy {
 fn path_to_str(path: &std::path::Path) -> anyhow::Result<&str> {
     path.to_str()
         .ok_or_else(|| anyhow!("Path {} is not valid UTF-8", path.display()))
+}
+
+/// The Unix time at which the served certificate, the first of the chain in `cert_path`, expires.
+fn certificate_not_after(cert_path: &str) -> anyhow::Result<i64> {
+    let pem = std::fs::read(cert_path).with_context(|| format!("Failed to read {cert_path}"))?;
+    let cert = X509::from_pem(&pem).with_context(|| format!("Failed to parse {cert_path}"))?;
+    let until_expiry = Asn1Time::from_unix(0)?.diff(cert.not_after())?;
+    Ok(i64::from(until_expiry.days) * 86_400 + i64::from(until_expiry.secs))
 }
 
 #[cfg(test)]
@@ -245,5 +266,13 @@ mod tests {
             Err(e) => e.to_string(),
         };
         assert!(error.contains("Failed to configure TLS"), "{error}");
+    }
+
+    #[test]
+    fn certificate_not_after_reads_the_served_certificate() {
+        // rcgen's certificates expire on 4096-01-01T00:00:00Z.
+        let dir = tls_dir("unused", "");
+        let not_after = certificate_not_after(path_to_str(&dir.join("tls.crt")).unwrap());
+        assert_eq!(not_after.unwrap(), 67_090_118_400);
     }
 }
