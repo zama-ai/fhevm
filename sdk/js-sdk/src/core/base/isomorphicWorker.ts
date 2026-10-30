@@ -129,7 +129,11 @@ async function createIsomorphicWorkerFromCode(jsCode: string): Promise<Worker | 
  * @param input - Value sent to the worker via postMessage (must be structured-cloneable).
  * @param timeoutMs - Max execution time before the worker is killed. Default: 30s.
  */
-async function runCodeInIsomorphicWorker<T>(code: string, input: unknown, timeoutMs: number = 30_000): Promise<T> {
+export async function runCodeInIsomorphicWorker<T>(
+  code: string,
+  input: unknown,
+  timeoutMs: number = 30_000,
+): Promise<T> {
   const workerApi = await resolveWorkerApi();
 
   const browserCode = `

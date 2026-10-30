@@ -5,7 +5,9 @@ import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
 import type { EthCallResult, TrustedClient } from '../modules/ethereum/types.js';
 import type { BytesHex, ChecksummedAddress } from '../types/primitives.js';
 import type { HostContractVersion } from '../types/hostContract.js';
-import { keccak_256, shake256 } from '@noble/hashes/sha3.js';
+import type { Logger } from '../types/logger.js';
+import type { FheEncryptionKeyDigests } from './fheEncryptionKeyDigests-p.js';
+import { keccak_256 } from '@noble/hashes/sha3.js';
 import { addressToChecksummedAddress, asAddress } from '../base/address.js';
 import { bytesToHex, bytesToHexNo0x, hexToBytes, unsafeBytesEquals } from '../base/bytes.js';
 import { assertIsUint256 } from '../base/uint.js';
@@ -27,6 +29,9 @@ import { ensureError } from '../base/errors/utils.js';
 import { executeWithBatching } from '../base/promise.js';
 import { FhevmConfigError } from '../errors/FhevmConfigError.js';
 import { FheEncryptionKeyVerificationError } from '../errors/FheEncryptionKeyVerificationError.js';
+import { isBlobWorkerSupported, runCodeInIsomorphicWorker } from '../base/isomorphicWorker.js';
+import { computeFheEncryptionKeyDigests } from './fheEncryptionKeyDigests-p.js';
+import { FHE_ENCRYPTION_KEY_DIGESTS_WORKER_CODE } from './fheEncryptionKeyDigestsWorkerCode-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -40,17 +45,8 @@ type KmsGenerationSource = {
   readonly checkChainId: boolean;
 };
 
-type Digests = {
-  readonly publicKey: Uint8Array;
-  readonly crs: Uint8Array;
-};
-
 // IKMSGeneration.KeyType.Public
 const KEY_TYPE_PUBLIC = 1;
-
-// Domain separators the KMS prepends before hashing (SHAKE256, 32 bytes).
-const PUBLIC_KEY_DIGEST_DOMAIN = new TextEncoder().encode('PDAT_KEY');
-const CRS_DIGEST_DOMAIN = new TextEncoder().encode('PDAT_CRS');
 
 // Selectors of the materials getters, to replay a failed read as a raw
 // eth_call that tells a revert from a transport error. Derived from the ABI
@@ -58,9 +54,15 @@ const CRS_DIGEST_DOMAIN = new TextEncoder().encode('PDAT_CRS');
 const GET_KEY_MATERIALS_SELECTOR = _selectorOf(getKeyMaterialsAbi);
 const GET_CRS_MATERIALS_SELECTOR = _selectorOf(getCrsMaterialsAbi);
 
+// The worker hash of a key / CRS bytes object: its digests, or why the worker
+// gave none (`undefined`: no worker can run). Never rejects.
+type DigestsWorkerResult = { readonly digests: FheEncryptionKeyDigests } | { readonly error: Error | undefined };
+
 // The digests of each key / CRS bytes object, hashed once: clients sharing a
-// downloaded key check it with their own reads, not their own hash.
-const digestsByBytes = new WeakMap<FheEncryptionKeyBytes, Digests>();
+// downloaded key check it with their own reads, not their own hash. Holds the
+// digests, or the worker hash in flight; a failed worker hash is replaced by
+// the calling thread's. Holds nothing of the check that started it.
+const digestsByBytes = new WeakMap<FheEncryptionKeyBytes, FheEncryptionKeyDigests | Promise<DigestsWorkerResult>>();
 
 ////////////////////////////////////////////////////////////////////////////////
 // requiresKeyVerification
@@ -165,6 +167,10 @@ export async function verifyFheEncryptionKeyBytes(
   const readActiveId = (abi: readonly [Record<string, unknown> & { readonly name: string }]): Promise<unknown> =>
     _thenChecked(read(abi, []), [checkChainId, checkVersion]);
 
+  // Hashed in a worker while the reads are in flight, awaited at the digest
+  // compare.
+  _startDigestsInWorker(bytes);
+
   const [, , unknownKeyId, unknownCrsId] = await executeWithBatching<unknown>(
     [checkChainId, checkVersion, () => readActiveId(getActiveKeyIdAbi), () => readActiveId(getActiveCrsIdAbi)],
     batchRpcCalls,
@@ -203,7 +209,7 @@ export async function verifyFheEncryptionKeyBytes(
   const expectedPublicKeyDigest = _parsePublicKeyDigest(keyMaterials);
   const expectedCrsDigest = _parseCrsDigest(crsMaterials);
 
-  const digests = _digestsOf(bytes);
+  const digests = await _digestsOf(bytes, context.runtime.config.logger);
   _assertDigestMatch('FHE public key', digests.publicKey, expectedPublicKeyDigest);
   _assertDigestMatch('CRS', digests.crs, expectedCrsDigest);
 
@@ -424,23 +430,76 @@ function _assertDigestMatch(subject: string, actual: Uint8Array, expected: Uint8
   }
 }
 
-/** The key and CRS digests of `bytes`, memoized per bytes object. */
-function _digestsOf(bytes: FheEncryptionKeyBytes): Digests {
-  let digests = digestsByBytes.get(bytes);
-  if (digests === undefined) {
-    digests = {
-      publicKey: _digest(PUBLIC_KEY_DIGEST_DOMAIN, bytes.publicKeyBytes.bytes),
-      crs: _digest(CRS_DIGEST_DOMAIN, bytes.crsBytes.bytes),
-    };
-    digestsByBytes.set(bytes, digests);
+/**
+ * Starts hashing `bytes` in an isomorphic worker, like the encrypt module's
+ * proofs, unless they are hashed or being hashed. Always memoizes a promise:
+ * when no worker can run, or the worker fails, it resolves without digests
+ * and the calling thread hashes them at the digest compare.
+ */
+function _startDigestsInWorker(bytes: FheEncryptionKeyBytes): void {
+  if (digestsByBytes.has(bytes)) {
+    return;
   }
-  return digests;
+  digestsByBytes.set(bytes, _hashInWorker(bytes));
+}
+
+async function _hashInWorker(bytes: FheEncryptionKeyBytes): Promise<DigestsWorkerResult> {
+  try {
+    // Memoized, and shared with the encrypt module: false when no blob / eval
+    // worker can run (e.g. CSP `worker-src`).
+    if (!(await isBlobWorkerSupported())) {
+      return { error: undefined };
+    }
+    // Cloned, not transferred (the bytes are cached and shared); default 30s timeout.
+    const result = await runCodeInIsomorphicWorker<unknown>(FHE_ENCRYPTION_KEY_DIGESTS_WORKER_CODE, {
+      publicKey: bytes.publicKeyBytes.bytes,
+      crs: bytes.crsBytes.bytes,
+    });
+    return { digests: _asDigests(result) };
+  } catch (e) {
+    return { error: ensureError(e) };
+  }
 }
 
 /**
- * SHAKE256(domain ‖ bytes), 32 bytes. One blocking call: ~140ms for the
- * ~4.6MB CRS on desktop (~33ms/MiB with @noble/hashes), once per bytes object.
+ * The key and CRS digests of `bytes`, memoized per bytes object: the worker
+ * hash if one was started and succeeded, else hashed now on the calling
+ * thread (once both rounds of reads are done, so it delays none of them).
  */
-function _digest(domain: Uint8Array, bytes: Uint8Array): Uint8Array {
-  return shake256.create({ dkLen: 32 }).update(domain).update(bytes).digest();
+async function _digestsOf(bytes: FheEncryptionKeyBytes, logger: Logger | undefined): Promise<FheEncryptionKeyDigests> {
+  const memo = digestsByBytes.get(bytes);
+  if (memo instanceof Promise) {
+    const result = await memo;
+    if ('digests' in result) {
+      return result.digests;
+    }
+    if (result.error !== undefined) {
+      logger?.debug?.(
+        `Cannot hash the FHE public key and CRS in a worker (${result.error.message}): hashing them on the calling thread.`,
+      );
+    }
+    // A concurrent check of the same bytes may have hashed them meanwhile.
+    const hashed = digestsByBytes.get(bytes);
+    if (hashed !== undefined && !(hashed instanceof Promise)) {
+      return hashed;
+    }
+  } else if (memo !== undefined) {
+    return memo;
+  }
+
+  const digests = computeFheEncryptionKeyDigests({ publicKey: bytes.publicKeyBytes.bytes, crs: bytes.crsBytes.bytes });
+  digestsByBytes.set(bytes, digests);
+  return digests;
+}
+
+function _asDigests(value: unknown): FheEncryptionKeyDigests {
+  const { publicKey, crs } = (value ?? {}) as { readonly publicKey?: unknown; readonly crs?: unknown };
+  if (!_isDigest(publicKey) || !_isDigest(crs)) {
+    throw new Error('Invalid FHE public key and CRS digests returned by the worker.');
+  }
+  return { publicKey, crs };
+}
+
+function _isDigest(value: unknown): value is Uint8Array {
+  return value instanceof Uint8Array && value.length === 32;
 }
