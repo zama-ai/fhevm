@@ -11,8 +11,10 @@
 // vite / esbuild upgrade without changing what the code computes. The
 // generated file records its inputs (the @noble/hashes version, and a sha256
 // of the bundled noble files and the entry); `--check` recomputes that hash
-// from the installed files. The unit tests check that the committed code is
-// self-contained, keeps noble's notice and returns noble's digests.
+// from the installed files. It also records a sha256 of the generated code
+// string, which `--check` recomputes from the committed string. The unit
+// tests check that the committed code is self-contained, keeps noble's
+// notice and returns noble's digests.
 //
 // The worker code is a self-contained script: no import, no `import()`, no
 // `node:` specifier, no `import.meta` (zama-sdk bundles its own worker as a
@@ -23,6 +25,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
 import * as prettier from 'prettier';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -43,6 +46,10 @@ const FORBIDDEN_PATTERNS = [
   { re: /\brequire\s*\(/, label: 'require()' },
   { re: /['"`]node:/, label: 'node: specifier' },
 ];
+
+// The committed code string: a single string literal, so evaluating it runs nothing.
+const CODE_RE =
+  /^export const FHE_ENCRYPTION_KEY_DIGESTS_WORKER_CODE: string =\s*('(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*");$/m;
 
 function fail(message) {
   throw new Error(message);
@@ -85,6 +92,11 @@ function inputsHash(packageDir, nobleFiles) {
     hash.update(`${name}\0`).update(readFileSync(path)).update('\0');
   }
   return hash.digest('hex');
+}
+
+/** @param {string} code */
+function codeHash(code) {
+  return createHash('sha256').update(code).digest('hex');
 }
 
 /** @returns {string | undefined} the first forbidden construct in `code` */
@@ -152,9 +164,12 @@ async function generateKeyDigestsWorkerCodeSource() {
  * and @noble/hashes ${noble.version} (MIT, notice kept in the code): do not edit.
  * Regenerate with \`npm run codegen:key-digests\`.
  *
- * Inputs, checked by \`--check\` instead of the bundled code:
+ * Inputs, checked by \`--check\` instead of rebundling:
  *   @noble/hashes ${noble.version}: ${nobleFiles.join(', ')}
  *   sha256: ${inputsHash(noble.packageDir, nobleFiles)}
+ *
+ * Code, checked by \`--check\` against a tampered or stale bundle (supply-chain check):
+ *   sha256: ${codeHash(workerCode)}
  *
  * The body of a \`runCodeInIsomorphicWorker\` function: receives
  * \`{ publicKey, crs }\` bytes as \`data\`, returns their 32-byte digests.
@@ -167,16 +182,14 @@ export const FHE_ENCRYPTION_KEY_DIGESTS_WORKER_CODE: string = ${JSON.stringify(w
 }
 
 /**
- * Checks the committed file against the installed inputs, without bundling.
+ * Checks the committed file against the installed inputs and its recorded
+ * code hash, without bundling.
  *
+ * @param {string} source the committed file
  * @returns {string | undefined} why the file is stale, if it is
  */
-function checkKeyDigestsWorkerCodeSource() {
-  if (!existsSync(OUTPUT_PATH)) {
-    return 'it is missing';
-  }
+export function checkKeyDigestsWorkerCodeSource(source) {
   const noble = readNoble();
-  const source = readFileSync(OUTPUT_PATH, 'utf8');
 
   const inputs = /^ \* {3}@noble\/hashes (\S+): (.+)\n \* {3}sha256: ([0-9a-f]{64})$/m.exec(source);
   if (inputs === null) {
@@ -189,6 +202,15 @@ function checkKeyDigestsWorkerCodeSource() {
   if (hash !== inputsHash(noble.packageDir, files.split(', '))) {
     return 'its inputs changed';
   }
+
+  const recorded = /^ \* Code, .*\n \* {3}sha256: ([0-9a-f]{64})$/m.exec(source);
+  const code = CODE_RE.exec(source);
+  if (recorded === null || code === null) {
+    return 'its code hash is not recorded';
+  }
+  if (recorded[1] !== codeHash(runInNewContext(code[1]))) {
+    return 'its code does not match its recorded hash';
+  }
   return undefined;
 }
 
@@ -196,25 +218,34 @@ function checkKeyDigestsWorkerCodeSource() {
 // CLI main
 ////////////////////////////////////////////////////////////////////////////////
 
-const args = process.argv.slice(2);
-const check = args.includes('--check');
-const unknownArgs = args.filter((arg) => arg !== '--check');
-if (unknownArgs.length > 0) {
-  console.error(`[codegen-key-digests] unknown argument(s): ${unknownArgs.join(', ')}`);
-  process.exit(1);
-}
-
-const rel = relative(ROOT, OUTPUT_PATH);
-
-if (check) {
-  const stale = checkKeyDigestsWorkerCodeSource();
-  if (stale !== undefined) {
-    console.error(`[codegen-key-digests] ${rel} is stale: ${stale}.`);
-    console.error('[codegen-key-digests] run `npm run codegen:key-digests` to regenerate it.');
+async function main() {
+  const args = process.argv.slice(2);
+  const check = args.includes('--check');
+  const unknownArgs = args.filter((arg) => arg !== '--check');
+  if (unknownArgs.length > 0) {
+    console.error(`[codegen-key-digests] unknown argument(s): ${unknownArgs.join(', ')}`);
     process.exit(1);
   }
-} else {
-  writeFileSync(OUTPUT_PATH, await generateKeyDigestsWorkerCodeSource());
+
+  const rel = relative(ROOT, OUTPUT_PATH);
+
+  if (check) {
+    const stale = existsSync(OUTPUT_PATH)
+      ? checkKeyDigestsWorkerCodeSource(readFileSync(OUTPUT_PATH, 'utf8'))
+      : 'it is missing';
+    if (stale !== undefined) {
+      console.error(`[codegen-key-digests] ${rel} is stale: ${stale}.`);
+      console.error('[codegen-key-digests] run `npm run codegen:key-digests` to regenerate it.');
+      process.exit(1);
+    }
+  } else {
+    writeFileSync(OUTPUT_PATH, await generateKeyDigestsWorkerCodeSource());
+  }
+
+  console.log(`[codegen-key-digests] ${check ? 'checked' : 'generated'} ${rel}`);
 }
 
-console.log(`[codegen-key-digests] ${check ? 'checked' : 'generated'} ${rel}`);
+// Run as a script, not when imported by the unit tests.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  await main();
+}

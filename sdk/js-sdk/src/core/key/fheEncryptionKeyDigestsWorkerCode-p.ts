@@ -3,9 +3,12 @@
  * and @noble/hashes 2.0.1 (MIT, notice kept in the code): do not edit.
  * Regenerate with `npm run codegen:key-digests`.
  *
- * Inputs, checked by `--check` instead of the bundled code:
+ * Inputs, checked by `--check` instead of rebundling:
  *   @noble/hashes 2.0.1: _u64.js, sha3.js, utils.js
  *   sha256: 3c9f3d3780305b5a2cb60618def675645e1e93e641fec6dad08bbdd4a1ec5df6
+ *
+ * Code, checked by `--check` against a tampered or stale bundle (supply-chain check):
+ *   sha256: a66094b8e3555e73b718d44dffb3066ef7e91e02fa6b69f503db6df68cfb4818
  *
  * The body of a `runCodeInIsomorphicWorker` function: receives
  * `{ publicKey, crs }` bytes as `data`, returns their 32-byte digests.

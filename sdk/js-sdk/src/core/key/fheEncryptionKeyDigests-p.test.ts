@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { shake256 } from '@noble/hashes/sha3.js';
 import { runCodeInIsomorphicWorker } from '../base/isomorphicWorker.js';
@@ -92,5 +93,26 @@ describe('FHE_ENCRYPTION_KEY_DIGESTS_WORKER_CODE', () => {
       /\bimport\s*[\s({*'"]|\bimport\.meta\b|\brequire\s*\(|['"`]node:/,
     );
     expect(FHE_ENCRYPTION_KEY_DIGESTS_WORKER_CODE).toContain('Copyright (c) 2022 Paul Miller');
+  });
+});
+
+describe('codegen-key-digests-worker --check', () => {
+  const codegen = new URL('../../../scripts/build/codegen-key-digests-worker.mjs', import.meta.url);
+  const source = readFileSync(new URL('./fheEncryptionKeyDigestsWorkerCode-p.ts', import.meta.url), 'utf-8');
+  const check = async (committed: string): Promise<string | undefined> => {
+    const { checkKeyDigestsWorkerCodeSource } = (await import(codegen.href)) as {
+      readonly checkKeyDigestsWorkerCodeSource: (source: string) => string | undefined;
+    };
+    return checkKeyDigestsWorkerCodeSource(committed);
+  };
+
+  it('accepts the committed file', async () => {
+    await expect(check(source)).resolves.toBeUndefined();
+  });
+
+  it('rejects a modified code string', async () => {
+    const modified = source.replace('computeFheEncryptionKeyDigests(data);', 'computeFheEncryptionKeyDigests(data );');
+    expect(modified).not.toBe(source);
+    await expect(check(modified)).resolves.toBe('its code does not match its recorded hash');
   });
 });
