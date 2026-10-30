@@ -139,6 +139,7 @@ export class FheEncryptionKeyCache {
   /**
    * Stores bytes in an empty slot, unchecked: callers check them first.
    * First write wins: an existing entry (resolved or in-flight) is kept.
+   * For tests only (e.g. the browser smoke harness).
    */
   setBytes(owner: FhevmRuntime, key: string, relayerUrl: string, bytes: FheEncryptionKeyBytes): void {
     // Skip to avoid creating a closure over the key bytes unnecessarily.
