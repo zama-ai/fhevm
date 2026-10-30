@@ -19,7 +19,12 @@ use alloy::{
 };
 use anyhow::anyhow;
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
-use std::{num::NonZeroUsize, sync::Once, time::Duration};
+use std::{
+    fmt,
+    num::NonZeroUsize,
+    sync::{Arc, Once},
+    time::Duration,
+};
 use tower::{
     ServiceBuilder,
     limit::{GlobalConcurrencyLimitLayer, concurrency::future::ResponseFuture},
@@ -171,9 +176,9 @@ where
         None => Http::new(rpc_node_url.as_url().clone()),
     };
     let is_local = transport.guess_local();
-    let call_rpc_url = rpc_node_url.clone();
+    let redacted_url: Arc<str> = rpc_node_url.to_string().into();
     let transport = ServiceBuilder::new()
-        .map_future(move |call| redact_errors(call, call_rpc_url.clone()))
+        .map_future(move |call| redact_errors(call, Arc::clone(&redacted_url)))
         .service(transport);
     let client = match bounds.and_then(|bounds| bounds.max_concurrent_calls) {
         Some(max_concurrent_calls) => bounded_rpc_client(transport, is_local, max_concurrent_calls),
@@ -188,13 +193,13 @@ where
 
 /// Strips the URL that a `reqwest` error carries and prints, which may contain an API key, and
 /// names the node by its redacted URL instead.
-fn redact_errors(call: TransportFut<'static>, rpc_url: RpcUrl) -> TransportFut<'static> {
+fn redact_errors(call: TransportFut<'static>, redacted_url: Arc<str>) -> TransportFut<'static> {
     Box::pin(async move {
         call.await.map_err(|err| match err {
             RpcError::Transport(TransportErrorKind::Custom(source)) => {
                 match source.downcast::<reqwest::Error>() {
                     Ok(source) => TransportErrorKind::custom(RpcRequestError {
-                        rpc_url,
+                        redacted_url,
                         source: source.without_url(),
                     }),
                     Err(source) => RpcError::Transport(TransportErrorKind::Custom(source)),
@@ -206,11 +211,28 @@ fn redact_errors(call: TransportFut<'static>, rpc_url: RpcUrl) -> TransportFut<'
 }
 
 /// A failed HTTP request to a RPC node.
-#[derive(Debug, thiserror::Error)]
-#[error("request to {rpc_url} failed")]
+#[derive(Debug)]
 struct RpcRequestError {
-    rpc_url: RpcUrl,
+    /// The URL of the node, as `RpcUrl` prints it.
+    redacted_url: Arc<str>,
     source: reqwest::Error,
+}
+
+impl fmt::Display for RpcRequestError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "request to {} failed: {}",
+            self.redacted_url, self.source
+        )
+    }
+}
+
+impl std::error::Error for RpcRequestError {
+    /// Returns the cause of the reqwest error, whose own message is already part of this one.
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.source()
+    }
 }
 
 static INSTALL_CRYPTO_PROVIDER_ONCE: Once = Once::new();
@@ -350,7 +372,11 @@ mod tests {
             .await
             .expect("the provider should have been built");
 
-        assert_no_api_key(&provider.get_block_number().await.unwrap_err());
+        // Bounded, as a parallel test could bind the freed port to a server that never answers.
+        let call = tokio::time::timeout(Duration::from_secs(5), provider.get_block_number())
+            .await
+            .expect("the refused call should have ended");
+        assert_no_api_key(&call.unwrap_err());
     }
 
     /// An API key, put in the URL path as some RPC providers require.
@@ -363,10 +389,17 @@ mod tests {
             .map(ToString::to_string)
             .collect::<Vec<_>>()
             .join(": ");
-        let debug = format!("{err:?}");
-        assert!(chain.contains("/<redacted> failed"), "{chain}");
-        // Guards against an error that would not come from the HTTP client at all.
-        assert!(chain.contains("error sending request"), "{chain}");
+        let (display, debug) = (err.to_string(), format!("{err:?}"));
+        assert!(display.contains("/<redacted> failed"), "{display}");
+        // The message says why the call failed, which also guards against an error that would not
+        // come from the HTTP client at all. alloy prints a custom transport error and also returns
+        // it as its source, so the chain repeats the message, but never the reason on its own.
+        assert!(display.contains("error sending request"), "{display}");
+        assert_eq!(
+            chain.matches("error sending request").count(),
+            chain.matches("/<redacted> failed").count(),
+            "{chain}"
+        );
         assert!(!chain.contains(API_KEY), "{chain}");
         assert!(!debug.contains(API_KEY), "{debug}");
     }

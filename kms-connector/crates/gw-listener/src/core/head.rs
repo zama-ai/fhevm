@@ -10,8 +10,8 @@ use tracing::{info, warn};
 /// new block. This makes the second case visible in the logs.
 pub struct HeadTracker {
     chain: ChainName,
-    /// The RPC node URL, logged in its redacted form.
-    rpc_url: RpcUrl,
+    /// The RPC node URL, as `RpcUrl` prints it.
+    redacted_url: String,
     /// How long the head may stay the same before a warning, and the delay between two warnings.
     stale_threshold: Duration,
     /// The highest head reported so far, and when it was first reported.
@@ -26,7 +26,7 @@ impl HeadTracker {
     pub fn new(chain: ChainName, rpc_url: &RpcUrl, stale_threshold: Duration) -> Self {
         Self {
             chain,
-            rpc_url: rpc_url.clone(),
+            redacted_url: rpc_url.to_string(),
             stale_threshold,
             highest_head: None,
             warned_at: None,
@@ -52,7 +52,7 @@ impl HeadTracker {
                     info!(
                         "The {chain} {head_name} reported by RPC node {} advanced to block {head} \
                         after {}s",
-                        self.rpc_url,
+                        self.redacted_url,
                         now.saturating_duration_since(advanced_at).as_secs(),
                     );
                 }
@@ -74,7 +74,7 @@ impl HeadTracker {
             "The {chain} {head_name} reported by RPC node {} has stayed at block {highest_head} \
             for {}s (latest reported: {head}, next block to poll: {next_block_to_poll}): either \
             {idle_cause} or the RPC node is lagging",
-            self.rpc_url,
+            self.redacted_url,
             stale_for.as_secs(),
         );
     }

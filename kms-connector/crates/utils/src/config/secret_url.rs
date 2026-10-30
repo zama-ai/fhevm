@@ -20,7 +20,7 @@ pub struct DatabaseUrl {
 
 impl DatabaseUrl {
     /// Returns the options to connect with, password included.
-    pub fn connect_options(&self) -> &PgConnectOptions {
+    pub(crate) fn connect_options(&self) -> &PgConnectOptions {
         &self.options
     }
 }
@@ -34,14 +34,22 @@ impl FromStr for DatabaseUrl {
             bail!("expected a `postgres://` URL");
         }
         // An unencoded `/`, `?` or `#` in the password ends the authority early: the `@` before
-        // the host then lands in the path, query or fragment, and parts of the password would be
-        // read as the host or the database.
-        if [Some(url.path()), url.query(), url.fragment()]
+        // the host then lands in the path, a query key or the fragment, and parts of the password
+        // would be read as the host or the database. Query values may hold an `@`, e.g. a user.
+        let query_keys = url
+            .query()
             .into_iter()
-            .flatten()
+            .flat_map(|query| query.split('&'))
+            .map(|param| param.split_once('=').map_or(param, |(key, _)| key));
+        if [url.path(), url.fragment().unwrap_or_default()]
+            .into_iter()
+            .chain(query_keys)
             .any(|part| part.contains('@'))
         {
-            bail!("percent-encode the `/`, `?` or `#` in the password");
+            bail!(
+                "found an `@` in the path, a query key or the fragment: percent-encode it, or the \
+                 `/`, `?` or `#` in the password that put it there"
+            );
         }
         Ok(Self {
             options: raw.parse()?,
@@ -98,7 +106,7 @@ pub struct RpcUrl(Url);
 
 impl RpcUrl {
     /// Returns the URL with its secrets, to connect to the node.
-    pub fn as_url(&self) -> &Url {
+    pub(crate) fn as_url(&self) -> &Url {
         &self.0
     }
 }
@@ -191,6 +199,11 @@ mod tests {
         assert_eq!(
             redacted("postgres://user:p@ss@db:5432/kms"),
             "postgres://user@db:5432/kms"
+        );
+        // So is one in a query value.
+        assert_eq!(
+            redacted("postgres://db:5432/kms?user=app@server&application_name=kms@node1"),
+            "postgres://app@server@db:5432/kms"
         );
     }
 
