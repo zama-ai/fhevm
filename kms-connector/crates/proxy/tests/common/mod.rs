@@ -1,13 +1,16 @@
 //! Helpers shared by the proxy integration tests.
 #![allow(dead_code)]
 
-use actix_web::{App, HttpRequest, HttpResponse, HttpServer, dev::ServerHandle, web};
+use actix_web::{
+    App, HttpRequest, HttpResponse, HttpServer, body::SizedStream, dev::ServerHandle, web,
+};
 use alloy::{
     primitives::Address,
     signers::local::PrivateKeySigner,
     transports::http::reqwest::{Client, RequestBuilder},
 };
 use connector_utils::config::{ContractConfig, contract::default_protocol_config_contract_config};
+use futures::StreamExt;
 use http::uri::{Authority, PathAndQuery};
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
@@ -62,6 +65,11 @@ pub async fn auth_header_expiring(
 pub async fn auth_header(signer: &PrivateKeySigner, path: &str, body: &[u8]) -> String {
     auth_header_expiring(signer, path, body, now() + 60).await
 }
+
+/// The answer the stub endpoint starts, and fails after [`MID_BODY_SENT`] bytes, on a request
+/// with an `x-stub-fail-mid-body` header.
+pub const MID_BODY_OUTPUT: &[u8] = br#"{"result":"0123456789abcdef0123456789abcdef"}"#;
+pub const MID_BODY_SENT: usize = 16;
 
 /// A stub Connector endpoint echoing what it receives.
 pub struct StubEndpoint {
@@ -123,6 +131,17 @@ async fn echo(
         .and_then(|v| v.parse().ok())
     {
         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
+    if req.headers().contains_key("x-stub-fail-mid-body") {
+        // The header and the first bytes of `MID_BODY_OUTPUT`, then, once the proxy has passed
+        // them on, the stream fails.
+        let first = web::Bytes::from_static(&MID_BODY_OUTPUT[..MID_BODY_SENT]);
+        let chunks =
+            futures::stream::once(async { Ok(first) }).chain(futures::stream::once(async {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                Err(std::io::Error::other("endpoint failed"))
+            }));
+        return HttpResponse::Ok().body(SizedStream::new(MID_BODY_OUTPUT.len() as u64, chunks));
     }
     let header = |name: &str| req.headers().get(name).and_then(|v| v.to_str().ok());
     HttpResponse::Ok().json(json!({

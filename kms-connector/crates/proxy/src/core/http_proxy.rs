@@ -316,6 +316,19 @@ impl ProxyHttp for Proxy {
         e: &Error,
         ctx: &mut Self::CTX,
     ) -> FailToProxy {
+        // Disables keep-alive so the answer carries a `Connection: close` header.
+        session.set_keepalive(None);
+        // The answer has already started: write nothing, to avoid appending an error body to the
+        // endpoint's response.
+        if session
+            .response_written()
+            .is_some_and(|written| !written.status.is_informational())
+        {
+            return FailToProxy {
+                error_code: 0,
+                can_reuse_downstream: false,
+            };
+        }
         let error_code = match e.root_cause().downcast_ref::<ErrorResponse>() {
             Some(error) => {
                 let status = StatusCode::from_u16(error.code.http_status())
