@@ -5,8 +5,7 @@ import { PreflightError } from "../errors";
 import { projectContainers } from "../flow/runtime-compose";
 import { kmsConnectorDbName } from "../kms-party";
 import { STATE_DIR } from "../layout";
-import type { VersionBundle } from "../types";
-import { ensureDir, readJson } from "../utils/fs";
+import { ensureDir } from "../utils/fs";
 import { run } from "../utils/process";
 
 type VersionChange = { key: string; from?: string; to?: string };
@@ -25,7 +24,6 @@ type ReceiptEntry = {
   kind: string;
   title: string;
   details?: Record<string, unknown>;
-  lockFile?: string;
   versionChanges?: VersionChange[];
   containers?: ReceiptContainer[];
   dockerInspectError?: string;
@@ -382,9 +380,6 @@ const compact = (value: string) => (value.length > 120 ? `${value.slice(0, 117)}
 
 const markdownEntry = (entry: ReceiptEntry) => {
   const lines = [`\n## ${entry.seq}. ${entry.kind}: ${entry.title}`, `- at: ${entry.at}`];
-  if (entry.lockFile) {
-    lines.push(`- lock: \`${entry.lockFile}\``);
-  }
   if (entry.versionChanges?.length) {
     lines.push("", "Version changes:", "", "| key | from | to |", "| --- | --- | --- |");
     for (const change of entry.versionChanges) {
@@ -430,27 +425,20 @@ const markdownEntry = (entry: ReceiptEntry) => {
   return `${lines.join("\n")}\n`;
 };
 
-export const createRolloutReceipt = (
+/** Starts a fresh receipt for the test `name` and returns its recorder. */
+export const startRolloutReceipt = async (
+  name: string,
   operations: { inspectContainers?: typeof inspectContainers } = {},
 ) => {
   let seq = 0;
-  let started = false;
   let currentEnv: Record<string, string> | undefined;
-
-  const start = async (script: string) => {
-    await ensureDir(receiptDir());
-    started = true;
-    seq = 0;
-    currentEnv = undefined;
-    await fs.writeFile(receiptJsonlPath(), "");
-    await fs.writeFile(
-      receiptMarkdownPath(),
-      [`# Stateful Rollout Receipt`, ``, `- runbook: \`${script}\``, `- started: ${new Date().toISOString()}`, ""].join(
-        "\n",
-      ),
-    );
-    console.log(`[receipt] writing ${receiptMarkdownPath()}`);
-  };
+  await ensureDir(receiptDir());
+  await fs.writeFile(receiptJsonlPath(), "");
+  await fs.writeFile(
+    receiptMarkdownPath(),
+    [`# Rollout Receipt`, ``, `- test: \`${name}\``, `- started: ${new Date().toISOString()}`, ""].join("\n"),
+  );
+  console.log(`[receipt] writing ${receiptMarkdownPath()}`);
 
   const record = async (
     kind: string,
@@ -459,17 +447,13 @@ export const createRolloutReceipt = (
       details?: Record<string, unknown>;
       docker?: boolean;
       diagnostics?: boolean;
-      lockFile?: string;
+      /** The stack's versions after this entry; the receipt lists what changed since the last one. */
+      versions?: Record<string, string>;
     } = {},
   ) => {
-    if (!started) {
-      await start("(unknown)");
-    }
-
-    const lock = options.lockFile ? await readJson<VersionBundle>(options.lockFile) : undefined;
-    const changes = lock ? versionChanges(currentEnv, lock.env) : undefined;
-    if (lock) {
-      currentEnv = lock.env;
+    const changes = options.versions ? versionChanges(currentEnv, options.versions) : undefined;
+    if (options.versions) {
+      currentEnv = options.versions;
     }
     const docker = options.docker || options.diagnostics
       ? await (operations.inspectContainers ?? inspectContainers)()
@@ -481,7 +465,6 @@ export const createRolloutReceipt = (
       kind,
       title,
       details: options.details,
-      lockFile: options.lockFile,
       versionChanges: changes,
       containers: docker?.containers,
       dockerInspectError: docker?.error,
@@ -495,19 +478,7 @@ export const createRolloutReceipt = (
     }
   };
 
-  return { record, start };
+  return { record };
 };
 
-export type RolloutReceipt = ReturnType<typeof createRolloutReceipt>;
-
-export const printRolloutReceipt = async () => {
-  const file = receiptMarkdownPath();
-  try {
-    process.stdout.write(await fs.readFile(file, "utf8"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new PreflightError(`No rollout receipt found at ${file}`);
-    }
-    throw error;
-  }
-};
+export type RolloutReceipt = Awaited<ReturnType<typeof startRolloutReceipt>>;
