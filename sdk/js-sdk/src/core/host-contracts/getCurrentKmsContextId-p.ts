@@ -23,14 +23,14 @@ type ReturnType = Uint256BigInt;
 const cachedGetCurrentKmsContextId = createCachedFetch<Context, Parameters, ReturnType>({
   executeFn: _getCurrentKmsContextId,
   cacheKeyFn: (context, params) => `${context.runtime.uid.toLowerCase()}:${params.kmsVerifierAddress.toLowerCase()}`,
-  // Host contract versions are immutable per deployment, so a long TTL is safe.
+  // The current KMS context can rotate, so keep the TTL short.
   ttlMs: CACHE_TTL_15MIN,
 });
 
 /**
  * Reads the current KMS context ID for a KMSVerifier contract.
  *
- * Results are cached per (runtime, address) with a 24-hour TTL.
+ * Results are cached per (runtime, address) with a 15-minute TTL.
  * Concurrent callers share a single in-flight RPC request (deduplication).
  *
  * @param parameters.address - The checksummed address of the KMSVerifier contract.

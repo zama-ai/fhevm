@@ -530,11 +530,10 @@ function resolveOptions(options: FhevmOptions | undefined): ResolvedFhevmOptions
  * 1. **Lazy, idempotent init** — `await fhevm.ready`. Init is lazy and shared:
  *    the first public call triggers it and every later `ready` awaits the same
  *    in-flight promise, so this is safe regardless of prior `init()`/action calls.
- * 2. **Resolve the frozen context** — the on-chain-resolved version snapshot
- *    (protocol / PubKey-CRS / TFHE / TKMS / host-contract versions) is resolved
- *    exactly once during init (via `ensureFrozenContext`) and stored on the
- *    client; this reads it back. Being client-cached, it survives repeated calls
- *    across different actions.
+ * 2. **Resolve the frozen context** — the version snapshot (PubKey-CRS / TFHE /
+ *    TKMS versions) is resolved exactly once during init (via
+ *    `ensureFrozenContext`) and stored on the client; this reads it back. Being
+ *    client-cached, it survives repeated calls across different actions.
  * 3. **Return a deep clone** — the caller gets an independent
  *    {@link cloneFhevmClientFrozenContext | deep copy}, not the live instance, so
  *    the action runs against a stable version view for its whole async duration,

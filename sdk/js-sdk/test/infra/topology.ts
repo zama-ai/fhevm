@@ -126,7 +126,7 @@ export function anvilSpecs(): AnvilSpec[] {
  * deployed by the proxy-upgrade pass, not ProtocolConfig. Including it
  * unconditionally would have the SDK read that implementation's
  * `getVersion()` (which returns "ACL v...") and fail the
- * `assertIsHostContractVersionOf(..., 'ProtocolConfig')` check. */
+ * `assertIsHostContractVersionOf(..., 'ProtocolConfig', 'ProtocolConfigReplica')` check. */
 function slotChainConfig(chainId: number, mnemonic: string, foundryProfile: FoundryProfile): SlotChainConfig {
   const h = deriveFhevmHostAddresses(mnemonic);
   return {
