@@ -1282,6 +1282,41 @@ describe('fetchFheEncryptionKeyBytes with several clients', () => {
     await expect(bytesA).resolves.toEqual(keyBytes());
   });
 
+  it('shares one entry between concurrent clients providing equal keys: no orphaned entry', async () => {
+    const a = makeClient({ chain: ethereumChain, handlers: precomputedHandlers(), fheEncryptionKey: keyBytes() });
+    const b = makeClient({ chain: ethereumChain, handlers: precomputedHandlers(), fheEncryptionKey: keyBytes() });
+    const deserialize = vi.fn(async ({ publicKeyBytes }: { readonly publicKeyBytes: { readonly bytes: Bytes } }) => ({
+      bytes: publicKeyBytes.bytes,
+    }));
+    for (const c of [a, b]) {
+      c.client.runtime.extend((() => ({
+        encrypt: { deserializeFheEncryptionPublicKey: deserialize, deserializeFheEncryptionCrs: async () => ({}) },
+      })) as unknown as EncryptModuleFactory);
+    }
+    const replaceBytes = vi.spyOn(globalFheEncryptionKeyCache, 'replaceBytes');
+
+    try {
+      const [bytesA, bytesB] = await Promise.all([
+        fetchFheEncryptionKeyBytes(a.client, { fhevmContext }),
+        fetchFheEncryptionKeyBytes(b.client, { fhevmContext }),
+      ]);
+      expect(bytesB).toBe(bytesA);
+      expect(replaceBytes).toHaveBeenCalledOnce();
+      await expect(cachedBytes(KEY)).resolves.toBe(bytesA);
+
+      // Both clients use the slot's entry: one wasm conversion.
+      await Promise.all(
+        [a, b].map((c) =>
+          fetchFheEncryptionKeyWasm(c.client as unknown as Fhevm<FhevmChain, WithEncrypt>, { fhevmContext }),
+        ),
+      );
+      expect(deserialize).toHaveBeenCalledOnce();
+      expect(replaceBytes).toHaveBeenCalledOnce();
+    } finally {
+      replaceBytes.mockRestore();
+    }
+  });
+
   it('evicts a downloaded key that fails the check, leaving the other holders of its entry as they are', async () => {
     const good = makeClient({ chain: ethereumChain, handlers: precomputedHandlers() });
     const gate = deferred();

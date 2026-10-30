@@ -59,7 +59,8 @@ export function getFheEncryptionKeySlot(context: {
  * - equal to the cached key, once downloaded: the cached key is used, checked
  *   for this client;
  * - otherwise (including while a download is in flight): checked, then cached,
- *   replacing a cached key, which is stale (only one key is active at a time).
+ *   replacing a cached key, which is stale (only one key is active at a time),
+ *   unless the cache holds the same key by then: that one is used, as above.
  *
  * Outcomes of the check:
  * - pass: a provided key is cached and the client releases it;
@@ -194,25 +195,26 @@ function _useProvidedFheEncryptionKey(
     provided,
     async (): Promise<CheckedFheEncryptionKey> => {
       try {
-        // Compared only with a cached key already downloaded: never wait for
-        // another client's download.
-        const cachedEntry = globalFheEncryptionKeyCache.get(key);
-        const cached =
-          cachedEntry?.resolvedKind === undefined
-            ? undefined
-            : await globalFheEncryptionKeyCache.entryBytes(cachedEntry);
+        const cachedEntry = await _getSameCachedEntry(key, provided);
         let checked: CheckedFheEncryptionKey;
-        if (cachedEntry !== undefined && cached !== undefined && _sameFheEncryptionKeyBytes(provided, cached)) {
+        if (cachedEntry !== undefined) {
           checked = await _checkCachedFheEncryptionKey(context, key, cachedEntry);
         } else {
           await _checkFheEncryptionKeyBytes(context, provided);
-          const entry = globalFheEncryptionKeyCache.replaceBytes(
-            context.runtime,
-            key,
-            context.chain.fhevm.relayerUrl,
-            provided,
-          );
-          checked = { key, entry, bytes: provided };
+          // Another client may have cached the same key during the check: use
+          // its entry rather than orphan it.
+          const sameEntry = await _getSameCachedEntry(key, provided);
+          if (sameEntry !== undefined) {
+            checked = await _checkCachedFheEncryptionKey(context, key, sameEntry);
+          } else {
+            const entry = globalFheEncryptionKeyCache.replaceBytes(
+              context.runtime,
+              key,
+              context.chain.fhevm.relayerUrl,
+              provided,
+            );
+            checked = { key, entry, bytes: provided };
+          }
         }
         // The cache holds the key from now on.
         releaseProvidedFheEncryptionKey(context, provided);
@@ -227,6 +229,19 @@ function _useProvidedFheEncryptionKey(
     },
     false,
   );
+}
+
+/**
+ * The slot's entry if it holds `provided`'s bytes. Compared only with a cached
+ * key already downloaded: never waits for another client's download.
+ */
+async function _getSameCachedEntry(key: string, provided: FheEncryptionKeyBytes): Promise<CacheEntry | undefined> {
+  const entry = globalFheEncryptionKeyCache.get(key);
+  if (entry?.resolvedKind === undefined) {
+    return undefined;
+  }
+  const cached = await globalFheEncryptionKeyCache.entryBytes(entry);
+  return _sameFheEncryptionKeyBytes(provided, cached) ? entry : undefined;
 }
 
 /**
