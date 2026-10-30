@@ -6,6 +6,11 @@
 {{- if not $policy.ports }}
 {{- fail "coprocessorProxy.prfServiceNetworkPolicy.ports must list the prf-service pod ports" }}
 {{- end }}
+{{- range $policy.extraIngress }}
+{{- if not .from }}
+{{- fail "coprocessorProxy.prfServiceNetworkPolicy.extraIngress rules must set `from`: a rule without it admits every source" }}
+{{- end }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -38,7 +38,12 @@ The proxy resolves `prfServiceAddress` once, at startup. The Service routes each
 to a ready prf-service pod. Idle pooled connections close after 10 s without traffic, so new
 connections reach newly scaled pods.
 
-The proxy reads its TLS certificate at startup: a renewed secret takes effect after a pod restart.
+The proxy reads its TLS certificate at startup only: a renewed secret takes effect after a pod
+restart. To restart the pods on renewal, set `coprocessorProxy.podAnnotations`, for example
+`reloader.stakater.com/auto: "true"` where Stakater Reloader runs, or a checksum of the secret.
+`coprocessor_proxy_tls_certificate_not_after_seconds` is the Unix time at which the served
+certificate expires; alert when it comes close, for example
+`coprocessor_proxy_tls_certificate_not_after_seconds - time() < 14 * 86400`.
 `commonConfig.env` does not apply to the proxy, the internet-facing pod: put a shared setting it
 needs in `coprocessorProxy.env`.
 
@@ -46,8 +51,12 @@ A NetworkPolicy allows this release's proxy pods to reach the prf-service pods s
 `prfServiceNetworkPolicy.podSelector`, on `prfServiceNetworkPolicy.ports` (TCP 8090 by default).
 Set these to the prf-service **pod** ports, which may differ from the Service port in
 `prfServiceAddress`. Add other required ingress, such as metrics scraping, to
-`prfServiceNetworkPolicy.extraIngress`. Isolation requires a CNI that enforces NetworkPolicy
-and no other policy granting broader access: Kubernetes policies are additive.
+`prfServiceNetworkPolicy.extraIngress`; rendering fails on a rule without `from`, which would
+admit every source. Isolation requires a CNI that enforces NetworkPolicy and no other policy
+granting broader access: Kubernetes policies are additive. A `podSelector` that matches no
+prf-service pod, for example after a typo or a label change, renders without error and leaves
+prf-service open. After each deployment, check from a pod that is not the proxy that prf-service's
+port refuses the connection, as `ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh` does.
 
 The proxy reads the signers at the latest finalized block. It checks that block every 5 s
 (`COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL`) after each poll completes, and reads the signers
@@ -82,16 +91,22 @@ for the accepted set, or 0 before the first read. It advances only after applyin
 equal, older or failed RPC replies leave it unchanged. Its age includes the chain's normal
 finality delay. Readiness does not check ongoing signer freshness.
 
-prf-service holds a request until its output is ready, so `coprocessorProxy.prfServiceResponseTimeoutSeconds`
-(120 by default) must exceed the KMS connector's `PRF_RETRIEVAL_DEADLINE`. It is also the shutdown
-grace period.
+prf-service holds a request until its output is ready. The timeouts along the path must therefore
+grow from the caller to the proxy: the KMS connector's `PRF_RETRIEVAL_DEADLINE` (see the
+[configuration of RFC-038](https://github.com/zama-ai/tech-spec/blob/main/rfcs/038-coprocessor-prf-output-endpoint.md#configuration);
+kms-connector does not implement it yet), then every timeout of the front layer, then
+`coprocessorProxy.prfServiceResponseTimeoutSeconds` (120 by default). Front-layer defaults are
+lower than 120 s: Cloudflare answers `524` when the origin has not responded within 100 s, and an
+AWS ALB closes a connection idle for 60 s. `prfServiceResponseTimeoutSeconds` is also the shutdown grace period.
 
 A request for an output prf-service has already stored still costs a signature check and a
 database read, so each replica limits how many requests per second one signer can send:
 `coprocessorProxy.maxRequestsPerSigner` (200 by default). Requests above the limit get `429` with
 `"code": "concurrency_limited"`, `"retryable": true` and `Retry-After: 1`, and never reach
-prf-service. The limit applies per replica and is not divided by `replicas`: keep-alive keeps a
-connector on one replica. The `signer` label of `coprocessor_proxy_requests_counter` names the
+prf-service. The limit applies per replica and is not divided by `replicas`. A connector opens one
+HTTP/1.1 connection per request in flight, and the Service balances each new connection over the
+replicas, so a signer's limit is about `replicas` × `maxRequestsPerSigner`. Adding replicas raises
+it. The `signer` label of `coprocessor_proxy_requests_counter` names the
 authenticated signer, so its `status="429"` series show which connector was limited.
 
 Kubernetes sends `SIGTERM` when it starts removing the pod from the Service, and each node keeps
@@ -104,6 +119,17 @@ every shutdown, even with no request in flight. A request sent on a connection t
 through the whole delay can fail when the delay ends; a client that closes idle connections
 sooner never sends one. The pod's `terminationGracePeriodSeconds` is the delay plus the grace plus
 10 s: Pingora's 5 s to close the remaining connections, and 5 s margin.
+
+TLS handshakes, signature checks and forwarding run on the proxy's worker threads,
+`coprocessorProxy.threads` (1 by default); match it to the CPU request. The readiness self-check
+goes through the same listener, with a 3 s timeout: replicas whose threads are saturated fail
+readiness together.
+
+Run at least 2 replicas in an environment that exposes the proxy, so that a node drain or an
+eviction leaves one serving. The default `topologySpreadConstraints` spread the replicas over nodes
+when the scheduler can. `coprocessorProxy.podDisruptionBudget.enabled` adds a budget of
+`minAvailable: 1`, rendered only with 2 replicas or more, since over a single replica it would block
+every node drain.
 
 ### Deployment requirement
 
@@ -129,5 +155,5 @@ example after 10 s. Otherwise a request sent as the proxy closes the connection 
 connection error, which the connector then has to retry.
 
 A TCP (layer 4) load balancer without an allowlist is not enough: it forwards slow and idle
-connections to the proxy unchanged. Every timeout of that layer must also exceed the connector's
-`PRF_RETRIEVAL_DEADLINE`, as the proxy's does.
+connections to the proxy unchanged. Every timeout of the front layer must sit between the
+connector's `PRF_RETRIEVAL_DEADLINE` and `prfServiceResponseTimeoutSeconds`, as described above.

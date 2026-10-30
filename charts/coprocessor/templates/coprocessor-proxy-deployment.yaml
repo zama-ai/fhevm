@@ -54,7 +54,7 @@ spec:
         {{- with $proxy.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- with .Values.podAnnotations }}
+      {{- with merge (dict) ($proxy.podAnnotations | default dict) (.Values.podAnnotations | default dict) }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -62,6 +62,8 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
+      # The proxy never calls the Kubernetes API.
+      automountServiceAccountToken: false
       # The shutdown delay, the grace period (the proxy's prf-service response timeout), the proxy's
       # GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS (5 s, coprocessor-proxy/src/core/proxy.rs) to close what is
       # left, and 5 s margin.
@@ -78,6 +80,19 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with $proxy.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- range . }}
+        - {{- toYaml . | nindent 10 }}
+          {{- if not .labelSelector }}
+          labelSelector:
+            matchLabels:
+              app: coprocessor-proxy
+              app.kubernetes.io/name: {{ include "coprocessorProxyName" $ }}
+              {{- include "coprocessor.extraSelectorLabels" $ | nindent 14 }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
       {{- if $proxy.serviceAccountName }}
       serviceAccountName: {{ $proxy.serviceAccountName }}
       {{- end }}
@@ -89,6 +104,10 @@ spec:
         - name: coprocessor-proxy
           image: {{ $proxy.image.name }}:{{ required "coprocessorProxy.image.tag must be set" $proxy.image.tag }}
           command: ["coprocessor-proxy"]
+          {{- with $proxy.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- if .Values.commonConfig.stackVersionProbe.enabled }}
           startupProbe:
             exec:
@@ -133,6 +152,8 @@ spec:
               value: "{{ int $proxy.prfServiceResponseTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER
               value: {{ int $proxy.maxRequestsPerSigner | quote }}
+            - name: COPROCESSOR_PROXY_THREADS
+              value: {{ int $proxy.threads | quote }}
           {{- if $tracingEnabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}

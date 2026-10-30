@@ -1884,7 +1884,8 @@ coprocessorProxy:
     # Required when enabled.
     tag: ""
 
-  # Stateless: replicas answer alike.
+  # Stateless: replicas answer alike. Run at least 2 in an environment that exposes the proxy, so
+  # a node drain or an eviction leaves one serving.
   replicas: 1
 
   tls:
@@ -1901,15 +1902,17 @@ coprocessorProxy:
   # `host:port` of prf-service's Service, which serves the PRF route (required), e.g.
   # "<release>-prf-service:8090". The Service routes each connection to a ready pod.
   prfServiceAddress: ""
-  # Must exceed the connector's PRF_RETRIEVAL_DEADLINE; also sets the SIGTERM drain grace.
-  # Pingora waits this grace even when idle.
+  # Last in the timeout chain: the connector's PRF_RETRIEVAL_DEADLINE (RFC-038) < every
+  # front-layer timeout < this. Also sets the SIGTERM drain grace, which Pingora waits even when
+  # idle.
   prfServiceResponseTimeoutSeconds: 120
   # How long the proxy keeps serving after SIGTERM, asking each client to reconnect, before it
   # stops accepting connections. Must exceed the time the pod's removal from the Service takes to
   # reach every node. The pod's termination budget is this delay, the drain grace and 10 s.
   shutdownDelaySeconds: 10
   # Requests per second each signer (KMS connector) can send to one replica; more get `429`.
-  # Per replica, not divided by `replicas`: keep-alive keeps a connector on one replica.
+  # The Service balances each connection, and a connector opens one per in-flight request, so a
+  # signer's limit is about `replicas` times this: adding replicas raises it.
   maxRequestsPerSigner: 200
 
   # Ingress allowed from this release's proxy pods to prf-service.
@@ -1923,7 +1926,8 @@ coprocessorProxy:
     # port.
     ports:
       - {port: 8090, protocol: TCP}
-    # More ingress rules for those pods, e.g. Prometheus scraping their metrics port.
+    # More ingress rules for those pods, e.g. Prometheus scraping their metrics port. Each rule
+    # must set `from`: a rule without it admits every source.
     extraIngress: []
 
   # Additional environment variables, e.g. COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL.
@@ -1945,6 +1949,9 @@ coprocessorProxy:
   serviceMonitor:
     enabled: false
 
+  # Worker threads of the proxy (COPROCESSOR_PROXY_THREADS): TLS handshakes, signature checks,
+  # forwarding and the readiness self-check share them. Match the CPU request.
+  threads: 1
   resources:
     requests:
       cpu: 500m
@@ -1972,6 +1979,22 @@ coprocessorProxy:
 
   # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
   podLabels: {}
+  # Extra pod annotations merged with global .Values.podAnnotations (this map wins on key
+  # conflict). The proxy reads its certificate at startup only: restart it on renewal, e.g. with
+  # `reloader.stakater.com/auto: "true"` or a checksum of the TLS Secret.
+  podAnnotations: {}
+
+  securityContext:
+    # The image's `fhevm` user. runAsNonRoot needs a numeric user, and the image names it.
+    runAsUser: 10000
+    runAsGroup: 10001
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
 
   serviceAccountName:
 
@@ -1979,6 +2002,17 @@ coprocessorProxy:
   nodeSelector:
   affinity:
   tolerations:
+  # Spreads the replicas over nodes when possible. A constraint without `labelSelector` selects
+  # this release's proxy pods.
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+
+  # Rendered only when `replicas` is at least 2, so it never blocks a node drain.
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
 
   updateStrategy:
     type: RollingUpdate
