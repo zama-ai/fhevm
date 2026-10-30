@@ -1,4 +1,6 @@
-use super::common::{is_transient_gateway_error, try_extract_non_retryable_config_error};
+use super::common::{
+    is_retryable_nonce_error, is_transient_gateway_error, try_extract_non_retryable_config_error,
+};
 use super::{begin_live_write, TransactionOperation};
 use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
@@ -263,12 +265,12 @@ where
                     )
                     .await?;
                     return Ok(());
-                } else if is_transient_gateway_error(&e) {
+                } else if is_transient_gateway_error(&e) || is_retryable_nonce_error(&e) {
                     VERIFY_PROOF_FAIL_COUNTER.inc();
                     warn!(
                         zk_proof_id = txn_request.0,
                         error = %crate::diagnostics::safe_rpc_error(&e),
-                        "Gateway temporarily unavailable; preserving proof retry budget"
+                        "Recoverable Gateway error; preserving proof retry budget"
                     );
                     // Keep the finite budget and last error intact, but persist
                     // the attempt so a failing batch cannot monopolize selection.

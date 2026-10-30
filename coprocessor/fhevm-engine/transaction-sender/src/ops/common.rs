@@ -63,6 +63,32 @@ pub(crate) fn is_transient_gateway_error(err: &RpcError<TransportErrorKind>) -> 
     }
 }
 
+/// A nonce rejection does not establish that the pending job is invalid.
+/// Keep its terminal retry budget intact while nonce recovery and operation
+/// backoff run. Match RPC message prefixes, never embedded contract-revert text.
+pub(crate) fn is_retryable_nonce_error(err: &RpcError<TransportErrorKind>) -> bool {
+    let Some(response) = err.as_error_resp() else {
+        return false;
+    };
+    if !matches!(response.code, -32000 | -32003 | -32603) {
+        return false;
+    }
+    let message = response.message.trim().to_ascii_lowercase();
+    [
+        "nonce too low",
+        "nonce too high",
+        "already known",
+        "replacement transaction underpriced",
+        "transaction underpriced",
+    ]
+    .iter()
+    .any(|prefix| {
+        message.strip_prefix(prefix).is_some_and(|suffix| {
+            suffix.is_empty() || suffix.starts_with(':') || suffix.starts_with(' ')
+        })
+    })
+}
+
 pub(crate) fn try_into_array<const SIZE: usize>(vec: Vec<u8>) -> Result<[u8; SIZE]> {
     if vec.len() != SIZE {
         return Err(anyhow!(
@@ -190,6 +216,53 @@ mod transient_gateway_tests {
                 "{code}: {message}"
             );
         }
+    }
+
+    #[test]
+    fn nonce_recovery_preserves_budget_for_known_rpc_responses() {
+        for code in [-32000, -32003, -32603] {
+            for message in [
+                "nonce too low",
+                "nonce too high: next nonce 10, tx nonce 11",
+                "already known",
+                "replacement transaction underpriced",
+                "transaction underpriced",
+                "  NONCE TOO LOW: next nonce 10, tx nonce 9  ",
+            ] {
+                let error = RpcError::ErrorResp(
+                    serde_json::from_value(serde_json::json!({
+                        "code": code, "message": message,
+                    }))
+                    .unwrap(),
+                );
+                assert!(is_retryable_nonce_error(&error), "{code}: {message}");
+            }
+        }
+    }
+
+    #[test]
+    fn nonce_recovery_does_not_hide_permanent_or_unrelated_errors() {
+        for (code, message) in [
+            (-32000, "execution reverted: nonce too low"),
+            (-32000, "execution reverted: already known"),
+            (-32000, "nonce too lowest"),
+            (-32000, "insufficient funds"),
+            (-32000, "replacement transaction invalid"),
+            (-32603, "internal error"),
+            (-32602, "nonce too high"),
+            (3, "nonce too low"),
+        ] {
+            let error = RpcError::ErrorResp(
+                serde_json::from_value(serde_json::json!({
+                    "code": code, "message": message,
+                }))
+                .unwrap(),
+            );
+            assert!(!is_retryable_nonce_error(&error), "{code}: {message}");
+        }
+        assert!(!is_retryable_nonce_error(&TransportErrorKind::custom_str(
+            "nonce too low"
+        )));
     }
 
     #[test]
