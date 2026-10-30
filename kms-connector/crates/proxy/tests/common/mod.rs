@@ -133,8 +133,8 @@ async fn echo(
         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
     }
     if req.headers().contains_key("x-stub-fail-mid-body") {
-        // The header and the first bytes of `MID_BODY_OUTPUT`, then, once the proxy has passed
-        // them on, the stream fails.
+        // The header and the first bytes of `MID_BODY_OUTPUT`, then the stream fails. The delay
+        // lets the stub flush the first bytes before failing, so the failure happens mid-body.
         let first = web::Bytes::from_static(&MID_BODY_OUTPUT[..MID_BODY_SENT]);
         let chunks =
             futures::stream::once(async { Ok(first) }).chain(futures::stream::once(async {

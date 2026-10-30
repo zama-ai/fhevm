@@ -81,7 +81,7 @@ impl Proxy {
         Ok(())
     }
 
-    /// Writes an error body as JSON.
+    /// Writes an error body as JSON, or nothing if an answer has already started.
     async fn respond_with_error(
         &self,
         session: &mut Session,
@@ -89,6 +89,10 @@ impl Proxy {
         ctx: &mut RequestContext,
     ) -> pingora::Result<()> {
         ctx.code = error.code.as_str();
+        // Write nothing into an answer that has already started.
+        if response_started(session) {
+            return Ok(());
+        }
         let status = StatusCode::from_u16(error.code.http_status())
             .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
         let body = serde_json::to_vec(&error).unwrap_or_default();
@@ -318,12 +322,9 @@ impl ProxyHttp for Proxy {
     ) -> FailToProxy {
         // Disables keep-alive so the answer carries a `Connection: close` header.
         session.set_keepalive(None);
-        // The answer has already started: write nothing, to avoid appending an error body to the
-        // endpoint's response.
-        if session
-            .response_written()
-            .is_some_and(|written| !written.status.is_informational())
-        {
+        // Write nothing into an answer that has already started.
+        if response_started(session) {
+            ctx.code = ErrorCode::UpstreamTransient.as_str();
             return FailToProxy {
                 error_code: 0,
                 can_reuse_downstream: false,
@@ -343,9 +344,9 @@ impl ProxyHttp for Proxy {
             // server-side by `logging()`; the client, e.g. the relayer, gets a fixed message.
             None if *e.esource() == ErrorSource::Upstream => {
                 let (code, message) = match e.etype() {
-                    ErrorType::ConnectTimedout | ErrorType::ReadTimedout => {
-                        (ErrorCode::Timeout, "endpoint timed out")
-                    }
+                    ErrorType::ConnectTimedout
+                    | ErrorType::ReadTimedout
+                    | ErrorType::WriteTimedout => (ErrorCode::Timeout, "endpoint timed out"),
                     _ => (ErrorCode::UpstreamTransient, "endpoint unavailable"),
                 };
                 let error = ErrorResponse::new(code, message.to_string(), None);
@@ -479,6 +480,16 @@ const STRIPPED_HEADERS: [HeaderName; 17] = [
     TRACESTATE,
     BAGGAGE,
 ];
+
+/// Whether a final (non-informational) response header was already sent to the client.
+///
+/// An informational `1xx` header (e.g. `100 Continue`) is only an interim answer: a final
+/// response is still expected after it, so an error answer can still be written.
+fn response_started(session: &Session) -> bool {
+    session
+        .response_written()
+        .is_some_and(|written| !written.status.is_informational())
+}
 
 /// Removes the [`STRIPPED_HEADERS`] from the request.
 pub fn sanitize_headers(req: &mut RequestHeader) {
