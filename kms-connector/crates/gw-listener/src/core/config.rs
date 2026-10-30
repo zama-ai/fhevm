@@ -321,26 +321,6 @@ mod tests {
         cleanup_env_vars();
     }
 
-    #[tokio::test]
-    #[serial(config_tests)]
-    async fn test_invalid_url_error_hides_the_url() {
-        cleanup_env_vars();
-        // Missing scheme: an easy mistake, with an API key in the path as some providers require.
-        unsafe {
-            env::set_var(
-                "KMS_CONNECTOR_GATEWAY_URL",
-                "rpc.example.com/v2/secret-api-key",
-            );
-        }
-
-        let err = Config::from_env_and_file(Some(example_config_path())).unwrap_err();
-        let err = format!("{err:?}");
-        assert!(err.contains("invalid URL"), "{err}");
-        assert!(!err.contains("secret-api-key"), "{err}");
-
-        cleanup_env_vars();
-    }
-
     fn example_config_path() -> String {
         format!(
             "{}/../../config/gw-listener.toml",

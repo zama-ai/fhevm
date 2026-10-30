@@ -11,7 +11,7 @@ use proxy::{
 };
 use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
-use tracing::error;
+use tracing::{debug, error};
 
 fn main() -> ExitCode {
     if let Err(err) = run() {
@@ -44,6 +44,7 @@ fn run() -> anyhow::Result<()> {
                 .build()?;
             let _guard = runtime.enter();
             init_otlp_setup(config.service_name.clone())?;
+            debug!("{config:?}");
 
             // The monitoring server runs on the tokio runtime, next to Pingora's own.
             let monitoring_endpoint = config.monitoring_endpoint;

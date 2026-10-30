@@ -14,7 +14,7 @@ use connector_utils::{
 };
 use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -37,6 +37,7 @@ async fn run() -> anyhow::Result<()> {
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref())?;
             init_otlp_setup(config.service_name.clone())?;
+            debug!("{config:?}");
 
             let cancel_token = CancellationToken::new();
             set_task_limit(config.task_limit);
