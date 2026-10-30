@@ -2,7 +2,7 @@
 ARG RUST_IMAGE_VERSION
 
 # Stage 0: Build contracts
-FROM cgr.dev/zama.ai/node:22.23.4-dev AS contract_builder
+FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.23.4 AS contract_builder
 
 USER root
 

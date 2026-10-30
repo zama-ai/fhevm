@@ -1,18 +1,13 @@
-FROM cgr.dev/zama.ai/node:22.23.4-dev AS prod
+FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.23.4 AS prod
 
 USER root
 
 RUN apk add --no-cache \
-    bash \
     curl \
     git \
     jq \
-    kubectl-1.34-default \
     python-3.12 \
-    python-3.12-dev && \
-    addgroup -g 10001 fhevm && \
-    adduser -D -u 10000 -G fhevm fhevm && \
-    mkdir -p /home/fhevm
+    python-3.12-dev
 
 # pnpm (used by host-contracts/lz-wiring/) and Foundry `cast` (used by
 # host-contracts/lz_wiring_from_eoa_owner.sh) — baked in so LayerZero
