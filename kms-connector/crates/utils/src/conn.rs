@@ -165,6 +165,7 @@ where
             .unwrap()
     });
 
+    let rpc_node_url = Arc::new(rpc_node_url);
     let transport = match bounds {
         Some(bounds) => {
             let http_client = Client::builder()
@@ -176,9 +177,9 @@ where
         None => Http::new(rpc_node_url.as_url().clone()),
     };
     let is_local = transport.guess_local();
-    let redacted_url: Arc<str> = rpc_node_url.to_string().into();
+    let call_rpc_url = Arc::clone(&rpc_node_url);
     let transport = ServiceBuilder::new()
-        .map_future(move |call| redact_errors(call, Arc::clone(&redacted_url)))
+        .map_future(move |call| redact_errors(call, Arc::clone(&call_rpc_url)))
         .service(transport);
     let client = match bounds.and_then(|bounds| bounds.max_concurrent_calls) {
         Some(max_concurrent_calls) => bounded_rpc_client(transport, is_local, max_concurrent_calls),
@@ -193,13 +194,13 @@ where
 
 /// Strips the URL that a `reqwest` error carries and prints, which may contain an API key, and
 /// names the node by its redacted URL instead.
-fn redact_errors(call: TransportFut<'static>, redacted_url: Arc<str>) -> TransportFut<'static> {
+fn redact_errors(call: TransportFut<'static>, rpc_url: Arc<RpcUrl>) -> TransportFut<'static> {
     Box::pin(async move {
         call.await.map_err(|err| match err {
             RpcError::Transport(TransportErrorKind::Custom(source)) => {
                 match source.downcast::<reqwest::Error>() {
                     Ok(source) => TransportErrorKind::custom(RpcRequestError {
-                        redacted_url,
+                        rpc_url,
                         source: source.without_url(),
                     }),
                     Err(source) => RpcError::Transport(TransportErrorKind::Custom(source)),
@@ -213,18 +214,13 @@ fn redact_errors(call: TransportFut<'static>, redacted_url: Arc<str>) -> Transpo
 /// A failed HTTP request to a RPC node.
 #[derive(Debug)]
 struct RpcRequestError {
-    /// The URL of the node, as `RpcUrl` prints it.
-    redacted_url: Arc<str>,
+    rpc_url: Arc<RpcUrl>,
     source: reqwest::Error,
 }
 
 impl fmt::Display for RpcRequestError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "request to {} failed: {}",
-            self.redacted_url, self.source
-        )
+        write!(f, "request to {} failed: {}", self.rpc_url, self.source)
     }
 }
 
