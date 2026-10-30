@@ -20,6 +20,10 @@ contract TestContract {
         CoprocessorConfig memory cfg = ZamaConfig.getEthereumCoprocessorConfig();
         return cfg;
     }
+    function getBscCoprocessorConfig() public view returns (CoprocessorConfig memory) {
+        CoprocessorConfig memory cfg = ZamaConfig.getBscCoprocessorConfig();
+        return cfg;
+    }
     function getPolygonCoprocessorConfig() public view returns (CoprocessorConfig memory) {
         CoprocessorConfig memory cfg = ZamaConfig.getPolygonCoprocessorConfig();
         return cfg;
@@ -104,6 +108,40 @@ contract MultiChainConfigTest is Test {
         assertTrue(testFhevmContract.confidentialProtocolId() == 10001);
     }
 
+    function test_ZamaMultiChainConfigBscMainnet() public {
+        // BSC mainnet (chainid == 56) is not supported yet
+        vm.chainId(56);
+
+        vm.expectRevert(abi.encodeWithSelector(ZamaConfig.ZamaProtocolUnsupported.selector));
+        new TestFHEVMContract();
+
+        TestContract testContract = new TestContract();
+
+        vm.expectRevert(abi.encodeWithSelector(ZamaConfig.ZamaProtocolUnsupported.selector));
+        testContract.getCoprocessorConfig();
+
+        vm.expectRevert(abi.encodeWithSelector(ZamaConfig.ZamaProtocolUnsupported.selector));
+        testContract.getBscCoprocessorConfig();
+
+        assertTrue(testContract.getConfidentialProtocolId() == 0);
+    }
+
+    function test_ZamaMultiChainConfigBscTestnet() public {
+        vm.chainId(97);
+
+        TestFHEVMContract testFhevmContract = new TestFHEVMContract();
+        CoprocessorConfig memory cfg = testFhevmContract.getCoprocessorConfig();
+        // chainid == 97
+        CoprocessorConfig memory bscTestnetCfg = ZamaConfig.getBscCoprocessorConfig();
+
+        assertTrue(cfg.ACLAddress == 0x9Adac873Ae2f737AF011f0778305Cff0B220ac36);
+        assertTrue(cfg.CoprocessorAddress == 0x24f6bBCd97E2FE90E43cb9C32B89A9828d8Ece08);
+        assertTrue(cfg.KMSVerifierAddress == 0x1F7CAD0c05fDED5F988683AdfDB4F242b310cdcB);
+
+        _assertConfigEq(cfg, bscTestnetCfg);
+        assertTrue(testFhevmContract.confidentialProtocolId() == 10001);
+    }
+
     function test_ZamaMultiChainConfigLocalChainId() public {
         vm.chainId(31337);
 
@@ -137,6 +175,16 @@ contract MultiChainConfigTest is Test {
         for (uint256 i = 0; i < chainIds.length; i++) {
             vm.chainId(chainIds[i]);
             _assertConfigEq(testContract.getCoprocessorConfig(), testContract.getPolygonCoprocessorConfig());
+        }
+    }
+
+    function test_ZamaMultiChainConfigMatchesBscFamilyGetter() public {
+        TestContract testContract = new TestContract();
+
+        uint256[2] memory chainIds = [uint256(97), 31337];
+        for (uint256 i = 0; i < chainIds.length; i++) {
+            vm.chainId(chainIds[i]);
+            _assertConfigEq(testContract.getCoprocessorConfig(), testContract.getBscCoprocessorConfig());
         }
     }
 

@@ -117,6 +117,42 @@ contract PolygonConfigTest is Test {
         testContract.getPolygonCoprocessorConfig();
     }
 
+    function test_ZamaConfigGetPolygonCoprocessorConfigEthereumMainnetSeparation() public {
+        vm.chainId(1);
+
+        TestContract testContract = new TestContract();
+
+        vm.expectRevert(abi.encodeWithSelector(ZamaConfig.ZamaProtocolUnsupported.selector));
+        testContract.getPolygonCoprocessorConfig();
+    }
+
+    function test_ZamaConfigGetPolygonCoprocessorConfigSepoliaSeparation() public {
+        vm.chainId(11155111);
+
+        TestContract testContract = new TestContract();
+
+        vm.expectRevert(abi.encodeWithSelector(ZamaConfig.ZamaProtocolUnsupported.selector));
+        testContract.getPolygonCoprocessorConfig();
+    }
+
+    function test_ZamaConfigGetPolygonCoprocessorConfigBscTestnetSeparation() public {
+        vm.chainId(97);
+
+        TestContract testContract = new TestContract();
+
+        vm.expectRevert(abi.encodeWithSelector(ZamaConfig.ZamaProtocolUnsupported.selector));
+        testContract.getPolygonCoprocessorConfig();
+    }
+
+    function test_ZamaConfigGetPolygonCoprocessorConfigBscMainnetSeparation() public {
+        vm.chainId(56);
+
+        TestContract testContract = new TestContract();
+
+        vm.expectRevert(abi.encodeWithSelector(ZamaConfig.ZamaProtocolUnsupported.selector));
+        testContract.getPolygonCoprocessorConfig();
+    }
+
     function test_ZamaConfigGetConfidentialProtocolIdUnknownChainId() public {
         vm.chainId(123);
 
