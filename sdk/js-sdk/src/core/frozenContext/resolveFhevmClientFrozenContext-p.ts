@@ -62,7 +62,7 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
   assertIsHostContractVersionOf(inputVerifierVersion, 'InputVerifier');
   assertIsHostContractVersionOf(kmsVerifierVersion, 'KMSVerifier');
   if (protocolConfigVersion !== undefined) {
-    assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig');
+    assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig', 'ProtocolConfigReplica');
   }
 
   return createFhevmClientFrozenContext({

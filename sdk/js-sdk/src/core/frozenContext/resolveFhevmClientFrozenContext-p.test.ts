@@ -70,7 +70,7 @@ describe('ProtocolConfigReplica at the ProtocolConfig address', () => {
 
   it('rejects another host contract', async () => {
     await expect(resolveFhevmClientFrozenContext(makeClient('ACL v0.3.0'))).rejects.toThrow(
-      "Invalid contract name. Expecting 'ProtocolConfig', got ACL.",
+      "Invalid contract name. Expecting 'ProtocolConfig' or 'ProtocolConfigReplica', got ACL.",
     );
   });
 });

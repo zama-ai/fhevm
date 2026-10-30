@@ -1,20 +1,17 @@
 import type { ChecksummedAddress, UintNumber } from './primitives.js';
 
-export type HostContractNameMap = {
-  readonly ACL: 'ACL';
-  readonly FHEVMExecutor: 'FHEVMExecutor';
-  readonly HCULimit: 'HCULimit';
-  readonly InputVerifier: 'InputVerifier';
-  readonly KMSVerifier: 'KMSVerifier';
+export type HostContractName =
+  | 'ACL'
+  | 'FHEVMExecutor'
+  | 'HCULimit'
+  | 'InputVerifier'
+  | 'KMSVerifier'
+  | 'ProtocolConfig'
   // Non-canonical host chains run a ProtocolConfigReplica at the ProtocolConfig address.
-  readonly ProtocolConfig: 'ProtocolConfig' | 'ProtocolConfigReplica';
-};
-
-// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
-export type HostContractName = keyof HostContractNameMap & string;
+  | 'ProtocolConfigReplica';
 
 export type HostContractVersion<hostContractName extends HostContractName = HostContractName> = {
-  readonly contractName: HostContractNameMap[hostContractName];
+  readonly contractName: hostContractName;
   readonly major: UintNumber;
   readonly minor: UintNumber;
   readonly patch: UintNumber;

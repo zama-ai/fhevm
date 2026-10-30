@@ -161,19 +161,17 @@ function parseVersion(version: string): HostContractVersion {
 }
 
 /**
- * Asserts that a {@link HostContractVersion} belongs to a specific contract.
- * Narrows the type to `HostContractVersion<name>` on success.
+ * Asserts that a {@link HostContractVersion} belongs to one of the given contracts.
+ * Narrows the type to `HostContractVersion<names[number]>` on success.
  *
- * @throws If `v.contractName` does not match the expected name.
+ * @throws If `v.contractName` is not one of `hostContractNames`.
  */
-export function assertIsHostContractVersionOf<hostContractName extends HostContractName>(
+export function assertIsHostContractVersionOf<const hostContractNames extends readonly HostContractName[]>(
   v: HostContractVersion,
-  hostContractName: hostContractName,
-): asserts v is HostContractVersion<hostContractName> {
-  if (
-    v.contractName !== hostContractName &&
-    !(hostContractName === 'ProtocolConfig' && v.contractName === 'ProtocolConfigReplica')
-  ) {
-    throw new Error(`Invalid contract name. Expecting '${hostContractName}', got ${v.contractName}.`);
+  ...hostContractNames: hostContractNames
+): asserts v is HostContractVersion<hostContractNames[number]> {
+  if (!hostContractNames.includes(v.contractName)) {
+    const expected = hostContractNames.map((name) => `'${name}'`).join(' or ');
+    throw new Error(`Invalid contract name. Expecting ${expected}, got ${v.contractName}.`);
   }
 }
