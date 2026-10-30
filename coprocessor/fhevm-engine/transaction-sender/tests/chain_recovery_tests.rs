@@ -43,7 +43,8 @@ async fn queue_work(
 
 async fn pending(env: &TestEnvironment, id: u8) -> anyhow::Result<bool> {
     Ok(sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM verify_proofs WHERE zk_proof_id=$1)
+        "SELECT EXISTS(SELECT 1 FROM verify_proofs
+                       WHERE zk_proof_id=$1 AND sender_status <> 'COMPLETED')
              OR EXISTS(SELECT 1 FROM ciphertext_digest WHERE handle=$2 AND NOT txn_is_sent)",
     )
     .bind(i64::from(id))

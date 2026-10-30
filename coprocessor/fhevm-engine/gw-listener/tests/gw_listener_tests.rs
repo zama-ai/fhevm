@@ -33,11 +33,15 @@ struct TestEnvironment {
 
 impl TestEnvironment {
     async fn new() -> anyhow::Result<Self> {
+        Self::new_with_import(ImportMode::WithKeysNoSns).await
+    }
+
+    async fn new_with_import(mode: ImportMode) -> anyhow::Result<Self> {
         let mut conf = ConfigSettings::default();
 
         let mut _test_instance = None;
         if std::env::var("FORCE_DATABASE_URL").is_err() {
-            let instance = test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            let instance = test_harness::instance::setup_test_db(mode)
                 .await
                 .expect("valid db instance");
             eprintln!("New test database on {}", instance.db_url());
@@ -144,7 +148,7 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
 #[tokio::test]
 #[serial(db)]
 async fn quorum_acceptance_schedules_locally_rejected_proof_for_replay() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+    let env = TestEnvironment::new_with_import(ImportMode::None).await?;
     let provider = ProviderBuilder::new()
         .wallet(env.wallet)
         .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
@@ -296,7 +300,7 @@ async fn quorum_acceptance_schedules_locally_rejected_proof_for_replay() -> anyh
 #[tokio::test]
 #[serial(db)]
 async fn quorum_rejection_discards_retained_proof_without_replay() -> anyhow::Result<()> {
-    let env = TestEnvironment::new().await?;
+    let env = TestEnvironment::new_with_import(ImportMode::None).await?;
     let provider = ProviderBuilder::new()
         .wallet(env.wallet)
         .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
@@ -501,5 +505,97 @@ async fn gcs_rewind_on_activated_window_ingests_window_start() -> anyhow::Result
     )
     .execute(&env.db_pool)
     .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn finalized_gateway_events_preserve_unresolved_sender_transactions() -> anyhow::Result<()> {
+    for accepted in [true, false] {
+        let env = TestEnvironment::new_with_import(ImportMode::None).await?;
+        let provider = ProviderBuilder::new()
+            .wallet(env.wallet)
+            .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+            .await?;
+        let contract = InputVerification::deploy(&provider).await?;
+        let listener = GatewayListener::new(
+            *contract.address(),
+            env.conf.clone(),
+            env.cancel_token.clone(),
+            provider.clone(),
+        );
+        let pool = env.db_pool.clone();
+        let run = tokio::spawn(async move { listener.run(pool).await });
+        contract
+            .verifyProofRequest(
+                U256::from(42),
+                PrivateKeySigner::random().address(),
+                PrivateKeySigner::random().address(),
+                vec![1u8; 32].into(),
+                vec![].into(),
+            )
+            .send()
+            .await?
+            .get_receipt()
+            .await?;
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let exists: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM verify_proofs WHERE zk_proof_id = 0)",
+                )
+                .fetch_one(&env.db_pool)
+                .await?;
+                if exists {
+                    break anyhow::Ok(());
+                }
+                sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await??;
+        // The listener must treat signed bytes as opaque data owned by sender recovery.
+        sqlx::query("UPDATE verify_proofs SET verified = FALSE, handles = NULL,
+            sender_status = 'SENDING', sender_attempt_no = 7, sender_tx_hash = $1, sender_raw_tx = $2
+            WHERE zk_proof_id = 0")
+            .bind(vec![9u8;32]).bind(vec![2u8;128]).execute(&env.db_pool).await?;
+        let receipt = if accepted {
+            contract
+                .emitVerifyProofResponse(U256::ZERO, vec![FixedBytes::from([7u8; 32])])
+                .send()
+                .await?
+                .get_receipt()
+                .await?
+        } else {
+            contract
+                .emitRejectProofResponse(U256::ZERO)
+                .send()
+                .await?
+                .get_receipt()
+                .await?
+        };
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let processed: Option<i64> = sqlx::query_scalar(
+                    "SELECT last_block_num FROM gw_listener_last_block WHERE dummy_id = TRUE",
+                )
+                .fetch_optional(&env.db_pool)
+                .await?
+                .flatten();
+                if processed.is_some_and(|block| block >= receipt.block_number.unwrap() as i64) {
+                    break anyhow::Ok(());
+                }
+                sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await??;
+        let row: (String, i64, Vec<u8>, Option<bool>) = sqlx::query_as(
+            "SELECT sender_status, sender_attempt_no, sender_raw_tx, verified FROM verify_proofs WHERE zk_proof_id = 0")
+            .fetch_one(&env.db_pool).await?;
+        assert_eq!(row.0, "SENDING");
+        assert_eq!(row.1, 7);
+        assert_eq!(row.2, vec![2u8; 128]);
+        assert_eq!(row.3, if accepted { None } else { Some(false) });
+        env.cancel_token.cancel();
+        run.await??;
+    }
     Ok(())
 }

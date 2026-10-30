@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ciphertext_digest SET sender_raw_tx = $3, sender_tx_hash = $4\n                     WHERE handle = $1 AND sender_attempt_no = $2 AND sender_status = 'SENDING'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6d35c60c711f3ef4c47040eac7998ff69609eae32574f40b7cab697b38a3d957"
+}

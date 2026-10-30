@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ciphertext_digest SET\n            sender_status = CASE WHEN sender_raw_tx IS NULL THEN 'RETRY_WAIT' ELSE 'AWAITING_OUTCOME' END,\n            sender_attempt_no = sender_attempt_no + 1, sender_status_updated_at = NOW(),\n            sender_next_action_at = NOW(), sender_last_error = 'previous sender attempt interrupted'\n        WHERE sender_status = 'SENDING'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "97d7ee20179e1c145edec121e136dd869c045b4225d5dfa24d1aff93c9146daf"
+}

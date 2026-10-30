@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id\n             FROM verify_proofs\n             WHERE (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))\n               AND retry_count < $1\n               AND zk_proof_id < $3\n               AND (last_retry_at IS NULL OR last_retry_at <= NOW() - make_interval(secs => $4))\n             ORDER BY COALESCE(last_retry_at, created_at), zk_proof_id\n             LIMIT $2",
+  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id, sender_attempt_no\n             FROM verify_proofs\n             WHERE (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL) OR sender_raw_tx IS NOT NULL)\n               AND sender_status IN ('QUEUED', 'RETRY_WAIT', 'AWAITING_OUTCOME')\n               AND (sender_next_action_at IS NULL OR sender_next_action_at <= NOW())\n               AND (retry_count < $1 OR sender_raw_tx IS NOT NULL)\n               AND zk_proof_id < $3\n               AND (last_retry_at IS NULL OR last_retry_at <= NOW() - make_interval(secs => $4))\n             ORDER BY COALESCE(last_retry_at, created_at), zk_proof_id\n             LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -47,6 +47,11 @@
         "ordinal": 8,
         "name": "transaction_id",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 9,
+        "name": "sender_attempt_no",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -66,8 +71,9 @@
       true,
       false,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "03a48beaf2772578697193310326319fd5717d69fd75c3f6dbd7d53d43df0689"
+  "hash": "22bb6ccecbaf72811686a9f6080f47a87eb924710f05bed7ee2d71b16a6ee6fc"
 }

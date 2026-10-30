@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE ciphertext_digest SET sender_status = CASE WHEN $3 = 'AWAITING_OUTCOME' AND sender_raw_tx IS NULL\n                        THEN 'RETRY_WAIT' ELSE $3 END, sender_status_updated_at = NOW(),\n                    sender_last_error = $4,\n                    sender_raw_tx = CASE WHEN $3 = 'AWAITING_OUTCOME' THEN sender_raw_tx ELSE NULL END,\n                    sender_tx_hash = CASE WHEN $3 = 'RETRY_WAIT' THEN NULL ELSE sender_tx_hash END,\n                    sender_next_action_at = CASE WHEN $3 IN ('RETRY_WAIT', 'AWAITING_OUTCOME')\n                        THEN NOW() + make_interval(secs => $5) ELSE NULL END\n                 WHERE handle = $1 AND sender_attempt_no = $2 AND sender_status = 'SENDING'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int8",
+        "Text",
+        "Text",
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e71b3882a8f68881fd4b769eae3a8dc05aacfd214221605825b1a1f51cc08c17"
+}

@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use crate::{
     metrics::{ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER, ADD_CIPHERTEXT_MATERIAL_SUCCESS_COUNTER},
@@ -9,6 +9,7 @@ use crate::{
 use super::common::{
     is_retryable_nonce_error, try_extract_non_retryable_config_error, try_into_array,
 };
+use super::state::{Attempt, Status, Task};
 use super::{begin_live_write, TransactionOperation};
 use alloy::{
     network::{Ethereum, TransactionBuilder},
@@ -34,6 +35,7 @@ where
 {
     ciphertext_commits_address: Address,
     provider: NonceManagedProvider<P>,
+    signer: crate::AbstractSigner,
     conf: crate::ConfigSettings,
     gas: Option<u64>,
     db_pool: Pool<Postgres>,
@@ -47,12 +49,15 @@ where
     #[tracing::instrument(name = "call_add_ciphertext", skip_all, fields(txn_id = tracing::field::Empty))]
     async fn send_transaction(
         &self,
-        handle: &[u8],
+        mut attempt: Attempt,
         txn_request: impl Into<TransactionRequest>,
         current_limited_retries_count: i32,
         current_unlimited_retries_count: i32,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
+        let Task::Ciphertext(handle) = &attempt.task.clone() else {
+            unreachable!()
+        };
         telemetry::record_short_hex_if_some(
             &tracing::Span::current(),
             "txn_id",
@@ -65,21 +70,21 @@ where
         // Share admission with proof responses and retain it through bookkeeping.
         // Waiting tasks must not hold connections or start pool-acquisition timers.
         let _permit = self.submission_slots.acquire().await?;
-        // Keep the acceptance fence across submission. Release it before the
-        // bookkeeping helpers open their own guarded transactions.
-        let Some(submission_fence) = begin_live_write(&self.db_pool).await? else {
+        let Some(mut submission_fence) = begin_live_write(&self.db_pool).await? else {
             return Ok(());
         };
-        let submission = self
-            .provider
-            .send_sync_with_overprovision(
-                txn_request,
-                self.conf.gas_limit_overprovision_percent,
-                Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
+        let submission = attempt
+            .submit(
+                &self.db_pool,
+                &mut submission_fence,
+                &self.provider,
+                self.signer.clone(),
+                txn_request.into(),
+                &self.conf,
             )
             .await;
         submission_fence.rollback().await?;
-        let receipt = match submission {
+        let receipt = match submission? {
             Ok(receipt) => receipt,
             Err(e) if self.already_added_error(&e).is_some() => {
                 warn!(
@@ -87,7 +92,7 @@ where
                     address = ?self.already_added_error(&e),
                     "Coprocessor has already added the ciphertext commit",
                 );
-                self.set_txn_is_sent(handle, None, None, src_transaction_id)
+                self.set_txn_is_sent(&attempt, None, None, src_transaction_id)
                     .await?;
                 return Ok(());
             }
@@ -98,6 +103,7 @@ where
                 if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
                     || matches!(&e, RpcError::LocalUsageError(_))
                     || is_retryable_nonce_error(&e)
+                    || attempt.raw.is_some()
                 {
                     ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                     warn!(
@@ -106,7 +112,7 @@ where
                         "Transaction sending failed with unlimited retry error"
                     );
                     self.increment_txn_unlimited_retries_count(
-                        handle,
+                        &attempt,
                         &crate::diagnostics::safe_rpc_error(&e),
                         current_unlimited_retries_count,
                     )
@@ -122,7 +128,7 @@ where
                         "Non-retryable gateway coprocessor config error while adding ciphertext"
                     );
                     self.stop_retrying_add_ciphertext_on_config_error(
-                        handle,
+                        &attempt,
                         &non_retryable_config_error.to_string(),
                     )
                     .await?;
@@ -135,7 +141,7 @@ where
                     "Transaction sending failed"
                 );
                 self.increment_txn_limited_retries_count(
-                    handle,
+                    &attempt,
                     &crate::diagnostics::safe_rpc_error(&e),
                     current_limited_retries_count,
                 )
@@ -146,7 +152,7 @@ where
 
         if receipt.status() {
             self.set_txn_is_sent(
-                handle,
+                &attempt,
                 Some(receipt.transaction_hash.as_slice()),
                 receipt.block_number.map(|bn| bn as i64),
                 src_transaction_id,
@@ -168,7 +174,7 @@ where
             );
 
             self.increment_txn_limited_retries_count(
-                handle,
+                &attempt,
                 "receipt status = false",
                 current_limited_retries_count,
             )
@@ -195,17 +201,23 @@ where
 
     async fn set_txn_is_sent(
         &self,
-        handle: &[u8],
+        attempt: &Attempt,
         txn_hash: Option<&[u8]>,
         txn_block_number: Option<i64>,
         src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+        let Task::Ciphertext(handle) = &attempt.task.clone() else {
+            unreachable!()
+        };
+        let Some(mut tx) = attempt
+            .transition(&self.db_pool, Status::Completed, None, 0)
+            .await?
+        else {
             info!("Cutover completed — skipping post-send digest/ct128 writes on retired stack");
             return Ok(());
         };
 
-        sqlx::query!(
+        let changed = sqlx::query!(
             "UPDATE ciphertext_digest
             SET
                 txn_is_sent = true,
@@ -221,7 +233,12 @@ where
             handle
         )
         .execute(tx.as_mut())
-        .await?;
+        .await?
+        .rows_affected();
+        anyhow::ensure!(
+            changed == 1,
+            "ciphertext publication evidence changed during submission"
+        );
 
         // Delete the local 128-bit ciphertext after successful transaction
         // The db copy is no longer needed once the ciphertext commit has been added on-chain
@@ -247,6 +264,7 @@ where
     pub fn new(
         ciphertext_commits_address: Address,
         provider: NonceManagedProvider<P>,
+        signer: crate::AbstractSigner,
         conf: crate::ConfigSettings,
         gas: Option<u64>,
         db_pool: Pool<Postgres>,
@@ -263,6 +281,7 @@ where
             submission_slots,
             ciphertext_commits_address,
             provider,
+            signer,
             conf,
             gas,
         }
@@ -270,11 +289,27 @@ where
 
     async fn increment_txn_limited_retries_count(
         &self,
-        handle: &[u8],
+        attempt: &Attempt,
         err: &str,
         current_retry_count: i32,
     ) -> anyhow::Result<()> {
-        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+        let Task::Ciphertext(handle) = &attempt.task.clone() else {
+            unreachable!()
+        };
+        let status = if current_retry_count + 1 >= self.conf.add_ciphertexts_max_retries {
+            Status::Stopped
+        } else {
+            Status::RetryWait
+        };
+        let Some(mut tx) = attempt
+            .transition(
+                &self.db_pool,
+                status,
+                Some(err),
+                self.conf.error_sleep_max_secs,
+            )
+            .await?
+        else {
             return Ok(());
         };
         let compact_hex_handle = to_hex(handle);
@@ -310,11 +345,22 @@ where
 
     async fn increment_txn_unlimited_retries_count(
         &self,
-        handle: &[u8],
+        attempt: &Attempt,
         err: &str,
         current_unlimited_retries_count: i32,
     ) -> anyhow::Result<()> {
-        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+        let Task::Ciphertext(handle) = &attempt.task.clone() else {
+            unreachable!()
+        };
+        let Some(mut tx) = attempt
+            .transition(
+                &self.db_pool,
+                attempt.retry_status(),
+                Some(err),
+                self.conf.error_sleep_max_secs,
+            )
+            .await?
+        else {
             return Ok(());
         };
         let compact_hex_handle = to_hex(handle);
@@ -351,10 +397,16 @@ where
 
     async fn stop_retrying_add_ciphertext_on_config_error(
         &self,
-        handle: &[u8],
+        attempt: &Attempt,
         error: &str,
     ) -> anyhow::Result<()> {
-        let Some(mut tx) = begin_live_write(&self.db_pool).await? else {
+        let Task::Ciphertext(handle) = &attempt.task.clone() else {
+            unreachable!()
+        };
+        let Some(mut tx) = attempt
+            .transition(&self.db_pool, Status::Stopped, Some(error), 0)
+            .await?
+        else {
             return Ok(());
         };
         sqlx::query!(
@@ -385,18 +437,34 @@ where
     }
 
     async fn execute(&self) -> anyhow::Result<bool> {
+        // Initialize terminal state for legacy jobs and jobs affected by a lower configured cap.
+        if let Some(mut tx) = begin_live_write(&self.db_pool).await? {
+            sqlx::query!(
+                "UPDATE ciphertext_digest SET sender_status = 'STOPPED',
+                sender_status_updated_at = NOW(), sender_next_action_at = NULL,
+                sender_last_error = COALESCE(txn_last_error, 'retry budget exhausted')
+                WHERE txn_is_sent = FALSE AND txn_limited_retries_count >= $1
+                  AND sender_status IN ('QUEUED', 'RETRY_WAIT') AND sender_raw_tx IS NULL",
+                self.conf.add_ciphertexts_max_retries
+            )
+            .execute(tx.as_mut())
+            .await?;
+            tx.commit().await?;
+        }
         // Computed digests becoming non-NULL does not prove S3 publication.
         // Only a current postflight verification witness makes a row eligible.
         let rows = sqlx::query!(
             "
-            SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
+            SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id, sender_attempt_no
             FROM ciphertext_digest
-            WHERE txn_is_sent = false
+            WHERE sender_status IN ('QUEUED', 'RETRY_WAIT', 'AWAITING_OUTCOME')
+            AND (sender_next_action_at IS NULL OR sender_next_action_at <= NOW())
+            AND (sender_raw_tx IS NOT NULL OR (txn_is_sent = false
             AND ciphertext IS NOT NULL
             AND ciphertext128 IS NOT NULL
             AND s3_publication_verified_at IS NOT NULL
             AND s3_publication_verified_digest IS NOT DISTINCT FROM ciphertext
-            AND txn_limited_retries_count < $1
+            AND txn_limited_retries_count < $1))
             ORDER BY created_at ASC
             LIMIT $2",
             self.conf.add_ciphertexts_max_retries,
@@ -405,93 +473,131 @@ where
         .fetch_all(&self.db_pool)
         .await?;
 
-        let ciphertext_manager =
-            CiphertextCommits::new(self.ciphertext_commits_address, self.provider.inner());
-
         info!(rows_count = rows.len(), "Selected rows to process");
 
         let maybe_has_more_work = rows.len() == self.conf.add_ciphertexts_batch_limit as usize;
 
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
-            let transaction_id = row.transaction_id.clone();
-            let _span =
-                tracing::info_span!("prepare_add_ciphertext", txn_id = tracing::field::Empty);
-            telemetry::record_short_hex_if_some(&_span, "txn_id", transaction_id.as_deref());
-            let _enter = _span.enter();
-
-            let handle = row.handle.clone();
-
-            let (ciphertext64_digest, ciphertext128_digest) =
-                match (row.ciphertext, row.ciphertext128) {
-                    (Some(ct), Some(ct128)) => (
-                        FixedBytes::from(try_into_array::<32>(ct)?),
-                        FixedBytes::from(try_into_array::<32>(ct128)?),
-                    ),
-                    _ => {
-                        error!(handle = to_hex(&handle), "Missing ciphertext(s)");
-                        continue;
-                    }
-                };
-
-            let handle_bytes32 = FixedBytes::from(try_into_array::<32>(handle.clone())?);
-            let key_id_gw_bytes32: [u8; 32] =
-                row.key_id_gw.try_into().map_err(|bad: Vec<u8>| {
-                    anyhow::anyhow!(
-                        "Failed to convert key_id_gw to [u8; 32] (len={}): 0x{}",
-                        bad.len(),
-                        to_hex(&bad)
-                    )
-                })?;
-            let key_id_gw = U256::from_be_bytes(key_id_gw_bytes32);
-
-            info!(
-                handle = to_hex(&handle),
-                host_chain_id = row.host_chain_id,
-                key_id_gw = to_hex(&key_id_gw_bytes32),
-                ct64_digest = to_hex(ciphertext64_digest.as_ref()),
-                ct128_digest = to_hex(ciphertext128_digest.as_ref()),
-                "Adding ciphertext"
-            );
-
-            let txn_request = match &self.gas {
-                Some(gas_limit) => ciphertext_manager
-                    .addCiphertextMaterial(
-                        handle_bytes32,
-                        key_id_gw,
-                        ciphertext64_digest,
-                        ciphertext128_digest,
-                    )
-                    .into_transaction_request()
-                    .with_gas_limit(*gas_limit),
-                None => ciphertext_manager
-                    .addCiphertextMaterial(
-                        handle_bytes32,
-                        key_id_gw,
-                        ciphertext64_digest,
-                        ciphertext128_digest,
-                    )
-                    .into_transaction_request(),
-            };
-
-            drop(_enter);
-            drop(_span);
-
             let operation = self.clone();
             join_set.spawn(async move {
-                operation
-                    .send_transaction(
-                        &row.handle,
-                        txn_request,
-                        row.txn_limited_retries_count,
-                        row.txn_unlimited_retries_count,
-                        transaction_id,
-                    )
-                    .await
+                let Some(attempt) = Attempt::claim(
+                    &operation.db_pool,
+                    Task::Ciphertext(row.handle.clone()),
+                    row.sender_attempt_no,
+                )
+                .await?
+                else {
+                    return Ok(());
+                };
+                let result: anyhow::Result<()> = async {
+                    let ciphertext_manager = CiphertextCommits::new(
+                        operation.ciphertext_commits_address,
+                        operation.provider.inner(),
+                    );
+                    let transaction_id = row.transaction_id.clone();
+                    let _span = tracing::info_span!(
+                        "prepare_add_ciphertext",
+                        txn_id = tracing::field::Empty
+                    );
+                    telemetry::record_short_hex_if_some(
+                        &_span,
+                        "txn_id",
+                        transaction_id.as_deref(),
+                    );
+                    let _enter = _span.enter();
+
+                    let txn_request = if attempt.raw.is_some() {
+                        TransactionRequest::default()
+                    } else {
+                        let handle = row.handle.clone();
+
+                        let (ciphertext64_digest, ciphertext128_digest) =
+                            match (row.ciphertext, row.ciphertext128) {
+                                (Some(ct), Some(ct128)) => (
+                                    FixedBytes::from(try_into_array::<32>(ct)?),
+                                    FixedBytes::from(try_into_array::<32>(ct128)?),
+                                ),
+                                _ => {
+                                    error!(handle = to_hex(&handle), "Missing ciphertext(s)");
+                                    return Ok(());
+                                }
+                            };
+
+                        let handle_bytes32 =
+                            FixedBytes::from(try_into_array::<32>(handle.clone())?);
+                        let key_id_gw_bytes32: [u8; 32] =
+                            row.key_id_gw.try_into().map_err(|bad: Vec<u8>| {
+                                anyhow::anyhow!(
+                                    "Failed to convert key_id_gw to [u8; 32] (len={}): 0x{}",
+                                    bad.len(),
+                                    to_hex(&bad)
+                                )
+                            })?;
+                        let key_id_gw = U256::from_be_bytes(key_id_gw_bytes32);
+
+                        info!(
+                            handle = to_hex(&handle),
+                            host_chain_id = row.host_chain_id,
+                            key_id_gw = to_hex(&key_id_gw_bytes32),
+                            ct64_digest = to_hex(ciphertext64_digest.as_ref()),
+                            ct128_digest = to_hex(ciphertext128_digest.as_ref()),
+                            "Adding ciphertext"
+                        );
+
+                        let txn_request = match &operation.gas {
+                            Some(gas_limit) => ciphertext_manager
+                                .addCiphertextMaterial(
+                                    handle_bytes32,
+                                    key_id_gw,
+                                    ciphertext64_digest,
+                                    ciphertext128_digest,
+                                )
+                                .into_transaction_request()
+                                .with_gas_limit(*gas_limit),
+                            None => ciphertext_manager
+                                .addCiphertextMaterial(
+                                    handle_bytes32,
+                                    key_id_gw,
+                                    ciphertext64_digest,
+                                    ciphertext128_digest,
+                                )
+                                .into_transaction_request(),
+                        };
+
+                        txn_request
+                    };
+                    drop(_enter);
+                    drop(_span);
+                    operation
+                        .send_transaction(
+                            attempt.clone(),
+                            txn_request,
+                            row.txn_limited_retries_count,
+                            row.txn_unlimited_retries_count,
+                            transaction_id,
+                        )
+                        .await
+                }
+                .await;
+                if let Err(error) = &result {
+                    if let Some(tx) = attempt
+                        .transition(
+                            &operation.db_pool,
+                            Status::AwaitingOutcome,
+                            Some(&crate::diagnostics::safe_error(error.as_ref())),
+                            operation.conf.error_sleep_max_secs,
+                        )
+                        .await?
+                    {
+                        tx.commit().await?;
+                    }
+                }
+                result
             });
         }
 
-        // Let every submission settle its nonce before returning an error.
+        // Let every submission settle its persisted attempt and nonce before returning an error.
         // Dropping the JoinSet here could leave other nonce reservations locked.
         let mut first_error = None;
         while let Some(res) = join_set.join_next().await {

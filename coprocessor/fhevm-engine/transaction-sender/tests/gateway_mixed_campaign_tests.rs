@@ -106,7 +106,7 @@ async fn mixed_work_progresses_through_selective_outage_and_restarts() -> anyhow
                 let remaining: i64 = sqlx::query_scalar(
                     "SELECT COUNT(*) FROM verify_proofs
                         WHERE zk_proof_id > 10
-                          AND (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))",
+                          AND sender_status NOT IN ('COMPLETED', 'STOPPED') AND (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))",
                 )
                 .fetch_one(&env.db_pool)
                 .await?;
@@ -123,7 +123,7 @@ async fn mixed_work_progresses_through_selective_outage_and_restarts() -> anyhow
         later_completed.push(next_id - 11 - remaining);
         let mutations: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM mixed_audit WHERE (old_row->>'zk_proof_id')::bigint <= 10
-             AND (old_row - 'last_retry_at') IS DISTINCT FROM (new_row - 'last_retry_at')",
+             AND (old_row - ARRAY['last_retry_at', 'sender_status', 'sender_status_updated_at', 'sender_attempt_no', 'sender_next_action_at', 'sender_last_error', 'sender_tx_hash', 'sender_raw_tx']) IS DISTINCT FROM (new_row - ARRAY['last_retry_at', 'sender_status', 'sender_status_updated_at', 'sender_attempt_no', 'sender_next_action_at', 'sender_last_error', 'sender_tx_hash', 'sender_raw_tx'])",
         )
         .fetch_one(&env.db_pool)
         .await?;
@@ -161,7 +161,7 @@ async fn mixed_work_progresses_through_selective_outage_and_restarts() -> anyhow
                 loop {
                     let remaining: i64 = sqlx::query_scalar(
                         "SELECT COUNT(*) FROM verify_proofs
-                        WHERE verified = TRUE OR (verified = FALSE AND handles IS NOT NULL)",
+                        WHERE sender_status NOT IN ('COMPLETED', 'STOPPED') AND (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL))",
                     )
                     .fetch_one(&env.db_pool)
                     .await?;

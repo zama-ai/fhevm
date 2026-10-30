@@ -72,6 +72,9 @@ impl NonceManagerNonOptimistic {
                 debug!(%address, nonce = available_nonce, "Reusing available nonce");
                 available_nonce
             } else {
+                while state.locked_nonces.contains(&state.next_nonce) {
+                    state.next_nonce += 1;
+                }
                 let next = state.next_nonce;
                 state.next_nonce += 1;
                 debug!(%address, nonce = next, "Using next sequential nonce");
@@ -85,6 +88,48 @@ impl NonceManagerNonOptimistic {
             "Nonce assigned"
         );
         Ok(nonce_to_use)
+    }
+
+    /// Restore durable reservations before starting concurrent allocation.
+    /// Reservations above the confirmed seed do not skip unreserved gaps.
+    pub async fn restore_nonces<P, N>(
+        &self,
+        provider: &P,
+        address: Address,
+        nonces: &[u64],
+    ) -> TransportResult<()>
+    where
+        P: Provider<N>,
+        N: Network,
+    {
+        let account = self.get_or_init_account_state(provider, address).await?;
+        let mut state = account.lock().await;
+        for &nonce in nonces {
+            state.locked_nonces.insert(nonce);
+            state.available_nonces.remove(&nonce);
+        }
+        Ok(())
+    }
+
+    /// Reconcile a rejected allocation with the confirmed chain count without losing
+    /// other pending reservations. Used during exclusive startup or after a definite
+    /// nonce rejection, never on timeout alone.
+    pub async fn reconcile_nonce<P, N>(
+        &self,
+        provider: &P,
+        address: Address,
+    ) -> TransportResult<u64>
+    where
+        P: Provider<N>,
+        N: Network,
+    {
+        let confirmed = provider.get_transaction_count(address).await?;
+        let account = self.get_or_init_account_state(provider, address).await?;
+        let mut state = account.lock().await;
+        state.next_nonce = confirmed;
+        state.available_nonces.clear();
+        state.locked_nonces.retain(|nonce| *nonce >= confirmed);
+        Ok(confirmed)
     }
 
     /// Releases a locked nonce, making it available for reuse.
@@ -219,6 +264,62 @@ mod tests {
             })),
         );
         manager
+    }
+
+    #[tokio::test]
+    async fn restored_reservations_preserve_gaps_and_skip_pending_nonces() {
+        let address = Address::ZERO;
+        let manager = manager_seeded_at(address, 10);
+        let provider = offline_provider();
+        manager
+            .restore_nonces(&provider, address, &[8, 11, 13])
+            .await
+            .unwrap();
+        assert_eq!(
+            manager.get_next_nonce(&provider, address).await.unwrap(),
+            10
+        );
+        assert_eq!(
+            manager.get_next_nonce(&provider, address).await.unwrap(),
+            12
+        );
+        assert_eq!(
+            manager.get_next_nonce(&provider, address).await.unwrap(),
+            14
+        );
+        manager.release_nonce(address, 11).await;
+        assert_eq!(
+            manager.get_next_nonce(&provider, address).await.unwrap(),
+            11
+        );
+    }
+
+    #[tokio::test]
+    async fn reconciling_wrong_seed_preserves_other_reservations() {
+        let address = Address::ZERO;
+        let manager = manager_seeded_at(address, 100);
+        let provider = offline_provider();
+        assert_eq!(
+            manager.get_next_nonce(&provider, address).await.unwrap(),
+            100
+        );
+        manager.release_nonce(address, 100).await;
+        // The node corrects the stale high seed, while nonce 103 belongs to another attempt.
+        manager
+            .restore_nonces(&provider, address, &[103])
+            .await
+            .unwrap();
+        let responses = alloy::transports::mock::Asserter::new();
+        responses.push_success(&"0x2");
+        let rpc = ProviderBuilder::new().connect_mocked_client(responses);
+        manager.reconcile_nonce(&rpc, address).await.unwrap();
+        assert_eq!(manager.get_next_nonce(&provider, address).await.unwrap(), 2);
+        assert!(manager
+            .get_account_details(address)
+            .await
+            .unwrap()
+            .locked_nonces
+            .contains(&103));
     }
 
     /// The contrast the send triage relies on: a mined nonce is retired, an undecided one goes

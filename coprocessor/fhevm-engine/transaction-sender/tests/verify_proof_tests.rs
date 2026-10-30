@@ -114,12 +114,10 @@ async fn verify_proof_response_success(#[case] signer_type: SignerType) -> anyho
     assert_eq!(event.0.zkProofId, expected_proof_id);
     assert_eq!(event.0.ctHandles, expected_handles);
 
-    // Make sure the proof is removed from the database.
+    // Wait until the proof reaches a terminal sender status.
     loop {
         let rows = sqlx::query!(
-            "SELECT *
-             FROM verify_proofs
-             WHERE zk_proof_id = $1",
+            "SELECT * FROM verify_proofs WHERE zk_proof_id = $1 AND sender_status NOT IN ('COMPLETED', 'STOPPED')",
             proof_id as i64,
         )
         .fetch_all(&env.db_pool)
@@ -228,12 +226,10 @@ async fn verify_proof_response_empty_handles_success(
     assert_eq!(event.0.zkProofId, expected_proof_id);
     assert_eq!(event.0.ctHandles, expected_handles);
 
-    // Make sure the proof is removed from the database.
+    // Wait until the proof reaches a terminal sender status.
     loop {
         let rows = sqlx::query!(
-            "SELECT *
-             FROM verify_proofs
-             WHERE zk_proof_id = $1",
+            "SELECT * FROM verify_proofs WHERE zk_proof_id = $1 AND sender_status NOT IN ('COMPLETED', 'STOPPED')",
             proof_id as i64,
         )
         .fetch_all(&env.db_pool)
@@ -347,8 +343,7 @@ async fn verify_proof_response_concurrent_success(
     // Make sure the proofs are removed from the database.
     loop {
         let rows = sqlx::query!(
-            "SELECT *
-             FROM verify_proofs"
+            "SELECT * FROM verify_proofs WHERE sender_status NOT IN ('COMPLETED', 'STOPPED')"
         )
         .fetch_all(&env.db_pool)
         .await?;
@@ -532,12 +527,10 @@ async fn verify_proof_response_reversal_already_verified(
     .execute(&env.db_pool)
     .await?;
 
-    // Make sure the proof is removed from the database.
+    // Wait until the proof reaches a terminal sender status.
     loop {
         let rows = sqlx::query!(
-            "SELECT *
-             FROM verify_proofs
-             WHERE zk_proof_id = $1",
+            "SELECT * FROM verify_proofs WHERE zk_proof_id = $1 AND sender_status NOT IN ('COMPLETED', 'STOPPED')",
             proof_id as i64,
         )
         .fetch_all(&env.db_pool)
@@ -629,12 +622,10 @@ async fn verify_proof_response_reversal_not_requested(
     .execute(&env.db_pool)
     .await?;
 
-    // Make sure the proof is removed from the database.
+    // Wait until the proof reaches a terminal sender status.
     loop {
         let rows = sqlx::query!(
-            "SELECT *
-             FROM verify_proofs
-             WHERE zk_proof_id = $1",
+            "SELECT * FROM verify_proofs WHERE zk_proof_id = $1 AND sender_status NOT IN ('COMPLETED', 'STOPPED')",
             proof_id as i64,
         )
         .fetch_all(&env.db_pool)
@@ -725,12 +716,10 @@ async fn reject_proof_response_reversal_not_requested(
     .execute(&env.db_pool)
     .await?;
 
-    // Make sure the proof is removed from the database.
+    // Wait until the proof reaches a terminal sender status.
     loop {
         let rows = sqlx::query!(
-            "SELECT *
-             FROM verify_proofs
-             WHERE zk_proof_id = $1",
+            "SELECT * FROM verify_proofs WHERE zk_proof_id = $1 AND sender_status NOT IN ('COMPLETED', 'STOPPED')",
             proof_id as i64,
         )
         .fetch_all(&env.db_pool)
@@ -916,7 +905,7 @@ async fn verify_proof_response_other_reversal(
     // Make sure the proof retry count is incremented.
     //
     // Note this is a racy test, because the retry count is incremented by the transaction sender and it might
-    // get to a point where retry count reaches max retries - then, transaction sender gives up and deletes the entry.
+    // get to a point where retry count reaches max retries - then the transaction sender records STOPPED and retains the entry.
     loop {
         let rows = sqlx::query!(
             "SELECT *
@@ -1099,7 +1088,7 @@ async fn verify_proof_response_other_reversal_gas_estimation(
     // Make sure the proof retry count is incremented.
     //
     // Note this is a racy test, because the retry count is incremented by the transaction sender and it might
-    // get to a point where retry count reaches max retries - then, transaction sender gives up and deletes the entry.
+    // get to a point where retry count reaches max retries - then the transaction sender records STOPPED and retains the entry.
     loop {
         let rows = sqlx::query!(
             "SELECT *
@@ -1192,7 +1181,7 @@ async fn reject_proof_response_other_reversal_gas_estimation(
     // Make sure the proof retry count is incremented.
     //
     // Note this is a racy test, because the retry count is incremented by the transaction sender and it might
-    // get to a point where retry count reaches max retries - then, transaction sender gives up and deletes the entry.
+    // get to a point where retry count reaches max retries - then the transaction sender records STOPPED and retains the entry.
     loop {
         let rows = sqlx::query!(
             "SELECT *
@@ -1225,7 +1214,7 @@ async fn reject_proof_response_other_reversal_gas_estimation(
 #[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn verify_proof_max_retries_remove_entry(
+async fn verify_proof_max_retries_retains_stopped_entry(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {
     let mut env = TestEnvironment::new(signer_type).await?;
@@ -1284,12 +1273,10 @@ async fn verify_proof_max_retries_remove_entry(
     .execute(&env.db_pool)
     .await?;
 
-    // Make sure the proof is removed from the database.
+    // Wait until the proof reaches a terminal sender status.
     loop {
         let rows = sqlx::query!(
-            "SELECT *
-             FROM verify_proofs
-             WHERE zk_proof_id = $1",
+            "SELECT * FROM verify_proofs WHERE zk_proof_id = $1 AND sender_status NOT IN ('COMPLETED', 'STOPPED')",
             proof_id as i64,
         )
         .fetch_all(&env.db_pool)
@@ -1300,6 +1287,13 @@ async fn verify_proof_max_retries_remove_entry(
         sleep(Duration::from_millis(500)).await;
     }
 
+    let stopped: (String, i32) = sqlx::query_as(
+        "SELECT sender_status, retry_count FROM verify_proofs WHERE zk_proof_id = $1",
+    )
+    .bind(proof_id as i64)
+    .fetch_one(&env.db_pool)
+    .await?;
+    assert_eq!(stopped, ("STOPPED".into(), 2));
     env.cancel_token.cancel();
     run_handle.await??;
     Ok(())

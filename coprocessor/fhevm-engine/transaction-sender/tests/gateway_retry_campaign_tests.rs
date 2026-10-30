@@ -188,7 +188,7 @@ async fn transient_failure_preserves_near_exhausted_proof_and_recovers(
         loop {
             let present: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM verify_proofs WHERE zk_proof_id = $1
-                   AND (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL)))",
+                   AND sender_status NOT IN ('COMPLETED', 'STOPPED') AND (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL)))",
             )
             .bind(proof_id)
             .fetch_one(&env.db_pool)

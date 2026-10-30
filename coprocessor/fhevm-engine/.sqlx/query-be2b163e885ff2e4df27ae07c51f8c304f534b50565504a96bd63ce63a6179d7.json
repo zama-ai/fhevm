@@ -77,6 +77,41 @@
         "ordinal": 14,
         "name": "block_number",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 15,
+        "name": "sender_status",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "sender_status_updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "sender_attempt_no",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 18,
+        "name": "sender_next_action_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 19,
+        "name": "sender_last_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 20,
+        "name": "sender_tx_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 21,
+        "name": "sender_raw_tx",
+        "type_info": "Bytea"
       }
     ],
     "parameters": {
@@ -98,6 +133,13 @@
       true,
       false,
       false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
       true,
       true
     ]

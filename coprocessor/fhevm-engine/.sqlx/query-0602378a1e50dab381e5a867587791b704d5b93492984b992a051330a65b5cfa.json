@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE verify_proofs SET sender_raw_tx = $3, sender_tx_hash = $4\n                     WHERE zk_proof_id = $1 AND sender_attempt_no = $2 AND sender_status = 'SENDING'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0602378a1e50dab381e5a867587791b704d5b93492984b992a051330a65b5cfa"
+}

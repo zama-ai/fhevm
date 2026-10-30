@@ -85,4 +85,5 @@ collectors:
         values: [count]
         query: |
           SELECT COUNT(*)::float AS count
-          FROM verify_proofs;
+          FROM verify_proofs
+          WHERE verified IS NULL OR sender_status <> 'COMPLETED';

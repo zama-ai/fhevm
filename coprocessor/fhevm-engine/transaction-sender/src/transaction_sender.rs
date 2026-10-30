@@ -57,6 +57,10 @@ where
             pool_size,
             submission_limit, "Configured Gateway submission concurrency"
         );
+        anyhow::ensure!(
+            gateway_provider.signer_address() == Some(alloy::network::TxSigner::address(&signer)),
+            "transaction signer must match the nonce-managed account"
+        );
         let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![
             Arc::new(
                 ops::verify_proof::VerifyProofOperation::new(
@@ -73,6 +77,7 @@ where
             Arc::new(ops::add_ciphertext::AddCiphertextOperation::new(
                 ciphertext_commits_address,
                 gateway_provider.clone(),
+                signer.clone(),
                 conf.clone(),
                 gas,
                 db_pool.clone(),
@@ -103,16 +108,16 @@ where
         // live stack version up to its own; a blue (live) binary starts active
         // and is paused into no-op mode when a later cutover retires it.
         let mode = StackMode::new(self.conf.gcs_mode);
-        {
+        let _version_listener = {
             let pool = self.db_pool.clone();
             let mode = mode.clone();
             let cancel = self.cancel_token.clone();
-            tokio::spawn(async move {
+            AbortOnDrop(tokio::spawn(async move {
                 if let Err(err) = run_stack_version_listener(pool, mode, cancel).await {
                     error!(error = %err, "stack-version listener exited with error");
                 }
-            });
-        }
+            }))
+        };
 
         // Green stack: stay fully idle until the cutover commits. Unlike the
         // GCS compute workers (which fill the isolated `gcs.*` schema during the
@@ -140,6 +145,39 @@ where
             info!("cutover finalized; transaction sender resuming as the live stack");
         }
 
+        // Startup recovery writes task state too. Park while contained, just as
+        // the operation loops do, before acquiring ownership and restoring work.
+        while fhevm_engine_common::chain_recovery::is_halted(&self.db_pool).await? {
+            tokio::select! {
+                _ = self.cancel_token.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(Duration::from_secs(u64::from(self.conf.db_polling_interval_secs).max(1))) => {}
+            }
+        }
+        let mut owner = ops::state::recover(&self.db_pool, &self.gateway_provider).await?;
+        // Losing the ownership connection must stop this sender before a successor recovers it.
+        let owner_cancel = self.cancel_token.clone();
+        let owner_timeout = self.conf.health_check_timeout;
+        let owner_monitor = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                if !matches!(
+                    tokio::time::timeout(
+                        owner_timeout,
+                        sqlx::query!("SELECT 1 AS alive").fetch_one(&mut owner)
+                    )
+                    .await,
+                    Ok(Ok(_))
+                ) {
+                    error!("Sender ownership connection lost; stopping sender");
+                    owner_cancel.cancel();
+                    break;
+                }
+                // Hold ownership through graceful shutdown; AbortOnDrop closes it only
+                // after this run has drained or cancelled all operation tasks.
+            }
+        });
+        // The monitor owns the detached connection and releases its session lock on exit.
+        let _owner_monitor = AbortOnDrop(owner_monitor);
         let mut join_set = JoinSet::new();
 
         for op in self.operations.clone() {
@@ -161,18 +199,12 @@ where
                         }
 
                         // Retired (paused) stack: a cutover bumped the live
-                        // stack version past this binary. Stop submitting and
-                        // idle until shutdown rather than pushing transactions
-                        // that the version guard would reject anyway.
+                        // stack version past this binary. Drain and release the
+                        // ownership connection so the incoming sender can recover.
                         if mode.is_paused() {
-                            tokio::select! {
-                                _ = token.cancelled() => {
-                                    info!(channel = op_channel, "Operation stopping (paused)");
-                                    break;
-                                }
-                                _ = tokio::time::sleep(Duration::from_secs(5)) => {}
-                            }
-                            continue;
+                            info!(channel = op_channel, "Sender retired; draining before releasing ownership");
+                            token.cancel();
+                            break;
                         }
 
                         // A contained full batch stays pending. Without this pause,
@@ -193,11 +225,13 @@ where
                         };
                         match execution {
                             Err(e) => {
-                                if is_backend_gone(&e) {
+                                if is_backend_gone(&e) || e.chain().any(|cause| cause.is::<sqlx::Error>()) {
+                                    // A failed commit can leave durable submission ownership uncertain.
+                                    // Restart recovery restores reservations before more work is allocated.
                                     error!(
                                         channel = op_channel,
                                         error = %crate::diagnostics::safe_error(e.as_ref()),
-                                        "Backend gone error, stopping operation and signaling other operations to stop"
+                                        "Sender transport or database unavailable; stopping operations for recovery"
                                     );
                                     token.cancel();
                                     return Err(e);
@@ -361,6 +395,13 @@ where
                 error_details.join("; "),
             )
         }
+    }
+}
+
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
     }
 }
 

@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE verify_proofs SET\n            sender_status = CASE WHEN sender_raw_tx IS NULL THEN 'RETRY_WAIT' ELSE 'AWAITING_OUTCOME' END,\n            sender_attempt_no = sender_attempt_no + 1, sender_status_updated_at = NOW(),\n            sender_next_action_at = NOW(), sender_last_error = 'previous sender attempt interrupted'\n        WHERE sender_status = 'SENDING'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "0301e695ab90696ffd65d8fc79da0f5c4c0140e15b86ed39a0d4d5470cb8789f"
+}

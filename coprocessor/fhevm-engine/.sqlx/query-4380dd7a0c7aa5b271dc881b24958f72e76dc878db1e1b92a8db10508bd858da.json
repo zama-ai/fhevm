@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS \"count!\" FROM verify_proofs\n                   WHERE sender_status <> 'COMPLETED'\n                     AND (verified = TRUE OR (verified = FALSE AND handles IS NOT NULL) OR sender_raw_tx IS NOT NULL)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "4380dd7a0c7aa5b271dc881b24958f72e76dc878db1e1b92a8db10508bd858da"
+}

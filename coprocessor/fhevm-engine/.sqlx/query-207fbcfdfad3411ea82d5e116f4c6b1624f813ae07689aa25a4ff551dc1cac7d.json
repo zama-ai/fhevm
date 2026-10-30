@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id\n            FROM ciphertext_digest\n            WHERE txn_is_sent = false\n            AND ciphertext IS NOT NULL\n            AND ciphertext128 IS NOT NULL\n            AND s3_publication_verified_at IS NOT NULL\n            AND s3_publication_verified_digest IS NOT DISTINCT FROM ciphertext\n            AND txn_limited_retries_count < $1\n            ORDER BY created_at ASC\n            LIMIT $2",
+  "query": "\n            SELECT handle, key_id_gw, ciphertext, ciphertext128, host_chain_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id, sender_attempt_no\n            FROM ciphertext_digest\n            WHERE sender_status IN ('QUEUED', 'RETRY_WAIT', 'AWAITING_OUTCOME')\n            AND (sender_next_action_at IS NULL OR sender_next_action_at <= NOW())\n            AND (sender_raw_tx IS NOT NULL OR (txn_is_sent = false\n            AND ciphertext IS NOT NULL\n            AND ciphertext128 IS NOT NULL\n            AND s3_publication_verified_at IS NOT NULL\n            AND s3_publication_verified_digest IS NOT DISTINCT FROM ciphertext\n            AND txn_limited_retries_count < $1))\n            ORDER BY created_at ASC\n            LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -42,6 +42,11 @@
         "ordinal": 7,
         "name": "transaction_id",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "sender_attempt_no",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -58,8 +63,9 @@
       false,
       false,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "a21ce8f8e686d2e6a5d8db4ada37c142a557d48978c352598b9ea97d77ade23f"
+  "hash": "207fbcfdfad3411ea82d5e116f4c6b1624f813ae07689aa25a4ff551dc1cac7d"
 }
