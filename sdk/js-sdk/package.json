@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "npm run clean && npm run codegen:loaders && npm run prettier:check && npm run prettier:ext && npm run lint && npm run build:cjs && npm run build:esm && npm run build:types && npm run build:tests",
+    "build": "npm run clean && npm run codegen:loaders && npm run codegen:key-digests:check && npm run prettier:check && npm run prettier:ext && npm run lint && npm run build:cjs && npm run build:esm && npm run build:types && npm run build:tests",
     "build:tests": "tsc --project ./test/tsconfig.json --noEmit",
     "build:cjs": "tsc --project ./tsconfig.build.cjs.json --module commonjs --moduleResolution node --outDir ./src/_cjs --removeComments --verbatimModuleSyntax false && printf '{\"type\":\"commonjs\"}' > ./src/_cjs/package.json && npm run build:cjs:wasm",
     "build:cjs:wasm:legacy": "node -e \"require('fs').cpSync('src/wasm','src/_cjs/wasm',{recursive:true})\"",
@@ -12,6 +12,8 @@
     "build:esm:wasm": "node scripts/build/build-esm-wasm.mjs",
     "codegen:loaders": "node scripts/build/codegen-loaders.mjs",
     "codegen:loaders:check": "node scripts/build/codegen-loaders.mjs --check",
+    "codegen:key-digests": "node scripts/build/codegen-key-digests-worker.mjs",
+    "codegen:key-digests:check": "node scripts/build/codegen-key-digests-worker.mjs --check",
     "prepublishOnly": "npm run build",
     "wasm:install": "node scripts/wasm/install-from-manifest.mjs",
     "build:types": "tsc --project ./tsconfig.build.esm.json --declarationDir ./src/_types --emitDeclarationOnly --declaration --declarationMap && npm run build:types:wasm",

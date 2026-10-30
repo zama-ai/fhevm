@@ -24,6 +24,8 @@ extend-exclude = [
     # Specific docs with known legacy typos (tracked separately)
     "coprocessor/fhevm-engine/host-listener/README.md",
     "sdk/js-sdk/src/wasm/tfhe/v1.8.1/tfhe-worker.mjs",
+    # Generated, minified @noble/hashes code (short variable names)
+    "sdk/js-sdk/src/core/key/fheEncryptionKeyDigestsWorkerCode-p.ts",
 
     # Keys and charts (binary/config data)
     "fhevm-keys/",

@@ -7,6 +7,7 @@ import type { Fhevm, FhevmKeyVerification } from '../types/coreFhevmClient.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { Bytes, BytesHex, ChecksummedAddress, UintNumber } from '../types/primitives.js';
 import type { Auth } from '../types/auth.js';
+import type { Logger } from '../types/logger.js';
 import { readFileSync } from 'node:fs';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AbiCoder, Interface, id as ethersId } from 'ethers';
@@ -38,12 +39,15 @@ import { getCrsMaterialsAbi, getKeyMaterialsAbi } from '../host-contracts/abi-fr
 import { fetchFheEncryptionKeyWasm } from './fetchFheEncryptionKey.js';
 import { encryptActionsWithModule } from '../clients/decorators/encrypt.js';
 import * as tfhe from '../../wasm/tfhe/v1.8.1/tfhe.js';
+import { isBlobWorkerSupported, runCodeInIsomorphicWorker } from '../base/isomorphicWorker.js';
+import { FHE_ENCRYPTION_KEY_DIGESTS_WORKER_CODE } from './fheEncryptionKeyDigestsWorkerCode-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/key/verifyFheEncryptionKeyBytes-p.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
-// Counts SHAKE256 hashers, test helpers included: count around the call under test.
+// Counts SHAKE256 hashers on the calling thread, test helpers included: count
+// around the call under test.
 const shake = vi.hoisted(() => ({ hashers: 0 }));
 vi.mock('@noble/hashes/sha3.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@noble/hashes/sha3.js')>();
@@ -59,6 +63,23 @@ vi.mock('@noble/hashes/sha3.js', async (importOriginal) => {
     }),
   };
 });
+
+// The real worker functions, spied on.
+vi.mock('../base/isomorphicWorker.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../base/isomorphicWorker.js')>();
+  return {
+    ...actual,
+    isBlobWorkerSupported: vi.fn(actual.isBlobWorkerSupported),
+    runCodeInIsomorphicWorker: vi.fn(actual.runCodeInIsomorphicWorker),
+  };
+});
+
+/** The digests worker calls so far. */
+const digestsWorkerCalls = (): unknown[][] =>
+  vi.mocked(runCodeInIsomorphicWorker).mock.calls.filter(([code]) => code === FHE_ENCRYPTION_KEY_DIGESTS_WORKER_CODE);
+
+/** The digests worker runs so far. */
+const digestsWorkerRuns = (): number => digestsWorkerCalls().length;
 
 const KEY_ID = (4n << 248n) | 3n;
 const CRS_ID = (5n << 248n) | 4n;
@@ -124,6 +145,7 @@ function makeClient(parameters: {
   readonly batchRpcCalls?: boolean | undefined;
   readonly call?: ((parameters: EthCallParameters) => Promise<EthCallResult>) | undefined;
   readonly auth?: Auth | undefined;
+  readonly logger?: Logger | undefined;
 }) {
   const readClients: unknown[] = [];
   // 'start:<fn>' / 'end:<fn>' per RPC call; each call takes one macrotask.
@@ -163,7 +185,7 @@ function makeClient(parameters: {
   const runtime = createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
     ethereum,
     relayer: { fetchFheEncryptionKeyBytes: fetchFheEncryptionKeyBytesFn, ...parameters.relayer } as RelayerModule,
-    config: { auth: parameters.auth },
+    config: { auth: parameters.auth, logger: parameters.logger },
   });
 
   const hostClient = { name: 'host' };
@@ -1157,6 +1179,7 @@ describe('fetchFheEncryptionKeyBytes with several clients', () => {
     const a = makeClient({ chain: ethereumChain, handlers: precomputedHandlers() });
     const b = makeClient({ chain: ethereumChain, handlers: precomputedHandlers() });
     const hashers = shake.hashers;
+    const workerRuns = digestsWorkerRuns();
 
     const [bytesA, bytesB] = await Promise.all([
       fetchFheEncryptionKeyBytes(a.client, { fhevmContext }),
@@ -1164,8 +1187,9 @@ describe('fetchFheEncryptionKeyBytes with several clients', () => {
     ]);
     expect(bytesB).toBe(bytesA);
     expect(a.fetchFheEncryptionKeyBytesFn.mock.calls.length + b.fetchFheEncryptionKeyBytesFn.mock.calls.length).toBe(1);
-    // One hasher for the public key, one for the CRS.
-    expect(shake.hashers - hashers).toBe(2);
+    // One worker run for the public key and the CRS, none on the calling thread.
+    expect(digestsWorkerRuns() - workerRuns).toBe(1);
+    expect(shake.hashers - hashers).toBe(0);
     expect(countReads(a.readContract, 'getKeyMaterials')).toBe(1);
     expect(countReads(b.readContract, 'getKeyMaterials')).toBe(1);
 
@@ -1731,5 +1755,182 @@ describe('FheEncryptionKeyCache entries', () => {
       metadata: { chainId: 0, relayerUrl: KEY },
     });
     await expect(entry.ready).rejects.toThrow(/relayerUrl mismatch/);
+  });
+});
+
+////////////////////////////////////////////////////////////////////////////////
+// verifyFheEncryptionKeyBytes — hashing the key and CRS
+////////////////////////////////////////////////////////////////////////////////
+
+describe('verifyFheEncryptionKeyBytes hashing', () => {
+  // Digests computed once, so that a read hashes nothing.
+  const PUBLIC_KEY_DIGEST = digest('PDAT_KEY', PUBLIC_KEY);
+  const CRS_DIGEST = digest('PDAT_CRS', CRS);
+  function hashedHandlers(overrides: Partial<Handlers> = {}): Handlers {
+    return kmsGenerationHandlers({
+      getKeyMaterials: () => [[], [{ keyType: 1, digest: PUBLIC_KEY_DIGEST }]],
+      getCrsMaterials: () => [[], CRS_DIGEST],
+      ...overrides,
+    });
+  }
+
+  // Holds getActiveKeyId, so that round 1 stays in flight.
+  function gatedRoundOne(): { readonly handlers: Handlers; readonly release: () => void } {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const handlers = hashedHandlers({
+      getActiveKeyId: async () => {
+        await gate;
+        return KEY_ID;
+      },
+    });
+    return { handlers, release };
+  }
+
+  it('hashes in a worker, leaving the cached bytes attached', async () => {
+    const { client } = makeClient({ chain: ethereumChain, handlers: hashedHandlers() });
+    const bytes = keyBytes();
+    const hashers = shake.hashers;
+    const workerRuns = digestsWorkerRuns();
+
+    await expect(verifyFheEncryptionKeyBytes(client, bytes)).resolves.toBe(bytes);
+    expect(digestsWorkerRuns() - workerRuns).toBe(1);
+    expect(shake.hashers - hashers).toBe(0);
+    const [, input] = digestsWorkerCalls().at(-1) ?? [];
+    expect(input).toEqual({ publicKey: PUBLIC_KEY, crs: CRS });
+    // Cloned, not transferred.
+    expect(bytes.publicKeyBytes.bytes.byteLength).toBe(PUBLIC_KEY.length);
+    expect(bytes.crsBytes.bytes.byteLength).toBe(CRS.length);
+    expect(bytes.publicKeyBytes.bytes).toEqual(new Uint8Array([1, 2, 3, 4, 5]));
+  });
+
+  it('hashes on the calling thread when no blob / eval worker can run', async () => {
+    vi.mocked(isBlobWorkerSupported).mockResolvedValueOnce(false);
+    const { client } = makeClient({ chain: ethereumChain, handlers: hashedHandlers() });
+    const bytes = keyBytes();
+    const hashers = shake.hashers;
+    const workerRuns = digestsWorkerRuns();
+
+    await expect(verifyFheEncryptionKeyBytes(client, bytes)).resolves.toBe(bytes);
+    expect(digestsWorkerRuns() - workerRuns).toBe(0);
+    // One hasher for the public key, one for the CRS.
+    expect(shake.hashers - hashers).toBe(2);
+  });
+
+  it('hashes on the calling thread when the worker fails', async () => {
+    const debug = vi.fn();
+    const { client } = makeClient({
+      chain: ethereumChain,
+      handlers: hashedHandlers(),
+      logger: { debug, warn: undefined, error: undefined },
+    });
+    vi.mocked(runCodeInIsomorphicWorker).mockRejectedValueOnce(new Error('Mocked worker failure'));
+    const hashers = shake.hashers;
+    const workerRuns = digestsWorkerRuns();
+
+    await expect(verifyFheEncryptionKeyBytes(client, keyBytes())).resolves.toBeDefined();
+    expect(digestsWorkerRuns() - workerRuns).toBe(1);
+    expect(shake.hashers - hashers).toBe(2);
+    expect(debug).toHaveBeenCalledWith(expect.stringMatching(/Mocked worker failure.*calling thread/));
+  });
+
+  it('hashes on the calling thread when the worker returns invalid digests', async () => {
+    const debug = vi.fn();
+    const { client } = makeClient({
+      chain: ethereumChain,
+      handlers: hashedHandlers(),
+      logger: { debug, warn: undefined, error: undefined },
+    });
+    vi.mocked(runCodeInIsomorphicWorker).mockResolvedValueOnce({
+      publicKey: new Uint8Array(1),
+      crs: new Uint8Array(32),
+    });
+    const hashers = shake.hashers;
+    const workerRuns = digestsWorkerRuns();
+
+    await expect(verifyFheEncryptionKeyBytes(client, keyBytes())).resolves.toBeDefined();
+    expect(digestsWorkerRuns() - workerRuns).toBe(1);
+    expect(shake.hashers - hashers).toBe(2);
+    expect(debug).toHaveBeenCalledWith(expect.stringMatching(/Invalid FHE public key and CRS digests.*calling thread/));
+  });
+
+  it('rejects a digest mismatch when hashing on the calling thread', async () => {
+    vi.mocked(isBlobWorkerSupported).mockResolvedValueOnce(false);
+    const { client } = makeClient({ chain: ethereumChain, handlers: hashedHandlers() });
+
+    await expect(verifyFheEncryptionKeyBytes(client, keyBytes({ crs: new Uint8Array([9]) as Bytes }))).rejects.toThrow(
+      /CRS digest mismatch/,
+    );
+  });
+
+  it('starts the worker hash before round 1 resolves', async () => {
+    const { handlers, release } = gatedRoundOne();
+    const { client, rpcLog } = makeClient({ chain: ethereumChain, handlers });
+    const workerRuns = digestsWorkerRuns();
+
+    const verified = verifyFheEncryptionKeyBytes(client, keyBytes());
+    await vi.waitFor(() => {
+      expect(digestsWorkerRuns() - workerRuns).toBe(1);
+    });
+    expect(rpcLog).not.toContain('end:getActiveCrsId');
+
+    release();
+    await expect(verified).resolves.toBeDefined();
+  });
+
+  it('hashes on the calling thread only at the digest compare, after both rounds', async () => {
+    vi.mocked(isBlobWorkerSupported).mockResolvedValueOnce(false);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { client, rpcLog } = makeClient({
+      chain: ethereumChain,
+      handlers: hashedHandlers({
+        getCrsMaterials: async () => {
+          await gate;
+          return [[], CRS_DIGEST];
+        },
+      }),
+    });
+    const hashers = shake.hashers;
+
+    const verified = verifyFheEncryptionKeyBytes(client, keyBytes());
+    await vi.waitFor(() => {
+      expect(rpcLog).toContain('end:getCrsMaterials');
+    });
+    expect(shake.hashers - hashers).toBe(0);
+
+    release();
+    await expect(verified).resolves.toBeDefined();
+    expect(shake.hashers - hashers).toBe(2);
+  });
+
+  it('does not hash on the calling thread when round 1 fails', async () => {
+    vi.mocked(isBlobWorkerSupported).mockResolvedValueOnce(false);
+    const { client } = makeClient({
+      chain: ethereumChain,
+      handlers: hashedHandlers({
+        getActiveCrsId: () => {
+          throw new Error('Mocked read failure');
+        },
+      }),
+    });
+    const hashers = shake.hashers;
+
+    await expect(verifyFheEncryptionKeyBytes(client, keyBytes())).rejects.toThrow();
+    expect(shake.hashers - hashers).toBe(0);
+  });
+
+  it('hashes a bytes object once for concurrent and later checks', async () => {
+    const { client } = makeClient({ chain: ethereumChain, handlers: hashedHandlers() });
+    const bytes = keyBytes();
+    const workerRuns = digestsWorkerRuns();
+
+    await Promise.all([verifyFheEncryptionKeyBytes(client, bytes), verifyFheEncryptionKeyBytes(client, bytes)]);
+    await verifyFheEncryptionKeyBytes(client, bytes);
+    expect(digestsWorkerRuns() - workerRuns).toBe(1);
   });
 });
