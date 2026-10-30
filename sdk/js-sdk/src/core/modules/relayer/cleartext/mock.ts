@@ -23,6 +23,7 @@ import { fetchPadShares } from './fetchPadShares.js';
 export const relayerModule: RelayerModuleFactory = () => {
   return Object.freeze({
     relayer: Object.freeze({
+      servesPlaceholderFheEncryptionKey: true,
       fetchFheEncryptionKeySource: (
         _relayerClient: RelayerClient,
         _parameters: FetchFheEncryptionKeySourceParameters,

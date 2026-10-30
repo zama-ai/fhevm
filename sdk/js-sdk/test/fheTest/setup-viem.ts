@@ -45,25 +45,25 @@ type CreateViemClientParameters = {
 
 export type CreateViemBaseClientFn = (
   params: CreateViemClientParameters & {
-    readonly options?: FhevmOptions | undefined;
+    readonly options?: FhevmOptions<PublicClient> | undefined;
   },
 ) => ReturnType<typeof createViemFhevmBaseClient>;
 
 export type CreateViemEncryptClientFn = (
   params: CreateViemClientParameters & {
-    readonly options?: FhevmEncryptOptions | undefined;
+    readonly options?: FhevmEncryptOptions<PublicClient> | undefined;
   },
 ) => ReturnType<typeof createViemFhevmEncryptClient>;
 
 export type CreateViemEncryptTransciClientFn = (
   params: CreateViemClientParameters & {
-    readonly options?: FhevmEncryptOptions | undefined;
+    readonly options?: FhevmEncryptOptions<PublicClient> | undefined;
   },
 ) => ReturnType<typeof createViemFhevmEncryptTransciClient>;
 
 export type CreateViemDecryptClientFn = (
   params: CreateViemClientParameters & {
-    readonly options?: FhevmDecryptOptions | undefined;
+    readonly options?: FhevmDecryptOptions<PublicClient> | undefined;
   },
 ) => ReturnType<typeof createViemFhevmDecryptClient>;
 

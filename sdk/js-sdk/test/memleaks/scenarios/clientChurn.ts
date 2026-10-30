@@ -34,7 +34,7 @@ import type { Scenario } from './scenario.js';
 // by relayerUrl with "first write wins" semantics — the key is deserialized
 // once per relayerUrl for the life of the process, and every later client
 // just awaits the same cached entry. Its own doc comment says as much: "To
-// force a re-fetch, call `remove(relayerUrl)` before `ensureBytes`." — so
+// force a re-fetch, `remove(key)` the entry first." — so
 // this scenario does exactly that before every iteration, which is also what
 // makes the old entry's wasm objects unreachable (and thus GC/finalizer
 // eligible) in the first place.

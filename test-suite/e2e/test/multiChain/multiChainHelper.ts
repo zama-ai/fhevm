@@ -1,3 +1,4 @@
+import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { ethers } from 'ethers';
 import { ethers as hardhatEthers } from 'hardhat';
 import { vars } from 'hardhat/config';
@@ -110,6 +111,39 @@ export function getSigners(chain: ChainConfig): NamedSigners {
   return signersCache.get(chain.rpcUrl)!;
 }
 
+type KeyVerification = NonNullable<Parameters<typeof FhevmSdk.create>[0]['keyVerification']>;
+
+/**
+ * KMSGeneration lives on the primary (Ethereum) host only. Other hosts read the
+ * FHE key / CRS digests from it through the primary chain def and client.
+ */
+function primaryKeyVerification(): KeyVerification | undefined {
+  const primary = HOST_CHAINS[0];
+  if (!primary.kmsGenerationAddress) return undefined;
+  return {
+    chain: defineFhevmChain({
+      id: primary.chainId,
+      fhevm: {
+        contracts: {
+          acl: { address: primary.aclAddress as `0x${string}` },
+          inputVerifier: { address: primary.inputVerifierAddress as `0x${string}` },
+          kmsVerifier: { address: primary.kmsVerifierAddress as `0x${string}` },
+          kmsGeneration: { address: primary.kmsGenerationAddress as `0x${string}` },
+        },
+        relayerUrl,
+        gateway: {
+          id: gatewayChainId,
+          contracts: {
+            decryption: { address: decryptionAddress as `0x${string}` },
+            inputVerification: { address: inputVerificationAddress as `0x${string}` },
+          },
+        },
+      },
+    }),
+    client: getProvider(primary) as unknown as KeyVerification['client'],
+  };
+}
+
 export async function createInstance(chain: ChainConfig) {
   const cfg = {
     verifyingContractAddressDecryption: decryptionAddress,
@@ -118,6 +152,9 @@ export async function createInstance(chain: ChainConfig) {
     inputVerifierContractAddress: chain.inputVerifierAddress,
     aclContractAddress: chain.aclAddress,
     protocolConfigAddress: chain.protocolConfigAddress,
+    ...(chain.kmsGenerationAddress
+      ? { kmsGenerationAddress: chain.kmsGenerationAddress }
+      : { keyVerification: primaryKeyVerification() }),
     rpcUrl: chain.rpcUrl,
     relayerUrl,
     gatewayChainId,

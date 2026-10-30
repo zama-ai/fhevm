@@ -2,16 +2,23 @@ import type { EthereumModule } from '../modules/ethereum/types.js';
 import type { RelayerModule } from '../modules/relayer/types.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
-import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
 import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
+import { createCoreFhevm } from '../runtime/CoreFhevm-p.js';
 import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 import { encryptModule } from '../modules/encrypt/module/index.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 import { fetchFheEncryptionKeyBytes } from './fetchFheEncryptionKeyBytes.js';
 import { fetchFheEncryptionKeyWasm } from './fetchFheEncryptionKey.js';
+
+// The key check is not under test here (see verifyFheEncryptionKeyBytes-p.test.ts).
+vi.mock('./verifyFheEncryptionKeyBytes-p.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./verifyFheEncryptionKeyBytes-p.js')>()),
+  assertKeyVerificationConfig: () => undefined,
+  verifyFheEncryptionKeyBytes: async (_context: unknown, bytes: FheEncryptionKeyBytes) => bytes,
+}));
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/key/fetchFheEncryptionKeyBytes.test.ts
@@ -71,14 +78,14 @@ function expectBytesAsServed(bytes: FheEncryptionKeyBytes, tfheVersion: FixtureV
 
 // One runtime for all tests: the encrypt WASM module belongs to a single runtime.
 const downloadFn = vi.fn<() => Promise<FheEncryptionKeyBytes>>();
-const context: { chain: FhevmChain; runtime: WithEncrypt } = {
+const context = createCoreFhevm(PRIVATE_ETHERS_TOKEN, {
   chain,
   runtime: createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
     ethereum: {} as EthereumModule,
     relayer: { fetchFheEncryptionKeyBytes: downloadFn } as unknown as RelayerModule,
     config: { singleThread: true },
   }).extend(encryptModule),
-};
+});
 
 /** A download that settles when the test says so. */
 function makePendingDownload() {
@@ -128,7 +135,10 @@ describe('fetchFheEncryptionKeyBytes', () => {
       config: {},
     });
     expectBytesAsServed(
-      await fetchFheEncryptionKeyBytes({ chain, runtime: runtimeWithoutEncrypt }, { fhevmContext }),
+      await fetchFheEncryptionKeyBytes(
+        createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain, runtime: runtimeWithoutEncrypt }),
+        { fhevmContext },
+      ),
       '1.5.4',
     );
   });

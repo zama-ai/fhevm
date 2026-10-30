@@ -1,6 +1,7 @@
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { FhevmBase, OptionalNativeClient } from '../types/coreFhevmClient.js';
 import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { deserializeFheEncryptionKey } from './deserializeFheEncryptionKey.js';
@@ -8,34 +9,26 @@ import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 import { ensureFheEncryptionKeyDownload } from './ensureFheEncryptionKeyDownload.js';
 
 export async function fetchFheEncryptionKeyWasm(
-  context: {
-    readonly chain: FhevmChain;
-    readonly runtime: WithEncrypt;
-  },
+  context: FhevmBase<FhevmChain, WithEncrypt, OptionalNativeClient>,
   parameters: {
     readonly options?: RelayerKeyUrlOptions | undefined;
     readonly ignoreCache?: boolean | undefined;
     readonly fhevmContext: FhevmClientFrozenContext;
   },
 ): Promise<FheEncryptionKeyWasm> {
-  const relayerUrl = context.chain.fhevm.relayerUrl;
   const runtime = context.runtime;
 
-  // Ensure a bytes fetch is in-flight
-  ensureFheEncryptionKeyDownload(context, parameters);
+  // Download (or join the download), then check the key for this client
+  const { key, entry } = await ensureFheEncryptionKeyDownload(context, parameters);
 
-  // Upgrade bytes → wasm (chains from pending bytes if still in-flight)
+  // Upgrade bytes → wasm, on the entry checked (not the slot's current one)
   globalFheEncryptionKeyCache.ensureWasm({
     owner: runtime,
-    relayerUrl,
+    key,
+    entry,
     deserializeFn: (bytes) =>
       deserializeFheEncryptionKey(context, { keyBytes: bytes, fhevmContext: parameters.fhevmContext }),
   });
-
-  const entry = globalFheEncryptionKeyCache.get(relayerUrl);
-  if (entry === undefined) {
-    throw new Error('Failed to fetch global FHE PKE params');
-  }
 
   await entry.ready;
 

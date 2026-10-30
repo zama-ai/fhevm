@@ -12,6 +12,7 @@ import type {
 } from './primitives.js';
 import type { ZkProof } from './zkProof-p.js';
 import type { WithEncrypt } from './coreFhevmRuntime.js';
+import type { FhevmBase, OptionalNativeClient } from './coreFhevmClient.js';
 import type { FhevmChain } from './fhevmChain.js';
 import type { FhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
 
@@ -27,7 +28,7 @@ export interface ZkProofBuilder {
   addTypedValue(typedValue: TypedValue): this;
   getBits(): EncryptionBits[];
   build(
-    context: { readonly chain: FhevmChain; readonly runtime: WithEncrypt },
+    context: FhevmBase<FhevmChain, WithEncrypt, OptionalNativeClient>,
     parameters: {
       readonly contractAddress: string;
       readonly userAddress: string;
