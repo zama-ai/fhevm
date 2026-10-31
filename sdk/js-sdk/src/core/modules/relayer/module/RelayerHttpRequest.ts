@@ -8,7 +8,7 @@ import type {
 import { sdkName, version } from '../../../_version.js';
 import { setAuth } from '../../../base/auth.js';
 import { fetchWithRetry, normalizeHeaders } from '../../../base/fetch.js';
-import { isNonEmptyString, assertRecordStringProperty } from '../../../base/string.js';
+import { isNonEmptyString, isRecordStringProperty, assertRecordStringProperty } from '../../../base/string.js';
 import { isUuidV7 } from '../../../base/uuidv7.js';
 import { assertRecordBytesHexNo0xProperty } from '../../../base/bytes.js';
 import { assertRecordArrayProperty } from '../../../base/record.js';
@@ -191,7 +191,8 @@ export class RelayerHttpRequest {
     // 3. Parse the response body as JSON
     // -------------------------------------------------------------------------
 
-    let bodyJson: { result?: unknown; code?: string; message?: string; requestId?: string };
+    // unknown, not an object type: JSON.parse can return null or a primitive.
+    let bodyJson: unknown;
 
     // 3.1. Read the body as text (not response.json()) so a non-JSON body (e.g. an
     // edge proxy's HTML error page) can still be reported in the error below.
@@ -226,7 +227,7 @@ export class RelayerHttpRequest {
     // 3.2. Parse the text as JSON (e.g. an edge proxy's HTML error page, an empty
     // body, or a truncated response from a dropped connection are not valid JSON).
     try {
-      bodyJson = JSON.parse(bodyText) as { result?: unknown; code?: string; message?: string; requestId?: string };
+      bodyJson = JSON.parse(bodyText) as unknown;
     } catch (cause) {
       this._logger?.error?.(
         `[RelayerHttpRequest] Response body on ${this._url} is not valid JSON (status=${response.status}).`,
@@ -260,7 +261,7 @@ export class RelayerHttpRequest {
       // A body missing any of them did not come from relayer-http itself: it's most
       // likely an intermediary (an edge gateway/API proxy, a load balancer) rejecting
       // the request before it ever reached relayer-http.
-      if (isNonEmptyString(bodyJson.code) && isNonEmptyString(bodyJson.message) && isUuidV7(bodyJson.requestId)) {
+      if (_isRelayerHttpErrorBody(bodyJson)) {
         this._logger?.error?.(
           `[RelayerHttpRequest] relayer-http error on ${this._url} (status=${response.status}, code=${bodyJson.code}, requestId=${bodyJson.requestId}): ${bodyJson.message}`,
           undefined,
@@ -323,6 +324,31 @@ export class RelayerHttpRequest {
     // Narrowed to { result: FetchUserDecryptResult } by the assert above.
     return bodyJson.result;
   }
+}
+
+/**
+ * Whether `value` matches relayer-http's own error body:
+ *
+ * ```json
+ * { "code": "acl_denied", "message": "...", "requestId": "<uuidv7>" }
+ * ```
+ *
+ * relayer-http always sets all three fields, so a body missing any of them (or
+ * not an object at all, e.g. JSON `null`) did not come from relayer-http itself.
+ *
+ * @param value - The parsed response body; may be any JSON value.
+ * @returns `true` when `code` and `message` are non-empty strings and
+ * `requestId` is a UUIDv7.
+ */
+function _isRelayerHttpErrorBody(value: unknown): value is { code: string; message: string; requestId: string } {
+  return (
+    isRecordStringProperty(value, 'code') &&
+    isNonEmptyString(value.code) &&
+    isRecordStringProperty(value, 'message') &&
+    isNonEmptyString(value.message) &&
+    isRecordStringProperty(value, 'requestId') &&
+    isUuidV7(value.requestId)
+  );
 }
 
 /**
