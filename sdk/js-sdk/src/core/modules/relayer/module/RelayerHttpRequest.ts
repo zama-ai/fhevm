@@ -84,22 +84,24 @@ export class RelayerHttpRequest {
 
     const { signal, cleanup } = this._createCombinedSignal();
 
-    const init = setAuth(
-      {
-        method: 'POST',
-        headers: {
-          ...this._headers,
-          'content-type': 'application/json',
-          'zama-sdk-version': version,
-          'zama-sdk-name': sdkName,
-        },
-        body: JSON.stringify(this._payload),
-        signal,
-      } satisfies RequestInit,
-      this._auth,
-    );
-
+    // The build stays inside the try: JSON.stringify (e.g. a BigInt payload) and
+    // setAuth (an invalid header) can throw, and cleanup() must still run.
     try {
+      const init = setAuth(
+        {
+          method: 'POST',
+          headers: {
+            ...this._headers,
+            'content-type': 'application/json',
+            'zama-sdk-version': version,
+            'zama-sdk-name': sdkName,
+          },
+          body: JSON.stringify(this._payload),
+          signal,
+        } satisfies RequestInit,
+        this._auth,
+      );
+
       return await this._runAfterInit(init);
     } finally {
       cleanup();
