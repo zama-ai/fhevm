@@ -206,8 +206,9 @@ export type FetchWithRetryParameters = {
  * connection timeouts). HTTP error responses (4xx, 5xx) are NOT retried - the response
  * is returned as-is for the caller to handle.
  *
- * The operation is abortable via `init.signal`. If the signal is aborted, an AbortError
- * is thrown immediately without further retries.
+ * The operation is abortable via `init.signal`. If the signal is aborted, nothing is
+ * retried: the signal's abort reason is thrown unchanged, or, if the abort lands
+ * during the delay between retries, the Error that `abortableSleep` wraps it in.
  *
  * @param url - The URL to fetch
  * @param init - Optional fetch init options (method, headers, body, etc.)
@@ -215,7 +216,7 @@ export type FetchWithRetryParameters = {
  * @param retryDelayMs - Delay in milliseconds between retries (default: 1000)
  * @returns The fetch Response
  * @throws The last network error if all retries are exhausted
- * @throws {Error} An error with name 'AbortError' if the signal is aborted
+ * @throws The signal's abort reason (any value) if the signal is aborted
  */
 export async function fetchWithRetry(
   args: {
@@ -235,8 +236,14 @@ export async function fetchWithRetry(
     try {
       return await fetch(url, init);
     } catch (error) {
-      // AbortError should not be retried - propagate immediately
-      if ((error as { name: string }).name === 'AbortError') {
+      // Aborted: never retry. Read the signal, not the error: fetch rejects with the
+      // abort reason itself, which can be any value (null, a string, a TimeoutError).
+      if (init?.signal?.aborted === true) {
+        throw init.signal.reason;
+      }
+
+      // No signal involved, but fetch still reports an abort: propagate it as-is.
+      if ((error as { name?: unknown } | null | undefined)?.name === 'AbortError') {
         throw error;
       }
 
