@@ -4,6 +4,16 @@
 {{- fail "prfService needs coprocessorProxy.enabled and coprocessorProxy.prfServiceNetworkPolicy.enabled" }}
 {{- end }}
 {{- $component := .Values.prfService -}}
+{{- /* A policy that does not select these pods leaves their port open. */}}
+{{- $pod := dict "app" "coprocessor-prf-service" "app.kubernetes.io/name" (include "prfServiceName" .) }}
+{{- $pod = mergeOverwrite $pod (.Values.commonConfig.extraSelectorLabels | default dict) }}
+{{- with .Values.commonConfig.stackVersion }}{{ $_ := set $pod "app.kubernetes.io/version" . }}{{ end }}
+{{- $pod = mergeOverwrite $pod (.Values.podLabels | default dict) ($component.podLabels | default dict) }}
+{{- range $k, $v := .Values.coprocessorProxy.prfServiceNetworkPolicy.podSelector }}
+{{- if ne (toString $v) (toString (get $pod $k)) }}
+{{- fail (printf "coprocessorProxy.prfServiceNetworkPolicy.podSelector %s does not select the prf-service pods" $k) }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
