@@ -10,6 +10,7 @@ import { setAuth } from '../../../base/auth.js';
 import { fetchWithRetry, normalizeHeaders } from '../../../base/fetch.js';
 import { isNonEmptyString, isRecordStringProperty, assertRecordStringProperty } from '../../../base/string.js';
 import { isUuidV7 } from '../../../base/uuidv7.js';
+import { isUintNumber } from '../../../base/uint.js';
 import { assertRecordBytesHexNo0xProperty } from '../../../base/bytes.js';
 import { assertRecordArrayProperty } from '../../../base/record.js';
 import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
@@ -30,6 +31,43 @@ import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError
 // the existing relayer's `RelayerUserDecryptSucceeded`, which nests a second `result`
 // one level deeper. So the existing guard can't be reused as-is — reusing its
 // lower-level field assertions instead.
+
+// setTimeout's largest delay (2^31 - 1 ms). Node turns a delay above it, below 1
+// or NaN into 1 ms, so an out-of-range timeout would fire almost immediately.
+// https://nodejs.org/api/timers.html#settimeoutcallback-delay-args
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
+// Largest response body parsed, in characters (UTF-16 code units, not bytes), so
+// roughly 10 MB for relayer-http's ASCII JSON: well above any realistic
+// user-decrypt response, but bounded. Checked after reading, before JSON.parse.
+const MAX_BODY_TEXT_LENGTH = 10 * 1024 * 1024;
+
+/**
+ * Returns `timeout` unchanged if it is a whole number of milliseconds that
+ * setTimeout honors as-is (1 to {@link MAX_TIMEOUT_MS}), or undefined if unset.
+ *
+ * @param timeout - `options.timeout`, in milliseconds.
+ * @returns The validated timeout, or undefined when no timeout is set.
+ * @throws {InvalidPropertyError} If `timeout` is set but out of range or not an integer.
+ */
+function _validateTimeoutMs(timeout: number | undefined): number | undefined {
+  if (timeout === undefined) {
+    return undefined;
+  }
+  if (!isUintNumber(timeout, MAX_TIMEOUT_MS) || timeout < 1) {
+    throw new InvalidPropertyError(
+      {
+        subject: 'options',
+        property: 'timeout',
+        expectedType: `integer from 1 to ${MAX_TIMEOUT_MS} (ms)`,
+        type: 'number',
+        value: String(timeout),
+      },
+      {},
+    );
+  }
+  return timeout;
+}
 
 type RelayerHttpRequestParams = {
   url: string;
@@ -63,7 +101,7 @@ export class RelayerHttpRequest {
     this._headers = normalizeHeaders(params.options?.headers);
     this._query = normalizeRelayerQuery(params.options?.query);
     this._signal = params.options?.signal;
-    this._timeoutMs = params.options?.timeout;
+    this._timeoutMs = _validateTimeoutMs(params.options?.timeout);
     this._fetchRetries = params.options?.fetchRetries;
     this._fetchRetryDelayInMilliseconds = params.options?.fetchRetryDelayInMilliseconds;
     this._logger = params.logger;
@@ -230,6 +268,11 @@ export class RelayerHttpRequest {
     // edge proxy's HTML error page) can still be reported in the error below.
     let bodyText: string;
     try {
+      // TODO(SECURITY): NO SIZE LIMIT WHILE READING THE RESPONSE BODY. response.text()
+      // buffers the whole body in memory; the check in 3.2 only keeps an oversized body
+      // from being parsed, and options.timeout bounds time, not bytes.
+      // Fix: read response.body as a stream, reject a content-length above a cap before
+      // reading, and stop with RelayerHttpFetchError once the cap is exceeded.
       bodyText = await response.text();
     } catch (cause) {
       // fetch() resolving only means the headers arrived — reading the body can
@@ -250,6 +293,23 @@ export class RelayerHttpRequest {
 
     // 3.2. Parse the text as JSON (e.g. an edge proxy's HTML error page, an empty
     // body, or a truncated response from a dropped connection are not valid JSON).
+    // An oversized body is rejected first: the parsed value can take several times
+    // the memory of the text itself.
+    if (bodyText.length > MAX_BODY_TEXT_LENGTH) {
+      this._logger?.error?.(
+        `[RelayerHttpRequest] Response body on ${this._url} is too large to parse (${bodyText.length} characters, status=${response.status}).`,
+        undefined,
+      );
+
+      throw new RelayerHttpFetchError({
+        url: this._url,
+        status: response.status,
+        contentType: response.headers.get('content-type') ?? undefined,
+        body: bodyText.slice(0, 500),
+        message: `relayer-http response body too large (${bodyText.length} characters, limit ${MAX_BODY_TEXT_LENGTH}).`,
+      });
+    }
+
     try {
       bodyJson = JSON.parse(bodyText) as unknown;
     } catch (cause) {

@@ -2,6 +2,7 @@ import type { MockInstance } from 'vitest';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { RelayerHttpRequest } from './RelayerHttpRequest.js';
 import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
+import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/RelayerHttpRequest.signal.test.ts
@@ -427,5 +428,27 @@ describe('RelayerHttpRequest abort classification', () => {
 
     expect(error).not.toBeInstanceOf(RelayerHttpTimeoutError);
     expect(error).toBe(callerSignal.reason);
+  });
+});
+
+// Bug: options.timeout goes straight to setTimeout. Node turns a delay that is NaN,
+// below 1 or above 2^31-1 ms into 1 ms, so an intended long timeout fires almost
+// immediately. https://nodejs.org/api/timers.html#settimeoutcallback-delay-args
+describe('RelayerHttpRequest options.timeout validation', () => {
+  it.each([
+    ['zero', 0],
+    ['negative', -1],
+    ['fractional', 1.5],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['above 2^31-1 ms', 2_147_483_648],
+  ])('rejects a %s timeout when the request is created', (_label, timeout) => {
+    expect(() => new RelayerHttpRequest({ url: RELAYER_URL, payload: {}, options: { timeout } })).toThrow(
+      InvalidPropertyError,
+    );
+  });
+
+  it.each([1, 2_147_483_647])('accepts a %d ms timeout', (timeout) => {
+    expect(() => new RelayerHttpRequest({ url: RELAYER_URL, payload: {}, options: { timeout } })).not.toThrow();
   });
 });
