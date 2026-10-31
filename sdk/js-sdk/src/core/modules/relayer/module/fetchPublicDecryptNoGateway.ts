@@ -1,6 +1,5 @@
 import type { Bytes65Hex } from '../../../types/primitives.js';
 import type { RelayerFetchPublicDecryptPayload } from '../../../types/relayer-p.js';
-import type { FetchPublicDecryptResult } from '../../../types/relayer.js';
 import type { FetchPublicDecryptParameters, FetchPublicDecryptReturnType, RelayerClientWithRuntime } from '../types.js';
 import { ensure0x } from '../../../base/string.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
@@ -29,6 +28,7 @@ export async function fetchPublicDecryptNoGateway(
   const url = buildRelayerUrlString(relayerBaseUrl, 'v4/public-decrypt');
 
   const request = new RelayerHttpRequest({
+    relayerOperation: 'PUBLIC_DECRYPT',
     url,
     payload: p,
     options,
@@ -36,7 +36,7 @@ export async function fetchPublicDecryptNoGateway(
   });
 
   // TODO !!!
-  const result = (await request.run()) as FetchPublicDecryptResult;
+  const result = await request.run();
 
   return {
     orderedAbiEncodedClearValues: ensure0x(result.decryptedValue),

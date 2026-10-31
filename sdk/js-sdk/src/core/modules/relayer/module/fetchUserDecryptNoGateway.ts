@@ -70,6 +70,7 @@ export async function fetchUserDecryptNoGateway(
   const url = buildRelayerUrlString(relayerBaseUrl, 'v4/user-decrypt');
 
   const request = new RelayerHttpRequest({
+    relayerOperation: 'USER_DECRYPT',
     url,
     payload: relayerPayload,
     options,
