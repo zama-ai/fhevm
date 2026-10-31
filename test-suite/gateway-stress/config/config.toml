@@ -74,14 +74,33 @@ urls = [
     "https://kms-connector-4-proxy:8443",
 ]
 
-# The API key the proxies check. Testing only.
-api_key = "fhevm-e2e-kms-connector-api-key"
+# Each party's KMS tx-sender address, aligned with `urls`: the `audience` of the `FhevmSig` headers
+# its proxy accepts. Here, the fhevm-cli stack's (KMS_CONNECTOR_TX_SENDER_ADDRESSES of the test-suite env).
+tx_sender_addresses = [
+    "0xEEcE0864CCAB13866AdCa8319B278b6d4af40484",
+    "0x0425EB924AcCc9199ebf98038Dea9cA4823bC3e9",
+    "0x885B871b70335f1A8111F4B2BEB533821Ef4b86C",
+    "0x0D836d479DfA383be1f855688bE699CF69c3f1ce",
+]
+
+# The host chain id and `ProtocolConfig` contract address, forming the `FhevmSig` EIP-712 domain.
+ethereum_chain_id = 12345
+# The `ProtocolConfig` contract address for the `FhevmSig` EIP-712 domain (here, the one of the test-suite env).
+protocol_config_address = "0x52054F36036811ca418be59e41Fc6DD1b9e4F4c8"
+
+# Key signing the `FhevmSig` headers: its address must be in the proxies' `allowed_senders`. Testing
+# only: this is the e2e test key (address 0xAE808c0968fF9557C8E0EAbcf57747c75B490Aa0).
+sender_private_key = "0xdcd7f0c4990a3df000d45f6eb2728a8cf93f0d16b1f6bdffbe07f5a250250e6c"
 
 # The proxies' certificate to trust.
 # tls_ca_cert = "/etc/kms-connector/proxy/tls.crt"
 
 # Skip TLS certificate verification instead of trusting `tls_ca_cert`. Testing only.
 danger_accept_invalid_certs = true
+
+# How long each `FhevmSig` header is valid for (at most 5m, the proxies' limit). Defaults to
+# `request_timeout`.
+# auth_validity = "120s"
 
 # Client-side timeout of each request.
 request_timeout = "120s"
