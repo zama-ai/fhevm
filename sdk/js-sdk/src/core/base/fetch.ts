@@ -216,7 +216,8 @@ export type FetchWithRetryParameters = {
  * @param retryDelayMs - Delay in milliseconds between retries (default: 1000)
  * @returns The fetch Response
  * @throws The last network error if all retries are exhausted
- * @throws The signal's abort reason (any value) if the signal is aborted
+ * @throws The signal's abort reason (any value) if the signal is aborted, or the
+ * Error `abortableSleep` wraps it in if the abort lands during the delay between retries
  */
 export async function fetchWithRetry(
   args: {
