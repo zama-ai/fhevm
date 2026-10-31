@@ -70,10 +70,64 @@ spec:
             - --http-endpoint=0.0.0.0:{{ $component.ports.http }}
             - --health-check-port={{ $component.ports.healthcheck }}
             - --metrics-addr=0.0.0.0:{{ $component.ports.metrics }}
+            - --database-url=$(DATABASE_URL)
+            - --database-pool-size={{ $component.databasePoolSize }}
+            - --max-concurrent-per-connector={{ int64 $component.limits.maxConcurrentPerConnector }}
+            - --max-in-flight-per-connector={{ $component.limits.maxInFlightPerConnector }}
             {{- with $component.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
+            {{- /* The prf_service role when set: it can only add and read pads rows. */}}
+            {{- with (default .Values.commonConfig.databaseUser $component.databaseUser) }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "password" }}
+            {{- with (default .Values.commonConfig.databasePassword $component.databasePassword) }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.commonConfig.databaseUrl }}
+            - name: DATABASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" .) "iam" }}
+            - name: DATABASE_IAM_AUTH_ENABLED
+              value: "true"
+            {{- with .Values.commonConfig.databaseIamRegion }}
+            - name: DATABASE_IAM_REGION
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" .) "true" }}
+            {{- include "coprocessor.databaseSslRootCertEnv" . | nindent 12 }}
+            {{- end }}
+            {{- end }}
           {{- if default .Values.commonConfig.tracing.enabled $component.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint | quote }}
@@ -107,4 +161,10 @@ spec:
           readinessProbe:
             {{- toYaml (omit $component.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
+          {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
+          {{- include "coprocessor.databaseSslRootCertVolumeMount" . | nindent 10 }}
+          {{- end }}
+      {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" .) "true" }}
+      {{- include "coprocessor.databaseSslRootCertVolume" . | nindent 6 }}
+      {{- end }}
 {{- end -}}

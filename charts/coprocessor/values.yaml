@@ -1729,6 +1729,19 @@ prfService:
 
   replicas: 1
 
+  # User and password of the `prf_service` role, as in commonConfig. Empty: the commonConfig user.
+  databaseUser: {}
+  databasePassword: {}
+  # At least 4: the listener, the two admissions of one connector, and one more.
+  databasePoolSize: 10
+
+  # Limits for each connector. Above a limit, prf-service answers `429 concurrency_limited`.
+  limits:
+    # Pad bits under evaluation that one connector can trigger, in all pods. At least 2048.
+    maxConcurrentPerConnector: 16384
+    # Requests in progress of one connector in one pod.
+    maxInFlightPerConnector: 256
+
   env: []
   extraArgs: []
 
