@@ -6,13 +6,13 @@ use prf_service::{
     PrfPath,
 };
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use std::{sync::Arc, time::Duration};
+use std::{num::NonZeroUsize, sync::Arc, time::Duration};
 use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use tokio::{task::JoinHandle, time::timeout};
 use tokio_util::sync::CancellationToken;
 
 const LIMIT: i64 = 100;
-const MAX_ADDS: usize = 2;
+const MAX_ADDS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
 const CONNECTOR: Address = Address::repeat_byte(0x11);
 const OTHER_CONNECTOR: Address = Address::repeat_byte(0x22);
 
@@ -193,12 +193,12 @@ async fn requests_of_a_connector_wait_in_memory_not_on_the_lock() {
     // Hold the lock of CONNECTOR, so its requests stop before they can add a row.
     let lock = lock_connector(&pool, CONNECTOR).await;
     let requests = spawn_admits(&admissions, 0..10, CONNECTOR);
-    while lock_waiters(&pool).await < MAX_ADDS as i64 {
+    while lock_waiters(&pool).await < MAX_ADDS.get() as i64 {
         tokio::task::yield_now().await;
     }
     // Only MAX_ADDS requests wait for the lock with a connection. The others wait in memory.
     tokio::time::sleep(Duration::from_millis(200)).await;
-    assert_eq!(lock_waiters(&pool).await, MAX_ADDS as i64);
+    assert_eq!(lock_waiters(&pool).await, MAX_ADDS.get() as i64);
 
     // Another connector is not blocked.
     assert_eq!(
@@ -217,8 +217,8 @@ async fn requests_of_a_connector_wait_in_memory_not_on_the_lock() {
 async fn cancelled_requests_keep_their_slots() {
     let (_instance, pool, admissions) = test_db().await;
     let lock = lock_connector(&pool, CONNECTOR).await;
-    let cancelled = spawn_admits(&admissions, 0..MAX_ADDS as u8, CONNECTOR);
-    while lock_waiters(&pool).await < MAX_ADDS as i64 {
+    let cancelled = spawn_admits(&admissions, 0..MAX_ADDS.get() as u8, CONNECTOR);
+    while lock_waiters(&pool).await < MAX_ADDS.get() as i64 {
         tokio::task::yield_now().await;
     }
     for request in &cancelled {
@@ -226,9 +226,9 @@ async fn cancelled_requests_keep_their_slots() {
     }
 
     // The cancelled requests still wait for the lock, so the new requests wait in memory.
-    let requests = spawn_admits(&admissions, 10..10 + MAX_ADDS as u8, CONNECTOR);
+    let requests = spawn_admits(&admissions, 10..10 + MAX_ADDS.get() as u8, CONNECTOR);
     tokio::time::sleep(Duration::from_millis(200)).await;
-    assert_eq!(lock_waiters(&pool).await, MAX_ADDS as i64);
+    assert_eq!(lock_waiters(&pool).await, MAX_ADDS.get() as i64);
 
     // A cancelled request adds its row first, so the new requests are over the budget.
     lock.rollback().await.unwrap();
