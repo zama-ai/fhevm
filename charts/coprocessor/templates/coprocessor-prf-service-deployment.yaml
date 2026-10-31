@@ -1,4 +1,8 @@
 {{- if .Values.prfService.enabled -}}
+{{- /* prf-service trusts X-Fhevm-Signer: only the proxy may reach it. */}}
+{{- if not (and .Values.coprocessorProxy.enabled .Values.coprocessorProxy.prfServiceNetworkPolicy.enabled) }}
+{{- fail "prfService needs coprocessorProxy.enabled and coprocessorProxy.prfServiceNetworkPolicy.enabled" }}
+{{- end }}
 {{- $component := .Values.prfService -}}
 apiVersion: apps/v1
 kind: Deployment
