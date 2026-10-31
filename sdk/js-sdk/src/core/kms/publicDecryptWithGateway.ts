@@ -7,7 +7,7 @@ import type { Handle } from '../types/encryptedTypes-p.js';
 import type { KmsExtraData } from '../types/kms-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
-import { assertKmsDecryptionBitLimit } from '../kms/utils.js';
+import { assertKmsDecryptionBitLimit } from './utils.js';
 import { readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
 import { createPublicDecryptionProof } from '../kms/PublicDecryptionProof-p.js';
