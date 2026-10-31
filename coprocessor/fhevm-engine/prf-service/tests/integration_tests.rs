@@ -1,3 +1,5 @@
+mod common;
+
 use alloy::primitives::{Address, B256};
 use ciphertext_attestation::{
     prf::{Version as AttestationVersion, PRF_ATTESTATION_HEADER},
@@ -19,6 +21,7 @@ const DEADLINE: Duration = Duration::from_secs(5);
 
 struct TestService {
     base_url: String,
+    /// Admin pool: it plays the pad-worker.
     pool: PgPool,
     cancel_token: CancellationToken,
     task: JoinHandle<anyhow::Result<()>>,
@@ -33,6 +36,7 @@ impl TestService {
             .connect(db.db_url())
             .await
             .expect("pool");
+        let service_pool = common::prf_service_pool(&pool, db.db_url(), 8).await;
         let port = TcpListener::bind("127.0.0.1:0")
             .unwrap()
             .local_addr()
@@ -47,7 +51,7 @@ impl TestService {
                 max_adds_per_connector: NonZeroUsize::new(2).unwrap(),
                 pad_poll_interval: Duration::from_secs(3600),
             },
-            pool.clone(),
+            service_pool,
             cancel_token.clone(),
         )
         .unwrap();
