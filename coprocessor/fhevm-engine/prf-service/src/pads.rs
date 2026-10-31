@@ -56,7 +56,7 @@ impl Admissions {
     }
 
     /// Joins the row of the request, or adds the row if `connector` has budget for it.
-    // TODO: take a signer that the FhevmSig check gives, not an Address. Do it after fhevm#4558.
+    /// `connector` must be the signer that coprocessor-proxy verified.
     pub async fn admit(
         &self,
         path: &PrfOutputRef,
