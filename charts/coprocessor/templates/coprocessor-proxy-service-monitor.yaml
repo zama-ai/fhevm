@@ -1,0 +1,16 @@
+{{- if and .Values.coprocessorProxy.enabled .Values.coprocessorProxy.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-proxy
+    app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+  name: {{ include "coprocessorProxyName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-proxy
+      app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+  endpoints:
+  - port: metrics
+{{- end -}}

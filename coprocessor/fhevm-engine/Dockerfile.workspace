@@ -111,6 +111,7 @@ COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY gateway-contracts/contracts ./gateway-contracts/contracts
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY shared/block-manifest ./shared/block-manifest
+COPY shared/fhevm-sig-auth ./shared/fhevm-sig-auth
 
 WORKDIR /app/coprocessor/fhevm-engine
 
@@ -118,6 +119,7 @@ WORKDIR /app/coprocessor/fhevm-engine
 # NOTE: We use cache mounts for incremental compilation. Because cache mounts
 # are NOT committed to the image layer, we must copy binaries to /out during
 # the same RUN instruction for COPY --from to work in later stages.
+# coprocessor-proxy builds without sccache, as coprocessor-proxy/Dockerfile does and says why.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/app/coprocessor/fhevm-engine/target,sharing=locked \
     --mount=type=secret,id=sccache_aws_access_key_id \
@@ -128,7 +130,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       export AWS_SECRET_ACCESS_KEY="$(cat /run/secrets/sccache_aws_secret_access_key)"; \
     fi && \
     cargo fetch && \
-    SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace --features "${CARGO_FEATURES}" && \
+    SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} --workspace --exclude coprocessor-proxy --features "${CARGO_FEATURES}" && \
+    env -u RUSTC_WRAPPER SQLX_OFFLINE=true BUILD_ID=${BUILD_ID} cargo build --profile=${CARGO_PROFILE} -p coprocessor-proxy && \
     if [ -n "${SCCACHE_BUCKET}" ] && command -v sccache >/dev/null 2>&1; then sccache --show-stats; fi && \
     mkdir -p /out && \
     cp target/${CARGO_PROFILE}/tfhe_worker /out/ && \
@@ -141,6 +144,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cp target/${CARGO_PROFILE}/zkproof_worker /out/ && \
     cp target/${CARGO_PROFILE}/consensus-detector /out/ && \
     cp target/${CARGO_PROFILE}/upgrade-controller /out/ && \
+    cp target/${CARGO_PROFILE}/coprocessor-proxy /out/ && \
     cp target/${CARGO_PROFILE}/resolve_database_url /out/ && \
     cp target/${CARGO_PROFILE}/bootstrap_versioning /out/
 
@@ -310,3 +314,16 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD psql --version || exit 1
 
 ENTRYPOINT ["/bin/bash", "-c"]
+
+# =============================================================================
+# Stage 2j: coprocessor-proxy runtime
+# =============================================================================
+FROM ${COPROCESSOR_RUNTIME_BASE_IMAGE} AS coprocessor-proxy
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /out/coprocessor-proxy /usr/local/bin/coprocessor-proxy
+
+USER fhevm:fhevm
+
+ENTRYPOINT ["/usr/local/bin/coprocessor-proxy"]

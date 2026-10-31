@@ -472,6 +472,38 @@ The two out-of-chart inputs the proxy needs are produced at deploy time by
   use their own client (`test/sdk/connector/connectorHttp.ts`), not the relayer
   SDK, so re-running them there would only duplicate the same code path.
 
+## coprocessor-proxy
+
+Except on blue-green stacks, each `coprocessor-<i>` release also runs the
+coprocessor-proxy (`values-coprocessor-proxy-e2e.yaml`), one replica in front of a
+fake prf-service until prf-service deploys here. `scripts/deploy/deploy-coprocessor.sh`
+provides what the chart does not:
+
+- **The fake**: a `common` chart release `coprocessor-<i>-prf-service-fake`
+  (`values-prf-service-fake-e2e.yaml`) running `test-suite/e2e/scripts/fake-prf-service.ts`
+  from the test-suite image: the PRF route over HTTP/1.1 on 8080, its request count on 9090.
+  The proxy's NetworkPolicy selects its pods (`fhevm.zama.ai/party: <i>`) and lets
+  test-suite pods (`app: fhevm-test-suite`) reach port 9090 only.
+- **TLS**: the Secret `coprocessor-proxy-tls`, made as for the kms-connector proxies,
+  with SANs = every party's `coprocessor-<i>-coprocessor-proxy` Service.
+- **Per party**: the image tag (`coprocessor_proxy` in resolve-tags), the signer (the
+  derived coprocessor wallet), the prf-service address and the NetworkPolicy's podSelector.
+- **Test-suite wiring**: the ConfigMap **`coprocessor-proxy`** (`urls`,
+  `signer-addresses`, `count-urls`, `metrics-urls`, `ca.crt`), read `optional` by the
+  `@fhevm/sdk` Argo Workflow, whose `coprocessor-proxy` task runs the
+  `Coprocessor proxy` suite signing with KMS party 1's tx-sender key
+  (`kms-connector-tx-sender-1`).
+
+With `automated_tests`, `scripts/e2e/check-coprocessor-proxy.sh` then checks that
+every proxy rolled out with its replicas Ready (its `/healthz` answers once the TLS
+listener is up and the KMS tx-senders have been read), and restarts every proxy under a
+steady load of signed requests from a test-suite pod, which stops once every old
+proxy pod is gone: no request may fail. It also checks the NetworkPolicy: that
+test-suite pod must reach each fake's port 9090 and no fake's PRF port.
+
+When prf-service deploys here, the fake release, the NetworkPolicy overrides and the count
+URLs go, and the prf-service address points at prf-service.
+
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 
 `preview-env-deploy.yml` takes a `deploy_polygon` input (default `false`) that adds a

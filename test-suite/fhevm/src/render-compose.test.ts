@@ -148,8 +148,11 @@ instances:
 };
 
 /** Runs a test body with `DOCKER_HOST` pinned to a known value, restoring it after. */
-/** The template's mount of the kms-connector proxies' test certificate into the e2e runner. */
-const PROXY_TLS_CERT_MOUNT = `${path.resolve(TEMPLATE_COMPOSE_DIR, "../static/config/kms-connector-proxy/tls.crt")}:/etc/kms-connector/proxy/tls.crt:ro`;
+/** The template's mounts of the kms-connector and coprocessor proxies' test certificates into the e2e runner. */
+const PROXY_TLS_CERT_MOUNTS = [
+  `${path.resolve(TEMPLATE_COMPOSE_DIR, "../static/config/kms-connector-proxy/tls.crt")}:/etc/kms-connector/proxy/tls.crt:ro`,
+  `${path.resolve(TEMPLATE_COMPOSE_DIR, "../static/config/coprocessor-proxy/tls.crt")}:/etc/coprocessor-proxy/tls.crt:ro`,
+];
 
 const withDockerHost = async <T>(value: string | undefined, run: () => Promise<T>) => {
   const previous = process.env.DOCKER_HOST;
@@ -313,6 +316,7 @@ describe("render-compose", () => {
         "coprocessor-transaction-sender",
         "coprocessor-consensus-detector",
         "coprocessor-upgrade-controller",
+        "coprocessor-proxy",
       ];
       // These implement exit-for-restart: fatal error, non-zero exit, and they
       // expect to be brought back. Without a policy the stack degraded
@@ -439,6 +443,76 @@ describe("render-compose", () => {
     expect(modernServices).toContain("coprocessor-upgrade-controller");
   });
 
+  test("requests a coprocessor-proxy and its fake prf-service per coprocessor only when the bundle pins the proxy", () => {
+    const withoutProxy: State = {
+      ...state,
+      versions: {
+        ...state.versions,
+        env: Object.fromEntries(Object.entries(state.versions.env).filter(([key]) => key !== "COPROCESSOR_PROXY_VERSION")),
+      },
+    };
+    expect(
+      serviceNameList(withoutProxy, "coprocessor").some((name) => name.endsWith("-proxy") || name.endsWith("-prf-service-fake")),
+    ).toBe(false);
+
+    const services = serviceNameList(state, "coprocessor");
+    for (const prefix of ["coprocessor-", "coprocessor1-"]) {
+      // The fake starts no later than its proxy, which resolves the fake's hostname once at startup.
+      expect(services).toContain(`${prefix}prf-service-fake`);
+      expect(services.indexOf(`${prefix}prf-service-fake`)).toBeLessThan(services.indexOf(`${prefix}proxy`));
+    }
+  });
+
+  test("gives each coprocessor its own proxy and fake prf-service, on the bundle's images", async () => {
+    // Instance 1 runs a coprocessor release by tag, which may predate the proxy.
+    const pinned: State = {
+      ...state,
+      scenario: resolveScenarioFile(
+        path.join("/tmp", "two-of-two-proxy.yaml"),
+        parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 1
+    source:
+      mode: registry
+      tag: v0.15.0
+`),
+      ),
+    };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "PROTOCOL_CONFIG_ADDRESS=0x00000000000000000000000000000000000000c1\n");
+      await generateComposeOverrides(pinned, stackSpecForState(pinned));
+      const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
+        services: Record<
+          string,
+          {
+            image?: string;
+            env_file?: string[];
+            environment?: Record<string, string>;
+            volumes?: string[];
+            depends_on?: Record<string, unknown>;
+          }
+        >;
+      };
+      const proxy = doc.services["coprocessor1-proxy"];
+      const fake = doc.services["coprocessor1-prf-service-fake"];
+      expect(doc.services["coprocessor1-tfhe-worker"]?.image).toMatch(/:v0\.15\.0$/);
+      expect(proxy?.image).toBe("ghcr.io/zama-ai/fhevm/coprocessor/coprocessor-proxy:${COPROCESSOR_PROXY_VERSION}");
+      expect(fake?.image).toBe("ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}");
+      expect(proxy?.depends_on).toEqual({ "coprocessor1-prf-service-fake": { condition: "service_healthy" } });
+      expect(proxy?.env_file).toEqual([envPath("coprocessor-proxy.1")]);
+      expect(proxy?.environment?.COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS).toBe("0x00000000000000000000000000000000000000c1");
+      expect(proxy?.volumes?.[0]).toMatch(/\/static\/config\/coprocessor-proxy:\/etc\/coprocessor-proxy\/tls:ro$/);
+      expect(fake?.volumes?.[0]).toMatch(/\/test-suite\/e2e\/scripts\/fake-prf-service\.ts:\/opt\/fake-prf-service\.ts:ro$/);
+    });
+  });
+
   test("requests the kms-connector endpoint and proxy only when the bundle pins their images", () => {
     const withoutEndpoint: State = {
       ...state,
@@ -519,6 +593,11 @@ describe("render-compose", () => {
       };
 
       for (const [name, service] of Object.entries(doc.services)) {
+        if (name.endsWith("-prf-service-fake")) {
+          // Runs the test-suite image; nothing to build.
+          expect(service.build, name).toBeUndefined();
+          continue;
+        }
         expect(service.build?.args?.COPROCESSOR_RUNTIME_BASE_IMAGE, name).toBe("e2e-public-runtime");
         expect(service.build?.args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE, name).toBe(
           "e2e-public-db-migration-runtime",
@@ -662,8 +741,8 @@ describe("render-compose", () => {
         const testSuite = doc.services["test-suite-e2e-debug"];
         expect(testSuite?.image).toContain(":fhevm-local");
         expect(testSuite?.build).toBeTruthy();
-        // Only the template's proxy test-certificate mount: no docker socket.
-        expect(testSuite?.volumes).toEqual([PROXY_TLS_CERT_MOUNT]);
+        // Only the template's proxy test-certificate mounts: no docker socket.
+        expect(testSuite?.volumes).toEqual(PROXY_TLS_CERT_MOUNTS);
         expect(testSuite?.group_add).toBeUndefined();
       });
     });
@@ -915,6 +994,10 @@ gcs:
       expect(doc.services["coprocessor-gcs-host-listener"]?.build).toBeDefined();
       // GCS reuses BCS's db-migration — no `coprocessor-gcs-db-migration`.
       expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
+      // Blue-green stacks run without the proxy pair.
+      const proxyPair = (name: string) => name.endsWith("-proxy") || name.endsWith("-prf-service-fake");
+      expect(Object.keys(doc.services).some(proxyPair)).toBe(false);
+      expect(serviceNameList(bgState, "coprocessor").some(proxyPair)).toBe(false);
     });
   });
 

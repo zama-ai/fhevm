@@ -1,0 +1,34 @@
+{{- if and .Values.coprocessorProxy.enabled .Values.coprocessorProxy.prfServiceNetworkPolicy.enabled -}}
+{{- $policy := .Values.coprocessorProxy.prfServiceNetworkPolicy -}}
+{{- if not $policy.podSelector }}
+{{- fail "coprocessorProxy.prfServiceNetworkPolicy.podSelector must select the prf-service pods" }}
+{{- end }}
+{{- if not $policy.ports }}
+{{- fail "coprocessorProxy.prfServiceNetworkPolicy.ports must list the prf-service pod ports" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  labels:
+    app: coprocessor-proxy
+    app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+  name: {{ include "coprocessorProxyName" . }}-prf-service
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $policy.podSelector | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: coprocessor-proxy
+              app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+              {{- include "coprocessor.extraSelectorLabels" . | nindent 14 }}
+      ports:
+        {{- toYaml $policy.ports | nindent 8 }}
+    {{- with $policy.extraIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end -}}

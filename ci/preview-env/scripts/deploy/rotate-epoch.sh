@@ -29,7 +29,7 @@ timeout="${EPOCH_TIMEOUT:-20m}"
 watch_timeout="${EPOCH_WATCH_TIMEOUT:-45m}"
 poll_secs="${EPOCH_POLL_SECS:-30}"
 overlay=ci/preview-env/host-chain/values-host-define-new-epoch-e2e.yaml
-release=host-define-new-epoch
+release="host-define-new-epoch"
 local_port="${EPOCH_LOCAL_PORT:-18545}"
 
 topic_confirm="0x7eda6f85e23b7b91c019b0570d02b663606ef9d74594f7e01fcfbdb0f4e954d5"
@@ -55,6 +55,8 @@ require_release() {
 stage_values() {
   local live="$1" out="$2"
   cp "${overlay}" "${out}"
+  # $base and $live are yq variables, not shell ones.
+  # shellcheck disable=SC2016
   LIVE="${live}" yq -i '
     .scDeploy.image.tag = (load(strenv(LIVE)).scDeploy.image.tag // .scDeploy.image.tag) |
     .scDeploy.env = (

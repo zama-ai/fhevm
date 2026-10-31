@@ -245,6 +245,7 @@ COPROCESSOR_TX_SENDER_VERSION
 COPROCESSOR_TFHE_WORKER_VERSION
 COPROCESSOR_ZKPROOF_WORKER_VERSION
 COPROCESSOR_SNS_WORKER_VERSION
+COPROCESSOR_PROXY_VERSION    # optional: omitted when the resolved images predate coprocessor-proxy
 LISTENER_CORE_VERSION
 CONNECTOR_DB_MIGRATION_VERSION
 CONNECTOR_GW_LISTENER_VERSION
@@ -350,6 +351,7 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli test decryption-signature-invalidation
 ./fhevm-cli test connector-http-public-decrypt
 ./fhevm-cli test connector-http
+./fhevm-cli test coprocessor-proxy
 ./fhevm-cli test light
 ./fhevm-cli test standard
 ./fhevm-cli test heavy
@@ -478,7 +480,7 @@ Available runtime suffixes:
 
 | Group           | Suffixes                                                                                                                                    |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `coprocessor`   | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
+| `coprocessor`   | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender`, `proxy` |
 | `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender`, `endpoint`, `proxy`                |
 | `test-suite`    | `e2e-debug`                                                                                                                                 |
 

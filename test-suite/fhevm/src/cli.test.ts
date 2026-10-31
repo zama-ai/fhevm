@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { resolveLogsFollow } from "./cli";
 import {
+  assertProfileRanTests,
   buildTestContainerArgs,
   dbRevertDeleteExpectations,
   dbRevertTargetBlock,
@@ -421,6 +422,18 @@ describe("cli", () => {
 
     // Malformed/short data is ignored rather than throwing.
     expect(recentCoprocessorSenders([{ data: "0x1234" }, log(a)], 24)).toEqual([`0x${a}`]);
+  });
+
+  test("the coprocessor-proxy profile fails when its suite skipped itself", () => {
+    const skipped = "  0 passing (12ms)\n  9 pending\n";
+    const ran = "  6 passing (3s)\n  3 pending\n";
+    expect(() => assertProfileRanTests("coprocessor-proxy", skipped, "test coprocessor-proxy")).toThrow(
+      "no coprocessor-proxy test passed",
+    );
+    expect(() => assertProfileRanTests("coprocessor-proxy", ran, "test coprocessor-proxy")).not.toThrow();
+    // Other profiles keep reading pending tests as a matched grep.
+    expect(() => assertProfileRanTests("erc20", skipped, "test erc20")).not.toThrow();
+    expect(() => assertProfileRanTests("erc20", "  0 passing (1ms)\n", "test erc20")).toThrow("matched zero tests");
   });
 
   test("grep-backed named profiles accept targeted grep narrowing", () => {

@@ -7,6 +7,7 @@ import {
   supportsConnectorHttp,
   supportsConsensusDetector,
   supportsCoprocessorDbStateRevert,
+  runsCoprocessorProxy,
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
@@ -23,6 +24,7 @@ import {
   coprocessorDatabaseName,
   defaultHostChainKey,
   hostChainSuffix,
+  withCoprocessorProxySuffixes,
 } from "../layout";
 import { blueGreenServiceNames } from "../generate/compose";
 import { kmsConnectorPrefix, kmsPublicPrefix } from "../kms-party";
@@ -39,6 +41,9 @@ const KMS_CONNECTOR_KMS_GENERATION_READY =
 
 /** Number of KMS connector instances: one per party. */
 const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
+
+/** The coprocessor-proxy's default `/healthz` port. */
+const COPROCESSOR_PROXY_HEALTHCHECK_PORT = 8080;
 
 /** gw-listener / kms-worker / tx-sender (+ endpoint and proxy when the bundle ships them) health containers across every KMS party. */
 export const kmsConnectorHealthContainers = (state: State): string[] => {
@@ -157,6 +162,33 @@ export const waitForLog = async (container: string, pattern: RegExp) => {
   }
 };
 
+/**
+ * Waits until a coprocessor's proxy is ready: its `/healthz` answers 200 once the TLS listener
+ * answers and the KMS tx-senders have been read. The proxy image has no HTTP client, so the probe
+ * runs in the coprocessor's fake prf-service, on the same network.
+ */
+const waitForCoprocessorProxy = async (prefix: string) => {
+  const proxy = `${prefix}proxy`;
+  const url = `http://${proxy}:${COPROCESSOR_PROXY_HEALTHCHECK_PORT}/healthz`;
+  for (let attempt = 0; attempt <= 90; attempt += 1) {
+    const [inspect] = await dockerInspect(proxy);
+    if (inspect && containerFailure(inspect)) {
+      throw new ContainerCrashed(proxy, inspect.State.ExitCode || -1, "");
+    }
+    const probe = await run(["docker", "exec", `${prefix}prf-service-fake`, "wget", "-qO-", url], {
+      allowFailure: true,
+      timeoutMs: 10_000,
+    });
+    if (probe.code === 0) {
+      return;
+    }
+    if (attempt === 90) {
+      throw new ProbeTimeout(proxy, 180);
+    }
+    await Bun.sleep(2_000);
+  }
+};
+
 /** Waits until an RPC endpoint answers a basic `eth_chainId` request. */
 export const waitForRpc = async (url: string) => {
   for (let attempt = 0; attempt <= 60; attempt += 1) {
@@ -211,17 +243,20 @@ export const postBootHealthGate = async (containers: string[], delayMs = POST_BO
 };
 
 /** Lists the coprocessor containers whose health determines coprocessor readiness. */
-export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "versions">) => {
+export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "versions" | "overrides">) => {
   if (state.scenario.kind === "blue-green") {
     return blueGreenServiceNames(state, { includeMigration: false });
   }
-  const suffixes = GROUP_SERVICE_SUFFIXES.coprocessor.filter(
-    (suffix) =>
-      (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
-      !suffix.includes("migration") &&
-      (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
-      (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
-      (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
+  const suffixes = withCoprocessorProxySuffixes(
+    GROUP_SERVICE_SUFFIXES.coprocessor.filter(
+      (suffix) =>
+        (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
+        !suffix.includes("migration") &&
+        (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
+        (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
+        (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
+    ),
+    runsCoprocessorProxy(state),
   );
   const topology = topologyForState(state);
   const names: string[] = [];
@@ -312,9 +347,14 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
     await waitForContainer(`${prefix}transaction-sender`, "running");
   };
   const count = topologyForState(state).count;
+  const includeProxy = runsCoprocessorProxy(state);
   for (let index = 0; index < count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
     await waitCoreFleet(prefix, true);
+    if (includeProxy) {
+      await waitForContainer(`${prefix}prf-service-fake`, "healthy");
+      await waitForCoprocessorProxy(prefix);
+    }
     if (state.scenario.kind === "blue-green" && !state.scenario.gcs.deferredStart) {
       await waitCoreFleet(`${prefix}gcs-`, false);
       await waitForContainer(`${prefix}gcs-upgrade-controller`, "running");
