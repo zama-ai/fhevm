@@ -133,6 +133,13 @@ export type FetchPublicDecryptModuleFunction = {
   ): Promise<FetchPublicDecryptReturnType>;
 };
 
+export type FetchPublicDecryptNoGatewayModuleFunction = {
+  fetchPublicDecryptNoGateway(
+    relayerClient: RelayerClientWithRuntime,
+    parameters: FetchPublicDecryptParameters,
+  ): Promise<FetchPublicDecryptReturnType>;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 // 4. fetchUserDecrypt
 ////////////////////////////////////////////////////////////////////////////////
@@ -311,6 +318,7 @@ export type RelayerModule = Prettify<
     FetchUserDecryptModuleFunction &
     FetchUserDecryptNoGatewayModuleFunction &
     FetchPublicDecryptModuleFunction &
+    FetchPublicDecryptNoGatewayModuleFunction &
     FetchDelegatedUserDecryptModuleFunction &
     FetchFeaturesModuleFunction &
     FetchPadSharesModuleFunction
