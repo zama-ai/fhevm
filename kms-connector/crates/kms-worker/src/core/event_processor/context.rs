@@ -39,15 +39,11 @@ pub struct DbContextManager<P> {
 
 impl<P: Provider> ContextManager for DbContextManager<P> {
     #[tracing::instrument(skip_all, fields(
-        context_id = extra_data.context_id.map(|id| format!("{id:#066x}")),
+        context_id = format!("{:#066x}", extra_data.context_id),
         epoch_id = extra_data.epoch_id.map(|id| format!("{id:#066x}")),
     ))]
     async fn validate_context(&self, extra_data: &ExtraData) -> Result<(), RequestCheckError> {
-        let Some(context_id) = extra_data.context_id else {
-            // Accepting request with no context for backwards compatibility with the relayer-sdk.
-            // TODO: Remove once https://github.com/zama-ai/fhevm-internal/issues/1506 is resolved.
-            return Ok(());
-        };
+        let context_id = extra_data.context_id;
         let epoch_id = extra_data.epoch_id;
 
         match self.check_local_db(context_id, epoch_id).await? {
