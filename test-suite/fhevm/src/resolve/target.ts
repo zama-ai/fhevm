@@ -69,6 +69,7 @@ const REPO_PACKAGES = {
   COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "fhevm%2Fcoprocessor%2Fconsensus-detector",
   COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "fhevm%2Fcoprocessor%2Fupgrade-controller",
   COPROCESSOR_PROXY_VERSION: "fhevm%2Fcoprocessor%2Fcoprocessor-proxy",
+  COPROCESSOR_PRF_SERVICE_VERSION: "fhevm%2Fcoprocessor%2Fprf-service",
   LISTENER_CORE_VERSION: "fhevm%2Flistener%2Flistener-core",
   CONNECTOR_DB_MIGRATION_VERSION: "fhevm%2Fkms-connector%2Fdb-migration",
   CONNECTOR_GW_LISTENER_VERSION: "fhevm%2Fkms-connector%2Fgw-listener",
@@ -88,6 +89,7 @@ export const OPTIONAL_REPO_KEYS = new Set([
   "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
   "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
   "COPROCESSOR_PROXY_VERSION",
+  "COPROCESSOR_PRF_SERVICE_VERSION",
   "CONNECTOR_ENDPOINT_VERSION",
   "CONNECTOR_PROXY_VERSION",
 ]);
@@ -105,6 +107,7 @@ export const PACKAGE_TO_REPOSITORY = {
   COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/consensus-detector",
   COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/upgrade-controller",
   COPROCESSOR_PROXY_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/coprocessor-proxy",
+  COPROCESSOR_PRF_SERVICE_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/prf-service",
   LISTENER_CORE_VERSION: "ghcr.io/zama-ai/fhevm/listener/listener-core",
   CONNECTOR_DB_MIGRATION_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/db-migration",
   CONNECTOR_GW_LISTENER_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/gw-listener",

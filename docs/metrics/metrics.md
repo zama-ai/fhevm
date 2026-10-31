@@ -225,6 +225,17 @@ tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest fina
  - **Alarm**: Sustained prf-service failures. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
     - **Recommendation**: `sum(increase(coprocessor_proxy_requests_counter{status=~"502|504"}[5m])) > 5`.
 
+### prf-service
+
+#### Metric Name: `coprocessor_prf_service_requests_total`
+ - **Type**: Counter
+ - **Labels**:
+   - `method`: `GET` or `HEAD`.
+   - `status`: HTTP response status.
+ - **Description**: One count for each PRF request that prf-service answers. `429`: a connector is at one of its limits. `500`: an evaluation failed. `503`: a database error. The `signer` label of `coprocessor_proxy_requests_counter` names the connector of a `429`.
+ - **Alarm**: Database errors, or a connector at its limit.
+    - **Recommendation**: `sum(increase(coprocessor_prf_service_requests_total{status=~"429|503"}[5m])) > 0`.
+
 ## kms-connector
 
 ### HTTP decryption: proxy and endpoint

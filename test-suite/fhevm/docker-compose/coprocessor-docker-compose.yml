@@ -346,5 +346,20 @@ services:
       coprocessor-prf-service-fake:
         condition: service_healthy
 
+  coprocessor-prf-service:
+    container_name: coprocessor-prf-service
+    image: ghcr.io/zama-ai/fhevm/coprocessor/prf-service:${COPROCESSOR_PRF_SERVICE_VERSION}
+    platform: linux/amd64
+    restart: "on-failure:10"
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+    command:
+      - prf-service
+      - --http-endpoint=0.0.0.0:8090
+      - --database-url=${DATABASE_URL}
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
+
 volumes:
   keys-cache:
