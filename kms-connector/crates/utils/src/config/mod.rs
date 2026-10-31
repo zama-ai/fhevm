@@ -16,7 +16,7 @@ use serde::{
     de::{IntoDeserializer, SeqAccess, Visitor, value::SeqAccessDeserializer},
 };
 use sqlx::postgres::types::PgInterval;
-use std::{fmt, marker::PhantomData, time::Duration};
+use std::{fmt, marker::PhantomData, num::NonZeroUsize, time::Duration};
 
 pub fn deserialize_pg_interval<'de, D>(deserializer: D) -> std::result::Result<PgInterval, D::Error>
 where
@@ -29,6 +29,10 @@ where
 
 pub fn default_database_pool_size() -> u32 {
     16
+}
+
+pub fn default_max_handles_per_decryption() -> NonZeroUsize {
+    NonZeroUsize::new(50).unwrap()
 }
 
 /// Deserializes a humantime `Duration` and rejects `0s`.
