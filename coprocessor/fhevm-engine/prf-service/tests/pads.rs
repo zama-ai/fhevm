@@ -1,5 +1,8 @@
+mod common;
+
 use alloy::primitives::{Address, B256};
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation, PrfOutputRef};
+use common::GRANTS;
 use prf_service::{
     pads::{read, Admission, Admissions, PadOutput, PadState},
     waiter::{PadWaiter, PAD_READY},
@@ -15,15 +18,24 @@ const MAX_ADDS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
 const CONNECTOR: Address = Address::repeat_byte(0x11);
 const OTHER_CONNECTOR: Address = Address::repeat_byte(0x22);
 
-async fn test_db() -> (DBInstance, PgPool, Arc<Admissions>) {
+/// A database and an admin pool.
+async fn admin_db() -> (DBInstance, PgPool) {
     let instance = setup_test_db(ImportMode::None).await.expect("test db");
     let pool = PgPoolOptions::new()
         .max_connections(16)
         .connect(instance.db_url())
         .await
         .expect("pool");
-    let admissions = Arc::new(Admissions::new(pool.clone(), LIMIT, MAX_ADDS));
-    (instance, pool, admissions)
+    (instance, pool)
+}
+
+/// Also a pool of the `prf_service` role, and the admissions of one pod on it. The admin pool plays
+/// the pad-worker.
+async fn test_db() -> (DBInstance, PgPool, PgPool, Arc<Admissions>) {
+    let (instance, pool) = admin_db().await;
+    let service = common::prf_service_pool(&pool, instance.db_url(), 16).await;
+    let admissions = Arc::new(Admissions::new(service.clone(), LIMIT, MAX_ADDS));
+    (instance, pool, service, admissions)
 }
 
 async fn lock_connector(
@@ -118,7 +130,7 @@ async fn set_error(pool: &PgPool, path: &PrfOutputRef) {
 
 #[tokio::test]
 async fn concurrent_requests_make_one_row() {
-    let (_instance, _pool, admissions) = test_db().await;
+    let (_instance, _pool, _service, admissions) = test_db().await;
     let requests = (0..13)
         .map(|i| {
             let admissions = admissions.clone();
@@ -131,15 +143,15 @@ async fn concurrent_requests_make_one_row() {
 
 #[tokio::test]
 async fn concurrent_requests_of_a_connector_stay_in_its_budget() {
-    let (_instance, _pool, admissions) = test_db().await;
+    let (_instance, _pool, _service, admissions) = test_db().await;
     let requests = spawn_admits(&admissions, 0..10, CONNECTOR);
     assert_one_created(requests, Admission::OverBudget).await;
 }
 
 #[tokio::test]
 async fn requests_on_two_pods_stay_in_the_budget() {
-    let (_instance, pool, pod_a) = test_db().await;
-    let pod_b = Arc::new(Admissions::new(pool.clone(), LIMIT, MAX_ADDS));
+    let (_instance, _pool, service, pod_a) = test_db().await;
+    let pod_b = Arc::new(Admissions::new(service, LIMIT, MAX_ADDS));
     let requests: Vec<_> = (0..10)
         .map(|label| {
             let pod = if label % 2 == 0 {
@@ -155,7 +167,7 @@ async fn requests_on_two_pods_stay_in_the_budget() {
 
 #[tokio::test]
 async fn connector_over_budget_joins_a_row_added_during_its_admission() {
-    let (_instance, pool, admissions) = test_db().await;
+    let (_instance, pool, _service, admissions) = test_db().await;
     assert_eq!(
         admissions.admit(&path(1, 64), CONNECTOR).await.unwrap(),
         Admission::Created
@@ -188,7 +200,7 @@ async fn connector_over_budget_joins_a_row_added_during_its_admission() {
 
 #[tokio::test]
 async fn requests_of_a_connector_wait_in_memory_not_on_the_lock() {
-    let (_instance, pool, admissions) = test_db().await;
+    let (_instance, pool, _service, admissions) = test_db().await;
     // Hold the lock of CONNECTOR, so its requests stop before they can add a row.
     let lock = lock_connector(&pool, CONNECTOR).await;
     let requests = spawn_admits(&admissions, 0..10, CONNECTOR);
@@ -214,7 +226,7 @@ async fn requests_of_a_connector_wait_in_memory_not_on_the_lock() {
 
 #[tokio::test]
 async fn cancelled_requests_keep_their_slots() {
-    let (_instance, pool, admissions) = test_db().await;
+    let (_instance, pool, _service, admissions) = test_db().await;
     let lock = lock_connector(&pool, CONNECTOR).await;
     let cancelled = spawn_admits(&admissions, 0..MAX_ADDS.get() as u8, CONNECTOR);
     while lock_waiters(&pool).await < MAX_ADDS.get() as i64 {
@@ -238,7 +250,7 @@ async fn cancelled_requests_keep_their_slots() {
 
 #[tokio::test]
 async fn budget_counts_the_pending_pad_bits_of_each_connector() {
-    let (_instance, pool, admissions) = test_db().await;
+    let (_instance, pool, _service, admissions) = test_db().await;
     let admit = |path, connector| {
         let admissions = admissions.clone();
         async move { admissions.admit(&path, connector).await.unwrap() }
@@ -269,7 +281,7 @@ async fn budget_counts_the_pending_pad_bits_of_each_connector() {
 
 #[tokio::test]
 async fn complete_row_gives_the_output() {
-    let (_instance, pool, admissions) = test_db().await;
+    let (_instance, pool, _service, admissions) = test_db().await;
     let path = path(1, 64);
     assert_eq!(read(&pool, &path).await.unwrap(), None);
     assert_eq!(
@@ -290,7 +302,7 @@ async fn complete_row_gives_the_output() {
 
 #[tokio::test]
 async fn table_refuses_a_pad_length_above_the_max() {
-    let (_instance, pool, _admissions) = test_db().await;
+    let (_instance, pool) = admin_db().await;
     let label = B256::repeat_byte(1);
     let insert = |pad_length: i32| {
         sqlx::query(
@@ -339,13 +351,14 @@ fn payload(path: &PrfOutputRef) -> String {
 /// Starts the waiter and returns once it listens.
 async fn start_waiter(
     pool: &PgPool,
+    service: &PgPool,
     poll_interval: Duration,
 ) -> (
     Arc<PadWaiter>,
     CancellationToken,
     JoinHandle<anyhow::Result<()>>,
 ) {
-    let waiter = Arc::new(PadWaiter::new(pool.clone(), poll_interval));
+    let waiter = Arc::new(PadWaiter::new(service.clone(), poll_interval));
     let cancel = CancellationToken::new();
     let run = tokio::spawn({
         let (waiter, cancel) = (waiter.clone(), cancel.clone());
@@ -387,12 +400,12 @@ async fn finished(wait: JoinHandle<anyhow::Result<PadState>>) -> PadState {
 
 #[tokio::test]
 async fn trigger_wakes_the_request_of_each_row() {
-    let (_instance, pool, admissions) = test_db().await;
+    let (_instance, pool, service, admissions) = test_db().await;
     let (short, long) = (path(1, 36), path(1, 64));
     for path in [&short, &long] {
         admissions.admit(path, CONNECTOR).await.unwrap();
     }
-    let (waiter, cancel, run) = start_waiter(&pool, NO_POLL).await;
+    let (waiter, cancel, run) = start_waiter(&pool, &service, NO_POLL).await;
     let short_wait = start_wait(&waiter, short).await;
     let long_wait = start_wait(&waiter, long).await;
 
@@ -412,10 +425,10 @@ async fn trigger_wakes_the_request_of_each_row() {
 
 #[tokio::test]
 async fn poll_wakes_a_request_without_notification() {
-    let (_instance, pool, admissions) = test_db().await;
+    let (_instance, pool, service, admissions) = test_db().await;
     let row = path(1, 64);
     admissions.admit(&row, CONNECTOR).await.unwrap();
-    let (waiter, _cancel, _run) = start_waiter(&pool, Duration::from_millis(100)).await;
+    let (waiter, _cancel, _run) = start_waiter(&pool, &service, Duration::from_millis(100)).await;
     let wait = start_wait(&waiter, row).await;
 
     // Without the trigger, only the poll can wake the request.
@@ -430,10 +443,10 @@ async fn poll_wakes_a_request_without_notification() {
 
 #[tokio::test]
 async fn failed_poll_does_not_stop_the_waiter() {
-    let (_instance, pool, admissions) = test_db().await;
+    let (_instance, pool, service, admissions) = test_db().await;
     let row = path(1, 64);
     admissions.admit(&row, CONNECTOR).await.unwrap();
-    let (waiter, _cancel, run) = start_waiter(&pool, Duration::from_millis(50)).await;
+    let (waiter, _cancel, run) = start_waiter(&pool, &service, Duration::from_millis(50)).await;
     let wait = start_wait(&waiter, row).await;
 
     // The poll query fails while the table has another name.
@@ -455,10 +468,10 @@ async fn failed_poll_does_not_stop_the_waiter() {
 
 #[tokio::test]
 async fn waiter_reads_the_rows_after_a_lost_connection() {
-    let (_instance, pool, admissions) = test_db().await;
+    let (_instance, pool, service, admissions) = test_db().await;
     let row = path(1, 64);
     admissions.admit(&row, CONNECTOR).await.unwrap();
-    let (waiter, _cancel, run) = start_waiter(&pool, NO_POLL).await;
+    let (waiter, _cancel, run) = start_waiter(&pool, &service, NO_POLL).await;
     let wait = start_wait(&waiter, row).await;
 
     // Complete the row with no notification, then cut the listen connection.
@@ -480,12 +493,10 @@ async fn waiter_reads_the_rows_after_a_lost_connection() {
 
 #[tokio::test]
 async fn wait_for_a_missing_row_fails() {
-    let (_instance, pool, _admissions) = test_db().await;
-    let waiter = PadWaiter::new(pool, NO_POLL);
+    let (_instance, _pool, service, _admissions) = test_db().await;
+    let waiter = PadWaiter::new(service, NO_POLL);
     assert!(waiter.wait(&path(1, 64)).await.is_err());
 }
-
-const GRANTS: &str = include_str!("../../db-migration/db-scripts/grant_pad_roles.sql");
 
 const INSERT_PAD: &str = "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
     VALUES (1, decode(repeat('ab', 32), 'hex'), 64, decode(repeat('11', 20), 'hex'))
@@ -510,7 +521,7 @@ fn assert_denied(result: Result<(), sqlx::Error>, sql: &str) {
 
 #[tokio::test]
 async fn grants_skip_a_missing_role() {
-    let (_instance, pool, _admissions) = test_db().await;
+    let (_instance, pool) = admin_db().await;
     sqlx::raw_sql("DROP ROLE IF EXISTS prf_service")
         .execute(&pool)
         .await
@@ -520,7 +531,7 @@ async fn grants_skip_a_missing_role() {
 
 #[tokio::test]
 async fn prf_service_role_writes_only_the_queue() {
-    let (_instance, pool, _admissions) = test_db().await;
+    let (_instance, pool) = admin_db().await;
     sqlx::raw_sql(
         "DO $$ BEGIN CREATE ROLE prf_service NOLOGIN;
          EXCEPTION WHEN duplicate_object THEN NULL; END $$",
