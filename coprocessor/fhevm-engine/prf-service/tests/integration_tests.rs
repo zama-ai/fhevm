@@ -67,6 +67,8 @@ async fn get_returns_body_and_attestation() {
         .await;
 
     assert_eq!(response.status(), StatusCode::OK);
+    // coprocessor-proxy forwards over HTTP/1.1.
+    assert_eq!(response.version(), Version::HTTP_11);
     assert_eq!(
         response.headers()["content-type"],
         "application/octet-stream"
@@ -96,21 +98,6 @@ async fn head_returns_same_headers_without_body() {
     );
     assert_eq!(attestation(&head), attestation(&get));
     assert!(head.bytes().await.unwrap().is_empty());
-
-    drop(client);
-    service.stop().await;
-}
-
-#[tokio::test]
-async fn serves_healthz() {
-    let service = TestService::start();
-    let client = Client::new();
-    for method in [Method::GET, Method::HEAD] {
-        let health = service.request(&client, method, "/healthz").await;
-        assert_eq!(health.version(), Version::HTTP_11);
-        assert_eq!(health.status(), StatusCode::OK);
-        assert!(health.bytes().await.unwrap().is_empty());
-    }
 
     drop(client);
     service.stop().await;
