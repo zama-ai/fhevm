@@ -8,8 +8,7 @@ import type { SignedDecryptionPermit } from '../types/signedDecryptionPermit.js'
 import type { TransportKeyPair } from './TransportKeyPair-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { decryptKmsSigncryptedShares } from './decryptKmsSigncryptedShares-p.js';
-import { fetchKmsSigncryptedSharesV1 } from './fetchKmsSigncryptedSharesV1-p.js';
-import { fetchKmsSigncryptedSharesV2 } from './fetchKmsSigncryptedSharesV2-p.js';
+import { fetchKmsSigncryptedSharesV2NoGateway } from './fetchKmsSigncryptedSharesV2NoGateway-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -39,27 +38,26 @@ export type ReturnType = readonly TypedValue[];
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function decryptValuesFromPairs(fhevm: Context, parameters: Parameters): Promise<ReturnType> {
+export async function decryptValuesFromPairsNoGateway(fhevm: Context, parameters: Parameters): Promise<ReturnType> {
   const { transportKeyPair: transportKeyPair, fhevmContext } = parameters;
 
   let kmsSigncryptedShares: KmsSigncryptedShares;
 
-  // Route on the permit's OWN version, never the resolved protocol version. A signed
-  // permit is a self-describing artifact: its version fixes the EIP-712 message shape,
-  // so only the matching route can read it and reach the matching relayer endpoint.
-  // Keying off protocol version instead is indirect and breaks the moment the two
-  // diverge (e.g. a v1 permit used against a chain that now resolves to a newer
-  // protocol) — the artifact you are consuming is the source of truth, not the context.
-  //
-  //   v1: message.contractAddresses              -> fetchKmsSigncryptedSharesV1 -> POST v2/user-decrypt
-  //   v2: message.userAddress + allowedContracts -> fetchKmsSigncryptedSharesV2 -> POST v3/user-decrypt
-  if (parameters.signedPermit.version === 1) {
-    kmsSigncryptedShares = await fetchKmsSigncryptedSharesV1(fhevm, parameters);
-  } else {
-    kmsSigncryptedShares = await fetchKmsSigncryptedSharesV2(fhevm, {
+  // relayer-http's POST /v4/user-decrypt only accepts the unified attestation
+  // (attestationType "eip712-unified-user-decrypt-v1"), whose payload needs
+  // userAddress + allowedContracts — fields a V1 permit's signed message does
+  // not carry. So, unlike the WithGateway path, there is no v1 route here: a
+  // V1 permit cannot be forwarded to relayer-http at all.
+  if (parameters.signedPermit.version >= 2) {
+    kmsSigncryptedShares = await fetchKmsSigncryptedSharesV2NoGateway(fhevm, {
       ...parameters,
       options: parameters.options as RelayerUserDecryptOptions | undefined,
     });
+  } else {
+    throw new Error(
+      `Unsupported permit version for no-gateway decryption: ${parameters.signedPermit.version}. ` +
+        'relayer-http only accepts unified (V2) permits — sign one with signUnifiedDecryptionPermit.',
+    );
   }
 
   // Using the `KmsSigncryptedShares` decrypt and reconstruct clear values

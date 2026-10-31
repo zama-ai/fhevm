@@ -192,6 +192,11 @@ export type FetchWithRetryParameters = {
   readonly init?: RequestInit | undefined;
   readonly retries?: number | undefined;
   readonly retryDelayMs?: number | undefined;
+  readonly logger?:
+    | {
+        readonly warn: ((message: string) => void) | undefined;
+      }
+    | undefined;
 };
 
 /**
@@ -238,6 +243,9 @@ export async function fetchWithRetry(
       lastError = error;
 
       if (attempt < retries) {
+        args.logger?.warn?.(
+          `[fetchWithRetry] Fetch to ${url} failed (attempt ${attempt + 1}/${retries + 1}): ${formatFetchErrorMetaMessages(error).join('. ')}. Retrying.`,
+        );
         // Abortable delay between retries
         await abortableSleep(retryDelayMs, init?.signal ?? undefined);
       }

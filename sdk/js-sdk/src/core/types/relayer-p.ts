@@ -143,6 +143,38 @@ export type FetchDelegatedUserDecryptPayload = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+// Relayer Async Request No Gateway
+////////////////////////////////////////////////////////////////////////////////
+
+// https://github.com/zama-ai/fhevm-relayer — v4/user-decrypt (RFC-016 unified struct)
+// Source: relayer-http/crates/relayer-http/src/endpoint/{docs.md,flows/user_decrypt.rs}
+// POST /v4/user-decrypt - pub struct UserDecryptRequest
+export type FetchUserDecryptPayloadV2NoGateway = {
+  readonly attestationType: 'eip712-unified-user-decrypt-v1';
+  readonly payload: {
+    readonly handles: readonly HandleContractPairV2[];
+    // Hex encoded address with 0x prefix.
+    readonly userAddress: ChecksummedAddress;
+    // List of hex encoded addresses with 0x prefix (empty = permissive mode)
+    readonly allowedContracts: readonly ChecksummedAddress[];
+    readonly requestValidity: {
+      // Number as a string
+      readonly startTimestamp: string;
+      // Number as a string
+      readonly durationSeconds: string;
+    };
+    // Hex encoded key with 0x prefix.
+    readonly publicKey: BytesHex;
+    // Hex encoded bytes with 0x prefix. Default: 0x00
+    readonly extraData: BytesHex;
+  };
+  // Hex encoded signature with 0x prefix. Variable length: a 65-byte EOA ECDSA
+  // signature, an ERC-1271 smart-contract-wallet blob, or the empty `0x`
+  // pre-approved-hash flow. The relayer /v4 route forwards it verbatim.
+  readonly signature: BytesHex;
+};
+
+////////////////////////////////////////////////////////////////////////////////
 // Relayer Async Request
 ////////////////////////////////////////////////////////////////////////////////
 

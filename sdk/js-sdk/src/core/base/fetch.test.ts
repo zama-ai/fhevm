@@ -264,6 +264,79 @@ describe('fetchWithRetry', () => {
 
     expect(global.fetch).toHaveBeenCalledWith('https://example.com', init);
   });
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Abort with a reason not named 'AbortError'
+  //////////////////////////////////////////////////////////////////////////////
+
+  // Bug: aborts are detected by the error's `name`, but fetch rejects with
+  // signal.reason itself, so the error's shape depends on what the caller passed
+  // to abort(). Any other reason is mistaken for a network failure.
+
+  // A fetch that never answers on its own: it rejects with signal.reason once
+  // the signal aborts, as the real fetch does.
+  function pendingUntilAbortFetch(): typeof fetch {
+    return vi.fn(
+      (_url: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => {
+              reject(init.signal?.reason);
+            },
+            { once: true },
+          );
+        }),
+    ) as unknown as typeof fetch;
+  }
+
+  function warnLogger(): { debug: undefined; warn: ReturnType<typeof vi.fn>; error: undefined } {
+    return { debug: undefined, warn: vi.fn(), error: undefined };
+  }
+
+  it('propagates a null abort reason instead of crashing on it', async () => {
+    global.fetch = pendingUntilAbortFetch();
+    const controller = new AbortController();
+
+    const promise = fetchWithRetry({ url: 'https://example.com', init: { signal: controller.signal } }).catch(
+      (e: unknown) => e,
+    );
+    controller.abort(null);
+
+    expect(await promise).toBeNull();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat a string abort reason as a retryable network failure', async () => {
+    global.fetch = pendingUntilAbortFetch();
+    const logger = warnLogger();
+    const controller = new AbortController();
+
+    const promise = fetchWithRetry({ url: 'https://example.com', init: { signal: controller.signal }, logger }).catch(
+      (e: unknown) => e,
+    );
+    controller.abort('user left');
+
+    expect(await promise).toBe('user left');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a TimeoutError abort reason as a retryable network failure', async () => {
+    global.fetch = pendingUntilAbortFetch();
+    const logger = warnLogger();
+    const controller = new AbortController();
+    const timeoutReason = new DOMException('Timed out', 'TimeoutError');
+
+    const promise = fetchWithRetry({ url: 'https://example.com', init: { signal: controller.signal }, logger }).catch(
+      (e: unknown) => e,
+    );
+    controller.abort(timeoutReason);
+
+    expect(await promise).toBe(timeoutReason);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
 });
 
 ////////////////////////////////////////////////////////////////////////////////
