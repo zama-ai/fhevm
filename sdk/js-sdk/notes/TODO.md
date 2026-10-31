@@ -2,7 +2,7 @@
 
 ## Next step
 
-- [ ] **`assertRecordBytesHexNo0xArrayProperty` ignores `options.byteLength`** — `src/core/base/bytes.ts:1174`
+- [x] **`assertRecordBytesHexNo0xArrayProperty` ignores `options.byteLength`** — `src/core/base/bytes.ts:1174`
 
   Each item is checked with `isBytesHexNo0x(arr[i])`, without the length, although `isBytesHexNo0x(value, byteLength?)`
   accepts one. `byteLength` only shows up in the error's `expectedType` text, so an item of any length passes.
