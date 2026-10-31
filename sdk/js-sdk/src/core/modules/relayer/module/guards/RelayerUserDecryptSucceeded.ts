@@ -72,7 +72,7 @@ function _assertIsRelayerResult200UserDecrypt(
 
   // In v11 extraData is optional.
   const requiredExtraData = false;
-  _assertExtraData(value.result, name, requiredExtraData, options);
+  assertExtraDataFieldOnResultItems(value.result, name, requiredExtraData, options);
 
   _patchMissingExtraDataV11(value.result as Array<{ extraData?: BytesHex }>);
 }
@@ -95,7 +95,7 @@ function _patchMissingExtraDataV11(
  *
  * When `required` is true, every item must include `extraData`.
  */
-export function _assertExtraData(
+export function assertExtraDataFieldOnResultItems(
   result: readonly unknown[],
   name: string,
   required: boolean,

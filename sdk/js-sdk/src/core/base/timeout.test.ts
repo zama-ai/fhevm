@@ -126,6 +126,24 @@ describe('abortableSleep', () => {
     }
   });
 
+  it('reuses the abort reason name (e.g. TimeoutError) instead of always AbortError', async () => {
+    const controller = new AbortController();
+    const timeoutReason = new DOMException('Timed out', 'TimeoutError');
+
+    const promise = abortableSleep(1000, controller.signal);
+
+    vi.advanceTimersByTime(500);
+    controller.abort(timeoutReason);
+
+    try {
+      await promise;
+      throw new Error('Expected to throw');
+    } catch (error) {
+      expect((error as Error).name).toBe('TimeoutError');
+      expect((error as Error).cause).toBe(timeoutReason);
+    }
+  });
+
   //////////////////////////////////////////////////////////////////////////////
   // Timer cleanup
   //////////////////////////////////////////////////////////////////////////////
