@@ -82,7 +82,7 @@ export class RelayerHttpRequest {
     // 1. Build the request init (headers, body, auth, abort signal)
     // -------------------------------------------------------------------------
 
-    const { signal, cleanup } = this._createCombinedSignal();
+    const { signal, timedOutAfterMs, cleanup } = this._createCombinedSignal();
 
     // The build stays inside the try: JSON.stringify (e.g. a BigInt payload) and
     // setAuth (an invalid header) can throw, and cleanup() must still run.
@@ -102,7 +102,7 @@ export class RelayerHttpRequest {
         this._auth,
       );
 
-      return await this._runAfterInit(init);
+      return await this._runAfterInit(init, signal, timedOutAfterMs);
     } finally {
       cleanup();
     }
@@ -114,12 +114,20 @@ export class RelayerHttpRequest {
    * caller's signal straight to fetch, so a timeout can abort independently of
    * whether the caller passed a signal at all.
    *
-   * @returns `signal` to pass as `init.signal`, and `cleanup` to call once the
-   * request settles (success or failure) so neither the timer nor the listener
-   * on the caller's own signal lingers.
+   * @returns `signal` to pass as `init.signal`; `timedOutAfterMs`, which returns
+   * the timeout when our own timer aborted the signal (undefined otherwise); and
+   * `cleanup` to call once the request settles (success or failure) so neither
+   * the timer nor the listener on the caller's own signal lingers.
    */
-  private _createCombinedSignal(): { signal: AbortSignal; cleanup: () => void } {
+  private _createCombinedSignal(): {
+    signal: AbortSignal;
+    timedOutAfterMs: () => number | undefined;
+    cleanup: () => void;
+  } {
     const internalController = new AbortController();
+    // Set only by our own timer: the abort reason's name can't tell our timeout
+    // apart from the caller's own (e.g. AbortSignal.timeout() is a TimeoutError too).
+    let firedTimeoutMs: number | undefined;
     const externalSignal = this._signal;
     const onExternalAbort = (): void => {
       internalController.abort(externalSignal?.reason);
@@ -129,13 +137,19 @@ export class RelayerHttpRequest {
     } else {
       externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
     }
+    const timeoutMs = this._timeoutMs;
     const timeoutId =
-      this._timeoutMs !== undefined
+      timeoutMs !== undefined
         ? setTimeout(() => {
+            // Already aborted (by the caller): the first reason stands, it isn't our timeout.
+            if (internalController.signal.aborted) {
+              return;
+            }
+            firedTimeoutMs = timeoutMs;
             // Same reason AbortSignal.timeout() uses; a clearable timer, unlike that one.
             // https://developer.mozilla.org/docs/Web/API/AbortSignal/timeout
             internalController.abort(new DOMException('Timed out', 'TimeoutError'));
-          }, this._timeoutMs)
+          }, timeoutMs)
         : undefined;
     const cleanup = (): void => {
       if (timeoutId !== undefined) {
@@ -144,12 +158,38 @@ export class RelayerHttpRequest {
       externalSignal?.removeEventListener('abort', onExternalAbort);
     };
 
-    return { signal: internalController.signal, cleanup };
+    return { signal: internalController.signal, timedOutAfterMs: () => firedTimeoutMs, cleanup };
+  }
+
+  /**
+   * Throws if the request was aborted, classifying by who aborted it: our own
+   * timer gives RelayerHttpTimeoutError; anything else is the caller's
+   * cancellation, rethrown as the caller's own reason, unchanged (whatever its
+   * type, even null). Returns if the signal isn't aborted.
+   *
+   * The thrown error can't be used for this: fetch rejects with the abort reason
+   * itself, abortableSleep wraps it, and the caller chooses its name.
+   */
+  private _throwIfAborted(signal: AbortSignal, timedOutAfterMs: () => number | undefined, during: string): void {
+    if (!signal.aborted) {
+      return;
+    }
+    const timeoutMs = timedOutAfterMs();
+    if (timeoutMs !== undefined) {
+      this._logger?.warn?.(`[RelayerHttpRequest] Request to ${this._url} timed out${during}.`);
+      throw new RelayerHttpTimeoutError({ url: this._url, timeoutMs });
+    }
+    this._logger?.warn?.(`[RelayerHttpRequest] Request aborted on ${this._url}${during}.`);
+    throw signal.reason;
   }
 
   // Everything after the request init is built. Split out so `run()` can wrap it
   // in a try/finally that always clears the timeout timer, success or failure.
-  private async _runAfterInit(init: RequestInit): Promise<FetchUserDecryptResult> {
+  private async _runAfterInit(
+    init: RequestInit,
+    signal: AbortSignal,
+    timedOutAfterMs: () => number | undefined,
+  ): Promise<FetchUserDecryptResult> {
     // -------------------------------------------------------------------------
     // 2. Fetch with network-level retry
     // -------------------------------------------------------------------------
@@ -166,19 +206,9 @@ export class RelayerHttpRequest {
         logger: this._logger,
       });
     } catch (cause) {
-      // Only ours to claim if we actually set up a timer — a 'TimeoutError' from
-      // anywhere else isn't one we can attach a meaningful timeoutMs to.
-      if (this._timeoutMs !== undefined && (cause as { name?: string }).name === 'TimeoutError') {
-        this._logger?.warn?.(`[RelayerHttpRequest] Request to ${this._url} timed out.`);
-        throw new RelayerHttpTimeoutError({ url: this._url, timeoutMs: this._timeoutMs });
-      }
-
-      // AbortError is deliberate cancellation, not a network failure — propagate
-      // it as-is rather than wrapping it here.
-      if ((cause as { name?: string }).name === 'AbortError') {
-        this._logger?.warn?.(`[RelayerHttpRequest] Request aborted on ${this._url}.`);
-        throw cause;
-      }
+      // An aborted request is our timeout or the caller's cancellation, never a
+      // network failure.
+      this._throwIfAborted(signal, timedOutAfterMs, '');
 
       this._logger?.error?.(`[RelayerHttpRequest] Fetch failed on ${this._url}.`, cause);
 
@@ -206,15 +236,7 @@ export class RelayerHttpRequest {
       // still fail on its own (connection dropped mid-stream, the timeout firing
       // after headers but before the body finished, or the abort signal firing
       // in that same window).
-      if (this._timeoutMs !== undefined && (cause as { name?: string }).name === 'TimeoutError') {
-        this._logger?.warn?.(`[RelayerHttpRequest] Request to ${this._url} timed out while reading the response body.`);
-        throw new RelayerHttpTimeoutError({ url: this._url, timeoutMs: this._timeoutMs });
-      }
-
-      if ((cause as { name?: string }).name === 'AbortError') {
-        this._logger?.warn?.(`[RelayerHttpRequest] Request aborted on ${this._url} while reading the response body.`);
-        throw cause;
-      }
+      this._throwIfAborted(signal, timedOutAfterMs, ' while reading the response body');
 
       this._logger?.error?.(`[RelayerHttpRequest] Failed to read the response body on ${this._url}.`, cause);
 

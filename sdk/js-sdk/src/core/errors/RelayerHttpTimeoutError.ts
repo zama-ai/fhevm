@@ -18,9 +18,9 @@ export type RelayerHttpTimeoutErrorParams = Prettify<
 >;
 
 /**
- * `options.timeout` elapsed before the request completed. Distinct from a user
- * cancellation ({@link RelayerHttpFetchError}'s plain `AbortError` propagation) —
- * this is a policy decision this client made, not something the caller requested.
+ * `options.timeout` elapsed before the request completed. Distinct from a caller
+ * cancellation, where the caller's own abort reason is rethrown unchanged — this
+ * is a policy decision this client made, not something the caller requested.
  */
 export class RelayerHttpTimeoutError extends RelayerErrorBase {
   readonly #url: string;
