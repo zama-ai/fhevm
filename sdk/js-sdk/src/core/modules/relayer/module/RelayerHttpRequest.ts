@@ -132,6 +132,8 @@ export class RelayerHttpRequest {
     const timeoutId =
       this._timeoutMs !== undefined
         ? setTimeout(() => {
+            // Same reason AbortSignal.timeout() uses; a clearable timer, unlike that one.
+            // https://developer.mozilla.org/docs/Web/API/AbortSignal/timeout
             internalController.abort(new DOMException('Timed out', 'TimeoutError'));
           }, this._timeoutMs)
         : undefined;
