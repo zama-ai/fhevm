@@ -1,21 +1,16 @@
-import type { RelayerPublicDecryptOptions } from '../../types/relayer.js';
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type { EncryptedValueLike } from '../../types/encryptedTypes.js';
-import type { TypedValue } from '../../types/primitives.js';
-import { toFhevmHandle } from '../../handle/FhevmHandle.js';
-import { publicDecrypt as publicDecrypt_ } from '../../kms/publicDecrypt.js';
-import { clearValueToTypedValue } from '../../handle/ClearValue.js';
-import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
+import type {
+  DecryptPublicValueWithGatewayParameters,
+  DecryptPublicValueWithGatewayReturnType,
+} from './decryptPublicValueWithGateway.js';
+import { decryptPublicValueWithGateway } from './decryptPublicValueWithGateway.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type DecryptPublicValueParameters = {
-  readonly encryptedValue: EncryptedValueLike;
-  readonly options?: RelayerPublicDecryptOptions | undefined;
-};
+export type DecryptPublicValueParameters = DecryptPublicValueWithGatewayParameters;
 
-export type DecryptPublicValueReturnType = TypedValue;
+export type DecryptPublicValueReturnType = DecryptPublicValueWithGatewayReturnType;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -23,12 +18,5 @@ export async function decryptPublicValue(
   fhevm: Fhevm<FhevmChain>,
   parameters: DecryptPublicValueParameters,
 ): Promise<DecryptPublicValueReturnType> {
-  const handle = toFhevmHandle(parameters.encryptedValue);
-
-  const fhevmContext = await initPublicAction(fhevm);
-
-  const originToken = Symbol('decryptPublicValues');
-  const res = await publicDecrypt_(fhevm, { ...parameters, handles: [handle], originToken, fhevmContext });
-
-  return clearValueToTypedValue(res.orderedClearValues[0], originToken);
+  return decryptPublicValueWithGateway(fhevm, parameters);
 }

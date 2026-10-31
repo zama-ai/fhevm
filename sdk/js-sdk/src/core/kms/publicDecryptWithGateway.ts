@@ -33,7 +33,7 @@ type ReturnType = PublicDecryptionProof;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function publicDecrypt(context: Context, parameters: Parameters): Promise<ReturnType> {
+export async function publicDecryptWithGateway(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { handles, options, originToken, fhevmContext } = parameters;
 
   // Request side: build dynamic extraData from current context ID

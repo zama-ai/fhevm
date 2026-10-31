@@ -43,6 +43,36 @@ import {
   type DecryptPublicValuesWithSignaturesParameters,
   type DecryptPublicValuesWithSignaturesReturnType,
 } from '../../actions/base/decryptPublicValuesWithSignatures.js';
+import {
+  decryptPublicValueWithGateway,
+  type DecryptPublicValueWithGatewayParameters,
+  type DecryptPublicValueWithGatewayReturnType,
+} from '../../actions/base/decryptPublicValueWithGateway.js';
+import {
+  decryptPublicValueNoGateway,
+  type DecryptPublicValueNoGatewayParameters,
+  type DecryptPublicValueNoGatewayReturnType,
+} from '../../actions/base/decryptPublicValueNoGateway.js';
+import {
+  decryptPublicValuesWithGateway,
+  type DecryptPublicValuesWithGatewayParameters,
+  type DecryptPublicValuesWithGatewayReturnType,
+} from '../../actions/base/decryptPublicValuesWithGateway.js';
+import {
+  decryptPublicValuesNoGateway,
+  type DecryptPublicValuesNoGatewayParameters,
+  type DecryptPublicValuesNoGatewayReturnType,
+} from '../../actions/base/decryptPublicValuesNoGateway.js';
+import {
+  decryptPublicValuesWithSignaturesWithGateway,
+  type DecryptPublicValuesWithSignaturesWithGatewayParameters,
+  type DecryptPublicValuesWithSignaturesWithGatewayReturnType,
+} from '../../actions/base/decryptPublicValuesWithSignaturesWithGateway.js';
+import {
+  decryptPublicValuesWithSignaturesNoGateway,
+  type DecryptPublicValuesWithSignaturesNoGatewayParameters,
+  type DecryptPublicValuesWithSignaturesNoGatewayReturnType,
+} from '../../actions/base/decryptPublicValuesWithSignaturesNoGateway.js';
 import { ensureFrozenContext } from '../../frozenContext/ensureFrozenContext-p.js';
 import {
   signLegacyDecryptionPermit,
@@ -76,6 +106,12 @@ export type BaseActions = {
    * ```
    */
   readonly decryptPublicValue: (parameters: DecryptPublicValueParameters) => Promise<DecryptPublicValueReturnType>;
+  readonly decryptPublicValueWithGateway: (
+    parameters: DecryptPublicValueWithGatewayParameters,
+  ) => Promise<DecryptPublicValueWithGatewayReturnType>;
+  readonly decryptPublicValueNoGateway: (
+    parameters: DecryptPublicValueNoGatewayParameters,
+  ) => Promise<DecryptPublicValueNoGatewayReturnType>;
   /**
    * Reads the decrypted (clear) values of encrypted values that were made public.
    *
@@ -96,6 +132,12 @@ export type BaseActions = {
    * ```
    */
   readonly decryptPublicValues: (parameters: DecryptPublicValuesParameters) => Promise<DecryptPublicValuesReturnType>;
+  readonly decryptPublicValuesWithGateway: (
+    parameters: DecryptPublicValuesWithGatewayParameters,
+  ) => Promise<DecryptPublicValuesWithGatewayReturnType>;
+  readonly decryptPublicValuesNoGateway: (
+    parameters: DecryptPublicValuesNoGatewayParameters,
+  ) => Promise<DecryptPublicValuesNoGatewayReturnType>;
   /**
    * Reads the decrypted (clear) value of an encrypted value that was made public.
    *
@@ -130,6 +172,12 @@ export type BaseActions = {
   readonly decryptPublicValuesWithSignatures: (
     parameters: DecryptPublicValuesWithSignaturesParameters,
   ) => Promise<DecryptPublicValuesWithSignaturesReturnType>;
+  readonly decryptPublicValuesWithSignaturesWithGateway: (
+    parameters: DecryptPublicValuesWithSignaturesWithGatewayParameters,
+  ) => Promise<DecryptPublicValuesWithSignaturesWithGatewayReturnType>;
+  readonly decryptPublicValuesWithSignaturesNoGateway: (
+    parameters: DecryptPublicValuesWithSignaturesNoGatewayParameters,
+  ) => Promise<DecryptPublicValuesWithSignaturesNoGatewayReturnType>;
   /**
    * Signs a decryption permit.
    *
@@ -192,8 +240,16 @@ export type BaseActions = {
 function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
   return {
     decryptPublicValue: (parameters) => decryptPublicValue(fhevm, parameters),
+    decryptPublicValueWithGateway: (parameters) => decryptPublicValueWithGateway(fhevm, parameters),
+    decryptPublicValueNoGateway: (parameters) => decryptPublicValueNoGateway(fhevm, parameters),
     decryptPublicValues: (parameters) => decryptPublicValues(fhevm, parameters),
+    decryptPublicValuesWithGateway: (parameters) => decryptPublicValuesWithGateway(fhevm, parameters),
+    decryptPublicValuesNoGateway: (parameters) => decryptPublicValuesNoGateway(fhevm, parameters),
     decryptPublicValuesWithSignatures: (parameters) => decryptPublicValuesWithSignatures(fhevm, parameters),
+    decryptPublicValuesWithSignaturesWithGateway: (parameters) =>
+      decryptPublicValuesWithSignaturesWithGateway(fhevm, parameters),
+    decryptPublicValuesWithSignaturesNoGateway: (parameters) =>
+      decryptPublicValuesWithSignaturesNoGateway(fhevm, parameters),
     signDecryptionPermit: (parameters) => signDecryptionPermit(fhevm, parameters),
     signLegacyDecryptionPermit: (parameters) => signLegacyDecryptionPermit(fhevm, parameters),
     signUnifiedDecryptionPermit: (parameters) => signUnifiedDecryptionPermit(fhevm, parameters),
