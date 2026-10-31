@@ -44,6 +44,7 @@ describe('RelayerHttpRequest external signal cleanup', () => {
     const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
 
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: controller.signal },
@@ -65,6 +66,7 @@ describe('RelayerHttpRequest external signal cleanup', () => {
     const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
 
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: controller.signal },
@@ -96,6 +98,7 @@ describe('RelayerHttpRequest external signal cleanup', () => {
     const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
 
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: { value: 1n },
       options: { signal: controller.signal, timeout: 60_000 },
@@ -145,6 +148,7 @@ describe('RelayerHttpRequest external signal cleanup', () => {
 
     const controller = new AbortController();
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: controller.signal, timeout: 60_000 },
@@ -162,7 +166,7 @@ describe('RelayerHttpRequest external signal cleanup', () => {
   it('does not touch the signal at all when none is provided', async () => {
     global.fetch = vi.fn().mockResolvedValue(new Response(successBody(), { status: 200 }));
 
-    const request = new RelayerHttpRequest({ url: RELAYER_URL, payload: {} });
+    const request = new RelayerHttpRequest({ relayerOperation: 'USER_DECRYPT', url: RELAYER_URL, payload: {} });
 
     await expect(request.run()).resolves.toBeDefined();
   });
@@ -224,6 +228,7 @@ describe('RelayerHttpRequest abort classification', () => {
     const controller = new AbortController();
     controller.abort('gone');
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: controller.signal },
@@ -242,6 +247,7 @@ describe('RelayerHttpRequest abort classification', () => {
     const controller = new AbortController();
     controller.abort(null);
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: controller.signal },
@@ -258,6 +264,7 @@ describe('RelayerHttpRequest abort classification', () => {
 
     const controller = new AbortController();
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: controller.signal },
@@ -279,6 +286,7 @@ describe('RelayerHttpRequest abort classification', () => {
 
     const controller = new AbortController();
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: controller.signal, fetchRetries: 3, fetchRetryDelayInMilliseconds: 1000 },
@@ -303,6 +311,7 @@ describe('RelayerHttpRequest abort classification', () => {
     const controller = new AbortController();
     const callerReason = new DOMException('Caller timed out', 'TimeoutError');
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: controller.signal, timeout: 60_000 },
@@ -322,6 +331,7 @@ describe('RelayerHttpRequest abort classification', () => {
     const controller = new AbortController();
     const callerReason = new DOMException('Caller timed out', 'TimeoutError');
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: controller.signal, timeout: 60_000, fetchRetries: 3, fetchRetryDelayInMilliseconds: 1000 },
@@ -342,7 +352,12 @@ describe('RelayerHttpRequest abort classification', () => {
     vi.useFakeTimers();
     global.fetch = pendingUntilAbortFetch();
 
-    const request = new RelayerHttpRequest({ url: RELAYER_URL, payload: {}, options: { timeout: 500 } });
+    const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
+      url: RELAYER_URL,
+      payload: {},
+      options: { timeout: 500 },
+    });
 
     const run = request.run().catch((e: unknown) => e);
     await vi.advanceTimersByTimeAsync(500);
@@ -358,6 +373,7 @@ describe('RelayerHttpRequest abort classification', () => {
     global.fetch = fetchMock;
 
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { timeout: 500, fetchRetries: 3, fetchRetryDelayInMilliseconds: 1000 },
@@ -374,7 +390,12 @@ describe('RelayerHttpRequest abort classification', () => {
     vi.useFakeTimers();
     global.fetch = stalledBodyFetch();
 
-    const request = new RelayerHttpRequest({ url: RELAYER_URL, payload: {}, options: { timeout: 500 } });
+    const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
+      url: RELAYER_URL,
+      payload: {},
+      options: { timeout: 500 },
+    });
 
     const run = request.run().catch((e: unknown) => e);
     await vi.advanceTimersByTimeAsync(500);
@@ -387,6 +408,7 @@ describe('RelayerHttpRequest abort classification', () => {
 
     const controller = new AbortController();
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: controller.signal },
@@ -403,6 +425,7 @@ describe('RelayerHttpRequest abort classification', () => {
 
     const controller = new AbortController();
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: controller.signal },
@@ -419,6 +442,7 @@ describe('RelayerHttpRequest abort classification', () => {
 
     const callerSignal = AbortSignal.timeout(10);
     const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
       url: RELAYER_URL,
       payload: {},
       options: { signal: callerSignal, timeout: 60_000 },
@@ -443,12 +467,26 @@ describe('RelayerHttpRequest options.timeout validation', () => {
     ['Infinity', Number.POSITIVE_INFINITY],
     ['above 2^31-1 ms', 2_147_483_648],
   ])('rejects a %s timeout when the request is created', (_label, timeout) => {
-    expect(() => new RelayerHttpRequest({ url: RELAYER_URL, payload: {}, options: { timeout } })).toThrow(
-      InvalidPropertyError,
-    );
+    expect(
+      () =>
+        new RelayerHttpRequest({
+          relayerOperation: 'USER_DECRYPT',
+          url: RELAYER_URL,
+          payload: {},
+          options: { timeout },
+        }),
+    ).toThrow(InvalidPropertyError);
   });
 
   it.each([1, 2_147_483_647])('accepts a %d ms timeout', (timeout) => {
-    expect(() => new RelayerHttpRequest({ url: RELAYER_URL, payload: {}, options: { timeout } })).not.toThrow();
+    expect(
+      () =>
+        new RelayerHttpRequest({
+          relayerOperation: 'USER_DECRYPT',
+          url: RELAYER_URL,
+          payload: {},
+          options: { timeout },
+        }),
+    ).not.toThrow();
   });
 });

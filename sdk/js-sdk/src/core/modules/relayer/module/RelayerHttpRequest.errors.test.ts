@@ -23,7 +23,7 @@ describe('RelayerHttpRequest error responses', () => {
     const body = { code: 'acl_denied', message: 'not allowed', requestId: VALID_REQUEST_ID };
     global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 403 }));
 
-    const request = new RelayerHttpRequest({ url: RELAYER_URL, payload: {} });
+    const request = new RelayerHttpRequest({ relayerOperation: 'USER_DECRYPT', url: RELAYER_URL, payload: {} });
     const error = await request.run().catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(RelayerHttpResponseError);
@@ -43,12 +43,15 @@ describe('RelayerHttpRequest error responses', () => {
     ['message missing', { code: 'acl_denied', requestId: VALID_REQUEST_ID }],
     ['requestId missing', { code: 'acl_denied', message: 'not allowed' }],
     ['requestId not a UUIDv7', { code: 'acl_denied', message: 'not allowed', requestId: 'req-123' }],
-    ['requestId a UUIDv4', { code: 'acl_denied', message: 'not allowed', requestId: '9b2c1f4e-3a5d-4e6f-8a7b-1c2d3e4f5a6b' }],
+    [
+      'requestId a UUIDv4',
+      { code: 'acl_denied', message: 'not allowed', requestId: '9b2c1f4e-3a5d-4e6f-8a7b-1c2d3e4f5a6b' },
+    ],
   ])('throws RelayerHttpUnexpectedResponseError for an error body with %s', async (_label, body) => {
     const text = JSON.stringify(body);
     global.fetch = vi.fn().mockResolvedValue(new Response(text, { status: 403 }));
 
-    const request = new RelayerHttpRequest({ url: RELAYER_URL, payload: {} });
+    const request = new RelayerHttpRequest({ relayerOperation: 'USER_DECRYPT', url: RELAYER_URL, payload: {} });
     const error = await request.run().catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(RelayerHttpUnexpectedResponseError);
@@ -62,7 +65,7 @@ describe('RelayerHttpRequest error responses', () => {
   it('throws RelayerHttpUnexpectedResponseError for a non-2xx response whose body is JSON null', async () => {
     global.fetch = vi.fn().mockResolvedValue(new Response('null', { status: 502 }));
 
-    const request = new RelayerHttpRequest({ url: RELAYER_URL, payload: {} });
+    const request = new RelayerHttpRequest({ relayerOperation: 'USER_DECRYPT', url: RELAYER_URL, payload: {} });
 
     await expect(request.run()).rejects.toBeInstanceOf(RelayerHttpUnexpectedResponseError);
   });
@@ -77,7 +80,7 @@ describe('RelayerHttpRequest error responses', () => {
     global.fetch = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
     const parseSpy = vi.spyOn(JSON, 'parse');
 
-    const request = new RelayerHttpRequest({ url: RELAYER_URL, payload: {} });
+    const request = new RelayerHttpRequest({ relayerOperation: 'USER_DECRYPT', url: RELAYER_URL, payload: {} });
     const error = await request.run().catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(RelayerHttpFetchError);
@@ -91,7 +94,7 @@ describe('RelayerHttpRequest error responses', () => {
     global.fetch = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
     const parseSpy = vi.spyOn(JSON, 'parse');
 
-    const request = new RelayerHttpRequest({ url: RELAYER_URL, payload: {} });
+    const request = new RelayerHttpRequest({ relayerOperation: 'USER_DECRYPT', url: RELAYER_URL, payload: {} });
     await request.run().catch((e: unknown) => e);
 
     expect(parseSpy).toHaveBeenCalledTimes(1);
@@ -106,7 +109,7 @@ describe('RelayerHttpRequest error responses', () => {
     });
     global.fetch = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
 
-    const request = new RelayerHttpRequest({ url: RELAYER_URL, payload: {} });
+    const request = new RelayerHttpRequest({ relayerOperation: 'USER_DECRYPT', url: RELAYER_URL, payload: {} });
     const error = await request.run().catch((e: unknown) => e);
 
     expect(error).toBeInstanceOf(RelayerHttpFetchError);

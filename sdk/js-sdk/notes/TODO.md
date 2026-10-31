@@ -1,3 +1,21 @@
+# TODO
+
+## Next step
+
+- [ ] **`assertRecordBytesHexNo0xArrayProperty` ignores `options.byteLength`** — `src/core/base/bytes.ts:1174`
+
+  Each item is checked with `isBytesHexNo0x(arr[i])`, without the length, although `isBytesHexNo0x(value, byteLength?)`
+  accepts one. `byteLength` only shows up in the error's `expectedType` text, so an item of any length passes.
+
+  - **Impact:** `RelayerHttpRequest`'s public-decrypt check passes `{ byteLength: 65 }` for `result.signatures`; a
+    signature of the wrong length is accepted there. The only other caller (`guards/RelayerPublicDecryptSucceeded.ts:60`)
+    passes no `byteLength`, so it is unaffected.
+  - **Failing test:** `RelayerHttpRequest.publicDecrypt.test.ts` › `throws RelayerHttpResultError when a signature is
+    not 65 bytes`.
+  - **Fix:** `isBytesHexNo0x(arr[i], options.byteLength)`, plus a `bytes.test.ts` case for a wrong-length item.
+
+## Backlog
+
 - JSDoc on all public fn in API: decrypt/encrypt/base modules
 - Cleanup public API modules
 - in test : call a non-public API fn -> something more advanced

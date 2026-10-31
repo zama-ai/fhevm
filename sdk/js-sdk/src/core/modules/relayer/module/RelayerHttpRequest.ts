@@ -1,7 +1,10 @@
 import type { Auth } from '../../../types/auth.js';
 import type { Logger } from '../../../types/logger.js';
 import type {
+  FetchPublicDecryptResult,
+  FetchResultOf,
   FetchUserDecryptResult,
+  RelayerPostOperation,
   RelayerPublicDecryptOptions,
   RelayerUserDecryptOptions,
 } from '../../../types/relayer.js';
@@ -11,8 +14,12 @@ import { fetchWithRetry, normalizeHeaders } from '../../../base/fetch.js';
 import { isNonEmptyString, isRecordStringProperty, assertRecordStringProperty } from '../../../base/string.js';
 import { isUuidV7 } from '../../../base/uuidv7.js';
 import { isUintNumber } from '../../../base/uint.js';
-import { assertRecordBytesHexNo0xProperty } from '../../../base/bytes.js';
-import { assertRecordArrayProperty } from '../../../base/record.js';
+import {
+  assertRecordBytesHexNo0xArrayProperty,
+  assertRecordBytesHexNo0xProperty,
+  assertRecordBytesHexProperty,
+} from '../../../base/bytes.js';
+import { assertRecordArrayProperty, assertRecordNonNullableProperty } from '../../../base/record.js';
 import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
 import { assertExtraDataFieldOnResultItems } from './guards/RelayerUserDecryptSucceeded.js';
 import { appendRelayerQuery, normalizeRelayerQuery } from './relayerUrl.js';
@@ -69,19 +76,21 @@ function _validateTimeoutMs(timeout: number | undefined): number | undefined {
   return timeout;
 }
 
-type RelayerHttpRequestParams = {
+// The relayer-http routes this client targets.
+type RelayerHttpOperation = Extract<RelayerPostOperation, 'USER_DECRYPT' | 'PUBLIC_DECRYPT'>;
+
+type RelayerHttpRequestParams<O extends RelayerHttpOperation> = {
+  relayerOperation: O;
   url: string;
   payload: Record<string, unknown>;
   // onProgress is ignored: this is a single-shot request, not a polled job, so
   // there's no intermediate progress to report.
-  options?:
-    | Omit<RelayerUserDecryptOptions, 'onProgress'>
-    | Omit<RelayerPublicDecryptOptions, 'onProgress'>
-    | undefined;
+  options?: Omit<RelayerUserDecryptOptions, 'onProgress'> | Omit<RelayerPublicDecryptOptions, 'onProgress'> | undefined;
   logger?: Logger | undefined;
 };
 
-export class RelayerHttpRequest {
+export class RelayerHttpRequest<O extends RelayerHttpOperation> {
+  private readonly _relayerOperation: O;
   private readonly _url: string;
   private readonly _payload: Record<string, unknown>;
   private readonly _auth: Auth | undefined;
@@ -94,7 +103,24 @@ export class RelayerHttpRequest {
   private readonly _logger: Logger | undefined;
   private _hasRun: boolean;
 
-  constructor(params: RelayerHttpRequestParams) {
+  constructor(params: RelayerHttpRequestParams<O>) {
+    if (
+      (params.relayerOperation as unknown) !== 'USER_DECRYPT' &&
+      (params.relayerOperation as unknown) !== 'PUBLIC_DECRYPT'
+    ) {
+      throw new InvalidPropertyError(
+        {
+          subject: 'RelayerHttpRequestParams',
+          property: 'relayerOperation',
+          expectedType: 'string',
+          value: params.relayerOperation,
+          expectedValue: 'USER_DECRYPT | PUBLIC_DECRYPT',
+        },
+        {},
+      );
+    }
+
+    this._relayerOperation = params.relayerOperation;
     this._url = params.url;
     this._payload = params.payload;
     this._auth = params.options?.auth;
@@ -108,7 +134,7 @@ export class RelayerHttpRequest {
     this._hasRun = false;
   }
 
-  public async run(): Promise<FetchUserDecryptResult> {
+  public async run(): Promise<FetchResultOf<O>> {
     if (this._hasRun) {
       throw new Error(
         'RelayerHttpRequest.run() was already called on this instance. Create a new instance per request.',
@@ -227,7 +253,7 @@ export class RelayerHttpRequest {
     init: RequestInit,
     signal: AbortSignal,
     timedOutAfterMs: () => number | undefined,
-  ): Promise<FetchUserDecryptResult> {
+  ): Promise<FetchResultOf<O>> {
     // -------------------------------------------------------------------------
     // 2. Fetch with network-level retry
     // -------------------------------------------------------------------------
@@ -375,38 +401,64 @@ export class RelayerHttpRequest {
       });
     }
 
-    // {
-    //   "status": "succeeded",
-    //   "requestId": "<uuidv7>",
-    //   "result": [
-    //     {
-    //        "payload": "<hex, no 0x>",
-    //        "signature": "<65-byte hex, no 0x>",
-    //        "extraData": "<hex, with 0x>"
-    //     }
-    //   ]
-    // }
-    //
-    // Wrapped in try/catch so a schema mismatch (a well-formed, status-ok body that
-    // still doesn't match the expected shape) is logged and surfaced as a typed
-    // RelayerHttpResultError, consistent with every other failure mode above,
-    // instead of leaking the raw InvalidPropertyError from the guard helpers.
-    try {
-      _assertIsRelayerHttpUserDecryptResult(bodyJson, 'body');
-    } catch (cause) {
-      this._logger?.error?.(
-        `[RelayerHttpRequest] Response body on ${this._url} does not match the expected schema.`,
-        cause,
-      );
-      throw new RelayerHttpResultError({
-        url: this._url,
-        cause: cause as InvalidPropertyError,
-        bodyJson: bodyText.slice(0, 500),
-      });
+    // Each assert is wrapped in try/catch so a schema mismatch (a well-formed,
+    // status-ok body that still doesn't match the expected shape) surfaces as a
+    // typed RelayerHttpResultError, not the guard helpers' raw InvalidPropertyError.
+    const relayerOperation: RelayerHttpOperation = this._relayerOperation;
+    switch (relayerOperation) {
+      case 'USER_DECRYPT': {
+        // {
+        //   "status": "succeeded",
+        //   "requestId": "<uuidv7>",
+        //   "result": [
+        //     {
+        //        "payload": "<hex, no 0x>",
+        //        "signature": "<65-byte hex, no 0x>",
+        //        "extraData": "<hex, with 0x>"
+        //     }
+        //   ]
+        // }
+        try {
+          _assertIsRelayerHttpUserDecryptResult(bodyJson, 'body');
+        } catch (cause) {
+          throw this._resultError(cause, bodyText);
+        }
+        return bodyJson.result as FetchResultOf<O>;
+      }
+      case 'PUBLIC_DECRYPT': {
+        // {
+        //   "status": "succeeded",
+        //   "requestId": "<uuidv7>",
+        //   "result": {
+        //     "decryptedValue": "<hex, no 0x>",
+        //     "signatures": ["<65-byte hex, no 0x>", ...],
+        //     "extraData": "<hex, with 0x>"
+        //   }
+        // }
+        try {
+          _assertIsRelayerHttpPublicDecryptResult(bodyJson, 'body');
+        } catch (cause) {
+          throw this._resultError(cause, bodyText);
+        }
+        return bodyJson.result as FetchResultOf<O>;
+      }
+      default:
+        // Unreachable: the constructor rejects any other operation.
+        throw new Error(`Unknown relayer operation: ${String(relayerOperation)}`);
     }
+  }
 
-    // Narrowed to { result: FetchUserDecryptResult } by the assert above.
-    return bodyJson.result;
+  // Logs a success body that failed its schema check and wraps the guard's error.
+  private _resultError(cause: unknown, bodyText: string): RelayerHttpResultError {
+    this._logger?.error?.(
+      `[RelayerHttpRequest] Response body on ${this._url} does not match the expected schema.`,
+      cause,
+    );
+    return new RelayerHttpResultError({
+      url: this._url,
+      cause: cause as InvalidPropertyError,
+      bodyJson: bodyText.slice(0, 500),
+    });
   }
 }
 
@@ -433,6 +485,34 @@ function _isRelayerHttpErrorBody(value: unknown): value is { code: string; messa
     isRecordStringProperty(value, 'requestId') &&
     isUuidV7(value.requestId)
   );
+}
+
+/**
+ * Asserts that `value` carries relayer-http's success envelope, shared by every
+ * route: `status` is `"succeeded"` and `requestId` is a UUIDv7.
+ *
+ * @param value - The parsed response body to validate.
+ * @param name - The subject name used in a thrown error, e.g. `'body'`.
+ * @throws If `status` isn't `"succeeded"` or `requestId` isn't a UUIDv7.
+ */
+function _assertIsRelayerHttpSucceeded(
+  value: unknown,
+  name: string,
+): asserts value is { status: 'succeeded'; requestId: string } {
+  assertRecordStringProperty(value, 'status', name, { expectedValue: 'succeeded' });
+  assertRecordStringProperty(value, 'requestId', name, {});
+  if (!isUuidV7(value.requestId)) {
+    throw new InvalidPropertyError(
+      {
+        subject: name,
+        property: 'requestId',
+        expectedType: 'UUIDv7',
+        type: 'string',
+        value: value.requestId,
+      },
+      {},
+    );
+  }
 }
 
 /**
@@ -467,20 +547,7 @@ function _assertIsRelayerHttpUserDecryptResult(
   value: unknown,
   name: string,
 ): asserts value is { result: FetchUserDecryptResult } {
-  assertRecordStringProperty(value, 'status', name, { expectedValue: 'succeeded' });
-  assertRecordStringProperty(value, 'requestId', name, {});
-  if (!isUuidV7(value.requestId)) {
-    throw new InvalidPropertyError(
-      {
-        subject: name,
-        property: 'requestId',
-        expectedType: 'UUIDv7',
-        type: 'string',
-        value: value.requestId,
-      },
-      {},
-    );
-  }
+  _assertIsRelayerHttpSucceeded(value, name);
 
   assertRecordArrayProperty(value, 'result', name, {});
   // A 200 success with zero shares is anomalous: the aggregator only returns
@@ -506,4 +573,54 @@ function _assertIsRelayerHttpUserDecryptResult(
   // relayer-http always includes extraData on every share (UserDecryptShare.extra_data
   // is a required field, not Option<...>) — no v11-style legacy omission to tolerate here.
   assertExtraDataFieldOnResultItems(value.result, name, /* required */ true, {});
+}
+
+/**
+ * Asserts that `value` matches relayer-http's `POST /v4/public-decrypt` success body:
+ *
+ * ```json
+ * {
+ *   "status": "succeeded",
+ *   "requestId": "<uuidv7>",
+ *   "result": {
+ *     "decryptedValue": "<hex, no 0x>",
+ *     "signatures": ["<65-byte hex, no 0x>", ...],
+ *     "extraData": "<hex, with 0x>"
+ *   }
+ * }
+ * ```
+ *
+ * @param value - The parsed response body to validate.
+ * @param name - The subject name used in a thrown error, e.g. `'body'`.
+ * @returns Nothing; narrows `value`'s type on success.
+ * @throws If the envelope is invalid, `value.result` is missing or null, or its
+ * `decryptedValue`, `signatures` (non-empty), or `extraData` does not match the
+ * expected hex shape.
+ */
+function _assertIsRelayerHttpPublicDecryptResult(
+  value: unknown,
+  name: string,
+): asserts value is { result: FetchPublicDecryptResult } {
+  _assertIsRelayerHttpSucceeded(value, name);
+
+  assertRecordNonNullableProperty(value, 'result', name, {});
+  const result: unknown = value.result;
+  const resultName = `${name}.result`;
+  assertRecordBytesHexNo0xProperty(result, 'decryptedValue', resultName, {});
+  assertRecordBytesHexNo0xArrayProperty(result, 'signatures', resultName, { byteLength: 65 });
+  // Success is only returned once the KMS threshold is reached, so at least one signature.
+  if (result.signatures.length === 0) {
+    throw new InvalidPropertyError(
+      {
+        subject: resultName,
+        property: 'signatures',
+        expectedType: 'non-empty array',
+        type: 'array',
+        value: '[]',
+      },
+      {},
+    );
+  }
+  // relayer-http always includes extraData (PublicDecryptOutput.extra_data is a String, not Option<...>).
+  assertRecordBytesHexProperty(result, 'extraData', resultName, {});
 }
