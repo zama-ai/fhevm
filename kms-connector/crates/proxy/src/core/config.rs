@@ -54,7 +54,7 @@ pub struct Config {
         default = "default_endpoint_healthcheck_frequency"
     )]
     pub endpoint_healthcheck_frequency: Duration,
-    /// How long the proxy waits for an endpoint response before answering `502`.
+    /// How long the proxy waits for an endpoint response before answering `504`.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_response_timeout"
@@ -159,7 +159,7 @@ fn default_endpoint_healthcheck_frequency() -> Duration {
 
 fn default_endpoint_response_timeout() -> Duration {
     // Should exceed the endpoint's `decryption_timeout` (30s by default) so the endpoint's own
-    // `504 timeout` reaches the relayer instead of a proxy `502`.
+    // `504 timeout` reaches the relayer instead of the proxy's own.
     Duration::from_secs(60)
 }
 

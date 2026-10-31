@@ -29,6 +29,7 @@ tracing.workspace = true
 tracing-opentelemetry.workspace = true
 
 [dev-dependencies]
+futures.workspace = true
 rcgen.workspace = true
 rstest.workspace = true
 rustls.workspace = true

@@ -5,8 +5,8 @@ mod common;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::transports::http::reqwest::StatusCode;
 use common::{
-    MAX_BODY_BYTES, StubEndpoint, TestProxy, auth_header, auth_header_expiring, free_addr, now,
-    sender,
+    MAX_BODY_BYTES, MID_BODY_OUTPUT, MID_BODY_SENT, StubEndpoint, TestProxy, auth_header,
+    auth_header_expiring, free_addr, now, sender,
 };
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
@@ -358,6 +358,8 @@ async fn test_upstream_timeout() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    // The request body was read, so only the proxy can say the connection closes after the answer.
+    assert_eq!(response.headers()["connection"], "close");
     let error: ErrorResponse = response.json().await.unwrap();
     assert_eq!(error.code, ErrorCode::Timeout);
     assert!(error.retryable);
@@ -380,6 +382,31 @@ async fn test_unreachable_endpoint() {
     let error: ErrorResponse = response.json().await.unwrap();
     assert_eq!(error.code, ErrorCode::UpstreamTransient);
     assert!(error.retryable);
+}
+
+#[tokio::test]
+async fn test_endpoint_failure_mid_body_cuts_the_answer_short() {
+    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+
+    let mut response = t
+        .post(PUBLIC_DECRYPTION_ROUTE, "{}")
+        .await
+        .header("x-stub-fail-mid-body", "1")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    // The client gets what the endpoint sent, then the end of the connection: no error answer
+    // inside the started body, and no answer that looks complete.
+    let mut received = Vec::new();
+    let end = loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => received.extend_from_slice(&chunk),
+            end => break end,
+        }
+    };
+    assert_eq!(received, MID_BODY_OUTPUT[..MID_BODY_SENT]);
+    assert!(end.is_err(), "{end:?}");
 }
 
 // ---------------------------------------------------------------------------------------------
