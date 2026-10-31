@@ -1,13 +1,11 @@
 mod error;
 mod http;
 pub mod in_flight;
+mod instance;
 mod metrics;
 mod pad_source;
 pub mod pads;
-mod path;
 pub mod waiter;
-
-pub use path::PrfPath;
 
 use anyhow::{bail, Context};
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};

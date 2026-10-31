@@ -1,8 +1,8 @@
 //! Adds requests to the `pads` table, within the budget of each connector.
 
-use crate::path::PrfPath;
 use alloy::primitives::{Address, B256};
 use anyhow::Context;
+use ciphertext_attestation::PrfOutputRef;
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
 use sqlx::PgPool;
 use std::{
@@ -57,7 +57,11 @@ impl Admissions {
 
     /// Joins the row of the request, or adds the row if `connector` has budget for it.
     // TODO: take a signer that the FhevmSig check gives, not an Address. Do it after fhevm#4558.
-    pub async fn admit(&self, path: &PrfPath, connector: Address) -> anyhow::Result<Admission> {
+    pub async fn admit(
+        &self,
+        path: &PrfOutputRef,
+        connector: Address,
+    ) -> anyhow::Result<Admission> {
         if let Some(state) = read(&self.pool, path).await? {
             return Ok(Admission::Existing(state));
         }
@@ -90,7 +94,7 @@ impl Admissions {
 async fn add(
     pool: &PgPool,
     max_pending_bits: i64,
-    path: &PrfPath,
+    path: &PrfOutputRef,
     connector: Address,
 ) -> anyhow::Result<Admission> {
     let mut tx = pool.begin().await?;
@@ -121,7 +125,7 @@ async fn add(
         "INSERT INTO pads (prf_instance, label, pad_length, triggered_by)
              VALUES ($1, $2, $3, $4)
              ON CONFLICT DO NOTHING",
-        i32::from(path.prf),
+        i32::from(path.prf_id),
         path.label.as_slice(),
         i32::from(path.pad_length),
         connector.as_slice(),
@@ -139,12 +143,12 @@ async fn add(
 }
 
 /// Reads the row of `path`, if it exists.
-pub async fn read(pool: &PgPool, path: &PrfPath) -> anyhow::Result<Option<PadState>> {
+pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<PadState>> {
     let Some(row) = sqlx::query!(
         "SELECT is_error, ciphertext128, ciphertext_digest, sns_ciphertext_digest, signer, signature
            FROM pads
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
-        i32::from(path.prf),
+        i32::from(path.prf_id),
         path.label.as_slice(),
         i32::from(path.pad_length),
     )

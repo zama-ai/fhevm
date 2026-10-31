@@ -1,5 +1,4 @@
-use crate::path::PrfPath;
-use ciphertext_attestation::keccak_b256;
+use ciphertext_attestation::{keccak_b256, PrfOutputRef};
 
 pub struct Pad {
     pub ct64: Vec<u8>,
@@ -8,14 +7,14 @@ pub struct Pad {
 
 // TODO: replace with the pads that the pad-worker computes.
 /// Deterministic mock pad: one 32-byte entry for each block, the same on all coprocessors.
-pub fn mock_pad(path: &PrfPath, block_bits: u32) -> Pad {
+pub fn mock_pad(path: &PrfOutputRef, block_bits: u32) -> Pad {
     let blocks = u32::from(path.pad_length).div_ceil(block_bits);
     let entries = |tag: &[u8]| -> Vec<u8> {
         (0..blocks)
             .flat_map(|i| {
                 let preimage = [
                     tag,
-                    &path.prf.to_be_bytes(),
+                    &path.prf_id.to_be_bytes(),
                     path.label.as_slice(),
                     &path.pad_length.to_be_bytes(),
                     &i.to_be_bytes(),
@@ -36,9 +35,9 @@ mod tests {
     use super::*;
     use alloy::primitives::B256;
 
-    fn path(pad_length: u16) -> PrfPath {
-        PrfPath {
-            prf: 0,
+    fn path(pad_length: u16) -> PrfOutputRef {
+        PrfOutputRef {
+            prf_id: 0,
             label: B256::repeat_byte(0xaa),
             pad_length,
         }

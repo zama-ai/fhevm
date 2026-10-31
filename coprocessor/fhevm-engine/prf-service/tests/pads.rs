@@ -1,9 +1,8 @@
 use alloy::primitives::{Address, B256};
-use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
+use ciphertext_attestation::{prf::Version, PrfOutputAttestation, PrfOutputRef};
 use prf_service::{
     pads::{read, Admission, Admissions, PadOutput, PadState},
     waiter::{PadWaiter, PAD_READY},
-    PrfPath,
 };
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{num::NonZeroUsize, sync::Arc, time::Duration};
@@ -76,22 +75,22 @@ fn spawn_admits(
         .collect()
 }
 
-fn path(label: u8, pad_length: u16) -> PrfPath {
-    PrfPath {
-        prf: 0,
+fn path(label: u8, pad_length: u16) -> PrfOutputRef {
+    PrfOutputRef {
+        prf_id: 0,
         label: B256::repeat_byte(label),
         pad_length,
     }
 }
 
-async fn set_output(pool: &PgPool, path: &PrfPath, output: &PadOutput) {
+async fn set_output(pool: &PgPool, path: &PrfOutputRef, output: &PadOutput) {
     let attestation = &output.attestation;
     sqlx::query(
         "UPDATE pads SET ciphertext128 = $4, ciphertext_digest = $5, sns_ciphertext_digest = $6,
                 signer = $7, signature = $8
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
     )
-    .bind(i32::from(path.prf))
+    .bind(i32::from(path.prf_id))
     .bind(path.label.as_slice())
     .bind(i32::from(path.pad_length))
     .bind(&output.ciphertext128)
@@ -104,12 +103,12 @@ async fn set_output(pool: &PgPool, path: &PrfPath, output: &PadOutput) {
     .unwrap();
 }
 
-async fn set_error(pool: &PgPool, path: &PrfPath) {
+async fn set_error(pool: &PgPool, path: &PrfOutputRef) {
     sqlx::query(
         "UPDATE pads SET is_error = true
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
     )
-    .bind(i32::from(path.prf))
+    .bind(i32::from(path.prf_id))
     .bind(path.label.as_slice())
     .bind(i32::from(path.pad_length))
     .execute(pool)
@@ -333,8 +332,8 @@ async fn notify(pool: &PgPool, payload: &str) {
         .unwrap();
 }
 
-fn payload(path: &PrfPath) -> String {
-    format!("{}:{:x}:{}", path.prf, path.label, path.pad_length)
+fn payload(path: &PrfOutputRef) -> String {
+    format!("{}:{:x}:{}", path.prf_id, path.label, path.pad_length)
 }
 
 /// Starts the waiter and returns once it listens.
@@ -368,7 +367,7 @@ async fn listeners(pool: &PgPool) -> i64 {
 /// Starts a request that waits for the row of `path`, and returns once it waits.
 async fn start_wait(
     waiter: &Arc<PadWaiter>,
-    path: PrfPath,
+    path: PrfOutputRef,
 ) -> JoinHandle<anyhow::Result<PadState>> {
     let wait = tokio::spawn({
         let waiter = waiter.clone();

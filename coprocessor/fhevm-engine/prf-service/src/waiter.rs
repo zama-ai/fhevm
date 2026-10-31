@@ -1,11 +1,9 @@
 //! Wakes the requests that wait for a pending row of `pads`.
 
-use crate::{
-    pads::{read, PadState},
-    path::PrfPath,
-};
+use crate::pads::{read, PadState};
 use alloy::primitives::B256;
 use anyhow::{bail, Context};
+use ciphertext_attestation::PrfOutputRef;
 use sqlx::{postgres::PgListener, PgPool};
 use std::{
     collections::HashMap,
@@ -23,7 +21,7 @@ pub const PAD_READY: &str = "pad_ready";
 pub struct PadWaiter {
     pool: PgPool,
     poll_interval: Duration,
-    waiting: Mutex<HashMap<PrfPath, Arc<Notify>>>,
+    waiting: Mutex<HashMap<PrfOutputRef, Arc<Notify>>>,
 }
 
 impl PadWaiter {
@@ -36,7 +34,7 @@ impl PadWaiter {
     }
 
     /// Waits until the row of `path` is complete or failed.
-    pub async fn wait(&self, path: &PrfPath) -> anyhow::Result<PadState> {
+    pub async fn wait(&self, path: &PrfOutputRef) -> anyhow::Result<PadState> {
         let waiting = self.register(*path);
         loop {
             let notified = waiting.notify.notified();
@@ -80,7 +78,7 @@ impl PadWaiter {
         }
     }
 
-    fn register(&self, path: PrfPath) -> Waiting<'_> {
+    fn register(&self, path: PrfOutputRef) -> Waiting<'_> {
         let notify = self
             .waiting
             .lock()
@@ -95,7 +93,7 @@ impl PadWaiter {
         }
     }
 
-    fn wake(&self, path: &PrfPath) {
+    fn wake(&self, path: &PrfOutputRef) {
         if let Some(notify) = self.waiting.lock().expect("waiting lock").get(path) {
             notify.notify_waiters();
         }
@@ -106,7 +104,7 @@ impl PadWaiter {
         let mut labels = Vec::new();
         let mut pad_lengths = Vec::new();
         for path in self.waiting.lock().expect("waiting lock").keys() {
-            prfs.push(i32::from(path.prf));
+            prfs.push(i32::from(path.prf_id));
             labels.push(path.label.to_vec());
             pad_lengths.push(i32::from(path.pad_length));
         }
@@ -125,8 +123,8 @@ impl PadWaiter {
         .fetch_all(&self.pool)
         .await?;
         for row in finished {
-            self.wake(&PrfPath {
-                prf: u16::try_from(row.prf_instance).context("prf_instance")?,
+            self.wake(&PrfOutputRef {
+                prf_id: u16::try_from(row.prf_instance).context("prf_instance")?,
                 label: B256::try_from(row.label.as_slice()).context("label")?,
                 pad_length: u16::try_from(row.pad_length).context("pad_length")?,
             });
@@ -138,7 +136,7 @@ impl PadWaiter {
 /// A request in the wait list. On drop, it removes its row from the list if no other request waits.
 struct Waiting<'a> {
     waiter: &'a PadWaiter,
-    path: PrfPath,
+    path: PrfOutputRef,
     notify: Arc<Notify>,
 }
 
@@ -156,10 +154,10 @@ impl Drop for Waiting<'_> {
     }
 }
 
-fn parse_payload(payload: &str) -> Option<PrfPath> {
+fn parse_payload(payload: &str) -> Option<PrfOutputRef> {
     let mut parts = payload.split(':');
-    let path = PrfPath {
-        prf: parts.next()?.parse().ok()?,
+    let path = PrfOutputRef {
+        prf_id: parts.next()?.parse().ok()?,
         label: parts.next()?.parse().ok()?,
         pad_length: parts.next()?.parse().ok()?,
     };
@@ -178,9 +176,9 @@ mod tests {
         PadWaiter::new(pool, Duration::from_secs(1))
     }
 
-    fn path(label: B256, pad_length: u16) -> PrfPath {
-        PrfPath {
-            prf: 7,
+    fn path(label: B256, pad_length: u16) -> PrfOutputRef {
+        PrfOutputRef {
+            prf_id: 7,
             label,
             pad_length,
         }
