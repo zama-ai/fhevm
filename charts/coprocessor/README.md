@@ -131,3 +131,16 @@ connection error, which the connector then has to retry.
 A TCP (layer 4) load balancer without an allowlist is not enough: it forwards slow and idle
 connections to the proxy unchanged. Every timeout of that layer must also exceed the connector's
 `PRF_RETRIEVAL_DEADLINE`, as the proxy's does.
+
+## PRF service
+
+`prfService` deploys `prf-service`. It trusts the `X-Fhevm-Signer` header of the proxy, so the chart
+deploys it only with `coprocessorProxy.enabled` and `coprocessorProxy.prfServiceNetworkPolicy.enabled`.
+
+Before you enable it:
+
+- Create the database role `prf_service` with `LOGIN`, and `GRANT rds_iam TO prf_service` for IAM
+  authentication. Set `prfService.databaseUser`, and `prfService.databasePassword` for password
+  authentication. The migration job gives the table rights on each deploy.
+- With `prfService.serviceMonitor.enabled`, add an ingress rule for the metrics port to
+  `coprocessorProxy.prfServiceNetworkPolicy.extraIngress`. The NetworkPolicy admits only the proxy.
