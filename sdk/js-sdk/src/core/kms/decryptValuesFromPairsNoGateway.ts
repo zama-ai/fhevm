@@ -24,7 +24,7 @@ type Parameters = {
     readonly handle: Handle;
     readonly contractAddress: ChecksummedAddress;
     // ownerAddress is only relevant for V2 (protocol >= 0.14.0). When omitted,
-    // fetchKmsSigncryptedSharesV2 defaults to userAddress (direct-access path).
+    // fetchKmsSigncryptedSharesV2NoGateway defaults to userAddress (direct-access path).
     // Provide it explicitly only for delegated handles where ownerAddress !== userAddress.
     readonly ownerAddress?: ChecksummedAddress | undefined;
   }>;

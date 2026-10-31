@@ -75,12 +75,12 @@ export async function fetchKmsSigncryptedSharesV2NoGateway(
   */
   const signedPermitVersion: number = signedPermit.version;
   if (signedPermitVersion !== 2) {
-    throw Error(`fetchKmsSigncryptedSharesV2 requires a v2 permit, got v${signedPermitVersion}`);
+    throw Error(`fetchKmsSigncryptedSharesV2NoGateway requires a v2 permit, got v${signedPermitVersion}`);
   }
   const signedPermitExtraData = createKmsExtraDataFromBytesHex(signedPermit.eip712.message.extraData);
   if (signedPermitExtraData.lt(EXTRA_DATA_V2)) {
     throw new Error(
-      `fetchKmsSigncryptedSharesV2 error: Invalid extraData version (< 2) extraData=${signedPermitExtraData.bytesHex}`,
+      `fetchKmsSigncryptedSharesV2NoGateway error: Invalid extraData version (< 2) extraData=${signedPermitExtraData.bytesHex}`,
     );
   }
 
@@ -159,8 +159,8 @@ export async function fetchKmsSigncryptedSharesV2NoGateway(
     fhevmContext,
   });
 
-  // 8. Fetch `KmsSigncryptedShares` from the relayer (unified V2 route)
-  const shares: readonly KmsSigncryptedShare[] = await context.runtime.relayer.fetchUserDecrypt(context, {
+  // 8. Fetch `KmsSigncryptedShares` from relayer-http (POST v4/user-decrypt, no gateway)
+  const shares: readonly KmsSigncryptedShare[] = await context.runtime.relayer.fetchUserDecryptNoGateway(context, {
     version: 2,
     payload: {
       handleContractPairs: resolvedPairs,
