@@ -1,7 +1,7 @@
 //! Limits the requests in progress of each connector, in one pod.
 
-use crate::path::PrfPath;
 use alloy::primitives::{Address, B256};
+use ciphertext_attestation::PrfOutputRef;
 use std::{
     collections::{HashMap, HashSet},
     num::NonZeroUsize,
@@ -24,8 +24,8 @@ impl InFlight {
     }
 
     /// Returns `None` if `connector` has a request for this label, or `max_per_connector` requests.
-    pub fn start(&self, connector: Address, path: &PrfPath) -> Option<InFlightRequest<'_>> {
-        let label = (path.prf, path.label);
+    pub fn start(&self, connector: Address, path: &PrfOutputRef) -> Option<InFlightRequest<'_>> {
+        let label = (path.prf_id, path.label);
         let mut requests = self.requests.lock().expect("requests lock");
         let labels = requests.entry(connector).or_default();
         // The limit is at least 1, so a refusal never leaves `labels` empty.
@@ -70,9 +70,9 @@ mod tests {
         InFlight::new(NonZeroUsize::new(max_per_connector).unwrap())
     }
 
-    fn path(label: u8) -> PrfPath {
-        PrfPath {
-            prf: 0,
+    fn path(label: u8) -> PrfOutputRef {
+        PrfOutputRef {
+            prf_id: 0,
             label: B256::repeat_byte(label),
             pad_length: 64,
         }
