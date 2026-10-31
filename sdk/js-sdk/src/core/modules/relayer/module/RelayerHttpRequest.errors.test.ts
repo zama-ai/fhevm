@@ -67,6 +67,36 @@ describe('RelayerHttpRequest error responses', () => {
     await expect(request.run()).rejects.toBeInstanceOf(RelayerHttpUnexpectedResponseError);
   });
 
+  // Bug: the body is parsed whatever its size; JSON.parse can take several times the
+  // string's memory. Bodies over 10 Mi characters must be rejected before parsing.
+  // Each body below is a valid JSON string, so without the check it gets parsed.
+  const MAX_BODY_TEXT_LENGTH = 10 * 1024 * 1024;
+
+  it('throws RelayerHttpFetchError without parsing a body over the size limit', async () => {
+    const body = `"${'a'.repeat(MAX_BODY_TEXT_LENGTH - 1)}"`;
+    global.fetch = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
+    const parseSpy = vi.spyOn(JSON, 'parse');
+
+    const request = new RelayerHttpRequest({ url: RELAYER_URL, payload: {} });
+    const error = await request.run().catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(RelayerHttpFetchError);
+    expect((error as Error).message).toContain('too large');
+    expect((error as RelayerHttpFetchError).status).toBe(200);
+    expect(parseSpy).not.toHaveBeenCalled();
+  });
+
+  it('parses a body exactly at the size limit', async () => {
+    const body = `"${'a'.repeat(MAX_BODY_TEXT_LENGTH - 2)}"`;
+    global.fetch = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
+    const parseSpy = vi.spyOn(JSON, 'parse');
+
+    const request = new RelayerHttpRequest({ url: RELAYER_URL, payload: {} });
+    await request.run().catch((e: unknown) => e);
+
+    expect(parseSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('throws RelayerHttpFetchError keeping the status and cause when reading the body fails', async () => {
     const streamError = new TypeError('terminated');
     const body = new ReadableStream<Uint8Array>({
