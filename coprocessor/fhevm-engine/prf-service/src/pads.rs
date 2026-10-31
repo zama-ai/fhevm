@@ -7,6 +7,7 @@ use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
 use sqlx::PgPool;
 use std::{
     collections::HashMap,
+    num::NonZeroUsize,
     sync::{Arc, Mutex},
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -39,13 +40,13 @@ pub enum Admission {
 pub struct Admissions {
     pool: PgPool,
     max_pending_bits: i64,
-    max_adds_per_connector: usize,
+    max_adds_per_connector: NonZeroUsize,
     /// One semaphore for each connector that added a row in this pod.
     adds: Mutex<HashMap<Address, Arc<Semaphore>>>,
 }
 
 impl Admissions {
-    pub fn new(pool: PgPool, max_pending_bits: i64, max_adds_per_connector: usize) -> Self {
+    pub fn new(pool: PgPool, max_pending_bits: i64, max_adds_per_connector: NonZeroUsize) -> Self {
         Self {
             pool,
             max_pending_bits,
@@ -77,7 +78,7 @@ impl Admissions {
             .lock()
             .expect("adds lock")
             .entry(connector)
-            .or_insert_with(|| Arc::new(Semaphore::new(self.max_adds_per_connector)))
+            .or_insert_with(|| Arc::new(Semaphore::new(self.max_adds_per_connector.get())))
             .clone();
         semaphore
             .acquire_owned()
