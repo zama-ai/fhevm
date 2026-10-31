@@ -11,8 +11,6 @@ use connector_utils::{
 };
 use http::uri::Authority;
 use serde::{Deserialize, Deserializer};
-#[cfg(test)]
-use serde::{Serialize, Serializer};
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -23,7 +21,6 @@ use std::{
 
 /// Configuration of the `Proxy` service.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The public bind address of the proxy.
     #[serde(alias = "proxy_bind_address", default = "default_bind_address")]
@@ -44,35 +41,30 @@ pub struct Config {
 
     /// The `host:port` addresses of the endpoints to forward requests to.
     #[serde(deserialize_with = "parse_endpoint_addresses")]
-    #[cfg_attr(test, serde(serialize_with = "serialize_endpoint_addresses"))]
     pub endpoint_addresses: Vec<Authority>,
     /// The timeout to establish a TCP connection to an endpoint.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_connect_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_connect_timeout: Duration,
     /// How often the endpoints are probed in the background to filter which ones receive requests.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_healthcheck_frequency"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_healthcheck_frequency: Duration,
     /// How long the proxy waits for an endpoint response before answering `502`.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_response_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_response_timeout: Duration,
     /// How long an idle pooled endpoint connection is kept before being closed.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_idle_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_idle_timeout: Duration,
 
     /// The maximum accepted size of a request body.
@@ -83,7 +75,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_request_read_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub request_read_timeout: Duration,
     /// The maximum number of requests per second accepted from each sender.
     #[serde(default = "default_rate_limit_per_second")]
@@ -103,7 +94,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_healthcheck_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
@@ -122,7 +112,6 @@ where
 
 /// The TLS material used by the proxy to terminate TLS.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct TlsConfig {
     /// The path of the PEM certificate chain.
     pub cert_path: PathBuf,
@@ -228,17 +217,6 @@ impl Default for Config {
             healthcheck_timeout: default_healthcheck_timeout(),
         }
     }
-}
-
-#[cfg(test)]
-fn serialize_endpoint_addresses<S>(
-    addresses: &[http::uri::Authority],
-    s: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    s.collect_seq(addresses.iter().map(Authority::as_str))
 }
 
 #[cfg(test)]

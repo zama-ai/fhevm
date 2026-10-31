@@ -133,14 +133,14 @@ pub async fn maybe_inject_synthetic_input(
         tokio::task::spawn_blocking(move || build_synthetic_input(&material, &aux_data, &seed))
             .await??;
 
-    // Same write fence as every other listener write. A retired blue stack never reaches
-    // here (`gcs_mode` is false for it), but a green stack rolled back mid-window can, and
-    // `Continue` is what keeps raw ingestion going after a rollback.
-    let Some(mut tx) = begin_write_guarded(db_pool, true, GcsRollbackPolicy::Continue)
+    // The synthetic input belongs to one attempt, so it must not outlive a rollback. Proving
+    // above takes seconds, and a rollback can land in that window. `Skip` makes this insert
+    // lose that race, instead of landing in the schema the rollback just recreated.
+    let Some(mut tx) = begin_write_guarded(db_pool, true, GcsRollbackPolicy::Skip)
         .await?
         .into_tx()
     else {
-        info!("Cutover completed — gw-listener skipping synthetic input insert on retired stack");
+        info!("GCS: skipping synthetic input insert — attempt rolled back or stack retired");
         return Ok(false);
     };
 

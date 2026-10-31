@@ -1,9 +1,7 @@
-use alloy::transports::http::reqwest::Url;
-#[cfg(test)]
-use connector_utils::config::serialize_pg_interval;
 use connector_utils::{
     config::{
-        AwsKmsConfig, ContractConfig, DeserializeConfig, Error, KmsWallet, TestingPrivateKey,
+        AwsKmsConfig, ContractConfig, DatabaseUrl, DeserializeConfig, Error, KmsWallet, RpcUrl,
+        TestingPrivateKey,
         contract::{
             default_decryption_contract_config, default_kms_generation_contract_config,
             default_protocol_config_contract_config, deserialize_decryption_contract_config,
@@ -15,18 +13,15 @@ use connector_utils::{
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-#[cfg(test)]
-use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use sqlx::postgres::types::PgInterval;
-use std::{net::SocketAddr, str::FromStr, time::Duration};
+use std::{net::SocketAddr, time::Duration};
 
 /// Configuration of the `TransactionSender`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
-    pub database_url: String,
+    pub database_url: DatabaseUrl,
     /// The size of the database connection pool.
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
@@ -35,11 +30,10 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_database_polling_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub database_polling_timeout: Duration,
 
     /// The Gateway RPC endpoint.
-    pub gateway_url: Url,
+    pub gateway_url: RpcUrl,
     /// The Chain ID of the Gateway.
     pub gateway_chain_id: u64,
     /// The `Decryption` contract configuration (on Gateway).
@@ -47,7 +41,7 @@ pub struct Config {
     pub decryption_contract: ContractConfig,
 
     /// The Ethereum RPC endpoint.
-    pub ethereum_url: Url,
+    pub ethereum_url: RpcUrl,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
     /// The number of confirmations required for Ethereum transactions to be considered confirmed.
@@ -58,7 +52,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_ethereum_tx_get_receipt_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub ethereum_tx_get_receipt_timeout: Duration,
     /// The `KMSGeneration` contract configuration (on Ethereum).
     #[serde(deserialize_with = "deserialize_kms_generation_contract_config")]
@@ -83,7 +76,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_tx_retry_interval"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub tx_retry_interval: Duration,
     /// Enable tracing of reverted transactions.
     #[serde(default = "default_trace_reverted_tx")]
@@ -110,13 +102,11 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_operation_recovery_run_interval"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub operation_recovery_run_interval: Duration,
     /// The expiration time for decryptions, after which `pending`/`under_process` decryptions are
     /// marked as `failed`.
     #[serde(
         deserialize_with = "deserialize_pg_interval",
-        serialize_with = "serialize_pg_interval",
         default = "default_decryption_expiry"
     )]
     pub decryption_expiry: PgInterval,
@@ -124,7 +114,6 @@ pub struct Config {
     /// considered as pending again.
     #[serde(
         deserialize_with = "deserialize_pg_interval",
-        serialize_with = "serialize_pg_interval",
         default = "default_operation_under_process_timeout"
     )]
     pub operation_under_process_timeout: PgInterval,
@@ -137,14 +126,12 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_gauge_update_interval"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub gauge_update_interval: Duration,
     /// The timeout to perform each external service connection healthcheck.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_healthcheck_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
@@ -242,13 +229,15 @@ fn default_ethereum_tx_required_confirmations() -> u64 {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            database_url: "postgres://postgres:postgres@localhost/kms-connector".to_string(),
+            database_url: "postgres://postgres:postgres@localhost/kms-connector"
+                .parse()
+                .unwrap(),
             database_pool_size: default_database_pool_size(),
             database_polling_timeout: default_database_polling_timeout(),
-            gateway_url: Url::from_str("http://localhost:8545").unwrap(),
+            gateway_url: "http://localhost:8545".parse().unwrap(),
             gateway_chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
-            ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
+            ethereum_url: "http://localhost:8545".parse().unwrap(),
             ethereum_chain_id: 11155111, // Sepolia
             ethereum_tx_required_confirmations: default_ethereum_tx_required_confirmations(),
             ethereum_tx_get_receipt_timeout: default_ethereum_tx_get_receipt_timeout(),
@@ -366,14 +355,11 @@ mod tests {
         let config = Config::from_env_and_file::<&str>(None).unwrap();
 
         // Verify values
-        assert_eq!(
-            config.gateway_url,
-            Url::from_str("http://localhost:9545").unwrap()
-        );
+        assert_eq!(config.gateway_url, "http://localhost:9545".parse().unwrap());
         assert_eq!(config.gateway_chain_id, 31888);
         assert_eq!(
             config.ethereum_url,
-            Url::from_str("http://localhost:9546").unwrap()
+            "http://localhost:9546".parse().unwrap()
         );
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(config.ethereum_tx_required_confirmations, 32);

@@ -866,7 +866,7 @@ async fn setup_with(configure: impl FnOnce(Config) -> Config) -> anyhow::Result<
     let mut test_instance = TestInstanceBuilder::db_setup().await?;
     let db = test_instance.db().clone();
     let config = configure(Config {
-        database_url: test_instance.db_url().to_string(),
+        database_url: test_instance.db_url().parse().unwrap(),
         database_pool_size: 3,
         http_endpoint: SocketAddr::from_str(&format!("127.0.0.1:{}", pick_free_port())).unwrap(),
         supported_chain_ids: vec![CHAIN_ID],

@@ -1,12 +1,11 @@
 use crate::config::{Error, Result};
 use alloy::primitives::{Address, address};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 use std::str::FromStr;
 use tracing::{info, warn};
 
 /// Struct containing the information required to interact with a Gateway's contract.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
 pub struct ContractConfig {
     pub contract_name: String,
     pub address: Address,
@@ -15,7 +14,7 @@ pub struct ContractConfig {
 }
 
 /// Struct used to deserialize the Gateway's contracts information from the configuration file.
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 struct RawContractConfig {
     pub address: String,
     pub domain_name: Option<String>,

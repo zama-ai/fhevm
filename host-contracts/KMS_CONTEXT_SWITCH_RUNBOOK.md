@@ -218,13 +218,19 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
    pending context in advance closes that window: the old context **stays
    registered** on the gateway, so in-flight requests keep verifying against the
    old committee while it is still the one answering. Two caveats:
-   - clients sending **empty/v0 `extraData`** pin the gateway's _current_ pointer,
-     which `updateKmsContext` flips immediately — such requests stall until
-     activation. With the epoch-aware relayer/SDK (§1), requests carry the host's
-     current context explicitly and are unaffected;
-   - the gateway pointer only moves **forward** (`KmsContextAlreadyRegistered`
-     guard). If the host switch is cancelled after this step (`destroyKmsContext`),
-     recover by registering the retry's (higher) context id.
+   - **Requests with empty or v0 `extraData` can get stuck.** Such a request names no
+     context, so the gateway pins it to the context that is current when it arrives.
+     The connectors cannot see that pinned context, and their response names no context
+     either, so the gateway reads the current context again when the response arrives.
+     After `updateKmsContext` the current context is the new one. It no longer matches
+     the pinned one, every response is rejected, and the request is never answered. The
+     requester loses the fee. Run `updateKmsContext` when no such requests are in
+     flight, or accept that loss.
+   - **The gateway pointer cannot go back.** `updateKmsContext` only accepts a context id
+     higher than the one already registered (`KmsContextAlreadyRegistered`). If the host
+     switch is cancelled with `destroyKmsContext` after this step, you cannot point the
+     gateway back to the old context. Instead, start the retry switch, which gets a
+     higher context id, and register that id on the gateway.
 
 4. **Automatic phase 1 — creation quorum**: every connector (old and new
    committees) submits `confirmKmsContextCreation`. When **all new + (n − t) old**
@@ -263,25 +269,34 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
 
 Ethereum is the canonical host: §3 and §4 run there and nowhere else. Every other host
 chain (e.g. Polygon) runs `ProtocolConfigReplica`, which has no lifecycle: no quorum, no
-reshare and no `KMSGeneration`. Its only write path is the two mirror methods, which import
-state Ethereum has already finalized and land it as immediately `Active`.
-**Bringing each replica forward after a canonical rotation is the operator's job** —
-nothing on-chain does it for you, and nothing flags a replica that fell behind.
+reshare and no `KMSGeneration`. Its only write paths are four `onlyACLOwner` mirror
+methods. `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` import state Ethereum has already
+finalized and land it as immediately `Active`. `mirrorKmsContextDestruction` and
+`mirrorKmsEpochDestruction` copy a canonical `destroyKmsContext` / `destroyKmsEpoch`.
+Mirroring a switch activates the new context without retiring the previous one, so a context
+destroyed on Ethereum stays trusted on every replica until its destruction is mirrored there
+as well (§5.6).
+**Bringing each replica forward after a canonical rotation, and retiring on each replica
+what Ethereum retired, is the operator's job** — nothing on-chain does it for you, and
+nothing flags a replica that fell behind.
 
 The tasks below are defined in `host-contracts/tasks/mirrorKmsContext.ts`.
 
 ### 5.1 Which task follows which operation
 
-| Canonical operation                 | Run on each replica                                                            | Replica method it calls    |
-| ----------------------------------- | ------------------------------------------------------------------------------ | -------------------------- |
-| Key resharing / epoch rotation (§3) | `task:buildMirrorKmsEpochCalldata` · `task:mirrorKmsEpoch`                     | `mirrorKmsEpoch`           |
-| Context switch (§4)                 | `task:buildMirrorKmsContextAndEpochCalldata` · `task:mirrorKmsContextAndEpoch` | `mirrorKmsContextAndEpoch` |
+| Canonical operation                      | Run on each replica                                                                         | Replica method it calls       |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------------- |
+| Key resharing / epoch rotation (§3)      | `task:buildMirrorKmsEpochCalldata` · `task:mirrorKmsEpoch`                                  | `mirrorKmsEpoch`              |
+| Context switch (§4)                      | `task:buildMirrorKmsContextAndEpochCalldata` · `task:mirrorKmsContextAndEpoch`              | `mirrorKmsContextAndEpoch`    |
+| Context destroyed (cancel or retirement) | `task:buildMirrorKmsContextDestructionCalldata` · `task:mirrorKmsContextDestruction` (§5.6) | `mirrorKmsContextDestruction` |
+| Epoch destroyed (cancel or retirement)   | `task:buildMirrorKmsEpochDestructionCalldata` · `task:mirrorKmsEpochDestruction` (§5.6)     | `mirrorKmsEpochDestruction`   |
 
 As everywhere else in this runbook, `build…Calldata` is the DAO path (prints the target
 and calldata, never broadcasts) and the bare task broadcasts with
 `DEPLOYER_PRIVATE_KEY`.
 
-**No ids or committee data are passed on the command line.** Those methods do take a context
+**No ids or committee data are passed on the command line** for the two activation mirrors.
+Those methods do take a context
 id, an epoch id and — for a context switch — the node set, thresholds, software version and
 PCR values, but the task reads all of it from canonical and encodes the arguments itself. The
 only inputs you supply are the canonical connection flags below.
@@ -311,7 +326,7 @@ host-contracts README. Use the mirror tasks for every rotation after that.
   `--canonical-protocol-config-address`).
 - **Replica address**: `PROTOCOL_CONFIG_CONTRACT_ADDRESS` for the replica chain, or
   `--use-internal-proxy-address` to resolve it from `addresses/`.
-- **Authorization**: both mirror methods are `onlyACLOwner` on the replica chain, so the
+- **Authorization**: all four mirror methods are `onlyACLOwner` on the replica chain, so the
   broadcaster (or the DAO executing the calldata) must be that chain's ACL owner.
 - **Ids only move forward, and gaps are fine.** The replica rejects any context/epoch id
   that is not strictly greater than its current one, so a mirror cannot roll it back or be
@@ -345,9 +360,8 @@ There is no committee to re-type: `mirrorKmsContextAndEpoch` needs the full
 `KmsNodeParams` plus the software version and PCR values, which the contract does not store,
 so the task recovers them from canonical's `NewKmsContext` event and checks them against the
 on-chain `contextInfoHash` anchor before using them. A wrong or tampered canonical RPC cannot
-slip a different committee past that check. Thresholds are read from canonical's live state
-rather than the event, so a threshold changed since the switch is mirrored at its current
-value.
+slip a different committee past that check. Thresholds come from the same event, so the
+replica receives the values the switch was defined with.
 
 Three errors are worth knowing:
 
@@ -408,6 +422,33 @@ carrying the real values.
 `idle`, because it tracks the pending/quorum path that replicas never run — that is the
 expected output, not a problem.
 
+### 5.6 Retire on every replica what Ethereum destroyed
+
+A canonical `destroyKmsContext` or `destroyKmsEpoch` does not reach the replicas: a mirrored
+context stays `Active` there, and `KMSVerifier` keeps accepting its signers, until the
+destruction is mirrored on each replica. For every canonical destruction, take the id from
+canonical's `KmsContextDestroyed` / `KmsEpochDestroyed` event and run on each replica:
+
+```bash
+# Context destroyed — DAO path, then no-DAO path:
+npx hardhat task:buildMirrorKmsContextDestructionCalldata --network <replica-network> --context-id <id>
+npx hardhat task:mirrorKmsContextDestruction --network <replica-network> --context-id <id>
+
+# Epoch destroyed — DAO path, then no-DAO path:
+npx hardhat task:buildMirrorKmsEpochDestructionCalldata --network <replica-network> --epoch-id <id>
+npx hardhat task:mirrorKmsEpochDestruction --network <replica-network> --epoch-id <id>
+```
+
+- **Mirror cancellations too.** The replica records the id of a cancelled switch or reshare
+  as destroyed, so it never activates it later.
+- **A context destruction covers its epochs.** Mirror an epoch destruction only after a
+  canonical `destroyKmsEpoch`.
+- **The replica refuses to destroy its active context or epoch.** That revert means the
+  replica is behind: mirror the successor first (§5.3 or §5.4).
+
+Do this with the same urgency as the canonical call: for a context destroyed because it was
+compromised, every replica trusts it until this step is done.
+
 ## 6. Quick reference
 
 ```text
@@ -420,15 +461,21 @@ Host tasks (host-contracts/, reads PROTOCOL_CONFIG_CONTRACT_ADDRESS):
   task:destroyKmsContext                          direct broadcast
   task:buildDestroyKmsEpochCalldata               DAO calldata, cancel/retire an epoch (--epoch-id)
   task:destroyKmsEpoch                            direct broadcast
+  (Destroying a context also retires its epochs, so no destroyKmsEpoch call is needed
+  after destroyKmsContext. Use destroyKmsEpoch only for an epoch whose context stays live.)
   task:kmsContextSwitchStatus                     read-only progress (--from-block!)
 
-Replica mirror tasks (host-contracts/, run on each non-canonical chain after canonical
-activates; all take --canonical-rpc-url + --canonical-protocol-config-address,
-optional --block-number):
+Replica mirror tasks (host-contracts/, run on each non-canonical chain after the canonical
+operation; the context-switch and epoch tasks take --canonical-rpc-url +
+--canonical-protocol-config-address, optional --block-number):
   task:buildMirrorKmsContextAndEpochCalldata      DAO calldata, mirror a context switch
   task:mirrorKmsContextAndEpoch                   direct broadcast
   task:buildMirrorKmsEpochCalldata                DAO calldata, mirror an epoch rotation
   task:mirrorKmsEpoch                             direct broadcast
+  task:buildMirrorKmsContextDestructionCalldata   DAO calldata, mirror a context destruction (--context-id)
+  task:mirrorKmsContextDestruction                direct broadcast
+  task:buildMirrorKmsEpochDestructionCalldata     DAO calldata, mirror an epoch destruction (--epoch-id)
+  task:mirrorKmsEpochDestruction                  direct broadcast
 
 Gateway tasks (gateway-contracts/, reads GATEWAY_CONFIG_ADDRESS, KMS_CONTEXT_ID):
   task:buildUpdateKmsContextProposal              DAO proposal triple (--verify-context-id)
@@ -467,21 +514,28 @@ Quorum cheat-sheet:
   - Epoch activation: **unanimous** — every new-committee signer must attest the _same_
     key/CRS result hash. One divergent attestation splits the vote and the epoch stays
     Pending until governance destroys it (`destroyKmsEpoch`).
-- **One switch in flight at a time — by convention, not by contract check.**
-  `defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext` do not revert
-  while another switch is pending, but the contract's bookkeeping _assumes_ at most
-  one context and one epoch are non-active (it resolves "the pending epoch" as the
-  latest-issued one). Settle an in-flight switch — complete it, or cancel it via
-  `destroyKmsContext` / `destroyKmsEpoch` — before opening another.
+- **One lifecycle operation in flight at a time — enforced by the contract.**
+  `defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext` revert with
+  `KmsLifecycleOperationInFlight` while a context or an epoch is still pending. Settle
+  an in-flight switch — complete it, or cancel it via `destroyKmsContext` /
+  `destroyKmsEpoch` — before opening another.
+- **Destroying a context retires its epochs with it.** `destroyKmsContext` clears only a
+  paired epoch that is still `Pending`. The earlier epoch of a retired context keeps the
+  `Active` value in storage, but nothing can use it: the only view that reports an epoch,
+  `isValidEpochForContext`, requires its context to be live, and so do the KMS verifier and
+  the connectors. No action is needed for that epoch. On replicas the context destruction
+  must be mirrored too (§5.6).
 - **Party IDs are positional and contiguous `1..n`.** The KMS core rejects any id outside
   that range. In a node swap, the incoming node **takes the dropped node's party id** —
   only the identity fields (addresses, `mpcIdentity`, cert, storage prefix) change.
 - **Canonical vs replica.** The lifecycle above exists only on the canonical host
   (Ethereum). Other host chains run `ProtocolConfigReplica`, a read-replica: no quorum
-  path, no `KMSGeneration`, and one write path — `mirrorKmsContextAndEpoch` /
-  `mirrorKmsEpoch`, which import already-finalized canonical state as immediately `Active`.
-  The only on-chain guard is that ids strictly increase, which prevents a rollback but not
-  a replica left behind; keeping every replica current is operational discipline (§5).
+  path, no `KMSGeneration`, and the owner mirror methods as its only write path — `mirrorKmsContextAndEpoch` /
+  `mirrorKmsEpoch`, which import already-finalized canonical state as immediately `Active`,
+  and `mirrorKmsContextDestruction` / `mirrorKmsEpochDestruction`, which copy canonical
+  destructions. The only on-chain guard on activation is that ids strictly increase, which
+  prevents a rollback but not a replica left behind. Keeping every replica current, and
+  mirroring every destruction, is operational discipline (§5).
 - **`mpcIdentity` must equal the identity the core itself is configured with** (its
   `mpc_identity` in the core/peers config). A mismatch makes the reshare role-resolution
   fail on the on-chain-vs-config merge and the reshare never starts (observed failure:
@@ -521,9 +575,10 @@ npx hardhat task:kmsContextSwitchStatus --network <network> --from-block <recent
 #       active one) | same-set-rotation (new epoch under the same active context)
 # contextState: PENDING (lists outstanding new tx-senders + the n-t old-side target)
 #               CREATED (creation quorum reached, epoch still PENDING)
-# epochState:   PENDING | ACTIVE ("fully live")
-# aborted:      true + reason if governance destroyed the pending context/epoch
-#               (destroyKmsContext / destroyKmsEpoch)
+# epochState:   PENDING | DESTROYED (an activated epoch shows as flow: idle)
+# aborted:      true + reason if governance destroyed the pending context or epoch
+#               (context-destroyed via destroyKmsContext, epoch-destroyed via destroyKmsEpoch)
+# fullyLive:    true when the active context and epoch are valid and nothing is in flight
 ```
 
 ### B.2 Verify a party's claimed parameters (coordinator-side)
