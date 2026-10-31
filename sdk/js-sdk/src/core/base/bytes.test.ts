@@ -1258,6 +1258,21 @@ describe('assertRecordBytesHexNo0xArrayProperty', () => {
       ),
     );
   });
+
+  it('accepts items of exactly byteLength bytes', () => {
+    expect(() =>
+      assertRecordBytesHexNo0xArrayProperty({ foo: ['ab'.repeat(65)] }, 'foo', 'Obj', { byteLength: 65 }),
+    ).not.toThrow();
+  });
+
+  // Bug: byteLength is ignored; an item of any length passes.
+  it('throws for an item that is not byteLength bytes', () => {
+    expect(() =>
+      assertRecordBytesHexNo0xArrayProperty({ foo: ['ab'.repeat(65), 'ab'.repeat(64)] }, 'foo', 'Obj', {
+        byteLength: 65,
+      }),
+    ).toThrow(InvalidPropertyError);
+  });
 });
 
 describe('isRecordUint8ArrayProperty', () => {

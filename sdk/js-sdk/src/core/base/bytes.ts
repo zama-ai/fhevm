@@ -1180,7 +1180,7 @@ export function assertRecordBytesHexNo0xArrayProperty<K extends string>(
   assertRecordArrayProperty(record, property, recordName, options);
   const arr = record[property];
   for (let i = 0; i < arr.length; ++i) {
-    if (!isBytesHexNo0x(arr[i])) {
+    if (!isBytesHexNo0x(arr[i], options.byteLength)) {
       throw new InvalidPropertyError(
         {
           subject: recordName,
