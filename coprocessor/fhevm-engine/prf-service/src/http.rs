@@ -1,8 +1,8 @@
 use crate::{
     error::{PrfError, NO_STORE},
+    instance,
     metrics::REQUESTS_COUNTER,
     pad_source::mock_pad,
-    path,
 };
 use actix_web::{
     dev::Server,
@@ -17,7 +17,7 @@ use anyhow::anyhow;
 use ciphertext_attestation::{
     keccak_b256,
     prf::{Version, PRF_ATTESTATION_HEADER},
-    PrfOutputAttestation,
+    PrfOutputAttestation, PrfOutputRef,
 };
 use std::{net::SocketAddr, time::Duration};
 use tokio_util::sync::CancellationToken;
@@ -67,9 +67,9 @@ fn serve(req: &HttpRequest) -> Result<HttpResponse, PrfError> {
     if req.uri().query().is_some() {
         return Err(PrfError::NonCanonicalPath);
     }
-    let path = path::parse(req.uri().path()).ok_or(PrfError::NonCanonicalPath)?;
-    let block_bits = path::block_bits(path.prf).ok_or(PrfError::UnknownPrf)?;
-    debug!(prf = path.prf, label = %path.label, pad_length = path.pad_length, "PRF output request");
+    let path = PrfOutputRef::from_path(req.uri().path()).ok_or(PrfError::NonCanonicalPath)?;
+    let block_bits = instance::block_bits(path.prf_id).ok_or(PrfError::UnknownPrf)?;
+    debug!(prf = path.prf_id, label = %path.label, pad_length = path.pad_length, "PRF output request");
 
     let pad = mock_pad(&path, block_bits);
     // TODO: send the attestation that the pad-worker signed. This mock has no signature.
