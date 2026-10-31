@@ -410,20 +410,22 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
         // {
         //   "status": "succeeded",
         //   "requestId": "<uuidv7>",
-        //   "result": [
-        //     {
-        //        "payload": "<hex, no 0x>",
-        //        "signature": "<65-byte hex, no 0x>",
-        //        "extraData": "<hex, with 0x>"
-        //     }
-        //   ]
+        //   "result": {
+        //     "result": [
+        //       {
+        //          "payload": "<hex, no 0x>",
+        //          "signature": "<65-byte hex, no 0x>",
+        //          "extraData": "<hex, with 0x>"
+        //       }
+        //     ]
+        //   }
         // }
         try {
           _assertIsRelayerHttpUserDecryptResult(bodyJson, 'body');
         } catch (cause) {
           throw this._resultError(cause, bodyText);
         }
-        return bodyJson.result as FetchResultOf<O>;
+        return bodyJson.result.result as FetchResultOf<O>;
       }
       case 'PUBLIC_DECRYPT': {
         // {
@@ -522,13 +524,15 @@ function _assertIsRelayerHttpSucceeded(
  * {
  *   "status": "succeeded",
  *   "requestId": "<uuidv7>",
- *   "result": [
- *     {
- *        "payload": "<hex, no 0x>",
- *        "signature": "<65-byte hex, no 0x>",
- *        "extraData": "<hex, with 0x>"
- *     }
- *   ]
+ *   "result": {
+ *     "result": [
+ *       {
+ *          "payload": "<hex, no 0x>",
+ *          "signature": "<65-byte hex, no 0x>",
+ *          "extraData": "<hex, with 0x>"
+ *       }
+ *     ]
+ *   }
  * }
  * ```
  *
@@ -540,22 +544,26 @@ function _assertIsRelayerHttpSucceeded(
  * @param name - The subject name used in a thrown error, e.g. `'body'`.
  * @returns Nothing; narrows `value`'s type on success.
  * @throws If `status` isn't `"succeeded"`, `requestId` isn't a UUIDv7, `value.result`
- * is missing, not an array, empty, or any item's `payload`, `signature`, or
- * `extraData` does not match the expected hex shape.
+ * is missing or null, `value.result.result` is missing, not an array, empty, or any
+ * item's `payload`, `signature`, or `extraData` does not match the expected hex shape.
  */
 function _assertIsRelayerHttpUserDecryptResult(
   value: unknown,
   name: string,
-): asserts value is { result: FetchUserDecryptResult } {
+): asserts value is { result: { result: FetchUserDecryptResult } } {
   _assertIsRelayerHttpSucceeded(value, name);
 
-  assertRecordArrayProperty(value, 'result', name, {});
+  assertRecordNonNullableProperty(value, 'result', name, {});
+  const result: unknown = value.result;
+  const resultName = `${name}.result`;
+  assertRecordArrayProperty(result, 'result', resultName, {});
+  const shares = result.result;
   // A 200 success with zero shares is anomalous: the aggregator only returns
   // success after reaching its threshold, so at least one share is expected.
-  if (value.result.length === 0) {
+  if (shares.length === 0) {
     throw new InvalidPropertyError(
       {
-        subject: name,
+        subject: resultName,
         property: 'result',
         expectedType: 'non-empty array',
         type: 'array',
@@ -564,15 +572,15 @@ function _assertIsRelayerHttpUserDecryptResult(
       {},
     );
   }
-  for (let i = 0; i < value.result.length; ++i) {
-    const item: unknown = value.result[i];
-    const itemName = `${name}.result[${i}]`;
+  for (let i = 0; i < shares.length; ++i) {
+    const item: unknown = shares[i];
+    const itemName = `${resultName}.result[${i}]`;
     assertRecordBytesHexNo0xProperty(item, 'payload', itemName, {});
     assertRecordBytesHexNo0xProperty(item, 'signature', itemName, { byteLength: 65 });
   }
   // relayer-http always includes extraData on every share (UserDecryptShare.extra_data
   // is a required field, not Option<...>) — no v11-style legacy omission to tolerate here.
-  assertExtraDataFieldOnResultItems(value.result, name, /* required */ true, {});
+  assertExtraDataFieldOnResultItems(shares, resultName, /* required */ true, {});
 }
 
 /**

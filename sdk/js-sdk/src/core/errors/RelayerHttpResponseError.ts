@@ -45,7 +45,6 @@ export type KnownRelayerHttpErrorCode = (typeof KNOWN_RELAYER_HTTP_ERROR_CODES)[
  * relayer-http introduces later is still assignable without a type error — the
  * standard TypeScript trick for "documented, not closed" unions.
  */
-// eslint-disable-next-line @typescript-eslint/ban-types
 export type RelayerHttpErrorCode = KnownRelayerHttpErrorCode | (string & {});
 
 const RETRYABLE_STATUSES = new Set([429, 502, 503, 504]);

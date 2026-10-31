@@ -290,8 +290,8 @@ describe('fetchWithRetry', () => {
     ) as unknown as typeof fetch;
   }
 
-  function warnLogger(): { debug: undefined; warn: ReturnType<typeof vi.fn>; error: undefined } {
-    return { debug: undefined, warn: vi.fn(), error: undefined };
+  function warnLogger() {
+    return { debug: undefined, warn: vi.fn<(message: string) => void>(), error: undefined };
   }
 
   it('propagates a null abort reason instead of crashing on it', async () => {

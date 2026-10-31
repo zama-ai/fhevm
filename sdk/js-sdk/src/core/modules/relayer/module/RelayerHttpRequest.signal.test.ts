@@ -15,7 +15,7 @@ function successBody(): string {
   return JSON.stringify({
     status: 'succeeded',
     requestId: VALID_REQUEST_ID,
-    result: [{ payload: 'ab'.repeat(32), signature: 'cd'.repeat(65), extraData: '0x00' }],
+    result: { result: [{ payload: 'ab'.repeat(32), signature: 'cd'.repeat(65), extraData: '0x00' }] },
   });
 }
 
