@@ -7,6 +7,7 @@ import { fetchFheEncryptionKeySource } from './fetchFheEncryptionKeySource.js';
 import { fetchUserDecrypt } from './fetchUserDecrypt.js';
 import { fetchFeatures } from './fetchFeatures.js';
 import { fetchPadShares } from './fetchPadShares.js';
+import { fetchUserDecryptNoGateway } from './fetchUserDecryptNoGateway.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // relayerModule
@@ -20,6 +21,7 @@ export const relayerModule: RelayerModuleFactory = () => {
       fetchCoprocessorSignatures,
       fetchPublicDecrypt,
       fetchUserDecrypt,
+      fetchUserDecryptNoGateway,
       fetchDelegatedUserDecrypt,
       fetchFeatures,
       fetchPadShares,

@@ -143,10 +143,10 @@ export type FetchDelegatedUserDecryptPayload = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// Relayer Async Request No Gateway
+// relayer-http request (no gateway)
 ////////////////////////////////////////////////////////////////////////////////
 
-// https://github.com/zama-ai/fhevm-relayer — v4/user-decrypt (RFC-016 unified struct)
+// relayer-http (in this monorepo) — v4/user-decrypt (RFC-016 unified struct)
 // Source: relayer-http/crates/relayer-http/src/endpoint/{docs.md,flows/user_decrypt.rs}
 // POST /v4/user-decrypt - pub struct UserDecryptRequest
 export type FetchUserDecryptPayloadV2NoGateway = {

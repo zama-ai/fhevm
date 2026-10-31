@@ -52,6 +52,7 @@ export const relayerModule: RelayerModuleFactory = () => {
       fetchCoprocessorSignatures,
       fetchPublicDecrypt,
       fetchUserDecrypt,
+      fetchUserDecryptNoGateway: fetchUserDecrypt,
       fetchDelegatedUserDecrypt,
       fetchPadShares,
       fetchFeatures: (

@@ -29,10 +29,10 @@ import { buildRelayerUrlString, validateRelayerBaseUrl } from './relayerUrl.js';
 // Source: relayer-http/crates/relayer-http/src/endpoint/{docs.md,flows/user_decrypt.rs}
 
 //////////////////////////////////////////////////////////////////////////////
-// fetchUserDecryptV2 (protocol version >= 0.14.0)
+// fetchUserDecryptNoGateway (protocol version >= 0.14.0)
 //////////////////////////////////////////////////////////////////////////////
 
-export async function fetchUserDecryptV2(
+export async function fetchUserDecryptNoGateway(
   relayerClient: RelayerClientWithRuntime,
   parameters: FetchUserDecryptParametersV2,
 ): Promise<FetchUserDecryptReturnType> {
@@ -43,7 +43,7 @@ export async function fetchUserDecryptV2(
     throw new Error('Empty handle contract pairs');
   }
 
-  // V3 envelope: AttestedUserDecryptRequestJson
+  // relayer-http's v4 UserDecryptRequest (attestationType, payload, signature).
   // publicKey and signature keep their 0x prefix (unlike the V1/V2 flat payload)
   const relayerPayload: FetchUserDecryptPayloadV2NoGateway = {
     attestationType: 'eip712-unified-user-decrypt-v1',
