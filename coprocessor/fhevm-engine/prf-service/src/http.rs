@@ -6,7 +6,6 @@ use crate::{
 };
 use actix_web::{
     dev::Server,
-    guard,
     http::{
         header::{ContentType, ALLOW, CACHE_CONTROL},
         Method,
@@ -30,14 +29,7 @@ const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 const KEEP_ALIVE: Duration = Duration::from_secs(15);
 
 fn configure(cfg: &mut web::ServiceConfig) {
-    // For the endpoint probe of coprocessor-proxy, which checks the port that it forwards to.
-    cfg.route(
-        "/healthz",
-        web::route()
-            .guard(guard::Any(guard::Get()).or(guard::Head()))
-            .to(HttpResponse::Ok),
-    )
-    .default_service(web::to(prf_output));
+    cfg.default_service(web::to(prf_output));
 }
 
 pub(crate) fn run_server(
