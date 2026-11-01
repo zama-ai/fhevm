@@ -88,6 +88,27 @@ listeners:
 
 Everything else (database, broker, pool settings, strategy defaults) inherits from the base file + `commonConfig`.
 
+For broker-fed coprocessor host listeners, set the chain's deployed
+`FHEVMExecutor` proxy on the publisher. This lets each block payload carry a
+canonical, block-scoped executor-version schedule; the host consumer uses the
+schedule only when its proxy and block identities match. Configure it per
+listener so a multi-chain release cannot reuse another chain's address:
+
+```yaml
+listeners:
+  - name: ethereum
+    env:
+      - name: APP_BLOCKCHAIN__STRATEGY__PUBLISH__TFHE_EXECUTOR_PROXY_ADDRESS
+        valueFrom:
+          configMapKeyRef:
+            name: host-sc-addresses
+            key: fhevm_executor.address
+```
+
+If the address is unset, publishers omit the optional metadata and the host
+listener keeps history-compatible scalar admission. Deployments that require
+version-aware admission should wire this variable to the chain's proxy address.
+
 #### Overriding shared settings
 
 Use `commonConfig` for values that apply to **all** listeners. Only add keys that differ from `config/listener-default.yaml`:

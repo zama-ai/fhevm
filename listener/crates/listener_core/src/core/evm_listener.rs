@@ -900,6 +900,7 @@ impl EvmListener {
         publisher::publish_block_events(
             &self.repositories,
             &block_n,
+            &self.provider,
             chain_id_u64,
             // This block is coming from the live flow, and detect the reorg processing, but was issued from the live flow.
             BlockFlow::Live,
@@ -1015,6 +1016,7 @@ impl EvmListener {
             publisher::publish_block_events(
                 &self.repositories,
                 &current_block,
+                &self.provider,
                 chain_id_u64,
                 BlockFlow::Reorged,
                 &self.broker,
@@ -2047,6 +2049,7 @@ async fn cursor_processing(
         publisher::publish_block_events(
             &listener.repositories,
             &fetched_block,
+            &listener.provider,
             chain_id_u64,
             BlockFlow::Live,
             &listener.broker,
@@ -2156,6 +2159,7 @@ async fn final_processing(
         publisher::publish_final_block_events(
             &listener.repositories,
             &fetched_block,
+            &listener.provider,
             chain_id_u64,
             &listener.broker,
             &listener.event_publisher,
@@ -2247,6 +2251,7 @@ async fn catchup_processing(
         publisher::publish_catchup_block_events(
             &listener.repositories,
             &fetched_block,
+            &listener.provider,
             chain_id_u64,
             publisher::CatchupTarget {
                 consumer_id: &consumer_id,
@@ -2332,6 +2337,7 @@ async fn final_catchup_processing(
         publisher::publish_final_catchup_block_events(
             &listener.repositories,
             &fetched_block,
+            &listener.provider,
             chain_id_u64,
             publisher::CatchupTarget {
                 consumer_id: &consumer_id,

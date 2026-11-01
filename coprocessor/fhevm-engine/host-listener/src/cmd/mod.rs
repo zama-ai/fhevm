@@ -15,7 +15,7 @@ use tracing::{error, info, warn, Level};
 
 use std::collections::{BTreeMap, VecDeque};
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use fhevm_engine_common::database::connect_pool_with_options;
@@ -26,6 +26,10 @@ use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 use fhevm_engine_common::versioning::{reconcile_stack_mode, StackMode};
 use sqlx::postgres::PgPoolOptions;
 
+use crate::database::event_operands::{
+    executor_upgrade_transitions_for_proxy, ExecutorVersion,
+    ExecutorVersionSchedule,
+};
 use crate::database::history_verification::verify_finalized_history;
 use crate::database::ingest::{
     update_finalized_blocks, validate_block_logs, BlockLogs, IngestOptions,
@@ -229,6 +233,7 @@ pub struct InfiniteLogIter {
     pub tick_block: HeartBeat,
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
+    executor_version_cursor: Mutex<Option<ExecutorVersionCursor>>,
     catchup_finalization_in_blocks: u64,
     tracks_kms_generation: bool,
     rpc_finalized_block: Option<i64>,
@@ -239,6 +244,46 @@ struct CatchupPage {
     from_block: u64,
     next_page: u64,
     remaining_blocks: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ExecutorVersionCursor {
+    block_number: u64,
+    block_hash: BlockHash,
+    version: ExecutorVersion,
+}
+
+/// Owned version-resolution input so history recovery can resolve each
+/// recovered block without borrowing its temporary log batch.
+pub(crate) struct ExecutorVersionRequest {
+    pub(crate) block_number: u64,
+    pub(crate) block_hash: BlockHash,
+    pub(crate) parent_hash: BlockHash,
+    pub(crate) tfhe_proxy: Option<Address>,
+    pub(crate) persisted_parent_version: Option<Option<ExecutorVersion>>,
+    pub(crate) upgrades: Vec<(u64, Address)>,
+}
+
+impl ExecutorVersionRequest {
+    pub(crate) fn from_block(
+        block: &BlockLogs<Log>,
+        tfhe_proxy: Option<Address>,
+    ) -> Self {
+        let upgrades = tfhe_proxy.map_or_else(Vec::new, |proxy| {
+            executor_upgrade_transitions_for_proxy(
+                block.logs.iter().map(|log| (log.log_index, &log.inner)),
+                proxy,
+            )
+        });
+        Self {
+            block_number: block.summary.number,
+            block_hash: block.summary.hash,
+            parent_hash: block.summary.parent_hash,
+            tfhe_proxy,
+            persisted_parent_version: None,
+            upgrades,
+        }
+    }
 }
 
 enum BlockOrTimeoutOrNone {
@@ -320,11 +365,103 @@ impl InfiniteLogIter {
             block_history: BlockHistory::new(
                 args.reorg_maximum_duration_in_blocks as usize,
             ),
+            executor_version_cursor: Mutex::new(None),
             catchup_finalization_in_blocks: args.catchup_finalization_in_blocks,
             tracks_kms_generation: !args.kms_generation_address.is_empty(),
             rpc_finalized_block: None,
             timeout_request_websocket: args.timeout_request_websocket,
         }
+    }
+
+    async fn query_executor_version(
+        &self,
+        address: Address,
+        at_block_hash: BlockHash,
+    ) -> Option<ExecutorVersion> {
+        let provider = self.provider.read().await.clone()?;
+        let executor =
+            crate::contracts::TfheContract::FHEVMExecutorInstance::new(
+                address, &provider,
+            );
+        match tokio::time::timeout(
+            Duration::from_secs(self.timeout_request_websocket),
+            executor
+                .getVersion()
+                .block(BlockId::hash_canonical(at_block_hash))
+                .call(),
+        )
+        .await
+        {
+            Ok(Ok(value)) => ExecutorVersion::parse(&value),
+            Ok(Err(error)) => {
+                tracing::debug!(
+                    %address,
+                    %at_block_hash,
+                    %error,
+                    "Cannot resolve FHEVMExecutor version at canonical block"
+                );
+                None
+            }
+            Err(_) => {
+                tracing::debug!(
+                    %address,
+                    %at_block_hash,
+                    "Timed out resolving FHEVMExecutor version at canonical block"
+                );
+                None
+            }
+        }
+    }
+
+    pub(crate) async fn executor_version_schedule(
+        &self,
+        request: ExecutorVersionRequest,
+    ) -> ExecutorVersionSchedule {
+        let Some(tfhe_proxy) = request.tfhe_proxy else {
+            if let Ok(mut cursor) = self.executor_version_cursor.lock() {
+                *cursor = None;
+            }
+            return ExecutorVersionSchedule::default();
+        };
+
+        let cached_parent = self
+            .executor_version_cursor
+            .lock()
+            .ok()
+            .and_then(|cursor| *cursor)
+            .filter(|cursor| {
+                cursor.block_hash == request.parent_hash
+                    && cursor.block_number.checked_add(1)
+                        == Some(request.block_number)
+            });
+        let mut current = cached_parent
+            .map(|cursor| cursor.version)
+            .or_else(|| request.persisted_parent_version.flatten());
+        if current.is_none() {
+            current = self
+                .query_executor_version(tfhe_proxy, request.parent_hash)
+                .await;
+        }
+        let mut schedule = ExecutorVersionSchedule::new(current);
+        for (log_index, implementation) in request.upgrades {
+            current = self
+                .query_executor_version(implementation, request.block_hash)
+                .await;
+            schedule.add_transition(log_index, current);
+        }
+
+        if let Some(version) = current {
+            if let Ok(mut cursor) = self.executor_version_cursor.lock() {
+                *cursor = Some(ExecutorVersionCursor {
+                    block_number: request.block_number,
+                    block_hash: request.block_hash,
+                    version,
+                });
+            }
+        } else if let Ok(mut cursor) = self.executor_version_cursor.lock() {
+            *cursor = None;
+        }
+        schedule
     }
 
     async fn get_chain_id(&self) -> anyhow::Result<ChainId> {
@@ -1125,6 +1262,9 @@ impl InfiniteLogIter {
     /// This cursor is in memory: gaps older than the startup lookback still
     /// require the HTTP poller or an explicit replay after a process restart.
     fn retry_from_block(&mut self, block_number: u64) {
+        if let Ok(mut cursor) = self.executor_version_cursor.lock() {
+            *cursor = None;
+        }
         let mut from = self
             .pending_catchup_page
             .as_ref()
@@ -1170,7 +1310,7 @@ async fn db_insert_block(
     );
     let mut retries = 10;
     loop {
-        let res = crate::database::ingest::ingest_with_history_recovery(
+        let res = crate::database::ingest::ingest_with_history_recovery_and_executor_versions(
             chain_id,
             db,
             block_logs,
@@ -1187,6 +1327,7 @@ async fn db_insert_block(
                 disable_synthetic_ops: args.disable_synthetic_ops,
             },
             |number| log_iter.canonical_block_for_recovery(number),
+            |request| log_iter.executor_version_schedule(request),
         )
         .await;
         let err = match res {
@@ -1649,6 +1790,7 @@ mod tests {
             tick_block: HeartBeat::new(),
             reorg_maximum_duration_in_blocks: reorg_max,
             block_history: BlockHistory::new(reorg_max as usize),
+            executor_version_cursor: Mutex::new(None),
             catchup_finalization_in_blocks: 20,
             tracks_kms_generation: false,
             rpc_finalized_block: None,
@@ -1661,6 +1803,49 @@ mod tests {
         block.header.hash = BlockHash::with_last_byte(hash);
         block.header.inner.number = 42;
         block
+    }
+
+    #[tokio::test]
+    async fn websocket_version_schedule_uses_persisted_parent_and_cursor() {
+        let iter = new_test_iter(50);
+        let proxy = Address::with_last_byte(0x42);
+        let parent = BlockLogs {
+            logs: vec![],
+            summary: BlockSummary {
+                number: 100,
+                hash: BlockHash::with_last_byte(0x64),
+                parent_hash: BlockHash::with_last_byte(0x63),
+                timestamp: 1_790_000_000,
+            },
+            catchup: false,
+            finalized: true,
+        };
+        let version = ExecutorVersion::new(0, 5, 0);
+        let mut parent_request =
+            ExecutorVersionRequest::from_block(&parent, Some(proxy));
+        parent_request.persisted_parent_version = Some(Some(version));
+        let parent_schedule =
+            iter.executor_version_schedule(parent_request).await;
+        assert_eq!(parent_schedule.ending_version(), Some(version));
+
+        let child = BlockLogs {
+            logs: vec![],
+            summary: BlockSummary {
+                number: 101,
+                hash: BlockHash::with_last_byte(0x65),
+                parent_hash: parent.summary.hash,
+                timestamp: parent.summary.timestamp + 1,
+            },
+            catchup: false,
+            finalized: true,
+        };
+        let child_schedule = iter
+            .executor_version_schedule(ExecutorVersionRequest::from_block(
+                &child,
+                Some(proxy),
+            ))
+            .await;
+        assert_eq!(child_schedule.ending_version(), Some(version));
     }
 
     #[tokio::test]

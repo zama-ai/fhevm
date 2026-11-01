@@ -30,8 +30,8 @@ use crate::cmd::wait_while_paused;
 #[cfg(test)]
 use crate::database::ingest::ingest_block_logs;
 use crate::database::ingest::{
-    ingest_with_history_recovery, update_finalized_blocks_aux, BlockLogs,
-    IngestOptions, IngestResult,
+    ingest_with_history_recovery_and_executor_versions,
+    update_finalized_blocks_aux, BlockLogs, IngestOptions, IngestResult,
 };
 use crate::database::tfhe_event_propagate::{
     spawn_stack_version_listener, Database,
@@ -817,7 +817,7 @@ async fn ingest_with_retry(
     let tfhe = Some(tfhe_address);
     let protocol_config = protocol_config_address;
     loop {
-        match ingest_with_history_recovery(
+        match ingest_with_history_recovery_and_executor_versions(
             chain_id,
             db,
             block_logs,
@@ -832,6 +832,7 @@ async fn ingest_with_retry(
                 heartbeat.update();
                 Ok(block)
             },
+            |request| client.executor_version_schedule(request),
         )
         .await
         {

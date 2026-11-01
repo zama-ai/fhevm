@@ -439,6 +439,7 @@ mod tests {
             parent_hash: Default::default(),
             timestamp: 0,
             transactions: vec![],
+            executor_version: None,
             catchup_id: None,
             last_in_catchup: false,
         };

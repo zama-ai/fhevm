@@ -24,8 +24,13 @@ use consumer::{
     AckDecision, BlockFlow, BlockPayload, CatchupPayload, ConsumerError, FilterCommand, FilterType,
     GroupStatus, ListenerConsumer,
 };
-use primitives::routing;
 use primitives::utils::chain_id_to_namespace;
+use primitives::{
+    event::{
+        ExecutorVersionMetadata, ExecutorVersionTransitionMetadata, IndexedLog, TransactionPayload,
+    },
+    routing,
+};
 use redis::FromRedisValue;
 use test_support::shared_redis_url;
 use tokio::sync::Mutex as AsyncMutex;
@@ -233,6 +238,7 @@ fn sample_block_payload(flow: BlockFlow, chain_id: u64, block_number: u64) -> Bl
         transactions: vec![],
         catchup_id: None,
         last_in_catchup: false,
+        executor_version: None,
     }
 }
 
@@ -382,6 +388,113 @@ async fn consume_final_receives_published_final_event() {
 
     assert_eq!(got, payload);
     assert_eq!(got.flow, BlockFlow::Final);
+}
+
+#[tokio::test]
+#[ignore = "requires Docker"]
+async fn catchup_replay_preserves_mixed_executor_version_schedule_over_broker() {
+    // Keep a mixed-version schedule on the wire through the catchup stream
+    // and redeliver the same block to model replay. The host consumer needs
+    // the same per-log schedule on both deliveries to replay scalar admission
+    // consistently.
+    let _guard = REDIS_TEST_LOCK.lock().await;
+    let url = consumer_redis_url().await;
+    reset_redis(&url).await;
+    let broker = Broker::redis(&url).await.unwrap();
+
+    let consumer = ListenerConsumer::new(&broker, 1, &unique_name("version-replay"));
+    consumer.ensure_catchup_consumer().await.unwrap();
+
+    let received = Arc::new(Mutex::new(Vec::<BlockPayload>::new()));
+    let received_by_handler = received.clone();
+    let consume = consumer.clone().consume_catchup(move |payload, _cancel| {
+        let received = received_by_handler.clone();
+        async move {
+            received.lock().unwrap().push(payload);
+            Ok(AckDecision::Ack)
+        }
+    });
+    let consume_handle = tokio::spawn(consume);
+
+    let topic = consumer.catchup_consumer_topic();
+    let stream = topic.key();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while redis_group_names(&url, &stream).await.is_empty() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "catchup consumer group was not created on {stream}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    let mut payload = sample_block_payload(BlockFlow::Catchup, 1, 91);
+    payload.executor_version = Some(ExecutorVersionMetadata {
+        proxy_address: [7u8; 20].into(),
+        block_hash: payload.block_hash,
+        parent_hash: payload.parent_hash,
+        initial_version: Some("FHEVMExecutor v0.5.0".into()),
+        transitions: vec![ExecutorVersionTransitionMetadata {
+            after_log_index: 5,
+            version: Some("FHEVMExecutor v0.6.0".into()),
+        }],
+    });
+    payload.transactions.push(TransactionPayload {
+        from: [4u8; 20].into(),
+        to: Some([7u8; 20].into()),
+        hash: [3u8; 32].into(),
+        transaction_index: 0,
+        value: Default::default(),
+        data: Default::default(),
+        logs: [5, 6]
+            .into_iter()
+            .map(|log_index| IndexedLog {
+                log_index,
+                address: [7u8; 20].into(),
+                topics: vec![],
+                data: Default::default(),
+            })
+            .collect(),
+    });
+
+    let publisher = broker.publisher_unscoped().await.unwrap();
+    for _ in 0..2 {
+        publisher
+            .publish(&topic.to_string(), &payload)
+            .await
+            .unwrap();
+    }
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while received.lock().unwrap().len() < 2 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "catchup replay did not deliver both versioned block payloads"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    wait_for_consumer_ack(&broker, &topic, &stream).await;
+
+    consumer.cancel_catchup();
+    tokio::time::timeout(Duration::from_secs(5), consume_handle)
+        .await
+        .expect("catchup consumer should stop after cancellation")
+        .expect("catchup consumer task should not panic")
+        .expect("catchup consumer should not return an error");
+
+    let delivered = received.lock().unwrap().clone();
+    assert_eq!(delivered, vec![payload.clone(), payload]);
+    assert_eq!(
+        delivered[0].executor_version.as_ref().unwrap().transitions[0].after_log_index,
+        5
+    );
+    assert_eq!(
+        delivered[0].transactions[0]
+            .logs
+            .iter()
+            .map(|log| log.log_index)
+            .collect::<Vec<_>>(),
+        vec![5, 6]
+    );
 }
 
 #[tokio::test]

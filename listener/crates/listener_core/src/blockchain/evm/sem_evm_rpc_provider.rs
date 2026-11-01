@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use alloy::network::AnyRpcBlock;
 use alloy::network::AnyTransactionReceipt;
-use alloy::primitives::B256;
+use alloy::primitives::{Address, B256, Bytes};
 use alloy::providers::fillers::{
     BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
 };
@@ -11,6 +11,8 @@ use alloy::providers::{Identity, Provider, ProviderBuilder, RootProvider};
 use alloy::rpc::client::RpcClient;
 use alloy::transports::http::Client;
 // use alloy::rpc::types::{Block, Transaction, TransactionReceipt};
+use alloy::sol;
+use alloy::sol_types::SolCall;
 use alloy::transports::http::Http;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -18,6 +20,13 @@ use thiserror::Error;
 use tokio::sync::{Semaphore, SemaphorePermit};
 use tracing::{error, instrument, trace, warn};
 use url::Url;
+
+sol! {
+    interface FhevmExecutorVersionAbi {
+        function getVersion() external view returns (string);
+        event Upgraded(address indexed implementation);
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum RpcProviderError {
@@ -332,6 +341,33 @@ impl SemEvmRpcProvider {
             .await?;
 
         receipt.ok_or(RpcProviderError::NotFound)
+    }
+
+    /// Query `getVersion()` against a canonical block hash. Callers can use
+    /// this for both a proxy at its parent state and a new implementation at
+    /// the block that contains its `Upgraded` event.
+    #[instrument(skip(self), level = "debug")]
+    pub async fn get_executor_version_at_hash(
+        &self,
+        address: Address,
+        block_hash: B256,
+    ) -> Result<String, RpcProviderError> {
+        let call_data = Bytes::from(FhevmExecutorVersionAbi::getVersionCall {}.abi_encode());
+        let response: Bytes = self
+            .raw_request(
+                "eth_call",
+                json!([
+                    { "to": address, "data": call_data },
+                    { "blockHash": block_hash, "requireCanonical": true }
+                ]),
+            )
+            .await?;
+        FhevmExecutorVersionAbi::getVersionCall::abi_decode_returns(&response).map_err(|error| {
+            RpcProviderError::DeserializationError {
+                method: "eth_call(getVersion)".to_string(),
+                details: error.to_string(),
+            }
+        })
     }
 
     #[instrument(skip(self), level = "debug")]
