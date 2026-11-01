@@ -1239,6 +1239,303 @@ impl Database {
         Ok(result.rows_affected() > 0)
     }
 
+    /// Reconstruct pending producer gates from persisted computation
+    /// identities. Replay can coalesce transactions that were stored as
+    /// separate chains when an ACL grant was missing. The inferred-chain
+    /// upsert cannot repair that edge, and must not replace the stored IDs or
+    /// reset discharged gates. Call after the ordered chain upserts, which
+    /// lock every pending child.
+    pub(crate) async fn repair_replayed_dependency_gates(
+        &self,
+        tx: &mut Transaction<'_>,
+        logs: &[LogTfhe],
+    ) -> Result<usize, SqlxError> {
+        let mut same_transaction_inputs = std::collections::BTreeMap::<
+            (Vec<u8>, Vec<u8>),
+            Vec<Vec<u8>>,
+        >::new();
+        let mut boundary_inputs = std::collections::BTreeMap::<
+            (Vec<u8>, Vec<u8>),
+            Vec<Vec<u8>>,
+        >::new();
+        let mut targets = std::collections::BTreeMap::<
+            Vec<u8>,
+            std::collections::BTreeSet<Vec<u8>>,
+        >::new();
+        for log in logs {
+            let Some(transaction) = log.transaction_hash else {
+                continue;
+            };
+            let Some(mask) = log.operand_boundary_mask else {
+                continue;
+            };
+            let transaction = transaction.to_vec();
+            let outputs = tfhe_result_handles(&log.event);
+            if outputs.is_empty() {
+                continue;
+            }
+            for output in &log.allowed_outputs {
+                targets
+                    .entry(transaction.clone())
+                    .or_default()
+                    .insert(output.to_vec());
+            }
+
+            // Keep transaction-local dependencies as well as boundary inputs.
+            // A required output may depend on an unallowed intermediate in the
+            // same transaction, whose own boundary input is the actual gate
+            // that must be restored after ACL replay.
+            let positions = tfhe_encrypted_operand_positions(&log.event);
+            for (position, input) in positions {
+                let boundary =
+                    mask[31 - position / 8] & (1 << (position % 8)) != 0;
+                for output in &outputs {
+                    let links = if boundary {
+                        &mut boundary_inputs
+                    } else {
+                        &mut same_transaction_inputs
+                    };
+                    links
+                        .entry((transaction.clone(), output.to_vec()))
+                        .or_default()
+                        .push(input.to_vec());
+                }
+            }
+        }
+
+        let mut target_transactions = Vec::new();
+        let mut target_outputs = Vec::new();
+        for (transaction, outputs) in targets {
+            for output in outputs {
+                target_transactions.push(transaction.clone());
+                target_outputs.push(output);
+            }
+        }
+        if target_outputs.is_empty() {
+            return Ok(0);
+        }
+        let active_targets: Vec<(Vec<u8>, Vec<u8>)> = sqlx::query_as(
+            r#"
+            SELECT c.transaction_id, c.output_handle
+            FROM unnest($1::bytea[], $2::bytea[])
+                AS target(transaction_id, output_handle)
+            JOIN computations c
+              ON c.transaction_id = target.transaction_id
+             AND c.output_handle = target.output_handle
+            WHERE c.host_chain_id = $3
+              AND c.is_allowed AND NOT c.is_completed AND NOT c.is_error
+              AND NOT EXISTS (
+                  SELECT 1 FROM ciphertexts ct
+                  WHERE ct.handle = c.output_handle
+              )
+            "#,
+        )
+        .bind(&target_transactions)
+        .bind(&target_outputs)
+        .bind(self.chain_id.as_i64())
+        .fetch_all(tx.as_mut())
+        .await?;
+        if active_targets.is_empty() {
+            return Ok(0);
+        }
+
+        let mut active_targets_by_transaction =
+            std::collections::BTreeMap::<Vec<u8>, Vec<Vec<u8>>>::new();
+        for (transaction, output) in active_targets {
+            active_targets_by_transaction
+                .entry(transaction)
+                .or_default()
+                .push(output);
+        }
+
+        // Walk backward from pending ACL-authorized outputs through only
+        // executor-minted local intermediates. Boundary edges on those paths
+        // are candidates for persisted cross-transaction gates. Resolving
+        // active targets first avoids letting a completed or materialized
+        // output make an unrelated sibling appear to need its old inputs.
+        let mut consumed = std::collections::BTreeSet::new();
+        for (transaction, transaction_targets) in active_targets_by_transaction
+        {
+            let mut pending =
+                transaction_targets.into_iter().collect::<Vec<_>>();
+            let mut visited = HashSet::new();
+            while let Some(output) = pending.pop() {
+                if !visited.insert(output.clone()) {
+                    continue;
+                }
+                let key = (transaction.clone(), output.clone());
+                if let Some(inputs) = boundary_inputs.get(&key) {
+                    for input in inputs {
+                        consumed.insert((
+                            output.clone(),
+                            transaction.clone(),
+                            input.clone(),
+                        ));
+                    }
+                }
+                if let Some(inputs) = same_transaction_inputs.get(&key) {
+                    pending.extend(inputs.iter().cloned());
+                }
+            }
+        }
+        if consumed.is_empty() {
+            return Ok(0);
+        }
+        let mut outputs = Vec::with_capacity(consumed.len());
+        let mut transactions = Vec::with_capacity(consumed.len());
+        let mut inputs = Vec::with_capacity(consumed.len());
+        for (output, transaction, input) in consumed {
+            outputs.push(output);
+            transactions.push(transaction);
+            inputs.push(input);
+        }
+
+        let edges: Vec<(Vec<u8>, Vec<u8>)> = sqlx::query_as(
+            r#"
+            WITH consumed AS (
+                SELECT DISTINCT *
+                FROM unnest($1::bytea[], $2::bytea[], $3::bytea[])
+                    AS u(output, transaction_id, input)
+            )
+            SELECT DISTINCT producer.dependence_chain_id, child.dependence_chain_id
+            FROM consumed
+            JOIN computations candidate
+              ON candidate.output_handle = consumed.output
+             AND candidate.transaction_id = consumed.transaction_id
+            JOIN LATERAL (
+                -- Every candidate is reachable from an authorized output in
+                -- this transaction. Confirm the persisted chain still has
+                -- work that can be gated before registering the edge.
+                SELECT pending_child.dependence_chain_id,
+                       pending_child.output_handle
+                FROM computations pending_child
+                WHERE pending_child.host_chain_id = candidate.host_chain_id
+                  AND pending_child.transaction_id = candidate.transaction_id
+                  AND pending_child.dependence_chain_id = candidate.dependence_chain_id
+                  AND pending_child.block_number = candidate.block_number
+                  AND pending_child.is_allowed
+                  AND NOT pending_child.is_completed
+                  AND NOT pending_child.is_error
+                  AND NOT EXISTS (
+                      SELECT 1 FROM ciphertexts ct
+                      WHERE ct.handle = pending_child.output_handle
+                  )
+                ORDER BY pending_child.schedule_order, pending_child.output_handle
+                LIMIT 1
+            ) child ON TRUE
+            JOIN LATERAL (
+                -- Reusable handles can have several producers. One earlier
+                -- pending producer can supply the canonical ciphertext; do
+                -- not gate on every duplicate execution of the same handle.
+                SELECT p.dependence_chain_id
+                FROM computations p
+                JOIN dependence_chain dc ON dc.dependence_chain_id = p.dependence_chain_id
+                WHERE p.output_handle = consumed.input
+                  AND p.host_chain_id = candidate.host_chain_id
+                  AND p.transaction_id <> candidate.transaction_id
+                  AND p.block_number <= candidate.block_number
+                  AND p.is_allowed AND NOT p.is_completed AND NOT p.is_error
+                  AND dc.status <> 'processed'
+                ORDER BY p.schedule_order, p.transaction_id
+                LIMIT 1
+            ) producer ON producer.dependence_chain_id <> child.dependence_chain_id
+            JOIN dependence_chain parent ON parent.dependence_chain_id = producer.dependence_chain_id
+            WHERE candidate.host_chain_id = $4
+              AND NOT EXISTS (SELECT 1 FROM ciphertexts ct WHERE ct.handle = consumed.input)
+              AND NOT EXISTS (SELECT 1 FROM ciphertexts ct WHERE ct.handle = candidate.output_handle)
+            ORDER BY producer.dependence_chain_id, child.dependence_chain_id
+            "#,
+        )
+        .bind(&outputs)
+        .bind(&transactions)
+        .bind(&inputs)
+        .bind(self.chain_id.as_i64())
+        .fetch_all(tx.as_mut())
+        .await?;
+        let mut parents = std::collections::BTreeMap::<
+            Vec<u8>,
+            std::collections::BTreeSet<Vec<u8>>,
+        >::new();
+        for (parent, child) in edges {
+            parents.entry(parent).or_default().insert(child);
+        }
+        let mut gate_counts = std::collections::BTreeMap::<Vec<u8>, i32>::new();
+        let mut sealed = Vec::new();
+        let mut repaired = 0;
+        for (parent, children) in parents {
+            // Children are already locked by ingestion. Never wait on an
+            // outside parent in the opposite order to worker retirement.
+            // Skipping a busy/retired parent is a safe undercount: the worker's
+            // missing-input retry remains the correctness backstop.
+            let existing: Option<Vec<Vec<u8>>> = sqlx::query_scalar(
+                r#"
+                SELECT dependents
+                FROM dependence_chain dc
+                WHERE dc.dependence_chain_id = $1 AND dc.status <> 'processed'
+                FOR NO KEY UPDATE SKIP LOCKED
+                "#,
+            )
+            .bind(&parent)
+            .fetch_optional(tx.as_mut())
+            .await?;
+            let Some(existing) = existing else {
+                continue;
+            };
+            let missing = children
+                .iter()
+                .filter(|child| !existing.contains(child))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !missing.is_empty() {
+                sqlx::query(
+                    "UPDATE dependence_chain SET dependents = dependents || $2::bytea[]
+                     WHERE dependence_chain_id = $1",
+                )
+                .bind(&parent)
+                .bind(&missing)
+                .execute(tx.as_mut())
+                .await?;
+                repaired += missing.len();
+            }
+            // The parent->child relation can predate this replay while the
+            // scalar dependency_count does not include it. This occurs when
+            // an earlier partial delivery persisted the relation for an
+            // unallowed child, then the complete replay made that child
+            // eligible. Reconcile from all currently pending canonical
+            // parents instead of treating an existing relation as proof that
+            // its count was already charged.
+            for child in children {
+                *gate_counts.entry(child).or_default() += 1;
+            }
+            sealed.push(parent);
+        }
+        // Set a lower bound from the complete pending parent set observed
+        // above. GREATEST keeps existing gates from earlier history, and makes
+        // replay idempotent when the parent relation was already present.
+        // Separate statements: a chain can be both a parent and a child, and
+        // PostgreSQL cannot update a row twice in one data-modifying CTE.
+        for (child, count) in gate_counts {
+            let result = sqlx::query(
+                "UPDATE dependence_chain SET dependency_count = $2
+                 WHERE dependence_chain_id = $1 AND dependency_count < $2",
+            )
+            .bind(child)
+            .bind(count)
+            .execute(tx.as_mut())
+            .await?;
+            repaired += result.rows_affected() as usize;
+        }
+        // As with ordinary gate creation, stop these parents absorbing more
+        // continuations while a consumer waits for their retirement.
+        let mut seals = self.sealed_chains.write().await;
+        for parent in sealed {
+            if let Ok(hash) = ChainHash::try_from(parent.as_slice()) {
+                seals.put(hash, ());
+            }
+        }
+        Ok(repaired)
+    }
+
     /// Publish committed identities, not a replay's newly inferred grouping.
     /// Prefer pending work when a reusable handle occurs in several transactions.
     pub async fn computation_chain_cache_entries(
