@@ -483,12 +483,14 @@ async fn execute_verify_proof_routine(
                 message = "verify_proofs row has NULL input; marking failed",
                 request_id
             );
+            let error = ExecutionError::NullInput(request_id).to_string();
             sqlx::query(
                 "UPDATE verify_proofs
-                 SET handles = ''::BYTEA, verified = false, verified_at = NOW()
+                 SET handles = ''::BYTEA, verified = false, verified_at = NOW(), last_error = $2
                  WHERE zk_proof_id = $1",
             )
             .bind(request_id)
+            .bind(error)
             .execute(&mut *txn)
             .await?;
             txn.commit().await?;
@@ -668,16 +670,18 @@ async fn execute_verify_proof_routine(
                 // For local failures this stores an empty handle list. After the
                 // rejection is sent, transaction-sender clears it while waiting
                 // for the Gateway's final outcome.
-                sqlx::query!(
+                sqlx::query(
                     "UPDATE verify_proofs
                      SET handles = $1,
                          verified = $2,
-                         verified_at = NOW()
+                         verified_at = NOW(),
+                         last_error = $4
                      WHERE zk_proof_id = $3",
-                    handles_bytes,
-                    verified,
-                    request_id,
                 )
+                .bind(handles_bytes)
+                .bind(verified)
+                .bind(request_id)
+                .bind(verification_error)
                 .execute(&mut *txn)
                 .await?;
             }
