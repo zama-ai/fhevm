@@ -1199,8 +1199,9 @@ pub(crate) async fn ingest_block_logs_with_executor_schedule(
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
     let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
     let mut counted_outputs = HashSet::new();
-    for tfhe_log in tfhe_event_log {
-        let inserted = match db.insert_tfhe_event(&mut tx, &tfhe_log).await {
+    let mut replayed_computation = false;
+    for tfhe_log in &tfhe_event_log {
+        let inserted = match db.insert_tfhe_event(&mut tx, tfhe_log).await {
             Err(sqlx::Error::Protocol(reason))
                 if reason == REPLAY_METADATA_CONFLICT =>
             {
@@ -1223,6 +1224,8 @@ pub(crate) async fn ingest_block_logs_with_executor_schedule(
             result => result?,
         };
         at_least_one_insertion |= inserted;
+        replayed_computation |=
+            !inserted && !tfhe_result_handles(&tfhe_log.event).is_empty();
         // Count all newly inserted ops per chain to avoid underestimating
         // pressure from producer paths that are required by downstream work.
         if slow_lane_enabled && inserted {
@@ -1288,6 +1291,11 @@ pub(crate) async fn ingest_block_logs_with_executor_schedule(
         .filter_map(|(_, chain)| chain.clone())
         .collect::<Vec<_>>();
     at_least_one_insertion |= !upgraded.is_empty();
+    // ACL-only replay can reactivate previously persisted outputs even when
+    // this delivery did not observe a duplicate computation insertion. It is
+    // still a replay for dependency reconstruction: the child may have been
+    // stored with its ACL absent and therefore incomplete gate accounting.
+    let replay_repair = replayed_computation || !upgraded.is_empty();
     if slow_lane_enabled {
         for (handle, stored_chain) in &upgraded {
             // Recording a missing producer inventory entry can already have
@@ -1416,7 +1424,16 @@ pub(crate) async fn ingest_block_logs_with_executor_schedule(
     // Write missing rows in this order too; SELECT FOR UPDATE alone misses them.
     let mut chain_updates = BTreeMap::new();
     if at_least_one_insertion {
-        for chain in chains {
+        for mut chain in chains {
+            if replay_repair {
+                // Stored computation IDs survive replay even when a repaired
+                // ACL grant changes the inferred grouping. Reconstruct gates
+                // below from those IDs; inferred edges could otherwise adopt
+                // a different child or add an uncounted release decrement.
+                // Keep outer-boundary gating on its existing cache/retry path.
+                chain.dependencies.clear();
+                chain.dependents.clear();
+            }
             chain_updates.insert(chain.hash.to_vec(), (Some(chain), None));
         }
     }
@@ -1462,6 +1479,17 @@ pub(crate) async fn ingest_block_logs_with_executor_schedule(
             count = repaired,
             "Pending computation dependence chains re-armed"
         );
+    }
+    if replay_repair {
+        let gates = db
+            .repair_replayed_dependency_gates(&mut tx, &tfhe_event_log)
+            .await?;
+        if gates > 0 {
+            warn!(
+                count = gates,
+                "Persisted computation dependency gates repaired"
+            );
+        }
     }
     let cache_updates = if options.dependence_cross_block {
         db.computation_chain_cache_entries(&mut tx, &touched_handles)
