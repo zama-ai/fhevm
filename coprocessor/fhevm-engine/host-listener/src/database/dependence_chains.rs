@@ -66,6 +66,7 @@ fn ensure_logs_order(logs: &mut [LogTfhe]) {
 const AVG_LOGS_PER_TX: usize = 8;
 fn scan_transactions(
     logs: &[LogTfhe],
+    prior_minted: &HashMap<(TransactionHash, Handle), u64>,
 ) -> (Vec<TransactionHash>, HashMap<TransactionHash, Transaction>) {
     // TODO: OPT no need for hashmap if contiguous tx
     let mut txs = HashMap::new();
@@ -85,8 +86,23 @@ fn scan_transactions(
         tx.size += outputs.len().max(1) as u64;
         let log_inputs = tfhe_inputs_handle(&log.event);
         for input in log_inputs {
-            if tx.output_handle.contains(&input) {
-                // self dependency, ignore, assuming logs are ordered in tx
+            let is_prior_same_transaction_output = log
+                .transaction_hash
+                .zip(log.log_index)
+                .and_then(|(transaction_hash, consumer_log_index)| {
+                    prior_minted.get(&(transaction_hash, input)).map(
+                        |producer_log_index| {
+                            *producer_log_index < consumer_log_index
+                        },
+                    )
+                })
+                .unwrap_or(false);
+            if tx.output_handle.contains(&input)
+                || is_prior_same_transaction_output
+            {
+                // The executor has already established the in-transaction
+                // ordering, whether the producer is in this delivery or a
+                // prior contiguous batch from this block.
                 continue;
             }
             tx.input_handle.push(input);
@@ -505,8 +521,33 @@ pub async fn dependence_chains(
     connex: bool,
     across_blocks: bool,
 ) -> OrderedChains {
+    dependence_chains_with_prior(
+        logs,
+        past_chains,
+        consumed_boundaries,
+        sealed_chains,
+        connex,
+        across_blocks,
+        &HashMap::new(),
+    )
+    .await
+}
+
+/// Group computation logs while recognizing same-transaction outputs that
+/// were persisted by an earlier contiguous batch of the same block. Their
+/// cache entry is not an external chain dependency: the executor already
+/// established the ordering inside the transaction.
+pub async fn dependence_chains_with_prior(
+    logs: &mut [LogTfhe],
+    past_chains: &ChainCache,
+    consumed_boundaries: &ConsumedBoundaryGuard,
+    sealed_chains: &SealedChainGuard,
+    connex: bool,
+    across_blocks: bool,
+    prior_minted: &HashMap<(TransactionHash, Handle), u64>,
+) -> OrderedChains {
     ensure_logs_order(logs);
-    let (ordered_hash, mut txs) = scan_transactions(logs);
+    let (ordered_hash, mut txs) = scan_transactions(logs, prior_minted);
     let mut used_txs_chains: HashMap<
         TransactionHash,
         HashSet<TransactionHash>,
@@ -913,6 +954,42 @@ mod tests {
         assert_eq!(chains.len(), 1);
         assert!(logs.iter().all(|log| log.dependence_chain == tx1));
         assert_eq!(cache.read().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn split_same_transaction_output_does_not_create_outer_self_gate() {
+        use super::dependence_chains_with_prior;
+        use std::collections::HashMap;
+
+        let cache = new_cache();
+        let guard = new_guard();
+        let sealed = new_sealed();
+        let tx = TransactionHash::with_last_byte(77);
+        let prior_output = new_handle();
+        cache.write().await.put(prior_output, tx);
+
+        let mut logs = vec![];
+        let _output = op1(prior_output, &mut logs, tx);
+        logs[0].log_index = Some(2);
+        let prior_minted = HashMap::from([((tx, prior_output), 0)]);
+
+        let chains = dependence_chains_with_prior(
+            &mut logs,
+            &cache,
+            &guard,
+            &sealed,
+            false,
+            true,
+            &prior_minted,
+        )
+        .await;
+
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].hash, tx);
+        assert!(chains[0].dependencies.is_empty());
+        assert!(chains[0].split_dependencies.is_empty());
+        assert!(chains[0].outer_boundary_handles.is_empty());
+        assert!(chains[0].dependents.is_empty());
     }
 
     #[tokio::test]
