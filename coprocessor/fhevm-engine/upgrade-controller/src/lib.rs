@@ -1047,6 +1047,20 @@ async fn check_gw_dry_run_ready(
               WHERE dummy_id = true),
              -1
            ) >= $1
+           AND EXISTS (
+               SELECT 1 FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block g
+               JOIN public.listener_block_checkpoints c
+                 ON c.source = 'gateway' AND c.stack_role = 'GCS'
+                AND c.block_number = g.last_block_num
+               WHERE g.dummy_id = TRUE AND g.last_block_num IS NOT NULL
+           )
+           AND EXISTS (
+               SELECT 1 FROM public.gw_listener_last_block b
+               JOIN public.listener_block_checkpoints c
+                 ON c.source = 'gateway' AND c.stack_role = 'BCS'
+                AND c.block_number = b.last_block_num
+               WHERE b.dummy_id = TRUE AND b.last_block_num IS NOT NULL
+           )
            AND NOT EXISTS (
                SELECT 1 FROM public.verify_proofs
                WHERE block_number IS NOT NULL
@@ -2546,6 +2560,72 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
     Ok(())
 }
 
+async fn promote_gateway_checkpoints(
+    tx: &mut Transaction<'_, Postgres>,
+) -> Result<Option<(i64, fhevm_engine_common::chain_recovery::HistoryConflict)>, Error> {
+    let cursor: Option<Option<i64>> = sqlx::query_scalar(&format!(
+        "SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
+         WHERE dummy_id = TRUE"
+    ))
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(cursor) = cursor.flatten() else {
+        return Ok(None);
+    };
+    let chains: Vec<i64> = sqlx::query_scalar(
+        "SELECT chain_id FROM public.listener_block_checkpoints
+         WHERE source = 'gateway' AND stack_role = 'GCS' AND block_number = $1",
+    )
+    .bind(cursor)
+    .fetch_all(&mut **tx)
+    .await?;
+    if cursor == 0 && chains.is_empty() {
+        return Ok(None);
+    }
+    if chains.len() != 1 {
+        return Err(sqlx::Error::Protocol(
+            "Gateway cutover requires one verified checkpoint for its cursor".into(),
+        )
+        .into());
+    }
+    let chain_id = chains[0];
+    let conflict: Option<(i64, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT g.block_number, b.block_hash, g.block_hash
+         FROM public.listener_block_checkpoints g
+         JOIN public.listener_block_checkpoints b USING (source, chain_id, block_number)
+         WHERE g.source = 'gateway' AND g.stack_role = 'GCS' AND b.stack_role = 'BCS'
+           AND g.chain_id = $1 AND b.block_hash <> g.block_hash LIMIT 1",
+    )
+    .bind(chain_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    if let Some((block_number, expected_hash, observed_hash)) = conflict {
+        return Ok(Some((
+            chain_id,
+            fhevm_engine_common::chain_recovery::HistoryConflict {
+                block_number,
+                expected_hash,
+                observed_hash,
+                reason: "Gateway identities disagree during stack promotion",
+            },
+        )));
+    }
+    sqlx::query(
+        "INSERT INTO public.listener_block_checkpoints
+            (source, stack_role, chain_id, block_number, block_hash, parent_hash)
+         SELECT source, 'BCS', chain_id, block_number, block_hash, parent_hash
+         FROM public.listener_block_checkpoints
+         WHERE source = 'gateway' AND stack_role = 'GCS' AND chain_id = $1
+         ON CONFLICT (source, stack_role, chain_id, block_number)
+         DO UPDATE SET parent_hash = COALESCE(
+             listener_block_checkpoints.parent_hash, EXCLUDED.parent_hash)",
+    )
+    .bind(chain_id)
+    .execute(&mut **tx)
+    .await?;
+    Ok(None)
+}
+
 /// Cutover routine — run once every GCS row is `UpgradeAuthorized`, from the
 /// unanimity handler or from `reconcile`. Idempotent via the under-lock re-read.
 ///
@@ -2643,6 +2723,19 @@ pub async fn execute_cutover(
             reason,
             "cutover refused: this controller cannot run the proposal's release"
         );
+        return Ok(());
+    }
+
+    // Keep Gateway cursor identity with the promoted schema. If the green and
+    // blue histories disagree, commit containment before any merge or drop.
+    if let Some((chain_id, conflict)) = promote_gateway_checkpoints(&mut tx).await? {
+        use fhevm_engine_common::chain_recovery::{record_halt_tx, ListenerSource};
+        record_halt_tx(
+            &mut tx,
+            conflict.observation(ListenerSource::Gateway, false, chain_id),
+        )
+        .await?;
+        tx.commit().await?;
         return Ok(());
     }
 
@@ -4433,6 +4526,9 @@ mod tests {
                 sqlx::query(&format!("INSERT INTO {schema}.gw_listener_last_block (dummy_id,last_block_num) VALUES (TRUE,1) ON CONFLICT (dummy_id) DO UPDATE SET last_block_num=1"))
                     .execute(&pool).await.unwrap();
             }
+            for role in ["BCS", "GCS"] {
+                seed_gateway_checkpoint(&pool, role, 1, 1).await;
+            }
             sqlx::query("INSERT INTO public.host_chain_blocks_valid (chain_id,block_hash,block_number,block_status) VALUES (1,$1,100,'finalized')")
                 .bind(vec![1_u8;32]).execute(&pool).await.unwrap();
             let replay = begin_replay(&pool, ListenerSource::Host, false, 1, 100, 100)
@@ -4563,6 +4659,28 @@ mod tests {
         .execute(pool)
         .await
         .expect("seed consensus_epoch history");
+    }
+
+    async fn seed_gateway_checkpoint(
+        pool: &Pool<Postgres>,
+        stack_role: &str,
+        chain_id: i64,
+        block_number: i64,
+    ) {
+        sqlx::query(
+            "INSERT INTO public.listener_block_checkpoints
+             (source,stack_role,chain_id,block_number,block_hash)
+             VALUES ('gateway',$1,$2,$3,$4)
+             ON CONFLICT (source,stack_role,chain_id,block_number)
+             DO UPDATE SET block_hash=EXCLUDED.block_hash",
+        )
+        .bind(stack_role)
+        .bind(chain_id)
+        .bind(block_number)
+        .bind(vec![u8::from(stack_role == "GCS"); 32])
+        .execute(pool)
+        .await
+        .expect("seed Gateway cursor checkpoint");
     }
 
     /// A `gcs` table NOT in `COPROCESSOR_TABLES`: only `DROP SCHEMA … CASCADE`
@@ -5265,6 +5383,9 @@ mod tests {
         .execute(&pool)
         .await
         .expect("seed blue Gateway watermark");
+        for role in ["BCS", "GCS"] {
+            seed_gateway_checkpoint(&pool, role, 1, 1).await;
+        }
 
         let cancel = CancellationToken::new();
         reconcile(
