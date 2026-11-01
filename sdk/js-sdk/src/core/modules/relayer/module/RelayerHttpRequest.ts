@@ -33,11 +33,9 @@ import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError
 // /v4/user-decrypt): a single POST, a single JSON response, no job id, no polling —
 // unlike RelayerAsyncRequest, which targets the existing relayer's async job-queue API.
 
-// relayer-http's success envelope is flat: `result` is directly the array of shares
-// (`{ status, requestId, result: [{ payload, signature, extraData }, ...] }`), unlike
-// the existing relayer's `RelayerUserDecryptSucceeded`, which nests a second `result`
-// one level deeper. So the existing guard can't be reused as-is — reusing its
-// lower-level field assertions instead.
+// relayer-http nests user-decrypt shares like the existing relayer (`result.result`),
+// but `RelayerUserDecryptSucceeded` tolerates v11's missing extraData and skips the
+// UUIDv7/65-byte/non-empty checks — so only its lower-level field assertions are reused.
 
 // setTimeout's largest delay (2^31 - 1 ms). Node turns a delay above it, below 1
 // or NaN into 1 ms, so an out-of-range timeout would fire almost immediately.
@@ -336,6 +334,8 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
       });
     }
 
+    // By design, a non-JSON body is a RelayerHttpFetchError whatever the status (e.g. a
+    // proxy's 502 HTML page): RelayerHttpUnexpectedResponseError is only for non-ok JSON.
     try {
       bodyJson = JSON.parse(bodyText) as unknown;
     } catch (cause) {
@@ -459,6 +459,8 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
     return new RelayerHttpResultError({
       url: this._url,
       cause: cause as InvalidPropertyError,
+      // By design, the raw text, not the parsed JSON, despite the field name; could be
+      // improved by renaming the field (e.g. `body`, as on RelayerHttpFetchError).
       bodyJson: bodyText.slice(0, 500),
     });
   }
