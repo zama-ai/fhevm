@@ -231,6 +231,12 @@ pub struct PublishConfig {
 
     #[serde(default = "default_publish_no_stale_retries")]
     pub publish_no_stale_retries: u32,
+
+    /// FHEVMExecutor proxy whose block-scoped version schedule is carried in
+    /// broker payloads for version-aware host-listener admission. When unset,
+    /// payloads omit this metadata and older compatibility rules apply.
+    #[serde(default)]
+    pub tfhe_executor_proxy_address: Option<alloy::primitives::Address>,
 }
 
 impl Default for PublishConfig {
@@ -239,6 +245,7 @@ impl Default for PublishConfig {
             publish_retry_secs: default_publish_retry_secs(),
             publish_stale: default_publish_stale(),
             publish_no_stale_retries: default_publish_no_stale_retries(),
+            tfhe_executor_proxy_address: None,
         }
     }
 }
@@ -1100,6 +1107,24 @@ mod tests {
         assert_eq!(config.publish_retry_secs, 1);
         assert!(config.publish_stale);
         assert_eq!(config.publish_no_stale_retries, 5);
+        assert!(config.tfhe_executor_proxy_address.is_none());
+    }
+
+    #[test]
+    fn test_publish_config_accepts_executor_proxy_address() {
+        let config: PublishConfig = serde_json::from_value(serde_json::json!({
+            "tfhe_executor_proxy_address":
+                "0x0000000000000000000000000000000000000042"
+        }))
+        .unwrap();
+        assert_eq!(
+            config.tfhe_executor_proxy_address,
+            Some(
+                "0x0000000000000000000000000000000000000042"
+                    .parse()
+                    .unwrap()
+            )
+        );
     }
 
     #[test]

@@ -96,3 +96,6 @@ blockchain:
       publish_stale: true
       # Active if publish_stale is false. Number of retries for stale publish attempts before giving up (default: 5)
       publish_no_stale_retries: 5
+      # Set the deployed FHEVMExecutor proxy to attach canonical, block-scoped
+      # executor-version metadata to broker payloads for host-listener ingress.
+      # tfhe_executor_proxy_address: "0x0000000000000000000000000000000000000000"

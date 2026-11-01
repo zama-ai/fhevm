@@ -10,13 +10,21 @@ use alloy::{
 };
 use consumer::{AckDecision, BlockPayload};
 use fhevm_engine_common::chain_id::ChainId;
-use primitives::event::{BlockFlow, IndexedLog, TransactionPayload};
+use primitives::event::{
+    BlockFlow, ExecutorVersionMetadata, ExecutorVersionTransitionMetadata,
+    IndexedLog, TransactionPayload,
+};
 use sqlx::PgPool;
 
-use super::{ingest_payload, ConsumerConfig};
+use super::{
+    executor_version_schedule_for_payload, ingest_payload, ConsumerConfig,
+};
 use crate::{
     contracts::KMSGeneration,
-    database::{ingest::IngestOptions, tfhe_event_propagate::Database},
+    database::{
+        event_operands::ExecutorVersion, ingest::IngestOptions,
+        tfhe_event_propagate::Database,
+    },
     kms_generation::{
         aws_s3::AwsS3Interface,
         digest::{digest_crs, digest_key},
@@ -25,6 +33,119 @@ use crate::{
 
 const CHAIN_ID: u64 = 12345;
 const KMS_ADDRESS: Address = Address::repeat_byte(2);
+
+#[test]
+fn broker_executor_schedule_is_bound_to_block_proxy_and_log_order() {
+    let proxy = Address::repeat_byte(7);
+    let block_hash = B256::repeat_byte(8);
+    let parent_hash = B256::repeat_byte(9);
+    let payload = BlockPayload {
+        flow: BlockFlow::Live,
+        chain_id: CHAIN_ID,
+        block_number: 11,
+        block_hash,
+        parent_hash,
+        timestamp: 1,
+        transactions: vec![],
+        catchup_id: None,
+        last_in_catchup: false,
+        executor_version: Some(ExecutorVersionMetadata {
+            proxy_address: proxy,
+            block_hash,
+            parent_hash,
+            initial_version: Some("FHEVMExecutor v0.5.0".into()),
+            transitions: vec![ExecutorVersionTransitionMetadata {
+                after_log_index: 5,
+                version: Some("FHEVMExecutor v0.6.0".into()),
+            }],
+        }),
+    };
+
+    let schedule = executor_version_schedule_for_payload(&payload, proxy);
+    assert!(schedule.is_resolved());
+    assert_eq!(
+        schedule.version_for_log_index(5),
+        Some(ExecutorVersion::new(0, 5, 0))
+    );
+    assert_eq!(
+        schedule.version_for_log_index(6),
+        Some(ExecutorVersion::new(0, 6, 0))
+    );
+}
+
+#[test]
+fn broker_executor_schedule_ignores_unbound_or_unordered_metadata() {
+    let proxy = Address::repeat_byte(7);
+    let mut payload = BlockPayload {
+        flow: BlockFlow::Live,
+        chain_id: CHAIN_ID,
+        block_number: 11,
+        block_hash: B256::repeat_byte(8),
+        parent_hash: B256::repeat_byte(9),
+        timestamp: 1,
+        transactions: vec![],
+        catchup_id: None,
+        last_in_catchup: false,
+        executor_version: Some(ExecutorVersionMetadata {
+            proxy_address: proxy,
+            block_hash: B256::repeat_byte(8),
+            parent_hash: B256::repeat_byte(9),
+            initial_version: Some("FHEVMExecutor v0.5.0".into()),
+            transitions: vec![
+                ExecutorVersionTransitionMetadata {
+                    after_log_index: 5,
+                    version: Some("FHEVMExecutor v0.6.0".into()),
+                },
+                ExecutorVersionTransitionMetadata {
+                    after_log_index: 5,
+                    version: Some("FHEVMExecutor v0.7.0".into()),
+                },
+            ],
+        }),
+    };
+    assert!(
+        !executor_version_schedule_for_payload(&payload, proxy).is_resolved()
+    );
+
+    payload.executor_version.as_mut().unwrap().block_hash =
+        B256::repeat_byte(4);
+    assert!(
+        !executor_version_schedule_for_payload(&payload, proxy).is_resolved()
+    );
+
+    payload.executor_version.as_mut().unwrap().block_hash = payload.block_hash;
+    assert!(!executor_version_schedule_for_payload(
+        &payload,
+        Address::repeat_byte(3)
+    )
+    .is_resolved());
+}
+
+#[test]
+fn broker_executor_schedule_keeps_unrecognized_versions_permissive() {
+    let proxy = Address::repeat_byte(7);
+    let payload = BlockPayload {
+        flow: BlockFlow::Live,
+        chain_id: CHAIN_ID,
+        block_number: 11,
+        block_hash: B256::repeat_byte(8),
+        parent_hash: B256::repeat_byte(9),
+        timestamp: 1,
+        transactions: vec![],
+        catchup_id: None,
+        last_in_catchup: false,
+        executor_version: Some(ExecutorVersionMetadata {
+            proxy_address: proxy,
+            block_hash: B256::repeat_byte(8),
+            parent_hash: B256::repeat_byte(9),
+            initial_version: Some("FHEVMExecutor vunknown".into()),
+            transitions: vec![],
+        }),
+    };
+    let schedule = executor_version_schedule_for_payload(&payload, proxy);
+    assert!(schedule.is_resolved());
+    assert_eq!(schedule.version_for_log_index(0), None);
+}
 
 /// Serves the expected material once `available` is set.
 #[derive(Clone)]
@@ -126,6 +247,7 @@ fn activation(number: u64, flow: BlockFlow, crs: bool) -> BlockPayload {
                 data: data.data,
             }],
         }],
+        executor_version: None,
     }
 }
 

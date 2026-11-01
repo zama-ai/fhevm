@@ -1,14 +1,22 @@
+use std::sync::Mutex;
 use std::time::Duration;
 
 use alloy::eips::BlockId;
 use alloy::primitives::{Address, B256};
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::client::RpcClient;
-use alloy::rpc::types::{Filter, Header, Log};
+use alloy::rpc::types::{
+    Filter, Header, Log, TransactionInput, TransactionRequest,
+};
+use alloy::sol_types::SolCall;
 use alloy::transports::http::reqwest::{Client, Url};
 use alloy::transports::layers::RetryBackoffLayer;
 use anyhow::{anyhow, Context, Result};
 
+use crate::cmd::ExecutorVersionRequest;
+use crate::database::event_operands::{
+    ExecutorVersion, ExecutorVersionSchedule,
+};
 use crate::database::ingest::{validate_block_logs, BlockLogs};
 
 /// HTTP client with built-in retry via Alloy's RetryBackoffLayer.
@@ -29,6 +37,7 @@ pub struct HttpChainClient {
     /// - We only need the `Provider` trait methods, not the concrete type
     provider: Box<dyn Provider<alloy::network::Ethereum> + Send + Sync>,
     addresses: Vec<Address>,
+    executor_version_cursor: Mutex<Option<(u64, B256, ExecutorVersion)>>,
 }
 
 impl HttpChainClient {
@@ -84,7 +93,100 @@ impl HttpChainClient {
         Ok(Self {
             provider: Box::new(provider),
             addresses,
+            executor_version_cursor: Mutex::new(None),
         })
+    }
+
+    async fn query_executor_version(
+        &self,
+        address: Address,
+        at_block_hash: B256,
+    ) -> Option<ExecutorVersion> {
+        let request = TransactionRequest::default().to(address).input(
+            TransactionInput::both(
+                crate::contracts::TfheContract::getVersionCall {}
+                    .abi_encode()
+                    .into(),
+            ),
+        );
+        match tokio::time::timeout(
+            Duration::from_secs(30),
+            self.provider
+                .call(request)
+                .block(BlockId::hash_canonical(at_block_hash)),
+        )
+        .await
+        {
+            Ok(Ok(value)) => crate::contracts::TfheContract::getVersionCall::abi_decode_returns(
+                &value,
+            )
+            .ok()
+            .and_then(|value| ExecutorVersion::parse(&value)),
+            Ok(Err(error)) => {
+                tracing::debug!(
+                    %address,
+                    %at_block_hash,
+                    %error,
+                    "Cannot resolve FHEVMExecutor version at canonical block"
+                );
+                None
+            }
+            Err(_) => {
+                tracing::debug!(
+                    %address,
+                    %at_block_hash,
+                    "Timed out resolving FHEVMExecutor version at canonical block"
+                );
+                None
+            }
+        }
+    }
+
+    pub(crate) async fn executor_version_schedule(
+        &self,
+        request: ExecutorVersionRequest,
+    ) -> ExecutorVersionSchedule {
+        let Some(tfhe_proxy) = request.tfhe_proxy else {
+            if let Ok(mut cursor) = self.executor_version_cursor.lock() {
+                *cursor = None;
+            }
+            return ExecutorVersionSchedule::default();
+        };
+
+        let cached_parent = self
+            .executor_version_cursor
+            .lock()
+            .ok()
+            .and_then(|cursor| *cursor)
+            .filter(|(number, hash, _)| {
+                *hash == request.parent_hash
+                    && number.checked_add(1) == Some(request.block_number)
+            });
+        let mut current = cached_parent
+            .map(|(_, _, version)| version)
+            .or_else(|| request.persisted_parent_version.flatten());
+        if current.is_none() {
+            current = self
+                .query_executor_version(tfhe_proxy, request.parent_hash)
+                .await;
+        }
+        let mut schedule = ExecutorVersionSchedule::new(current);
+        for (log_index, implementation) in request.upgrades {
+            current = self
+                .query_executor_version(implementation, request.block_hash)
+                .await;
+            schedule.add_transition(log_index, current);
+        }
+
+        if let Some(version) = current {
+            if let Ok(mut cursor) = self.executor_version_cursor.lock() {
+                *cursor =
+                    Some((request.block_number, request.block_hash, version));
+            }
+        } else if let Ok(mut cursor) = self.executor_version_cursor.lock() {
+            *cursor = None;
+        }
+        schedule
     }
 
     pub async fn chain_id(&self) -> Result<u64> {
@@ -198,7 +300,13 @@ impl HttpChainClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cmd::block_history::BlockSummary;
+    use crate::cmd::ExecutorVersionRequest;
+    use crate::database::event_operands::ExecutorVersion;
+    use crate::database::ingest::BlockLogs;
+    use alloy::primitives::{Bytes, Log as PrimitiveLog};
     use alloy::rpc::types::Block;
+    use alloy::sol_types::{SolCall, SolEvent};
     use alloy::transports::mock::Asserter;
     use serde_json::Value;
 
@@ -373,7 +481,316 @@ mod tests {
                 ProviderBuilder::new().connect_mocked_client(asserter),
             ),
             addresses: vec![],
+            executor_version_cursor: Mutex::new(None),
         }
+    }
+
+    fn encoded_version(version: &str) -> Bytes {
+        crate::contracts::TfheContract::getVersionCall::abi_encode_returns(
+            &version.to_owned(),
+        )
+        .into()
+    }
+
+    fn upgraded_log(
+        proxy: Address,
+        implementation: Address,
+        block_number: u64,
+        block_hash: B256,
+        log_index: u64,
+    ) -> Log {
+        Log {
+            inner: PrimitiveLog {
+                address: proxy,
+                data: crate::contracts::TfheContract::Upgraded {
+                    implementation,
+                }
+                .encode_log_data(),
+            },
+            block_number: Some(block_number),
+            block_hash: Some(block_hash),
+            block_timestamp: Some(1),
+            transaction_hash: Some(B256::with_last_byte(1)),
+            transaction_index: Some(0),
+            log_index: Some(log_index),
+            removed: false,
+        }
+    }
+
+    fn version_block(
+        number: u64,
+        hash: B256,
+        parent_hash: B256,
+        logs: Vec<Log>,
+    ) -> BlockLogs<Log> {
+        BlockLogs {
+            logs,
+            summary: BlockSummary {
+                number,
+                hash,
+                parent_hash,
+                timestamp: 1,
+            },
+            catchup: false,
+            finalized: true,
+        }
+    }
+
+    #[tokio::test]
+    async fn version_schedule_bootstraps_and_applies_upgrades_after_log_index()
+    {
+        let asserter = Asserter::new();
+        asserter.push_success(&encoded_version("FHEVMExecutor v0.5.0"));
+        asserter.push_success(&encoded_version("FHEVMExecutor v0.6.0"));
+        asserter.push_success(&encoded_version("FHEVMExecutor v0.7.0"));
+        let client = mocked_client(asserter);
+        let proxy = Address::from([1; 20]);
+        let v06 = Address::from([6; 20]);
+        let v07 = Address::from([7; 20]);
+        let hash = B256::with_last_byte(0x64);
+        let block = version_block(
+            100,
+            hash,
+            B256::with_last_byte(0x63),
+            vec![
+                upgraded_log(proxy, v07, 100, hash, 9),
+                upgraded_log(proxy, v06, 100, hash, 4),
+            ],
+        );
+        let request = ExecutorVersionRequest::from_block(&block, Some(proxy));
+        assert_eq!(request.upgrades, vec![(4, v06), (9, v07)]);
+
+        let schedule = client.executor_version_schedule(request).await;
+        assert_eq!(
+            schedule.version_for_log_index(3),
+            Some(ExecutorVersion::new(0, 5, 0))
+        );
+        assert_eq!(
+            schedule.version_for_log_index(4),
+            Some(ExecutorVersion::new(0, 5, 0))
+        );
+        assert_eq!(
+            schedule.version_for_log_index(5),
+            Some(ExecutorVersion::new(0, 6, 0))
+        );
+        assert_eq!(
+            schedule.version_for_log_index(9),
+            Some(ExecutorVersion::new(0, 6, 0))
+        );
+        assert_eq!(
+            schedule.version_for_log_index(10),
+            Some(ExecutorVersion::new(0, 7, 0))
+        );
+    }
+
+    #[tokio::test]
+    async fn version_resolution_handles_unknown_restart_and_orphaned_upgrade() {
+        let seed = 0x70_u64;
+        let address_byte = (seed % 251 + 1) as u8;
+        let block_number = 100 + seed % 1_000_000;
+        let asserter = Asserter::new();
+        asserter.push_success(&encoded_version("FHEVMExecutor v0.5.0"));
+        asserter.push_success(&encoded_version("FHEVMExecutor v0.6.0"));
+        asserter.push_success(&encoded_version("FHEVMExecutor v0.5.0"));
+        let client = mocked_client(asserter);
+        let proxy = Address::from([address_byte; 20]);
+        let parent_hash = B256::with_last_byte(address_byte);
+        let original_hash = B256::with_last_byte(address_byte.wrapping_add(1));
+        let replacement_hash =
+            B256::with_last_byte(address_byte.wrapping_add(2));
+        let implementation = Address::from([address_byte.wrapping_add(6); 20]);
+
+        let original = version_block(
+            block_number,
+            original_hash,
+            parent_hash,
+            vec![upgraded_log(proxy, implementation, 100, original_hash, 2)],
+        );
+        let original = client
+            .executor_version_schedule(ExecutorVersionRequest::from_block(
+                &original,
+                Some(proxy),
+            ))
+            .await;
+        assert_eq!(
+            original.ending_version(),
+            Some(ExecutorVersion::new(0, 6, 0))
+        );
+
+        // A canonical replacement for the same height omits the orphaned
+        // upgrade; the cached version from the old block must not carry over.
+        let replacement =
+            version_block(block_number, replacement_hash, parent_hash, vec![]);
+        let replacement = client
+            .executor_version_schedule(ExecutorVersionRequest::from_block(
+                &replacement,
+                Some(proxy),
+            ))
+            .await;
+        assert_eq!(
+            replacement.ending_version(),
+            Some(ExecutorVersion::new(0, 5, 0))
+        );
+
+        // A restarted client uses the hash-matched persisted parent version.
+        let restarted = mocked_client(Asserter::new());
+        let mut request = ExecutorVersionRequest::from_block(
+            &version_block(
+                block_number + 1,
+                B256::with_last_byte(address_byte.wrapping_add(3)),
+                replacement_hash,
+                vec![],
+            ),
+            Some(proxy),
+        );
+        request.persisted_parent_version =
+            Some(Some(ExecutorVersion::new(0, 5, 0)));
+        let replayed = restarted.executor_version_schedule(request).await;
+        assert_eq!(
+            replayed.version_for_log_index(0),
+            Some(ExecutorVersion::new(0, 5, 0))
+        );
+
+        // Unknown contract strings remain permissive at bootstrap and after an
+        // upgrade instead of applying a guessed newer policy.
+        let unknown_responses = Asserter::new();
+        unknown_responses
+            .push_success(&encoded_version("unrecognized executor"));
+        unknown_responses
+            .push_success(&encoded_version("unrecognized implementation"));
+        let unknown_client = mocked_client(unknown_responses);
+        let unknown_hash = B256::with_last_byte(address_byte.wrapping_add(4));
+        let unknown_block = version_block(
+            block_number + 2,
+            unknown_hash,
+            replacement_hash,
+            vec![upgraded_log(
+                proxy,
+                Address::from([address_byte.wrapping_add(8); 20]),
+                block_number + 2,
+                unknown_hash,
+                7,
+            )],
+        );
+        let unknown = unknown_client
+            .executor_version_schedule(ExecutorVersionRequest::from_block(
+                &unknown_block,
+                Some(proxy),
+            ))
+            .await;
+        assert!(unknown.is_resolved());
+        assert_eq!(unknown.version_for_log_index(6), None);
+        assert_eq!(unknown.version_for_log_index(8), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn persisted_parent_version_survives_database_and_http_client_restart(
+    ) {
+        use crate::database::ingest::{
+            ingest_with_history_recovery_and_executor_versions, IngestOptions,
+        };
+        use crate::database::tfhe_event_propagate::Database;
+        use fhevm_engine_common::chain_id::ChainId;
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let chain_id = ChainId::try_from(42_u64).expect("chain id");
+        let proxy = Address::with_last_byte(0x42);
+        let version = ExecutorVersion::new(0, 5, 0);
+        let options = IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 0,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        };
+        let acl = None;
+        let kms = None;
+        let protocol = None;
+        let bridge = None;
+        let mut first_db = Database::new(&instance.db_url, chain_id, 16)
+            .await
+            .expect("first database client");
+        let parent = version_block(
+            100,
+            B256::with_last_byte(0x64),
+            B256::with_last_byte(0x63),
+            vec![],
+        );
+        ingest_with_history_recovery_and_executor_versions(
+            chain_id,
+            &mut first_db,
+            &parent,
+            &acl,
+            &Some(proxy),
+            &kms,
+            &protocol,
+            &bridge,
+            options.clone(),
+            |_| std::future::ready(Err(anyhow!("unexpected history gap"))),
+            |request| async move {
+                assert_eq!(request.persisted_parent_version, None);
+                ExecutorVersionSchedule::new(Some(version))
+            },
+        )
+        .await
+        .expect("ingest parent block")
+        .require_complete()
+        .expect("parent block complete");
+        drop(first_db);
+
+        // Simulate process restart: both the database wrapper and poller client
+        // are fresh, and the mocked RPC has no historical version response.
+        let mut restarted_db = Database::new(&instance.db_url, chain_id, 16)
+            .await
+            .expect("restarted database client");
+        let restarted_client = mocked_client(Asserter::new());
+        let child = version_block(
+            101,
+            B256::with_last_byte(0x65),
+            parent.summary.hash,
+            vec![],
+        );
+        ingest_with_history_recovery_and_executor_versions(
+            chain_id,
+            &mut restarted_db,
+            &child,
+            &acl,
+            &Some(proxy),
+            &kms,
+            &protocol,
+            &bridge,
+            options,
+            |_| std::future::ready(Err(anyhow!("unexpected history gap"))),
+            |request| {
+                let client = &restarted_client;
+                async move {
+                    let schedule = client.executor_version_schedule(request).await;
+                    assert_eq!(
+                        schedule.version_for_log_index(0),
+                        Some(version),
+                        "the poller must use the version loaded from the canonical parent row"
+                    );
+                    schedule
+                }
+            },
+        )
+        .await
+        .expect("ingest child block after restart")
+        .require_complete()
+        .expect("child block complete");
+
+        let pool = restarted_db.pool().await;
+        let child_version: Option<String> = sqlx::query_scalar(
+            "SELECT tfhe_executor_version FROM host_chain_blocks_valid \
+             WHERE chain_id = $1 AND block_number = 101 AND block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(child.summary.hash.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("persisted child version");
+        assert_eq!(child_version.as_deref(), Some("FHEVMExecutor v0.5.0"));
     }
 
     #[tokio::test]

@@ -20,7 +20,7 @@ use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{debug, error, info, warn};
 
 use crate::cmd::block_history::{BlockHash, BlockSummary};
-use crate::cmd::InfiniteLogIter;
+use crate::cmd::{ExecutorVersionRequest, InfiniteLogIter};
 use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
@@ -30,7 +30,9 @@ use crate::database::derived_history::{
 };
 use crate::database::event_envelope::{classify, DecodedEvent};
 use crate::database::event_operands::{
-    validate_collection_shape, validate_scalar_mode,
+    validate_collection_shape, validate_scalar_mode, validate_scalar_values,
+    validate_scalar_values_for_executor_version, validate_type_metadata,
+    ExecutorVersion, ExecutorVersionSchedule,
 };
 use crate::database::synthetic_ops::{
     synthetic_logs, synthetic_transaction_hash, SyntheticContext,
@@ -96,25 +98,100 @@ pub async fn ingest_with_history_recovery<GetBlock, BlockFuture>(
     protocol: &Option<Address>,
     bridge: &Option<Address>,
     options: IngestOptions,
-    mut get_block: GetBlock,
+    get_block: GetBlock,
 ) -> anyhow::Result<IngestResult>
 where
     GetBlock: FnMut(u64) -> BlockFuture,
     BlockFuture: Future<Output = anyhow::Result<BlockLogs<Log>>>,
 {
+    ingest_with_history_recovery_and_executor_versions(
+        chain_id,
+        db,
+        block,
+        acl,
+        tfhe,
+        kms,
+        protocol,
+        bridge,
+        options,
+        get_block,
+        |_| std::future::ready(ExecutorVersionSchedule::default()),
+    )
+    .await
+}
+
+async fn persisted_executor_version_for_parent(
+    db: &Database,
+    chain_id: ChainId,
+    request: &ExecutorVersionRequest,
+) -> anyhow::Result<Option<Option<ExecutorVersion>>> {
+    let (Some(proxy), Some(parent_number)) =
+        (request.tfhe_proxy, request.block_number.checked_sub(1))
+    else {
+        return Ok(None);
+    };
+    let pool = db.pool().await;
+    let version: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT tfhe_executor_version FROM host_chain_blocks_valid \
+         WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3 \
+           AND tfhe_executor_address = $4",
+    )
+    .bind(chain_id.as_i64())
+    .bind(parent_number as i64)
+    .bind(request.parent_hash.as_slice())
+    .bind(proxy.as_slice())
+    .fetch_optional(&pool)
+    .await?;
+    Ok(version
+        .map(|(value,)| value.and_then(|value| ExecutorVersion::parse(&value))))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn ingest_with_history_recovery_and_executor_versions<
+    GetBlock,
+    BlockFuture,
+    GetExecutorSchedule,
+    ScheduleFuture,
+>(
+    chain_id: ChainId,
+    db: &mut Database,
+    block: &BlockLogs<Log>,
+    acl: &Option<Address>,
+    tfhe: &Option<Address>,
+    kms: &Option<Address>,
+    protocol: &Option<Address>,
+    bridge: &Option<Address>,
+    options: IngestOptions,
+    mut get_block: GetBlock,
+    mut get_executor_schedule: GetExecutorSchedule,
+) -> anyhow::Result<IngestResult>
+where
+    GetBlock: FnMut(u64) -> BlockFuture,
+    BlockFuture: Future<Output = anyhow::Result<BlockLogs<Log>>>,
+    GetExecutorSchedule: FnMut(ExecutorVersionRequest) -> ScheduleFuture,
+    ScheduleFuture: Future<Output = ExecutorVersionSchedule>,
+{
     let mut repair = None;
     let mut fetched = 0;
     loop {
-        let result = ingest_block_logs(
+        let block_to_ingest = repair.as_ref().unwrap_or(block);
+        let mut request =
+            ExecutorVersionRequest::from_block(block_to_ingest, *tfhe);
+        request.persisted_parent_version =
+            persisted_executor_version_for_parent(db, chain_id, &request)
+                .await?;
+        let schedule = get_executor_schedule(request).await;
+        let result = ingest_block_logs_with_executor_schedule(
             chain_id,
             db,
-            repair.as_ref().unwrap_or(block),
+            block_to_ingest,
             acl,
             tfhe,
             kms,
             protocol,
             bridge,
             options.clone(),
+            schedule,
         )
         .await?;
         match result {
@@ -158,11 +235,27 @@ pub fn validate_block_logs(block: &BlockLogs<Log>) -> Result<(), sqlx::Error> {
 }
 
 /// Validate decoded executor metadata before admitting the event to ingestion.
+#[cfg(test)]
 fn validate_tfhe_event(
     event: &TfheContract::TfheContractEvents,
     chain_id: u64,
 ) -> Result<(), &'static str> {
+    validate_tfhe_event_for_version(event, chain_id, None)
+}
+
+fn validate_tfhe_event_for_version(
+    event: &TfheContract::TfheContractEvents,
+    chain_id: u64,
+    executor_version: Option<ExecutorVersion>,
+) -> Result<(), &'static str> {
     validate_scalar_mode(event)?;
+    validate_type_metadata(event)?;
+    match executor_version {
+        Some(version) => {
+            validate_scalar_values_for_executor_version(event, version)?
+        }
+        None => validate_scalar_values(event)?,
+    }
     validate_collection_shape(event)?;
     for handle in tfhe_result_handles(event) {
         validate_computed_handle_metadata(&handle.0, chain_id)?;
@@ -455,6 +548,34 @@ pub async fn ingest_block_logs(
     confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<IngestResult, sqlx::Error> {
+    ingest_block_logs_with_executor_schedule(
+        chain_id,
+        db,
+        block_logs,
+        acl_contract_address,
+        tfhe_contract_address,
+        kms_generation_contract_address,
+        protocol_config_contract_address,
+        confidential_bridge_address,
+        options,
+        ExecutorVersionSchedule::default(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn ingest_block_logs_with_executor_schedule(
+    chain_id: ChainId,
+    db: &mut Database,
+    block_logs: &BlockLogs<Log>,
+    acl_contract_address: &Option<Address>,
+    tfhe_contract_address: &Option<Address>,
+    kms_generation_contract_address: &Option<Address>,
+    protocol_config_contract_address: &Option<Address>,
+    confidential_bridge_address: &Option<Address>,
+    options: IngestOptions,
+    executor_version_schedule: ExecutorVersionSchedule,
+) -> Result<IngestResult, sqlx::Error> {
     let Some(mut tx) = db.new_transaction().await? else {
         info!("cutover completed — host-listener skipping block ingest (retired stack)");
         return Ok(IngestResult::Complete);
@@ -729,10 +850,19 @@ pub async fn ingest_block_logs(
                 TfheContract::TfheContractEvents::SELECTORS,
             ) {
                 DecodedEvent::Decoded(event) => {
-                    validate_tfhe_event(&event.data, chain_id.as_u64())
-                        .map_err(|reason| {
-                            sqlx::Error::Protocol(reason.into())
-                        })?;
+                    let executor_version = log.log_index.map_or_else(
+                        || executor_version_schedule.ending_version(),
+                        |log_index| {
+                            executor_version_schedule
+                                .version_for_log_index(log_index)
+                        },
+                    );
+                    validate_tfhe_event_for_version(
+                        &event.data,
+                        chain_id.as_u64(),
+                        executor_version,
+                    )
+                    .map_err(|reason| sqlx::Error::Protocol(reason.into()))?;
                     // Old handles did not commit operand origin. Recognize
                     // their exact preimage, not a guessed activation height.
                     // Wildcard development configurations without an ACL
@@ -1257,6 +1387,29 @@ pub async fn ingest_block_logs(
         allow_event_count,
     )
     .await?;
+    if executor_version_schedule.is_resolved() {
+        if let Some(tfhe_address) = tfhe_contract_address {
+            let version =
+                executor_version_schedule.ending_version().map(|version| {
+                    format!(
+                        "FHEVMExecutor v{}.{}.{}",
+                        version.major, version.minor, version.patch
+                    )
+                });
+            sqlx::query(
+                "UPDATE host_chain_blocks_valid \
+                 SET tfhe_executor_address = $1, tfhe_executor_version = $2 \
+                 WHERE chain_id = $3 AND block_number = $4 AND block_hash = $5",
+            )
+            .bind(tfhe_address.as_slice())
+            .bind(version)
+            .bind(chain_id.as_i64())
+            .bind(block_number as i64)
+            .bind(block_hash.as_slice())
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
     // A replay's inferred grouping can differ from the persisted computation's
     // chain. Order the union before taking any chain row locks: two separately
     // sorted passes can still deadlock (inferred B -> stored A vs A -> B).
@@ -2618,9 +2771,84 @@ mod tests {
     use crate::contracts::TfheContract;
     use crate::contracts::TfheContract::TfheContractEvents;
     use crate::database::tfhe_event_propagate::ClearConst;
-    use alloy::primitives::{Address, FixedBytes};
+    use alloy::primitives::{Address, FixedBytes, U256};
 
     use super::*;
+
+    #[test]
+    fn ingestion_preserves_legacy_scalar_values_and_rejects_typed_zero() {
+        let mut result = [0_u8; 32];
+        result[21] = COMPUTED_HANDLE_INDEX_MARKER;
+        result[22..30].copy_from_slice(&1_u64.to_be_bytes());
+        result[30] = 2;
+        result[31] = HANDLE_VERSION;
+        let make_event = |result, pt| {
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt,
+                toType: 2,
+                result: FixedBytes(result),
+            })
+        };
+        assert_eq!(
+            validate_tfhe_event(&make_event(result, U256::from(255)), 1),
+            Ok(())
+        );
+
+        assert_eq!(
+            validate_tfhe_event(&make_event(result, U256::from(256)), 1),
+            Ok(()),
+            "legacy trivial-encryption values outside the current type range remain replayable"
+        );
+
+        result[30] = 3;
+        let event = make_event(result, U256::ZERO);
+        assert_eq!(
+            validate_tfhe_event(&event, 1),
+            Err("event result type disagrees with operation metadata")
+        );
+
+        result[30] = 2;
+        let mut lhs = [0_u8; 32];
+        lhs[30] = 2;
+        lhs[31] = HANDLE_VERSION;
+        let division_event = |rhs: U256| {
+            TfheContractEvents::FheDiv(TfheContract::FheDiv {
+                caller: Address::ZERO,
+                lhs: FixedBytes(lhs),
+                rhs: FixedBytes(rhs.to_be_bytes::<32>()),
+                scalarByte: FixedBytes([1]),
+                result: FixedBytes(result),
+            })
+        };
+        assert_eq!(
+            validate_tfhe_event(&division_event(U256::from(256)), 1),
+            Err("division/remainder scalar divisor is zero for its FheType")
+        );
+        assert_eq!(
+            validate_tfhe_event(&division_event(U256::from(257)), 1),
+            Ok(())
+        );
+
+        let mul_div_event = |divisor: U256| {
+            TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
+                caller: Address::ZERO,
+                factor1: FixedBytes(lhs),
+                factor2: FixedBytes(U256::from(256).to_be_bytes::<32>()),
+                divisor: FixedBytes(divisor.to_be_bytes::<32>()),
+                scalarByte: FixedBytes([3]),
+                result: FixedBytes(result),
+            })
+        };
+        assert_eq!(
+            validate_tfhe_event(&mul_div_event(U256::from(256)), 1),
+            Err("MulDiv divisor is zero for its FheType")
+        );
+        assert_eq!(
+            validate_tfhe_event(&mul_div_event(U256::from(257)), 1),
+            Ok(())
+        );
+    }
 
     fn fixture_chain(hash: u8, dependencies: &[u8]) -> Chain {
         Chain {
@@ -3649,5 +3877,149 @@ mod tests {
             assert!(logs_contain(message));
             assert!(logs_contain("host_chain_id=2"));
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn executor_upgrade_boundary_controls_scalar_admission_atomically() {
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let chain_id = ChainId::try_from(42_u64).expect("chain id");
+        let proxy = Address::with_last_byte(0x42);
+        let summary = BlockSummary {
+            number: 100,
+            hash: FixedBytes::with_last_byte(0x64),
+            parent_hash: FixedBytes::with_last_byte(0x63),
+            timestamp: 1_790_000_000,
+        };
+        let block_hash = summary.hash;
+        let make_log = |result_id: u8, pt: u64, log_index: u64| {
+            let mut handle = [0_u8; 32];
+            handle[0] = result_id;
+            handle[21] = COMPUTED_HANDLE_INDEX_MARKER;
+            handle[22..30].copy_from_slice(&42_u64.to_be_bytes());
+            handle[30] = 2;
+            handle[31] = HANDLE_VERSION;
+            let event = TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: U256::from(pt),
+                toType: 2,
+                result: FixedBytes(handle),
+            };
+            Log {
+                inner: alloy::primitives::Log {
+                    address: proxy,
+                    data: event.encode_log_data(),
+                },
+                block_number: Some(summary.number),
+                block_hash: Some(block_hash),
+                block_timestamp: Some(summary.timestamp),
+                transaction_hash: Some(FixedBytes::with_last_byte(0x90)),
+                transaction_index: Some(0),
+                log_index: Some(log_index),
+                removed: false,
+            }
+        };
+        let make_schedule = || {
+            let mut schedule = ExecutorVersionSchedule::new(Some(
+                ExecutorVersion::new(0, 4, 0),
+            ));
+            schedule.add_transition(1, Some(ExecutorVersion::new(0, 5, 0)));
+            schedule
+        };
+        let options = IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 0,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        };
+        let acl = None;
+        let kms = None;
+        let protocol = None;
+        let bridge = None;
+        let mut db = Database::new(&instance.db_url, chain_id, 16)
+            .await
+            .expect("database client");
+
+        let invalid_logs = vec![
+            // The upgrade is effective strictly after log index 1. This
+            // event remains v0.4 and is therefore valid despite the v0.5
+            // uint8 range check.
+            make_log(1, 256, 1),
+            // This event is after the upgrade and must fail the v0.5 bound.
+            make_log(2, 256, 2),
+        ];
+        let error = ingest_block_logs_with_executor_schedule(
+            chain_id,
+            &mut db,
+            &BlockLogs {
+                logs: invalid_logs,
+                summary,
+                catchup: false,
+                finalized: true,
+            },
+            &acl,
+            &Some(proxy),
+            &kms,
+            &protocol,
+            &bridge,
+            options.clone(),
+            make_schedule(),
+        )
+        .await
+        .expect_err("post-upgrade out-of-range value must be rejected");
+        assert!(error.to_string().contains("trivial-encryption value"));
+
+        let pool = db.pool().await;
+        let rolled_back_rows: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM host_chain_blocks_valid \
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(block_hash.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("query rollback state");
+        assert_eq!(
+            rolled_back_rows, 0,
+            "rejected block must roll back atomically"
+        );
+
+        let valid_logs = vec![make_log(1, 256, 1), make_log(2, 255, 2)];
+        ingest_block_logs_with_executor_schedule(
+            chain_id,
+            &mut db,
+            &BlockLogs {
+                logs: valid_logs,
+                summary,
+                catchup: false,
+                finalized: true,
+            },
+            &acl,
+            &Some(proxy),
+            &kms,
+            &protocol,
+            &bridge,
+            options,
+            make_schedule(),
+        )
+        .await
+        .expect("valid retry")
+        .require_complete()
+        .expect("valid retry must complete");
+
+        let counts: (i32, Option<String>) = sqlx::query_as(
+            "SELECT fhe_event_count, tfhe_executor_version \
+             FROM host_chain_blocks_valid \
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(block_hash.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("persisted accepted block");
+        assert_eq!(counts.0, 2);
+        assert_eq!(counts.1.as_deref(), Some("FHEVMExecutor v0.5.0"));
     }
 }

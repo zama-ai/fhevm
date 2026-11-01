@@ -191,6 +191,28 @@ pub struct TransactionPayload {
     pub logs: Vec<IndexedLog>,
 }
 
+/// Version information for the configured FHEVM executor proxy at a block
+/// boundary. The host listener accepts this metadata only when its proxy,
+/// block hash, and parent hash match its own configuration and payload.
+/// `None` versions deliberately preserve history-compatible scalar admission
+/// when the producer cannot resolve a version at that canonical block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecutorVersionMetadata {
+    pub proxy_address: Address,
+    pub block_hash: B256,
+    pub parent_hash: B256,
+    pub initial_version: Option<String>,
+    pub transitions: Vec<ExecutorVersionTransitionMetadata>,
+}
+
+/// An executor implementation version that becomes active after an
+/// `Upgraded` log at the given block-global log index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExecutorVersionTransitionMetadata {
+    pub after_log_index: u64,
+    pub version: Option<String>,
+}
+
 /// Processing flow that produced a block payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -246,6 +268,11 @@ pub struct BlockPayload {
     /// listener predating this field.
     #[serde(default)]
     pub last_in_catchup: bool,
+    /// Optional version schedule for the configured FHEVM executor proxy.
+    /// Omitted by older producers; consumers then retain legacy-compatible
+    /// admission behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executor_version: Option<ExecutorVersionMetadata>,
 }
 
 // --- Debug-only Display impls (remove when no longer needed) ---
@@ -329,6 +356,7 @@ mod tests {
                 .parse()
                 .unwrap(),
             timestamp: 1700000000,
+            executor_version: None,
             transactions: vec![TransactionPayload {
                 from: "0x0000000000000000000000000000000000000001"
                     .parse()
@@ -482,10 +510,21 @@ mod tests {
             transactions: vec![],
             catchup_id: None,
             last_in_catchup: false,
+            executor_version: None,
         };
 
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["transactions"], json!([]));
+        assert!(json.get("executor_version").is_none());
+    }
+
+    #[test]
+    fn legacy_block_payload_without_executor_version_remains_deserializable() {
+        let payload = sample_payload();
+        let mut json = serde_json::to_value(payload.clone()).unwrap();
+        json.as_object_mut().unwrap().remove("executor_version");
+        let decoded: BlockPayload = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded, payload);
     }
 
     #[test]
