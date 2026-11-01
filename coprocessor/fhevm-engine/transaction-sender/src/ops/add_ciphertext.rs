@@ -248,12 +248,15 @@ where
             return Ok(());
         };
 
+        // Duplicate Gateway acknowledgments carry no receipt. Keep a receipt
+        // already recorded by a concurrent replica, and replace the identity
+        // only when this call has a successful receipt hash.
         sqlx::query!(
             "UPDATE ciphertext_digest
             SET
                 txn_is_sent = true,
-                txn_hash = $1,
-                txn_block_number = $2
+                txn_hash = CASE WHEN $1::bytea IS NULL THEN txn_hash ELSE $1::bytea END,
+                txn_block_number = CASE WHEN $1::bytea IS NULL THEN txn_block_number ELSE $2::bigint END
             WHERE handle = $3
               AND ciphertext IS NOT NULL
               AND ciphertext128 IS NOT NULL
