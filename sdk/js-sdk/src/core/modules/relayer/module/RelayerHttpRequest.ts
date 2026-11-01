@@ -1,81 +1,24 @@
 import type { Auth } from '../../../types/auth.js';
 import type { Logger } from '../../../types/logger.js';
-import type {
-  FetchPublicDecryptResult,
-  FetchResultOf,
-  FetchUserDecryptResult,
-  RelayerPostOperation,
-  RelayerPublicDecryptOptions,
-  RelayerUserDecryptOptions,
-} from '../../../types/relayer.js';
+import type { FetchResultOf, RelayerPublicDecryptOptions, RelayerUserDecryptOptions } from '../../../types/relayer.js';
+import type { RelayerHttpOperation } from './RelayerHttpAttempt.js';
+import type { RelayerHttpSignal } from './relayerHttpSignal.js';
+import type { RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseError.js';
 import { sdkName, version } from '../../../_version.js';
 import { setAuth } from '../../../base/auth.js';
-import { fetchWithRetry, normalizeHeaders } from '../../../base/fetch.js';
-import { isNonEmptyString, isRecordStringProperty, assertRecordStringProperty } from '../../../base/string.js';
-import { isUuidV7 } from '../../../base/uuidv7.js';
+import { normalizeHeaders } from '../../../base/fetch.js';
 import { isUintNumber } from '../../../base/uint.js';
-import {
-  assertRecordBytesHexNo0xArrayProperty,
-  assertRecordBytesHexNo0xProperty,
-  assertRecordBytesHexProperty,
-} from '../../../base/bytes.js';
-import { assertRecordArrayProperty, assertRecordNonNullableProperty } from '../../../base/record.js';
 import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
-import { assertExtraDataFieldOnResultItems } from './guards/RelayerUserDecryptSucceeded.js';
-import { appendRelayerQuery, normalizeRelayerQuery } from './relayerUrl.js';
-import { RelayerHttpFetchError } from '../../../errors/RelayerHttpFetchError.js';
-import { RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseError.js';
-import { RelayerHttpUnexpectedResponseError } from '../../../errors/RelayerHttpUnexpectedResponseError.js';
-import { RelayerHttpResultError } from '../../../errors/RelayerHttpResultError.js';
-import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
+import { normalizeRelayerQuery } from './relayerUrl.js';
+import { RelayerHttpAttempt } from './RelayerHttpAttempt.js';
+import { runRelayerHttpRetryLoop } from './relayerHttpRetryLoop.js';
+import { MAX_TIMEOUT_MS, createRelayerHttpSignal } from './relayerHttpSignal.js';
 
 // One-shot request/response client for relayer-http's synchronous routes (e.g. POST
 // /v4/user-decrypt): a single POST, a single JSON response, no job id, no polling —
 // unlike RelayerAsyncRequest, which targets the existing relayer's async job-queue API.
-
-// relayer-http nests user-decrypt shares like the existing relayer (`result.result`),
-// but `RelayerUserDecryptSucceeded` tolerates v11's missing extraData and skips the
-// UUIDv7/65-byte/non-empty checks — so only its lower-level field assertions are reused.
-
-// setTimeout's largest delay (2^31 - 1 ms). Node turns a delay above it, below 1
-// or NaN into 1 ms, so an out-of-range timeout would fire almost immediately.
-// https://nodejs.org/api/timers.html#settimeoutcallback-delay-args
-const MAX_TIMEOUT_MS = 2_147_483_647;
-
-// Largest response body parsed, in characters (UTF-16 code units, not bytes), so
-// roughly 10 MB for relayer-http's ASCII JSON: well above any realistic
-// user-decrypt response, but bounded. Checked after reading, before JSON.parse.
-const MAX_BODY_TEXT_LENGTH = 10 * 1024 * 1024;
-
-/**
- * Returns `timeout` unchanged if it is a whole number of milliseconds that
- * setTimeout honors as-is (1 to {@link MAX_TIMEOUT_MS}), or undefined if unset.
- *
- * @param timeout - `options.timeout`, in milliseconds.
- * @returns The validated timeout, or undefined when no timeout is set.
- * @throws {InvalidPropertyError} If `timeout` is set but out of range or not an integer.
- */
-function _validateTimeoutMs(timeout: number | undefined): number | undefined {
-  if (timeout === undefined) {
-    return undefined;
-  }
-  if (!isUintNumber(timeout, MAX_TIMEOUT_MS) || timeout < 1) {
-    throw new InvalidPropertyError(
-      {
-        subject: 'options',
-        property: 'timeout',
-        expectedType: `integer from 1 to ${MAX_TIMEOUT_MS} (ms)`,
-        type: 'number',
-        value: String(timeout),
-      },
-      {},
-    );
-  }
-  return timeout;
-}
-
-// The relayer-http routes this client targets.
-type RelayerHttpOperation = Extract<RelayerPostOperation, 'USER_DECRYPT' | 'PUBLIC_DECRYPT'>;
+// Owns the run's lifetime (combined signal, timer, cleanup); each HTTP attempt is a
+// RelayerHttpAttempt, and _retryDecision alone decides whether another one follows.
 
 type RelayerHttpRequestParams<O extends RelayerHttpOperation> = {
   relayerOperation: O;
@@ -99,24 +42,11 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
   private readonly _fetchRetries: number | undefined;
   private readonly _fetchRetryDelayInMilliseconds: number | undefined;
   private readonly _logger: Logger | undefined;
+  // One-shot guard: run() may be called once per instance.
   private _hasRun: boolean;
 
   constructor(params: RelayerHttpRequestParams<O>) {
-    if (
-      (params.relayerOperation as unknown) !== 'USER_DECRYPT' &&
-      (params.relayerOperation as unknown) !== 'PUBLIC_DECRYPT'
-    ) {
-      throw new InvalidPropertyError(
-        {
-          subject: 'RelayerHttpRequestParams',
-          property: 'relayerOperation',
-          expectedType: 'string',
-          value: params.relayerOperation,
-          expectedValue: 'USER_DECRYPT | PUBLIC_DECRYPT',
-        },
-        {},
-      );
-    }
+    _assertRelayerHttpOperation(params.relayerOperation);
 
     this._relayerOperation = params.relayerOperation;
     this._url = params.url;
@@ -133,6 +63,10 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
   }
 
   public async run(): Promise<FetchResultOf<O>> {
+    // -------------------------------------------------------------------------
+    // 1. Allow one run per instance
+    // -------------------------------------------------------------------------
+
     if (this._hasRun) {
       throw new Error(
         'RelayerHttpRequest.run() was already called on this instance. Create a new instance per request.',
@@ -141,496 +75,153 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
     this._hasRun = true;
 
     // -------------------------------------------------------------------------
-    // 1. Build the request init (headers, body, auth, abort signal)
+    // 2. Combine the caller's signal with options.timeout
     // -------------------------------------------------------------------------
 
-    const { signal, timedOutAfterMs, cleanup } = this._createCombinedSignal();
+    const combined = createRelayerHttpSignal(this._signal, this._timeoutMs);
+
+    // -------------------------------------------------------------------------
+    // 3. Build the request init once, then run the HTTP attempts
+    // -------------------------------------------------------------------------
 
     // The build stays inside the try: JSON.stringify (e.g. a BigInt payload) and
     // setAuth (an invalid header) can throw, and cleanup() must still run.
     try {
-      const init = setAuth(
-        {
-          method: 'POST',
-          headers: {
-            ...this._headers,
-            'content-type': 'application/json',
-            'zama-sdk-version': version,
-            'zama-sdk-name': sdkName,
-          },
-          body: JSON.stringify(this._payload),
-          signal,
-        } satisfies RequestInit,
-        this._auth,
-      );
+      // 3.1. Build the request init once (headers, body, auth)
+      const init = this._buildInit();
 
-      return await this._runAfterInit(init, signal, timedOutAfterMs);
-    } finally {
-      cleanup();
-    }
-  }
-
-  /**
-   * Combines the caller's own signal (if any) with `options.timeout` into one
-   * internal signal, the same pattern RelayerAsyncRequest uses: never pass the
-   * caller's signal straight to fetch, so a timeout can abort independently of
-   * whether the caller passed a signal at all.
-   *
-   * @returns `signal` to pass as `init.signal`; `timedOutAfterMs`, which returns
-   * the timeout when our own timer aborted the signal (undefined otherwise); and
-   * `cleanup` to call once the request settles (success or failure) so neither
-   * the timer nor the listener on the caller's own signal lingers.
-   */
-  private _createCombinedSignal(): {
-    signal: AbortSignal;
-    timedOutAfterMs: () => number | undefined;
-    cleanup: () => void;
-  } {
-    const internalController = new AbortController();
-    // Set only by our own timer: the abort reason's name can't tell our timeout
-    // apart from the caller's own (e.g. AbortSignal.timeout() is a TimeoutError too).
-    let firedTimeoutMs: number | undefined;
-    const externalSignal = this._signal;
-    const onExternalAbort = (): void => {
-      internalController.abort(externalSignal?.reason);
-    };
-    if (externalSignal?.aborted === true) {
-      internalController.abort(externalSignal.reason);
-    } else {
-      externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
-    }
-    const timeoutMs = this._timeoutMs;
-    const timeoutId =
-      timeoutMs !== undefined
-        ? setTimeout(() => {
-            // Already aborted (by the caller): the first reason stands, it isn't our timeout.
-            if (internalController.signal.aborted) {
-              return;
-            }
-            firedTimeoutMs = timeoutMs;
-            // Same reason AbortSignal.timeout() uses; a clearable timer, unlike that one.
-            // https://developer.mozilla.org/docs/Web/API/AbortSignal/timeout
-            internalController.abort(new DOMException('Timed out', 'TimeoutError'));
-          }, timeoutMs)
-        : undefined;
-    const cleanup = (): void => {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
-      externalSignal?.removeEventListener('abort', onExternalAbort);
-    };
-
-    return { signal: internalController.signal, timedOutAfterMs: () => firedTimeoutMs, cleanup };
-  }
-
-  /**
-   * Throws if the request was aborted, classifying by who aborted it: our own
-   * timer gives RelayerHttpTimeoutError; anything else is the caller's
-   * cancellation, rethrown as the caller's own reason, unchanged (whatever its
-   * type, even null). Returns if the signal isn't aborted.
-   *
-   * The thrown error can't be used for this: fetch rejects with the abort reason
-   * itself, abortableSleep wraps it, and the caller chooses its name.
-   */
-  private _throwIfAborted(signal: AbortSignal, timedOutAfterMs: () => number | undefined, during: string): void {
-    if (!signal.aborted) {
-      return;
-    }
-    const timeoutMs = timedOutAfterMs();
-    if (timeoutMs !== undefined) {
-      this._logger?.warn?.(`[RelayerHttpRequest] Request to ${this._url} timed out${during}.`);
-      throw new RelayerHttpTimeoutError({ url: this._url, timeoutMs });
-    }
-    this._logger?.warn?.(`[RelayerHttpRequest] Request aborted on ${this._url}${during}.`);
-    throw signal.reason;
-  }
-
-  // Everything after the request init is built. Split out so `run()` can wrap it
-  // in a try/finally that always clears the timeout timer, success or failure.
-  private async _runAfterInit(
-    init: RequestInit,
-    signal: AbortSignal,
-    timedOutAfterMs: () => number | undefined,
-  ): Promise<FetchResultOf<O>> {
-    // -------------------------------------------------------------------------
-    // 2. Fetch with network-level retry
-    // -------------------------------------------------------------------------
-
-    let response: Response;
-    try {
-      // undefined falls back to fetchWithRetry's own defaults (3 retries, 1000ms delay),
-      // matching RelayerAsyncRequest's FETCH_RETRY/FETCH_RETRY_AFTER_MS.
-      response = await fetchWithRetry({
-        url: appendRelayerQuery(this._url, this._query),
-        init,
-        retries: this._fetchRetries,
-        retryDelayMs: this._fetchRetryDelayInMilliseconds,
+      // 3.2. Run HTTP attempts until one succeeds or the error is final
+      return await runRelayerHttpRetryLoop({
+        runAttempt: () => this._createAttempt(init, combined).run(),
+        // Called through `this`, so a subclass override is the one used.
+        decide: (error, attempt) => this._retryDecision(error, attempt),
+        signal: combined.signal,
+        timedOutAfterMs: combined.timedOutAfterMs,
+        remainingMs: combined.remainingMs,
+        url: this._url,
         logger: this._logger,
       });
-    } catch (cause) {
-      // An aborted request is our timeout or the caller's cancellation, never a
-      // network failure.
-      this._throwIfAborted(signal, timedOutAfterMs, '');
-
-      this._logger?.error?.(`[RelayerHttpRequest] Fetch failed on ${this._url}.`, cause);
-
-      throw new RelayerHttpFetchError({
-        url: this._url,
-        cause,
-        message: 'relayer-http request failed (network error).',
-      });
-    }
-
-    // -------------------------------------------------------------------------
-    // 3. Parse the response body as JSON
-    // -------------------------------------------------------------------------
-
-    // unknown, not an object type: JSON.parse can return null or a primitive.
-    let bodyJson: unknown;
-
-    // 3.1. Read the body as text (not response.json()) so a non-JSON body (e.g. an
-    // edge proxy's HTML error page) can still be reported in the error below.
-    let bodyText: string;
-    try {
-      // TODO(SECURITY): NO SIZE LIMIT WHILE READING THE RESPONSE BODY. response.text()
-      // buffers the whole body in memory; the check in 3.2 only keeps an oversized body
-      // from being parsed, and options.timeout bounds time, not bytes.
-      // Fix: read response.body as a stream, reject a content-length above a cap before
-      // reading, and stop with RelayerHttpFetchError once the cap is exceeded.
-      bodyText = await response.text();
-    } catch (cause) {
-      // fetch() resolving only means the headers arrived — reading the body can
-      // still fail on its own (connection dropped mid-stream, the timeout firing
-      // after headers but before the body finished, or the abort signal firing
-      // in that same window).
-      this._throwIfAborted(signal, timedOutAfterMs, ' while reading the response body');
-
-      this._logger?.error?.(`[RelayerHttpRequest] Failed to read the response body on ${this._url}.`, cause);
-
-      throw new RelayerHttpFetchError({
-        url: this._url,
-        cause,
-        status: response.status,
-        message: 'relayer-http request failed (could not read response body).',
-      });
-    }
-
-    // 3.2. Parse the text as JSON (e.g. an edge proxy's HTML error page, an empty
-    // body, or a truncated response from a dropped connection are not valid JSON).
-    // An oversized body is rejected first: the parsed value can take several times
-    // the memory of the text itself.
-    if (bodyText.length > MAX_BODY_TEXT_LENGTH) {
-      this._logger?.error?.(
-        `[RelayerHttpRequest] Response body on ${this._url} is too large to parse (${bodyText.length} characters, status=${response.status}).`,
-        undefined,
-      );
-
-      throw new RelayerHttpFetchError({
-        url: this._url,
-        status: response.status,
-        contentType: response.headers.get('content-type') ?? undefined,
-        body: bodyText.slice(0, 500),
-        message: `relayer-http response body too large (${bodyText.length} characters, limit ${MAX_BODY_TEXT_LENGTH}).`,
-      });
-    }
-
-    // By design, a non-JSON body is a RelayerHttpFetchError whatever the status (e.g. a
-    // proxy's 502 HTML page): RelayerHttpUnexpectedResponseError is only for non-ok JSON.
-    try {
-      bodyJson = JSON.parse(bodyText) as unknown;
-    } catch (cause) {
-      this._logger?.error?.(
-        `[RelayerHttpRequest] Response body on ${this._url} is not valid JSON (status=${response.status}).`,
-        cause,
-      );
-
-      throw new RelayerHttpFetchError({
-        url: this._url,
-        cause,
-        status: response.status,
-        contentType: response.headers.get('content-type') ?? undefined,
-        body: bodyText.slice(0, 500),
-        message: 'Failed to parse relayer-http response body as JSON.',
-      });
-    }
-
-    // -------------------------------------------------------------------------
-    // 4. Validate the status and shape, then return the result
-    // -------------------------------------------------------------------------
-
-    if (!response.ok) {
-      // relayer-http's own ErrorBody always carries all three fields — code, message
-      // and requestId are never optional on its side:
-      //
-      //   {
-      //     "code": "acl_denied",
-      //     "message": "...",
-      //     "requestId": "<uuidv7>"
-      //   }
-      //
-      // A body missing any of them did not come from relayer-http itself: it's most
-      // likely an intermediary (an edge gateway/API proxy, a load balancer) rejecting
-      // the request before it ever reached relayer-http.
-      if (_isRelayerHttpErrorBody(bodyJson)) {
-        this._logger?.error?.(
-          `[RelayerHttpRequest] relayer-http error on ${this._url} (status=${response.status}, code=${bodyJson.code}, requestId=${bodyJson.requestId}): ${bodyJson.message}`,
-          undefined,
-        );
-
-        throw new RelayerHttpResponseError({
-          url: this._url,
-          status: response.status,
-          code: bodyJson.code,
-          responseMessage: bodyJson.message,
-          requestId: bodyJson.requestId,
-        });
-      }
-
-      // The body didn't match relayer-http's own error contract (checked above), so
-      // it most likely came from something other than relayer-http itself.
-      this._logger?.error?.(
-        `[RelayerHttpRequest] Unexpected non-relayer-http error response on ${this._url} (status=${response.status}).`,
-        undefined,
-      );
-
-      throw new RelayerHttpUnexpectedResponseError({
-        url: this._url,
-        status: response.status,
-        contentType: response.headers.get('content-type') ?? undefined,
-        body: bodyText.slice(0, 500),
-      });
-    }
-
-    // Each assert is wrapped in try/catch so a schema mismatch (a well-formed,
-    // status-ok body that still doesn't match the expected shape) surfaces as a
-    // typed RelayerHttpResultError, not the guard helpers' raw InvalidPropertyError.
-    const relayerOperation: RelayerHttpOperation = this._relayerOperation;
-    switch (relayerOperation) {
-      case 'USER_DECRYPT': {
-        // {
-        //   "status": "succeeded",
-        //   "requestId": "<uuidv7>",
-        //   "result": {
-        //     "result": [
-        //       {
-        //          "payload": "<hex, no 0x>",
-        //          "signature": "<65-byte hex, no 0x>",
-        //          "extraData": "<hex, with 0x>"
-        //       }
-        //     ]
-        //   }
-        // }
-        try {
-          _assertIsRelayerHttpUserDecryptResult(bodyJson, 'body');
-        } catch (cause) {
-          throw this._resultError(cause, bodyText);
-        }
-        return bodyJson.result.result as FetchResultOf<O>;
-      }
-      case 'PUBLIC_DECRYPT': {
-        // {
-        //   "status": "succeeded",
-        //   "requestId": "<uuidv7>",
-        //   "result": {
-        //     "decryptedValue": "<hex, no 0x>",
-        //     "signatures": ["<65-byte hex, no 0x>", ...],
-        //     "extraData": "<hex, with 0x>"
-        //   }
-        // }
-        try {
-          _assertIsRelayerHttpPublicDecryptResult(bodyJson, 'body');
-        } catch (cause) {
-          throw this._resultError(cause, bodyText);
-        }
-        return bodyJson.result as FetchResultOf<O>;
-      }
-      default:
-        // Unreachable: the constructor rejects any other operation.
-        throw new Error(`Unknown relayer operation: ${String(relayerOperation)}`);
+    } finally {
+      combined.cleanup();
     }
   }
 
-  // Logs a success body that failed its schema check and wraps the guard's error.
-  private _resultError(cause: unknown, bodyText: string): RelayerHttpResultError {
-    this._logger?.error?.(
-      `[RelayerHttpRequest] Response body on ${this._url} does not match the expected schema.`,
-      cause,
+  /**
+   * The single retry decision, called after each relayer-http error response.
+   * Override in a subclass; the default never retries.
+   *
+   * @param _error - The attempt's relayer-http error.
+   * @param _attempt - The 1-based number of HTTP attempts already made.
+   * @returns The delay in ms before the next attempt (an integer in [1, MAX_TIMEOUT_MS]),
+   * or undefined to stop.
+   *
+   * @example
+   * ```typescript
+   * class RetryOnce<O extends RelayerHttpOperation> extends RelayerHttpRequest<O> {
+   *   protected override _retryDecision(error: RelayerHttpResponseError, attempt: number): number | undefined {
+   *     return attempt === 1 ? 1000 : undefined;
+   *   }
+   * }
+   * ```
+   */
+  protected _retryDecision(_error: RelayerHttpResponseError, _attempt: number): number | undefined {
+    return undefined;
+  }
+
+  // Normalized headers + content-type + sdk headers, the JSON body (serialized once) and auth.
+  private _buildInit(): Readonly<Omit<RequestInit, 'signal'>> {
+    return setAuth(
+      {
+        method: 'POST',
+        headers: {
+          ...this._headers,
+          'content-type': 'application/json',
+          'zama-sdk-version': version,
+          'zama-sdk-name': sdkName,
+        },
+        body: JSON.stringify(this._payload),
+      } satisfies RequestInit,
+      this._auth,
     );
-    return new RelayerHttpResultError({
+  }
+
+  // One fresh attempt from the stored values, the shared init and the combined signal.
+  private _createAttempt(
+    init: Readonly<Omit<RequestInit, 'signal'>>,
+    combined: RelayerHttpSignal,
+  ): RelayerHttpAttempt<O> {
+    return new RelayerHttpAttempt({
+      relayerOperation: this._relayerOperation,
       url: this._url,
-      cause: cause as InvalidPropertyError,
-      // By design, the raw text, not the parsed JSON, despite the field name; could be
-      // improved by renaming the field (e.g. `body`, as on RelayerHttpFetchError).
-      bodyJson: bodyText.slice(0, 500),
+      query: this._query,
+      init,
+      signal: combined.signal,
+      timedOutAfterMs: combined.timedOutAfterMs,
+      fetchRetries: this._fetchRetries,
+      fetchRetryDelayInMilliseconds: this._fetchRetryDelayInMilliseconds,
+      logger: this._logger,
     });
   }
 }
 
 /**
- * Whether `value` matches relayer-http's own error body:
+ * Asserts that `value` is one of the relayer-http operations this client targets.
  *
- * ```json
- * { "code": "acl_denied", "message": "...", "requestId": "<uuidv7>" }
+ * @param value - The `relayerOperation` passed to the constructor.
+ * @returns Nothing; narrows `value` to RelayerHttpOperation on success.
+ * @throws {InvalidPropertyError} Unless `value` is `'USER_DECRYPT'` or `'PUBLIC_DECRYPT'`.
+ *
+ * @example
+ * ```typescript
+ * _assertRelayerHttpOperation('USER_DECRYPT'); // ok
+ * _assertRelayerHttpOperation('INPUT_PROOF'); // throws
  * ```
- *
- * relayer-http always sets all three fields, so a body missing any of them (or
- * not an object at all, e.g. JSON `null`) did not come from relayer-http itself.
- *
- * @param value - The parsed response body; may be any JSON value.
- * @returns `true` when `code` and `message` are non-empty strings and
- * `requestId` is a UUIDv7.
  */
-function _isRelayerHttpErrorBody(value: unknown): value is { code: string; message: string; requestId: string } {
-  return (
-    isRecordStringProperty(value, 'code') &&
-    isNonEmptyString(value.code) &&
-    isRecordStringProperty(value, 'message') &&
-    isNonEmptyString(value.message) &&
-    isRecordStringProperty(value, 'requestId') &&
-    isUuidV7(value.requestId)
+function _assertRelayerHttpOperation(value: unknown): asserts value is RelayerHttpOperation {
+  if (value === 'USER_DECRYPT' || value === 'PUBLIC_DECRYPT') {
+    return;
+  }
+  throw new InvalidPropertyError(
+    {
+      subject: 'RelayerHttpRequestParams',
+      property: 'relayerOperation',
+      expectedType: 'string',
+      value: value as string,
+      expectedValue: 'USER_DECRYPT | PUBLIC_DECRYPT',
+    },
+    {},
   );
 }
 
 /**
- * Asserts that `value` carries relayer-http's success envelope, shared by every
- * route: `status` is `"succeeded"` and `requestId` is a UUIDv7.
+ * Returns `timeout` unchanged if it is a whole number of milliseconds that
+ * setTimeout honors as-is (1 to {@link MAX_TIMEOUT_MS}), or undefined if unset.
  *
- * @param value - The parsed response body to validate.
- * @param name - The subject name used in a thrown error, e.g. `'body'`.
- * @throws If `status` isn't `"succeeded"` or `requestId` isn't a UUIDv7.
- */
-function _assertIsRelayerHttpSucceeded(
-  value: unknown,
-  name: string,
-): asserts value is { status: 'succeeded'; requestId: string } {
-  assertRecordStringProperty(value, 'status', name, { expectedValue: 'succeeded' });
-  assertRecordStringProperty(value, 'requestId', name, {});
-  if (!isUuidV7(value.requestId)) {
-    throw new InvalidPropertyError(
-      {
-        subject: name,
-        property: 'requestId',
-        expectedType: 'UUIDv7',
-        type: 'string',
-        value: value.requestId,
-      },
-      {},
-    );
-  }
-}
-
-/**
- * Asserts that `value` matches relayer-http's `POST /v4/user-decrypt` success body:
+ * @param timeout - `options.timeout`, in milliseconds.
+ * @returns The validated timeout, or undefined when no timeout is set.
+ * @throws {InvalidPropertyError} If `timeout` is set but out of range or not an integer.
  *
- * ```json
- * {
- *   "status": "succeeded",
- *   "requestId": "<uuidv7>",
- *   "result": {
- *     "result": [
- *       {
- *          "payload": "<hex, no 0x>",
- *          "signature": "<65-byte hex, no 0x>",
- *          "extraData": "<hex, with 0x>"
- *       }
- *     ]
- *   }
- * }
+ * @example
+ * ```typescript
+ * _validateTimeoutMs(5000); // 5000
+ * _validateTimeoutMs(0); // throws
  * ```
- *
- * `status` and `requestId` are checked for minimal consistency with the same-origin
- * check already done on the error path ({@link RelayerHttpResponseError}) — not full
- * validation of the envelope.
- *
- * @param value - The parsed response body to validate.
- * @param name - The subject name used in a thrown error, e.g. `'body'`.
- * @returns Nothing; narrows `value`'s type on success.
- * @throws If `status` isn't `"succeeded"`, `requestId` isn't a UUIDv7, `value.result`
- * is missing or null, `value.result.result` is missing, not an array, empty, or any
- * item's `payload`, `signature`, or `extraData` does not match the expected hex shape.
  */
-function _assertIsRelayerHttpUserDecryptResult(
-  value: unknown,
-  name: string,
-): asserts value is { result: { result: FetchUserDecryptResult } } {
-  _assertIsRelayerHttpSucceeded(value, name);
-
-  assertRecordNonNullableProperty(value, 'result', name, {});
-  const result: unknown = value.result;
-  const resultName = `${name}.result`;
-  assertRecordArrayProperty(result, 'result', resultName, {});
-  const shares = result.result;
-  // A 200 success with zero shares is anomalous: the aggregator only returns
-  // success after reaching its threshold, so at least one share is expected.
-  if (shares.length === 0) {
+function _validateTimeoutMs(timeout: number | undefined): number | undefined {
+  if (timeout === undefined) {
+    return undefined;
+  }
+  if (!isUintNumber(timeout, MAX_TIMEOUT_MS) || timeout < 1) {
     throw new InvalidPropertyError(
       {
-        subject: resultName,
-        property: 'result',
-        expectedType: 'non-empty array',
-        type: 'array',
-        value: '[]',
+        subject: 'options',
+        property: 'timeout',
+        expectedType: `integer from 1 to ${MAX_TIMEOUT_MS} (ms)`,
+        type: 'number',
+        value: String(timeout),
       },
       {},
     );
   }
-  for (let i = 0; i < shares.length; ++i) {
-    const item: unknown = shares[i];
-    const itemName = `${resultName}.result[${i}]`;
-    assertRecordBytesHexNo0xProperty(item, 'payload', itemName, {});
-    assertRecordBytesHexNo0xProperty(item, 'signature', itemName, { byteLength: 65 });
-  }
-  // relayer-http always includes extraData on every share (UserDecryptShare.extra_data
-  // is a required field, not Option<...>) — no v11-style legacy omission to tolerate here.
-  assertExtraDataFieldOnResultItems(shares, resultName, /* required */ true, {});
-}
-
-/**
- * Asserts that `value` matches relayer-http's `POST /v4/public-decrypt` success body:
- *
- * ```json
- * {
- *   "status": "succeeded",
- *   "requestId": "<uuidv7>",
- *   "result": {
- *     "decryptedValue": "<hex, no 0x>",
- *     "signatures": ["<65-byte hex, no 0x>", ...],
- *     "extraData": "<hex, with 0x>"
- *   }
- * }
- * ```
- *
- * @param value - The parsed response body to validate.
- * @param name - The subject name used in a thrown error, e.g. `'body'`.
- * @returns Nothing; narrows `value`'s type on success.
- * @throws If the envelope is invalid, `value.result` is missing or null, or its
- * `decryptedValue`, `signatures` (non-empty), or `extraData` does not match the
- * expected hex shape.
- */
-function _assertIsRelayerHttpPublicDecryptResult(
-  value: unknown,
-  name: string,
-): asserts value is { result: FetchPublicDecryptResult } {
-  _assertIsRelayerHttpSucceeded(value, name);
-
-  assertRecordNonNullableProperty(value, 'result', name, {});
-  const result: unknown = value.result;
-  const resultName = `${name}.result`;
-  assertRecordBytesHexNo0xProperty(result, 'decryptedValue', resultName, {});
-  assertRecordBytesHexNo0xArrayProperty(result, 'signatures', resultName, { byteLength: 65 });
-  // Success is only returned once the KMS threshold is reached, so at least one signature.
-  if (result.signatures.length === 0) {
-    throw new InvalidPropertyError(
-      {
-        subject: resultName,
-        property: 'signatures',
-        expectedType: 'non-empty array',
-        type: 'array',
-        value: '[]',
-      },
-      {},
-    );
-  }
-  // relayer-http always includes extraData (PublicDecryptOutput.extra_data is a String, not Option<...>).
-  assertRecordBytesHexProperty(result, 'extraData', resultName, {});
+  return timeout;
 }
