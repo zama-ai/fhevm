@@ -63,6 +63,9 @@ pub enum ExecutionError {
     #[error("Too many inputs: {0}")]
     TooManyInputs(usize),
 
+    #[error("Transient proof verification execution failure: {0}")]
+    TransientVerificationFailure(String),
+
     #[error("Unknown chain ID: {0})")]
     UnknownChainId(i64),
 
