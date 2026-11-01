@@ -30,7 +30,8 @@ use crate::database::derived_history::{
 };
 use crate::database::event_envelope::{classify, DecodedEvent};
 use crate::database::event_operands::{
-    validate_collection_shape, validate_scalar_mode, validate_scalar_values,
+    tfhe_encrypted_operand_positions, validate_collection_shape,
+    validate_scalar_mode, validate_scalar_values,
     validate_scalar_values_for_executor_version, validate_type_metadata,
     ExecutorVersion, ExecutorVersionSchedule,
 };
@@ -312,15 +313,16 @@ fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
 /// Counts fail-closed rejections of operand-origin mask derivation. The
 /// rejected block is retried (and rejected again) on every pass, so a
 /// sustained nonzero rate on this counter means ingestion is STALLED on a
-/// block whose logs the RPC provider serves malformed (missing/duplicate
-/// log metadata) — page on it; the stall does not self-announce otherwise
-/// and never resolves without a healthy refetch or an operator fix.
+/// block whose logs are malformed (missing/duplicate metadata) or whose
+/// earlier computation lacks durable origin metadata — page on it; the stall
+/// does not self-announce otherwise and resolves only after a complete
+/// healthy refetch or operator recovery.
 static OPERAND_MASK_DERIVATION_REJECTS_COUNTER: std::sync::LazyLock<
     prometheus::IntCounter,
 > = std::sync::LazyLock::new(|| {
     prometheus::register_int_counter!(
         "coprocessor_host_listener_operand_mask_derivation_rejects_counter",
-        "Fail-closed rejections of operand-origin mask derivation (block ingest stalled on malformed provider logs)"
+        "Fail-closed rejections of operand-origin mask derivation (block ingest stalled on malformed or incomplete provenance)"
     )
     .unwrap()
 });
@@ -331,8 +333,16 @@ fn refuse_mask_derivation(reason: &'static str) -> sqlx::Error {
     sqlx::Error::Protocol(reason.into())
 }
 
+#[cfg(test)]
 pub(crate) fn populate_operand_boundary_masks(
     logs: &mut [LogTfhe],
+) -> Result<(), sqlx::Error> {
+    populate_operand_boundary_masks_with_prior(logs, &HashMap::new())
+}
+
+fn populate_operand_boundary_masks_with_prior(
+    logs: &mut [LogTfhe],
+    prior_minted: &HashMap<(TransactionHash, EventHandle), u64>,
 ) -> Result<(), sqlx::Error> {
     let mask_bearing =
         |log: &LogTfhe| !tfhe_result_handles(&log.event).is_empty();
@@ -374,9 +384,14 @@ pub(crate) fn populate_operand_boundary_masks(
         let transaction_hash = log
             .transaction_hash
             .expect("validated mask-bearing transaction hash");
+        let log_index =
+            log.log_index.expect("validated mask-bearing log index");
         let minted = minted_by_transaction.entry(transaction_hash).or_default();
         let mask = operand_boundary_mask_from_minted(&log.event, |handle| {
             minted.contains(handle)
+                || prior_minted
+                    .get(&(transaction_hash, *handle))
+                    .is_some_and(|producer_log_index| *producer_log_index < log_index)
         })
         .map_err(|reason| {
             OPERAND_MASK_DERIVATION_REJECTS_COUNTER.inc();
@@ -392,6 +407,167 @@ pub(crate) fn populate_operand_boundary_masks(
         }
     }
     Ok(())
+}
+
+/// Reconstruct executor-minted inputs produced by an earlier delivery batch
+/// of the same transaction. A producer also present in this delivery is left
+/// to the ordered in-memory pass above, which handles both producer-before-
+/// consumer and consumer-before-producer correctly during full replay.
+async fn persisted_prior_minted_outputs(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    logs: &[LogTfhe],
+) -> Result<HashMap<(TransactionHash, EventHandle), u64>, sqlx::Error> {
+    use std::collections::HashSet;
+
+    let mut outputs_in_delivery = HashSet::new();
+    let mut latest_consumer = HashMap::new();
+    for log in logs
+        .iter()
+        .filter(|log| !tfhe_result_handles(&log.event).is_empty())
+    {
+        let (Some(transaction_hash), Some(log_index)) =
+            (log.transaction_hash, log.log_index)
+        else {
+            // The ordered derivation below reports the canonical malformed
+            // metadata error and increments its rejection metric.
+            continue;
+        };
+        if log.is_executor_minted {
+            outputs_in_delivery.extend(
+                tfhe_result_handles(&log.event)
+                    .into_iter()
+                    .map(|handle| (transaction_hash, handle)),
+            );
+        }
+        for (_, handle) in tfhe_encrypted_operand_positions(&log.event) {
+            let key = (transaction_hash, handle);
+            if outputs_in_delivery.contains(&key) {
+                continue;
+            }
+            latest_consumer
+                .entry(key)
+                .and_modify(|last: &mut u64| *last = (*last).max(log_index))
+                .or_insert(log_index);
+        }
+    }
+
+    // Outputs in this delivery are reconstructed from its ordered logs. For
+    // remaining encrypted operands, look up only the exact (transaction,
+    // handle) pairs instead of scanning every computation in the transaction.
+    let mut requested = latest_consumer.into_iter().collect::<Vec<_>>();
+    requested.retain(|(key, _)| !outputs_in_delivery.contains(key));
+    if requested.is_empty() {
+        return Ok(HashMap::new());
+    }
+    requested.sort_by_key(|((transaction_hash, handle), _)| {
+        (transaction_hash.to_vec(), handle.to_vec())
+    });
+    let block_number = logs
+        .iter()
+        .find(|log| !tfhe_result_handles(&log.event).is_empty())
+        .map(|log| log.block_number)
+        .expect("requested operand origins require a computation log");
+    let block_number = i64::try_from(block_number).map_err(|_| {
+        refuse_mask_derivation(
+            "refusing operand-origin derivation with block number outside PostgreSQL range",
+        )
+    })?;
+    let transaction_ids = requested
+        .iter()
+        .map(|((transaction_hash, _), _)| transaction_hash.to_vec())
+        .collect::<Vec<_>>();
+    let output_handles = requested
+        .iter()
+        .map(|((_, handle), _)| handle.to_vec())
+        .collect::<Vec<_>>();
+    let consumer_indexes = requested
+        .iter()
+        .map(|(_, log_index)| i64::try_from(*log_index))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| {
+            refuse_mask_derivation(
+                "refusing operand-origin derivation with log index outside PostgreSQL range",
+            )
+        })?;
+
+    let rows = sqlx::query_as::<
+        _,
+        (Vec<u8>, Vec<u8>, Option<i64>, Option<bool>, i64),
+    >(
+        "WITH requested AS (
+             SELECT transaction_id, output_handle, consumer_log_index
+             FROM unnest($1::bytea[], $2::bytea[], $3::bigint[])
+                  AS r(transaction_id, output_handle, consumer_log_index)
+         )
+         SELECT c.transaction_id,
+                c.output_handle,
+                c.log_index,
+                c.is_executor_minted,
+                r.consumer_log_index
+         FROM requested r
+         JOIN computations c
+           ON c.transaction_id = r.transaction_id
+          AND c.output_handle = r.output_handle
+          AND c.host_chain_id = $4
+          AND c.block_number = $5",
+    )
+    .bind(transaction_ids)
+    .bind(output_handles)
+    .bind(consumer_indexes)
+    .bind(chain_id.as_i64())
+    .bind(block_number)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    let mut prior_minted = HashMap::new();
+    for (
+        transaction_id,
+        output_handle,
+        producer_log_index,
+        is_executor_minted,
+        consumer_log_index,
+    ) in rows
+    {
+        if is_executor_minted == Some(false) {
+            continue;
+        }
+        let Some(producer_log_index) = producer_log_index else {
+            return Err(refuse_mask_derivation(
+                "refusing operand-origin derivation: persisted same-transaction producer has no log index; replay the complete block",
+            ));
+        };
+        if producer_log_index >= consumer_log_index {
+            continue;
+        }
+        if is_executor_minted != Some(true) {
+            return Err(refuse_mask_derivation(
+                "refusing operand-origin derivation: persisted same-transaction producer provenance is unknown; replay the complete block",
+            ));
+        }
+        let transaction_hash = <[u8; 32]>::try_from(transaction_id.as_slice())
+            .map(TransactionHash::from)
+            .map_err(|_| {
+                refuse_mask_derivation(
+                    "refusing operand-origin derivation: persisted transaction hash is malformed",
+                )
+            })?;
+        let handle = <[u8; 32]>::try_from(output_handle.as_slice())
+            .map(EventHandle::from)
+            .map_err(|_| {
+                refuse_mask_derivation(
+                    "refusing operand-origin derivation: persisted output handle is malformed",
+                )
+            })?;
+        let producer_log_index = u64::try_from(producer_log_index)
+            .map_err(|_| {
+                refuse_mask_derivation(
+                    "refusing operand-origin derivation: persisted producer log index is negative",
+                )
+            })?;
+        prior_minted.insert((transaction_hash, handle), producer_log_index);
+    }
+    Ok(prior_minted)
 }
 
 fn propagate_slow_lane_to_dependents(
@@ -1172,7 +1348,13 @@ pub(crate) async fn ingest_block_logs_with_executor_schedule(
     // boundary mask is consensus-critical execution metadata, so ordering or
     // provenance gaps are fatal for this block instead of falling back to
     // database-local inference.
-    populate_operand_boundary_masks(&mut tfhe_event_log)?;
+    let prior_minted =
+        persisted_prior_minted_outputs(&mut tx, chain_id, &tfhe_event_log)
+            .await?;
+    populate_operand_boundary_masks_with_prior(
+        &mut tfhe_event_log,
+        &prior_minted,
+    )?;
 
     // Publish only committed producer identities. Rolled-back grouping must
     // not assign later consumers to chains that were never stored.

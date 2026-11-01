@@ -1006,6 +1006,15 @@ impl Database {
                     .into(),
             )
         })?;
+        let log_index = log
+            .log_index
+            .and_then(|index| i64::try_from(index).ok())
+            .ok_or_else(|| {
+                SqlxError::Protocol(
+                    "refusing computation insert without a PostgreSQL-range log index"
+                        .into(),
+                )
+            })?;
         let operand_boundary_mask =
             (!log.has_legacy_operand_origin).then_some(derived_mask.as_slice());
         // Schema isolation handles BCS/GCS routing at the connection layer
@@ -1036,7 +1045,11 @@ impl Database {
                     $9::bytea, $10::smallint, $11::smallint)
                     OR (block_number IS NOT NULL AND block_number IS DISTINCT FROM $7::bigint)
                     OR ($8::bytea IS NOT NULL AND operand_boundary_mask IS NOT NULL
-                        AND operand_boundary_mask IS DISTINCT FROM $8::bytea)))",
+                        AND operand_boundary_mask IS DISTINCT FROM $8::bytea)
+                    OR (is_executor_minted IS NOT NULL
+                        AND is_executor_minted IS DISTINCT FROM $12::boolean)
+                    OR (log_index IS NOT NULL
+                        AND log_index IS DISTINCT FROM $13::bigint)))",
         )
         .bind(output_handle)
         .bind(log.transaction_hash.map(|hash| hash.to_vec()))
@@ -1049,6 +1062,8 @@ impl Database {
         .bind(&group_id_vec)
         .bind(output_index)
         .bind(output_count)
+        .bind(log.is_executor_minted)
+        .bind(log_index)
         .fetch_one(tx.deref_mut()).await?;
         if conflicting {
             error!(
@@ -1059,7 +1074,7 @@ impl Database {
         }
         // Reconcile ACL evidence after all computation writes, before taking
         // chain locks, to keep the worker and ingestion lock order consistent.
-        let result = sqlx::query!(
+        let result = sqlx::query(
             r#"
             INSERT INTO computations (
                 output_handle,
@@ -1077,30 +1092,41 @@ impl Database {
                 operand_boundary_mask,
                 group_id,
                 output_index,
-                output_count
+                output_count,
+                log_index,
+                is_executor_minted
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15)
-            ON CONFLICT (output_handle, transaction_id) DO NOTHING
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            ON CONFLICT (output_handle, transaction_id) DO UPDATE
+                SET log_index = COALESCE(computations.log_index, EXCLUDED.log_index),
+                    is_executor_minted = COALESCE(
+                        computations.is_executor_minted,
+                        EXCLUDED.is_executor_minted
+                    )
+                WHERE computations.log_index IS NULL
+                   OR computations.is_executor_minted IS NULL
             "#,
-            output_handle,
-            dependencies as _,
-            fhe_operation as i16,
-            is_scalar,
-            log.dependence_chain.to_vec(),
-            log.transaction_hash.map(|txh| txh.to_vec()) as _,
-            output_allowed,
-            log.block_timestamp
+        )
+        .bind(output_handle)
+        .bind(dependencies.to_vec())
+        .bind(fhe_operation as i16)
+        .bind(is_scalar)
+        .bind(log.dependence_chain.to_vec())
+        .bind(log.transaction_hash.map(|txh| txh.to_vec()))
+        .bind(output_allowed)
+        .bind(log.block_timestamp
                 .saturating_add(TimeDuration::microseconds(
                     log.tx_depth_size as i64
-                )),
-            !output_allowed,
-            self.chain_id.as_i64(),
-            log.block_number as i64,
-            operand_boundary_mask,
-            group_id_vec,
-            output_index,
-            output_count,
-        )
+                )))
+        .bind(!output_allowed)
+        .bind(self.chain_id.as_i64())
+        .bind(log.block_number as i64)
+        .bind(operand_boundary_mask.map(ToOwned::to_owned))
+        .bind(group_id_vec)
+        .bind(output_index)
+        .bind(output_count)
+        .bind(log_index)
+        .bind(log.is_executor_minted)
         .execute(tx.deref_mut()).await?;
         Ok(result.rows_affected() > 0)
     }
