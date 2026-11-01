@@ -18,7 +18,7 @@ use fhevm_engine_common::{telemetry, HANDLE_VERSION};
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use sha3::Digest;
 use sha3::Keccak256;
-use sqlx::{postgres::PgListener, PgPool};
+use sqlx::{postgres::PgListener, PgPool, Row};
 use sqlx::{Postgres, Transaction};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -44,6 +44,14 @@ use tracing::{debug, error, info, warn};
 
 pub const MAX_CACHED_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
+
+fn is_retryable_initial_verification_error(error: &ExecutionError) -> bool {
+    matches!(error, ExecutionError::TransientVerificationFailure(_))
+}
+
+#[cfg(test)]
+#[path = "verifier_retry_tests.rs"]
+mod retry_policy_tests;
 
 pub(crate) const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
 pub(crate) const HANDLE_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_hdl";
@@ -424,14 +432,25 @@ async fn execute_verify_proof_routine(
         }
     };
 
-    if let Ok(row) = sqlx::query!(
+    if let Ok(row) = sqlx::query(
         "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id,
-                block_number, handles, verified_at
+                block_number, handles, verified_at IS NOT NULL AS is_replay
             FROM verify_proofs
             WHERE verified IS NULL
               AND chain_id = ANY($1::bigint[])
               AND (
-                  verified_at IS NULL
+                  (
+                      verified_at IS NULL
+                      AND (
+                          last_retry_at IS NULL
+                          OR last_retry_at + make_interval(
+                              secs => LEAST(
+                                  86400,
+                                  60 * (1 << LEAST(GREATEST(retry_count - 1, 0), 11))
+                              )
+                          ) <= NOW()
+                      )
+                  )
                   OR (
                       handles IS NOT NULL
                       AND verified_at > NOW() - INTERVAL '7 days'
@@ -448,16 +467,16 @@ async fn execute_verify_proof_routine(
               )
             ORDER BY zk_proof_id ASC
             LIMIT 1 FOR UPDATE SKIP LOCKED",
-        known_chain_ids,
     )
+    .bind(known_chain_ids)
     .fetch_one(&mut *txn)
     .await
     {
         let started_at = SystemTime::now();
-        let request_id: i64 = row.zk_proof_id;
-        let is_replay = row.verified_at.is_some();
+        let request_id: i64 = row.try_get("zk_proof_id")?;
+        let is_replay: bool = row.try_get("is_replay")?;
 
-        let Some(input) = row.input else {
+        let Some(input) = row.try_get::<Option<Vec<u8>>, _>("input")? else {
             // A NULL input can never verify; mark it failed and commit so the
             // malformed row isn't re-picked and crash-loops the worker.
             error!(
@@ -475,7 +494,7 @@ async fn execute_verify_proof_routine(
             txn.commit().await?;
             return Ok(());
         };
-        let host_chain_id_raw: i64 = row.chain_id;
+        let host_chain_id_raw: i64 = row.try_get("chain_id")?;
 
         // The filter above guarantees host_chain_id_raw is in HostChainsCache.
         // Both lookups below are infallible in practice; the `?` is a sanity
@@ -487,11 +506,13 @@ async fn execute_verify_proof_routine(
             .get_chain(host_chain_id)
             .ok_or(ExecutionError::UnknownChainId(host_chain_id_raw))?;
 
-        let contract_address = row.contract_address;
-        let user_address = row.user_address;
-        let transaction_id: Option<Vec<u8>> = row.transaction_id;
-        let block_number: Option<i64> = row.block_number;
-        let expected_handles = row.handles.unwrap_or_default();
+        let contract_address: String = row.try_get("contract_address")?;
+        let user_address: String = row.try_get("user_address")?;
+        let transaction_id: Option<Vec<u8>> = row.try_get("transaction_id")?;
+        let block_number: Option<i64> = row.try_get("block_number")?;
+        let expected_handles: Vec<u8> = row
+            .try_get::<Option<Vec<u8>>, _>("handles")?
+            .unwrap_or_default();
 
         info!(
             message = "Process zk-verify request",
@@ -548,6 +569,7 @@ async fn execute_verify_proof_routine(
             let mut verified = false;
             let mut handles_bytes = vec![];
             let mut verification_error = None;
+            let mut retryable_initial_failure = false;
             match res.as_ref() {
                 Ok((cts, blob_hash)) => {
                     info!(
@@ -599,6 +621,7 @@ async fn execute_verify_proof_routine(
                         );
                     }
                     verification_error = Some(err.to_string());
+                    retryable_initial_failure = is_retryable_initial_verification_error(err);
                 }
             }
 
@@ -613,19 +636,34 @@ async fn execute_verify_proof_routine(
                     .execute(&mut *txn)
                     .await?;
                 } else {
-                    sqlx::query!(
+                    sqlx::query(
                         "UPDATE verify_proofs
                          SET verified = NULL,
                              retry_count = retry_count + 1,
                              last_error = $2,
-                             last_retry_at = NOW()
+                             last_retry_at = clock_timestamp()
                          WHERE zk_proof_id = $1",
-                        request_id,
-                        verification_error,
                     )
+                    .bind(request_id)
+                    .bind(verification_error)
                     .execute(&mut *txn)
                     .await?;
                 }
+            } else if retryable_initial_failure {
+                sqlx::query(
+                    "UPDATE verify_proofs
+                     SET handles = NULL,
+                         verified = NULL,
+                         verified_at = NULL,
+                         retry_count = retry_count + 1,
+                         last_error = $2,
+                         last_retry_at = clock_timestamp()
+                     WHERE zk_proof_id = $1",
+                )
+                .bind(request_id)
+                .bind(verification_error)
+                .execute(&mut *txn)
+                .await?;
             } else {
                 // For local failures this stores an empty handle list. After the
                 // rejection is sent, transaction-sender clears it while waiting
@@ -854,7 +892,9 @@ pub(crate) fn rerand_and_expand_verified_list(
         // to one device; installing it selects that device's CUDA streams.
         static NEXT_GPU: AtomicUsize = AtomicUsize::new(0);
         if key.gpu_sks.is_empty() {
-            return Err(ExecutionError::Other("No GPU server keys available".into()));
+            return Err(ExecutionError::TransientVerificationFailure(
+                "No GPU server keys available".into(),
+            ));
         }
         let gpu_index = NEXT_GPU.fetch_add(1, Ordering::Relaxed) % key.gpu_sks.len();
         set_server_key(key.gpu_sks[gpu_index].clone());
@@ -875,7 +915,11 @@ pub(crate) fn rerand_and_expand_verified_list(
     let mut seed_gen = re_rand_context.finalize();
     let seed = seed_gen
         .next_seed()
-        .map_err(FhevmError::ReRandomisationError)
+        .map_err(|error| {
+            ExecutionError::TransientVerificationFailure(
+                FhevmError::ReRandomisationError(error).to_string(),
+            )
+        })
         .inspect_err(telemetry::set_current_span_error)?;
 
     // The list already passed conformance and ZK verification, so a failure
@@ -883,7 +927,11 @@ pub(crate) fn rerand_and_expand_verified_list(
     // without re-randomisation material), not an invalid user proof.
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .re_randomize_and_expand_without_verification(&key.pks, seed)
-        .map_err(FhevmError::ReRandomisationError)
+        .map_err(|error| {
+            ExecutionError::TransientVerificationFailure(
+                FhevmError::ReRandomisationError(error).to_string(),
+            )
+        })
         .inspect_err(telemetry::set_current_span_error)?;
 
     let cts = extract_ct_list(&expanded)
@@ -973,7 +1021,7 @@ async fn get_remaining_tasks(
     pool: &PgPool,
     known_chain_ids: &[i64],
 ) -> Result<i64, ExecutionError> {
-    Ok(sqlx::query_scalar!(
+    Ok(sqlx::query_scalar::<_, i64>(
         "
         SELECT COUNT(*)
         FROM (
@@ -982,7 +1030,18 @@ async fn get_remaining_tasks(
             WHERE verified IS NULL
               AND chain_id = ANY($1::bigint[])
               AND (
-                  verified_at IS NULL
+                  (
+                      verified_at IS NULL
+                      AND (
+                          last_retry_at IS NULL
+                          OR last_retry_at + make_interval(
+                              secs => LEAST(
+                                  86400,
+                                  60 * (1 << LEAST(GREATEST(retry_count - 1, 0), 11))
+                              )
+                          ) <= NOW()
+                      )
+                  )
                   OR (
                       handles IS NOT NULL
                       AND verified_at > NOW() - INTERVAL '7 days'
@@ -1000,11 +1059,10 @@ async fn get_remaining_tasks(
             FOR UPDATE SKIP LOCKED
         ) AS unlocked_rows;
         ",
-        known_chain_ids,
     )
+    .bind(known_chain_ids)
     .fetch_one(pool)
-    .await
-    .map(|count| count.unwrap_or(0))?)
+    .await?)
 }
 
 pub(crate) async fn insert_ciphertexts(
