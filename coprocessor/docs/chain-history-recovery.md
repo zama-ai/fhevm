@@ -299,3 +299,64 @@ SET resolved_at = NOW(), recovery_note = '<verified baseline and audit reference
 WHERE id IN (<audited halt IDs>) AND resolved_at IS NULL;
 COMMIT;
 ```
+
+## CFI-0023 persisted self-edge recovery
+
+The split-batch fix prevents new self-dependency edges. It does not rewrite
+`dependence_chain` rows created by older binaries. A self-edge is an invalid
+scheduler dependency: the chain is waiting on itself even though the executor
+already established the transaction's internal log order.
+
+Check for retained self-edges after deploying the fix and before relying on the
+affected database:
+
+```sql
+SELECT encode(c.dependence_chain_id, 'hex') AS chain_id,
+       c.status, c.worker_id, c.dependency_count,
+       cardinality(array_positions(c.dependents, c.dependence_chain_id))
+           AS self_edge_occurrences
+FROM public.dependence_chain c
+WHERE c.dependence_chain_id = ANY(c.dependents)
+ORDER BY c.dependence_chain_id;
+```
+
+If any rows are returned, stop the host listener and all TFHE workers sharing
+that database, preserve a database snapshot, and record the query output. Do
+not repair a row while it is processing or owned by a worker. A row may be
+repaired directly only when it is `updated`, unowned, has at least one pending
+dependency, and contains exactly one self-edge. In that case the self-edge is
+one invalid gate; remove it and decrement the matching count atomically under
+a row lock:
+
+```sql
+BEGIN;
+SELECT dependence_chain_id, status, worker_id, dependency_count,
+       cardinality(array_positions(dependents, dependence_chain_id))
+           AS self_edge_occurrences
+FROM public.dependence_chain
+WHERE dependence_chain_id = decode('<chain-id-hex>', 'hex')
+FOR UPDATE;
+
+UPDATE public.dependence_chain
+SET dependents = array_remove(dependents, dependence_chain_id),
+    dependency_count = dependency_count - 1,
+    last_updated_at = NOW()
+WHERE dependence_chain_id = decode('<chain-id-hex>', 'hex')
+  AND status = 'updated'
+  AND worker_id IS NULL
+  AND dependency_count >= 1
+  AND cardinality(array_positions(dependents, dependence_chain_id)) = 1
+RETURNING dependence_chain_id, status, worker_id, dependency_count, dependents;
+
+SELECT pg_notify('work_available', '');
+COMMIT;
+```
+
+Require exactly one row from the `UPDATE`; otherwise roll back and investigate.
+For a processing/owned/processed row, multiple self-edge occurrences, or any
+count/edge inconsistency, do not edit the row with this template. Keep the
+services stopped and use an audited database recovery with the coprocessor
+team. After repair, verify the self-edge query is empty, replay the affected
+block, and check that the chain is eligible only after its remaining real
+producer gates have discharged. This procedure changes scheduler bookkeeping
+only; it does not authorize changing computation metadata or ciphertexts.

@@ -24,7 +24,9 @@ use crate::cmd::{ExecutorVersionRequest, InfiniteLogIter};
 use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
-use crate::database::dependence_chains::dependence_chains;
+use crate::database::dependence_chains::{
+    dependence_chains, dependence_chains_with_prior,
+};
 use crate::database::derived_history::{
     CommittedInventory, COMMITTED_INVENTORY_CHANGED,
 };
@@ -1360,13 +1362,14 @@ pub(crate) async fn ingest_block_logs_with_executor_schedule(
     // not assign later consumers to chains that were never stored.
     let private_cache =
         Arc::new(RwLock::new(db.dependence_chain.read().await.clone()));
-    let chains = dependence_chains(
+    let chains = dependence_chains_with_prior(
         &mut tfhe_event_log,
         &private_cache,
         &db.consumed_boundaries,
         &db.sealed_chains,
         options.dependence_by_connexity,
         options.dependence_cross_block,
+        &prior_minted,
     )
     .await;
 
