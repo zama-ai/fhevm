@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
-use alloy::sol_types::SolEventInterface;
+use alloy::sol_types::{SolEvent, SolEventInterface};
 use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::handle_metadata::{
@@ -467,8 +467,11 @@ pub async fn ingest_block_logs(
     for log in &block_logs.logs {
         let address = Some(log.inner.address);
         if acl_contract_address.is_none() || &address == acl_contract_address {
-            if let Ok(event) =
-                AclContract::AclContractEvents::decode_log(&log.inner)
+            if let DecodedEvent::Decoded(event) =
+                classify::<AclContract::AclContractEvents>(
+                    &log.inner,
+                    AclContract::AclContractEvents::SELECTORS,
+                )
             {
                 touched_handles.extend(
                     acl_result_handles(&event).into_iter().map(|h| h.to_vec()),
@@ -477,8 +480,11 @@ pub async fn ingest_block_logs(
         }
         if tfhe_contract_address.is_none() || &address == tfhe_contract_address
         {
-            if let Ok(event) =
-                TfheContract::TfheContractEvents::decode_log(&log.inner)
+            if let DecodedEvent::Decoded(event) =
+                classify::<TfheContract::TfheContractEvents>(
+                    &log.inner,
+                    TfheContract::TfheContractEvents::SELECTORS,
+                )
             {
                 touched_handles.extend(
                     tfhe_result_handles(&event).into_iter().map(|h| h.to_vec()),
@@ -773,13 +779,35 @@ pub async fn ingest_block_logs(
         let is_kms_gen_address =
             &current_address == kms_generation_contract_address;
         if is_kms_gen_address {
-            if let Ok(event) =
-                KMSGeneration::KMSGenerationEvents::decode_log(&log.inner)
-            {
-                kms_gen_events.push((event.data, log.clone()));
-                continue;
-            } else {
-                KMS_EVENT_DECODE_FAIL_COUNTER.inc()
+            match classify::<KMSGeneration::KMSGenerationEvents>(
+                &log.inner,
+                KMSGeneration::KMSGenerationEvents::SELECTORS,
+            ) {
+                DecodedEvent::Decoded(event) => {
+                    kms_gen_events.push((event.data, log.clone()));
+                    continue;
+                }
+                DecodedEvent::MalformedKnown => {
+                    KMS_EVENT_DECODE_FAIL_COUNTER.inc();
+                    let is_activation = log
+                        .inner
+                        .data
+                        .topics()
+                        .first()
+                        .is_some_and(|topic| {
+                            topic.0
+                                == KMSGeneration::ActivateKey::SIGNATURE_HASH.0
+                                || topic.0
+                                    == KMSGeneration::ActivateCrs::SIGNATURE_HASH.0
+                        });
+                    if is_activation {
+                        return Err(sqlx::Error::Protocol(
+                            "malformed known KMS activation event envelope"
+                                .into(),
+                        ));
+                    }
+                }
+                DecodedEvent::Unknown => KMS_EVENT_DECODE_FAIL_COUNTER.inc(),
             }
         }
 
@@ -1618,48 +1646,74 @@ async fn handle_protocol_config_log(
     chain_id: ChainId,
     log: &Log,
 ) -> Result<(), sqlx::Error> {
-    match ProtocolConfig::ProtocolConfigEvents::decode_log(&log.inner) {
-        Ok(event) => match &event.data {
-            ProtocolConfig::ProtocolConfigEvents::CoprocessorUpgradeProposed(proposed) => {
-                let Some(proposal_block) =
-                    log.block_number.and_then(|b| i64::try_from(b).ok())
-                else {
-                    warn!(
-                        proposal_id = %proposed.proposalId,
-                        "Ignoring CoprocessorUpgradeProposed without a valid block number"
-                    );
-                    return Ok(());
-                };
-                if log.log_index.is_none() {
-                    warn!(
-                        proposal_id = %proposed.proposalId,
-                        proposal_block,
-                        "Ignoring CoprocessorUpgradeProposed without a log index"
-                    );
-                    return Ok(());
-                }
-                notify_coprocessor_upgrade_proposed(
-                    tx,
-                    chain_id,
-                    proposed,
-                    proposal_block,
-                )
-                .await?;
+    let event = match classify::<ProtocolConfig::ProtocolConfigEvents>(
+        &log.inner,
+        ProtocolConfig::ProtocolConfigEvents::SELECTORS,
+    ) {
+        DecodedEvent::Decoded(event) => event,
+        DecodedEvent::MalformedKnown => {
+            PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+            let is_upgrade_proposal = log
+                .inner
+                .data
+                .topics()
+                .first()
+                .is_some_and(|topic| {
+                    topic.0
+                        == ProtocolConfig::CoprocessorUpgradeProposed::SIGNATURE_HASH.0
+                });
+            if is_upgrade_proposal {
+                return Err(sqlx::Error::Protocol(
+                    "malformed known ProtocolConfig upgrade proposal envelope"
+                        .into(),
+                ));
             }
-            _ => {
-                // ProtocolConfigEvents has no Debug impl; topic0 identifies
-                // the unhandled variant.
+            return Ok(());
+        }
+        DecodedEvent::Unknown => {
+            PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+            return Ok(());
+        }
+    };
+    match &event.data {
+        ProtocolConfig::ProtocolConfigEvents::CoprocessorUpgradeProposed(
+            proposed,
+        ) => {
+            let Some(proposal_block) =
+                log.block_number.and_then(|b| i64::try_from(b).ok())
+            else {
                 warn!(
-                    topic0 = ?log.topic0(),
-                    block_number = ?log.block_number,
-                    tx_hash = ?log.transaction_hash,
-                    log_index = ?log.log_index,
-                    "ProtocolConfig event decoded but no handler matched — likely a new variant added without updating host-listener",
+                    proposal_id = %proposed.proposalId,
+                    "Ignoring CoprocessorUpgradeProposed without a valid block number"
                 );
-                PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+                return Ok(());
+            };
+            if log.log_index.is_none() {
+                warn!(
+                    proposal_id = %proposed.proposalId,
+                    proposal_block,
+                    "Ignoring CoprocessorUpgradeProposed without a log index"
+                );
+                return Ok(());
             }
-        },
-        Err(_) => {
+            notify_coprocessor_upgrade_proposed(
+                tx,
+                chain_id,
+                proposed,
+                proposal_block,
+            )
+            .await?;
+        }
+        _ => {
+            // ProtocolConfigEvents has no Debug impl; topic0 identifies
+            // the unhandled variant.
+            warn!(
+                topic0 = ?log.topic0(),
+                block_number = ?log.block_number,
+                tx_hash = ?log.transaction_hash,
+                log_index = ?log.log_index,
+                "ProtocolConfig event decoded but no handler matched — likely a new variant added without updating host-listener",
+            );
             PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
         }
     }
