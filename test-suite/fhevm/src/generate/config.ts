@@ -143,6 +143,7 @@ export const renderRelayerHttpConfig = (
     kms_aggregator: {
       public_decrypt: Record<string, unknown>;
       user_decrypt: Record<string, unknown>;
+      pad_decrypt: Record<string, unknown>;
       auth: Record<string, unknown>;
       endpoints: unknown[];
     };
@@ -156,6 +157,7 @@ export const renderRelayerHttpConfig = (
   config.http.supported_chain_ids = chains.map((chain) => Number(chain.chainId));
   aggregator.public_decrypt.threshold = t + 1;
   aggregator.user_decrypt.threshold = 2 * t + 1;
+  aggregator.pad_decrypt.threshold = 2 * t + 1;
   aggregator.auth.chain_id = Number(defaultChain.chainId);
   aggregator.auth.protocol_config =
     state.discovery?.hosts[defaultChain.key]?.PROTOCOL_CONFIG_CONTRACT_ADDRESS ?? aggregator.auth.protocol_config;

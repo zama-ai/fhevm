@@ -5,8 +5,8 @@ result. Reading order: this file, `aggregator.rs`, `call.rs`, `client.rs`, `flow
 
 ## 1. What it is
 
-- Fans out `POST /v1/user-decrypt` or `POST /v1/public-decrypt` (request and response DTOs from the `kms-connector-api`
-  crate) to the `n` configured nodes.
+- Fans out `POST /v1/user-decrypt`, `POST /v1/public-decrypt` or `POST /v1/pad-decrypt` (request and response DTOs
+  from the `kms-connector-api` crate) to the `n` configured nodes.
 - Collects the answers until every node has finished or the deadline (`call.timeout`) passes.
 - Answers `Ok(output)` when `counted >= threshold`, otherwise a typed error that carries the counts and the dominant
   connector error.
@@ -84,7 +84,7 @@ stateDiagram-v2
 |---|---|
 | node | one KMS connector endpoint (`endpoints[i]`, named in logs as `kms_node`) |
 | accepted | a `200` response that passed `Flow::check` |
-| counted | accepted responses that count toward the threshold: all of them for user decrypt, the largest agreeing group for public decrypt |
+| counted | accepted responses that count toward the threshold: all of them for user and pad decrypt, the largest agreeing group for public decrypt |
 | threshold | counted responses needed to answer (configured per flow, `1 <= threshold <= n`) |
 | deadline | `call.timeout` after the start: the aggregation, and every call in it, ends by then |
 | fail fast | `counted + pending < threshold`: even if every pending node answered we could not make it, so stop now |
@@ -161,8 +161,8 @@ Always on:
 
 | check | flow | why | on failure |
 |---|---|---|---|
-| the signature is 65 bytes | both | the SDK requires it on every share; one malformed node must not break the whole answer | `RejectReason::BadSignature`, the response is not counted |
-| the signature bytes are not those of an already accepted response | both | one response per signer | `RejectReason::Duplicate` |
+| the signature is 65 bytes | all | the SDK requires it on every share; one malformed node must not break the whole answer | `RejectReason::BadSignature`, the response is not counted |
+| the signature bytes are not those of an already accepted response | all | one response per signer | `RejectReason::Duplicate` |
 | only identical `(decryptedResult, extraData)` answers count together | public | one plaintext is expected; a divergent node lands in its own group | the answer is the largest group's result with that group's signatures only |
 
 Optional, off by default (`user_decrypt.checks` in the configuration; a flow's checks are its `Flow::Checks` type,
@@ -176,6 +176,15 @@ built once at startup):
 Without them the `decryptionId` is correlation only: logged on the span, never compared. User-decrypt shares differ by
 design: every accepted share counts and is returned, in acceptance order. Public decrypt has no optional check in this
 version.
+
+Pad decrypt (RFC-030) is user decrypt for pads: each node answers `{ decryptionId, encryptedPayload, signature }`, the
+payload being its signed pad shares encrypted to the user. The relayer cannot see the shares, their `sessionId` or
+their per-share signatures, so it only checks the transport signature's length and uniqueness, counts every accepted
+response and returns them all as they are. The SDK verifies the signatures and reconstructs each pad from `2t + 1`
+shares of one session, so the threshold is `2t + 1`. Because the aggregation waits for every node (section 4), the
+answer carries every response that arrived before the deadline: up to `t` spare shares, which let the SDK drop a wrong
+one. No optional check yet: the `decryptionId` is not compared with the request's (user decrypt's
+`decryption_id_match` could be extended to pads).
 
 **Trust boundary.** Version 1 verifies no signature: the KMS core signs each response and the SDK verifies the
 signatures against the KMS signer set client-side. A byzantine node can therefore place a garbage 65-byte signature
@@ -191,6 +200,8 @@ Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 { "result": [ { "payload": "a1b2…", "signature": "1a2b…", "extraData": "0x02…" }, … ] }
 // public decrypt: the largest agreeing group
 { "decryptedValue": "0000…2a", "signatures": ["1a2b…", …], "extraData": "0x02…" }
+// pad decrypt: every accepted node response, acceptance order, as sent (0x hex)
+{ "responses": [ { "decryptionId": "0x…", "encryptedPayload": "0x…", "signature": "0x…" }, … ] }
 ```
 
 ## 8. Configuration → behaviour
@@ -207,6 +218,7 @@ kms_aggregator:
   user_decrypt:
     threshold: 9
     checks: { decryption_id_match: false, decryption_id_majority: false }   # optional, section 6
+  pad_decrypt: { threshold: 9 }   # 2t + 1
   auth:                        # FhevmSig signing, section 5
     chain_id: 1                # EIP-712 domain: Ethereum chain id ...
     protocol_config: "0x…"     # ... and ProtocolConfig address
@@ -305,7 +317,7 @@ attempt: it counts in `relayer_http_signer_errors_total{flow}`, and a call that 
   scenario runs in microseconds and `elapsed` is exact). Adding a scenario is adding a file:
 
 ```yaml
-flow: user_decrypt            # user_decrypt | public_decrypt
+flow: user_decrypt            # user_decrypt | public_decrypt | pad_decrypt
 threshold: 9
 timeout: 5s
 max_retries: 0                # optional
@@ -347,7 +359,7 @@ Version 1 is the fan-out and the aggregation only.
 - **No storage of responses and no cache**: responses arriving after the answer are cancelled, so a response cache in
   front of the aggregator would first need every accepted response to be registered as it arrives.
 - Endpoint audiences read from `ProtocolConfig` instead of the config (RFC-033).
-- Transciphering: one more `Flow` implementation (request/response DTOs, route, check, counted, output).
+- Pad decryption: a `decryption_id_match` check, as for user decrypt.
 - The module only depends on its `config.rs` structs and the api crate: it can move to its own crate when needed.
 - **Everything the relayer may ever read on chain is read on a host chain (Ethereum), through host contracts. The
   relayer has no interaction with the gateway chain and no gateway-specific configuration, optional checks included.**

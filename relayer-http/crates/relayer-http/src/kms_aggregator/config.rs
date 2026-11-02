@@ -32,6 +32,7 @@ pub struct KmsAggregatorConfig {
     pub call: CallConfig,
     pub user_decrypt: UserDecryptConfig,
     pub public_decrypt: PublicDecryptConfig,
+    pub pad_decrypt: PadDecryptConfig,
     pub auth: AuthConfig,
     pub endpoints: Vec<EndpointConfig>,
 }
@@ -116,6 +117,13 @@ pub struct UserChecks {
 #[serde(deny_unknown_fields)]
 pub struct PublicDecryptConfig {
     /// Identical `(decryptedResult, extraData)` answers that must be accepted before answering.
+    pub threshold: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PadDecryptConfig {
+    /// Distinct responses that must be accepted before answering: `2t + 1`, what the SDK needs per pad.
     pub threshold: usize,
 }
 
@@ -260,6 +268,7 @@ impl KmsAggregatorConfig {
         for (name, threshold) in [
             ("user_decrypt", self.user_decrypt.threshold),
             ("public_decrypt", self.public_decrypt.threshold),
+            ("pad_decrypt", self.pad_decrypt.threshold),
         ] {
             if threshold == 0 || threshold > n {
                 return fail(format!(
@@ -304,6 +313,7 @@ pub(crate) mod tests {
                 checks: UserChecks::default(),
             },
             public_decrypt: PublicDecryptConfig { threshold: 1 },
+            pad_decrypt: PadDecryptConfig { threshold: 1 },
             auth: AuthConfig {
                 chain_id: 1,
                 protocol_config: Address::repeat_byte(0xc0),
@@ -504,6 +514,9 @@ pub(crate) mod tests {
         cfg.public_decrypt.threshold = 4;
         assert!(message(&cfg).contains("public_decrypt.threshold (4) must be within 1..=3"));
         cfg.public_decrypt.threshold = 3;
+        cfg.pad_decrypt.threshold = 0;
+        assert!(message(&cfg).contains("pad_decrypt.threshold (0) must be within 1..=3"));
+        cfg.pad_decrypt.threshold = 3;
         cfg.validate().unwrap();
     }
 

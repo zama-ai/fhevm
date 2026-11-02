@@ -1,4 +1,4 @@
-//! The relayer's HTTP layer: two sync decryption routes, the Kubernetes probes, one error model. Start with `docs.md`.
+//! The relayer's HTTP layer: three sync decryption routes, the Kubernetes probes, one error model. Start with `docs.md`.
 
 pub mod error;
 pub mod flows;
@@ -30,6 +30,7 @@ pub fn router(app: App) -> Router {
     let routes = Router::new()
         .route("/v4/user-decrypt", post(flows::user_decrypt::handle))
         .route("/v4/public-decrypt", post(flows::public_decrypt::handle))
+        .route("/v4/pad-decrypt", post(flows::pad_decrypt::handle))
         .route("/liveness", get(ops::liveness))
         .route("/healthz", get(ops::healthz))
         .fallback(error::not_found)
@@ -153,14 +154,15 @@ pub(crate) mod tests {
     use crate::metrics::tests::{histogram_sum, total, value};
     use crate::metrics::{FlowName, Metrics};
 
-    /// An app over `mock`: thresholds 9 (user) and 5 (public), a 2 s deadline, `max_retries` retries.
+    /// An app over `mock`: thresholds 9 (user, pad) and 5 (public), a 2 s deadline, `max_retries` retries.
     fn app_with(mock: Arc<MockClient>, max_retries: u32, shutdown: CancellationToken) -> App {
         let caller = mock.caller(Duration::from_secs(2), max_retries);
         let metrics = caller.metrics().clone();
         App {
             user_decrypt: Arc::new(Aggregator::new(caller.clone(), 9, UserChecks::default())),
-            public_decrypt: Arc::new(Aggregator::new(caller, 5, ())),
-            http: Arc::new(HttpConfig::for_tests(&[1, 137])),
+            public_decrypt: Arc::new(Aggregator::new(caller.clone(), 5, ())),
+            pad_decrypt: Arc::new(Aggregator::new(caller, 9, ())),
+            http: Arc::new(HttpConfig::for_tests(&[1, 137, 12345])),
             metrics,
             shutdown,
         }
@@ -248,6 +250,43 @@ pub(crate) mod tests {
         let share = &body["result"]["result"][0];
         assert!(share["payload"].is_string() && share["signature"].is_string());
         assert_eq!(share["extraData"], EXTRA_DATA_V2);
+    }
+
+    fn pad_wire() -> String {
+        let now = flows::now();
+        flows::pad_decrypt::tests::wire(now - 10, now + 604_800)
+    }
+
+    #[tokio::test]
+    async fn pad_decrypt_answers_the_envelope() {
+        let (status, request_id, body) =
+            call(healthy(), "POST", "/v4/pad-decrypt", &pad_wire()).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "succeeded");
+        assert_eq!(body["requestId"], request_id);
+        let responses = body["result"]["responses"].as_array().unwrap();
+        assert_eq!(responses.len(), 13);
+        for field in ["decryptionId", "encryptedPayload", "signature"] {
+            assert!(
+                responses[0][field].as_str().unwrap().starts_with("0x"),
+                "{field}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn pad_decrypt_rejects_a_label_that_is_not_the_witness_hash() {
+        let wire = pad_wire().replace(
+            "0x77777777777777777777777777777777",
+            "0x78787878787878787878787878787878",
+        );
+        let (status, _, body) = call(healthy(), "POST", "/v4/pad-decrypt", &wire).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+        assert_eq!(body["code"], "malformed");
+        assert_eq!(
+            body["message"],
+            "payload.pads[0].label: is not the hash of the witness"
+        );
     }
 
     #[tokio::test]

@@ -1,0 +1,12 @@
+# Pad decrypt, n = 13, t = 4: every node answers, all 13 responses are returned (the SDK needs 2t + 1 = 9 per label).
+flow: pad_decrypt
+threshold: 9
+timeout: 5s
+nodes:
+  - { count: 13, replies: [ok] }
+expect:
+  outcome: ok
+  counted: 13
+  responses: 13
+  elapsed: 10ms
+  attempts: 13

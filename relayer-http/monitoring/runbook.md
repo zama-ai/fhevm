@@ -2,7 +2,7 @@
 
 One section per alert of `alerts.yaml`; the anchor is the alert name in lowercase. Thresholds are unvalidated first guesses.
 
-Dashboards (`design.md`, Dashboards): start on **relayer-http operator** (the alert's flow section, then its KMS node health table), follow a node or an outcome to **relayer-http lookup**, click a request to read its summary and every line of it. **relayer-http client stats** is for usage questions, not incidents. `<flow>` below is `Public decrypt` or `User decrypt`.
+Dashboards (`design.md`, Dashboards): start on **relayer-http operator** (the alert's flow section, then its KMS node health table), follow a node or an outcome to **relayer-http lookup**, click a request to read its summary and every line of it. **relayer-http client stats** is for usage questions, not incidents. `<flow>` below is `Public decrypt`, `User decrypt` or `Pad decrypt`.
 
 ## RelayerHttpServerErrors
 

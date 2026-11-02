@@ -18,7 +18,7 @@
       {
         "name": "flow", "label": "Flow (repeats)", "type": "custom",
         "description": "Filters the Repeats and retries row only; the other panels name their flow.",
-        "query": "user_decrypt,public_decrypt,none",
+        "query": "user_decrypt,public_decrypt,pad_decrypt,none",
         "includeAll": true, "multi": true, "allValue": ".*", "current": {"text": "All", "value": "$__all"}, "hide": 0
       }
     ]
@@ -84,7 +84,7 @@
     },
     {
       "type": "stat", "id": 106, "title": "Requests sent more than once",
-      "description": "decryption_ids seen in more than one request in the range, both flows: the same request content sent again (client retries, or several clients).",
+      "description": "decryption_ids seen in more than one request in the range, every flow: the same request content sent again (client retries, or several clients).",
       "datasource": {"type": "loki", "uid": "${loki}"},
       "gridPos": {"h": 4, "w": 4, "x": 20, "y": 3},
       "targets": [{"expr": "count(sum by (fields_decryption_id) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= \"request completed\" | json | fields_message = \"request completed\" | fields_decryption_id != \"none\" [$__range])) > 1)", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],

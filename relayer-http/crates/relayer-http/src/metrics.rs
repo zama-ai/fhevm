@@ -20,21 +20,28 @@ use tokio_util::sync::CancellationToken;
 pub enum FlowName {
     UserDecrypt,
     PublicDecrypt,
+    PadDecrypt,
     None,
 }
 
 impl FlowName {
     /// Every value, in the order of the generated references.
-    pub const ALL: [Self; 3] = [Self::UserDecrypt, Self::PublicDecrypt, Self::None];
+    pub const ALL: [Self; 4] = [
+        Self::UserDecrypt,
+        Self::PublicDecrypt,
+        Self::PadDecrypt,
+        Self::None,
+    ];
 
-    /// The two decryption flows: what a request or a node call can belong to.
-    pub const DECRYPTS: [Self; 2] = [Self::UserDecrypt, Self::PublicDecrypt];
+    /// The decryption flows: what a request or a node call can belong to.
+    pub const DECRYPTS: [Self; 3] = [Self::UserDecrypt, Self::PublicDecrypt, Self::PadDecrypt];
 
     /// The label and log value.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::UserDecrypt => "user_decrypt",
             Self::PublicDecrypt => "public_decrypt",
+            Self::PadDecrypt => "pad_decrypt",
             Self::None => "none",
         }
     }
