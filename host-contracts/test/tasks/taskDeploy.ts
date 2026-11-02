@@ -108,6 +108,14 @@ describe('task:deployAllHostContracts', function () {
     ).to.be.rejectedWith(/"CANONICAL_CHAIN_ID" env variable is not set/);
   });
 
+  it('deploys CiphertextRoots on the canonical host', async function () {
+    const ciphertextRoots = await ethers.getContractAt(
+      'CiphertextRoots',
+      readHostAddress('CIPHERTEXT_ROOTS_CONTRACT_ADDRESS'),
+    );
+    expect(await ciphertextRoots.getVersion()).to.equal('CiphertextRoots v0.1.0');
+  });
+
   it('deploys a fresh non-canonical host without a KMSGeneration proxy', async function () {
     process.env.SOLIDITY_COVERAGE = 'true';
     await run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'fresh' });

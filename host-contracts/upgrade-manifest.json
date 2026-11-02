@@ -1,1 +1,10 @@
-["ACL", "FHEVMExecutor", "KMSVerifier", "InputVerifier", "HCULimit", "ProtocolConfig", "KMSGeneration"]
+[
+  "ACL",
+  "FHEVMExecutor",
+  "KMSVerifier",
+  "InputVerifier",
+  "HCULimit",
+  "ProtocolConfig",
+  "KMSGeneration",
+  "CiphertextRoots"
+]

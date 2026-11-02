@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd, ciphertextRootsAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 import {ACL} from "@fhevm-host-contracts/contracts/ACL.sol";
 import {FHEVMExecutor} from "@fhevm-host-contracts/contracts/FHEVMExecutor.sol";
 import {KMSVerifier} from "@fhevm-host-contracts/contracts/KMSVerifier.sol";
@@ -14,6 +14,7 @@ import {PauserSet} from "@fhevm-host-contracts/contracts/immutable/PauserSet.sol
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
+import {CiphertextRoots} from "@fhevm-host-contracts/contracts/CiphertextRoots.sol";
 import {IProtocolConfigReplica} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
@@ -317,6 +318,17 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertNotEq(kgImplementation, address(0), "Implementation not deployed");
         assertEq(kgProxy.getVersion(), "KMSGeneration v0.3.0", "Version mismatch");
         assertEq(_readImplementationSlot(kmsGenerationAdd), kgImplementation, "Implementation slot mismatch");
+    }
+
+    function test_DeployCiphertextRoots_UsesProxyUpgradeFlow() public {
+        _deployACL(OWNER);
+
+        (CiphertextRoots crProxy, address crImplementation) = _deployCiphertextRoots(OWNER);
+
+        assertEq(address(crProxy), ciphertextRootsAdd, "CiphertextRoots proxy address mismatch");
+        assertNotEq(crImplementation, address(0), "Implementation not deployed");
+        assertEq(crProxy.getVersion(), "CiphertextRoots v0.1.0", "Version mismatch");
+        assertEq(_readImplementationSlot(ciphertextRootsAdd), crImplementation, "Implementation slot mismatch");
     }
 
     function _readImplementationSlot(address proxy) private view returns (address) {
