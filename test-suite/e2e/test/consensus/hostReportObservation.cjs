@@ -12,11 +12,18 @@ function assertDivergentReports(candidate, reports) {
   }
 }
 
-async function observe(chain, block, candidate) {
+// State-hash objects are scoped by the upgrade attempt (version, proposal id,
+// proposal block) so retries never read a previous attempt's blobs - the key
+// layout mirrors consensus-detector/src/state_hash.rs:state_hash_key.
+async function observe(chain, block, candidate, version, proposal, attempt) {
   assert.match(chain, /^[0-9]+$/);
   assert.match(block, /^[0-9]+$/);
+  assert.match(version, /^[A-Za-z0-9.+_-]+$/);
+  assert.match(proposal, /^[0-9a-f]+$/);
+  assert.match(attempt, /^[0-9]+$/);
+  const key = `state_hash/version=${version}/proposal=${proposal}/attempt=${attempt}/chain=${chain}/block=${block}.bin`;
   const reports = await Promise.all([0, 1, 2].map(async operator => {
-    const response = await fetch(`http://object-store:9000/coproc-${operator}/state_hash/chain=${chain}/block=${block}.bin`,
+    const response = await fetch(`http://object-store:9000/coproc-${operator}/${key}`,
       { signal: AbortSignal.timeout(10_000) });
     assert.equal(response.status, 200, `operator ${operator} report unavailable`);
     const bytes = Buffer.from(await response.arrayBuffer());
