@@ -192,8 +192,7 @@ contract ProtocolConfigReplica is
         bytes[] calldata signatures,
         bytes calldata extraData
     ) external virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        uint256 activeContextId = $.latestActiveKmsContextId;
+        uint256 activeContextId = _getProtocolConfigStorage().latestActiveKmsContextId;
         if (destroyedContextId >= activeContextId) {
             revert KmsContextDestructionAheadOfReplica(destroyedContextId, activeContextId);
         }
@@ -207,8 +206,7 @@ contract ProtocolConfigReplica is
         bytes[] calldata signatures,
         bytes calldata extraData
     ) external virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        uint256 activeEpochId = $.latestActiveEpochId;
+        uint256 activeEpochId = _getProtocolConfigStorage().latestActiveEpochId;
         if (destroyedEpochId >= activeEpochId) {
             revert KmsEpochDestructionAheadOfReplica(destroyedEpochId, activeEpochId);
         }

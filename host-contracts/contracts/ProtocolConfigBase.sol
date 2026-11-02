@@ -409,7 +409,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
 
     /**
      * @dev Sets `contextId` Active and activates `epochId` under it, as the latest active pair.
-     *      Callers own the counter writes and any event emission.
+     *      Callers own any event emission.
      */
     function _activateKmsContextAndEpoch(uint256 contextId, uint256 epochId) internal virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();

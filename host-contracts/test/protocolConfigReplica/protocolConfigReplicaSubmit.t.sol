@@ -64,18 +64,6 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaFixture {
         protocolConfigReplica.submitKmsContextSwitch(_ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM), epoch);
     }
 
-    /// @dev The previous committee check runs before the new committee is validated and stored.
-    function test_revertSwitchNonMemberSignersBeforeInvalidCommittee() public {
-        KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED1, QUORUM);
-        context.thresholds.mpc = N + 1;
-        context.signatures = _sign(_contextDigest(CTX1, context), SEED1, QUORUM);
-
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigReplica.KmsSignerNotInCommittee.selector, _signers(SEED1)[0], CTX1)
-        );
-        protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N));
-    }
-
     function test_revertSwitchDuplicateSigner() public {
         KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
         context.signatures[2] = context.signatures[0];
@@ -103,9 +91,10 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaFixture {
         protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N));
     }
 
+    /// @dev An invalid `mpc` also pins that the previous committee check runs before the store.
     function test_revertSwitchTamperedThresholds() public {
         KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
-        context.thresholds.kmsGen = 2;
+        context.thresholds.mpc = N + 1;
 
         _expectNotInCommittee(_contextDigest(CTX1, context), context.signatures[0], CTX1);
         protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N));
