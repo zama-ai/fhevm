@@ -64,7 +64,12 @@ test("checkout labels cannot substitute for immutable image build provenance", (
 });
 
 test("published-runtime CI always builds its harness and failpoints come from planned capability", () => {
-  const boot = workflow.jobs.consensus.steps.find((step: any) => step.name === "Boot the stack").run;
+  const cpuBoot = workflow.jobs.consensus.steps.find((step: any) => step.name === "Boot the stack");
+  const gpuBoot = workflow.jobs.gpu.steps.find((step: any) => step.name === "Boot the heterogeneous-scheduling stack");
+  for (const step of [cpuBoot, gpuBoot]) {
+    expect(step.env.BLOCKCHAIN_ACTIONS_TOKEN).toBe("${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}");
+  }
+  const boot = cpuBoot.run;
   expect(boot).toContain('args+=(--override test-suite)');
   expect(boot).toContain('${CAPABILITIES:-}');
   expect(workflow.jobs.consensus.env.CAPABILITIES).toContain("matrix.capabilities");
