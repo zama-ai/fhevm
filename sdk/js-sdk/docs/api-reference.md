@@ -70,57 +70,71 @@ Exported from both adapter entry points. The ethers variants take `provider`
 function createFhevmClient(parameters: {
   readonly provider: ContractRunner;
   readonly chain: FhevmChain;
-  readonly options?: FhevmOptions | undefined;
+  readonly options?: FhevmOptions<ContractRunner> | undefined;
 }): FhevmClient;
 
 function createFhevmEncryptClient(parameters: {
   readonly provider: ContractRunner;
   readonly chain: FhevmChain;
-  readonly options?: FhevmEncryptOptions | undefined;
+  readonly options?: FhevmEncryptOptions<ContractRunner> | undefined;
 }): FhevmEncryptClient;
 
 function createFhevmEncryptTransciClient(parameters: {
   readonly provider: ContractRunner;
   readonly chain: FhevmChain;
-  readonly options?: FhevmEncryptOptions | undefined;
+  readonly options?: FhevmEncryptOptions<ContractRunner> | undefined;
 }): FhevmEncryptTransciClient; // RFC-030 pad-based encryption (experimental)
 
 function createFhevmDecryptClient(parameters: {
   readonly provider: ContractRunner;
   readonly chain: FhevmChain;
-  readonly options?: FhevmDecryptOptions | undefined;
+  readonly options?: FhevmDecryptOptions<ContractRunner> | undefined;
 }): FhevmDecryptClient;
 
 function createFhevmBaseClient(parameters: {
   readonly provider: ContractRunner;
   readonly chain: FhevmChain;
-  readonly options?: FhevmOptions | undefined;
+  readonly options?: FhevmOptions<ContractRunner> | undefined;
 }): FhevmBaseClient;
 ```
 
 The viem forms replace `provider: ContractRunner` with
-`publicClient: PublicClient`. The cleartext entry points
+`publicClient: PublicClient`, and the option types' `ContractRunner` with
+`PublicClient`. The cleartext entry points
 (`@fhevm/sdk/ethers/cleartext`, `@fhevm/sdk/viem/cleartext`) export the same
 factories with a `Cleartext` infix, including
 `createFhevmCleartextEncryptTransciClient`. See [Clients](clients.md).
 
 ### Factory options
 
+The option types take the adapter's client type, the one `keyVerification`
+takes: `ContractRunner` (ethers) or `PublicClient` (viem).
+
 ```ts
-type FhevmBaseOptions = {
+type FhevmBaseOptions<client> = {
   readonly batchRpcCalls?: boolean | undefined;
+  readonly keyVerification?: FhevmKeyVerification<client> | undefined;
 };
 
-type FhevmOptions = FhevmBaseOptions & {
+type FhevmOptions<client> = FhevmBaseOptions<client> & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
 };
 
-type FhevmEncryptOptions = FhevmBaseOptions & {
+type FhevmEncryptOptions<client> = FhevmBaseOptions<client> & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
 };
 
-type FhevmDecryptOptions = FhevmBaseOptions;
+type FhevmDecryptOptions<client> = FhevmBaseOptions<client>;
+
+// exported from '@fhevm/sdk/types'
+type FhevmKeyVerification<client> = {
+  readonly chain: FhevmChain;
+  readonly client: client;
+};
 ```
+
+`keyVerification` applies to every client: it is required when the host chain
+is not Ethereum (see [Key verification](clients.md#key-verification)).
 
 ### Client lifecycle members
 
