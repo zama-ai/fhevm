@@ -1210,6 +1210,15 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForContainer("fhevm-relayer", "running");
       await waitForLog("fhevm-relayer", /All servers are ready and responding/);
       break;
+    case "relayer-http":
+      // Optional image: bundles that predate relayer-http do not resolve RELAYER_HTTP_VERSION.
+      if (!state.versions.env.RELAYER_HTTP_VERSION) {
+        break;
+      }
+      await stepComposeUp("relayer-http", state);
+      await waitForContainer("fhevm-relayer-http", "running");
+      await waitForLog("fhevm-relayer-http", /relayer-http started/);
+      break;
     case "test-suite":
       await stepComposeUp("test-suite", state);
       await waitForTestSuite();
