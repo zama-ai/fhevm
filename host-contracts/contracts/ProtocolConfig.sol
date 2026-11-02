@@ -312,13 +312,11 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             revert InvalidKmsContext(kmsContextId);
         }
 
-        // Clear the context's epoch (if any), then mark the context destroyed.
-        // A confirmed switch created this context's epoch as the latest-issued one: clear it when it
-        // belongs to this context. It can only be Pending here, since an Active epoch makes its
-        // context the latest active one, which the guard above refuses. Earlier epochs of a retired
-        // context keep their stored state, but nothing can use them: every epoch check also
-        // requires the context. A switch destroyed before its creation quorum has no epoch yet, so
-        // there is nothing to clear and the ownership check below is false.
+        // A confirmed switch issued this context's epoch as the latest one. It can only be Pending:
+        // an Active epoch makes its context the latest active one, which the guard above refuses.
+        // Reset it to None, so the in-flight gate reopens. A switch destroyed before its creation
+        // quorum has no epoch, so the check below is false. Earlier epochs keep their state, but
+        // every epoch check also requires the context.
         uint256 latestEpochId = $.epochCounter;
         if ($.contextForEpoch[latestEpochId] == kmsContextId) {
             delete $.epochState[latestEpochId];

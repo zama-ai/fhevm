@@ -10,7 +10,7 @@ import {KmsContextAnchor, KmsNode, KmsThresholds} from "./shared/Structs.sol";
  */
 abstract contract ProtocolConfigBase is IProtocolConfigBase {
     /// @notice Lifecycle state of a KMS context: created Pending, promoted to Created once the
-    ///         creation quorum confirms, then Active when its first epoch activates, then Destroyed.
+    ///         creation quorum confirms, then Active when its first epoch activates. A destroyed context is Destroyed.
     enum ContextState {
         None,
         Pending,
@@ -20,7 +20,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /// @notice Lifecycle state of an epoch: opened Pending for resharing, then Active once the
-    ///         activation quorum confirms, then Destroyed.
+    ///         activation quorum confirms. A destroyed epoch is Destroyed.
     enum EpochState {
         None,
         Pending,
@@ -293,8 +293,9 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Returns true if the context is Pending, Created or Active. The v0.14 upgrade gave a state only to the context that was active at that upgrade,
-     * so older contexts also read as None and are not live.
+     * @dev Returns true if the context is Pending, Created or Active. The v0.14 upgrade gave a state
+     * only to the context that was active at that upgrade, so older contexts read as None and are not
+     * live.
      */
     function _isLiveKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
         ContextState state = _getProtocolConfigStorage().contextState[kmsContextId];

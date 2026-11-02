@@ -139,7 +139,8 @@ rotation.
 
 `mirrorKmsContextAndEpoch` requires a context id and an epoch id **strictly above** the active ones.
 `mirrorKmsEpoch` requires the active context id and an epoch id strictly above the active one. An
-activation replaces the Destroyed state of the ids it activates, on every owner path. The submit path rejects a destroyed id, so only the owner can land a canonical id that
+activation replaces the Destroyed state of the ids it activates, on every owner path. The submit path
+rejects a destroyed id, so only the owner can land a canonical id that
 `recoverKmsState` destroyed. Only `recoverKmsState` moves a replica back. Gaps are fine (contexts/epochs
 aborted or never activated on Ethereum are just never mirrored). Nothing stops a replica from
 **drifting** if a mirror call is skipped: replaying each Ethereum rotation to every replica is the

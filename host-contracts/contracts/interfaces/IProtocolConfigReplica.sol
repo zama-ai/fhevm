@@ -220,8 +220,7 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     // signatures. `mirrorKmsContextAndEpoch` requires both IDs above the active ones. `mirrorKmsEpoch`
     // requires the active context and an epoch above the active one. They overwrite a context or epoch
     // already stored under the given ID. Activation replaces the Destroyed state of the pair.
-    // `recoverKmsState` does the same for the pair it restores. It is the only function that moves
-    // the replica back.
+    // `recoverKmsState` is the only function that moves the replica back.
     // -----------------------------------------------------------------------------------------
 
     /**
@@ -253,8 +252,8 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
      * @notice Recovers the replica from a forged context or epoch in one call.
      * @dev Use it when the replica activated a context or epoch that canonical never activated: a
      *      forged submission, or a canonical step that governance aborted after its signatures became
-     *      public. Activates `contextId` and `epochId` with no ordering check, which replaces
-     *      a Destroyed state, and replaces any committee stored under `contextId`. Then destroys every
+     *      public. Activates `contextId` and `epochId` with no ordering check, including a
+     *      destroyed ID, and replaces any committee stored under `contextId`. Then destroys every
      *      listed ID, so the submit path rejects the forged calldata. List every context and epoch ID
      *      that the forged state activated, from the `KmsContextSwitchSubmitted` and
      *      `KmsKeyResharingSubmitted` events. A forged epoch that is not listed stays active. It is
