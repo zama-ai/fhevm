@@ -39,7 +39,7 @@ make run (host :4002) --http--> 127.0.0.1:4002+i (socat forwarder) --https + Fhe
 
 - Ports: the Makefile sets them once and passes them to the scripts: `RELAYER_HTTP_PORT` (3002, the in-stack relayer) and `RELAYER_HTTP_RUN_PORT` (4002, `make run`; its forwarders take the next ports). Override on the command line: `make -C relayer-http/dev RELAYER_HTTP_RUN_PORT=5002 run`.
 - Config: `.fhevm/runtime/config/relayer-http.yaml` with the bind port set to `RELAYER_HTTP_RUN_PORT` and each proxy URL set to its forwarder; written to `relayer-http/target/dev-config.yaml`.
-- Forwarders: one `relayer-http-fwd-<i>` container per party, removed when `make run` stops. The proxies are reachable only on the stack network.
+- Forwarders: one `relayer-http-fwd-<i>` container per party; the proxies are reachable only on the stack network. They stay up after `make run` stops and the next run reuses them; `make -C relayer-http/dev down` removes them.
 - Signing key and `RUST_LOG`: `.fhevm/runtime/env/relayer-http.env`.
 - The flows reach the host as `host.docker.internal` (macOS) or the `fhevm_default` network gateway (Linux); `RELAYER_HTTP_URL` overrides.
 

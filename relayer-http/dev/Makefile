@@ -8,7 +8,7 @@ export RELAYER_HTTP_PORT     ?= 3002
 export RELAYER_HTTP_RUN_PORT ?= 4002
 CLIPPY  := cargo clippy --workspace --all-targets -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
 
-.PHONY: help fmt fmt-fix clippy test test-aws check build run public-decrypt user-decrypt
+.PHONY: help fmt fmt-fix clippy test test-aws check build run down public-decrypt user-decrypt
 
 help: ## this list
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{ printf "  %-16s %s\n", $$1, $$2 }'
@@ -31,6 +31,8 @@ build: ## cargo build -p relayer-http
 # --- local stack ------------------------------------------------------------------------------------------------
 run: ## cargo run the relayer on the host (RELAYER_HTTP_RUN_PORT, default 4002) with the stack's config, logs in this terminal
 	scripts/relayer-run.sh
+down: ## remove the forwarders `make run` leaves running
+	@ids="$$(docker ps -aq --filter name='^relayer-http-fwd-')"; [ -z "$$ids" ] || docker rm -f $$ids
 
 # --- flows (e2e debug container) ----------------------------------------------------------------------------------
 public-decrypt: ## deploy HTTPPublicDecrypt and POST /v4/public-decrypt (ATTEMPTS, RETRY_DELAY_MS, RELAYER_HTTP_URL)

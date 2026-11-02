@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Runs relayer-http on the host with cargo, on RELAYER_HTTP_RUN_PORT (set by the Makefile), against the running stack
-# (./fhevm-cli up). Logs in this terminal; Ctrl-C stops the relayer and removes the forwarders.
+# (./fhevm-cli up). Logs in this terminal; Ctrl-C stops the relayer. The forwarders stay up for the next run
+# (reused when they still match) until `make down` removes them.
 #
 # Config: the stack's own relayer-http config (rendered by fhevm-cli), with each KMS proxy URL replaced by a local
 # forwarder. The proxies are reachable only on the stack network, so one socat container per party listens on
@@ -19,20 +20,20 @@ PROXIES=()
 while IFS= read -r proxy; do PROXIES+=("$proxy"); done < <(sed -nE 's#^ *url: "?https://([^"]+)"?$#\1#p' "$STACK_CONFIG")
 [ "${#PROXIES[@]}" -gt 0 ] || { echo "no KMS endpoint in $STACK_CONFIG"; exit 1; }
 
-FWD_IDS="$(docker ps -aq --filter name='^relayer-http-fwd-')"
-[ -z "$FWD_IDS" ] || { echo "relayer-http-fwd-* containers exist: another make run is active, or remove them (docker rm -f \$(docker ps -aq --filter name=relayer-http-fwd-))"; exit 1; }
-forwarders_down() {
-  local ids
-  ids="$(docker ps -aq --filter name='^relayer-http-fwd-')"
-  # shellcheck disable=SC2086 # one container id per word
-  if [ -n "$ids" ]; then docker rm -f $ids >/dev/null; fi
-}
-trap forwarders_down EXIT
+# One forwarder per party, labelled with its host port and proxy: a running one with the same label is reused,
+# anything else under that name is replaced.
 for i in "${!PROXIES[@]}"; do
+  name="relayer-http-fwd-$((i + 1))"
+  route="127.0.0.1:$((PORT + i + 1)) -> ${PROXIES[$i]}"
+  if [ "$(docker inspect -f '{{.State.Running}} {{index .Config.Labels "route"}}' "$name" 2>/dev/null)" = "true $route" ]; then
+    echo "forwarder $route (reused)"
+    continue
+  fi
+  docker rm -f "$name" >/dev/null 2>&1 || true
   # verify=0: the stack's test proxies; the relayer-to-proxy TLS path is exercised by the in-stack relayer.
-  docker run -d --name "relayer-http-fwd-$((i + 1))" --network fhevm_default -p "127.0.0.1:$((PORT + i + 1)):8443" \
+  docker run -d --name "$name" --label "route=$route" --network fhevm_default -p "127.0.0.1:$((PORT + i + 1)):8443" \
     alpine/socat TCP-LISTEN:8443,fork,reuseaddr "OPENSSL:${PROXIES[$i]},verify=0" >/dev/null
-  echo "forwarder 127.0.0.1:$((PORT + i + 1)) -> ${PROXIES[$i]}"
+  echo "forwarder $route"
 done
 
 mkdir -p "$(dirname "$CONFIG")"
