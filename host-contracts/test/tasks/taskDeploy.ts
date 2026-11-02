@@ -9,6 +9,7 @@ import {
 } from '../../tasks/protocolConfigMirror';
 import {
   CRS_COUNTER_BASE,
+  EPOCH_COUNTER_BASE,
   KEY_COUNTER_BASE,
   KMS_CONTEXT_COUNTER_BASE,
   PREP_KEYGEN_COUNTER_BASE,
@@ -32,6 +33,7 @@ import {
   deployFreshEmptyUUPSProxy,
   deployFreshKMSGenerationProxy,
   deployFreshProtocolConfigProxy,
+  deployFreshProtocolConfigReplicaProxy,
   deployFreshUninitializedProtocolConfigProxy,
   readHostAddress,
   rotateToNewKmsContext,
@@ -334,6 +336,22 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
     ).to.be.rejectedWith(/reports version "KMSGeneration.*expected "ProtocolConfig/);
   });
 
+  it('rejects a replica', async function () {
+    const replicaAddress = await deployFreshProtocolConfigReplicaProxy(
+      deployer,
+      KMS_CONTEXT_COUNTER_BASE + 1n,
+      EPOCH_COUNTER_BASE + 1n,
+      buildProtocolConfigNodes(),
+      buildProtocolConfigThresholds(),
+    );
+    await expect(
+      readCanonicalSnapshot(hre, {
+        canonicalProvider: ethers.provider,
+        canonicalProtocolConfigAddress: replicaAddress,
+      }),
+    ).to.be.rejectedWith(/reports version "ProtocolConfigReplica v/);
+  });
+
   it('rejects when the canonical address is an uninitialized empty proxy', async function () {
     const uninitializedEmpty = await deployFreshEmptyUUPSProxy(deployer);
 
@@ -433,6 +451,26 @@ describe('canonical snapshot env (buildCanonicalSnapshotEnv / readCanonicalSnaps
     expect(() => readCanonicalSnapshotFromEnv()).to.throw(
       /"CANONICAL_BLOCK_NUMBER" env variable must be a decimal string/,
     );
+  });
+
+  it('rejects a chain id outside [1, 2^64)', async function () {
+    await exportToEnv();
+    for (const chainId of ['0', (2n ** 64n).toString()]) {
+      process.env.CANONICAL_CHAIN_ID = chainId;
+      expect(() => readCanonicalSnapshotFromEnv()).to.throw(
+        /"CANONICAL_CHAIN_ID" env variable must be in \[1, 2\^64\)/,
+      );
+    }
+  });
+
+  it('rejects a malformed or zero canonical address', async function () {
+    await exportToEnv();
+    for (const address of ['not-an-address', ethers.ZeroAddress, '0'.repeat(40)]) {
+      process.env.CANONICAL_PROTOCOL_CONFIG_ADDRESS = address;
+      expect(() => readCanonicalSnapshotFromEnv()).to.throw(
+        /"CANONICAL_PROTOCOL_CONFIG_ADDRESS" env variable must be a valid nonzero address/,
+      );
+    }
   });
 
   it('rejects a truncated JSON value', async function () {

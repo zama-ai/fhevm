@@ -492,7 +492,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _activatePendingContextWithDefaultSigners(newContextId, nodeConfigHash, EPOCH_COUNTER_BASE + 2, 1);
 
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestroyed(firstContextId);
+        emit IProtocolConfigBase.KmsContextDestroyed(firstContextId);
         vm.prank(owner);
         protocolConfig.destroyKmsContext(firstContextId);
         assertFalse(protocolConfig.isValidKmsContext(firstContextId));
@@ -508,7 +508,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         uint256 currentId = protocolConfig.getCurrentKmsContextId();
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.LatestActiveKmsContextCannotBeDestroyed.selector, currentId)
+            abi.encodeWithSelector(IProtocolConfigBase.LatestActiveKmsContextCannotBeDestroyed.selector, currentId)
         );
         protocolConfig.destroyKmsContext(currentId);
     }
@@ -682,7 +682,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertTrue(protocolConfig.isValidEpochForContext(oldContextId, oldEpochId));
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsEpochDestroyed(oldEpochId);
+        emit IProtocolConfigBase.KmsEpochDestroyed(oldEpochId);
         vm.prank(owner);
         protocolConfig.destroyKmsEpoch(oldEpochId);
 
@@ -694,7 +694,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         (, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfig.LatestActiveKmsEpochCannotBeDestroyed.selector, currentEpochId)
+            abi.encodeWithSelector(IProtocolConfigBase.LatestActiveKmsEpochCannotBeDestroyed.selector, currentEpochId)
         );
         protocolConfig.destroyKmsEpoch(currentEpochId);
     }
@@ -719,7 +719,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsEpochDestroyed(pendingEpochId);
+        emit IProtocolConfigBase.KmsEpochDestroyed(pendingEpochId);
         vm.prank(owner);
         protocolConfig.destroyKmsEpoch(pendingEpochId);
 
@@ -846,7 +846,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _defineSameSetContextSwitch();
 
         vm.expectEmit(true, false, false, true, address(protocolConfig));
-        emit IProtocolConfig.KmsContextDestroyed(pendingContextId);
+        emit IProtocolConfigBase.KmsContextDestroyed(pendingContextId);
         vm.prank(owner);
         protocolConfig.destroyKmsContext(pendingContextId);
 
@@ -1581,6 +1581,15 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
 
         ProtocolConfig(protocolConfigAdd).reinitializeV3();
         assertEq(uint256(vm.load(protocolConfigAdd, INITIALIZABLE_STORAGE)), 4);
+
+        // The KMS signers sign under this domain, so the upgrade path must set it.
+        (, string memory name, string memory version, uint256 chainId, address verifyingContract, , ) = ProtocolConfig(
+            protocolConfigAdd
+        ).eip712Domain();
+        assertEq(name, "ProtocolConfig");
+        assertEq(version, "1");
+        assertEq(chainId, block.chainid);
+        assertEq(verifyingContract, protocolConfigAdd);
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         ProtocolConfig(protocolConfigAdd).reinitializeV3();
