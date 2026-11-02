@@ -220,8 +220,8 @@ env:
   SYNC_SECRETS_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/sync-secrets
   SYNC_SECRETS_CHART_VERSION: "0.2.3"
   #=====KMS==================================================================
-  KMS_REPO_REF: "v0.14.1"
-  KMS_CORE_TAG: "v0.14.1"
+  KMS_REPO_REF: "v0.15.0-1"
+  KMS_CORE_TAG: "v0.15.0-1"
   #=====REDIS================================================================
   REDIS_CHART: oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
   REDIS_CHART_VERSION: "25.3.8"
@@ -877,9 +877,9 @@ jobs:
 
       - name: Resolve KMS enclave image
         working-directory: .kms-deploy
-        # PCR labels must come from the image deploy.sh will start.
-        # v0.14.1 hardcodes core-service-enclave. Current kms main defaults
-        # KMS_CORE_ENCLAVE_IMAGE_NAME to core-service-enclave-insecure.
+        # PCR labels must come from the image deploy.sh will start: the
+        # KMS_CORE_ENCLAVE_IMAGE_NAME default of the pinned deploy.sh, or
+        # core-service-enclave when that release hardcodes it.
         run: |
           image_name="hub.zama.org/ghcr/zama-ai/kms/core-service-enclave"
           line=$(grep -E '^KMS_CORE_ENCLAVE_IMAGE_NAME=' ci/scripts/deploy.sh || true)
@@ -963,8 +963,8 @@ jobs:
           # deploy.sh's parse_args takes CLI flags, not env vars, for these
           # (--tag sets both KMS_CORE_TAG and KMS_CLIENT_TAG). TLS and the
           # enclave image name are the env-var exceptions. The image is the
-          # one whose PCR labels were read above; current kms main uses it,
-          # v0.14.1 ignores it and hardcodes the same secure name.
+          # one whose PCR labels were read above; releases that hardcode it
+          # ignore the variable and use the same secure name.
           TLS: "true"
           KMS_CORE_ENCLAVE_IMAGE_NAME: ${{ env.KMS_ENCLAVE_IMAGE }}
         run: |
@@ -1355,6 +1355,13 @@ jobs:
       ######################################################################
       - name: Trigger KMS keygen + CRS generation
         run: bash ci/preview-env/scripts/deploy/deploy-contracts.sh trigger-keygen
+
+      # The insecure-keygen redirect is single-threaded and sits on every
+      # kms-worker call. Keygen is done here, so point the workers straight at
+      # their cores and drop it.
+      - name: Bypass the insecure-keygen redirect
+        if: env.KEYGEN == 'insecure'
+        run: bash ci/preview-env/scripts/deploy/bypass-kms-keygen-redirect.sh
 
       ######################################################################
       # RELAYER + TEST-SUITE: generic `common` chart + published images.
