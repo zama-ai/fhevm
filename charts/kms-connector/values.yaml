@@ -438,6 +438,11 @@ kmsConnectorProxy:
 
   replicas: 1
 
+  # How long the proxy waits for requests in flight when it stops. Sets
+  # `KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD`, and the pod's `terminationGracePeriodSeconds` to this
+  # value plus 10s (the 5s Pingora takes to close what is left, plus 5s margin)
+  shutdownGracePeriodSeconds: 60
+
   # Addresses allowed to sign `FhevmSig` requests (the relayer signers)
   allowedSenders: []
   # This connector's tx-sender wallet address: the `audience` accepted requests are signed for

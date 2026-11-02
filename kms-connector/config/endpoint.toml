@@ -40,6 +40,10 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS
 # max_allowed_contracts = 10
 
+# Maximum number of handles of a single decryption request (optional, defaults to 50).
+# ENV: KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION
+# max_handles_per_decryption = 50
+
 # Host chain ids accepted in ciphertext handles (required)
 # ENV: KMS_CONNECTOR_SUPPORTED_CHAIN_IDS (comma-separated list, e.g. "11155111,1")
 supported_chain_ids = [11155111]

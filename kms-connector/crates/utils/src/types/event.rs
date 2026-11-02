@@ -149,7 +149,7 @@ impl ProtocolEvent {
 }
 
 // `Debug` and `PartialEq` are implemented by hand below because
-// `fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_1` (aliased as
+// `fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest_3` (aliased as
 // `UserDecryptionRequestV2`) doesn't derive them: `alloy::sol!` skips the automatic derives on any
 // struct that references a type defined in a different `sol!` module, and this event's `payload`
 // field reaches into `IDecryption::UserDecryptionRequestPayload`. All of the event's fields

@@ -153,11 +153,12 @@ interface IDecryption {
      * @param userAddress The user's address.
      * @param publicKey The user's public key for used reencryption.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
-     * @custom:deprecated Emitted only by the legacy user decryption paths. Removed when the
-     * relayer-sdk deprecation window for old-format signatures closes. New callers should subscribe
-     * to the overloaded unified EIP-712 `UserDecryptionRequest` event emitted by
-     * `userDecryptionRequest(HandleEntry[], ...)`.
-     * @custom:deprecated Emitted for the v0.14 -> v0.15 upgrade period. Should be removed in v0.16.
+     * @custom:deprecated Transitional: emitted only by the legacy user decryption paths, and only
+     * while consumers still read the materials-carrying overloads. Removed with those overloads once
+     * every consumer reads the handles-only ones, or when the relayer-sdk deprecation window for
+     * old-format signatures closes, whichever comes first. New callers should subscribe to the
+     * handles-only unified overload `UserDecryptionRequest(uint256, HandleEntry[],
+     * UserDecryptionRequestPayload)` emitted by `userDecryptionRequest(HandleEntry[], ...)`.
      */
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
@@ -199,8 +200,10 @@ interface IDecryption {
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @custom:deprecated Emitted only by the legacy user decryption paths. Removed when the
      * relayer-sdk deprecation window for old-format signatures closes. New callers should subscribe
-     * to the overloaded unified EIP-712 `UserDecryptionRequest` event emitted by
-     * `userDecryptionRequest(HandleEntry[], ...)`.
+     * to the handles-only unified overload `UserDecryptionRequest(uint256, HandleEntry[],
+     * UserDecryptionRequestPayload)` emitted by `userDecryptionRequest(HandleEntry[], ...)`; its
+     * materials-carrying sibling is transitional and goes once every consumer reads the handles-only
+     * overloads.
      * @dev Shares its name with the legacy event via Solidity event overloading — the
      * distinct parameter list produces a distinct `topic0`.
      */

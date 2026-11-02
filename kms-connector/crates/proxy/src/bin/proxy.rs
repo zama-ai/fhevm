@@ -34,7 +34,6 @@ fn run() -> anyhow::Result<()> {
         }
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref())?;
-            debug!("{config:?}");
 
             // The tonic OTLP exporter spawns its channel worker with `tokio::spawn` at build time,
             // so a runtime must be entered here. The worker then runs on this runtime's threads,
@@ -45,6 +44,7 @@ fn run() -> anyhow::Result<()> {
                 .build()?;
             let _guard = runtime.enter();
             init_otlp_setup(config.service_name.clone())?;
+            debug!("{config:?}");
 
             // The monitoring server runs on the tokio runtime, next to Pingora's own.
             let monitoring_endpoint = config.monitoring_endpoint;
