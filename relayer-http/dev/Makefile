@@ -31,7 +31,8 @@ PROMTOOL_MONITORING := docker run --rm -v $(ROOT)/monitoring:/monitoring:ro -w /
 CLIPPY  := cargo clippy --workspace --all-targets -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
 
 .PHONY: help fmt fmt-fix clippy test test-aws check check-alerts references build run down upgrade-fhevm-cli-relayer \
-	public-decrypt user-decrypt load check-metrics start-monitoring stop-monitoring check-dashboards
+	public-decrypt user-decrypt load check-metrics start-monitoring stop-monitoring check-dashboards \
+	pad-stack pad-connectors pad-run pad-decrypt
 
 help: ## this list
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{ printf "  %-26s %s\n", $$1, $$2 }'
@@ -91,3 +92,13 @@ user-decrypt: ## deploy UserDecrypt, sign the unified request, POST /v4/user-dec
 	scripts/e2e.sh user-decrypt.ts
 load: ## k6 traffic mix: PROFILE=normal (1 per 5 s) or load (RATE/s, default 100), DURATION, TARGET=fhevm-cli|host
 	scripts/load.sh
+
+# --- pad decryption (RFC-030): the SDK's cleartext stack on anvil, mock KMS connectors; no fhevm stack needed ------
+pad-stack: ## anvil :8544 with the v1.0.0 cleartext host contracts (terminal 1)
+	scripts/pad.sh stack
+pad-connectors: ## mock KMS connectors 127.0.0.1:8091..8094 serving /v1/pad-decrypt from that stack (terminal 2)
+	scripts/pad.sh connectors
+pad-run: ## the relayer with dev/config/pad-cleartext.yaml (terminal 3)
+	scripts/pad.sh run
+pad-decrypt: ## sign and POST /v4/pad-decrypt, check every response: signers, sessions, the pad itself (terminal 4)
+	scripts/pad.sh flow

@@ -73,7 +73,8 @@ Conversion: `ciphertextHandles` → `ctHandles`, `extraData` as it is.
 ### `POST /v4/pad-decrypt`
 
 Pad decryption of tech-spec RFC-030, forwarded to the connector's `POST /v1/pad-decrypt`. The connector's endpoint
-accepts it, but its worker answers every pad request `422 unprocessable` until it can process them.
+accepts it, but its worker answers every pad request `422 unprocessable` until it can process them, so end-to-end runs
+use the mock connectors of `crates/pad-mock` (`dev/README.md`, "Pad decryption").
 
 The connector's envelope (`kms-connector-api` `PadDecryptionRequest`), with the SDK's decimal-string integers. The
 RFC-016 signed fields are those of user decryption (an existing user-decrypt signature can be reused); the pad fields
