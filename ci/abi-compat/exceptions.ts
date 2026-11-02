@@ -47,6 +47,19 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "error NonIncreasingEpochId(uint256,uint256)",
       "event MirrorKmsContextAndEpoch(uint256 indexed,uint256 indexed,(address,address,string,string,int32,string,bytes,string)[],(uint256,uint256,uint256,uint256),string,(bytes,bytes,bytes)[])",
       "event MirrorKmsEpoch(uint256 indexed,uint256 indexed)",
+      // Per RFC 037 section 3.1, the lifecycle confirmations carry the KMS signer's EIP-712 signature.
+      // Anyone may submit them. So the confirm functions and their events change shape.
+      "error EpochActivationSignerDoesNotMatchTxSender(address,address)",
+      "event EpochActivationConfirmation(uint256 indexed,address indexed,bytes32)",
+      "event KmsContextCreationConfirmation(uint256 indexed,address indexed,bool,bool)",
+      "event ActivateEpoch(uint256 indexed,uint256 indexed,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[],string[])",
+      "function confirmEpochActivation(uint256,(uint256,uint256,(uint8,bytes)[],bytes)[],(uint256,uint256,bytes,bytes)[]) returns ()",
+      "function confirmKmsContextCreation(uint256) returns ()",
+      // confirmKmsContextCreation now computes the previous-committee quorum from the active context,
+      // so ProtocolConfig no longer has the cache and its getter.
+      "function getContextCreationPreviousTxSenderThreshold(uint256) returns (uint256)",
+      // The key and CRS results carry no signature now, so the error names results, not attestations.
+      "error EmptyEpochActivationAttestation(uint256)",
     ],
   },
   "gateway-contracts": {
