@@ -235,6 +235,5 @@ The rotation tasks are `task:buildMirrorKmsContextAndEpochCalldata` /
 `task:mirrorKmsContextAndEpoch` (context switch) and `task:buildMirrorKmsEpochCalldata` /
 `task:mirrorKmsEpoch` (same-set epoch rotation), defined in `tasks/mirrorKmsContext.ts`. Both read
 canonical's active KMS context/epoch over `--canonical-rpc-url` / `--canonical-protocol-config-address`
-(the context-switch pair also cross-checks the recovered `NewKmsContext` event data against the
-canonical `contextInfoHash` anchor) and call the replica's `mirrorKmsContextAndEpoch` /
+and call the replica's `mirrorKmsContextAndEpoch` /
 `mirrorKmsEpoch` described in [Mirror methods](#mirror-methods-owner-path).

@@ -32,7 +32,7 @@ export type CanonicalSnapshot = {
 };
 
 // RPC providers must disable caching so this check re-fetches the block after the state reads.
-export async function assertCanonicalSnapshotBlockHash(
+async function assertCanonicalSnapshotBlockHash(
   canonicalProvider: Provider,
   snapshot: Pick<CanonicalSnapshot, 'blockNumber' | 'blockHash'>,
 ): Promise<void> {

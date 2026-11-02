@@ -29,7 +29,7 @@ describe('KMS mirror tasks', function () {
   const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
 
   describe('readCanonicalContextSwitch', function () {
-    it('recovers the rotated context from the NewKmsContext event and matches live ids', async function () {
+    it('reads the rotated context from canonical storage and matches live ids', async function () {
       const committee = await buildControllableKmsCommittee();
       const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
       const contextId = await rotateToNewKmsContext(canonicalAddress, deployer, committee);
@@ -60,7 +60,7 @@ describe('KMS mirror tasks', function () {
       expect(args.thresholds.mpc).to.equal(BigInt(committee.thresholds.mpc));
     });
 
-    it('rejects a replica, then the same proxy upgraded back to ProtocolConfig with no context anchor', async function () {
+    it('rejects a replica', async function () {
       const replicaAddress = await deployFreshProtocolConfigReplicaProxy(
         deployer,
         KMS_CONTEXT_COUNTER_BASE + 1n,
@@ -68,20 +68,12 @@ describe('KMS mirror tasks', function () {
         buildProtocolConfigNodes(),
         buildProtocolConfigThresholds(),
       );
-      const read = () =>
+      await expect(
         readCanonicalContextSwitch(hre, {
           canonicalProvider: ethers.provider,
           canonicalProtocolConfigAddress: replicaAddress,
-        });
-
-      // The version identity check rejects a replica before any event scan.
-      await expect(read()).to.be.rejectedWith(/reports version "ProtocolConfigReplica v/);
-
-      // Upgraded back to ProtocolConfig, the proxy passes the identity check but holds no anchor.
-      const implementation = await (await ethers.getContractFactory('ProtocolConfig', deployer)).deploy();
-      const replica = await ethers.getContractAt('ProtocolConfigReplica', replicaAddress, deployer);
-      await (await replica.upgradeToAndCall(await implementation.getAddress(), '0x')).wait();
-      await expect(read()).to.be.rejectedWith(/has no context anchor recorded/);
+        }),
+      ).to.be.rejectedWith(/reports version "ProtocolConfigReplica v/);
     });
   });
 

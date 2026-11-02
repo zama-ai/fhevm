@@ -376,23 +376,18 @@ npx hardhat task:mirrorKmsContextAndEpoch --network <replica-network> \
 ```
 
 There is no committee to re-type. `mirrorKmsContextAndEpoch` takes the four stored `KmsNode`
-fields and the thresholds. The task reads both from canonical's `NewKmsContext` event. It
-checks the full event data against the on-chain `contextInfoHash` anchor before it uses them.
-A wrong RPC block or a mismatched event fails that check.
+fields and the thresholds. The task reads both from canonical storage at one finalized block.
 
-Three errors are worth knowing:
+Two errors are worth knowing:
 
 - `reports version "ProtocolConfigReplica v…"; expected "ProtocolConfig v…"` — the
   `--canonical-protocol-config-address` points at a replica, not at Ethereum's `ProtocolConfig`.
-- `has no context anchor recorded` — the address runs `ProtocolConfig` but holds no anchor for the
-  active context. This is normally a replica proxy that still runs `ProtocolConfig`.
 - `is already at context …` — either canonical's rotation is not finalized yet (§5.2) or this
   replica is already up to date.
 
 ### 5.4 Mirror an epoch rotation
 
-Same-set rotations carry no committee data, so this path is just the two ids — no event
-read, no anchor check:
+Same-set rotations carry no committee data, so this path mirrors just the two ids:
 
 ```bash
 cd host-contracts

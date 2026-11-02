@@ -59,7 +59,7 @@ function requireProtocolConfigAddress(): string {
       `"CANONICAL_PROTOCOL_CONFIG_ADDRESS" env variable must be a valid nonzero address, got ${JSON.stringify(raw)}.`,
     );
   }
-  return raw;
+  return getAddress(raw);
 }
 
 function requireKmsNodes(): KmsNode[] {

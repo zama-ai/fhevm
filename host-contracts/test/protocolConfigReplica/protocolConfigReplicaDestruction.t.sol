@@ -1,18 +1,17 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {ProtocolConfigReplicaTestBase} from "./protocolConfigReplica.t.sol";
+import {ProtocolConfigReplicaFixture} from "./ProtocolConfigReplicaTestBase.sol";
 import {IProtocolConfigReplica} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
 import {IProtocolConfigBase} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigBase.sol";
 import {KmsThresholds} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 
-contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
+contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaFixture {
     // -----------------------------------------------------------------------
     // submitKmsContextDestruction / submitKmsEpochDestruction
     // -----------------------------------------------------------------------
 
     function test_submitKmsContextDestructionOfSupersededContext() public {
-        _setupReplica();
         _switch(SEED0, CTX1 + 1, EPOCH1 + 1, SEED1);
 
         vm.expectEmit(true, false, false, false, address(protocolConfigReplica));
@@ -32,7 +31,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_revertContextDestructionReplay() public {
-        _setupReplica();
         _mirrorAhead();
         bytes[] memory signatures = _sign(_hashContextDestruction(CTX1 + 9, EXTRA), SEED0, QUORUM);
         vm.expectEmit(true, false, false, false, address(protocolConfigReplica));
@@ -50,7 +48,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_revertContextDestructionActive() public {
-        _setupReplica();
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.KmsContextDestructionAheadOfReplica.selector, CTX1, CTX1)
         );
@@ -58,7 +55,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_revertContextDestructionQuorum() public {
-        _setupReplica();
         _mirrorAhead();
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, QUORUM - 1, QUORUM)
@@ -67,7 +63,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_revertDestructionZeroQuorumCommittee() public {
-        _setupReplica();
         // With `mpc == n` the `n - t` quorum is 0, and the floor raises it to 1.
         vm.prank(owner);
         protocolConfigReplica.mirrorKmsContextAndEpoch(
@@ -82,7 +77,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_revertContextDestructionSignedByOldCommittee() public {
-        _setupReplica();
         _switch(SEED0, CTX1 + 1, EPOCH1 + 1, SEED1);
 
         vm.expectRevert(
@@ -96,7 +90,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_submitKmsEpochDestruction() public {
-        _setupReplica();
         protocolConfigReplica.submitKmsKeyResharing(_epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, N));
 
         vm.expectEmit(true, false, false, false, address(protocolConfigReplica));
@@ -108,7 +101,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_revertEpochDestructionReplay() public {
-        _setupReplica();
         _mirrorAhead();
         bytes[] memory signatures = _sign(_hashEpochDestruction(EPOCH1 + 9, EXTRA), SEED0, QUORUM);
         protocolConfigReplica.submitKmsEpochDestruction(EPOCH1 + 9, signatures, EXTRA);
@@ -124,7 +116,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_revertEpochDestructionActive() public {
-        _setupReplica();
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.KmsEpochDestructionAheadOfReplica.selector, EPOCH1, EPOCH1)
         );
@@ -132,7 +123,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_revertEpochDestructionQuorum() public {
-        _setupReplica();
         _mirrorAhead();
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, QUORUM - 1, QUORUM)
@@ -141,7 +131,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_supersededEpochDestructionWaitsForReplica() public {
-        _setupReplica();
         // Canonical activates E2, then E3, then destroys the superseded E2. The replica is still at E1.
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -161,7 +150,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_supersededContextDestructionWaitsForReplica() public {
-        _setupReplica();
         // Canonical switches from C1 (SEED0) to C2 (SEED1), then to C3 (SEED2), then C3 destroys C2.
         // The replica is at C1.
         vm.expectRevert(
@@ -178,7 +166,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaTestBase {
     }
 
     function test_destroyedPendingEpochAppliesAfterNextResharing() public {
-        _setupReplica();
         // Canonical: E2 stays pending and is destroyed, then E3 activates with previous epoch E1.
         protocolConfigReplica.submitKmsKeyResharing(_epochSubmission(CTX1, EPOCH1, EPOCH1 + 2, SEED0, N));
         _destroyEpoch(EPOCH1 + 1, SEED0, QUORUM);
