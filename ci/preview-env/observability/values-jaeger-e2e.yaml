@@ -41,7 +41,7 @@ resources:
     memory: "512Mi"
   limits:
     cpu: "1"
-    memory: "2Gi"
+    memory: "4Gi"
 
 # Pins onto the zws-pool Karpenter node pool - see
 # ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
