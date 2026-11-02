@@ -82,7 +82,8 @@ contract ProtocolConfigReplica is
             revert InvalidKmsEpoch(canonicalEpochId);
         }
 
-        _storeAndActivateKmsContextAndEpoch(canonicalContextId, canonicalEpochId, canonicalNodes, canonicalThresholds);
+        _storeKmsCommittee(canonicalContextId, canonicalNodes, canonicalThresholds);
+        _activateWithCounters(canonicalContextId, canonicalEpochId);
         _initCanonicalDomain(canonicalChainId, canonicalProtocolConfig);
     }
 

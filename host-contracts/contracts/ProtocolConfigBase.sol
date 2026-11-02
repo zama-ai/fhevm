@@ -325,22 +325,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Stores a KMS context under the caller-provided `contextId`, validates nodes and
-     *      thresholds, and activates it under `epochId`. Use this on the two bootstrap paths, where
-     *      the context ID is externally determined. Callers are responsible for emitting
-     *      context lifecycle events and recording the matching `KmsContextAnchor` when appropriate.
-     */
-    function _storeAndActivateKmsContextAndEpoch(
-        uint256 contextId,
-        uint256 epochId,
-        KmsNode[] memory nodes,
-        KmsThresholds calldata thresholds
-    ) internal virtual {
-        _storeKmsCommittee(contextId, nodes, thresholds);
-        _activateWithCounters(contextId, epochId);
-    }
-
-    /**
      * @dev Activates `contextId` and `epochId` as the latest active pair and sets both counters to
      *      them. The canonical calls this only on bootstrap, because its allocation counter can run
      *      ahead of the active pair. On a replica every activation is its newest state.
@@ -426,17 +410,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Promotes `epochId` to Active under `contextId` and makes it the active epoch.
-     *      Callers own the matching context-state writes and any event emission.
-     */
-    function _activateEpoch(uint256 epochId, uint256 contextId) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.epochState[epochId] = EpochState.Active;
-        $.contextForEpoch[epochId] = contextId;
-        $.latestActiveEpochId = epochId;
-    }
-
-    /**
      * @dev Sets `contextId` Active and activates `epochId` under it, as the latest active pair.
      *      Callers own the counter writes and any event emission.
      */
@@ -444,7 +417,9 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         $.contextState[contextId] = ContextState.Active;
         $.latestActiveKmsContextId = contextId;
-        _activateEpoch(epochId, contextId);
+        $.epochState[epochId] = EpochState.Active;
+        $.contextForEpoch[epochId] = contextId;
+        $.latestActiveEpochId = epochId;
     }
 
     /**
