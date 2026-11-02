@@ -120,10 +120,10 @@ contract ProtocolConfigReplica is
         if (epoch.epochId <= previousEpochId) {
             revert NonIncreasingEpochId(epoch.epochId, previousEpochId);
         }
-        if ($.destroyedContexts[context.contextId]) {
+        if ($.contextState[context.contextId] == ContextState.Destroyed) {
             revert KmsContextIdDestroyed(context.contextId);
         }
-        if ($.destroyedEpochs[epoch.epochId]) {
+        if ($.epochState[epoch.epochId] == EpochState.Destroyed) {
             revert KmsEpochIdDestroyed(epoch.epochId);
         }
 
@@ -164,7 +164,7 @@ contract ProtocolConfigReplica is
         if (epoch.epochId <= activeEpochId) {
             revert KmsKeyResharingAlreadyApplied(epoch.epochId);
         }
-        if ($.destroyedEpochs[epoch.epochId]) {
+        if ($.epochState[epoch.epochId] == EpochState.Destroyed) {
             revert KmsEpochIdDestroyed(epoch.epochId);
         }
 
@@ -197,7 +197,7 @@ contract ProtocolConfigReplica is
         if (destroyedContextId >= activeContextId) {
             revert KmsContextDestructionAheadOfReplica(destroyedContextId, activeContextId);
         }
-        if ($.destroyedContexts[destroyedContextId]) {
+        if ($.contextState[destroyedContextId] == ContextState.Destroyed) {
             revert KmsContextAlreadyDestroyed(destroyedContextId);
         }
         _verifyDestructionQuorum(_contextDestructionStructHash(destroyedContextId, extraData), signatures);
@@ -215,7 +215,7 @@ contract ProtocolConfigReplica is
         if (destroyedEpochId >= activeEpochId) {
             revert KmsEpochDestructionAheadOfReplica(destroyedEpochId, activeEpochId);
         }
-        if ($.destroyedEpochs[destroyedEpochId]) {
+        if ($.epochState[destroyedEpochId] == EpochState.Destroyed) {
             revert KmsEpochAlreadyDestroyed(destroyedEpochId);
         }
         _verifyDestructionQuorum(_epochDestructionStructHash(destroyedEpochId, extraData), signatures);
@@ -257,7 +257,6 @@ contract ProtocolConfigReplica is
             revert NonIncreasingEpochId(epochId, activeEpochId);
         }
 
-        delete $.destroyedEpochs[epochId];
         _activateWithCounters(contextId, epochId);
         emit MirrorKmsEpoch(contextId, epochId);
     }
@@ -345,8 +344,8 @@ contract ProtocolConfigReplica is
     }
 
     /**
-     * @dev Clears the destroyed flags of `contextId` and `epochId`, stores the committee under
-     *      `contextId`, and activates the pair. No ordering check.
+     * @dev Stores the committee under `contextId` and activates the pair, which also replaces a
+     *      Destroyed state. No ordering check.
      */
     function _replaceAndActivateKmsContextAndEpoch(
         uint256 contextId,
@@ -354,9 +353,6 @@ contract ProtocolConfigReplica is
         KmsNode[] calldata nodes,
         KmsThresholds calldata thresholds
     ) private {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        delete $.destroyedContexts[contextId];
-        delete $.destroyedEpochs[epochId];
         _replaceKmsContext(contextId, nodes, thresholds);
         _activateWithCounters(contextId, epochId);
         emit MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
@@ -367,7 +363,7 @@ contract ProtocolConfigReplica is
      */
     function _destroyKmsContext(uint256 destroyedContextId) private {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        if ($.destroyedContexts[destroyedContextId]) {
+        if ($.contextState[destroyedContextId] == ContextState.Destroyed) {
             revert KmsContextAlreadyDestroyed(destroyedContextId);
         }
         if (destroyedContextId == $.latestActiveKmsContextId) {
@@ -382,7 +378,7 @@ contract ProtocolConfigReplica is
      */
     function _destroyKmsEpoch(uint256 destroyedEpochId) private {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        if ($.destroyedEpochs[destroyedEpochId]) {
+        if ($.epochState[destroyedEpochId] == EpochState.Destroyed) {
             revert KmsEpochAlreadyDestroyed(destroyedEpochId);
         }
         if (destroyedEpochId == $.latestActiveEpochId) {

@@ -495,7 +495,7 @@ restored context, for example a resharing epoch under canonical's active context
 later if its context is activated again.
 
 If canonical later uses a destroyed id, mirror it with `mirrorKmsContextAndEpoch` or
-`mirrorKmsEpoch`. They clear the destroyed flag. No task wraps `recoverKmsState`, so the owner
+`mirrorKmsEpoch`. The activation replaces the Destroyed state. No task wraps `recoverKmsState`, so the owner
 calls it directly.
 
 ## 6. Quick reference

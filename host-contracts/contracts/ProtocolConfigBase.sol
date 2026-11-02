@@ -10,20 +10,23 @@ import {KmsContextAnchor, KmsNode, KmsThresholds} from "./shared/Structs.sol";
  */
 abstract contract ProtocolConfigBase is IProtocolConfigBase {
     /// @notice Lifecycle state of a KMS context: created Pending, promoted to Created once the
-    ///         creation quorum confirms, then Active when its first epoch activates.
+    ///         creation quorum confirms, then Active when its first epoch activates. Destroyed once
+    ///         destroyed.
     enum ContextState {
         None,
         Pending,
         Created,
-        Active
+        Active,
+        Destroyed
     }
 
     /// @notice Lifecycle state of an epoch: opened Pending for resharing, then Active once the
-    ///         activation quorum confirms.
+    ///         activation quorum confirms. Destroyed once destroyed.
     enum EpochState {
         None,
         Pending,
-        Active
+        Active,
+        Destroyed
     }
 
     /// @notice Upper bound on the KMS committee size and on every per-context threshold.
@@ -95,7 +98,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         /// @notice MPC threshold per context.
         /// @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
-        /// @notice Whether a context has been destroyed.
+        /// @dev Deprecated.
         mapping(uint256 contextId => bool) destroyedContexts;
         /// @notice The most recently activated KMS context ID, the one reads resolve against.
         ///         Several contexts may remain in the `Active` state at once (prior contexts are not
@@ -133,9 +136,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         mapping(uint256 contextId => uint256 confirmations) contextCreationPreviousTxSenderConfirmationCount;
         /// @notice Context anchor recorded when NewKmsContext was emitted.
         mapping(uint256 contextId => KmsContextAnchor) contextAnchors;
-        /// @notice Whether an epoch has been destroyed.
-        /// @dev Added in v0.4.0. An epoch destroyed before the upgrade is not flagged.
-        mapping(uint256 epochId => bool) destroyedEpochs;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfig")) - 1)) & ~bytes32(uint256(0xff))
@@ -294,12 +294,13 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Returns true if the context is Pending, Created or Active. Destruction resets a context
-     * to None. The v0.14 upgrade gave a state only to the context that was active at that upgrade,
+     * @dev Returns true if the context is Pending, Created or Active. A destroyed context is not
+     * live. The v0.14 upgrade gave a state only to the context that was active at that upgrade,
      * so older contexts also read as None and are not live.
      */
     function _isLiveKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
-        return _getProtocolConfigStorage().contextState[kmsContextId] != ContextState.None;
+        ContextState state = _getProtocolConfigStorage().contextState[kmsContextId];
+        return state != ContextState.None && state != ContextState.Destroyed;
     }
 
     /**
@@ -447,31 +448,20 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Clears `epochId` back to None and drops its context link. Callers own the preconditions
-     *      and any event emission.
-     */
-    function _clearEpoch(uint256 epochId) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.epochState[epochId] = EpochState.None;
-        delete $.contextForEpoch[epochId];
-    }
-
-    /**
-     * @dev Marks `contextId` destroyed and resets its state to None. Callers own the preconditions.
+     * @dev Sets `contextId` Destroyed. Callers own the preconditions.
      */
     function _markKmsContextDestroyed(uint256 contextId) internal {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.destroyedContexts[contextId] = true;
-        $.contextState[contextId] = ContextState.None;
+        _getProtocolConfigStorage().contextState[contextId] = ContextState.Destroyed;
         emit KmsContextDestroyed(contextId);
     }
 
     /**
-     * @dev Clears `epochId` and marks it destroyed. Callers own the preconditions.
+     * @dev Sets `epochId` Destroyed and drops its context link. Callers own the preconditions.
      */
     function _markKmsEpochDestroyed(uint256 epochId) internal {
-        _clearEpoch(epochId);
-        _getProtocolConfigStorage().destroyedEpochs[epochId] = true;
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        $.epochState[epochId] = EpochState.Destroyed;
+        delete $.contextForEpoch[epochId];
         emit KmsEpochDestroyed(epochId);
     }
 

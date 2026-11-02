@@ -599,7 +599,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /**
      * @dev Reverts when a context switch or epoch rotation is still settling. In flight means the
      *      latest-issued context is Pending/Created or the latest-issued epoch is Pending. Destroyed
-     *      entries are None and do not count, so the destroy paths reopen the gate.
+     *      and cleared entries do not count, so the destroy paths reopen the gate.
      */
     function _checkNoKmsLifecycleOperationInFlight() internal view virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
@@ -636,6 +636,16 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         epochId = ++$.epochCounter;
         $.epochState[epochId] = EpochState.Pending;
         $.contextForEpoch[epochId] = contextId;
+    }
+
+    /**
+     * @dev Clears `epochId` back to None and drops its context link. Callers own the preconditions
+     *      and any event emission.
+     */
+    function _clearEpoch(uint256 epochId) internal virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        $.epochState[epochId] = EpochState.None;
+        delete $.contextForEpoch[epochId];
     }
 
     /**
