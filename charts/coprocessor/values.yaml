@@ -1911,8 +1911,8 @@ coprocessorProxy:
   # reach every node. The pod's termination budget is this delay, the drain grace and 10 s.
   shutdownDelaySeconds: 10
   # Requests per second each signer (KMS connector) can send to one replica; more get `429`.
-  # The Service balances each connection, and a connector opens one per in-flight request, so a
-  # signer's limit is about `replicas` times this: adding replicas raises it.
+  # The Service balances connections, not requests, and a connector opens one per in-flight
+  # request, so a signer's limit is up to about `replicas` times this: adding replicas raises it.
   maxRequestsPerSigner: 200
 
   # Ingress allowed from this release's proxy pods to prf-service.
@@ -1950,11 +1950,13 @@ coprocessorProxy:
     enabled: false
 
   # Worker threads of the proxy (COPROCESSOR_PROXY_THREADS): TLS handshakes, signature checks,
-  # forwarding and the readiness self-check share them. Match the CPU request.
-  threads: 1
+  # forwarding and the readiness self-check share them. At least the CPU request: with 2, a
+  # replica stayed under about 1 core in the load test, and a flood of unknown-signer requests no
+  # longer stalled its readiness check as it did with 1.
+  threads: 2
   resources:
     requests:
-      cpu: 500m
+      cpu: "1"
       memory: 256Mi
     limits:
       memory: 512Mi

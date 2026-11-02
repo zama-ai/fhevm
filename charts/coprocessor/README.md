@@ -104,9 +104,9 @@ database read, so each replica limits how many requests per second one signer ca
 `coprocessorProxy.maxRequestsPerSigner` (200 by default). Requests above the limit get `429` with
 `"code": "concurrency_limited"`, `"retryable": true` and `Retry-After: 1`, and never reach
 prf-service. The limit applies per replica and is not divided by `replicas`. A connector opens one
-HTTP/1.1 connection per request in flight, and the Service balances each new connection over the
-replicas, so a signer's limit is about `replicas` × `maxRequestsPerSigner`. Adding replicas raises
-it. The `signer` label of `coprocessor_proxy_requests_counter` names the
+HTTP/1.1 connection per request in flight, and the Service balances connections, not requests, over
+the replicas, so a signer's limit is up to about `replicas` × `maxRequestsPerSigner`. Adding
+replicas raises it. The `signer` label of `coprocessor_proxy_requests_counter` names the
 authenticated signer, so its `status="429"` series show which connector was limited.
 
 Kubernetes sends `SIGTERM` when it starts removing the pod from the Service, and each node keeps
@@ -121,9 +121,9 @@ sooner never sends one. The pod's `terminationGracePeriodSeconds` is the delay p
 10 s: Pingora's 5 s to close the remaining connections, and 5 s margin.
 
 TLS handshakes, signature checks and forwarding run on the proxy's worker threads,
-`coprocessorProxy.threads` (1 by default); match it to the CPU request. The readiness self-check
-goes through the same listener, with a 3 s timeout: replicas whose threads are saturated fail
-readiness together.
+`coprocessorProxy.threads` (2 by default, with a CPU request of 1). Keep it at least the CPU
+request. The readiness self-check goes through the same listener, with a 3 s timeout: replicas
+whose threads are saturated fail readiness together.
 
 Run at least 2 replicas in an environment that exposes the proxy, so that a node drain or an
 eviction leaves one serving. The default `topologySpreadConstraints` spread the replicas over nodes
@@ -138,7 +138,9 @@ connections from a client that holds them open. It closes a client connection th
 between two requests. Pingora 0.9 caps neither the number of connections nor the total time a
 client takes to send a request head: each read of it waits up to 60 s on a new connection and 15 s
 on a reused one, so a client that sends a byte at a time holds the connection. Pingora accepts
-request heads of up to 1 MiB, and waits up to 60 s for a TLS handshake. The proxy must therefore not be reachable directly from the
+request heads of up to 1 MiB, and waits up to 60 s for a TLS handshake. Each pending connection
+holds about 48 KB, so about 10,000 slow connections fill the 512Mi memory limit and the replica is
+OOM-killed, at any thread count. The proxy must therefore not be reachable directly from the
 internet. Put it behind one of:
 
 - an HTTP-aware layer that terminates the client's TLS connection, receives each request in full
@@ -148,7 +150,8 @@ internet. Put it behind one of:
   firewall rule in front of a TLS-passthrough exposure.
 
 The proxy speaks HTTP/1.1 to its clients, so each request a connector holds open takes one
-connection: a per-client connection limit must allow the connector's concurrent PRF requests.
+connection: a per-client connection limit must allow the connector's concurrent PRF requests, and
+the limits across all clients must stay well below the connections that fill a replica's memory.
 
 A connector's pool must close its idle connections to the proxy sooner than the proxy does, for
 example after 10 s. Otherwise a request sent as the proxy closes the connection fails with a

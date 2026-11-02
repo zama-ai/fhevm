@@ -115,7 +115,7 @@ pub struct Config {
     pub shutdown_delay: Duration,
     /// The worker threads of the proxy service. TLS handshakes, signature checks and forwarding
     /// all run on them, as does the readiness self-check's request.
-    #[arg(long, env = "COPROCESSOR_PROXY_THREADS", default_value = "1")]
+    #[arg(long, env = "COPROCESSOR_PROXY_THREADS", default_value = "2")]
     pub threads: NonZeroUsize,
 
     /// The service name used for tracing.
@@ -219,7 +219,7 @@ mod tests {
         );
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(10));
         assert_eq!(config.shutdown_delay, Duration::ZERO);
-        assert_eq!(config.threads.get(), 1);
+        assert_eq!(config.threads.get(), 2);
         assert_eq!(config.max_requests_per_signer.get(), 200);
         assert_eq!(config.bind_address, "0.0.0.0:8443".parse().unwrap());
     }
