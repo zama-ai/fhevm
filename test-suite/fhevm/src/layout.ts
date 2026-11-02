@@ -306,6 +306,7 @@ export const TEST_GREP: Record<string, string> = {
     "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt",
   "operators": "test operator|FHEVM manual operations",
   "hcu-block-cap": "block cap scenarios",
+  "hcu-allowlist": "HCU allowlist",
   "erc20": "should transfer tokens between two users.",
   "negative-acl": "negative-acl",
   "multi-chain-isolation": "Multi-Chain State Isolation",
@@ -350,6 +351,7 @@ export const STANDARD_TEST_PROFILES = [
   "multi-chain-isolation",
   "confidential-bridge",
   "hcu-block-cap",
+  "hcu-allowlist",
   // Covers both drift detection (incl. an on-chain divergence cross-check folded
   // in from the former `ciphertext-drift` profile) and full auto-recovery.
   // `ciphertext-drift` is still registered as a profile for on-demand runs but
