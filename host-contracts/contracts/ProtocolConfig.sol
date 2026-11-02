@@ -111,12 +111,11 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
 
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        _storeAndActivateKmsContextAndEpoch(
-            newContextId,
-            EPOCH_COUNTER_BASE + 1,
-            _toKmsNodes(initialKmsNodeParams),
-            initialThresholds
-        );
+        uint256 newEpochId = EPOCH_COUNTER_BASE + 1;
+        _storeKmsCommittee(newContextId, _toKmsNodes(initialKmsNodeParams), initialThresholds);
+        $.currentKmsContextId = newContextId;
+        $.epochCounter = newEpochId;
+        _activateKmsContextAndEpoch(newContextId, newEpochId);
 
         $.contextAnchors[newContextId] = KmsContextAnchor({
             emissionBlockNumber: block.number,

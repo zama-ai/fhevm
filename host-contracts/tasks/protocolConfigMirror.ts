@@ -31,17 +31,6 @@ export type CanonicalSnapshot = {
   blockHash: string;
 };
 
-// RPC providers must disable caching so this check re-fetches the block after the state reads.
-async function assertCanonicalSnapshotBlockHash(
-  canonicalProvider: Provider,
-  snapshot: Pick<CanonicalSnapshot, 'blockNumber' | 'blockHash'>,
-): Promise<void> {
-  const block = await canonicalProvider.getBlock(snapshot.blockNumber);
-  if (block === null || block.hash === null || block.hash !== snapshot.blockHash) {
-    throw new Error(`Canonical block ${snapshot.blockNumber} is missing or its hash changed during the read; retry.`);
-  }
-}
-
 // Reads the canonical ProtocolConfig's current KMS context, pinned to one finalized block, for
 // exports and mirror tasks. Pass blockNumber to pin to a finalized historical block (the export
 // artifact's blockNumber) so a DAO signer can reproduce a snapshot byte-for-byte even after a later
@@ -130,7 +119,11 @@ export async function readCanonicalSnapshot(
   }));
   const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
 
-  await assertCanonicalSnapshotBlockHash(canonicalProvider, { blockNumber, blockHash });
+  // RPC providers must disable caching so this re-fetches the block after the state reads.
+  const refetched = await canonicalProvider.getBlock(blockNumber);
+  if (refetched === null || refetched.hash === null || refetched.hash !== blockHash) {
+    throw new Error(`Canonical block ${blockNumber} is missing or its hash changed during the read; retry.`);
+  }
 
   return {
     protocolConfigAddress: getAddress(canonicalProtocolConfigAddress),

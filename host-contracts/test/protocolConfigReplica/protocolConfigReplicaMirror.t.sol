@@ -205,7 +205,6 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaFixture {
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, CTX1);
         assertEq(activeEpochId, EPOCH1);
-        assertEq(protocolConfigReplica.getCurrentKmsContextIdCounter(), CTX1);
         _assertMembers(CTX1, SEED0);
         assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1));
         assertFalse(protocolConfigReplica.isValidKmsContext(forgedId));

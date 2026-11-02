@@ -94,13 +94,14 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
         /// @notice Whether a context has been destroyed. Only the replica writes it, as a tombstone
         ///         that blocks a replayed submission.
+        /// @dev A context destroyed before the replica upgrade is not flagged.
         mapping(uint256 contextId => bool) destroyedContexts;
         /// @notice The most recently activated KMS context ID, the one reads resolve against.
         ///         Several contexts may remain in the `Active` state at once (prior contexts are not
         ///         demoted on rotation, so in-flight requests stay valid). This points at the newest.
         ///         Updated only on activation, unlike the canonical `currentKmsContextId` allocation counter.
         uint256 latestActiveKmsContextId;
-        /// @notice Epoch ID counter.
+        /// @notice Epoch ID counter on the canonical. Unused on a replica.
         uint256 epochCounter;
         /// @notice The most recently activated epoch ID. Multiple epochs may remain `Active`. This
         ///         points at the newest, which new reads resolve against.
@@ -320,26 +321,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         if (!_isValidKmsContext(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
-    }
-
-    /**
-     * @dev Stores a KMS context under the caller-provided `contextId`, validates nodes and
-     *      thresholds, and activates it under `epochId`. Use this on the two bootstrap paths, where
-     *      the context ID is externally determined. Callers are responsible for emitting
-     *      context lifecycle events and recording the matching `KmsContextAnchor` when appropriate.
-     *      Also seeds `currentKmsContextId` and `epochCounter`, which the canonical increments.
-     */
-    function _storeAndActivateKmsContextAndEpoch(
-        uint256 contextId,
-        uint256 epochId,
-        KmsNode[] memory nodes,
-        KmsThresholds calldata thresholds
-    ) internal virtual {
-        _storeKmsCommittee(contextId, nodes, thresholds);
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.currentKmsContextId = contextId;
-        $.epochCounter = epochId;
-        _activateKmsContextAndEpoch(contextId, epochId);
     }
 
     /**

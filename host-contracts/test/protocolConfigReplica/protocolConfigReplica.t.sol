@@ -11,6 +11,7 @@ import {IProtocolConfigBase} from "@fhevm-host-contracts/contracts/interfaces/IP
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
+import {PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
@@ -180,6 +181,18 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         (newContextId, newEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
         assertEq(newContextId, contextId);
         assertEq(newEpochId, epochId + 1);
+    }
+
+    /// @dev A pending context leaves the canonical counter above the active ID. The replica reports the active ID.
+    function test_reinitializeV4CounterReturnsActiveContextId() public {
+        ProtocolConfig pc = _setupCanonical();
+        vm.prank(owner);
+        pc.defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds(), "", new PcrValues[](0));
+        assertEq(pc.getCurrentKmsContextIdCounter(), CTX1 + 1);
+
+        protocolConfigReplica = _upgradeToReplica(pc);
+
+        assertEq(protocolConfigReplica.getCurrentKmsContextIdCounter(), CTX1);
     }
 
     function test_revertReinitializeV4OnFreshReplica() public {

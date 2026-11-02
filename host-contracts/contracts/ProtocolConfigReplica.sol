@@ -82,7 +82,8 @@ contract ProtocolConfigReplica is
             revert InvalidKmsEpoch(canonicalEpochId);
         }
 
-        _storeAndActivateKmsContextAndEpoch(canonicalContextId, canonicalEpochId, canonicalNodes, canonicalThresholds);
+        _storeKmsCommittee(canonicalContextId, canonicalNodes, canonicalThresholds);
+        _activateKmsContextAndEpoch(canonicalContextId, canonicalEpochId);
         _initCanonicalDomain(canonicalChainId, canonicalProtocolConfig);
     }
 
@@ -112,7 +113,7 @@ contract ProtocolConfigReplica is
     ) external virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         uint256 previousContextId = $.latestActiveKmsContextId;
-        // This check also stops a write over the active committee before the signature checks.
+        // This check also stops _replaceKmsContext from overwriting the active committee.
         if (context.contextId <= previousContextId) {
             revert KmsContextSwitchAlreadyApplied(context.contextId);
         }

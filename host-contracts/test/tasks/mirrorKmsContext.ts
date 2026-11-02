@@ -7,16 +7,13 @@ import {
   assertReplicaNeedsEpochMirror,
   encodeMirrorKmsContextAndEpoch,
   encodeMirrorKmsEpoch,
-  readCanonicalContextSwitch,
 } from '../../tasks/mirrorKmsContext';
-import { EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
+import { readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import type { ProtocolConfig, ProtocolConfigReplica } from '../../types';
 import { confirmEpochActivation } from '../utils/protocolConfigEip712';
 import {
   buildControllableKmsCommittee,
-  buildProtocolConfigNodes,
-  buildProtocolConfigThresholds,
   deployFreshProtocolConfigProxy,
   deployFreshProtocolConfigReplicaProxy,
   rotateToNewKmsContext,
@@ -28,55 +25,6 @@ import {
 describe('KMS mirror tasks', function () {
   const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
 
-  describe('readCanonicalContextSwitch', function () {
-    it('reads the rotated context from canonical storage and matches live ids', async function () {
-      const committee = await buildControllableKmsCommittee();
-      const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
-      const contextId = await rotateToNewKmsContext(canonicalAddress, deployer, committee);
-
-      const canonical = (await ethers.getContractAt('ProtocolConfig', canonicalAddress)) as unknown as ProtocolConfig;
-      const [liveContextId, liveEpochId] = await canonical.getCurrentKmsContextAndEpoch();
-      expect(liveContextId).to.equal(contextId);
-
-      const args = await readCanonicalContextSwitch(hre, {
-        canonicalProvider: ethers.provider,
-        canonicalProtocolConfigAddress: canonicalAddress,
-      });
-
-      expect(args.contextId).to.equal(liveContextId);
-      expect(args.epochId).to.equal(liveEpochId);
-      expect(args.nodes.length).to.equal(committee.nodes.length);
-      committee.nodes.forEach((node, i) => {
-        expect(args.nodes[i]).to.deep.equal({
-          txSenderAddress: node.txSenderAddress,
-          signerAddress: node.signerAddress,
-          ipAddress: node.ipAddress,
-          storageUrl: node.storageUrl,
-        });
-      });
-      expect(args.thresholds.publicDecryption).to.equal(BigInt(committee.thresholds.publicDecryption));
-      expect(args.thresholds.userDecryption).to.equal(BigInt(committee.thresholds.userDecryption));
-      expect(args.thresholds.kmsGen).to.equal(BigInt(committee.thresholds.kmsGen));
-      expect(args.thresholds.mpc).to.equal(BigInt(committee.thresholds.mpc));
-    });
-
-    it('rejects a replica', async function () {
-      const replicaAddress = await deployFreshProtocolConfigReplicaProxy(
-        deployer,
-        KMS_CONTEXT_COUNTER_BASE + 1n,
-        EPOCH_COUNTER_BASE + 1n,
-        buildProtocolConfigNodes(),
-        buildProtocolConfigThresholds(),
-      );
-      await expect(
-        readCanonicalContextSwitch(hre, {
-          canonicalProvider: ethers.provider,
-          canonicalProtocolConfigAddress: replicaAddress,
-        }),
-      ).to.be.rejectedWith(/reports version "ProtocolConfigReplica v/);
-    });
-  });
-
   describe('encodeMirrorKmsContextAndEpoch', function () {
     it('builds calldata that decodes back to the recovered args', async function () {
       const committee = await buildControllableKmsCommittee();
@@ -84,22 +32,22 @@ describe('KMS mirror tasks', function () {
       await rotateToNewKmsContext(canonicalAddress, deployer, committee);
 
       const iface = await getProtocolConfigReplicaInterface(hre);
-      const args = await readCanonicalContextSwitch(hre, {
+      const args = await readCanonicalSnapshot(hre, {
         canonicalProvider: ethers.provider,
         canonicalProtocolConfigAddress: canonicalAddress,
       });
       const calldata = encodeMirrorKmsContextAndEpoch(iface, args);
       const decoded = iface.decodeFunctionData('mirrorKmsContextAndEpoch', calldata);
 
-      expect(decoded[0]).to.equal(args.contextId);
-      expect(decoded[1]).to.equal(args.epochId);
-      expect(decoded[2].length).to.equal(args.nodes.length);
+      expect(decoded[0]).to.equal(args.currentKmsContextId);
+      expect(decoded[1]).to.equal(args.currentEpochId);
+      expect(decoded[2].length).to.equal(args.kmsNodes.length);
       decoded[2].forEach((node: unknown[], i: number) => {
         expect(node).to.deep.equal([
-          args.nodes[i].txSenderAddress,
-          args.nodes[i].signerAddress,
-          args.nodes[i].ipAddress,
-          args.nodes[i].storageUrl,
+          args.kmsNodes[i].txSenderAddress,
+          args.kmsNodes[i].signerAddress,
+          args.kmsNodes[i].ipAddress,
+          args.kmsNodes[i].storageUrl,
         ]);
       });
       expect(decoded[3].publicDecryption).to.equal(args.thresholds.publicDecryption);
@@ -157,11 +105,11 @@ describe('KMS mirror tasks', function () {
       );
 
       const iface = await getProtocolConfigReplicaInterface(hre);
-      const switchArgs = await readCanonicalContextSwitch(hre, {
+      const switchArgs = await readCanonicalSnapshot(hre, {
         canonicalProvider: ethers.provider,
         canonicalProtocolConfigAddress: canonicalAddress,
       });
-      await assertReplicaNeedsContextSwitch(hre, replicaAddress, switchArgs.contextId);
+      await assertReplicaNeedsContextSwitch(hre, replicaAddress, switchArgs.currentKmsContextId);
       const contextCalldata = encodeMirrorKmsContextAndEpoch(iface, switchArgs);
 
       await (await deployer.sendTransaction({ to: replicaAddress, data: contextCalldata })).wait();
@@ -171,8 +119,8 @@ describe('KMS mirror tasks', function () {
         replicaAddress,
       )) as unknown as ProtocolConfigReplica;
       const [mirroredContextId, mirroredEpochId] = await replica.getCurrentKmsContextAndEpoch();
-      expect(mirroredContextId).to.equal(switchArgs.contextId);
-      expect(mirroredEpochId).to.equal(switchArgs.epochId);
+      expect(mirroredContextId).to.equal(switchArgs.currentKmsContextId);
+      expect(mirroredEpochId).to.equal(switchArgs.currentEpochId);
 
       // Now drive a same-set rotation on canonical and mirror just the epoch.
       const asCanonicalOwner = (await ethers.getContractAt(
@@ -187,17 +135,22 @@ describe('KMS mirror tasks', function () {
         rotateReceipt!.blockNumber,
       );
       const newEpochId = newEpochEvent.args.epochId;
-      await confirmEpochActivation(asCanonicalOwner, committee.signerSigners, switchArgs.contextId, newEpochId);
+      await confirmEpochActivation(
+        asCanonicalOwner,
+        committee.signerSigners,
+        switchArgs.currentKmsContextId,
+        newEpochId,
+      );
 
       const [, canonicalEpochIdAfterRotation] = await asCanonicalOwner.getCurrentKmsContextAndEpoch();
       expect(canonicalEpochIdAfterRotation).to.equal(newEpochId);
 
-      await assertReplicaNeedsEpochMirror(hre, replicaAddress, switchArgs.contextId, newEpochId);
-      const epochCalldata = encodeMirrorKmsEpoch(iface, switchArgs.contextId, newEpochId);
+      await assertReplicaNeedsEpochMirror(hre, replicaAddress, switchArgs.currentKmsContextId, newEpochId);
+      const epochCalldata = encodeMirrorKmsEpoch(iface, switchArgs.currentKmsContextId, newEpochId);
       await (await deployer.sendTransaction({ to: replicaAddress, data: epochCalldata })).wait();
 
       const [finalContextId, finalEpochId] = await replica.getCurrentKmsContextAndEpoch();
-      expect(finalContextId).to.equal(switchArgs.contextId);
+      expect(finalContextId).to.equal(switchArgs.currentKmsContextId);
       expect(finalEpochId).to.equal(newEpochId);
     });
   });
