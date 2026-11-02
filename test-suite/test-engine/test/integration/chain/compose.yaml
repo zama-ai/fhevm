@@ -1,4 +1,4 @@
-# Throwaway Anvil node for the Chain module tests (`npm run test:chain`). Independent of the fhEVM
+# Throwaway Anvil node for the Chain module tests (`npm run test:integration:chain`). Independent of the fhEVM
 # stack: no state survives `docker compose down -v`.
 name: test-engine-anvil
 

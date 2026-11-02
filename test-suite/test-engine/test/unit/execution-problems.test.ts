@@ -2,7 +2,7 @@ import type { Envelope } from '@cucumber/messages';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { findExecutionProblems, parseEnvelopes } from '../src/report/execution-problems.js';
+import { findExecutionProblems, parseEnvelopes } from '../../src/report/execution-problems.js';
 
 type Status = 'PASSED' | 'FAILED' | 'SKIPPED' | 'UNDEFINED' | 'AMBIGUOUS' | 'PENDING';
 

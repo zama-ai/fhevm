@@ -8,7 +8,7 @@ artifacts are committed so that no compiler runs in the tests.
 | `Counter.sol` | `Counter.json` | solc 0.8.24, optimizer on (200 runs), cancun |
 
 `Counter.json` uses the Hardhat artifact format (`hh-sol-artifact-1`). To rebuild it after changing
-the source, compile with the Foundry image of `test/anvil/compose.yaml`:
+the source, compile with the Foundry image of `test/integration/chain/compose.yaml`:
 
 ```sh
 mkdir -p /tmp/counter/src && cp test/fixtures/contracts/Counter.sol /tmp/counter/src/

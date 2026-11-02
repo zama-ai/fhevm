@@ -54,12 +54,15 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Engine tests
-        run: npm test
+      - name: Unit tests
+        run: npm run test:unit
 
-      # Starts a throwaway Anvil container (test/anvil/compose.yaml) and always removes it.
-      - name: Chain tests (Anvil)
-        run: npm run test:chain
+      - name: CLI integration tests
+        run: npm run test:integration:cli
+
+      # Starts a throwaway Anvil container (test/integration/chain/compose.yaml) and always removes it.
+      - name: Chain integration tests (Anvil)
+        run: npm run test:integration:chain
 
       - name: Validate profiles
         run: npm run engine -- profiles

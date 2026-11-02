@@ -8,8 +8,8 @@ import {
   hasRunnableItems,
   planExecution,
   selectScenarios,
-} from '../src/planner/planner.js';
-import { fakeScenario, planningProfile } from './helpers.js';
+} from '../../src/planner/planner.js';
+import { fakeScenario, planningProfile } from '../helpers.js';
 
 const scenarios = [
   fakeScenario('a', ['smoke']),
