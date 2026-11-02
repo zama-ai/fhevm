@@ -54,7 +54,7 @@ export type ComposeDoc = Record<string, unknown> & {
   services: Record<string, Record<string, unknown>>;
 };
 
-const LOCAL_BUILD_TAG = "fhevm-local";
+export const LOCAL_BUILD_TAG = "fhevm-local";
 /** Returns the local image tag used for a specific coprocessor instance. */
 const localInstanceTag = (index: number) => `${LOCAL_BUILD_TAG}-i${index}`;
 

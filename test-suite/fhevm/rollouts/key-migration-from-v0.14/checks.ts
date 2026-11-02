@@ -5,17 +5,25 @@ export type ConnectorObservation = {
   party: number;
 };
 
-export const assertLocalConnectorUpgrade = (
+/**
+ * Each `image|imageId` of the upgraded party must differ from the one it ran before and carry the
+ * tag the upgrade deploys, so a dropped local build cannot pass as the registry image.
+ */
+export const assertConnectorUpgraded = (
   baselineImages: readonly string[],
   upgradedImages: readonly string[],
+  expectedTags: readonly string[],
 ) => {
-  if (baselineImages.length === 0 || upgradedImages.length !== baselineImages.length) {
+  if (baselineImages.length === 0 || upgradedImages.length !== baselineImages.length || expectedTags.length !== upgradedImages.length) {
     throw new Error("connector gate blocked: upgraded service image list is incomplete");
   }
   for (let index = 0; index < upgradedImages.length; index += 1) {
     const [configuredImage, imageId] = upgradedImages[index]!.split("|");
-    if (!configuredImage?.endsWith(":fhevm-local") || !imageId || upgradedImages[index] === baselineImages[index]) {
-      throw new Error(`connector gate blocked: party 1 service ${index} did not reach its locally built image`);
+    if (!imageId || upgradedImages[index] === baselineImages[index]) {
+      throw new Error(`connector gate blocked: party 1 service ${index} still runs its previous image`);
+    }
+    if (!configuredImage?.endsWith(`:${expectedTags[index]}`)) {
+      throw new Error(`connector gate blocked: party 1 service ${index} runs ${configuredImage}, not tag ${expectedTags[index]}`);
     }
   }
 };
