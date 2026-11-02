@@ -681,8 +681,9 @@ async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Resul
 
     // Unknown field.
     let raw = format!(
-        r#"{{"ctHandles":["{}"],"extraData":"0x00","sneaky":1}}"#,
-        rand_handle(CHAIN_ID)
+        r#"{{"ctHandles":["{}"],"extraData":"{}","sneaky":1}}"#,
+        rand_handle(CHAIN_ID),
+        extra_data()
     );
     let response = endpoint.post_raw(PUBLIC_DECRYPTION_ROUTE, raw).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
