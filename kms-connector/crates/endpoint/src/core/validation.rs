@@ -29,6 +29,8 @@ const DURATION_SECONDS_RANGE: RangeInclusive<u64> = 1..=MAX_USER_DECRYPTION_DURA
 pub enum ValidationError {
     #[error("no handle provided")]
     NoHandles,
+    #[error("too many handles: {0}, maximum is {1}")]
+    TooManyHandles(usize, usize),
     #[error("total bit size of the handles too large: {0} bits, maximum is {1}")]
     BitSizeExceeded(u64, u64),
     #[error("too many allowed contracts: {0}, maximum is {1}")]
@@ -65,6 +67,7 @@ impl ValidationError {
         match self {
             Self::UnsupportedAttestationType => ErrorCode::UnsupportedAttestationType,
             Self::NoHandles
+            | Self::TooManyHandles(..)
             | Self::BitSizeExceeded(..)
             | Self::TooManyAllowedContracts(..)
             | Self::InvalidHandle { .. }
@@ -129,12 +132,19 @@ fn validate_request_validity(validity: &RequestValidity) -> Result<(), Validatio
     Ok(())
 }
 
-/// Checks the handle list: non-empty, well-formed handles of a decryptable FHE type, on a single
-/// supported chain, within the total bit size budget.
-fn validate_handles<'a>(
-    handles: impl IntoIterator<Item = &'a B256>,
-    config: &Config,
-) -> Result<u64, ValidationError> {
+/// Checks the handle list: non-empty, within the handle count limit, well-formed handles of a
+/// decryptable FHE type, on a single supported chain, within the total bit size budget.
+fn validate_handles<'a, I>(handles: I, config: &Config) -> Result<u64, ValidationError>
+where
+    I: IntoIterator<Item = &'a B256>,
+    I::IntoIter: ExactSizeIterator,
+{
+    let handles = handles.into_iter();
+    let max_handles = config.max_handles_per_decryption.get();
+    if handles.len() > max_handles {
+        return Err(ValidationError::TooManyHandles(handles.len(), max_handles));
+    }
+
     let (mut chain_id, mut total_bits) = (None, 0u64);
     for handle in handles {
         let fhe_type =
@@ -205,6 +215,7 @@ pub(crate) mod tests {
     use super::*;
     use alloy::primitives::{Address, Bytes};
     use kms_connector_api::{AttestationType, HandleEntry, UserDecryptionPayload};
+    use std::num::NonZeroUsize;
 
     const EBOOL: u8 = FheTypes::Bool as u8;
     const EUINT4: u8 = FheTypes::Uint4 as u8;
@@ -226,6 +237,7 @@ pub(crate) mod tests {
         Config {
             supported_chain_ids: vec![1, 2],
             max_allowed_contracts: 1,
+            max_handles_per_decryption: NonZeroUsize::new(3).unwrap(),
             ..Config::default()
         }
     }
@@ -295,8 +307,33 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn bit_size_budget() {
+    fn too_many_handles() {
         let cfg = config();
+        let handles = vec![handle(1, EBOOL); 3];
+        assert_eq!(
+            validate_public_decryption(&public_request(handles.clone(), vec![]), &cfg),
+            Ok(())
+        );
+        assert_eq!(
+            validate_user_decryption(&user_request(handles, vec![]), &cfg),
+            Ok(())
+        );
+
+        let handles = vec![handle(1, EBOOL); 4];
+        assert_eq!(
+            validate_public_decryption(&public_request(handles.clone(), vec![]), &cfg),
+            Err(ValidationError::TooManyHandles(4, 3))
+        );
+        assert_eq!(
+            validate_user_decryption(&user_request(handles, vec![]), &cfg),
+            Err(ValidationError::TooManyHandles(4, 3))
+        );
+    }
+
+    #[test]
+    fn bit_size_budget() {
+        let mut cfg = config();
+        cfg.max_handles_per_decryption = NonZeroUsize::new(9).unwrap();
         // 8 * 256 = 2048 fits exactly, one more bit exceeds the budget.
         let mut handles = vec![handle(1, EUINT256); 8];
         handles.push(handle(1, EBOOL));

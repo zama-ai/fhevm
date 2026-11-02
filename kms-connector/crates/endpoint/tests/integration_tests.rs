@@ -29,6 +29,7 @@ use rstest::rstest;
 use sqlx::{Pool, Postgres, Row, types::chrono::Utc};
 use std::{
     net::SocketAddr,
+    num::NonZeroUsize,
     str::FromStr,
     time::{Duration, Instant},
 };
@@ -661,6 +662,7 @@ async fn test_client_disconnect_releases_permit() -> anyhow::Result<()> {
 async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Result<()> {
     let endpoint = setup_with(|config| Config {
         max_body_bytes: 1024,
+        max_handles_per_decryption: NonZeroUsize::new(2).unwrap(),
         ..config
     })
     .await?;
@@ -712,6 +714,16 @@ async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Resul
     let body = error_body(response).await;
     assert_eq!(body.code, ErrorCode::Malformed);
     assert!(body.message.contains("unsupported chain id"));
+    let response = endpoint
+        .post_public(&PublicDecryptionRequest {
+            ctHandles: vec![rand_handle(CHAIN_ID); 3],
+            extraData: Bytes::new(),
+        })
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = error_body(response).await;
+    assert_eq!(body.code, ErrorCode::Malformed);
+    assert!(body.message.contains("too many handles"));
 
     // Empty handle list.
     let mut request = user_request();

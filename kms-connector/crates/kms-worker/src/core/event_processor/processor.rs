@@ -149,6 +149,10 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
     async fn check_request(&self, event: &ProtocolEvent) -> Result<(), ProcessingError> {
         match &event.kind {
             ProtocolEventKind::PublicDecryption(req) => {
+                self.decryption_processor
+                    .check_handle_count(req.ctHandles.len())
+                    .map_err(RequestCheckError::record)?;
+
                 tokio::try_join!(
                     biased;
                     async {
@@ -162,6 +166,10 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 Ok(())
             }
             ProtocolEventKind::UserDecryption(req) => {
+                self.decryption_processor
+                    .check_handle_count(req.ctHandles.len())
+                    .map_err(RequestCheckError::record)?;
+
                 let tx_hash = event.tx_hash.ok_or_else(|| {
                     ProcessingError::irrecoverable(
                         ErrorCode::Unprocessable,
@@ -188,6 +196,10 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 Ok(())
             }
             ProtocolEventKind::UserDecryptionV2(req) => {
+                self.decryption_processor
+                    .check_handle_count(req.handles.len())
+                    .map_err(RequestCheckError::record)?;
+
                 tokio::try_join!(
                     biased;
                     async {
