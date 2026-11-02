@@ -19,12 +19,12 @@ export async function fetchFheEncryptionKeyWasm(
   const runtime = context.runtime;
 
   // Download (or join the download), then check the key for this client
-  const { key, entry } = await ensureFheEncryptionKeyDownload(context, parameters);
+  const { slot, entry } = await ensureFheEncryptionKeyDownload(context, parameters);
 
   // Upgrade bytes → wasm, on the entry checked (not the slot's current one)
   globalFheEncryptionKeyCache.ensureWasm({
     owner: runtime,
-    key,
+    slot,
     entry,
     deserializeFn: (bytes) =>
       deserializeFheEncryptionKey(context, { keyBytes: bytes, fhevmContext: parameters.fhevmContext }),
