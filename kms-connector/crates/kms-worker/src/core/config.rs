@@ -1,7 +1,7 @@
-use alloy::{primitives::Address, transports::http::reqwest::Url};
+use alloy::primitives::Address;
 use connector_utils::{
     config::{
-        ContractConfig, DeserializeConfig,
+        ContractConfig, DatabaseUrl, DeserializeConfig, RpcUrl,
         contract::{
             default_decryption_contract_config, default_gateway_config_contract_config,
             default_kms_generation_contract_config, default_protocol_config_contract_config,
@@ -9,22 +9,20 @@ use connector_utils::{
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size, deserialize_non_zero_duration,
+        default_database_pool_size, default_max_handles_per_decryption,
+        deserialize_non_zero_duration,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
-#[cfg(test)]
-use serde::Serialize;
 use serde::{Deserialize, Deserializer};
-use std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
+use std::{net::SocketAddr, num::NonZeroUsize, time::Duration};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
-    pub database_url: String,
+    pub database_url: DatabaseUrl,
     /// The size of the database connection pool.
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
@@ -33,21 +31,19 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_db_fast_event_polling"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub db_fast_event_polling: Duration,
     /// The timeout for polling the database for long events (prep keygen for ex).
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_db_long_event_polling"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub db_long_event_polling: Duration,
     /// The limit number of events to fetch from the database.
     #[serde(default = "default_events_batch_size")]
     pub events_batch_size: u8,
 
     /// The Gateway RPC endpoint.
-    pub gateway_url: Url,
+    pub gateway_url: RpcUrl,
     /// The Chain ID of the Gateway.
     pub gateway_chain_id: u64,
     /// The `Decryption` contract configuration (on Gateway).
@@ -58,7 +54,7 @@ pub struct Config {
     pub gateway_config_contract: ContractConfig,
 
     /// The Ethereum RPC endpoint.
-    pub ethereum_url: Url,
+    pub ethereum_url: RpcUrl,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
     /// The `KMSGeneration` contract configuration (on Ethereum).
@@ -83,25 +79,25 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_kms_connect_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub kms_connect_timeout: Duration,
     /// Interval between HTTP/2 keepalive pings sent to the KMS Core, even when the channel is idle.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_kms_keep_alive_interval"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub kms_keep_alive_interval: Duration,
     /// Time to wait for a keepalive ping acknowledgement before closing the KMS Core connection.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_kms_keep_alive_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub kms_keep_alive_timeout: Duration,
     /// The maximum number of decryption attempts.
     #[serde(default = "default_max_decryption_attempts")]
     pub max_decryption_attempts: u16,
+    /// The maximum number of handles a single decryption request can contain.
+    #[serde(default = "default_max_handles_per_decryption")]
+    pub max_handles_per_decryption: NonZeroUsize,
 
     /// Number of attempts for S3 ciphertext retrieval.
     #[serde(default = "default_s3_ciphertext_retrieval_attempts")]
@@ -111,21 +107,18 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_s3_connect_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_connect_timeout: Duration,
     /// Timeout of a single attestation `HEAD` on a Coprocessor bucket.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_s3_head_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_head_timeout: Duration,
     /// Timeout of a single ciphertext `GET`.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_s3_get_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_get_timeout: Duration,
     /// Ceiling on the attestation `HEAD`s in flight on a single Coprocessor bucket, across all
     /// requests.
@@ -142,7 +135,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_copro_registry_refresh"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub copro_registry_refresh: Duration,
 
     /// Ceiling on the calls a single host chain endpoint may have in flight, across all requests.
@@ -153,7 +145,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_host_rpc_call_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub host_rpc_call_timeout: Duration,
 
     /// Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
@@ -175,16 +166,14 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_healthcheck_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
 /// Configuration of a single Host Chain.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct HostChainConfig {
     /// The Host Chain RPC endpoint.
-    pub url: Url,
+    pub url: RpcUrl,
     /// The Chain ID of the Host Chain.
     #[serde(alias = "chainId")]
     pub chain_id: u64,
@@ -314,21 +303,23 @@ impl DeserializeConfig for Config {}
 impl Default for Config {
     fn default() -> Self {
         Self {
-            database_url: "postgres://postgres:postgres@localhost/kms-connector".to_string(),
+            database_url: "postgres://postgres:postgres@localhost/kms-connector"
+                .parse()
+                .unwrap(),
             database_pool_size: default_database_pool_size(),
             db_fast_event_polling: default_db_fast_event_polling(),
             db_long_event_polling: default_db_long_event_polling(),
             events_batch_size: default_events_batch_size(),
-            gateway_url: Url::from_str("http://localhost:8545").unwrap(),
+            gateway_url: "http://localhost:8545".parse().unwrap(),
             gateway_chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
             gateway_config_contract: default_gateway_config_contract_config(),
-            ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
+            ethereum_url: "http://localhost:8545".parse().unwrap(),
             ethereum_chain_id: 11155111, // Sepolia
             kms_generation_contract: default_kms_generation_contract_config(),
             protocol_config_contract: default_protocol_config_contract_config(),
             host_chains: vec![HostChainConfig {
-                url: Url::from_str("http://localhost:8545").unwrap(),
+                url: "http://localhost:8545".parse().unwrap(),
                 chain_id: 12345,
                 acl_address: Address::default(),
             }],
@@ -338,6 +329,7 @@ impl Default for Config {
             kms_keep_alive_interval: default_kms_keep_alive_interval(),
             kms_keep_alive_timeout: default_kms_keep_alive_timeout(),
             max_decryption_attempts: default_max_decryption_attempts(),
+            max_handles_per_decryption: default_max_handles_per_decryption(),
             s3_ciphertext_retrieval_attempts: default_s3_ciphertext_retrieval_attempts(),
             s3_connect_timeout: default_s3_connect_timeout(),
             s3_head_timeout: default_s3_head_timeout(),
@@ -383,6 +375,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL");
             env::remove_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
+            env::remove_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION");
             env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_S3_HEAD_TIMEOUT");
@@ -459,6 +452,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL", "20s");
             env::set_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT", "8s");
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
+            env::set_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION", "10");
             env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4s");
             env::set_var("KMS_CONNECTOR_S3_HEAD_TIMEOUT", "6s");
@@ -477,14 +471,11 @@ mod tests {
 
         // Verify values
         assert_eq!(config.events_batch_size, 15);
-        assert_eq!(
-            config.gateway_url,
-            Url::from_str("http://localhost:9545").unwrap()
-        );
+        assert_eq!(config.gateway_url, "http://localhost:9545".parse().unwrap());
         assert_eq!(config.gateway_chain_id, 31888);
         assert_eq!(
             config.ethereum_url,
-            Url::from_str("http://localhost:9546").unwrap()
+            "http://localhost:9546".parse().unwrap()
         );
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(
@@ -506,7 +497,7 @@ mod tests {
         assert_eq!(
             config.host_chains,
             vec![HostChainConfig {
-                url: Url::from_str("http://localhost:9545").unwrap(),
+                url: "http://localhost:9545".parse().unwrap(),
                 chain_id: 31888,
                 acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
                     .unwrap()
@@ -521,6 +512,7 @@ mod tests {
         assert_eq!(config.kms_keep_alive_interval.as_secs(), 20);
         assert_eq!(config.kms_keep_alive_timeout.as_secs(), 8);
         assert_eq!(config.max_decryption_attempts, 300);
+        assert_eq!(config.max_handles_per_decryption.get(), 10);
         assert_eq!(config.s3_ciphertext_retrieval_attempts.get(), 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
         assert_eq!(config.s3_head_timeout.as_secs(), 6);
@@ -544,6 +536,7 @@ mod tests {
             "KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS",
             "KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE",
             "KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS",
+            "KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION",
         ] {
             cleanup_env_vars();
             unsafe { env::set_var(ceiling, "0") }
@@ -614,7 +607,7 @@ mod tests {
         assert_eq!(
             config.host_chains,
             vec![HostChainConfig {
-                url: Url::from_str("http://localhost:9545").unwrap(),
+                url: "http://localhost:9545".parse().unwrap(),
                 chain_id: 31888,
                 acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
                     .unwrap()

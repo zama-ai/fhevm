@@ -84,6 +84,12 @@ function resolveEnvRpc(envName: string, label: string, defaultRpcUrl?: string): 
   throw new Error(`env var ${envName} (RPC URL for ${label}) is not set`);
 }
 
+// One LOCAL_HOST_CHAINS entry: a ChainConfig whose label and finality floor the harness may leave out.
+type LocalHostChainJson = Omit<ChainConfig, 'label' | 'minWindowSeconds'> & {
+  label?: string;
+  minWindowSeconds?: number;
+};
+
 export function resolveEnvironment(name: string): {
   canonicalChainId: number;
   chains: ChainConfig[];
@@ -94,17 +100,20 @@ export function resolveEnvironment(name: string): {
     throw new Error(`--environment must be one of: ${SUPPORTED_ENVIRONMENTS.join(', ')}`);
   }
   // Local e2e chains are scenario-defined (1..N), so the test passes them as JSON, ProtocolConfig chain first.
+  // They have no label or finality floor unless the harness sets one.
   const scenarioChains = name === 'local' ? process.env.LOCAL_HOST_CHAINS : undefined;
   const chains: ChainConfig[] = scenarioChains
-    ? (JSON.parse(scenarioChains) as (Omit<ChainConfig, 'label'> & { label?: string })[]).map((c) => ({
+    ? (JSON.parse(scenarioChains) as LocalHostChainJson[]).map((c) => ({
         ...c,
         label: c.label ?? `chain-${c.chainId}`,
+        minWindowSeconds: c.minWindowSeconds ?? 0,
       }))
     : def.chains.map((c) => ({
         chainId: c.chainId,
         label: c.label,
         rpcUrl: resolveEnvRpc(c.rpcUrlEnv, c.label, c.defaultRpcUrl),
         fallbackBlockTimeSeconds: c.fallbackBlockTimeSeconds,
+        minWindowSeconds: c.minWindowSeconds,
       }));
   if (chains.length === 0) {
     throw new Error('LOCAL_HOST_CHAINS is empty');
@@ -133,6 +142,7 @@ export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams):
   const startEpochSeconds = parseIsoTimestampToEpochSeconds(raw.startTime);
   const durationSeconds = parseDurationToSeconds(raw.duration);
   const bufferSeconds = parseDurationToSeconds(raw.buffer);
+  assertWindowCoversFinality(durationSeconds, hostChains);
 
   let proposalId: bigint;
   try {
@@ -162,6 +172,20 @@ export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams):
     proposalId,
     softwareVersion,
   };
+}
+
+// A window shorter than a chain's floor ends before the chain finalizes startBlock, so the dry run
+// never starts and the attempt rolls back.
+export function assertWindowCoversFinality(durationSeconds: number, chains: ChainConfig[]): void {
+  for (const chain of chains) {
+    const floor = chain.minWindowSeconds;
+    if (durationSeconds < floor) {
+      throw new Error(
+        `--duration ${durationSeconds}s is below the minimum window of chain ${chain.chainId} (${floor}s): ` +
+          'the dry run cannot start before the chain finalizes startBlock',
+      );
+    }
+  }
 }
 
 function chainLabel(chain: ChainConfig): string {
@@ -198,6 +222,7 @@ export function redactRpcUrl(url: string): string {
 async function gatherWindows(
   inputs: CoprocessorUpgradeInputs,
 ): Promise<{ host: HostReport[]; gateway: GatewayReport }> {
+  const nowEpochSeconds = Math.floor(Date.now() / 1000);
   const host: HostReport[] = [];
   for (const chain of inputs.hostChains) {
     const provider = new JsonRpcProvider(chain.rpcUrl);
@@ -209,6 +234,7 @@ async function gatherWindows(
         durationSeconds: inputs.durationSeconds,
         bufferSeconds: inputs.bufferSeconds,
         fallbackBlockTimeSeconds: chain.fallbackBlockTimeSeconds,
+        nowEpochSeconds,
       });
       host.push({
         chainId: chain.chainId,
@@ -343,7 +369,9 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
   console.log(`Proposal id        : ${inputs.proposalId}`);
   console.log(`Software version   : ${inputs.softwareVersion}`);
   console.log(
-    `Evaluation window  : ${isoUtc(inputs.startEpochSeconds)} → ${isoUtc(inputs.startEpochSeconds + inputs.durationSeconds)} (${inputs.durationSeconds}s)`,
+    `Evaluation window  : ${isoUtc(inputs.startEpochSeconds)} → ${isoUtc(
+      inputs.startEpochSeconds + inputs.durationSeconds,
+    )} (${inputs.durationSeconds}s)`,
   );
   console.log(`DAO buffer         : ${inputs.bufferSeconds}s`);
   console.log(
@@ -355,11 +383,15 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
     console.log(`  chainId=${report.chainId} (${report.label})`);
     console.log(`    rpc            : ${redactRpcUrl(report.rpcUrl)}`);
     console.log(
-      `    tip            : block ${report.result.currentTipBlock} @ ${isoUtc(report.result.currentTipTimestamp)}`,
+      `    tip            : block ${report.result.currentTipBlock} @ ${isoUtc(report.result.currentTipTimestamp)} (${
+        report.result.tipAgeSeconds
+      }s behind the clock)`,
     );
     console.log(`    block time     : ${formatBlockTime(report.result.effectiveBlockTimeSeconds)}`);
     console.log(
-      `    startBlock     : ${report.result.startBlock} (estimated ${isoUtc(report.result.startBlockEstimatedTimestamp)}, skew ${report.result.startSkewSeconds >= 0 ? '+' : ''}${report.result.startSkewSeconds}s)`,
+      `    startBlock     : ${report.result.startBlock} (estimated ${isoUtc(
+        report.result.startBlockEstimatedTimestamp,
+      )}, skew ${report.result.startSkewSeconds >= 0 ? '+' : ''}${report.result.startSkewSeconds}s)`,
     );
     console.log(
       `    endBlock       : ${report.result.endBlock} (estimated ${isoUtc(report.result.endBlockEstimatedTimestamp)})`,

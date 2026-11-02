@@ -7,6 +7,11 @@ const BLOCK_TIME_SAMPLE_SIZE = 1000;
 // Drift threshold: warn if observed differs from fallback by more than this fraction (0.2 = 20%).
 const BLOCK_TIME_DRIFT_WARN_FRACTION = 0.2;
 
+// A host tip older than this many block times means the RPC is far behind the chain. The floor keeps
+// sub-second chains tolerant of ordinary lag.
+const STALE_TIP_BLOCK_TIMES = 10;
+const STALE_TIP_MIN_SECONDS = 60;
+
 export interface ChainConfig {
   chainId: number;
   // Short name for reports, e.g. 'sepolia'; shown in place of the RPC URL. Scenario-defined chains
@@ -15,6 +20,9 @@ export interface ChainConfig {
   rpcUrl: string;
   // Configured fallback block time in seconds, used only if RPC sampling fails.
   fallbackBlockTimeSeconds: number;
+  // Shortest --duration the chain's finality allows: the dry run cannot start before startBlock is
+  // finalized. 0 means no floor (chains passed by the e2e harness through LOCAL_HOST_CHAINS).
+  minWindowSeconds: number;
 }
 
 export interface BlockWindowInput {
@@ -27,11 +35,18 @@ export interface BlockWindowInput {
   bufferSeconds: number;
   // Used only if RPC sampling fails.
   fallbackBlockTimeSeconds: number;
+  // Wall-clock "now" in UNIX seconds. The caller reads it once per run so every chain is measured
+  // against the same instant.
+  nowEpochSeconds: number;
 }
 
 export interface BlockWindowResult {
   currentTipBlock: number;
   currentTipTimestamp: number;
+  // Wall clock at computation time; the DAO lead is measured from it, not from the tip.
+  computedAtEpochSeconds: number;
+  // How far the tip timestamp lags the wall clock.
+  tipAgeSeconds: number;
   // Null if sampling failed.
   observedBlockTimeSeconds: number | null;
   // Observed value if available, else fallback.
@@ -70,7 +85,13 @@ async function sampleBlockTime(
   if (sampleStart >= tipBlock) {
     return { tipBlock, tipTimestamp, averageBlockTimeSeconds: null };
   }
-  const sampleStartBlock = await provider.getBlock(sampleStart);
+  let sampleStartBlock: Awaited<ReturnType<JsonRpcProvider['getBlock']>>;
+  try {
+    sampleStartBlock = await provider.getBlock(sampleStart);
+  } catch {
+    // A failed historical read falls back to the configured block time, like a missing block.
+    sampleStartBlock = null;
+  }
   if (!sampleStartBlock) {
     return { tipBlock, tipTimestamp, averageBlockTimeSeconds: null };
   }
@@ -99,9 +120,20 @@ export async function computeBlockWindow(input: BlockWindowInput): Promise<Block
     throw new Error('durationSeconds must be positive');
   }
 
+  const now = input.nowEpochSeconds;
   const sample = await sampleBlockTime(input.provider);
   const effectiveBlockTimeSeconds = sample.averageBlockTimeSeconds ?? input.fallbackBlockTimeSeconds;
   const usedFallback = sample.averageBlockTimeSeconds === null;
+
+  // A lagging tip does not move the window: its older block number and older timestamp cancel out in
+  // the projection. A tip this far behind still means the RPC is unhealthy, so stop rather than trust it.
+  const tipAgeSeconds = now - sample.tipTimestamp;
+  const maxTipAgeSeconds = Math.max(STALE_TIP_MIN_SECONDS, STALE_TIP_BLOCK_TIMES * effectiveBlockTimeSeconds);
+  if (tipAgeSeconds > maxTipAgeSeconds) {
+    throw new Error(
+      `chain tip is ${tipAgeSeconds}s old (block ${sample.tipBlock}, allowed ${Math.round(maxTipAgeSeconds)}s): the RPC is far behind the chain, check the endpoint`,
+    );
+  }
 
   const startBlock = projectBlockNumber(
     sample.tipBlock,
@@ -125,6 +157,8 @@ export async function computeBlockWindow(input: BlockWindowInput): Promise<Block
   return {
     currentTipBlock: sample.tipBlock,
     currentTipTimestamp: sample.tipTimestamp,
+    computedAtEpochSeconds: now,
+    tipAgeSeconds,
     observedBlockTimeSeconds: sample.averageBlockTimeSeconds,
     effectiveBlockTimeSeconds,
     startBlock,
@@ -136,11 +170,13 @@ export async function computeBlockWindow(input: BlockWindowInput): Promise<Block
   };
 }
 
+// Seconds until the chain is expected to reach startBlock, measured from the later of the local clock
+// and the tip timestamp: neither a lagging RPC nor a local clock running behind can inflate the lead.
 export function bufferLeadSeconds(result: BlockWindowResult): number {
-  return (result.startBlock - result.currentTipBlock) * result.effectiveBlockTimeSeconds;
+  return result.startBlockEstimatedTimestamp - Math.max(result.computedAtEpochSeconds, result.currentTipTimestamp);
 }
 
-// True iff startBlock is at least bufferSeconds away from the tip in wall-clock terms.
+// True iff startBlock is at least bufferSeconds away in wall-clock terms.
 export function bufferSatisfied(result: BlockWindowResult, bufferSeconds: number): boolean {
   return bufferLeadSeconds(result) >= bufferSeconds;
 }

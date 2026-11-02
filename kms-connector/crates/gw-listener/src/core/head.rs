@@ -1,9 +1,8 @@
 use crate::{core::publish::ChainName, monitoring::metrics::RPC_HEAD_BLOCK};
-use alloy::transports::http::reqwest::Url;
+use connector_utils::config::RpcUrl;
 use prometheus::IntGauge;
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
-use url::Host;
 
 /// Tracks the head reported by a chain's RPC node, and warns when it stops advancing.
 ///
@@ -11,8 +10,8 @@ use url::Host;
 /// new block. This makes the second case visible in the logs.
 pub struct HeadTracker {
     chain: ChainName,
-    /// The RPC node host, logged instead of the full URL, which may contain an API key.
-    rpc_host: Option<Host>,
+    /// The RPC node URL, logged in its redacted form.
+    rpc_url: RpcUrl,
     /// How long the head may stay the same before a warning, and the delay between two warnings.
     stale_threshold: Duration,
     /// The highest head reported so far, and when it was first reported.
@@ -24,10 +23,10 @@ pub struct HeadTracker {
 }
 
 impl HeadTracker {
-    pub fn new(chain: ChainName, rpc_url: &Url, stale_threshold: Duration) -> Self {
+    pub fn new(chain: ChainName, rpc_url: &RpcUrl, stale_threshold: Duration) -> Self {
         Self {
             chain,
-            rpc_host: rpc_url.host().map(|host| host.to_owned()),
+            rpc_url: rpc_url.clone(),
             stale_threshold,
             highest_head: None,
             warned_at: None,
@@ -53,7 +52,7 @@ impl HeadTracker {
                     info!(
                         "The {chain} {head_name} reported by RPC node {} advanced to block {head} \
                         after {}s",
-                        self.rpc_host(),
+                        self.rpc_url,
                         now.saturating_duration_since(advanced_at).as_secs(),
                     );
                 }
@@ -75,16 +74,9 @@ impl HeadTracker {
             "The {chain} {head_name} reported by RPC node {} has stayed at block {highest_head} \
             for {}s (latest reported: {head}, next block to poll: {next_block_to_poll}): either \
             {idle_cause} or the RPC node is lagging",
-            self.rpc_host(),
+            self.rpc_url,
             stale_for.as_secs(),
         );
-    }
-
-    /// The RPC node host, as logged.
-    fn rpc_host(&self) -> String {
-        self.rpc_host
-            .as_ref()
-            .map_or_else(|| "unknown host".to_string(), Host::to_string)
     }
 
     /// The name of the tracked head, and the cause other than a lagging RPC node for it to stall.
@@ -99,7 +91,6 @@ impl HeadTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::str::FromStr;
     use tracing_test::traced_test;
 
     const THRESHOLD: Duration = Duration::from_secs(60);
@@ -107,7 +98,9 @@ mod tests {
     const ADVANCED: &str = "advanced to block";
 
     fn tracker() -> HeadTracker {
-        let url = Url::from_str("https://user:api-key@rpc.example.com/v1/secret-key").unwrap();
+        let url = "https://user:api-key@rpc.example.com/v1/secret-key"
+            .parse()
+            .unwrap();
         HeadTracker::new(ChainName::Gateway, &url, THRESHOLD)
     }
 

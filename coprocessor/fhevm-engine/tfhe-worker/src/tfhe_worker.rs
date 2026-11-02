@@ -2518,7 +2518,7 @@ async fn run_tfhe_worker_inner(
         // Long-lived task that mirrors `upgrade_state.start_block` (stack_role
         // = 'GCS') into the atomic, woken by `event_upgrade_activated`. Lives
         // outside the cycle loop so it survives `tfhe_worker_cycle` restarts.
-        let (watcher_pool, _refresh) = connect_pool_with_options(
+        let (watcher_pool, refresh) = connect_pool_with_options(
             &db_url,
             sqlx::postgres::PgPoolOptions::new().max_connections(2),
             None,
@@ -2526,6 +2526,9 @@ async fn run_tfhe_worker_inner(
         .await?;
         let watcher_state = start_block_state.clone();
         tokio::spawn(async move {
+            // Dropping the handle cancels the IAM token refresh, so it has to
+            // outlive the watcher, not the enclosing `if`.
+            let _refresh = refresh;
             loop {
                 if let Err(err) = run_gcs_activation_watcher(&watcher_pool, &watcher_state).await {
                     error!(target: "tfhe_worker", error = %err, "GCS activation watcher errored; restarting in 5s");

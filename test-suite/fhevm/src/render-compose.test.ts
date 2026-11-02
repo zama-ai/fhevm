@@ -148,9 +148,9 @@ instances:
 };
 
 /** Runs a test body with `DOCKER_HOST` pinned to a known value, restoring it after. */
-/** The template's mounts of the kms-connector and coprocessor proxies' test certificates into the e2e runner. */
-const PROXY_TLS_CERT_MOUNTS = [
-  `${path.resolve(TEMPLATE_COMPOSE_DIR, "../static/config/kms-connector-proxy/tls.crt")}:/etc/kms-connector/proxy/tls.crt:ro`,
+/** The template's mounts of the kms-connector proxies' test CA and the coprocessor proxies' test certificate into the e2e runner. */
+const PROXY_CERT_MOUNTS = [
+  `${path.resolve(TEMPLATE_COMPOSE_DIR, "../static/config/kms-connector-proxy/ca.crt")}:/etc/kms-connector/proxy/ca.crt:ro`,
   `${path.resolve(TEMPLATE_COMPOSE_DIR, "../static/config/coprocessor-proxy/tls.crt")}:/etc/coprocessor-proxy/tls.crt:ro`,
 ];
 
@@ -741,8 +741,8 @@ instances:
         const testSuite = doc.services["test-suite-e2e-debug"];
         expect(testSuite?.image).toContain(":fhevm-local");
         expect(testSuite?.build).toBeTruthy();
-        // Only the template's proxy test-certificate mounts: no docker socket.
-        expect(testSuite?.volumes).toEqual(PROXY_TLS_CERT_MOUNTS);
+        // Only the template's proxy certificate mounts: no docker socket.
+        expect(testSuite?.volumes).toEqual(PROXY_CERT_MOUNTS);
         expect(testSuite?.group_add).toBeUndefined();
       });
     });
