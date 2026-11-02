@@ -138,6 +138,12 @@ keys (keep them aligned to the same kms release):
 Current defaults (also in `parse-overrides.cjs`): `kms_core_version=v0.15.0-1`,
 `kms_repo_ref=v0.15.0-1` (`zama-ai/kms` release `v0.15.0-1`).
 
+RFC-021 blue-green with the pinned Blue (not `bcs_from_head`) defaults both
+keys to `PINNED_BCS_KMS_CORE_TAG` instead (`v0.14.1`, in the workflow's
+`bcs_pin` step). A live network's keys predate the upgrade, so Blue reads keys
+from its own kms release and Green must read old ones. Explicit overrides still
+win.
+
 **kms-connector is not kms-core.** `kms_connector_version` /
 `kms_connector_chart_version` are fhevm-owned (same resolve/build rules as
 coprocessor). Changing KMS version does not change kms-connector unless you

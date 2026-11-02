@@ -347,11 +347,13 @@ jobs:
           STACK_VERSION: ${{ steps.stack_version.outputs.stack_version }}
           # Previous-release pin for the BCS fleet.
           PINNED_BCS_IMAGE_TAG: "v0.14.1"
+          PINNED_BCS_KMS_CORE_TAG: "v0.14.1"
         run: |
           if [[ "${BCS_FROM_HEAD}" != "true" ]]; then
             {
               echo "from_head=false"
               echo "image_tag=${PINNED_BCS_IMAGE_TAG}"
+              echo "kms_core_tag=${PINNED_BCS_KMS_CORE_TAG}"
               echo "consensus_version="
               echo "stack_version="
             } >> "$GITHUB_OUTPUT"
@@ -390,11 +392,6 @@ jobs:
           echo "Blue from HEAD: tag bcs-${GITHUB_SHA:0:7}, release ${bcs_stack}, consensus ${bcs_consensus}" \
             "(Green: ${STACK_VERSION}, consensus ${consensus})"
 
-      - id: parse_overrides
-        env:
-          OVERRIDES_RAW: ${{ inputs.overrides }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: node ci/preview-env/scripts/resolve/parse-overrides.cjs
       - id: check
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -525,6 +522,15 @@ jobs:
             echo "nb_coprocessor=${nb_coprocessor}"
             echo "chain_mode=${chain_mode}"
           } >> "$GITHUB_OUTPUT"
+
+      # After check: an RFC-021 pair with the pinned Blue defaults kms to that
+      # Blue's release. bcs_from_head is HEAD's tfhe, so it keeps the default.
+      - id: parse_overrides
+        env:
+          OVERRIDES_RAW: ${{ inputs.overrides }}
+          EVENT_NAME: ${{ github.event_name }}
+          BCS_KMS_CORE_TAG: ${{ steps.check.outputs.blue_green == 'true' && steps.bcs_pin.outputs.kms_core_tag || '' }}
+        run: node ci/preview-env/scripts/resolve/parse-overrides.cjs
 
   ##########################################################################
   # Build every fhevm-owned image at this PR's HEAD (or the dispatched

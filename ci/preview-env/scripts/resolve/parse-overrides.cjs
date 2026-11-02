@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // Parse workflow_dispatch `overrides` JSON into GITHUB_OUTPUT.
-// Env: OVERRIDES_RAW (string JSON or empty), EVENT_NAME, GITHUB_OUTPUT.
+// Env: OVERRIDES_RAW (string JSON or empty), EVENT_NAME, GITHUB_OUTPUT,
+// BCS_KMS_CORE_TAG (set only for an RFC-021 pair with the pinned Blue).
 // Unknown keys fail. Empty / {} means resolve as today.
 // Dispatch-only default: relayer_sdk_version=0.4.4 (PR stays empty → @fhevm/sdk only).
+// BCS_KMS_CORE_TAG replaces the kms_repo_ref / kms_core_version defaults, so
+// keys come from Blue's kms release; explicit overrides still win.
 
 const ALLOWED = new Set([
   "host_contracts_version",
@@ -33,6 +36,12 @@ const ALWAYS_DEFAULTS = {
   kms_core_version: "v0.15.0-1",
   redis_chart_version: "25.3.8",
 };
+
+const bcsKmsCoreTag = String(process.env.BCS_KMS_CORE_TAG || "").trim();
+if (bcsKmsCoreTag) {
+  ALWAYS_DEFAULTS.kms_repo_ref = bcsKmsCoreTag;
+  ALWAYS_DEFAULTS.kms_core_version = bcsKmsCoreTag;
+}
 
 const fs = require("node:fs");
 
