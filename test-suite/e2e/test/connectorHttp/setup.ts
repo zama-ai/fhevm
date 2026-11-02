@@ -3,9 +3,10 @@ import { expect } from 'chai';
 import type { Signer } from 'ethers';
 import { ethers } from 'hardhat';
 
-import { aclAddress } from '../instance';
+import { aclAddress, protocolConfigAddress } from '../instance';
 import { connectorHttpConfigured, endpointUrls, getVersion } from '../sdk/connector/connectorHttp';
 import { type KmsSignerSet, readKmsSignerSet } from '../sdk/connector/verify';
+import { currentKmsExtraData } from '../sdk/unified/unifiedUserDecrypt';
 
 /** Skips the whole suite when the stack has no kms-connector endpoint (older bundles). */
 export function skipUnlessConfigured(ctx: Mocha.Context): void {
@@ -29,10 +30,16 @@ export async function probeEndpoints(): Promise<void> {
   expect(unreachable, `unreachable connector endpoints: ${unreachable.join(', ')}`).to.deep.equal([]);
 }
 
-export async function connectorSetup(ctx: Mocha.Context): Promise<{ urls: string[]; kms: KmsSignerSet }> {
+export async function connectorSetup(
+  ctx: Mocha.Context,
+): Promise<{ urls: string[]; kms: KmsSignerSet; extraData: string }> {
   skipUnlessConfigured(ctx);
   await probeEndpoints();
-  return { urls: endpointUrls(), kms: await readKmsSignerSet() };
+  return {
+    urls: endpointUrls(),
+    kms: await readKmsSignerSet(),
+    extraData: await currentKmsExtraData(ethers.provider, protocolConfigAddress),
+  };
 }
 
 /** Waits for `n` more blocks so the kms-workers' host-chain reads observe a fresh ACL change. */

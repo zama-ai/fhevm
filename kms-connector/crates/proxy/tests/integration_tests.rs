@@ -27,7 +27,7 @@ async fn test_forwards_authenticated_requests_untouched() {
     );
 
     // Deliberately non-canonical JSON: the proxy must forward it byte-for-byte.
-    let body = r#"{ "ctHandles":["0x01"] ,  "extraData":"0x00"}"#;
+    let body = r#"{ "ctHandles":["0x01"] ,  "extraData":"0x01"}"#;
     let response = t
         .post(PUBLIC_DECRYPTION_ROUTE, body)
         .await
