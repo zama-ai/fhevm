@@ -25,7 +25,7 @@ use fhevm_gateway_bindings::{
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{self, KMSGenerationErrors},
-    protocol_config::ProtocolConfig::{self, ProtocolConfigErrors},
+    protocol_config::ProtocolConfig::ProtocolConfigErrors,
 };
 use sqlx::{Pool, Postgres};
 use thiserror::Error;
@@ -199,14 +199,9 @@ impl TransactionSender<DbKmsResponsePicker, WalletProvider> {
         .await?;
         let kms_generation_contract =
             KMSGeneration::new(config.kms_generation_contract.address, eth_provider.clone());
-        let protocol_config_contract = ProtocolConfig::new(
-            config.protocol_config_contract.address,
-            eth_provider.clone(),
-        );
         let eth_sender = EthereumTransactionSender::new(
             eth_provider.clone(),
             kms_generation_contract,
-            protocol_config_contract,
             eth_sender_config,
         );
 
