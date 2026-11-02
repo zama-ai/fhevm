@@ -1,6 +1,7 @@
 use crate::monitoring::metrics::{inc_event_failed_counter, inc_event_retried_counter};
 use alloy::primitives::U256;
 use connector_utils::{
+    conn::begin_async_commit_tx,
     monitoring::otlp::PropagationContext,
     types::{
         CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponse, KmsResponseKind,
@@ -95,7 +96,9 @@ impl DbKmsResponsePublisher {
         //      override a previous error row, but never a payload);
         //   2. mark the request `completed` only if the response row is actually written.
         // `rows_affected` reflects the outer UPDATE, so it is 1 iff the response was stored.
-        sqlx::query!(
+        // Async commit: if lost, the request is still pending and is decrypted again.
+        let mut tx = begin_async_commit_tx(&self.db_pool).await?;
+        let query_result = sqlx::query!(
             "WITH written_response AS (
                 INSERT INTO public_decryption_responses AS existing (
                     decryption_id, decrypted_result, signature, extra_data, created_at,
@@ -127,9 +130,10 @@ impl DbKmsResponsePublisher {
             source as RequestSource,
             decryption_insert_status(source) as OperationStatus,
         )
-        .execute(&self.db_pool)
-        .await
-        .map_err(anyhow::Error::from)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(query_result)
     }
 
     /// Stores the response and completes the associated request row in a single statement.
@@ -147,7 +151,9 @@ impl DbKmsResponsePublisher {
         //      override a previous error row, never a payload);
         //   2. mark the request `completed` only for the response row is actually written.
         // `rows_affected` reflects the outer UPDATE, so it is 1 iff the response was stored.
-        sqlx::query!(
+        // Async commit: if lost, the request is still pending and is decrypted again.
+        let mut tx = begin_async_commit_tx(&self.db_pool).await?;
+        let query_result = sqlx::query!(
             "WITH written_response AS (
                 INSERT INTO user_decryption_responses AS existing (
                     decryption_id, user_decrypted_shares, signature, extra_data, created_at,
@@ -179,9 +185,10 @@ impl DbKmsResponsePublisher {
             source as RequestSource,
             decryption_insert_status(source) as OperationStatus,
         )
-        .execute(&self.db_pool)
-        .await
-        .map_err(anyhow::Error::from)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(query_result)
     }
 
     async fn publish_prep_keygen(
@@ -318,6 +325,7 @@ impl DbKmsResponsePublisher {
     ) -> anyhow::Result<()> {
         // Same shape as `publish_public_decryption`: upsert the error row unless a successful
         // payload already exists, then mark the request `failed` only if the row was written.
+        let mut tx = begin_async_commit_tx(&self.db_pool).await?;
         let query_result = sqlx::query!(
             "WITH written_response AS (
                 INSERT INTO public_decryption_responses AS existing (
@@ -346,8 +354,9 @@ impl DbKmsResponsePublisher {
             Utc::now(),
             bc2wrap::serialize(otlp_ctx)?,
         )
-        .execute(&self.db_pool)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
         log_error_publication_result(query_result, error_code);
         Ok(())
     }
@@ -365,6 +374,7 @@ impl DbKmsResponsePublisher {
     ) -> anyhow::Result<()> {
         // Same shape as `publish_public_decryption`: upsert the error row unless a successful
         // payload already exists, then mark the request `failed` only if the row was written.
+        let mut tx = begin_async_commit_tx(&self.db_pool).await?;
         let query_result = sqlx::query!(
             "WITH written_response AS (
                 INSERT INTO user_decryption_responses AS existing (
@@ -393,8 +403,9 @@ impl DbKmsResponsePublisher {
             Utc::now(),
             bc2wrap::serialize(otlp_ctx)?,
         )
-        .execute(&self.db_pool)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
         log_error_publication_result(query_result, error_code);
         Ok(())
     }

@@ -18,7 +18,7 @@ use alloy::{
     },
 };
 use anyhow::anyhow;
-use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
+use sqlx::{Pool, Postgres, Transaction, postgres::PgPoolOptions};
 use std::{
     fmt,
     num::NonZeroUsize,
@@ -60,6 +60,20 @@ pub async fn connect_to_db(
         }
     }
     Err(anyhow!("Could not connect to Postgres DB at url {db_url}"))
+}
+
+/// Begins a transaction committed with `synchronous_commit = off`.
+///
+/// Releases the global `NOTIFY` lock without waiting for the WAL flush. The latest commits may be
+/// lost on a crash or failover, so only use it for writes that are recovered when lost.
+pub async fn begin_async_commit_tx(
+    db_pool: &Pool<Postgres>,
+) -> sqlx::Result<Transaction<'static, Postgres>> {
+    let mut tx = db_pool.begin().await?;
+    sqlx::query("SET LOCAL synchronous_commit = off")
+        .execute(&mut *tx)
+        .await?;
+    Ok(tx)
 }
 
 /// The default `Filler`s for an `alloy::Provider`.
@@ -387,5 +401,29 @@ mod tests {
         assert!(!chain.contains(API_KEY), "{chain}");
         assert!(!debug.contains(API_KEY), "{debug}");
         assert!(display.contains("/<redacted> failed: "), "{display}");
+    }
+
+    #[tokio::test]
+    async fn begin_async_commit_only_affects_its_transaction() {
+        let db = crate::tests::setup::DbInstance::setup_external()
+            .await
+            .unwrap();
+        let db_url: DatabaseUrl = db.url.parse().unwrap();
+        // Single connection, so the check after commit runs on the same session
+        let pool = connect_to_db(&db_url, 1).await.unwrap();
+        // The test DB runs with `synchronous_commit=off`, so we set it back to `on` for this test
+        sqlx::query("SET synchronous_commit = on")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let show = "SHOW synchronous_commit";
+
+        let mut tx = begin_async_commit_tx(&pool).await.unwrap();
+        let in_tx: String = sqlx::query_scalar(show).fetch_one(&mut *tx).await.unwrap();
+        assert_eq!(in_tx, "off");
+        tx.commit().await.unwrap();
+
+        let after: String = sqlx::query_scalar(show).fetch_one(&pool).await.unwrap();
+        assert_eq!(after, "on");
     }
 }
