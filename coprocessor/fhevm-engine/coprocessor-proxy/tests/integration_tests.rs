@@ -705,6 +705,220 @@ async fn test_closes_client_connections_idle_between_requests() {
     );
 }
 
+/// A TLS connection the proxy has counted: it answered a request on it. `None` when the proxy
+/// refused the connection.
+async fn open_counted_connection(
+    t: &TestProxy,
+) -> Option<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut stream = t.tls.try_connect(t.addr).await.ok()?;
+    let request = format!("GET / HTTP/1.1\r\nHost: {}\r\n\r\n", t.addr);
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let response = read_one_response(&mut stream).await;
+    assert!(response.starts_with("HTTP/1.1 404"), "{response}");
+    Some(stream)
+}
+
+#[tokio::test]
+async fn test_closes_a_connection_whose_request_head_misses_the_deadline() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.request_head_timeout = Duration::from_secs(1);
+    })
+    .await;
+    let stream = t.tls.connect(t.addr).await;
+    let (mut reader, mut writer) = tokio::io::split(stream);
+    let started = Instant::now();
+    // One byte every 200 ms: Pingora alone waits up to 60 s for each read.
+    let head = format!("GET / HTTP/1.1\r\nHost: {}\r\n\r\n", t.addr);
+    let dripping = tokio::spawn(async move {
+        for byte in head.as_bytes() {
+            if writer.write_all(&[*byte]).await.is_err() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    });
+
+    let mut byte = [0u8; 1];
+    let read = tokio::time::timeout(Duration::from_secs(5), reader.read(&mut byte)).await;
+    assert!(matches!(read, Ok(Ok(0) | Err(_))), "{read:?}");
+    let closed_after = started.elapsed();
+    assert!(
+        closed_after >= Duration::from_millis(900) && closed_after < Duration::from_secs(3),
+        "{closed_after:?}"
+    );
+    dripping.abort();
+}
+
+#[tokio::test]
+async fn test_refuses_a_request_body_and_closes_a_connection_that_drips_it() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let head_timeout = Duration::from_secs(1);
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.request_head_timeout = head_timeout;
+    })
+    .await;
+    let stream = t.tls.connect(t.addr).await;
+    let (mut reader, mut writer) = tokio::io::split(stream);
+    let started = Instant::now();
+    let head = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nContent-Length: 100000\r\n\r\n",
+        prf_path(1),
+        t.addr
+    );
+    writer.write_all(head.as_bytes()).await.unwrap();
+    // One body byte every 200 ms: Pingora alone waits up to 60 s for each read.
+    let dripping = tokio::spawn(async move {
+        loop {
+            if writer.write_all(b"x").await.is_err() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    });
+
+    let mut response = Vec::new();
+    let bound = head_timeout + CLIENT_IDLE_TIMEOUT + Duration::from_secs(5);
+    let read = tokio::time::timeout(bound, reader.read_to_end(&mut response)).await;
+    dripping.abort();
+    let response = String::from_utf8_lossy(&response);
+    assert!(response.starts_with("HTTP/1.1 401"), "{response}");
+    assert!(read.is_ok(), "still open after {:?}", started.elapsed());
+}
+
+#[tokio::test]
+async fn test_serves_a_slow_request_head_completed_within_the_deadline() {
+    use tokio::io::AsyncWriteExt;
+
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.request_head_timeout = Duration::from_secs(3);
+    })
+    .await;
+    let mut stream = t.tls.connect(t.addr).await;
+    let head = format!("GET / HTTP/1.1\r\nHost: {}\r\n\r\n", t.addr);
+    for chunk in head.as_bytes().chunks(4) {
+        stream.write_all(chunk).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+    let response = read_one_response(&mut stream).await;
+    assert!(response.starts_with("HTTP/1.1 404"), "{response}");
+}
+
+#[tokio::test]
+async fn test_serves_a_request_held_longer_than_the_head_deadline_and_idle_timeout() {
+    use tokio::io::AsyncWriteExt;
+
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.request_head_timeout = Duration::from_secs(1);
+    })
+    .await;
+    let path = prf_path(1);
+    let auth = auth_header(&sender(), &path, b"").await;
+    let held = Duration::from_secs(1) + CLIENT_IDLE_TIMEOUT + Duration::from_secs(1);
+    let mut stream = t.tls.connect(t.addr).await;
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: {}\r\nAuthorization: {auth}\r\nX-Stub-Delay-Ms: {}\r\n\r\n",
+        t.addr,
+        held.as_millis()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let response = tokio::time::timeout(
+        held + Duration::from_secs(10),
+        read_one_response(&mut stream),
+    )
+    .await
+    .unwrap();
+    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+}
+
+#[tokio::test]
+async fn test_refuses_an_ip_at_its_connection_limit_before_tls() {
+    let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
+    let t = TestProxy::launch(rpc, StubPrfService::start().await, |config| {
+        config.max_connections_per_ip = 2;
+        config.max_pending_handshakes_per_ip = 0;
+    })
+    .await;
+    let first = open_counted_connection(&t).await.unwrap();
+    let _second = open_counted_connection(&t).await.unwrap();
+    assert!(t.tls.try_connect(t.addr).await.is_err());
+
+    drop(first);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while t.tls.try_connect(t.addr).await.is_err() {
+        assert!(
+            Instant::now() < deadline,
+            "the closed connection is still counted"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[tokio::test]
+async fn test_refuses_an_ip_at_its_pending_handshake_limit_but_not_one_that_completes_them() {
+    let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
+    let t = TestProxy::launch(rpc, StubPrfService::start().await, |config| {
+        config.max_connections_per_ip = 0;
+        config.max_pending_handshakes_per_ip = 2;
+    })
+    .await;
+    // Completed handshakes free their places. A response proves the server completed its side.
+    for _ in 0..10 {
+        drop(open_counted_connection(&t).await.unwrap());
+    }
+    // Two connections that never start TLS hold both places.
+    let _slow = [
+        tokio::net::TcpStream::connect(t.addr).await.unwrap(),
+        tokio::net::TcpStream::connect(t.addr).await.unwrap(),
+    ];
+    assert!(t.tls.try_connect(t.addr).await.is_err());
+}
+
+#[tokio::test]
+async fn test_counts_no_connection_after_many_short_and_aborted_ones() {
+    use tokio::io::AsyncWriteExt;
+
+    let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
+    let t = TestProxy::launch(rpc, StubPrfService::start().await, |config| {
+        config.max_connections_per_ip = 4;
+        config.max_pending_handshakes_per_ip = 0;
+    })
+    .await;
+    for _ in 0..100 {
+        drop(open_counted_connection(&t).await.unwrap());
+    }
+    for _ in 0..50 {
+        let mut stream = t.tls.connect(t.addr).await;
+        stream.write_all(b"GET / HT").await.unwrap();
+    }
+
+    // Each leaked count would hold one of the 4 places for good.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let mut open = Vec::new();
+        while open.len() < 4 {
+            let Some(stream) = open_counted_connection(&t).await else {
+                break;
+            };
+            open.push(stream);
+        }
+        if open.len() == 4 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{} of 4 connections accepted",
+            open.len()
+        );
+        drop(open);
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 #[tokio::test]
 async fn test_counts_requests_by_route_status_and_signer() {
     let t = TestProxy::start(StubPrfService::start().await).await;

@@ -1,3 +1,4 @@
+mod client_limits;
 mod config;
 mod error;
 mod http_proxy;

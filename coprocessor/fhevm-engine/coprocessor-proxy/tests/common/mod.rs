@@ -585,6 +585,14 @@ impl TestTls {
         &self,
         addr: SocketAddr,
     ) -> tokio_rustls::client::TlsStream<tokio::net::TcpStream> {
+        self.try_connect(addr).await.unwrap()
+    }
+
+    /// Like [`Self::connect`], for a connection the proxy may refuse.
+    pub async fn try_connect(
+        &self,
+        addr: SocketAddr,
+    ) -> std::io::Result<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
         let mut roots = rustls::RootCertStore::empty();
         roots.add(self.cert_der.clone()).unwrap();
         let config = rustls::ClientConfig::builder_with_provider(Arc::new(
@@ -595,11 +603,10 @@ impl TestTls {
         .with_root_certificates(roots)
         .with_no_client_auth();
         let server_name = rustls::pki_types::ServerName::from(addr.ip());
-        let tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let tcp = tokio::net::TcpStream::connect(addr).await?;
         tokio_rustls::TlsConnector::from(Arc::new(config))
             .connect(server_name, tcp)
             .await
-            .unwrap()
     }
 }
 

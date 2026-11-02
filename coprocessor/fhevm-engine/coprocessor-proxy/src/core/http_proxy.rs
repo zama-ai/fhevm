@@ -127,6 +127,9 @@ impl ProxyHttp for Proxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
+        if let Some(peer) = session.client_addr().and_then(|a| a.as_inet()) {
+            self.client_limits.head_received(*peer);
+        }
         // The client's next connection goes through the Service, to a replica that is not stopping.
         if self.draining.load(Ordering::Relaxed) {
             session.set_keepalive(None);
@@ -305,6 +308,9 @@ impl ProxyHttp for Proxy {
 
     // Structured access log. Never logs bodies nor credentials.
     async fn logging(&self, session: &mut Session, e: Option<&Error>, ctx: &mut Self::CTX) {
+        if let Some(peer) = session.client_addr().and_then(|a| a.as_inet()) {
+            self.client_limits.response_sent(*peer);
+        }
         let status = session
             .response_written()
             .map(|resp| resp.status.as_u16())

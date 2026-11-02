@@ -152,6 +152,12 @@ spec:
               value: "{{ int $proxy.prfServiceResponseTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER
               value: {{ int $proxy.maxRequestsPerSigner | quote }}
+            - name: COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT
+              value: "{{ int $proxy.requestHeadTimeoutSeconds }}s"
+            - name: COPROCESSOR_PROXY_MAX_CONNECTIONS_PER_IP
+              value: {{ int $proxy.maxConnectionsPerIp | quote }}
+            - name: COPROCESSOR_PROXY_MAX_PENDING_HANDSHAKES_PER_IP
+              value: {{ int $proxy.maxPendingHandshakesPerIp | quote }}
             - name: COPROCESSOR_PROXY_THREADS
               value: {{ int $proxy.threads | quote }}
           {{- if $tracingEnabled }}

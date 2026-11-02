@@ -113,6 +113,34 @@ pub struct Config {
         value_parser = humantime::parse_duration
     )]
     pub shutdown_delay: Duration,
+    /// How long a client has, once its TLS handshake completes, to send the head of its first
+    /// request; the connection is closed after. A later request head on the connection is due
+    /// within the idle timeout (15 s) of the previous response.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT",
+        default_value = "10s",
+        value_parser = parse_non_zero_duration
+    )]
+    pub request_head_timeout: Duration,
+    /// How many connections one client IP can hold open past their TLS handshake; more are
+    /// refused before TLS. 0 disables the limit, as needed when the proxy does not see the
+    /// clients' own addresses.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_MAX_CONNECTIONS_PER_IP",
+        default_value_t = 512
+    )]
+    pub max_connections_per_ip: usize,
+    /// How many connections one client IP can hold in their TLS handshake, which Pingora gives
+    /// up to 60 s; more are refused before TLS. A handshake that fails holds its place until
+    /// those 60 s pass. 0 disables the limit.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_MAX_PENDING_HANDSHAKES_PER_IP",
+        default_value_t = 256
+    )]
+    pub max_pending_handshakes_per_ip: usize,
     /// The worker threads of the proxy service. TLS handshakes, signature checks and forwarding
     /// all run on them, as does the readiness self-check's request.
     #[arg(long, env = "COPROCESSOR_PROXY_THREADS", default_value = "2")]
@@ -219,6 +247,9 @@ mod tests {
         );
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(10));
         assert_eq!(config.shutdown_delay, Duration::ZERO);
+        assert_eq!(config.request_head_timeout, Duration::from_secs(10));
+        assert_eq!(config.max_connections_per_ip, 512);
+        assert_eq!(config.max_pending_handshakes_per_ip, 256);
         assert_eq!(config.threads.get(), 2);
         assert_eq!(config.max_requests_per_signer.get(), 200);
         assert_eq!(config.bind_address, "0.0.0.0:8443".parse().unwrap());
@@ -254,6 +285,9 @@ mod tests {
             ("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "45s"),
             ("COPROCESSOR_PROXY_PRF_SERVICE_IDLE_TIMEOUT", "7s"),
             ("COPROCESSOR_PROXY_SHUTDOWN_DELAY", "9s"),
+            ("COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT", "3s"),
+            ("COPROCESSOR_PROXY_MAX_CONNECTIONS_PER_IP", "64"),
+            ("COPROCESSOR_PROXY_MAX_PENDING_HANDSHAKES_PER_IP", "0"),
             ("COPROCESSOR_PROXY_THREADS", "4"),
             ("OTEL_SERVICE_NAME", "coprocessor-proxy-test"),
             ("COPROCESSOR_PROXY_LOG_LEVEL", "debug"),
@@ -293,6 +327,9 @@ mod tests {
         assert_eq!(config.prf_service_response_timeout, Duration::from_secs(45));
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(7));
         assert_eq!(config.shutdown_delay, Duration::from_secs(9));
+        assert_eq!(config.request_head_timeout, Duration::from_secs(3));
+        assert_eq!(config.max_connections_per_ip, 64);
+        assert_eq!(config.max_pending_handshakes_per_ip, 0);
         assert_eq!(config.threads.get(), 4);
         assert_eq!(config.service_name, "coprocessor-proxy-test");
         assert_eq!(config.log_level, Level::DEBUG);

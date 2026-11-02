@@ -1,5 +1,8 @@
 use crate::{
-    core::{Config, SIGNER_RATE_INTERVAL},
+    core::{
+        Config, SIGNER_RATE_INTERVAL,
+        client_limits::{ClientLimits, LimitedApp},
+    },
     kms_tx_senders::Follower,
     monitoring::health,
 };
@@ -10,12 +13,15 @@ use fhevm_sig_auth::{FhevmSigVerifier, RefreshableSigners};
 use pingora::{
     listeners::tls::TlsSettings,
     prelude::Server,
-    proxy::http_proxy_service_with_name,
+    proxy::http_proxy,
     server::{
         RunArgs, ShutdownSignal, ShutdownSignalWatch, ShutdownWatch, UnixShutdownSignalWatch,
         configuration::ServerConf,
     },
-    services::background::{BackgroundService, GenBackgroundService},
+    services::{
+        background::{BackgroundService, GenBackgroundService},
+        listening::Service,
+    },
 };
 use pingora_limits::rate::Rate;
 use prometheus::{IntGauge, register_int_gauge};
@@ -49,6 +55,7 @@ pub struct Proxy {
     pub(super) signer_requests: Rate,
     /// Set during the shutdown delay: each client connection closes after its next response.
     pub(super) draining: Arc<AtomicBool>,
+    pub(super) client_limits: Arc<ClientLimits>,
 }
 
 /// Watches the Unix signals like [`UnixShutdownSignalWatch`], but holds `SIGTERM` back for
@@ -119,6 +126,11 @@ impl Proxy {
         let domain =
             fhevm_sig_auth::domain(config.ethereum_chain_id, config.protocol_config_address);
         let verifier = FhevmSigVerifier::new(domain, config.coprocessor_signer_address, signers);
+        let client_limits = Arc::new(ClientLimits::new(
+            config.request_head_timeout,
+            config.max_connections_per_ip,
+            config.max_pending_handshakes_per_ip,
+        ));
         let proxy = Self {
             verifier,
             config,
@@ -126,6 +138,7 @@ impl Proxy {
             kms_tx_senders: Arc::new(follower),
             signer_requests: Rate::new(SIGNER_RATE_INTERVAL),
             draining: Arc::default(),
+            client_limits,
         };
         Ok((proxy, state))
     }
@@ -179,8 +192,13 @@ impl Proxy {
         ));
 
         let service_name = self.config.service_name.clone();
-        let mut proxy_service =
-            http_proxy_service_with_name(&server.configuration, self, &service_name);
+        let client_limits = Arc::clone(&self.client_limits);
+        let proxy = http_proxy(&server.configuration, self);
+        let mut proxy_service = Service::new(
+            service_name,
+            LimitedApp::new(proxy, Arc::clone(&client_limits)),
+        );
+        proxy_service.set_connection_filter(client_limits);
         proxy_service.add_tls_with_settings(&listen_addr, None, tls);
         server.add_service(proxy_service);
         info!("Proxy will listen at: https://{listen_addr}");
