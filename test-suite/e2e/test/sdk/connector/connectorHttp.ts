@@ -311,12 +311,7 @@ export async function fanOutUntilSettled<T>(
 // Request builders
 ////////////////////////////////////////////////////////////////////////////////
 
-/** Empty v0 `extraData`. */
-export const PUBLIC_EXTRA_DATA = '0x';
-/** Legacy v0 `extraData`. */
-export const USER_EXTRA_DATA = '0x00';
-
-export const buildPublicRequest = (ctHandles: string[], extraData = PUBLIC_EXTRA_DATA): PublicDecryptionRequest => ({
+export const buildPublicRequest = (ctHandles: string[], extraData: string): PublicDecryptionRequest => ({
   ctHandles: ctHandles.map((h) => hexlify(getBytes(h))),
   extraData,
 });
@@ -328,7 +323,8 @@ export interface UserRequestInput {
   readonly allowedContracts?: string[];
   readonly startTimestamp?: number;
   readonly durationSeconds?: number;
-  readonly extraData?: string;
+  /** See `currentKmsExtraData`. */
+  readonly extraData: string;
   readonly decryptionContractAddress: string;
 }
 
@@ -352,10 +348,10 @@ export async function buildUserRequest(
     publicKey: input.publicKey,
     startTimestamp: input.startTimestamp ?? backdatedStartTimestamp(),
     durationSeconds: input.durationSeconds ?? 7 * 24 * 60 * 60,
-    extraData: input.extraData ?? USER_EXTRA_DATA,
+    extraData: input.extraData,
   };
   const signature = await signRequest(
-    { relayerUrl: '', decryptionContractAddress: input.decryptionContractAddress },
+    { relayerUrl: '', decryptionContractAddress: input.decryptionContractAddress, extraData: input.extraData },
     unified,
     mode ?? { kind: 'eoa', signer },
   );
@@ -367,7 +363,7 @@ export async function buildUserRequest(
       publicKey: unified.publicKey,
       allowedContracts: [...unified.allowedContracts],
       requestValidity: { startTimestamp: unified.startTimestamp, durationSeconds: unified.durationSeconds },
-      extraData: unified.extraData ?? USER_EXTRA_DATA,
+      extraData: input.extraData,
     },
     signature,
   };

@@ -16,7 +16,11 @@ use connector_utils::{
         },
         setup::{TestInstance, TestInstanceBuilder, pick_free_port},
     },
-    types::db::{OperationStatus, RequestSource},
+    types::{
+        DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT,
+        db::{OperationStatus, RequestSource},
+        extra_data::extra_data_v2_payload,
+    },
 };
 use endpoint::core::{Config, Endpoint};
 use kms_connector_api::{
@@ -679,8 +683,9 @@ async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Resul
 
     // Unknown field.
     let raw = format!(
-        r#"{{"ctHandles":["{}"],"extraData":"0x00","sneaky":1}}"#,
-        rand_handle(CHAIN_ID)
+        r#"{{"ctHandles":["{}"],"extraData":"{}","sneaky":1}}"#,
+        rand_handle(CHAIN_ID),
+        extra_data()
     );
     let response = endpoint.post_raw(PUBLIC_DECRYPTION_ROUTE, raw).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -690,7 +695,7 @@ async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Resul
     let response = endpoint
         .post_public(&PublicDecryptionRequest {
             ctHandles: vec![rand_handle(CHAIN_ID); 32],
-            extraData: Bytes::from(vec![0x00]),
+            extraData: extra_data(),
         })
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -700,14 +705,14 @@ async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Resul
     let response = endpoint
         .post_public(&PublicDecryptionRequest {
             ctHandles: vec![],
-            extraData: Bytes::new(),
+            extraData: extra_data(),
         })
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let response = endpoint
         .post_public(&PublicDecryptionRequest {
             ctHandles: vec![rand_handle(CHAIN_ID + 1)],
-            extraData: Bytes::new(),
+            extraData: extra_data(),
         })
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -717,7 +722,7 @@ async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Resul
     let response = endpoint
         .post_public(&PublicDecryptionRequest {
             ctHandles: vec![rand_handle(CHAIN_ID); 3],
-            extraData: Bytes::new(),
+            extraData: extra_data(),
         })
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -968,10 +973,15 @@ fn rand_handle(chain_id: u64) -> B256 {
     B256::from(bytes)
 }
 
+/// A well-formed v2 `extraData` targeting the testing KMS context and default epoch.
+fn extra_data() -> Bytes {
+    Bytes::from(extra_data_v2_payload(TESTING_KMS_CONTEXT, DEFAULT_EPOCH_ID))
+}
+
 fn public_request() -> PublicDecryptionRequest {
     PublicDecryptionRequest {
         ctHandles: vec![rand_handle(CHAIN_ID), rand_handle(CHAIN_ID)],
-        extraData: Bytes::from(vec![0x00]),
+        extraData: extra_data(),
     }
 }
 
@@ -991,7 +1001,7 @@ fn user_request() -> UserDecryptionRequest {
                 startTimestamp: Utc::now().timestamp() as u64 - 60,
                 durationSeconds: 300,
             },
-            extraData: Bytes::from(vec![0x00]),
+            extraData: extra_data(),
         },
         signature: Bytes::from(vec![0x66; 65]),
     }

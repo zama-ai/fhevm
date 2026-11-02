@@ -178,7 +178,6 @@ import {
   stepComposeUp,
 } from "./runtime-compose";
 import {
-  BOOTSTRAP_SUSPENDED_GROUPS,
   CANONICAL_HOST_CONTRACT_UPGRADES,
   CONNECTOR_OPTIONAL_VERSION_KEYS,
   CONNECTOR_VERSION_KEYS,
@@ -186,10 +185,15 @@ import {
   GATEWAY_CONTRACT_UPGRADES,
   HOST_CONTRACT_UPGRADES,
   LISTENER_CORE_VERSION_KEYS,
+  RELAYER_VERSION_KEYS,
+  type UpgradeStep,
   bootstrapBootOverrides,
   bootstrapBootVersions,
   bootstrapPhaseEnv,
+  checkUpgradeSteps,
   contractUpgradeCommand,
+  isDeferredBootstrap,
+  upgradeOrder,
 } from "./bootstrap";
 import { pause, runContractTask, snapshotContractSources, unpause } from "./contracts";
 
@@ -1311,18 +1315,23 @@ export const applyBootstrap = (
   }
   return {
     versions: bootstrapBootVersions(bundle, bootstrap),
-    overrides: bootstrapBootOverrides(overrides),
+    overrides: bootstrapBootOverrides(overrides, bootstrap),
     bootstrapPending: { target: bundle, overrides },
   };
 };
 
-const logBootstrap = (state: Pick<State, "bootstrapPending" | "versions">) => {
-  if (state.bootstrapPending) {
-    console.log(
-      `[bootstrap] contracts, KMS core/connector and listener-core boot at ${state.versions.env.HOST_VERSION} ` +
-        `(core ${state.versions.env.CORE_VERSION}); upgraded to the bundle once the operators ingest the keys, then Green starts`,
-    );
+const logBootstrap = (state: Pick<State, "bootstrapPending" | "versions" | "scenario">) => {
+  if (!state.bootstrapPending) {
+    return;
   }
+  const deferred = isDeferredBootstrap(state.scenario);
+  console.log(
+    `[bootstrap] contracts, KMS core/connector${deferred ? ", listener-core and relayer" : " and listener-core"} boot at ` +
+      `${state.versions.env.HOST_VERSION} (core ${state.versions.env.CORE_VERSION}); ` +
+      (deferred
+        ? "the test runs the upgrade steps and starts Green"
+        : "upgraded to the bundle once the operators ingest the keys, then Green starts"),
+  );
 };
 
 /** Builds a synthetic state object for dry-run previews. */
@@ -1361,7 +1370,7 @@ const bootstrapState = async (options: UpOptions) => {
   assertSupportedBundleScenario({ versions: boot.versions, overrides: boot.overrides, scenario });
   await assertSchemaCompatibility(resolved.bundle, options.overrides, scenario, options.allowSchemaMismatch);
   await ensureLockSnapshot(resolved.lockPath, resolved.bundle);
-  logBootstrap(boot);
+  logBootstrap({ ...boot, scenario });
   return {
     target: resolved.bundle.target,
     lockPath: resolved.lockPath,
@@ -1922,31 +1931,6 @@ const applyRuntimeUpgradeLock = (
     removeRuntimeUpgradeOverrides(state.overrides, group),
   );
 
-/** Applies an ordered rollout version lock without restarting runtime services. */
-export const applyVersionLock = async (
-  label: string,
-  lockFile: string,
-  allowedVersionKeys: readonly string[],
-  options: { overrides?: LocalOverride[] } = {},
-) => {
-  const state = await loadState();
-  if (!state || !(await projectContainers()).length) {
-    throw new PreflightError("Stack is not running; start one with `fhevm-cli up` first");
-  }
-  await ensureRuntimeArtifacts(state, "rollout version lock");
-  const { changedKeys, state: nextState } = await buildLockedState(
-    label,
-    state,
-    lockFile,
-    allowedVersionKeys,
-    mergeLocalOverrides(state.overrides, options.overrides),
-  );
-  await assertSchemaCompatibility(nextState.versions, nextState.overrides, nextState.scenario, false);
-  await saveState(nextState);
-  await generateRuntime(nextState, stackSpecForState(nextState));
-  console.log(`[rollout] ${label} versions=${changedKeys.join(", ") || "(none)"}`);
-};
-
 const waitForRelayer = async () => {
   await waitForContainer("fhevm-relayer-db", "healthy");
   await waitForContainer("fhevm-relayer", "running");
@@ -2257,16 +2241,35 @@ const upgradeKmsCluster = async (state: State, group: "kms" | "kms-core", lockFi
 /**
  * Ends the bootstrap step: regenerates the runtime and, when the stack booted at the scenario's
  * `bootstrap` release, upgrades it to the bundle now that the key material is ingested, in
- * production order: contracts, KMS core, KMS connector, listener-core, then the deferred Green
- * fleet. Mutates `state` so the remaining steps and the step marker see the upgraded stack.
+ * production order. A deferred bootstrap leaves the upgrade to the test.
  */
 const completeBootstrap = async (state: State) => {
   const pending = state.bootstrapPending;
-  if (!pending) {
+  if (!pending || isDeferredBootstrap(state.scenario)) {
     await generateRuntime(state, stackSpecForState(state));
     return;
   }
   const completed = new Set(pending.completed ?? []);
+  await upgradeBootstrappedStack(
+    state,
+    upgradeOrder(state.scenario).filter((step) => !completed.has(step)),
+  );
+};
+
+/**
+ * Runs `steps` of the bootstrap upgrade in the order given. Mutates `state` so the caller sees
+ * the upgraded stack; `green` ends the bootstrap.
+ */
+export const upgradeBootstrappedStack = async (state: State, steps: readonly UpgradeStep[]) => {
+  const pending = state.bootstrapPending;
+  if (!pending) {
+    throw new PreflightError(
+      "upgrade steps need a stack that booted at its scenario's bootstrap release and has not started Green",
+    );
+  }
+  const order = upgradeOrder(state.scenario);
+  const completed = new Set(pending.completed ?? []);
+  checkUpgradeSteps(order, [...completed], steps);
   // Every unit is recorded once it succeeds, so a later call skips it instead of repeating an
   // upgrade task that reverts on an already upgraded proxy.
   const once = async (unit: string, action: () => Promise<void>) => {
@@ -2290,7 +2293,7 @@ const completeBootstrap = async (state: State) => {
     );
   };
 
-  await once("contracts", async () => {
+  const upgradeContracts = async () => {
     await snapshotContractSources("gateway");
     await snapshotContractSources("host");
     advance("the contracts", CONTRACT_VERSION_KEYS, ["gateway-contracts", "host-contracts"]);
@@ -2318,48 +2321,74 @@ const completeBootstrap = async (state: State) => {
         );
       }
     }
-  });
+  };
   // A KMS core and its connector are one rollout unit: upgrade them operator by operator,
-  // like production and the rollouts, through the paired primitive.
-  const migration = await kmsEpochMigrationFor(state, pending.target.env.CORE_VERSION ?? "");
-  const lockFile = path.join(STATE_DIR, "bootstrap-kms-operator-lock.json");
-  await writeJson(lockFile, {
-    ...state.versions,
-    env: bootstrapPhaseEnv(state.versions.env, pending.target.env, ["CORE_VERSION", ...CONNECTOR_VERSION_KEYS]),
-  });
+  // like production, through the paired primitive. Software upgrades leave the active epoch
+  // alone, so a later call reads the same migration.
   const { target, lockPath, requiresGitHub } = state;
-  const overrides = pending.overrides.filter((override) => override.group === "kms-connector");
-  for (const operatorId of kmsPartyIds(state.scenario.kms.parties)) {
-    await once(`kms-operator:${operatorId}`, async () => {
-      console.log(`[bootstrap] key material ingested; upgrading KMS operator ${operatorId} to the bundle`);
-      await upgradeKmsOperatorWhenQuorate(state, operatorId, { lockFile, overrides, migration });
-      // Keep this `pending`, which `once` records progress on, and the bundle's own lock.
-      Object.assign(state, await loadState(), { bootstrapPending: pending, target, lockPath, requiresGitHub });
+  const upgradeKmsOperator = async (operatorId: number) => {
+    const migration = await kmsEpochMigrationFor(state, pending.target.env.CORE_VERSION ?? "");
+    const lockFile = path.join(STATE_DIR, "bootstrap-kms-operator-lock.json");
+    await writeJson(lockFile, {
+      ...state.versions,
+      env: bootstrapPhaseEnv(state.versions.env, pending.target.env, ["CORE_VERSION", ...CONNECTOR_VERSION_KEYS]),
     });
-  }
-  // The paired primitive recreates only each operator's core and connector runtime; start the
-  // connector services the bootstrap release did not ship (HTTP endpoint and proxy).
-  await once("kms-connector-http", async () => {
-    advance("the KMS connector HTTP path", CONNECTOR_OPTIONAL_VERSION_KEYS, ["kms-connector"]);
-    await generateRuntime(state, stackSpecForState(state));
-    await stepComposeUp("kms-connector", state, serviceNameList(state, "kms-connector"));
-    await waitForKmsConnector(state);
-  });
-  await once("listener-core", async () => {
-    advance("listener-core", LISTENER_CORE_VERSION_KEYS, ["listener-core"]);
-    await executeUpgradePlan(state, resolveUpgradePlan(state, "listener-core", { lockFile: true }));
-  });
+    const overrides = pending.overrides.filter((override) => override.group === "kms-connector");
+    console.log(`[bootstrap] key material ingested; upgrading KMS operator ${operatorId} to the bundle`);
+    await upgradeKmsOperatorWhenQuorate(state, operatorId, { lockFile, overrides, migration });
+    // Keep this `pending`, which `once` records progress on, and the bundle's own lock.
+    Object.assign(state, await loadState(), { bootstrapPending: pending, target, lockPath, requiresGitHub });
+  };
+  // The paired primitive recreates only each operator's core and connector runtime; once every
+  // operator runs the bundle, start the connector services the release did not ship.
+  const operatorSteps = order.filter((step) => step.startsWith("kms-operator:"));
+  const startConnectorHttpOnceOperatorsAreDone = async () => {
+    if (!operatorSteps.every((step) => completed.has(step))) {
+      return;
+    }
+    await once("kms-connector-http", async () => {
+      advance("the KMS connector HTTP path", CONNECTOR_OPTIONAL_VERSION_KEYS, ["kms-connector"]);
+      await generateRuntime(state, stackSpecForState(state));
+      await stepComposeUp("kms-connector", state, serviceNameList(state, "kms-connector"));
+      await waitForKmsConnector(state);
+    });
+  };
+  const startGreen = async () => {
+    state.versions = pending.target;
+    state.overrides = pending.overrides;
+    await saveState(state);
+    console.log("[bootstrap] stack upgraded to the bundle; starting the Green fleet");
+    // The marker stays until Green runs, so a failed start is retried by `up --resume` rather
+    // than left deferred for good.
+    await startDeferredGreen();
+    Object.assign(state, await loadState());
+    delete state.bootstrapPending;
+    await saveState(state);
+  };
 
-  state.versions = pending.target;
-  state.overrides = pending.overrides;
-  await saveState(state);
-  console.log("[bootstrap] stack upgraded to the bundle; starting the Green fleet");
-  // Green was built alongside Blue in the coprocessor step. The marker stays until Green runs,
-  // so a failed start is retried by `up --resume` rather than left deferred for good.
-  await startDeferredGreen(deferredGreenOperations, { rebuild: false });
-  Object.assign(state, await loadState());
-  delete state.bootstrapPending;
-  await saveState(state);
+  // Resuming after a crash between the last operator and the HTTP start: `green` returns before
+  // the check that follows each step.
+  await startConnectorHttpOnceOperatorsAreDone();
+  for (const step of steps) {
+    if (step === "green") {
+      await startGreen();
+      return;
+    }
+    await once(step, async () => {
+      if (step === "contracts") {
+        await upgradeContracts();
+      } else if (step === "relayer") {
+        advance("the relayer", RELAYER_VERSION_KEYS, ["relayer"]);
+        await executeUpgradePlan(state, resolveUpgradePlan(state, "relayer", { lockFile: true }));
+      } else if (step === "listener-core") {
+        advance("listener-core", LISTENER_CORE_VERSION_KEYS, ["listener-core"]);
+        await executeUpgradePlan(state, resolveUpgradePlan(state, "listener-core", { lockFile: true }));
+      } else {
+        await upgradeKmsOperator(Number(step.slice("kms-operator:".length)));
+      }
+    });
+    await startConnectorHttpOnceOperatorsAreDone();
+  }
 };
 
 type DeferredGreenOperations = {
@@ -2396,10 +2425,7 @@ const deferredGreenOperations: DeferredGreenOperations = {
 };
 
 /** Builds and starts a Green fleet that was intentionally absent during prerequisite migration. */
-export const startDeferredGreen = async (
-  operations: DeferredGreenOperations = deferredGreenOperations,
-  options: { rebuild?: boolean } = {},
-) => {
+export const startDeferredGreen = async (operations: DeferredGreenOperations = deferredGreenOperations) => {
   const state = await operations.loadState();
   if (!state || state.scenario.kind !== "blue-green" || !state.scenario.gcs.deferredStart) {
     throw new PreflightError("startDeferredGreen requires a running Blue-Green scenario with gcs.deferredStart=true");
@@ -2430,7 +2456,8 @@ export const startDeferredGreen = async (
 
   try {
     await operations.generateRuntime(nextState, stackSpecForState(nextState));
-    await operations.maybeBuild("coprocessor", nextState, { force: options.rebuild ?? true, persistState: false });
+    // Green was built alongside Blue in the coprocessor step.
+    await operations.maybeBuild("coprocessor", nextState, { persistState: false });
     await operations.composeUp("coprocessor", migrationServices, { forceRecreate: true });
     for (const service of migrationServices) {
       await operations.waitForContainer(service, "complete");
