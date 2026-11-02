@@ -4,11 +4,19 @@
 // /app/test-suite/e2e/scripts/relayer-http/.
 import { ethers } from 'hardhat';
 
+import { currentKmsExtraData } from '../../test/sdk/unified/unifiedUserDecrypt';
 import { getSigners, initSigners } from '../../test/signers';
 
 if (!process.env.RELAYER_HTTP_URL) throw new Error('RELAYER_HTTP_URL is not set: run the flow through make (dev/scripts/e2e.sh)');
 export const RELAYER = process.env.RELAYER_HTTP_URL.replace(/\/$/, '');
 const TIMEOUT_MS = 120_000;
+
+/** v2 extraData for the current KMS context and epoch, read from ProtocolConfig (the connectors reject v0). */
+export async function kmsExtraData(): Promise<string> {
+  const address = process.env.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
+  if (!address) throw new Error('PROTOCOL_CONFIG_CONTRACT_ADDRESS is not set in the e2e container');
+  return currentKmsExtraData(ethers.provider, address);
+}
 
 export interface Reply<T> {
   status: number;
