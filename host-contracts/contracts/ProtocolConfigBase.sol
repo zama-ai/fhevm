@@ -10,8 +10,7 @@ import {KmsContextAnchor, KmsNode, KmsThresholds} from "./shared/Structs.sol";
  */
 abstract contract ProtocolConfigBase is IProtocolConfigBase {
     /// @notice Lifecycle state of a KMS context: created Pending, promoted to Created once the
-    ///         creation quorum confirms, then Active when its first epoch activates. Destroyed once
-    ///         destroyed.
+    ///         creation quorum confirms, then Active when its first epoch activates, then Destroyed.
     enum ContextState {
         None,
         Pending,
@@ -21,7 +20,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /// @notice Lifecycle state of an epoch: opened Pending for resharing, then Active once the
-    ///         activation quorum confirms. Destroyed once destroyed.
+    ///         activation quorum confirms, then Destroyed.
     enum EpochState {
         None,
         Pending,
@@ -294,8 +293,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Returns true if the context is Pending, Created or Active. A destroyed context is not
-     * live. The v0.14 upgrade gave a state only to the context that was active at that upgrade,
+     * @dev Returns true if the context is Pending, Created or Active. The v0.14 upgrade gave a state only to the context that was active at that upgrade,
      * so older contexts also read as None and are not live.
      */
     function _isLiveKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
@@ -431,12 +429,10 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Sets `epochId` Destroyed and drops its context link. Callers own the preconditions.
+     * @dev Sets `epochId` Destroyed. Callers own the preconditions.
      */
     function _markKmsEpochDestroyed(uint256 epochId) internal {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.epochState[epochId] = EpochState.Destroyed;
-        delete $.contextForEpoch[epochId];
+        _getProtocolConfigStorage().epochState[epochId] = EpochState.Destroyed;
         emit KmsEpochDestroyed(epochId);
     }
 

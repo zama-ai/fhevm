@@ -264,7 +264,7 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaTestBase {
             _epochSubmission(forgedId, EPOCH1, forgedEpochId, SEED2, N)
         );
 
-        // The owner mirrors them, which replaces the forged nodes and clears the destroyed flags.
+        // The owner mirrors them, which replaces the forged nodes and the Destroyed state.
         vm.prank(owner);
         protocolConfigReplica.mirrorKmsContextAndEpoch(forgedId, forgedEpochId, _nodes(SEED2), _thresholds());
         _assertNotMembers(forgedId, SEED1);

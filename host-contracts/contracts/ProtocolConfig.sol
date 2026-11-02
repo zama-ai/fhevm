@@ -321,7 +321,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         // there is nothing to clear and the ownership check below is false.
         uint256 latestEpochId = $.epochCounter;
         if ($.contextForEpoch[latestEpochId] == kmsContextId) {
-            _clearEpoch(latestEpochId);
+            delete $.epochState[latestEpochId];
         }
 
         _markKmsContextDestroyed(kmsContextId);
@@ -632,16 +632,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         epochId = ++$.epochCounter;
         $.epochState[epochId] = EpochState.Pending;
         $.contextForEpoch[epochId] = contextId;
-    }
-
-    /**
-     * @dev Clears `epochId` back to None and drops its context link. Callers own the preconditions
-     *      and any event emission.
-     */
-    function _clearEpoch(uint256 epochId) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.epochState[epochId] = EpochState.None;
-        delete $.contextForEpoch[epochId];
     }
 
     /**
