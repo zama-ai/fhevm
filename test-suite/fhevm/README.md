@@ -207,6 +207,8 @@ The profile drives the stack through a `Stack` handle (`src/commands/stack.ts`):
 
 Each action is recorded in `.fhevm/rollout/receipt.md` and `receipt.jsonl`, with the container images and the version changes since the previous entry. The e2e workflow uploads both files.
 
+`test-suite-e2e-key-migration-nightly` runs the `key-migration-from-v0.14` test on `main` every night.
+
 `rollout-standard` is intentionally narrow: it covers encrypted input, FHE compute/write paths, user decrypt, delegated user decrypt, public decrypt, and ERC20 transfer coverage. Broader profiles such as `multi-chain-isolation`, HCU, pause/unpause, DB revert, and drift recovery stay available as explicit tests.
 
 ## Version Override via Environment Variables
