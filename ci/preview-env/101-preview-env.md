@@ -132,11 +132,11 @@ keys (keep them aligned to the same kms release):
 
 | Key | Becomes | Role |
 | --- | --- | --- |
-| `kms_core_version` | `KMS_CORE_TAG` | GHCR tag passed to `deploy.sh --tag`. CI reads PCR labels from the enclave image that `deploy.sh` installs (`core-service-enclave-insecure` on current kms main, `core-service-enclave` on `v0.14.1`). |
+| `kms_core_version` | `KMS_CORE_TAG` | GHCR tag passed to `deploy.sh --tag`. CI reads PCR labels from the enclave image that `deploy.sh` installs (`core-service-enclave-insecure` on current kms main, `core-service-enclave` on older releases such as `v0.14.1`). |
 | `kms_repo_ref` | `KMS_REPO_REF` | Git ref sparse-checked out of `zama-ai/kms` (`deploy.sh`, charts, threshold wiring). |
 
-Current defaults (also in `parse-overrides.cjs`): `kms_core_version=v0.14.1`,
-`kms_repo_ref=v0.14.1` (`zama-ai/kms` release `v0.14.1` / `75b85afd`).
+Current defaults (also in `parse-overrides.cjs`): `kms_core_version=v0.15.0-1`,
+`kms_repo_ref=v0.15.0-1` (`zama-ai/kms` release `v0.15.0-1`).
 
 **kms-connector is not kms-core.** `kms_connector_version` /
 `kms_connector_chart_version` are fhevm-owned (same resolve/build rules as
@@ -164,8 +164,8 @@ Or `overrides` in the Actions form:
 
 ```json
 {
-  "kms_core_version": "v0.14.1",
-  "kms_repo_ref": "v0.14.1"
+  "kms_core_version": "v0.15.0-1",
+  "kms_repo_ref": "v0.15.0-1"
 }
 ```
 
