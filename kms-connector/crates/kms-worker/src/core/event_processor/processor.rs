@@ -13,7 +13,7 @@ use connector_utils::types::{
     ProtocolEventKind, db::invalidate_kms_epoch, extra_data::parse_extra_data, u256_to_request_id,
 };
 use kms_connector_api::ErrorCode;
-use kms_grpc::kms::v1::{DestroyMpcContextRequest, DestroyMpcEpochRequest};
+use kms_grpc::kms::v1::DestroyMpcContextRequest;
 use sqlx::{Pool, Postgres};
 use tracing::warn;
 
@@ -341,11 +341,9 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     context_id: Some(u256_to_request_id(req.kmsContextId)),
                 },
             )),
-            ProtocolEventKind::KmsEpochDestroyed(req) => {
-                Ok(KmsGrpcRequest::DestroyMpcEpoch(DestroyMpcEpochRequest {
-                    epoch_id: Some(u256_to_request_id(req.epochId)),
-                }))
-            }
+            ProtocolEventKind::KmsEpochDestroyed(req) => Ok(self
+                .protocol_config_processor
+                .prepare_destroy_kms_epoch_request(req)),
         }
     }
 }
