@@ -4,12 +4,12 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { DIST_DIR, PACKAGE_ROOT } from '../src/paths.js';
-import { buildRunReport } from '../src/report/report.js';
-import { buildWorkerEnv, executePlan } from '../src/runner/orchestrator.js';
-import { assertRetryDisabled } from '../src/runner/worker.js';
-import { createRedactor } from '../src/secrets/redactor.js';
-import { FIXTURE_SECRET, fakeScenario, tempDir } from './helpers.js';
+import { DIST_DIR, PACKAGE_ROOT } from '../../src/paths.js';
+import { buildRunReport } from '../../src/report/report.js';
+import { buildWorkerEnv, executePlan } from '../../src/runner/orchestrator.js';
+import { assertRetryDisabled } from '../../src/runner/worker.js';
+import { createRedactor } from '../../src/secrets/redactor.js';
+import { FIXTURE_SECRET, fakeScenario, tempDir } from '../helpers.js';
 
 describe('buildWorkerEnv', () => {
   it('keeps only allowlisted variables', () => {

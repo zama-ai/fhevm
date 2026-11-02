@@ -1,18 +1,19 @@
 /**
- * Chain module tests against the throwaway Anvil node. Run with `npm run test:chain`, which starts
- * the node (test/anvil/compose.yaml), sets TE_ANVIL_RPC_URL and removes the node afterwards.
+ * Chain module tests against the throwaway Anvil node. Run with `npm run test:integration:chain`,
+ * which starts the node (compose.yaml next to this file), sets TE_ANVIL_RPC_URL and removes the node
+ * afterwards.
  */
 import type { Contract } from 'ethers';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, it } from 'node:test';
 
-import type { EvidencePayload } from '../../src/api/evidence.js';
-import { loadArtifact } from '../../src/chain/artifacts.js';
-import { Chain } from '../../src/chain/chain.js';
-import { bufferedGasLimit } from '../../src/chain/gas.js';
-import { loadProfile } from '../../src/profiles/profile.js';
-import type { ResolvedChainSection } from '../../src/profiles/types.js';
+import type { EvidencePayload } from '../../../src/api/evidence.js';
+import { loadArtifact } from '../../../src/chain/artifacts.js';
+import { Chain } from '../../../src/chain/chain.js';
+import { bufferedGasLimit } from '../../../src/chain/gas.js';
+import { loadProfile } from '../../../src/profiles/profile.js';
+import type { ResolvedChainSection } from '../../../src/profiles/types.js';
 import {
   ANVIL_MNEMONIC,
   CHAIN_PROFILES,
@@ -23,7 +24,7 @@ import {
   readReport,
   runCli,
   scenarioOf,
-} from '../helpers.js';
+} from '../../helpers.js';
 
 const section: ResolvedChainSection = loadProfile('fx-anvil', { profilesDir: CHAIN_PROFILES }).chain!;
 const counterArtifact = loadArtifact(COUNTER_ARTIFACT);

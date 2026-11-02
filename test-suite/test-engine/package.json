@@ -20,8 +20,11 @@
     "build": "rm -rf dist && tsc -p tsconfig.json",
     "tsc": "tsc --noEmit -p tsconfig.json",
     "engine": "node dist/src/cli/main.js",
-    "test": "node --test --test-reporter=spec \"dist/test/**/*.test.js\"",
-    "test:chain": "sh test/anvil/run.sh",
+    "test": "node --test --test-reporter=spec \"dist/test/unit/**/*.test.js\" \"dist/test/integration/cli/**/*.test.js\"",
+    "test:unit": "node --test --test-reporter=spec \"dist/test/unit/**/*.test.js\"",
+    "test:integration": "npm run test:integration:cli && npm run test:integration:chain",
+    "test:integration:cli": "node --test --test-reporter=spec \"dist/test/integration/cli/**/*.test.js\"",
+    "test:integration:chain": "sh test/integration/chain/run.sh",
     "prettier": "prettier --write \"**/*.{json,md,ts,yml,yaml}\"",
     "prettier:check": "prettier --check \"**/*.{json,md,ts,yml,yaml}\""
   },

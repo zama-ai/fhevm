@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { EVIDENCE_MEDIA_TYPE, Evidence } from '../src/api/evidence.js';
-import { createRedactor } from '../src/secrets/redactor.js';
+import { EVIDENCE_MEDIA_TYPE, Evidence } from '../../src/api/evidence.js';
+import { createRedactor } from '../../src/secrets/redactor.js';
 
 const fixedNow = () => new Date('2026-10-06T12:00:00.000Z');
 

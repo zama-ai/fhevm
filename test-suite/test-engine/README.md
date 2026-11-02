@@ -41,6 +41,34 @@ npm run engine -- dry-run --profile testnet   # what would run on the TestNet, a
 | **Profile**          | A target environment (`none`, `local`, `devnet`, `testnet`, `mainnet`): its settings and whether it requires confirmation.                 |
 | **Support code**     | The TypeScript step definitions (and optional World) of a scenario.                                                                        |
 
+## Repository layout
+
+`scenarios/` holds the tests the engine runs (the product). `test/` holds the engine's own tests: they check the engine itself, and their fixtures are inputs to the engine, many of them broken on purpose.
+
+```
+test-engine/
+├── src/                      # the engine
+├── schema/                   # JSON Schemas of scenario.yaml and profile files
+├── profiles/                 # target environments: local, devnet, testnet, mainnet
+├── scenarios/                # scenarios run by `npm run engine -- run` (default --scenarios-dir)
+│   └── smoke/                #   engine regression scenario, no dependency on the stack
+└── test/                     # tests of the engine itself (node:test), never run by the engine
+    ├── unit/                 #   modules called in process; no external service
+    ├── integration/
+    │   ├── cli/              #   the compiled CLI run as a process against the fixtures; no Docker
+    │   └── chain/            #   Chain module and chain scenarios against a throwaway Anvil (Docker)
+    ├── fixtures/             #   scenarios, profiles and contracts used as engine inputs
+    └── helpers.ts
+```
+
+| Command                          | Runs                                     | Needs              |
+| -------------------------------- | ---------------------------------------- | ------------------ |
+| `npm test`                       | `test/unit/` and `test/integration/cli/` | a build            |
+| `npm run test:unit`              | `test/unit/`                             | a build            |
+| `npm run test:integration:cli`   | `test/integration/cli/`                  | a build            |
+| `npm run test:integration:chain` | `test/integration/chain/`                | a build and Docker |
+| `npm run test:integration`       | both integration suites                  | a build and Docker |
+
 ## Adding a scenario
 
 1. Create a folder under `scenarios/`, e.g. `scenarios/my-area/my-scenario/`.
@@ -407,13 +435,15 @@ flowchart LR
 ## Development
 
 ```bash
-npm run build          # clean build to dist/
-npm test               # node:test suites (unit + CLI integration), on the compiled output; no Docker
-npm run test:chain     # Chain module tests against a throwaway Anvil container (needs Docker and a build)
-npm run tsc            # type-check only
-npm run prettier:check # formatting (same rules as the repository root)
+npm run build                  # clean build to dist/
+npm test                       # unit + CLI integration tests, on the compiled output; no Docker
+npm run test:integration:chain # Chain integration tests against a throwaway Anvil container (needs Docker)
+npm run tsc                    # type-check only
+npm run prettier:check         # formatting (same rules as the repository root)
 ```
 
-The CLI integration tests run the engine against `test/fixtures/scenarios/` with the fixture profiles of `test/fixtures/profiles/`. The fixtures cover passing, failing, undefined, ambiguous and unparsable scenarios, crashes at import, step and scenario timeouts, disabled scenarios, isolation, runtime skips (step, hook, after a failing hook), Worlds not extending `EngineWorld`, missing settings, planner skips (targets, confirmation), evidence from steps and hooks, and secret redaction across every output. `test/fixtures/invalid-scenarios/` and `test/fixtures/invalid-profiles/` hold deliberately invalid files.
+See [Repository layout](#repository-layout) for every test command.
 
-`npm run test:chain` starts the Anvil node of [`test/anvil/compose.yaml`](test/anvil/compose.yaml) (chain ID 31337, host port 8545, or `TE_ANVIL_PORT`), runs `test/anvil/*.anvil.ts`, and always removes the container. Those tests use the `fx-anvil` profile of `test/fixtures/chain-profiles/`, the scenarios of `test/fixtures/chain-scenarios/` and the `Counter` contract of `test/fixtures/contracts/`, whose compiled artifact is committed. They cover deployment, transactions, the gas buffer, reverted and rejected transactions, the chain ID check, an unreachable RPC, and full engine runs with `chain.*` evidence and no mnemonic in any output.
+The CLI integration tests (`test/integration/cli/`) run the engine against `test/fixtures/scenarios/` with the fixture profiles of `test/fixtures/profiles/`. The fixtures cover passing, failing, undefined, ambiguous and unparsable scenarios, crashes at import, step and scenario timeouts, disabled scenarios, isolation, runtime skips (step, hook, after a failing hook), Worlds not extending `EngineWorld`, missing settings, planner skips (targets, confirmation), evidence from steps and hooks, and secret redaction across every output. `test/fixtures/invalid-scenarios/` and `test/fixtures/invalid-profiles/` hold deliberately invalid files.
+
+`npm run test:integration:chain` starts the Anvil node of [`test/integration/chain/compose.yaml`](test/integration/chain/compose.yaml) (chain ID 31337, host port 8545, or `TE_ANVIL_PORT`), runs `test/integration/chain/*.test.ts`, and always removes the container. Those tests use the `fx-anvil` profile of `test/fixtures/chain-profiles/`, the scenarios of `test/fixtures/chain-scenarios/` and the `Counter` contract of `test/fixtures/contracts/`, whose compiled artifact is committed. They cover deployment, transactions, the gas buffer, reverted and rejected transactions, the chain ID check, an unreachable RPC, and full engine runs with `chain.*` evidence and no mnemonic in any output.

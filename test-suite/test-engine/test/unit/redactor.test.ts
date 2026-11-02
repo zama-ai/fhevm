@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { RedactingLineBuffer, createRedactor } from '../src/secrets/redactor.js';
+import { RedactingLineBuffer, createRedactor } from '../../src/secrets/redactor.js';
 
 const SECRET = 'p@ss word/"quoted"';
 
