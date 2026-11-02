@@ -124,7 +124,7 @@ fail the run.
 | **fhevm images** | `coprocessor_version`, `kms_connector_version`, `test_suite_version`, … | Resolve from the change-detection base commit (built components use the PR/dispatch SHA). |
 | **In-repo charts** | `coprocessor_chart_version`, `contracts_chart_version`, … | Install `charts/<name>` from the workflow checkout. |
 | **External pins** | `common_chart_version`, `kms_core_version`, `kms_repo_ref`, `redis_chart_version`, … | Always the pins in `parse-overrides.cjs` (`ALWAYS_DEFAULTS`). **Not** resolved from the fhevm base commit. |
-| **Relayer SDK** | `relayer_sdk_version` | PR: empty → `@fhevm/sdk` only. Dispatch: `0.4.4` when omitted; set `""` in `overrides` to skip the relayer-sdk suite. |
+| **Relayer SDK** | `relayer_sdk_version` | Empty → `@fhevm/sdk` only. Dispatch: set it (e.g. `--set relayer_sdk_version=0.4.4`) to also run the `@zama-fhe/relayer-sdk` suite. |
 
 **Dedicated KMS (`zama-ai/kms`)** — never built by this workflow. Party count
 is **`nb_kms_core`** (`4` or `13`), not an override. Version is two override
@@ -293,8 +293,8 @@ kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost
 ## See test results
 
 - **With auto-tests** (`preview-env-e2e-tests` label or `automated_tests=true`):
-  the workflow runs the e2e DAG for both `@fhevm/sdk` and `@zama-fhe/relayer-sdk`
-  and posts a per-test pass/fail table to the PR comment / run summary.
+  the workflow runs the `@fhevm/sdk` e2e DAG (plus `@zama-fhe/relayer-sdk` when
+  `relayer_sdk_version` is set) and posts a per-test pass/fail table to the PR comment / run summary.
   Combined with `preview-env-blue-green`, that DAG runs **twice**: once during
   `DryRunStarted` (BCS live; CI asserts each party's `"gcs-<release>".computations`
   is non-empty) and once after cutover (`versioning=v0.15`, GCS live).

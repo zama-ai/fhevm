@@ -143,7 +143,7 @@ on:
           - "4"
           - "13"
       overrides:
-        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. Dispatch default for relayer_sdk_version is 0.4.4 when omitted."
+        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. relayer_sdk_version (e.g. 0.4.4) also runs the @zama-fhe/relayer-sdk e2e suite; empty by default."
         required: false
         default: ""
       deploy_polygon:
@@ -185,8 +185,7 @@ permissions: {}
 # change-detection base commit - a preview deploys what the branch actually
 # runs, not a hand-maintained release that has quietly gone stale. Version
 # and chart pins come from check-labels' overrides_json (empty image pins on
-# pull_request; dispatch may set them via the overrides input). Do not put
-# relayer_sdk_version=0.4.4 here: PRs must stay empty so only @fhevm/sdk runs.
+# pull_request; dispatch may set them via the overrides input).
 ##############################################################################
 env:
   # How far back from the base commit to look for a published image before
@@ -211,8 +210,8 @@ env:
   # environment runs. Deploy overwrites these from overrides_json.
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
-  # Empty at workflow level: PR runs stay @fhevm/sdk only. Dispatch default
-  # 0.4.4 is applied in parse-overrides.cjs when EVENT_NAME=workflow_dispatch.
+  # Empty: only @fhevm/sdk runs. Set relayer_sdk_version in overrides to add
+  # the @zama-fhe/relayer-sdk suite.
   RELAYER_SDK_VERSION: ""
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
@@ -737,7 +736,7 @@ jobs:
       # can force shared Geth/Nitro (inputs.* is empty on pull_request).
       CHAIN_MODE: ${{ needs.check-labels.outputs.chain_mode }}
       # Pins from parse-overrides (always-defaults + dispatch overrides).
-      # RELAYER_SDK_VERSION stays empty on PR so only @fhevm/sdk runs.
+      # RELAYER_SDK_VERSION is empty unless set in overrides, so only @fhevm/sdk runs.
       CONTRACTS_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).contracts_chart_version }}
       COPROCESSOR_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).coprocessor_chart_version }}
       KMS_CONNECTOR_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).kms_connector_chart_version }}

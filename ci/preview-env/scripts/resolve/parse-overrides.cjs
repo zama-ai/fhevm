@@ -3,7 +3,7 @@
 // Env: OVERRIDES_RAW (string JSON or empty), EVENT_NAME, GITHUB_OUTPUT,
 // BCS_KMS_CORE_TAG (set only for an RFC-021 pair with the pinned Blue).
 // Unknown keys fail. Empty / {} means resolve as today.
-// Dispatch-only default: relayer_sdk_version=0.4.4 (PR stays empty → @fhevm/sdk only).
+// relayer_sdk_version is empty unless set, so only @fhevm/sdk runs.
 // BCS_KMS_CORE_TAG replaces the kms_repo_ref / kms_core_version defaults, so
 // keys come from Blue's kms release; explicit overrides still win.
 
@@ -71,7 +71,6 @@ if (raw && raw !== "{}") {
   }
 }
 
-const isDispatch = process.env.EVENT_NAME === "workflow_dispatch";
 const out = {};
 for (const key of ALLOWED) {
   const hasKey = Object.prototype.hasOwnProperty.call(parsed, key);
@@ -81,9 +80,6 @@ for (const key of ALLOWED) {
   } else if (ALWAYS_DEFAULTS[key]) {
     // Empty or omitted → workflow pin (same as `inputs.x || 'pin'`).
     out[key] = ALWAYS_DEFAULTS[key];
-  } else if (isDispatch && key === "relayer_sdk_version" && !hasKey) {
-    // Omitted on dispatch → 0.4.4. Explicit "" skips the relayer-sdk suite.
-    out[key] = "0.4.4";
   } else {
     out[key] = "";
   }
