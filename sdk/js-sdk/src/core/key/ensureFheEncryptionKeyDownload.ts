@@ -1,6 +1,6 @@
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
-import type { FhevmBase, OptionalNativeClient } from '../types/coreFhevmClient.js';
+import type { FhevmBase, OptionalNativeClient, ResolvedFhevmOptions } from '../types/coreFhevmClient.js';
 import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { FetchFheEncryptionKeyBytesParameters } from '../modules/relayer/types.js';
@@ -15,8 +15,8 @@ import {
 } from '../runtime/CoreFhevm-p.js';
 import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 import {
-  assertKeyVerificationConfig,
   requiresKeyVerification,
+  resolveKmsGeneration,
   verifyFheEncryptionKeyBytes,
 } from './verifyFheEncryptionKeyBytes-p.js';
 
@@ -34,18 +34,33 @@ type CheckedFheEncryptionKey = {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * The client's slot in the global key cache: the relayer URL, or
- * `placeholder:<relayer URL>` for a relayer module that serves placeholder key
- * material, so a client that checks keys never reads unchecked ones.
+ * The client's slot in the global key cache: the relayer URL, then what the
+ * key is checked against:
+ * - `<relayer URL>|kmsgen:<chain id>:<address>`: the KMSGeneration contract;
+ * - `<relayer URL>|unverified`: nothing (see
+ *   `skipsFheEncryptionKeyVerification`); clients that check keys never
+ *   read it.
  *
+ * Clients share a slot only when they name the same relayer and
+ * KMSGeneration, so a wrong setting evicts only its own slot. A client
+ * whose RPC returns other state for that same contract (e.g. a fork)
+ * still shares the slot and can evict it. Neither suffix contains `|`, so
+ * two different slots never give the same string.
+ *
+ * @throws {FhevmConfigError} when the client cannot check key material.
  * @internal
  */
 export function getFheEncryptionKeySlot(context: {
   readonly chain: FhevmChain;
   readonly runtime: FhevmRuntime;
+  readonly options: Pick<ResolvedFhevmOptions, 'keyVerification'>;
 }): string {
   const relayerUrl = context.chain.fhevm.relayerUrl;
-  return requiresKeyVerification(context.runtime) ? relayerUrl : `placeholder:${relayerUrl}`;
+  if (!requiresKeyVerification(context.runtime)) {
+    return `${relayerUrl}|unverified`;
+  }
+  const { chainId, address } = resolveKmsGeneration(context);
+  return `${relayerUrl}|kmsgen:${chainId}:${address}`;
 }
 
 /**
@@ -95,12 +110,8 @@ export async function ensureFheEncryptionKeyDownload(
     throw providedError;
   }
 
+  // Checks the client's own setup, even when another client filled the cache.
   const key = getFheEncryptionKeySlot(context);
-
-  // The client's own setup, even when another client filled the cache.
-  if (requiresKeyVerification(runtime)) {
-    assertKeyVerificationConfig(context);
-  }
 
   const provided = getProvidedFheEncryptionKey(context);
   if (provided !== undefined) {
@@ -167,9 +178,8 @@ async function _checkCachedFheEncryptionKey(
     await _checkFheEncryptionKeyBytes(context, bytes);
   } catch (e) {
     if (e instanceof FheEncryptionKeyVerificationError) {
-      // Accepted trade-off: a client with a wrong KMSGeneration address evicts
-      // good bytes, and the other clients download them again. Not reachable
-      // with the shipped chain definitions.
+      // Clients on this slot check against the same KMSGeneration, so they
+      // reject these bytes too (unless their RPC serves other chain state).
       globalFheEncryptionKeyCache.evict(key, entry);
     }
     throw e;

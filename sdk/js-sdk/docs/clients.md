@@ -114,7 +114,7 @@ const client = createFhevmClient({
 | ----------------- | ----------------------- | ----------------- | ----------------------------------------------------------------- |
 | `batchRpcCalls`   | `boolean`               | all clients       | Coalesce the client's contract reads into batched RPC calls.      |
 | `fheEncryptionKey`| `FheEncryptionKeyBytes` | encrypt / full    | Preloads the public key and CRS so the client skips the download. Checked once, before the client is ready (see [Key verification](#key-verification)). |
-| `keyVerification` | `FhevmKeyVerification` (`{ chain, client }`) | all clients | Required when the host chain is not Ethereum: an Ethereum chain definition and a client for it, used to verify the FHE public key and CRS. |
+| `keyVerification` | `FhevmKeyVerification` (`{ chain, client }`) | all clients | Required when the host chain is not Ethereum: an Ethereum chain definition and a client for it, used to verify the FHE public key and CRS. On Ethereum it is optional; when set, its chain must have the host chain's own KMSGeneration contract, else creating an encrypt client fails (other clients fail when they fetch the key). |
 
 The encryption-key cache is covered in
 [Runtime configuration](runtime-configuration.md).
@@ -135,7 +135,7 @@ The encryption-key cache is covered in
   never uses the Relayer's key instead. Create a new client with a valid key,
   or without one.
 - Network errors are thrown as they are; the next call retries.
-- Cleartext mode serves a placeholder key and skips the check.
+- Cleartext mode serves filler key bytes and skips the check.
 
 The Relayer returns the URLs of the FHE public key and CRS. Before using them,
 the SDK checks their digests (SHAKE256), and ids when the Relayer serves a

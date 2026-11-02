@@ -84,8 +84,9 @@ function _assertWasmIsTerminal(entry: CacheEntry): void {
 /**
  * Global cache for FHE public key parameters.
  *
- * Keyed by slot key: the relayer URL, or `placeholder:<relayer URL>` for
- * placeholder keys (see {@link getFheEncryptionKeySlot}). Each entry is a
+ * Keyed by slot key: the relayer URL, then the KMSGeneration contract the key
+ * is checked against, or `unverified` for never-verified keys (see
+ * {@link getFheEncryptionKeySlot}). Each entry is a
  * live mutable placeholder that callers hold a reference to and observe state
  * changes across awaits.
  */

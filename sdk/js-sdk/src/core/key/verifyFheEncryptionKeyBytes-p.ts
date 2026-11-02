@@ -32,10 +32,14 @@ import { FheEncryptionKeyVerificationError } from '../errors/FheEncryptionKeyVer
 
 type Context = FhevmBase<FhevmChain, FhevmRuntime, OptionalNativeClient>;
 
-type KmsGenerationSource = {
-  readonly address: ChecksummedAddress;
-  readonly trustedClient: TrustedClient;
+/** A `KMSGeneration` contract: Ethereum chain id and checksummed address. */
+export type KmsGenerationRef = {
   readonly chainId: number;
+  readonly address: ChecksummedAddress;
+};
+
+type KmsGenerationSource = KmsGenerationRef & {
+  readonly trustedClient: TrustedClient;
   /** The `keyVerification` client: its chain id is checked before any of its results is trusted. */
   readonly checkChainId: boolean;
 };
@@ -67,11 +71,11 @@ const digestsByBytes = new WeakMap<FheEncryptionKeyBytes, Digests>();
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * `false` only for a relayer module that serves placeholder key material
- * (cleartext mode, no FHE): every other key is checked before use.
+ * `false` only for a relayer module that skips the key check (see
+ * `skipsFheEncryptionKeyVerification`): every other key is checked.
  */
 export function requiresKeyVerification(runtime: FhevmRuntime): boolean {
-  return runtime.relayer.servesPlaceholderFheEncryptionKey !== true;
+  return runtime.relayer.skipsFheEncryptionKeyVerification !== true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -79,9 +83,8 @@ export function requiresKeyVerification(runtime: FhevmRuntime): boolean {
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Checks, without any RPC call, that the client can verify key material:
- * either the host chain is Ethereum (its definition has `kmsGeneration`), or
- * `keyVerification` names an Ethereum chain definition.
+ * Checks, without any RPC call, that the client can verify key material
+ * (see {@link resolveKmsGeneration}).
  *
  * @throws {FhevmConfigError}
  */
@@ -89,12 +92,40 @@ export function assertKeyVerificationConfig(context: {
   readonly chain: FhevmChain;
   readonly options: ResolvedFhevmOptions;
 }): void {
-  if (context.chain.fhevm.contracts.kmsGeneration !== undefined) {
-    return;
-  }
+  resolveKmsGeneration(context);
+}
+
+/**
+ * The `KMSGeneration` contract the client checks key material against, without
+ * any RPC call. It comes from the host chain definition (Ethereum) and/or
+ * `options.keyVerification.chain`: one is used as is, two must name the same
+ * contract. The address is checksummed, so equal contracts give equal values.
+ *
+ * @throws {FhevmConfigError} when there is none, when `keyVerification.chain`
+ * has none, or when the two disagree.
+ */
+export function resolveKmsGeneration(context: {
+  readonly chain: FhevmChain;
+  readonly options: Pick<ResolvedFhevmOptions, 'keyVerification'>;
+}): KmsGenerationRef {
+  const hostKmsGeneration = context.chain.fhevm.contracts.kmsGeneration;
+  const host =
+    hostKmsGeneration === undefined ? undefined : _kmsGenerationRef(context.chain.id, hostKmsGeneration.address);
 
   const keyVerification = context.options.keyVerification;
-  if (keyVerification === undefined) {
+  let option: KmsGenerationRef | undefined;
+  if (keyVerification !== undefined) {
+    const kmsGeneration = keyVerification.chain.fhevm.contracts.kmsGeneration;
+    if (kmsGeneration === undefined) {
+      throw new FhevmConfigError({
+        message: `'options.keyVerification.chain' (chain ${keyVerification.chain.id}) has no KMSGeneration contract.`,
+      });
+    }
+    option = _kmsGenerationRef(keyVerification.chain.id, kmsGeneration.address);
+  }
+
+  const ref = host ?? option;
+  if (ref === undefined) {
     throw new FhevmConfigError({
       message:
         `Chain ${context.chain.id} has no KMSGeneration contract to verify the FHE public key and CRS against: ` +
@@ -102,12 +133,18 @@ export function assertKeyVerificationConfig(context: {
         `connected to Ethereum.`,
     });
   }
-
-  if (keyVerification.chain.fhevm.contracts.kmsGeneration === undefined) {
+  if (option !== undefined && (option.chainId !== ref.chainId || option.address !== ref.address)) {
     throw new FhevmConfigError({
-      message: `'options.keyVerification.chain' (chain ${keyVerification.chain.id}) has no KMSGeneration contract.`,
+      message:
+        `'options.keyVerification' names KMSGeneration ${option.address} on chain ${option.chainId}, but chain ` +
+        `${ref.chainId} has its own, ${ref.address}: remove 'options.keyVerification' or make it match.`,
     });
   }
+  return ref;
+}
+
+function _kmsGenerationRef(chainId: number, address: string): KmsGenerationRef {
+  return { chainId, address: addressToChecksummedAddress(asAddress(address)) };
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -217,39 +254,23 @@ export async function verifyFheEncryptionKeyBytes(
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Picks the KMSGeneration contract and the client to read it with: the host
- * chain's when it is Ethereum, else the `keyVerification` one.
+ * The KMSGeneration contract (see {@link resolveKmsGeneration}) and the client
+ * to read it with: the `keyVerification` client when set, else the host client
+ * (the contract is then on the host chain).
  */
 function _resolveKmsGenerationSource(context: Context): KmsGenerationSource {
-  assertKeyVerificationConfig(context);
-
-  const hostKmsGeneration = context.chain.fhevm.contracts.kmsGeneration;
-  if (hostKmsGeneration !== undefined) {
-    if (context.client === undefined) {
-      throw new FhevmConfigError({
-        message: 'A host-chain client is required to verify the FHE public key and CRS against KMSGeneration.',
-      });
-    }
-    return {
-      address: addressToChecksummedAddress(asAddress(hostKmsGeneration.address)),
-      trustedClient: asCoreClientFhevm(context).trustedClient,
-      chainId: context.chain.id,
-      checkChainId: false,
-    };
-  }
+  const ref = resolveKmsGeneration(context);
 
   const kv = context.options.keyVerification;
-  const kmsGeneration = kv?.chain.fhevm.contracts.kmsGeneration;
-  if (kv === undefined || kmsGeneration === undefined) {
-    // Unreachable: checked by assertKeyVerificationConfig
-    throw new FhevmConfigError({ message: "Missing 'options.keyVerification'." });
+  if (kv !== undefined) {
+    return { ...ref, trustedClient: kv.trustedClient, checkChainId: true };
   }
-  return {
-    address: addressToChecksummedAddress(asAddress(kmsGeneration.address)),
-    trustedClient: kv.trustedClient,
-    chainId: kv.chain.id,
-    checkChainId: true,
-  };
+  if (context.client === undefined) {
+    throw new FhevmConfigError({
+      message: 'A host-chain client is required to verify the FHE public key and CRS against KMSGeneration.',
+    });
+  }
+  return { ...ref, trustedClient: asCoreClientFhevm(context).trustedClient, checkChainId: false };
 }
 
 /**

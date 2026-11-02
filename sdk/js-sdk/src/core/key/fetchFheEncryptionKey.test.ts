@@ -15,7 +15,7 @@ import { fetchFheEncryptionKeyWasm } from './fetchFheEncryptionKey.js';
 // The key check is not under test here (see verifyFheEncryptionKeyBytes-p.test.ts).
 vi.mock('./verifyFheEncryptionKeyBytes-p.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./verifyFheEncryptionKeyBytes-p.js')>()),
-  assertKeyVerificationConfig: () => undefined,
+  resolveKmsGeneration: () => ({ chainId: 1, address: '0x0000000000000000000000000000000000000001' }),
   verifyFheEncryptionKeyBytes: async (_context: unknown, bytes: FheEncryptionKeyBytes) => bytes,
 }));
 

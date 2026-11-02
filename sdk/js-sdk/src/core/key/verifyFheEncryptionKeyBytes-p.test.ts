@@ -4,7 +4,7 @@ import type { EncryptModuleFactory } from '../modules/encrypt/types.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
 import type { Fhevm, FhevmKeyVerification } from '../types/coreFhevmClient.js';
-import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
+import type { FhevmRuntime, WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { Bytes, BytesHex, ChecksummedAddress, UintNumber } from '../types/primitives.js';
 import type { Auth } from '../types/auth.js';
 import { readFileSync } from 'node:fs';
@@ -31,6 +31,7 @@ import { assertKeyVerificationConfig, verifyFheEncryptionKeyBytes } from './veri
 import { fetchFheEncryptionKeyBytes } from './fetchFheEncryptionKeyBytes.js';
 import { fetchFheEncryptionKeyBytes as fetchFheEncryptionKeyBytesAction } from '../actions/chain/fetchFheEncryptionKeyBytes.js';
 import { globalFheEncryptionKeyCache, type CacheEntry } from './FheEncryptionKeyCache-p.js';
+import { getFheEncryptionKeySlot } from './ensureFheEncryptionKeyDownload.js';
 import { encrypt } from '../coprocessor/encrypt.js';
 import { createTypedValue } from '../base/typedValue.js';
 import { getHostContractVersion, invalidateVersionCache } from '../host-contracts/HostContractVersion-p.js';
@@ -90,6 +91,30 @@ const otherHostChain: FhevmChain = {
   ...polygonAmoy,
   fhevm: { ...polygonAmoy.fhevm, relayerUrl: 'https://relayer.test' },
 };
+
+// Sepolia with another chain id and/or KMSGeneration address.
+function sepoliaWith(parameters: { readonly id?: number; readonly kmsGeneration?: string }): FhevmChain {
+  const address = parameters.kmsGeneration ?? sepolia.fhevm.contracts.kmsGeneration?.address ?? '';
+  return {
+    ...sepolia,
+    id: parameters.id ?? sepolia.id,
+    fhevm: { ...sepolia.fhevm, contracts: { ...sepolia.fhevm.contracts, kmsGeneration: { address } } },
+  } as FhevmChain;
+}
+const SEPOLIA_KMS_GENERATION = sepolia.fhevm.contracts.kmsGeneration?.address ?? '';
+
+// The cache slot of a client checking keys against sepolia's KMSGeneration.
+const SLOT = getFheEncryptionKeySlot({
+  chain: ethereumChain,
+  runtime: { relayer: {} } as FhevmRuntime,
+  options: { keyVerification: undefined },
+});
+// The cache slot of a relayer module that skips the key check.
+const UNVERIFIED_SLOT = getFheEncryptionKeySlot({
+  chain: ethereumChain,
+  runtime: { relayer: { skipsFheEncryptionKeyVerification: true } } as FhevmRuntime,
+  options: { keyVerification: undefined },
+});
 
 type Handlers = Record<string, (parameters: { readonly args: readonly unknown[] }) => unknown>;
 
@@ -218,6 +243,30 @@ describe('assertKeyVerificationConfig', () => {
       keyVerification: { chain: otherHostChain, client: {} },
     });
     expect(() => assertKeyVerificationConfig(client)).toThrow(/has no KMSGeneration contract/);
+  });
+
+  it('accepts an Ethereum host chain whose keyVerification names its own KMSGeneration, with a lowercase address', () => {
+    const { client } = makeClient({
+      chain: ethereumChain,
+      handlers: {},
+      keyVerification: { chain: sepoliaWith({ kmsGeneration: SEPOLIA_KMS_GENERATION.toLowerCase() }), client: {} },
+    });
+    expect(() => assertKeyVerificationConfig(client)).not.toThrow();
+  });
+
+  it.each([
+    { name: 'another chain id, same address', chain: sepoliaWith({ id: 1 }) },
+    { name: 'same chain id, another address', chain: sepoliaWith({ kmsGeneration: `0x${'2'.padStart(40, '0')}` }) },
+  ])('rejects an Ethereum host chain whose keyVerification names another KMSGeneration ($name)', ({ chain }) => {
+    const { client } = makeClient({ chain: ethereumChain, handlers: {}, keyVerification: { chain, client: {} } });
+    let error: unknown;
+    try {
+      assertKeyVerificationConfig(client);
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(FhevmConfigError);
+    expect((error as Error).message).toMatch(/names KMSGeneration .*, but chain 11155111 has its own/);
   });
 });
 
@@ -527,10 +576,13 @@ describe('verifyFheEncryptionKeyBytes', () => {
     await expect(verifyFheEncryptionKeyBytes(client, keyBytes())).rejects.toThrow(/Invalid contract name/);
   });
 
-  it('reads KMSGeneration through the keyVerification client on another host chain', async () => {
+  it.each([
+    { name: 'another host chain', chain: otherHostChain },
+    { name: 'Ethereum, when set', chain: ethereumChain },
+  ])('reads KMSGeneration through the keyVerification client, its chain id checked ($name)', async ({ chain }) => {
     const ethereumClient = { name: 'ethereum' };
-    const { client, readClients } = makeClient({
-      chain: otherHostChain,
+    const { client, readClients, getChainId } = makeClient({
+      chain,
       handlers: kmsGenerationHandlers(),
       keyVerification: { chain: sepolia, client: ethereumClient },
     });
@@ -538,6 +590,7 @@ describe('verifyFheEncryptionKeyBytes', () => {
     await expect(verifyFheEncryptionKeyBytes(client, keyBytes())).resolves.toBeDefined();
     expect(readClients.length).toBeGreaterThan(0);
     expect(readClients.every((c) => c === ethereumClient)).toBe(true);
+    expect(getChainId).toHaveBeenCalled();
   });
 
   it('rejects a keyVerification client connected to another chain as a config error', async () => {
@@ -711,7 +764,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
 
     await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).resolves.toBeDefined();
     expect(fetchFheEncryptionKeyBytesFn).toHaveBeenCalledOnce();
-    expect(globalFheEncryptionKeyCache.has('https://relayer.test')).toBe(true);
+    expect(globalFheEncryptionKeyCache.has(SLOT)).toBe(true);
   });
 
   it('never caches bytes that fail the check', async () => {
@@ -723,7 +776,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
     await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toThrow(
       FheEncryptionKeyVerificationError,
     );
-    expect(globalFheEncryptionKeyCache.has('https://relayer.test')).toBe(false);
+    expect(globalFheEncryptionKeyCache.has(SLOT)).toBe(false);
   });
 
   it('checks caller-provided bytes instead of downloading', async () => {
@@ -736,7 +789,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
 
     await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toThrow(/digest mismatch/);
     expect(fetchFheEncryptionKeyBytesFn).not.toHaveBeenCalled();
-    expect(globalFheEncryptionKeyCache.has('https://relayer.test')).toBe(false);
+    expect(globalFheEncryptionKeyCache.has(SLOT)).toBe(false);
   });
 
   it('uses caller-provided bytes once verified, then refetches from the relayer', async () => {
@@ -752,7 +805,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
     expect(fetchFheEncryptionKeyBytesFn).not.toHaveBeenCalled();
     expect(getProvidedFheEncryptionKey(client)).toBeUndefined();
 
-    globalFheEncryptionKeyCache.remove('https://relayer.test');
+    globalFheEncryptionKeyCache.remove(SLOT);
     await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).resolves.not.toBe(provided);
     expect(fetchFheEncryptionKeyBytesFn).toHaveBeenCalledOnce();
   });
@@ -762,8 +815,8 @@ describe('fetchFheEncryptionKeyBytes', () => {
     async (relayerUrl) => {
       const { client: other } = makeClient({ chain: ethereumChain, handlers: {} });
       const cached = keyBytes();
-      globalFheEncryptionKeyCache.setBytes(other.runtime, 'https://relayer.test', 'https://relayer.test', cached);
-      const entry = globalFheEncryptionKeyCache.get('https://relayer.test');
+      globalFheEncryptionKeyCache.setBytes(other.runtime, SLOT, 'https://relayer.test', cached);
+      const entry = globalFheEncryptionKeyCache.get(SLOT);
       const provided = { ...keyBytes(), metadata: { relayerUrl, chainId: 0 } };
 
       expect(() => makeClient({ chain: ethereumChain, handlers: {}, fheEncryptionKey: provided })).toThrow(
@@ -772,8 +825,8 @@ describe('fetchFheEncryptionKeyBytes', () => {
       expect(() => makeClient({ chain: ethereumChain, handlers: {}, fheEncryptionKey: provided })).toThrow(
         /must originate from the same relayer/,
       );
-      expect(globalFheEncryptionKeyCache.get('https://relayer.test')).toBe(entry);
-      await expect(cachedBytes('https://relayer.test')).resolves.toBe(cached);
+      expect(globalFheEncryptionKeyCache.get(SLOT)).toBe(entry);
+      await expect(cachedBytes(SLOT)).resolves.toBe(cached);
     },
   );
 
@@ -793,7 +846,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
 
     // After the check: the cache does not share the caller's arrays.
     flipFirstByte(provided.crsBytes.bytes);
-    await expect(cachedBytes('https://relayer.test')).resolves.toEqual(keyBytes());
+    await expect(cachedBytes(SLOT)).resolves.toEqual(keyBytes());
   });
 
   it('returns a copy from the fetchFheEncryptionKeyBytes action: changing it leaves the cache as is', async () => {
@@ -805,7 +858,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
     flipFirstByte(returned.publicKeyBytes.bytes);
     flipFirstByte(returned.crsBytes.bytes);
 
-    await expect(cachedBytes('https://relayer.test')).resolves.toEqual(keyBytes());
+    await expect(cachedBytes(SLOT)).resolves.toEqual(keyBytes());
     await expect(fetchFheEncryptionKeyBytesAction(client)).resolves.toEqual(keyBytes());
   });
 
@@ -828,7 +881,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
     await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toBe(error);
     expect(readContract).toHaveBeenCalledTimes(reads);
     expect(fetchFheEncryptionKeyBytesFn).not.toHaveBeenCalled();
-    expect(globalFheEncryptionKeyCache.has('https://relayer.test')).toBe(false);
+    expect(globalFheEncryptionKeyCache.has(SLOT)).toBe(false);
   });
 
   it('keeps caller-provided bytes after a network error: the next call checks them again', async () => {
@@ -848,14 +901,14 @@ describe('fetchFheEncryptionKeyBytes', () => {
     });
 
     await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toBe(networkError);
-    expect(globalFheEncryptionKeyCache.has('https://relayer.test')).toBe(false);
+    expect(globalFheEncryptionKeyCache.has(SLOT)).toBe(false);
     const reads = readContract.mock.calls.length;
 
     fail = false;
     await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).resolves.toEqual(keyBytes());
     expect(readContract.mock.calls.length).toBeGreaterThan(reads);
     expect(fetchFheEncryptionKeyBytesFn).not.toHaveBeenCalled();
-    await expect(cachedBytes('https://relayer.test')).resolves.toEqual(keyBytes());
+    await expect(cachedBytes(SLOT)).resolves.toEqual(keyBytes());
   });
 
   describe('caller-provided bytes when the cache already holds the key', () => {
@@ -866,7 +919,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
 
     it('rejects stale provided bytes, as on an empty cache, and never falls back to the cached key', async () => {
       await warmCache();
-      const entry = globalFheEncryptionKeyCache.get('https://relayer.test');
+      const entry = globalFheEncryptionKeyCache.get(SLOT);
       const { client, fetchFheEncryptionKeyBytesFn } = makeClient({
         chain: ethereumChain,
         handlers: kmsGenerationHandlers(),
@@ -875,7 +928,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
 
       const error = await fetchFheEncryptionKeyBytes(client, { fhevmContext }).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(FheEncryptionKeyVerificationError);
-      expect(globalFheEncryptionKeyCache.get('https://relayer.test')).toBe(entry);
+      expect(globalFheEncryptionKeyCache.get(SLOT)).toBe(entry);
 
       await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toBe(error);
       expect(fetchFheEncryptionKeyBytesFn).not.toHaveBeenCalled();
@@ -884,7 +937,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
     it('checks the provided bytes once for concurrent calls on a client', async () => {
       const { client: other } = makeClient({ chain: ethereumChain, handlers: {} });
       const stale = keyBytes({ crs: CRS.slice(1) as Bytes });
-      globalFheEncryptionKeyCache.setBytes(other.runtime, 'https://relayer.test', 'https://relayer.test', stale);
+      globalFheEncryptionKeyCache.setBytes(other.runtime, SLOT, 'https://relayer.test', stale);
       const { client, readContract } = makeClient({
         chain: ethereumChain,
         handlers: kmsGenerationHandlers(),
@@ -930,7 +983,7 @@ describe('fetchFheEncryptionKeyBytes', () => {
 
     it('uses the cached entry for provided bytes identical to the cached ones, still checked, then releases them', async () => {
       const cached = await warmCache();
-      const entry = globalFheEncryptionKeyCache.get('https://relayer.test');
+      const entry = globalFheEncryptionKeyCache.get(SLOT);
       const { client, readContract, fetchFheEncryptionKeyBytesFn } = makeClient({
         chain: ethereumChain,
         handlers: kmsGenerationHandlers(),
@@ -940,20 +993,20 @@ describe('fetchFheEncryptionKeyBytes', () => {
       await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).resolves.toBe(cached);
       // Checked by this client, with its own reads.
       expect(readContract).toHaveBeenCalled();
-      expect(globalFheEncryptionKeyCache.get('https://relayer.test')).toBe(entry);
+      expect(globalFheEncryptionKeyCache.get(SLOT)).toBe(entry);
       expect(getProvidedFheEncryptionKey(client)).toBeUndefined();
 
       // Released: a refetch after an eviction downloads from the relayer.
-      globalFheEncryptionKeyCache.remove('https://relayer.test');
+      globalFheEncryptionKeyCache.remove(SLOT);
       await fetchFheEncryptionKeyBytes(client, { fhevmContext });
       expect(fetchFheEncryptionKeyBytesFn).toHaveBeenCalledOnce();
     });
 
     it('evicts the cached entry for provided bytes identical to it that fail the check, and remembers the error', async () => {
       const { client: other } = makeClient({ chain: ethereumChain, handlers: {} });
-      globalFheEncryptionKeyCache.setBytes(other.runtime, 'https://relayer.test', 'https://relayer.test', keyBytes());
+      globalFheEncryptionKeyCache.setBytes(other.runtime, SLOT, 'https://relayer.test', keyBytes());
       // Compared only once its bytes are available.
-      await globalFheEncryptionKeyCache.get('https://relayer.test')?.ready;
+      await globalFheEncryptionKeyCache.get(SLOT)?.ready;
       // Another active CRS for this client.
       const { client, readContract, fetchFheEncryptionKeyBytesFn } = makeClient({
         chain: ethereumChain,
@@ -963,21 +1016,21 @@ describe('fetchFheEncryptionKeyBytes', () => {
 
       const error = await fetchFheEncryptionKeyBytes(client, { fhevmContext }).catch((e: unknown) => e);
       expect(error).toBeInstanceOf(FheEncryptionKeyVerificationError);
-      expect(globalFheEncryptionKeyCache.has('https://relayer.test')).toBe(false);
+      expect(globalFheEncryptionKeyCache.has(SLOT)).toBe(false);
       const reads = readContract.mock.calls.length;
 
       // Remembered: the same error, with no RPC call and no relayer download.
       await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toBe(error);
       expect(readContract).toHaveBeenCalledTimes(reads);
       expect(fetchFheEncryptionKeyBytesFn).not.toHaveBeenCalled();
-      expect(globalFheEncryptionKeyCache.has('https://relayer.test')).toBe(false);
+      expect(globalFheEncryptionKeyCache.has(SLOT)).toBe(false);
     });
 
     it('replaces a stale cached key with different provided bytes that pass the check', async () => {
       const { client: other } = makeClient({ chain: ethereumChain, handlers: {} });
       const stale = keyBytes({ crs: CRS.slice(1) as Bytes });
-      globalFheEncryptionKeyCache.setBytes(other.runtime, 'https://relayer.test', 'https://relayer.test', stale);
-      const entry = globalFheEncryptionKeyCache.get('https://relayer.test');
+      globalFheEncryptionKeyCache.setBytes(other.runtime, SLOT, 'https://relayer.test', stale);
+      const entry = globalFheEncryptionKeyCache.get(SLOT);
       const { client, readContract, fetchFheEncryptionKeyBytesFn } = makeClient({
         chain: ethereumChain,
         handlers: kmsGenerationHandlers(),
@@ -988,12 +1041,12 @@ describe('fetchFheEncryptionKeyBytes', () => {
       expect(readContract).toHaveBeenCalled();
       expect(fetchFheEncryptionKeyBytesFn).not.toHaveBeenCalled();
       // A new entry takes the slot: callers holding the old one keep the old key.
-      expect(globalFheEncryptionKeyCache.get('https://relayer.test')).not.toBe(entry);
+      expect(globalFheEncryptionKeyCache.get(SLOT)).not.toBe(entry);
       await entry?.ready;
       expect(entry?.value).toBe(stale);
 
       // Released: a refetch after an eviction downloads from the relayer.
-      globalFheEncryptionKeyCache.remove('https://relayer.test');
+      globalFheEncryptionKeyCache.remove(SLOT);
       await fetchFheEncryptionKeyBytes(client, { fhevmContext });
       expect(fetchFheEncryptionKeyBytesFn).toHaveBeenCalledOnce();
     });
@@ -1006,14 +1059,14 @@ describe('fetchFheEncryptionKeyBytes', () => {
 
     await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toThrow(FhevmConfigError);
     await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toThrow(/options\.keyVerification/);
-    expect(globalFheEncryptionKeyCache.has('https://relayer.test')).toBe(false);
+    expect(globalFheEncryptionKeyCache.has(SLOT)).toBe(false);
     // Rejected before the download.
     expect(fetchFheEncryptionKeyBytesFn).not.toHaveBeenCalled();
   });
 
   it('requires keyVerification on another host chain even when another client filled the cache', async () => {
     const { client: other } = makeClient({ chain: ethereumChain, handlers: {} });
-    globalFheEncryptionKeyCache.setBytes(other.runtime, 'https://relayer.test', 'https://relayer.test', keyBytes());
+    globalFheEncryptionKeyCache.setBytes(other.runtime, SLOT, 'https://relayer.test', keyBytes());
     const { client } = makeClient({ chain: otherHostChain, handlers: {} });
 
     await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toThrow(/options\.keyVerification/);
@@ -1031,11 +1084,11 @@ describe('fetchFheEncryptionKeyBytes', () => {
     expect(readClients.every((c) => c === ethereumClient)).toBe(true);
   });
 
-  it('does not check placeholder bytes from a cleartext relayer module, nor require keyVerification', async () => {
+  it('does not check cleartext bytes from a cleartext relayer module, nor require keyVerification', async () => {
     const { client, readContract, fetchFheEncryptionKeyBytesFn } = makeClient({
       chain: otherHostChain,
       handlers: {},
-      relayer: { servesPlaceholderFheEncryptionKey: true },
+      relayer: { skipsFheEncryptionKeyVerification: true },
     });
 
     await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).resolves.toBeDefined();
@@ -1045,12 +1098,12 @@ describe('fetchFheEncryptionKeyBytes', () => {
 });
 
 ////////////////////////////////////////////////////////////////////////////////
-// fetchFheEncryptionKeyBytes — placeholder bytes never reach the shared cache
+// fetchFheEncryptionKeyBytes — cleartext bytes never reach the shared cache
 ////////////////////////////////////////////////////////////////////////////////
 
 describe('fetchFheEncryptionKeyBytes with a cleartext client on the same relayer URL', () => {
   const fhevmContext = createFhevmClientFrozenContext({});
-  const placeholder = keyBytes({
+  const cleartextBytes = keyBytes({
     publicKey: new Uint8Array([0xde, 0xad]) as Bytes,
     crs: new Uint8Array([0xbe, 0xef]) as Bytes,
     publicKeyId: 'fhe-public-key-data-id',
@@ -1058,65 +1111,65 @@ describe('fetchFheEncryptionKeyBytes with a cleartext client on the same relayer
   });
 
   function makeCleartextClient() {
-    const fetchPlaceholder = vi.fn(async () => placeholder);
+    const fetchCleartextBytes = vi.fn(async () => cleartextBytes);
     const { client } = makeClient({
       chain: ethereumChain,
       handlers: {},
-      relayer: { servesPlaceholderFheEncryptionKey: true, fetchFheEncryptionKeyBytes: fetchPlaceholder },
+      relayer: { skipsFheEncryptionKeyVerification: true, fetchFheEncryptionKeyBytes: fetchCleartextBytes },
     });
-    return { client, fetchPlaceholder };
+    return { client, fetchCleartextBytes };
   }
 
-  it('keeps the placeholder bytes out of the shared cache: a real client still downloads and verifies', async () => {
+  it('keeps the cleartext bytes out of the shared cache: a real client still downloads and verifies', async () => {
     const cleartext = makeCleartextClient();
-    await expect(fetchFheEncryptionKeyBytes(cleartext.client, { fhevmContext })).resolves.toBe(placeholder);
-    expect(globalFheEncryptionKeyCache.has('https://relayer.test')).toBe(false);
+    await expect(fetchFheEncryptionKeyBytes(cleartext.client, { fhevmContext })).resolves.toBe(cleartextBytes);
+    expect(globalFheEncryptionKeyCache.has(SLOT)).toBe(false);
 
     const real = makeClient({ chain: ethereumChain, handlers: kmsGenerationHandlers() });
     const bytes = await fetchFheEncryptionKeyBytes(real.client, { fhevmContext });
-    expect(bytes).not.toBe(placeholder);
+    expect(bytes).not.toBe(cleartextBytes);
     expect(bytes.publicKeyBytes.bytes).toEqual(PUBLIC_KEY);
     expect(real.fetchFheEncryptionKeyBytesFn).toHaveBeenCalledOnce();
     expect(real.readContract).toHaveBeenCalled();
 
     // The cleartext client keeps its own bytes.
-    await expect(fetchFheEncryptionKeyBytes(cleartext.client, { fhevmContext })).resolves.toBe(placeholder);
-    expect(cleartext.fetchPlaceholder).toHaveBeenCalledOnce();
+    await expect(fetchFheEncryptionKeyBytes(cleartext.client, { fhevmContext })).resolves.toBe(cleartextBytes);
+    expect(cleartext.fetchCleartextBytes).toHaveBeenCalledOnce();
   });
 
-  it('gives a cleartext client its own placeholder bytes when the shared cache holds the real key', async () => {
+  it('gives a cleartext client its own cleartext bytes when the shared cache holds the real key', async () => {
     const real = makeClient({ chain: ethereumChain, handlers: kmsGenerationHandlers() });
     const bytes = await fetchFheEncryptionKeyBytes(real.client, { fhevmContext });
 
     const cleartext = makeCleartextClient();
-    await expect(fetchFheEncryptionKeyBytes(cleartext.client, { fhevmContext })).resolves.toBe(placeholder);
-    expect(cleartext.fetchPlaceholder).toHaveBeenCalledOnce();
-    await expect(cachedBytes('https://relayer.test')).resolves.toBe(bytes);
+    await expect(fetchFheEncryptionKeyBytes(cleartext.client, { fhevmContext })).resolves.toBe(cleartextBytes);
+    expect(cleartext.fetchCleartextBytes).toHaveBeenCalledOnce();
+    await expect(cachedBytes(SLOT)).resolves.toBe(bytes);
   });
 
   it('shares one cache entry between cleartext clients on the same relayer URL', async () => {
     const first = makeCleartextClient();
     const second = makeCleartextClient();
-    await expect(fetchFheEncryptionKeyBytes(first.client, { fhevmContext })).resolves.toBe(placeholder);
-    await expect(fetchFheEncryptionKeyBytes(second.client, { fhevmContext })).resolves.toBe(placeholder);
-    expect(first.fetchPlaceholder).toHaveBeenCalledOnce();
-    expect(second.fetchPlaceholder).not.toHaveBeenCalled();
-    await expect(cachedBytes('placeholder:https://relayer.test')).resolves.toBe(placeholder);
+    await expect(fetchFheEncryptionKeyBytes(first.client, { fhevmContext })).resolves.toBe(cleartextBytes);
+    await expect(fetchFheEncryptionKeyBytes(second.client, { fhevmContext })).resolves.toBe(cleartextBytes);
+    expect(first.fetchCleartextBytes).toHaveBeenCalledOnce();
+    expect(second.fetchCleartextBytes).not.toHaveBeenCalled();
+    await expect(cachedBytes(UNVERIFIED_SLOT)).resolves.toBe(cleartextBytes);
   });
 
   it.each(['cleartext first', 'real first'])(
-    'never caches placeholder bytes under the plain relayer URL (%s)',
+    'never caches cleartext bytes under the plain relayer URL (%s)',
     async (order) => {
       const cleartext = makeCleartextClient();
       const real = makeClient({ chain: ethereumChain, handlers: kmsGenerationHandlers() });
       const clients = order === 'cleartext first' ? [cleartext.client, real.client] : [real.client, cleartext.client];
       for (const client of clients) {
         await fetchFheEncryptionKeyBytes(client, { fhevmContext });
-        const plain = await cachedBytes('https://relayer.test');
-        expect(plain).not.toBe(placeholder);
-        expect(plain?.publicKeyBytes.bytes).not.toEqual(placeholder.publicKeyBytes.bytes);
+        const plain = await cachedBytes(SLOT);
+        expect(plain).not.toBe(cleartextBytes);
+        expect(plain?.publicKeyBytes.bytes).not.toEqual(cleartextBytes.publicKeyBytes.bytes);
       }
-      const plain = await cachedBytes('https://relayer.test');
+      const plain = await cachedBytes(SLOT);
       expect(plain?.publicKeyBytes.bytes).toEqual(PUBLIC_KEY);
     },
   );
@@ -1128,7 +1181,7 @@ describe('fetchFheEncryptionKeyBytes with a cleartext client on the same relayer
 
 describe('fetchFheEncryptionKeyBytes with several clients', () => {
   const fhevmContext = createFhevmClientFrozenContext({});
-  const KEY = 'https://relayer.test';
+  const KEY = SLOT;
   const ethereumClient = { name: 'ethereum' };
 
   // Digests computed once, so that a read hashes nothing.
@@ -1175,6 +1228,85 @@ describe('fetchFheEncryptionKeyBytes with several clients', () => {
     expect(countReads(a.readContract, 'getKeyMaterials')).toBe(1);
     expect(countReads(b.readContract, 'getKeyMaterials')).toBe(1);
   });
+
+  it('shares one download between clients checking against the same KMSGeneration, whatever their host chain, and evicts a key they reject', async () => {
+    const badDigest = (): Partial<Handlers> => ({
+      getKeyMaterials: () => [[], [{ keyType: 1, digest: digest('PDAT_KEY', new Uint8Array([9])) }]],
+    });
+    const a = makeClient({ chain: ethereumChain, handlers: precomputedHandlers(badDigest()) });
+    const b = makeClient({
+      chain: otherHostChain,
+      handlers: precomputedHandlers(badDigest()),
+      // The same KMSGeneration, its address in lowercase: still the same slot.
+      keyVerification: {
+        chain: sepoliaWith({ kmsGeneration: SEPOLIA_KMS_GENERATION.toLowerCase() }),
+        client: ethereumClient,
+      },
+    });
+
+    const fetchCount = (): number =>
+      a.fetchFheEncryptionKeyBytesFn.mock.calls.length + b.fetchFheEncryptionKeyBytesFn.mock.calls.length;
+
+    // One shared download, rejected by both clients.
+    const results = await Promise.allSettled([
+      fetchFheEncryptionKeyBytes(a.client, { fhevmContext }),
+      fetchFheEncryptionKeyBytes(b.client, { fhevmContext }),
+    ]);
+    for (const result of results) {
+      expect((result as PromiseRejectedResult).reason).toBeInstanceOf(FheEncryptionKeyVerificationError);
+    }
+    expect(fetchCount()).toBe(1);
+
+    // The shared slot is emptied: the next call downloads again.
+    expect(globalFheEncryptionKeyCache.has(SLOT)).toBe(false);
+    await expect(fetchFheEncryptionKeyBytes(b.client, { fhevmContext })).rejects.toThrow(
+      FheEncryptionKeyVerificationError,
+    );
+    expect(fetchCount()).toBe(2);
+  });
+
+  // Same relayer, another KMSGeneration that records another key.
+  it.each([
+    {
+      order: 'first',
+      name: 'another address',
+      wrongChain: sepoliaWith({ kmsGeneration: `0x${'2'.padStart(40, '0')}` }),
+    },
+    { order: 'second', name: 'same address on another chain', wrongChain: sepoliaWith({ id: 1 }) },
+  ])(
+    'never evicts the key of clients checking against another KMSGeneration ($name, wrong client fetches $order)',
+    async ({ order, wrongChain }) => {
+      const good = makeClient({ chain: ethereumChain, handlers: precomputedHandlers() });
+      const wrong = makeClient({
+        chain: otherHostChain,
+        handlers: precomputedHandlers({
+          getKeyMaterials: () => [[], [{ keyType: 1, digest: digest('PDAT_KEY', new Uint8Array([9])) }]],
+        }),
+        keyVerification: { chain: wrongChain, client: ethereumClient },
+        keyVerificationChainId: BigInt(wrongChain.id),
+      });
+      const fetchCount = (): number =>
+        good.fetchFheEncryptionKeyBytesFn.mock.calls.length + wrong.fetchFheEncryptionKeyBytesFn.mock.calls.length;
+
+      const clients = order === 'first' ? [wrong.client, good.client] : [good.client, wrong.client];
+      for (const c of clients) {
+        await fetchFheEncryptionKeyBytes(c, { fhevmContext }).catch(() => undefined);
+      }
+      // Each slot downloads once.
+      expect(fetchCount()).toBe(2);
+
+      // The wrong client keeps failing and evicts only its own slot: the good
+      // client never downloads again.
+      for (let i = 0; i < 3; i++) {
+        await expect(fetchFheEncryptionKeyBytes(wrong.client, { fhevmContext })).rejects.toThrow(
+          FheEncryptionKeyVerificationError,
+        );
+        await expect(fetchFheEncryptionKeyBytes(good.client, { fhevmContext })).resolves.toBeDefined();
+      }
+      expect(globalFheEncryptionKeyCache.has(SLOT)).toBe(true);
+      expect(good.fetchFheEncryptionKeyBytesFn).toHaveBeenCalledOnce();
+    },
+  );
 
   it.each(['first', 'second'])(
     'fails only the client whose keyVerification client is on another network (%s to fetch)',
@@ -1524,7 +1656,7 @@ describe('encrypt', () => {
     client.runtime.extend(encryptModuleFactory);
 
     await fetchFheEncryptionKeyBytes(client, { fhevmContext });
-    globalFheEncryptionKeyCache.remove('https://relayer.test');
+    globalFheEncryptionKeyCache.remove(SLOT);
     readClients.length = 0;
 
     await expect(
@@ -1631,7 +1763,7 @@ describe('fetchFheEncryptionKeyBytes after the wasm upgrade', () => {
 
 describe('FheEncryptionKeyCache entries', () => {
   const fhevmContext = createFhevmClientFrozenContext({});
-  const KEY = 'https://relayer.test';
+  const KEY = SLOT;
   const OLD = keyBytes({ publicKey: new Uint8Array([0xa0]) as Bytes, crs: new Uint8Array([0xa1]) as Bytes });
   const NEW = keyBytes({ publicKey: new Uint8Array([0xb0]) as Bytes, crs: new Uint8Array([0xb1]) as Bytes });
 
@@ -1744,12 +1876,14 @@ describe('FheEncryptionKeyCache entries', () => {
     const { client } = makeClient({ chain: ethereumChain, handlers: {} });
     const other = { ...keyBytes(), metadata: { relayerUrl: 'https://other.test', chainId: 0 } };
 
-    expect(() => globalFheEncryptionKeyCache.setBytes(client.runtime, KEY, KEY, other)).toThrow(/relayerUrl mismatch/);
+    expect(() => globalFheEncryptionKeyCache.setBytes(client.runtime, KEY, 'https://relayer.test', other)).toThrow(
+      /relayerUrl mismatch/,
+    );
     expect(globalFheEncryptionKeyCache.has(KEY)).toBe(false);
 
-    globalFheEncryptionKeyCache.setBytes(client.runtime, KEY, KEY, OLD);
+    globalFheEncryptionKeyCache.setBytes(client.runtime, KEY, 'https://relayer.test', OLD);
     const entry = globalFheEncryptionKeyCache.get(KEY);
-    expect(() => globalFheEncryptionKeyCache.replaceBytes(client.runtime, KEY, KEY, other)).toThrow(
+    expect(() => globalFheEncryptionKeyCache.replaceBytes(client.runtime, KEY, 'https://relayer.test', other)).toThrow(
       /relayerUrl mismatch/,
     );
     expect(globalFheEncryptionKeyCache.get(KEY)).toBe(entry);

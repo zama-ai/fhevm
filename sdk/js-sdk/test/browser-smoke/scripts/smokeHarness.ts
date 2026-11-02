@@ -306,12 +306,12 @@ export function toFheEncryptionKeyBytes(keyFile: SerializedKeyFile, chain: Fhevm
 }
 
 /**
- * A view of `runtime` whose relayer module serves placeholder key material:
- * the test keys are not the active ones in any `KMSGeneration`, so the SDK
- * skips the key check, and caches them in their own (placeholder) slot.
+ * A view of `runtime` whose relayer module skips the key check: the test keys
+ * are not the active ones in any `KMSGeneration`, so the SDK caches them in
+ * their own (unverified) slot.
  */
-function placeholderKeyRuntime<runtime extends FhevmRuntime>(runtime: runtime): runtime {
-  const relayer = { ...runtime.relayer, servesPlaceholderFheEncryptionKey: true };
+function unverifiedKeyRuntime<runtime extends FhevmRuntime>(runtime: runtime): runtime {
+  const relayer = { ...runtime.relayer, skipsFheEncryptionKeyVerification: true };
   // A proxy, not Object.create: the runtime getters read private fields.
   return new Proxy(runtime, {
     get: (target, property) => (property === 'relayer' ? relayer : Reflect.get(target, property)),
@@ -320,16 +320,16 @@ function placeholderKeyRuntime<runtime extends FhevmRuntime>(runtime: runtime): 
 
 /**
  * Loads test/keys/key.<keyTfheVersion>.json and injects it into `chain`'s
- * placeholder cache slot (see placeholderKeyRuntime), so an encryption can
+ * unverified cache slot (see unverifiedKeyRuntime), so an encryption can
  * resolve the key offline.
  */
 export async function loadAndCacheKey(runtime: FhevmRuntime, chain: FhevmChain, keyTfheVersion: string): Promise<void> {
   const keyFile = await fetchSerializedKeyFile(keyTfheVersion);
   const keyBytes = toFheEncryptionKeyBytes(keyFile, chain);
-  const view = placeholderKeyRuntime(runtime);
+  const view = unverifiedKeyRuntime(runtime);
   globalFheEncryptionKeyCache.setBytes(
     view,
-    getFheEncryptionKeySlot({ chain, runtime: view }),
+    getFheEncryptionKeySlot({ chain, runtime: view, options: { keyVerification: undefined } }),
     chain.fhevm.relayerUrl,
     keyBytes,
   );
@@ -347,10 +347,10 @@ export async function buildUint64Proof(runtime: WithEncrypt, chain: FhevmChain):
   const builder = createZkProofBuilder();
   builder.addUint64(42n);
   return builder.build(
-    // No host-chain client: the test key is a placeholder key, already cached
+    // No host-chain client: the test key is never verified, already cached
     // (see loadAndCacheKey), so build() reads it with no fetch and no check.
     // A core client, not a plain context: key lookups read its options.
-    createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain, runtime: placeholderKeyRuntime(runtime) }),
+    createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain, runtime: unverifiedKeyRuntime(runtime) }),
     {
       contractAddress: DUMMY_CONTRACT_ADDRESS,
       userAddress: DUMMY_USER_ADDRESS,
