@@ -62,7 +62,7 @@ To check if an entity has permission to access a ciphertext, use functions like 
 - **`isSenderAllowed`**: Simplifies checks for the current transaction sender.
 - **`isPubliclyDecryptable`**: Verifies whether any entity is permitted to retrieve the ciphertext's cleartext value off-chain.
 - **`checkSignatures`**: Verifies the authenticity of a cleartext value by checking cryptographic signatures. This ensures that the value submitted back to the chain originated from a legitimate public decryption operation on the associated ciphertext handle.
-- **`isAccountDenied`**: Checks whether an account is on the deny list. Denied accounts are blocked from `allow*` calls inside the ACL contract, so they cannot grant or receive new permissions on encrypted values.
+- **`isAccountDenied`**: Checks whether an account is on the deny list of the current chain. The deny list stops a denied dApp from producing new handles: it cannot call `allow`, `allowForDecryption` or `allowTransient`. It does not restrict access to existing handles, including bridging.
 
 ### User decryption delegation
 

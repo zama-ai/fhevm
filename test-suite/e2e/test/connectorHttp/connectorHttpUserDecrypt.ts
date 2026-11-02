@@ -36,10 +36,11 @@ describe('Connector HTTP user decrypt', function () {
   let contract: UserDecrypt;
   let contractAddress: string;
   let publicKey: string;
+  let extraData: string;
 
   before(async function () {
     this.timeout(180_000);
-    await connectorSetup(this);
+    ({ extraData } = await connectorSetup(this));
     await initSigners(2);
     signers = await getSigners();
     instances = await createInstances(signers);
@@ -58,6 +59,7 @@ describe('Connector HTTP user decrypt', function () {
         publicKey,
         allowedContracts,
         decryptionContractAddress: verifyingContractAddressDecryption,
+        extraData,
       },
       signers.alice,
     );
@@ -132,6 +134,7 @@ describe('Connector HTTP user decrypt', function () {
         publicKey,
         allowedContracts: [contractAddress],
         decryptionContractAddress: verifyingContractAddressDecryption,
+        extraData,
       },
       signers.bob,
     );

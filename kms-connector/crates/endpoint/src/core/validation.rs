@@ -29,6 +29,8 @@ const DURATION_SECONDS_RANGE: RangeInclusive<u64> = 1..=MAX_USER_DECRYPTION_DURA
 pub enum ValidationError {
     #[error("no handle provided")]
     NoHandles,
+    #[error("too many handles: {0}, maximum is {1}")]
+    TooManyHandles(usize, usize),
     #[error("total bit size of the handles too large: {0} bits, maximum is {1}")]
     BitSizeExceeded(u64, u64),
     #[error("too many allowed contracts: {0}, maximum is {1}")]
@@ -65,6 +67,7 @@ impl ValidationError {
         match self {
             Self::UnsupportedAttestationType => ErrorCode::UnsupportedAttestationType,
             Self::NoHandles
+            | Self::TooManyHandles(..)
             | Self::BitSizeExceeded(..)
             | Self::TooManyAllowedContracts(..)
             | Self::InvalidHandle { .. }
@@ -129,12 +132,19 @@ fn validate_request_validity(validity: &RequestValidity) -> Result<(), Validatio
     Ok(())
 }
 
-/// Checks the handle list: non-empty, well-formed handles of a decryptable FHE type, on a single
-/// supported chain, within the total bit size budget.
-fn validate_handles<'a>(
-    handles: impl IntoIterator<Item = &'a B256>,
-    config: &Config,
-) -> Result<u64, ValidationError> {
+/// Checks the handle list: non-empty, within the handle count limit, well-formed handles of a
+/// decryptable FHE type, on a single supported chain, within the total bit size budget.
+fn validate_handles<'a, I>(handles: I, config: &Config) -> Result<u64, ValidationError>
+where
+    I: IntoIterator<Item = &'a B256>,
+    I::IntoIter: ExactSizeIterator,
+{
+    let handles = handles.into_iter();
+    let max_handles = config.max_handles_per_decryption.get();
+    if handles.len() > max_handles {
+        return Err(ValidationError::TooManyHandles(handles.len(), max_handles));
+    }
+
     let (mut chain_id, mut total_bits) = (None, 0u64);
     for handle in handles {
         let fhe_type =
@@ -205,6 +215,7 @@ pub(crate) mod tests {
     use super::*;
     use alloy::primitives::{Address, Bytes};
     use kms_connector_api::{AttestationType, HandleEntry, UserDecryptionPayload};
+    use std::num::NonZeroUsize;
 
     const EBOOL: u8 = FheTypes::Bool as u8;
     const EUINT4: u8 = FheTypes::Uint4 as u8;
@@ -226,6 +237,7 @@ pub(crate) mod tests {
         Config {
             supported_chain_ids: vec![1, 2],
             max_allowed_contracts: 1,
+            max_handles_per_decryption: NonZeroUsize::new(3).unwrap(),
             ..Config::default()
         }
     }
@@ -276,7 +288,7 @@ pub(crate) mod tests {
             Ok(())
         );
         assert_eq!(
-            validate_user_decryption(&user_request(handles, vec![]), &cfg),
+            validate_user_decryption(&user_request(handles, extra_data_v2()), &cfg),
             Ok(())
         );
     }
@@ -285,28 +297,53 @@ pub(crate) mod tests {
     fn empty_handles() {
         let cfg = config();
         assert_eq!(
-            validate_public_decryption(&public_request(vec![], vec![]), &cfg),
+            validate_public_decryption(&public_request(vec![], extra_data_v2()), &cfg),
             Err(ValidationError::NoHandles)
         );
         assert_eq!(
-            validate_user_decryption(&user_request(vec![], vec![]), &cfg),
+            validate_user_decryption(&user_request(vec![], extra_data_v2()), &cfg),
             Err(ValidationError::NoHandles)
         );
     }
 
     #[test]
-    fn bit_size_budget() {
+    fn too_many_handles() {
         let cfg = config();
+        let handles = vec![handle(1, EBOOL); 3];
+        assert_eq!(
+            validate_public_decryption(&public_request(handles.clone(), extra_data_v2()), &cfg),
+            Ok(())
+        );
+        assert_eq!(
+            validate_user_decryption(&user_request(handles, extra_data_v2()), &cfg),
+            Ok(())
+        );
+
+        let handles = vec![handle(1, EBOOL); 4];
+        assert_eq!(
+            validate_public_decryption(&public_request(handles.clone(), extra_data_v2()), &cfg),
+            Err(ValidationError::TooManyHandles(4, 3))
+        );
+        assert_eq!(
+            validate_user_decryption(&user_request(handles, extra_data_v2()), &cfg),
+            Err(ValidationError::TooManyHandles(4, 3))
+        );
+    }
+
+    #[test]
+    fn bit_size_budget() {
+        let mut cfg = config();
+        cfg.max_handles_per_decryption = NonZeroUsize::new(9).unwrap();
         // 8 * 256 = 2048 fits exactly, one more bit exceeds the budget.
         let mut handles = vec![handle(1, EUINT256); 8];
         handles.push(handle(1, EBOOL));
         assert_eq!(
-            validate_public_decryption(&public_request(handles, vec![]), &cfg),
+            validate_public_decryption(&public_request(handles, extra_data_v2()), &cfg),
             Err(ValidationError::BitSizeExceeded(2050, 2048))
         );
         let handles = vec![handle(1, EUINT256); 8];
         assert_eq!(
-            validate_user_decryption(&user_request(handles, vec![]), &cfg),
+            validate_user_decryption(&user_request(handles, extra_data_v2()), &cfg),
             Ok(())
         );
     }
@@ -315,7 +352,7 @@ pub(crate) mod tests {
     fn non_decryptable_fhe_type() {
         let cfg = config();
         let bad = handle(1, EUINT4);
-        match validate_public_decryption(&public_request(vec![bad], vec![]), &cfg) {
+        match validate_public_decryption(&public_request(vec![bad], extra_data_v2()), &cfg) {
             Err(ValidationError::InvalidHandle { handle, reason }) => {
                 assert_eq!(handle, bad);
                 assert!(reason.contains("cannot be decrypted"), "{reason}");
@@ -327,7 +364,7 @@ pub(crate) mod tests {
     #[test]
     fn too_many_allowed_contracts() {
         let cfg = config();
-        let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
+        let mut request = user_request(vec![handle(1, EUINT64)], extra_data_v2());
         request
             .payload
             .allowedContracts
@@ -354,7 +391,7 @@ pub(crate) mod tests {
             ("durationSeconds", *duration.end() + 1, &duration),
         ];
         let request_with = |field, value| {
-            let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
+            let mut request = user_request(vec![handle(1, EUINT64)], extra_data_v2());
             let validity = &mut request.payload.requestValidity;
             match field {
                 "startTimestamp" => validity.startTimestamp = value,
@@ -385,7 +422,7 @@ pub(crate) mod tests {
     #[test]
     fn unsupported_attestation_type() {
         let cfg = config();
-        let mut request = user_request(vec![handle(1, EUINT64)], vec![]);
+        let mut request = user_request(vec![handle(1, EUINT64)], extra_data_v2());
         request.attestationType = "random_attestation_type".to_owned();
         let error = validate_user_decryption(&request, &cfg).unwrap_err();
         assert_eq!(error, ValidationError::UnsupportedAttestationType);
@@ -397,7 +434,7 @@ pub(crate) mod tests {
     fn bad_fhe_type() {
         let cfg = config();
         let bad = handle(1, BAD_FHE_TYPE);
-        match validate_public_decryption(&public_request(vec![bad], vec![]), &cfg) {
+        match validate_public_decryption(&public_request(vec![bad], extra_data_v2()), &cfg) {
             Err(ValidationError::InvalidHandle { handle, .. }) => assert_eq!(handle, bad),
             other => panic!("unexpected: {other:?}"),
         }
@@ -408,7 +445,7 @@ pub(crate) mod tests {
         let cfg = config();
         let handles = vec![handle(1, EUINT64), handle(2, EUINT64)];
         assert_eq!(
-            validate_user_decryption(&user_request(handles, vec![]), &cfg),
+            validate_user_decryption(&user_request(handles, extra_data_v2()), &cfg),
             Err(ValidationError::MixedChainIds(1, 2))
         );
     }
@@ -417,7 +454,10 @@ pub(crate) mod tests {
     fn unsupported_chain() {
         let cfg = config();
         assert_eq!(
-            validate_public_decryption(&public_request(vec![handle(9, EUINT64)], vec![]), &cfg),
+            validate_public_decryption(
+                &public_request(vec![handle(9, EUINT64)], extra_data_v2()),
+                &cfg
+            ),
             Err(ValidationError::UnsupportedChainId(9))
         );
     }
@@ -427,8 +467,6 @@ pub(crate) mod tests {
         let cfg = config();
         let handles = vec![handle(1, EUINT64)];
         for extra_data in [
-            vec![],
-            vec![0x00],
             [vec![0x01], vec![0xaa; 32]].concat(),
             extra_data_v2(),
             [extra_data_v2(), vec![0xff; 7]].concat(),
@@ -441,10 +479,16 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn extra_data_rejects_unknown_version_and_truncation() {
+    fn extra_data_rejects_missing_unknown_version_and_truncation() {
         let cfg = config();
         let handles = vec![handle(1, EUINT64)];
-        for extra_data in [vec![0x03], vec![0x01; 10], vec![0x02; 64]] {
+        for extra_data in [
+            vec![],
+            vec![0x00],
+            vec![0x03],
+            vec![0x01; 10],
+            vec![0x02; 64],
+        ] {
             assert!(matches!(
                 validate_public_decryption(&public_request(handles.clone(), extra_data), &cfg),
                 Err(ValidationError::InvalidExtraData(_))

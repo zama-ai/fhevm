@@ -50,6 +50,9 @@ pub struct DecryptionProcessor<GP: Provider, HP: Provider> {
 
     /// Gas cap for the `IERC1271.isValidSignature` static call (RFC-012).
     erc1271_gas_limit: u64,
+
+    /// The maximum number of handles a single decryption request can contain.
+    max_handles_per_decryption: usize,
 }
 
 impl<GP, HP> DecryptionProcessor<GP, HP>
@@ -79,7 +82,23 @@ where
             host_clients,
             ciphertext_manager,
             erc1271_gas_limit: config.erc1271_gas_limit,
+            max_handles_per_decryption: config.max_handles_per_decryption.get(),
         }
+    }
+
+    /// Rejects decryption requests containing more handles than the configured limit.
+    pub fn check_handle_count(&self, handle_count: usize) -> Result<(), RequestCheckError> {
+        if handle_count > self.max_handles_per_decryption {
+            return Err(RequestCheckError::irrecoverable(
+                RequestCheckKind::HandleLimit,
+                ErrorCode::Unprocessable,
+                anyhow!(
+                    "Request contains {handle_count} handles, exceeding the limit of {}",
+                    self.max_handles_per_decryption
+                ),
+            ));
+        }
+        Ok(())
     }
 
     /// Returns the client of the host chain `chain_id`.
@@ -400,7 +419,6 @@ where
         } = self.ciphertext_manager.verify_and_retrieve(handles).await?;
 
         let request_id = Some(u256_to_request_id(decryption_id));
-        let kms_extra_data = kms_decryption_extra_data(extra_data);
 
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.user_address.to_checksum(None);
@@ -412,9 +430,9 @@ where
                 domain: Some(self.domain.clone()),
                 enc_key,
                 typed_ciphertexts: ciphertexts,
-                extra_data: kms_extra_data,
+                extra_data: extra_data.to_vec(),
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-                context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+                context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
                 // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
                 signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
             };
@@ -426,9 +444,9 @@ where
                 ciphertexts,
                 key_id: Some(u256_to_request_id(key_id)),
                 domain: Some(self.domain.clone()),
-                extra_data: kms_extra_data,
+                extra_data: extra_data.to_vec(),
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-                context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+                context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
                 // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
                 signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
             };
@@ -509,15 +527,6 @@ fn extract_single_chain_id<'a>(
     })
 }
 
-fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
-    // relayer-sdk <=0.4.2 sends 0x00 but verifies the KMS signature against empty extraData.
-    if extra_data.as_ref() == [0x00] {
-        Vec::new()
-    } else {
-        extra_data.to_vec()
-    }
-}
-
 pub struct UserDecryptionExtraData {
     pub user_address: Address,
     pub public_key: Bytes,
@@ -556,6 +565,7 @@ mod tests {
     };
     use fhevm_host_bindings::acl::ACL;
     use rstest::rstest;
+    use std::num::NonZeroUsize;
     use user_decryption_signature::{
         ERC1271_MAGIC_VALUE, compute_user_decrypt_digest, default_user_decrypt_domain,
     };
@@ -611,21 +621,27 @@ mod tests {
         DecryptionProcessor::new(&config, mock_provider, host_clients, ciphertext_manager)
     }
 
+    #[rstest]
+    #[case::below_limit(1, ExpectedOutcome::Ok)]
+    #[case::at_limit(2, ExpectedOutcome::Ok)]
+    #[case::above_limit(3, ExpectedOutcome::Irrecoverable)]
     #[test]
-    fn kms_decryption_extra_data_normalizes_legacy_zero_marker() {
-        assert_eq!(
-            kms_decryption_extra_data(&Bytes::from_static(&[0x00])),
-            Vec::<u8>::new()
-        );
-    }
+    fn check_handle_count(#[case] handle_count: usize, #[case] expected: ExpectedOutcome) {
+        let config = Config {
+            max_handles_per_decryption: NonZeroUsize::new(2).unwrap(),
+            ..Default::default()
+        };
+        let decryption_processor =
+            setup_test_processor_with_config(Asserter::new(), rand_handle(), config);
 
-    #[test]
-    fn kms_decryption_extra_data_keeps_empty_and_versioned_values() {
-        assert_eq!(kms_decryption_extra_data(&Bytes::new()), Vec::<u8>::new());
-        assert_eq!(
-            kms_decryption_extra_data(&Bytes::from_static(&[0x01, 0x02])),
-            vec![0x01, 0x02]
-        );
+        let result = decryption_processor
+            .check_handle_count(handle_count)
+            .map_err(RequestCheckError::record);
+
+        match expected {
+            ExpectedOutcome::Ok => result.unwrap(),
+            _ => assert_kind(&result, &expected),
+        }
     }
 
     enum PubDecryptACLMock {
