@@ -6,7 +6,8 @@ import { ethers } from 'hardhat';
 
 import { getSigners, initSigners } from '../../test/signers';
 
-export const RELAYER = (process.env.RELAYER_HTTP_URL ?? 'http://relayer-http:3002').replace(/\/$/, '');
+if (!process.env.RELAYER_HTTP_URL) throw new Error('RELAYER_HTTP_URL is not set: run the flow through make (dev/scripts/e2e.sh)');
+export const RELAYER = process.env.RELAYER_HTTP_URL.replace(/\/$/, '');
 const TIMEOUT_MS = 120_000;
 
 export interface Reply<T> {

@@ -1,7 +1,11 @@
 # Development tooling for relayer-http against the local fhevm stack. Run from anywhere:
 #   make -C relayer-http/dev <rule>       (see README.md)
-# relayer-http runs in the stack (./fhevm-cli up) on :3002; `make run` runs it on the host on :18080.
 ROOT    := $(abspath ..)
+# relayer-http ports, passed to the scripts; override on the command line (make RELAYER_HTTP_RUN_PORT=5002 run).
+# RELAYER_HTTP_PORT: relayer-http in the stack (./fhevm-cli up), as in test-suite/fhevm/src/layout.ts.
+# RELAYER_HTTP_RUN_PORT: relayer-http on the host (make run); its forwarders take the next ports.
+export RELAYER_HTTP_PORT     ?= 3002
+export RELAYER_HTTP_RUN_PORT ?= 4002
 CLIPPY  := cargo clippy --workspace --all-targets -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
 
 .PHONY: help fmt fmt-fix clippy test test-aws check build run public-decrypt user-decrypt
@@ -25,7 +29,7 @@ build: ## cargo build -p relayer-http
 	cd $(ROOT) && cargo build -p relayer-http
 
 # --- local stack ------------------------------------------------------------------------------------------------
-run: ## cargo run the relayer on the host (:18080) with the stack's config, logs in this terminal
+run: ## cargo run the relayer on the host (RELAYER_HTTP_RUN_PORT, default 4002) with the stack's config, logs in this terminal
 	scripts/relayer-run.sh
 
 # --- flows (e2e debug container) ----------------------------------------------------------------------------------
