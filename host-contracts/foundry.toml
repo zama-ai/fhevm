@@ -9,6 +9,8 @@ cbor_metadata = false
 bytecode_hash = 'none'
 optimizer = true
 optimizer_runs = 200
+# HCULimit tests assert transient HCU state across calls in one test transaction.
+isolate = false
 
 remappings = [
     '@fhevm-foundry/=./fhevm-foundry/',
