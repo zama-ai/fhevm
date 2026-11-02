@@ -93,7 +93,8 @@ npx hardhat task:deployAllHostContracts --with-kms-generation true   # canonical
 npx hardhat task:deployAllHostContracts --with-kms-generation false --protocol-config-source canonical  # non-canonical host
 ```
 
-`KMSGeneration` is deployed only on the canonical host chain. Non-canonical host chains
+`KMSGeneration` is deployed only on the canonical host chain. `CiphertextRoots` is canonical-only too and
+opt-in: add `--with-ciphertext-roots true` to deploy it; its proxy address is reserved either way. Non-canonical host chains
 deploy the common host contracts only. They pass `--protocol-config-source canonical`, so they
 deploy `ProtocolConfigReplica` seeded from the `CANONICAL_*` env variables (see below). The default
 `fresh` deploys `ProtocolConfig`.

@@ -109,6 +109,33 @@ describe('Upgrades', function () {
     await expectInitialState(kg2);
   });
 
+  it('deploy upgradeable CiphertextRoots', async function () {
+    const factory = await ethers.getContractFactory('CiphertextRoots', this.signers.fred);
+    const factoryUpgraded = await ethers.getContractFactory('CiphertextRootsUpgradedExample', this.signers.fred);
+    const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
+    const cr = await upgrades.upgradeProxy(emptyUUPS, factory, {
+      call: { fn: 'initializeFromEmptyProxy' },
+    });
+    await cr.waitForDeployment();
+    expect(await cr.getVersion()).to.equal('CiphertextRoots v0.1.0');
+    // A schedule set before the upgrade must read back the same after it.
+    await (await cr.setEpochSchedule(1n, 100n, 10n)).wait();
+    const expectSchedule = async (c: any) => {
+      const schedule = await c.getEpochSchedule(1n);
+      expect(schedule.startBlock).to.equal(100n);
+      // `entries` is also a built-in array method, which `schedule.entries` would return instead.
+      const entries = schedule.getValue('entries');
+      expect(entries.length).to.equal(1);
+      expect(entries[0].fromEpoch).to.equal(0n);
+      expect(entries[0].epochLength).to.equal(10n);
+    };
+    await expectSchedule(cr);
+    const cr2 = await upgrades.upgradeProxy(cr, factoryUpgraded);
+    await cr2.waitForDeployment();
+    expect(await cr2.getVersion()).to.equal('CiphertextRoots v0.2.0');
+    await expectSchedule(cr2);
+  });
+
   it('deploy upgradeable KMSVerifier', async function () {
     const kmsFactory = await ethers.getContractFactory('contracts/KMSVerifier.sol:KMSVerifier', this.signers.fred);
     const kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample', this.signers.fred); // because account[5] is set in `.env to be owner of ACL/Host
