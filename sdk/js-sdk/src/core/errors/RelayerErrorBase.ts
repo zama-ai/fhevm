@@ -73,6 +73,8 @@ export function humanReadableOperation(relayerOperation: RelayerOperation, capit
       return capitalize ? 'Delegated user decryption' : 'delegated user decryption';
     case 'KEY_URL':
       return capitalize ? 'Key url' : 'key url';
+    case 'PAD_DECRYPT':
+      return capitalize ? 'Pad decryption' : 'pad decryption';
     default: {
       assertNever(relayerOperation, `Unknown operation: ${relayerOperation}`);
     }
