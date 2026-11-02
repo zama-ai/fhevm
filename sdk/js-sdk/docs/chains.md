@@ -45,6 +45,7 @@ type FhevmChain = {
       readonly inputVerifier: ChainContract;
       readonly kmsVerifier: ChainContract;
       readonly protocolConfig: ChainContract | undefined;
+      readonly kmsGeneration?: ChainContract | undefined; // Ethereum only
     };
     readonly relayerUrl: string;
     readonly gateway: {
@@ -70,6 +71,7 @@ type ChainContract = {
 | `fhevm.contracts.inputVerifier`         | Verifies encrypted inputs and their proofs.                 |
 | `fhevm.contracts.kmsVerifier`           | Holds the authorized KMS signer set and quorum threshold.   |
 | `fhevm.contracts.protocolConfig`        | Optional aggregate config contract; may be `undefined`.     |
+| `fhevm.contracts.kmsGeneration`         | Ethereum only: digests of the FHE public key and CRS, checked before encryption. Set only in Ethereum chain definitions. |
 | `fhevm.relayerUrl`                       | The Relayer the SDK sends proof, pad and decryption requests to. |
 | `fhevm.gateway.id`                       | The gateway rollup's chain id.                              |
 | `fhevm.gateway.contracts.decryption`     | Gateway decryption contract.                                 |

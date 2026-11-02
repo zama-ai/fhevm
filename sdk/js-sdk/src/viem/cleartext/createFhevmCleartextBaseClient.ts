@@ -16,7 +16,7 @@ export function createFhevmCleartextBaseClient<
 >(parameters: {
   readonly publicClient: publicClient;
   readonly chain: chain;
-  readonly options?: FhevmOptions | undefined;
+  readonly options?: FhevmOptions<PublicClient> | undefined;
 }): FhevmBaseClient<chain, FhevmRuntime, publicClient> {
   const c = createCoreFhevm(PRIVATE_VIEM_TOKEN, {
     chain: parameters.chain,

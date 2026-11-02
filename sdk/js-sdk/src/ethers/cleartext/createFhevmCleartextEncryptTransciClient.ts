@@ -14,7 +14,7 @@ export function createFhevmCleartextEncryptTransciClient<
 >(parameters: {
   readonly provider: provider;
   readonly chain: chain;
-  readonly options?: FhevmEncryptOptions | undefined;
+  readonly options?: FhevmEncryptOptions<EthersT.ContractRunner> | undefined;
 }): FhevmEncryptTransciClient<chain, WithEncryptTransci, provider> {
   const c = createFhevmCleartextBaseClient(parameters);
 
