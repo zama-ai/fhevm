@@ -4,8 +4,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { DEFAULT_SCENARIOS_DIR, PACKAGE_ROOT } from '../../../src/paths.js';
-import { parseMessages } from '../../../src/report/messages.js';
+import { DEFAULT_SCENARIOS_DIR, PACKAGE_ROOT } from '../../../src/infrastructure/paths.js';
+import { parseMessages } from '../../../src/orchestration/reporting/messages.js';
 import {
   CLI,
   FIXTURE_PROFILES,
