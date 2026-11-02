@@ -1,0 +1,10 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata:
+  name: chain-types
+  description: Valid definition whose resolved chain values have the wrong type.
+spec:
+  chain:
+    rpcUrl: { env: TE_CHAIN_RPC_URL }
+    chainId: { env: TE_CHAIN_ID }
+    mnemonic: { env: TE_CHAIN_MNEMONIC, secret: true }

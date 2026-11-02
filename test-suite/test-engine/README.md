@@ -10,7 +10,7 @@ A manifest-driven, Cucumber-based engine for fhEVM end-to-end scenarios.
 
 The engine runs on Node.js (>= 22) and TypeScript compiled with `tsc`. No TypeScript loader is involved at runtime; Cucumber always loads plain JavaScript from `dist/`.
 
-> **Status:** Phase 1a (engine infrastructure). Profiles, planner rules, the scenario World, evidence and secret handling are in place. No fhEVM scenario has been ported yet: the only scenario is `smoke.arithmetic`, which has no dependency on the stack. The Chain, FHE and contract-configuration modules come in Phase 1b.
+> **Status:** Phase 1b, in progress. The engine infrastructure (profiles, planner rules, the scenario World, evidence, secret handling) is in place, and so are the first fhEVM building blocks: the typed `chain` profile section and the [Chain module](#using-the-chain) (wallets, transactions and deployments recorded as evidence). No fhEVM scenario has been ported yet: the only shipped scenario is `smoke.arithmetic`, which has no dependency on the stack. The FHE and contract-configuration modules come next.
 
 ## Quick start
 
@@ -93,9 +93,10 @@ When('Alice deposits {int}', function (this: MyWorld, amount: number) {
 
 | Member                 | Content                                                                          |
 | ---------------------- | -------------------------------------------------------------------------------- |
-| `this.engine.scenario` | id, name, owner, tags, origin of the running scenario                            |
+| `this.engine.scenario` | id, name, owner, tags, origin and source `directory` of the running scenario     |
 | `this.engine.profile`  | `name`, `settingKeys()`, `setting(key)`                                          |
 | `this.engine.evidence` | `record(kind, data, { label })`: structured evidence (see [Evidence](#evidence)) |
+| `this.engine.chain`    | the [Chain module](#using-the-chain), created on first access                    |
 | `this.engine.log(...)` | a console line, with secrets redacted                                            |
 
 ### Rules for support code
@@ -108,6 +109,40 @@ When('Alice deposits {int}', function (this: MyWorld, amount: number) {
 - **Never skip at runtime.** Returning `'skipped'` from a step or a hook fails the scenario (see [Execution guarantees](#execution-guarantees)). If a scenario cannot run on an environment, leave that profile out of its `targets`.
 - **`BeforeAll` / `AfterAll` are unsupported.** They have no World and cannot record evidence.
 - **Scenario globals are safe.** `setWorldConstructor`, `setDefaultTimeout` and `defineParameterType` only affect the calling scenario, because each scenario has its own process.
+
+### Using the chain
+
+`this.engine.chain` gives steps access to the chain of the profile's [`chain` section](#the-chain-section), without Hardhat:
+
+```ts
+import { type EngineWorld, loadArtifact } from '#engine';
+import { When } from '@cucumber/cucumber';
+import path from 'node:path';
+
+When('alice deploys a counter and bob increments it', async function (this: EngineWorld) {
+  const { chain } = this.engine;
+  const artifact = loadArtifact(path.join(this.engine.scenario.directory, 'artifacts', 'Counter.json'));
+  const counter = await chain.deploy(artifact, [5], { from: 'alice', label: 'Deploy Counter' });
+  const bob = chain.wallet('bob');
+  await chain.send(counter.connect(bob).getFunction('increment')(), { label: 'bob increments' });
+  const count = await counter.getFunction('count')(); // reads are plain ethers calls
+});
+```
+
+| Member                                    | What it does                                                                                                                                                                                       |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wallet(role)`                            | Wallet of a role (`alice` … `eve` by default), derived from the profile mnemonic like the e2e signers. Transactions without a `gasLimit` get the e2e gas buffer. An unknown role throws.           |
+| `send(txPromise, { label })`              | Waits for the transaction an ethers call returns, records `chain.tx` evidence and returns the receipt. A reverted transaction, or one rejected before broadcast, is recorded, then fails the step. |
+| `deploy(artifact, args, { from, label })` | Deploys from a compiled artifact, records `chain.deploy` evidence and returns an ethers `Contract` connected to the deployer. Constructor overrides (e.g. `{ gasLimit }`) go last in `args`.       |
+| `loadArtifact(path)`                      | Reads a Hardhat artifact JSON (`contractName`, `abi`, `bytecode`); also exported from `#engine`.                                                                                                   |
+| `provider`, `chainId`, `roles()`          | The ethers `JsonRpcProvider`, the profile's chain ID, the wallet roles.                                                                                                                            |
+| `verifyConnection()`                      | Checks once that the RPC is reachable and reports the profile's chain ID. Engine wallets run it before their first transaction, so nothing is ever sent to the wrong network.                      |
+| `waitForBlock(n, timeoutMs)`, `sleep(ms)` | Utilities ported from the e2e suite.                                                                                                                                                               |
+
+- **Lazy.** The chain is created on first access: a scenario that never touches it opens no connection. The engine closes the provider after each Gherkin scenario.
+- **Declare `targets`.** On a profile without a `chain` section (such as `none`), accessing `this.engine.chain` fails the step: `profile 'none' has no chain section; declare spec.targets for this scenario …`. A scenario that uses the chain should list the profiles it can run on.
+- **Keep the engine wallets.** `wallet.connect()` throws: ethers would return a plain wallet without the gas buffer and the chain ID check. A transaction broadcast whose receipt cannot be obtained is recorded with status `unknown` and its hash.
+- **Funding.** Wallets are expected to be funded: Anvil and the local stack pre-fund the mnemonic accounts; live networks rely on pre-funded wallets.
 
 ## Manifest reference
 
@@ -149,25 +184,44 @@ spec:
   envFiles: # optional, read in memory only
     - ./testnet.env
     - { path: ./local-overrides.env, optional: true }
+  chain: # optional typed section of the Chain module, see below
+    rpcUrl: { env: SEPOLIA_ETH_RPC_URL, secret: true }
+    chainId: { value: 11155111 }
+    mnemonic: { env: MNEMONIC, secret: true }
   settings:
     example.url: { value: https://example.invalid } # literal (never for secrets)
     example.timeout: { env: EXAMPLE_TIMEOUT, default: 30 } # env var with fallback (never for secrets)
     example.token: { env: EXAMPLE_TOKEN, secret: true } # secret: from env or env file only
 ```
 
-| Profile   | Confirmation | Notes                                                                                        |
-| --------- | ------------ | -------------------------------------------------------------------------------------------- |
-| `none`    | no           | Built-in default (no file, no settings). Only for scenarios that do not use the fhEVM stack. |
-| `local`   | no           | Local stack started with `fhevm-cli`.                                                        |
-| `devnet`  | no           |                                                                                              |
-| `testnet` | no           |                                                                                              |
-| `mainnet` | **yes**      | Real funds.                                                                                  |
+| Profile   | Confirmation | `chain` section                                                                                                                                                                                                     |
+| --------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `none`    | no           | None. Built-in default (no file, no settings). Only for scenarios that do not use the fhEVM stack.                                                                                                                  |
+| `local`   | no           | `RPC_URL`, `CHAIN_ID_HOST` (default 12345) and `MNEMONIC` from `<repo>/.fhevm/runtime/env/test-suite.env`, written by `fhevm-cli up`. The RPC address is the stack network's: the engine runs in a container on it. |
+| `devnet`  | no           | `RPC_URL` (secret), chain ID 1337, `MNEMONIC`.                                                                                                                                                                      |
+| `testnet` | no           | `SEPOLIA_ETH_RPC_URL` (secret), chain ID 11155111, `MNEMONIC`.                                                                                                                                                      |
+| `mainnet` | **yes**      | `MAINNET_ETH_RPC_URL` (secret), chain ID 1, `MNEMONIC`. Real funds.                                                                                                                                                 |
 
-The shipped profiles have no settings yet: the typed fhEVM sections (chain, relayer, wallets) arrive with the Phase 1b modules.
+No URL or mnemonic is committed: they come from the environment. The relayer and contracts sections arrive with the modules that own them.
 
 **Value resolution.** A setting is exactly one of `{ value }`, `{ env }` or `{ env, default }`. An `env` source is looked up in the process environment first, then in the env files, in order. Settings are resolved once, before any scenario runs: a missing variable or a missing (non-optional) env file stops the run with exit 2. Env files are never merged into `process.env`.
 
 **Secrets.** `secret: true` marks a sensitive value. Secrets cannot have a literal `value` or a `default` (they never live in the repository) and must be at least 8 characters long. They are redacted from every output (see [Secret handling](#secret-handling)).
+
+### The `chain` section
+
+A **typed section** has fields fixed by the schema and is owned by one engine module; `settings` stays for one-off values. `chain` is read by the [Chain module](#using-the-chain).
+
+| Field      | Required | Description                                                                                                                                                                                 |
+| ---------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rpcUrl`   | yes      | Value source. An http(s) URL. Declare it `secret: true` when it embeds an API key.                                                                                                          |
+| `chainId`  | yes      | Value source. A positive integer, checked against `eth_chainId` before the first transaction. Never a secret.                                                                               |
+| `mnemonic` | yes      | Value source. A valid BIP-39 mnemonic. `secret: true` is mandatory.                                                                                                                         |
+| `hdPath`   | no       | Derivation path prefix; the account index is appended. Default `m/44'/60'/0'/0` (the e2e Hardhat config).                                                                                   |
+| `wallets`  | no       | Role → account index, no shared index. Default `alice: 0`, `bob: 1`, `carol: 2`, `dave: 3`, `eve: 4` (the e2e signers).                                                                     |
+| `gas`      | no       | `bufferPercent` (default 50) and `limitCap` (default 10 000 000): the gas limit of a transaction without one is `estimate × (100 + bufferPercent) / 100`, capped (the e2e `withGasBuffer`). |
+
+`rpcUrl`, `chainId` and `mnemonic` take the same sources as settings, and their types are checked once resolved (a value read from the environment is a string): a wrong URL, chain ID or mnemonic stops the run with exit 2, and the message never quotes the mnemonic. `profiles --profile <name>` prints the resolved section with the source of each value.
 
 ## Planner rules
 
@@ -247,19 +301,28 @@ An unexpected internal error after scenarios started (for example, the report ca
 
 `this.engine.evidence.record(kind, data, { label })` records a piece of evidence on the running step or `Before`/`After` hook:
 
-- `kind`: a short, namespaced name made of lowercase words separated by `.` or `-` (e.g. `engine.note`; Phase 1b modules will add `chain.tx`, `fhe.relayer-job`, …);
+- `kind`: a short, namespaced name made of lowercase words separated by `.` or `-` (e.g. `engine.note`, `chain.tx`);
 - `data`: a JSON object; secret values are redacted before it is stored.
 
 Each call adds a Cucumber attachment (media type `application/vnd.fhevm.evidence+json`), visible in the Cucumber report and in the terminal, and the report extracts it into `evidence.json`. Calling `record()` while no step or hook is running (e.g. from the World constructor, a `setTimeout`, or without awaiting) throws `evidence.record() must be called (and awaited) inside a step or hook`.
 
 `evidence.json` (`schemaVersion: 1`, type `EvidenceFile` in [`src/report/evidence.ts`](src/report/evidence.ts)) holds one entry per piece of evidence, each with a `scope`:
 
-| Scope      | Produced by | Content                                                                                                                                                |
-| ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `run`      | the engine  | `engine.run` (engine and Node versions, git commit, times, filters) and `engine.profile` (name, confirmation, settings with sources, secrets redacted) |
-| `scenario` | the engine  | `engine.scenario`: plan decision and reason, outcome, timings (also for skipped scenarios)                                                             |
-| `step`     | `record()`  | kind, label, data, timestamp, Gherkin scenario and step                                                                                                |
-| `hook`     | `record()`  | same, with the hook instead of the step                                                                                                                |
+| Scope      | Produced by | Content                                                                                                                                                                  |
+| ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `run`      | the engine  | `engine.run` (engine and Node versions, git commit, times, filters) and `engine.profile` (name, confirmation, chain section and settings with sources, secrets redacted) |
+| `scenario` | the engine  | `engine.scenario`: plan decision and reason, outcome, timings (also for skipped scenarios)                                                                               |
+| `step`     | `record()`  | kind, label, data, timestamp, Gherkin scenario and step                                                                                                                  |
+| `hook`     | `record()`  | same, with the hook instead of the step                                                                                                                                  |
+
+The Chain module records its evidence through `record()`, on the running step:
+
+| Kind           | Recorded by      | Data                                                                                                                                                                |
+| -------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chain.tx`     | `chain.send()`   | `chainId`, `hash`, `from` (`role`, `address`), `to`, `blockNumber`, `gasUsed`, `status` (`success`, `reverted`, `rejected` or `unknown`, the last two with `error`) |
+| `chain.deploy` | `chain.deploy()` | `chainId`, `contract`, `address`, `hash`, `deployer` (`role`, `address`), `blockNumber`, `gasUsed`, `status`                                                        |
+
+Wallets are recorded by role and address; the mnemonic never appears in evidence.
 
 ## Secret handling
 
@@ -272,7 +335,7 @@ Every output is redacted **before it is written**: nothing unredacted reaches th
 | Worker stdout/stderr (terminal and `console.log`) | in the engine, line by line, before printing or writing                                       |
 | `report.json`, `report.html`, `evidence.json`     | in the report builder                                                                         |
 
-Redaction replaces the raw, JSON-escaped and URL-encoded forms of each secret with `[REDACTED:<setting key>]`. A secret transformed in other ways (base64, hashed, split across lines) is not detected; never log transformed secrets. In addition, the worker never receives the profile environment variables, and the job (profile included) reaches the worker through stdin, never through its command line.
+Redaction replaces the raw, JSON-escaped and URL-encoded forms of each secret with `[REDACTED:<key>]`, where the key is the setting key or `chain.<field>`. With a `chain` section, the private key derived for each wallet role is a secret too (`chain.wallets.<role>`). A secret transformed in other ways (base64, hashed, split across lines) is not detected; never log transformed secrets. In addition, the worker never receives the profile environment variables, and the job (profile included) reaches the worker through stdin, never through its command line.
 
 ## Outputs
 
@@ -319,7 +382,7 @@ flowchart LR
     Orchestrator -->|"job via stdin, allowlisted env"| Worker
     subgraph Worker["Worker process (per scenario)"]
         JobContext["Job-context holder"] --> Cucumber
-        Cucumber --> World["Engine World<br/>scenario · profile · evidence · log"]
+        Cucumber --> World["Engine World<br/>scenario · profile · evidence · chain · log"]
     end
     Worker -->|"redacted output, messages.ndjson"| Orchestrator
     Orchestrator -->|"outcomes"| Report
@@ -334,8 +397,9 @@ flowchart LR
 | Planner        | `src/planner/`               | scenarios + filters + profile → `ExecutionPlan` (run/skip + reason); confirmation rules. Pure.                                      |
 | Runner         | `src/runner/orchestrator.ts` | `ExecutionPlan` → `ScenarioRunResult[]`, one per plan item; redacted console tee.                                                   |
 | Worker         | `src/runner/worker.ts`       | `WorkerJob` (stdin) → redacted Cucumber artifacts + exit code (`0` passed, `1` failed/invalid, `2` engine error, `143` terminated). |
-| Engine API     | `src/api/` (`#engine`)       | `EngineWorld`, `ProfileView`, `Evidence`.                                                                                           |
-| Engine support | `src/cucumber/support/`      | loaded first in every worker: default step timeout, default World, EngineWorld check.                                               |
+| Engine API     | `src/api/` (`#engine`)       | `EngineWorld`, `ProfileView`, `Evidence`, `Chain`, `loadArtifact`.                                                                  |
+| Chain          | `src/chain/`                 | resolved `chain` section → provider, role wallets with gas buffer, `send`/`deploy` recording `chain.tx`/`chain.deploy`.             |
+| Engine support | `src/cucumber/support/`      | loaded first in every worker: default step timeout, default World, EngineWorld check, chain provider closed after each scenario.    |
 | Secrets        | `src/secrets/redactor.ts`    | secret values → redactor for text, objects and streams.                                                                             |
 | Report         | `src/report/`                | plan + results + message streams → `RunReport` → `report.html`, `evidence.json`; shared `findExecutionProblems`.                    |
 | CLI            | `src/cli/`                   | argv → exit code.                                                                                                                   |
@@ -344,9 +408,12 @@ flowchart LR
 
 ```bash
 npm run build          # clean build to dist/
-npm test               # node:test suites (unit + CLI integration), on the compiled output
+npm test               # node:test suites (unit + CLI integration), on the compiled output; no Docker
+npm run test:chain     # Chain module tests against a throwaway Anvil container (needs Docker and a build)
 npm run tsc            # type-check only
 npm run prettier:check # formatting (same rules as the repository root)
 ```
 
 The CLI integration tests run the engine against `test/fixtures/scenarios/` with the fixture profiles of `test/fixtures/profiles/`. The fixtures cover passing, failing, undefined, ambiguous and unparsable scenarios, crashes at import, step and scenario timeouts, disabled scenarios, isolation, runtime skips (step, hook, after a failing hook), Worlds not extending `EngineWorld`, missing settings, planner skips (targets, confirmation), evidence from steps and hooks, and secret redaction across every output. `test/fixtures/invalid-scenarios/` and `test/fixtures/invalid-profiles/` hold deliberately invalid files.
+
+`npm run test:chain` starts the Anvil node of [`test/anvil/compose.yaml`](test/anvil/compose.yaml) (chain ID 31337, host port 8545, or `TE_ANVIL_PORT`), runs `test/anvil/*.anvil.ts`, and always removes the container. Those tests use the `fx-anvil` profile of `test/fixtures/chain-profiles/`, the scenarios of `test/fixtures/chain-scenarios/` and the `Counter` contract of `test/fixtures/contracts/`, whose compiled artifact is committed. They cover deployment, transactions, the gas buffer, reverted and rejected transactions, the chain ID check, an unreachable RPC, and full engine runs with `chain.*` evidence and no mnemonic in any output.

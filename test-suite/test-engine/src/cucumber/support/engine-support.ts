@@ -2,9 +2,9 @@
  * Support code loaded into every scenario before the scenario's own support code.
  * It runs inside the scenario worker process, so it only affects that scenario.
  */
-import { Before, setDefaultTimeout, setWorldConstructor } from '@cucumber/cucumber';
+import { After, Before, setDefaultTimeout, setWorldConstructor } from '@cucumber/cucumber';
 
-import { EngineWorld } from '../../api/world.js';
+import { EngineWorld, disposeWorld } from '../../api/world.js';
 import { getCurrentJob } from '../../runner/job-context.js';
 
 const job = getCurrentJob();
@@ -17,4 +17,8 @@ Before({ name: 'engine: World must extend EngineWorld' }, function (this: unknow
   if (!(this instanceof EngineWorld)) {
     throw new Error("the World must extend EngineWorld (import { EngineWorld } from '#engine')");
   }
+});
+
+After({ name: 'engine: release scenario resources' }, function (this: unknown) {
+  if (this instanceof EngineWorld) disposeWorld(this);
 });

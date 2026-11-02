@@ -1,14 +1,18 @@
+import { Mnemonic } from 'ethers';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
+import { deriveAccounts } from '../chain/wallets.js';
 import { PROFILE_SCHEMA_PATH } from '../paths.js';
 import { createYamlValidator } from '../schema/yaml-document.js';
 import { MIN_SECRET_LENGTH, type SecretValue } from '../secrets/redactor.js';
 import { parseEnvFile } from './env-file.js';
 import {
   BUILTIN_PROFILE,
+  type ChainSectionDefinition,
   type ProfileDefinition,
   ProfileError,
+  type ResolvedChainSection,
   type ResolvedProfile,
   type ResolvedSetting,
   type ValueSource,
@@ -48,9 +52,11 @@ export function listProfileNames(profilesDir: string): string[] {
   return [BUILTIN_PROFILE, ...fileNames.sort()];
 }
 
-function checkValueSource(key: string, source: ValueSource): string[] {
+/** The value sources of the `chain` section, in display order. */
+const CHAIN_SOURCES = ['rpcUrl', 'chainId', 'mnemonic'] as const;
+
+function checkValueSource(where: string, source: ValueSource): string[] {
   const problems: string[] = [];
-  const where = `spec.settings.${key}`;
   const hasValue = source.value !== undefined;
   const hasEnv = source.env !== undefined;
   if (hasValue === hasEnv) problems.push(`${where}: exactly one of 'value' or 'env' is required`);
@@ -86,9 +92,34 @@ function semanticProblems(profilePath: string, document: unknown): string[] {
   } else if (typeof metadata.name === 'string' && metadata.name !== fileName) {
     problems.push(`metadata.name '${metadata.name}' must match the file name '${fileName}'`);
   }
+  if (isRecord(spec.chain)) problems.push(...chainProblems(spec.chain));
   if (isRecord(spec.settings)) {
     for (const [key, source] of Object.entries(spec.settings)) {
-      if (isRecord(source)) problems.push(...checkValueSource(key, source as ValueSource));
+      if (isRecord(source)) problems.push(...checkValueSource(`spec.settings.${key}`, source as ValueSource));
+    }
+  }
+  return problems;
+}
+
+function chainProblems(chain: Record<string, unknown>): string[] {
+  const problems: string[] = [];
+  for (const field of CHAIN_SOURCES) {
+    const source = chain[field];
+    if (isRecord(source)) problems.push(...checkValueSource(`spec.chain.${field}`, source as ValueSource));
+  }
+  if (isRecord(chain.mnemonic) && chain.mnemonic.secret !== true) {
+    problems.push(`spec.chain.mnemonic: must declare 'secret: true'`);
+  }
+  if (isRecord(chain.chainId) && chain.chainId.secret === true) {
+    problems.push(`spec.chain.chainId: cannot be a secret`);
+  }
+  if (isRecord(chain.wallets)) {
+    const roleByIndex = new Map<unknown, string>();
+    for (const [role, index] of Object.entries(chain.wallets)) {
+      const other = roleByIndex.get(index);
+      if (other !== undefined)
+        problems.push(`spec.chain.wallets: '${other}' and '${role}' use the same index ${index}`);
+      else roleByIndex.set(index, role);
     }
   }
   return problems;
@@ -155,7 +186,7 @@ function readEnvFiles(definition: ProfileDefinition, profilePath: string, proble
 }
 
 function resolveSetting(
-  key: string,
+  where: string,
   source: ValueSource,
   env: NodeJS.ProcessEnv,
   envFiles: EnvFileValues[],
@@ -175,14 +206,69 @@ function resolveSetting(
   }
 
   if (!resolved) {
-    problems.push(`spec.settings.${key}: environment variable '${name}' is not set`);
+    problems.push(`${where}: environment variable '${name}' is not set`);
     return undefined;
   }
   if (secret && String(resolved.value).length < MIN_SECRET_LENGTH) {
-    problems.push(`spec.settings.${key}: secret value must be at least ${MIN_SECRET_LENGTH} characters long`);
+    problems.push(`${where}: secret value must be at least ${MIN_SECRET_LENGTH} characters long`);
     return undefined;
   }
   return resolved;
+}
+
+type ResolveValue = (where: string, source: ValueSource) => ResolvedSetting | undefined;
+
+/**
+ * Resolves the `chain` section and checks the types of its values: a value read from the
+ * environment is a string, so types can only be checked once resolved.
+ */
+function resolveChain(
+  chain: ChainSectionDefinition,
+  resolve: ResolveValue,
+  problems: string[],
+): ResolvedChainSection | undefined {
+  const before = problems.length;
+  const rpcUrl = resolve('spec.chain.rpcUrl', chain.rpcUrl);
+  const chainId = resolve('spec.chain.chainId', chain.chainId);
+  const mnemonic = resolve('spec.chain.mnemonic', chain.mnemonic);
+
+  if (rpcUrl && !isHttpUrl(String(rpcUrl.value))) {
+    problems.push(`spec.chain.rpcUrl: must be an http(s) URL`);
+  }
+  const chainIdValue = chainId ? toChainId(chainId.value) : undefined;
+  if (chainId && chainIdValue === undefined) {
+    problems.push(`spec.chain.chainId: must be a positive integer, got '${String(chainId.value)}'`);
+  }
+  // The message never quotes the mnemonic.
+  if (mnemonic && !Mnemonic.isValidMnemonic(String(mnemonic.value))) {
+    problems.push(`spec.chain.mnemonic: not a valid BIP-39 mnemonic`);
+  }
+  if (problems.length > before || !rpcUrl || !chainId || !mnemonic || chainIdValue === undefined) return undefined;
+
+  return {
+    rpcUrl: { ...rpcUrl, value: String(rpcUrl.value) },
+    chainId: { ...chainId, value: chainIdValue },
+    mnemonic: { ...mnemonic, value: String(mnemonic.value) },
+    hdPath: chain.hdPath,
+    wallets: { ...chain.wallets },
+    gas: { ...chain.gas },
+  };
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function toChainId(value: unknown): number | undefined {
+  const text = String(value).trim();
+  if (typeof value === 'boolean' || !/^[0-9]+$/.test(text)) return undefined;
+  const chainId = Number(text);
+  return Number.isSafeInteger(chainId) && chainId > 0 ? chainId : undefined;
 }
 
 /**
@@ -203,9 +289,12 @@ export function loadProfile(name: string, options: ProfileOptions): ResolvedProf
 
   const problems: string[] = [];
   const envFiles = readEnvFiles(definition, profilePath, problems);
+  const resolve: ResolveValue = (where, source) =>
+    resolveSetting(where, source, options.env ?? process.env, envFiles, problems);
+  const chain = definition.spec.chain ? resolveChain(definition.spec.chain, resolve, problems) : undefined;
   const settings: Record<string, ResolvedSetting> = {};
   for (const [key, source] of Object.entries(definition.spec.settings)) {
-    const resolved = resolveSetting(key, source, options.env ?? process.env, envFiles, problems);
+    const resolved = resolve(`spec.settings.${key}`, source);
     if (resolved) settings[key] = resolved;
   }
   if (problems.length > 0) throw new ProfileError(profilePath, problems);
@@ -214,23 +303,54 @@ export function loadProfile(name: string, options: ProfileOptions): ResolvedProf
     name: definition.metadata.name,
     description: definition.metadata.description,
     requiresConfirmation: definition.spec.requiresConfirmation,
+    ...(chain ? { chain } : {}),
     settings,
   };
 }
 
-/** The secret values of a resolved profile, for building a redactor. */
+/** Every resolved value of a profile under its display key (`chain.<field>`, then setting keys). */
+function valuesOf(profile: ResolvedProfile): [string, ResolvedSetting][] {
+  const chain = profile.chain;
+  const chainValues: [string, ResolvedSetting][] = chain
+    ? CHAIN_SOURCES.map((field) => [`chain.${field}`, chain[field]])
+    : [];
+  return [...chainValues, ...Object.entries(profile.settings)];
+}
+
+/**
+ * The secret values of a resolved profile (typed sections and settings), for building a redactor.
+ * With a `chain` section, the private keys derived for the wallet roles are secrets too
+ * (`chain.wallets.<role>`, matched without the `0x` prefix so both forms are redacted).
+ */
 export function secretsOf(profile: ResolvedProfile): SecretValue[] {
-  return Object.entries(profile.settings)
+  const secrets = valuesOf(profile)
     .filter(([, setting]) => setting.secret)
     .map(([key, setting]) => ({ key, value: String(setting.value) }));
+  if (profile.chain) {
+    const { mnemonic, hdPath, wallets } = profile.chain;
+    for (const [role, account] of Object.entries(deriveAccounts(mnemonic.value, hdPath, wallets))) {
+      secrets.push({ key: `chain.wallets.${role}`, value: account.privateKey.slice(2) });
+    }
+  }
+  return secrets;
+}
+
+const redact = <T extends ResolvedSetting>(key: string, setting: T): T =>
+  setting.secret ? { ...setting, value: `[REDACTED:${key}]` } : setting;
+
+/** A copy of the `chain` section safe to print or store: secret values replaced by a placeholder. */
+export function redactedChain(profile: ResolvedProfile): ResolvedChainSection | undefined {
+  if (!profile.chain) return undefined;
+  // chainId cannot be a secret (checked when the file is read).
+  const { rpcUrl, mnemonic } = profile.chain;
+  return {
+    ...profile.chain,
+    rpcUrl: redact('chain.rpcUrl', rpcUrl),
+    mnemonic: redact('chain.mnemonic', mnemonic),
+  };
 }
 
 /** A copy of the settings safe to print or store: secret values replaced by a placeholder. */
 export function redactedSettings(profile: ResolvedProfile): Record<string, ResolvedSetting> {
-  return Object.fromEntries(
-    Object.entries(profile.settings).map(([key, setting]) => [
-      key,
-      setting.secret ? { ...setting, value: `[REDACTED:${key}]` } : setting,
-    ]),
-  );
+  return Object.fromEntries(Object.entries(profile.settings).map(([key, setting]) => [key, redact(key, setting)]));
 }

@@ -21,6 +21,7 @@
     "tsc": "tsc --noEmit -p tsconfig.json",
     "engine": "node dist/src/cli/main.js",
     "test": "node --test --test-reporter=spec \"dist/test/**/*.test.js\"",
+    "test:chain": "sh test/anvil/run.sh",
     "prettier": "prettier --write \"**/*.{json,md,ts,yml,yaml}\"",
     "prettier:check": "prettier --check \"**/*.{json,md,ts,yml,yaml}\""
   },
@@ -30,6 +31,7 @@
     "@cucumber/messages": "34.2.0",
     "@cucumber/tag-expressions": "11.0.0",
     "ajv": "^8.20.0",
+    "ethers": "^6.17.0",
     "yaml": "^2.9.1"
   },
   "devDependencies": {

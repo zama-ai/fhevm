@@ -3,8 +3,8 @@ import path from 'node:path';
 
 import type { DiscoveredScenario } from '../discovery/discovery.js';
 import type { ExecutionPlan, PlanDecision, SelectionFilters } from '../planner/planner.js';
-import { redactedSettings } from '../profiles/profile.js';
-import type { ResolvedProfile, ResolvedSetting } from '../profiles/types.js';
+import { redactedChain, redactedSettings } from '../profiles/profile.js';
+import type { ResolvedChainSection, ResolvedProfile, ResolvedSetting } from '../profiles/types.js';
 import { ARTIFACTS, type RunMode, type ScenarioOutcome, type ScenarioRunResult } from '../runner/types.js';
 import type { Redactor } from '../secrets/redactor.js';
 import { EVIDENCE_FILE, buildEvidence } from './evidence.js';
@@ -51,6 +51,8 @@ export interface ProfileSnapshot {
   name: string;
   description: string;
   requiresConfirmation: boolean;
+  /** Secret values replaced by `[REDACTED:chain.<field>]`; the source of every value is kept. */
+  chain?: ResolvedChainSection;
   /** Secret values replaced by `[REDACTED:<key>]`; the source of every value is kept. */
   settings: Record<string, ResolvedSetting>;
 }
@@ -184,6 +186,7 @@ export function buildRunReport(input: BuildReportInput): RunReport {
         name: profile.name,
         description: profile.description,
         requiresConfirmation: profile.requiresConfirmation,
+        ...(profile.chain ? { chain: redactedChain(profile) } : {}),
         settings: redactedSettings(profile),
       },
       ...(input.gitCommit ? { gitCommit: input.gitCommit } : {}),
