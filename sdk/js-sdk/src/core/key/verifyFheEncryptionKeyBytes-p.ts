@@ -4,18 +4,13 @@ import type { FhevmBase, OptionalNativeClient, ResolvedFhevmOptions } from '../t
 import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
 import type { EthCallResult, TrustedClient } from '../modules/ethereum/types.js';
 import type { BytesHex, ChecksummedAddress } from '../types/primitives.js';
-import type { HostContractVersion } from '../types/hostContract.js';
 import { keccak_256, shake256 } from '@noble/hashes/sha3.js';
 import { addressToChecksummedAddress, asAddress } from '../base/address.js';
 import { bytesToHex, bytesToHexNo0x, hexToBytes, unsafeBytesEquals } from '../base/bytes.js';
 import { assertIsUint256 } from '../base/uint.js';
 import { assertIsNonEmptyString } from '../base/string.js';
 import { asCoreClientFhevm } from '../runtime/CoreFhevm-p.js';
-import {
-  assertIsHostContractVersionOf,
-  getHostContractVersion,
-  parseVersion,
-} from '../host-contracts/HostContractVersion-p.js';
+import { assertIsHostContractVersionOf, parseVersion } from '../host-contracts/HostContractVersion-p.js';
 import {
   getActiveCrsIdAbi,
   getActiveKeyIdAbi,
@@ -196,7 +191,7 @@ export async function verifyFheEncryptionKeyBytes(
   let versionCheck: Promise<void> | undefined;
   const checkVersion = (): Promise<void> =>
     (versionCheck ??= _thenChecked(
-      _assertIsKmsGeneration(context, source, () => read(getVersionAbi, [])),
+      _assertIsKmsGeneration(() => read(getVersionAbi, [])),
       [checkChainId],
     ));
   const readActiveId = (abi: readonly [Record<string, unknown> & { readonly name: string }]): Promise<unknown> =>
@@ -307,26 +302,16 @@ async function _assertChainId(context: Context, source: KmsGenerationSource): Pr
 }
 
 /**
- * Checks that the contract is `KMSGeneration`. On Ethereum, through the host
- * contract version cache, like any other host contract read. Through
- * `keyVerification`, read directly: the client's network is checked by this
- * verification only, so a version it reads is never shared with another
- * client (a client on the wrong network would fail the others).
+ * Checks that the contract is `KMSGeneration`. The version is read by each
+ * verification, on every chain, and never taken from or stored in the host
+ * contract version cache: the read runs alongside the chain id check, so a
+ * shared value could come from a client on the wrong network and fail every
+ * other client. The cost is one call per verification.
  */
-async function _assertIsKmsGeneration(
-  context: Context,
-  source: KmsGenerationSource,
-  readVersion: () => Promise<unknown>,
-): Promise<void> {
-  let version: HostContractVersion;
-  if (source.checkChainId) {
-    const res = await readVersion();
-    assertIsNonEmptyString(res);
-    version = parseVersion(res);
-  } else {
-    version = await getHostContractVersion(asCoreClientFhevm(context), { address: source.address });
-  }
-  assertIsHostContractVersionOf(version, 'KMSGeneration');
+async function _assertIsKmsGeneration(readVersion: () => Promise<unknown>): Promise<void> {
+  const res = await readVersion();
+  assertIsNonEmptyString(res);
+  assertIsHostContractVersionOf(parseVersion(res), 'KMSGeneration');
 }
 
 // KMSGeneration returns id 0 when no key / CRS generation has completed.

@@ -739,13 +739,14 @@ describe('verifyFheEncryptionKeyBytes version read', () => {
     },
   );
 
-  it('shares the version cache with host contract reads on Ethereum', async () => {
+  it('reads the version on Ethereum too, never from the host contract version cache', async () => {
     const { client, readContract } = makeClient({ chain: ethereumChain, handlers: kmsGenerationHandlers() });
     const address = ethereumChain.fhevm.contracts.kmsGeneration?.address as ChecksummedAddress;
 
     await getHostContractVersion(client, { address });
     await verifyFheEncryptionKeyBytes(client, keyBytes());
-    expect(countReads(readContract, 'getVersion')).toBe(1);
+    await verifyFheEncryptionKeyBytes(client, keyBytes());
+    expect(countReads(readContract, 'getVersion')).toBe(3);
   });
 });
 
