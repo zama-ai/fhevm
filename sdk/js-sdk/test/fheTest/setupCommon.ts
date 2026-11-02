@@ -59,6 +59,11 @@ export type FheTestBaseEnv = {
   readonly protocolVersion: ProtocolVersion;
   readonly fheEncryptionKeyTfheVersion: string;
   readonly moduleVersions?: FhevmModuleVersions | undefined;
+  /**
+   * Sepolia RPC URL, set when the host chain is not Ethereum (bsc_testnet):
+   * the SDK checks the FHE key / CRS against Sepolia's KMSGeneration.
+   */
+  readonly keyVerificationRpcUrl?: string | undefined;
 };
 
 // ---------------------------------------------------------------------------
@@ -566,6 +571,19 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     );
   }
 
+  // bscTestnet has no KMSGeneration: the key check reads Sepolia's, through
+  // the RPC URL the sepolia chain uses.
+  let keyVerificationRpcUrl: string | undefined;
+  if (chainName === 'bsc_testnet') {
+    keyVerificationRpcUrl =
+      parseEnvFile(resolve(testDir, '.env.sepolia')).RPC_URL ?? loadChainDefaults().sepolia?.rpcUrl;
+    if (!keyVerificationRpcUrl) {
+      throw new Error(
+        `Sepolia RPC_URL is missing for "${chainName}" key verification. Set it in test/.env.sepolia or add a sepolia entry to test/chains/chain-defaults.json.`,
+      );
+    }
+  }
+
   const fheTestAddress = resolveFHETestAddress(chainName);
   const fheTestVersion = resolveFHETestVersion(chainName);
 
@@ -610,6 +628,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     protocolVersion: getExpectedProtocolVersion(chainName),
     fheEncryptionKeyTfheVersion: getFheEncryptionKeyTfheVersion(chainName),
     moduleVersions: tfheVersion === undefined ? undefined : { tfhe: tfheVersion },
+    keyVerificationRpcUrl,
   };
 
   return _baseEnv;
