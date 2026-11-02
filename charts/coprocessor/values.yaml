@@ -1918,8 +1918,8 @@ coprocessorProxy:
   # connection is closed after. A later head on the connection is due within 15 s of the previous
   # response.
   requestHeadTimeoutSeconds: 10
-  # Per client IP, connections held past the TLS handshake and connections in the handshake
-  # (which Pingora gives up to 60 s); more are refused before TLS. 0 disables a limit. Both need
+  # Per client IP, all connections, and those still in the TLS handshake (which Pingora gives up
+  # to 60 s); more are refused before TLS. 0 disables a limit. Both need
   # the client's own address: set both to 0 behind an L7 front layer, or with a TLS-passthrough
   # Service whose externalTrafficPolicy is Cluster, where every client appears as a node address.
   maxConnectionsPerIp: 512

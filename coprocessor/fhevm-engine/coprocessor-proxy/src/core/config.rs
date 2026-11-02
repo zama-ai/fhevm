@@ -123,7 +123,7 @@ pub struct Config {
         value_parser = parse_non_zero_duration
     )]
     pub request_head_timeout: Duration,
-    /// How many connections one client IP can hold open past their TLS handshake; more are
+    /// How many connections one client IP can hold, in their TLS handshake or past it; more are
     /// refused before TLS. 0 disables the limit, as needed when the proxy does not see the
     /// clients' own addresses.
     #[arg(

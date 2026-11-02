@@ -140,17 +140,20 @@ can hold of it:
   to send the whole head of its first request, and 15 s after a response to send the whole head
   of the next one. A connection that misses its deadline is closed, however slowly bytes still
   arrive. No deadline runs while prf-service holds a request.
-- One client IP can hold `coprocessorProxy.maxConnectionsPerIp` connections past their TLS
-  handshake (512 by default) and `coprocessorProxy.maxPendingHandshakesPerIp` connections in
-  their handshake (256 by default). The proxy drops a connection above either limit before TLS.
-  Pingora 0.9 gives a TLS handshake up to 60 s and reports no failed handshake, so a handshake
-  that fails keeps its place until those 60 s pass. `0` disables a limit.
+- One client IP can hold `coprocessorProxy.maxConnectionsPerIp` connections (512 by default), of
+  which `coprocessorProxy.maxPendingHandshakesPerIp` in their TLS handshake (256 by default). The
+  proxy drops a connection above either limit before TLS. `0` disables a limit.
 
-A connector's handshakes complete in milliseconds, so the pending limit refuses it only when more
-than 256 of its handshakes are in flight at once, for example when a rolling restart moves that
-many of its concurrent requests to one busy replica. Each request a connector holds open takes one
-connection, so
-`maxConnectionsPerIp` must exceed a connector's concurrent PRF requests to one replica.
+Pingora 0.9 gives a TLS handshake up to 60 s and reports no failed handshake, so a connection that
+fails or aborts its handshake, or never starts it, keeps its place until those 60 s pass. A
+TCP-only health check against the TLS port therefore holds one place per probe for 60 s; check
+the health port instead. A connector's handshakes complete in milliseconds, so the pending limit
+refuses it only when more than 256 of its handshakes are in flight at once. On a replica with 2
+threads, a burst of 200 simultaneous connections from one IP completed without a refusal, and a
+burst of 300 reached the limit. A connector whose connect timeout fires under overload and that
+retries its 128 connections twice can also reach it, since the abandoned handshakes keep their
+places. Each request a connector holds open takes one connection, so `maxConnectionsPerIp` must
+exceed a connector's concurrent PRF requests to one replica.
 
 The per-IP limits need each client's own address. With a TLS-passthrough `LoadBalancer` or
 `NodePort` Service, set `externalTrafficPolicy: Local`: with `Cluster`, kube-proxy replaces the
@@ -162,8 +165,8 @@ PROXY protocol.
 These limits bound one address, not a flood from many: over IPv6, one host can use every address
 of its /64. Each slow connection holds about 48 KB
 (measured with slow request heads), so the 512Mi memory limit fills at about 10,000 connections and
-the replica is OOM-killed, at any thread count. One address can hold up to 768 connections (512
-past TLS and 256 in the handshake), about 37 MB, so about 14 addresses can still fill a replica.
+the replica is OOM-killed, at any thread count. One address can hold up to 512 connections, about
+24 MB, so about 21 addresses can still fill a replica.
 A bound across all clients is tracked in
 [fhevm-internal issue 2271](https://github.com/zama-ai/fhevm-internal/issues/2271). The proxy must
 therefore not be reachable directly from the internet. Put it behind one of:
@@ -188,7 +191,8 @@ connector's `PRF_RETRIEVAL_DEADLINE` and `prfServiceResponseTimeoutSeconds`, as 
 
 `coprocessor_proxy_connections_refused_counter` counts the connections dropped before TLS, by the
 limit they hit (`reason="open_connections"` or `reason="pending_handshakes"`), and
-`coprocessor_proxy_request_head_timeouts_counter` the connections closed for a late request head.
+`coprocessor_proxy_request_head_timeouts_counter` the connections closed at a request head
+deadline, including one still receiving the previous request's body.
 `coprocessor_proxy_client_connections` is the number of connections open past their TLS handshake.
 A rise in refusals with no attack under way means a connector shares its address with others, or
 the limits see node addresses.

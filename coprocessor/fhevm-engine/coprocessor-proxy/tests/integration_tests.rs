@@ -836,6 +836,62 @@ async fn test_serves_a_request_held_longer_than_the_head_deadline_and_idle_timeo
 }
 
 #[tokio::test]
+async fn test_serves_a_second_request_head_sent_after_the_head_timeout_within_the_idle_timeout() {
+    use tokio::io::AsyncWriteExt;
+
+    let head_timeout = Duration::from_secs(1);
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.request_head_timeout = head_timeout;
+    })
+    .await;
+    let mut stream = t.tls.connect(t.addr).await;
+    let head = format!("GET / HTTP/1.1\r\nHost: {}\r\n\r\n", t.addr);
+    stream.write_all(head.as_bytes()).await.unwrap();
+    let response = read_one_response(&mut stream).await;
+    assert!(response.starts_with("HTTP/1.1 404"), "{response}");
+
+    tokio::time::sleep(head_timeout * 3).await;
+    stream.write_all(head.as_bytes()).await.unwrap();
+    let response = read_one_response(&mut stream).await;
+    assert!(response.starts_with("HTTP/1.1 404"), "{response}");
+}
+
+#[tokio::test]
+async fn test_counts_no_connection_after_head_deadline_closes() {
+    use tokio::io::AsyncReadExt;
+
+    let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
+    let t = TestProxy::launch(rpc, StubPrfService::start().await, |config| {
+        config.request_head_timeout = Duration::from_secs(1);
+        config.max_connections_per_ip = 2;
+        config.max_pending_handshakes_per_ip = 0;
+    })
+    .await;
+    // Two connections that never send a head, closed by the proxy at their deadline.
+    for mut idle in [t.tls.connect(t.addr).await, t.tls.connect(t.addr).await] {
+        let mut byte = [0u8; 1];
+        let read = tokio::time::timeout(Duration::from_secs(5), idle.read(&mut byte)).await;
+        assert!(matches!(read, Ok(Ok(0) | Err(_))), "{read:?}");
+    }
+
+    // Each leaked count would hold one of the 2 places for good.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let first = open_counted_connection(&t).await;
+        let second = open_counted_connection(&t).await;
+        if first.is_some() && second.is_some() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "a connection closed at its deadline is still counted"
+        );
+        drop((first, second));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+#[tokio::test]
 async fn test_refuses_an_ip_at_its_connection_limit_before_tls() {
     let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
     let t = TestProxy::launch(rpc, StubPrfService::start().await, |config| {

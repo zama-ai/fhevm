@@ -1,6 +1,10 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
-use crate::core::{ErrorCode, ErrorResponse, Proxy, Route, RouteError, match_route};
+use crate::core::{
+    ErrorCode, ErrorResponse, Proxy, Route, RouteError,
+    client_limits::{ConnectionId, connection_id},
+    match_route,
+};
 use alloy::primitives::Address;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -26,6 +30,10 @@ use std::{
     time::{Duration, Instant},
 };
 use tracing::{error, info};
+
+fn client_connection(session: &Session) -> Option<ConnectionId> {
+    session.digest()?.socket_digest.as_ref().map(connection_id)
+}
 
 static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
@@ -127,8 +135,8 @@ impl ProxyHttp for Proxy {
         session: &mut Session,
         _ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
-        if let Some(peer) = session.client_addr().and_then(|a| a.as_inet()) {
-            self.client_limits.head_received(*peer);
+        if let Some(connection) = client_connection(session) {
+            self.client_limits.head_received(connection);
         }
         // The client's next connection goes through the Service, to a replica that is not stopping.
         if self.draining.load(Ordering::Relaxed) {
@@ -308,8 +316,8 @@ impl ProxyHttp for Proxy {
 
     // Structured access log. Never logs bodies nor credentials.
     async fn logging(&self, session: &mut Session, e: Option<&Error>, ctx: &mut Self::CTX) {
-        if let Some(peer) = session.client_addr().and_then(|a| a.as_inet()) {
-            self.client_limits.response_sent(*peer);
+        if let Some(connection) = client_connection(session) {
+            self.client_limits.response_sent(connection);
         }
         let status = session
             .response_written()

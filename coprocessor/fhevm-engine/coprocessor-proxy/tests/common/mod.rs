@@ -464,7 +464,7 @@ impl TestProxy {
             .tls_danger_accept_invalid_certs(true) // self-signed test certificate
             .build()
             .unwrap();
-        wait_for_listener(addr).await;
+        wait_for_tls_listener(&tls, addr).await;
 
         Self {
             client,
@@ -623,6 +623,25 @@ pub fn free_addr() -> SocketAddr {
         .unwrap()
         .local_addr()
         .unwrap()
+}
+
+/// Waits for the proxy's TLS listener with complete requests: a TCP connection that never starts
+/// TLS would hold one of the client IP's places for Pingora's 60 s handshake timeout.
+async fn wait_for_tls_listener(tls: &TestTls, addr: SocketAddr) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(mut stream) = tls.try_connect(addr).await {
+            let request = format!("GET / HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
+            stream.write_all(request.as_bytes()).await.unwrap();
+            let mut response = Vec::new();
+            stream.read_to_end(&mut response).await.unwrap();
+            return;
+        }
+        assert!(Instant::now() < deadline, "{addr} did not come up");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
 pub async fn wait_for_listener(addr: SocketAddr) {
