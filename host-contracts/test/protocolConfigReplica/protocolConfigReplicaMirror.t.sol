@@ -234,7 +234,9 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaTestBase {
         assertFalse(protocolConfigReplica.isValidEpochForContext(forgedId, forgedEpochId));
 
         // The forged calldata still matches the digest built from the restored pair.
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsContextIdDestroyed.selector, forgedId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsContextCannotBeActivated.selector, forgedId)
+        );
         protocolConfigReplica.submitKmsContextSwitch(context, epoch);
     }
 
@@ -254,7 +256,9 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaTestBase {
         );
 
         // Canonical later allocates the same IDs to a real committee. The submit path rejects them.
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsContextIdDestroyed.selector, forgedId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsContextCannotBeActivated.selector, forgedId)
+        );
         protocolConfigReplica.submitKmsContextSwitch(
             _ctxSubmission(CTX1, forgedId, SEED2, SEED0, QUORUM),
             _epochSubmission(forgedId, EPOCH1, forgedEpochId, SEED2, N)

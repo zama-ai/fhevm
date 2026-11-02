@@ -122,10 +122,10 @@ contract ProtocolConfigReplica is
             revert NonIncreasingEpochId(epoch.epochId, previousEpochId);
         }
         if ($.contextState[context.contextId] == ContextState.Destroyed) {
-            revert KmsContextIdDestroyed(context.contextId);
+            revert DestroyedKmsContextCannotBeActivated(context.contextId);
         }
         if ($.epochState[epoch.epochId] == EpochState.Destroyed) {
-            revert KmsEpochIdDestroyed(epoch.epochId);
+            revert DestroyedKmsEpochCannotBeActivated(epoch.epochId);
         }
 
         // Store the new committee first, because the epoch signatures verify against it.
@@ -166,7 +166,7 @@ contract ProtocolConfigReplica is
             revert KmsKeyResharingAlreadyApplied(epoch.epochId);
         }
         if ($.epochState[epoch.epochId] == EpochState.Destroyed) {
-            revert KmsEpochIdDestroyed(epoch.epochId);
+            revert DestroyedKmsEpochCannotBeActivated(epoch.epochId);
         }
 
         uint256 contextId = $.latestActiveKmsContextId;

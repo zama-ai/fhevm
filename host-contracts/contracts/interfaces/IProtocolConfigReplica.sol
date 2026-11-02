@@ -103,11 +103,11 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
 
     /// @notice The submitted context ID was destroyed. It cannot be activated through a submission.
     /// @param contextId The destroyed context ID.
-    error KmsContextIdDestroyed(uint256 contextId);
+    error DestroyedKmsContextCannotBeActivated(uint256 contextId);
 
     /// @notice The submitted epoch ID was destroyed. It cannot be activated through a submission.
     /// @param epochId The destroyed epoch ID.
-    error KmsEpochIdDestroyed(uint256 epochId);
+    error DestroyedKmsEpochCannotBeActivated(uint256 epochId);
 
     /// @notice The epoch ID is not strictly greater than the active one.
     /// @param epochId The rejected epoch ID.
@@ -165,7 +165,7 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
      *      Every context signature must recover to a previous-committee signer. Leave out the
      *      signatures of signers that are only in the new committee. Reverts with
      *      `NonIncreasingEpochId` if the epoch ID is not above the active one. Reverts with
-     *      `KmsContextIdDestroyed` or `KmsEpochIdDestroyed` if either ID was destroyed.
+     *      `DestroyedKmsContextCannotBeActivated` or `DestroyedKmsEpochCannotBeActivated` if either ID was destroyed.
      * @param context The context switch and its signatures.
      * @param epoch The first epoch of the new context and its signatures.
      */
@@ -175,7 +175,7 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
      * @notice Applies a canonical same-set resharing.
      * @dev The resharing builds on the active context and epoch. Verifies the
      *      EpochActivationConfirmation signatures of every signer of the active committee. Reverts
-     *      with `KmsEpochIdDestroyed` if the epoch ID was destroyed.
+     *      with `DestroyedKmsEpochCannotBeActivated` if the epoch ID was destroyed.
      * @param epoch The new epoch and its signatures.
      */
     function submitKmsKeyResharing(KmsEpochSubmission calldata epoch) external;

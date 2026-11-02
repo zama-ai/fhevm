@@ -232,7 +232,9 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaTestBase {
         vm.prank(owner);
         protocolConfigReplica.mirrorKmsContextDestruction(destroyedId);
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsContextIdDestroyed.selector, destroyedId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsContextCannotBeActivated.selector, destroyedId)
+        );
         protocolConfigReplica.submitKmsContextSwitch(
             _ctxSubmission(CTX1, destroyedId, SEED1, SEED0, QUORUM),
             _epochSubmission(destroyedId, EPOCH1, EPOCH1 + 1, SEED1, N)
@@ -245,7 +247,9 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaTestBase {
         vm.prank(owner);
         protocolConfigReplica.mirrorKmsEpochDestruction(destroyedId);
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsEpochIdDestroyed.selector, destroyedId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsEpochCannotBeActivated.selector, destroyedId)
+        );
         protocolConfigReplica.submitKmsContextSwitch(
             _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM),
             _epochSubmission(CTX1 + 1, EPOCH1, destroyedId, SEED1, N)
@@ -335,7 +339,9 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaTestBase {
         vm.prank(owner);
         protocolConfigReplica.mirrorKmsEpochDestruction(destroyedId);
 
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsEpochIdDestroyed.selector, destroyedId));
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsEpochCannotBeActivated.selector, destroyedId)
+        );
         protocolConfigReplica.submitKmsKeyResharing(_epochSubmission(CTX1, EPOCH1, destroyedId, SEED0, N));
     }
 }
