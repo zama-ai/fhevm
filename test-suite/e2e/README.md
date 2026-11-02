@@ -97,9 +97,9 @@ checks, signed with `KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY` for the party's a
 leaves quorum verification to `verify.ts` (the endpoint only returns its own
 party's answer). The suites skip when `KMS_CONNECTOR_ENDPOINT_URLS` is empty
 (bundles without the endpoint and proxy images). The proxies serve the
-self-signed test certificate checked in under
-`test-suite/fhevm/static/config/kms-connector-proxy`, which the e2e container
-trusts through `NODE_EXTRA_CA_CERTS`; the proxy's own rejections (401, 404/405,
+test certificate checked in under
+`test-suite/fhevm/static/config/kms-connector-proxy`, whose CA (`ca.crt`) the
+e2e container trusts through `NODE_EXTRA_CA_CERTS`; the proxy's own rejections (401, 404/405,
 oversized bodies, upstream errors) are covered by the crate's integration tests.
 
 Run via the fhevm-cli profile `connector-http` (part of `standard`; runs all
