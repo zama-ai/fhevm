@@ -39,11 +39,11 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
     }
 
     function _upgradeToReplica(ProtocolConfig pc) internal returns (ProtocolConfigReplica) {
-        // Existing replica proxies run the v0.15 ProtocolConfig, which is at initialized version 4.
-        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(4)));
+        // Existing replica proxies run the v0.14 ProtocolConfig, which is at initialized version 3.
+        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(3)));
         address replicaImpl = address(new ProtocolConfigReplica());
         vm.prank(owner);
-        pc.upgradeToAndCall(replicaImpl, abi.encodeCall(ProtocolConfigReplica.reinitializeV4, ()));
+        pc.upgradeToAndCall(replicaImpl, abi.encodeCall(ProtocolConfigReplica.reinitializeV3, ()));
         return ProtocolConfigReplica(protocolConfigAdd);
     }
 
@@ -218,7 +218,7 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
         );
     }
 
-    function test_reinitializeV4SucceedsOnUpgradeFromProtocolConfig() public {
+    function test_reinitializeV3SucceedsOnUpgradeFromProtocolConfig() public {
         ProtocolConfig pc = _setupCanonical();
 
         (uint256 contextId, uint256 epochId) = pc.getCurrentKmsContextAndEpoch();
@@ -230,8 +230,8 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
 
         protocolConfigReplica = _upgradeToReplica(pc);
 
-        assertEq(uint256(vm.load(protocolConfigAdd, INITIALIZABLE_STORAGE)), 5);
-        assertEq(protocolConfigReplica.getVersion(), "ProtocolConfigReplica v0.4.0");
+        assertEq(uint256(vm.load(protocolConfigAdd, INITIALIZABLE_STORAGE)), 4);
+        assertEq(protocolConfigReplica.getVersion(), "ProtocolConfigReplica v0.3.0");
         (uint256 newContextId, uint256 newEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
         assertEq(newContextId, contextId);
         assertEq(newEpochId, epochId);
@@ -242,14 +242,14 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfigReplica.getMpcThresholdForContext(contextId), mpc);
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        protocolConfigReplica.reinitializeV4();
+        protocolConfigReplica.reinitializeV3();
     }
 
-    function test_revertReinitializeV4OnFreshReplica() public {
+    function test_revertReinitializeV3OnFreshReplica() public {
         _setupReplica();
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        protocolConfigReplica.reinitializeV4();
+        protocolConfigReplica.reinitializeV3();
     }
 
     function test_revertUpgradeNotOwner() public {

@@ -245,6 +245,18 @@ bootstrap: {}
       ).toThrow("bootstrap.tag must be a non-empty release tag");
     });
 
+    test("lets the test defer the bootstrap upgrade", () => {
+      const scenario = (upgrade: string) => `
+version: 1
+kind: blue-green
+gcs:
+  source: { mode: local }
+bootstrap: { tag: v0.14.2-0, upgrade: ${upgrade} }
+`;
+      expect(parseBlueGreenScenario(scenario("deferred")).bootstrap).toEqual({ tag: "v0.14.2-0", upgrade: "deferred" });
+      expect(() => parseBlueGreenScenario(scenario("now"))).toThrow("bootstrap.upgrade must be deferred when set");
+    });
+
     test("accepts bootstrap for a threshold KMS cluster", () => {
       const parsed = parseBlueGreenScenario(`
 version: 1

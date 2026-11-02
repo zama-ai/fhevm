@@ -6,6 +6,8 @@ export type HostContractNameMap = {
   readonly HCULimit: 'HCULimit';
   readonly InputVerifier: 'InputVerifier';
   readonly KMSVerifier: 'KMSVerifier';
+  // Ethereum only: stores the FHE public key and CRS digests.
+  readonly KMSGeneration: 'KMSGeneration';
   // Non-canonical host chains run a ProtocolConfigReplica at the ProtocolConfig address.
   readonly ProtocolConfig: 'ProtocolConfig' | 'ProtocolConfigReplica';
 };

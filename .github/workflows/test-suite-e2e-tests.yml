@@ -370,6 +370,9 @@ jobs:
 
       - name: Selected e2e suite
         working-directory: test-suite/fhevm
+        env:
+          # The upgrade profile builds the connector mid-test, like `--build` at boot; other profiles never need it.
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ env.TEST_PROFILE == 'key-migration-from-v0.14' && secrets.BLOCKCHAIN_ACTIONS_TOKEN || '' }} # zizmor: ignore[secrets-outside-env] Same secret and trust boundary as the boot step of this job: dispatches, callers, and same-repo PRs with the e2e label.
         run: |
           args=("$TEST_PROFILE")
           ./fhevm-cli test "${args[@]}"
@@ -465,6 +468,18 @@ jobs:
             snapshot_logs "${prefix} - Transaction Sender" "${prefix}-tx-sender"
             snapshot_logs "${prefix} - Endpoint" "${prefix}-endpoint"
           done
+
+      - name: Upload rollout receipt
+        # Written by profiles that change the stack between checks, such as key-migration-from-v0.14.
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: rollout-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.SCENARIO }}-${{ env.TEST_PROFILE }}
+          path: |
+            .fhevm/rollout/receipt.md
+            .fhevm/rollout/receipt.jsonl
+          include-hidden-files: true
+          if-no-files-found: ignore
 
       - name: Cleanup
         working-directory: test-suite/fhevm
