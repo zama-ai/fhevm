@@ -13,7 +13,8 @@ import type { RelayerCommonOptions } from '../types/relayer.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import type { ExternalHandle } from '../types/encryptedTypes-p.js';
 import type { SignedDecryptionPermit, SignedDecryptionPermitV2 } from '../types/signedDecryptionPermit.js';
-import type { PadWitness } from '../modules/relayer/types.js';
+import type { FetchPadSharesReturnType, PadWitness } from '../modules/relayer/types.js';
+import type { ReconstructPadsModuleReturnType } from '../modules/encryptWithPad/types.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytes32ToHex, bytesToHex, concatBytes, hexToBytes } from '../base/bytes.js';
 import { encryptionBitsFromFheType, fheTypeIdFromName, fheTypeNameFromTypeName } from '../handle/FheType.js';
@@ -130,7 +131,7 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
   // 4. Fetch the pad shares (one response per KMS node) and, concurrently, the
   //    signers of the context named by the permit's extraData.
   const extraData = signedPermit.eip712.message.extraData;
-  const [padDecryptResponses, kmsSignersContext] = await Promise.all([
+  const fetchShares = (): Promise<FetchPadSharesReturnType> =>
     context.runtime.relayer.fetchPadShares(context, {
       payload: {
         kmsDecryptEip712Message: signedPermit.eip712.message,
@@ -142,7 +143,9 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
       },
       fhevmContext,
       options,
-    }),
+    });
+  const [firstResponses, kmsSignersContext] = await Promise.all([
+    fetchShares(),
     readKmsSignersContextFromPermitExtraData(context, {
       kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
       protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
@@ -152,18 +155,21 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
   ]);
 
   // 5. Verify the responses against the context signers and reconstruct the pad.
-  const pads = await context.runtime.encryptWithPad.reconstructPads({
-    responses: padDecryptResponses,
-    witnesses: [witness],
-    extraData,
-    transportPublicKey: signedPermit.eip712.message.publicKey,
-    kmsSigners: kmsSignersContext.signers,
-    // The sharing degree t, not `kmsSignersContext.threshold` (the public decryption
-    // threshold). Per the KMS team, n = 3t+1 when the context does not expose it.
-    mpcThreshold: kmsSignersContext.mpcThreshold ?? Math.floor((kmsSignersContext.signers.length - 1) / 3),
-    gatewayChainId: context.chain.fhevm.gateway.id,
-    verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address as ChecksummedAddress,
-  });
+  const reconstruct = (responses: FetchPadSharesReturnType): Promise<ReconstructPadsModuleReturnType> =>
+    context.runtime.encryptWithPad.reconstructPads({
+      responses,
+      witnesses: [witness],
+      extraData,
+      transportPublicKey: signedPermit.eip712.message.publicKey,
+      kmsSigners: kmsSignersContext.signers,
+      // The sharing degree t, not `kmsSignersContext.threshold` (the public decryption
+      // threshold). Per the KMS team, n = 3t+1 when the context does not expose it.
+      mpcThreshold: kmsSignersContext.mpcThreshold ?? Math.floor((kmsSignersContext.signers.length - 1) / 3),
+      gatewayChainId: context.chain.fhevm.gateway.id,
+      verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption
+        .address as ChecksummedAddress,
+    });
+  const pads = await reconstructWithOneRetry(firstResponses, fetchShares, reconstruct);
   const pad = pads.get(label);
   if (pad === undefined) {
     throw new Error(`No pad reconstructed for label ${label}.`);
@@ -294,4 +300,24 @@ function _typedValueToBigInt(v: TypedValue): bigint {
   }
   // uintN values are numbers or bigints; addresses are 0x-prefixed hex strings.
   return BigInt(v.value);
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Reconstructs from `first`; if that fails (fewer than 2t+1 consistent shares, a wrong share), fetches once more
+ * and reconstructs from the new responses, whose failure is final. The KMS connectors answer a repeated request from
+ * the same MPC run, so the retry brings the shares of the nodes that were late the first time. A failure of `fetch`
+ * itself is never retried here.
+ */
+export async function reconstructWithOneRetry<R, P>(
+  first: R,
+  fetch: () => Promise<R>,
+  reconstruct: (responses: R) => Promise<P>,
+): Promise<P> {
+  try {
+    return await reconstruct(first);
+  } catch {
+    return reconstruct(await fetch());
+  }
 }

@@ -90,7 +90,7 @@ The KMS connector's endpoint accepts pad decryptions but its worker does not pro
 `CleartextPaddedInputter` does the KMS's work but the signatures. Four terminals, in this order:
 
 ```sh
-make -C relayer-http/dev pad-stack        # anvil :8544, cleartext host contracts deployed (sdk/js-sdk's localcleartext script)
+make -C relayer-http/dev pad-stack        # anvil :8544, cleartext host contracts and FHETest deployed (sdk/js-sdk's localcleartext script)
 make -C relayer-http/dev pad-connectors   # 4 mock connectors 127.0.0.1:8091..8094, one KMS signer key each
 make -C relayer-http/dev pad-run          # the relayer with dev/config/pad-cleartext.yaml (chain 31337, pad threshold 3)
 make -C relayer-http/dev pad-decrypt      # one signed request through the relayer, every response checked
@@ -102,6 +102,15 @@ POST /v4/pad-decrypt -> 200 OK in 17.7ms
 label 0x6bf8…5a69: 4 shares, one session, pad 64 bits ok
 label 0x36bb…fa25: 4 shares, one session, pad 300 bits ok
 pad decryption ok: 4 responses from 4 distinct KMS signers
+```
+
+The SDK's pad suites run against the same three processes, its pad shares fetched from relayer-http
+(`fetchPadShares`, the rest of the client cleartext), the round trip submitting the package on chain and decrypting
+it back:
+
+```sh
+cd sdk/js-sdk && RELAYER_HTTP_URL=http://127.0.0.1:8080 CHAIN=localcleartext_v1_0 \
+  npx vitest run --config test/fheTest/vitest.config.ts ethers-relayer-http
 ```
 
 Prerequisites: foundry (`anvil`, `forge`, `cast`) and the SDK's contract dependencies (`sdk/js-sdk/contracts`). The

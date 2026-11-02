@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Pad decryption (RFC-030) against the SDK's cleartext fhevm stack on anvil, the KMS connectors mocked by pad-mock.
 # Usage: pad.sh stack | connectors | run | flow      (one terminal each, in this order; see README.md)
-#   stack       anvil on $RPC_URL with the v1.0.0 cleartext host contracts (the SDK's localcleartext script)
+#   stack       anvil on $RPC_URL with the v1.0.0 cleartext host contracts and FHETest (the SDK's localcleartext script)
 #   connectors  one mock connector per KMS signer of the stack, 127.0.0.1:8091..8094, serving /v1/pad-decrypt
 #   run         the relayer with dev/config/pad-cleartext.yaml
 #   flow        one signed POST /v4/pad-decrypt through the relayer, every response checked
@@ -21,7 +21,7 @@ key_at() { cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-derivation-
 case "${1:-}" in
   stack)
     echo "anvil on $RPC_URL with the v1.0.0 cleartext stack (Ctrl-C stops it)"
-    cd "$SDK" && PORT="${RPC_URL##*:}" exec ./test/scripts/fhevm-anvil.sh --foundry-profile=v1.0 --skip-fhetest
+    cd "$SDK" && PORT="${RPC_URL##*:}" exec ./test/scripts/fhevm-anvil.sh --foundry-profile=v1.0
     ;;
   connectors)
     # The four KMS signers of LocalHostBootstrap: m/44'/60'/0'/3/i.
