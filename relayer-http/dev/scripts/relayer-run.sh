@@ -1,18 +1,50 @@
 #!/usr/bin/env bash
-# Runs the relayer on the host with cargo, logs in this terminal (Ctrl-C stops it). Usage: relayer-run.sh CONFIG
-# Signs with SIGNER_KEY (defaults to the e2e test key, KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY in .env.test-suite,
-# whose address proxies-up.sh allows), for the ProtocolConfig of the running stack. SIGNER_ADDRESS is the key's
-# address (default: the e2e test key's): the relayer refuses to start when the two do not match.
+# Runs relayer-http on the host with cargo, on :18080, against the running stack (./fhevm-cli up). Logs in this
+# terminal; Ctrl-C stops the relayer and removes the forwarders.
+#
+# Config: the stack's own relayer-http config (rendered by fhevm-cli), with each KMS proxy URL replaced by a local
+# forwarder. The proxies are reachable only on the stack network, so one socat container per party listens on
+# 127.0.0.1:18080+i and opens the TLS connection to kms-connector[-i]-proxy:8443; the relayer speaks plain http to
+# loopback. Signing key and log level: the stack's relayer-http.env.
 set -euo pipefail
-CONFIG="${1:?config path}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-STACK_ENV="$(cd "$ROOT/.." && pwd)/.fhevm/runtime/env/kms-connector.env"
-[ -f "$CONFIG" ] || { echo "no such config: $CONFIG (make config KMS=<n> T=<t> writes one)"; exit 1; }
-PROTOCOL_CONFIG="$(grep -s '^KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS=' "$STACK_ENV" | cut -d= -f2)"
-[ -n "$PROTOCOL_CONFIG" ] || { echo "no ProtocolConfig address in $STACK_ENV: start the stack first (./fhevm-cli up)"; exit 1; }
-echo "relayer-http with $CONFIG (ProtocolConfig $PROTOCOL_CONFIG, RELAYER_SIGNER_KEY set)"
-cd "$ROOT" && \
-  APP_KMS_AGGREGATOR__AUTH__PROTOCOL_CONFIG="$PROTOCOL_CONFIG" \
-  APP_KMS_AGGREGATOR__AUTH__ADDRESS="${SIGNER_ADDRESS:-0xAE808c0968fF9557C8E0EAbcf57747c75B490Aa0}" \
-  RELAYER_SIGNER_KEY="${SIGNER_KEY:-0xdcd7f0c4990a3df000d45f6eb2728a8cf93f0d16b1f6bdffbe07f5a250250e6c}" \
-  exec cargo run -p relayer-http -- "$CONFIG"
+STATE="${FHEVM_STATE_DIR:-$(cd "$ROOT/.." && pwd)/.fhevm}"
+STACK_CONFIG="$STATE/runtime/config/relayer-http.yaml"
+STACK_ENV="$STATE/runtime/env/relayer-http.env"
+CONFIG="$ROOT/target/dev-config.yaml"
+PORT=18080
+[ -f "$STACK_CONFIG" ] && [ -f "$STACK_ENV" ] || { echo "no relayer-http config in $STATE/runtime: start the stack first (./fhevm-cli up)"; exit 1; }
+
+PROXIES=()
+while IFS= read -r proxy; do PROXIES+=("$proxy"); done < <(sed -nE 's#^ *url: "?https://([^"]+)"?$#\1#p' "$STACK_CONFIG")
+[ "${#PROXIES[@]}" -gt 0 ] || { echo "no KMS endpoint in $STACK_CONFIG"; exit 1; }
+
+FWD_IDS="$(docker ps -aq --filter name='^relayer-http-fwd-')"
+[ -z "$FWD_IDS" ] || { echo "relayer-http-fwd-* containers exist: another make run is active, or remove them (docker rm -f \$(docker ps -aq --filter name=relayer-http-fwd-))"; exit 1; }
+forwarders_down() {
+  local ids
+  ids="$(docker ps -aq --filter name='^relayer-http-fwd-')"
+  # shellcheck disable=SC2086 # one container id per word
+  if [ -n "$ids" ]; then docker rm -f $ids >/dev/null; fi
+}
+trap forwarders_down EXIT
+for i in "${!PROXIES[@]}"; do
+  # verify=0: the stack's test proxies; the relayer-to-proxy TLS path is exercised by the in-stack relayer.
+  docker run -d --name "relayer-http-fwd-$((i + 1))" --network fhevm_default -p "127.0.0.1:$((PORT + i + 1)):8443" \
+    alpine/socat TCP-LISTEN:8443,fork,reuseaddr "OPENSSL:${PROXIES[$i]},verify=0" >/dev/null
+  echo "forwarder 127.0.0.1:$((PORT + i + 1)) -> ${PROXIES[$i]}"
+done
+
+mkdir -p "$(dirname "$CONFIG")"
+awk -v port="$PORT" '
+  /^ *endpoint: / { sub(/0\.0\.0\.0:[0-9]+/, "0.0.0.0:" port) }
+  /^ *url: "?https:\/\// { n++; sub(/"?https:\/\/[^"]+"?$/, "http://127.0.0.1:" port + n) }
+  { print }
+' "$STACK_CONFIG" > "$CONFIG"
+echo "relayer-http on :$PORT with $CONFIG"
+
+set -a
+# shellcheck disable=SC1090 # the stack's generated env file
+. "$STACK_ENV"
+set +a
+cd "$ROOT" && cargo run -p relayer-http -- "$CONFIG"

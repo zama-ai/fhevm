@@ -1,11 +1,12 @@
 // Shared by the relayer-http flow scripts. They run inside the e2e debug container
 // (`npx hardhat run scripts/relayer-http/<flow>.ts --network staging`, see dev/scripts/e2e.sh) and talk to the
-// relayer on the host. Imports are relative to /app/test-suite/e2e/scripts/relayer-http/.
+// relayer at RELAYER_HTTP_URL (e2e.sh picks the stack's or the one on the host). Imports are relative to
+// /app/test-suite/e2e/scripts/relayer-http/.
 import { ethers } from 'hardhat';
 
 import { getSigners, initSigners } from '../../test/signers';
 
-export const RELAYER = (process.env.RELAYER_HTTP_URL ?? 'http://host.docker.internal:8080').replace(/\/$/, '');
+export const RELAYER = (process.env.RELAYER_HTTP_URL ?? 'http://relayer-http:8080').replace(/\/$/, '');
 const TIMEOUT_MS = 120_000;
 
 export interface Reply<T> {
@@ -58,7 +59,7 @@ export async function requireRelayer(): Promise<void> {
   } catch (e) {
     console.error(`relayer unreachable at ${RELAYER}: ${(e as Error).message}`);
   }
-  console.error('start it with `make -C relayer-http/dev run`');
+  console.error('in the stack: `docker logs fhevm-relayer-http`; on the host: `make -C relayer-http/dev run`');
   process.exit(1);
 }
 
