@@ -2,7 +2,9 @@
  * Blue-green `bootstrap`: boot the components that exist before the keys do at a previous
  * release, then upgrade them to the resolved bundle once the operators have ingested the keys.
  */
-import type { BlueGreenBootstrap, LocalOverride, OverrideGroup, VersionBundle } from "../types";
+import { PreflightError } from "../errors";
+import { kmsPartyIds } from "../kms-party";
+import type { BlueGreenBootstrap, LocalOverride, OverrideGroup, State, VersionBundle } from "../types";
 
 export const CONTRACT_VERSION_KEYS = ["GATEWAY_VERSION", "HOST_VERSION"] as const;
 export const LISTENER_CORE_VERSION_KEYS = ["LISTENER_CORE_VERSION"] as const;
@@ -14,19 +16,23 @@ export const CONNECTOR_VERSION_KEYS = [
 ] as const;
 /** Connector services the previous release did not ship; they join with the connector upgrade. */
 export const CONNECTOR_OPTIONAL_VERSION_KEYS = ["CONNECTOR_ENDPOINT_VERSION", "CONNECTOR_PROXY_VERSION"] as const;
+/** Pinned only when the test runs the upgrade itself; the default bootstrap boots the target relayer. */
+export const RELAYER_VERSION_KEYS = ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"] as const;
 
 /** Local overrides that would replace a pinned release image; suspended until the upgrade. */
-export const BOOTSTRAP_SUSPENDED_GROUPS: readonly OverrideGroup[] = [
+export const bootstrapSuspendedGroups = (bootstrap: BlueGreenBootstrap): readonly OverrideGroup[] => [
   "gateway-contracts",
   "host-contracts",
   "kms-connector",
   "listener-core",
+  ...(bootstrap.upgrade === "deferred" ? (["relayer"] as const) : []),
 ];
 
 /** The bundle with every bootstrapped component pinned to the release. */
 export const bootstrapBootVersions = (bundle: VersionBundle, bootstrap: BlueGreenBootstrap): VersionBundle => {
   const env = { ...bundle.env };
-  for (const key of [...CONTRACT_VERSION_KEYS, ...LISTENER_CORE_VERSION_KEYS, ...CONNECTOR_VERSION_KEYS, "CORE_VERSION"]) {
+  const pinned = [...CONTRACT_VERSION_KEYS, ...LISTENER_CORE_VERSION_KEYS, ...CONNECTOR_VERSION_KEYS, "CORE_VERSION"];
+  for (const key of bootstrap.upgrade === "deferred" ? [...pinned, ...RELAYER_VERSION_KEYS] : pinned) {
     env[key] = bootstrap.tag;
   }
   for (const key of CONNECTOR_OPTIONAL_VERSION_KEYS) {
@@ -35,8 +41,44 @@ export const bootstrapBootVersions = (bundle: VersionBundle, bootstrap: BlueGree
   return { ...bundle, env, sources: [...bundle.sources, `bootstrap=${bootstrap.tag}`] };
 };
 
-export const bootstrapBootOverrides = (overrides: LocalOverride[]) =>
-  overrides.filter((override) => !BOOTSTRAP_SUSPENDED_GROUPS.includes(override.group));
+export const bootstrapBootOverrides = (overrides: LocalOverride[], bootstrap: BlueGreenBootstrap) =>
+  overrides.filter((override) => !bootstrapSuspendedGroups(bootstrap).includes(override.group));
+
+/** True when the scenario boots at its `bootstrap` release and leaves the upgrade to the test. */
+export const isDeferredBootstrap = (scenario: State["scenario"]) =>
+  scenario.kind === "blue-green" && scenario.bootstrap?.upgrade === "deferred";
+
+/** One unit of the bootstrap upgrade; a test that defers the upgrade runs them itself. */
+export type UpgradeStep = "contracts" | "relayer" | `kms-operator:${number}` | "listener-core" | "green";
+
+/** The production order. The relayer is a step only when deferred; otherwise it boots at the bundle. */
+export const upgradeOrder = (scenario: State["scenario"]): UpgradeStep[] => [
+  "contracts",
+  ...(isDeferredBootstrap(scenario) ? (["relayer"] as const) : []),
+  ...kmsPartyIds(scenario.kms.parties).map((id) => `kms-operator:${id}` as const),
+  "listener-core",
+  "green",
+];
+
+/**
+ * Requires `steps` to continue `order` from the first step not yet run, and rejects the whole list
+ * before any step runs, so a typo cannot leave the stack half upgraded.
+ */
+export const checkUpgradeSteps = (
+  order: readonly UpgradeStep[],
+  completed: readonly string[],
+  steps: readonly UpgradeStep[],
+) => {
+  const remaining = order.filter((step) => !completed.includes(step));
+  steps.forEach((step, index) => {
+    if (step !== remaining[index]) {
+      throw new PreflightError(
+        `upgrade step ${step} is out of order; the next step is ${remaining[index] ?? "none, the upgrade is complete"} ` +
+          `(order: ${order.join(", ")})`,
+      );
+    }
+  });
+};
 
 /** `env` with the `keys` the target defines taken from it. */
 export const bootstrapPhaseEnv = (

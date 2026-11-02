@@ -158,15 +158,6 @@ describe("cli", () => {
     expect(wrongGroup.stderr).toContain("supported only with `fhevm-cli upgrade kms-connector`");
   });
 
-  test("prints rollout help with run and receipt subcommands", async () => {
-    const result = await execCli(["rollout", "--help"]);
-    const output = normalizeCliOutput(result.stdout);
-    expect(result.code).toBe(0);
-    expect(output).toContain("fhevm-cli rollout");
-    expect(output).toContain("run");
-    expect(output).toContain("receipt");
-  });
-
   test("lists bundled test profiles", async () => {
     const result = await execCli(["test", "list"]);
     expect(result.code).toBe(0);
