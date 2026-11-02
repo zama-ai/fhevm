@@ -419,6 +419,10 @@ jobs:
 
       - name: Boot the stack
         working-directory: test-suite/fhevm
+        env:
+          # Read access to the private zama-ai/kms git dependencies, for `--build` of the
+          # connector. Must be explicit: the `gh auth token` fallback would return GH_TOKEN.
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           test_features=()
           if [[ " ${CAPABILITIES:-} " == *" failpoints "* ]]; then
@@ -813,6 +817,9 @@ jobs:
         working-directory: test-suite/fhevm
         env:
           SCENARIO: three-of-three-heterogeneous-scheduling
+          # Read access to the private zama-ai/kms git dependencies, for `--build` of the
+          # connector. Must be explicit: the `gh auth token` fallback would return GH_TOKEN.
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           echo "CONSENSUS_RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
           lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
