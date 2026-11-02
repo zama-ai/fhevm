@@ -44,7 +44,7 @@ impl KMSGenerationProcessor {
             domain: Some(self.domain.clone()),
             params: prep_keygen_request.paramsType as i32,
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+            context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
             extra_data: prep_keygen_request.extraData.to_vec(),
             keyset_config: Some(keyset_config(prep_keygen_request.existingKeyId)),
             // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
@@ -67,7 +67,7 @@ impl KMSGenerationProcessor {
             domain: Some(self.domain.clone()),
             params: None,
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+            context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
             extra_data: keygen_request.extraData.to_vec(),
             keyset_config: Some(keyset_config(existing_key_id)),
             keyset_added_info: keyset_added_info(existing_key_id),
@@ -101,7 +101,7 @@ impl KMSGenerationProcessor {
             extra_data: crsgen_request.extraData.to_vec(),
             max_num_bits,
             epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-            context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+            context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
             // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
             signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
         }))
@@ -147,6 +147,9 @@ fn keyset_added_info(existing_key_id: U256) -> Option<KeySetAddedInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use connector_utils::types::{
+        DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT, extra_data::extra_data_v2_payload,
+    };
     use rstest::rstest;
 
     #[rstest]
@@ -157,6 +160,7 @@ mod tests {
         let processor = KMSGenerationProcessor::new(&Config::default());
         let prep_keygen_id = U256::from(7);
         let key_id = U256::from(8);
+        let extra_data = extra_data_v2_payload(TESTING_KMS_CONTEXT, DEFAULT_EPOCH_ID);
         let is_migration = !existing_key_id.is_zero();
         let expected_config = if is_migration {
             COMPRESSED_MIGRATION_KEY_SET_CONFIG
@@ -176,7 +180,7 @@ mod tests {
                 prepKeygenId: prep_keygen_id,
                 paramsType: 0,
                 existingKeyId: existing_key_id,
-                extraData: Default::default(),
+                extraData: extra_data.clone().into(),
             })
             .await
             .unwrap()
@@ -190,7 +194,7 @@ mod tests {
                 prepKeygenId: prep_keygen_id,
                 keyId: key_id,
                 existingKeyId: existing_key_id,
-                extraData: Default::default(),
+                extraData: extra_data.clone().into(),
             })
             .await
             .unwrap()

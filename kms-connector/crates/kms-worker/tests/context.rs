@@ -395,7 +395,7 @@ async fn test_validate_context_fallback_caches_valid_pair() -> anyhow::Result<()
     let context_id = U256::from(33);
     let epoch_id = U256::from(5);
     let extra_data = ExtraData {
-        context_id: Some(context_id),
+        context_id,
         epoch_id: Some(epoch_id),
     };
     context_manager.validate_context(&extra_data).await?;
@@ -430,7 +430,7 @@ async fn test_validate_context_pending_epoch_is_recoverable() -> anyhow::Result<
     let context_id = U256::from(33);
     let epoch_id = U256::from(5);
     let extra_data = ExtraData {
-        context_id: Some(context_id),
+        context_id,
         epoch_id: Some(epoch_id),
     };
     let err = context_manager
@@ -469,7 +469,7 @@ async fn test_validate_context_destroyed_rejects_any_epoch() -> anyhow::Result<(
 
     for epoch_id in [Some(DEFAULT_EPOCH_ID), Some(U256::from(99)), None] {
         let extra_data = ExtraData {
-            context_id: Some(TESTING_KMS_CONTEXT),
+            context_id: TESTING_KMS_CONTEXT,
             epoch_id,
         };
         let err = context_manager
@@ -508,7 +508,7 @@ async fn test_validate_context_destroyed_epoch_leaves_siblings_valid() -> anyhow
 
     let err = context_manager
         .validate_context(&ExtraData {
-            context_id: Some(TESTING_KMS_CONTEXT),
+            context_id: TESTING_KMS_CONTEXT,
             epoch_id: Some(destroyed_epoch_id),
         })
         .await
@@ -522,7 +522,7 @@ async fn test_validate_context_destroyed_epoch_leaves_siblings_valid() -> anyhow
     // The sibling epoch seeded by `DbInstance::setup` must remain valid, from the DB alone.
     context_manager
         .validate_context(&ExtraData {
-            context_id: Some(TESTING_KMS_CONTEXT),
+            context_id: TESTING_KMS_CONTEXT,
             epoch_id: Some(DEFAULT_EPOCH_ID),
         })
         .await?;
@@ -553,7 +553,7 @@ async fn test_validate_context_epoch_of_other_context_falls_back_on_chain() -> a
 
     let err = context_manager
         .validate_context(&ExtraData {
-            context_id: Some(other_context_id),
+            context_id: other_context_id,
             epoch_id: Some(DEFAULT_EPOCH_ID),
         })
         .await
@@ -601,7 +601,7 @@ async fn test_validate_context_stale_epoch_association_self_heals() -> anyhow::R
     .await?;
 
     let extra_data = ExtraData {
-        context_id: Some(other_context_id),
+        context_id: other_context_id,
         epoch_id: Some(DEFAULT_EPOCH_ID),
     };
     context_manager.validate_context(&extra_data).await?;
@@ -630,7 +630,7 @@ async fn test_validate_context_v1_extra_data_validates_context_only() -> anyhow:
     let (_test_instance, context_manager) = setup_context_manager(Asserter::new()).await?;
 
     let extra_data = ExtraData {
-        context_id: Some(TESTING_KMS_CONTEXT),
+        context_id: TESTING_KMS_CONTEXT,
         epoch_id: None,
     };
     context_manager.validate_context(&extra_data).await?;
@@ -651,7 +651,7 @@ async fn test_validate_context_v1_unknown_context_falls_back_without_caching() -
 
     let context_id = U256::from(33);
     let extra_data = ExtraData {
-        context_id: Some(context_id),
+        context_id,
         epoch_id: None,
     };
     context_manager.validate_context(&extra_data).await?;
@@ -674,7 +674,7 @@ async fn test_validate_context_default_epoch_id_matches_seeded_row() -> anyhow::
     let (_test_instance, context_manager) = setup_context_manager(Asserter::new()).await?;
 
     let extra_data = ExtraData {
-        context_id: Some(TESTING_KMS_CONTEXT),
+        context_id: TESTING_KMS_CONTEXT,
         epoch_id: Some(DEFAULT_EPOCH_ID),
     };
     context_manager.validate_context(&extra_data).await?;

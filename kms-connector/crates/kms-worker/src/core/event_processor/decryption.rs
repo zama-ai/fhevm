@@ -400,7 +400,6 @@ where
         } = self.ciphertext_manager.verify_and_retrieve(handles).await?;
 
         let request_id = Some(u256_to_request_id(decryption_id));
-        let kms_extra_data = kms_decryption_extra_data(extra_data);
 
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.user_address.to_checksum(None);
@@ -412,9 +411,9 @@ where
                 domain: Some(self.domain.clone()),
                 enc_key,
                 typed_ciphertexts: ciphertexts,
-                extra_data: kms_extra_data,
+                extra_data: extra_data.to_vec(),
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-                context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+                context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
                 // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
                 signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
             };
@@ -426,9 +425,9 @@ where
                 ciphertexts,
                 key_id: Some(u256_to_request_id(key_id)),
                 domain: Some(self.domain.clone()),
-                extra_data: kms_extra_data,
+                extra_data: extra_data.to_vec(),
                 epoch_id: parsed_extra_data.epoch_id.map(u256_to_request_id),
-                context_id: parsed_extra_data.context_id.map(u256_to_request_id),
+                context_id: Some(u256_to_request_id(parsed_extra_data.context_id)),
                 // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
                 signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
             };
@@ -507,15 +506,6 @@ fn extract_single_chain_id<'a>(
             anyhow!("request contains no handles"),
         )
     })
-}
-
-fn kms_decryption_extra_data(extra_data: &Bytes) -> Vec<u8> {
-    // relayer-sdk <=0.4.2 sends 0x00 but verifies the KMS signature against empty extraData.
-    if extra_data.as_ref() == [0x00] {
-        Vec::new()
-    } else {
-        extra_data.to_vec()
-    }
 }
 
 pub struct UserDecryptionExtraData {
@@ -609,23 +599,6 @@ mod tests {
         )]);
         let ciphertext_manager = CiphertextManager::for_test(mock_provider.clone());
         DecryptionProcessor::new(&config, mock_provider, host_clients, ciphertext_manager)
-    }
-
-    #[test]
-    fn kms_decryption_extra_data_normalizes_legacy_zero_marker() {
-        assert_eq!(
-            kms_decryption_extra_data(&Bytes::from_static(&[0x00])),
-            Vec::<u8>::new()
-        );
-    }
-
-    #[test]
-    fn kms_decryption_extra_data_keeps_empty_and_versioned_values() {
-        assert_eq!(kms_decryption_extra_data(&Bytes::new()), Vec::<u8>::new());
-        assert_eq!(
-            kms_decryption_extra_data(&Bytes::from_static(&[0x01, 0x02])),
-            vec![0x01, 0x02]
-        );
     }
 
     enum PubDecryptACLMock {
