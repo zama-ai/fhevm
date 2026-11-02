@@ -78,7 +78,7 @@ urls = [
 api_key = "fhevm-e2e-kms-connector-api-key"
 
 # The proxies' certificate to trust.
-# tls_ca_cert = "/etc/kms-connector/proxy/tls.crt"
+# tls_ca_cert = "/etc/kms-connector/proxy/ca.crt"
 
 # Skip TLS certificate verification instead of trusting `tls_ca_cert`. Testing only.
 danger_accept_invalid_certs = true
