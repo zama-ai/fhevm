@@ -8,6 +8,7 @@ import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {KmsContextAnchor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -23,7 +24,13 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  *      The signatures let other chains verify lifecycle steps (RFC 037).
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
-contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableEmptyProxy, ACLOwnable {
+contract ProtocolConfig is
+    IProtocolConfig,
+    ProtocolConfigBase,
+    UUPSUpgradeableEmptyProxy,
+    EIP712UpgradeableCrossChain,
+    ACLOwnable
+{
     // -----------------------------------------------------------------------------------------
     // Contract information
     // -----------------------------------------------------------------------------------------
@@ -39,10 +46,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     // -----------------------------------------------------------------------------------------
     // EIP-712 type hashes
     // -----------------------------------------------------------------------------------------
-
-    /// @dev Hash of the EIP-712 domain separator type.
-    bytes32 private constant EIP712_DOMAIN_TYPE_HASH =
-        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
     /// @dev Hash of the KeyDigest type, used to hash the key digests into `epochMaterialHash`.
     bytes32 private constant EIP712_KEY_DIGEST_TYPE_HASH = keccak256("KeyDigest(uint8 keyType,bytes digest)");
@@ -113,6 +116,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 1;
         _storeKmsCommittee(newContextId, _toKmsNodes(initialKmsNodeParams), initialThresholds);
         _activateWithCounters(newContextId, EPOCH_COUNTER_BASE + 1);
+        __EIP712_init(EIP712_NAME, "1", address(this), uint64(block.chainid));
 
         $.contextAnchors[newContextId] = KmsContextAnchor({
             emissionBlockNumber: block.number,
@@ -133,7 +137,9 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {
+        __EIP712_init(EIP712_NAME, "1", address(this), uint64(block.chainid));
+    }
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
@@ -213,7 +219,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
         // The signer must belong to the outgoing or incoming committee and confirm only once.
         uint256 previousContextId = $.latestActiveKmsContextId;
-        bytes32 digest = _hashTypedData(
+        bytes32 digest = _hashTypedDataV4(
             _contextCreationStructHash(
                 previousContextId,
                 kmsContextId,
@@ -487,7 +493,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             revert EmptyEpochActivationResults(epochId);
         }
         epochMaterialHash = _hashEpochMaterial(keys, crsList);
-        digest = _hashTypedData(
+        digest = _hashTypedDataV4(
             _epochActivationStructHash(
                 contextId,
                 _getProtocolConfigStorage().latestActiveEpochId,
@@ -563,7 +569,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     ) internal virtual returns (address signer, bool quorumReached) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         uint256 kmsContextId = $.latestActiveKmsContextId;
-        bytes32 digest = _hashTypedData(structHash);
+        bytes32 digest = _hashTypedDataV4(structHash);
         signer = ECDSA.recover(digest, signature);
         if (!$.isKmsSignerForContext[kmsContextId][signer]) {
             revert KmsDestructionUnauthorized(signer, destroyedId);
@@ -575,19 +581,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         quorumReached =
             ++_getProtocolConfigCanonicalStorage().destructionConfirmationCountForDigest[destroyedId][digest] ==
             _faultTolerantQuorum(kmsContextId);
-    }
-
-    function _hashTypedData(bytes32 structHash) internal view virtual returns (bytes32) {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                EIP712_DOMAIN_TYPE_HASH,
-                keccak256(bytes(EIP712_NAME)),
-                keccak256(bytes("1")),
-                block.chainid,
-                address(this)
-            )
-        );
-        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
     }
 
     /**
