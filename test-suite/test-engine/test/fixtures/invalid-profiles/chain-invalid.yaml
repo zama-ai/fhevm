@@ -1,0 +1,12 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata:
+  name: chain-invalid
+  description: Invalid chain section (several problems at once).
+spec:
+  chain:
+    rpcUrl: { value: "http://127.0.0.1:8545" }
+    mnemonic: { env: SOME_MNEMONIC }
+    hdPath: "m/44'/60'/x"
+    wallets: { alice: 0, bob: 0 }
+    gas: { bufferPercent: 50, multiplier: 2 }

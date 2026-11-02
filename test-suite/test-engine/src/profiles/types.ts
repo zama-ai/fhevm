@@ -18,6 +18,23 @@ export interface ValueSource {
 
 export type EnvFileEntry = string | { path: string; optional?: boolean };
 
+/** Gas limit rule for transactions sent without an explicit `gasLimit` (same as the e2e suite). */
+export interface ChainGas {
+  bufferPercent: number;
+  limitCap: number;
+}
+
+/** `spec.chain` as written in the profile file (schema defaults applied). */
+export interface ChainSectionDefinition {
+  rpcUrl: ValueSource;
+  chainId: ValueSource;
+  mnemonic: ValueSource;
+  hdPath: string;
+  /** Wallet role → account index. */
+  wallets: Record<string, number>;
+  gas: ChainGas;
+}
+
 export interface ProfileDefinition {
   apiVersion: typeof PROFILE_API_VERSION;
   kind: 'Profile';
@@ -25,6 +42,8 @@ export interface ProfileDefinition {
   spec: {
     requiresConfirmation: boolean;
     envFiles: EnvFileEntry[];
+    /** Typed section of the Chain module. Optional: a profile without it cannot run chain steps. */
+    chain?: ChainSectionDefinition;
     settings: Record<string, ValueSource>;
   };
 }
@@ -36,11 +55,25 @@ export interface ResolvedSetting {
   source: string;
 }
 
+/** A resolved value whose type was checked after resolution. */
+export type ResolvedValue<T extends SettingValue> = ResolvedSetting & { value: T };
+
+/** `spec.chain` once resolved and type-checked. */
+export interface ResolvedChainSection {
+  rpcUrl: ResolvedValue<string>;
+  chainId: ResolvedValue<number>;
+  mnemonic: ResolvedValue<string>;
+  hdPath: string;
+  wallets: Record<string, number>;
+  gas: ChainGas;
+}
+
 /** Plain data only: it is serialised into the worker job and structured-cloned into each World. */
 export interface ResolvedProfile {
   name: string;
   description: string;
   requiresConfirmation: boolean;
+  chain?: ResolvedChainSection;
   settings: Record<string, ResolvedSetting>;
 }
 

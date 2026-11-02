@@ -1,0 +1,14 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.chain-basic
+  name: Fixture chain basic
+  owner: qa
+  description: Engine test fixture (Chain module on Anvil) - deploy, send transactions, read state.
+  tags: [fixture, chain]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 60
+  targets: [fx-anvil]

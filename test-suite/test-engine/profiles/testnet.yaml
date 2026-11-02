@@ -5,5 +5,9 @@ metadata:
   description: Public TestNet (Sepolia host chain)
 spec:
   requiresConfirmation: false
-  # Typed sections (chain, relayer, wallets) and their settings arrive with the Phase 1b modules.
+  chain:
+    rpcUrl: { env: SEPOLIA_ETH_RPC_URL, secret: true }
+    chainId: { value: 11155111 }
+    mnemonic: { env: MNEMONIC, secret: true }
+  # The relayer and contracts sections arrive with the modules that own them.
   settings: {}

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -16,6 +16,12 @@ export const FIXTURE_PROFILES = path.join(FIXTURES_DIR, 'profiles');
 export const INVALID_SCENARIOS = path.join(FIXTURES_DIR, 'invalid-scenarios');
 export const INVALID_PROFILES = path.join(FIXTURES_DIR, 'invalid-profiles');
 export const RESERVED_PROFILES = path.join(FIXTURES_DIR, 'reserved-profiles');
+/** Chain fixtures live apart, so that the other fixture listings stay unchanged. */
+export const CHAIN_SCENARIOS = path.join(FIXTURES_DIR, 'chain-scenarios');
+export const CHAIN_PROFILES = path.join(FIXTURES_DIR, 'chain-profiles');
+export const COUNTER_ARTIFACT = path.join(FIXTURES_DIR, 'contracts', 'Counter.json');
+/** Public test mnemonic of Anvil and Hardhat, used by the `fx-anvil` fixture profile. */
+export const ANVIL_MNEMONIC = 'test test test test test test test test test test test junk';
 export const CLI = path.join(DIST_DIR, 'src', 'cli', 'main.js');
 
 /** Fake secret used by the secret-handling fixtures. */
@@ -27,6 +33,14 @@ export const discoveryOptions = (scenariosDir: string, profilesDir = FIXTURE_PRO
   distDir: DIST_DIR,
   knownProfiles: listProfileNames(profilesDir),
 });
+
+/** Every file below `dir`, recursively. */
+export function filesBelow(dir: string): string[] {
+  return readdirSync(dir).flatMap((entry) => {
+    const full = path.join(dir, entry);
+    return statSync(full).isDirectory() ? filesBelow(full) : [full];
+  });
+}
 
 export function tempDir(prefix = 'test-engine-'): string {
   return mkdtempSync(path.join(os.tmpdir(), prefix));

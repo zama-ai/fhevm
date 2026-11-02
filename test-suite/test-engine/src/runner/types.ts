@@ -12,6 +12,8 @@ export interface ScenarioInfo {
   name: string;
   owner: string;
   tags: string[];
+  /** Absolute path of the scenario source directory (where `scenario.yaml` lives), e.g. to load artifacts. */
+  directory: string;
   origin?: string;
 }
 

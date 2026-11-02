@@ -1,0 +1,16 @@
+# Throwaway Anvil node for the Chain module tests (`npm run test:chain`). Independent of the fhEVM
+# stack: no state survives `docker compose down -v`.
+name: test-engine-anvil
+
+services:
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:v1.5.1@sha256:3a70bfa9bd2c732a767bb60d12c8770b40e8f9b6cca28efc4b12b1be81c7f28e
+    entrypoint: ["anvil"]
+    command: ["--host", "0.0.0.0", "--port", "8545", "--chain-id", "31337"]
+    ports:
+      - "127.0.0.1:${TE_ANVIL_PORT:-8545}:8545"
+    healthcheck:
+      test: ["CMD", "cast", "chain-id", "--rpc-url", "http://127.0.0.1:8545"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

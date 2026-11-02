@@ -1,0 +1,14 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.chain-revert
+  name: Fixture chain revert
+  owner: qa
+  description: Engine test fixture (Chain module on Anvil) - a reverted transaction fails the step and is recorded.
+  tags: [fixture, chain]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 60
+  targets: [fx-anvil]

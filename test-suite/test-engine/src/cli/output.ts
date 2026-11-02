@@ -3,8 +3,14 @@ import path from 'node:path';
 import type { DiscoveredScenario } from '../discovery/discovery.js';
 import type { ManifestError } from '../manifest/types.js';
 import type { ExecutionPlan } from '../planner/planner.js';
-import { redactedSettings } from '../profiles/profile.js';
-import { BUILTIN_PROFILE, type ProfileDefinition, type ProfileError, type ResolvedProfile } from '../profiles/types.js';
+import { redactedChain, redactedSettings } from '../profiles/profile.js';
+import {
+  BUILTIN_PROFILE,
+  type ProfileDefinition,
+  type ProfileError,
+  type ResolvedProfile,
+  type ResolvedSetting,
+} from '../profiles/types.js';
 import type { ReportFiles, RunReport, ScenarioReport } from '../report/report.js';
 import type { RunMode, ScenarioOutcome } from '../runner/types.js';
 
@@ -55,12 +61,13 @@ export function printDiscoveryErrors(errors: ManifestError[]): void {
 
 export function printProfileList(profiles: ProfileDefinition[]): void {
   printTable(
-    ['PROFILE', 'CONFIRM', 'SETTINGS', 'DESCRIPTION'],
+    ['PROFILE', 'CONFIRM', 'SECTIONS', 'SETTINGS', 'DESCRIPTION'],
     [
-      [BUILTIN_PROFILE, 'no', '0', 'Built-in profile: no environment, no settings.'],
+      [BUILTIN_PROFILE, 'no', '-', '0', 'Built-in profile: no environment, no settings.'],
       ...profiles.map(({ metadata, spec }) => [
         metadata.name,
         spec.requiresConfirmation ? 'yes' : 'no',
+        spec.chain ? 'chain' : '-',
         String(Object.keys(spec.settings).length),
         metadata.description,
       ]),
@@ -77,24 +84,47 @@ export function printProfileErrors(errors: ProfileError[]): void {
   }
 }
 
-/** Prints the resolved settings of a profile, secrets redacted. */
+const displaySource = (source: string): string =>
+  source.startsWith('env-file:') ? `env-file:${relative(source.split(':')[1]!)}:${source.split(':').at(-1)}` : source;
+
+const settingRow = (key: string, setting: ResolvedSetting): string[] => [
+  key,
+  setting.secret ? 'yes' : 'no',
+  displaySource(setting.source),
+  String(setting.value),
+];
+
+/** Prints the resolved typed sections and settings of a profile, secrets redacted. */
 export function printProfileSettings(profile: ResolvedProfile): void {
   console.log(`\nProfile '${profile.name}' resolved:`);
+  const chain = redactedChain(profile);
+  if (chain) {
+    const list = (values: Record<string, number>) =>
+      Object.entries(values)
+        .map(([key, value]) => `${key}=${value}`)
+        .join(', ');
+    console.log('\nSection chain:');
+    printTable(
+      ['FIELD', 'SECRET', 'SOURCE', 'VALUE'],
+      [
+        settingRow('rpcUrl', chain.rpcUrl),
+        settingRow('chainId', chain.chainId),
+        settingRow('mnemonic', chain.mnemonic),
+        ['hdPath', 'no', 'profile', chain.hdPath],
+        ['wallets', 'no', 'profile', list(chain.wallets)],
+        ['gas', 'no', 'profile', list({ ...chain.gas })],
+      ],
+    );
+  }
   const settings = Object.entries(redactedSettings(profile));
   if (settings.length === 0) {
-    console.log('No settings.');
+    console.log('\nNo settings.');
     return;
   }
+  console.log('\nSettings:');
   printTable(
     ['SETTING', 'SECRET', 'SOURCE', 'VALUE'],
-    settings.map(([key, setting]) => [
-      key,
-      setting.secret ? 'yes' : 'no',
-      setting.source.startsWith('env-file:')
-        ? `env-file:${relative(setting.source.split(':')[1]!)}:${setting.source.split(':').at(-1)}`
-        : setting.source,
-      String(setting.value),
-    ]),
+    settings.map(([key, setting]) => settingRow(key, setting)),
   );
 }
 

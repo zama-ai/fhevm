@@ -5,5 +5,9 @@ metadata:
   description: DevNet (zws-dev)
 spec:
   requiresConfirmation: false
-  # Typed sections (chain, relayer, wallets) and their settings arrive with the Phase 1b modules.
+  chain:
+    rpcUrl: { env: RPC_URL, secret: true }
+    chainId: { value: 1337 }
+    mnemonic: { env: MNEMONIC, secret: true }
+  # The relayer and contracts sections arrive with the modules that own them.
   settings: {}

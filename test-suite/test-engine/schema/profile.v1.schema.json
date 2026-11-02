@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://zama.ai/schemas/fhevm/test-engine/profile.v1.schema.json",
   "title": "fhEVM test engine environment profile (v1)",
-  "description": "Describes one target environment: whether it requires confirmation and the settings scenarios can read. Every field is enforced at runtime; unknown fields are rejected. A setting is exactly one of {value}, {env} or {env, default}; secrets (secret: true) must come from env and cannot have a default.",
+  "description": "Describes one target environment: whether it requires confirmation, the typed sections owned by engine modules (chain) and the generic settings scenarios can read. Every field is enforced at runtime; unknown fields are rejected. A value is exactly one of {value}, {env} or {env, default}; secrets (secret: true) must come from env and cannot have a default.",
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "kind", "metadata", "spec"],
@@ -66,6 +66,9 @@
             ]
           }
         },
+        "chain": {
+          "$ref": "#/definitions/chainSection"
+        },
         "settings": {
           "description": "Generic settings read by scenarios through this.engine.profile.setting(key).",
           "type": "object",
@@ -102,6 +105,71 @@
         "secret": {
           "description": "Sensitive value: redacted from every output.",
           "type": "boolean"
+        }
+      }
+    },
+    "chainSection": {
+      "description": "Typed section owned by the Chain module (this.engine.chain). rpcUrl, chainId and mnemonic are value sources, checked after resolution; the mnemonic must be secret.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rpcUrl", "chainId", "mnemonic"],
+      "properties": {
+        "rpcUrl": {
+          "description": "JSON-RPC endpoint (http or https).",
+          "$ref": "#/definitions/valueSource"
+        },
+        "chainId": {
+          "description": "Expected chain ID (positive integer); checked against eth_chainId before the first transaction.",
+          "$ref": "#/definitions/valueSource"
+        },
+        "mnemonic": {
+          "description": "BIP-39 mnemonic of the wallets. Must declare secret: true.",
+          "$ref": "#/definitions/valueSource"
+        },
+        "hdPath": {
+          "description": "HD derivation path prefix; the account index is appended. Same default as the e2e Hardhat config.",
+          "type": "string",
+          "pattern": "^m(/[0-9]+'?)*$",
+          "default": "m/44'/60'/0'/0"
+        },
+        "wallets": {
+          "description": "Wallet roles and their account index. Same default roles and indices as the e2e suite.",
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "default": {
+            "alice": 0,
+            "bob": 1,
+            "carol": 2,
+            "dave": 3,
+            "eve": 4
+          }
+        },
+        "gas": {
+          "description": "Gas limit rule for transactions sent without an explicit gasLimit: estimate * (100 + bufferPercent) / 100, capped at limitCap. Same defaults as the e2e suite.",
+          "type": "object",
+          "additionalProperties": false,
+          "default": {},
+          "properties": {
+            "bufferPercent": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000,
+              "default": 50
+            },
+            "limitCap": {
+              "type": "integer",
+              "minimum": 21000,
+              "default": 10000000
+            }
+          }
         }
       }
     }

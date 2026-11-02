@@ -1,0 +1,14 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.chain-on-none
+  name: Fixture chain on none
+  owner: qa
+  description:
+    Engine test fixture - a scenario without targets that uses the chain on a profile without a chain section.
+  tags: [fixture, chain]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30

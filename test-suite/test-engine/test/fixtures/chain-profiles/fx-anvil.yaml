@@ -1,0 +1,14 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata:
+  name: fx-anvil
+  description: Fixture profile of the throwaway Anvil node (test/anvil/compose.yaml).
+spec:
+  # Anvil's public test mnemonic. It has no value, but it goes through an env file and is a
+  # secret, so the redaction path is exercised.
+  envFiles:
+    - ./fx-anvil.env
+  chain:
+    rpcUrl: { env: TE_ANVIL_RPC_URL, default: "http://127.0.0.1:8545" }
+    chainId: { value: 31337 }
+    mnemonic: { env: TE_ANVIL_MNEMONIC, secret: true }
