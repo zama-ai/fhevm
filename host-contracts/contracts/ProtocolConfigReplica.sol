@@ -26,8 +26,7 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
     uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @dev Shared between `initializeFromCanonical` and `reinitializeV3`. Existing replica proxies
-    ///      run the v0.14 `ProtocolConfig`, which is at initialized version 3.
+    /// @dev Shared between `initializeFromCanonical` and `reinitializeV3`.
     uint64 private constant REINITIALIZER_VERSION = 4;
 
     // -----------------------------------------------------------------------------------------
