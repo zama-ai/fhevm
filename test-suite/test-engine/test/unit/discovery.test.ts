@@ -3,9 +3,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { discoverScenarios } from '../src/discovery/discovery.js';
-import { DIST_DIR } from '../src/paths.js';
-import { FIXTURE_SCENARIOS, INVALID_SCENARIOS, discoveryOptions, tempDir } from './helpers.js';
+import { discoverScenarios } from '../../src/discovery/discovery.js';
+import { DIST_DIR } from '../../src/paths.js';
+import { FIXTURE_SCENARIOS, INVALID_SCENARIOS, discoveryOptions, tempDir } from '../helpers.js';
 
 describe('discoverScenarios', () => {
   it('finds, validates and sorts the fixture scenarios', async () => {

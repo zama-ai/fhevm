@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
-import { DEFAULT_PROFILES_DIR } from '../src/paths.js';
-import { parseEnvFile } from '../src/profiles/env-file.js';
+import { DEFAULT_PROFILES_DIR } from '../../src/paths.js';
+import { parseEnvFile } from '../../src/profiles/env-file.js';
 import {
   listProfileNames,
   listProfiles,
@@ -12,8 +12,8 @@ import {
   redactedChain,
   redactedSettings,
   secretsOf,
-} from '../src/profiles/profile.js';
-import { ProfileError } from '../src/profiles/types.js';
+} from '../../src/profiles/profile.js';
+import { ProfileError } from '../../src/profiles/types.js';
 import {
   ANVIL_MNEMONIC,
   CHAIN_PROFILES,
@@ -21,7 +21,7 @@ import {
   FIXTURE_SECRET,
   INVALID_PROFILES,
   RESERVED_PROFILES,
-} from './helpers.js';
+} from '../helpers.js';
 
 function problemsOf(action: () => unknown): string {
   try {

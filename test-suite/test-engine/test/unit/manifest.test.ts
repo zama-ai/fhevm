@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { parseManifest } from '../src/manifest/manifest.js';
-import { ManifestError } from '../src/manifest/types.js';
+import { parseManifest } from '../../src/manifest/manifest.js';
+import { ManifestError } from '../../src/manifest/types.js';
 
 const VALID = `
 apiVersion: fhevm.zama.ai/scenario/v1
