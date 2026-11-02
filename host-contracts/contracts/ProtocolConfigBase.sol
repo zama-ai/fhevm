@@ -71,10 +71,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
 
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfig
     struct ProtocolConfigStorage {
-        /// @notice On the canonical, the monotonic allocation counter for KMS context IDs: the latest
-        ///         issued ID. Always `>= latestActiveKmsContextId`. Differs while a context is Pending/Created.
-        ///         On a replica, every activation sets it to `latestActiveKmsContextId`, which can lower it.
-        ///         A replica upgraded from v0.15 can hold a higher value until its first activation.
+        /// @notice Monotonic allocation counter for KMS context IDs on the canonical. Unused on a replica.
         uint256 currentKmsContextId;
         /// @notice KMS nodes per context.
         mapping(uint256 contextId => KmsNode[]) kmsNodesForContext;
@@ -95,7 +92,8 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         /// @notice MPC threshold per context.
         /// @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
-        /// @notice Whether a context has been destroyed.
+        /// @notice Whether a context has been destroyed. Only the replica writes it, as a tombstone
+        ///         that blocks a replayed submission.
         mapping(uint256 contextId => bool) destroyedContexts;
         /// @notice The most recently activated KMS context ID, the one reads resolve against.
         ///         Several contexts may remain in the `Active` state at once (prior contexts are not
@@ -133,8 +131,9 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         mapping(uint256 contextId => uint256 confirmations) contextCreationPreviousTxSenderConfirmationCount;
         /// @notice Context anchor recorded when NewKmsContext was emitted.
         mapping(uint256 contextId => KmsContextAnchor) contextAnchors;
-        /// @notice Whether an epoch has been destroyed.
-        /// @dev Added in v0.4.0. An epoch destroyed before the upgrade is not flagged.
+        /// @notice Whether an epoch has been destroyed. Only the replica writes it, as a tombstone
+        ///         that blocks a replayed submission.
+        /// @dev Added in v0.4.0. An epoch destroyed before the replica upgrade is not flagged.
         mapping(uint256 epochId => bool) destroyedEpochs;
     }
 
@@ -328,6 +327,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
      *      thresholds, and activates it under `epochId`. Use this on the two bootstrap paths, where
      *      the context ID is externally determined. Callers are responsible for emitting
      *      context lifecycle events and recording the matching `KmsContextAnchor` when appropriate.
+     *      Also seeds `currentKmsContextId` and `epochCounter`, which the canonical increments.
      */
     function _storeAndActivateKmsContextAndEpoch(
         uint256 contextId,
@@ -336,15 +336,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         KmsThresholds calldata thresholds
     ) internal virtual {
         _storeKmsCommittee(contextId, nodes, thresholds);
-        _activateWithCounters(contextId, epochId);
-    }
-
-    /**
-     * @dev Activates `contextId` and `epochId` as the latest active pair and sets both counters to
-     *      them. The canonical calls this only on bootstrap, because its allocation counter can run
-     *      ahead of the active pair. On a replica every activation is its newest state.
-     */
-    function _activateWithCounters(uint256 contextId, uint256 epochId) internal {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         $.currentKmsContextId = contextId;
         $.epochCounter = epochId;
@@ -457,21 +448,18 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Marks `contextId` destroyed and resets its state to None. Callers own the preconditions.
+     * @dev Resets the state of `contextId` to None. Callers own the preconditions.
      */
     function _markKmsContextDestroyed(uint256 contextId) internal {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.destroyedContexts[contextId] = true;
-        $.contextState[contextId] = ContextState.None;
+        _getProtocolConfigStorage().contextState[contextId] = ContextState.None;
         emit KmsContextDestroyed(contextId);
     }
 
     /**
-     * @dev Clears `epochId` and marks it destroyed. Callers own the preconditions.
+     * @dev Clears `epochId`. Callers own the preconditions.
      */
     function _markKmsEpochDestroyed(uint256 epochId) internal {
         _clearEpoch(epochId);
-        _getProtocolConfigStorage().destroyedEpochs[epochId] = true;
         emit KmsEpochDestroyed(epochId);
     }
 
@@ -490,6 +478,13 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         uint256 quorum = $.kmsNodesForContext[contextId].length - $.mpcThresholdForContext[contextId];
         return quorum > 0 ? quorum : 1;
+    }
+
+    /**
+     * @dev Returns the epoch activation quorum of `contextId`: every signer of its committee.
+     */
+    function _epochActivationQuorum(uint256 contextId) internal view returns (uint256) {
+        return _getProtocolConfigStorage().kmsSignerAddressesForContext[contextId].length;
     }
 
     /**

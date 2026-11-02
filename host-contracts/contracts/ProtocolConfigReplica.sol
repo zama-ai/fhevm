@@ -127,8 +127,6 @@ contract ProtocolConfigReplica is
             revert KmsEpochIdDestroyed(epoch.epochId);
         }
 
-        // Store the new committee first, because the epoch signatures verify against it.
-        _replaceKmsContext(context.contextId, context.nodes, context.thresholds);
         _verifyQuorum(
             _contextCreationStructHash(
                 previousContextId,
@@ -140,6 +138,7 @@ contract ProtocolConfigReplica is
             previousContextId,
             _faultTolerantQuorum(previousContextId)
         );
+        _replaceKmsContext(context.contextId, context.nodes, context.thresholds);
         _verifyQuorum(
             _epochActivationStructHash(
                 context.contextId,
@@ -150,10 +149,10 @@ contract ProtocolConfigReplica is
             ),
             epoch.signatures,
             context.contextId,
-            context.nodes.length
+            _epochActivationQuorum(context.contextId)
         );
 
-        _activateWithCounters(context.contextId, epoch.epochId);
+        _activateKmsContextAndEpoch(context.contextId, epoch.epochId);
         emit KmsContextSwitchSubmitted(context.contextId, epoch.epochId);
     }
 
@@ -179,10 +178,10 @@ contract ProtocolConfigReplica is
             ),
             epoch.signatures,
             contextId,
-            $.kmsSignerAddressesForContext[contextId].length
+            _epochActivationQuorum(contextId)
         );
 
-        _activateWithCounters(contextId, epoch.epochId);
+        _activateKmsContextAndEpoch(contextId, epoch.epochId);
         emit KmsKeyResharingSubmitted(contextId, epoch.epochId);
     }
 
@@ -197,11 +196,8 @@ contract ProtocolConfigReplica is
         if (destroyedContextId >= activeContextId) {
             revert KmsContextDestructionAheadOfReplica(destroyedContextId, activeContextId);
         }
-        if ($.destroyedContexts[destroyedContextId]) {
-            revert KmsContextAlreadyDestroyed(destroyedContextId);
-        }
+        _destroyKmsContext(destroyedContextId);
         _verifyDestructionQuorum(_contextDestructionStructHash(destroyedContextId, extraData), signatures);
-        _markKmsContextDestroyed(destroyedContextId);
     }
 
     /// @inheritdoc IProtocolConfigReplica
@@ -215,11 +211,8 @@ contract ProtocolConfigReplica is
         if (destroyedEpochId >= activeEpochId) {
             revert KmsEpochDestructionAheadOfReplica(destroyedEpochId, activeEpochId);
         }
-        if ($.destroyedEpochs[destroyedEpochId]) {
-            revert KmsEpochAlreadyDestroyed(destroyedEpochId);
-        }
+        _destroyKmsEpoch(destroyedEpochId);
         _verifyDestructionQuorum(_epochDestructionStructHash(destroyedEpochId, extraData), signatures);
-        _markKmsEpochDestroyed(destroyedEpochId);
     }
 
     // -----------------------------------------------------------------------------------------
@@ -258,7 +251,7 @@ contract ProtocolConfigReplica is
         }
 
         delete $.destroyedEpochs[epochId];
-        _activateWithCounters(contextId, epochId);
+        _activateKmsContextAndEpoch(contextId, epochId);
         emit MirrorKmsEpoch(contextId, epochId);
     }
 
@@ -289,6 +282,18 @@ contract ProtocolConfigReplica is
     /// @inheritdoc IProtocolConfigReplica
     function mirrorKmsEpochDestruction(uint256 destroyedEpochId) external virtual onlyACLOwner {
         _destroyKmsEpoch(destroyedEpochId);
+    }
+
+    /// @inheritdoc IProtocolConfigBase
+    /// @dev A replica allocates no context IDs, so it returns the active context ID.
+    function getCurrentKmsContextIdCounter()
+        external
+        view
+        virtual
+        override(IProtocolConfigBase, ProtocolConfigBase)
+        returns (uint256)
+    {
+        return _getProtocolConfigStorage().latestActiveKmsContextId;
     }
 
     /// @inheritdoc IProtocolConfigBase
@@ -358,7 +363,7 @@ contract ProtocolConfigReplica is
         delete $.destroyedContexts[contextId];
         delete $.destroyedEpochs[epochId];
         _replaceKmsContext(contextId, nodes, thresholds);
-        _activateWithCounters(contextId, epochId);
+        _activateKmsContextAndEpoch(contextId, epochId);
         emit MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
     }
 
@@ -374,6 +379,7 @@ contract ProtocolConfigReplica is
             revert LatestActiveKmsContextCannotBeDestroyed(destroyedContextId);
         }
 
+        $.destroyedContexts[destroyedContextId] = true;
         _markKmsContextDestroyed(destroyedContextId);
     }
 
@@ -389,6 +395,7 @@ contract ProtocolConfigReplica is
             revert LatestActiveKmsEpochCannotBeDestroyed(destroyedEpochId);
         }
 
+        $.destroyedEpochs[destroyedEpochId] = true;
         _markKmsEpochDestroyed(destroyedEpochId);
     }
 

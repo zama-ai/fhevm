@@ -158,10 +158,10 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
 
     /**
      * @notice Applies a canonical context switch and the first epoch of the new context.
-     * @dev The switch builds on the active context and epoch. Stores the submitted committee under
-     *      `context.contextId`. It replaces any committee stored under that ID. Then verifies `n - t`
-     *      ContextCreationConfirmation signatures of the previous committee and the
-     *      EpochActivationConfirmation signatures of every new signer.
+     * @dev The switch builds on the active context and epoch. Verifies `n - t`
+     *      ContextCreationConfirmation signatures of the previous committee. Then stores the submitted
+     *      committee under `context.contextId`, replacing any committee stored under that ID. Then
+     *      verifies the EpochActivationConfirmation signatures of every new signer.
      *      Every context signature must recover to a previous-committee signer. Leave out the
      *      signatures of signers that are only in the new committee. Reverts with
      *      `NonIncreasingEpochId` if the epoch ID is not above the active one. Reverts with

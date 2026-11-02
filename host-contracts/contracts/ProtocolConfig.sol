@@ -554,7 +554,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
         $.epochActivationConfirmedBySigner[epochId][signer] = true;
         uint256 digestCount = ++$.epochActivationConfirmationCountForDigest[epochId][digest];
-        allSignersAgreed = digestCount == $.kmsSignerAddressesForContext[contextId].length;
+        allSignersAgreed = digestCount == _epochActivationQuorum(contextId);
     }
 
     /**
