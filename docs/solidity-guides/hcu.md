@@ -8,48 +8,99 @@ FHE operations in FHEVM are computationally intensive compared to standard Ether
 
 To represent this complexity, we introduced the **Homomorphic Complexity Unit ("HCU")**. In Solidity, each FHE operation consumes a set amount of HCU based on the operational computational complexity for hardware computation. Since FHE transactions are symbolic, this helps preventing resource exhaustion outside of the blockchain.
 
-To do so, there is a contract named `HCULimit`, which monitors HCU consumption and enforces three key limits:
+To do so, there is a contract named `HCULimit`, which monitors HCU consumption and enforces these limits:
 
 - **Sequential homomorphic operations depth limit per transaction**: Controls HCU usage for operations that must be processed in order. Exceeding it reverts with `HCUTransactionDepthLimitExceeded`.
 - **Global homomorphic operations complexity per transaction**: Controls HCU usage for operations that can be processed in parallel. Exceeding it reverts with `HCUTransactionLimitExceeded`.
-- **Global homomorphic operations complexity per block**: Caps the total HCU consumed across all transactions from non-whitelisted callers in the same block. Exceeding it reverts with `HCUBlockLimitExceeded`.
+- **HCU quota**: Limits the HCU that the contracts sharing a quota can use at once (a maximum) and on average (a decay per block). Exceeding it reverts with `HCUQuotaExceeded`; a stopped quota reverts with `HCUQuotaStopped`, and a paused quota with `HCUQuotaPaused`.
+- **Chain capacity and tiers** (off unless governance sets a capacity): Limits the HCU load of all contracts on the chain together. Each quota belongs to a tier, and a tier's operations are refused once the chain's load passes the tier's threshold. Exceeding it reverts with `HCUChainLoadTooHigh`; a tier that admits no load reverts with `HCUTierStopped`.
+- **Depth across transactions** (off unless governance enables it): Caps the sequential HCU depth that builds up over a chain of dependent transactions. Exceeding it reverts with `HCUCrossTxDepthLimitExceeded`.
 
 If any of these limits is exceeded, the transaction will revert.
 
 ## HCU limit
 
-The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. The global per-block HCU cap is set on-chain by governance (via `HCULimit.setHCUPerBlock`) and is always greater than or equal to the per-transaction limit; you can read its current value from the deployed `HCULimit` contract (`getGlobalHCUCapPerBlock()`), and the current block's running total via `getBlockMeter()`. If any HCU limit is exceeded, the transaction will revert.
+The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. Quotas are set on-chain by governance (via `HCULimit.setQuota`); you can read a contract's quota with `getContractQuota(contract)`, and that quota's maximum, decay per block and current usage with `getQuota(quotaId)`. If any HCU limit is exceeded, the transaction will revert.
 
 To resolve a per-transaction revert, you must do one of the following:
 
 - Refactor your code to reduce the number of FHE operations in your transaction.
 - Split your FHE operations across multiple independent transactions.
 
-### Block-level limit and transaction estimation
+### Quotas and transaction estimation
 
-Unlike the per-transaction limits, the per-block cap depends on the **other transactions included in the same block**, not just on your own. The contract keeps a counter (`usedBlockHCU`) that resets every new block and aggregates HCU spent by every transaction from a non-whitelisted caller in that block. Here, the caller is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA. As a result:
+Every contract that calls `FHEVMExecutor` belongs to one quota. Contracts start in the default quota (`0`); a contract moves to another quota when governance assigns it (`assignQuota`) or when that quota's admin grants it (`grantQuota`). Here, the contract is the dApp contract address passed by `FHEVMExecutor`, not the user's EOA. On a chain where the 0.14 allowlist was active, an allowlisted contract nobody assigned yet computes in quota `1`, shared at the old per-block cap, or in quota `2`, unmetered, if it was also on the block HCU whitelist. `getContractQuota` returns that quota, and only governance moves such a contract. A contract sent back to the default quota leaves the allowlist and stays stopped.
 
-- A transaction that estimates successfully (e.g. via `eth_estimateGas` or a static call) can still revert with `HCUBlockLimitExceeded` at execution time if other FHE-heavy transactions are mined in the same block ahead of it.
+A quota has a maximum and a decay per block, like the depth limit across transactions below. Every FHE operation adds its HCU to the quota's usage, usage decreases by the decay every block, and an operation fits while usage stays at or below the maximum. The maximum sets the largest burst; the decay sets the sustained rate. A quota whose maximum is `type(uint48).max` is not metered. A quota's maximum and decay are both 0 (stopped) or both non-zero.
+
+Unlike the per-transaction limits, a quota depends on **other transactions in the same quota**, not just on your own. As a result:
+
+- A transaction that estimates successfully (e.g. via `eth_estimateGas` or a static call) can still revert with `HCUQuotaExceeded` at execution time if other FHE-heavy transactions in the same quota are mined ahead of it.
 - This revert is **non-deterministic from the sender's perspective**: it is a function of block-inclusion ordering, not of the transaction's own payload.
 
-If you hit `HCUBlockLimitExceeded`, options include:
+If you hit `HCUQuotaStopped(account, quotaId)`, the quota's maximum is 0, often because the contract is still in a stopped default quota. Retrying fails until the contract is moved to another quota or governance resizes this one.
 
-- **Retry** the transaction in a later block, optionally with adjusted gas/priority so it is included when block HCU usage is lower.
+If you hit `HCUQuotaPaused(account, quotaId)`, a pauser paused the quota. Retrying fails until governance unpauses it.
+
+If you hit `HCUQuotaExceeded(account, quotaId, retryAfterBlocks)`, `retryAfterBlocks` is the wait for the operation that failed, as for the depth limit: wait at least that many blocks, simulate again, and repeat until the simulation passes. It is `type(uint256).max` when one operation alone exceeds the quota's maximum; then retrying fails until the maximum is raised.
+
+Options include:
+
+- **Retry** the transaction after `retryAfterBlocks`, when the quota has room again.
 - **Reduce the HCU footprint** of the transaction so it is more likely to fit alongside others (same techniques as for per-transaction reverts).
-- **Request a whitelist entry** (`addToBlockHCUWhitelist`) for caller contracts that have a justified need to bypass the block cap; this is governed on-chain and is not available to arbitrary callers.
+- **Ask for your contract to join a quota**: your partner's quota admin can grant it, or governance can assign one for contracts that need more HCU.
+
+Three roles manage quotas, following OpenZeppelin's role admins (`AccessControl`) and closed targets (`AccessManager`):
+
+| Role        | Functions                                                         | What it does                                                                                                                                                        |
+| ----------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Governance  | `setQuota`, `setQuotaAdmin`, `assignQuota`, `unpauseQuota`        | Sizes every quota, names each quota's admin, moves any contract to any quota, lifts a pause.                                                                        |
+| Quota admin | `grantQuota(quotaId, contract)`, `revokeQuota(quotaId, contract)` | A partner's address: moves contracts from the default quota into its quota, and any contract of its quota back to the default quota, without a governance proposal. |
+| Pauser      | `pauseQuota(quotaId)`                                             | Stops every contract in a quota. The quota keeps its size and contracts, and its admin cannot move them until governance unpauses it.                               |
+
+A quota admin can add contracts only while the default quota is stopped (`DefaultQuotaNotStopped` otherwise), so joining a quota never leaves a contract with less room than it had. It can send any contract of its quota back to the default quota, including one governance assigned. It cannot resize its quota or take a contract from another quota. You can read a quota's admin with `getQuotaAdmin(quotaId)` and whether it is paused with `isQuotaPaused(quotaId)`.
+
+### Chain capacity and tiers
+
+Governance can set a capacity for the whole chain with `setCapacity(maxHCU, decayPerBlock)`: the HCU load the coprocessors absorb, and how much of it they drain per block. Every FHE operation adds its HCU to this load, whatever its quota, including a quota that is not metered. The load decays like a quota's usage. A maximum of `type(uint48).max` leaves the capacity off.
+
+Each quota belongs to a tier, tier 0 until governance moves it with `setQuotaTier(quotaId, tier)`. Governance sets each tier's threshold with `setTier(tier, maxLoadBps)`, in basis points of the capacity's maximum. An operation is refused when the chain's load after it would pass its tier's threshold. Tier 0 starts at 10,000, the full capacity. Thresholds apply only while the capacity is on.
+
+A threshold caps the chain's shared load, not a tier's share of throughput. With tiers at 10,000 and 2,000, contracts in the 2,000 tier are refused once the load passes one fifth of the capacity, while contracts in the 10,000 tier run until the capacity is full. Lower tiers are refused first as load rises. When the chain is quiet, a contract in any tier can use up to the full capacity, within its own quota.
+
+The load is shared by every contract on the chain, so in a tier below 10,000 a transaction that estimates successfully can revert at execution more often than against a quota alone.
+
+If you hit `HCUChainLoadTooHigh(account, quotaId, retryAfterBlocks)`, the chain is busy for your tier. `retryAfterBlocks` assumes no other contract adds load meanwhile, so wait at least that many blocks, simulate again, and repeat. It is `type(uint256).max` when one operation alone exceeds the tier's threshold. When both your quota and the chain's load refuse an operation, the error names the one with the longer wait, so waiting that long clears both.
+
+If you hit `HCUTierStopped(account, quotaId)`, your quota's tier admits no load: its threshold is 0 or the capacity is stopped. Retrying fails until governance moves the quota or changes the threshold or the capacity.
+
+The checks run in this order: `HCUQuotaPaused`, `HCUQuotaStopped`, `HCUTierStopped`, then `HCUQuotaExceeded` or `HCUChainLoadTooHigh`, then the per-transaction limits and the depth across transactions.
+
+You can read the capacity and its current load with `getCapacity()`, a tier's threshold with `getTier(tier)` and a quota's tier with `getQuotaTier(quotaId)`.
+
+### Depth across transactions
+
+The per-transaction depth limit restarts at every transaction. A chain of dependent transactions, each under that limit, can still build an arbitrarily long sequence of operations that the coprocessor must run one after another. When governance enables it (`setCrossTxDepthLimit(maxDepth, decayPerBlock)`), `HCULimit` carries each handle's depth from one transaction to the next:
+
+- A handle's carried depth is stored with each permission granted on it (`FHE.allow`). The ACL returns it with `getStoredDepth(handle, account)`.
+- Carried depth decays by `decayPerBlock` every block, as the coprocessor works through the chain.
+- Verified inputs and bridged handles start at depth 0.
+- An operation whose result would exceed `maxDepth` reverts with `HCUCrossTxDepthLimitExceeded(retryAfterBlocks)`.
+
+`retryAfterBlocks` is the wait for the operation that failed. Later operations of the same transaction can need more, so wait at least that many blocks, simulate again, and repeat until the simulation passes. As with quotas, a transaction that simulates successfully can still revert if another transaction extends the same chain first.
 
 ## HCU costs for common operations
 
 ### Boolean operations (`ebool`)
 
-| Function name  | HCU (scalar) | HCU (non-scalar) |
-| -------------- | ------------ | ---------------- |
-| `and`          | 22,000       | 25,000           |
-| `or`           | 22,000       | 24,000           |
-| `xor`          | 2,000        | 22,000           |
-| `not`          |      -       | 2                |
-| `select`       |      -       | 55,000           |
-| `randEbool`    |      -       | 19,000           | 
+| Function name | HCU (scalar) | HCU (non-scalar) |
+| ------------- | ------------ | ---------------- |
+| `and`         | 22,000       | 25,000           |
+| `or`          | 22,000       | 24,000           |
+| `xor`         | 2,000        | 22,000           |
+| `not`         | -            | 2                |
+| `select`      | -            | 55,000           |
+| `randEbool`   | -            | 19,000           |
 
 ---
 
@@ -59,176 +110,176 @@ HCU increase with the bit-width of the encrypted integer type. Below are the det
 
 #### **8-bit Encrypted integers (`euint8`)**
 
-| Function name  | HCU (scalar) | HCU (non-scalar) |
-| -------------- | ------------ | ---------------- |
-| `add`          | 84,000       | 88,000           |
-| `sub`          | 84,000       | 91,000           |
-| `mul`          | 122,000      | 150,000          |
-| `div`          | 210,000      | -                |
-| `rem`          | 440,000      | -                |
-| `and`          | 31,000       | 31,000           |
-| `or`           | 30,000       | 30,000           |
-| `xor`          | 31,000       | 31,000           |
-| `shr`          | 32,000       | 91,000           |
-| `shl`          | 32,000       | 92,000           |
-| `rotr`         | 31,000       | 93,000           |
-| `rotl`         | 31,000       | 91,000           |
-| `eq`           | 55,000       | 55,000           |
-| `ne`           | 55,000       | 55,000           |
-| `ge`           | 52,000       | 63,000           |
-| `gt`           | 52,000       | 59,000           |
-| `le`           | 58,000       | 58,000           |
-| `lt`           | 52,000       | 59,000           |
-| `min`          | 84,000       | 119,000          |
-| `max`          | 89,000       | 121,000          |
-| `neg`          | -            | 79,000           |
-| `not`          | -            | 9                |
-| `select`       | -            | 55,000           |
-| `mulDiv`       | 495,000      | 524,000          |
-| `randEuint8`   | -            | 23,000           |
-| `randEuint8(bound)` | -       | 23,000           |
+| Function name       | HCU (scalar) | HCU (non-scalar) |
+| ------------------- | ------------ | ---------------- |
+| `add`               | 84,000       | 88,000           |
+| `sub`               | 84,000       | 91,000           |
+| `mul`               | 122,000      | 150,000          |
+| `div`               | 210,000      | -                |
+| `rem`               | 440,000      | -                |
+| `and`               | 31,000       | 31,000           |
+| `or`                | 30,000       | 30,000           |
+| `xor`               | 31,000       | 31,000           |
+| `shr`               | 32,000       | 91,000           |
+| `shl`               | 32,000       | 92,000           |
+| `rotr`              | 31,000       | 93,000           |
+| `rotl`              | 31,000       | 91,000           |
+| `eq`                | 55,000       | 55,000           |
+| `ne`                | 55,000       | 55,000           |
+| `ge`                | 52,000       | 63,000           |
+| `gt`                | 52,000       | 59,000           |
+| `le`                | 58,000       | 58,000           |
+| `lt`                | 52,000       | 59,000           |
+| `min`               | 84,000       | 119,000          |
+| `max`               | 89,000       | 121,000          |
+| `neg`               | -            | 79,000           |
+| `not`               | -            | 9                |
+| `select`            | -            | 55,000           |
+| `mulDiv`            | 495,000      | 524,000          |
+| `randEuint8`        | -            | 23,000           |
+| `randEuint8(bound)` | -            | 23,000           |
 
 #### **16-bit Encrypted integers (`euint16`)**
 
-| Function name   | HCU (scalar) | HCU (non-scalar) |
-| --------------- | ------------ | ---------------- |
-| `add`           | 93,000       | 93,000           |
-| `sub`           | 93,000       | 93,000           |
-| `mul`           | 193,000      | 222,000          |
-| `div`           | 302,000      | -                |
-| `rem`           | 580,000      | -                |
-| `and`           | 31,000       | 31,000           |
-| `or`            | 30,000       | 31,000           |
-| `xor`           | 31,000       | 31,000           |
-| `shr`           | 32,000       | 123,000          |
-| `shl`           | 32,000       | 125,000          |
-| `rotr`          | 31,000       | 125,000          |
-| `rotl`          | 31,000       | 125,000          |
-| `eq`            | 55,000       | 83,000           |
-| `ne`            | 55,000       | 83,000           |
-| `ge`            | 55,000       | 84,000           |
-| `gt`            | 55,000       | 84,000           |
-| `le`            | 58,000       | 83,000           |
-| `lt`            | 58,000       | 84,000           |
-| `min`           | 88,000       | 146,000          |
-| `max`           | 89,000       | 145,000          |
-| `neg`           | -            | 93,000           |
-| `not`           | -            | 16               |
-| `select`        | -            | 55,000           |
-| `mulDiv`        | 703,000      | 766,000          |
-| `randEuint16`   | -            | 23,000           |
-| `randEuint16(bound)` | -       | 23,000           |
+| Function name        | HCU (scalar) | HCU (non-scalar) |
+| -------------------- | ------------ | ---------------- |
+| `add`                | 93,000       | 93,000           |
+| `sub`                | 93,000       | 93,000           |
+| `mul`                | 193,000      | 222,000          |
+| `div`                | 302,000      | -                |
+| `rem`                | 580,000      | -                |
+| `and`                | 31,000       | 31,000           |
+| `or`                 | 30,000       | 31,000           |
+| `xor`                | 31,000       | 31,000           |
+| `shr`                | 32,000       | 123,000          |
+| `shl`                | 32,000       | 125,000          |
+| `rotr`               | 31,000       | 125,000          |
+| `rotl`               | 31,000       | 125,000          |
+| `eq`                 | 55,000       | 83,000           |
+| `ne`                 | 55,000       | 83,000           |
+| `ge`                 | 55,000       | 84,000           |
+| `gt`                 | 55,000       | 84,000           |
+| `le`                 | 58,000       | 83,000           |
+| `lt`                 | 58,000       | 84,000           |
+| `min`                | 88,000       | 146,000          |
+| `max`                | 89,000       | 145,000          |
+| `neg`                | -            | 93,000           |
+| `not`                | -            | 16               |
+| `select`             | -            | 55,000           |
+| `mulDiv`             | 703,000      | 766,000          |
+| `randEuint16`        | -            | 23,000           |
+| `randEuint16(bound)` | -            | 23,000           |
 
 #### **32-bit Encrypted Integers (`euint32`)**
 
-| Function name   | HCU (scalar) | HCU (non-scalar) |
-| --------------- | ------------ | ---------------- |
-| `add`           | 95,000       | 125,000          |
-| `sub`           | 95,000       | 125,000          |
-| `mul`           | 265,000      | 328,000          |
-| `div`           | 438,000      | -                |
-| `rem`           | 792,000      | -                |
-| `and`           | 32,000       | 32,000           |
-| `or`            | 32,000       | 32,000           |
-| `xor`           | 32,000       | 32,000           |
-| `shr`           | 32,000       | 163,000          |
-| `shl`           | 32,000       | 162,000          |
-| `rotr`          | 32,000       | 160,000          |
-| `rotl`          | 32,000       | 163,000          |
-| `eq`            | 82,000       | 86,000           |
-| `ne`            | 83,000       | 85,000           |
-| `ge`            | 84,000       | 118,000          |
-| `gt`            | 84,000       | 118,000          |
-| `le`            | 84,000       | 117,000          |
-| `lt`            | 83,000       | 117,000          |
-| `min`           | 117,000      | 182,000          |
-| `max`           | 117,000      | 180,000          |
-| `neg`           | -            | 131,000          |
-| `not`           | -            | 32               |
-| `select`        | -            | 55,000           |
-| `mulDiv`        | 1,080,000    | 1,311,000        |
-| `randEuint32`   | -            | 24,000           |
-| `randEuint32(bound)` | -       | 24,000           |
+| Function name        | HCU (scalar) | HCU (non-scalar) |
+| -------------------- | ------------ | ---------------- |
+| `add`                | 95,000       | 125,000          |
+| `sub`                | 95,000       | 125,000          |
+| `mul`                | 265,000      | 328,000          |
+| `div`                | 438,000      | -                |
+| `rem`                | 792,000      | -                |
+| `and`                | 32,000       | 32,000           |
+| `or`                 | 32,000       | 32,000           |
+| `xor`                | 32,000       | 32,000           |
+| `shr`                | 32,000       | 163,000          |
+| `shl`                | 32,000       | 162,000          |
+| `rotr`               | 32,000       | 160,000          |
+| `rotl`               | 32,000       | 163,000          |
+| `eq`                 | 82,000       | 86,000           |
+| `ne`                 | 83,000       | 85,000           |
+| `ge`                 | 84,000       | 118,000          |
+| `gt`                 | 84,000       | 118,000          |
+| `le`                 | 84,000       | 117,000          |
+| `lt`                 | 83,000       | 117,000          |
+| `min`                | 117,000      | 182,000          |
+| `max`                | 117,000      | 180,000          |
+| `neg`                | -            | 131,000          |
+| `not`                | -            | 32               |
+| `select`             | -            | 55,000           |
+| `mulDiv`             | 1,080,000    | 1,311,000        |
+| `randEuint32`        | -            | 24,000           |
+| `randEuint32(bound)` | -            | 24,000           |
 
 #### **64-bit Encrypted integers (`euint64`)**
 
-| Function name   | HCU (scalar) | HCU (non-scalar) |
-| --------------- | ------------ | ---------------- |
-| `add`           | 133,000      | 162,000          |
-| `sub`           | 133,000      | 162,000          |
-| `mul`           | 365,000      | 596,000          |
-| `div`           | 715,000      | -                |
-| `rem`           | 1,153,000    | -                |
-| `and`           | 34,000       | 34,000           |
-| `or`            | 34,000       | 34,000           |
-| `xor`           | 34,000       | 34,000           |
-| `shr`           | 34,000       | 209,000          |
-| `shl`           | 34,000       | 208,000          |
-| `rotr`          | 34,000       | 209,000          |
-| `rotl`          | 34,000       | 209,000          |
-| `eq`            | 83,000       | 120,000          |
-| `ne`            | 84,000       | 118,000          |
-| `ge`            | 116,000      | 152,000          |
-| `gt`            | 117,000      | 152,000          |
-| `le`            | 119,000      | 149,000          |
-| `lt`            | 118,000      | 146,000          |
-| `min`           | 150,000      | 219,000          |
-| `max`           | 149,000      | 218,000          |
-| `neg`           | -            | 131,000          |
-| `not`           | -            | 63               |
-| `select`        | -            | 55,000           |
-| `mulDiv`        | 1,921,000    | 2,911,000        |
-| `randEuint64`   | -            | 24,000           |
-| `randEuint64(bound)` | -       | 24,000           |
+| Function name        | HCU (scalar) | HCU (non-scalar) |
+| -------------------- | ------------ | ---------------- |
+| `add`                | 133,000      | 162,000          |
+| `sub`                | 133,000      | 162,000          |
+| `mul`                | 365,000      | 596,000          |
+| `div`                | 715,000      | -                |
+| `rem`                | 1,153,000    | -                |
+| `and`                | 34,000       | 34,000           |
+| `or`                 | 34,000       | 34,000           |
+| `xor`                | 34,000       | 34,000           |
+| `shr`                | 34,000       | 209,000          |
+| `shl`                | 34,000       | 208,000          |
+| `rotr`               | 34,000       | 209,000          |
+| `rotl`               | 34,000       | 209,000          |
+| `eq`                 | 83,000       | 120,000          |
+| `ne`                 | 84,000       | 118,000          |
+| `ge`                 | 116,000      | 152,000          |
+| `gt`                 | 117,000      | 152,000          |
+| `le`                 | 119,000      | 149,000          |
+| `lt`                 | 118,000      | 146,000          |
+| `min`                | 150,000      | 219,000          |
+| `max`                | 149,000      | 218,000          |
+| `neg`                | -            | 131,000          |
+| `not`                | -            | 63               |
+| `select`             | -            | 55,000           |
+| `mulDiv`             | 1,921,000    | 2,911,000        |
+| `randEuint64`        | -            | 24,000           |
+| `randEuint64(bound)` | -            | 24,000           |
 
 #### **128-bit Encrypted integers (`euint128`)**
 
-| Function name    | HCU (scalar) | HCU (non-scalar) |
-| ---------------- | ------------ | ---------------- |
-| `add`            | 172,000      | 259,000          |
-| `sub`            | 172,000      | 260,000          |
-| `mul`            | 696,000      | 1,686,000        |
-| `div`            | 1,225,000    | -                |
-| `rem`            | 1,943,000    | -                |
-| `and`            | 37,000       | 37,000           |
-| `or`             | 37,000       | 37,000           |
-| `xor`            | 37,000       | 37,000           |
-| `shr`            | 37,000       | 272,000          |
-| `shl`            | 37,000       | 272,000          |
-| `rotr`           | 37,000       | 283,000          |
-| `rotl`           | 37,000       | 278,000          |
-| `eq`             | 117,000      | 122,000          |
-| `ne`             | 117,000      | 122,000          |
-| `ge`             | 149,000      | 210,000          |
-| `gt`             | 150,000      | 218,000          |
-| `le`             | 150,000      | 218,000          |
-| `lt`             | 149,000      | 215,000          |
-| `min`            | 186,000      | 289,000          |
-| `max`            | 180,000      | 290,000          |
-| `neg`            | -            | 168,000          |
-| `not`            | -            | 130              |
-| `select`         | -            | 57,000           |
-| `randEuint128`   | -            | 25,000           |
-| `randEuint128(bound)` | -       | 25,000           |
+| Function name         | HCU (scalar) | HCU (non-scalar) |
+| --------------------- | ------------ | ---------------- |
+| `add`                 | 172,000      | 259,000          |
+| `sub`                 | 172,000      | 260,000          |
+| `mul`                 | 696,000      | 1,686,000        |
+| `div`                 | 1,225,000    | -                |
+| `rem`                 | 1,943,000    | -                |
+| `and`                 | 37,000       | 37,000           |
+| `or`                  | 37,000       | 37,000           |
+| `xor`                 | 37,000       | 37,000           |
+| `shr`                 | 37,000       | 272,000          |
+| `shl`                 | 37,000       | 272,000          |
+| `rotr`                | 37,000       | 283,000          |
+| `rotl`                | 37,000       | 278,000          |
+| `eq`                  | 117,000      | 122,000          |
+| `ne`                  | 117,000      | 122,000          |
+| `ge`                  | 149,000      | 210,000          |
+| `gt`                  | 150,000      | 218,000          |
+| `le`                  | 150,000      | 218,000          |
+| `lt`                  | 149,000      | 215,000          |
+| `min`                 | 186,000      | 289,000          |
+| `max`                 | 180,000      | 290,000          |
+| `neg`                 | -            | 168,000          |
+| `not`                 | -            | 130              |
+| `select`              | -            | 57,000           |
+| `randEuint128`        | -            | 25,000           |
+| `randEuint128(bound)` | -            | 25,000           |
 
 #### **256-bit Encrypted integers (`euint256`)**
 
-| Function name    | HCU (scalar) | HCU (non-scalar) |
-| ---------------- | ------------ | ---------------- |
-| `and`            | 38,000       | 38,000           |
-| `or`             | 38,000       | 38,000           |
-| `xor`            | 39,000       | 39,000           |
-| `shr`            | 38,000       | 369,000          |
-| `shl`            | 39,000       | 378,000          |
-| `rotr`           | 40,000       | 375,000          |
-| `rotl`           | 38,000       | 378,000          |
-| `eq`             | 118,000      | 152,000          |
-| `ne`             | 117,000      | 150,000          |
-| `neg`            | -            | 269,000          |
-| `not`            | -            | 130              |
-| `select`         | -            | 108,000          |
-| `randEuint256`   | -            | 30,000           |
-| `randEuint256(bound)` | -       | 30,000           |
+| Function name         | HCU (scalar) | HCU (non-scalar) |
+| --------------------- | ------------ | ---------------- |
+| `and`                 | 38,000       | 38,000           |
+| `or`                  | 38,000       | 38,000           |
+| `xor`                 | 39,000       | 39,000           |
+| `shr`                 | 38,000       | 369,000          |
+| `shl`                 | 39,000       | 378,000          |
+| `rotr`                | 40,000       | 375,000          |
+| `rotl`                | 38,000       | 378,000          |
+| `eq`                  | 118,000      | 152,000          |
+| `ne`                  | 117,000      | 150,000          |
+| `neg`                 | -            | 269,000          |
+| `not`                 | -            | 130              |
+| `select`              | -            | 108,000          |
+| `randEuint256`        | -            | 30,000           |
+| `randEuint256(bound)` | -            | 30,000           |
 
 #### N-ary operations (`sum`, `isIn`)
 
@@ -270,9 +321,9 @@ For `isIn` on `eaddress`, see the n-ary table above.
 
 ## Additional Operations
 
-| Function name    | HCU           |
-| ---------------- | ------------- |
-| `cast`           | 32            |
-| `trivialEncrypt` | 32            |
+| Function name    | HCU |
+| ---------------- | --- |
+| `cast`           | 32  |
+| `trivialEncrypt` | 32  |
 
 `mulDiv` is priced as a multiplication plus a division on the doubled width (`mulDiv` on `euint64` costs about a `mul` plus a `div` on 128 bits), which is why it is the most expensive binary operator.
