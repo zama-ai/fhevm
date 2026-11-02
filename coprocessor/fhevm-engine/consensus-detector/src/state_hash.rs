@@ -14,6 +14,13 @@ use tracing::{debug, error, info, warn};
 
 pub const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
+/// Notified by the sns-worker when a batch of ct128 squashes commits (its
+/// `--pg-notify-channel`; every deployment wires it to this name). A block's
+/// hash now also waits for the block's PBS work, which can finish after the
+/// last tfhe-worker notify, so listen to the squash commits too instead of
+/// relying on the next host block to retrigger the pass.
+pub const EVENT_CIPHERTEXT128_COMPUTED: &str = "event_ciphertext128_computed";
+
 /// Sentinel for blocks with `fhe_event_count = 0`. Generated via
 /// `printf '' | shasum -a 256` (equivalently `encode(sha256(''::bytea), 'hex')`).
 pub const EMPTY_BLOCK_STATE_HASH: &str =
@@ -130,7 +137,8 @@ async fn insert_state_hash(
 /// GCS path: stamp the GCS `state_hash` for one chain's blocks in `[start, end]`
 /// that don't already have an entry. Empty blocks (`fhe_event_count = 0`) get
 /// [`EMPTY_BLOCK_STATE_HASH`]; non-empty blocks get the SHA-256 over their
-/// GCS `ciphertexts`.
+/// GCS `ciphertexts` plus the ct128 digests of the block's PBS work, and are
+/// held back until that PBS work is done (see [`compute_gcs_hash`]).
 async fn compute_and_insert_gcs(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: i64,
@@ -208,8 +216,27 @@ async fn compute_and_insert_gcs(
     Ok(())
 }
 
-/// SHA-256 over the block's GCS `ciphertexts`; `None` until every non-errored
-/// computation completes. Errored computations are excluded so operators agree.
+/// SHA-256 over the block's GCS `ciphertexts`, followed by the ct128 digests
+/// of the block's PBS (squash) work; `None` until every non-errored
+/// computation completes AND every PBS computation scheduled for the block's
+/// output handles is squashed with its `ciphertext_digest.ciphertext128`
+/// recorded. Errored computations are excluded so operators agree.
+///
+/// The PBS anchor (fhevm-internal#1960): the plain ct64 hash is blind to the
+/// sns-worker, so a divergent squash stack (e.g. a CPU worker in a GPU fleet)
+/// would still reach consensus and break decryption after cutover. Folding the
+/// ct128 digests in makes operators agree on the squash output too, and the
+/// completeness gate keeps the hash (and therefore its upload - the insert is
+/// what the upload sweep reads) back until the block's PBS work is done.
+///
+/// Determinism of the PBS set: the ACL `Allowed` ingest inserts the
+/// `pbs_computations` row in the same transaction as the allow, and a
+/// computation only completes after its transaction is allowed, so by the time
+/// the completion gate opens the joined set is exactly the block's allowed
+/// output handles at every operator. The sns-worker commits `is_completed` and
+/// the `ciphertext_digest.ciphertext128` digest in one transaction, so the
+/// gate never admits a half-written squash. Blocks with no PBS rows hash to
+/// the previous recipe byte-for-byte (the digest aggregate degrades to `''`).
 ///
 /// Like [`compute_and_insert_gcs`], the source tables are explicitly qualified
 /// with the versioned GCS schema (`GCS_SCHEMA_QUOTED`) and never fall back to
@@ -230,26 +257,65 @@ async fn compute_gcs_hash(
               FROM {schema}.computations
              WHERE host_chain_id = $1 AND block_number = $2 AND is_error = false
         ),
-        v AS (SELECT 1 FROM bc HAVING bool_and(is_completed))
-        SELECT encode(
-            sha256(string_agg(ct.ciphertext, ''::bytea
-                              ORDER BY ct.handle, ct.ciphertext_version)),
-            'hex'
-        ) AS state_hash
-          FROM v CROSS JOIN bc
-          JOIN {schema}.ciphertexts ct
-            ON ct.tenant_id = bc.tenant_id AND ct.handle = bc.output_handle
+        pbs AS (
+            SELECT DISTINCT p.handle, p.is_completed, cd.ciphertext128
+              FROM {schema}.pbs_computations p
+              JOIN bc ON bc.output_handle = p.handle
+              LEFT JOIN {schema}.ciphertext_digest cd ON cd.handle = p.handle
+        )
+        SELECT
+            (SELECT bool_and(is_completed) FROM bc) AS fhe_done,
+            (SELECT count(*) FROM pbs) AS pbs_total,
+            (SELECT count(*) FROM pbs
+              WHERE NOT pbs.is_completed OR pbs.ciphertext128 IS NULL) AS pbs_pending,
+            CASE WHEN (SELECT bool_and(is_completed) FROM bc)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM pbs
+                       WHERE NOT pbs.is_completed OR pbs.ciphertext128 IS NULL)
+                THEN encode(
+                    sha256(
+                        (SELECT string_agg(ct.ciphertext, ''::bytea
+                                           ORDER BY ct.handle, ct.ciphertext_version)
+                           FROM bc
+                           JOIN {schema}.ciphertexts ct
+                             ON ct.tenant_id = bc.tenant_id AND ct.handle = bc.output_handle)
+                        || COALESCE(
+                            (SELECT string_agg(pbs.ciphertext128, ''::bytea
+                                               ORDER BY pbs.handle)
+                               FROM pbs),
+                            ''::bytea)
+                    ),
+                    'hex'
+                )
+            END AS state_hash
         "#
     );
-    let Some(row) = sqlx::query(&sql)
+    let row = sqlx::query(&sql)
         .bind(chain_id)
         .bind(block_number)
-        .fetch_optional(&mut **tx)
-        .await?
-    else {
-        return Ok(None);
-    };
+        .fetch_one(&mut **tx)
+        .await?;
+    let fhe_done: Option<bool> = row.try_get("fhe_done")?;
+    let pbs_total: i64 = row.try_get("pbs_total")?;
+    let pbs_pending: i64 = row.try_get("pbs_pending")?;
     let state_hash: Option<String> = row.try_get("state_hash")?;
+    if state_hash.is_some() {
+        // Fires once per block: the insert that follows removes it from the
+        // pending scan.
+        if pbs_total > 0 {
+            info!(
+                chain_id,
+                block_number,
+                ct128_digests = pbs_total,
+                "all ct128 digests ready; binding them into the block's state_hash"
+            );
+        }
+    } else if fhe_done == Some(true) && pbs_pending > 0 {
+        debug!(
+            chain_id,
+            block_number, pbs_pending, pbs_total, "state_hash held back: ct128 digests not ready"
+        );
+    }
     Ok(state_hash)
 }
 
@@ -1026,11 +1092,15 @@ async fn compute_post_cutover_state_hashes(
 }
 
 /// Pure pg-notify driven: one pass at startup, then one on every
-/// `event_ciphertext_computed`, `event_new_block`, or `event_gw_new_block`.
+/// `event_ciphertext_computed`, `event_ciphertext128_computed`,
+/// `event_new_block`, or `event_gw_new_block`.
 /// Listening on `event_new_block` covers host windows with no FHE activity —
 /// `event_ciphertext_computed` only fires when work happens, so empty dry-run
-/// windows would otherwise never produce sentinel rows. `event_gw_new_block`
-/// advances the Gateway tip so newly-sealed Gateway blocks get hashed.
+/// windows would otherwise never produce sentinel rows.
+/// `event_ciphertext128_computed` fires when the sns-worker commits a squash
+/// batch, which is what unblocks a block whose hash waits on PBS work.
+/// `event_gw_new_block` advances the Gateway tip so newly-sealed Gateway
+/// blocks get hashed.
 pub async fn run(
     pool: Pool<Postgres>,
     s3: Option<Arc<aws_sdk_s3::Client>>,
@@ -1046,6 +1116,7 @@ pub async fn run(
     listener
         .listen_all([
             EVENT_CIPHERTEXT_COMPUTED,
+            EVENT_CIPHERTEXT128_COMPUTED,
             crate::NEW_BLOCK_CHANNEL,
             EVENT_GW_NEW_BLOCK,
         ])
@@ -1213,6 +1284,104 @@ mod tests {
         .fetch_one(&pool)
         .await?;
         assert!(includes_b);
+        Ok(())
+    }
+
+    /// fhevm-internal#1960: the hash waits for the block's PBS (squash) work
+    /// and binds the ct128 digests, so a divergent sns-worker breaks consensus
+    /// instead of being invisible to it.
+    #[tokio::test]
+    async fn host_hash_waits_for_pbs_and_binds_ct128_digest() -> anyhow::Result<()> {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await?;
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+            (chain_id, block_hash, block_number, block_status, fhe_event_count)
+            VALUES (42, '\\x10', 100, 'finalized', 1)",
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO computations
+            (output_handle, dependencies, fhe_operation, is_scalar, transaction_id,
+             host_chain_id, block_number, is_allowed, is_completed)
+            VALUES ('\\x01', '{}', 0, FALSE, '\\x01', 42, 100, TRUE, TRUE)",
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO ciphertexts
+            (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
+            VALUES (0, '\\x01', '\\xaa', 0, 5)",
+        )
+        .execute(&pool)
+        .await?;
+        // The ACL Allowed ingest scheduled PBS work for the output handle;
+        // the squash has not run yet.
+        sqlx::query(
+            "INSERT INTO pbs_computations (handle, host_chain_id, block_number, is_completed)
+             VALUES ('\\x01', 42, 100, FALSE)",
+        )
+        .execute(&pool)
+        .await?;
+
+        let hashes = |pool: Pool<Postgres>| async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM state_hash WHERE chain_id = 42 AND block_number = 100",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        };
+        let pass = |pool: Pool<Postgres>| async move {
+            let mut tx = pool.begin().await?;
+            compute_and_insert_gcs(&mut tx, 42, 100, 100, 10, "public").await?;
+            tx.commit().await?;
+            anyhow::Ok(())
+        };
+
+        pass(pool.clone()).await?;
+        assert_eq!(
+            hashes(pool.clone()).await,
+            0,
+            "no hash while the block's PBS work is pending"
+        );
+
+        // Completed without a recorded ct128 digest (the sns-worker commits
+        // both atomically, so this state only exists mid-crash or on a skipped
+        // enqueue): still held back.
+        sqlx::query("UPDATE pbs_computations SET is_completed = TRUE WHERE handle = '\\x01'")
+            .execute(&pool)
+            .await?;
+        pass(pool.clone()).await?;
+        assert_eq!(
+            hashes(pool.clone()).await,
+            0,
+            "no hash while the ct128 digest is unrecorded"
+        );
+
+        sqlx::query(
+            "INSERT INTO ciphertext_digest (handle, ciphertext128) VALUES ('\\x01', '\\xdd')",
+        )
+        .execute(&pool)
+        .await?;
+        pass(pool.clone()).await?;
+        let binds_ct128: bool = sqlx::query_scalar(
+            "SELECT state_hash = encode(sha256('\\xaadd'::bytea), 'hex')
+            FROM state_hash WHERE chain_id = 42 AND block_number = 100",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert!(
+            binds_ct128,
+            "hash is sha256(ct64 bytes || ct128 digest) once PBS is done"
+        );
         Ok(())
     }
 
