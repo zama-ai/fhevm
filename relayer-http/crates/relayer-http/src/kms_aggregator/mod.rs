@@ -17,8 +17,10 @@ pub use client::{
     AttemptError, ConnectorClient, Endpoint, HttpClient, HttpReply, MAX_RESPONSE_BYTES,
 };
 pub use config::{
-    ConfigError, KmsAggregatorConfig, PublicDecryptConfig, UserChecks, UserDecryptConfig,
+    ConfigError, KmsAggregatorConfig, PadDecryptConfig, PublicDecryptConfig, UserChecks,
+    UserDecryptConfig,
 };
+pub use flows::pad_decrypt::{PadDecrypt, PadDecryptOutput};
 pub use flows::public_decrypt::{PublicDecrypt, PublicDecryptOutput};
 pub use flows::user_decrypt::{UserDecrypt, UserDecryptOutput, UserDecryptShare};
 pub use flows::{Flow, RejectReason};

@@ -9,6 +9,8 @@ use crate::config::HttpConfig;
 
 /// The connector's budget for one decryption request, in plaintext bits.
 const MAX_DECRYPTION_BITS: u32 = 2048;
+/// The connector's longest `requestValidity.durationSeconds`: one year.
+pub const MAX_DURATION_SECONDS: u64 = kms_connector_api::MAX_USER_DECRYPTION_DURATION_SECONDS;
 
 /// Which field is wrong, and how. Rendered as the message of a `400 malformed`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -106,6 +108,28 @@ pub fn handles<'a>(
             format!("total size {bits} bits exceeds {MAX_DECRYPTION_BITS}"),
         )
         .with_value(format_args!("{count} handles")));
+    }
+    Ok(())
+}
+
+/// The user-signed validity window lasts at most [`MAX_DURATION_SECONDS`], has started and has not ended:
+/// `start <= now < start + duration`.
+pub fn request_validity(field: &str, start: u64, duration: u64, now: u64) -> Result<(), Invalid> {
+    if duration > MAX_DURATION_SECONDS {
+        return Err(Invalid::new(
+            format!("{field}.durationSeconds"),
+            format!("at most {MAX_DURATION_SECONDS} seconds"),
+        )
+        .with_value(duration));
+    }
+    if start > now {
+        return Err(Invalid::new(
+            format!("{field}.startTimestamp"),
+            "must not be in the future",
+        ));
+    }
+    if start.saturating_add(duration) <= now {
+        return Err(Invalid::new(field, "window has already expired"));
     }
     Ok(())
 }
@@ -224,6 +248,21 @@ pub(crate) mod tests {
         for bad in [vec![1; 32], vec![2; 64], vec![3; 33], vec![0xff]] {
             assert!(extra_data("x", &bad).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn request_validity_rules() {
+        assert_eq!(request_validity("v", 90, 20, 100), Ok(()));
+        assert_eq!(request_validity("v", 100, 1, 100), Ok(()));
+        assert_eq!(
+            request_validity("v", 101, 20, 100).unwrap_err().field,
+            "v.startTimestamp"
+        );
+        assert_eq!(request_validity("v", 90, 10, 100).unwrap_err().field, "v");
+        assert_eq!(request_validity("v", 0, MAX_DURATION_SECONDS, 100), Ok(()));
+        let too_long = request_validity("v", 0, MAX_DURATION_SECONDS + 1, 100).unwrap_err();
+        assert_eq!(too_long.field, "v.durationSeconds");
+        assert_eq!(too_long.value, Some((MAX_DURATION_SECONDS + 1).to_string()));
     }
 
     #[test]

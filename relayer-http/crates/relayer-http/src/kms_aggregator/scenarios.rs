@@ -7,16 +7,19 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
 
-use kms_connector_api::{ErrorCode, PublicDecryptionRequest, UserDecryptionRequest};
+use kms_connector_api::{
+    ErrorCode, PadDecryptionRequest, PublicDecryptionRequest, UserDecryptionRequest,
+};
 use serde::Deserialize;
 use tokio::time::Instant;
 
 use super::aggregator::{AggregationError, Aggregator, Tally};
 use super::config::UserChecks;
 use super::flows::Flow;
+use super::flows::pad_decrypt::PadDecrypt;
 use super::flows::public_decrypt::PublicDecrypt;
 use super::flows::user_decrypt::UserDecrypt;
-use super::mock::{MockClient, PUBLIC_REQUEST_JSON, Reply, USER_REQUEST_JSON};
+use super::mock::{MockClient, PAD_REQUEST_JSON, PUBLIC_REQUEST_JSON, Reply, USER_REQUEST_JSON};
 use crate::metrics::Metrics;
 
 #[derive(Debug, Deserialize)]
@@ -44,9 +47,11 @@ fn default_delay() -> Duration {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(clippy::enum_variant_names, reason = "the YAML flow names")]
 enum ScenarioFlow {
     UserDecrypt,
     PublicDecrypt,
+    PadDecrypt,
 }
 
 #[derive(Debug, Deserialize)]
@@ -70,7 +75,7 @@ struct Expect {
     dominant: Option<ErrorCode>,
     /// HTTP attempts across all nodes.
     attempts: Option<u32>,
-    /// Shares (user decrypt) or signatures (public decrypt) in the answer.
+    /// Shares (user decrypt), signatures (public decrypt) or node responses (pad decrypt) in the answer.
     responses: Option<usize>,
     /// What the per-node metrics recorded, summed over the nodes.
     metrics: Option<ExpectMetrics>,
@@ -320,6 +325,13 @@ async fn run_file(path: &Path) -> Result<(), String> {
             let request: PublicDecryptionRequest =
                 serde_json::from_str(PUBLIC_REQUEST_JSON).unwrap();
             run::<PublicDecrypt>(&scenario, request, (), |o| o.signatures.len()).await
+        }
+        ScenarioFlow::PadDecrypt => {
+            if scenario.checks.is_some() {
+                return Err("`checks` applies to user_decrypt only".to_owned());
+            }
+            let request: PadDecryptionRequest = serde_json::from_str(PAD_REQUEST_JSON).unwrap();
+            run::<PadDecrypt>(&scenario, request, (), |o| o.responses.len()).await
         }
     };
     let report = compare(&scenario.expect, &observed);

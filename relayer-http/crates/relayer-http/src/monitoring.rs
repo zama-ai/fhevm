@@ -8,7 +8,7 @@ use regex::Regex;
 use serde_json::Value;
 
 use crate::endpoint::summary::{FIELDS, MESSAGE, OTHER_LINE_FIELDS};
-use crate::metrics::{Kind, LABELS, METRICS, Values, not_node_health};
+use crate::metrics::{FlowName, Kind, LABELS, METRICS, Values, not_node_health};
 use crate::reference::monitoring_dir;
 
 /// What one query names.
@@ -275,6 +275,38 @@ fn every_dashboard_starts_with_the_same_nav_bar_its_own_button_highlighted() {
     }
 }
 
+/// The title of a decryption flow's section: `pad_decrypt` is `Pad decrypt`.
+fn section_title(flow: FlowName) -> String {
+    let words = flow.as_str().replace('_', " ");
+    let mut chars = words.chars();
+    chars
+        .next()
+        .map(|first| first.to_ascii_uppercase().to_string() + chars.as_str())
+        .unwrap_or_default()
+}
+
+#[test]
+fn the_operator_dashboard_has_a_section_per_decryption_flow() {
+    let (_, operator) = dashboards()
+        .into_iter()
+        .find(|(_, d)| d["uid"] == "relayer-http")
+        .unwrap();
+    let rows: BTreeSet<&str> = operator["panels"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["type"] == "row")
+        .filter_map(|p| p["title"].as_str())
+        .collect();
+    for flow in FlowName::DECRYPTS {
+        let title = section_title(flow);
+        assert!(
+            rows.contains(title.as_str()),
+            "relayer-http.json: no section {title}"
+        );
+    }
+}
+
 #[test]
 fn panel_titles_are_unique_and_the_flow_sections_never_mix_the_flows() {
     let mut flow_sections = 0;
@@ -289,16 +321,16 @@ fn panel_titles_are_unique_and_the_flow_sections_never_mix_the_flows() {
         titles.dedup();
         assert_eq!(titles.len(), count, "{name}: panel titles are unique");
         for (row, panel) in sections(&dashboard) {
-            let (prefix, flow) = if row.starts_with("Public decrypt") {
-                ("Public decrypt", "public_decrypt")
-            } else if row.starts_with("User decrypt") {
-                ("User decrypt", "user_decrypt")
-            } else {
+            let Some((prefix, flow)) = FlowName::DECRYPTS
+                .into_iter()
+                .map(|f| (section_title(f), f.as_str()))
+                .find(|(prefix, _)| row.starts_with(prefix.as_str()))
+            else {
                 continue;
             };
             let title = panel["title"].as_str().unwrap_or_default();
             assert!(
-                title.starts_with(prefix),
+                title.starts_with(prefix.as_str()),
                 "{name} / {row}: {title} names its flow"
             );
             for target in panel["targets"].as_array().into_iter().flatten() {

@@ -28,7 +28,7 @@ pub const FIELDS: &[Field] = &[
     },
     Field {
         name: "flow",
-        meaning: "`user_decrypt`, `public_decrypt`, or `none` when answered before a flow is known",
+        meaning: "`user_decrypt`, `public_decrypt`, `pad_decrypt`, or `none` when answered before a flow is known",
     },
     Field {
         name: "outcome",
@@ -48,23 +48,23 @@ pub const FIELDS: &[Field] = &[
     },
     Field {
         name: "handles",
-        meaning: "ciphertext handles, comma-separated; at most `http.max_handles_per_decryption` (the validation limit), then `+N more`, so only a request that failed validation is cut; `none` if the body was unreadable",
+        meaning: "ciphertext handles (pad decrypt: the pad labels), comma-separated; at most `http.max_handles_per_decryption` (the validation limit), then `+N more`, so only a request that failed validation is cut; `none` if the body was unreadable",
     },
     Field {
         name: "contract_addresses",
-        meaning: "contract addresses of the handles, comma-separated, each once, cut like `handles`; `none` if the body was unreadable or the flow has none (public decrypt)",
+        meaning: "contract addresses of the handles (pad decrypt: the witnesses' consumers), comma-separated, each once, cut like `handles`; `none` if the body was unreadable or the flow has none (public decrypt)",
     },
     Field {
         name: "allowed_contracts",
-        meaning: "the `allowedContracts` of the request (user decrypt), comma-separated, at most `http.max_allowed_contracts` (the validation limit), then `+N more`; `none` otherwise",
+        meaning: "the `allowedContracts` of the request (user and pad decrypt), comma-separated, at most `http.max_allowed_contracts` (the validation limit), then `+N more`; `none` otherwise",
     },
     Field {
         name: "user_address",
-        meaning: "the user's address (user decrypt); `none` otherwise",
+        meaning: "the user's address (user and pad decrypt); `none` otherwise",
     },
     Field {
         name: "chain_id",
-        meaning: "chain id the handles carry; `none` if unreadable",
+        meaning: "chain id the handles carry (pad decrypt: the request's `chainId`); `none` if unreadable",
     },
     Field {
         name: "body_len",
@@ -200,6 +200,11 @@ impl Summary {
         self.contract_addresses = contract_addresses;
         self.allowed_contracts = allowed_contracts;
         self.user_address = user_address;
+    }
+
+    /// The request names its chain itself (pad decrypt: its labels are hashes, not handles).
+    pub fn chain_id(&mut self, chain_id: u64) {
+        self.chain_id = Some(chain_id);
     }
 
     /// The connector request is built and goes to the aggregator.

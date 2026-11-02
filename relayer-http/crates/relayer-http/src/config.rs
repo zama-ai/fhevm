@@ -64,6 +64,10 @@ pub struct HttpConfig {
     /// theirs when they change it.
     #[serde(default = "default_max_allowed_contracts")]
     pub max_allowed_contracts: usize,
+    /// Most pads in one pad decryption request; the connectors' `max_pads`, so set it to theirs when they change it.
+    /// At least 1.
+    #[serde(default = "default_max_pads")]
+    pub max_pads: usize,
 }
 
 /// 50, the connector's default `max_handles_per_decryption`.
@@ -73,6 +77,11 @@ fn default_max_handles_per_decryption() -> usize {
 
 /// 10, the connector's default `max_allowed_contracts`.
 fn default_max_allowed_contracts() -> usize {
+    10
+}
+
+/// 10, the connector's default `max_pads`.
+fn default_max_pads() -> usize {
     10
 }
 
@@ -97,6 +106,7 @@ impl HttpConfig {
             supported_chain_ids: chain_ids.to_vec(),
             max_handles_per_decryption: default_max_handles_per_decryption(),
             max_allowed_contracts: default_max_allowed_contracts(),
+            max_pads: default_max_pads(),
         }
     }
 
@@ -120,6 +130,9 @@ impl HttpConfig {
             return Err(ConfigError(
                 "http.max_handles_per_decryption must be >= 1".to_owned(),
             ));
+        }
+        if self.max_pads == 0 {
+            return Err(ConfigError("http.max_pads must be >= 1".to_owned()));
         }
         let mut seen = std::collections::HashSet::new();
         if let Some(dup) = self.supported_chain_ids.iter().find(|id| !seen.insert(*id)) {
@@ -204,6 +217,7 @@ mod tests {
         assert!(config.log.show_timestamp && config.log.show_target);
         assert_eq!(config.kms_aggregator.endpoints.len(), 13);
         assert_eq!(config.kms_aggregator.user_decrypt.threshold, 9);
+        assert_eq!(config.kms_aggregator.pad_decrypt.threshold, 9);
         assert_eq!(config.kms_aggregator.public_decrypt.threshold, 5);
         assert!(!config.kms_aggregator.skip_tls_verification);
         assert_eq!(
@@ -315,24 +329,27 @@ mod tests {
         assert_eq!(
             (
                 without.max_handles_per_decryption,
-                without.max_allowed_contracts
+                without.max_allowed_contracts,
+                without.max_pads
             ),
-            (50, 10)
+            (50, 10, 10)
         );
         let config = RelayerConfig::load_with(
             EXAMPLE,
             env(&[
                 ("APP_HTTP__MAX_HANDLES_PER_DECRYPTION", "100"),
                 ("APP_HTTP__MAX_ALLOWED_CONTRACTS", "20"),
+                ("APP_HTTP__MAX_PADS", "4"),
             ]),
         )
         .unwrap();
         assert_eq!(
             (
                 config.http.max_handles_per_decryption,
-                config.http.max_allowed_contracts
+                config.http.max_allowed_contracts,
+                config.http.max_pads
             ),
-            (100, 20)
+            (100, 20, 4)
         );
     }
 
@@ -374,6 +391,9 @@ mod tests {
                 .contains("max_handles_per_decryption")
         );
         http.max_handles_per_decryption = 1;
+        http.max_pads = 0;
+        assert!(http.validate().unwrap_err().0.contains("max_pads"));
+        http.max_pads = 1;
         http.supported_chain_ids = vec![1, 1];
         assert!(http.validate().unwrap_err().0.contains("twice"));
         http.supported_chain_ids = vec![];

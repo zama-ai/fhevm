@@ -1,6 +1,7 @@
-//! What differs between user decrypt and public decrypt: DTOs, route, response checks, counting, output shape.
+//! What differs between the decryption flows (user, public, pad): DTOs, route, response checks, counting, output shape.
 //! Optional, flow-specific checks come from the configuration through `Flow::Checks`.
 
+pub mod pad_decrypt;
 pub mod public_decrypt;
 pub mod user_decrypt;
 

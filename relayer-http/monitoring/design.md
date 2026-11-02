@@ -97,7 +97,7 @@ Status: ✅ exists · ➕ planned metric · 📜 computed from logs at query tim
 
 - Prometheus memory and the hosted-Prometheus bill (Grafana Cloud, per active series) grow with the number of series: one per label combination, about 14 per histogram. With HPA the total is one pod's count times the pod count.
 - The policy caps one pod's worst case at 5,000; a test computes it from the label bounds. The cap catches a multiplication by mistake (a `code` label on a histogram: ×24), not the cost of a metric chosen on purpose.
-- Today 2,613; with the planned metrics about 2,900.
+- Today 3,484, with three decryption flows (`metrics.md`); the planned metrics add a few hundred.
 - The live count is far lower than the worst case: most node × code combinations never happen.
 
 ## Dashboards
