@@ -60,6 +60,17 @@ pub(crate) async fn partial_block() -> anyhow::Result<(Database, PgPool, DBInsta
         .await?;
     sqlx::query("INSERT INTO ciphertexts (tenant_id,handle,ciphertext,ciphertext_version,ciphertext_type) VALUES (0,$1,'\\xaabb',0,5)")
         .bind(a.as_slice()).execute(&pool).await?;
+    // Simulate the squash as well: `Allowed(a)` scheduled PBS work above, and
+    // the state hash waits for it and binds its ct128 digest
+    // (fhevm-internal#1960).
+    sqlx::query("UPDATE pbs_computations SET is_completed=TRUE WHERE handle=$1")
+        .bind(a.as_slice())
+        .execute(&pool)
+        .await?;
+    sqlx::query("INSERT INTO ciphertext_digest (handle, ciphertext128) VALUES ($1,'\\xcd')")
+        .bind(a.as_slice())
+        .execute(&pool)
+        .await?;
     Ok((db, pool, instance))
 }
 
