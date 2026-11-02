@@ -87,6 +87,7 @@ function runWorker(scenario: DiscoveredScenario, options: OrchestratorOptions): 
         name: metadata.name,
         owner: metadata.owner,
         tags: metadata.tags,
+        directory: scenario.directory,
         ...(metadata.origin !== undefined ? { origin: metadata.origin } : {}),
       },
       profile: options.profile,

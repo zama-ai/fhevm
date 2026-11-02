@@ -5,5 +5,14 @@ metadata:
   description: Local stack started with fhevm-cli (ephemeral, throwaway secrets)
 spec:
   requiresConfirmation: false
-  # Typed sections (chain, relayer, wallets) and their settings arrive with the Phase 1b modules.
+  # Written by `fhevm-cli up`. The RPC address is the one seen from the stack's containers: the
+  # engine runs in a container on that network.
+  envFiles:
+    - path: ../../../.fhevm/runtime/env/test-suite.env
+      optional: true
+  chain:
+    rpcUrl: { env: RPC_URL }
+    chainId: { env: CHAIN_ID_HOST, default: 12345 }
+    mnemonic: { env: MNEMONIC, secret: true }
+  # The relayer and contracts sections arrive with the modules that own them.
   settings: {}

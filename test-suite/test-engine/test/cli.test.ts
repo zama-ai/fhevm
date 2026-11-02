@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, it } from 'node:test';
 
@@ -14,6 +14,7 @@ import {
   INVALID_PROFILES,
   INVALID_SCENARIOS,
   RESERVED_PROFILES,
+  filesBelow,
   readEvidence,
   readReport,
   runCli,
@@ -22,14 +23,6 @@ import {
 } from './helpers.js';
 
 const SECRET_ENV = { TE_FIXTURE_SECRET: FIXTURE_SECRET };
-
-/** Every file below `dir`, recursively. */
-function filesBelow(dir: string): string[] {
-  return readdirSync(dir).flatMap((entry) => {
-    const full = path.join(dir, entry);
-    return statSync(full).isDirectory() ? filesBelow(full) : [full];
-  });
-}
 
 describe('test-engine CLI', () => {
   describe('list', () => {

@@ -1,7 +1,8 @@
 name: test-suite-test-engine
 
-# CI of the test engine itself: build, unit/integration tests and the stack-independent smoke
-# scenario. It never runs fhEVM scenarios (those are triggered manually, see test-suite/test-engine).
+# CI of the test engine itself: build, unit/integration tests, the Chain module tests against a
+# throwaway Anvil node, and the stack-independent smoke scenario. It never runs fhEVM scenarios
+# (those are triggered manually, see test-suite/test-engine).
 on:
   pull_request:
     paths:
@@ -56,6 +57,10 @@ jobs:
       - name: Engine tests
         run: npm test
 
+      # Starts a throwaway Anvil container (test/anvil/compose.yaml) and always removes it.
+      - name: Chain tests (Anvil)
+        run: npm run test:chain
+
       - name: Validate profiles
         run: npm run engine -- profiles
 
@@ -63,6 +68,12 @@ jobs:
       # dry-run here: no shipped scenario targets it, so the run would correctly exit 3 (nothing
       # executed). Its rules are covered by the engine tests with fixture profiles.
       - name: Validate scenarios on every profile (dry-run)
+        env:
+          # Placeholders: a dry-run resolves the profiles' chain section but never connects.
+          # The mnemonic is Anvil's public test mnemonic.
+          RPC_URL: http://placeholder.invalid:8545
+          SEPOLIA_ETH_RPC_URL: https://placeholder.invalid/sepolia
+          MNEMONIC: test test test test test test test test test test test junk
         run: |
           for profile in none local devnet testnet; do
             npm run engine -- dry-run --profile "$profile" --output-dir "reports/dry-run-$profile"
