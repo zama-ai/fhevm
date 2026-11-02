@@ -5,7 +5,8 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { type DiscoveryResult, discoverScenarios } from '../discovery/discovery.js';
+import { listProfileNames, listProfiles, loadProfile, secretsOf } from '../config/profiles/profile.js';
+import { BUILTIN_PROFILE, ProfileError } from '../config/profiles/types.js';
 import {
   DEFAULT_PROFILES_DIR,
   DEFAULT_REPORTS_DIR,
@@ -13,7 +14,11 @@ import {
   DIST_DIR,
   PACKAGE_ROOT,
   readEngineVersion,
-} from '../paths.js';
+} from '../infrastructure/paths.js';
+import { createRedactor } from '../infrastructure/secrets/redactor.js';
+import type { RunMode } from '../model/execution.js';
+import { type DiscoveryResult, discoverScenarios } from '../orchestration/discovery/discovery.js';
+import { executePlan } from '../orchestration/execution/orchestrator.js';
 import {
   PlanError,
   type SelectionFilters,
@@ -21,13 +26,8 @@ import {
   hasRunnableItems,
   planExecution,
   selectScenarios,
-} from '../planner/planner.js';
-import { listProfileNames, listProfiles, loadProfile, secretsOf } from '../profiles/profile.js';
-import { BUILTIN_PROFILE, ProfileError } from '../profiles/types.js';
-import { buildRunReport, writeRunReport } from '../report/report.js';
-import { executePlan } from '../runner/orchestrator.js';
-import type { RunMode } from '../runner/types.js';
-import { createRedactor } from '../secrets/redactor.js';
+} from '../orchestration/planning/planner.js';
+import { buildRunReport, writeRunReport } from '../orchestration/reporting/report.js';
 import {
   printDiscoveryErrors,
   printPlan,

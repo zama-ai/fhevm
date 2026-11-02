@@ -47,13 +47,13 @@ npm run engine -- dry-run --profile testnet   # what would run on the TestNet, a
 
 ```
 test-engine/
-├── src/                      # the engine
+├── src/                      # the engine, by layer then domain (see Architecture)
 ├── schema/                   # JSON Schemas of scenario.yaml and profile files
 ├── profiles/                 # target environments: local, devnet, testnet, mainnet
 ├── scenarios/                # scenarios run by `npm run engine -- run` (default --scenarios-dir)
 │   └── smoke/                #   engine regression scenario, no dependency on the stack
 └── test/                     # tests of the engine itself (node:test), never run by the engine
-    ├── unit/                 #   modules called in process; no external service
+    ├── unit/                 #   modules called in process, one folder per src/ layer; no external service
     ├── integration/
     │   ├── cli/              #   the compiled CLI run as a process against the fixtures; no Docker
     │   └── chain/            #   Chain module and chain scenarios against a throwaway Anvil (Docker)
@@ -334,7 +334,7 @@ An unexpected internal error after scenarios started (for example, the report ca
 
 Each call adds a Cucumber attachment (media type `application/vnd.fhevm.evidence+json`), visible in the Cucumber report and in the terminal, and the report extracts it into `evidence.json`. Calling `record()` while no step or hook is running (e.g. from the World constructor, a `setTimeout`, or without awaiting) throws `evidence.record() must be called (and awaited) inside a step or hook`.
 
-`evidence.json` (`schemaVersion: 1`, type `EvidenceFile` in [`src/report/evidence.ts`](src/report/evidence.ts)) holds one entry per piece of evidence, each with a `scope`:
+`evidence.json` (`schemaVersion: 1`, type `EvidenceFile` in [`src/orchestration/reporting/evidence.ts`](src/orchestration/reporting/evidence.ts)) holds one entry per piece of evidence, each with a `scope`:
 
 | Scope      | Produced by | Content                                                                                                                                                                  |
 | ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -381,7 +381,7 @@ reports/20261006-143006-run-ae7e/
         └── console.log            # the scenario's console output, without ANSI colours
 ```
 
-`report.json` (`schemaVersion: 1`, type `RunReport` in [`src/report/report.ts`](src/report/report.ts)) contains the engine and Node versions; the run (id, mode, times, filters, profile snapshot, git commit, interrupted flag); a summary (counts per outcome, `executed`, `success`); and per scenario its metadata, targets, requirements, plan decision, outcome, reason, timings, evidence count, artifact paths and the parsed Cucumber execution (Gherkin scenarios, steps, hooks that failed or recorded evidence, issues).
+`report.json` (`schemaVersion: 1`, type `RunReport` in [`src/orchestration/reporting/report.ts`](src/orchestration/reporting/report.ts)) contains the engine and Node versions; the run (id, mode, times, filters, profile snapshot, git commit, interrupted flag); a summary (counts per outcome, `executed`, `success`); and per scenario its metadata, targets, requirements, plan decision, outcome, reason, timings, evidence count, artifact paths and the parsed Cucumber execution (Gherkin scenarios, steps, hooks that failed or recorded evidence, issues).
 
 | Outcome     | Meaning                                                                                                                           |
 | ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -417,20 +417,36 @@ flowchart LR
     Report --> Outputs[("report.json · report.html · evidence.json")]
 ```
 
-| Component      | Code                         | Contract (input → output)                                                                                                           |
-| -------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Manifest       | `src/manifest/`              | YAML → `ScenarioManifest` or `ManifestError(problems[])`. Pure.                                                                     |
-| Discovery      | `src/discovery/`             | scenarios dir + known profiles → valid `DiscoveredScenario`s + one error per invalid manifest.                                      |
-| Profiles       | `src/profiles/`              | profiles dir + name + environment → `ResolvedProfile` (plain data) or `ProfileError(problems[])`.                                   |
-| Planner        | `src/planner/`               | scenarios + filters + profile → `ExecutionPlan` (run/skip + reason); confirmation rules. Pure.                                      |
-| Runner         | `src/runner/orchestrator.ts` | `ExecutionPlan` → `ScenarioRunResult[]`, one per plan item; redacted console tee.                                                   |
-| Worker         | `src/runner/worker.ts`       | `WorkerJob` (stdin) → redacted Cucumber artifacts + exit code (`0` passed, `1` failed/invalid, `2` engine error, `143` terminated). |
-| Engine API     | `src/api/` (`#engine`)       | `EngineWorld`, `ProfileView`, `Evidence`, `Chain`, `loadArtifact`.                                                                  |
-| Chain          | `src/chain/`                 | resolved `chain` section → provider, role wallets with gas buffer, `send`/`deploy` recording `chain.tx`/`chain.deploy`.             |
-| Engine support | `src/cucumber/support/`      | loaded first in every worker: default step timeout, default World, EngineWorld check, chain provider closed after each scenario.    |
-| Secrets        | `src/secrets/redactor.ts`    | secret values → redactor for text, objects and streams.                                                                             |
-| Report         | `src/report/`                | plan + results + message streams → `RunReport` → `report.html`, `evidence.json`; shared `findExecutionProblems`.                    |
-| CLI            | `src/cli/`                   | argv → exit code.                                                                                                                   |
+`src/` is organised in two levels: the first says where and when the code runs, the second which domain it deals with.
+
+| Layer             | Runs in         | Holds                                                                                                  | May import from                                      |
+| ----------------- | --------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| `cli/`            | main process    | the entry point                                                                                        | `orchestration`, `model`, `config`, `infrastructure` |
+| `config/`         | both            | what the user declares: `manifest/`, `profiles/`                                                       | `infrastructure`                                     |
+| `model/`          | both            | data and rules shared by the two processes: worker job, outcomes, evidence payload, execution problems | `config`, `infrastructure`                           |
+| `orchestration/`  | main process    | `discovery/`, `planning/`, `execution/`, `reporting/`                                                  | `model`, `config`, `infrastructure`                  |
+| `runtime/`        | scenario worker | `worker/`, `cucumber/` (engine support code), `world/`, `modules/` (capabilities such as `chain/`)     | `model`, `config`, `infrastructure`                  |
+| `infrastructure/` | both            | technical code with no engine rule: `secrets/`, `yaml/`, `paths.ts`                                    | nothing internal                                     |
+| `api/`            | scenario worker | the public barrel `#engine`, re-exports only                                                           | `runtime`, `model`, `config`                         |
+
+`orchestration` and `runtime` never import each other. `test/unit/architecture.test.ts` fails on any import outside this table, and on a new first-level folder that is not in it.
+
+| Component      | Code                           | Contract (input → output)                                                                                                           |
+| -------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Manifest       | `src/config/manifest/`         | YAML → `ScenarioManifest` or `ManifestError(problems[])`. Pure.                                                                     |
+| Profiles       | `src/config/profiles/`         | profiles dir + name + environment → `ResolvedProfile` (plain data) or `ProfileError(problems[])`; wallet account derivation.        |
+| Discovery      | `src/orchestration/discovery/` | scenarios dir + known profiles → valid `DiscoveredScenario`s + one error per invalid manifest.                                      |
+| Planner        | `src/orchestration/planning/`  | scenarios + filters + profile → `ExecutionPlan` (run/skip + reason); confirmation rules. Pure.                                      |
+| Orchestrator   | `src/orchestration/execution/` | `ExecutionPlan` → `ScenarioRunResult[]`, one per plan item; redacted console tee.                                                   |
+| Report         | `src/orchestration/reporting/` | plan + results + message streams → `RunReport` → `report.html`, `evidence.json`.                                                    |
+| Shared model   | `src/model/`                   | `WorkerJob`, `ScenarioRunResult`, `EvidencePayload`; `findExecutionProblems`, used by the worker and the report.                    |
+| Worker         | `src/runtime/worker/`          | `WorkerJob` (stdin) → redacted Cucumber artifacts + exit code (`0` passed, `1` failed/invalid, `2` engine error, `143` terminated). |
+| Engine support | `src/runtime/cucumber/`        | loaded first in every worker: default step timeout, default World, EngineWorld check, chain provider closed after each scenario.    |
+| World          | `src/runtime/world/`           | `EngineWorld`, `ProfileView`, `Evidence`.                                                                                           |
+| Chain          | `src/runtime/modules/chain/`   | resolved `chain` section → provider, role wallets with gas buffer, `send`/`deploy` recording `chain.tx`/`chain.deploy`.             |
+| Secrets        | `src/infrastructure/secrets/`  | secret values → redactor for text, objects and streams.                                                                             |
+| Engine API     | `src/api/` (`#engine`)         | re-exports `EngineWorld`, `ProfileView`, `Evidence`, `Chain`, `loadArtifact` for scenario support code.                             |
+| CLI            | `src/cli/`                     | argv → exit code.                                                                                                                   |
 
 ## Development
 

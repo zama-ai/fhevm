@@ -1,18 +1,18 @@
 import path from 'node:path';
 
-import type { DiscoveredScenario } from '../discovery/discovery.js';
-import type { ManifestError } from '../manifest/types.js';
-import type { ExecutionPlan } from '../planner/planner.js';
-import { redactedChain, redactedSettings } from '../profiles/profile.js';
+import type { ManifestError } from '../config/manifest/types.js';
+import { redactedChain, redactedSettings } from '../config/profiles/profile.js';
 import {
   BUILTIN_PROFILE,
   type ProfileDefinition,
   type ProfileError,
   type ResolvedProfile,
   type ResolvedSetting,
-} from '../profiles/types.js';
-import type { ReportFiles, RunReport, ScenarioReport } from '../report/report.js';
-import type { RunMode, ScenarioOutcome } from '../runner/types.js';
+} from '../config/profiles/types.js';
+import type { RunMode, ScenarioOutcome } from '../model/execution.js';
+import type { DiscoveredScenario } from '../orchestration/discovery/discovery.js';
+import type { ExecutionPlan } from '../orchestration/planning/planner.js';
+import type { ReportFiles, RunReport, ScenarioReport } from '../orchestration/reporting/report.js';
 
 /** Short path for display: relative to the working directory when below it, absolute otherwise. */
 const relative = (file: string) => {

@@ -8,12 +8,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { after, before, describe, it } from 'node:test';
 
-import type { EvidencePayload } from '../../../src/api/evidence.js';
-import { loadArtifact } from '../../../src/chain/artifacts.js';
-import { Chain } from '../../../src/chain/chain.js';
-import { bufferedGasLimit } from '../../../src/chain/gas.js';
-import { loadProfile } from '../../../src/profiles/profile.js';
-import type { ResolvedChainSection } from '../../../src/profiles/types.js';
+import { loadProfile } from '../../../src/config/profiles/profile.js';
+import type { ResolvedChainSection } from '../../../src/config/profiles/types.js';
+import type { EvidencePayload } from '../../../src/model/evidence.js';
+import { loadArtifact } from '../../../src/runtime/modules/chain/artifacts.js';
+import { Chain } from '../../../src/runtime/modules/chain/chain.js';
+import { bufferedGasLimit } from '../../../src/runtime/modules/chain/gas.js';
 import {
   ANVIL_MNEMONIC,
   CHAIN_PROFILES,

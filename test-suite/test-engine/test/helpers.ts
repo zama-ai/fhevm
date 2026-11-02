@@ -3,12 +3,12 @@ import { mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { DiscoveredScenario } from '../src/discovery/discovery.js';
-import { DEFAULT_PROFILES_DIR, DEFAULT_SCENARIOS_DIR, DIST_DIR, PACKAGE_ROOT } from '../src/paths.js';
-import type { PlanningProfile } from '../src/planner/planner.js';
-import { listProfileNames } from '../src/profiles/profile.js';
-import type { EvidenceFile } from '../src/report/evidence.js';
-import type { RunReport } from '../src/report/report.js';
+import { listProfileNames } from '../src/config/profiles/profile.js';
+import { DEFAULT_PROFILES_DIR, DEFAULT_SCENARIOS_DIR, DIST_DIR, PACKAGE_ROOT } from '../src/infrastructure/paths.js';
+import type { DiscoveredScenario } from '../src/orchestration/discovery/discovery.js';
+import type { PlanningProfile } from '../src/orchestration/planning/planner.js';
+import type { EvidenceFile } from '../src/orchestration/reporting/evidence.js';
+import type { RunReport } from '../src/orchestration/reporting/report.js';
 
 export const FIXTURES_DIR = path.join(PACKAGE_ROOT, 'test', 'fixtures');
 export const FIXTURE_SCENARIOS = path.join(FIXTURES_DIR, 'scenarios');
