@@ -74,14 +74,18 @@ describe('Upgrades', function () {
     return pc;
   }
 
-  for (const [version, getFactory] of [
-    ['ProtocolConfigReplica v0.4.0', (s: Signer) => ethers.getContractFactory('ProtocolConfigReplica', s)],
-    ['ProtocolConfig v0.4.0', (s: Signer) => ethers.getContractFactory('ProtocolConfig', s)],
+  for (const [version, getFactory, args] of [
+    [
+      'ProtocolConfigReplica v0.4.0',
+      (s: Signer) => ethers.getContractFactory('ProtocolConfigReplica', s),
+      [1, '0x0000000000000000000000000000000000000001'],
+    ],
+    ['ProtocolConfig v0.4.0', (s: Signer) => ethers.getContractFactory('ProtocolConfig', s), []],
   ] as const) {
     it(`upgrades a v0.15 ProtocolConfig proxy in place to ${version}`, async function () {
       const factory = await getFactory(this.signers.fred);
       const pc = await deployV015ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
-      const upgraded = await upgrades.upgradeProxy(pc, factory, { call: 'reinitializeV4' });
+      const upgraded = await upgrades.upgradeProxy(pc, factory, { call: { fn: 'reinitializeV4', args: [...args] } });
       await upgraded.waitForDeployment();
       expect(await upgraded.getVersion()).to.equal(version);
     });
