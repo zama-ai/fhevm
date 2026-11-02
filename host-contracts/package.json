@@ -20,6 +20,7 @@
     "codegen:overloads": "../library-solidity/codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "test:gas": "hardhat test --grep Gas",
     "test:forge": "forge test",
+    "gas:ciphertextRoots": "forge test --match-contract CiphertextRootsGasTest -vv",
     "forge:soldeer": "forge soldeer install",
     "mock:daemon": "ts-node --transpile-only scripts/mock-coprocessor/index.ts daemon",
     "mock:query": "ts-node --transpile-only scripts/mock-coprocessor/index.ts query",

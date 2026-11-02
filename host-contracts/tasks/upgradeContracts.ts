@@ -581,6 +581,56 @@ task('task:prepareUpgradeKMSGeneration')
     await prepareUpgradeContract('KMSGeneration', 'KMS_GENERATION_CONTRACT_ADDRESS', taskArgs, hre);
   });
 
+task('task:upgradeCiphertextRoots')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/CiphertextRoots.sol:CiphertextRoots',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: examples/CiphertextRootsUpgradedExample.sol:CiphertextRootsUpgradedExample',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await upgradeContract('CiphertextRoots', 'CIPHERTEXT_ROOTS_CONTRACT_ADDRESS', taskArgs, hre);
+  });
+
+task('task:prepareUpgradeCiphertextRoots')
+  .addParam(
+    'currentImplementation',
+    'The currently deployed implementation solidity contract path and name, eg: contracts/CiphertextRoots.sol:CiphertextRoots',
+  )
+  .addParam(
+    'newImplementation',
+    'The new implementation solidity contract path and name, eg: contracts/CiphertextRoots.sol:CiphertextRoots',
+  )
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    await prepareUpgradeContract('CiphertextRoots', 'CIPHERTEXT_ROOTS_CONTRACT_ADDRESS', taskArgs, hre);
+  });
+
 task('task:upgradeInputVerifier')
   .addParam(
     'currentImplementation',
