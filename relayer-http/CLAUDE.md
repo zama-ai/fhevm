@@ -71,7 +71,7 @@ Every change must pass the first three; a change to the AWS signer or the AWS de
 Tests that need an external service are `#[ignore = "<why>"]` and grouped in one module per service, run by name with
 `--run-ignored only -E 'test(/<module>/)'` once the service is up (never an env var that silently skips). Check exit codes strictly (a grep on the output hides a failing build).
 
-Against the local fhevm stack: `./fhevm-cli up` runs relayer-http in the stack (`fhevm-relayer-http`, :8080);
+Against the local fhevm stack: `./fhevm-cli up` runs relayer-http in the stack (`fhevm-relayer-http`, :3002);
 `make -C dev run` runs it on the host instead (:18080, the stack's config); `make -C dev public-decrypt` / `user-decrypt`
 (one flow each, from the e2e container); `make -C dev check` (the three commands above). See `dev/README.md`.
 

@@ -381,7 +381,8 @@ const bundleFromFiles = async (
         CONNECTOR_TX_SENDER_VERSION: findImageTag(parsed, "connector", "CONNECTOR_TX_SENDER_VERSION"),
         // GitOps YAMLs don't deploy the connector HTTP endpoint and proxy yet; leave
         // CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION unset so the compat layer gates the
-        // services out (optional repo keys). Same for relayer-http (RELAYER_HTTP_VERSION).
+        // services out (optional repo keys). relayer-http isn't deployed either: RELAYER_HTTP_VERSION
+        // stays unset, so `up` skips it.
         CORE_VERSION: findImageTag(parsed, "kmsCore", "CORE_VERSION"),
         RELAYER_VERSION: findImageTag(parsed, "relayer", "RELAYER_VERSION"),
         RELAYER_MIGRATE_VERSION: findImageTag(parsed, "relayer", "RELAYER_MIGRATE_VERSION"),

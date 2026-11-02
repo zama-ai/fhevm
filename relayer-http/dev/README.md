@@ -8,9 +8,9 @@ Runs relayer-http against the local fhevm stack (`test-suite/fhevm`). Nothing he
 
 ```sh
 ./fhevm-cli up …                                    # from test-suite/fhevm
-curl -s localhost:8080/liveness                     # {"status":"alive"}
-curl -s localhost:8080/healthz                      # {"status":"ready"}
-curl -si localhost:8080/v4/public-decrypt -H 'content-type: application/json' \
+curl -s localhost:3002/liveness                     # {"status":"alive"}
+curl -s localhost:3002/healthz                      # {"status":"ready"}
+curl -si localhost:3002/v4/public-decrypt -H 'content-type: application/json' \
   -d '{"ciphertextHandles":[],"extraData":"0x00"}'  # 400 malformed, "ciphertextHandles: must not be empty"
 make -C relayer-http/dev public-decrypt             # 3 handles, clear values checked, timing printed
 make -C relayer-http/dev user-decrypt               # signed unified request, shares checked, timing printed
@@ -18,7 +18,7 @@ make -C relayer-http/dev user-decrypt               # signed unified request, sh
 
 ```
 e2e container: hardhat script --> host-node:8545 (deploy a fixture)
-                              --> relayer-http:8080 --https + FhevmSig--> kms-connector[-i]-proxy:8443 --> kms-connector[-i]-endpoint:8080
+                              --> relayer-http:3002 --https + FhevmSig--> kms-connector[-i]-proxy:8443 --> kms-connector[-i]-endpoint:8080
 ```
 
 - Logs: `docker logs -f fhevm-relayer-http`.

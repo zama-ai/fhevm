@@ -1,6 +1,7 @@
 # relayer-http config template for the local stack. fhevm-cli rewrites the stack-dependent fields
-# (renderRelayerHttpConfig): http.supported_chain_ids, the two thresholds, auth.chain_id,
-# auth.protocol_config, auth.address and endpoints (one per KMS committee party's proxy).
+# (renderRelayerHttpConfig): http.endpoint (RELAYER_HTTP_PORT), http.supported_chain_ids, the two
+# thresholds, auth.chain_id, auth.protocol_config, auth.address and endpoints (one per KMS committee
+# party's proxy).
 name: relayer-http-local
 log:
   format: pretty
@@ -9,7 +10,7 @@ log:
   show_timestamp: true
   show_target: false
 http:
-  endpoint: "0.0.0.0:8080"
+  endpoint: "0.0.0.0:0"
   max_body_bytes: 1048576
   body_read_timeout: 10s
   supported_chain_ids: []

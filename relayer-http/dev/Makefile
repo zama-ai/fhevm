@@ -1,6 +1,6 @@
 # Development tooling for relayer-http against the local fhevm stack. Run from anywhere:
 #   make -C relayer-http/dev <rule>       (see README.md)
-# relayer-http runs in the stack (./fhevm-cli up) on :8080; `make run` runs it on the host on :18080.
+# relayer-http runs in the stack (./fhevm-cli up) on :3002; `make run` runs it on the host on :18080.
 ROOT    := $(abspath ..)
 CLIPPY  := cargo clippy --workspace --all-targets -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
 

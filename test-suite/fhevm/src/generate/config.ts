@@ -7,7 +7,7 @@ import {
   requiresLegacyRelayerKeyUrlConfig,
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
-import { hostChainRuntimes, OBJECT_STORE_INTERNAL_URL } from "../layout";
+import { hostChainRuntimes, OBJECT_STORE_INTERNAL_URL, RELAYER_HTTP_PORT } from "../layout";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
 import { hostReachableMaterialUrl, predictedCrsId, predictedKeyId } from "../utils/fs";
@@ -152,6 +152,7 @@ export const renderRelayerHttpConfig = (
   if (!defaultChain) throw new Error("Missing default host chain");
   const t = plan.kms.threshold;
   const aggregator = config.kms_aggregator;
+  config.http.endpoint = `0.0.0.0:${RELAYER_HTTP_PORT}`;
   config.http.supported_chain_ids = chains.map((chain) => Number(chain.chainId));
   aggregator.public_decrypt.threshold = t + 1;
   aggregator.user_decrypt.threshold = 2 * t + 1;

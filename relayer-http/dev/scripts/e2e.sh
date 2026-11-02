@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copies dev/e2e/ into the e2e debug container and runs one flow script there with hardhat.
-# Relayer: the stack's (http://relayer-http:8080) when container fhevm-relayer-http runs, else the one `make run` starts
+# Relayer: the stack's (http://relayer-http:3002) when container fhevm-relayer-http runs, else the one `make run` starts
 # on the host (:18080); RELAYER_HTTP_URL overrides both. MIN_SHARES, ATTEMPTS and RETRY_DELAY_MS pass through when set.
 # Usage: e2e.sh public-decrypt.ts | user-decrypt.ts
 set -euo pipefail
@@ -12,7 +12,7 @@ docker cp "$HERE/e2e/." "$CONTAINER:/app/test-suite/e2e/scripts/relayer-http/"
 
 if [ -z "${RELAYER_HTTP_URL:-}" ]; then
   if [ "$(docker inspect -f '{{.State.Running}}' fhevm-relayer-http 2>/dev/null)" = true ]; then
-    RELAYER_HTTP_URL=http://relayer-http:8080
+    RELAYER_HTTP_URL=http://relayer-http:3002
   else
     # Relayer on the host: Docker Desktop (macOS) names the host host.docker.internal, Linux Docker Engine reaches it at
     # the gateway of the stack's network.

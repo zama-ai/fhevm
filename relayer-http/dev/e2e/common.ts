@@ -6,7 +6,7 @@ import { ethers } from 'hardhat';
 
 import { getSigners, initSigners } from '../../test/signers';
 
-export const RELAYER = (process.env.RELAYER_HTTP_URL ?? 'http://relayer-http:8080').replace(/\/$/, '');
+export const RELAYER = (process.env.RELAYER_HTTP_URL ?? 'http://relayer-http:3002').replace(/\/$/, '');
 const TIMEOUT_MS = 120_000;
 
 export interface Reply<T> {

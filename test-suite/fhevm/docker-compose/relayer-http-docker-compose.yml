@@ -17,4 +17,4 @@ services:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/config/relayer-http.yaml:/app/config/config.yaml:ro
       - ../static/config/kms-connector-proxy/ca.crt:/etc/kms-connector/proxy/ca.crt:ro
     ports:
-      - "8080:8080"
+      - "3002:3002" # RELAYER_HTTP_PORT in src/layout.ts

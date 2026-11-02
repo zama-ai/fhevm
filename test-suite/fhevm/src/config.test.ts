@@ -175,6 +175,7 @@ describe("relayer-http config", () => {
         envs,
       ),
     );
+    expect(config.http.endpoint).toBe("0.0.0.0:3002");
     expect(config.http.supported_chain_ids).toEqual([12345, 67890]);
     expect(config.kms_aggregator.public_decrypt.threshold).toBe(2);
     expect(config.kms_aggregator.user_decrypt.threshold).toBe(3);

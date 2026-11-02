@@ -105,7 +105,9 @@ export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
 export const DEFAULT_POSTGRES_PASSWORD = "postgres";
 export const DEFAULT_POSTGRES_DB = "coprocessor";
-export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, OBJECT_STORE_PORT, 9001, 8080];
+/** Host port of relayer-http (in-stack `fhevm-relayer-http`). */
+export const RELAYER_HTTP_PORT = 3002;
+export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, OBJECT_STORE_PORT, 9001, RELAYER_HTTP_PORT];
 export const OBJECT_STORE_INTERNAL_URL = `http://object-store:${OBJECT_STORE_PORT}`;
 /**
  * Per-operator alias for the one object store. Every alias reaches the same
