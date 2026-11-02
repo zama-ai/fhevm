@@ -32,6 +32,7 @@ jobs:
               - relayer-http/**
               - kms-connector/crates/api/**
               - kms-connector/Cargo.toml
+              - shared/fhevm-sig-auth/**
   dependencies-check:
     name: relayer-http-dependency-analysis/dependencies-check (bpr)
     needs: check-changes

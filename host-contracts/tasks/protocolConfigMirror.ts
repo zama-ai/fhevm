@@ -31,35 +31,58 @@ export type CanonicalSnapshot = {
   blockHash: string;
 };
 
-// Reads the canonical ProtocolConfig's current KMS context, pinned to one block. Used by
-// task:exportCanonicalProtocolConfig, the only task that reads the canonical chain over RPC. Pass
-// blockNumber to pin to a historical block (the export artifact's blockNumber) so a DAO signer can
-// reproduce a snapshot byte-for-byte even after a later context rotation. Omit it to read the latest
-// finalized block.
+// RPC providers must disable caching so this check re-fetches the block after the state reads.
+export async function assertCanonicalSnapshotBlockHash(
+  canonicalProvider: Provider,
+  snapshot: Pick<CanonicalSnapshot, 'blockNumber' | 'blockHash'>,
+): Promise<void> {
+  const block = await canonicalProvider.getBlock(snapshot.blockNumber);
+  if (block === null || block.hash === null || block.hash !== snapshot.blockHash) {
+    throw new Error(`Canonical block ${snapshot.blockNumber} is missing or its hash changed during the read; retry.`);
+  }
+}
+
+// Reads the canonical ProtocolConfig's current KMS context, pinned to one finalized block, for
+// exports and mirror tasks. Pass blockNumber to pin to a finalized historical block (the export
+// artifact's blockNumber) so a DAO signer can reproduce a snapshot byte-for-byte even after a later
+// context rotation. Omit it to read the latest finalized block.
 export async function readCanonicalSnapshot(
   hre: HardhatRuntimeEnvironment,
   options: { canonicalProvider: Provider; canonicalProtocolConfigAddress: string; blockNumber?: number },
 ): Promise<CanonicalSnapshot> {
   const { ethers } = hre;
   const { canonicalProvider, canonicalProtocolConfigAddress } = options;
+  if (options.blockNumber !== undefined && (!Number.isSafeInteger(options.blockNumber) || options.blockNumber < 0)) {
+    throw new Error('Canonical block number must be a nonnegative safe integer.');
+  }
 
   // Handshake before the identity check so a dead or mistyped RPC URL is reported as an RPC
-  // problem, not as a contract identity failure. Pin to the finalized block when no explicit block
-  // is requested: a finalized block can't be reorged out, so the exported artifact stays
+  // problem, not as a contract identity failure. Require finality even for an explicit block:
+  // a finalized block can't be reorged out, so the exported artifact stays
   // reproducible. We resolve the full block (not just its number) to capture the hash too, which
   // uniquely identifies the read's state across reorgs — a height alone is ambiguous.
   let canonicalChainId: bigint;
-  let blockTag: number | 'finalized';
-  let block: Awaited<ReturnType<Provider['getBlock']>>;
+  let finalizedBlock: Awaited<ReturnType<Provider['getBlock']>>;
   try {
     canonicalChainId = (await canonicalProvider.getNetwork()).chainId;
-    blockTag = options.blockNumber ?? 'finalized';
-    block = await canonicalProvider.getBlock(blockTag);
+    finalizedBlock = await canonicalProvider.getBlock('finalized');
   } catch (err) {
     throw new Error(`Canonical RPC handshake failed (${formatError(err)}).`);
   }
+  if (finalizedBlock === null || finalizedBlock.hash === null) {
+    throw new Error('Canonical RPC returned no finalized block.');
+  }
+  if (options.blockNumber !== undefined && options.blockNumber > finalizedBlock.number) {
+    throw new Error(
+      `Canonical block ${options.blockNumber} is above the latest finalized block ${finalizedBlock.number}; wait for finalization.`,
+    );
+  }
+  const block =
+    options.blockNumber === undefined || options.blockNumber === finalizedBlock.number
+      ? finalizedBlock
+      : await canonicalProvider.getBlock(options.blockNumber);
   if (block === null || block.hash === null) {
-    throw new Error(`Canonical RPC returned no finalized block for "${blockTag}".`);
+    throw new Error(`Canonical RPC returned no block or hash for "${options.blockNumber}".`);
   }
   const blockNumber = block.number;
   const blockHash = block.hash;
@@ -106,6 +129,8 @@ export async function readCanonicalSnapshot(
     storageUrl: node.storageUrl,
   }));
   const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
+
+  await assertCanonicalSnapshotBlockHash(canonicalProvider, { blockNumber, blockHash });
 
   return {
     protocolConfigAddress: getAddress(canonicalProtocolConfigAddress),

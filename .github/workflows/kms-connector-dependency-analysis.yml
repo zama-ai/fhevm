@@ -31,6 +31,8 @@ jobs:
               - .github/workflows/kms-connector-dependency-analysis.yml
               - kms-connector/crates/**
               - kms-connector/Cargo.*
+              - kms-connector/.cargo/**
+              - .github/actions/kms-git-auth/**
 
   dependencies-check:
     name: kms-connector-dependency-analysis/dependencies-check (bpr)
@@ -45,6 +47,11 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
+
+      - name: Authenticate zama-ai/kms git dependencies
+        uses: ./.github/actions/kms-git-auth
+        with:
+          token: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
 
       - name: Rust setup
         uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203 # v1

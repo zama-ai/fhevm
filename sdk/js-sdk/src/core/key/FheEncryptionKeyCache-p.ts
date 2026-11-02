@@ -41,6 +41,8 @@ export class CacheEntryImpl implements CacheEntry {
 
   /** @internal promise on the future value being resolved. Do not use externally. */
   _pending!: Promise<FheEncryptionKeyBytes | FheEncryptionKeyWasm>;
+  /** @internal promise on the bytes as fetched, kept after conversion to wasm. Do not use externally. */
+  _bytes!: Promise<FheEncryptionKeyBytes>;
   /** @internal debug: true if `_pending` has been chained from (e.g. by ensureWasm). */
   _pendingChained: boolean;
 
@@ -124,14 +126,14 @@ export class FheEncryptionKeyCache {
 
   setBytes(owner: FhevmRuntime, relayerUrl: string, bytes: FheEncryptionKeyBytes): void {
     // First write wins: if an entry already exists (resolved or in-flight),
-    // skip to avoid creating a closure over the 50MB bytes unnecessarily.
+    // skip to avoid creating a closure over the key bytes unnecessarily.
     if (this.#cache.has(relayerUrl)) {
       return;
     }
     _assertRelayerUrlMatch(bytes.metadata.relayerUrl, relayerUrl);
     // The closure over `bytes` is ephemeral: ensureBytes calls the fetcher
     // immediately, the promise resolves synchronously, and the closure becomes
-    // unreachable. No extra copy of the 50MB data is retained.
+    // unreachable. The entry keeps `bytes` itself (not a copy), as served.
     this.ensureBytes({
       owner,
       relayerUrl,
@@ -168,6 +170,7 @@ export class FheEncryptionKeyCache {
     entry.pendingKind = 'bytes';
     entry.pendingOp = 'fetching';
     entry._pending = pendingValue;
+    entry._bytes = pendingValue;
     entry.ready = this.#makeReady(relayerUrl, entry, 'bytes', pendingValue);
 
     this.#cache.set(relayerUrl, entry);
@@ -216,61 +219,24 @@ export class FheEncryptionKeyCache {
   }
 
   /**
-   * Get bytes from the cache, converting from wasm if necessary.
+   * Get bytes from the cache, as fetched.
    *
    * - No entry → `undefined`
-   * - Resolved bytes → return immediately
-   * - Resolved wasm → serialize to bytes and return
-   * - Pending bytes → await, return resolved bytes
-   * - Pending wasm → await, serialize to bytes and return
+   * - Otherwise → await the fetch, return its bytes or throw its error
+   *
+   * Never serializes the wasm value back to bytes: tfhe upgrades older
+   * serialization versions on load, so the result could differ from the
+   * bytes the relayer served.
    */
-  async resolveBytes(parameters: {
-    readonly relayerUrl: string;
-    readonly serializeFn?: ((parameters: FheEncryptionKeyWasm) => Promise<FheEncryptionKeyBytes>) | undefined;
-  }): Promise<FheEncryptionKeyBytes | undefined> {
-    const { relayerUrl, serializeFn } = parameters;
+  async resolveBytes(parameters: { readonly relayerUrl: string }): Promise<FheEncryptionKeyBytes | undefined> {
+    const { relayerUrl } = parameters;
 
     const entry = this.#cache.get(relayerUrl);
     if (entry === undefined) {
       return undefined;
     }
 
-    // Bytes already available — return immediately, don't wait for pending wasm
-    if (entry.resolvedKind === 'bytes') {
-      return entry.value as FheEncryptionKeyBytes;
-    }
-
-    // Wasm already available — serialize to bytes
-    if (entry.resolvedKind === 'wasm') {
-      if (serializeFn === undefined) {
-        throw new Error('Cannot convert wasm to bytes: serialize function not provided');
-      }
-      return serializeFn(entry.value as FheEncryptionKeyWasm);
-    }
-
-    if (entry.pendingKind === undefined) {
-      return undefined;
-    }
-
-    await entry.ready;
-
-    // Re-read after potential await — entry is mutable across await boundaries.
-    // Cast needed: TS narrows out "bytes" from the early return above,
-    // but the entry can become "bytes" during the await.
-    const kind = entry.resolvedKind as 'bytes' | 'wasm' | undefined;
-
-    if (kind === 'bytes') {
-      return entry.value as FheEncryptionKeyBytes;
-    }
-
-    if (kind === 'wasm') {
-      if (serializeFn === undefined) {
-        throw new Error('Cannot convert wasm to bytes: serialize function not provided');
-      }
-      return serializeFn(entry.value as FheEncryptionKeyWasm);
-    }
-
-    return undefined;
+    return entry._bytes;
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -323,6 +289,9 @@ export class FheEncryptionKeyCache {
         throw err;
       },
     );
+    // Callers get the error through `_bytes` or by awaiting `ready`: never
+    // leave `ready` unhandled when no one awaits it.
+    ready.catch(() => undefined);
     return ready;
   }
 }

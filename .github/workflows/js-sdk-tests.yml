@@ -2,12 +2,13 @@ name: js-sdk-tests
 
 on:
   pull_request:
+    # No `paths` filter: the workflow always runs so `js-sdk-tests/test`
+    # always reports (success or skipped), which the merge queue requires.
+    # `paths` also sees only the first 300 changed files; paths-filter below
+    # lists them through the API, which stops at 3000.
     branches:
       - devex/js-sdk
       - main
-    paths:
-      - ".github/workflows/js-sdk-*.yml"
-      - "sdk/js-sdk/**"
   push:
     branches:
       - devex/js-sdk
@@ -21,9 +22,34 @@ on:
 # No permissions at the workflow level — each job declares only what it needs.
 permissions: {}
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  check-changes:
+    name: js-sdk-tests/check-changes
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: "read" # Required to list the pull request's changed files
+    outputs:
+      sdk-changed: ${{ github.event_name != 'pull_request' || steps.filter.outputs.sdk }}
+    steps:
+      # On pull_request, paths-filter lists changed files through the API,
+      # so no checkout is needed.
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        if: github.event_name == 'pull_request'
+        id: filter
+        with:
+          filters: |
+            sdk:
+              - ".github/workflows/js-sdk-*.yml"
+              - "sdk/js-sdk/**"
+
   run-tests:
     name: js-sdk-tests/test
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.sdk-changed == 'true' }}
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/extras=s3-cache
     defaults:
       run:

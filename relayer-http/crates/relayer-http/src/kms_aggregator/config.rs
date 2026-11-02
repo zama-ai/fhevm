@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use alloy::primitives::Address;
+use fhevm_sig_auth::DEFAULT_MAX_AUTH_VALIDITY;
 use serde::Deserialize;
 use url::{Host, Url};
 
@@ -16,7 +18,7 @@ pub struct ConfigError(pub String);
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct KmsAggregatorConfig {
-    /// Allow plain http and `auth: none` towards non-loopback hosts. Local/compose only.
+    /// Allow plain http towards non-loopback hosts. Local/compose only.
     #[serde(default)]
     pub allow_insecure_http: bool,
     /// HTTP calls in flight at once, all aggregations together (one semaphore per process).
@@ -25,6 +27,7 @@ pub struct KmsAggregatorConfig {
     pub call: CallConfig,
     pub user_decrypt: UserDecryptConfig,
     pub public_decrypt: PublicDecryptConfig,
+    pub auth: AuthConfig,
     pub endpoints: Vec<EndpointConfig>,
 }
 
@@ -116,15 +119,41 @@ pub struct PublicDecryptConfig {
 pub struct EndpointConfig {
     pub name: String,
     pub url: Url,
-    pub auth: AuthConfig,
+    /// The audience this connector accepts (today its KMS tx-sender address).
+    pub audience: Address,
 }
 
-/// The secret itself is never in the config, only the name of the env var holding it.
+/// `FhevmSig` signing of connector calls (RFC-038).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthConfig {
+    /// EIP-712 domain: the Ethereum chain id.
+    pub chain_id: u64,
+    /// EIP-712 domain: the `ProtocolConfig` address.
+    pub protocol_config: Address,
+    /// Signature lifetime: longer than `call.timeout`, at most 5 min.
+    #[serde(with = "humantime_serde", default = "default_validity")]
+    pub validity: Duration,
+    /// The signing key's address; startup fails on a mismatch.
+    pub address: Address,
+    pub signer: SignerConfig,
+}
+
+fn default_validity() -> Duration {
+    Duration::from_secs(120)
+}
+
+/// The signing key; the config names an env var, never holds a secret.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-pub enum AuthConfig {
-    None,
-    ApiKey { value_env: String },
+pub enum SignerConfig {
+    /// A hex private key in the env var `value_env` (local dev, CI).
+    PrivateKey { value_env: String },
+    /// An AWS KMS key (deployments).
+    AwsKms {
+        /// Key id or ARN; region and credentials come from the AWS environment.
+        key_id: String,
+    },
 }
 
 fn fail(message: String) -> Result<(), ConfigError> {
@@ -169,16 +198,11 @@ impl KmsAggregatorConfig {
                     "{at}.url is plain http to a non-loopback host: use https or set allow_insecure_http (local only)"
                 ));
             }
-            match &ep.auth {
-                AuthConfig::None if !local && !self.allow_insecure_http => {
-                    return fail(format!(
-                        "{at}.auth is `none` to a non-loopback host: configure an api_key or set allow_insecure_http (local only)"
-                    ));
-                }
-                AuthConfig::ApiKey { value_env } if value_env.trim().is_empty() => {
-                    return fail(format!("{at}.auth.value_env must not be empty"));
-                }
-                _ => {}
+            if ep.audience.is_zero() {
+                return fail(format!("{at}.audience must not be the zero address"));
+            }
+            if earlier().any(|o| o.audience == ep.audience) {
+                return fail(format!("{at}.audience must be unique"));
             }
         }
         if self.max_concurrent_calls < n {
@@ -203,6 +227,24 @@ impl KmsAggregatorConfig {
                 "kms_aggregator.call.retries must satisfy 0 < delay <= backoff_max <= call.timeout"
                     .to_owned(),
             );
+        }
+        let auth = &self.auth;
+        if auth.validity <= call.timeout || auth.validity > DEFAULT_MAX_AUTH_VALIDITY {
+            return fail(format!(
+                "kms_aggregator.auth.validity must be > call.timeout and <= {DEFAULT_MAX_AUTH_VALIDITY:?}"
+            ));
+        }
+        if auth.address.is_zero() {
+            return fail("kms_aggregator.auth.address must not be the zero address".to_owned());
+        }
+        match &auth.signer {
+            SignerConfig::PrivateKey { value_env } if value_env.trim().is_empty() => {
+                return fail("kms_aggregator.auth.signer.value_env must not be empty".to_owned());
+            }
+            SignerConfig::AwsKms { key_id, .. } if key_id.trim().is_empty() => {
+                return fail("kms_aggregator.auth.signer.key_id must not be empty".to_owned());
+            }
+            _ => {}
         }
         for (name, threshold) in [
             ("user_decrypt", self.user_decrypt.threshold),
@@ -236,7 +278,7 @@ pub(crate) mod tests {
         Url::parse(s).unwrap()
     }
 
-    /// `n` https endpoints with API keys, thresholds 1, single attempt.
+    /// `n` https endpoints with distinct audiences, a local signer, thresholds 1, single attempt.
     pub(crate) fn valid(n: usize) -> KmsAggregatorConfig {
         KmsAggregatorConfig {
             allow_insecure_http: false,
@@ -250,16 +292,28 @@ pub(crate) mod tests {
                 checks: UserChecks::default(),
             },
             public_decrypt: PublicDecryptConfig { threshold: 1 },
+            auth: AuthConfig {
+                chain_id: 1,
+                protocol_config: Address::repeat_byte(0xc0),
+                validity: default_validity(),
+                address: Address::repeat_byte(0xee),
+                signer: SignerConfig::PrivateKey {
+                    value_env: "RELAYER_SIGNER_KEY".to_owned(),
+                },
+            },
             endpoints: (0..n)
                 .map(|i| EndpointConfig {
                     name: format!("kms_{i:02}"),
                     url: url(&format!("https://kms-{i:02}.example.net:8443")),
-                    auth: AuthConfig::ApiKey {
-                        value_env: format!("KMS_{i:02}_API_KEY"),
-                    },
+                    audience: audience(i),
                 })
                 .collect(),
         }
+    }
+
+    /// The audience of endpoint `i`: `0x0101…01` for 0, `0x0202…02` for 1, ...
+    pub(crate) fn audience(i: usize) -> Address {
+        Address::repeat_byte(u8::try_from(i + 1).unwrap())
     }
 
     fn message(cfg: &KmsAggregatorConfig) -> String {
@@ -322,35 +376,57 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn plain_http_and_no_auth_allowed_on_loopback_or_when_opted_in() {
+    fn plain_http_allowed_on_loopback_or_when_opted_in() {
         for host in ["localhost", "127.0.0.1", "[::1]", "LOCALHOST"] {
             let mut cfg = valid(1);
             cfg.endpoints[0].url = url(&format!("http://{host}:3002"));
-            cfg.endpoints[0].auth = AuthConfig::None;
             cfg.validate().unwrap_or_else(|e| panic!("{host}: {e}"));
         }
         let mut cfg = valid(1);
         cfg.endpoints[0].url = url("http://kms-connector-1:8080");
-        cfg.endpoints[0].auth = AuthConfig::None;
         assert!(message(&cfg).contains("plain http to a non-loopback host"));
         cfg.allow_insecure_http = true;
         cfg.validate().unwrap();
     }
 
     #[test]
-    fn no_auth_to_remote_https_host_is_rejected() {
-        let mut cfg = valid(1);
-        cfg.endpoints[0].auth = AuthConfig::None;
-        assert!(message(&cfg).contains("auth is `none` to a non-loopback host"));
+    fn audience_rules() {
+        let mut cfg = valid(2);
+        cfg.endpoints[1].audience = Address::ZERO;
+        assert!(message(&cfg).contains("endpoints[1].audience must not be the zero address"));
+        cfg.endpoints[1].audience = cfg.endpoints[0].audience;
+        assert!(message(&cfg).contains("endpoints[1].audience must be unique"));
     }
 
     #[test]
-    fn api_key_env_name_must_not_be_empty() {
+    fn auth_validity_covers_a_call_and_stays_accepted() {
         let mut cfg = valid(1);
-        cfg.endpoints[0].auth = AuthConfig::ApiKey {
-            value_env: String::new(),
+        cfg.auth.validity = cfg.call.timeout;
+        assert!(message(&cfg).contains("auth.validity must be > call.timeout"));
+        cfg.auth.validity = DEFAULT_MAX_AUTH_VALIDITY + Duration::from_secs(1);
+        assert!(message(&cfg).contains("auth.validity must be > call.timeout"));
+        cfg.auth.validity = DEFAULT_MAX_AUTH_VALIDITY;
+        cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn auth_address_must_not_be_zero() {
+        let mut cfg = valid(1);
+        cfg.auth.address = Address::ZERO;
+        assert!(message(&cfg).contains("kms_aggregator.auth.address must not be the zero address"));
+    }
+
+    #[test]
+    fn signer_fields_must_not_be_empty() {
+        let mut cfg = valid(1);
+        cfg.auth.signer = SignerConfig::PrivateKey {
+            value_env: " ".to_owned(),
         };
-        assert!(message(&cfg).contains("auth.value_env must not be empty"));
+        assert!(message(&cfg).contains("auth.signer.value_env must not be empty"));
+        cfg.auth.signer = SignerConfig::AwsKms {
+            key_id: " ".to_owned(),
+        };
+        assert!(message(&cfg).contains("auth.signer.key_id must not be empty"));
     }
 
     #[test]
@@ -468,10 +544,26 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn debug_output_never_contains_a_secret() {
-        let cfg = valid(2);
-        let printed = format!("{cfg:?}");
-        assert!(printed.contains("KMS_00_API_KEY"));
-        assert!(!printed.contains("Bearer"));
+    fn signer_config_parses_both_variants() {
+        let local: SignerConfig =
+            serde_json::from_str(r#"{"type": "private_key", "value_env": "KEY"}"#).unwrap();
+        assert_eq!(
+            local,
+            SignerConfig::PrivateKey {
+                value_env: "KEY".to_owned()
+            }
+        );
+        let aws: SignerConfig =
+            serde_json::from_str(r#"{"type": "aws_kms", "key_id": "k"}"#).unwrap();
+        assert_eq!(
+            aws,
+            SignerConfig::AwsKms {
+                key_id: "k".to_owned()
+            }
+        );
+        assert!(
+            serde_json::from_str::<SignerConfig>(r#"{"type": "private_key", "key": "0x01"}"#)
+                .is_err()
+        );
     }
 }

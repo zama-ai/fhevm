@@ -18,7 +18,8 @@ use pingora::{
     server::{RunArgs, UnixShutdownSignalWatch, configuration::ServerConf},
     services::background::GenBackgroundService,
 };
-use std::sync::Arc;
+use pingora_limits::rate::Rate;
+use std::{sync::Arc, time::Duration};
 use tracing::info;
 
 /// The `Proxy` service: sender authentication and load-balancing in front of the endpoints.
@@ -26,7 +27,11 @@ pub struct Proxy {
     pub(super) config: Config,
     pub(super) verifier: FhevmSigVerifier,
     pub(super) endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
+    pub(super) rate_limiter: Rate,
 }
+
+/// The window over which the requests of a sender are counted against its rate limit.
+pub const RATE_LIMIT_INTERVAL: Duration = Duration::from_secs(1);
 
 /// How long in-flight connections are given to finish once the graceful shutdown deadline (
 /// [`Config::shutdown_grace_period`]) has passed, before Pingora forcibly closes them.
@@ -70,6 +75,7 @@ impl Proxy {
             verifier,
             config,
             endpoint_balancer,
+            rate_limiter: Rate::new(RATE_LIMIT_INTERVAL),
         };
         Ok((proxy, state))
     }

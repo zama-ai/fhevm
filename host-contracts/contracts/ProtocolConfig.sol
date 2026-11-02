@@ -330,12 +330,13 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
 
         // Mark the context destroyed, clear its epoch (if any), and wipe context-creation bookkeeping.
-        $.destroyedContexts[kmsContextId] = true;
         $.contextState[kmsContextId] = ContextState.None;
-        // A confirmed switch created this context's epoch as the latest-issued one: clear it whether
-        // it is still Pending or already Active, so no live epoch is left pointing at a destroyed
-        // context. A switch destroyed before its creation quorum has no epoch yet, so there is
-        // nothing to clear and the ownership check below is false.
+        // A confirmed switch created this context's epoch as the latest-issued one: clear it when it
+        // belongs to this context. It can only be Pending here, since an Active epoch makes its
+        // context the latest active one, which the guard above refuses. Earlier epochs of a retired
+        // context keep their stored state, but nothing can use them: every epoch check also
+        // requires the context. A switch destroyed before its creation quorum has no epoch yet, so
+        // there is nothing to clear and the ownership check below is false.
         uint256 latestEpochId = $.epochCounter;
         if ($.contextForEpoch[latestEpochId] == kmsContextId) {
             _clearEpoch(latestEpochId);

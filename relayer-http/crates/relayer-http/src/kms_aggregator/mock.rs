@@ -10,16 +10,20 @@ use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, PublicDecryptionRequest,
     PublicDecryptionResponse, USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse,
 };
+use reqwest::header::HeaderValue;
 use serde::Deserialize;
 use tokio::time::sleep;
 use url::Url;
 
 use super::call::Caller;
 use super::client::{AttemptError, ConnectorClient, Endpoint, HttpReply};
+use super::config::tests::{audience, valid};
 use super::config::{
-    AuthConfig, CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RetryConfig,
-    UserChecks, UserDecryptConfig,
+    CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RetryConfig, UserChecks,
+    UserDecryptConfig,
 };
+use super::signer::RequestSigner;
+use super::signer::tests::test_signer;
 
 /// From `kms-connector/crates/api/tests/vectors.json`.
 pub const USER_REQUEST_JSON: &str = r#"{"attestationType":"eip712-unified-user-decrypt-v1","payload":{"handles":[{"handle":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","contractAddress":"0x3333333333333333333333333333333333333333","ownerAddress":"0x4444444444444444444444444444444444444444"}],"userAddress":"0x5555555555555555555555555555555555555555","publicKey":"0x20002000","allowedContracts":["0x3333333333333333333333333333333333333333"],"requestValidity":{"startTimestamp":1770000000,"durationSeconds":300},"extraData":"0x00"},"signature":"0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"}"#;
@@ -62,16 +66,20 @@ pub struct MockClient {
     scripts: Vec<Vec<Reply>>,
     delay: Duration,
     attempts: Mutex<Vec<u32>>,
+    /// The `Authorization` value of every attempt, per node.
+    authorizations: Mutex<Vec<Vec<HeaderValue>>>,
 }
 
 impl MockClient {
     /// `scripts[node]` = replies per attempt (the last one repeats). Endpoint names are `node-<i>`.
     pub fn new(scripts: Vec<Vec<Reply>>, delay: Duration) -> Arc<Self> {
         let attempts = Mutex::new(vec![0; scripts.len()]);
+        let authorizations = Mutex::new(vec![Vec::new(); scripts.len()]);
         Arc::new(Self {
             scripts,
             delay,
             attempts,
+            authorizations,
         })
     }
 
@@ -79,7 +87,12 @@ impl MockClient {
         self.attempts.lock().unwrap()[node]
     }
 
-    /// A validated config for `n` mock nodes (loopback urls, no auth, thresholds 1).
+    /// The `Authorization` values `node` received, one per attempt.
+    pub fn authorizations(&self, node: usize) -> Vec<HeaderValue> {
+        self.authorizations.lock().unwrap()[node].clone()
+    }
+
+    /// A validated config for `n` mock nodes (loopback urls, audiences `audience(i)`, thresholds 1).
     pub fn config(n: usize, timeout: Duration, max_retries: u32) -> KmsAggregatorConfig {
         KmsAggregatorConfig {
             allow_insecure_http: false,
@@ -98,20 +111,31 @@ impl MockClient {
                 checks: UserChecks::default(),
             },
             public_decrypt: PublicDecryptConfig { threshold: 1 },
+            auth: valid(0).auth,
             endpoints: (0..n)
                 .map(|i| EndpointConfig {
                     name: format!("node-{i}"),
                     url: Url::parse(&format!("http://localhost:3000/{i}")).unwrap(),
-                    auth: AuthConfig::None,
+                    audience: audience(i),
                 })
                 .collect(),
         }
     }
 
-    /// A `Caller` over this mock, one endpoint per script.
+    /// A `Caller` over this mock, one endpoint per script, signing with `test_signer()`.
     pub fn caller(self: Arc<Self>, timeout: Duration, max_retries: u32) -> Arc<Caller> {
+        self.caller_with(timeout, max_retries, test_signer())
+    }
+
+    /// A `Caller` over this mock signing with `signer`.
+    pub fn caller_with(
+        self: Arc<Self>,
+        timeout: Duration,
+        max_retries: u32,
+        signer: Arc<RequestSigner>,
+    ) -> Arc<Caller> {
         let cfg = Self::config(self.scripts.len(), timeout, max_retries);
-        Arc::new(Caller::new(&cfg, self).unwrap())
+        Arc::new(Caller::new(&cfg, self, signer).unwrap())
     }
 }
 
@@ -122,6 +146,7 @@ impl ConnectorClient for MockClient {
         endpoint: &Endpoint,
         route: &str,
         body: Bytes,
+        authorization: &HeaderValue,
     ) -> Result<HttpReply, AttemptError> {
         let node: usize = endpoint
             .name
@@ -133,6 +158,7 @@ impl ConnectorClient for MockClient {
             attempts[node] += 1;
             attempts[node] - 1
         };
+        self.authorizations.lock().unwrap()[node].push(authorization.clone());
         let script = &self.scripts[node];
         let reply = script
             .get(attempt as usize)
@@ -335,13 +361,14 @@ mod tests {
         let endpoint = Endpoint {
             name: "node-0".into(),
             url: Url::parse("http://localhost:3000/0").unwrap(),
-            auth: None,
+            audience: audience(0),
         };
         let body = Bytes::from_static(USER_REQUEST_JSON.as_bytes());
+        let auth = HeaderValue::from_static("FhevmSig expires=1, sig=0x00");
         let mut seen = Vec::new();
         for _ in 0..3 {
             let reply = mock
-                .post(&endpoint, USER_DECRYPTION_ROUTE, body.clone())
+                .post(&endpoint, USER_DECRYPTION_ROUTE, body.clone(), &auth)
                 .await
                 .unwrap();
             seen.push(reply.status);

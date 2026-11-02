@@ -40,10 +40,10 @@ tree-shakable surface.
 | `src/core/clients/`           | Client construction and the decorator groups.              |
 | `src/core/actions/`           | Standalone action functions (base/encrypt/decrypt/chain/host). |
 | `src/core/runtime/`           | The composable runtime and its lazy init.                  |
-| `src/core/modules/`           | Runtime modules: `encrypt`, `decrypt`, `relayer`, `ethereum`. |
+| `src/core/modules/`           | Runtime modules: `encrypt`, `encryptTransci`, `decrypt`, `relayer`, `ethereum`. |
 | `src/core/chains/`            | Built-in chain definitions and `defineFhevmChain`.         |
 | `src/core/kms/`               | Transport key pair, permits, KMS share flow.               |
-| `src/core/coprocessor/`       | ZK proof building.                                          |
+| `src/core/coprocessor/`       | ZK proof building and RFC-030 pad-based input encryption.   |
 | `src/core/handle/`, `src/core/types/` | Encrypted-value handles and the type system.        |
 | `src/core/host-contracts/`    | Reads against ACL / verifier host contracts.               |
 | `src/wasm/`                   | The TFHE and TKMS WASM libraries and loaders.              |
@@ -55,17 +55,21 @@ a chain id through its native library.
 ## The runtime and modules
 
 A `FhevmRuntime` is a composable container of **modules**. A module wraps a unit
-of capability — and, for the two cryptographic modules, a specific WASM library:
+of capability — and, for the cryptographic modules, a specific WASM library:
 
 - **encrypt module** → the TFHE WASM (proof generation, ~4.9 MB).
+- **encryptTransci module** → the TKMS WASM (pad share reconstruction for
+  RFC-030 pad-based encryption). It shares the TKMS WASM instance with the
+  decrypt module.
 - **decrypt module** → the TKMS WASM (share reconstruction, ~600 KB).
 - **relayer module** → HTTP orchestration against the Relayer.
 - **ethereum module** → library-agnostic contract reads and signing.
 
-Modules are added by extension, which is the mechanism behind the four client
+Modules are added by extension, which is the mechanism behind the client
 factories. `createFhevmEncryptClient` extends the runtime with only the encrypt
 module, so a bundler never pulls in the decrypt WASM. `createFhevmClient` extends
-with both.
+with both. `createFhevmEncryptTransciClient` extends with only the
+encryptTransci module, so it never pulls in the TFHE WASM.
 
 ### Initialization is lazy, idempotent, and shared
 
@@ -106,6 +110,26 @@ These stages are also exposed as the standalone actions `generateZkProof` and
 `fetchEncryptedValues`, so advanced callers can separate proof creation from
 verification.
 
+### Pad-based encryption (RFC-030)
+
+`encryptValuesTransci` implements the RFC-030 pad-based input flow, split across
+the relayer and encryptTransci modules:
+
+1. **Build a witness** binding the submitter (`userAddress`), the consumer
+   (`contractAddress`), the chain, an expiration timestamp, and a fresh nonce.
+   Its hash is the pad label.
+2. **Fetch the one-time pad** (relayer module). A pad decryption request,
+   authenticated by the caller's v2 signed permit, returns one signed share per
+   KMS node.
+3. **Reconstruct the pad** (encryptTransci module). The SDK verifies the
+   signatures against the context's KMS signers and reconstructs the pad from
+   consistent shares.
+4. **Mask and package.** The packed values are XOR-ed with the pad and wrapped
+   with the witness into the `inputPackage` a contract passes to
+   `FHE.fromExternal`.
+
+No zero-knowledge proof is built and no coprocessor signature is requested.
+
 ## The private-decryption pipeline
 
 `decryptValue` composes the KMS share flow:
@@ -141,7 +165,7 @@ The internals follow a consistent set of rules:
 
 ## Related
 
-- [Clients](clients.md) — how the four factories map to module composition.
+- [Clients](clients.md) — how the client factories map to module composition.
 - [Runtime configuration](runtime-configuration.md) — the lazy-init and WASM-loading surface.
 - [Actions](actions.md) — the standalone functional layer.
 - [Glossary](GLOSSARY.md) — the vocabulary used across these layers.

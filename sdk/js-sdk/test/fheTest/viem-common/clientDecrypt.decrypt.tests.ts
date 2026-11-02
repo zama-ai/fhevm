@@ -4,7 +4,13 @@ import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { canDecryptValue, canDecryptValues, canDecryptValuesFromPairs } from '@fhevm/sdk/actions/decrypt';
 import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
-import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, createLogger } from '../setupCommon.js';
+import {
+  decryptTestCases,
+  fheTypeIdFromHandle,
+  fheTypeIdFromName,
+  clearTypeFromHandle,
+  createLogger,
+} from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -45,6 +51,7 @@ export function defineClientDecryptDecryptTests(parameters: {
       expect(typeof client.decryptValuesFromPairs).toBe('function');
       expect(typeof client.generateTransportKeyPair).toBe('function');
       expect(typeof client.signLegacyDecryptionPermit).toBe('function');
+      expect(typeof client.signUnifiedDecryptionPermit).toBe('function');
     });
 
     it('should generate an e2e transport key pair', async () => {
@@ -185,6 +192,7 @@ export function defineClientDecryptDecryptTests(parameters: {
           }),
         );
         expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+        expect(fheTypeIdFromHandle(encryptedValue)).toBe(fheTypeIdFromName(fheType));
         console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}...`);
 
         // Read expected clear value from FHETest._db

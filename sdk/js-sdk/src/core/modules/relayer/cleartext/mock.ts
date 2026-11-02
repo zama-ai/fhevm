@@ -14,6 +14,7 @@ import { fetchUserDecrypt } from './fetchUserDecrypt.js';
 import { fetchPublicDecrypt } from './fetchPublicDecrypt.js';
 import { fetchDelegatedUserDecrypt } from './fetchDelegatedUserDecryptV1.js';
 import { fetchCoprocessorSignatures } from './fetchCoprocessorSignatures.js';
+import { fetchPadShares } from './fetchPadShares.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // relayerModule
@@ -52,6 +53,7 @@ export const relayerModule: RelayerModuleFactory = () => {
       fetchPublicDecrypt,
       fetchUserDecrypt,
       fetchDelegatedUserDecrypt,
+      fetchPadShares,
       fetchFeatures: (
         _relayerClient: RelayerClientWithRuntime,
         _parameters: FetchFeaturesParameters,

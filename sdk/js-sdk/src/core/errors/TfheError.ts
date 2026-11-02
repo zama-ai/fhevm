@@ -7,7 +7,7 @@ import { FhevmErrorBase } from './FhevmErrorBase.js';
 ////////////////////////////////////////////////////////////////////////////////
 
 export type TfheErrorType = TfheError & {
-  name: 'TFHEError';
+  name: 'TfheError';
 };
 
 export type TfheErrorParams = Prettify<

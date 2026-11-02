@@ -1,6 +1,6 @@
 //! The Pingora [`ProxyHttp`] implementation of [`Proxy`]: the request lifecycle of the proxy.
 
-use crate::core::{Proxy, Route, RouteError, match_route};
+use crate::core::{Proxy, RATE_LIMIT_INTERVAL, Route, RouteError, match_route};
 use alloy::primitives::{Address, B256, KECCAK256_EMPTY, Keccak256};
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -10,7 +10,8 @@ use http::{
     HeaderValue, Method, StatusCode,
     header::{
         ALLOW, AUTHORIZATION, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED, HeaderName,
-        PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, TE, TRAILER, UPGRADE, VIA, WWW_AUTHENTICATE,
+        PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, RETRY_AFTER, TE, TRAILER, UPGRADE, VIA,
+        WWW_AUTHENTICATE,
     },
 };
 use kms_connector_api::{ErrorCode, ErrorResponse, VERSION_ROUTE};
@@ -40,6 +41,7 @@ const BAGGAGE: HeaderName = HeaderName::from_static("baggage");
 /// Error message for oversized request bodies.
 const BODY_TOO_LARGE: &str = "request body too large";
 const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path";
+const RATE_LIMITED: &str = "sender rate limit exceeded";
 
 /// Per-request context.
 pub struct RequestContext {
@@ -63,6 +65,22 @@ pub struct RequestContext {
 }
 
 impl Proxy {
+    /// Counts a request of `sender`, rejecting it if the sender is over its rate limit.
+    fn check_rate_limit(&self, sender: &Address) -> Result<(), ErrorResponse> {
+        /// Each request counts as one event against the sender's limit.
+        const REQUEST_COUNT: isize = 1;
+
+        let count = self.rate_limiter.observe(sender, REQUEST_COUNT);
+        if count > self.config.rate_limit_per_second.get() as isize {
+            return Err(ErrorResponse::new(
+                ErrorCode::RateLimited,
+                RATE_LIMITED,
+                None,
+            ));
+        }
+        Ok(())
+    }
+
     /// Writes an error body as JSON.
     async fn respond_with_error(
         &self,
@@ -79,6 +97,10 @@ impl Proxy {
         header.insert_header(CONTENT_LENGTH, body.len().to_string())?;
         if status == StatusCode::UNAUTHORIZED {
             header.insert_header(WWW_AUTHENTICATE, fhevm_sig_auth::SCHEME)?;
+        }
+        if error.code == ErrorCode::RateLimited {
+            // The sender's count is reset when the current window ends, at most one window away.
+            header.insert_header(RETRY_AFTER, RATE_LIMIT_INTERVAL.as_secs().to_string())?;
         }
         session
             .write_response_header(Box::new(header), false)
@@ -141,8 +163,9 @@ impl ProxyHttp for Proxy {
         Ok(())
     }
 
-    // Request target (400), route (404/405), `FhevmSig` header (401), body cap (400), all before
-    // any endpoint connection. A request without a body is fully authenticated here.
+    // Request target (400), route (404/405), `FhevmSig` header (401), body cap (400), sender rate
+    // limit (429), all before any endpoint connection. A request without a body is fully
+    // authenticated here.
     async fn request_filter(
         &self,
         session: &mut Session,
@@ -194,6 +217,14 @@ impl ProxyHttp for Proxy {
             .and_then(|v| v.parse::<usize>().ok());
         if declared_length.is_some_and(|len| len > self.config.max_body_bytes) {
             let error = ErrorResponse::new(ErrorCode::Malformed, BODY_TOO_LARGE, None);
+            self.respond_with_error(session, error, ctx).await?;
+            return Ok(true);
+        }
+
+        // `GET /version` probes do not count against the sender's rate limit.
+        if route != Route::Version
+            && let Err(error) = self.check_rate_limit(&sender)
+        {
             self.respond_with_error(session, error, ctx).await?;
             return Ok(true);
         }

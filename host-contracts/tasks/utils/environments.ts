@@ -12,19 +12,28 @@
 
 export interface EnvChainEntry {
   chainId: number;
+  // Short name for reports, e.g. 'sepolia'; shown in place of the RPC URL.
   label: string;
   fallbackBlockTimeSeconds: number;
+  // Shortest --duration the chain's finality allows: the dry run cannot start before startBlock is
+  // finalized (two epochs on Ethereum-class chains).
+  minWindowSeconds: number;
   rpcUrlEnv: string;
   defaultRpcUrl?: string;
 }
 
 export interface EnvGatewayEntry {
+  // Short name for reports, e.g. 'gateway-testnet'; shown in place of the RPC URL.
   label: string;
+  // Chain id the gateway RPC must report. Unset only for local, whose gateway is scenario-defined.
+  chainId?: number;
   rpcUrlEnv: string;
   defaultRpcUrl?: string;
 }
 
 export interface EnvironmentDef {
+  // Host chain holding the canonical ProtocolConfig; the broadcast task refuses any other --network.
+  canonicalChainId: number;
   chains: EnvChainEntry[];
   gateway: EnvGatewayEntry;
 }
@@ -38,10 +47,12 @@ const PUBLIC_BNB_TESTNET_RPC = 'https://bsc-testnet-rpc.publicnode.com';
 
 export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
   devnet: {
+    canonicalChainId: 11155111,
     chains: [
       {
         chainId: 11155111,
         label: 'sepolia',
+        minWindowSeconds: 1800,
         fallbackBlockTimeSeconds: 12,
         rpcUrlEnv: 'SEPOLIA_RPC_URL',
         defaultRpcUrl: PUBLIC_SEPOLIA_RPC,
@@ -49,6 +60,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 80002,
         label: 'amoy',
+        minWindowSeconds: 600,
         fallbackBlockTimeSeconds: 1.5,
         rpcUrlEnv: 'POLYGON_AMOY_RPC_URL',
         defaultRpcUrl: PUBLIC_AMOY_RPC,
@@ -56,6 +68,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 560048,
         label: 'hoodi',
+        minWindowSeconds: 1800,
         fallbackBlockTimeSeconds: 12,
         rpcUrlEnv: 'HOODI_RPC_URL',
         defaultRpcUrl: PUBLIC_HOODI_RPC,
@@ -63,19 +76,22 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 97,
         label: 'bnb-testnet',
+        minWindowSeconds: 300,
         fallbackBlockTimeSeconds: 0.45,
         rpcUrlEnv: 'BNB_TESTNET_RPC_URL',
         defaultRpcUrl: PUBLIC_BNB_TESTNET_RPC,
       },
     ],
-    // Devnet gateway is a Zama-internal endpoint — no public default; env var required.
-    gateway: { label: 'gateway-devnet', rpcUrlEnv: 'GATEWAY_DEVNET_RPC_URL' },
+    // Devnet gateway is a Zama-internal endpoint and gets redeployed: no defaults, env vars required.
+    gateway: { label: 'gateway-devnet', chainId: 10900, rpcUrlEnv: 'GATEWAY_DEVNET_RPC_URL' },
   },
   testnet: {
+    canonicalChainId: 11155111,
     chains: [
       {
         chainId: 11155111,
         label: 'sepolia',
+        minWindowSeconds: 1800,
         fallbackBlockTimeSeconds: 12,
         rpcUrlEnv: 'SEPOLIA_RPC_URL',
         defaultRpcUrl: PUBLIC_SEPOLIA_RPC,
@@ -83,6 +99,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 80002,
         label: 'amoy',
+        minWindowSeconds: 600,
         fallbackBlockTimeSeconds: 1.5,
         rpcUrlEnv: 'POLYGON_AMOY_RPC_URL',
         defaultRpcUrl: PUBLIC_AMOY_RPC,
@@ -90,6 +107,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 560048,
         label: 'hoodi',
+        minWindowSeconds: 1800,
         fallbackBlockTimeSeconds: 12,
         rpcUrlEnv: 'HOODI_RPC_URL',
         defaultRpcUrl: PUBLIC_HOODI_RPC,
@@ -97,6 +115,7 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
       {
         chainId: 97,
         label: 'bnb-testnet',
+        minWindowSeconds: 300,
         fallbackBlockTimeSeconds: 0.45,
         rpcUrlEnv: 'BNB_TESTNET_RPC_URL',
         defaultRpcUrl: PUBLIC_BNB_TESTNET_RPC,
@@ -104,22 +123,52 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
     ],
     gateway: {
       label: 'gateway-testnet',
+      chainId: 10901,
       rpcUrlEnv: 'GATEWAY_TESTNET_RPC_URL',
       defaultRpcUrl: 'https://rpc.testnet.zama.org',
     },
   },
-  // No defaults — production RPCs are private; env vars required.
+  // No RPC defaults — production RPCs are private; env vars required.
   mainnet: {
+    canonicalChainId: 1,
     chains: [
-      { chainId: 1, label: 'ethereum', fallbackBlockTimeSeconds: 12, rpcUrlEnv: 'ETHEREUM_MAINNET_RPC_URL' },
-      { chainId: 137, label: 'polygon', fallbackBlockTimeSeconds: 2, rpcUrlEnv: 'POLYGON_MAINNET_RPC_URL' },
-      { chainId: 56, label: 'bnb', fallbackBlockTimeSeconds: 0.45, rpcUrlEnv: 'BNB_MAINNET_RPC_URL' },
+      {
+        chainId: 1,
+        label: 'ethereum',
+        minWindowSeconds: 1800,
+        fallbackBlockTimeSeconds: 12,
+        rpcUrlEnv: 'ETHEREUM_MAINNET_RPC_URL',
+      },
+      {
+        chainId: 137,
+        label: 'polygon',
+        minWindowSeconds: 600,
+        fallbackBlockTimeSeconds: 2,
+        rpcUrlEnv: 'POLYGON_MAINNET_RPC_URL',
+      },
+      {
+        chainId: 56,
+        label: 'bnb',
+        minWindowSeconds: 300,
+        fallbackBlockTimeSeconds: 0.45,
+        rpcUrlEnv: 'BNB_MAINNET_RPC_URL',
+      },
     ],
-    gateway: { label: 'gateway-mainnet', rpcUrlEnv: 'GATEWAY_MAINNET_RPC_URL' },
+    gateway: { label: 'gateway-mainnet', chainId: 261131, rpcUrlEnv: 'GATEWAY_MAINNET_RPC_URL' },
   },
   // Local anvil stack for the blue-green e2e: single host chain + local gateway, RPCs from env vars.
+  // LOCAL_HOST_CHAINS overrides the chains; its first entry is the ProtocolConfig chain.
   local: {
-    chains: [{ chainId: 12345, label: 'host-local', fallbackBlockTimeSeconds: 1, rpcUrlEnv: 'LOCAL_HOST_RPC_URL' }],
+    canonicalChainId: 12345,
+    chains: [
+      {
+        chainId: 12345,
+        label: 'host-local',
+        minWindowSeconds: 0,
+        fallbackBlockTimeSeconds: 1,
+        rpcUrlEnv: 'LOCAL_HOST_RPC_URL',
+      },
+    ],
     gateway: { label: 'gateway-local', rpcUrlEnv: 'LOCAL_GATEWAY_RPC_URL' },
   },
 };
@@ -132,5 +181,11 @@ for (const [name, def] of Object.entries(ENVIRONMENTS)) {
   const dup = ids.find((id, i) => ids.indexOf(id) !== i);
   if (dup !== undefined) {
     throw new Error(`ENVIRONMENTS.${name}.chains contains duplicate chainId ${dup}`);
+  }
+  if (!ids.includes(def.canonicalChainId)) {
+    throw new Error(`ENVIRONMENTS.${name}.canonicalChainId ${def.canonicalChainId} is not one of its chains`);
+  }
+  if (name !== 'local' && def.gateway.chainId === undefined) {
+    throw new Error(`ENVIRONMENTS.${name}.gateway.chainId is required`);
   }
 }

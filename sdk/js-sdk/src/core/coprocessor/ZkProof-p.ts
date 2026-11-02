@@ -23,7 +23,7 @@ import { bytes32ToHex, bytesToHexLarge, concatBytes, hexToBytes32, toBytes } fro
 import { assertIsUint64, assertIsUint8, asUint64BigInt, uint64ToBytes32 } from '../base/uint.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
 import { asEncryptionBits, assertIsEncryptionBitsArray, fheTypeIdFromEncryptionBits } from '../handle/FheType.js';
-import { buildHandle } from '../handle/FhevmHandle.js';
+import { buildInputHandle } from '../handle/FhevmHandle.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 
@@ -378,7 +378,7 @@ function _zkProofToInputHandles(
     const hash21 = _computeInputHash21(hexToBytes32(blobHashBytes32Hex), args.aclContractAddress, args.chainId, i);
 
     inputHandles.push(
-      buildHandle({
+      buildInputHandle({
         hash21,
         chainId: args.chainId,
         fheTypeId,

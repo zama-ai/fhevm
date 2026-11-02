@@ -1,13 +1,11 @@
 use connector_utils::{
     config::{
-        DeserializeConfig, default_database_pool_size, deserialize_non_zero_duration,
+        DatabaseUrl, DeserializeConfig, default_database_pool_size, deserialize_non_zero_duration,
         deserialize_one_or_many,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
 };
 use serde::Deserialize;
-#[cfg(test)]
-use serde::Serialize;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     time::Duration,
@@ -15,10 +13,9 @@ use std::{
 
 /// Configuration of the `Endpoint` service.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
-    pub database_url: String,
+    pub database_url: DatabaseUrl,
     /// The size of the database connection pool.
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
@@ -34,14 +31,12 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_decryption_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub decryption_timeout: Duration,
     /// How long an irrecoverable decryption error is reused before reprocessing.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_error_serve_window"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub error_serve_window: Duration,
     /// The maximum accepted size of a JSON request body.
     #[serde(default = "default_max_body_bytes")]
@@ -65,7 +60,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_healthcheck_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
@@ -103,7 +97,9 @@ fn default_max_allowed_contracts() -> usize {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            database_url: "postgres://postgres:postgres@localhost/kms-connector".to_string(),
+            database_url: "postgres://postgres:postgres@localhost/kms-connector"
+                .parse()
+                .unwrap(),
             database_pool_size: default_database_pool_size(),
             http_endpoint: default_http_endpoint(),
             max_in_flight_decryptions: default_max_in_flight_decryptions(),
@@ -181,7 +177,7 @@ mod tests {
 
         assert_eq!(
             config.database_url,
-            "postgres://postgres:postgres@localhost"
+            "postgres://postgres:postgres@localhost".parse().unwrap()
         );
         assert_eq!(config.database_pool_size, 4);
         assert_eq!(config.http_endpoint, "127.0.0.1:9090".parse().unwrap());

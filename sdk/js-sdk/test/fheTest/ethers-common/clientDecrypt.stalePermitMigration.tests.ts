@@ -95,7 +95,7 @@ const ACL_DELEGATE_ABI = [
 
 export function defineClientDecryptStalePermitMigrationTests(parameters: {
   readonly runIf: boolean;
-  /** Protocol era of the chain under test (12, 13, or 14 — see `protocolEraOf`). */
+  /** Protocol era of the chain under test (12, 13, 14, or 16 — see `protocolEraOf`). */
   readonly era: number;
   readonly createFhevmDecryptClient: CreateEthersDecryptClientFn;
 }): void {

@@ -1,28 +1,39 @@
 # relayer-http development tooling
 
 Runs the relayer on the host with `cargo run`, against the KMS connectors of the local fhevm stack through their
-proxies (API key + TLS), and drives one decryption flow at a time from the e2e container. Development aid only;
+proxies (FhevmSig + TLS), and drives one decryption flow at a time from the e2e container. Development aid only;
 nothing here is used by CI or production.
 
 ```
 make run  (host :8080) --http--> 127.0.0.1:8081..808N (socat "port-forward pods", TLS client)
-                                  --https + Bearer--> kms-connector[-i]-proxy:8443 --http--> kms-connector[-i]-endpoint:8080
+                                  --https + FhevmSig--> kms-connector[-i]-proxy:8443 --http--> kms-connector[-i]-endpoint:8080
 e2e container: hardhat script --> host-node:8545 (deploy a fixture), http://host.docker.internal:8080 (relayer route)
 ```
+
+The e2e container reaches the relayer on the host at `host.docker.internal` on macOS (Docker Desktop) and at the
+gateway of the stack's network on Linux (`scripts/e2e.sh` picks by `uname`); `RELAYER_HTTP_URL=…` overrides both.
 
 ## Flow
 
 ```sh
-make -C relayer-http/dev up               # proxies + forwarders for the running stack; smoke: "400 malformed" per party
+make -C relayer-http/dev up               # proxies + forwarders for the running stack; smoke: unsigned "401" per party
 make -C relayer-http/dev run              # cargo run with dev/config/kms-<N>.yaml; logs in this terminal
 make -C relayer-http/dev public-decrypt   # other terminal: 3 handles, clear values checked, timing printed
 make -C relayer-http/dev user-decrypt     # signed unified request, shares checked, timing printed
 make -C relayer-http/dev down
 make -C relayer-http/dev check            # fmt + clippy + test, the CLAUDE.md commands
+make -C relayer-http/dev test-aws         # the AWS KMS signer against Floci (an AWS emulator, started and stopped by the target)
 ```
 
 `N` (the number of KMS connectors) is read from the running containers; `make help` shows what was detected.
 Override with `make up KMS=4`, `make run CONFIG=…`, `make up TAG=<image tag>`.
+
+Every connector call carries an `FhevmSig` header (RFC-038). By default the relayer signs with the e2e test key
+(`KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY` in `test-suite/fhevm/templates/env/.env.test-suite`), which
+`proxies-up.sh` allows. To use another key, pass `make up SIGNER_ADDRESS=0x…` and `make run SIGNER_KEY=0x… SIGNER_ADDRESS=0x…`: the relayer refuses to start when the key does not have that address.
+`relayer-run.sh` reads the ProtocolConfig address of the domain from the running stack
+(`.fhevm/runtime/env/kms-connector.env`); each endpoint's `audience` is its party's KMS tx-sender, deterministic in the
+stack and written by `gen-config.sh`.
 
 Prerequisites: the stack is up (`./fhevm-cli up …`), the `fhevm-test-suite-e2e-debug` container runs, the connector
 endpoint images include the v1 envelope (`attestationType` / `payload`, kms-connector PR #3990; an older endpoint
@@ -48,10 +59,10 @@ writes such a config from the same template (`scripts/gen-config.sh`, which prod
 
 | symptom | where to look |
 |---|---|
-| smoke `401` | the API key digest in `proxies-up.sh` does not match `API_KEY` |
-| smoke `502` | the proxy cannot reach `kms-connector[-i]-endpoint:8080`, or its tag differs from the endpoint's (the proxy health-checks a path that moved); `make down up` |
+| relayer calls answered `401 sender_authentication_failed` | the message names the check: `auth_unknown_signer` = `make up` allowed another `SIGNER_ADDRESS` than the relayer's, or the stack's tx-sender addresses differ from the `audience`s (`make config`), or the proxies predate the stack's ProtocolConfig (`make down up`) |
+| relayer calls answered `502` | the proxy cannot reach `kms-connector[-i]-endpoint:8080`, or its tag differs from the endpoint's (the proxy health-checks a path that moved); `make down up` |
 | smoke connection refused | forwarder not up, or port 808x taken |
-| relayer exits at start | `KMS_API_KEY` unset, or config validation (the message names the field) |
+| relayer exits at start | no stack env (`relayer-run.sh` needs the ProtocolConfig address), or config validation (the message names the field) |
 | `make run` exits with `Address already in use` | another relayer-http still listens on 8080 (`lsof -nP -iTCP:8080`) |
 | `400 malformed` on user decrypt from every node | endpoint image predates #3990 |
 | `copro_consensus_failed`, `ciphertext_not_found`, `upstream_transient`, `timeout` | transient right after a fixture deployment or on a cold KMS: the relayer itself retries retryable connector errors (200 ms, then doubling) within its 5 s deadline, and the flow scripts re-submit on top of that, up to 6 times, 5 s apart (`ATTEMPTS`, `RETRY_DELAY_MS`); `attempt failed` (one per failed attempt, with its code) and `call failed` lines in the relayer log name the node |
@@ -61,5 +72,5 @@ Recreating endpoints (for example to move them to a tag with #3990) changes thei
 their endpoint once at startup, so run `make down up` afterwards.
 
 The forwarders terminate the proxy's self-signed TLS because a host process on macOS cannot trust it; the relayer
-speaks plain http to loopback (allowed by its config validation) and the proxy still checks the Bearer key. None of
+speaks plain http to loopback (allowed by its config validation) and the proxy still checks the FhevmSig. None of
 this applies to production, where the relayer validates the proxy certificate itself.

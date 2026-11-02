@@ -15,6 +15,7 @@
 - [Introduction](#introduction)
 - [Main features](#main-features)
 - [Getting Started](#getting-started)
+  - [Building](#building)
 - [Configuration](#configuration)
   - [Configuration Precedence](#configuration-precedence)
   - [S3 Configuration](#s3-configuration)
@@ -32,6 +33,23 @@ All services consist of a single binary. The service can be started via its `sta
 
 KMS_CONNECTOR_DATABASE_URL="postgres://postgres:postgres@localhost" ./gw-listener start
 ```
+
+### Building
+
+Some dependencies (`kms-grpc`, `bc2wrap`, ...) are git dependencies on the private [zama-ai/kms](https://github.com/zama-ai/kms) repository, so building requires read access to it.
+
+- **Cargo builds** fetch them with the git CLI (see [`.cargo/config.toml`](./.cargo/config.toml)), so git needs credentials for `https://github.com`. With the GitHub CLI, run once:
+
+  ```bash
+  gh auth setup-git
+  ```
+
+- **Docker builds** cannot see your git credentials. The token is passed as the `BLOCKCHAIN_ACTIONS_TOKEN` BuildKit secret, which `make docker-build` fills from `BLOCKCHAIN_ACTIONS_TOKEN` or, if unset, from `gh auth token`. The base images also require `docker login ghcr.io` and `docker login cgr.dev`.
+
+  ```bash
+  make docker-build                     # all services, tagged kms-connector-<service>:local
+  make docker-build TARGETS=kms-worker  # a subset
+  ```
 
 ## Configuration
 

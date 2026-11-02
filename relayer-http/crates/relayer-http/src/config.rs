@@ -112,7 +112,8 @@ impl RelayerConfig {
         Self::load_with(path, Environment::with_prefix("APP"))
     }
 
-    fn load_with(path: &str, env: Environment) -> Result<Self, ConfigError> {
+    /// `load` with the `APP_*` overrides read from `env` (tests pass them as a map).
+    pub(crate) fn load_with(path: &str, env: Environment) -> Result<Self, ConfigError> {
         let config: Self = Config::builder()
             .add_source(File::with_name(path))
             .add_source(env.prefix_separator("_").separator("__"))
