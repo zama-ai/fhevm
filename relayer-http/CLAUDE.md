@@ -43,6 +43,8 @@ relayer-http/
         ├── flows/{mod,user_decrypt,public_decrypt,pad_decrypt}.rs   # one file per flow: checks, counting, output
         ├── mock.rs, scenarios.rs                       # test only: scripted connector, YAML scenario runner
         └── scenarios/*.yaml                            # behaviour scenarios, run by the test suite
+crates/pad-mock/               # DEVELOPMENT ONLY (never in the image): mock KMS connectors serving /v1/pad-decrypt from the
+                               # SDK's cleartext stack on anvil, and a flow driver for /v4/pad-decrypt; start with its docs.md
 ```
 
 Two modules, each with its `docs.md` next to the code: `endpoint/docs.md` (routes, payloads, responses, every
@@ -81,7 +83,9 @@ Tests that need an external service are `#[ignore = "<why>"]` and grouped in one
 
 Against the local fhevm stack: `./fhevm-cli up` runs relayer-http in the stack (`fhevm-relayer-http`, :3002);
 `make -C dev run` runs it on the host instead (:4002, the stack's config); `make -C dev public-decrypt` / `user-decrypt`
-(one flow each, from the e2e container); `make -C dev check` (the three commands above). See `dev/README.md`.
+(one flow each, from the e2e container); `make -C dev check` (the three commands above). Pad decryption needs no fhevm stack:
+`make -C dev pad-stack`, `pad-connectors`, `pad-run`, `pad-decrypt` (anvil with the SDK's cleartext stack, the mock
+connectors of `crates/pad-mock`). See `dev/README.md`.
 
 ## Container image
 
@@ -143,7 +147,7 @@ Production-ready means no panic, typed errors, logs, cancellation and tests, not
 **Compatibility.** The connector interface comes from the `kms-connector-api` crate (path dependency, never its
 `endpoint` feature): DTOs, routes, error codes and their `retryable` flag are used as they are, never redefined.
 Pad decryption (RFC-030) included: the connector's endpoint accepts it, but its worker rejects every pad request
-until it can process them.
+until it can process them, so local runs use the mock connectors of `crates/pad-mock`.
 
 **Tests.** A unit test per function, next to it. Paused tokio time (`start_paused`) for anything timed, so durations
 are exact and tests are instant. Behaviour is described in YAML scenarios run by the test suite; adding a case is adding
