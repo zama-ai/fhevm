@@ -64,6 +64,7 @@ cd test-suite/fhevm
 ./fhevm-cli test public-decrypt-http-ebool
 ./fhevm-cli test erc20
 ./fhevm-cli test hcu-block-cap
+./fhevm-cli test hcu-allowlist
 ./fhevm-cli test multi-chain-isolation  # requires multi-chain scenario
 
 # Boot with a local coprocessor override (all services)
