@@ -6,7 +6,9 @@ name: test-suite-e2e-key-migration-nightly
 
 on:
   schedule:
-    - cron: "0 2 * * *"
+    # Weekdays only: each run holds a 32-CPU runner for about 2.5 hours, and main rarely
+    # changes at weekends. Off the hour, where GitHub delays or drops scheduled runs.
+    - cron: "23 2 * * 1-5"
   workflow_dispatch:
 
 permissions: {}

@@ -199,6 +199,8 @@ An upgrade test is a test profile that changes the stack between its checks. It 
 ./fhevm-cli test key-migration-from-v0.14
 ```
 
+`test-suite-e2e-key-migration-nightly` runs this test on `main` every weekday night.
+
 The profile drives the stack through a `Stack` handle (`src/commands/stack.ts`):
 
 - `stack.upgrade(...steps)` runs the next bootstrap upgrade steps. They must continue the order `contracts`, `relayer`, `kms-operator:<n>` for each KMS operator, `listener-core`, then `green`, which starts the deferred Green fleet; a list that does not fails before anything changes. A test can upgrade a few steps, run checks, then upgrade the rest. Without `upgrade: deferred`, `up` runs the same order itself, except `relayer`, which then boots at the bundle.
@@ -206,8 +208,6 @@ The profile drives the stack through a `Stack` handle (`src/commands/stack.ts`):
 - `stack.runHostContractTask(...)` and `stack.runGatewayContractTask(...)` run contract tasks from the deploy images.
 
 Each action is recorded in `.fhevm/rollout/receipt.md` and `receipt.jsonl`, with the container images and the version changes since the previous entry. The e2e workflow uploads both files.
-
-`test-suite-e2e-key-migration-nightly` runs the `key-migration-from-v0.14` test on `main` every night.
 
 `rollout-standard` is intentionally narrow: it covers encrypted input, FHE compute/write paths, user decrypt, delegated user decrypt, public decrypt, and ERC20 transfer coverage. Broader profiles such as `multi-chain-isolation`, HCU, pause/unpause, DB revert, and drift recovery stay available as explicit tests.
 
