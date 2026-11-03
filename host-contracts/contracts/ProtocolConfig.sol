@@ -332,7 +332,8 @@ contract ProtocolConfig is
             delete $.epochState[latestEpochId];
         }
 
-        _markKmsContextDestroyed(kmsContextId);
+        $.contextState[kmsContextId] = ContextState.Destroyed;
+        emit KmsContextDestroyed(kmsContextId);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -360,7 +361,8 @@ contract ProtocolConfig is
             revert InvalidKmsEpoch(epochId);
         }
 
-        _markKmsEpochDestroyed(epochId);
+        $.epochState[epochId] = EpochState.Destroyed;
+        emit KmsEpochDestroyed(epochId);
     }
 
     /// @inheritdoc IProtocolConfig

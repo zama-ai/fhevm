@@ -193,7 +193,8 @@ contract ProtocolConfigReplica is
     ) external virtual {
         _checkKmsContextDestroyable(destroyedContextId);
         _verifyDestructionQuorum(_contextDestructionStructHash(destroyedContextId, extraData), signatures);
-        _markKmsContextDestroyed(destroyedContextId);
+        _getProtocolConfigStorage().contextState[destroyedContextId] = ContextState.Destroyed;
+        emit KmsContextDestroyed(destroyedContextId);
     }
 
     /// @inheritdoc IProtocolConfigReplica
@@ -204,7 +205,8 @@ contract ProtocolConfigReplica is
     ) external virtual {
         _checkKmsEpochDestroyable(destroyedEpochId);
         _verifyDestructionQuorum(_epochDestructionStructHash(destroyedEpochId, extraData), signatures);
-        _markKmsEpochDestroyed(destroyedEpochId);
+        _getProtocolConfigStorage().epochState[destroyedEpochId] = EpochState.Destroyed;
+        emit KmsEpochDestroyed(destroyedEpochId);
     }
 
     // -----------------------------------------------------------------------------------------
@@ -237,13 +239,15 @@ contract ProtocolConfigReplica is
     /// @inheritdoc IProtocolConfigReplica
     function mirrorKmsContextDestruction(uint256 destroyedContextId) external virtual onlyACLOwner {
         _checkKmsContextDestroyable(destroyedContextId);
-        _markKmsContextDestroyed(destroyedContextId);
+        _getProtocolConfigStorage().contextState[destroyedContextId] = ContextState.Destroyed;
+        emit KmsContextDestroyed(destroyedContextId);
     }
 
     /// @inheritdoc IProtocolConfigReplica
     function mirrorKmsEpochDestruction(uint256 destroyedEpochId) external virtual onlyACLOwner {
         _checkKmsEpochDestroyable(destroyedEpochId);
-        _markKmsEpochDestroyed(destroyedEpochId);
+        _getProtocolConfigStorage().epochState[destroyedEpochId] = EpochState.Destroyed;
+        emit KmsEpochDestroyed(destroyedEpochId);
     }
 
     /// @inheritdoc IProtocolConfigBase

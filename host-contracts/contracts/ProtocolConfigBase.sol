@@ -426,22 +426,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Sets `contextId` Destroyed. The caller checks the preconditions.
-     */
-    function _markKmsContextDestroyed(uint256 contextId) internal {
-        _getProtocolConfigStorage().contextState[contextId] = ContextState.Destroyed;
-        emit KmsContextDestroyed(contextId);
-    }
-
-    /**
-     * @dev Sets `epochId` Destroyed. The caller checks the preconditions.
-     */
-    function _markKmsEpochDestroyed(uint256 epochId) internal {
-        _getProtocolConfigStorage().epochState[epochId] = EpochState.Destroyed;
-        emit KmsEpochDestroyed(epochId);
-    }
-
-    /**
      * @dev Returns the `n - t` quorum of the committee of `contextId`, floored at 1.
      *      The committee has `n` nodes. At most `t` of them (its MPC threshold) can be faulty, which
      *      means crashed, offline, or malicious. The quorum must be:
