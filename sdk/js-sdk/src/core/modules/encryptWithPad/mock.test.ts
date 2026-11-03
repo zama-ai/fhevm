@@ -225,6 +225,14 @@ describe('reconstructPads', () => {
     expect(pads.get(b.label)).toEqual(expectedPad(b, 0x5a));
   });
 
+  it('reconstructs a label when one validly signed party sends divergent rawShares in the same session', async () => {
+    // Party 0 signs its share correctly but with other pad bytes, same session and version: the 3 honest parties
+    // {1,2,3} still reach 2t+1 and must provide the pad.
+    const responses = await Promise.all([0, 1, 2, 3].map((i) => response(i, [shareOf(a, i === 0 ? 0x00 : 0x3c)])));
+    const pads = await run(responses, [a]);
+    expect(pads.get(a.label)).toEqual(expectedPad(a, 0x3c));
+  });
+
   it('fails a label when fewer than 2t+1 shares agree on its session', async () => {
     const responses = await Promise.all([0, 1, 2].map((i) => response(i, [shareOf(a, 0x3c, i === 1 ? '99' : '11')])));
     await expect(run(responses, [a])).rejects.toThrow(/Not enough consistent pad decryption responses for label/);

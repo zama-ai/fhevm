@@ -53,8 +53,8 @@ export const encryptWithPadModule: EncryptWithPadModuleFactory = (runtime: Fhevm
 // the cleartext encoding. For each response: verify its transport signature against the KMS signers of the
 // request's context, decrypt it, and verify every share on its own (signature, context, party, degree, encoding);
 // an invalid response is skipped. Then, label by label, select at least 2t+1 shares from distinct responses that
-// carry the same `sessionId` and the same `rawShares` version, from distinct parties, and reconstruct that label's
-// pad. The selection may differ from label to label.
+// carry the same `sessionId` and the same `rawShares`, from distinct parties, and reconstruct that label's pad. The
+// selection may differ from label to label.
 //
 // The `*Cleartext*` functions are the encoding stand-ins: a cleartext `rawShares` is its version byte followed by
 // the whole pad, one PRF block of `CLEARTEXT_PAD_BLOCK_BYTES` bytes per ring element.
@@ -127,11 +127,14 @@ async function reconstructPads(
   //    reconstruct the label's pad from them.
   const pads = new Map<Bytes32Hex, Uint8Array>();
   for (const w of witnesses) {
+    // KMS: each party's share differs (a point of the sharing polynomial), so shares can only be grouped by session
+    // and encoding; the threshold reconstruction then corrects faulty shares. Cleartext: every honest share is the
+    // whole pad, so shares are grouped by their bytes too, which stands in for that error correction.
     const selected = _selectShares(verified, w.label, mpcThreshold);
     if (selected === undefined) {
       const rejectedDetails = rejected.length === 0 ? '' : ` Rejected responses: ${rejected.join('; ')}`;
       throw new Error(
-        `Not enough consistent pad decryption responses for label ${w.label}: got ${verified.length} valid of ${responses.length}, no (session, rawShares version) reaches 2t+1 = ${2 * mpcThreshold + 1} distinct parties.${rejectedDetails}`,
+        `Not enough consistent pad decryption responses for label ${w.label}: got ${verified.length} valid of ${responses.length}, no (session, rawShares) reaches 2t+1 = ${2 * mpcThreshold + 1} distinct parties.${rejectedDetails}`,
       );
     }
     pads.set(w.label, _truncatePad(_reconstructCleartextPad(selected, w.label), w.padLength));
@@ -233,8 +236,8 @@ async function _verifyShare(
 }
 
 /**
- * For `label`, the first group of at least 2t+1 shares, one per response, agreeing on (sessionId, rawShares
- * version), from distinct parties; `undefined` if none.
+ * For `label`, the first group of at least 2t+1 shares, one per response, agreeing on (sessionId, rawShares), from
+ * distinct parties; `undefined` if none. With at most t faulty parties, only the honest group can reach 2t+1.
  */
 function _selectShares(
   verified: readonly VerifiedResponse[],
@@ -246,7 +249,10 @@ function _selectShares(
   for (const v of verified) {
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const share = v.sharesByLabel.get(lowerLabel)!;
-    const key = `${share.sessionId.toLowerCase()}|${share.rawShares.slice(0, 4).toLowerCase()}`;
+    // Cleartext: every honest node returns the same rawShares, the whole pad
+    // (CleartextPaddedInputter.getCleartextPadSharesMaterial), so agreeing on it stands in for the error correction
+    // of a real threshold reconstruction. A real encoding, whose shares differ by party, cannot be grouped this way.
+    const key = `${share.sessionId.toLowerCase()}|${share.rawShares.toLowerCase()}`;
     const group = groups.get(key) ?? [];
     if (!group.some((g) => g.partyId === share.partyId)) {
       group.push(share);
@@ -354,8 +360,8 @@ function _cleartextRawSharesBytes(rawShares: BytesHex, padLength: number): numbe
 }
 
 /**
- * Cleartext reconstruction: every share is the whole pad, so reconstruction is a consistency check, all selected
- * shares of the label must be identical. Returns the pad stream, past the version byte.
+ * Cleartext reconstruction: every share is the whole pad, and `_selectShares` only groups identical ones, so this is
+ * a guard. Returns the pad stream, past the version byte.
  */
 function _reconstructCleartextPad(shares: readonly PadShare[], label: Bytes32Hex): Uint8Array {
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
