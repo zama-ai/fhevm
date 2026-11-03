@@ -7,6 +7,8 @@ import {
   ANVIL_MNEMONIC,
   CHAIN_PROFILES,
   CHAIN_SCENARIOS,
+  FHE_PROFILES,
+  FHE_SCENARIOS,
   filesBelow,
   readReport,
   runCli,
@@ -56,5 +58,44 @@ describe('Chain through the engine (no Anvil)', () => {
     assert.match(result.stdout, /chainId +no +literal +31337/);
     assert.match(result.stdout, /wallets +no +profile +alice=0, bob=1, carol=2, dave=3, eve=4/);
     assert.ok(!result.stdout.includes(ANVIL_MNEMONIC));
+  });
+});
+
+describe('Relayer and contracts sections through the CLI', () => {
+  const apiKey = 'relayer-api-key-0123456789';
+
+  it('lists the typed sections of each profile', () => {
+    const result = runCli(['profiles'], { profilesDir: FHE_PROFILES });
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /fx-fhe +no +chain,relayer,contracts +0/);
+  });
+
+  it('prints the resolved relayer and contracts sections with the API key redacted', () => {
+    const result = runCli(['profiles', '--profile', 'fx-fhe'], {
+      profilesDir: FHE_PROFILES,
+      env: { TE_FHE_API_KEY: apiKey },
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.match(result.stdout, /Section relayer:/);
+    assert.match(result.stdout, /apiKey +yes +env:TE_FHE_API_KEY +\[REDACTED:relayer\.apiKey\]/);
+    assert.match(result.stdout, /gateway\.chainId +no +default +54321/);
+    assert.match(result.stdout, /Section contracts:/);
+    assert.match(result.stdout, /acl +no +env-file:.*fx-fhe\.env:TE_FHE_ACL +0x0{39}3/);
+    assert.ok(!result.stdout.includes(apiKey));
+  });
+
+  it('keeps the API key out of report.json and evidence.json, which hold the redacted sections', () => {
+    const result = runCli(['dry-run', '--profile', 'fx-fhe'], {
+      scenariosDir: FHE_SCENARIOS,
+      profilesDir: FHE_PROFILES,
+      env: { TE_FHE_API_KEY: apiKey },
+    });
+    assert.equal(result.code, 0, result.stdout + result.stderr);
+    for (const file of ['report.json', 'evidence.json']) {
+      const content = readFileSync(path.join(result.outputDir, file), 'utf8');
+      assert.ok(!content.includes(apiKey), `${file} holds the API key`);
+      assert.ok(content.includes('[REDACTED:relayer.apiKey]'), `${file} holds the redacted relayer section`);
+      assert.ok(content.includes('"protocolConfig"'), `${file} holds the contracts section`);
+    }
   });
 });

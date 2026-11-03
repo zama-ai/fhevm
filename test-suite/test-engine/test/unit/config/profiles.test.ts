@@ -9,6 +9,8 @@ import {
   loadProfile,
   readProfileFile,
   redactedChain,
+  redactedContracts,
+  redactedRelayer,
   redactedSettings,
   secretsOf,
 } from '../../../src/config/profiles/profile.js';
@@ -17,6 +19,7 @@ import { DEFAULT_PROFILES_DIR } from '../../../src/infrastructure/paths.js';
 import {
   ANVIL_MNEMONIC,
   CHAIN_PROFILES,
+  FHE_PROFILES,
   FIXTURE_PROFILES,
   FIXTURE_SECRET,
   INVALID_PROFILES,
@@ -34,6 +37,21 @@ function problemsOf(action: () => unknown): string {
 }
 
 const SECRET_ENV = { TE_FIXTURE_SECRET: FIXTURE_SECRET };
+
+/** Values for the shipped profiles that read everything from the environment (devnet, testnet). */
+const LIVE_ENV = {
+  RPC_URL: 'https://devnet.example/rpc-key-123456',
+  SEPOLIA_ETH_RPC_URL: 'https://sepolia.example/key-123456',
+  MNEMONIC: ANVIL_MNEMONIC,
+  RELAYER_URL: 'https://relayer.example/v2',
+  CHAIN_ID_GATEWAY: '10901',
+  DECRYPTION_ADDRESS: '0x0000000000000000000000000000000000000001',
+  INPUT_VERIFICATION_ADDRESS: '0x0000000000000000000000000000000000000002',
+  ACL_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000003',
+  INPUT_VERIFIER_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000004',
+  KMS_VERIFIER_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000005',
+  PROTOCOL_CONFIG_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000006',
+};
 
 describe('profile files', () => {
   it('ships valid profiles: local, devnet, testnet, mainnet (mainnet requires confirmation)', () => {
@@ -57,7 +75,7 @@ describe('profile files', () => {
     assert.match(byFile.get('multi-problem')!, /must match the file name 'multi-problem'/);
     assert.match(byFile.get('multi-problem')!, /a secret cannot have a literal 'value'/);
     assert.match(byFile.get('secret-value')!, /a secret cannot have a literal 'value'/);
-    assert.match(byFile.get('secret-default')!, /a secret cannot have a 'default'/);
+    assert.match(byFile.get('secret-default')!, /a secret cannot have a 'default' other than the empty string/);
     assert.match(byFile.get('value-and-env')!, /settings\.url: exactly one of 'value' or 'env'/);
     assert.match(byFile.get('value-and-env')!, /settings\.empty: exactly one of 'value' or 'env'/);
     assert.match(byFile.get('chain-invalid')!, /spec\.chain: missing required field 'chainId'/);
@@ -69,6 +87,13 @@ describe('profile files', () => {
     assert.equal(byFile.has('missing-env-file'), false);
     assert.match(byFile.get('chain-secret-literal')!, /spec\.chain\.mnemonic: a secret cannot have a literal 'value'/);
     assert.equal(byFile.has('chain-types'), false);
+    const relayer = byFile.get('relayer-invalid')!;
+    assert.match(relayer, /spec\.relayer\.gateway: missing required field 'inputVerification'/);
+    assert.match(relayer, /spec\.relayer\.apiKey: must declare 'secret: true'/);
+    assert.match(relayer, /spec\.relayer\.gateway\.chainId: cannot be a secret/);
+    assert.match(relayer, /spec\.contracts\.kmsVerifier: a secret cannot have a 'default' other than the empty string/);
+    assert.match(relayer, /spec\.contracts: unknown field 'executor'/);
+    assert.equal(byFile.has('relayer-types'), false);
   });
 
   it("treats a 'none.yaml' file as a configuration error everywhere", () => {
@@ -172,8 +197,7 @@ describe('chain section', () => {
   it('is declared by every shipped profile, and resolves with the mnemonic as a secret', () => {
     const { profiles } = listProfiles(DEFAULT_PROFILES_DIR);
     for (const profile of profiles) assert.ok(profile.spec.chain, `${profile.metadata.name} has a chain section`);
-    const env = { SEPOLIA_ETH_RPC_URL: 'https://sepolia.example/key-123456', MNEMONIC: ANVIL_MNEMONIC };
-    const testnet = loadProfile('testnet', { profilesDir: DEFAULT_PROFILES_DIR, env });
+    const testnet = loadProfile('testnet', { profilesDir: DEFAULT_PROFILES_DIR, env: LIVE_ENV });
     assert.equal(testnet.chain!.chainId.value, 11155111);
     assert.deepEqual(
       secretsOf(testnet).map((secret) => secret.key),
@@ -256,6 +280,113 @@ describe('chain section', () => {
 
   it('is absent from the built-in none profile', () => {
     assert.equal(loadProfile('none', { profilesDir: CHAIN_PROFILES }).chain, undefined);
+  });
+});
+
+describe('relayer and contracts sections', () => {
+  it('is declared by every shipped profile; devnet and testnet resolve with an empty API key by default', () => {
+    const { profiles } = listProfiles(DEFAULT_PROFILES_DIR);
+    for (const profile of profiles) {
+      assert.ok(profile.spec.relayer, `${profile.metadata.name} has a relayer section`);
+      assert.ok(profile.spec.contracts, `${profile.metadata.name} has a contracts section`);
+    }
+    for (const name of ['devnet', 'testnet']) {
+      const profile = loadProfile(name, { profilesDir: DEFAULT_PROFILES_DIR, env: LIVE_ENV });
+      assert.equal(profile.relayer!.gateway.chainId.value, 10901);
+      assert.deepEqual(profile.relayer!.apiKey, { value: '', secret: true, source: 'default' });
+      assert.equal(profile.contracts!.acl.source, 'env:ACL_CONTRACT_ADDRESS');
+      assert.ok(!secretsOf(profile).some((secret) => secret.key === 'relayer.apiKey'));
+    }
+    assert.match(
+      problemsOf(() =>
+        loadProfile('devnet', { profilesDir: DEFAULT_PROFILES_DIR, env: { ...LIVE_ENV, CHAIN_ID_GATEWAY: undefined } }),
+      ),
+      /spec\.relayer\.gateway\.chainId: environment variable 'CHAIN_ID_GATEWAY' is not set/,
+    );
+  });
+
+  it('resolves values, converts the gateway chain ID and records the sources', () => {
+    const profile = loadProfile('fx-fhe', { profilesDir: FHE_PROFILES, env: { TE_FHE_GATEWAY_CHAIN_ID: '54321' } });
+    const { relayer, contracts } = profile;
+    assert.deepEqual(relayer!.url, { value: 'http://fhevm-relayer:3000/v2', secret: false, source: 'default' });
+    assert.deepEqual(relayer!.gateway.chainId, { value: 54321, secret: false, source: 'env:TE_FHE_GATEWAY_CHAIN_ID' });
+    // A checksummed address is kept as written.
+    assert.equal(relayer!.gateway.decryption.value, '0x5FFdAaA37C1D40b2e0DE7b4F1e5A1B1d6bDea7E9');
+    assert.match(relayer!.gateway.inputVerification.source, /^env-file:.*fx-fhe\.env:TE_FHE_INPUT_VERIFICATION$/);
+    assert.equal(contracts!.acl.value, '0x0000000000000000000000000000000000000003');
+    assert.deepEqual(contracts!.protocolConfig, {
+      value: '0x0000000000000000000000000000000000000006',
+      secret: false,
+      source: 'literal',
+    });
+  });
+
+  it('treats an empty API key as not set: nothing to redact, printed empty', () => {
+    const profile = loadProfile('fx-fhe', { profilesDir: FHE_PROFILES, env: {} });
+    assert.deepEqual(profile.relayer!.apiKey, { value: '', secret: true, source: 'default' });
+    assert.deepEqual(
+      secretsOf(profile).map((secret) => secret.key),
+      [
+        'chain.mnemonic',
+        'chain.wallets.alice',
+        'chain.wallets.bob',
+        'chain.wallets.carol',
+        'chain.wallets.dave',
+        'chain.wallets.eve',
+      ],
+    );
+    assert.equal(redactedRelayer(profile)!.apiKey!.value, '');
+  });
+
+  it('exposes a set API key for redaction and redacts the printable sections', () => {
+    const apiKey = 'relayer-api-key-0123456789';
+    const profile = loadProfile('fx-fhe', { profilesDir: FHE_PROFILES, env: { TE_FHE_API_KEY: apiKey } });
+    assert.deepEqual(
+      secretsOf(profile).find((secret) => secret.key === 'relayer.apiKey'),
+      { key: 'relayer.apiKey', value: apiKey },
+    );
+    const printable = redactedRelayer(profile)!;
+    assert.deepEqual(printable.apiKey, {
+      value: '[REDACTED:relayer.apiKey]',
+      secret: true,
+      source: 'env:TE_FHE_API_KEY',
+    });
+    assert.equal(printable.url.value, 'http://fhevm-relayer:3000/v2');
+    assert.ok(!JSON.stringify(printable).includes(apiKey));
+    assert.deepEqual(redactedContracts(profile), profile.contracts, 'no contract address is secret here');
+    assert.equal(profile.relayer!.apiKey!.value, apiKey, 'the resolved profile is not modified');
+  });
+
+  it('checks the types of resolved values, reporting every problem without quoting the API key', () => {
+    const problems = problemsOf(() =>
+      loadProfile('relayer-types', {
+        profilesDir: INVALID_PROFILES,
+        env: {
+          TE_RELAYER_URL: 'ftp://relayer',
+          TE_RELAYER_API_KEY: 'short',
+          TE_GATEWAY_CHAIN_ID: '0',
+          TE_DECRYPTION: 'not-an-address',
+          // Mixed case with a wrong checksum (one letter's case flipped).
+          TE_ACL: '0x5fFdAaA37C1D40b2e0DE7b4F1e5A1B1d6bDea7E9',
+        },
+      }),
+    );
+    assert.match(problems, /spec\.relayer\.url: must be an http\(s\) URL/);
+    assert.match(problems, /spec\.relayer\.apiKey: secret value must be at least 8 characters/);
+    assert.match(problems, /spec\.relayer\.gateway\.chainId: must be a positive integer, got '0'/);
+    assert.match(problems, /spec\.relayer\.gateway\.decryption: must be a 20-byte hex address .*got 'not-an-address'/);
+    assert.match(problems, /spec\.contracts\.acl: must be a 20-byte hex address/);
+    assert.ok(!problems.includes("'short'"));
+    assert.match(
+      problemsOf(() => loadProfile('relayer-types', { profilesDir: INVALID_PROFILES, env: {} })),
+      /spec\.relayer\.url: environment variable 'TE_RELAYER_URL' is not set.*spec\.contracts\.acl: environment variable 'TE_ACL' is not set/,
+    );
+  });
+
+  it('is absent from the built-in none profile', () => {
+    const none = loadProfile('none', { profilesDir: FHE_PROFILES });
+    assert.equal(none.relayer, undefined);
+    assert.equal(none.contracts, undefined);
   });
 });
 

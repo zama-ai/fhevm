@@ -35,6 +35,26 @@ export interface ChainSectionDefinition {
   gas: ChainGas;
 }
 
+/** `spec.relayer` as written in the profile file: what the FHE module reaches through the relayer. */
+export interface RelayerSectionDefinition {
+  url: ValueSource;
+  /** Optional; an empty value means no authentication. */
+  apiKey?: ValueSource;
+  gateway: {
+    chainId: ValueSource;
+    decryption: ValueSource;
+    inputVerification: ValueSource;
+  };
+}
+
+/** `spec.contracts` as written in the profile file: protocol contracts deployed on the host chain. */
+export interface ContractsSectionDefinition {
+  acl: ValueSource;
+  inputVerifier: ValueSource;
+  kmsVerifier: ValueSource;
+  protocolConfig: ValueSource;
+}
+
 export interface ProfileDefinition {
   apiVersion: typeof PROFILE_API_VERSION;
   kind: 'Profile';
@@ -44,6 +64,10 @@ export interface ProfileDefinition {
     envFiles: EnvFileEntry[];
     /** Typed section of the Chain module. Optional: a profile without it cannot run chain steps. */
     chain?: ChainSectionDefinition;
+    /** Typed section of the FHE module. */
+    relayer?: RelayerSectionDefinition;
+    /** Host-chain protocol contracts, read by the FHE module (and later by contract configuration). */
+    contracts?: ContractsSectionDefinition;
     settings: Record<string, ValueSource>;
   };
 }
@@ -68,12 +92,34 @@ export interface ResolvedChainSection {
   gas: ChainGas;
 }
 
+/** `spec.relayer` once resolved and type-checked. */
+export interface ResolvedRelayerSection {
+  url: ResolvedValue<string>;
+  /** An empty value means no authentication. */
+  apiKey?: ResolvedValue<string>;
+  gateway: {
+    chainId: ResolvedValue<number>;
+    decryption: ResolvedValue<string>;
+    inputVerification: ResolvedValue<string>;
+  };
+}
+
+/** `spec.contracts` once resolved and type-checked. */
+export interface ResolvedContractsSection {
+  acl: ResolvedValue<string>;
+  inputVerifier: ResolvedValue<string>;
+  kmsVerifier: ResolvedValue<string>;
+  protocolConfig: ResolvedValue<string>;
+}
+
 /** Plain data only: it is serialised into the worker job and structured-cloned into each World. */
 export interface ResolvedProfile {
   name: string;
   description: string;
   requiresConfirmation: boolean;
   chain?: ResolvedChainSection;
+  relayer?: ResolvedRelayerSection;
+  contracts?: ResolvedContractsSection;
   settings: Record<string, ResolvedSetting>;
 }
 

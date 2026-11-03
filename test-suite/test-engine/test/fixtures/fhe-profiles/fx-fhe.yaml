@@ -1,0 +1,24 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata:
+  name: fx-fhe
+  description: Fixture profile with the relayer and contracts sections (values of a local stack).
+spec:
+  envFiles:
+    - ./fx-fhe.env
+  chain:
+    rpcUrl: { value: "http://host-node:8545" }
+    chainId: { value: 12345 }
+    mnemonic: { env: TE_FHE_MNEMONIC, secret: true }
+  relayer:
+    url: { env: TE_FHE_RELAYER_URL, default: "http://fhevm-relayer:3000/v2" }
+    apiKey: { env: TE_FHE_API_KEY, secret: true, default: "" }
+    gateway:
+      chainId: { env: TE_FHE_GATEWAY_CHAIN_ID, default: 54321 }
+      decryption: { value: "0x5FFdAaA37C1D40b2e0DE7b4F1e5A1B1d6bDea7E9" }
+      inputVerification: { env: TE_FHE_INPUT_VERIFICATION }
+  contracts:
+    acl: { env: TE_FHE_ACL }
+    inputVerifier: { value: "0x0000000000000000000000000000000000000004" }
+    kmsVerifier: { value: "0x0000000000000000000000000000000000000005" }
+    protocolConfig: { value: "0x0000000000000000000000000000000000000006" }

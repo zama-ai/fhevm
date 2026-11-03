@@ -72,13 +72,13 @@ jobs:
       # executed). Its rules are covered by the engine tests with fixture profiles.
       - name: Validate scenarios on every profile (dry-run)
         env:
-          # Placeholders: a dry-run resolves the profiles' chain section but never connects.
-          # The mnemonic is Anvil's public test mnemonic.
+          # Placeholders: a dry-run resolves the profiles' chain, relayer and contracts sections but
+          # never connects. The mnemonic is Anvil's public test mnemonic.
           RPC_URL: http://placeholder.invalid:8545
           SEPOLIA_ETH_RPC_URL: https://placeholder.invalid/sepolia
           MNEMONIC: test test test test test test test test test test test junk
-          # Temporary settings of the local profile for the SDK spike (scenarios/spikes/fhe-sdk).
           RELAYER_URL: http://placeholder.invalid:3000/v2
+          CHAIN_ID_GATEWAY: "54321"
           DECRYPTION_ADDRESS: "0x0000000000000000000000000000000000000001"
           INPUT_VERIFICATION_ADDRESS: "0x0000000000000000000000000000000000000002"
           ACL_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000003"

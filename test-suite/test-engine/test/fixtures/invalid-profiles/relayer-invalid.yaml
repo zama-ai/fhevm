@@ -1,0 +1,18 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata:
+  name: relayer-invalid
+  description: Invalid relayer and contracts sections (several problems at once).
+spec:
+  relayer:
+    url: { env: SOME_RELAYER_URL }
+    apiKey: { env: SOME_API_KEY }
+    gateway:
+      chainId: { env: SOME_GATEWAY_CHAIN_ID, secret: true }
+      decryption: { value: "0x0000000000000000000000000000000000000001" }
+  contracts:
+    acl: { value: "0x0000000000000000000000000000000000000003" }
+    inputVerifier: { value: "0x0000000000000000000000000000000000000004" }
+    kmsVerifier: { env: SOME_KMS_VERIFIER, secret: true, default: not-an-empty-default }
+    protocolConfig: { value: "0x0000000000000000000000000000000000000006" }
+    executor: { value: "0x0000000000000000000000000000000000000007" }
