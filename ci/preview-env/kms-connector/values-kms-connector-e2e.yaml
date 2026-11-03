@@ -48,6 +48,12 @@ commonConfig:
     polygon: null
 
 kmsConnectorKmsWorker:
+  # Every connector component goes on the generic zws-pool nodepool, same as
+  # its postgres-connector-<i> release.
+  nodeSelector: &zwsPoolSelector
+    karpenter.sh/nodepool: zws-pool
+  tolerations: &zwsPoolTolerations
+    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
   config:
     # Overridden per-release to this party's own kms-core-<i>-core-<i> - see
     # header note. Party 1's endpoint is the standalone-template-safe default.
@@ -85,3 +91,21 @@ kmsConnectorProxy:
   env:
     - name: KMS_CONNECTOR_RATE_LIMIT_PER_SECOND
       value: "2000"
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
+
+kmsConnectorGwListener:
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
+
+kmsConnectorTxSender:
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
+
+kmsConnectorEndpoint:
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
+
+kmsConnectorDbMigration:
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
