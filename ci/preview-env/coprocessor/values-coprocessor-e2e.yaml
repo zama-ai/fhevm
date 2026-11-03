@@ -70,6 +70,12 @@ dbMigration:
   # is allowed to create it. values-coprocessor-gcs-e2e.yaml sets this to false
   # for the coprocessor-<i>-gcs release: it must find the database, not create it.
   allowBootstrap: true
+  # Light components (everything but the FHE workers and txSender) go on the
+  # generic zws-pool nodepool, same as the polygon consumer / poller releases.
+  nodeSelector: &zwsPoolSelector
+    karpenter.sh/nodepool: zws-pool
+  tolerations: &zwsPoolTolerations
+    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
 
 #=======================================================
 hostListenerShared:
@@ -81,6 +87,8 @@ hostListenerShared:
   # below, just not caught until the KMS keygen ceremony actually fired an
   # ActivateKey event this far into the pipeline).
   serviceAccountName: coprocessor
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
 
 #=======================================================
 hostListenerPollerShared:
@@ -94,12 +102,18 @@ hostListenerPollerShared:
   # mirroring zama-zws/gitops's eth-coproc-listener-poller app - so it stays
   # disabled in chains[] below.
   serviceAccountName: coprocessor
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
 hostListenerCatchupOnlyShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
   serviceAccountName: coprocessor
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
 hostListenerConsumerShared:
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/host-listener, tag: latest}
   serviceAccountName: coprocessor
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
   config:
     # Broker URL for the host-listener-consumer, rendered as BROKER_URL /
     # --broker-url (see charts/coprocessor/templates/coprocessor-host-listener-
@@ -117,6 +131,8 @@ hostListenerConsumerShared:
 gwListener:
   enabled: true
   image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/gw-listener, tag: latest}
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
 
 #=======================================================
 tfheWorker:
@@ -313,6 +329,12 @@ consensusDetector:
     manifestPublicationCadence:
       - "12345:1"
       - "31337:1"
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
+
+upgradeController:
+  nodeSelector: *zwsPoolSelector
+  tolerations: *zwsPoolTolerations
 
 #=======================================================
 chains:

@@ -127,6 +127,13 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      nodeSelector:
+        karpenter.sh/nodepool: zws-pool
+      tolerations:
+        - key: "karpenter.sh/nodepool"
+          operator: "Equal"
+          value: "zws-pool"
+          effect: "NoSchedule"
       imagePullSecrets:
         - name: registry-credentials
       containers:
