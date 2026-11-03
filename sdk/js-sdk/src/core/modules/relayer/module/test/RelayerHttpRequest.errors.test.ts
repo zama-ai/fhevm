@@ -40,7 +40,9 @@ describe('RelayerHttpRequest error responses', () => {
   it.each([
     ['code missing', { message: 'not allowed', requestId: VALID_REQUEST_ID }],
     ['code empty', { code: '', message: 'not allowed', requestId: VALID_REQUEST_ID }],
+    ['code blank (whitespace only)', { code: '   ', message: 'not allowed', requestId: VALID_REQUEST_ID }],
     ['message missing', { code: 'acl_denied', requestId: VALID_REQUEST_ID }],
+    ['message blank (whitespace only)', { code: 'acl_denied', message: '\t\n ', requestId: VALID_REQUEST_ID }],
     ['requestId missing', { code: 'acl_denied', message: 'not allowed' }],
     ['requestId not a UUIDv7', { code: 'acl_denied', message: 'not allowed', requestId: 'req-123' }],
     [
