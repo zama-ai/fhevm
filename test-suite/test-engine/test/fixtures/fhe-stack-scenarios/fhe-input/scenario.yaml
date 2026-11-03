@@ -1,0 +1,15 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.fhe-input
+  name: Fixture FHE input
+  owner: qa
+  description:
+    Engine test fixture - encrypt an input, compute on it and decrypt the result through this.engine.fhe (local stack).
+  tags: [fixture, fhe]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  targets: [local]
+  timeoutSeconds: 300
