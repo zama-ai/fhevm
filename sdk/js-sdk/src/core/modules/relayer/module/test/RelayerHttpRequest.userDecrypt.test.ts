@@ -50,6 +50,7 @@ describe('RelayerHttpRequest user-decrypt success body', () => {
     ['result.result is missing', _successBody({})],
     ['result.result is empty', _successBody({ result: [] })],
     ['a payload has a 0x prefix', _successBody({ result: [{ ...VALID_SHARES[0], payload: '0xa1b2' }] })],
+    ['a payload is empty', _successBody({ result: [VALID_SHARES[0], { ...VALID_SHARES[1], payload: '' }] })],
     ['a signature is not 65 bytes', _successBody({ result: [{ ...VALID_SHARES[0], signature: 'ab'.repeat(64) }] })],
     ['extraData is missing', _successBody({ result: [{ payload: 'a1b2', signature: SIGNATURE }] })],
   ])('throws RelayerHttpResultError when %s', async (_label, body) => {

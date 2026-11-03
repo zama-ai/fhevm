@@ -57,6 +57,7 @@ describe('RelayerHttpRequest public-decrypt success body', () => {
     ],
     ['decryptedValue is missing', _successBody({ signatures: [SIGNATURE], extraData: '0x00' })],
     ['decryptedValue has a 0x prefix', _successBody({ ...VALID_RESULT, decryptedValue: '0x2a' })],
+    ['decryptedValue is empty', _successBody({ ...VALID_RESULT, decryptedValue: '' })],
     ['signatures is missing', _successBody({ decryptedValue: '2a', extraData: '0x00' })],
     ['signatures is empty', _successBody({ ...VALID_RESULT, signatures: [] })],
     ['a signature is not 65 bytes', _successBody({ ...VALID_RESULT, signatures: [SIGNATURE, 'ab'.repeat(64)] })],
