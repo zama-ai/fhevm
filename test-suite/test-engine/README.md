@@ -51,7 +51,8 @@ test-engine/
 ├── schema/                   # JSON Schemas of scenario.yaml and profile files
 ├── profiles/                 # target environments: local, devnet, testnet, mainnet
 ├── scenarios/                # scenarios run by `npm run engine -- run` (default --scenarios-dir)
-│   └── smoke/                #   engine regression scenario, no dependency on the stack
+│   ├── smoke/                #   engine regression scenario, no dependency on the stack
+│   └── spikes/fhe-sdk/       #   throwaway spike S4: @fhevm/sdk inside the engine, local stack only
 └── test/                     # tests of the engine itself (node:test), never run by the engine
     ├── unit/                 #   modules called in process, one folder per src/ layer; no external service
     ├── integration/

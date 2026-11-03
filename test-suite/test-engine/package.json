@@ -33,6 +33,7 @@
     "@cucumber/html-formatter": "24.1.0",
     "@cucumber/messages": "34.2.0",
     "@cucumber/tag-expressions": "11.0.0",
+    "@fhevm/sdk": "0.14.5",
     "ajv": "^8.20.0",
     "ethers": "^6.17.0",
     "yaml": "^2.9.1"
