@@ -116,6 +116,8 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
       const init = this._buildInit();
 
       // 3.2. Run HTTP attempts until one succeeds or the error is final
+      // BY DESIGN, not raced against the signal: a global fetch that ignores the abort leaves
+      // run() pending (native fetch never does; the timer and listener are still released).
       const result = await runRelayerHttpRetryLoop({
         runAttempt: () => this._createAttempt(init, combined).run(),
         // Called through `this`, so a subclass override is the one used.
