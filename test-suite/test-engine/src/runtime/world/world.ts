@@ -4,7 +4,7 @@ import { format } from 'node:util';
 import { secretsOf } from '../../config/profiles/profile.js';
 import type { ResolvedProfile, SettingValue } from '../../config/profiles/types.js';
 import { type Redactor, createRedactor } from '../../infrastructure/secrets/redactor.js';
-import type { EngineWorldParameters, ScenarioInfo } from '../../model/execution.js';
+import { type EngineWorldParameters, MISSING_SECTION_ERROR, type ScenarioInfo } from '../../model/execution.js';
 import { Chain } from '../modules/chain/chain.js';
 import { Fhe } from '../modules/fhe/fhe.js';
 import { Evidence } from './evidence.js';
@@ -65,9 +65,22 @@ export function disposeWorld(world: EngineWorld): void {
   chains.delete(world);
 }
 
-/** The P-002 message: a module used on a profile without the sections it needs. */
-const missingSections = (profileName: string, sections: string[]): string =>
-  `profile '${profileName}' has no ${sections.join(', ')} section${sections.length > 1 ? 's' : ''}; declare spec.targets for this scenario so that it only runs on profiles that have ${sections.length > 1 ? 'them' : 'one'}`;
+/**
+ * A step used a module on a profile without the sections it needs (P-002), typically a scenario
+ * that forgot `spec.targets` and runs on `none`. The engine reports it as a configuration error.
+ */
+export class MissingProfileSectionError extends Error {
+  constructor(
+    readonly profileName: string,
+    readonly sections: string[],
+  ) {
+    const plural = sections.length > 1;
+    super(
+      `profile '${profileName}' has no ${sections.join(', ')} section${plural ? 's' : ''}; declare spec.targets for this scenario so that it only runs on profiles that have ${plural ? 'them' : 'one'}`,
+    );
+    this.name = MISSING_SECTION_ERROR;
+  }
+}
 
 /**
  * Base World of every scenario. Cucumber creates one instance per Gherkin scenario; scenarios
@@ -89,7 +102,7 @@ export class EngineWorld<P extends EngineWorldParameters = EngineWorldParameters
       get chain(): Chain {
         let chain = chains.get(world);
         if (!chain) {
-          if (!profile.chain) throw new Error(missingSections(profile.name, ['chain']));
+          if (!profile.chain) throw new MissingProfileSectionError(profile.name, ['chain']);
           chain = new Chain({ profileName: profile.name, section: profile.chain, evidence });
           chains.set(world, chain);
         }
@@ -100,7 +113,7 @@ export class EngineWorld<P extends EngineWorldParameters = EngineWorldParameters
         if (!fhe) {
           const { relayer, contracts } = profile;
           const missing = (['chain', 'relayer', 'contracts'] as const).filter((section) => !profile[section]);
-          if (!relayer || !contracts || missing.length > 0) throw new Error(missingSections(profile.name, missing));
+          if (!relayer || !contracts || missing.length > 0) throw new MissingProfileSectionError(profile.name, missing);
           fhe = new Fhe({
             profileName: profile.name,
             relayer,
