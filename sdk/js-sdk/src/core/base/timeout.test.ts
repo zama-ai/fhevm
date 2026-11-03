@@ -144,6 +144,29 @@ describe('abortableSleep', () => {
     }
   });
 
+  it('rejects when aborted during sleep with a reason whose name getter throws', async () => {
+    const controller = new AbortController();
+    const hostileReason = {
+      get name(): string {
+        throw new Error('hostile name getter');
+      },
+    };
+
+    let outcome: unknown = 'pending';
+    abortableSleep(1000, controller.signal).then(
+      () => (outcome = 'resolved'),
+      (e: unknown) => (outcome = e),
+    );
+
+    vi.advanceTimersByTime(500);
+    controller.abort(hostileReason);
+    // Flush promise jobs only: the sleep timer must not be what settles it.
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).cause).toBe(hostileReason);
+  });
+
   //////////////////////////////////////////////////////////////////////////////
   // Timer cleanup
   //////////////////////////////////////////////////////////////////////////////
