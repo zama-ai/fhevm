@@ -381,6 +381,10 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
   for (let index = 0; index < count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
     await waitCoreFleet(prefix, true);
+    // In blue-green mode, prf-service runs only in the green fleet (below).
+    if (state.scenario.kind !== "blue-green" && supportsPrfService(state)) {
+      await waitForContainer(`${prefix}prf-service`, "running");
+    }
     if (includeProxy) {
       await waitForContainer(`${prefix}prf-service-fake`, "healthy");
       await waitForCoprocessorProxy(prefix);
