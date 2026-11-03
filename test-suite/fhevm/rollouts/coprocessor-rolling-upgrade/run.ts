@@ -5,9 +5,9 @@
  * `testnet-before-coprocessor-v0.14` profile.
  */
 import type { Stack } from "../../src/commands/stack";
-import { DRIFT_CONSENSUS_WARNING, DRIFT_WARNING } from "../../src/drift";
-import { TEST_SUITE_CONTAINER } from "../../src/layout";
-import { toServiceName } from "../../src/utils/fs";
+import { ADD_CIPHERTEXT_MATERIAL_TOPIC, DRIFT_CONSENSUS_WARNING, DRIFT_WARNING } from "../../src/drift";
+import { TEST_SUITE_CONTAINER, envPath } from "../../src/layout";
+import { hostReachableRpcUrl, readEnvFile, toServiceName } from "../../src/utils/fs";
 import { run } from "../../src/utils/process";
 
 const TARGET_TAG = "v0.14.5";
@@ -31,6 +31,26 @@ const assertOperatorRuns = async (index: number, tag: string) => {
   const stale = rows.filter(([, image]) => !image!.endsWith(`:${tag}`));
   if (!rows.length || stale.length) {
     throw new Error(`coprocessor operator ${index} is not fully on ${tag}: ${stale.map((row) => row.join(" ")).join(", ")}`);
+  }
+};
+
+/**
+ * Throws unless the operator submitted ciphertext material after `fromBlock`. The consensus watchdog
+ * cannot see an operator that stops submitting while three others still agree.
+ */
+const assertOperatorSubmits = async (gateway: { rpcUrl: string; ciphertextCommits: string }, index: number, fromBlock: number) => {
+  const txSender = (await readEnvFile(envPath("gateway-sc")))[`COPROCESSOR_TX_SENDER_ADDRESS_${index}`]!.toLowerCase();
+  const logs = JSON.parse(
+    (
+      await run([
+        "cast", "logs", "--json", "--rpc-url", gateway.rpcUrl, "--address", gateway.ciphertextCommits,
+        "--from-block", String(fromBlock), ADD_CIPHERTEXT_MATERIAL_TOPIC,
+      ])
+    ).stdout,
+  ) as { data: string }[];
+  // data: keyId | ciphertextDigest | snsCiphertextDigest | coprocessorTxSender, one 32-byte word each.
+  if (!logs.some((log) => `0x${log.data.slice(218, 258)}`.toLowerCase() === txSender)) {
+    throw new Error(`coprocessor operator ${index} (${txSender}) submitted no ciphertext since gateway block ${fromBlock}`);
   }
 };
 
@@ -63,6 +83,15 @@ export const runCoprocessorRollingUpgrade = async (stack: Stack) => {
         `--lock-file profiles/${BASELINE_LOCK} --override test-suite`,
     );
   }
+  if (state.scenario.instances.some((instance) => instance.source.mode === "registry")) {
+    throw new Error("coprocessor-rolling-upgrade needs a freshly booted stack; re-run `fhevm-cli up`");
+  }
+  const gateway = {
+    rpcUrl: hostReachableRpcUrl(state.discovery!.endpoints.gateway.http),
+    ciphertextCommits: state.discovery!.gateway.CIPHERTEXT_COMMITS_ADDRESS!,
+  };
+  const gatewayBlock = async () =>
+    Number((await run(["cast", "block-number", "--rpc-url", gateway.rpcUrl])).stdout.trim());
   const startedAt = new Date().toISOString();
 
   logPhase("start traffic on the 0.13 fleet");
@@ -80,7 +109,9 @@ export const runCoprocessorRollingUpgrade = async (stack: Stack) => {
       logPhase(`upgrade operator ${index} to ${TARGET_TAG} (${index} of ${OPERATORS} already upgraded)`);
       await stack.upgradeCoprocessor(index, TARGET_TAG);
       await assertOperatorRuns(index, TARGET_TAG);
+      const restartedAt = await gatewayBlock();
       await Bun.sleep(SOAK_MS);
+      await assertOperatorSubmits(gateway, index, restartedAt);
       await assertNoDrift(startedAt);
     }
   } finally {

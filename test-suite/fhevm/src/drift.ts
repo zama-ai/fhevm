@@ -6,6 +6,9 @@ export const DRIFT_WARNING = '"message":"Drift detected: observed multiple diges
 // racing ahead of consensus formation and landing on an empty drift_revert_signal.
 export const DRIFT_CONSENSUS_WARNING = '"message":"Drift detected: local digest does not match consensus"';
 
+/** Topic hash for AddCiphertextMaterial(bytes32 indexed ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address coprocessorTxSender). */
+export const ADD_CIPHERTEXT_MATERIAL_TOPIC = "0x7249a80e5b91709d2170511b960e8a92e1d5849d200f320524dfffd8b50308f7";
+
 export const DRIFT_INSTALL_SQL = `CREATE TABLE IF NOT EXISTS drift_injection_state (
   id BOOLEAN PRIMARY KEY DEFAULT TRUE,
   enabled BOOLEAN NOT NULL,

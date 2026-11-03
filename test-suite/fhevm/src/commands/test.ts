@@ -22,6 +22,7 @@ import { isDeferredBootstrap } from "../flow/bootstrap";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { runStackTest } from "./stack";
 import {
+  ADD_CIPHERTEXT_MATERIAL_TOPIC,
   DRIFT_CLEANUP_SQL,
   DRIFT_CONSENSUS_WARNING,
   DRIFT_INSTALL_SQL,
@@ -505,9 +506,6 @@ const waitForDriftWarning = async (
   }
   throw new PreflightError(`drift warning was not observed after injecting handle ${handleHex}`);
 };
-
-/** Topic hash for AddCiphertextMaterial(bytes32 indexed ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address coprocessorTxSender). */
-const ADD_CIPHERTEXT_MATERIAL_TOPIC = "0x7249a80e5b91709d2170511b960e8a92e1d5849d200f320524dfffd8b50308f7";
 
 /** Queries on-chain AddCiphertextMaterial events and asserts the two submissions have divergent digests. */
 const assertOnChainDivergence = async (

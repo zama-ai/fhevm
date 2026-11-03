@@ -15,6 +15,20 @@ const MAX_TRANSFERS = STOP_FILE ? Infinity : Number(process.env.TRAFFIC_TRANSFER
 const PAUSE_MS = Number(process.env.TRAFFIC_PAUSE_MS ?? 1000);
 const SEED = Number(process.env.TRAFFIC_SEED ?? Date.now() % 2 ** 32);
 const MINT_AMOUNT = 1_000n;
+// Above the consensus watchdog's 3-minute stall budget, so a stalled fleet fails with the stalled handle.
+const TRANSFER_TIMEOUT_MS = 10 * 60_000;
+
+const withTimeout = async <T>(label: string, work: Promise<T>): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} did not finish within ${TRANSFER_TIMEOUT_MS / 60_000} min`)), TRANSFER_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 /** mulberry32: small and seeded, so TRAFFIC_SEED replays a failing run transfer for transfer. */
 const seededRandom = (seed: number) => () => {
@@ -59,20 +73,28 @@ describe('EncryptedERC20 traffic', function () {
       const asked = random() < 0.1 ? expected[from] + 1n : 1n + BigInt(Math.floor(random() * Number(expected[from])));
       const moved = asked <= expected[from] ? asked : 0n;
 
-      const input = await this.instances[from].encryptUint64({
-        value: asked,
-        contractAddress,
-        userAddress: this.signers[from].address,
-      });
-      const tx = await contract
-        .connect(this.signers[from])
-        ['transfer(address,bytes32,bytes)'](this.signers[to].address, input.handles[0], input.inputProof);
-      expect((await tx.wait())?.status, `transfer #${count}`).to.eq(1);
-      expected[from] -= moved;
-      expected[to] += moved;
-
-      expect(await decryptBalance(from), `${from} after transfer #${count}`).to.eq(expected[from]);
-      expect(await decryptBalance(to), `${to} after transfer #${count}`).to.eq(expected[to]);
+      const transfer = async () => {
+        const input = await this.instances[from].encryptUint64({
+          value: asked,
+          contractAddress,
+          userAddress: this.signers[from].address,
+        });
+        const tx = await contract
+          .connect(this.signers[from])
+          ['transfer(address,bytes32,bytes)'](this.signers[to].address, input.handles[0], input.inputProof);
+        expect((await tx.wait())?.status, `transfer #${count}`).to.eq(1);
+        expected[from] -= moved;
+        expected[to] += moved;
+        expect(await decryptBalance(from), `${from} after transfer #${count}`).to.eq(expected[from]);
+        expect(await decryptBalance(to), `${to} after transfer #${count}`).to.eq(expected[to]);
+      };
+      try {
+        await withTimeout(`transfer #${count}`, transfer());
+      } catch (error) {
+        // A divergence or stall explains most failures here; report it first when there is one.
+        await checkConsensus();
+        throw error;
+      }
       await checkConsensus();
       console.log(`[erc20-traffic #${count}] ${from} -> ${to}: asked ${asked}, moved ${moved}`);
       await new Promise((resolve) => setTimeout(resolve, PAUSE_MS));
