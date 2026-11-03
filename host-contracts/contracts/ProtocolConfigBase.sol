@@ -10,7 +10,7 @@ import {KmsContextAnchor, KmsNode, KmsThresholds} from "./shared/Structs.sol";
  */
 abstract contract ProtocolConfigBase is IProtocolConfigBase {
     /// @notice Lifecycle state of a KMS context: created Pending, promoted to Created once the
-    ///         creation quorum confirms, then Active when its first epoch activates. A destroyed context is Destroyed.
+    ///         creation quorum confirms, then Active when its first epoch activates.
     enum ContextState {
         None,
         Pending,
@@ -20,7 +20,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /// @notice Lifecycle state of an epoch: opened Pending for resharing, then Active once the
-    ///         activation quorum confirms. A destroyed epoch is Destroyed.
+    ///         activation quorum confirms.
     enum EpochState {
         None,
         Pending,
@@ -414,7 +414,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
 
     /**
      * @dev Sets `contextId` Active and activates `epochId` under it, as the latest active pair.
-     *      Callers own any event emission.
+     *      The caller emits any events.
      */
     function _activateKmsContextAndEpoch(uint256 contextId, uint256 epochId) internal virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
@@ -426,7 +426,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Sets `contextId` Destroyed. Callers own the preconditions.
+     * @dev Sets `contextId` Destroyed. The caller checks the preconditions.
      */
     function _markKmsContextDestroyed(uint256 contextId) internal {
         _getProtocolConfigStorage().contextState[contextId] = ContextState.Destroyed;
@@ -434,7 +434,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Sets `epochId` Destroyed. Callers own the preconditions.
+     * @dev Sets `epochId` Destroyed. The caller checks the preconditions.
      */
     function _markKmsEpochDestroyed(uint256 epochId) internal {
         _getProtocolConfigStorage().epochState[epochId] = EpochState.Destroyed;
@@ -459,7 +459,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Returns the epoch activation quorum of `contextId`: every signer of its committee.
+     * @dev Returns the epoch activation quorum of `contextId`, which is every signer of its committee.
      */
     function _epochActivationQuorum(uint256 contextId) internal view returns (uint256) {
         return _getProtocolConfigStorage().kmsSignerAddressesForContext[contextId].length;

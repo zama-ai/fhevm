@@ -171,9 +171,8 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     /**
      * @notice Applies a canonical context destruction.
      * @dev Verifies `n - t` ContextDestructionConfirmation signatures of the active committee.
-     *      Reverts with `KmsContextAlreadyDestroyed` if the ID is already destroyed. The submitter
-     *      treats this error as success. Reverts with `LatestActiveKmsContextCannotBeDestroyed` for
-     *      the active context.
+     *      Reverts with `KmsContextAlreadyDestroyed` if the ID is already destroyed. Reverts with
+     *      `LatestActiveKmsContextCannotBeDestroyed` for the active context.
      *      Accepts an ID that was never stored, because the canonical can destroy a pending context
      *      that never reached this replica. No submission can then activate that ID. So submit a
      *      destruction only after the replica applies every activation that the canonical made before

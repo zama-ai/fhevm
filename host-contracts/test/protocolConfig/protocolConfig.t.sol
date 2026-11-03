@@ -896,9 +896,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(protocolConfig.getKmsGenThresholdForContext(KMS_CONTEXT_COUNTER_BASE + 2), 1);
     }
 
-    /// @dev Previous-side quorum boundary, both sides: with n = 4 previous nodes and t = 1, the
-    ///      target is n - t = 3. All-new + n - t - 1 previous confirmations stay Pending, the
-    ///      (n - t)-th completes creation (NewKmsEpoch), and any later one hits the Created state.
+    /// @dev Previous-side quorum boundary. With n = 4 previous nodes and t = 1, the target is n - t = 3.
+    ///      All new confirmations plus n - t - 1 previous confirmations leave the context Pending. The
+    ///      (n - t)-th previous confirmation completes creation and emits NewKmsEpoch. A later one reverts
+    ///      because the context is no longer Pending.
     function test_confirmKmsContextCreationUsesNewSignersAndOldQuorum() public {
         _setupDefaultWithMpcThreshold(1);
         bytes32 nodeConfigHash = _defineContextSwitchToSigners(0xB2, 0xB3);
@@ -1227,7 +1228,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
-        // A live pending epoch passes the state check, so an empty key or CRS list reaches the dedicated revert.
+        // A live pending epoch passes the state check, so an empty key or CRS list reverts with EmptyEpochActivationResults.
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList

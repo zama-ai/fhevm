@@ -57,7 +57,7 @@ async function protocolConfigDomain(pc: ProtocolConfig): Promise<TypedDataDomain
 const abi = AbiCoder.defaultAbiCoder();
 
 // keccak256(abi.encode(KmsNode[] nodes, KmsThresholds thresholds)). The encode types come from the
-// ProtocolConfig ABI, so the tuple layout cannot drift from the contract. KmsNode is the projection of
+// ProtocolConfig ABI, so the tuple layout always matches the contract. KmsNode is the projection of
 // KmsNodeParams that ProtocolConfig stores, and the encoder drops the fields KmsNode does not have.
 function hashNodeConfig(
   iface: ProtocolConfigInterface,

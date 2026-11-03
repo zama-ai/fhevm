@@ -136,7 +136,7 @@ rotation.
 a context or epoch already stored under the given id, and a lower id moves the replica back.
 `mirrorKmsEpoch` requires the active context id. An activation replaces the Destroyed state of the
 ids it activates, on every owner path. The submit path rejects a destroyed id, so only the owner can
-land it. See runbook §5.7 to recover a replica. Gaps are fine (contexts/epochs
+activate it. See runbook §5.7 to recover a replica. Gaps are fine (contexts/epochs
 aborted or never activated on Ethereum are just never mirrored). Nothing stops a replica from
 **drifting** if a mirror call is skipped: replaying each Ethereum rotation to every replica is the
 operator's responsibility.

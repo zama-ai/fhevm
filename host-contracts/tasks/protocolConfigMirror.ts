@@ -121,7 +121,7 @@ export async function readCanonicalSnapshot(
 
   // RPC providers must disable caching so this re-fetches the block after the state reads.
   const refetched = await canonicalProvider.getBlock(blockNumber);
-  if (refetched === null || refetched.hash === null || refetched.hash !== blockHash) {
+  if (refetched?.hash !== blockHash) {
     throw new Error(`Canonical block ${blockNumber} is missing or its hash changed during the read; retry.`);
   }
 

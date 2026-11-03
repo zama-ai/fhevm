@@ -252,7 +252,7 @@ contract ProtocolConfig is
 
         emit KmsContextCreationConfirmation(kmsContextId, signer, signature, extraData);
 
-        // Context creation quorum: all new nodes and (n - t) previous nodes confirmed the same digest.
+        // The context creation quorum needs the same digest from all new nodes and (n - t) previous nodes.
         bool quorumReached = canonical$.contextCreationNewConfirmationCountForDigest[kmsContextId][digest] ==
             $.kmsNodesForContext[kmsContextId].length &&
             canonical$.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest] >=
@@ -262,7 +262,7 @@ contract ProtocolConfig is
         }
 
         $.contextState[kmsContextId] = ContextState.Created;
-        // Create the confirmed context's first epoch here, pairing it with the context by construction.
+        // Create the first epoch of the confirmed context here, so this epoch always pairs with this context.
         uint256 epochId = _createPendingEpoch(kmsContextId);
         // Connectors must read previous key/CRS material from the last block before this epoch request.
         emit NewKmsEpoch(kmsContextId, epochId, previousContextId, $.latestActiveEpochId, block.number - 1);
@@ -299,7 +299,7 @@ contract ProtocolConfig is
             }
         }
 
-        // All signers agreed on `epochId`, so promote `contextId` and `epochId` to Active.
+        // All signers agreed, promote context and epoch to Active.
         _activateKmsContextAndEpoch(contextId, epochId);
 
         KmsNode[] storage nodes = $.kmsNodesForContext[contextId];
@@ -321,10 +321,10 @@ contract ProtocolConfig is
             revert InvalidKmsContext(kmsContextId);
         }
 
-        // A confirmed switch issued this context's epoch as the latest one. It can only be Pending:
-        // an Active epoch makes its context the latest active one, which the guard above refuses.
-        // Reset it to None, not Destroyed: the context destruction covers it, so no KmsEpochDestroyed
-        // is emitted. Any state other than Pending reopens the in-flight gate. A switch destroyed
+        // A confirmed switch issued this context's epoch as the latest one. It can only be Pending,
+        // because an Active epoch makes its context the latest active one, which the guard above refuses.
+        // Reset it to None, not Destroyed. The context destruction covers it, so the contract emits no
+        // KmsEpochDestroyed. Any state other than Pending reopens the in-flight gate. A switch destroyed
         // before its creation quorum has no epoch, so the check below is false. Earlier epochs keep
         // their state, but every epoch check also requires the context.
         uint256 latestEpochId = $.epochCounter;
@@ -366,7 +366,6 @@ contract ProtocolConfig is
     /// @inheritdoc IProtocolConfig
     /// @dev Each signer confirms once. The confirmation counts toward the active committee's `n - t`
     ///      quorum. The DAO does not rotate before a destruction reaches the quorum (RFC 037).
-    ///      `ProtocolConfigReplica` requires `n - t` signatures over one digest too.
     ///      The contract does not check that the context was destroyed. KMS nodes sign only after
     ///      they see the KmsContextDestroyed event.
     function confirmKmsContextDestruction(
@@ -480,10 +479,8 @@ contract ProtocolConfig is
     // -----------------------------------------------------------------------------------------
 
     /**
-     * @dev Verifies one signer's activation submission for `epochId` under `contextId` and returns
-     *      its signer, `epochMaterialHash`, and EpochActivationConfirmation digest. The
-     *      EpochActivationConfirmation signature binds the key and CRS results through
-     *      `epochMaterialHash` and must recover to a signer of the context's committee.
+     * @dev Verifies one signer's EpochActivationConfirmation for `epochId` and returns the signer,
+     *      `epochMaterialHash` and digest. The signer must be in the committee of `contextId`.
      */
     function _verifyEpochActivation(
         uint256 contextId,

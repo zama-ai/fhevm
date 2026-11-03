@@ -132,8 +132,8 @@ describe('Canonical prepare tasks', function () {
       const decoded = iface.decodeFunctionData('initializeFromCanonical', innerCalldata);
       expect(decoded[0]).to.equal(canonicalContextId);
       expect(decoded[1]).to.equal(canonicalEpochId);
-      // Round-trip every KmsNode field so a dropped or transposed field is caught instead of
-      // silently passing on txSenderAddress alone.
+      // Round-trip every KmsNode field. A check on txSenderAddress alone misses a dropped or
+      // transposed field.
       const expectedNodes = buildProtocolConfigNodes();
       expect(decoded[2].length).to.equal(expectedNodes.length);
       decoded[2].forEach((node: unknown[], index: number) => {

@@ -73,7 +73,7 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaFixture {
         vm.prank(owner);
         protocolConfigReplica.mirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
 
-        // Mirrored context and epoch are immediately active (no quorum replay).
+        // The mirrored context and epoch are active at once, with no quorum replay.
         _assertActive(contextId, epochId);
         assertTrue(protocolConfigReplica.isValidKmsContext(contextId));
         assertTrue(protocolConfigReplica.isValidEpochForContext(contextId, epochId));
