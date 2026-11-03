@@ -276,13 +276,13 @@ export class Fhe {
       (delegator
         ? `delegated decryption by ${signerRole} of ${handles.length} handle(s)`
         : `user decryption by ${signerRole} of ${handles.length} handle(s)`);
-    let cache: 'hit' | 'miss' | 'bypassed' = 'bypassed';
     const { result, trace, durationMs } = await this.run(kind, data, label, async (client) => {
       if (permitKind === 'unified' && !(await client.canUseUnifiedPermit())) {
         throw new Error(`the relayer of profile '${this.options.profileName}' does not offer the unified (v3) route`);
       }
       const permit = await this.permitFor(client, permitKind, signerRole, contract, delegator?.address, parameters);
-      cache = permit.cache;
+      // Set on the shared data, so that a failed decryption also says where its permit came from.
+      data.cache = permit.cache;
       return client.decrypt({ handles, contractAddress: contract, ...permit.entry }, parameters);
     });
     const values = result.map((value) => toClearValue(value.value));
@@ -294,7 +294,6 @@ export class Fhe {
           result.map((value) => value.type),
           values,
         ),
-        cache,
         relayer: relayerEvidence(trace),
         durationMs,
         status: 'success',

@@ -1,0 +1,16 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.fhe-delegation
+  name: Fixture FHE delegated user decryption
+  owner: qa
+  description:
+    Engine test fixture - alice delegates bob on the ACL, then bob decrypts alice's value through this.engine.fhe (local
+    stack).
+  tags: [fixture, fhe]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  targets: [local]
+  timeoutSeconds: 300

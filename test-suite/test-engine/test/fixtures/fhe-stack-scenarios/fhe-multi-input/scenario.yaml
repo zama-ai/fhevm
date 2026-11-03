@@ -1,0 +1,16 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.fhe-multi-input
+  name: Fixture FHE multi-value input
+  owner: qa
+  description:
+    Engine test fixture - two encrypted values in one input proof, the result publicly decrypted and its proof verified
+    on chain (local stack).
+  tags: [fixture, fhe]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  targets: [local]
+  timeoutSeconds: 300
