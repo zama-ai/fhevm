@@ -838,9 +838,9 @@ where
         .await
         {
             Ok(record) => {
-                if let Err(e) = decision::put(client, bucket, &proposal_id, &record).await {
-                    warn!(error = %e, "failed to write the decision record; retrying next pass");
-                }
+                // put() logs every outcome (written / kept / failed) with the
+                // key and the serialized record; a failure retries next pass.
+                let _ = decision::put(client, bucket, &proposal_id, &record).await;
             }
             Err(e) => warn!(error = %e, "failed to sign the decision record"),
         }
