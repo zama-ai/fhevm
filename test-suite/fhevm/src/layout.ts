@@ -201,6 +201,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "coprocessor-transaction-sender",
     "coprocessor-consensus-detector",
     "coprocessor-upgrade-controller",
+    "coprocessor-proxy",
   ],
   "kms-connector": [
     "kms-connector-db-migration",
@@ -259,6 +260,26 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
 /** The kms-connector services `supportsConnectorHttp` gates as a pair: HTTP endpoint + proxy. */
 export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
 
+/**
+ * The coprocessor services `runsCoprocessorProxy` gates as a pair: the proxy and the fake
+ * prf-service it forwards to, in start order. The fake runs the test-suite image, so it is not a
+ * coprocessor build service.
+ */
+export const COPROCESSOR_PROXY_SUFFIXES = ["prf-service-fake", "proxy"];
+
+/**
+ * The env file of coprocessor `index`'s proxy. It holds only the proxy's own settings: the
+ * coprocessor's env carries database and signing secrets the internet-facing proxy must not get.
+ */
+export const coprocessorProxyEnvName = (index: number) =>
+  index === 0 ? "coprocessor-proxy" : `coprocessor-proxy.${index}`;
+
+/** `suffixes` without the proxy pair, then the pair in start order when `includeProxy`. */
+export const withCoprocessorProxySuffixes = (suffixes: readonly string[], includeProxy: boolean) => [
+  ...suffixes.filter((suffix) => !COPROCESSOR_PROXY_SUFFIXES.includes(suffix)),
+  ...(includeProxy ? COPROCESSOR_PROXY_SUFFIXES : []),
+];
+
 /** Services that run the same image and therefore must be built together by an override. */
 const IMAGE_SIBLINGS: Record<string, string[]> = {
   "coprocessor-host-listener": ["coprocessor-host-listener-poller"],
@@ -310,6 +331,7 @@ export const TEST_GREP: Record<string, string> = {
   "connector-http-negative": "Connector HTTP negative",
   // All three connector HTTP suites in one mocha run; this is the profile included in the standard test set.
   "connector-http": "Connector HTTP",
+  "coprocessor-proxy": "Coprocessor proxy",
   "random": "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt",
   "random-subset":
     "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt",
@@ -359,6 +381,7 @@ export const STANDARD_TEST_PROFILES = [
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
   "connector-http",
+  "coprocessor-proxy",
   "negative-acl",
   "random-subset",
   "multi-chain-isolation",
@@ -397,6 +420,7 @@ export const STANDARD_SHARD_DECRYPTION_TEST_PROFILES = [
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
   "connector-http",
+  "coprocessor-proxy",
 ] as const;
 
 export const STANDARD_SHARD_COMPUTE_TEST_PROFILES = [

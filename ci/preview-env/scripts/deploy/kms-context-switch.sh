@@ -52,6 +52,8 @@ stage_values() {
   live=$(mktemp)
   helm get values "${live_release}" -n "${NAMESPACE}" -o yaml > "${live}"
   cp "${overlay}" "${out}"
+  # $base and $live are yq variables, not shell ones.
+  # shellcheck disable=SC2016
   LIVE="${live}" yq -i '
     .scDeploy.image.tag = (load(strenv(LIVE)).scDeploy.image.tag // .scDeploy.image.tag) |
     .scDeploy.env = (

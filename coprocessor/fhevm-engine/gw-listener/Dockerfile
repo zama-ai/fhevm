@@ -46,6 +46,7 @@ COPY gateway-contracts/rust_bindings/ ./gateway-contracts/rust_bindings
 COPY host-contracts/rust_bindings ./host-contracts/rust_bindings
 COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY shared/block-manifest ./shared/block-manifest
+COPY shared/fhevm-sig-auth ./shared/fhevm-sig-auth
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 

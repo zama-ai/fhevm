@@ -231,6 +231,44 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(withHttp, [...running, "kms-connector-endpoint", "kms-connector-proxy"])).toBeUndefined();
   });
 
+  test("expects coprocessor-proxy and its fake prf-service only when the bundle pins the proxy", () => {
+    const running = [
+      "fhevm-object-store",
+      "coprocessor-and-kms-db",
+      "kms-core",
+      "host-node",
+      "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
+      "coprocessor-gw-listener",
+      "coprocessor-tfhe-worker",
+      "coprocessor-zkproof-worker",
+      "coprocessor-sns-worker",
+      "coprocessor-transaction-sender",
+      "coprocessor-consensus-detector",
+      "coprocessor-upgrade-controller",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+      "fhevm-relayer-db",
+      "fhevm-relayer",
+      "fhevm-test-suite-e2e-debug",
+    ];
+    // completeState() carries no COPROCESSOR_PROXY_VERSION: neither container is expected.
+    expect(resumeRepairStep(completeState(), running)).toBeUndefined();
+    const base = completeState();
+    const withProxy = {
+      ...base,
+      versions: { ...base.versions, env: { ...base.versions.env, COPROCESSOR_PROXY_VERSION: "02f6cc0" } },
+    };
+    expect(resumeRepairStep(withProxy, running)).toBe("coprocessor");
+    expect(resumeRepairStep(withProxy, [...running, "coprocessor-proxy"])).toBe("coprocessor");
+    expect(resumeRepairStep(withProxy, [...running, "coprocessor-prf-service-fake", "coprocessor-proxy"])).toBeUndefined();
+  });
+
   test("returns nothing when every steady-state service is present", () => {
     const running = [
       "fhevm-object-store",
