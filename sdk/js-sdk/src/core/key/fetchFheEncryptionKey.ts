@@ -35,7 +35,7 @@ export async function fetchSolanaFheEncryptionKeyWasm(
   context: SolanaProofContext,
   parameters: { readonly fhevmContext: FhevmClientFrozenContext },
 ): Promise<FheEncryptionKeyWasm> {
-  const key = ensureSolanaFheEncryptionKeyDownload(context, parameters);
+  const key = await ensureSolanaFheEncryptionKeyDownload(context, parameters);
   return _toFheEncryptionKeyWasm(context.runtime, key, parameters.fhevmContext);
 }
 

@@ -1,3 +1,4 @@
+import type { EncryptModuleFactory } from '../modules/encrypt/types.js';
 import type { EthereumModule } from '../modules/ethereum/types.js';
 import type { RelayerModule } from '../modules/relayer/types.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
@@ -31,15 +32,30 @@ const runtimeAuth: Auth = { type: 'ApiKeyHeader', value: 'runtime-secret' };
 // Stop after the download: the key is not under test.
 const stopAfterDownload = () => Promise.reject(new Error('stop after the download'));
 const fetchFheEncryptionKeyBytes = vi.fn<RelayerModule['fetchFheEncryptionKeyBytes']>(stopAfterDownload);
+// The mock encrypt module, counting the public keys it converts from bytes.
+let publicKeyConversions = 0;
+const countingEncryptModule: EncryptModuleFactory = (moduleRuntime) => {
+  const { encrypt } = encryptModule(moduleRuntime);
+  return {
+    encrypt: {
+      ...encrypt,
+      deserializeFheEncryptionPublicKey: (parameters) => {
+        publicKeyConversions += 1;
+        return encrypt.deserializeFheEncryptionPublicKey(parameters);
+      },
+    },
+  };
+};
 const runtime = createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
   ethereum: {} as EthereumModule,
   relayer: { fetchFheEncryptionKeyBytes } as unknown as RelayerModule,
   config: { auth: runtimeAuth },
-}).extend(encryptModule);
+}).extend(countingEncryptModule);
 const client = createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain, runtime });
 
 beforeEach(() => {
   globalFheEncryptionKeyCache.clear();
+  publicKeyConversions = 0;
   fetchFheEncryptionKeyBytes.mockReset();
   fetchFheEncryptionKeyBytes.mockImplementation(stopAfterDownload);
 });
@@ -97,10 +113,11 @@ describe('fetchSolanaFheEncryptionKeyWasm', () => {
       programs: { host: { address: `0x${'22'.repeat(32)}` } },
     },
   } as SolanaProofContext['chain'];
-  const keyBytes = (id: string) =>
+  // A new object each call: two keys made from the same `seed` hold equal bytes.
+  const keyBytes = (id: string, seed = id.length) =>
     ({
-      publicKeyBytes: { id, bytes: new Uint8Array([1, 2, 3]) },
-      crsBytes: { id: `${id}-crs`, capacity: 2048, bytes: new Uint8Array([4, 5, 6]) },
+      publicKeyBytes: { id, bytes: new Uint8Array([seed, 2, 3]) },
+      crsBytes: { id: `${id}-crs`, capacity: 2048, bytes: new Uint8Array([seed, 5, 6]) },
       metadata: { relayerUrl: solanaChain.fhevm.relayerUrl, chainId: solanaChain.id },
     }) as unknown as FheEncryptionKeyBytes;
   // A chainless core, as the Solana clients create theirs.
@@ -116,6 +133,18 @@ describe('fetchSolanaFheEncryptionKeyWasm', () => {
     const second = await fetchSolanaFheEncryptionKeyWasm(solanaContext(keyBytes('second')), { fhevmContext });
 
     expect(second).not.toBe(first);
+    expect(fetchFheEncryptionKeyBytes).not.toHaveBeenCalled();
+  });
+
+  it('reuses the cached key for a provided key with the same bytes, and replaces it for other bytes', async () => {
+    const first = await fetchSolanaFheEncryptionKeyWasm(solanaContext(keyBytes('key', 1)), { fhevmContext });
+    const same = await fetchSolanaFheEncryptionKeyWasm(solanaContext(keyBytes('key', 1)), { fhevmContext });
+    expect(same).toBe(first);
+    expect(publicKeyConversions).toBe(1);
+
+    const other = await fetchSolanaFheEncryptionKeyWasm(solanaContext(keyBytes('key', 2)), { fhevmContext });
+    expect(other).not.toBe(first);
+    expect(publicKeyConversions).toBe(2);
     expect(fetchFheEncryptionKeyBytes).not.toHaveBeenCalled();
   });
 

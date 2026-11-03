@@ -70,8 +70,11 @@ function _unverifiedSlot(relayerUrl: string): string {
 
 /**
  * The Solana client's FHE encryption key in the global cache, in the relayer's unverified slot:
- * - a caller-provided key (`options.fheEncryptionKey`) replaces the cached one, which is stale
- *   (only one key is active at a time), and the client releases it;
+ * - a caller-provided key (`options.fheEncryptionKey`) equal to the cached key, once downloaded:
+ *   the cached key is used, as on EVM;
+ * - another provided key replaces the cached one, which is stale (only one key is active at a
+ *   time);
+ * - either way the client releases the provided key;
  * - otherwise the relayer's key is downloaded, or the download in flight joined.
  *
  * The key is not checked against KMSGeneration: KMSGeneration is on Ethereum, and a Solana client
@@ -80,18 +83,28 @@ function _unverifiedSlot(relayerUrl: string): string {
  *
  * @internal
  */
-export function ensureSolanaFheEncryptionKeyDownload(
+export async function ensureSolanaFheEncryptionKeyDownload(
   context: SolanaProofContext,
   parameters: { readonly fhevmContext: FhevmClientFrozenContext },
-): { readonly slot: string; readonly entry: CacheEntry } {
+): Promise<{ readonly slot: string; readonly entry: CacheEntry }> {
   const { relayerUrl } = context.chain.fhevm;
   const runtime = context.runtime;
   const slot = _unverifiedSlot(relayerUrl);
 
   const provided = getProvidedFheEncryptionKey(context.fhevm);
   if (provided !== undefined) {
-    const entry = globalFheEncryptionKeyCache.replaceBytes(runtime, slot, relayerUrl, provided);
-    releaseProvidedFheEncryptionKey(context.fhevm, provided);
+    const entry = await _memoize(
+      solanaProvidedKeyUses,
+      provided,
+      async () => {
+        const cached =
+          (await _getSameCachedEntry(slot, provided)) ??
+          globalFheEncryptionKeyCache.replaceBytes(runtime, slot, relayerUrl, provided);
+        releaseProvidedFheEncryptionKey(context.fhevm, provided);
+        return cached;
+      },
+      false,
+    );
     return { slot, entry };
   }
 
@@ -240,6 +253,8 @@ async function _verifyCachedFheEncryptionKey(
 // the error of a key that fails the check (see ensureFheEncryptionKeyDownload),
 // any other error is retried by the next call.
 const providedKeyUses = new WeakMap<FheEncryptionKeyBytes, Promise<ClientFheEncryptionKey>>();
+// The same for a Solana client, whose key is not checked.
+const solanaProvidedKeyUses = new WeakMap<FheEncryptionKeyBytes, Promise<CacheEntry>>();
 
 function _useProvidedFheEncryptionKey(
   context: Context,
