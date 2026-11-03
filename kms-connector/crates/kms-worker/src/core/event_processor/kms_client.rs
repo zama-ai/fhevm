@@ -23,6 +23,8 @@ use kms_grpc::{
     },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
+use std::time::Duration;
+use tokio::time::timeout;
 use tonic::{
     Code, Request, Response, Status,
     transport::{Channel, Endpoint},
@@ -51,6 +53,8 @@ pub struct KmsClient {
 
     /// Number of retries for GRPC requests sent to the KMS Core.
     grpc_request_retries: u8,
+    /// Bounds each decryption submission.
+    decryption_submission_timeout: Duration,
 }
 
 /// Identifies the KMS Core result to poll for a given event.
@@ -117,7 +121,11 @@ impl From<&ProtocolEventKind> for KmsPollTarget {
 }
 
 impl KmsClient {
-    pub fn new(channels: Vec<Channel>, grpc_request_retries: u8) -> Self {
+    pub fn new(
+        channels: Vec<Channel>,
+        grpc_request_retries: u8,
+        decryption_submission_timeout: Duration,
+    ) -> Self {
         let inners = channels
             .into_iter()
             .map(CoreServiceEndpointClient::new)
@@ -126,6 +134,7 @@ impl KmsClient {
         Self {
             inners,
             grpc_request_retries,
+            decryption_submission_timeout,
         }
     }
 
@@ -136,7 +145,11 @@ impl KmsClient {
             channels.push(KmsClient::connect_single_shard(i, kms_shard_endpoint, config).await?);
         }
 
-        Ok(Self::new(channels, config.grpc_request_retries))
+        Ok(Self::new(
+            channels,
+            config.grpc_request_retries,
+            config.kms_decryption_submission_timeout,
+        ))
     }
 
     /// Connects to a single KMS Core shard.
@@ -252,7 +265,14 @@ impl KmsClient {
             || {
                 let mut client = inner_client.clone();
                 let request = request.clone();
-                async move { client.public_decrypt(request).await }
+                async move {
+                    timeout(
+                        self.decryption_submission_timeout,
+                        client.public_decrypt(request),
+                    )
+                    .await
+                    .map_err(|_| Status::deadline_exceeded("KMS decryption submission timed out"))?
+                }
             },
             EventType::PublicDecryptionRequest,
             |_| Ok(KmsSendResponse::Empty),
@@ -273,7 +293,14 @@ impl KmsClient {
             || {
                 let mut client = inner_client.clone();
                 let request = request.clone();
-                async move { client.user_decrypt(request).await }
+                async move {
+                    timeout(
+                        self.decryption_submission_timeout,
+                        client.user_decrypt(request),
+                    )
+                    .await
+                    .map_err(|_| Status::deadline_exceeded("KMS decryption submission timed out"))?
+                }
             },
             EventType::UserDecryptionRequest,
             |_| Ok(KmsSendResponse::Empty),
@@ -733,6 +760,17 @@ where
             .inc();
         if RETRYABLE_GRPC_CODE.contains(&error.code()) {
             warn!("#{i}/{retries} GRPC request attempt failed: {error}");
+            if i < retries as i16
+                && error.code() == Code::DeadlineExceeded
+                && matches!(
+                    event_type,
+                    EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest
+                )
+            {
+                // Spread out retries when several submissions time out together.
+                let delay = Duration::from_millis(rand::random_range(100..=500));
+                tokio::time::sleep(delay).await;
+            }
         } else {
             return (
                 i,

@@ -23,6 +23,7 @@ futures.workspace = true
 humantime-serde.workspace = true
 kms-grpc.workspace = true
 prometheus.workspace = true
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha3.workspace = true
@@ -39,6 +40,7 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+http-body.workspace = true
 ciphertext-attestation = { workspace = true, features = ["test-utils"] }
 connector-utils = { workspace = true, features = ["tests"] }
 mocktail.workspace = true

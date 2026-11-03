@@ -60,6 +60,11 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_KMS_CONNECT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
 # kms_connect_timeout = "5s"
 
+# Timeout per decryption submission attempt.
+# Optional, defaults to 30s; timed-out submissions pause 100-500ms before retrying; 3 attempts by default.
+# ENV: KMS_CONNECTOR_KMS_DECRYPTION_SUBMISSION_TIMEOUT
+# kms_decryption_submission_timeout = "30s"
+
 # Interval between HTTP/2 keepalive pings sent to the KMS Core, even when idle (optional, defaults to 10s)
 # ENV: KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL (format: https://docs.rs/humantime/latest/humantime/)
 # kms_keep_alive_interval = "10s"
