@@ -52,7 +52,7 @@ commonConfig:
     acl: ""
 
   # BNB Testnet chain RPC node endpoint (HTTP)
-  bnbTestnetUrl: ""
+  bnbTestnetUrl: "http://bnb-testnet-node:8545"
   # BNB Testnet chain identifier (override the network preset when set)
   bnbTestnetChainId: ""
   # BNB Testnet smart contract addresses (override the network preset when set)
@@ -223,6 +223,9 @@ kmsConnectorKmsWorker:
       - url: "$(KMS_CONNECTOR_POLYGON_URL)"
         chainId: "$(KMS_CONNECTOR_POLYGON_CHAIN_ID)"
         aclAddress: "$(KMS_CONNECTOR_POLYGON_ACL_ADDRESS)"
+      - url: "$(KMS_CONNECTOR_BNB_TESTNET_URL)"
+        chainId: "$(KMS_CONNECTOR_BNB_TESTNET_CHAIN_ID)"
+        aclAddress: "$(KMS_CONNECTOR_BNB_TESTNET_ACL_ADDRESS)"
 
     # Override commonConfig.gatewayUrl if needed
     # gatewayUrl:
