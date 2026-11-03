@@ -29,6 +29,16 @@ async fn startup_new_catchup_with_unowned_requests() {
 }
 
 #[tokio::test]
+async fn invalid_range_at_first_live_block_keeps_ingesting() {
+    exercise_startup(Startup::InvalidCatchup(2000), false).await;
+}
+
+#[tokio::test]
+async fn invalid_range_above_first_live_block_preserves_retained_catchups() {
+    exercise_startup(Startup::InvalidCatchup(2001), true).await;
+}
+
+#[tokio::test]
 async fn startup_same_catchup_without_other_requests() {
     exercise_startup(Startup::SameCatchup, false).await;
 }
@@ -187,6 +197,7 @@ enum Startup {
     ClampedCatchup,
     CoreClampedCatchup,
     SameCatchup,
+    InvalidCatchup(i64),
 }
 
 async fn exercise_startup(startup: Startup, previous_requests: bool) {
@@ -206,6 +217,12 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         let identity = format!("host-listener-consumer.{}", chain_id.as_u64());
         let manual = match startup {
             Startup::NoFlags => ManualCatchupArgs::default(),
+            Startup::InvalidCatchup(from) => ManualCatchupArgs {
+                catchup_from_block: Some(from),
+                // An invalid replacement must leave earlier requests intact even
+                // without --no-override-catchup.
+                ..Default::default()
+            },
             Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup | Startup::SameCatchup => ManualCatchupArgs {
                 catchup_from_block: Some(-100),
                 catchup_up_to_block: matches!(startup, Startup::ClampedCatchup | Startup::CoreClampedCatchup).then_some(2100),
@@ -296,7 +313,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
                 "retained requests must resume while the new range waits for a live block");
             pending_requests.push(request);
         }
-        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup)
+        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup | Startup::InvalidCatchup(_))
             || (matches!(startup, Startup::NoFlags) && !previous_requests)
         {
             publisher.publish(
@@ -316,6 +333,30 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             };
             expected.push((id, 1900, if matches!(startup, Startup::ClampedCatchup | Startup::CoreClampedCatchup) { 2000 } else { 1999 }));
+        }
+        if let Startup::InvalidCatchup(from) = startup {
+            loop {
+                let failed: Option<(i64, i64, String, bool, bool, bool)> = sqlx::query_as(
+                    "SELECT block_start, block_end, failure_reason, request_pending, cancel_pending,
+                            owner_id IS NULL AND lease_until IS NULL
+                     FROM host_consumer_catchups
+                     WHERE chain_id = $1 AND consumer_id = $2 AND status = 'FAILED'",
+                ).bind(chain_id.as_i64()).bind(&identity).fetch_optional(&pool).await.unwrap();
+                if let Some((start, end, reason, request_pending, cancel_pending, unowned)) = failed {
+                    assert_eq!((start, end), (from, 1999));
+                    assert!(reason.contains("at live block 2000"));
+                    assert!(!request_pending && !cancel_pending && unowned);
+                    break;
+                }
+                assert!(!run.is_finished(), "invalid catchup stopped live ingestion");
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+            publisher.publish(
+                &routing::consumer_new_event_routing(identity.clone()),
+                &event_block(chain_id.as_u64(), 2001, BlockFlow::Live, None, false),
+            ).await.unwrap();
+            blocks.push(2001);
+            wait_for_events(&pool, chain_id, &blocks).await;
         }
         let mut actual = Vec::new();
         for _ in 0..expected.len() {
@@ -420,7 +461,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         }
         expected.sort();
         let stored: Vec<(uuid::Uuid, i64, i64, String, bool)> = sqlx::query_as(
-            "SELECT id, block_start, block_end, status, owner_id IS NOT NULL AND lease_until > clock_timestamp() FROM host_consumer_catchups WHERE chain_id = $1 AND consumer_id = $2 ORDER BY id",
+            "SELECT id, block_start, block_end, status, owner_id IS NOT NULL AND lease_until > clock_timestamp() FROM host_consumer_catchups WHERE chain_id = $1 AND consumer_id = $2 AND status <> 'FAILED' ORDER BY id",
         ).bind(chain_id.as_i64()).bind(&identity).fetch_all(&pool).await.unwrap();
         assert_eq!(stored, expected.iter().map(|(id, start, end)|
             (*id, *start as i64, *end as i64, "DONE".to_owned(), false)

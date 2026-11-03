@@ -15,7 +15,16 @@ of the contract set is visible.
 
 Both bounds are inclusive. Nonnegative values are absolute block numbers;
 negative values are offsets from the first live block this process observes,
-saturating at genesis. The omitted end is `-1`. An inverted range is rejected.
+saturating at genesis. The omitted end is `-1`. Explicit inverted absolute
+bounds are rejected at startup. If resolving relative bounds produces an inverted
+range (for example, a start at or above the first LIVE block with the default
+end), the attempt is persisted as `FAILED` with its bounds and `failure_reason`.
+The consumer logs an error and increments
+`host_consumer_catchup_request_failures_total{chain_id,flow}`, while live/finalized
+ingestion and retained catchups continue. A failed replacement does not suppress
+ongoing requests. No command is published for the failed attempt; correct the
+flags and restart to retry manually. The same flags can also be retried against a
+later live reference; failed attempts are never resumed automatically.
 Before first publication, the consumer bounds the end to its highest observed
 FINAL payload for finalized replay, or LIVE payload for `--catchup-unfinalized`.
 It waits for a payload of the appropriate flow if no head has been observed.
@@ -160,7 +169,10 @@ live ingestion retains its existing drift recovery policy.
 
 `ONGOING` means the consumer retains and accepts the request. `SUPPRESSED` means
 it no longer accepts it. `SKIPPED` means its start was above the observed eligible
-head; no replay was published and no deliveries are admitted for that ID. The store supports an idempotent, consumer/chain-scoped
+head; no replay was published and no deliveries are admitted for that ID.
+`FAILED` means the requested bounds resolved to an invalid range; `failure_reason`
+records the error. Failed attempts have no lease or pending commands, and their
+deliveries are rejected with reason `failed`. The store supports an idempotent, consumer/chain-scoped
 `ONGOING` to `DONE` transition that releases ownership,
 and clears pending request publication without overwriting suppression.
 A `DONE` request is no longer resumed at startup, but

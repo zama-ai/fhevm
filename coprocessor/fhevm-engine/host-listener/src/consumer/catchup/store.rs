@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use super::ManualCatchupArgs;
+use super::{InvalidManualCatchupRange, ManualCatchupArgs};
 
 #[derive(Debug)]
 pub struct Request {
@@ -64,7 +64,42 @@ pub async fn ensure_requested(
         let Some(reference) = reference else {
             return Ok(None);
         };
-        let (start, end) = args.resolve(reference)?;
+        let (start, end) = match args.resolve(reference) {
+            Ok(bounds) => bounds,
+            Err(error) => {
+                let Some(range) =
+                    error.downcast_ref::<InvalidManualCatchupRange>()
+                else {
+                    return Err(error);
+                };
+                let start = i64::try_from(range.start)
+                    .context("catchup start exceeds BIGINT")?;
+                let end = i64::try_from(range.end)
+                    .context("catchup end exceeds BIGINT")?;
+                let reason = error.to_string();
+                let id = Uuid::now_v7();
+                sqlx::query!(
+                    "INSERT INTO host_consumer_catchups
+                     (id, chain_id, consumer_id, requested_from, requested_to,
+                      block_start, block_end, finalized, status, failure_reason, request_pending)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'FAILED', $9, FALSE)",
+                    id,
+                    chain_id,
+                    consumer_id,
+                    requested_from,
+                    requested_to,
+                    start,
+                    end,
+                    !args.catchup_unfinalized,
+                    reason,
+                )
+                .execute(&mut *tx)
+                .await?;
+                // A rejected replacement must not suppress valid retained work.
+                tx.commit().await?;
+                return Err(error);
+            }
+        };
         let start =
             i64::try_from(start).context("catchup start exceeds BIGINT")?;
         let end = i64::try_from(end).context("catchup end exceeds BIGINT")?;
@@ -384,6 +419,7 @@ pub enum RejectionReason {
     WrongFlow,
     Suppressed,
     Skipped,
+    Failed,
     Inactive,
 }
 
@@ -397,6 +433,7 @@ impl RejectionReason {
             Self::WrongFlow => "wrong_flow",
             Self::Suppressed => "suppressed",
             Self::Skipped => "skipped",
+            Self::Failed => "failed",
             Self::Inactive => "inactive",
         }
     }
@@ -407,6 +444,7 @@ fn status_rejection_reason(status: Option<&str>) -> Option<RejectionReason> {
         Some("ONGOING" | "DONE") => None,
         Some("SUPPRESSED") => Some(RejectionReason::Suppressed),
         Some("SKIPPED") => Some(RejectionReason::Skipped),
+        Some("FAILED") => Some(RejectionReason::Failed),
         Some(_) => Some(RejectionReason::Inactive),
         None => Some(RejectionReason::UnknownId),
     }
