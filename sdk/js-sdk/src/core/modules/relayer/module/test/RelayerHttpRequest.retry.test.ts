@@ -127,6 +127,7 @@ describe('RelayerHttpRequest retry through run()', () => {
   });
 
   describe('default decision (base class, R14)', () => {
+    // Base class, a 503: no retry, 1 fetch, one error line, no warn, no timer left.
     it('503 relayer-http body → 1 fetch, RelayerHttpResponseError, 1 error line, no warn, no timer', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503(), S200]);
@@ -150,6 +151,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // The base class never retries a relayer-http error, whatever the status: 1 fetch.
     it.each([400, 401, 403, 404, 408, 429, 500, 502, 503, 504])(
       'never retries a %d relayer-http error (1 fetch)',
       async (status) => {
@@ -177,6 +179,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       undefined,
     ];
 
+    // The default retry decision says stop for every code, status and attempt.
     it.each(CODES.map((code) => [String(code), code]))(
       'returns undefined for code %s, every status, attempts 1..5',
       (_l, code) => {
@@ -192,6 +195,7 @@ describe('RelayerHttpRequest retry through run()', () => {
   });
 
   describe('override dispatch', () => {
+    // The override receives the request itself, the exact error run() rejects with, and attempt 1.
     it('calls the override through `this` with the exact thrown error and a 1-based attempt', async () => {
       global.fetch = fetchSequence([S503()]);
       const decide = scriptOf([undefined]);
@@ -208,6 +212,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(attempt).toBe(1);
     });
 
+    // Two concurrent requests with different scripts: each follows its own, attempts counted separately.
     it('two instances with different scripts follow their own script', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503(), S503(), S503(), S503()]);
@@ -230,6 +235,7 @@ describe('RelayerHttpRequest retry through run()', () => {
   });
 
   describe('S23 response sequences', () => {
+    // A 503 then a 200, with one 1000 ms retry: the result after 2 fetches, one retry warn.
     it('503 then 200: 2 fetches, the result, 1 warn, no error line', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503(), S200]);
@@ -248,6 +254,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(logger.error).not.toHaveBeenCalled();
     });
 
+    // Override stops on the first 503: run() rejects after 1 fetch.
     it('stop on the first error: 1 fetch', async () => {
       global.fetch = fetchSequence([S503(), S200]);
 
@@ -255,6 +262,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
+    // Override retries 3 times then stops: rejects with the 4th error, 3 warns, 1 error line.
     it('a script ending after 3 retries: 4 fetches, the last error, one error line', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503('m1'), S503('m2'), S503('m3'), S503('m4'), S200]);
@@ -272,6 +280,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(logger.error).toHaveBeenCalledWith(stopLine('m4'), undefined);
     });
 
+    // Override always says retry: run() still stops at 5 fetches with the 5th error.
     it('an always-retry override stops at 5 fetches (R15)', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503('m1'), S503('m2'), S503('m3'), S503('m4'), S503('m5'), S200]);
@@ -287,6 +296,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(decide).toHaveBeenCalledTimes(4);
     });
 
+    // After a retried 503, a different kind of failure is returned as-is, with no further retry.
     it.each([
       ['non-JSON', { status: 502, body: '<html>bad gateway</html>' }, RelayerHttpFetchError],
       ['a non-relayer JSON error', { status: 500, body: '{"error":"x"}' }, RelayerHttpUnexpectedResponseError],
@@ -306,6 +316,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(decide).toHaveBeenCalledTimes(1);
     });
 
+    // After a retried 503, a network failure with no fetch retries left: RelayerHttpFetchError, no further retry.
     it('503 then a network error (retries exhausted): RelayerHttpFetchError, decide called once', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503(), { reject: new TypeError('fetch failed') }]);
@@ -320,7 +331,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(decide).toHaveBeenCalledTimes(1);
     });
 
-    // The no-parse check itself lives in the attempt tests.
+    // An oversized body on the retried attempt is still rejected as too large.
     it('a retried request still rejects an oversized body', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503(), { status: 200, body: `"${'a'.repeat(MAX_BODY_TEXT_LENGTH - 1)}"` }]);
@@ -338,6 +349,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(decide).toHaveBeenCalledTimes(1);
     });
 
+    // Retry delay longer than the whole timeout: no wait, the 503 error is returned at once.
     it('timeout 500 with a 1000 ms script delay: 1 fetch, no wait, the response error at once', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503(), S200]);
@@ -354,6 +366,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // Retry delay vs time left: waits only if the delay is strictly below it.
     it.each([
       ['equal to', 1000, false],
       ['one below', 999, true],
@@ -375,6 +388,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       }
     });
 
+    // Delay equal to a MAX_TIMEOUT_MS timeout: not strictly below, so no wait (the abort is only a backstop).
     it('timeout MAX_TIMEOUT_MS with a MAX_TIMEOUT_MS delay: no wait (not strictly below)', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503(), S200]);
@@ -392,6 +406,8 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // Override returns an unusable delay (zero, negative, fractional, NaN, infinite, too large, non-number):
+    // stop at once, no wait.
     it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, MAX_TIMEOUT_MS + 1, '10', { valueOf: () => 10 }])(
       'an override returning the invalid delay %s fails closed: 1 fetch, same error type, no timer',
       async (value) => {
@@ -414,6 +430,7 @@ describe('RelayerHttpRequest retry through run()', () => {
   });
 
   describe('decide never sees anything but a RelayerHttpResponseError', () => {
+    // Non-response failures never reach the retry decision: their own error type after 1 fetch.
     it.each([
       ['a network error', { reject: new TypeError('fetch failed') } as Step, RelayerHttpFetchError],
       ['a non-JSON body', { status: 503, body: 'oops' } as Step, RelayerHttpFetchError],
@@ -433,6 +450,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
+    // Our timeout fires during fetch: RelayerHttpTimeoutError, retry decision never asked.
     it('our timeout during fetch: RelayerHttpTimeoutError, decide not called', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence(['pending']);
@@ -447,6 +465,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(decide).not.toHaveBeenCalled();
     });
 
+    // Caller aborts during fetch with a response-error reason: that exact reason, never treated as retryable.
     it('a caller abort whose reason is a RelayerHttpResponseError, during fetch: that reason, decide not called', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence(['pending']);
@@ -466,6 +485,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
+    // Caller signal already aborted with a response-error reason: rejects with it, no fetch.
     it('a caller signal already aborted with a RelayerHttpResponseError: that reason, no fetch, decide not called', async () => {
       global.fetch = fetchSequence([S503()]);
       const decide = vi.fn<Decide>(() => 10);
@@ -483,6 +503,7 @@ describe('RelayerHttpRequest retry through run()', () => {
 
   // S24: abort during the wait between HTTP attempts.
   describe('abort during the wait', () => {
+    // Caller aborts while waiting to retry: rejects with the caller's reason, listener removed, no timer left.
     it.each([
       ['a string', 'user left'],
       ['null', null],
@@ -516,6 +537,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(removeSpy).toHaveBeenCalledWith('abort', addSpy.mock.calls[0]![1]);
     });
 
+    // Caller's own AbortSignal.timeout() fires during the retry wait: its TimeoutError, not ours.
     it("the caller's own AbortSignal.timeout() during the wait → its reason, not RelayerHttpTimeoutError", async () => {
       vi.useFakeTimers();
       vi.spyOn(AbortSignal, 'timeout').mockImplementation(fakeAbortSignalTimeout);
@@ -535,8 +557,8 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
-    // T4: the warn hook moves monotonic time after the S15 check but not past the deadline,
-    // so the sleep's due time lies beyond it; our timer then fires while the sleep is active.
+    // Our timeout fires while waiting to retry: RelayerHttpTimeoutError, listener and timers cleaned up.
+    //   503 ──► warn (clock +500) ──► wait 600 starts ──► +500: our 1000 ms deadline ──► timeout
     it('our timer during the wait → RelayerHttpTimeoutError, 1 fetch, cleanup', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503(), S200]);
@@ -566,7 +588,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       );
     });
 
-    // If the hook itself fires our timer, only the pre-aborted sleep path is exercised.
+    // Our deadline passes inside the warn call, before the wait starts: still RelayerHttpTimeoutError.
     it('our timer fired inside the warn hook (pre-aborted sleep) → RelayerHttpTimeoutError', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503(), S200]);
@@ -589,6 +611,8 @@ describe('RelayerHttpRequest retry through run()', () => {
   // S14 with the real sleep: one synchronous clock advance fires the sleep timer and the abort
   // before the loop resumes, so the next attempt's fetch path sees the abort and never fetches.
   describe('abort between the end of the wait and the next fetch (real sleep)', () => {
+    // Wait ends and the caller aborts in the same clock jump: the next attempt sees the abort, no 2nd fetch.
+    //   503 ──► wait 100 ──► +150: wait over + caller aborts ──► run() rejects with the caller's reason
     it.each([
       ['a string', 'late'],
       ['null', null],
@@ -622,6 +646,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(removeSpy).toHaveBeenCalledTimes(1);
     });
 
+    // The 950 ms wait ends and our 1000 ms deadline passes in the same clock jump: timeout, no 2nd fetch.
     it('our timer → RelayerHttpTimeoutError, classified by the next attempt, 1 fetch', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503(), S200]);
@@ -649,6 +674,7 @@ describe('RelayerHttpRequest retry through run()', () => {
 
   // S25
   describe('cleanup after a run that retried', () => {
+    // After a run that retried, success or failure: caller listener added once and removed, no timer left.
     it.each([
       ['a retried success', [S503(), S503(), S200], [10, 10], true, 20],
       ['a retried failure', [S503(), S503()], [10, undefined], false, 10],
@@ -679,7 +705,7 @@ describe('RelayerHttpRequest retry through run()', () => {
     );
   });
 
-  // The init is built once: what the caller mutates during the wait never reaches the next attempt.
+  // Caller mutates payload, auth, headers and query during the wait: the retry sends the original request.
   it('payload, auth, headers and query mutated during the wait: identical bodies, headers and urls', async () => {
     vi.useFakeTimers();
     global.fetch = fetchSequence([S503(), S200]);
@@ -712,7 +738,7 @@ describe('RelayerHttpRequest retry through run()', () => {
     expect(new Headers(calls[1]![1].headers).get('authorization')).toBe('Bearer token-1');
   });
 
-  // A payload's toJSON runs once per run(), however many attempts follow.
+  // Three attempts: the payload is serialized (toJSON) only once.
   it('serializes the payload once for all attempts (toJSON called once)', async () => {
     vi.useFakeTimers();
     global.fetch = fetchSequence([S503(), S503(), S200]);
@@ -726,7 +752,7 @@ describe('RelayerHttpRequest retry through run()', () => {
     expect(toJSON).toHaveBeenCalledTimes(1);
   });
 
-  // Log hygiene: options.query never leaks into the retry warn nor the stop error line.
+  // options.query (may hold secrets) never appears in the retry warn or the final error line.
   it('logs the query-less url in the retry warn and the stop error line when options.query is set', async () => {
     vi.useFakeTimers();
     global.fetch = fetchSequence([S503('m1'), S503('m2')]);
@@ -749,6 +775,7 @@ describe('RelayerHttpRequest retry through run()', () => {
     }
   });
 
+  // PUBLIC_DECRYPT retries too: a 503 then a 200 returns the public result.
   it('retries a PUBLIC_DECRYPT request: 503 then 200 returns the public result', async () => {
     vi.useFakeTimers();
     const publicResult = { decryptedValue: '00'.repeat(31) + '2a', signatures: ['ab'.repeat(65)], extraData: '0x00' };
@@ -768,6 +795,7 @@ describe('RelayerHttpRequest retry through run()', () => {
     expect(decide.mock.calls.map(([, , attempt]) => attempt)).toEqual([1]);
   });
 
+  // Network retries restart inside each attempt: network fail, 503, network fail, 200 → success after 4 fetches.
   it('runs the network retries inside each HTTP attempt (counter restarts per attempt)', async () => {
     vi.useFakeTimers();
     const network = (): Step => ({ reject: new TypeError('fetch failed') });
@@ -783,6 +811,7 @@ describe('RelayerHttpRequest retry through run()', () => {
   describe('S8 one-shot run()', () => {
     const MESSAGE = 'RelayerHttpRequest.run() was already called on this instance. Create a new instance per request.';
 
+    // run() called again after it settled: rejects at once, no new fetch.
     it('rejects a second run() after the first settled, without fetching', async () => {
       global.fetch = fetchSequence([S200]);
       const request = scripted(scriptOf([]));
@@ -792,6 +821,7 @@ describe('RelayerHttpRequest retry through run()', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
+    // run() called again during the retry wait: rejects, while the first run still succeeds.
     it('rejects a second run() during the wait; the first one still retries and succeeds', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503(), S200]);

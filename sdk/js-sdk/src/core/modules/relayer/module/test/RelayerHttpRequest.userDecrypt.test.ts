@@ -35,10 +35,12 @@ describe('RelayerHttpRequest user-decrypt success body', () => {
     vi.restoreAllMocks();
   });
 
+  // A valid body with wrapped shares: run() resolves to the share array.
   it('returns the share array of a valid body', async () => {
     await expect(_run(_successBody({ result: VALID_SHARES }))).resolves.toEqual(VALID_SHARES);
   });
 
+  // A malformed success body (status, requestId, wrapping or share field): RelayerHttpResultError with the url.
   it.each([
     ['status is not succeeded', { ..._successBody({ result: VALID_SHARES }), status: 'failed' }],
     ['requestId is not a UUIDv7', { ..._successBody({ result: VALID_SHARES }), requestId: 'abc' }],

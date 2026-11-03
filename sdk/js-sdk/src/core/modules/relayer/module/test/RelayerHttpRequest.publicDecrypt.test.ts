@@ -34,15 +34,18 @@ describe('RelayerHttpRequest public-decrypt success body', () => {
     vi.restoreAllMocks();
   });
 
+  // A valid public-decrypt body: run() resolves to the result object.
   it('returns the result object of a valid body', async () => {
     await expect(_run(_successBody(VALID_RESULT))).resolves.toEqual(VALID_RESULT);
   });
 
+  // An empty extraData ('0x') is valid.
   it('accepts an empty extraData (0x)', async () => {
     const result = { ...VALID_RESULT, extraData: '0x' };
     await expect(_run(_successBody(result))).resolves.toEqual(result);
   });
 
+  // A malformed success body (status, requestId, result shape or field format): RelayerHttpResultError with the url.
   it.each([
     ['status is not succeeded', { ..._successBody(VALID_RESULT), status: 'failed' }],
     ['requestId is not a UUIDv7', { ..._successBody(VALID_RESULT), requestId: 'abc' }],

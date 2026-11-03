@@ -87,6 +87,7 @@ describe('runRelayerHttpRetryLoop', () => {
     vi.useRealTimers();
   });
 
+  // First attempt succeeds: its result, with no decision, wait or log line.
   it('returns the first attempt result without deciding, waiting or logging', async () => {
     const h = makeHarness();
     h.runAttempt.mockResolvedValueOnce('ok');
@@ -98,6 +99,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(h.logger.error).not.toHaveBeenCalled();
   });
 
+  // A failure, then success after a 1000 ms decided delay: second run only after the full delay, one retry warn.
   it('retries after the decided delay, then returns: 2 runs, 1 warn, decide(sameError, 1)', async () => {
     vi.useFakeTimers();
     const h = makeHarness();
@@ -121,6 +123,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // Decision returns undefined: stops and rethrows the same error, one error line, no wait.
   it('stops on undefined: 1 run, the same instance, one error line with cause undefined, no wait', async () => {
     vi.useFakeTimers();
     const h = makeHarness();
@@ -138,6 +141,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // Three failures: each decision gets that attempt's error and its 1-based attempt number.
   it('passes a fresh error and the 1-based attempt number to each decision', async () => {
     vi.useFakeTimers();
     const h = makeHarness();
@@ -159,6 +163,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(h.logger.error).toHaveBeenCalledWith(stopLine('e3'), undefined);
   });
 
+  // A retry, then a non-relayer error on attempt 2: that error rethrown as is, no second decision.
   it.each([
     ['RelayerHttpFetchError', (): unknown => new RelayerHttpFetchError({ url: RELAYER_URL, message: 'net' })],
     [
@@ -190,7 +195,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(h.logger.error).not.toHaveBeenCalled();
   });
 
-  // Guard 2: never retry, never log, never decide for anything but a RelayerHttpResponseError.
+  // Anything but a real RelayerHttpResponseError (look-alikes included): rethrown at once, no decision, no log.
   it.each([
     ['a TypeError', new TypeError('x')],
     ['a RelayerHttpTimeoutError', new RelayerHttpTimeoutError({ url: RELAYER_URL, timeoutMs: 1 })],
@@ -216,7 +221,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(h.logger.warn).not.toHaveBeenCalled();
   });
 
-  // R15: never more than 5 HTTP attempts, whatever decide says.
+  // Decision always retries: stops at 5 attempts, rethrowing the 5th error with one error line.
   it('stops an always-retry decision at 5 runs with the 5th error, decide called for attempts 1..4 only', async () => {
     vi.useFakeTimers();
     const h = makeHarness();
@@ -239,6 +244,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // Retry delay at its maximum: the 5-attempt ceiling still holds.
   it('keeps the ceiling with the largest valid delay (timers not run past attempt 5)', async () => {
     vi.useFakeTimers();
     const h = makeHarness();
@@ -256,8 +262,9 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  // S17: fail closed, no coercion. A stop means: 1 run, same instance, one error line, no warn, no timer.
   const valueOfSpy = vi.fn(() => 1000);
+  // Decision returns an invalid delay (out of range, non-integer, non-number): stop at once,
+  // no wait, no coercion, one error line.
   it.each([
     ['0', 0],
     ['-1', -1],
@@ -298,6 +305,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(valueOfSpy).not.toHaveBeenCalled();
   });
 
+  // Smallest and largest valid delays are accepted: a retry warn and one armed wait.
   it.each([1, MAX_TIMEOUT_MS])('accepts a %d ms delay without a timeout (one wait armed)', async (delay) => {
     vi.useFakeTimers();
     const h = makeHarness();
@@ -317,7 +325,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  // S15: wait only when delay < remaining.
+  // Retry only when the 1000 ms delay is strictly below the remaining time; otherwise stop with the error.
   it.each([
     ['remaining > delay', 1001, true],
     ['remaining === delay', 1000, false],
@@ -347,6 +355,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // Remaining time is re-read at each decision: once it drops to 1000 ms, the second failure stops.
   it('reads the remaining time when deciding to wait, not once per run', async () => {
     vi.useFakeTimers();
     let remaining = 5000;
@@ -365,7 +374,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(h.runAttempt).toHaveBeenCalledTimes(2);
   });
 
-  // Guard 1: an aborted run is never retried, even when the reason is a RelayerHttpResponseError.
+  // Signal already aborted with a RelayerHttpResponseError reason: rethrown, never retried, no decision.
   it('aborted signal whose reason is a RelayerHttpResponseError: rethrows it, decide not called', async () => {
     const reason = responseError('caller reason');
     const h = makeHarness();
@@ -380,6 +389,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(h.logger.error).not.toHaveBeenCalled();
   });
 
+  // Signal already aborted: the attempt's own error is rethrown (not the abort reason), no decision.
   it('aborted signal: rethrows the caught value itself (not the reason), decide not called', async () => {
     const caught = responseError('from the attempt');
     const h = makeHarness();
@@ -392,7 +402,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(h.logger.error).not.toHaveBeenCalled();
   });
 
-  // Guards 1 and 2 run before the ceiling: on the 5th failure they rethrow without the stop line.
+  // 5th attempt fails with an abort or a non-relayer error: that error rethrown, without the ceiling's error line.
   it.each([
     ['an aborted signal', true, (): unknown => responseError('fifth')],
     ['a non-response error', false, (): unknown => new TypeError('fifth')],
@@ -420,6 +430,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(h.logger.error).not.toHaveBeenCalled();
   });
 
+  // Decision throws: that error propagates as is, no wait, no log.
   it('a decide throw propagates unchanged: 1 run, no wait', async () => {
     vi.useFakeTimers();
     const h = makeHarness();
@@ -436,6 +447,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // Decision throws a RelayerHttpResponseError: it propagates and is never retried.
   it('a decide throwing a RelayerHttpResponseError: that instance propagates, never retried', async () => {
     const h = makeHarness();
     const fromDecide = responseError('from decide');
@@ -450,6 +462,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(h.logger.error).not.toHaveBeenCalled();
   });
 
+  // Decision throws null: null propagates as is.
   it('a decide throw of a non-Error value (null) propagates unchanged', async () => {
     const h = makeHarness();
     h.runAttempt.mockRejectedValueOnce(responseError());
@@ -470,6 +483,7 @@ describe('runRelayerHttpRetryLoop', () => {
   describe('guard order before the fit check', () => {
     const REMAINING_MS = 60_000;
 
+    // Abort, non-relayer error or throwing decision: exits before reading the remaining time, no error line.
     it.each([
       ['an aborted signal (guard 1)', 'abort'],
       ['a non-response error (guard 2)', 'non-response'],
@@ -500,7 +514,7 @@ describe('runRelayerHttpRetryLoop', () => {
       expect(h.runAttempt).toHaveBeenCalledTimes(1);
     });
 
-    // A delay that would fit the remaining time still stops: the range check (guard 6) comes first.
+    // Decision stops or returns an invalid delay: stops before reading the remaining time, though plenty is left.
     it.each([
       ['undefined (guard 5)', undefined],
       ['0 (guard 6)', 0],
@@ -524,7 +538,7 @@ describe('runRelayerHttpRetryLoop', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
-    // The ceiling (guard 3) stops the 5th failure before decide (guard 4) and the fit check (guard 7).
+    // 5th failure: the ceiling stops the loop before the decision or the remaining-time check runs.
     it('the 5th failure consults neither decide nor the remaining time', async () => {
       vi.useFakeTimers();
       const remainingMs = vi.fn(() => REMAINING_MS);
@@ -549,6 +563,7 @@ describe('runRelayerHttpRetryLoop', () => {
     });
   });
 
+  // Two failures then success: runAttempt called afresh each time, 3 calls.
   it('calls runAttempt again for each attempt (fresh attempt per call)', async () => {
     vi.useFakeTimers();
     const h = makeHarness();
@@ -565,6 +580,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(h.runAttempt).toHaveBeenCalledTimes(3);
   });
 
+  // No logger: a retry still works.
   it('works without a logger', async () => {
     vi.useFakeTimers();
     const h = makeHarness({ logger: undefined });
@@ -578,6 +594,7 @@ describe('runRelayerHttpRetryLoop', () => {
   });
 
   describe('aborts and hooks around the wait', () => {
+    // Caller aborts during the retry wait: the caller's reason, no further attempt, an abort warn.
     it('caller abort during the wait → the reason, no further run, no timer', async () => {
       vi.useFakeTimers();
       const h = makeHarness();
@@ -596,6 +613,7 @@ describe('runRelayerHttpRetryLoop', () => {
       );
     });
 
+    // Our timer fires during the retry wait: RelayerHttpTimeoutError carrying the timeout.
     it('our-timer abort during the wait (stub timedOutAfterMs) → RelayerHttpTimeoutError', async () => {
       vi.useFakeTimers();
       let fired: number | undefined;
@@ -614,6 +632,7 @@ describe('runRelayerHttpRetryLoop', () => {
       expect(h.runAttempt).toHaveBeenCalledTimes(1);
     });
 
+    // Decision aborts but returns a delay: the wait rejects with the abort reason at once.
     it('a decide that aborts the signal and returns a delay: the wait sees the abort', async () => {
       vi.useFakeTimers();
       const h = makeHarness();
@@ -628,6 +647,7 @@ describe('runRelayerHttpRetryLoop', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // Retry warn hook aborts: the wait rejects with the abort reason at once.
     it('a warn hook that aborts the signal: the wait sees the abort', async () => {
       vi.useFakeTimers();
       const h = makeHarness();
@@ -673,6 +693,7 @@ describe('runRelayerHttpRetryLoop', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // Our timer already fired when the wait starts: RelayerHttpTimeoutError, no timer armed.
     it('our timer already fired when the wait starts (stub timedOutAfterMs) → RelayerHttpTimeoutError', async () => {
       vi.useFakeTimers();
       let fired: number | undefined;
@@ -705,6 +726,7 @@ describe('runRelayerHttpRetryLoop', () => {
       expect(h.runAttempt).toHaveBeenCalledTimes(1);
     });
 
+    // Warn hook advances the clock 400 ms: the retry still waits the full 1000 ms from the sleep start.
     it('a warn hook that advances time: the full delay still elapses from the start of the sleep', async () => {
       vi.useFakeTimers();
       const h = makeHarness();
@@ -723,8 +745,8 @@ describe('runRelayerHttpRetryLoop', () => {
       expect(h.runAttempt).toHaveBeenCalledTimes(2);
     });
 
-    // Abort after the wait resolved, before the next attempt: the loop starts the attempt,
-    // whose own fetchWithRetry.throwIfAborted() catches it (S14); guard 1 then rethrows.
+    // Abort after the wait ends, before the next attempt: that attempt runs, sees the abort, and its throw is rethrown.
+    //   attempt 1 fails ──► wait ends ──► caller aborts ──► attempt 2 throws ──► rejects 'between'
     it('abort between the end of the wait and the next attempt: next attempt runs, its throw is rethrown', async () => {
       vi.useFakeTimers();
       const h = makeHarness();
@@ -748,6 +770,7 @@ describe('runRelayerHttpRetryLoop', () => {
     });
   });
 
+  // 50 retry loops in a row: no timer left behind.
   it('runs many loops back to back without leaving a timer', async () => {
     vi.useFakeTimers();
     for (let i = 0; i < 50; i++) {
@@ -782,6 +805,7 @@ describe('waitBeforeHttpRetry', () => {
     });
   }
 
+  // Resolves only once the full delay has passed, leaving no timer or abort listener.
   it('resolves after the delay, not before, and leaves no timer nor listener', async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -802,6 +826,7 @@ describe('waitBeforeHttpRetry', () => {
     expect(removeSpy).toHaveBeenCalledTimes(addSpy.mock.calls.length);
   });
 
+  // Sleeps for the given delay on the given signal.
   it('sleeps on the given signal with the given delay', async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -813,6 +838,7 @@ describe('waitBeforeHttpRetry', () => {
     expect(abortableSleep).toHaveBeenLastCalledWith(42, controller.signal);
   });
 
+  // Caller aborts during the sleep, whatever the reason: that exact reason, timer released, an abort warn.
   it.each([
     ['a string', 'user left'],
     ['null', null],
@@ -840,6 +866,7 @@ describe('waitBeforeHttpRetry', () => {
     );
   });
 
+  // Our timer fires during the sleep: RelayerHttpTimeoutError and a timeout warn.
   it('our-timer abort (stub timedOutAfterMs) during the sleep → RelayerHttpTimeoutError', async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -861,6 +888,7 @@ describe('waitBeforeHttpRetry', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // Signal already aborted: rejects at once with its reason, no timer.
   it('an already-aborted signal rejects at once with the reason and arms no timer', async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -870,6 +898,7 @@ describe('waitBeforeHttpRetry', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // No logger: an abort still rejects with the reason.
   it('works without a logger', async () => {
     const controller = new AbortController();
     controller.abort('gone');
@@ -877,7 +906,7 @@ describe('waitBeforeHttpRetry', () => {
     expect(await wait(controller, { logger: undefined }).catch((e: unknown) => e)).toBe('gone');
   });
 
-  // Fallback: a sleep rejection on a live signal is never swallowed nor re-wrapped.
+  // Sleep rejects while the signal is still live: that value rethrown as is, no warn.
   it.each([
     ['an Error', new Error('sleep broke')],
     ['undefined', undefined],
@@ -896,6 +925,7 @@ describe('waitBeforeHttpRetry', () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
+  // Sleep throws synchronously while the signal is live: that error rethrown as is.
   it('rethrows unchanged when abortableSleep throws synchronously on a live signal', async () => {
     const controller = new AbortController();
     const syncError = new Error('sync throw');

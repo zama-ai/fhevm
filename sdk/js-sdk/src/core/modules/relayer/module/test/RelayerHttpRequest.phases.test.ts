@@ -141,6 +141,8 @@ describe('RelayerHttpRequest abort in every phase', () => {
     ['an Error', new Error('cancelled')],
     ['a caller DOMException TimeoutError', new DOMException('Caller timed out', 'TimeoutError')],
   ])('caller abort with %s', (_label, reason) => {
+    // Caller aborts in any phase of a retrying run: run() rejects with the caller's exact reason,
+    // never RelayerHttpTimeoutError; no extra fetch, timer and listener cleaned up.
     it.each(PHASES)('$phase → the reason unchanged', async ({ steps, reachedAtMs, fetchCalls, decisions }) => {
       vi.useFakeTimers();
       global.fetch = fetchSequence(steps);
@@ -169,7 +171,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
   });
 
   describe('our timer', () => {
-    // The wait phase is excluded: S15 admits only delay < remaining; see the T4 test below.
+    // Our timeout fires in any phase but the wait (covered below): RelayerHttpTimeoutError, nothing left behind.
     it.each(PHASES.filter(({ phase }) => !phase.includes('wait')))(
       '$phase → RelayerHttpTimeoutError',
       async ({ steps, reachedAtMs, fetchCalls, decisions }) => {
@@ -195,7 +197,8 @@ describe('RelayerHttpRequest abort in every phase', () => {
       },
     );
 
-    // T4: time moves after the S15 check (warn hook) without reaching the deadline.
+    // Our deadline hits during the wait between attempts: RelayerHttpTimeoutError, no second fetch.
+    //   fetch 503 ──► warn 'Retrying in' (clock jumps near deadline) ──► wait ──► deadline ──► reject
     it('during the wait between attempts → RelayerHttpTimeoutError', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503, S200]);
@@ -233,6 +236,8 @@ describe('RelayerHttpRequest abort in every phase', () => {
       });
     }
 
+    // Caller aborts right after the wait ends, before the next fetch: run() rejects with the reason, 1 fetch only.
+    //   fetch 503 ──► wait ends ──► caller aborts ──► no 2nd fetch ──► reject reason
     it.each([
       ['a string', 'user left'],
       ['null', null],
@@ -256,6 +261,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // Our deadline passes right after the wait ends, before the next fetch: RelayerHttpTimeoutError, 1 fetch only.
     it('our timer → RelayerHttpTimeoutError, no second fetch', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503, S200]);
@@ -274,6 +280,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
   });
 
   describe('caller signal already aborted', () => {
+    // Caller signal already aborted: run() rejects with its reason, no fetch, no retry decision, nothing left behind.
     it.each([
       ['a string', 'gone'],
       ['null', null],
@@ -299,7 +306,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
       expect(removeSpy.mock.calls.length).toBeGreaterThanOrEqual(addSpy.mock.calls.length);
     });
 
-    // abort() without a reason: the platform's DOMException AbortError is passed through.
+    // abort() without a reason: run() rejects with the platform's AbortError, unchanged.
     it('without a reason → the platform AbortError instance, unchanged', async () => {
       global.fetch = fetchSequence([S503]);
       const controller = new AbortController();
@@ -316,6 +323,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
 
   // Tie-break documentation (fake-timer FIFO, not a design rule): the timer armed first fires first.
   describe('caller abort vs our timer at the same instant (during fetch)', () => {
+    // Caller abort and our timeout due at the same instant, caller's timer armed first: the caller's reason wins.
     it('the caller timer armed first wins: caller reason', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence(['pending']);
@@ -330,6 +338,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
       expect(await run).toBe('caller first');
     });
 
+    // Same instant, our timer armed first: RelayerHttpTimeoutError wins.
     it('our timer armed first wins: RelayerHttpTimeoutError', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence(['pending']);
@@ -344,6 +353,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
       expect(await run).toBeInstanceOf(RelayerHttpTimeoutError);
     });
 
+    // The caller's own AbortSignal.timeout() fires: its reason comes back, never RelayerHttpTimeoutError.
     it("the caller's own AbortSignal.timeout() is never reported as our timeout", async () => {
       vi.useFakeTimers();
       vi.spyOn(AbortSignal, 'timeout').mockImplementation(fakeAbortSignalTimeout);
@@ -362,6 +372,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
   });
 
   describe('timeout bounds', () => {
+    // No timeout option: no timer is armed; only the caller's abort ends the run.
     it('without a timeout: no timer is armed during the run', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence(['pending']);
@@ -377,6 +388,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
       expect(await run).toBe('done');
     });
 
+    // timeout 1 ms: RelayerHttpTimeoutError after 1 ms.
     it('timeout 1 ms → RelayerHttpTimeoutError after 1 ms', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence(['pending']);
@@ -391,6 +403,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
       expect((error as RelayerHttpTimeoutError).timeoutMs).toBe(1);
     });
 
+    // timeout MAX_TIMEOUT_MS: still pending 1 ms before the deadline, RelayerHttpTimeoutError exactly at it.
     it('timeout MAX_TIMEOUT_MS fires exactly at the deadline, not 1 ms early', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence(['pending']);
@@ -411,7 +424,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
       expect((error as RelayerHttpTimeoutError).timeoutMs).toBe(MAX_TIMEOUT_MS);
     });
 
-    // R3: options.timeout bounds the whole run, all attempts and waits included.
+    // The timeout bounds the whole run: two 503s with waits, then a hung fetch, all stopped at 250 ms.
     it('bounds the whole run across attempts and waits', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503, S503, 'pending']);
@@ -425,6 +438,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
       expect(request.decisions).toEqual([1, 2]);
     });
 
+    // The system clock jumps 10 minutes ahead: the timeout is unaffected and the retry succeeds.
     it('a system-clock jump does not shorten nor extend the timeout', async () => {
       vi.useFakeTimers();
       global.fetch = fetchSequence([S503, S200]);

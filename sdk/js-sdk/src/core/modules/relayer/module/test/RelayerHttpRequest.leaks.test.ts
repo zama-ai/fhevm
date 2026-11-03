@@ -423,6 +423,7 @@ describe('RelayerHttpRequest leaves nothing behind', () => {
     vi.useRealTimers();
   });
 
+  // For every way a run can end: no timer pending and every abort listener released.
   it.each(EXITS)('after $name: no pending timer, every signal listener released', async (exit) => {
     vi.useFakeTimers();
     const tracker = trackSignalListeners();
@@ -437,6 +438,7 @@ describe('RelayerHttpRequest leaves nothing behind', () => {
     expect(tracker.unreleased()).toBe(0);
   });
 
+  // For every exit with a live caller signal: exactly one listener added on it, and removed.
   it.each(EXITS.filter((exit) => exit.preAborted !== true))(
     'after $name: exactly one listener added on the caller signal, and removed',
     async (exit) => {
@@ -452,6 +454,7 @@ describe('RelayerHttpRequest leaves nothing behind', () => {
     },
   );
 
+  // After a run settled, aborting the caller signal no longer affects the signal given to fetch.
   it('after a settled run, a late caller abort no longer reaches the combined signal', async () => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -471,7 +474,8 @@ describe('RelayerHttpRequest leaves nothing behind', () => {
     expect(combinedSignal.aborted).toBe(false);
   });
 
-  // A non-compliant fetch (polyfill, custom wrapper) that never honors the signal.
+  // A fetch or body read that ignores the signal (non-compliant polyfill):
+  // our timeout still removes the caller listener.
   it.each([
     { name: 'fetch', response: () => new Promise<Response>(() => {}) },
     {
@@ -502,6 +506,7 @@ describe('RelayerHttpRequest leaves nothing behind', () => {
     },
   );
 
+  // Same hung fetch or body read, but the caller aborts: our timeout timer is cleared at once.
   it.each([
     { name: 'fetch', response: () => new Promise<Response>(() => {}) },
     {
@@ -529,6 +534,7 @@ describe('RelayerHttpRequest leaves nothing behind', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // Caller's AbortSignal.timeout() expired before run(): its reason, no fetch, nothing left behind.
   it("a caller's AbortSignal.timeout() already expired before run(): its reason, no fetch, nothing left behind", async () => {
     vi.useFakeTimers();
     vi.spyOn(AbortSignal, 'timeout').mockImplementation(fakeAbortSignalTimeout);
@@ -561,6 +567,7 @@ describe('RelayerHttpRequest leaves nothing behind', () => {
     expect(onCaller(tracker.removeSpy)).toBeGreaterThanOrEqual(onCaller(tracker.addSpy));
   });
 
+  // Every exit run 4 times on one shared caller signal: listeners balanced, no timer left.
   it('many sequential runs sharing one caller signal: listeners balanced, no timer', async () => {
     vi.useFakeTimers();
     // One prototype-level tracker sees every signal; the caller's calls are picked out by `this`.
@@ -583,6 +590,7 @@ describe('RelayerHttpRequest leaves nothing behind', () => {
     expect(tracker.unreleased()).toBe(0);
   });
 
+  // 25 concurrent runs, each retrying once: all succeed, no timer, every listener released.
   it('many concurrent retrying runs: no timer, every listener released', async () => {
     vi.useFakeTimers();
     const tracker = trackSignalListeners();

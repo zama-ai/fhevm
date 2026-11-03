@@ -19,6 +19,7 @@ describe('RelayerHttpRequest error responses', () => {
     vi.restoreAllMocks();
   });
 
+  // A 403 with a valid relayer-http error body: RelayerHttpResponseError keeping status, code, message, requestId.
   it('throws RelayerHttpResponseError for a valid relayer-http error body, keeping its fields', async () => {
     const body = { code: 'acl_denied', message: 'not allowed', requestId: VALID_REQUEST_ID };
     global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 403 }));
@@ -35,8 +36,7 @@ describe('RelayerHttpRequest error responses', () => {
     expect(responseError.requestId).toBe(VALID_REQUEST_ID);
   });
 
-  // Any body that misses part of relayer-http's own { code, message, requestId }
-  // contract did not come from relayer-http itself.
+  // A 403 body breaking the { code, message, requestId } contract: RelayerHttpUnexpectedResponseError, raw body kept.
   it.each([
     ['code missing', { message: 'not allowed', requestId: VALID_REQUEST_ID }],
     ['code empty', { code: '', message: 'not allowed', requestId: VALID_REQUEST_ID }],
@@ -60,8 +60,7 @@ describe('RelayerHttpRequest error responses', () => {
     expect(unexpectedError.body).toBe(text);
   });
 
-  // Bug: JSON.parse('null') returns null, and the non-2xx branch reads
-  // bodyJson.code on it, throwing a raw TypeError instead of a typed error.
+  // A 502 whose body is JSON null: RelayerHttpUnexpectedResponseError, not a raw TypeError.
   it('throws RelayerHttpUnexpectedResponseError for a non-2xx response whose body is JSON null', async () => {
     global.fetch = vi.fn().mockResolvedValue(new Response('null', { status: 502 }));
 
@@ -75,6 +74,7 @@ describe('RelayerHttpRequest error responses', () => {
   // Each body below is a valid JSON string, so without the check it gets parsed.
   const MAX_BODY_TEXT_LENGTH = 10 * 1024 * 1024;
 
+  // A 200 body one character over 10 Mi: RelayerHttpFetchError 'too large', never parsed.
   it('throws RelayerHttpFetchError without parsing a body over the size limit', async () => {
     const body = `"${'a'.repeat(MAX_BODY_TEXT_LENGTH - 1)}"`;
     global.fetch = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
@@ -89,6 +89,7 @@ describe('RelayerHttpRequest error responses', () => {
     expect(parseSpy).not.toHaveBeenCalled();
   });
 
+  // A 200 body of exactly 10 Mi characters: parsed normally.
   it('parses a body exactly at the size limit', async () => {
     const body = `"${'a'.repeat(MAX_BODY_TEXT_LENGTH - 2)}"`;
     global.fetch = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
@@ -100,6 +101,7 @@ describe('RelayerHttpRequest error responses', () => {
     expect(parseSpy).toHaveBeenCalledTimes(1);
   });
 
+  // Body stream fails during the read: RelayerHttpFetchError keeping the 200 status and the stream error as cause.
   it('throws RelayerHttpFetchError keeping the status and cause when reading the body fails', async () => {
     const streamError = new TypeError('terminated');
     const body = new ReadableStream<Uint8Array>({

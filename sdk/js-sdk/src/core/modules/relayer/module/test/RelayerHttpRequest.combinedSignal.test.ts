@@ -79,6 +79,7 @@ function nextTick(): Promise<void> {
 }
 
 describe('relayerHttpSignal MAX_TIMEOUT_MS', () => {
+  // The cap equals setTimeout's largest allowed delay.
   it("is setTimeout's largest delay (2^31 - 1 ms)", () => {
     expect(MAX_TIMEOUT_MS).toBe(2_147_483_647);
   });
@@ -90,6 +91,7 @@ describe('createRelayerHttpSignal', () => {
     vi.useRealTimers();
   });
 
+  // No caller signal, no timeout: a live signal, no timer, no remaining time.
   it('without a caller signal nor a timeout: live signal, no timer, no remaining time', () => {
     vi.useFakeTimers();
     const combined = createRelayerHttpSignal(undefined, undefined);
@@ -103,6 +105,7 @@ describe('createRelayerHttpSignal', () => {
     expect(combined.signal.aborted).toBe(false);
   });
 
+  // The combined signal is always a new signal, never the caller's.
   it('never returns the caller signal itself', () => {
     const controller = new AbortController();
     const combined = createRelayerHttpSignal(controller.signal, undefined);
@@ -111,6 +114,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // Caller signal already aborted: the combined signal starts aborted with the same reason, nothing left after cleanup.
   it.each(callerReasons())('forwards a caller signal already aborted with %s, unchanged', (_label, reason) => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -132,7 +136,7 @@ describe('createRelayerHttpSignal', () => {
     }
   });
 
-  // abort() with no argument: the platform substitutes a DOMException AbortError.
+  // Caller aborted with no reason: the platform's AbortError is forwarded as-is.
   it('forwards a caller signal already aborted without a reason (platform AbortError)', () => {
     const controller = new AbortController();
     controller.abort();
@@ -144,6 +148,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // A signal from AbortSignal.abort(reason) is forwarded already aborted with that reason.
   it('forwards a caller signal created by AbortSignal.abort(reason)', () => {
     const callerSignal = AbortSignal.abort('pre-aborted');
 
@@ -154,6 +159,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // Caller aborts later: the combined signal aborts with the same reason, not counted as our timeout.
   it.each(callerReasons())('forwards a later caller abort with %s, unchanged', (_label, reason) => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -168,6 +174,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // Caller's own AbortSignal.timeout() fires: forwarded as the caller's reason, not our timeout.
   it("forwards the caller's own AbortSignal.timeout() reason, not as our timeout", () => {
     vi.useFakeTimers();
     vi.spyOn(AbortSignal, 'timeout').mockImplementation(fakeAbortSignalTimeout);
@@ -182,6 +189,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // A live caller signal gets exactly one abort listener.
   it('adds exactly one listener on a live caller signal', () => {
     const controller = new AbortController();
     const addSpy = vi.spyOn(controller.signal, 'addEventListener');
@@ -193,6 +201,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // Our timer: still live at 499 ms, TimeoutError and timedOutAfterMs at 500 ms.
   it('aborts with a TimeoutError and reports timedOutAfterMs once OUR timer fires, not before', () => {
     vi.useFakeTimers();
     const combined = createRelayerHttpSignal(undefined, 500);
@@ -209,6 +218,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // A 1 ms timeout fires after 1 ms.
   it('honors the smallest timeout (1 ms)', () => {
     vi.useFakeTimers();
     const combined = createRelayerHttpSignal(undefined, 1);
@@ -220,6 +230,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // The maximum timeout counts down correctly and fires only at the very end.
   it('honors the largest timeout (MAX_TIMEOUT_MS) without firing early', () => {
     vi.useFakeTimers();
     const combined = createRelayerHttpSignal(undefined, MAX_TIMEOUT_MS);
@@ -234,6 +245,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // Caller aborts before our timer: caller reason kept, our later timer changes nothing.
   it('keeps the caller reason when the caller aborts first (our timer fires later)', () => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -248,6 +260,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // Our timer fires before the caller aborts: our timeout kept.
   it('keeps our timeout when our timer fires first (the caller aborts later)', () => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -261,7 +274,8 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
-  // Tie-break documentation (fake-timer FIFO, not a design rule): at the same due time, the timer created first fires first.
+  // Caller timer and ours due at the same instant, caller's armed first: caller reason wins (fake-timer FIFO).
+  //   caller setTimeout(500) ──► our timer(500) ──► +500: caller fires first ──► 'caller first'
   it('keeps the caller reason when a caller timer due at the same instant was armed before ours', () => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -275,6 +289,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // Same instant, but ours armed first: our timeout wins.
   it('keeps our timeout when a caller timer due at the same instant was armed after ours', () => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -288,6 +303,7 @@ describe('createRelayerHttpSignal', () => {
     combined.cleanup();
   });
 
+  // Caller signal already aborted, then our timer comes due: still the caller's abort, not a timeout.
   it('a pre-aborted caller signal is never reclassified as our timeout when the timer is due', () => {
     vi.useFakeTimers();
     const controller = new AbortController();
@@ -302,6 +318,7 @@ describe('createRelayerHttpSignal', () => {
   });
 
   describe('remainingMs', () => {
+    // No timeout: remainingMs stays undefined.
     it('is undefined without a timeout, whatever time elapses', () => {
       vi.useFakeTimers();
       const combined = createRelayerHttpSignal(undefined, undefined);
@@ -312,6 +329,7 @@ describe('createRelayerHttpSignal', () => {
       combined.cleanup();
     });
 
+    // remainingMs counts down from the timeout as time passes.
     it('starts at the timeout and decreases as monotonic time elapses', () => {
       vi.useFakeTimers();
       const combined = createRelayerHttpSignal(undefined, 1000);
@@ -324,6 +342,7 @@ describe('createRelayerHttpSignal', () => {
       combined.cleanup();
     });
 
+    // remainingMs never goes up between reads.
     it('never increases between two reads', () => {
       vi.useFakeTimers();
       const combined = createRelayerHttpSignal(undefined, 1000);
@@ -338,6 +357,7 @@ describe('createRelayerHttpSignal', () => {
       combined.cleanup();
     });
 
+    // remainingMs bottoms out at 0: at and past the deadline, and after cleanup.
     it('never goes below 0, at and past the deadline, and after cleanup', () => {
       vi.useFakeTimers();
       const combined = createRelayerHttpSignal(undefined, 1000);
@@ -351,6 +371,7 @@ describe('createRelayerHttpSignal', () => {
       expect(combined.remainingMs()).toBe(0);
     });
 
+    // A wall-clock jump changes neither remainingMs nor the timer.
     it.each([
       ['forward', 1_000_000_000],
       ['backward', -1_000_000_000],
@@ -368,6 +389,7 @@ describe('createRelayerHttpSignal', () => {
   });
 
   describe('cleanup', () => {
+    // cleanup removes the caller listener and clears our timer.
     it('removes the listener it added on the caller signal and clears our timer', () => {
       vi.useFakeTimers();
       const controller = new AbortController();
@@ -382,6 +404,7 @@ describe('createRelayerHttpSignal', () => {
       expect(removeSpy).toHaveBeenCalledWith(type, handler);
     });
 
+    // After cleanup, neither a caller abort nor the old deadline aborts the combined signal.
     it('stops forwarding: neither a later caller abort nor the old deadline aborts the signal', () => {
       vi.useFakeTimers();
       const controller = new AbortController();
@@ -395,6 +418,7 @@ describe('createRelayerHttpSignal', () => {
       expect(combined.timedOutAfterMs()).toBeUndefined();
     });
 
+    // Calling cleanup twice is harmless and arms nothing.
     it('is idempotent: a second call neither throws nor re-arms anything', () => {
       vi.useFakeTimers();
       const controller = new AbortController();
@@ -410,6 +434,7 @@ describe('createRelayerHttpSignal', () => {
       expect(combined.signal.aborted).toBe(false);
     });
 
+    // cleanup after our timer already fired is harmless.
     it('is safe after our timer already fired', () => {
       vi.useFakeTimers();
       const combined = createRelayerHttpSignal(undefined, 10);
@@ -420,6 +445,7 @@ describe('createRelayerHttpSignal', () => {
       expect(combined.timedOutAfterMs()).toBe(10);
     });
 
+    // 100 signals created and cleaned up on one caller signal: listeners balanced, no timer left.
     it('leaves nothing behind across many signals sharing one long-lived caller signal', () => {
       vi.useFakeTimers();
       const controller = new AbortController();
@@ -440,6 +466,7 @@ describe('createRelayerHttpSignal', () => {
   });
 
   describe('release on abort', () => {
+    // Our timer aborts only the combined signal, never the caller's.
     it('our timer never aborts the caller signal', () => {
       vi.useFakeTimers();
       const controller = new AbortController();
@@ -454,6 +481,7 @@ describe('createRelayerHttpSignal', () => {
       combined.cleanup();
     });
 
+    // Caller signal already aborted: our timer stays armed until cleanup.
     it('a pre-aborted caller signal still arms our timer until cleanup', () => {
       vi.useFakeTimers();
       const controller = new AbortController();
@@ -465,6 +493,7 @@ describe('createRelayerHttpSignal', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // Another caller listener throws on abort: forwarding and release still happen; the throw surfaces as uncaught.
     it('a throwing listener on the caller signal blocks neither forwarding nor release', async () => {
       vi.useFakeTimers();
       const trap = trapUncaughtExceptions();
@@ -490,6 +519,7 @@ describe('createRelayerHttpSignal', () => {
       }
     });
 
+    // A listener on the combined signal throws: release still happens; the throw surfaces as uncaught.
     it('a throwing listener on the combined signal does not block release', async () => {
       vi.useFakeTimers();
       const trap = trapUncaughtExceptions();
@@ -532,6 +562,7 @@ describe('throwIfRelayerHttpAborted', () => {
     );
   }
 
+  // Live signal: returns, logs nothing.
   it('returns without logging when the signal is live', () => {
     const logger = makeLogger();
 
@@ -540,10 +571,12 @@ describe('throwIfRelayerHttpAborted', () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 
+  // Live signal: returns even if timedOutAfterMs reports a value.
   it('returns when the signal is live even if timedOutAfterMs reports a value', () => {
     expect(check(new AbortController().signal, 500)).toBe(RETURNED);
   });
 
+  // Aborted by our timer: throws RelayerHttpTimeoutError and warns once, naming the phase.
   it.each(['', ' while reading the response body', ' while waiting to retry'])(
     'throws RelayerHttpTimeoutError when OUR timer aborted (during=%j) and warns once',
     (during) => {
@@ -561,6 +594,7 @@ describe('throwIfRelayerHttpAborted', () => {
     },
   );
 
+  // Aborted by the caller: rethrows the caller's reason as-is and warns once.
   it.each(callerReasons())('rethrows a caller reason that is %s, unchanged, and warns once', (_label, reason) => {
     const logger = makeLogger();
     const controller = new AbortController();
@@ -576,12 +610,14 @@ describe('throwIfRelayerHttpAborted', () => {
     );
   });
 
+  // timedOutAfterMs decides: our timeout wins even when the reason is a response error.
   it('classifies by timedOutAfterMs, not by the reason: our timer wins over a RelayerHttpResponseError reason', () => {
     const signal = AbortSignal.abort(responseError());
 
     expect(check(signal, 250)).toBeInstanceOf(RelayerHttpTimeoutError);
   });
 
+  // Works with no logger, or with a logger whose warn is undefined.
   it('works without a logger, and with a logger whose warn is undefined', () => {
     const signal = AbortSignal.abort('gone');
 

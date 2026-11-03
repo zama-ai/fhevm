@@ -190,6 +190,7 @@ describe('abort', () => {
       ['no reason (AbortError)', (c) => c.abort()],
     ];
 
+    // Caller signal already aborted: run() rejects with that exact reason and never fetches.
     it.each(reasons)('rejects with the reason (%s) without fetching', async (_label, abort) => {
       const fetchMock = stubFetch(publicOk);
       const controller = new AbortController();
@@ -201,6 +202,7 @@ describe('abort', () => {
       expect(outcome.timers).toBe(0);
       expect(fetchMock).not.toHaveBeenCalled();
     });
+    // Pre-aborted caller with a 1 ms timeout configured: rejects with the caller's reason, not a timeout error.
     it('a pre-aborted caller is not a timeout, even with a timeout configured', async () => {
       stubFetch();
       const controller = new AbortController();
@@ -224,6 +226,7 @@ describe('abort', () => {
       ['an invalid auth header', {}, { auth: { type: 'BearerToken', token: 'a\nb' } }],
     ];
 
+    // Pre-aborted caller and a request that would fail to build: the caller's reason wins, no fetch.
     it.each(buildThrows)(
       'the reason wins over a build throw (%s), without fetching',
       async (_label, payload, options) => {
@@ -248,6 +251,7 @@ describe('abort', () => {
   });
 
   describe('abort during fetch', () => {
+    // Caller aborts while fetch hangs: run() rejects with the caller's own reason, one warn, no error log.
     it.each(callerReasons)('caller abort with %s rejects with that reason and one warn', async (_label, make) => {
       const fetchMock = stubFetch((init) => untilAborted(init?.signal));
       const { logger, warn, error } = makeLogger();
@@ -267,6 +271,7 @@ describe('abort', () => {
       expect(error).not.toHaveBeenCalled();
     });
 
+    // Fetch hangs with a 500 ms timeout: still pending at 499 ms, RelayerHttpTimeoutError at 500 ms.
     it('our timer rejects with RelayerHttpTimeoutError at the deadline, not before', async () => {
       stubFetch((init) => untilAborted(init?.signal));
       const { logger, warn } = makeLogger();
@@ -283,6 +288,8 @@ describe('abort', () => {
       expect(warn).toHaveBeenCalledTimes(1);
     });
 
+    // Caller aborts with an old RelayerHttpResponseError as reason: rejected with that same object,
+    // never handed to the retry decision, one warn.
     it('a caller reason that is itself a RelayerHttpResponseError passes through by identity, with a single warn line', async () => {
       const first = new RelayerHttpRequest({ relayerOperation: 'PUBLIC_DECRYPT', url: URL_, payload: {} });
       stubFetch(relayerError);
@@ -309,6 +316,7 @@ describe('abort', () => {
       return new TextResponse(OK_TEXT, 200, undefined, () => untilAborted(init?.signal));
     }
 
+    // Caller aborts while the body is being read: rejects with the caller's reason; the warn names the body-read phase.
     it.each(callerReasons)('caller abort with %s rejects with the reason', async (_label, make) => {
       stubFetch(slowBody);
       const { logger, warn } = makeLogger();
@@ -326,6 +334,7 @@ describe('abort', () => {
       expect(warn.mock.calls[0]?.[0]).toContain(' while reading the response body');
     });
 
+    // Body read hangs past the 300 ms timeout: RelayerHttpTimeoutError; the warn names the body-read phase.
     it('our timer rejects with RelayerHttpTimeoutError', async () => {
       stubFetch(slowBody);
       const { logger, warn } = makeLogger();
@@ -342,6 +351,7 @@ describe('abort', () => {
   });
 
   describe('abort from hooks at the stop', () => {
+    // Retry decision aborts the caller then asks for a delay: rejects with the abort reason, no second fetch.
     it('abort inside a decision returning a delay: the abort wins and no second fetch starts', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const controller = new AbortController();
@@ -361,6 +371,7 @@ describe('abort', () => {
   });
 
   describe('abort during the wait between attempts', () => {
+    // Caller aborts during the wait between attempts: rejects with the reason, no second fetch, wait-phase warn.
     it.each(callerReasons)('caller abort with %s rejects with the reason, no second fetch', async (_label, make) => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const { logger, warn, error } = makeLogger();
@@ -381,6 +392,7 @@ describe('abort', () => {
       expect(error).not.toHaveBeenCalled();
     });
 
+    // Abort reason whose name getter throws, during the wait: still rejects with that reason at once.
     it('caller abort with a reason whose name getter throws rejects with the reason, no second fetch', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const controller = new AbortController();
@@ -405,6 +417,8 @@ describe('abort', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // Timeout expires during the wait between attempts: RelayerHttpTimeoutError, no second fetch.
+    //   fetch ──► 503 ──► retry warn (clock +600 ms) ──► wait 500 ms ──► t=1000 timeout ──► rejects
     it('our timer during the wait rejects with RelayerHttpTimeoutError', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const events: string[] = [];
@@ -432,6 +446,8 @@ describe('abort', () => {
       expect(warn.mock.calls[1]?.[0]).toContain(WAIT_PHASE);
     });
 
+    // Caller abort and the wait's timer due at the same instant, abort armed first: the wait rejects with the reason.
+    //   503 ──► warn arms abort@200 ──► wait arms timer@200 ──► t=200 abort fires first ──► rejects
     it('a caller abort armed before the wait and due when it ends is seen by the wait', async () => {
       const controller = new AbortController();
       const fetchMock = stubFetch(relayerError, publicOk);
@@ -456,7 +472,8 @@ describe('abort', () => {
   });
 
   describe('abort between the end of the wait and the next fetch', () => {
-    // A synchronous advance fires the wait's timer; the abort lands before the loop resumes.
+    // Caller aborts after the wait's timer fired, before the next fetch: rejects with the reason, no second fetch.
+    //   503 ──► wait 200 ms ──► timer fires (sync advance) ──► caller aborts ──► next attempt rejects
     it.each(callerReasons)(
       'caller abort with %s: the next attempt rejects with the reason before fetching',
       async (_label, make) => {
@@ -483,6 +500,7 @@ describe('abort', () => {
       },
     );
 
+    // Wait ends at 999 ms, timeout fires at 1000 ms before the next fetch: RelayerHttpTimeoutError, one fetch.
     it('our timer due just after the wait ends: RelayerHttpTimeoutError before the next fetch', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const { logger, warn } = makeLogger();
@@ -508,6 +526,7 @@ describe('abort', () => {
     }
     const retryOptions: RelayerCommonOptions = { fetchRetries: 1, fetchRetryDelayInMilliseconds: 10_000 };
 
+    // Caller aborts during the network-retry delay: settles at once with the reason, no second fetch, no decision.
     it.each(callerReasons)(
       'caller abort with %s settles at once with the reason, no second fetch',
       async (_label, make) => {
@@ -536,6 +555,7 @@ describe('abort', () => {
       },
     );
 
+    // Abort reason whose name getter throws, during the network-retry delay: settles at once with that reason.
     it('caller abort with a reason whose name getter throws settles at once with the reason, no second fetch', async () => {
       const fetchMock = networkThenOk();
       const decide = vi.fn<Script>(() => 10);
@@ -563,6 +583,7 @@ describe('abort', () => {
       expect(decide).not.toHaveBeenCalled();
     });
 
+    // Timeout expires during a 10 s network-retry delay: RelayerHttpTimeoutError at 500 ms, no second fetch.
     it('our timer during the network-retry delay rejects with RelayerHttpTimeoutError', async () => {
       const fetchMock = networkThenOk();
       const events: string[] = [];
@@ -581,6 +602,7 @@ describe('abort', () => {
   });
 
   describe('failures on a live signal are not aborts', () => {
+    // Fetch rejects with an AbortError while the caller signal is live: a RelayerHttpFetchError, not an abort.
     it('a fetch rejecting with an AbortError while the signal is live is a fetch error', async () => {
       const controller = new AbortController();
       stubFetch(() => Promise.reject(new DOMException('aborted elsewhere', 'AbortError')));
@@ -594,6 +616,7 @@ describe('abort', () => {
       expect(outcome.timers).toBe(0);
     });
 
+    // Body read of a 503 fails while the signal is live: RelayerHttpFetchError, retry decision never called.
     it('a body read rejecting while the signal is live is a fetch error, never a decision', async () => {
       const fetchMock = stubFetch(
         () => new TextResponse(ERROR_TEXT, 503, undefined, () => Promise.reject(new TypeError('reset'))),
@@ -610,6 +633,8 @@ describe('abort', () => {
   });
   describe('abort precedence and lifetime', () => {
     for (const phase of ['fetch', 'body'] as const) {
+      // Caller aborts while blocked in fetch or in the body read: rejects with the exact reason (any type),
+      // one warn, no decision, listener and timers cleaned up.
       it.each(['caller', null, new DOMException('caller timeout', 'TimeoutError'), { source: 'caller' }])(
         `preserves caller reason during ${phase}: %j`,
         async (reason) => {
@@ -648,6 +673,9 @@ describe('abort', () => {
       );
     }
 
+    // Caller abort and timeout both due at 100 ms: whichever timer was armed first wins.
+    //   caller-first: abort armed ──► run() arms timeout ──► t=100 ──► caller reason
+    //   timer-first:  run() arms timeout ──► abort armed ──► t=100 ──► RelayerHttpTimeoutError
     it.each(['caller-first', 'timer-first'])('keeps the first abort at the same deadline: %s', async (order) => {
       const context = setup();
       const events: string[] = [];
@@ -693,6 +721,7 @@ describe('abort', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // Shared signal aborted during a first request: a later request on it rejects with the same reason, no fetch.
     it('a later request on an aborted shared signal rejects without another fetch', async () => {
       const context = setup();
       const entered = deferred<void>();
@@ -931,6 +960,7 @@ describe('leaks', () => {
       return () => [ofType(add), ofType(remove)];
     }
 
+    // While the fetch is pending: one timer only if a timeout is set, one caller listener; removed after abort.
     it.each([
       [5000, 1],
       [undefined, 0],
@@ -954,6 +984,7 @@ describe('leaks', () => {
   });
 
   describe('resources at settlement', () => {
+    // Every outcome path (success, failures, aborts, timeouts): no timer left and the one caller listener removed.
     it.each(scenarios)('$name: zero timers and the caller listener removed once', async (scenario) => {
       const controller = new AbortController();
       const add = vi.spyOn(controller.signal, 'addEventListener');
@@ -992,6 +1023,7 @@ describe('leaks', () => {
       expect.soft(snapshot.removed[0] === snapshot.added[0], 'same listener removed').toBe(true);
     });
 
+    // Pre-aborted caller signal: rejects with its reason, no fetch, no timer, no listener left behind.
     it('a pre-aborted caller signal leaves no timer and no listener', async () => {
       const controller = new AbortController();
       controller.abort('early');
@@ -1020,6 +1052,7 @@ describe('leaks', () => {
       expect.soft(added.filter((l) => !removed.includes(l)).length, 'listeners left').toBe(0);
     });
 
+    // No caller signal, retry then failure: no timer left at settlement.
     it('a run without a caller signal leaves no timer after a retried failure', async () => {
       vi.stubGlobal('fetch', fetchFor([relayerError, relayerError]));
       const request = new ScriptedRequest({
@@ -1039,6 +1072,7 @@ describe('leaks', () => {
       expect(await out).toBe(0);
     });
 
+    // Successful run with a timeout: the timeout never fires afterwards (no warn, no timer).
     it('the timeout does not fire after a successful run settles', async () => {
       vi.stubGlobal('fetch', fetchFor([ok]));
       const warn = vi.fn();
@@ -1056,6 +1090,7 @@ describe('leaks', () => {
       expect(warn).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
     });
+    // After settlement, a caller abort is not forwarded to the fetch signal and logs nothing.
     it('the caller listener is gone: a later abort is not forwarded to the fetch signal and logs nothing', async () => {
       const controller = new AbortController();
       const add = vi.spyOn(controller.signal, 'addEventListener');
@@ -1087,6 +1122,7 @@ describe('leaks', () => {
       expect(error).not.toHaveBeenCalled();
     });
 
+    // A second run() on a settled request rejects and adds no listener or timer.
     it('a second run() does not add a listener or a timer', async () => {
       const controller = new AbortController();
       const add = vi.spyOn(controller.signal, 'addEventListener');
@@ -1131,6 +1167,7 @@ describe('races', () => {
   }
 
   describe('caller abort and our timer at the same instant', () => {
+    // Caller abort and timeout both due at 500 ms, caller scheduled first: rejects with the caller's reason.
     it('the caller abort scheduled first wins', async () => {
       stubFetch((init) => untilAborted(init?.signal));
       const controller = new AbortController();
@@ -1144,6 +1181,7 @@ describe('races', () => {
       expect(result).toEqual({ status: 'rejected', reason: 'caller first' });
     });
 
+    // Timeout armed by run() before a caller abort due at the same 500 ms: RelayerHttpTimeoutError wins.
     it('our timer, armed first, wins over a caller abort due at the same time', async () => {
       stubFetch((init) => untilAborted(init?.signal));
       const controller = new AbortController();
@@ -1160,6 +1198,7 @@ describe('races', () => {
   });
 
   describe('abort issued right after run() returns', () => {
+    // Caller aborts synchronously right after run() returns: rejects with the reason, no timer left.
     it('synchronously: the run rejects with the reason', async () => {
       stubFetch((init) => untilAborted(init?.signal));
       const controller = new AbortController();
@@ -1173,6 +1212,7 @@ describe('races', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // Caller aborts one microtask after run() returns: rejects with the reason, no timer left.
     it('in the next microtask: the run rejects with the reason', async () => {
       stubFetch((init) => untilAborted(init?.signal));
       const controller = new AbortController();
@@ -1188,6 +1228,7 @@ describe('races', () => {
   });
 
   describe('gated orderings after the response arrived', () => {
+    // Abort arrives after run() already rejected with a response error: the error stands, no extra log.
     it('settlement observed first, abort after: the response error stands and nothing more is logged', async () => {
       stubFetch(() => new TextResponse(ERROR_TEXT, 503));
       const controller = new AbortController();
@@ -1206,6 +1247,7 @@ describe('races', () => {
   });
 
   describe('forced orderings', () => {
+    // Fetch aborts the caller then rejects with a network error: the caller's reason wins.
     it('abort inside fetch that then rejects with another error: the caller reason wins', async () => {
       const controller = new AbortController();
       stubFetch(() => {
@@ -1216,6 +1258,7 @@ describe('races', () => {
       await expect(scripted(makeLogger().logger, { signal: controller.signal }).run()).rejects.toBe('caller reason');
     });
 
+    // Caller aborts in the .then of a successful run: the result stands, nothing logged.
     it('abort after settlement, in the same tick: the result stands and nothing is logged', async () => {
       stubFetch(() => new TextResponse(OK_TEXT, 200));
       const controller = new AbortController();
@@ -1237,6 +1280,8 @@ describe('races', () => {
       expect(warn).not.toHaveBeenCalled();
     });
 
+    // One 503 retry: events happen in strict order.
+    //   fetch ──► decide(1) ──► warn ──► wait 100 ms ──► fetch ──► settled
     it('a retry follows a strict order: fetch, decide, warn, wait, fetch, settle', async () => {
       const events: string[] = [];
       const steps = [() => new TextResponse(ERROR_TEXT, 503), () => new TextResponse(OK_TEXT, 200)];
@@ -1291,6 +1336,7 @@ describe('reentrancy', () => {
   }
 
   describe('second run()', () => {
+    // Second run() while the first is in flight: rejects without fetching; the first still resolves.
     it('rejects while the first run is pending, without fetching; the first run completes', async () => {
       let release: (r: Response) => void = () => undefined;
       const fetchMock = stubFetch(() => new Promise<Response>((resolve) => (release = resolve)));
@@ -1305,6 +1351,7 @@ describe('reentrancy', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // Second run() after a success: rejects without a new fetch.
     it('rejects after a successful run, without fetching again', async () => {
       const fetchMock = stubFetch(publicOk, publicOk);
       const request = scripted();
@@ -1314,6 +1361,7 @@ describe('reentrancy', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // Second run() after a failure: rejects with a new error, not the first failure, no new fetch.
     it('rejects after a failed run, with an error that is not the first failure', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const request = scripted();
@@ -1328,6 +1376,7 @@ describe('reentrancy', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // Repeated run() calls on a used request: the same non-empty error message each time.
     it('gives the same message on every rejected second call', async () => {
       stubFetch(publicOk);
       const request = scripted();
@@ -1340,6 +1389,7 @@ describe('reentrancy', () => {
       expect(a.message.length).toBeGreaterThan(0);
     });
 
+    // A rejected second run() adds no caller listener and no timer.
     it('does not touch the caller signal listeners', async () => {
       stubFetch(publicOk);
       const controller = new AbortController();
@@ -1356,6 +1406,7 @@ describe('reentrancy', () => {
   });
 
   describe('re-entry from hooks', () => {
+    // run() re-entered from inside fetch: the inner call rejects, the outer run resolves.
     it('run() called from inside fetch rejects; the outer run completes', async () => {
       let inner: unknown = 'not called';
       const request = scripted();
@@ -1369,6 +1420,7 @@ describe('reentrancy', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // run() re-entered from the retry decision: the inner call rejects, the retry still happens and succeeds.
     it('run() called from inside the decision rejects; the decision still drives the retry', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const request = scripted();
@@ -1386,6 +1438,7 @@ describe('reentrancy', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    // run() re-entered from the retry warn: the inner call rejects, the outer run resolves.
     it('run() called from inside the retry warn rejects; the outer run completes', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
       let inner: Promise<unknown> | undefined;
@@ -1408,6 +1461,7 @@ describe('reentrancy', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    // A retry decision that runs a different instance: both instances resolve independently.
     it('a decision that runs another instance gets that instance result independently', async () => {
       const fetchMock = stubFetch(relayerError, publicOk, publicOk);
       const other = scripted();
@@ -1428,6 +1482,7 @@ describe('reentrancy', () => {
   });
 
   describe('hooks that abort', () => {
+    // Retry warn hook aborts the caller: the wait rejects with that reason, no second fetch.
     it('the logger.warn hook aborting the caller on the retry line: the wait rejects with the reason', async () => {
       const controller = new AbortController();
       const fetchMock = stubFetch(relayerError, publicOk);
@@ -1449,6 +1504,7 @@ describe('reentrancy', () => {
   });
 
   describe('caller signal shared across instances', () => {
+    // Two pending requests on one signal: one abort rejects both with the same reason; both listeners removed.
     it('one abort rejects both pending instances with the same reason', async () => {
       stubFetch(
         (init) => untilAborted(init?.signal),
@@ -1472,6 +1528,7 @@ describe('reentrancy', () => {
       expect(spies.removed()).toBe(2);
     });
 
+    // Shared signal: a finished request ignores a later abort; only the pending one rejects.
     it('a settled instance is not affected by a later abort of the shared signal', async () => {
       stubFetch(publicOk, (init) => untilAborted(init?.signal));
       const controller = new AbortController();
@@ -1494,6 +1551,7 @@ describe('reentrancy', () => {
       expect(spies.removed()).toBe(2);
     });
 
+    // Request A's decision aborts the shared signal: request B, still pending, rejects with A's reason.
     it('an abort from inside one instance decision rejects the other pending instance', async () => {
       const fetchMock = stubFetch(relayerError, (init) => untilAborted(init?.signal));
       const controller = new AbortController();
@@ -1509,6 +1567,7 @@ describe('reentrancy', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    // Shared signal, one done and one in flight: the abort rejects only the in-flight one; the done fetch signal stays live.
     it('a completed request no longer reacts to the shared signal; the in-flight one does', async () => {
       const controller = new AbortController();
       const add = vi.spyOn(controller.signal, 'addEventListener');
@@ -1539,6 +1598,7 @@ describe('reentrancy', () => {
       expect(warn).toHaveBeenCalledTimes(1);
     });
 
+    // New request on a signal already aborted by another request: rejects with that reason, no fetch.
     it('a request created on a signal aborted by another request lifetime rejects without fetching', async () => {
       const controller = new AbortController();
       const fetchMock = stubFetch((init) => untilAborted(init?.signal));
@@ -1642,6 +1702,7 @@ describe('retry', () => {
   }
 
   describe('default decision (base class)', () => {
+    // Base class on a relayer 503: one fetch, rejects with the parsed RelayerHttpResponseError, one error log.
     it('makes one fetch and throws the relayer-http error with one error line', async () => {
       const fetchMock = stubFetch(() => relayerError(503, 'overloaded', rid(1), 'busy'));
       const { logger, warn, error } = makeLogger();
@@ -1670,6 +1731,7 @@ describe('retry', () => {
     const codes = [...KNOWN_RELAYER_HTTP_ERROR_CODES, 'some_future_code'];
     const pairs = statuses.flatMap((status) => codes.map((code) => [status, code] as const));
 
+    // Default decision never retries: undefined for every status, code and attempt 1..5.
     it.each(pairs)('returns undefined for status %i, code %s and attempts 1..5', async (status, code) => {
       const fetchMock = stubFetch(() => relayerError(status, code));
       const seen: Array<number | undefined> = [];
@@ -1693,6 +1755,7 @@ describe('retry', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // First-try success: the public-decrypt result, decision never called, nothing logged.
     it('returns the public-decrypt result on a first-try success without calling the decision', async () => {
       const fetchMock = stubFetch(publicOk);
       const { logger, warn, error } = makeLogger();
@@ -1706,6 +1769,7 @@ describe('retry', () => {
       expect(error).not.toHaveBeenCalled();
     });
 
+    // User-decrypt success returns the result items.
     it('returns the user-decrypt result items', async () => {
       stubFetch(userOk);
       const request = new RelayerHttpRequest({ relayerOperation: 'USER_DECRYPT', url: URL_, payload: {} });
@@ -1713,6 +1777,7 @@ describe('retry', () => {
       await expect(request.run()).resolves.toEqual(USER_RESULT);
     });
 
+    // User-decrypt success with a wrong result shape: RelayerHttpResultError caused by InvalidPropertyError.
     it.each([
       ['a public-decrypt result', { result: PUBLIC_RESULT }],
       ['a result that is not an array', { result: { result: USER_RESULT[0] } }],
@@ -1729,6 +1794,7 @@ describe('retry', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // User-decrypt subclass retrying once: a 503 then a 200 returns the items after 2 fetches.
     it('a user-decrypt override retries a relayer-http error, then returns the items', async () => {
       const fetchMock = stubFetch(() => relayerError(503, 'overloaded', rid(9)), userOk);
       const calls: Array<[string | undefined, number]> = [];
@@ -1750,6 +1816,7 @@ describe('retry', () => {
   });
 
   describe('override dispatch', () => {
+    // The decision receives the exact rejected error instance and attempt 1.
     it('calls the override with the exact error instance and the 1-based attempt', async () => {
       stubFetch(() => relayerError(503, 'overloaded', rid(1)));
       const script = delays(undefined);
@@ -1761,6 +1828,7 @@ describe('retry', () => {
       expect(script.calls[0]?.[1]).toBe(1);
     });
 
+    // Two instances with different scripts: each uses its own decision (one retries and succeeds, one stops).
     it('dispatches per instance: two instances with different scripts', async () => {
       const fetchMock = stubFetch(
         () => relayerError(503, 'overloaded', rid(101)),
@@ -1783,6 +1851,7 @@ describe('retry', () => {
       expect(scriptB.calls.map(([e, n]) => [e.requestId, n])).toEqual([[rid(102), 1]]);
       expect(fetchMock).toHaveBeenCalledTimes(3);
     });
+    // Two interleaved instances: their decisions and attempt counts stay independent; both clean up.
     it('dispatches independent decisions for two interleaved instances', async () => {
       const left = withCallerSignal();
       const right = withCallerSignal();
@@ -1808,6 +1877,7 @@ describe('retry', () => {
   });
 
   describe('retry then outcome', () => {
+    // A 503 then a 200, with one 250 ms retry: the result after 2 fetches, one warn, no error.
     it('retries a 503 then returns the 200 result, with one warn and no error line', async () => {
       const fetchMock = stubFetch(() => relayerError(503, 'overloaded', rid(1), 'busy'), publicOk);
       const { logger, warn, error } = makeLogger();
@@ -1824,6 +1894,7 @@ describe('retry', () => {
       expect(error).not.toHaveBeenCalled();
     });
 
+    // The retry warn line has the exact expected format.
     it('writes the exact retry warn line with status, code, requestId, message, delay and attempt', async () => {
       stubFetch(() => relayerError(429, 'rate_limited', rid(7), 'slow down'), publicOk);
       const { logger, warn } = makeLogger();
@@ -1835,6 +1906,7 @@ describe('retry', () => {
       expect(warn.mock.calls).toEqual([[retryLine(429, 'rate_limited', rid(7), 'slow down', 1234, 1)]]);
     });
 
+    // The query is sent in the fetch URL but kept out of the warn and error lines.
     it('keeps the query out of the retry and stop lines', async () => {
       const fetchMock = stubFetch(
         () => relayerError(503, 'overloaded', rid(1), 'busy'),
@@ -1855,6 +1927,7 @@ describe('retry', () => {
       expect(error.mock.calls[0]?.[0]).not.toContain('sepolia');
     });
 
+    // The next fetch starts exactly at the decided delay: not at 99 ms, at 100 ms.
     it('waits exactly the decided delay before the next fetch', async () => {
       const fetchMock = stubFetch(() => relayerError(), publicOk);
 
@@ -1866,6 +1939,7 @@ describe('retry', () => {
       expect((await out).ok).toBe(true);
     });
 
+    // Script retries 3 times then stops: 4 fetches, rejects with the last error, 3 warns, 1 error.
     it('stops when the script ends after 3 retries and throws the last error', async () => {
       const fetchMock = stubFetch(
         () => relayerError(503, 'overloaded', rid(1)),
@@ -1903,6 +1977,7 @@ describe('retry', () => {
       ],
     ];
 
+    // A 503 retried, then a non-relayer failure: that failure's type is kept, no second decision.
     it.each(otherFailures)(
       'retries then keeps the type of %s, without a second decision',
       async (_label, second, type) => {
@@ -1937,6 +2012,7 @@ describe('retry', () => {
       ],
     ];
 
+    // A non-relayer failure on the first attempt: its type is kept, decision never called, one error log.
     it.each(firstAttemptFailures)(
       '%s on the first attempt keeps its type and never reaches the decision',
       async (_name, respond, type) => {
@@ -1968,6 +2044,7 @@ describe('retry', () => {
     ];
 
     for (const testCase of afterRetryFailures) {
+      // After one retry, a failed or oversized body read: RelayerHttpFetchError, no second decision, cleanup done.
       it(`never consults the decision for ${testCase.label}, after retry=true`, async () => {
         const controller = new AbortController();
         const add = vi.spyOn(controller.signal, 'addEventListener');
@@ -1994,6 +2071,7 @@ describe('retry', () => {
       });
     }
 
+    // A 200 with a wrong result shape: RelayerHttpResultError with an InvalidPropertyError cause.
     it('wraps a result schema mismatch with an InvalidPropertyError cause', async () => {
       stubFetch(() => new TextResponse(JSON.stringify({ status: 'succeeded', requestId: rid(0), result: {} }), 200));
 
@@ -2003,6 +2081,7 @@ describe('retry', () => {
       expect((reason as Error).cause).toBeInstanceOf(InvalidPropertyError);
     });
 
+    // Decision throws a value: run() rejects with that exact value after one fetch.
     it('propagates a value thrown by the decision unchanged, after one fetch', async () => {
       const fetchMock = stubFetch(() => relayerError());
       const thrown = { marker: 'decide-throws' };
@@ -2019,6 +2098,7 @@ describe('retry', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // Decision throws any value (null, string, Error): rejects with it unchanged, cleanup done.
     it.each([null, 'hook failure', new Error('hook failure')])(
       'propagates a throwing decision unchanged: %j',
       async (reason) => {
@@ -2037,6 +2117,7 @@ describe('retry', () => {
       },
     );
 
+    // Network retries run inside one HTTP attempt: network error, 503, 200 gives success after 3 fetches.
     it('runs network retries inside an HTTP attempt', async () => {
       const fetchMock = stubFetch(
         () => Promise.reject(new TypeError('network down')),
@@ -2051,6 +2132,8 @@ describe('retry', () => {
       expect(await out).toMatchObject({ ok: true, value: PUBLIC_RESULT });
       expect(fetchMock).toHaveBeenCalledTimes(3);
     });
+    // The network retry allowance restarts in each HTTP attempt; every fetch shares one signal.
+    //   offline ──► net retry ──► 503 ──► decide 20 ms ──► offline ──► net retry ──► 200
     it('restarts the network retry allowance inside each HTTP attempt', async () => {
       const context = withCallerSignal({ fetchRetries: 1, fetchRetryDelayInMilliseconds: 10 });
       context.decision.mockReturnValueOnce(20);
@@ -2077,6 +2160,7 @@ describe('retry', () => {
   });
 
   describe('attempt ceiling', () => {
+    // Decision always retries: stops after 5 attempts and rejects with the 5th error.
     it('never starts a 6th attempt, whatever the decision says', async () => {
       const fetchMock = stubFetch(...[1, 2, 3, 4, 5, 6].map((k) => () => relayerError(503, 'overloaded', rid(k))));
       const { logger, warn, error } = makeLogger();
@@ -2094,6 +2178,7 @@ describe('retry', () => {
       expect(error).toHaveBeenCalledTimes(1);
     });
 
+    // A success on the 5th attempt is still returned.
     it('still returns a success reached at the 5th attempt', async () => {
       const fetchMock = stubFetch(relayerError, relayerError, relayerError, relayerError, publicOk);
 
@@ -2121,6 +2206,7 @@ describe('retry', () => {
       {},
     ];
 
+    // Invalid delay from the decision: stops after one fetch with the same error, no wait, one error log.
     it.each(invalid)('stops on %s: one fetch, same error, one error line, no wait', async (value) => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const { logger, warn, error } = makeLogger();
@@ -2139,6 +2225,7 @@ describe('retry', () => {
       expect(error).toHaveBeenCalledTimes(1);
     });
 
+    // A 1 ms delay is valid.
     it('accepts a delay of 1 ms', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
 
@@ -2149,6 +2236,7 @@ describe('retry', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
+    // The max timer delay is valid without a timeout: the second fetch happens exactly after it.
     it('accepts a delay of MAX_TIMEOUT_MS when no timeout is set', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const { logger, warn } = makeLogger();
@@ -2165,6 +2253,7 @@ describe('retry', () => {
   });
 
   describe('remaining time', () => {
+    // Delay longer than the remaining time: stops at once with the error, no wait, no warn.
     it('does not wait when the delay exceeds the remaining time', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const { logger, warn, error } = makeLogger();
@@ -2179,6 +2268,7 @@ describe('retry', () => {
       expect(error).toHaveBeenCalledTimes(1);
     });
 
+    // Delay equal to the remaining time: stops at once.
     it('does not wait when the delay equals the remaining time', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const script = delays(1000);
@@ -2189,6 +2279,7 @@ describe('retry', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // Delay 1 ms under the remaining time: waits and succeeds.
     it('waits when the delay is just below the remaining time', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
 
@@ -2201,6 +2292,7 @@ describe('retry', () => {
 
     const slowFirstFetch = () => new Promise<Response>((resolve) => setTimeout(() => resolve(relayerError()), 300));
 
+    // First fetch took 300 ms: a 700 ms delay no longer fits a 1000 ms timeout, so it stops.
     it('counts the time already spent: 300 ms elapsed, a 700 ms delay on a 1000 ms timeout stops', async () => {
       const fetchMock = stubFetch(slowFirstFetch, publicOk);
       const script = delays(700);
@@ -2213,6 +2305,7 @@ describe('retry', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    // First fetch took 300 ms: a 699 ms delay still fits a 1000 ms timeout, so it waits and succeeds.
     it('counts the time already spent: 300 ms elapsed, a 699 ms delay on a 1000 ms timeout waits', async () => {
       const fetchMock = stubFetch(slowFirstFetch, publicOk);
 
@@ -2222,6 +2315,7 @@ describe('retry', () => {
       expect(await out).toMatchObject({ ok: true, value: PUBLIC_RESULT });
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
+    // Decision spends 40 ms then asks 60 ms on a 100 ms budget: no longer fits, stops without a warn.
     it('recomputes the remaining budget after time spent in the decision', async () => {
       vi.stubGlobal(
         'fetch',
@@ -2241,6 +2335,7 @@ describe('retry', () => {
   });
 
   describe('one signal and one deadline across attempts', () => {
+    // Every attempt receives the same fetch signal.
     it('every attempt receives the same signal', async () => {
       const fetchMock = stubFetch(
         () => relayerError(),
@@ -2258,6 +2353,7 @@ describe('retry', () => {
       expect(third).toBe(first);
     });
 
+    // Second attempt hangs: it times out at the original 1000 ms deadline, not later.
     it('a pending second attempt times out at the original deadline, not before', async () => {
       const steps = [() => relayerError(), (init?: RequestInit) => untilAborted(init?.signal)];
       const fetchMock = vi.fn<FetchFn>((_input, init) => Promise.resolve(steps.shift()!(init)));
@@ -2283,6 +2379,7 @@ describe('retry', () => {
     const slowFirst = () =>
       new Promise<Response>((resolve) => setTimeout(() => resolve(relayerError(503, 'overloaded', rid(1))), 300));
 
+    // Budget carries over: 300 ms fetch + 200 ms wait leaves 500 ms, so a 500 ms second delay stops.
     it('the second decision sees the budget left after the first retry: 500 ms left, a 500 ms delay stops', async () => {
       const fetchMock = stubFetch(slowFirst, () => relayerError(503, 'overloaded', rid(2)), publicOk);
       const { logger, warn, error } = makeLogger();
@@ -2303,6 +2400,7 @@ describe('retry', () => {
       expect(outcome.timers).toBe(0);
     });
 
+    // Budget carries over: 500 ms left, so a 499 ms second delay waits and succeeds.
     it('the second decision sees the budget left after the first retry: 500 ms left, a 499 ms delay waits', async () => {
       const fetchMock = stubFetch(slowFirst, () => relayerError(503, 'overloaded', rid(2)), publicOk);
 
@@ -2313,6 +2411,7 @@ describe('retry', () => {
       expect(fetchMock).toHaveBeenCalledTimes(3);
     });
 
+    // A 1 h wall-clock jump during the decision does not eat the remaining time: the retry succeeds.
     it('a wall-clock jump does not consume the remaining time', async () => {
       const fetchMock = stubFetch(() => relayerError(), publicOk);
       const { logger, warn } = makeLogger();
@@ -2328,6 +2427,7 @@ describe('retry', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(warn).toHaveBeenCalledTimes(1);
     });
+    // Payload, headers and auth mutated in the decision: the retry sends the original body and headers, same signal.
     it('serializes once and retains the same fetch signal and headers after mutation', async () => {
       const payload = { value: 'original' };
       const headers = { 'x-test': 'original' };
@@ -2417,6 +2517,7 @@ describe('security', () => {
       42,
     ];
 
+    // Unsupported operation: the constructor throws InvalidPropertyError, no fetch.
     it.each(badOperations)('rejects the operation %s at new, without fetching', (operation) => {
       const fetchMock = stubFetch(ok);
 
@@ -2431,12 +2532,14 @@ describe('security', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    // Supported operations construct fine.
     it.each(['USER_DECRYPT', 'PUBLIC_DECRYPT'] as const)('accepts the operation %s', (operation) => {
       expect(() => new RelayerHttpRequest({ relayerOperation: operation, url: URL_, payload: {} })).not.toThrow();
     });
 
     const badTimeouts: unknown[] = [0, -1, 1.5, NaN, Infinity, -Infinity, MAX_TIMEOUT_MS + 1, '1000', null];
 
+    // Invalid timeout: the constructor throws InvalidPropertyError, no fetch.
     it.each(badTimeouts)('rejects the timeout %s at new', (timeout) => {
       const fetchMock = stubFetch(ok);
 
@@ -2444,11 +2547,13 @@ describe('security', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    // Valid timeouts (1, max, unset) construct fine.
     it.each([1, MAX_TIMEOUT_MS, undefined])('accepts the timeout %s', (timeout) => {
       const options: RelayerCommonOptions = timeout === undefined ? {} : { timeout };
 
       expect(() => scripted(options, {})).not.toThrow();
     });
+    // Constructor failure: no fetch, no timer.
     it('a constructor failure performs no fetch and arms no timer', () => {
       const fetchMock = stubFetch(ok);
 
@@ -2467,6 +2572,7 @@ describe('security', () => {
   });
 
   describe('request built once', () => {
+    // Body is JSON.stringify(payload); fetch gets its own signal, not the caller's.
     it('sends JSON.stringify(payload) as the body, with a signal that is not the caller signal', async () => {
       const fetchMock = stubFetch(ok);
       const controller = new AbortController();
@@ -2480,6 +2586,7 @@ describe('security', () => {
       expect(init?.signal).not.toBe(controller.signal);
     });
 
+    // Payload, headers and auth mutated in the retry warn: both attempts send the original body and headers.
     it('sends identical bodies and headers on every attempt, despite mutations during the wait', async () => {
       const payload: Record<string, unknown> = { handles: ['0x01'] };
       const headers: Record<string, string> = { 'x-custom': 'one' };
@@ -2513,6 +2620,7 @@ describe('security', () => {
       expect(headerPairs(second).some(([, v]) => v.includes('token-two'))).toBe(false);
     });
 
+    // Unserializable payload (BigInt): rejects with the TypeError, no fetch.
     it('a payload that cannot be serialized rejects with the TypeError, without fetching', async () => {
       const fetchMock = stubFetch(ok);
 
@@ -2520,6 +2628,7 @@ describe('security', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    // Query appended to the fetched URL, but the error url stays the bare URL.
     it('appends the query to the fetched URL but keeps it out of error urls', async () => {
       const fetchMock = stubFetch(relayerError);
 
@@ -2530,6 +2639,7 @@ describe('security', () => {
       expect(`${fetched.origin}${fetched.pathname}`).toBe(URL_);
       expect((error as RelayerHttpResponseError).url).toBe(URL_);
     });
+    // Payload toJSON throws: rejects with that error, no fetch, no decision, listener removed, no timer.
     it('cleans up when payload serialization throws before fetch', async () => {
       const reason = new Error('serialize');
       const controller = new AbortController();
@@ -2576,6 +2686,7 @@ describe('security', () => {
       await vi.advanceTimersByTimeAsync(ms);
     }
 
+    // Every auth type and failure path: the secret is sent in headers but never appears in logs or errors.
     it.each(cases)('$authName, $pathName: the secret is sent but never logged or thrown', async (c) => {
       const fetchMock = stubFetch(...c.steps);
       const { logger, lines } = recordingLogger();
@@ -2602,6 +2713,7 @@ describe('security', () => {
       ['an api-key cookie', { type: 'ApiKeyCookie', cookie: 'api_key', value: SECRET }],
     ];
 
+    // The retry warn line carries the server message but neither the secret nor the payload.
     it.each(namedAuths)(
       '%s: the retry warn line carries the server message but neither the secret nor the payload',
       async (_authName, auth) => {
@@ -2639,6 +2751,7 @@ describe('security', () => {
       ['null', 'null'],
     ];
 
+    // A 503 whose body is not a valid relayer error: RelayerHttpUnexpectedResponseError, never retried.
     it.each(notRelayerBodies)(
       'a 503 with %s is not a relayer-http error and is never retried',
       async (_label, body) => {
@@ -2655,6 +2768,7 @@ describe('security', () => {
       },
     );
 
+    // An unknown error code is kept as is.
     it('an unknown error code is kept as is', async () => {
       stubFetch(
         () =>
@@ -2669,6 +2783,7 @@ describe('security', () => {
       expect(error).toBeInstanceOf(RelayerHttpResponseError);
       expect((error as RelayerHttpResponseError).code).toBe('brand_new');
     });
+    // Non-ok body with a null message or a bare string: unexpected response, no decision, one error log.
     it.each([
       ['a null message', { code: 'overloaded', message: null, requestId: rid(9) }],
       ['a string', 'overloaded'],
@@ -2687,6 +2802,7 @@ describe('security', () => {
       expect(error).toHaveBeenCalledTimes(1);
     });
 
+    // Error envelope with a numeric requestId: unexpected response, no decision.
     it.each([{ code: 'overloaded', message: 'busy', requestId: 42 }])(
       'rejects near-miss error envelope %j without a decision',
       async (body) => {
@@ -2702,6 +2818,7 @@ describe('security', () => {
       },
     );
 
+    // Any non-ok status with a relayer error body: RelayerHttpResponseError with that status and code.
     it.each([400, 401, 404, 418, 429, 500, 502, 599])(
       'a %d response with a relayer error body is a response error carrying that status',
       async (status) => {
@@ -2724,6 +2841,7 @@ describe('security', () => {
       },
     );
 
+    // Non-ok non-JSON body: RelayerHttpFetchError, no decision.
     it('a non-ok non-JSON body is a fetch error, whatever the status', async () => {
       stubFetch(() => new TextResponse('<html>Service Unavailable</html>', 503, TEXT_PLAIN));
       const decide = vi.fn<Script>(() => 1);
@@ -2734,6 +2852,7 @@ describe('security', () => {
       expect(decide).not.toHaveBeenCalled();
     });
 
+    // A 200 with an error-shaped body: RelayerHttpResultError, no decision.
     it('an ok response with an error-shaped body is a result error, not a response error', async () => {
       stubFetch(() => new TextResponse(JSON.stringify({ code: 'overloaded', message: 'x', requestId: rid(9) }), 200));
       const decide = vi.fn<Script>(() => 1);
@@ -2744,6 +2863,7 @@ describe('security', () => {
       expect(decide).not.toHaveBeenCalled();
     });
 
+    // A 200 whose status is not 'succeeded': RelayerHttpResultError.
     it('an ok response whose status field is not succeeded is a result error', async () => {
       stubFetch(
         () => new TextResponse(JSON.stringify({ status: 'failed', requestId: rid(0), result: PUBLIC_RESULT }), 200),
@@ -2761,12 +2881,14 @@ describe('security', () => {
   });
 
   describe('body size limit', () => {
+    // A body of exactly the size limit is parsed.
     it('parses a body of exactly the limit', async () => {
       stubFetch(() => new TextResponse(padded(OK_TEXT, MAX_BODY_TEXT_LENGTH), 200));
 
       await expect(scripted({}, {}).run()).resolves.toEqual(PUBLIC_RESULT);
     });
 
+    // The size limit counts UTF-16 code units, not bytes.
     it('counts UTF-16 code units, not bytes', async () => {
       const wide = JSON.stringify({
         status: 'succeeded',
@@ -2779,12 +2901,14 @@ describe('security', () => {
       await expect(scripted({}, {}).run()).resolves.toEqual(PUBLIC_RESULT);
     });
 
+    // A body one unit over the limit: RelayerHttpFetchError.
     it('rejects a body one unit over the limit with RelayerHttpFetchError', async () => {
       stubFetch(() => new TextResponse(padded(OK_TEXT, MAX_BODY_TEXT_LENGTH + 1), 200));
 
       await expect(scripted({}, {}).run()).rejects.toBeInstanceOf(RelayerHttpFetchError);
     });
 
+    // An oversized relayer error body: RelayerHttpFetchError, never retried.
     it('an oversized relayer-http error body is a fetch error and is never retried', async () => {
       const fetchMock = stubFetch(() => new TextResponse(padded(ERROR_TEXT, MAX_BODY_TEXT_LENGTH + 1), 503), ok);
       const decide = vi.fn<Script>(() => 10);

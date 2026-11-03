@@ -93,6 +93,8 @@ describe('RelayerHttpRequest reentrancy', () => {
   });
 
   describe('one-shot run()', () => {
+    // Second run() while the first fetch is pending: one-shot rejection; the first still resolves, 1 fetch.
+    //   run() #1 ──► run() #2 rejects ──► fetch answers 200 ──► run() #1 resolves
     it('a second run() while the first fetch is in flight rejects; the first completes normally', async () => {
       vi.useFakeTimers();
       let resolveFetch: (response: Response) => void = () => undefined;
@@ -114,6 +116,7 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
+    // Second run() after the first settled (success or failure): one-shot rejection, no new fetch.
     it.each([
       ['a success', [S200]],
       ['a failure', [S503]],
@@ -126,6 +129,7 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
+    // Second run() after a request-build throw (BigInt payload): still rejected, the instance is spent.
     it('a second run() after a build throw also rejects (the instance is spent)', async () => {
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S200] });
       const request = new RelayerHttpRequest({
@@ -141,6 +145,7 @@ describe('RelayerHttpRequest reentrancy', () => {
   });
 
   describe('decide overrides', () => {
+    // Retry decision calls run() on its own instance: that call is rejected; the outer run retries and succeeds.
     it('a decide that calls run() on the same instance gets the one-shot rejection; the outer run is unaffected', async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503, S200] });
@@ -158,6 +163,7 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(global.fetch).toHaveBeenCalledTimes(2);
     });
 
+    // Retry decision starts another retrying request: both finish independently with their own fetch counts.
     it('a decide that starts another (retrying) request: both complete independently', async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503, S200], [OTHER_URL]: [S503, S503, S200] });
@@ -180,6 +186,7 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // Retry decision aborts the caller signal and asks for a retry: caller's reason, no second fetch.
     it('a decide that aborts the caller signal and returns a delay: the caller reason, no second fetch', async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503, S200] });
@@ -197,7 +204,7 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
-    // The stop logs the response error, then the abort before settlement wins over it.
+    // Retry decision aborts the caller signal and stops: the abort wins; the response error is still logged once.
     it('a decide that aborts the caller signal and returns undefined: the caller reason, error logged once', async () => {
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503] });
       const controller = new AbortController();
@@ -217,6 +224,7 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
+    // Retry decision throws (any value): that value propagates as-is, cleanup runs, 1 fetch, no error logged.
     it.each([
       ['an Error', new Error('decide failed')],
       ['a string', 'decide failed'],
@@ -249,6 +257,7 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(logger.error).not.toHaveBeenCalled();
     });
 
+    // Retry decision throws on attempt 2: that value propagates after 2 fetches.
     it('a decide that throws on a retried attempt: that value propagates after 2 fetches', async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503, S503] });
@@ -270,6 +279,7 @@ describe('RelayerHttpRequest reentrancy', () => {
   });
 
   describe('logger hooks', () => {
+    // The 'Retrying in' warn hook aborts the caller signal: caller's reason, no second fetch.
     it('a warn hook that aborts the caller signal: the caller reason, no second fetch', async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503, S200] });
@@ -324,6 +334,7 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // The warn hook moves the clock past the deadline: RelayerHttpTimeoutError, no second fetch.
     it('a warn hook that advances time past the deadline: RelayerHttpTimeoutError, no second fetch', async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503, S200] });
@@ -342,6 +353,7 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // The warn hook calls run() on the same instance: that call is rejected; the outer run retries and succeeds.
     it('a warn hook that calls run() on the same instance: one-shot rejection, the outer run retries', async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503, S200] });
@@ -361,7 +373,8 @@ describe('RelayerHttpRequest reentrancy', () => {
     });
   });
 
-  // An abort that lands after the response arrived: never retries, and the abort wins over the error.
+  // Caller aborts inside fetch, yet a 503 is still delivered: no retry decision, the abort wins.
+  //   fetch starts ──► caller aborts ──► 503 delivered ──► run() rejects 'aborted in fetch'
   it('a caller abort fired from inside fetch (response still delivered): no retry, decide not called, the caller reason', async () => {
     const controller = new AbortController();
     global.fetch = vi.fn(() => {
@@ -380,6 +393,7 @@ describe('RelayerHttpRequest reentrancy', () => {
   });
 
   describe('two instances concurrently', () => {
+    // Two concurrent requests with different scripts, timeouts and signals: each gets its own outcome.
     it('share no state: different scripts, timeouts and signals', async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503, S200], [OTHER_URL]: [S503, S503, S503] });
@@ -403,6 +417,7 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // Two concurrent requests, one aborted during its wait: only that one rejects, the other succeeds.
     it("aborting one instance's signal during its wait does not affect the other", async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503, S200], [OTHER_URL]: [S503, S200] });
@@ -423,6 +438,7 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(callsTo(OTHER_URL)).toBe(2);
     });
 
+    // Two requests share one caller signal, aborted during both waits: both reject with its reason, all cleaned up.
     it('one shared caller signal aborted during both waits: both get the reason, nothing left behind', async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503, S200], [OTHER_URL]: [S503, S200] });

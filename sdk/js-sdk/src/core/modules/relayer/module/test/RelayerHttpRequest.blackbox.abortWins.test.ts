@@ -164,6 +164,7 @@ describe('abort', () => {
   }
 
   describe('abort during fetch', () => {
+    // Our timer fires while fetch ignores the signal: RelayerHttpTimeoutError, not the late 200.
     it('our timer wins over a fetch that ignores the signal and succeeds later', async () => {
       stubFetch(() => new Promise<Response>((resolve) => setTimeout(() => resolve(publicOk()), 800)));
 
@@ -173,6 +174,7 @@ describe('abort', () => {
       expectTimeout(rejected(await out), 500);
     });
 
+    // Caller aborts while fetch ignores the signal: rejects with the caller's reason, not the late 200.
     it('a caller abort wins over a fetch that ignores the signal and succeeds later', async () => {
       stubFetch(() => new Promise<Response>((resolve) => setTimeout(() => resolve(publicOk()), 800)));
       const controller = new AbortController();
@@ -185,6 +187,9 @@ describe('abort', () => {
       expect(rejected(await out)).toBe('late caller');
     });
 
+    // Caller abort and our timer both fire while fetch hangs: the first one decides the error, one warn.
+    //   fetch ──► caller aborts ──► timer due ──► 200 ──► rejects 'caller'
+    //   fetch ──► timer due ──► caller aborts ──► 200 ──► rejects RelayerHttpTimeoutError
     it.each(['caller-first', 'timer-first'])('retains first abort with an uncooperative fetch: %s', async (order) => {
       const context = setup();
       const gate = deferred<Response>();
@@ -224,7 +229,8 @@ describe('abort', () => {
       expect(context.log.warn).toHaveBeenCalledTimes(1);
     });
 
-    // By design, run() is not raced against the signal (see RelayerHttpRequest.run, step 3.2).
+    // Fetch ignores the signal and never settles: after an abort, run() stays pending by design,
+    // but its timers and caller listener are released.
     it.each(['a caller abort', 'our timer'])(
       'a global fetch that ignores the signal and never settles: run() stays pending after %s, resources released',
       async (trigger) => {
@@ -252,6 +258,8 @@ describe('abort', () => {
       },
     );
 
+    // A listener fetch added throws on abort: run() still rejects with the caller's reason;
+    // the throw surfaces as one uncaught exception.
     it('a fetch whose own abort listener throws: run() still rejects with the caller reason, nothing left behind', async () => {
       const trap = trapUncaughtExceptions();
       try {
@@ -283,6 +291,7 @@ describe('abort', () => {
   });
 
   describe('abort during the body read', () => {
+    // Caller aborts during a slow body read that ignores the signal: rejects with the caller's reason.
     it('an abort wins over a body read that ignores the signal and completes later', async () => {
       const slowIgnoring = () =>
         new TextResponse(
@@ -308,6 +317,7 @@ describe('abort', () => {
       return () => new TextResponse(text, status, undefined, () => (abort(), Promise.resolve(text)));
     }
 
+    // Caller aborts during the body read of a 200: rejects with the caller's reason, one warn, no error line.
     it('a successful result is replaced by the caller reason, with one warn', async () => {
       const controller = new AbortController();
       stubFetch(abortingBody(OK_TEXT, 200, () => controller.abort('after body')));
@@ -323,6 +333,7 @@ describe('abort', () => {
       expect(error).not.toHaveBeenCalled();
     });
 
+    // Caller aborts during the body read of a 503: the caller's reason wins, no retry decision, no error line.
     it('a relayer-http error is replaced by the caller reason; no decision, no error line', async () => {
       const controller = new AbortController();
       stubFetch(abortingBody(ERROR_TEXT, 503, () => controller.abort('after error body')));
@@ -338,6 +349,7 @@ describe('abort', () => {
       expect(error).not.toHaveBeenCalled();
     });
 
+    // Our timer fires during the body read of a 200: RelayerHttpTimeoutError and one warn.
     it('a successful result is replaced by RelayerHttpTimeoutError when our timer fires during the read', async () => {
       stubFetch(abortingBody(OK_TEXT, 200, () => vi.advanceTimersByTime(700)));
       const { logger, warn } = makeLogger();
@@ -350,6 +362,7 @@ describe('abort', () => {
       expect(warn.mock.calls[0]?.[0]).toContain(LATE_PHASE);
     });
 
+    // The caller's abort reason is itself a RelayerHttpResponseError: rejects with that exact object, no decision.
     it('a caller reason that is itself a RelayerHttpResponseError is returned as is', async () => {
       const first = new RelayerHttpRequest({ relayerOperation: 'PUBLIC_DECRYPT', url: URL_, payload: {} });
       stubFetch(relayerError);
@@ -368,6 +381,7 @@ describe('abort', () => {
   });
 
   describe('abort from hooks at the stop', () => {
+    // logger.error aborts at the stop: rejects with the caller's reason; the error line comes before the abort warn.
     it('abort inside logger.error at the stop: the abort wins, after the error line', async () => {
       stubFetch(relayerError);
       const controller = new AbortController();
@@ -385,6 +399,7 @@ describe('abort', () => {
       expect(events.map((e) => e.split(':')[0])).toEqual(['error', 'warn']);
     });
 
+    // The decision aborts then stops: decide, error line, abort warn, then rejects with the caller's reason.
     it('abort inside the decision returning undefined: decision, error line, then the abort', async () => {
       stubFetch(relayerError);
       const controller = new AbortController();
@@ -402,6 +417,7 @@ describe('abort', () => {
       expect(events.map((e) => e.split(':')[0])).toEqual(['decide', 'error', 'warn']);
     });
 
+    // The decision aborts then throws: rejects with the caller's reason, not the thrown error.
     it('abort inside a throwing decision: the abort replaces the thrown value', async () => {
       stubFetch(relayerError);
       const controller = new AbortController();
@@ -415,6 +431,7 @@ describe('abort', () => {
       expect(rejected(outcome)).toBe('abort then throw');
     });
 
+    // Our timer fires while the decision runs (stop or retry): RelayerHttpTimeoutError, no second fetch.
     it.each([undefined, 10])(
       'our timer fires while the decision runs (returns %s): RelayerHttpTimeoutError',
       async (delay) => {
@@ -434,6 +451,7 @@ describe('abort', () => {
       },
     );
 
+    // The stop or retry log hook aborts then throws: rejects with the caller's reason, not the hook's error.
     it.each(['stop-log', 'retry-log'])('abort from %s replaces a hook exception', async (hook) => {
       const context = setup();
       const events: string[] = [];
@@ -507,6 +525,7 @@ describe('leaks', () => {
   }
 
   describe('resources at settlement', () => {
+    // Each scenario settles with zero timers and the caller's abort listener added once and removed once.
     it.each(scenarios)('$name: zero timers and the caller listener removed once', async (scenario) => {
       const controller = new AbortController();
       const add = vi.spyOn(controller.signal, 'addEventListener');
@@ -600,6 +619,8 @@ describe('races', () => {
       return { events, body, controller, warn, error, done };
     }
 
+    // 200 body read held open, caller aborts, then the body is released: the caller's reason, one warn.
+    //   body read ──► caller aborts ──► body released ──► rejects 'gated'
     it('success body: entered, abort, released, then the caller reason', async () => {
       const g = await gatedBody(OK_TEXT, 200);
       g.controller.abort('gated');
@@ -614,6 +635,7 @@ describe('races', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // 503 body read held open, caller aborts, then released: the caller's reason, no decision, no error line.
     it('relayer-http error body: entered, abort, released, then the caller reason; no decision', async () => {
       const decide = vi.fn<Script>(() => 10);
       const g = await gatedBody(ERROR_TEXT, 503, decide);
@@ -629,6 +651,8 @@ describe('races', () => {
       expect(g.warn).toHaveBeenCalledTimes(1);
     });
 
+    // 200 body read held open past our deadline, then released: RelayerHttpTimeoutError.
+    //   body read ──► 500 ms deadline ──► body released ──► rejects timeout
     it('success body: our timer fires while the body is held, then the timeout', async () => {
       const events: string[] = [];
       const body = deferred<string>();
@@ -647,6 +671,8 @@ describe('races', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
+    // Fetch held open (ignoring the signal), caller aborts, then a 200 arrives: the caller's reason.
+    //   fetch ──► caller aborts ──► 200 ──► rejects 'gated'
     it('fetch held open and ignoring the signal: entered, abort, resolved, then the caller reason', async () => {
       const events: string[] = [];
       const response = deferred<Response>();
@@ -667,6 +693,7 @@ describe('races', () => {
       expect(events).toEqual(['fetch', 'abort', 'resolved', 'rejected:reason']);
     });
 
+    // Fetch resolves and the caller aborts in the same synchronous block: the caller's reason wins.
     it('fetch resolving and the caller aborting in the same synchronous block: the reason wins', async () => {
       const events: string[] = [];
       const response = deferred<Response>();
@@ -681,6 +708,7 @@ describe('races', () => {
       expect(events).toEqual(['rejected:reason']);
     });
 
+    // Caller aborts inside fetch, which then returns a 503: the caller's reason, no decision, no error line.
     it('an abort in the same tick as a relayer error resolution wins over the error, and the decision is skipped', async () => {
       const events: string[] = [];
       const controller = new AbortController();
@@ -733,6 +761,8 @@ describe('races', () => {
       return { kinds, warns, errors };
     }
 
+    // Abort fired N microtasks after fetch, N growing, on a 200: aborts first (one warn each),
+    // then results (no warn), switching exactly once.
     it('success response: from the abort to the result at one depth, never back', async () => {
       const { kinds, warns } = await sweep(OK_TEXT, 200, (c) => c.abort('m'));
 
@@ -740,6 +770,7 @@ describe('races', () => {
       kinds.forEach((kind, i) => expect([kind, warns[i]]).toEqual([kind, kind === 'abort' ? 1 : 0]));
     });
 
+    // Same sweep on a 503 with the default decision: aborts first, then the relayer error with its error line.
     it('relayer-http error, default decision: from the abort to the error with its line, never back', async () => {
       const { kinds, warns, errors } = await sweep(ERROR_TEXT, 503, (c) => c.abort('m'));
 
@@ -750,6 +781,7 @@ describe('races', () => {
       });
     });
 
+    // Same sweep firing our timer instead of an abort: timeouts first, then the result, switching once.
     it('our timer at each depth: from the timeout to the result at one depth, never back', async () => {
       const { kinds, warns } = await sweep(OK_TEXT, 200, () => vi.advanceTimersByTime(60_000));
 
@@ -759,6 +791,7 @@ describe('races', () => {
   });
 
   describe('forced orderings', () => {
+    // Caller aborts inside fetch before it returns a 200: rejects with the caller's reason.
     it('abort inside fetch before it resolves: fetch, abort, then the rejection', async () => {
       const events: string[] = [];
       const controller = new AbortController();
@@ -792,6 +825,7 @@ describe('reentrancy', () => {
   }
 
   describe('caller signal shared across instances', () => {
+    // The decision aborts the caller signal and stops: rejects with that abort's reason.
     it('the instance whose decision aborted the shared signal rejects with that reason', async () => {
       stubFetch(relayerError);
       const controller = new AbortController();

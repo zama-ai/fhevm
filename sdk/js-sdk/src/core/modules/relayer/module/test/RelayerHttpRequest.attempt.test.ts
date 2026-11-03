@@ -102,6 +102,7 @@ describe('RelayerHttpAttempt', () => {
   });
 
   describe.each(OPERATIONS)('%s', (relayerOperation) => {
+    // A 200 with a valid success body: run() resolves to the validated result, nothing logged.
     it('returns the validated result of a 200 success body', async () => {
       global.fetch = respondWith(() => successBody(relayerOperation), 200);
       const { attempt, logger } = makeAttempt({ relayerOperation });
@@ -112,6 +113,7 @@ describe('RelayerHttpAttempt', () => {
       expect(logger.error).not.toHaveBeenCalled();
     });
 
+    // A relayer-http error body (503): RelayerHttpResponseError with its fields, not logged.
     it('throws RelayerHttpResponseError for a relayer-http error body, WITHOUT logging it', async () => {
       global.fetch = respondWith(errorBody, 503);
       const { attempt, logger } = makeAttempt({ relayerOperation });
@@ -129,6 +131,7 @@ describe('RelayerHttpAttempt', () => {
       expect(logger.warn).not.toHaveBeenCalled();
     });
 
+    // A 502 JSON body that is not a relayer-http error: RelayerHttpUnexpectedResponseError, logged once.
     it('throws a logged RelayerHttpUnexpectedResponseError for a non-relayer-http JSON error body', async () => {
       global.fetch = respondWith(() => JSON.stringify({ error: 'bad gateway' }), 502);
       const { attempt, logger } = makeAttempt({ relayerOperation });
@@ -140,6 +143,7 @@ describe('RelayerHttpAttempt', () => {
       expect(logger.error).toHaveBeenCalledTimes(1);
     });
 
+    // A 502 whose body is JSON null: RelayerHttpUnexpectedResponseError, logged once.
     it('throws a logged RelayerHttpUnexpectedResponseError for a non-2xx JSON null body', async () => {
       global.fetch = respondWith(() => 'null', 502);
       const { attempt, logger } = makeAttempt({ relayerOperation });
@@ -148,6 +152,7 @@ describe('RelayerHttpAttempt', () => {
       expect(logger.error).toHaveBeenCalledTimes(1);
     });
 
+    // A non-JSON body (HTML proxy page), success or error status: logged RelayerHttpFetchError with that status.
     it.each([200, 503])('throws a logged RelayerHttpFetchError for a non-JSON body (status %d)', async (status) => {
       global.fetch = respondWith(() => '<html>proxy</html>', status);
       const { attempt, logger } = makeAttempt({ relayerOperation });
@@ -159,6 +164,7 @@ describe('RelayerHttpAttempt', () => {
       expect(logger.error).toHaveBeenCalledTimes(1);
     });
 
+    // A 200 success body without a result: logged RelayerHttpResultError carrying the url.
     it('throws a logged RelayerHttpResultError for a 200 body that misses the schema', async () => {
       global.fetch = respondWith(() => JSON.stringify({ status: 'succeeded', requestId: VALID_REQUEST_ID }), 200);
       const { attempt, logger } = makeAttempt({ relayerOperation });
@@ -170,6 +176,7 @@ describe('RelayerHttpAttempt', () => {
       expect(logger.error).toHaveBeenCalledTimes(1);
     });
 
+    // fetch rejects (network failure): logged RelayerHttpFetchError with the network error as cause.
     it('throws a logged RelayerHttpFetchError keeping the cause on a network failure', async () => {
       const networkError = new TypeError('fetch failed');
       global.fetch = vi.fn(() => Promise.reject(networkError));
@@ -184,6 +191,7 @@ describe('RelayerHttpAttempt', () => {
   });
 
   describe('body size limit (unchanged)', () => {
+    // A body one byte over the size limit: RelayerHttpFetchError 'too large', JSON.parse never called.
     it.each([200, 503])('rejects a body over the limit without parsing it (status %d)', async (status) => {
       const body = `"${'a'.repeat(MAX_BODY_TEXT_LENGTH - 1)}"`;
       global.fetch = respondWith(() => body, status);
@@ -198,6 +206,7 @@ describe('RelayerHttpAttempt', () => {
       expect(parseSpy).not.toHaveBeenCalled();
     });
 
+    // A body exactly at the size limit: it is parsed.
     it('parses a body exactly at the limit', async () => {
       const body = `"${'a'.repeat(MAX_BODY_TEXT_LENGTH - 2)}"`;
       global.fetch = respondWith(() => body, 200);
@@ -209,6 +218,7 @@ describe('RelayerHttpAttempt', () => {
       expect(parseSpy).toHaveBeenCalledTimes(1);
     });
 
+    // The body stream errors without any abort: RelayerHttpFetchError with the status and the stream error as cause.
     it('throws RelayerHttpFetchError with status and cause when reading the body fails (not aborted)', async () => {
       const streamError = new TypeError('terminated');
       global.fetch = respondWith(
@@ -231,6 +241,7 @@ describe('RelayerHttpAttempt', () => {
   });
 
   describe('request shape', () => {
+    // fetch gets the same url, method, headers and body, plus the attempt's signal.
     it('passes init.body unchanged and attaches the given signal', async () => {
       global.fetch = respondWith(() => successBody('USER_DECRYPT'), 200);
       const { attempt, controller } = makeAttempt({ relayerOperation: 'USER_DECRYPT' });
@@ -245,7 +256,7 @@ describe('RelayerHttpAttempt', () => {
       expect(init.signal).toBe(controller.signal);
     });
 
-    // One signal by construction: a stray `signal` smuggled into init never reaches fetch.
+    // A stray signal smuggled into init is ignored: fetch gets the attempt's own signal.
     it('attaches the given signal even if init carries another one at runtime', async () => {
       global.fetch = respondWith(() => successBody('USER_DECRYPT'), 200);
       const stray = new AbortController();
@@ -258,6 +269,7 @@ describe('RelayerHttpAttempt', () => {
       expect(sentInit.signal).toBe(controller.signal);
     });
 
+    // run() leaves the caller's init object untouched (no signal added).
     it('does not mutate the shared init', async () => {
       global.fetch = respondWith(() => successBody('USER_DECRYPT'), 200);
       const init = { ...BASE_INIT, headers: { ...(BASE_INIT.headers as Record<string, string>) } };
@@ -270,6 +282,7 @@ describe('RelayerHttpAttempt', () => {
       expect('signal' in init).toBe(false);
     });
 
+    // A query is appended (encoded) to the fetched url; errors report the url without it.
     it('appends the query to the fetched url but keeps the query-less url in errors', async () => {
       global.fetch = respondWith(errorBody, 503);
       const { attempt } = makeAttempt({ relayerOperation: 'USER_DECRYPT', query: { a: '1', 'b c': 'd&e' } });
@@ -280,7 +293,7 @@ describe('RelayerHttpAttempt', () => {
       expect((error as RelayerHttpResponseError).url).toBe(RELAYER_URL);
     });
 
-    // The query is appended inside the fetch try: its internal assert surfaces as a typed error.
+    // A url that already holds a query: logged RelayerHttpFetchError, no fetch.
     it('wraps the query-append assert on a query-bearing url as a logged RelayerHttpFetchError, without fetching', async () => {
       const fetchMock = vi.fn();
       global.fetch = fetchMock;
@@ -291,6 +304,7 @@ describe('RelayerHttpAttempt', () => {
       expect(logger.error).toHaveBeenCalledTimes(1);
     });
 
+    // Two network failures then a 200, with 2 retries allowed: one attempt resolves after 3 fetches.
     it('runs the network retries of fetchWithRetry inside one attempt', async () => {
       vi.useFakeTimers();
       let call = 0;
@@ -313,6 +327,7 @@ describe('RelayerHttpAttempt', () => {
       expect(global.fetch).toHaveBeenCalledTimes(3);
     });
 
+    // An unknown relayerOperation at runtime: a plain Error naming it, not a typed relayer error.
     it('rejects an unknown runtime relayerOperation with a defensive throw on a 200 body', async () => {
       global.fetch = respondWith(() => successBody('USER_DECRYPT'), 200);
       const { attempt } = makeAttempt({ relayerOperation: 'INPUT_PROOF' as unknown as 'USER_DECRYPT' });
@@ -327,7 +342,7 @@ describe('RelayerHttpAttempt', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
-    // Stateless: no one-shot guard (the owner holds it); each run() is a fresh HTTP attempt.
+    // No one-shot guard here (the owner holds it): two run() calls make two fetches.
     it('has no one-shot guard: two run() calls make two fetches', async () => {
       global.fetch = respondWith(() => successBody('USER_DECRYPT'), 200);
       const { attempt } = makeAttempt({ relayerOperation: 'USER_DECRYPT' });
@@ -340,6 +355,7 @@ describe('RelayerHttpAttempt', () => {
   });
 
   describe('owns no resource', () => {
+    // Success: no timer created, no listener added on the given signal.
     it('creates no timer and adds no listener on the given signal (success)', async () => {
       vi.useFakeTimers();
       global.fetch = respondWith(() => successBody('USER_DECRYPT'), 200);
@@ -355,6 +371,7 @@ describe('RelayerHttpAttempt', () => {
       expect(addSpy).not.toHaveBeenCalled();
     });
 
+    // Error response: no timer created, no listener added on the given signal.
     it('creates no timer and adds no listener on the given signal (error response)', async () => {
       vi.useFakeTimers();
       global.fetch = respondWith(errorBody, 503);
@@ -368,6 +385,7 @@ describe('RelayerHttpAttempt', () => {
       expect(addSpy).not.toHaveBeenCalled();
     });
 
+    // Network retries with delays, all failing: no timer left, every listener added is removed.
     it('leaves listeners balanced and no timer after a network-retry delay', async () => {
       vi.useFakeTimers();
       global.fetch = vi.fn(() => Promise.reject(new TypeError('fetch failed')));
@@ -392,6 +410,7 @@ describe('RelayerHttpAttempt', () => {
 
   // The attempt classifies an abort with the signal and timedOutAfterMs it was given (S5).
   describe('abort classification with a synthetic signal', () => {
+    // Signal already aborted, timedOutAfterMs 500: RelayerHttpTimeoutError(500), no fetch.
     it('given signal already aborted + timedOutAfterMs 500 → RelayerHttpTimeoutError, no fetch', async () => {
       const fetchMock = vi.fn();
       global.fetch = fetchMock;
@@ -405,6 +424,7 @@ describe('RelayerHttpAttempt', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    // Signal already aborted, not our timeout: run() rejects with that exact reason, no fetch.
     it.each([
       ['a string', 'gone'],
       ['null', null],
@@ -430,6 +450,7 @@ describe('RelayerHttpAttempt', () => {
       },
     ];
 
+    // Signal aborts mid-request (fetch or body read), timedOutAfterMs 500: RelayerHttpTimeoutError, timeout warned.
     it.each(phases)('aborted $phase + timedOutAfterMs 500 → RelayerHttpTimeoutError', async ({ setup, during }) => {
       vi.useFakeTimers();
       setup();
@@ -453,6 +474,7 @@ describe('RelayerHttpAttempt', () => {
       expect(logger.warn).toHaveBeenCalledWith(`[RelayerHttpRequest] Request to ${RELAYER_URL} timed out${during}.`);
     });
 
+    // Signal aborts mid-request (fetch or body read), timedOutAfterMs undefined: run() rejects with the raw reason.
     it.each(phases)('aborted $phase + timedOutAfterMs undefined → the reason unchanged', async ({ setup }) => {
       vi.useFakeTimers();
       setup();
@@ -467,6 +489,7 @@ describe('RelayerHttpAttempt', () => {
       expect(await run).toBeNull();
     });
 
+    // Abort during the network-retry delay: our timeout gives RelayerHttpTimeoutError, otherwise the raw reason; no timer left.
     it.each([
       ['timedOutAfterMs 500', 500, RelayerHttpTimeoutError],
       ['timedOutAfterMs undefined', undefined, undefined],

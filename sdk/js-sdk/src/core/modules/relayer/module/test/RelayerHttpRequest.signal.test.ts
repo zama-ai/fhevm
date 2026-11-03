@@ -36,6 +36,7 @@ describe('RelayerHttpRequest external signal cleanup', () => {
     vi.useRealTimers();
   });
 
+  // Success with a caller signal: the one abort listener added is removed.
   it('removes its abort listener from the caller-supplied signal on success', async () => {
     global.fetch = vi.fn().mockResolvedValue(new Response(successBody(), { status: 200 }));
 
@@ -58,6 +59,7 @@ describe('RelayerHttpRequest external signal cleanup', () => {
     expect(removeSpy).toHaveBeenCalledWith('abort', handler);
   });
 
+  // A 403 error response with a caller signal: the abort listener is removed.
   it('removes its abort listener from the caller-supplied signal on a (non-abort) failure', async () => {
     global.fetch = vi.fn().mockResolvedValue(new Response(errorBody(), { status: 403 }));
 
@@ -110,12 +112,14 @@ describe('RelayerHttpRequest external signal cleanup', () => {
     return { addSpy, removeSpy };
   }
 
+  // Building the request throws (BigInt payload): no timer left pending.
   it('leaves no timer pending when building the request throws', async () => {
     await runWithThrowingBuild();
 
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // Building the request throws: every listener added on the caller signal is removed.
   it('leaves no listener on the caller-supplied signal when building the request throws', async () => {
     const { addSpy, removeSpy } = await runWithThrowingBuild();
 
@@ -125,7 +129,7 @@ describe('RelayerHttpRequest external signal cleanup', () => {
     }
   });
 
-  // The timeout timer must never outlive run(), however the request settles.
+  // Success, error response or caller cancellation: the timeout timer never outlives run().
   it.each([
     {
       outcome: 'success',
@@ -163,6 +167,7 @@ describe('RelayerHttpRequest external signal cleanup', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  // No caller signal: the request simply succeeds.
   it('does not touch the signal at all when none is provided', async () => {
     global.fetch = vi.fn().mockResolvedValue(new Response(successBody(), { status: 200 }));
 
@@ -171,7 +176,7 @@ describe('RelayerHttpRequest external signal cleanup', () => {
     await expect(request.run()).resolves.toBeDefined();
   });
 
-  // Untyped JS callers may pass null: it means no signal, like undefined.
+  // options.signal null (untyped JS) means no signal: the request succeeds, no timer left.
   it('treats options.signal null as no signal', async () => {
     vi.useFakeTimers();
     global.fetch = vi.fn().mockResolvedValue(new Response(successBody(), { status: 200 }));
@@ -238,6 +243,7 @@ describe('RelayerHttpRequest abort classification', () => {
     vi.useRealTimers();
   });
 
+  // Caller signal already aborted with a string: run() rejects with that string, no fetch.
   it('rethrows the caller reason when the caller signal is already aborted with a string', async () => {
     const fetchMock = vi.fn();
     global.fetch = fetchMock;
@@ -255,8 +261,7 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  // throwIfAborted() bypasses fetchWithRetry's catch, so null reaches the
-  // RelayerHttpRequest catch directly instead of crashing in fetchWithRetry first.
+  // Caller signal already aborted with null: run() rejects with null, no fetch.
   it('rethrows the caller reason when the caller signal is already aborted with null', async () => {
     const fetchMock = vi.fn();
     global.fetch = fetchMock;
@@ -276,6 +281,7 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(error).toBeNull();
   });
 
+  // Caller aborts with a string while the body is read: run() rejects with that string.
   it('rethrows the caller reason when the caller aborts with a string while the body is being read', async () => {
     global.fetch = stalledBodyFetch();
 
@@ -293,9 +299,7 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(await run).toBe('user left');
   });
 
-  // During the retry delay, abortableSleep rejects with a wrapper Error named
-  // 'AbortError' (the caller's reason is only its `cause`). Only a fix that
-  // rethrows signal.reason, not the caught error, returns the caller's reason here.
+  // Caller aborts with a string during the network-retry delay: run() rejects with that string, not a wrapper AbortError.
   it('rethrows the caller reason when the caller aborts with a string during the delay between retries', async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
@@ -322,6 +326,7 @@ describe('RelayerHttpRequest abort classification', () => {
   // unchanged, never as RelayerHttpTimeoutError, in every phase. A manual
   // controller stands in for AbortSignal.timeout() to keep the timing exact.
 
+  // The caller's own TimeoutError reason while the body is read: returned unchanged, not as our timeout.
   it("rethrows the caller's own TimeoutError reason while the body is being read", async () => {
     global.fetch = stalledBodyFetch();
 
@@ -340,6 +345,7 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(await run).toBe(callerReason);
   });
 
+  // The caller's own TimeoutError reason during the network-retry delay: returned unchanged, 1 fetch.
   it("rethrows the caller's own TimeoutError reason during the delay between retries", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
@@ -365,6 +371,7 @@ describe('RelayerHttpRequest abort classification', () => {
   // Regression guards for the fix: our own options.timeout must keep producing
   // RelayerHttpTimeoutError, whichever phase it fires in. These pass today.
 
+  // Our timeout fires while fetch is pending: RelayerHttpTimeoutError(500).
   it('reports our own timeout as RelayerHttpTimeoutError while fetch is in flight', async () => {
     vi.useFakeTimers();
     global.fetch = pendingUntilAbortFetch();
@@ -384,6 +391,7 @@ describe('RelayerHttpRequest abort classification', () => {
     expect((error as RelayerHttpTimeoutError).timeoutMs).toBe(500);
   });
 
+  // Our timeout fires during the network-retry delay: RelayerHttpTimeoutError, 1 fetch.
   it('reports our own timeout as RelayerHttpTimeoutError during the delay between retries', async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
@@ -403,6 +411,7 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  // Our timeout fires while the body is read: RelayerHttpTimeoutError.
   it('reports our own timeout as RelayerHttpTimeoutError while the body is being read', async () => {
     vi.useFakeTimers();
     global.fetch = stalledBodyFetch();
@@ -420,6 +429,7 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(await run).toBeInstanceOf(RelayerHttpTimeoutError);
   });
 
+  // Caller aborts with a string while fetch is pending: run() rejects with that string.
   it('rethrows the caller reason when the caller aborts with a string', async () => {
     global.fetch = pendingUntilAbortFetch();
 
@@ -437,6 +447,7 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(await run).toBe('user left');
   });
 
+  // Caller aborts with null while fetch is pending: run() rejects with null.
   it('rethrows the caller reason when the caller aborts with null', async () => {
     global.fetch = pendingUntilAbortFetch();
 
@@ -454,7 +465,7 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(await run).toBeNull();
   });
 
-  // NaN !== NaN: the abort must still be recognized as itself, so it is warned once.
+  // Caller aborts with NaN: run() rejects with NaN and warns once (NaN !== NaN must not break detection).
   it('rethrows a NaN caller reason and warns once', async () => {
     global.fetch = pendingUntilAbortFetch();
     const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -475,7 +486,7 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(logger.warn).toHaveBeenCalledTimes(1);
   });
 
-  // Nothing was sent: the warn must not claim a response was received.
+  // Pre-aborted caller plus a build throw: rejects with the reason; the warn says 'before the request was sent'.
   it('warns "before the request was sent" when a pre-aborted caller meets a build throw', async () => {
     const fetchMock = vi.fn();
     global.fetch = fetchMock;
@@ -498,6 +509,7 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(logger.warn.mock.calls[0]?.[0]).not.toContain(' after the response was received');
   });
 
+  // The caller's real AbortSignal.timeout() fires: its reason comes back, not RelayerHttpTimeoutError.
   it("does not report the caller's own AbortSignal.timeout() as RelayerHttpTimeoutError", async () => {
     global.fetch = pendingUntilAbortFetch();
 
@@ -520,6 +532,7 @@ describe('RelayerHttpRequest abort classification', () => {
 // below 1 or above 2^31-1 ms into 1 ms, so an intended long timeout fires almost
 // immediately. https://nodejs.org/api/timers.html#settimeoutcallback-delay-args
 describe('RelayerHttpRequest options.timeout validation', () => {
+  // Invalid timeout (0, negative, fractional, NaN, Infinity, over 2^31-1): the constructor throws InvalidPropertyError.
   it.each([
     ['zero', 0],
     ['negative', -1],
@@ -539,6 +552,7 @@ describe('RelayerHttpRequest options.timeout validation', () => {
     ).toThrow(InvalidPropertyError);
   });
 
+  // The timeout bounds 1 and 2^31-1 ms are accepted.
   it.each([1, 2_147_483_647])('accepts a %d ms timeout', (timeout) => {
     expect(
       () =>
