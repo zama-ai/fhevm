@@ -471,6 +471,63 @@ describe('RelayerHttpRequest leaves nothing behind', () => {
     expect(combinedSignal.aborted).toBe(false);
   });
 
+  // A non-compliant fetch (polyfill, custom wrapper) that never honors the signal.
+  it.each([
+    { name: 'fetch', response: () => new Promise<Response>(() => {}) },
+    {
+      name: 'the body read',
+      response: () => Promise.resolve(new Response(new ReadableStream<Uint8Array>(), { status: 200 })),
+    },
+  ])('after our timeout fires on a hung $name that ignores the signal: the caller listener is removed', async ({
+    response,
+  }) => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const addSpy = vi.spyOn(controller.signal, 'addEventListener');
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+    global.fetch = vi.fn(response);
+
+    void new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
+      url: RELAYER_URL,
+      payload: {},
+      options: { signal: controller.signal, timeout: TIMEOUT_MS },
+    })
+      .run()
+      .catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(TIMEOUT_MS);
+
+    expect(addSpy).toHaveBeenCalledTimes(1);
+    expect(removeSpy).toHaveBeenCalledWith('abort', addSpy.mock.calls[0]![1]);
+  });
+
+  it.each([
+    { name: 'fetch', response: () => new Promise<Response>(() => {}) },
+    {
+      name: 'the body read',
+      response: () => Promise.resolve(new Response(new ReadableStream<Uint8Array>(), { status: 200 })),
+    },
+  ])('after a caller abort on a hung $name that ignores the signal: our timer is cleared', async ({ response }) => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    global.fetch = vi.fn(response);
+
+    void new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
+      url: RELAYER_URL,
+      payload: {},
+      options: { signal: controller.signal, timeout: MAX_TIMEOUT_MS },
+    })
+      .run()
+      .catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    controller.abort('gone');
+    // Flush promise jobs only: the timer must not be left pending until MAX_TIMEOUT_MS.
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("a caller's AbortSignal.timeout() already expired before run(): its reason, no fetch, nothing left behind", async () => {
     vi.useFakeTimers();
     vi.spyOn(AbortSignal, 'timeout').mockImplementation(fakeAbortSignalTimeout);
