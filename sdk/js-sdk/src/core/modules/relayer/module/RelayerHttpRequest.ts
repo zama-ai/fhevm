@@ -111,9 +111,12 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
     //
     // The build stays inside the try: JSON.stringify (e.g. a BigInt payload) and
     // setAuth (an invalid header) can throw, and cleanup() must still run.
+    // Until the init is built, nothing was sent: the abort warn says so.
+    let during = ' before the request was sent';
     try {
       // 3.1. Build the request init once (headers, body, auth)
       const init = this._buildInit();
+      during = ' after the response was received';
 
       // 3.2. Run HTTP attempts until one succeeds or the error is final
       // BY DESIGN, not raced against the signal: a global fetch that ignores the abort leaves
@@ -133,7 +136,7 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
       // 4. Let an abort before settlement win over the result
       // -----------------------------------------------------------------------
 
-      this._throwIfAbortedAtExit(combined);
+      this._throwIfAbortedAtExit(combined, during);
       return result;
     } catch (error) {
       // -----------------------------------------------------------------------
@@ -142,7 +145,7 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
 
       // The abort itself (e.g. thrown by step 4) passes through: same instance, no second warn.
       if (!_isAbortOutcome(error, combined.signal)) {
-        this._throwIfAbortedAtExit(combined);
+        this._throwIfAbortedAtExit(combined, during);
       }
       throw error;
     } finally {
@@ -176,19 +179,20 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
    * Throws the abort if the combined signal was aborted before run() settled; returns otherwise.
    *
    * @param combined - The run's combined signal.
+   * @param during - The warn suffix: ' before the request was sent' or ' after the response was received'.
    *
    * @example
    * ```typescript
-   * this._throwIfAbortedAtExit(combined); // throws RelayerHttpTimeoutError if our timer fired
+   * this._throwIfAbortedAtExit(combined, during); // throws RelayerHttpTimeoutError if our timer fired
    * ```
    */
-  private _throwIfAbortedAtExit(combined: RelayerHttpSignal): void {
+  private _throwIfAbortedAtExit(combined: RelayerHttpSignal, during: string): void {
     throwIfRelayerHttpAborted({
       signal: combined.signal,
       timedOutAfterMs: combined.timedOutAfterMs,
       url: this._url,
       logger: this._logger,
-      during: ' after the response was received',
+      during,
     });
   }
 
@@ -245,7 +249,8 @@ function _isAbortOutcome(error: unknown, signal: AbortSignal): boolean {
   if (!signal.aborted) {
     return false;
   }
-  return error === signal.reason || error instanceof RelayerHttpTimeoutError;
+  // Object.is, not ===: a NaN reason must still match itself.
+  return Object.is(error, signal.reason) || error instanceof RelayerHttpTimeoutError;
 }
 
 /**
