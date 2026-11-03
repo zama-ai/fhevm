@@ -1171,3 +1171,76 @@ async fn delivery_rejections_distinguish_identity_scope_flow_and_status() {
         "database failures must remain errors, not acknowledged rejections"
     );
 }
+
+#[tokio::test]
+async fn invalid_resolved_range_records_failure_without_suppressing_and_can_retry(
+) {
+    use host_listener::consumer::catchup::InvalidManualCatchupRange;
+
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
+    let retained = store::ensure_requested(
+        &pool,
+        1,
+        "host.1",
+        &args(100, Some(200), false),
+        Some(1000),
+        None,
+        false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    for from in [1000, 1001] {
+        let flags = args(from, None, false);
+        let error = store::ensure_requested(
+            &pool,
+            1,
+            "host.1",
+            &flags,
+            Some(1000),
+            Some(uuid::Uuid::new_v4()),
+            false,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.is::<InvalidManualCatchupRange>());
+        let failed: (uuid::Uuid, i64, i64, String, bool) = sqlx::query_as(
+            "SELECT id, block_start, block_end, failure_reason,
+                    NOT request_pending AND NOT cancel_pending AND owner_id IS NULL AND lease_until IS NULL
+             FROM host_consumer_catchups WHERE requested_from = $1 AND status = 'FAILED'",
+        ).bind(from).fetch_one(&pool).await.unwrap();
+        assert_eq!((failed.1, failed.2), (from, 999));
+        assert_eq!(failed.3, error.to_string());
+        assert!(failed.4);
+        assert_eq!(
+            store::rejection_reason(&pool, 1, "host.1", Some(failed.0), true)
+                .await
+                .unwrap(),
+            Some(store::RejectionReason::Failed)
+        );
+        let status: String = sqlx::query_scalar(
+            "SELECT status FROM host_consumer_catchups WHERE id = $1",
+        )
+        .bind(retained)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(status, "ONGOING");
+        // Retrying the same flags at a later live reference creates an executable
+        // request; the failed attempt remains available for operator inspection.
+        let retry = store::ensure_requested(
+            &pool,
+            1,
+            "host.1",
+            &args(from, None, true),
+            Some(2000),
+            None,
+            false,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_ne!(retry, failed.0);
+    }
+}

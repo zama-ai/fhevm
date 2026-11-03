@@ -84,7 +84,26 @@ async fn configure_requested(
                 Some(creator_owner),
                 db.gcs_mode(),
             )
-            .await?
+            .await
+            .or_else(|error| {
+                if !error.is::<InvalidManualCatchupRange>() {
+                    return Err(error);
+                }
+                tracing::error!(
+                    %chain_id,
+                    consumer_id = client.consumer_id(),
+                    requested_from = ?args.catchup_from_block,
+                    requested_to = ?args.catchup_up_to_block,
+                    finalized = !args.catchup_unfinalized,
+                    %error,
+                    "Manual catchup failed; live ingestion continues. Correct the bounds and retry manually"
+                );
+                super::metrics::inc_catchup_request_failures(
+                    &chain_id.to_string(),
+                    !args.catchup_unfinalized,
+                );
+                Ok(None)
+            })?
         }
     };
     if let Some(id) = id {
@@ -244,6 +263,27 @@ pub struct ManualCatchupArgs {
     pub no_override_catchup: bool,
 }
 
+/// Invalid bounds after resolving offsets against this startup's live reference.
+/// Only this operator error is nonfatal to the running consumer.
+#[derive(Debug)]
+pub struct InvalidManualCatchupRange {
+    pub start: u64,
+    pub end: u64,
+    pub live_block: u64,
+}
+
+impl std::fmt::Display for InvalidManualCatchupRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Invalid manual catchup range [{}, {}] at live block {}",
+            self.start, self.end, self.live_block
+        )
+    }
+}
+
+impl std::error::Error for InvalidManualCatchupRange {}
+
 impl ManualCatchupArgs {
     pub fn validate(&self) -> Result<()> {
         if self.catchup_unfinalized && !self.enabled() {
@@ -293,7 +333,12 @@ impl ManualCatchupArgs {
         let start = resolve(from);
         let end = resolve(to);
         if start > end {
-            bail!("Invalid manual catchup range [{start}, {end}] at live block {live_block}");
+            return Err(InvalidManualCatchupRange {
+                start,
+                end,
+                live_block,
+            }
+            .into());
         }
         Ok((start, end))
     }
