@@ -221,7 +221,7 @@ const DUMMY_USER_ADDRESS = '0x857Ca72A957920Fa0FB138602995839866Bd4005';
  * A self-contained dummy chain: no relayer is ever reached (the key is
  * provided), and its RPC is mocked (see createDummyChainRunner).
  */
-function makeDummyChain(relayerUrl: string): FhevmChain {
+function makeDummyChain(relayerUrl: string, withKmsGeneration: boolean): FhevmChain {
   return defineFhevmChain({
     id: 12_345,
     fhevm: {
@@ -229,7 +229,7 @@ function makeDummyChain(relayerUrl: string): FhevmChain {
         acl: { address: DUMMY_CONTRACT_ADDRESS },
         inputVerifier: { address: DUMMY_USER_ADDRESS },
         kmsVerifier: { address: '0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11' },
-        kmsGeneration: { address: '0x3E0fBCcE61af7C01113027449eEFFF5DCd501419' },
+        kmsGeneration: withKmsGeneration ? { address: '0x3E0fBCcE61af7C01113027449eEFFF5DCd501419' } : undefined,
         protocolConfig: undefined, // To be filled
       },
       relayerUrl,
@@ -255,6 +255,14 @@ const HOST_CONTRACT_VERSIONS = {
 /** The active key and CRS ids of the mocked KMSGeneration: any non-zero id (the test keys carry label ids). */
 const ACTIVE_KEY_ID = 1n;
 const ACTIVE_CRS_ID = 1n;
+
+/** What a dummy chain's mocked KMSGeneration serves as the active key. */
+type MockedKmsGeneration = {
+  readonly activeKeyId: bigint;
+  readonly digests: FheEncryptionKeyDigests;
+  /** Every KMSGeneration function called, in order. */
+  readonly calls: string[];
+};
 /** `KeyType.Public` in KMSGeneration's key digests. */
 const KEY_TYPE_PUBLIC = 1;
 
@@ -269,22 +277,21 @@ const HOST_CONTRACT_ABI = new Interface([
 
 /**
  * The mocked RPC of a dummy chain, as an ethers runner: answers `getVersion()`
- * for its ACL, InputVerifier and KMSVerifier, and, for its KMSGeneration, the
- * reads that check a key: version, active ids, and `digests` as the active key
- * and CRS materials. Any other call fails the test.
+ * for its ACL, InputVerifier and KMSVerifier, and, for its KMSGeneration (if
+ * any), the reads that check a key: version, active ids, and the digests as
+ * the active key and CRS materials. Any other call fails the test.
  */
-function createDummyChainRunner(chain: FhevmChain, digests: FheEncryptionKeyDigests): EthersT.ContractRunner {
+function createDummyChainRunner(
+  chain: FhevmChain,
+  kmsGenerationMock: MockedKmsGeneration | undefined,
+): EthersT.ContractRunner {
   const { acl, inputVerifier, kmsVerifier, kmsGeneration } = chain.fhevm.contracts;
-  if (kmsGeneration === undefined) {
-    throw new Error(`Dummy chain ${chain.id} has no KMSGeneration.`);
-  }
   const versionsByAddress = new Map<string, string>([
     [acl.address.toLowerCase(), HOST_CONTRACT_VERSIONS.acl],
     [inputVerifier.address.toLowerCase(), HOST_CONTRACT_VERSIONS.inputVerifier],
     [kmsVerifier.address.toLowerCase(), HOST_CONTRACT_VERSIONS.kmsVerifier],
-    [kmsGeneration.address.toLowerCase(), HOST_CONTRACT_VERSIONS.kmsGeneration],
   ]);
-  const kmsGenerationAddress = kmsGeneration.address.toLowerCase();
+  const kmsGenerationAddress = kmsGeneration?.address.toLowerCase();
 
   const answer = (to: string, data: string): string => {
     const fn = HOST_CONTRACT_ABI.getFunction(data.slice(0, 10));
@@ -295,17 +302,21 @@ function createDummyChainRunner(chain: FhevmChain, digests: FheEncryptionKeyDige
     if (fn.name === 'getVersion' && version !== undefined) {
       return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [version]);
     }
-    if (to.toLowerCase() !== kmsGenerationAddress) {
+    if (kmsGenerationMock === undefined || to.toLowerCase() !== kmsGenerationAddress) {
       throw new Error(`Unexpected call to ${to}: ${fn.name}`);
     }
+    kmsGenerationMock.calls.push(fn.name);
+    const { activeKeyId, digests } = kmsGenerationMock;
     const args = HOST_CONTRACT_ABI.decodeFunctionData(fn, data);
     switch (fn.name) {
+      case 'getVersion':
+        return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [HOST_CONTRACT_VERSIONS.kmsGeneration]);
       case 'getActiveKeyId':
-        return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [ACTIVE_KEY_ID]);
+        return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [activeKeyId]);
       case 'getActiveCrsId':
         return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [ACTIVE_CRS_ID]);
       case 'getKeyMaterials':
-        if (args[0] !== ACTIVE_KEY_ID) {
+        if (args[0] !== activeKeyId) {
           throw new Error(`Unexpected getKeyMaterials(${String(args[0])})`);
         }
         return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [[], [[KEY_TYPE_PUBLIC, digests.publicKeyDigest]]]);
@@ -337,23 +348,50 @@ export type DummyChain = {
   readonly provider: EthersT.ContractRunner;
   /** For `options.fheEncryptionKey`: no relayer is reached. */
   readonly fheEncryptionKey: FheEncryptionKeyBytes;
+  /** Every KMSGeneration function the SDK called, in order (empty without a KMSGeneration). */
+  readonly kmsGenerationCalls: readonly string[];
+};
+
+/** Deviations of a dummy chain from a KMSGeneration serving the key as active (negative key checks). */
+export type DummyChainOptions = {
+  /** Serves these digests in place of the key's own. */
+  readonly digests?: { readonly publicKeyDigest?: string; readonly crsDigest?: string } | undefined;
+  /** Serves this active key id (0: no key generation completed). */
+  readonly activeKeyId?: bigint | undefined;
+  /** Deploys no KMSGeneration on the chain. */
+  readonly withoutKmsGeneration?: boolean | undefined;
 };
 
 /**
  * A dummy chain whose active key is test/keys/key.<keyTfheVersion>.json: its
  * mocked KMSGeneration serves that key's digests (key.<keyTfheVersion>.digests.json),
- * so the SDK checks the key for real before using it.
+ * so the SDK checks the key for real before using it. `options` make it serve
+ * something else, for the check to fail.
  */
-export async function setupDummyChain(relayerUrl: string, keyTfheVersion: string): Promise<DummyChain> {
-  const chain = makeDummyChain(relayerUrl);
+export async function setupDummyChain(
+  relayerUrl: string,
+  keyTfheVersion: string,
+  options: DummyChainOptions = {},
+): Promise<DummyChain> {
+  const chain = makeDummyChain(relayerUrl, options.withoutKmsGeneration !== true);
   const [keyFile, digests] = await Promise.all([
     fetchTestKeyFile<SerializedKeyFile>(`key.${keyTfheVersion}.json`),
     fetchTestKeyFile<FheEncryptionKeyDigests>(`key.${keyTfheVersion}.digests.json`),
   ]);
+  const kmsGenerationCalls: string[] = [];
+  const kmsGenerationMock: MockedKmsGeneration | undefined =
+    options.withoutKmsGeneration === true
+      ? undefined
+      : {
+          activeKeyId: options.activeKeyId ?? ACTIVE_KEY_ID,
+          digests: { ...digests, ...options.digests },
+          calls: kmsGenerationCalls,
+        };
   return {
     chain,
-    provider: createDummyChainRunner(chain, digests),
+    provider: createDummyChainRunner(chain, kmsGenerationMock),
     fheEncryptionKey: toFheEncryptionKeyBytes(keyFile, chain),
+    kmsGenerationCalls,
   };
 }
 
