@@ -6,7 +6,7 @@ import type {
   RelayerPostOperation,
 } from '../../../types/relayer.js';
 import { fetchWithRetry } from '../../../base/fetch.js';
-import { isNonEmptyString, isRecordStringProperty, assertRecordStringProperty } from '../../../base/string.js';
+import { isNonBlankString, isRecordStringProperty, assertRecordStringProperty } from '../../../base/string.js';
 import { isUuidV7 } from '../../../base/uuidv7.js';
 import {
   assertRecordBytesHexNo0xArrayProperty,
@@ -359,9 +359,9 @@ function _bodyExcerpt(bodyText: string): string {
 function _isRelayerHttpErrorBody(value: unknown): value is { code: string; message: string; requestId: string } {
   return (
     isRecordStringProperty(value, 'code') &&
-    isNonEmptyString(value.code) &&
+    isNonBlankString(value.code) &&
     isRecordStringProperty(value, 'message') &&
-    isNonEmptyString(value.message) &&
+    isNonBlankString(value.message) &&
     isRecordStringProperty(value, 'requestId') &&
     isUuidV7(value.requestId)
   );
