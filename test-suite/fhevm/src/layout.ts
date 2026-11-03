@@ -316,6 +316,7 @@ export const TEST_GREP: Record<string, string> = {
   "operators": "test operator|FHEVM manual operations",
   "hcu-block-cap": "block cap scenarios",
   "erc20": "should transfer tokens between two users.",
+  "erc20-traffic": "\\[erc20-traffic\\]",
   "cross-cutover-setup": "\\[cross-cutover-setup\\]",
   "cross-cutover-transfer": "\\[cross-cutover-transfer\\]",
   "cross-cutover-verify": "\\[cross-cutover-verify\\]",

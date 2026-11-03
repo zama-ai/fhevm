@@ -168,6 +168,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   operators: "Run manual operator workflows.",
   "hcu-block-cap": "Run HCU block cap scenarios.",
   erc20: "Run ERC20 transfer coverage.",
+  "erc20-traffic":
+    "Transfer a confidential token between five wallets, decrypting both balances after every transfer and checking them against the expected ledger. Runs 20 transfers, or until TRAFFIC_STOP_FILE exists when a caller sets it in the test container.",
   "negative-acl": "Run negative ACL scenarios.",
   "multi-chain-isolation": "Run multi-chain state isolation coverage.",
   "confidential-bridge": "Run confidential bridge cross-chain decrypt coverage (multi-chain).",

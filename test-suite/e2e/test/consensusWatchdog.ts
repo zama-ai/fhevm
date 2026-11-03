@@ -501,6 +501,16 @@ function isEnabled(): boolean {
   return !!(process.env.GATEWAY_RPC_URL && process.env.CIPHERTEXT_COMMITS_ADDRESS);
 }
 
+/**
+ * Polls once and throws on a divergence or a stall. Runs after each test, and inside a long-running
+ * test that would otherwise report a divergence only when it ends.
+ */
+export const checkConsensus = async () => {
+  if (!watchdog) return;
+  await watchdog.flush();
+  watchdog.checkHealth();
+};
+
 export const mochaHooks = {
   async beforeAll(this: Mocha.Context) {
     if (!isEnabled()) return;
@@ -521,11 +531,7 @@ export const mochaHooks = {
   },
 
   async afterEach(this: Mocha.Context) {
-    if (!watchdog) return;
-
-    // Force one last poll before checking health so we catch recent events.
-    await watchdog.flush();
-    watchdog.checkHealth();
+    await checkConsensus();
   },
 
   async afterAll(this: Mocha.Context) {
