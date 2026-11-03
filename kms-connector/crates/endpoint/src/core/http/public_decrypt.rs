@@ -143,7 +143,7 @@ impl DecryptionRoute for PublicRoute {
 mod tests {
     use super::*;
     use crate::core::validation::tests::{config, handle};
-    use alloy::primitives::{Bytes, U256};
+    use alloy::primitives::U256;
     use connector_utils::types::extra_data::extra_data_v2_payload;
     use tfhe::FheTypes;
     use zama_solana_acl::host_chain::solana_host_chain_id;
