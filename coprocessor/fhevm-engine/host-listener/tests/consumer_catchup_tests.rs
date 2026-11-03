@@ -258,6 +258,81 @@ async fn exercise_history_gap(broker_url: String) {
     }).await.expect("finalized catchup must consume its repair without live/final assistance");
 }
 
+#[tokio::test]
+async fn final_deliveries_do_not_hide_a_stopped_live_stream() {
+    use primitives::routing;
+    use test_harness::instance::{setup_test_db, ImportMode};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn liveness_status(port: u16) -> u16 {
+        let mut stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        stream.write_all(b"GET /liveness HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").await.unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).await.unwrap();
+        response.split_whitespace().nth(1).unwrap().parse().unwrap()
+    }
+
+    tokio::time::timeout(std::time::Duration::from_secs(90), async {
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::PgPool::connect(instance.db_url.as_str()).await.unwrap();
+        let chain_id = ChainId::try_from(
+            (uuid::Uuid::new_v4().as_u128() % 900_000_000) as u64 + 100_000_000,
+        ).unwrap();
+        let identity = format!("host-listener-consumer.{}", chain_id.as_u64());
+        seed_history(&pool, chain_id.as_i64(), &[1999]).await;
+        let broker_url = std::env::var("CATCHUP_BROKER_URL").unwrap();
+        let broker = Broker::from_url(&broker_url).await.unwrap();
+        let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap()
+            .local_addr().unwrap().port();
+        let mut config = test_config(broker_url, instance.db_url.clone(), chain_id, ManualCatchupArgs::default());
+        config.health_port = port;
+        let run = tokio::spawn(run_consumer(config));
+        let observer = consumer::ListenerConsumer::new(&broker, chain_id.as_u64(), &identity);
+        loop {
+            let status = observer.group_status().await.unwrap();
+            if [".new-event", ".final-event"].iter().all(|suffix| {
+                status.iter().any(|(topic, groups)| topic.ends_with(suffix) && !groups.is_empty())
+            }) { break; }
+            assert!(!run.is_finished(), "listener stopped during startup");
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let publisher = broker.publisher("").await.unwrap();
+        publisher.publish(
+            &routing::consumer_new_event_routing(identity.clone()),
+            &event_block(chain_id.as_u64(), 2000, BlockFlow::Live, None, false),
+        ).await.unwrap();
+        wait_for_events(&pool, chain_id, &[2000]).await;
+        assert_eq!(liveness_status(port).await, 200);
+        // Keep FINAL active beyond the existing 20-second LIVE timeout.
+        for _ in 0..23 {
+            publisher.publish(
+                &routing::consumer_final_event_routing(identity.clone()),
+                &event_block(chain_id.as_u64(), 2000, BlockFlow::Final, None, false),
+            ).await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
+        let finalized: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM host_chain_blocks_valid
+             WHERE chain_id = $1 AND block_number = 2000 AND block_status = 'finalized')",
+        ).bind(chain_id.as_i64()).fetch_one(&pool).await.unwrap();
+        assert!(finalized, "FINAL deliveries must have been consumed");
+        assert!(!run.is_finished());
+        assert_eq!(liveness_status(port).await, 503,
+            "FINAL deliveries must not refresh LIVE-stream liveness");
+        publisher.publish(
+            &routing::consumer_new_event_routing(identity.clone()),
+            &event_block(chain_id.as_u64(), 2001, BlockFlow::Live, None, false),
+        ).await.unwrap();
+        wait_for_events(&pool, chain_id, &[2000, 2001]).await;
+        assert_eq!(liveness_status(port).await, 200);
+        run.abort();
+        let _ = run.await;
+        instance.parent_token.cancel();
+    }).await.expect("LIVE-stream liveness regression must finish");
+}
+
 #[derive(Clone, Copy)]
 enum Startup {
     NoFlags,
