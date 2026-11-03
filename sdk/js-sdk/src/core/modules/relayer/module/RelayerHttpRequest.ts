@@ -9,10 +9,11 @@ import { setAuth } from '../../../base/auth.js';
 import { normalizeHeaders } from '../../../base/fetch.js';
 import { isUintNumber } from '../../../base/uint.js';
 import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
+import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
 import { normalizeRelayerQuery } from './relayerUrl.js';
 import { RelayerHttpAttempt } from './RelayerHttpAttempt.js';
 import { runRelayerHttpRetryLoop } from './relayerHttpRetryLoop.js';
-import { MAX_TIMEOUT_MS, createRelayerHttpSignal } from './relayerHttpSignal.js';
+import { MAX_TIMEOUT_MS, createRelayerHttpSignal, throwIfRelayerHttpAborted } from './relayerHttpSignal.js';
 
 // One-shot request/response client for relayer-http's synchronous routes (e.g. POST
 // /v4/user-decrypt): a single POST, a single JSON response, no job id, no polling —
@@ -84,6 +85,15 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
     // 3. Build the request init once, then run the HTTP attempts
     // -------------------------------------------------------------------------
 
+    // An abort before settlement wins over the loop's outcome:
+    //
+    //   loop ──► result ──► aborted? ──► yes ──► throw the abort ──┐
+    //    │                     └──► no ──► return result           │
+    //    └──► error ◄──────────────────────────────────────────────┘
+    //           └──► already the abort? ──► yes ──► rethrow it
+    //                     └──► no ──► aborted? ──► yes ──► throw the abort
+    //                                    └──► no ──► rethrow the error
+    //
     // The build stays inside the try: JSON.stringify (e.g. a BigInt payload) and
     // setAuth (an invalid header) can throw, and cleanup() must still run.
     try {
@@ -91,7 +101,7 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
       const init = this._buildInit();
 
       // 3.2. Run HTTP attempts until one succeeds or the error is final
-      return await runRelayerHttpRetryLoop({
+      const result = await runRelayerHttpRetryLoop({
         runAttempt: () => this._createAttempt(init, combined).run(),
         // Called through `this`, so a subclass override is the one used.
         decide: (error, attempt) => this._retryDecision(error, attempt),
@@ -101,6 +111,23 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
         url: this._url,
         logger: this._logger,
       });
+
+      // -----------------------------------------------------------------------
+      // 4. Let an abort before settlement win over the result
+      // -----------------------------------------------------------------------
+
+      this._throwIfAbortedAtExit(combined);
+      return result;
+    } catch (error) {
+      // -----------------------------------------------------------------------
+      // 5. Let an abort before settlement win over the error
+      // -----------------------------------------------------------------------
+
+      // The abort itself (e.g. thrown by step 4) passes through: same instance, no second warn.
+      if (!_isAbortOutcome(error, combined.signal)) {
+        this._throwIfAbortedAtExit(combined);
+      }
+      throw error;
     } finally {
       combined.cleanup();
     }
@@ -126,6 +153,26 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
    */
   protected _retryDecision(_error: RelayerHttpResponseError, _attempt: number): number | undefined {
     return undefined;
+  }
+
+  /**
+   * Throws the abort if the combined signal was aborted before run() settled; returns otherwise.
+   *
+   * @param combined - The run's combined signal.
+   *
+   * @example
+   * ```typescript
+   * this._throwIfAbortedAtExit(combined); // throws RelayerHttpTimeoutError if our timer fired
+   * ```
+   */
+  private _throwIfAbortedAtExit(combined: RelayerHttpSignal): void {
+    throwIfRelayerHttpAborted({
+      signal: combined.signal,
+      timedOutAfterMs: combined.timedOutAfterMs,
+      url: this._url,
+      logger: this._logger,
+      during: ' after the response was received',
+    });
   }
 
   // Normalized headers + content-type + sdk headers, the JSON body (serialized once) and auth.
@@ -162,6 +209,26 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
       logger: this._logger,
     });
   }
+}
+
+/**
+ * Tells whether `error` already is the classified abort of `signal`.
+ *
+ * @param error - The value the loop rejected with.
+ * @param signal - The run's combined signal.
+ * @returns True if `error` is the abort reason itself or our RelayerHttpTimeoutError.
+ *
+ * @example
+ * ```typescript
+ * _isAbortOutcome(signal.reason, signal); // true
+ * _isAbortOutcome(new Error('boom'), signal); // false
+ * ```
+ */
+function _isAbortOutcome(error: unknown, signal: AbortSignal): boolean {
+  if (!signal.aborted) {
+    return false;
+  }
+  return error === signal.reason || error instanceof RelayerHttpTimeoutError;
 }
 
 /**
