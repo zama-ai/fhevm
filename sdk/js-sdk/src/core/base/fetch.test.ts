@@ -337,6 +337,28 @@ describe('fetchWithRetry', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(logger.warn).not.toHaveBeenCalled();
   });
+
+  // Documented contract: unlike an abort during fetch, the reason is wrapped (abortableSleep), not rethrown.
+  it('rejects with an AbortError wrapping the reason when aborted during the retry delay', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    const controller = new AbortController();
+
+    const promise = fetchWithRetry({
+      url: 'https://example.com',
+      init: { signal: controller.signal },
+      retries: 1,
+      retryDelayMs: 1000,
+    }).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(500);
+    controller.abort('user left');
+
+    const error = await promise;
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).name).toBe('AbortError');
+    expect((error as Error).cause).toBe('user left');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
 
 ////////////////////////////////////////////////////////////////////////////////
