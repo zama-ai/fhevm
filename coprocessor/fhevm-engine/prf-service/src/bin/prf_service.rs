@@ -30,8 +30,8 @@ struct Args {
     #[arg(long)]
     database_url: Option<DatabaseURL>,
 
-    /// Postgres pool size. At least the listener, the two admissions of one connector, and one more.
-    #[arg(long, env = "PRF_DATABASE_POOL_SIZE", default_value_t = 10, value_parser = clap::value_parser!(u32).range(4..))]
+    /// Postgres pool size: the listener, two admissions for each connector, and reads. The default is for 13 connectors.
+    #[arg(long, env = "PRF_DATABASE_POOL_SIZE", default_value_t = 32, value_parser = clap::value_parser!(u32).range(4..))]
     database_pool_size: u32,
 
     /// Pad bits under evaluation that one connector can trigger, in all pods.

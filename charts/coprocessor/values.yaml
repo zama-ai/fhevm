@@ -1753,8 +1753,8 @@ prfService:
   # User and password of the `prf_service` role, as in commonConfig. Empty: the commonConfig user.
   databaseUser: {}
   databasePassword: {}
-  # At least 4: the listener, the two admissions of one connector, and one more.
-  databasePoolSize: 10
+  # The listener, two admissions for each connector, and reads: 32 for 13 connectors. At least 4.
+  databasePoolSize: 32
 
   # Limits for each connector. Above a limit, prf-service answers `429 concurrency_limited`.
   limits:
