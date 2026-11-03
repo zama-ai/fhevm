@@ -70,7 +70,7 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
     this._auth = params.options?.auth;
     this._headers = normalizeHeaders(params.options?.headers);
     this._query = normalizeRelayerQuery(params.options?.query);
-    this._signal = params.options?.signal;
+    this._signal = params.options?.signal ?? undefined;
     this._timeoutMs = _validateTimeoutMs(params.options?.timeout);
     this._fetchRetries = params.options?.fetchRetries;
     this._fetchRetryDelayInMilliseconds = params.options?.fetchRetryDelayInMilliseconds;
