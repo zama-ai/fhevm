@@ -217,6 +217,18 @@ spec:
     rpcUrl: { env: SEPOLIA_ETH_RPC_URL, secret: true }
     chainId: { value: 11155111 }
     mnemonic: { env: MNEMONIC, secret: true }
+  relayer: # optional typed section of the FHE module, see below
+    url: { env: RELAYER_URL }
+    apiKey: { env: ZAMA_FHEVM_API_KEY, secret: true, default: '' } # empty: no authentication
+    gateway:
+      chainId: { env: CHAIN_ID_GATEWAY }
+      decryption: { env: DECRYPTION_ADDRESS }
+      inputVerification: { env: INPUT_VERIFICATION_ADDRESS }
+  contracts: # optional typed section: protocol contracts on the host chain
+    acl: { env: ACL_CONTRACT_ADDRESS }
+    inputVerifier: { env: INPUT_VERIFIER_CONTRACT_ADDRESS }
+    kmsVerifier: { env: KMS_VERIFIER_CONTRACT_ADDRESS }
+    protocolConfig: { env: PROTOCOL_CONFIG_CONTRACT_ADDRESS }
   settings:
     example.url: { value: https://example.invalid } # literal (never for secrets)
     example.timeout: { env: EXAMPLE_TIMEOUT, default: 30 } # env var with fallback (never for secrets)
@@ -231,11 +243,20 @@ spec:
 | `testnet` | no           | `SEPOLIA_ETH_RPC_URL` (secret), chain ID 11155111, `MNEMONIC`.                                                                                                                                                      |
 | `mainnet` | **yes**      | `MAINNET_ETH_RPC_URL` (secret), chain ID 1, `MNEMONIC`. Real funds.                                                                                                                                                 |
 
-No URL or mnemonic is committed: they come from the environment. The relayer and contracts sections arrive with the modules that own them.
+No URL or mnemonic is committed: they come from the environment.
+
+Every shipped profile also declares the [`relayer` and `contracts` sections](#the-relayer-and-contracts-sections), with the variable names of the e2e suite:
+
+| Profile   | `relayer` and `contracts` sections                                                                                                                                                  |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `local`   | From `test-suite.env`: `RELAYER_URL`, `CHAIN_ID_GATEWAY` (default 54321), the gateway and host contract addresses. No API key.                                                      |
+| `devnet`  | From the environment; `ZAMA_FHEVM_API_KEY` is optional (empty by default, so no authentication).                                                                                    |
+| `testnet` | **Placeholder**, as `devnet`: not validated against the network yet. The public values embedded in the e2e suite (`test/instance.ts`) are the starting point when it is configured. |
+| `mainnet` | **Placeholder**, as `testnet`.                                                                                                                                                      |
 
 **Value resolution.** A setting is exactly one of `{ value }`, `{ env }` or `{ env, default }`. An `env` source is looked up in the process environment first, then in the env files, in order. Settings are resolved once, before any scenario runs: a missing variable or a missing (non-optional) env file stops the run with exit 2. Env files are never merged into `process.env`.
 
-**Secrets.** `secret: true` marks a sensitive value. Secrets cannot have a literal `value` or a `default` (they never live in the repository) and must be at least 8 characters long. They are redacted from every output (see [Secret handling](#secret-handling)).
+**Secrets.** `secret: true` marks a sensitive value. Secrets cannot have a literal `value` (they never live in the repository); their only allowed `default` is the empty string, which means "not set". A non-empty secret must be at least 8 characters long; an empty one is not redacted, since there is nothing to hide. They are redacted from every output (see [Secret handling](#secret-handling)).
 
 ### The `chain` section
 
@@ -251,6 +272,20 @@ A **typed section** has fields fixed by the schema and is owned by one engine mo
 | `gas`      | no       | `bufferPercent` (default 50) and `limitCap` (default 10 000 000): the gas limit of a transaction without one is `estimate × (100 + bufferPercent) / 100`, capped (the e2e `withGasBuffer`). |
 
 `rpcUrl`, `chainId` and `mnemonic` take the same sources as settings, and their types are checked once resolved (a value read from the environment is a string): a wrong URL, chain ID or mnemonic stops the run with exit 2, and the message never quotes the mnemonic. `profiles --profile <name>` prints the resolved section with the source of each value.
+
+### The `relayer` and `contracts` sections
+
+Both are read by the FHE module (coming next). `relayer` holds what is reached through the relayer and the gateway chain; `contracts` holds the protocol contracts deployed on the host chain (the contract configuration will add to it). Every field is a value source.
+
+| Field                                                             | Required | Description                                                                                                      |
+| ----------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
+| `relayer.url`                                                     | yes      | An http(s) URL, with or without the API version suffix (`/v1`, `/v2`).                                           |
+| `relayer.apiKey`                                                  | no       | Sent on every relayer call. `secret: true` is mandatory; an empty value (`default: ""`) means no authentication. |
+| `relayer.gateway.chainId`                                         | yes      | A positive integer. Never a secret.                                                                              |
+| `relayer.gateway.decryption`, `inputVerification`                 | yes      | Addresses of the Decryption and InputVerification contracts on the gateway chain.                                |
+| `contracts.acl`, `inputVerifier`, `kmsVerifier`, `protocolConfig` | yes      | Addresses of the host-chain protocol contracts.                                                                  |
+
+An address must be 20-byte hex; a mixed-case address must have a valid checksum (a wrong one usually means a typo). As for `chain`, types are checked once resolved and every problem stops the run with exit 2.
 
 ## Planner rules
 
@@ -337,12 +372,12 @@ Each call adds a Cucumber attachment (media type `application/vnd.fhevm.evidence
 
 `evidence.json` (`schemaVersion: 1`, type `EvidenceFile` in [`src/orchestration/reporting/evidence.ts`](src/orchestration/reporting/evidence.ts)) holds one entry per piece of evidence, each with a `scope`:
 
-| Scope      | Produced by | Content                                                                                                                                                                  |
-| ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `run`      | the engine  | `engine.run` (engine and Node versions, git commit, times, filters) and `engine.profile` (name, confirmation, chain section and settings with sources, secrets redacted) |
-| `scenario` | the engine  | `engine.scenario`: plan decision and reason, outcome, timings (also for skipped scenarios)                                                                               |
-| `step`     | `record()`  | kind, label, data, timestamp, Gherkin scenario and step                                                                                                                  |
-| `hook`     | `record()`  | same, with the hook instead of the step                                                                                                                                  |
+| Scope      | Produced by | Content                                                                                                                                                                   |
+| ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run`      | the engine  | `engine.run` (engine and Node versions, git commit, times, filters) and `engine.profile` (name, confirmation, typed sections and settings with sources, secrets redacted) |
+| `scenario` | the engine  | `engine.scenario`: plan decision and reason, outcome, timings (also for skipped scenarios)                                                                                |
+| `step`     | `record()`  | kind, label, data, timestamp, Gherkin scenario and step                                                                                                                   |
+| `hook`     | `record()`  | same, with the hook instead of the step                                                                                                                                   |
 
 The Chain module records its evidence through `record()`, on the running step:
 
@@ -364,7 +399,7 @@ Every output is redacted **before it is written**: nothing unredacted reaches th
 | Worker stdout/stderr (terminal and `console.log`) | in the engine, line by line, before printing or writing                                       |
 | `report.json`, `report.html`, `evidence.json`     | in the report builder                                                                         |
 
-Redaction replaces the raw, JSON-escaped and URL-encoded forms of each secret with `[REDACTED:<key>]`, where the key is the setting key or `chain.<field>`. With a `chain` section, the private key derived for each wallet role is a secret too (`chain.wallets.<role>`). A secret transformed in other ways (base64, hashed, split across lines) is not detected; never log transformed secrets. In addition, the worker never receives the profile environment variables, and the job (profile included) reaches the worker through stdin, never through its command line.
+Redaction replaces the raw, JSON-escaped and URL-encoded forms of each secret with `[REDACTED:<key>]`, where the key is the setting key or the field of a typed section (`chain.<field>`, `relayer.<field>`, `contracts.<field>`). With a `chain` section, the private key derived for each wallet role is a secret too (`chain.wallets.<role>`). A secret transformed in other ways (base64, hashed, split across lines) is not detected; never log transformed secrets. In addition, the worker never receives the profile environment variables, and the job (profile included) reaches the worker through stdin, never through its command line.
 
 ## Outputs
 

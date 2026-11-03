@@ -1,0 +1,18 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata:
+  name: relayer-types
+  description: Valid definition whose resolved relayer and contracts values may have the wrong type.
+spec:
+  relayer:
+    url: { env: TE_RELAYER_URL }
+    apiKey: { env: TE_RELAYER_API_KEY, secret: true }
+    gateway:
+      chainId: { env: TE_GATEWAY_CHAIN_ID }
+      decryption: { env: TE_DECRYPTION }
+      inputVerification: { value: "0x0000000000000000000000000000000000000002" }
+  contracts:
+    acl: { env: TE_ACL }
+    inputVerifier: { value: "0x0000000000000000000000000000000000000004" }
+    kmsVerifier: { value: "0x0000000000000000000000000000000000000005" }
+    protocolConfig: { value: "0x0000000000000000000000000000000000000006" }

@@ -28,20 +28,24 @@ class FheSpikeWorld extends EngineWorld {
   contract: Contract | undefined;
   encrypted: { handle: Uint8Array; inputProof: Uint8Array } | undefined;
 
+  /**
+   * The profile's relayer and contracts sections. Until the FHE module exists, the spike reads them
+   * straight from the World parameters (the engine exposes no API for them yet).
+   */
   settings(): FheSettings {
-    const profile = this.engine.profile;
-    const text = (key: string) => String(profile.setting(key));
-    const address = (key: string) => text(key) as `0x${string}`;
+    const { relayer, contracts, name } = this.parameters.profile;
+    if (!relayer || !contracts) throw new Error(`profile '${name}' has no relayer or contracts section`);
+    const address = (setting: { value: string }) => setting.value as `0x${string}`;
     return {
-      relayerUrl: text('relayer.url'),
+      relayerUrl: relayer.url.value,
       chainId: this.engine.chain.chainId,
-      gatewayChainId: Number(profile.setting('gateway.chain-id')),
-      decryption: address('gateway.decryption'),
-      inputVerification: address('gateway.input-verification'),
-      acl: address('contracts.acl'),
-      inputVerifier: address('contracts.input-verifier'),
-      kmsVerifier: address('contracts.kms-verifier'),
-      protocolConfig: address('contracts.protocol-config'),
+      gatewayChainId: relayer.gateway.chainId.value,
+      decryption: address(relayer.gateway.decryption),
+      inputVerification: address(relayer.gateway.inputVerification),
+      acl: address(contracts.acl),
+      inputVerifier: address(contracts.inputVerifier),
+      kmsVerifier: address(contracts.kmsVerifier),
+      protocolConfig: address(contracts.protocolConfig),
     };
   }
 

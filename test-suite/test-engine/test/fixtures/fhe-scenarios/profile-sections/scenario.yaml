@@ -1,0 +1,14 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.profile-sections
+  name: Fixture profile sections
+  owner: qa
+  description:
+    Engine test fixture - a scenario without targets, dry-run on a profile with the relayer and contracts sections.
+  tags: [fixture, fhe]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30

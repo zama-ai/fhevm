@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://zama.ai/schemas/fhevm/test-engine/profile.v1.schema.json",
   "title": "fhEVM test engine environment profile (v1)",
-  "description": "Describes one target environment: whether it requires confirmation, the typed sections owned by engine modules (chain) and the generic settings scenarios can read. Every field is enforced at runtime; unknown fields are rejected. A value is exactly one of {value}, {env} or {env, default}; secrets (secret: true) must come from env and cannot have a default.",
+  "description": "Describes one target environment: whether it requires confirmation, the typed sections owned by engine modules (chain, relayer, contracts) and the generic settings scenarios can read. Every field is enforced at runtime; unknown fields are rejected. A value is exactly one of {value}, {env} or {env, default}; secrets (secret: true) must come from env, and their only allowed default is the empty string (meaning \"not set\").",
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "kind", "metadata", "spec"],
@@ -69,6 +69,12 @@
         "chain": {
           "$ref": "#/definitions/chainSection"
         },
+        "relayer": {
+          "$ref": "#/definitions/relayerSection"
+        },
+        "contracts": {
+          "$ref": "#/definitions/contractsSection"
+        },
         "settings": {
           "description": "Generic settings read by scenarios through this.engine.profile.setting(key).",
           "type": "object",
@@ -99,13 +105,60 @@
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
         },
         "default": {
-          "description": "Fallback when the variable is not set (only with env, never for secrets).",
+          "description": "Fallback when the variable is not set (only with env; for secrets, only the empty string).",
           "type": ["string", "number", "boolean"]
         },
         "secret": {
           "description": "Sensitive value: redacted from every output.",
           "type": "boolean"
         }
+      }
+    },
+    "relayerSection": {
+      "description": "Typed section owned by the FHE module (this.engine.fhe): the relayer and the gateway chain. Every field is a value source, checked after resolution.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "gateway"],
+      "properties": {
+        "url": {
+          "description": "Relayer URL (http or https), with or without the API version suffix (/v1, /v2).",
+          "$ref": "#/definitions/valueSource"
+        },
+        "apiKey": {
+          "description": "Relayer API key, sent on every relayer call. Must declare secret: true; an empty value means no authentication.",
+          "$ref": "#/definitions/valueSource"
+        },
+        "gateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["chainId", "decryption", "inputVerification"],
+          "properties": {
+            "chainId": {
+              "description": "Gateway chain ID (positive integer).",
+              "$ref": "#/definitions/valueSource"
+            },
+            "decryption": {
+              "description": "Address of the Decryption contract on the gateway chain.",
+              "$ref": "#/definitions/valueSource"
+            },
+            "inputVerification": {
+              "description": "Address of the InputVerification contract on the gateway chain.",
+              "$ref": "#/definitions/valueSource"
+            }
+          }
+        }
+      }
+    },
+    "contractsSection": {
+      "description": "Protocol contracts deployed on the host chain, read by the FHE module. Every field is a value source holding an address, checked after resolution.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["acl", "inputVerifier", "kmsVerifier", "protocolConfig"],
+      "properties": {
+        "acl": { "$ref": "#/definitions/valueSource" },
+        "inputVerifier": { "$ref": "#/definitions/valueSource" },
+        "kmsVerifier": { "$ref": "#/definitions/valueSource" },
+        "protocolConfig": { "$ref": "#/definitions/valueSource" }
       }
     },
     "chainSection": {

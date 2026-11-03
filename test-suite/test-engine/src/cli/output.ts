@@ -1,7 +1,7 @@
 import path from 'node:path';
 
 import type { ManifestError } from '../config/manifest/types.js';
-import { redactedChain, redactedSettings } from '../config/profiles/profile.js';
+import { redactedChain, redactedContracts, redactedRelayer, redactedSettings } from '../config/profiles/profile.js';
 import {
   BUILTIN_PROFILE,
   type ProfileDefinition,
@@ -59,6 +59,10 @@ export function printDiscoveryErrors(errors: ManifestError[]): void {
   }
 }
 
+/** The typed sections a profile declares, comma-separated, or `-`. */
+const sectionsOf = (spec: ProfileDefinition['spec']): string =>
+  (['chain', 'relayer', 'contracts'] as const).filter((section) => spec[section]).join(',') || '-';
+
 export function printProfileList(profiles: ProfileDefinition[]): void {
   printTable(
     ['PROFILE', 'CONFIRM', 'SECTIONS', 'SETTINGS', 'DESCRIPTION'],
@@ -67,7 +71,7 @@ export function printProfileList(profiles: ProfileDefinition[]): void {
       ...profiles.map(({ metadata, spec }) => [
         metadata.name,
         spec.requiresConfirmation ? 'yes' : 'no',
-        spec.chain ? 'chain' : '-',
+        sectionsOf(spec),
         String(Object.keys(spec.settings).length),
         metadata.description,
       ]),
@@ -114,6 +118,28 @@ export function printProfileSettings(profile: ResolvedProfile): void {
         ['wallets', 'no', 'profile', list(chain.wallets)],
         ['gas', 'no', 'profile', list({ ...chain.gas })],
       ],
+    );
+  }
+  const relayer = redactedRelayer(profile);
+  if (relayer) {
+    console.log('\nSection relayer:');
+    printTable(
+      ['FIELD', 'SECRET', 'SOURCE', 'VALUE'],
+      [
+        settingRow('url', relayer.url),
+        ...(relayer.apiKey ? [settingRow('apiKey', relayer.apiKey)] : []),
+        settingRow('gateway.chainId', relayer.gateway.chainId),
+        settingRow('gateway.decryption', relayer.gateway.decryption),
+        settingRow('gateway.inputVerification', relayer.gateway.inputVerification),
+      ],
+    );
+  }
+  const contracts = redactedContracts(profile);
+  if (contracts) {
+    console.log('\nSection contracts:');
+    printTable(
+      ['FIELD', 'SECRET', 'SOURCE', 'VALUE'],
+      Object.entries(contracts).map(([field, setting]) => settingRow(field, setting)),
     );
   }
   const settings = Object.entries(redactedSettings(profile));

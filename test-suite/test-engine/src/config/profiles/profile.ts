@@ -1,4 +1,4 @@
-import { Mnemonic } from 'ethers';
+import { Mnemonic, isAddress } from 'ethers';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
@@ -10,11 +10,16 @@ import { parseEnvFile } from './env-file.js';
 import {
   BUILTIN_PROFILE,
   type ChainSectionDefinition,
+  type ContractsSectionDefinition,
   type ProfileDefinition,
   ProfileError,
+  type RelayerSectionDefinition,
   type ResolvedChainSection,
+  type ResolvedContractsSection,
   type ResolvedProfile,
+  type ResolvedRelayerSection,
   type ResolvedSetting,
+  type ResolvedValue,
   type ValueSource,
 } from './types.js';
 
@@ -54,6 +59,10 @@ export function listProfileNames(profilesDir: string): string[] {
 
 /** The value sources of the `chain` section, in display order. */
 const CHAIN_SOURCES = ['rpcUrl', 'chainId', 'mnemonic'] as const;
+/** The gateway value sources of the `relayer` section, in display order. */
+const GATEWAY_SOURCES = ['chainId', 'decryption', 'inputVerification'] as const;
+/** The value sources of the `contracts` section, in display order. */
+const CONTRACT_SOURCES = ['acl', 'inputVerifier', 'kmsVerifier', 'protocolConfig'] as const;
 
 function checkValueSource(where: string, source: ValueSource): string[] {
   const problems: string[] = [];
@@ -64,7 +73,10 @@ function checkValueSource(where: string, source: ValueSource): string[] {
   if (source.secret) {
     if (hasValue)
       problems.push(`${where}: a secret cannot have a literal 'value' (secrets never live in the repository)`);
-    if (source.default !== undefined) problems.push(`${where}: a secret cannot have a 'default'`);
+    // An empty default only means "not set": it puts no secret in the repository.
+    if (source.default !== undefined && source.default !== '') {
+      problems.push(`${where}: a secret cannot have a 'default' other than the empty string`);
+    }
   }
   return problems;
 }
@@ -93,6 +105,13 @@ function semanticProblems(profilePath: string, document: unknown): string[] {
     problems.push(`metadata.name '${metadata.name}' must match the file name '${fileName}'`);
   }
   if (isRecord(spec.chain)) problems.push(...chainProblems(spec.chain));
+  if (isRecord(spec.relayer)) problems.push(...relayerProblems(spec.relayer));
+  if (isRecord(spec.contracts)) {
+    for (const field of CONTRACT_SOURCES) {
+      const source = spec.contracts[field];
+      if (isRecord(source)) problems.push(...checkValueSource(`spec.contracts.${field}`, source as ValueSource));
+    }
+  }
   if (isRecord(spec.settings)) {
     for (const [key, source] of Object.entries(spec.settings)) {
       if (isRecord(source)) problems.push(...checkValueSource(`spec.settings.${key}`, source as ValueSource));
@@ -120,6 +139,28 @@ function chainProblems(chain: Record<string, unknown>): string[] {
       if (other !== undefined)
         problems.push(`spec.chain.wallets: '${other}' and '${role}' use the same index ${index}`);
       else roleByIndex.set(index, role);
+    }
+  }
+  return problems;
+}
+
+function relayerProblems(relayer: Record<string, unknown>): string[] {
+  const problems: string[] = [];
+  for (const field of ['url', 'apiKey'] as const) {
+    const source = relayer[field];
+    if (isRecord(source)) problems.push(...checkValueSource(`spec.relayer.${field}`, source as ValueSource));
+  }
+  if (isRecord(relayer.apiKey) && relayer.apiKey.secret !== true) {
+    problems.push(`spec.relayer.apiKey: must declare 'secret: true'`);
+  }
+  if (isRecord(relayer.gateway)) {
+    const gateway = relayer.gateway;
+    for (const field of GATEWAY_SOURCES) {
+      const source = gateway[field];
+      if (isRecord(source)) problems.push(...checkValueSource(`spec.relayer.gateway.${field}`, source as ValueSource));
+    }
+    if (isRecord(gateway.chainId) && gateway.chainId.secret === true) {
+      problems.push(`spec.relayer.gateway.chainId: cannot be a secret`);
     }
   }
   return problems;
@@ -209,7 +250,9 @@ function resolveSetting(
     problems.push(`${where}: environment variable '${name}' is not set`);
     return undefined;
   }
-  if (secret && String(resolved.value).length < MIN_SECRET_LENGTH) {
+  // An empty secret means "not set" (for example an optional API key): there is nothing to redact.
+  const length = String(resolved.value).length;
+  if (secret && length > 0 && length < MIN_SECRET_LENGTH) {
     problems.push(`${where}: secret value must be at least ${MIN_SECRET_LENGTH} characters long`);
     return undefined;
   }
@@ -255,6 +298,73 @@ function resolveChain(
   };
 }
 
+/** Resolves the `relayer` section and checks the types of its values. */
+function resolveRelayer(
+  relayer: RelayerSectionDefinition,
+  resolve: ResolveValue,
+  problems: string[],
+): ResolvedRelayerSection | undefined {
+  const before = problems.length;
+  const url = resolve('spec.relayer.url', relayer.url);
+  const apiKey = relayer.apiKey ? resolve('spec.relayer.apiKey', relayer.apiKey) : undefined;
+  const chainId = resolve('spec.relayer.gateway.chainId', relayer.gateway.chainId);
+  const decryption = resolveAddress('spec.relayer.gateway.decryption', relayer.gateway.decryption, resolve, problems);
+  const inputVerification = resolveAddress(
+    'spec.relayer.gateway.inputVerification',
+    relayer.gateway.inputVerification,
+    resolve,
+    problems,
+  );
+
+  if (url && !isHttpUrl(String(url.value))) problems.push(`spec.relayer.url: must be an http(s) URL`);
+  const chainIdValue = chainId ? toChainId(chainId.value) : undefined;
+  if (chainId && chainIdValue === undefined) {
+    problems.push(`spec.relayer.gateway.chainId: must be a positive integer, got '${String(chainId.value)}'`);
+  }
+  if (problems.length > before || !url || !chainId || chainIdValue === undefined || !decryption || !inputVerification) {
+    return undefined;
+  }
+  return {
+    url: { ...url, value: String(url.value) },
+    ...(apiKey ? { apiKey: { ...apiKey, value: String(apiKey.value) } } : {}),
+    gateway: { chainId: { ...chainId, value: chainIdValue }, decryption, inputVerification },
+  };
+}
+
+/** Resolves the `contracts` section; every value must be an address. */
+function resolveContracts(
+  contracts: ContractsSectionDefinition,
+  resolve: ResolveValue,
+  problems: string[],
+): ResolvedContractsSection | undefined {
+  const before = problems.length;
+  const [acl, inputVerifier, kmsVerifier, protocolConfig] = CONTRACT_SOURCES.map((field) =>
+    resolveAddress(`spec.contracts.${field}`, contracts[field], resolve, problems),
+  );
+  if (problems.length > before || !acl || !inputVerifier || !kmsVerifier || !protocolConfig) return undefined;
+  return { acl, inputVerifier, kmsVerifier, protocolConfig };
+}
+
+/**
+ * Resolves a value that must be a 20-byte hex address. A mixed-case address must have a valid
+ * checksum: a wrong one usually means a typo.
+ */
+function resolveAddress(
+  where: string,
+  source: ValueSource,
+  resolve: ResolveValue,
+  problems: string[],
+): ResolvedValue<string> | undefined {
+  const resolved = resolve(where, source);
+  if (!resolved) return undefined;
+  const value = String(resolved.value);
+  if (!isAddress(value)) {
+    problems.push(`${where}: must be a 20-byte hex address (with a valid checksum if mixed-case), got '${value}'`);
+    return undefined;
+  }
+  return { ...resolved, value };
+}
+
 function isHttpUrl(value: string): boolean {
   try {
     const { protocol } = new URL(value);
@@ -291,7 +401,10 @@ export function loadProfile(name: string, options: ProfileOptions): ResolvedProf
   const envFiles = readEnvFiles(definition, profilePath, problems);
   const resolve: ResolveValue = (where, source) =>
     resolveSetting(where, source, options.env ?? process.env, envFiles, problems);
-  const chain = definition.spec.chain ? resolveChain(definition.spec.chain, resolve, problems) : undefined;
+  const { chain: chainDefinition, relayer: relayerDefinition, contracts: contractsDefinition } = definition.spec;
+  const chain = chainDefinition ? resolveChain(chainDefinition, resolve, problems) : undefined;
+  const relayer = relayerDefinition ? resolveRelayer(relayerDefinition, resolve, problems) : undefined;
+  const contracts = contractsDefinition ? resolveContracts(contractsDefinition, resolve, problems) : undefined;
   const settings: Record<string, ResolvedSetting> = {};
   for (const [key, source] of Object.entries(definition.spec.settings)) {
     const resolved = resolve(`spec.settings.${key}`, source);
@@ -304,17 +417,35 @@ export function loadProfile(name: string, options: ProfileOptions): ResolvedProf
     description: definition.metadata.description,
     requiresConfirmation: definition.spec.requiresConfirmation,
     ...(chain ? { chain } : {}),
+    ...(relayer ? { relayer } : {}),
+    ...(contracts ? { contracts } : {}),
     settings,
   };
 }
 
-/** Every resolved value of a profile under its display key (`chain.<field>`, then setting keys). */
+/** The resolved values of the `relayer` section under their display key, in display order. */
+function relayerValues(relayer: ResolvedRelayerSection): [string, ResolvedSetting][] {
+  return [
+    ['relayer.url', relayer.url],
+    ...(relayer.apiKey ? ([['relayer.apiKey', relayer.apiKey]] as [string, ResolvedSetting][]) : []),
+    ...GATEWAY_SOURCES.map((field): [string, ResolvedSetting] => [`relayer.gateway.${field}`, relayer.gateway[field]]),
+  ];
+}
+
+/**
+ * Every resolved value of a profile under its display key (`chain.<field>`, `relayer.<field>`,
+ * `contracts.<field>`, then setting keys).
+ */
 function valuesOf(profile: ResolvedProfile): [string, ResolvedSetting][] {
-  const chain = profile.chain;
-  const chainValues: [string, ResolvedSetting][] = chain
-    ? CHAIN_SOURCES.map((field) => [`chain.${field}`, chain[field]])
-    : [];
-  return [...chainValues, ...Object.entries(profile.settings)];
+  const { chain, relayer, contracts } = profile;
+  return [
+    ...(chain ? CHAIN_SOURCES.map((field): [string, ResolvedSetting] => [`chain.${field}`, chain[field]]) : []),
+    ...(relayer ? relayerValues(relayer) : []),
+    ...(contracts
+      ? CONTRACT_SOURCES.map((field): [string, ResolvedSetting] => [`contracts.${field}`, contracts[field]])
+      : []),
+    ...Object.entries(profile.settings),
+  ];
 }
 
 /**
@@ -324,7 +455,8 @@ function valuesOf(profile: ResolvedProfile): [string, ResolvedSetting][] {
  */
 export function secretsOf(profile: ResolvedProfile): SecretValue[] {
   const secrets = valuesOf(profile)
-    .filter(([, setting]) => setting.secret)
+    // An empty secret means "not set": there is nothing to redact.
+    .filter(([, setting]) => setting.secret && String(setting.value) !== '')
     .map(([key, setting]) => ({ key, value: String(setting.value) }));
   if (profile.chain) {
     const { mnemonic, hdPath, wallets } = profile.chain;
@@ -336,7 +468,7 @@ export function secretsOf(profile: ResolvedProfile): SecretValue[] {
 }
 
 const redact = <T extends ResolvedSetting>(key: string, setting: T): T =>
-  setting.secret ? { ...setting, value: `[REDACTED:${key}]` } : setting;
+  setting.secret && String(setting.value) !== '' ? { ...setting, value: `[REDACTED:${key}]` } : setting;
 
 /** A copy of the `chain` section safe to print or store: secret values replaced by a placeholder. */
 export function redactedChain(profile: ResolvedProfile): ResolvedChainSection | undefined {
@@ -348,6 +480,32 @@ export function redactedChain(profile: ResolvedProfile): ResolvedChainSection | 
     rpcUrl: redact('chain.rpcUrl', rpcUrl),
     mnemonic: redact('chain.mnemonic', mnemonic),
   };
+}
+
+/** A copy of the `relayer` section safe to print or store: secret values replaced by a placeholder. */
+export function redactedRelayer(profile: ResolvedProfile): ResolvedRelayerSection | undefined {
+  if (!profile.relayer) return undefined;
+  // gateway.chainId cannot be a secret (checked when the file is read).
+  const { url, apiKey, gateway } = profile.relayer;
+  return {
+    url: redact('relayer.url', url),
+    ...(apiKey ? { apiKey: redact('relayer.apiKey', apiKey) } : {}),
+    gateway: {
+      chainId: gateway.chainId,
+      decryption: redact('relayer.gateway.decryption', gateway.decryption),
+      inputVerification: redact('relayer.gateway.inputVerification', gateway.inputVerification),
+    },
+  };
+}
+
+/** A copy of the `contracts` section safe to print or store: secret values replaced by a placeholder. */
+export function redactedContracts(profile: ResolvedProfile): ResolvedContractsSection | undefined {
+  const contracts = profile.contracts;
+  if (!contracts) return undefined;
+  const [acl, inputVerifier, kmsVerifier, protocolConfig] = CONTRACT_SOURCES.map((field) =>
+    redact(`contracts.${field}`, contracts[field]),
+  );
+  return { acl: acl!, inputVerifier: inputVerifier!, kmsVerifier: kmsVerifier!, protocolConfig: protocolConfig! };
 }
 
 /** A copy of the settings safe to print or store: secret values replaced by a placeholder. */
