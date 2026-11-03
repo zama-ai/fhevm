@@ -1,67 +1,114 @@
 //! Resolves the coprocessors of one upgrade attempt from the on-chain
 //! `GatewayConfig` contract, at the block that the attempt names.
 
-use alloy::{eips::BlockId, network::Ethereum, primitives::Address, providers::Provider};
+use std::time::Duration;
+
+use alloy::{
+    eips::BlockId,
+    network::Ethereum,
+    primitives::Address,
+    providers::{Provider, ProviderBuilder, WsConnect},
+    transports::http::reqwest::Url,
+};
 use anyhow::anyhow;
 use fhevm_gateway_bindings::gateway_config::GatewayConfig::{self, GatewayConfigInstance};
 
 /// Reader for the coprocessor registrations in `GatewayConfig`.
+///
+/// It holds where to reach the Gateway, not a connection. The Gateway is read
+/// at startup and once per upgrade attempt, so a held websocket would sit idle
+/// between reads, time out and log reconnect errors. Each read opens its own
+/// connection and drops it on return, so no connection outlives its read.
 #[derive(Clone)]
-pub struct S3Service<P: Provider<Ethereum>> {
-    gateway_config_contract: GatewayConfigInstance<P>,
+pub struct S3Service {
+    gw_url: Url,
+    gateway_config_address: Address,
+    max_retries: u32,
+    retry_interval: Duration,
 }
 
-impl<P> S3Service<P>
-where
-    P: Provider<Ethereum>,
-{
-    pub fn new(provider: P, gateway_config_address: Address) -> Self {
-        let gateway_config_contract = GatewayConfig::new(gateway_config_address, provider);
+impl S3Service {
+    pub fn new(
+        gw_url: Url,
+        gateway_config_address: Address,
+        max_retries: u32,
+        retry_interval: Duration,
+    ) -> Self {
         Self {
-            gateway_config_contract,
+            gw_url,
+            gateway_config_address,
+            max_retries,
+            retry_interval,
         }
     }
 
-    /// The members as of one block: each coprocessor's signer with the bucket it
-    /// registered. `GatewayConfig` keys `coprocessors` by tx-sender address, so
-    /// this walks the tx senders and takes the signer from each registration.
-    /// Both reads name the one block, so every operator resolves one set, and a
-    /// coprocessor dropped later keeps the bucket it used.
+    async fn connect(&self) -> anyhow::Result<impl Provider<Ethereum>> {
+        ProviderBuilder::new()
+            .connect_ws(
+                WsConnect::new(self.gw_url.clone())
+                    .with_max_retries(self.max_retries)
+                    .with_retry_interval(self.retry_interval),
+            )
+            .await
+            .map_err(|e| anyhow!("connecting to the Gateway failed: {e}"))
+    }
+
+    /// The Gateway chain id (`eth_chainId`).
+    pub async fn chain_id(&self) -> anyhow::Result<u64> {
+        let provider = self.connect().await?;
+        provider
+            .get_chain_id()
+            .await
+            .map_err(|e| anyhow!("eth_chainId failed: {e}"))
+    }
+
+    /// The members as of one block, read over a connection of their own.
     pub async fn get_members_at(&self, block: u64) -> anyhow::Result<Vec<(Address, String)>> {
-        let at = BlockId::number(block);
-        let tx_senders = self
-            .gateway_config_contract
-            .getCoprocessorTxSenders()
+        let contract = GatewayConfig::new(self.gateway_config_address, self.connect().await?);
+        members_at(&contract, block).await
+    }
+}
+
+/// The members as of one block: each coprocessor's signer with the bucket it
+/// registered. `GatewayConfig` keys `coprocessors` by tx-sender address, so
+/// this walks the tx senders and takes the signer from each registration.
+/// Both reads name the one block, so every operator resolves one set, and a
+/// coprocessor dropped later keeps the bucket it used.
+async fn members_at<P: Provider<Ethereum>>(
+    contract: &GatewayConfigInstance<P>,
+    block: u64,
+) -> anyhow::Result<Vec<(Address, String)>> {
+    let at = BlockId::number(block);
+    let tx_senders = contract
+        .getCoprocessorTxSenders()
+        .block(at)
+        .call()
+        .await
+        .map_err(|e| anyhow!("getCoprocessorTxSenders at block {block} failed: {e}"))?;
+
+    let mut members = Vec::with_capacity(tx_senders.len());
+    for tx_sender in tx_senders {
+        let coprocessor = contract
+            .getCoprocessor(tx_sender)
             .block(at)
             .call()
             .await
-            .map_err(|e| anyhow!("getCoprocessorTxSenders at block {block} failed: {e}"))?;
-
-        let mut members = Vec::with_capacity(tx_senders.len());
-        for tx_sender in tx_senders {
-            let coprocessor = self
-                .gateway_config_contract
-                .getCoprocessor(tx_sender)
-                .block(at)
-                .call()
-                .await
-                .map_err(|e| anyhow!("getCoprocessor({tx_sender}) at block {block} failed: {e}"))?;
-            if coprocessor.s3BucketUrl.is_empty() {
-                return Err(anyhow!(
-                    "no S3 bucket URL for coprocessor {tx_sender} at block {block}"
-                ));
-            }
-            members.push((coprocessor.signerAddress, coprocessor.s3BucketUrl));
+            .map_err(|e| anyhow!("getCoprocessor({tx_sender}) at block {block} failed: {e}"))?;
+        if coprocessor.s3BucketUrl.is_empty() {
+            return Err(anyhow!(
+                "no S3 bucket URL for coprocessor {tx_sender} at block {block}"
+            ));
         }
-        Ok(members)
+        members.push((coprocessor.signerAddress, coprocessor.s3BucketUrl));
     }
+    Ok(members)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use alloy::primitives::Bytes;
-    use alloy::providers::{mock::Asserter, ProviderBuilder};
+    use alloy::providers::mock::Asserter;
     use alloy::sol_types::SolCall;
     use fhevm_gateway_bindings::gateway_config::GatewayConfig::{
         getCoprocessorCall, getCoprocessorTxSendersCall, Coprocessor,
@@ -86,13 +133,13 @@ mod tests {
             },
         )));
 
-        let service = S3Service::new(
-            ProviderBuilder::default().connect_mocked_client(asserter),
+        let contract = GatewayConfig::new(
             Address::ZERO,
+            ProviderBuilder::default().connect_mocked_client(asserter),
         );
 
         assert_eq!(
-            service.get_members_at(7).await.expect("members"),
+            members_at(&contract, 7).await.expect("members"),
             vec![(signer, "http://bucket".to_owned())]
         );
     }

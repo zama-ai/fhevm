@@ -1,7 +1,6 @@
 use std::{path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
 use alloy::primitives::Address;
-use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::signers::{
     aws::{aws_sdk_kms, AwsSigner},
     local::PrivateKeySigner,
@@ -9,7 +8,7 @@ use alloy::signers::{
 use alloy::transports::http::reqwest::Url;
 use anyhow::Context;
 use clap::Parser;
-use consensus_detector::Config;
+use consensus_detector::{s3::S3Service, Config};
 use fhevm_engine_common::{
     database::{
         apply_gcs_mode_search_path, connect_pool_with_options_and_connect_options,
@@ -311,25 +310,28 @@ async fn main() -> anyhow::Result<()> {
     let cancel = CancellationToken::new();
     install_signal_handlers(cancel.clone())?;
 
-    let provider = loop {
-        match ProviderBuilder::new()
-            .connect_ws(
-                WsConnect::new(args.gw_url.clone())
-                    .with_max_retries(args.provider_max_retries)
-                    .with_retry_interval(args.provider_retry_interval),
-            )
-            .await
-        {
-            Ok(p) => {
-                info!(gw_url = %args.gw_url, "connected to Gateway");
-                break p;
+    // Each Gateway read opens its own connection and drops it, so nothing here
+    // holds a connection that sits idle between reads.
+    let gateway = S3Service::new(
+        args.gw_url.clone(),
+        config.gateway_config_address,
+        args.provider_max_retries,
+        args.provider_retry_interval,
+    );
+    // The chain id comes from the Gateway itself, so it can't drift from the
+    // chain being watched, and mirrors how transaction-sender derives it.
+    let gw_chain_id = loop {
+        match gateway.chain_id().await {
+            Ok(chain_id) => {
+                info!(gw_url = %args.gw_url, gw_chain_id = chain_id, "read Gateway chain id");
+                break chain_id;
             }
             Err(e) => {
                 error!(
                     gw_url = %args.gw_url,
                     error = %e,
                     retry_interval = ?args.provider_retry_interval,
-                    "failed to connect to Gateway, retrying"
+                    "failed to read Gateway chain id, retrying"
                 );
                 tokio::time::sleep(args.provider_retry_interval).await;
             }
@@ -346,7 +348,9 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    if let Err(e) = consensus_detector::run(config, pool, provider, cancel.clone()).await {
+    if let Err(e) =
+        consensus_detector::run(config, pool, gateway, gw_chain_id, cancel.clone()).await
+    {
         error!(error = %e, "consensus-detector exited with error");
         return Err(e);
     }

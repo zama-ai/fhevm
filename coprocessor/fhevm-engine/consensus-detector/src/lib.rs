@@ -63,9 +63,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use alloy::network::Ethereum;
 use alloy::primitives::Address;
-use alloy::providers::Provider;
 use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
 use fhevm_engine_common::utils::DatabaseURL;
 use serde::{Deserialize, Serialize};
@@ -679,25 +677,22 @@ fn unanimity_notifications(
 
 /// What this operator needs to write and read decision records: its own bucket
 /// and signing key, and the `GatewayConfig` reader that resolves the members.
-struct Fleet<'a, P: Provider<Ethereum>> {
+struct Fleet<'a> {
     s3: Option<&'a aws_sdk_s3::Client>,
     /// Green runs the cutover, so Green alone writes the record. Blue reads it.
     writes: bool,
     bucket: Option<&'a str>,
     signer: Option<&'a fhevm_engine_common::types::CoproSigner>,
-    gateway: &'a S3Service<P>,
+    gateway: &'a S3Service,
 }
 
 /// The members of one attempt, read at `gw_start_block`. Every operator reads
 /// the same block, so no operator counts a smaller set, and no operator loses
 /// the bucket of a member it must count.
-async fn attempt_members<P>(
-    fleet: &Fleet<'_, P>,
+async fn attempt_members(
+    fleet: &Fleet<'_>,
     gw_start_block: i64,
-) -> anyhow::Result<Vec<decision::Member>>
-where
-    P: Provider<Ethereum>,
-{
+) -> anyhow::Result<Vec<decision::Member>> {
     let block = u64::try_from(gw_start_block)?;
     let members = fleet.gateway.get_members_at(block).await?;
     if members.is_empty() {
@@ -734,18 +729,15 @@ fn usable_member_url(url: &str) -> anyhow::Result<()> {
 /// a window-set change, polls each chain's + the Gateway's candidates, records
 /// this operator's decision once the tracks anchor or the deadline passes, and
 /// acts only on the records every member wrote.
-async fn consensus_pass<P>(
+async fn consensus_pass(
     pool: &Pool<Postgres>,
     http: &reqwest::Client,
-    fleet: &Fleet<'_, P>,
+    fleet: &Fleet<'_>,
     host_tracks: &mut HashMap<i64, ConsensusTrack>,
     gateway: &mut ConsensusTrack,
     window_state: &mut WindowState,
     commitment_timeout: Duration,
-) -> Result<(), Error>
-where
-    P: Provider<Ethereum>,
-{
+) -> Result<(), Error> {
     let active = active_upgrade_windows(pool).await?;
     if window_state.tracked_window != active {
         // Window set changed: reset all tracks + timeout so no prior anchor carries over.
@@ -1129,24 +1121,18 @@ async fn build_s3_client(config: &Config) -> aws_sdk_s3::Client {
 }
 
 /// Main service loop.
-pub async fn run<P>(
+///
+/// `gw_chain_id` is the Gateway's own `eth_chainId`, read through `gateway`.
+pub async fn run(
     config: Config,
     pool: Pool<Postgres>,
-    provider: P,
+    gateway: S3Service,
+    gw_chain_id: u64,
     cancel: CancellationToken,
-) -> anyhow::Result<()>
-where
-    P: Provider<Ethereum> + Clone + 'static,
-{
-    // Resolve the Gateway chain id from the connected provider (eth_chainId).
-    // This is the authoritative source — it can't drift from the chain we're
-    // actually watching — and mirrors how transaction-sender derives it. Must
-    // run before `provider` is moved into the S3Service below. Kept as i64 to
-    // match the `state_hash`/`upgrade_state` chain_id columns and the notify
-    // payloads.
-    let gw_chain_id: i64 = provider
-        .get_chain_id()
-        .await?
+) -> anyhow::Result<()> {
+    // Kept as i64 to match the `state_hash`/`upgrade_state` chain_id columns
+    // and the notify payloads.
+    let gw_chain_id: i64 = gw_chain_id
         .try_into()
         .map_err(|e| anyhow::anyhow!("gateway chain_id does not fit in i64: {e}"))?;
 
@@ -1159,8 +1145,6 @@ where
     );
 
     fhevm_engine_common::metrics_server::spawn(config.metrics_addr.clone(), cancel.child_token());
-
-    let s3_service = S3Service::new(provider, config.gateway_config_address);
 
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
@@ -1185,7 +1169,7 @@ where
         writes: config.gcs_mode,
         bucket: config.my_bucket.as_deref(),
         signer: config.manifest_signer.as_ref(),
-        gateway: &s3_service,
+        gateway: &gateway,
     };
     {
         let pool = pool.clone();
@@ -1233,7 +1217,7 @@ where
     info!(?channels, "listening for notifications");
 
     // One host track per chain, discovered from upgrade_state each pass;
-    // the Gateway track is keyed by the provider-resolved gw_chain_id.
+    // the Gateway track is keyed by the Gateway's own gw_chain_id.
     let mut host_tracks: HashMap<i64, ConsensusTrack> = HashMap::new();
     let mut gateway_track = ConsensusTrack::new(gw_chain_id, TrackKind::Gateway);
     // Tracked window + its timeout state.
