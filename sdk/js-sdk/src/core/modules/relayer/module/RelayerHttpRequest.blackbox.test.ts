@@ -215,6 +215,33 @@ describe('abort', () => {
       expect(reason).toBe('gave up');
       expect(reason).not.toBeInstanceOf(RelayerHttpTimeoutError);
     });
+
+    const buildThrows: Array<[string, Record<string, unknown>, RelayerCommonOptions]> = [
+      ['an unserializable payload', { big: 1n }, {}],
+      ['an invalid auth header', {}, { auth: { type: 'BearerToken', token: 'a\nb' } }],
+    ];
+
+    it.each(buildThrows)(
+      'the reason wins over a build throw (%s), without fetching',
+      async (_label, payload, options) => {
+        const fetchMock = stubFetch(publicOk);
+        const controller = new AbortController();
+        controller.abort('gave up');
+        const request = new RelayerHttpRequest({
+          relayerOperation: 'PUBLIC_DECRYPT',
+          url: URL_,
+          payload,
+          options: { ...options, signal: controller.signal },
+          logger: makeLogger().logger,
+        });
+
+        const outcome = await capture(request.run());
+
+        expect(rejected(outcome)).toBe('gave up');
+        expect(outcome.timers).toBe(0);
+        expect(fetchMock).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('abort during fetch', () => {

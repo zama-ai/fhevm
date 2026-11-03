@@ -454,6 +454,50 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(await run).toBeNull();
   });
 
+  // NaN !== NaN: the abort must still be recognized as itself, so it is warned once.
+  it('rethrows a NaN caller reason and warns once', async () => {
+    global.fetch = pendingUntilAbortFetch();
+    const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    const controller = new AbortController();
+    const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
+      url: RELAYER_URL,
+      payload: {},
+      options: { signal: controller.signal },
+      logger,
+    });
+
+    const run = request.run().catch((e: unknown) => e);
+    controller.abort(NaN);
+
+    expect(await run).toBeNaN();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+
+  // Nothing was sent: the warn must not claim a response was received.
+  it('warns "before the request was sent" when a pre-aborted caller meets a build throw', async () => {
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock;
+    const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    const controller = new AbortController();
+    controller.abort('gone');
+    const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
+      url: RELAYER_URL,
+      payload: { big: 1n },
+      options: { signal: controller.signal },
+      logger,
+    });
+
+    expect(await request.run().catch((e: unknown) => e)).toBe('gone');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn.mock.calls[0]?.[0]).toContain(' before the request was sent');
+    expect(logger.warn.mock.calls[0]?.[0]).not.toContain(' after the response was received');
+  });
+
   it("does not report the caller's own AbortSignal.timeout() as RelayerHttpTimeoutError", async () => {
     global.fetch = pendingUntilAbortFetch();
 

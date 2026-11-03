@@ -57,6 +57,27 @@ function fakeAbortSignalTimeout(ms: number): AbortSignal {
   return controller.signal;
 }
 
+// Node reports a throwing EventTarget listener as an uncaughtException on the next tick.
+// Swaps the runner's handlers for a trap until `restore()`, so the test can assert on it.
+function trapUncaughtExceptions(): { caught: unknown[]; restore: () => void } {
+  const saved = process.listeners('uncaughtException');
+  process.removeAllListeners('uncaughtException');
+  const caught: unknown[] = [];
+  const trap = (error: unknown): void => void caught.push(error);
+  process.on('uncaughtException', trap);
+  return {
+    caught,
+    restore: () => {
+      process.off('uncaughtException', trap);
+      for (const listener of saved) process.on('uncaughtException', listener);
+    },
+  };
+}
+
+function nextTick(): Promise<void> {
+  return new Promise((resolve) => process.nextTick(resolve));
+}
+
 describe('relayerHttpSignal MAX_TIMEOUT_MS', () => {
   it("is setTimeout's largest delay (2^31 - 1 ms)", () => {
     expect(MAX_TIMEOUT_MS).toBe(2_147_483_647);
@@ -414,6 +435,82 @@ describe('createRelayerHttpSignal', () => {
       expect(removeSpy).toHaveBeenCalledTimes(100);
       for (const [type, handler] of addSpy.mock.calls) {
         expect(removeSpy).toHaveBeenCalledWith(type, handler);
+      }
+    });
+  });
+
+  describe('release on abort', () => {
+    it('our timer never aborts the caller signal', () => {
+      vi.useFakeTimers();
+      const controller = new AbortController();
+      const combined = createRelayerHttpSignal(controller.signal, 500);
+
+      vi.advanceTimersByTime(500);
+
+      expect(controller.signal.aborted).toBe(false);
+      expect(combined.signal.aborted).toBe(true);
+      expect((combined.signal.reason as DOMException).name).toBe('TimeoutError');
+      expect(combined.timedOutAfterMs()).toBe(500);
+      combined.cleanup();
+    });
+
+    it('a pre-aborted caller signal still arms our timer until cleanup', () => {
+      vi.useFakeTimers();
+      const controller = new AbortController();
+      controller.abort('early');
+      const combined = createRelayerHttpSignal(controller.signal, 500);
+
+      expect(vi.getTimerCount()).toBe(1);
+      combined.cleanup();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('a throwing listener on the caller signal blocks neither forwarding nor release', async () => {
+      vi.useFakeTimers();
+      const trap = trapUncaughtExceptions();
+      try {
+        const controller = new AbortController();
+        const boom = new Error('caller listener failed');
+        controller.signal.addEventListener('abort', () => {
+          throw boom;
+        });
+        const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+        const combined = createRelayerHttpSignal(controller.signal, 500);
+
+        controller.abort('user left');
+        await nextTick();
+
+        expect(combined.signal.reason).toBe('user left');
+        expect(combined.timedOutAfterMs()).toBeUndefined();
+        expect(vi.getTimerCount()).toBe(0);
+        expect(removeSpy).toHaveBeenCalledTimes(1);
+        expect(trap.caught).toEqual([boom]);
+      } finally {
+        trap.restore();
+      }
+    });
+
+    it('a throwing listener on the combined signal does not block release', async () => {
+      vi.useFakeTimers();
+      const trap = trapUncaughtExceptions();
+      try {
+        const controller = new AbortController();
+        const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+        const combined = createRelayerHttpSignal(controller.signal, 500);
+        const boom = new Error('combined listener failed');
+        combined.signal.addEventListener('abort', () => {
+          throw boom;
+        });
+
+        controller.abort('user left');
+        await nextTick();
+
+        expect(combined.signal.reason).toBe('user left');
+        expect(vi.getTimerCount()).toBe(0);
+        expect(removeSpy).toHaveBeenCalledTimes(1);
+        expect(trap.caught).toEqual([boom]);
+      } finally {
+        trap.restore();
       }
     });
   });

@@ -129,6 +129,23 @@ function setup(timeout = 100, options: RelayerCommonOptions = {}) {
   return { controller, request, decision, log, run };
 }
 
+// Node reports a throwing EventTarget listener as an uncaughtException on the next tick.
+// Swaps the runner's handlers for a trap until `restore()`, so the test can assert on it.
+function trapUncaughtExceptions(): { caught: unknown[]; restore: () => void } {
+  const saved = process.listeners('uncaughtException');
+  process.removeAllListeners('uncaughtException');
+  const caught: unknown[] = [];
+  const trap = (error: unknown): void => void caught.push(error);
+  process.on('uncaughtException', trap);
+  return {
+    caught,
+    restore: () => {
+      process.off('uncaughtException', trap);
+      for (const listener of saved) process.on('uncaughtException', listener);
+    },
+  };
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
 });
@@ -205,6 +222,63 @@ describe('abort', () => {
           : ['fetch', 'timer-due', 'caller', 'response', 'settled'],
       );
       expect(context.log.warn).toHaveBeenCalledTimes(1);
+    });
+
+    // By design, run() is not raced against the signal (see RelayerHttpRequest.run, step 3.2).
+    it.each(['a caller abort', 'our timer'])(
+      'a global fetch that ignores the signal and never settles: run() stays pending after %s, resources released',
+      async (trigger) => {
+        stubFetch(() => new Promise<Response>(() => undefined));
+        const controller = new AbortController();
+        const add = vi.spyOn(controller.signal, 'addEventListener');
+        const remove = vi.spyOn(controller.signal, 'removeEventListener');
+        let settled = false;
+
+        void scripted(makeLogger().logger, { signal: controller.signal, timeout: 500 })
+          .run()
+          .then(
+            () => (settled = true),
+            () => (settled = true),
+          );
+        await vi.advanceTimersByTimeAsync(100);
+        if (trigger === 'a caller abort') controller.abort('gone');
+        await vi.advanceTimersByTimeAsync(500);
+
+        expect(settled).toBe(false);
+        expect(vi.getTimerCount()).toBe(0);
+        expect(add).toHaveBeenCalledTimes(1);
+        expect(remove).toHaveBeenCalledTimes(1);
+        expect(remove.mock.calls[0]?.[1]).toBe(add.mock.calls[0]?.[1]);
+      },
+    );
+
+    it('a fetch whose own abort listener throws: run() still rejects with the caller reason, nothing left behind', async () => {
+      const trap = trapUncaughtExceptions();
+      try {
+        const context = setup(5000);
+        const boom = new Error('fetch listener failed');
+        stubFetch(
+          (init) =>
+            new Promise<Response>((_resolve, reject) => {
+              const signal = init!.signal!;
+              signal.addEventListener('abort', () => {
+                throw boom;
+              });
+              signal.addEventListener('abort', () => reject(signal.reason));
+            }),
+        );
+
+        const pending = context.run();
+        await vi.advanceTimersByTimeAsync(100);
+        context.controller.abort('caller');
+        const outcome = await pending;
+        await new Promise<void>((resolve) => process.nextTick(resolve));
+
+        expect(outcome).toEqual({ ok: false, error: 'caller' });
+        expect(trap.caught).toEqual([boom]);
+      } finally {
+        trap.restore();
+      }
     });
   });
 
