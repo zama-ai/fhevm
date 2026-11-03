@@ -170,6 +170,23 @@ describe('RelayerHttpRequest external signal cleanup', () => {
 
     await expect(request.run()).resolves.toBeDefined();
   });
+
+  // Untyped JS callers may pass null: it means no signal, like undefined.
+  it('treats options.signal null as no signal', async () => {
+    vi.useFakeTimers();
+    global.fetch = vi.fn().mockResolvedValue(new Response(successBody(), { status: 200 }));
+
+    const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
+      url: RELAYER_URL,
+      payload: {},
+      options: { signal: null as unknown as AbortSignal, timeout: 5000 },
+    });
+
+    await expect(request.run()).resolves.toBeDefined();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });
 
 // A fetch that never answers on its own: it rejects with signal.reason once the
