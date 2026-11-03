@@ -1,7 +1,6 @@
 use crate::monitoring::metrics::{inc_event_failed_counter, inc_event_retried_counter};
 use alloy::primitives::U256;
 use connector_utils::{
-    conn::begin_async_commit_tx,
     monitoring::otlp::PropagationContext,
     types::{
         CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponse, KmsResponseKind,
@@ -27,6 +26,17 @@ pub trait KmsResponsePublisher {
 }
 
 /// Struct that stores KMS Core's responses in a `Postgres` database.
+///
+/// # Async commits
+///
+/// HTTP-sourced responses are committed with `synchronous_commit = off`, so the commit (and its
+/// `NOTIFY` lock) doesn't wait for the WAL flush. It's set in the same round trip, by
+/// `set_config(..., is_local = true)` in the upsert's `RETURNING`, so it only lasts for that
+/// statement's implicit transaction.
+///
+/// A Postgres crash may lose the latest async commits, which is safe: lost requests are unlocked
+/// by the recovery routine and decrypted again, and client retries reset `failed` ones.
+/// Gateway-sourced responses are committed synchronously.
 #[derive(Clone)]
 pub struct DbKmsResponsePublisher {
     db_pool: Pool<Postgres>,
@@ -96,9 +106,8 @@ impl DbKmsResponsePublisher {
         //      override a previous error row, but never a payload);
         //   2. mark the request `completed` only if the response row is actually written.
         // `rows_affected` reflects the outer UPDATE, so it is 1 iff the response was stored.
-        // Async commit: if lost, the request is still pending and is decrypted again.
-        let mut tx = begin_async_commit_tx(&self.db_pool).await?;
-        let query_result = sqlx::query!(
+        // HTTP-sourced responses are committed asynchronously (see `DbKmsResponsePublisher`).
+        sqlx::query!(
             "WITH written_response AS (
                 INSERT INTO public_decryption_responses AS existing (
                     decryption_id, decrypted_result, signature, extra_data, created_at,
@@ -116,7 +125,10 @@ impl DbKmsResponsePublisher {
                     error_code = NULL,
                     error_details = NULL
                 WHERE existing.decrypted_result IS NULL
-                RETURNING decryption_id
+                RETURNING decryption_id,
+                    CASE WHEN source = 'http'
+                        THEN set_config('synchronous_commit', 'off', true)
+                    END
             )
             UPDATE public_decryption_requests AS request SET status = 'completed'
             FROM written_response
@@ -130,10 +142,9 @@ impl DbKmsResponsePublisher {
             source as RequestSource,
             decryption_insert_status(source) as OperationStatus,
         )
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        Ok(query_result)
+        .execute(&self.db_pool)
+        .await
+        .map_err(anyhow::Error::from)
     }
 
     /// Stores the response and completes the associated request row in a single statement.
@@ -151,9 +162,8 @@ impl DbKmsResponsePublisher {
         //      override a previous error row, never a payload);
         //   2. mark the request `completed` only for the response row is actually written.
         // `rows_affected` reflects the outer UPDATE, so it is 1 iff the response was stored.
-        // Async commit: if lost, the request is still pending and is decrypted again.
-        let mut tx = begin_async_commit_tx(&self.db_pool).await?;
-        let query_result = sqlx::query!(
+        // HTTP-sourced responses are committed asynchronously (see `DbKmsResponsePublisher`).
+        sqlx::query!(
             "WITH written_response AS (
                 INSERT INTO user_decryption_responses AS existing (
                     decryption_id, user_decrypted_shares, signature, extra_data, created_at,
@@ -171,7 +181,10 @@ impl DbKmsResponsePublisher {
                     error_code = NULL,
                     error_details = NULL
                 WHERE existing.user_decrypted_shares IS NULL
-                RETURNING decryption_id
+                RETURNING decryption_id,
+                    CASE WHEN source = 'http'
+                        THEN set_config('synchronous_commit', 'off', true)
+                    END
             )
             UPDATE user_decryption_requests AS request SET status = 'completed'
             FROM written_response
@@ -185,10 +198,9 @@ impl DbKmsResponsePublisher {
             source as RequestSource,
             decryption_insert_status(source) as OperationStatus,
         )
-        .execute(&mut *tx)
-        .await?;
-        tx.commit().await?;
-        Ok(query_result)
+        .execute(&self.db_pool)
+        .await
+        .map_err(anyhow::Error::from)
     }
 
     async fn publish_prep_keygen(
@@ -325,7 +337,8 @@ impl DbKmsResponsePublisher {
     ) -> anyhow::Result<()> {
         // Same shape as `publish_public_decryption`: upsert the error row unless a successful
         // payload already exists, then mark the request `failed` only if the row was written.
-        let mut tx = begin_async_commit_tx(&self.db_pool).await?;
+        // Always committed asynchronously, as error rows are HTTP-sourced only (see
+        // `DbKmsResponsePublisher`).
         let query_result = sqlx::query!(
             "WITH written_response AS (
                 INSERT INTO public_decryption_responses AS existing (
@@ -342,7 +355,7 @@ impl DbKmsResponsePublisher {
                     source = EXCLUDED.source,
                     status = EXCLUDED.status
                 WHERE existing.decrypted_result IS NULL
-                RETURNING decryption_id
+                RETURNING decryption_id, set_config('synchronous_commit', 'off', true)
             )
             UPDATE public_decryption_requests AS request SET status = 'failed'
             FROM written_response
@@ -354,9 +367,8 @@ impl DbKmsResponsePublisher {
             Utc::now(),
             bc2wrap::serialize(otlp_ctx)?,
         )
-        .execute(&mut *tx)
+        .execute(&self.db_pool)
         .await?;
-        tx.commit().await?;
         log_error_publication_result(query_result, error_code);
         Ok(())
     }
@@ -374,7 +386,8 @@ impl DbKmsResponsePublisher {
     ) -> anyhow::Result<()> {
         // Same shape as `publish_public_decryption`: upsert the error row unless a successful
         // payload already exists, then mark the request `failed` only if the row was written.
-        let mut tx = begin_async_commit_tx(&self.db_pool).await?;
+        // Always committed asynchronously, as error rows are HTTP-sourced only (see
+        // `DbKmsResponsePublisher`).
         let query_result = sqlx::query!(
             "WITH written_response AS (
                 INSERT INTO user_decryption_responses AS existing (
@@ -391,7 +404,7 @@ impl DbKmsResponsePublisher {
                     source = EXCLUDED.source,
                     status = EXCLUDED.status
                 WHERE existing.user_decrypted_shares IS NULL
-                RETURNING decryption_id
+                RETURNING decryption_id, set_config('synchronous_commit', 'off', true)
             )
             UPDATE user_decryption_requests AS request SET status = 'failed'
             FROM written_response
@@ -403,9 +416,8 @@ impl DbKmsResponsePublisher {
             Utc::now(),
             bc2wrap::serialize(otlp_ctx)?,
         )
-        .execute(&mut *tx)
+        .execute(&self.db_pool)
         .await?;
-        tx.commit().await?;
         log_error_publication_result(query_result, error_code);
         Ok(())
     }

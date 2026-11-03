@@ -69,11 +69,9 @@ pub async fn connect_to_db(
 pub async fn begin_async_commit_tx(
     db_pool: &Pool<Postgres>,
 ) -> sqlx::Result<Transaction<'static, Postgres>> {
-    let mut tx = db_pool.begin().await?;
-    sqlx::query("SET LOCAL synchronous_commit = off")
-        .execute(&mut *tx)
-        .await?;
-    Ok(tx)
+    db_pool
+        .begin_with("BEGIN; SET LOCAL synchronous_commit = off")
+        .await
 }
 
 /// The default `Filler`s for an `alloy::Provider`.
