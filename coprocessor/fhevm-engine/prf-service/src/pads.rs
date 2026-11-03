@@ -16,6 +16,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 pub const CONNECTOR_LOCK: &str =
     "SELECT pg_advisory_xact_lock(hashtextextended('pads:' || encode($1, 'hex'), 0))";
 
+type Adds = Arc<Mutex<HashMap<Address, Arc<Semaphore>>>>;
+
 /// The attestation and the body length of a complete row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PadOutput {
@@ -45,8 +47,8 @@ pub struct Admissions {
     pool: PgPool,
     max_pending_bits: i64,
     max_adds_per_connector: NonZeroUsize,
-    /// One semaphore for each connector that added a row in this pod.
-    adds: Mutex<HashMap<Address, Arc<Semaphore>>>,
+    /// One semaphore for each connector with an add in progress in this pod.
+    adds: Adds,
 }
 
 impl Admissions {
@@ -55,7 +57,7 @@ impl Admissions {
             pool,
             max_pending_bits,
             max_adds_per_connector,
-            adds: Mutex::default(),
+            adds: Adds::default(),
         }
     }
 
@@ -80,7 +82,7 @@ impl Admissions {
         .await?
     }
 
-    async fn add_slot(&self, connector: Address) -> OwnedSemaphorePermit {
+    async fn add_slot(&self, connector: Address) -> AddSlot {
         let semaphore = self
             .adds
             .lock()
@@ -88,10 +90,36 @@ impl Admissions {
             .entry(connector)
             .or_insert_with(|| Arc::new(Semaphore::new(self.max_adds_per_connector.get())))
             .clone();
-        semaphore
+        let permit = semaphore
             .acquire_owned()
             .await
-            .expect("the semaphore is never closed")
+            .expect("the semaphore is never closed");
+        AddSlot {
+            adds: self.adds.clone(),
+            connector,
+            permit: Some(permit),
+        }
+    }
+}
+
+/// An add of one connector. On drop, it removes the semaphore of the connector if no other add uses it.
+struct AddSlot {
+    adds: Adds,
+    connector: Address,
+    permit: Option<OwnedSemaphorePermit>,
+}
+
+impl Drop for AddSlot {
+    fn drop(&mut self) {
+        let mut adds = self.adds.lock().expect("adds lock");
+        // Release the permit under the lock, so the last add to drop always sees that it is the last.
+        drop(self.permit.take());
+        if adds
+            .get(&self.connector)
+            .is_some_and(|semaphore| Arc::strong_count(semaphore) == 1)
+        {
+            adds.remove(&self.connector);
+        }
     }
 }
 
@@ -201,4 +229,69 @@ pub async fn read_body(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Opt
     .fetch_optional(pool)
     .await?;
     Ok(body.flatten())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::postgres::PgPoolOptions;
+    use std::time::Duration;
+    use tokio::time::timeout;
+
+    const CONNECTOR: Address = Address::repeat_byte(0x11);
+
+    fn admissions() -> Admissions {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/unused")
+            .unwrap();
+        Admissions::new(pool, 64, NonZeroUsize::new(2).unwrap())
+    }
+
+    #[tokio::test]
+    async fn adds_removes_a_connector_after_its_last_add() {
+        let admissions = admissions();
+        let first = admissions.add_slot(CONNECTOR).await;
+        let second = admissions.add_slot(CONNECTOR).await;
+        // A third add waits until one of the two ends.
+        let third = admissions.add_slot(CONNECTOR);
+        tokio::pin!(third);
+        assert!(timeout(Duration::from_millis(50), &mut third)
+            .await
+            .is_err());
+        drop(first);
+        let third = third.await;
+        assert!(
+            timeout(Duration::from_millis(50), admissions.add_slot(CONNECTOR))
+                .await
+                .is_err()
+        );
+
+        drop(second);
+        assert_eq!(admissions.adds.lock().unwrap().len(), 1);
+        drop(third);
+        assert!(admissions.adds.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn adds_is_empty_after_concurrent_adds() {
+        let admissions = Arc::new(admissions());
+        for _ in 0..1000 {
+            // All adds take a slot, then all drop at the same time.
+            let barrier = Arc::new(tokio::sync::Barrier::new(2));
+            let tasks: Vec<_> = (0..2)
+                .map(|_| {
+                    let (admissions, barrier) = (admissions.clone(), barrier.clone());
+                    tokio::spawn(async move {
+                        let slot = admissions.add_slot(CONNECTOR).await;
+                        barrier.wait().await;
+                        drop(slot);
+                    })
+                })
+                .collect();
+            for task in tasks {
+                task.await.unwrap();
+            }
+            assert!(admissions.adds.lock().unwrap().is_empty());
+        }
+    }
 }
