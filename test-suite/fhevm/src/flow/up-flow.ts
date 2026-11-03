@@ -31,6 +31,7 @@ import {
   listenerCoreServicesForState,
   listenerDatabaseName,
   listenerOperatorsForState,
+  listenerPublisherServices,
   listenerPublishersForState,
 } from "../generate/listener-core";
 import { generateRuntime } from "../generate";
@@ -2398,6 +2399,12 @@ const COPROCESSOR_OPERATOR_PHASES = [
   ["gw-listener", "transaction-sender"],
 ];
 
+/** The listener-core publishers that belong to one coprocessor operator. */
+export const coprocessorOperatorPublishers = (state: State, index: number) =>
+  listenerOperatorsForState(state).includes(index)
+    ? listenerPublisherServices([index], state.scenario.hostChains, consumerOnlyHostListeners(state.scenario))
+    : [];
+
 /**
  * Moves one coprocessor operator to the release `tag` in place, as an operator without Blue/Green does:
  * its database migration runs to completion while its old services keep running, then each phase of
@@ -2424,10 +2431,13 @@ export const upgradeCoprocessorOperator = async (state: State, index: number, ta
   );
   // Services outside the runbook's phases, such as the consensus detector, restart last.
   phased.push(services.filter((name) => !phased.flat().includes(name)));
-  for (const phase of phased.filter((names) => names.length)) {
-    console.log(`[upgrade] coprocessor operator ${index}: restarting ${phase.join(", ")} on ${tag}`);
-    await composeUp("coprocessor", phase, { noDeps: true, forceRecreate: true });
-    for (const name of phase) {
+  // The operator's own listener-core publishers move with its host listeners, ahead of them.
+  const steps = phased.map((names) => ({ component: "coprocessor", names }));
+  steps.splice(1, 0, { component: "listener-core", names: coprocessorOperatorPublishers(state, index) });
+  for (const { component, names } of steps.filter((step) => step.names.length)) {
+    console.log(`[upgrade] coprocessor operator ${index}: restarting ${names.join(", ")} on ${tag}`);
+    await composeUp(component, names, { noDeps: true, forceRecreate: true });
+    for (const name of names) {
       await waitForContainer(name, "running");
     }
   }

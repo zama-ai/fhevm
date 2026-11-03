@@ -1169,6 +1169,13 @@ const buildListenerCoreOverride = async (plan: StackSpec): Promise<ComposeDoc> =
           APP_BROKER__BROKER_URL: listenerBrokerUrl(operator),
         };
       }
+      // An operator pinned to a release runs that release's listener-core, as it does in production.
+      // Blue/Green pins its BCS fleet this way too, but upgrades listener-core as a step of its own.
+      const source = plan.coprocessor?.instances.find((instance) => instance.index === operator)?.source;
+      if (!plan.blueGreen && source?.mode === "registry") {
+        delete clone.build;
+        clone.image = rewriteImageTag(built.image, source.tag);
+      }
       services[name] = clone;
     }
   }

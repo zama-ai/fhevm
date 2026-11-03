@@ -280,6 +280,39 @@ describe("render-compose", () => {
     });
   });
 
+  test("runs a registry-pinned operator's publisher on that operator's release", async () => {
+    const pinned: State = {
+      ...state,
+      scenario: resolveScenarioFile(
+        path.join("/tmp", "two-of-two-pinned.yaml"),
+        parseCoprocessorScenario(`
+version: 1
+kind: coprocessor-consensus
+topology:
+  count: 2
+  threshold: 2
+instances:
+  - index: 1
+    source:
+      mode: registry
+      tag: v0.14.5
+`),
+      ),
+    };
+    await withTempStateDir(async () => {
+      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
+      await writeFile(envPath("coprocessor"), "\n");
+      await writeFile(envPath("coprocessor.1"), "\n");
+      await generateComposeOverrides(pinned, stackSpecForState(pinned));
+      const doc = YAML.parse(await readFile(composePath("listener-core"), "utf8")) as {
+        services: Record<string, { image?: string }>;
+      };
+      expect(doc.services["listener1-publisher-for-anvil"]?.image).toEndWith(":v0.14.5");
+      // An operator that follows the bundle keeps the bundle's listener-core version.
+      expect(doc.services["listener-publisher-for-anvil"]?.image).toEndWith(":${LISTENER_CORE_VERSION}");
+    });
+  });
+
   test("renders multi-instance coprocessor overrides with local poller siblings", async () => {
     await withTempStateDir(async () => {
       await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });

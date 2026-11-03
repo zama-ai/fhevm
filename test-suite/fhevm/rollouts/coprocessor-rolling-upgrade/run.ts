@@ -5,6 +5,8 @@
  * `testnet-before-coprocessor-v0.14` profile.
  */
 import type { Stack } from "../../src/commands/stack";
+import { coprocessorOperatorPublishers } from "../../src/flow/up-flow";
+import type { State } from "../../src/types";
 import { ADD_CIPHERTEXT_MATERIAL_TOPIC, DRIFT_CONSENSUS_WARNING, DRIFT_WARNING } from "../../src/drift";
 import { TEST_SUITE_CONTAINER, envPath } from "../../src/layout";
 import { hostReachableRpcUrl, readEnvFile, toServiceName } from "../../src/utils/fs";
@@ -20,16 +22,20 @@ const SOAK_MS = 3 * 60_000;
 
 const logPhase = (label: string) => console.log(`\n[coprocessor rolling upgrade] ${label}`);
 
-/** Every running service of the operator uses an image with `tag`. */
-const assertOperatorRuns = async (index: number, tag: string) => {
+/** Every running service of the operator, its listener-core publishers included, uses an image with `tag`. */
+const assertOperatorRuns = async (state: State, index: number, tag: string) => {
   const prefix = toServiceName("", index);
+  const publishers = coprocessorOperatorPublishers(state, index);
   const rows = (await run(["docker", "ps", "--format", "{{.Names}}|{{.Image}}"])).stdout
     .trim()
     .split("\n")
     .map((row) => row.split("|"))
-    .filter(([name, image]) => name!.startsWith(prefix) && image!.includes("/fhevm/coprocessor/"));
+    .filter(
+      ([name, image]) =>
+        (name!.startsWith(prefix) && image!.includes("/fhevm/coprocessor/")) || publishers.includes(name!),
+    );
   const stale = rows.filter(([, image]) => !image!.endsWith(`:${tag}`));
-  if (!rows.length || stale.length) {
+  if (rows.length <= publishers.length || stale.length) {
     throw new Error(`coprocessor operator ${index} is not fully on ${tag}: ${stale.map((row) => row.join(" ")).join(", ")}`);
   }
 };
@@ -108,7 +114,7 @@ export const runCoprocessorRollingUpgrade = async (stack: Stack) => {
       assertTrafficRunning();
       logPhase(`upgrade operator ${index} to ${TARGET_TAG} (${index} of ${OPERATORS} already upgraded)`);
       await stack.upgradeCoprocessor(index, TARGET_TAG);
-      await assertOperatorRuns(index, TARGET_TAG);
+      await assertOperatorRuns(state, index, TARGET_TAG);
       const restartedAt = await gatewayBlock();
       await Bun.sleep(SOAK_MS);
       await assertOperatorSubmits(gateway, index, restartedAt);
