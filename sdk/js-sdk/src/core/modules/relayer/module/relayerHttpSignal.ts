@@ -46,12 +46,14 @@ export function createRelayerHttpSignal(
 
   const onCallerAbort = (): void => {
     controller.abort(callerSignal?.reason);
+    release();
   };
+
+  const removeCallerListener =
+    callerSignal === undefined || callerSignal.aborted ? undefined : _addAbortListener(callerSignal, onCallerAbort);
 
   if (callerSignal?.aborted === true) {
     controller.abort(callerSignal.reason);
-  } else {
-    callerSignal?.addEventListener('abort', onCallerAbort, { once: true });
   }
 
   // -------------------------------------------------------------------------
@@ -72,9 +74,24 @@ export function createRelayerHttpSignal(
     firedTimeoutMs = timeoutMs;
     // Same reason AbortSignal.timeout() uses; a clearable timer, unlike that one.
     controller.abort(new DOMException('Timed out', 'TimeoutError'));
+    release();
   };
 
   const timeoutId = timeoutMs === undefined ? undefined : setTimeout(onTimeout, timeoutMs);
+
+  // Once aborted, the timer and the caller listener are useless: release them now,
+  // so a fetch that ignores the signal and never settles cannot keep them alive. Idempotent.
+  let released = false;
+  function release(): void {
+    if (released) {
+      return;
+    }
+    released = true;
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+    removeCallerListener?.();
+  }
 
   // -------------------------------------------------------------------------
   // 3. Expose the signal, timeout marker, remaining time and cleanup
@@ -84,12 +101,28 @@ export function createRelayerHttpSignal(
     signal: controller.signal,
     timedOutAfterMs: () => firedTimeoutMs,
     remainingMs: () => _remainingMs(timeoutMs, startedAtMs),
-    cleanup: () => {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
-      callerSignal?.removeEventListener('abort', onCallerAbort);
-    },
+    cleanup: release,
+  };
+}
+
+/**
+ * Adds a one-shot 'abort' listener and returns the closure that removes it,
+ * like undici's addAbortListener (lib/core/util.js).
+ *
+ * @param signal - The signal to listen to.
+ * @param listener - Called once when `signal` aborts.
+ * @returns A function that removes `listener` from `signal`.
+ *
+ * @example
+ * ```typescript
+ * const remove = _addAbortListener(signal, onAbort);
+ * remove();
+ * ```
+ */
+function _addAbortListener(signal: AbortSignal, listener: () => void): () => void {
+  signal.addEventListener('abort', listener, { once: true });
+  return () => {
+    signal.removeEventListener('abort', listener);
   };
 }
 
