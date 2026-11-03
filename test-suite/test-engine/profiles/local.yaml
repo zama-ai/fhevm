@@ -26,6 +26,4 @@ spec:
     inputVerifier: { env: INPUT_VERIFIER_CONTRACT_ADDRESS }
     kmsVerifier: { env: KMS_VERIFIER_CONTRACT_ADDRESS }
     protocolConfig: { env: PROTOCOL_CONFIG_CONTRACT_ADDRESS }
-  # Temporary, removed with the SDK spike (scenarios/spikes/fhe-sdk).
-  settings:
-    spike.single-thread: { env: FHE_SPIKE_SINGLE_THREAD, default: false }
+  settings: {}

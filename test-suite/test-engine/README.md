@@ -51,24 +51,25 @@ test-engine/
 ├── schema/                   # JSON Schemas of scenario.yaml and profile files
 ├── profiles/                 # target environments: local, devnet, testnet, mainnet
 ├── scenarios/                # scenarios run by `npm run engine -- run` (default --scenarios-dir)
-│   ├── smoke/                #   engine regression scenario, no dependency on the stack
-│   └── spikes/fhe-sdk/       #   throwaway spike S4: @fhevm/sdk inside the engine, local stack only
+│   └── smoke/                #   engine regression scenario, no dependency on the stack
 └── test/                     # tests of the engine itself (node:test), never run by the engine
     ├── unit/                 #   modules called in process, one folder per src/ layer; no external service
     ├── integration/
     │   ├── cli/              #   the compiled CLI run as a process against the fixtures; no Docker
-    │   └── chain/            #   Chain module and chain scenarios against a throwaway Anvil (Docker)
+    │   ├── chain/            #   Chain module and chain scenarios against a throwaway Anvil (Docker)
+    │   └── fhe/              #   FHE scenarios against the local fhEVM stack, run in its e2e container
     ├── fixtures/             #   scenarios, profiles and contracts used as engine inputs
     └── helpers.ts
 ```
 
-| Command                          | Runs                                     | Needs              |
-| -------------------------------- | ---------------------------------------- | ------------------ |
-| `npm test`                       | `test/unit/` and `test/integration/cli/` | a build            |
-| `npm run test:unit`              | `test/unit/`                             | a build            |
-| `npm run test:integration:cli`   | `test/integration/cli/`                  | a build            |
-| `npm run test:integration:chain` | `test/integration/chain/`                | a build and Docker |
-| `npm run test:integration`       | both integration suites                  | a build and Docker |
+| Command                          | Runs                                     | Needs                                        |
+| -------------------------------- | ---------------------------------------- | -------------------------------------------- |
+| `npm test`                       | `test/unit/` and `test/integration/cli/` | a build                                      |
+| `npm run test:unit`              | `test/unit/`                             | a build                                      |
+| `npm run test:integration:cli`   | `test/integration/cli/`                  | a build                                      |
+| `npm run test:integration:chain` | `test/integration/chain/`                | a build and Docker                           |
+| `npm run test:integration`       | the CLI and chain integration suites     | a build and Docker                           |
+| `npm run test:integration:fhe`   | `test/integration/fhe/`                  | a build and the local stack (`fhevm-cli up`) |
 
 ## Adding a scenario
 

@@ -259,6 +259,7 @@ describe('FHE module', () => {
     });
     const entry = ofKind('fhe.user-decrypt')[0]!;
     assert.equal(entry.data.status, 'failed');
+    assert.equal(entry.data.cache, 'miss', 'a failure says where its permit came from');
     assert.equal(entry.data.error, 'relayer rejected the request');
     assert.deepEqual(entry.data.relayer.error, { label: 'not_allowed_on_host_acl', message: 'not allowed' });
   });
