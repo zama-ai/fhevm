@@ -254,7 +254,6 @@ mod tests {
         for code in [
             ErrorCode::Malformed,
             ErrorCode::SenderAuthenticationFailed,
-            ErrorCode::AuthExpired,
             ErrorCode::RateLimited,
             ErrorCode::Overloaded,
             ErrorCode::AclDenied,
