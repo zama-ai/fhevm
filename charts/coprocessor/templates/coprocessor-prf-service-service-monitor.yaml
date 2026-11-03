@@ -1,4 +1,4 @@
-{{- if .Values.prfService.serviceMonitor.enabled -}}
+{{- if and .Values.prfService.enabled .Values.prfService.serviceMonitor.enabled -}}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
