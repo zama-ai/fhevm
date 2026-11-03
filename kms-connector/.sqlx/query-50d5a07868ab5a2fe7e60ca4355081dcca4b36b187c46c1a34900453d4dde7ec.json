@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pad_decryption_responses(\n            decryption_id, error_code, error_details, extra_data, created_at, otlp_context, status\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, 'completed')\n        ON CONFLICT (decryption_id) DO UPDATE SET\n            error_code = EXCLUDED.error_code, error_details = EXCLUDED.error_details,\n            created_at = EXCLUDED.created_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Text",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "50d5a07868ab5a2fe7e60ca4355081dcca4b36b187c46c1a34900453d4dde7ec"
+}

@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pad_decryption_responses(\n            decryption_id, encrypted_payload, signature, extra_data, created_at, otlp_context,\n            status\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, 'completed')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "771d2a7350b585940334f392c994a3528abacae34d56f60cc583a8f718dd5be7"
+}
