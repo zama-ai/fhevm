@@ -52,7 +52,7 @@ commonConfig:
     acl: ""
 
   # BNB Testnet chain RPC node endpoint (HTTP)
-  bnbTestnetUrl: ""
+  bnbTestnetUrl: "http://bnb-testnet-node:8545"
   # BNB Testnet chain identifier (override the network preset when set)
   bnbTestnetChainId: ""
   # BNB Testnet smart contract addresses (override the network preset when set)
