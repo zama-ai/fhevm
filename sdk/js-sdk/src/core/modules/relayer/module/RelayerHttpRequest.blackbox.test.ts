@@ -351,6 +351,30 @@ describe('abort', () => {
       expect(error).not.toHaveBeenCalled();
     });
 
+    it('caller abort with a reason whose name getter throws rejects with the reason, no second fetch', async () => {
+      const fetchMock = stubFetch(relayerError, publicOk);
+      const controller = new AbortController();
+      const reason = {
+        get name(): string {
+          throw new Error('hostile name getter');
+        },
+      };
+
+      let outcome: Outcome | undefined;
+      void capture(scripted(makeLogger().logger, { signal: controller.signal }, () => 1000).run()).then(
+        (settled) => (outcome = settled),
+      );
+      await vi.advanceTimersByTimeAsync(400);
+      controller.abort(reason);
+      // Flush promise jobs only: the wait's own timer must not be what settles the run.
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(outcome).toBeDefined();
+      expect(rejected(outcome!)).toBe(reason);
+      expect(outcome!.timers).toBe(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
     it('our timer during the wait rejects with RelayerHttpTimeoutError', async () => {
       const fetchMock = stubFetch(relayerError, publicOk);
       const events: string[] = [];
@@ -481,6 +505,33 @@ describe('abort', () => {
         expect(decide).not.toHaveBeenCalled();
       },
     );
+
+    it('caller abort with a reason whose name getter throws settles at once with the reason, no second fetch', async () => {
+      const fetchMock = networkThenOk();
+      const decide = vi.fn<Script>(() => 10);
+      const controller = new AbortController();
+      const reason = {
+        get name(): string {
+          throw new Error('hostile name getter');
+        },
+      };
+
+      let outcome: Outcome | undefined;
+      void capture(scripted(makeLogger().logger, { ...retryOptions, signal: controller.signal }, decide).run()).then(
+        (settled) => (outcome = settled),
+      );
+      await vi.advanceTimersByTimeAsync(100);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      controller.abort(reason);
+      // Flush promise jobs only: the 10 s retry delay must not be what settles the run.
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(outcome).toBeDefined();
+      expect(rejected(outcome!)).toBe(reason);
+      expect(outcome!.timers).toBe(0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(decide).not.toHaveBeenCalled();
+    });
 
     it('our timer during the network-retry delay rejects with RelayerHttpTimeoutError', async () => {
       const fetchMock = networkThenOk();
