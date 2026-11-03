@@ -150,7 +150,7 @@ export async function waitBeforeHttpRetry(args: {
   try {
     await abortableSleep(args.delayMs, args.signal);
   } catch (e) {
-    // The sleep's own abort wrapper is discarded: classify from the signal instead.
+    // Classify from the signal, not the rejection: our own timeout becomes RelayerHttpTimeoutError.
     throwIfRelayerHttpAborted({
       signal: args.signal,
       timedOutAfterMs: args.timedOutAfterMs,
