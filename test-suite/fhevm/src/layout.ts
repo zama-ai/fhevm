@@ -28,6 +28,7 @@ const statePaths = (root: string) => {
     STATE_FILE: path.join(persistedStateDir, "state.json"),
     versionsEnvPath: path.join(envDir, "versions.env"),
     relayerConfigPath: path.join(generatedConfigDir, "relayer.yaml"),
+    relayerHttpConfigPath: path.join(generatedConfigDir, "relayer-http.yaml"),
     gatewayAddressesPath: path.join(addressDir, "gateway", ".env.gateway"),
   };
 };
@@ -43,6 +44,7 @@ export let GENERATED_CONFIG_DIR = currentStatePaths.GENERATED_CONFIG_DIR;
 export let STATE_FILE = currentStatePaths.STATE_FILE;
 export let versionsEnvPath = currentStatePaths.versionsEnvPath;
 export let relayerConfigPath = currentStatePaths.relayerConfigPath;
+export let relayerHttpConfigPath = currentStatePaths.relayerHttpConfigPath;
 export let gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
 export let gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
 export let paymentBridgingAddressesSolidityPath = path.join(
@@ -63,6 +65,7 @@ export const setStateDir = (root = process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_
   STATE_FILE = currentStatePaths.STATE_FILE;
   versionsEnvPath = currentStatePaths.versionsEnvPath;
   relayerConfigPath = currentStatePaths.relayerConfigPath;
+  relayerHttpConfigPath = currentStatePaths.relayerHttpConfigPath;
   gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
   gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
   paymentBridgingAddressesSolidityPath = path.join(
@@ -78,6 +81,7 @@ const TEMPLATE_CONFIG_DIR = path.join(TEMPLATE_DIR, "config");
 export const TEMPLATE_COMPOSE_DIR = path.join(CLI_DIR, "docker-compose");
 const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
 export const TEMPLATE_RELAYER_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer.yaml");
+export const TEMPLATE_RELAYER_HTTP_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer-http.yaml");
 export const TEMPLATE_KMS_CORE_CONFIG_THRESHOLD = path.join(
   TEMPLATE_CONFIG_DIR,
   "kms-core-threshold.toml",
@@ -101,7 +105,9 @@ export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
 export const DEFAULT_POSTGRES_PASSWORD = "postgres";
 export const DEFAULT_POSTGRES_DB = "coprocessor";
-export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, OBJECT_STORE_PORT, 9001];
+/** Host port of relayer-http (in-stack `fhevm-relayer-http`). */
+export const RELAYER_HTTP_PORT = 3002;
+export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, OBJECT_STORE_PORT, 9001, RELAYER_HTTP_PORT];
 export const OBJECT_STORE_INTERNAL_URL = `http://object-store:${OBJECT_STORE_PORT}`;
 /**
  * Per-operator alias for the one object store. Every alias reaches the same
@@ -147,6 +153,7 @@ export const COMPONENTS = [
   "coprocessor",
   "kms-connector",
   "relayer",
+  "relayer-http",
   "test-suite",
 ] as const;
 
@@ -167,6 +174,7 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "kms-connector": ["kms-connector"],
   "bootstrap": ["gateway-sc", "host-sc"],
   "relayer": ["relayer"],
+  "relayer-http": ["relayer-http"],
   "test-suite": ["test-suite"],
 };
 

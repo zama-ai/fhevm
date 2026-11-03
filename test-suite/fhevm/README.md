@@ -251,6 +251,7 @@ CONNECTOR_PROXY_VERSION      # optional: omitted when the resolved images predat
 CORE_VERSION
 RELAYER_VERSION
 RELAYER_MIGRATE_VERSION
+RELAYER_HTTP_VERSION         # optional: omitted when relayer-http is not published at the resolved sha (GitOps targets never carry it)
 TEST_SUITE_VERSION
 ```
 
