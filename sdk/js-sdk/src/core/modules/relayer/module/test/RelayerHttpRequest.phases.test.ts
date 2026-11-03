@@ -1,19 +1,19 @@
 import type { Mock } from 'vitest';
-import type { RelayerHttpOperation } from './RelayerHttpAttempt.js';
+import type { RelayerHttpOperation } from '../RelayerHttpAttempt.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { RelayerHttpRequest } from './RelayerHttpRequest.js';
-import { MAX_TIMEOUT_MS } from './relayerHttpSignal.js';
-import { abortableSleep } from '../../../base/timeout.js';
-import { RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseError.js';
-import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
+import { RelayerHttpRequest } from '../RelayerHttpRequest.js';
+import { MAX_TIMEOUT_MS } from '../relayerHttpSignal.js';
+import { abortableSleep } from '../../../../base/timeout.js';
+import { RelayerHttpResponseError } from '../../../../errors/RelayerHttpResponseError.js';
+import { RelayerHttpTimeoutError } from '../../../../errors/RelayerHttpTimeoutError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/RelayerHttpRequest.phases.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/RelayerHttpRequest.phases.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 // Pass-through by default; the "between the wait and the next fetch" tests hook one call.
-vi.mock('../../../base/timeout.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../base/timeout.js')>();
+vi.mock('../../../../base/timeout.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../base/timeout.js')>();
   return { ...actual, abortableSleep: vi.fn(actual.abortableSleep) };
 });
 
@@ -226,7 +226,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
   // S14: the abort lands after the wait resolved, before the next attempt's fetch.
   describe('between the end of the wait and the next fetch', () => {
     async function hookAfterWait(afterSleep: () => void): Promise<void> {
-      const actual = await vi.importActual<typeof import('../../../base/timeout.js')>('../../../base/timeout.js');
+      const actual = await vi.importActual<typeof import('../../../base/timeout.js')>('../../../../base/timeout.js');
       vi.mocked(abortableSleep).mockImplementationOnce(async (ms, signal) => {
         await actual.abortableSleep(ms, signal);
         afterSleep();

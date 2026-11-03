@@ -1,11 +1,11 @@
 import type { MockInstance } from 'vitest';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { RelayerHttpRequest } from './RelayerHttpRequest.js';
-import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
-import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
+import { RelayerHttpRequest } from '../RelayerHttpRequest.js';
+import { RelayerHttpTimeoutError } from '../../../../errors/RelayerHttpTimeoutError.js';
+import { InvalidPropertyError } from '../../../../base/errors/InvalidPropertyError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/RelayerHttpRequest.signal.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/RelayerHttpRequest.signal.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 const RELAYER_URL = 'https://relayer-http.example.com/v4/user-decrypt';

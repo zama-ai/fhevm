@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { RelayerAsyncRequest } from './RelayerAsyncRequest.js';
+import { RelayerAsyncRequest } from '../RelayerAsyncRequest.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/RelayerAsyncRequest.query.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/RelayerAsyncRequest.query.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 const RELAYER_URL = 'https://relayer.example.com/v2/public-decrypt';

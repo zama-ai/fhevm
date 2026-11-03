@@ -1,10 +1,10 @@
-import type { Logger } from '../../../types/logger.js';
-import type { RelayerCommonOptions } from '../../../types/relayer.js';
+import type { Logger } from '../../../../types/logger.js';
+import type { RelayerCommonOptions } from '../../../../types/relayer.js';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseError.js';
-import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
-import { RelayerHttpRequest } from './RelayerHttpRequest.js';
+import { RelayerHttpResponseError } from '../../../../errors/RelayerHttpResponseError.js';
+import { RelayerHttpTimeoutError } from '../../../../errors/RelayerHttpTimeoutError.js';
+import { RelayerHttpRequest } from '../RelayerHttpRequest.js';
 
 const URL_ = 'https://relayer.test/v2/public-decrypt';
 const LATE_PHASE = ' after the response was received';

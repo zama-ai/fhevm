@@ -1,9 +1,9 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { RelayerHttpRequest } from './RelayerHttpRequest.js';
-import { RelayerHttpResultError } from '../../../errors/RelayerHttpResultError.js';
+import { RelayerHttpRequest } from '../RelayerHttpRequest.js';
+import { RelayerHttpResultError } from '../../../../errors/RelayerHttpResultError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/RelayerHttpRequest.publicDecrypt.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/RelayerHttpRequest.publicDecrypt.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 const RELAYER_URL = 'https://relayer-http.example.com/v4/public-decrypt';

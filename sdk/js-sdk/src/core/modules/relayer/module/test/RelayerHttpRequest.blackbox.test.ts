@@ -1,16 +1,19 @@
-import type { Auth } from '../../../types/auth.js';
-import type { Logger } from '../../../types/logger.js';
-import type { RelayerCommonOptions } from '../../../types/relayer.js';
-import type { RelayerHttpOperation } from './RelayerHttpAttempt.js';
+import type { Auth } from '../../../../types/auth.js';
+import type { Logger } from '../../../../types/logger.js';
+import type { RelayerCommonOptions } from '../../../../types/relayer.js';
+import type { RelayerHttpOperation } from '../RelayerHttpAttempt.js';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
-import { RelayerHttpFetchError } from '../../../errors/RelayerHttpFetchError.js';
-import { KNOWN_RELAYER_HTTP_ERROR_CODES, RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseError.js';
-import { RelayerHttpResultError } from '../../../errors/RelayerHttpResultError.js';
-import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
-import { RelayerHttpUnexpectedResponseError } from '../../../errors/RelayerHttpUnexpectedResponseError.js';
-import { RelayerHttpRequest } from './RelayerHttpRequest.js';
+import { InvalidPropertyError } from '../../../../base/errors/InvalidPropertyError.js';
+import { RelayerHttpFetchError } from '../../../../errors/RelayerHttpFetchError.js';
+import {
+  KNOWN_RELAYER_HTTP_ERROR_CODES,
+  RelayerHttpResponseError,
+} from '../../../../errors/RelayerHttpResponseError.js';
+import { RelayerHttpResultError } from '../../../../errors/RelayerHttpResultError.js';
+import { RelayerHttpTimeoutError } from '../../../../errors/RelayerHttpTimeoutError.js';
+import { RelayerHttpUnexpectedResponseError } from '../../../../errors/RelayerHttpUnexpectedResponseError.js';
+import { RelayerHttpRequest } from '../RelayerHttpRequest.js';
 
 const URL_ = 'https://relayer.test/v2/public-decrypt';
 const WAIT_PHASE = ' while waiting to retry';

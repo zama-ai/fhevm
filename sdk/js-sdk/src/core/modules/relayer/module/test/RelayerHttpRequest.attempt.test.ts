@@ -1,16 +1,16 @@
 import type { Mock } from 'vitest';
-import type { Logger } from '../../../types/logger.js';
-import type { RelayerHttpAttemptParams, RelayerHttpOperation } from './RelayerHttpAttempt.js';
+import type { Logger } from '../../../../types/logger.js';
+import type { RelayerHttpAttemptParams, RelayerHttpOperation } from '../RelayerHttpAttempt.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { RelayerHttpAttempt } from './RelayerHttpAttempt.js';
-import { RelayerHttpFetchError } from '../../../errors/RelayerHttpFetchError.js';
-import { RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseError.js';
-import { RelayerHttpResultError } from '../../../errors/RelayerHttpResultError.js';
-import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
-import { RelayerHttpUnexpectedResponseError } from '../../../errors/RelayerHttpUnexpectedResponseError.js';
+import { RelayerHttpAttempt } from '../RelayerHttpAttempt.js';
+import { RelayerHttpFetchError } from '../../../../errors/RelayerHttpFetchError.js';
+import { RelayerHttpResponseError } from '../../../../errors/RelayerHttpResponseError.js';
+import { RelayerHttpResultError } from '../../../../errors/RelayerHttpResultError.js';
+import { RelayerHttpTimeoutError } from '../../../../errors/RelayerHttpTimeoutError.js';
+import { RelayerHttpUnexpectedResponseError } from '../../../../errors/RelayerHttpUnexpectedResponseError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/RelayerHttpRequest.attempt.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/RelayerHttpRequest.attempt.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 const RELAYER_URL = 'https://relayer-http.example.com/v4/user-decrypt';

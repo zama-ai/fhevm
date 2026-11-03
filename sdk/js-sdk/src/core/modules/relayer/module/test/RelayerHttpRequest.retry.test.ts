@@ -1,17 +1,20 @@
 import type { Mock } from 'vitest';
-import type { Logger } from '../../../types/logger.js';
-import type { RelayerHttpOperation } from './RelayerHttpAttempt.js';
+import type { Logger } from '../../../../types/logger.js';
+import type { RelayerHttpOperation } from '../RelayerHttpAttempt.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { RelayerHttpRequest } from './RelayerHttpRequest.js';
-import { MAX_TIMEOUT_MS } from './relayerHttpSignal.js';
-import { RelayerHttpFetchError } from '../../../errors/RelayerHttpFetchError.js';
-import { KNOWN_RELAYER_HTTP_ERROR_CODES, RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseError.js';
-import { RelayerHttpResultError } from '../../../errors/RelayerHttpResultError.js';
-import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
-import { RelayerHttpUnexpectedResponseError } from '../../../errors/RelayerHttpUnexpectedResponseError.js';
+import { RelayerHttpRequest } from '../RelayerHttpRequest.js';
+import { MAX_TIMEOUT_MS } from '../relayerHttpSignal.js';
+import { RelayerHttpFetchError } from '../../../../errors/RelayerHttpFetchError.js';
+import {
+  KNOWN_RELAYER_HTTP_ERROR_CODES,
+  RelayerHttpResponseError,
+} from '../../../../errors/RelayerHttpResponseError.js';
+import { RelayerHttpResultError } from '../../../../errors/RelayerHttpResultError.js';
+import { RelayerHttpTimeoutError } from '../../../../errors/RelayerHttpTimeoutError.js';
+import { RelayerHttpUnexpectedResponseError } from '../../../../errors/RelayerHttpUnexpectedResponseError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/RelayerHttpRequest.retry.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/RelayerHttpRequest.retry.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 const RELAYER_URL = 'https://relayer-http.example.com/v4/user-decrypt';

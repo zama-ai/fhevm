@@ -1,11 +1,11 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { RelayerHttpRequest } from './RelayerHttpRequest.js';
-import { RelayerHttpFetchError } from '../../../errors/RelayerHttpFetchError.js';
-import { RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseError.js';
-import { RelayerHttpUnexpectedResponseError } from '../../../errors/RelayerHttpUnexpectedResponseError.js';
+import { RelayerHttpRequest } from '../RelayerHttpRequest.js';
+import { RelayerHttpFetchError } from '../../../../errors/RelayerHttpFetchError.js';
+import { RelayerHttpResponseError } from '../../../../errors/RelayerHttpResponseError.js';
+import { RelayerHttpUnexpectedResponseError } from '../../../../errors/RelayerHttpUnexpectedResponseError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/RelayerHttpRequest.errors.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/RelayerHttpRequest.errors.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 const RELAYER_URL = 'https://relayer-http.example.com/v4/user-decrypt';

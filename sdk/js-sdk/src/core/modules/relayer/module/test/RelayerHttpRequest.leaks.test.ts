@@ -1,17 +1,17 @@
 import type { Mock, MockInstance } from 'vitest';
-import type { Logger } from '../../../types/logger.js';
-import type { RelayerHttpOperation } from './RelayerHttpAttempt.js';
+import type { Logger } from '../../../../types/logger.js';
+import type { RelayerHttpOperation } from '../RelayerHttpAttempt.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { RelayerHttpRequest } from './RelayerHttpRequest.js';
-import { MAX_TIMEOUT_MS } from './relayerHttpSignal.js';
-import { RelayerHttpFetchError } from '../../../errors/RelayerHttpFetchError.js';
-import { RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseError.js';
-import { RelayerHttpResultError } from '../../../errors/RelayerHttpResultError.js';
-import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
-import { RelayerHttpUnexpectedResponseError } from '../../../errors/RelayerHttpUnexpectedResponseError.js';
+import { RelayerHttpRequest } from '../RelayerHttpRequest.js';
+import { MAX_TIMEOUT_MS } from '../relayerHttpSignal.js';
+import { RelayerHttpFetchError } from '../../../../errors/RelayerHttpFetchError.js';
+import { RelayerHttpResponseError } from '../../../../errors/RelayerHttpResponseError.js';
+import { RelayerHttpResultError } from '../../../../errors/RelayerHttpResultError.js';
+import { RelayerHttpTimeoutError } from '../../../../errors/RelayerHttpTimeoutError.js';
+import { RelayerHttpUnexpectedResponseError } from '../../../../errors/RelayerHttpUnexpectedResponseError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/RelayerHttpRequest.leaks.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/RelayerHttpRequest.leaks.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 const RELAYER_URL = 'https://relayer-http.example.com/v4/user-decrypt';
@@ -478,28 +478,29 @@ describe('RelayerHttpRequest leaves nothing behind', () => {
       name: 'the body read',
       response: () => Promise.resolve(new Response(new ReadableStream<Uint8Array>(), { status: 200 })),
     },
-  ])('after our timeout fires on a hung $name that ignores the signal: the caller listener is removed', async ({
-    response,
-  }) => {
-    vi.useFakeTimers();
-    const controller = new AbortController();
-    const addSpy = vi.spyOn(controller.signal, 'addEventListener');
-    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
-    global.fetch = vi.fn(response);
+  ])(
+    'after our timeout fires on a hung $name that ignores the signal: the caller listener is removed',
+    async ({ response }) => {
+      vi.useFakeTimers();
+      const controller = new AbortController();
+      const addSpy = vi.spyOn(controller.signal, 'addEventListener');
+      const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+      global.fetch = vi.fn(response);
 
-    void new RelayerHttpRequest({
-      relayerOperation: 'USER_DECRYPT',
-      url: RELAYER_URL,
-      payload: {},
-      options: { signal: controller.signal, timeout: TIMEOUT_MS },
-    })
-      .run()
-      .catch(() => undefined);
-    await vi.advanceTimersByTimeAsync(TIMEOUT_MS);
+      void new RelayerHttpRequest({
+        relayerOperation: 'USER_DECRYPT',
+        url: RELAYER_URL,
+        payload: {},
+        options: { signal: controller.signal, timeout: TIMEOUT_MS },
+      })
+        .run()
+        .catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(TIMEOUT_MS);
 
-    expect(addSpy).toHaveBeenCalledTimes(1);
-    expect(removeSpy).toHaveBeenCalledWith('abort', addSpy.mock.calls[0]![1]);
-  });
+      expect(addSpy).toHaveBeenCalledTimes(1);
+      expect(removeSpy).toHaveBeenCalledWith('abort', addSpy.mock.calls[0]![1]);
+    },
+  );
 
   it.each([
     { name: 'fetch', response: () => new Promise<Response>(() => {}) },

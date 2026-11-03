@@ -1,24 +1,24 @@
 import type { Mock } from 'vitest';
-import type { Logger } from '../../../types/logger.js';
-import type { RelayerHttpRetryLoopParams } from './relayerHttpRetryLoop.js';
+import type { Logger } from '../../../../types/logger.js';
+import type { RelayerHttpRetryLoopParams } from '../relayerHttpRetryLoop.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { runRelayerHttpRetryLoop, waitBeforeHttpRetry } from './relayerHttpRetryLoop.js';
-import { MAX_TIMEOUT_MS } from './relayerHttpSignal.js';
-import { abortableSleep } from '../../../base/timeout.js';
-import { RelayerHttpFetchError } from '../../../errors/RelayerHttpFetchError.js';
-import { RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseError.js';
-import { RelayerHttpResultError } from '../../../errors/RelayerHttpResultError.js';
-import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
-import { RelayerHttpUnexpectedResponseError } from '../../../errors/RelayerHttpUnexpectedResponseError.js';
-import { InvalidPropertyError } from '../../../base/errors/InvalidPropertyError.js';
+import { runRelayerHttpRetryLoop, waitBeforeHttpRetry } from '../relayerHttpRetryLoop.js';
+import { MAX_TIMEOUT_MS } from '../relayerHttpSignal.js';
+import { abortableSleep } from '../../../../base/timeout.js';
+import { RelayerHttpFetchError } from '../../../../errors/RelayerHttpFetchError.js';
+import { RelayerHttpResponseError } from '../../../../errors/RelayerHttpResponseError.js';
+import { RelayerHttpResultError } from '../../../../errors/RelayerHttpResultError.js';
+import { RelayerHttpTimeoutError } from '../../../../errors/RelayerHttpTimeoutError.js';
+import { RelayerHttpUnexpectedResponseError } from '../../../../errors/RelayerHttpUnexpectedResponseError.js';
+import { InvalidPropertyError } from '../../../../base/errors/InvalidPropertyError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/RelayerHttpRequest.retryLoop.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/RelayerHttpRequest.retryLoop.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 // Pass-through by default; a test can make one call reject with mockImplementationOnce.
-vi.mock('../../../base/timeout.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../../base/timeout.js')>();
+vi.mock('../../../../base/timeout.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../base/timeout.js')>();
   return { ...actual, abortableSleep: vi.fn(actual.abortableSleep) };
 });
 
@@ -728,7 +728,7 @@ describe('runRelayerHttpRetryLoop', () => {
     it('abort between the end of the wait and the next attempt: next attempt runs, its throw is rethrown', async () => {
       vi.useFakeTimers();
       const h = makeHarness();
-      const actual = await vi.importActual<typeof import('../../../base/timeout.js')>('../../../base/timeout.js');
+      const actual = await vi.importActual<typeof import('../../../base/timeout.js')>('../../../../base/timeout.js');
       vi.mocked(abortableSleep).mockImplementationOnce(async (ms, signal) => {
         await actual.abortableSleep(ms, signal);
         h.controller.abort('between');

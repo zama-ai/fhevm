@@ -1,12 +1,12 @@
 import type { Mock } from 'vitest';
-import type { Logger } from '../../../types/logger.js';
+import type { Logger } from '../../../../types/logger.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { MAX_TIMEOUT_MS, createRelayerHttpSignal, throwIfRelayerHttpAborted } from './relayerHttpSignal.js';
-import { RelayerHttpTimeoutError } from '../../../errors/RelayerHttpTimeoutError.js';
-import { RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseError.js';
+import { MAX_TIMEOUT_MS, createRelayerHttpSignal, throwIfRelayerHttpAborted } from '../relayerHttpSignal.js';
+import { RelayerHttpTimeoutError } from '../../../../errors/RelayerHttpTimeoutError.js';
+import { RelayerHttpResponseError } from '../../../../errors/RelayerHttpResponseError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/RelayerHttpRequest.combinedSignal.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/RelayerHttpRequest.combinedSignal.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 const RELAYER_URL = 'https://relayer-http.example.com/v4/user-decrypt';
