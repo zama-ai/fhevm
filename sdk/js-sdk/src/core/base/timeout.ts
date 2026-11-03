@@ -8,10 +8,19 @@ import { isRecordStringProperty } from './string.js';
  * otherwise, for consistency with fetch's own abort behavior.
  */
 function createAbortError(reason?: unknown): Error {
-  const name = isRecordStringProperty(reason, 'name') ? reason.name : 'AbortError';
   const error = new Error('Aborted', { cause: reason });
-  error.name = name;
+  error.name = readReasonName(reason) ?? 'AbortError';
   return error;
+}
+
+// The reason can be any value: a throwing `name` getter or Proxy trap must not
+// break the abort listener, or the sleep would never settle.
+function readReasonName(reason: unknown): string | undefined {
+  try {
+    return isRecordStringProperty(reason, 'name') ? reason.name : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
