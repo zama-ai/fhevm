@@ -197,8 +197,8 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
-    // Guard 1 runs before decide; a stop after it rethrows the current error (most literal reading).
-    it('a decide that aborts the caller signal and returns undefined: the response error, logged once', async () => {
+    // The stop logs the response error, then the abort before settlement wins over it.
+    it('a decide that aborts the caller signal and returns undefined: the caller reason, error logged once', async () => {
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503] });
       const controller = new AbortController();
       const logger = makeLogger();
@@ -211,8 +211,9 @@ describe('RelayerHttpRequest reentrancy', () => {
         logger,
       );
 
-      expect(await request.run().catch((e: unknown) => e)).toBeInstanceOf(RelayerHttpResponseError);
+      expect(await request.run().catch((e: unknown) => e)).toBe('aborted in decide');
       expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(logger.warn).toHaveBeenCalledTimes(1);
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
@@ -360,8 +361,8 @@ describe('RelayerHttpRequest reentrancy', () => {
     });
   });
 
-  // An abort that lands after the response arrived: guard 1 rethrows the caught error, never retries.
-  it('a caller abort fired from inside fetch (response still delivered): no retry, decide not called', async () => {
+  // An abort that lands after the response arrived: never retries, and the abort wins over the error.
+  it('a caller abort fired from inside fetch (response still delivered): no retry, decide not called, the caller reason', async () => {
     const controller = new AbortController();
     global.fetch = vi.fn(() => {
       controller.abort('aborted in fetch');
@@ -375,7 +376,7 @@ describe('RelayerHttpRequest reentrancy', () => {
 
     expect(decide).not.toHaveBeenCalled();
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(error).toBeInstanceOf(RelayerHttpResponseError);
+    expect(error).toBe('aborted in fetch');
   });
 
   describe('two instances concurrently', () => {
