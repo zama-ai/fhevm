@@ -4,7 +4,7 @@ use alloy::primitives::{Address, B256};
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation, PrfOutputRef};
 use common::GRANTS;
 use prf_service::{
-    pads::{read, read_body, Admission, Admissions, PadOutput, PadState},
+    pads::{read, read_body, Admission, Admissions, PadOutput, PadState, CONNECTOR_LOCK},
     waiter::{PadWaiter, PAD_READY},
 };
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -43,7 +43,7 @@ async fn lock_connector(
     connector: Address,
 ) -> sqlx::Transaction<'static, sqlx::Postgres> {
     let mut lock = pool.begin().await.unwrap();
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('pads:' || encode($1, 'hex'), 0))")
+    sqlx::query(CONNECTOR_LOCK)
         .bind(connector.as_slice())
         .execute(lock.as_mut())
         .await

@@ -12,6 +12,10 @@ use std::{
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+/// Locks the budget of the connector in `$1` until the end of the transaction.
+pub const CONNECTOR_LOCK: &str =
+    "SELECT pg_advisory_xact_lock(hashtextextended('pads:' || encode($1, 'hex'), 0))";
+
 /// The attestation and the body length of a complete row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PadOutput {
@@ -99,12 +103,10 @@ async fn add(
 ) -> anyhow::Result<Admission> {
     let mut tx = pool.begin().await?;
     // Lock the connector, so two requests of one connector cannot use the same budget.
-    sqlx::query!(
-        "SELECT pg_advisory_xact_lock(hashtextextended('pads:' || encode($1, 'hex'), 0))",
-        connector.as_slice(),
-    )
-    .execute(tx.as_mut())
-    .await?;
+    sqlx::query(CONNECTOR_LOCK)
+        .bind(connector.as_slice())
+        .execute(tx.as_mut())
+        .await?;
     let pending = sqlx::query_scalar!(
         r#"SELECT COALESCE(SUM(pad_length), 0)::BIGINT AS "pending!"
                  FROM pads
