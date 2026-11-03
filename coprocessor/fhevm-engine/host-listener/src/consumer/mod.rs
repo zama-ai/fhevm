@@ -55,6 +55,7 @@ const MAX_DB_RETRIES: u64 = 10;
 const STATS_REPORT_INTERVAL: Duration = Duration::from_secs(60);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
 const WATCH_PROPAGATION_DELAY: Duration = Duration::from_secs(10);
+const HISTORY_GAP_RETRY_DELAY: Duration = Duration::from_secs(5);
 static SLOW_LANE_PROMOTION_ATTEMPTED: AtomicBool = AtomicBool::new(false);
 const STATS_FINALIZATION_MARGIN: i64 = 5;
 /// How often the retirement watcher re-reads the paused flag.
@@ -724,10 +725,10 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                     )
                     .await
                     .map_err(|error| HandlerError::Transient(error.into()))?;
-                    // Missing history is a dependency wait. Keep the delivery
-                    // pending without opening the circuit breaker, so the
-                    // repair can be consumed on this same catchup queue.
-                    return Ok(AckDecision::Nack);
+                    // Yield without opening the circuit breaker so this queue
+                    // can consume the repair. Pace AMQP redelivery; Redis keeps
+                    // its existing pending-message claim timing.
+                    return Ok(AckDecision::Delay(HISTORY_GAP_RETRY_DELAY));
                 }
             }
             let decision = result?;

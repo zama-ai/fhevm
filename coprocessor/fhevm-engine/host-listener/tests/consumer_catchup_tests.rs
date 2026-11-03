@@ -61,6 +61,27 @@ async fn startup_completes_from_core_last_marker_below_stored_end() {
 
 #[tokio::test]
 async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
+    exercise_history_gap(std::env::var("CATCHUP_BROKER_URL").unwrap()).await;
+}
+
+#[tokio::test]
+async fn amqp_delayed_history_gaps_recover_without_unbounded_repairs() {
+    use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage};
+
+    let rabbitmq = GenericImage::new("rabbitmq", "3.8.22-management")
+        .with_exposed_port(5672.into())
+        .with_wait_for(WaitFor::message_on_stdout(
+            "Server startup complete; 4 plugins started.",
+        ))
+        .start()
+        .await
+        .unwrap();
+    let port = rabbitmq.get_host_port_ipv4(5672).await.unwrap();
+    exercise_history_gap(format!("amqp://guest:guest@127.0.0.1:{port}/%2f"))
+        .await;
+}
+
+async fn exercise_history_gap(broker_url: String) {
     use broker::{AsyncHandlerPayloadClassified, Topic};
     use host_listener::consumer::catchup::store;
     use primitives::{
@@ -68,7 +89,7 @@ async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
     };
     use test_harness::instance::{setup_test_db, ImportMode};
 
-    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+    tokio::time::timeout(std::time::Duration::from_secs(90), async {
         let instance = setup_test_db(ImportMode::None).await.unwrap();
         let pool = sqlx::PgPool::connect(instance.db_url.as_str()).await.unwrap();
         let chain_id = ChainId::try_from(
@@ -91,8 +112,14 @@ async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
             false,
         ).await.unwrap().unwrap();
 
-        let broker_url = std::env::var("CATCHUP_BROKER_URL").unwrap();
         let broker = Broker::from_url(&broker_url).await.unwrap();
+        let amqp = matches!(&broker, Broker::Amqp { .. });
+        let final_queue = Topic::new(format!("{}.v{}",
+            routing::consumer_final_event_routing(identity.clone()),
+            fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION));
+        let replay_queue = Topic::new(format!("{}.v{}",
+            routing::consumer_final_catchup_event_routing(identity.clone()),
+            fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION));
         let namespace = chain_id_to_namespace(chain_id.as_u64());
         let stop = CancellationToken::new();
         let (request_tx, mut requests) = mpsc::unbounded_channel();
@@ -118,9 +145,15 @@ async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
         let observer = consumer::ListenerConsumer::new(&broker, chain_id.as_u64(), &identity);
         loop {
             let status = observer.group_status().await.unwrap();
-            if [".final-event", ".final-catchup-event"].iter().all(|suffix| {
-                status.iter().any(|(topic, groups)| topic.ends_with(suffix) && !groups.is_empty())
-            }) {
+            let ready = if amqp {
+                broker.exists(&final_queue).await.unwrap()
+                    && broker.exists(&replay_queue).await.unwrap()
+            } else {
+                [".final-event", ".final-catchup-event"].iter().all(|suffix| {
+                    status.iter().any(|(topic, groups)| topic.ends_with(suffix) && !groups.is_empty())
+                })
+            };
+            if ready {
                 break;
             }
             assert!(!run.is_finished(), "listener stopped during startup");
@@ -148,10 +181,15 @@ async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
         // breaker. Observe them pending before delivering their dependency.
         loop {
             let status = observer.group_status().await.unwrap();
-            if status.iter().any(|(topic, groups)| {
-                topic.ends_with(".final-catchup-event")
-                    && groups.iter().any(|group| group.pending == 5 && group.lag == Some(0))
-            }) {
+            let waiting = if amqp {
+                broker.queue_depths(&replay_queue, None).await.unwrap().retry == Some(5)
+            } else {
+                status.iter().any(|(topic, groups)| {
+                    topic.ends_with(".final-catchup-event")
+                        && groups.iter().any(|group| group.pending == 5 && group.lag == Some(0))
+                })
+            };
+            if waiting {
                 break;
             }
             assert!(!run.is_finished(), "listener stopped while waiting for history");
@@ -167,19 +205,49 @@ async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
             &event_block(chain_id.as_u64(), 901, BlockFlow::FinalCatchup, Some(repair_id), true),
         ).await.unwrap();
 
+        if amqp {
+            let mut repaired = std::collections::HashSet::from([901]);
+            loop {
+                while let Ok(request) = requests.try_recv() {
+                    assert_eq!(request.block_start, request.block_end);
+                    assert!((902..=905).contains(&request.block_start));
+                    assert!(repaired.insert(request.block_start), "the same missing height must not snowball into repeated repairs");
+                    publisher.publish(
+                        &replay_routing,
+                        &event_block(chain_id.as_u64(), request.block_start, BlockFlow::FinalCatchup, request.catchup_id, true),
+                    ).await.unwrap();
+                }
+                let (total, ongoing): (i64, i64) = sqlx::query_as(
+                    "SELECT COUNT(*), COUNT(*) FILTER (WHERE status <> 'DONE')
+                     FROM host_consumer_catchups WHERE chain_id = $1 AND consumer_id = $2",
+                ).bind(chain_id.as_i64()).bind(&identity).fetch_one(&pool).await.unwrap();
+                assert!(total <= 6, "one original request plus at most one repair per missing height");
+                let depths = broker.queue_depths(&replay_queue, None).await.unwrap();
+                assert_eq!(depths.dead_letter, 0);
+                let ingested: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM host_chain_blocks_valid
+                     WHERE chain_id = $1 AND block_number BETWEEN 901 AND 906 AND block_status = 'finalized'",
+                ).bind(chain_id.as_i64()).fetch_one(&pool).await.unwrap();
+                if ongoing == 0 && ingested == 6 && depths.is_empty() { break; }
+                assert!(!run.is_finished(), "listener stopped during delayed history repair");
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
+        }
         wait_for_events(&pool, chain_id, &[901, 902, 903, 904, 905, 906, 1000]).await;
-        loop {
-            let done: i64 = sqlx::query_scalar(
-                "SELECT COUNT(*) FROM host_consumer_catchups WHERE id = ANY($1) AND status = 'DONE'",
-            ).bind(&[id, repair_id][..]).fetch_one(&pool).await.unwrap();
-            let status = observer.group_status().await.unwrap();
-            let drained = status.iter().any(|(topic, groups)| {
-                topic.ends_with(".final-catchup-event") && !groups.is_empty()
-                    && groups.iter().all(|group| group.pending == 0 && group.lag == Some(0))
-            });
-            if done == 2 && drained { break; }
-            assert!(!run.is_finished(), "listener stopped before completing replay");
-            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        if !amqp {
+            loop {
+                let done: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM host_consumer_catchups WHERE id = ANY($1) AND status = 'DONE'",
+                ).bind(&[id, repair_id][..]).fetch_one(&pool).await.unwrap();
+                let status = observer.group_status().await.unwrap();
+                let drained = status.iter().any(|(topic, groups)| {
+                    topic.ends_with(".final-catchup-event") && !groups.is_empty()
+                        && groups.iter().all(|group| group.pending == 0 && group.lag == Some(0))
+                });
+                if done == 2 && drained { break; }
+                assert!(!run.is_finished(), "listener stopped before completing replay");
+                tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            }
         }
         assert!(!run.is_finished(), "listener stopped after recovery");
         run.abort();
