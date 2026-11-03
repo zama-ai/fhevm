@@ -2,14 +2,12 @@
 pragma solidity ^0.8.24;
 
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
-import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
 import {IProtocolConfigReplica, KmsContextSubmission, KmsEpochSubmission} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
 import {KmsThresholds, KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
-import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
+import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 
 abstract contract ProtocolConfigReplicaTestBase is HostContractsDeployerTestUtils {
     ProtocolConfigReplica internal protocolConfigReplica;
@@ -37,12 +35,9 @@ abstract contract ProtocolConfigReplicaTestBase is HostContractsDeployerTestUtil
     uint256 internal constant QUORUM = 3;
 
     /// @dev Signatures are made under the canonical domain, not the replica's own.
-    function _hashProtocolConfigTypedData(bytes32 structHash) internal pure override returns (bytes32) {
-        return
-            MessageHashUtils.toTypedDataHash(
-                _computeProtocolConfigDomainSeparator(CANONICAL_CHAIN_ID, CANONICAL_ADDRESS),
-                structHash
-            );
+    constructor() {
+        signingChainId = CANONICAL_CHAIN_ID;
+        signingVerifyingContract = CANONICAL_ADDRESS;
     }
 
     /// @dev Bootstraps a replica on the same active context and epoch as a fresh canonical deploy.
@@ -59,46 +54,34 @@ abstract contract ProtocolConfigReplicaTestBase is HostContractsDeployerTestUtil
         );
     }
 
-    function _setupCanonical() internal returns (ProtocolConfig pc) {
-        _deployACL(owner);
-        (pc, ) = _deployProtocolConfig(owner, _makeKmsNodeParams(2), _defaultThresholds());
-    }
-
-    function _upgradeToReplica(ProtocolConfig pc) internal returns (ProtocolConfigReplica) {
-        // Existing replica proxies run the v0.14 ProtocolConfig, which is at initialized version 3.
-        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(3)));
-        address replicaImpl = address(new ProtocolConfigReplica());
-        vm.prank(owner);
-        pc.upgradeToAndCall(
-            replicaImpl,
-            abi.encodeCall(ProtocolConfigReplica.reinitializeV3, (CANONICAL_CHAIN_ID, CANONICAL_ADDRESS))
-        );
-        return ProtocolConfigReplica(protocolConfigAdd);
-    }
-
     function _thresholds() internal pure returns (KmsThresholds memory) {
         return KmsThresholds({publicDecryption: 1, userDecryption: 2, kmsGen: 3, mpc: 1});
     }
 
-    /// @dev Signer keys of committee `seed`. Seed 0 is the bootstrap committee.
-    function _keys(uint256 seed) internal pure returns (uint256[] memory keys) {
-        keys = new uint256[](N);
-        for (uint256 i = 0; i < N; i++) {
+    /// @dev The first `n` signer keys of committee `seed`. Seed 0 is the bootstrap committee.
+    function _keys(uint256 seed, uint256 n) internal pure returns (uint256[] memory keys) {
+        keys = new uint256[](n);
+        for (uint256 i = 0; i < n; i++) {
             keys[i] = _defaultSignerPk(i) + seed;
         }
     }
 
-    function _nodes(uint256 seed) internal pure returns (KmsNode[] memory nodes) {
-        uint256[] memory keys = _keys(seed);
-        nodes = _toKmsNodes(_makeKmsNodeParams(N));
-        for (uint256 i = 0; i < N; i++) {
+    function _nodes(uint256 seed) internal pure returns (KmsNode[] memory) {
+        return _nodes(seed, N);
+    }
+
+    /// @dev Committee `seed` with `n` nodes.
+    function _nodes(uint256 seed, uint256 n) internal pure returns (KmsNode[] memory nodes) {
+        uint256[] memory keys = _keys(seed, n);
+        nodes = _toKmsNodes(_makeKmsNodeParams(n));
+        for (uint256 i = 0; i < n; i++) {
             nodes[i].txSenderAddress = address(uint160(0xA1 + i + seed * 0x10));
             nodes[i].signerAddress = vm.addr(keys[i]);
         }
     }
 
     function _signers(uint256 seed) internal pure returns (address[] memory signers) {
-        uint256[] memory keys = _keys(seed);
+        uint256[] memory keys = _keys(seed, N);
         signers = new address[](N);
         for (uint256 i = 0; i < N; i++) {
             signers[i] = vm.addr(keys[i]);
@@ -107,7 +90,7 @@ abstract contract ProtocolConfigReplicaTestBase is HostContractsDeployerTestUtil
 
     /// @dev Signs `digest` with the first `count` keys of committee `seed`.
     function _sign(bytes32 digest, uint256 seed, uint256 count) internal pure returns (bytes[] memory signatures) {
-        uint256[] memory keys = _keys(seed);
+        uint256[] memory keys = _keys(seed, count);
         signatures = new bytes[](count);
         for (uint256 i = 0; i < count; i++) {
             signatures[i] = _computeSignature(keys[i], digest);
@@ -122,11 +105,24 @@ abstract contract ProtocolConfigReplicaTestBase is HostContractsDeployerTestUtil
         uint256 seed,
         uint256 previousSeed,
         uint256 count
+    ) internal view returns (KmsContextSubmission memory) {
+        return _ctxSubmission(previousContextId, contextId, _nodes(seed), _thresholds(), previousSeed, count);
+    }
+
+    /// @dev A switch from `previousContextId` to `nodes` and `thresholds` under `contextId`, signed by
+    ///      `count` signers of committee `previousSeed`.
+    function _ctxSubmission(
+        uint256 previousContextId,
+        uint256 contextId,
+        KmsNode[] memory nodes,
+        KmsThresholds memory thresholds,
+        uint256 previousSeed,
+        uint256 count
     ) internal view returns (KmsContextSubmission memory context) {
         context = KmsContextSubmission({
             contextId: contextId,
-            nodes: _nodes(seed),
-            thresholds: _thresholds(),
+            nodes: nodes,
+            thresholds: thresholds,
             signatures: new bytes[](0),
             extraData: EXTRA
         });
@@ -157,6 +153,20 @@ abstract contract ProtocolConfigReplicaTestBase is HostContractsDeployerTestUtil
             _ctxSubmission(activeContextId, contextId, seed, previousSeed, QUORUM),
             _epochSubmission(contextId, activeEpochId, epochId, seed, N)
         );
+    }
+
+    /// @dev The switch from the bootstrap pair to committee SEED1 under `CTX1 + 1` and `EPOCH1 + 1`.
+    function _defaultSwitch() internal view returns (KmsContextSubmission memory, KmsEpochSubmission memory) {
+        return (
+            _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM),
+            _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N)
+        );
+    }
+
+    function _assertActive(uint256 contextId, uint256 epochId) internal view {
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
+        assertEq(activeContextId, contextId);
+        assertEq(activeEpochId, epochId);
     }
 
     /// @dev Checks that `contextId` stores exactly the nodes of committee `seed`.
@@ -219,6 +229,41 @@ abstract contract ProtocolConfigReplicaTestBase is HostContractsDeployerTestUtil
     ) internal view returns (bytes32) {
         return
             _hashEpochActivation(contextId, previousEpochId, epoch.epochId, epoch.epochMaterialHash, epoch.extraData);
+    }
+
+    /// @dev Expects the switch to revert on its first context signature, checked against the active committee.
+    function _assertContextRejected(KmsContextSubmission memory context, KmsEpochSubmission memory epoch) internal {
+        uint256 activeContextId = protocolConfigReplica.getCurrentKmsContextId();
+        _expectNotInCommittee(_contextDigest(activeContextId, context), context.signatures[0], activeContextId);
+        protocolConfigReplica.submitKmsContextSwitch(context, epoch);
+    }
+
+    /// @dev Expects the switch to revert on its first epoch signature, checked against the new committee.
+    function _assertEpochRejected(KmsContextSubmission memory context, KmsEpochSubmission memory epoch) internal {
+        (, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
+        _expectNotInCommittee(
+            _epochDigest(context.contextId, activeEpochId, epoch),
+            epoch.signatures[0],
+            context.contextId
+        );
+        protocolConfigReplica.submitKmsContextSwitch(context, epoch);
+    }
+
+    /// @dev Expects the resharing to revert on its first signature, checked against the active committee.
+    function _assertResharingRejected(KmsEpochSubmission memory epoch) internal {
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
+        _expectNotInCommittee(
+            _epochDigest(activeContextId, activeEpochId, epoch),
+            epoch.signatures[0],
+            activeContextId
+        );
+        protocolConfigReplica.submitKmsKeyResharing(epoch);
+    }
+
+    /// @dev Pranks a non-owner and expects the next call to revert with `NotHostOwner`.
+    function _expectNotOwner() internal {
+        vm.prank(address(0x999));
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
     }
 
     /// @dev Expects `KmsSignerNotInCommittee` for the signer that `signature` recovers to over the

@@ -116,9 +116,8 @@ replica with the KMS confirmation signatures, through the `submitKms*` methods. 
 permissionless path. No task in this repo calls them yet. The owner mirror methods below are the
 path the repo tasks use for rotations. The owner also uses them to recover a replica.
 
-A submitted destruction of an id at or above the replica's active id reverts with
-`KmsContextDestructionAheadOfReplica` or `KmsEpochDestructionAheadOfReplica`. The submitter retries
-it after the replica moves past that id.
+A submitted destruction has ordering and retry rules. See `submitKmsContextDestruction` in
+`IProtocolConfigReplica`.
 
 ### Mirror methods (owner path)
 
@@ -148,7 +147,7 @@ The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **ne
 seed their replica from it.
 
 An existing replica proxy that still runs `ProtocolConfig` does not need this flow. It migrates in
-place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV3(canonicalChainId, canonicalProtocolConfig))`.
+place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV4(canonicalChainId, canonicalProtocolConfig))`.
 The two arguments set the canonical `ProtocolConfig` EIP-712 domain. Both contracts use the
 same base storage, so the KMS context, epoch and nodes stay as they are.
 

@@ -34,11 +34,11 @@ contract ProtocolConfigReplica is
 
     string private constant CONTRACT_NAME = "ProtocolConfigReplica";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @dev Shared between `initializeFromCanonical` and `reinitializeV3`.
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    /// @dev Shared between `initializeFromCanonical` and `reinitializeV4`.
+    uint64 private constant REINITIALIZER_VERSION = 5;
 
     // -----------------------------------------------------------------------------------------
     // Constructor
@@ -94,7 +94,7 @@ contract ProtocolConfigReplica is
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3(
+    function reinitializeV4(
         uint64 canonicalChainId,
         address canonicalProtocolConfig
     ) public virtual reinitializer(REINITIALIZER_VERSION) {
@@ -191,12 +191,9 @@ contract ProtocolConfigReplica is
         bytes[] calldata signatures,
         bytes calldata extraData
     ) external virtual {
-        uint256 activeContextId = _getProtocolConfigStorage().latestActiveKmsContextId;
-        if (destroyedContextId >= activeContextId) {
-            revert KmsContextDestructionAheadOfReplica(destroyedContextId, activeContextId);
-        }
-        _destroyKmsContext(destroyedContextId);
+        _checkKmsContextDestroyable(destroyedContextId);
         _verifyDestructionQuorum(_contextDestructionStructHash(destroyedContextId, extraData), signatures);
+        _markKmsContextDestroyed(destroyedContextId);
     }
 
     /// @inheritdoc IProtocolConfigReplica
@@ -205,12 +202,9 @@ contract ProtocolConfigReplica is
         bytes[] calldata signatures,
         bytes calldata extraData
     ) external virtual {
-        uint256 activeEpochId = _getProtocolConfigStorage().latestActiveEpochId;
-        if (destroyedEpochId >= activeEpochId) {
-            revert KmsEpochDestructionAheadOfReplica(destroyedEpochId, activeEpochId);
-        }
-        _destroyKmsEpoch(destroyedEpochId);
+        _checkKmsEpochDestroyable(destroyedEpochId);
         _verifyDestructionQuorum(_epochDestructionStructHash(destroyedEpochId, extraData), signatures);
+        _markKmsEpochDestroyed(destroyedEpochId);
     }
 
     // -----------------------------------------------------------------------------------------
@@ -242,12 +236,14 @@ contract ProtocolConfigReplica is
 
     /// @inheritdoc IProtocolConfigReplica
     function mirrorKmsContextDestruction(uint256 destroyedContextId) external virtual onlyACLOwner {
-        _destroyKmsContext(destroyedContextId);
+        _checkKmsContextDestroyable(destroyedContextId);
+        _markKmsContextDestroyed(destroyedContextId);
     }
 
     /// @inheritdoc IProtocolConfigReplica
     function mirrorKmsEpochDestruction(uint256 destroyedEpochId) external virtual onlyACLOwner {
-        _destroyKmsEpoch(destroyedEpochId);
+        _checkKmsEpochDestroyable(destroyedEpochId);
+        _markKmsEpochDestroyed(destroyedEpochId);
     }
 
     /// @inheritdoc IProtocolConfigBase
@@ -289,36 +285,25 @@ contract ProtocolConfigReplica is
         if (canonicalChainId == 0 || canonicalProtocolConfig == address(0)) {
             revert InvalidCanonicalDomain(canonicalChainId, canonicalProtocolConfig);
         }
-        __EIP712_init(EIP712_NAME, "1", canonicalProtocolConfig, canonicalChainId);
+        __EIP712_init(EIP712_NAME, EIP712_VERSION, canonicalProtocolConfig, canonicalChainId);
     }
 
     /**
-     * @dev Stores `nodes` and `thresholds` under `contextId`. Clears the committee already stored
-     *      under that ID first, so none of its signers stays a member.
+     * @dev Stores `nodes` and `thresholds` under `contextId`, replacing any committee stored there.
      */
     function _replaceKmsContext(
         uint256 contextId,
         KmsNode[] calldata nodes,
         KmsThresholds calldata thresholds
     ) private {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        KmsNode[] storage storedNodes = $.kmsNodesForContext[contextId];
-        for (uint256 i = 0; i < storedNodes.length; i++) {
-            address txSender = storedNodes[i].txSenderAddress;
-            delete $.isKmsTxSenderForContext[contextId][txSender];
-            delete $.isKmsSignerForContext[contextId][storedNodes[i].signerAddress];
-            delete $.kmsNodeByTxSenderForContext[contextId][txSender];
-        }
-        delete $.kmsNodesForContext[contextId];
-        delete $.kmsSignerAddressesForContext[contextId];
-
+        _clearKmsCommittee(contextId);
         _storeKmsCommittee(contextId, nodes, thresholds);
     }
 
     /**
-     * @dev Marks `destroyedContextId` destroyed. Reverts if it is already destroyed or is the active context.
+     * @dev Reverts if `destroyedContextId` is already destroyed or is the active context.
      */
-    function _destroyKmsContext(uint256 destroyedContextId) private {
+    function _checkKmsContextDestroyable(uint256 destroyedContextId) private view {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         if ($.contextState[destroyedContextId] == ContextState.Destroyed) {
             revert KmsContextAlreadyDestroyed(destroyedContextId);
@@ -326,14 +311,12 @@ contract ProtocolConfigReplica is
         if (destroyedContextId == $.latestActiveKmsContextId) {
             revert LatestActiveKmsContextCannotBeDestroyed(destroyedContextId);
         }
-
-        _markKmsContextDestroyed(destroyedContextId);
     }
 
     /**
-     * @dev Marks `destroyedEpochId` destroyed. Reverts if it is already destroyed or is the active epoch.
+     * @dev Reverts if `destroyedEpochId` is already destroyed or is the active epoch.
      */
-    function _destroyKmsEpoch(uint256 destroyedEpochId) private {
+    function _checkKmsEpochDestroyable(uint256 destroyedEpochId) private view {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         if ($.epochState[destroyedEpochId] == EpochState.Destroyed) {
             revert KmsEpochAlreadyDestroyed(destroyedEpochId);
@@ -341,8 +324,6 @@ contract ProtocolConfigReplica is
         if (destroyedEpochId == $.latestActiveEpochId) {
             revert LatestActiveKmsEpochCannotBeDestroyed(destroyedEpochId);
         }
-
-        _markKmsEpochDestroyed(destroyedEpochId);
     }
 
     /**

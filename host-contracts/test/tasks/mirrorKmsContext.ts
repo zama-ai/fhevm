@@ -50,7 +50,7 @@ describe('KMS mirror tasks', function () {
           snapshot.kmsNodes[i].storageUrl,
         ]);
       });
-      expect(decoded[3].publicDecryption).to.equal(snapshot.thresholds.publicDecryption);
+      expect(decoded[3].toObject()).to.deep.equal(snapshot.thresholds);
     });
   });
 

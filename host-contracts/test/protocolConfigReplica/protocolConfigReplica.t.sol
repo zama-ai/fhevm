@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {ProtocolConfigReplicaTestBase} from "./ProtocolConfigReplicaTestBase.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
 import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
@@ -10,7 +9,6 @@ import {IProtocolConfigReplica, KmsEpochSubmission} from "@fhevm-host-contracts/
 import {IProtocolConfigBase} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigBase.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
-import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
@@ -86,24 +84,45 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         );
     }
 
-    function _expectReinitializeV3Reverts(uint64 chainId, address canonical) internal {
-        ProtocolConfig pc = _setupCanonical();
-        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(3)));
-        address replicaImpl = address(new ProtocolConfigReplica());
+    // -----------------------------------------------------------------------
+    // Upgrade from ProtocolConfig
+    // -----------------------------------------------------------------------
 
+    address internal replicaImplementation;
+
+    /// @dev Deploys a canonical ProtocolConfig with 2 nodes of committee SEED0, and the replica implementation.
+    ///      `_upgradeToReplica` then makes no deployment, so a test can expect a revert on the upgrade.
+    function _setupCanonical() internal returns (ProtocolConfig pc) {
+        _deployACL(owner);
+        (pc, ) = _deployProtocolConfig(owner, _makeKmsNodeParams(2), _defaultThresholds());
+        replicaImplementation = address(new ProtocolConfigReplica());
+    }
+
+    function _upgradeToReplica(uint64 chainId, address canonical) internal {
+        // Existing replica proxies run the v0.15 ProtocolConfig, which is at initialized version 4.
+        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(4)));
         vm.prank(owner);
+        ProtocolConfig(protocolConfigAdd).upgradeToAndCall(
+            replicaImplementation,
+            abi.encodeCall(ProtocolConfigReplica.reinitializeV4, (chainId, canonical))
+        );
+        protocolConfigReplica = ProtocolConfigReplica(protocolConfigAdd);
+    }
+
+    function _expectReinitializeV4Reverts(uint64 chainId, address canonical) internal {
+        _setupCanonical();
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.InvalidCanonicalDomain.selector, chainId, canonical)
         );
-        pc.upgradeToAndCall(replicaImpl, abi.encodeCall(ProtocolConfigReplica.reinitializeV3, (chainId, canonical)));
+        _upgradeToReplica(chainId, canonical);
     }
 
-    function test_revertReinitializeV3ZeroChainId() public {
-        _expectReinitializeV3Reverts(0, CANONICAL_ADDRESS);
+    function test_revertReinitializeV4ZeroChainId() public {
+        _expectReinitializeV4Reverts(0, CANONICAL_ADDRESS);
     }
 
-    function test_revertReinitializeV3ZeroAddress() public {
-        _expectReinitializeV3Reverts(CANONICAL_CHAIN_ID, address(0));
+    function test_revertReinitializeV4ZeroAddress() public {
+        _expectReinitializeV4Reverts(CANONICAL_CHAIN_ID, address(0));
     }
 
     // -----------------------------------------------------------------------
@@ -149,7 +168,7 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         );
     }
 
-    function test_reinitializeV3OnUpgradeFromProtocolConfigKeepsStateAndMirrors() public {
+    function test_reinitializeV4OnUpgradeFromProtocolConfigKeepsStateAndMirrors() public {
         ProtocolConfig pc = _setupCanonical();
 
         (uint256 contextId, uint256 epochId) = pc.getCurrentKmsContextAndEpoch();
@@ -159,14 +178,12 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         uint256 kmsGen = pc.getKmsGenThresholdForContext(contextId);
         uint256 mpc = pc.getMpcThresholdForContext(contextId);
 
-        protocolConfigReplica = _upgradeToReplica(pc);
+        _upgradeToReplica(CANONICAL_CHAIN_ID, CANONICAL_ADDRESS);
 
-        assertEq(uint256(vm.load(protocolConfigAdd, INITIALIZABLE_STORAGE)), 4);
+        assertEq(uint256(vm.load(protocolConfigAdd, INITIALIZABLE_STORAGE)), 5);
         _assertCanonicalDomain();
-        assertEq(protocolConfigReplica.getVersion(), "ProtocolConfigReplica v0.3.0");
-        (uint256 newContextId, uint256 newEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
-        assertEq(newContextId, contextId);
-        assertEq(newEpochId, epochId);
+        assertEq(protocolConfigReplica.getVersion(), "ProtocolConfigReplica v0.4.0");
+        _assertActive(contextId, epochId);
         assertEq(protocolConfigReplica.getKmsSignersForContext(contextId), signers);
         assertEq(protocolConfigReplica.getPublicDecryptionThresholdForContext(contextId), publicDecryption);
         assertEq(protocolConfigReplica.getUserDecryptionThresholdForContext(contextId), userDecryption);
@@ -174,40 +191,54 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         assertEq(protocolConfigReplica.getMpcThresholdForContext(contextId), mpc);
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        protocolConfigReplica.reinitializeV3(CANONICAL_CHAIN_ID, CANONICAL_ADDRESS);
+        protocolConfigReplica.reinitializeV4(CANONICAL_CHAIN_ID, CANONICAL_ADDRESS);
 
         vm.prank(owner);
         protocolConfigReplica.mirrorKmsEpoch(contextId, epochId + 1);
-        (newContextId, newEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
-        assertEq(newContextId, contextId);
-        assertEq(newEpochId, epochId + 1);
+        _assertActive(contextId, epochId + 1);
     }
 
     /// @dev A pending context leaves the canonical counter above the active ID. The replica reports the active ID.
-    function test_reinitializeV3CounterReturnsActiveContextId() public {
+    function test_reinitializeV4CounterReturnsActiveContextId() public {
         ProtocolConfig pc = _setupCanonical();
         vm.prank(owner);
         pc.defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds(), "", new PcrValues[](0));
         assertEq(pc.getCurrentKmsContextIdCounter(), CTX1 + 1);
 
-        protocolConfigReplica = _upgradeToReplica(pc);
+        _upgradeToReplica(CANONICAL_CHAIN_ID, CANONICAL_ADDRESS);
 
         assertEq(protocolConfigReplica.getCurrentKmsContextIdCounter(), CTX1);
+
+        // The canonical stored the pending 2-node SEED0 committee under `CTX1 + 1`. Mirroring that ID replaces it.
+        vm.prank(owner);
+        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1 + 1, EPOCH1 + 1, _nodes(SEED1), _thresholds());
+        assertEq(protocolConfigReplica.getCurrentKmsContextIdCounter(), CTX1 + 1);
+        _assertActive(CTX1 + 1, EPOCH1 + 1);
+        _assertMembers(CTX1 + 1, SEED1);
+        _assertNotMembers(CTX1 + 1, SEED0);
     }
 
-    function test_revertReinitializeV3OnFreshReplica() public {
+    /// @dev The replica verifies signatures against the committee that ProtocolConfig stored before the upgrade.
+    function test_reinitializeV4ThenSubmitsKeyResharing() public {
+        _setupCanonical();
+        _upgradeToReplica(CANONICAL_CHAIN_ID, CANONICAL_ADDRESS);
+
+        protocolConfigReplica.submitKmsKeyResharing(_epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, 2));
+        _assertActive(CTX1, EPOCH1 + 1);
+    }
+
+    function test_revertReinitializeV4OnFreshReplica() public {
         _setupReplica();
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        protocolConfigReplica.reinitializeV3(CANONICAL_CHAIN_ID, CANONICAL_ADDRESS);
+        protocolConfigReplica.reinitializeV4(CANONICAL_CHAIN_ID, CANONICAL_ADDRESS);
     }
 
     function test_revertUpgradeNotOwner() public {
         _setupReplica();
         address newImpl = address(new ProtocolConfigReplica());
 
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
+        _expectNotOwner();
         protocolConfigReplica.upgradeToAndCall(newImpl, "");
     }
 
@@ -239,18 +270,12 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
     /// @dev Expects a resharing signed under the domain `(chainId, verifyingContract)` to be rejected.
     function _expectRejectsDomain(uint256 chainId, address verifyingContract) internal {
         _setupReplica();
-        bytes32 structHash = keccak256(
-            abi.encode(EIP712_EPOCH_ACTIVATION_TYPE_HASH, CTX1, EPOCH1, EPOCH1 + 1, MATERIAL, keccak256(EXTRA))
-        );
-        bytes32 digest = MessageHashUtils.toTypedDataHash(
-            _computeProtocolConfigDomainSeparator(chainId, verifyingContract),
-            structHash
-        );
+        (signingChainId, signingVerifyingContract) = (chainId, verifyingContract);
         KmsEpochSubmission memory epoch = _epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, N);
-        epoch.signatures = _sign(digest, SEED0, N);
 
-        _expectNotInCommittee(_epochDigest(CTX1, EPOCH1, epoch), epoch.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsKeyResharing(epoch);
+        // The replica recovers the signer over the canonical digest.
+        (signingChainId, signingVerifyingContract) = (CANONICAL_CHAIN_ID, CANONICAL_ADDRESS);
+        _assertResharingRejected(epoch);
     }
 
     function test_revertSubmitSignedForLocalDomain() public {

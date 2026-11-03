@@ -73,6 +73,10 @@ abstract contract HostContractsDeployerTestUtils is Test {
     /// @dev Shared ProtocolConfig handle bound by each suite's setUp; used by the hoisted EIP-712 helpers below.
     ProtocolConfig internal protocolConfig;
 
+    /// @dev EIP-712 domain that the KMS signers sign ProtocolConfig confirmations under.
+    uint256 internal signingChainId = block.chainid;
+    address internal signingVerifyingContract = protocolConfigAdd;
+
     function _deployACL(address owner) internal returns (ACL aclProxy, address aclImplementation) {
         address emptyProxyImplementation = address(new EmptyUUPSProxyACL());
 
@@ -452,10 +456,10 @@ abstract contract HostContractsDeployerTestUtils is Test {
             );
     }
 
-    function _hashProtocolConfigTypedData(bytes32 structHash) internal view virtual returns (bytes32) {
+    function _hashProtocolConfigTypedData(bytes32 structHash) internal view returns (bytes32) {
         return
             MessageHashUtils.toTypedDataHash(
-                _computeProtocolConfigDomainSeparator(block.chainid, address(protocolConfig)),
+                _computeProtocolConfigDomainSeparator(signingChainId, signingVerifyingContract),
                 structHash
             );
     }

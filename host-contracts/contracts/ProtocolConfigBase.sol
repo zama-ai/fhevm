@@ -40,6 +40,9 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     ///      the replica verifies under it.
     string internal constant EIP712_NAME = "ProtocolConfig";
 
+    /// @dev EIP-712 domain version of the canonical ProtocolConfig.
+    string internal constant EIP712_VERSION = "1";
+
     // -----------------------------------------------------------------------------------------
     // EIP-712 type hashes
     //
@@ -383,6 +386,22 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         $.isKmsSignerForContext[contextId][node.signerAddress] = true;
         $.kmsNodeByTxSenderForContext[contextId][node.txSenderAddress] = node;
         $.kmsSignerAddressesForContext[contextId].push(node.signerAddress);
+    }
+
+    /**
+     * @dev Removes every node of the committee of `contextId`, so none of its signers stays a member.
+     */
+    function _clearKmsCommittee(uint256 contextId) internal {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        KmsNode[] storage storedNodes = $.kmsNodesForContext[contextId];
+        for (uint256 i = 0; i < storedNodes.length; i++) {
+            address txSender = storedNodes[i].txSenderAddress;
+            delete $.isKmsTxSenderForContext[contextId][txSender];
+            delete $.isKmsSignerForContext[contextId][storedNodes[i].signerAddress];
+            delete $.kmsNodeByTxSenderForContext[contextId][txSender];
+        }
+        delete $.kmsNodesForContext[contextId];
+        delete $.kmsSignerAddressesForContext[contextId];
     }
 
     /**

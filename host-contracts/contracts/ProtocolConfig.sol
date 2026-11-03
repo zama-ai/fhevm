@@ -37,11 +37,11 @@ contract ProtocolConfig is
 
     string private constant CONTRACT_NAME = "ProtocolConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @dev Shared between `initializeFromEmptyProxy` and `reinitializeV3`.
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    /// @dev Shared between `initializeFromEmptyProxy` and `reinitializeV4`.
+    uint64 private constant REINITIALIZER_VERSION = 5;
 
     // -----------------------------------------------------------------------------------------
     // EIP-712 type hashes
@@ -119,7 +119,7 @@ contract ProtocolConfig is
         $.currentKmsContextId = newContextId;
         $.epochCounter = newEpochId;
         _activateKmsContextAndEpoch(newContextId, newEpochId);
-        __EIP712_init(EIP712_NAME, "1", address(this), uint64(block.chainid));
+        __EIP712_init(EIP712_NAME, EIP712_VERSION, address(this), uint64(block.chainid));
 
         $.contextAnchors[newContextId] = KmsContextAnchor({
             emissionBlockNumber: block.number,
@@ -136,12 +136,12 @@ contract ProtocolConfig is
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract from V3.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
-        __EIP712_init(EIP712_NAME, "1", address(this), uint64(block.chainid));
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {
+        __EIP712_init(EIP712_NAME, EIP712_VERSION, address(this), uint64(block.chainid));
     }
 
     // -----------------------------------------------------------------------------------------
@@ -323,9 +323,10 @@ contract ProtocolConfig is
 
         // A confirmed switch issued this context's epoch as the latest one. It can only be Pending:
         // an Active epoch makes its context the latest active one, which the guard above refuses.
-        // Reset it to None, so the in-flight gate reopens. A switch destroyed before its creation
-        // quorum has no epoch, so the check below is false. Earlier epochs keep their state, but
-        // every epoch check also requires the context.
+        // Reset it to None, not Destroyed: the context destruction covers it, so no KmsEpochDestroyed
+        // is emitted. Any state other than Pending reopens the in-flight gate. A switch destroyed
+        // before its creation quorum has no epoch, so the check below is false. Earlier epochs keep
+        // their state, but every epoch check also requires the context.
         uint256 latestEpochId = $.epochCounter;
         if ($.contextForEpoch[latestEpochId] == kmsContextId) {
             delete $.epochState[latestEpochId];

@@ -220,7 +220,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         _setupDefault();
 
         // Version and current context.
-        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.3.0");
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.4.0");
         uint256 contextId = protocolConfig.getCurrentKmsContextId();
         assertEq(contextId, KMS_CONTEXT_COUNTER_BASE + 1);
         assertEq(protocolConfig.getCurrentKmsContextId(), contextId);
@@ -1557,19 +1557,19 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         protocolConfig.upgradeToAndCall(newImpl, "");
 
-        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.4.0");
+        assertEq(protocolConfig.getVersion(), "ProtocolConfig v0.5.0");
         // State preserved across upgrade.
         assertTrue(protocolConfig.isValidKmsContext(protocolConfig.getCurrentKmsContextId()));
     }
 
     // -----------------------------------------------------------------------
-    // reinitializeV3 upgrade path
+    // reinitializeV4 upgrade path
     // -----------------------------------------------------------------------
 
-    /// @dev Calls reinitializeV3() on a proxy pinned at the initialized version the v0.2.0
-    ///      implementation left behind (3), as the upgrade tooling does. The pre-store check proves
+    /// @dev Calls reinitializeV4() on a proxy pinned at the initialized version the v0.3.0
+    ///      implementation left behind (4), as the upgrade tooling does. The pre-store check proves
     ///      the hardcoded slot is where OZ Initializable writes.
-    function test_reinitializeV3SucceedsOnUpgradePath() public {
+    function test_reinitializeV4SucceedsOnUpgradePath() public {
         _deployACL(owner);
         _deployEmptyProtocolConfigProxy();
         address impl = address(new ProtocolConfig());
@@ -1577,10 +1577,10 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(impl, "");
 
         assertEq(uint256(vm.load(protocolConfigAdd, INITIALIZABLE_STORAGE)), 1);
-        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(3)));
+        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(4)));
 
-        ProtocolConfig(protocolConfigAdd).reinitializeV3();
-        assertEq(uint256(vm.load(protocolConfigAdd, INITIALIZABLE_STORAGE)), 4);
+        ProtocolConfig(protocolConfigAdd).reinitializeV4();
+        assertEq(uint256(vm.load(protocolConfigAdd, INITIALIZABLE_STORAGE)), 5);
 
         // The KMS signers sign under this domain, so the upgrade path must set it.
         (, string memory name, string memory version, uint256 chainId, address verifyingContract, , ) = ProtocolConfig(
@@ -1592,20 +1592,20 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         assertEq(verifyingContract, protocolConfigAdd);
 
         vm.expectRevert(Initializable.InvalidInitialization.selector);
-        ProtocolConfig(protocolConfigAdd).reinitializeV3();
+        ProtocolConfig(protocolConfigAdd).reinitializeV4();
     }
 
-    /// @dev Upgrades a v0.14 proxy in place. v0.14 shares the ProtocolConfigStorage layout and its initializer
-    ///      writes no canonical storage, so a fresh proxy pinned at version 3 matches a v0.14 proxy.
-    function test_reinitializeV3OnV014StateThenRotatesEpoch() public {
+    /// @dev Upgrades a v0.15 proxy in place. v0.15 shares the ProtocolConfigStorage layout and its initializer
+    ///      writes no canonical storage, so a fresh proxy pinned at version 4 matches a v0.15 proxy.
+    function test_reinitializeV4OnV015StateThenRotatesEpoch() public {
         _setupTwoNodeContext();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(3)));
+        vm.store(protocolConfigAdd, INITIALIZABLE_STORAGE, bytes32(uint256(4)));
         address impl = address(new ProtocolConfig());
         vm.prank(owner);
-        protocolConfig.upgradeToAndCall(impl, abi.encodeCall(ProtocolConfig.reinitializeV3, ()));
+        protocolConfig.upgradeToAndCall(impl, abi.encodeCall(ProtocolConfig.reinitializeV4, ()));
 
-        // The confirm path reads the committee that v0.14 stored, so a rotation completes after the upgrade.
+        // The confirm path reads the committee that v0.15 stored, so a rotation completes after the upgrade.
         uint256 epochId = EPOCH_COUNTER_BASE + 2;
         _activateSameSetEpoch(epochId, 2);
         (uint256 currentContextId, uint256 currentEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();

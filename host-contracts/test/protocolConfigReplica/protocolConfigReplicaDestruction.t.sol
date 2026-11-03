@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {ProtocolConfigReplicaFixture} from "./ProtocolConfigReplicaTestBase.sol";
-import {IProtocolConfigReplica} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
+import {IProtocolConfigReplica, KmsContextSubmission, KmsEpochSubmission} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
 import {IProtocolConfigBase} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigBase.sol";
 import {KmsThresholds} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 
@@ -23,15 +23,7 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaFixture {
         assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1 + 1, EPOCH1 + 1));
     }
 
-    /// @dev Moves the replica to `CTX1 + 10` and `EPOCH1 + 10` under committee SEED0, so the IDs
-    ///      below are never stored and not ahead of the replica.
-    function _mirrorAhead() internal {
-        vm.prank(owner);
-        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1 + 10, EPOCH1 + 10, _nodes(SEED0), _thresholds());
-    }
-
     function test_revertContextDestructionReplay() public {
-        _mirrorAhead();
         bytes[] memory signatures = _sign(_hashContextDestruction(CTX1 + 9, EXTRA), SEED0, QUORUM);
         vm.expectEmit(true, false, false, false, address(protocolConfigReplica));
         emit IProtocolConfigBase.KmsContextDestroyed(CTX1 + 9);
@@ -49,13 +41,26 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaFixture {
 
     function test_revertContextDestructionActive() public {
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigReplica.KmsContextDestructionAheadOfReplica.selector, CTX1, CTX1)
+            abi.encodeWithSelector(IProtocolConfigBase.LatestActiveKmsContextCannotBeDestroyed.selector, CTX1)
         );
         _destroyContext(CTX1, SEED0, QUORUM);
     }
 
+    /// @dev Canonical destroys pending C2 before it reaches the replica. The replica records C2 as
+    ///      destroyed, so a late signature set for C2 cannot activate it (RFC 037 section 3.2).
+    function test_destroyedNeverStoredContextCannotBeActivated() public {
+        vm.expectEmit(true, false, false, false, address(protocolConfigReplica));
+        emit IProtocolConfigBase.KmsContextDestroyed(CTX1 + 1);
+        _destroyContext(CTX1 + 1, SEED0, QUORUM);
+
+        (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsContextCannotBeActivated.selector, CTX1 + 1)
+        );
+        protocolConfigReplica.submitKmsContextSwitch(context, epoch);
+    }
+
     function test_revertContextDestructionQuorum() public {
-        _mirrorAhead();
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, QUORUM - 1, QUORUM)
         );
@@ -89,6 +94,33 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaFixture {
         _destroyContext(CTX1, SEED0, QUORUM);
     }
 
+    /// @dev Canonical C2 (SEED1) destroys C1, but the replica switches to C3 (SEED2) before the
+    ///      destruction arrives. The C2 signatures no longer match the active committee, so the owner
+    ///      applies the destruction (accepted RFC 037 risk).
+    function test_contextDestructionAfterRotationRecoversThroughMirror() public {
+        _switch(SEED0, CTX1 + 1, EPOCH1 + 1, SEED1);
+        bytes[] memory signatures = _sign(_hashContextDestruction(CTX1, EXTRA), SEED1, QUORUM);
+        _switch(SEED1, CTX1 + 2, EPOCH1 + 2, SEED2);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IProtocolConfigReplica.KmsSignerNotInCommittee.selector,
+                _signers(SEED1)[0],
+                CTX1 + 2
+            )
+        );
+        protocolConfigReplica.submitKmsContextDestruction(CTX1, signatures, EXTRA);
+
+        vm.expectEmit(true, false, false, false, address(protocolConfigReplica));
+        emit IProtocolConfigBase.KmsContextDestroyed(CTX1);
+        vm.prank(owner);
+        protocolConfigReplica.mirrorKmsContextDestruction(CTX1);
+        assertFalse(protocolConfigReplica.isValidKmsContext(CTX1));
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsContextAlreadyDestroyed.selector, CTX1));
+        protocolConfigReplica.submitKmsContextDestruction(CTX1, signatures, EXTRA);
+    }
+
     function test_submitKmsEpochDestruction() public {
         protocolConfigReplica.submitKmsKeyResharing(_epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, N));
 
@@ -101,7 +133,6 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaFixture {
     }
 
     function test_revertEpochDestructionReplay() public {
-        _mirrorAhead();
         bytes[] memory signatures = _sign(_hashEpochDestruction(EPOCH1 + 9, EXTRA), SEED0, QUORUM);
         protocolConfigReplica.submitKmsEpochDestruction(EPOCH1 + 9, signatures, EXTRA);
 
@@ -117,31 +148,25 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaFixture {
 
     function test_revertEpochDestructionActive() public {
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigReplica.KmsEpochDestructionAheadOfReplica.selector, EPOCH1, EPOCH1)
+            abi.encodeWithSelector(IProtocolConfigBase.LatestActiveKmsEpochCannotBeDestroyed.selector, EPOCH1)
         );
         _destroyEpoch(EPOCH1, SEED0, QUORUM);
     }
 
     function test_revertEpochDestructionQuorum() public {
-        _mirrorAhead();
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, QUORUM - 1, QUORUM)
         );
         _destroyEpoch(EPOCH1 + 9, SEED0, QUORUM - 1);
     }
 
-    function test_supersededEpochDestructionWaitsForReplica() public {
-        // Canonical activates E2, then E3, then destroys the superseded E2. The replica is still at E1.
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                IProtocolConfigReplica.KmsEpochDestructionAheadOfReplica.selector,
-                EPOCH1 + 1,
-                EPOCH1
-            )
-        );
-        _destroyEpoch(EPOCH1 + 1, SEED2, QUORUM);
-
+    function test_supersededEpochDestructionAfterReplicaCatchesUp() public {
+        // Canonical activates E2, then E3, then destroys the superseded E2. The replica catches up first.
         protocolConfigReplica.submitKmsKeyResharing(_epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, N));
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfigBase.LatestActiveKmsEpochCannotBeDestroyed.selector, EPOCH1 + 1)
+        );
+        _destroyEpoch(EPOCH1 + 1, SEED0, QUORUM);
         protocolConfigReplica.submitKmsKeyResharing(_epochSubmission(CTX1, EPOCH1 + 1, EPOCH1 + 2, SEED0, N));
         _destroyEpoch(EPOCH1 + 1, SEED0, QUORUM);
 
@@ -149,11 +174,33 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaFixture {
         assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1 + 2));
     }
 
+    /// @dev Canonical activates E2, then E3, then destroys E2. The replica is still at E1 and receives
+    ///      the E2 destruction first. Both resharings then revert, so the owner recovers the replica.
+    function test_supersededEpochDestructionAheadOfReplicaStallsResharings() public {
+        KmsEpochSubmission memory epoch2 = _epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, N);
+        KmsEpochSubmission memory epoch3 = _epochSubmission(CTX1, EPOCH1 + 1, EPOCH1 + 2, SEED0, N);
+        _destroyEpoch(EPOCH1 + 1, SEED0, QUORUM);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsEpochCannotBeActivated.selector, EPOCH1 + 1)
+        );
+        protocolConfigReplica.submitKmsKeyResharing(epoch2);
+        // The E3 signatures commit to previous epoch E2, but the replica builds the digest from E1.
+        _assertResharingRejected(epoch3);
+
+        vm.prank(owner);
+        protocolConfigReplica.mirrorKmsEpoch(CTX1, EPOCH1 + 2);
+
+        _assertActive(CTX1, EPOCH1 + 2);
+        assertFalse(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1 + 1));
+        assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1 + 2));
+    }
+
     function test_supersededContextDestructionWaitsForReplica() public {
         // Canonical switches from C1 (SEED0) to C2 (SEED1), then to C3 (SEED2), then C3 destroys C2.
-        // The replica is at C1.
+        // The replica is at C1, so SEED2 is not its active committee.
         vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigReplica.KmsContextDestructionAheadOfReplica.selector, CTX1 + 1, CTX1)
+            abi.encodeWithSelector(IProtocolConfigReplica.KmsSignerNotInCommittee.selector, _signers(SEED2)[0], CTX1)
         );
         _destroyContext(CTX1 + 1, SEED2, QUORUM);
 
@@ -170,8 +217,7 @@ contract ProtocolConfigReplicaDestructionTest is ProtocolConfigReplicaFixture {
         protocolConfigReplica.submitKmsKeyResharing(_epochSubmission(CTX1, EPOCH1, EPOCH1 + 2, SEED0, N));
         _destroyEpoch(EPOCH1 + 1, SEED0, QUORUM);
 
-        (, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
-        assertEq(activeEpochId, EPOCH1 + 2);
+        _assertActive(CTX1, EPOCH1 + 2);
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsEpochAlreadyDestroyed.selector, EPOCH1 + 1));
         _destroyEpoch(EPOCH1 + 1, SEED0, QUORUM);
     }

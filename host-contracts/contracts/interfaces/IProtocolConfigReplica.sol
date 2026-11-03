@@ -113,18 +113,6 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     /// @param activeEpochId The active epoch ID.
     error NonIncreasingEpochId(uint256 epochId, uint256 activeEpochId);
 
-    /// @notice The destroyed context ID is at or above the active one. Retry after the replica moves
-    ///         past it.
-    /// @param contextId The destroyed context ID.
-    /// @param activeContextId The active context ID.
-    error KmsContextDestructionAheadOfReplica(uint256 contextId, uint256 activeContextId);
-
-    /// @notice The destroyed epoch ID is at or above the active one. Retry after the replica moves
-    ///         past it.
-    /// @param epochId The destroyed epoch ID.
-    /// @param activeEpochId The active epoch ID.
-    error KmsEpochDestructionAheadOfReplica(uint256 epochId, uint256 activeEpochId);
-
     /// @notice Fewer signatures than the quorum.
     /// @param signatureCount The number of submitted signatures.
     /// @param quorum The required number of signatures.
@@ -161,9 +149,10 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
      *      ContextCreationConfirmation signatures of the previous committee. Then stores the submitted
      *      committee under `context.contextId`, replacing any committee stored under that ID. Then
      *      verifies the EpochActivationConfirmation signatures of every new signer.
-     *      Every context signature must recover to a previous-committee signer. Leave out the
-     *      signatures of signers that are only in the new committee. Reverts with
-     *      `NonIncreasingEpochId` if the epoch ID is not above the active one. Reverts with
+     *      Every context signature must recover to a previous-committee signer, else the call reverts
+     *      with `KmsSignerNotInCommittee`. The canonical emits `KmsContextCreationConfirmation` for both
+     *      committees. Leave out the signatures of signers that are only in the new committee.
+     *      Reverts with `NonIncreasingEpochId` if the epoch ID is not above the active one. Reverts with
      *      `DestroyedKmsContextCannotBeActivated` or `DestroyedKmsEpochCannotBeActivated` if either ID was destroyed.
      * @param context The context switch and its signatures.
      * @param epoch The first epoch of the new context and its signatures.
@@ -182,10 +171,19 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     /**
      * @notice Applies a canonical context destruction.
      * @dev Verifies `n - t` ContextDestructionConfirmation signatures of the active committee.
-     *      Accepts an ID that was never stored, because the canonical can destroy a context that never
-     *      reached this replica. Reverts with `KmsContextDestructionAheadOfReplica` for an ID at or
-     *      above the active one, even if the owner already destroyed it. The submitter retries it
-     *      after the replica moves past that ID.
+     *      Reverts with `KmsContextAlreadyDestroyed` if the ID is already destroyed. The submitter
+     *      treats this error as success. Reverts with `LatestActiveKmsContextCannotBeDestroyed` for
+     *      the active context.
+     *      Accepts an ID that was never stored, because the canonical can destroy a pending context
+     *      that never reached this replica. No submission can then activate that ID. So submit a
+     *      destruction only after the replica applies every activation that the canonical made before
+     *      it. An early destruction of a superseded ID blocks its activation and the submissions that
+     *      build on it, until the owner mirrors the later state.
+     *      A replica that is behind can revert with `LatestActiveKmsContextCannotBeDestroyed`,
+     *      `KmsSignatureQuorumNotReached` or `KmsSignerNotInCommittee`. Retry after the replica catches
+     *      up. If the replica applied a later context switch, keep only the signatures of signers of the
+     *      active committee. The retry succeeds only if at least the active `n - t` remain.
+     *      Else the owner uses `mirrorKmsContextDestruction`.
      * @param destroyedContextId The destroyed context ID.
      * @param signatures The signatures over one ContextDestructionConfirmation.
      * @param extraData The extra data that every signature commits to.
@@ -198,10 +196,10 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
 
     /**
      * @notice Applies a canonical epoch destruction.
-     * @dev Verifies `n - t` EpochDestructionConfirmation signatures of the active committee. Accepts an
-     *      ID that was never stored. Reverts with `KmsEpochDestructionAheadOfReplica` for an ID at or
-     *      above the active one, even if the owner already destroyed it. The submitter retries it
-     *      after the replica moves past that ID.
+     * @dev Verifies `n - t` EpochDestructionConfirmation signatures of the active committee. Same
+     *      rules as `submitKmsContextDestruction`, with `KmsEpochAlreadyDestroyed`,
+     *      `LatestActiveKmsEpochCannotBeDestroyed` and the `mirrorKmsEpochDestruction` fallback. A
+     *      resharing keeps the committee, so a retry after a resharing succeeds.
      * @param destroyedEpochId The destroyed epoch ID.
      * @param signatures The signatures over one EpochDestructionConfirmation.
      * @param extraData The extra data that every signature commits to.

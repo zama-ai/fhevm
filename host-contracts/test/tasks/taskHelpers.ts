@@ -144,6 +144,10 @@ export async function deployFreshProtocolConfigProxy(
   return proxyAddress;
 }
 
+// Placeholder canonical EIP-712 domain for a replica whose signatures no test verifies.
+export const PLACEHOLDER_CANONICAL_CHAIN_ID = 1n;
+export const PLACEHOLDER_CANONICAL_PROTOCOL_CONFIG = '0x' + '11'.repeat(20);
+
 export async function deployFreshProtocolConfigReplicaProxy(
   deployer: Wallet,
   contextId: bigint,
@@ -152,13 +156,17 @@ export async function deployFreshProtocolConfigReplicaProxy(
   thresholds: KmsThresholdsStruct,
 ): Promise<string> {
   const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
-  // No caller verifies a signature, so the canonical EIP-712 domain uses this chain and a placeholder address.
-  const canonicalProtocolConfig = '0x' + '11'.repeat(20);
-  const { chainId } = await ethers.provider.getNetwork();
   await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfigReplica', {
     call: {
       fn: 'initializeFromCanonical',
-      args: [contextId, epochId, kmsNodes, thresholds, chainId, canonicalProtocolConfig],
+      args: [
+        contextId,
+        epochId,
+        kmsNodes,
+        thresholds,
+        PLACEHOLDER_CANONICAL_CHAIN_ID,
+        PLACEHOLDER_CANONICAL_PROTOCOL_CONFIG,
+      ],
     },
   });
   return proxyAddress;

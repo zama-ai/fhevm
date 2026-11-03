@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import {ProtocolConfigReplicaFixture} from "./ProtocolConfigReplicaTestBase.sol";
 import {IProtocolConfigReplica, KmsContextSubmission, KmsEpochSubmission} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
+import {KmsNode, KmsThresholds} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 
 contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaFixture {
     // -----------------------------------------------------------------------
@@ -20,9 +21,7 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaFixture {
             _epochSubmission(contextId, EPOCH1, epochId, SEED1, N)
         );
 
-        (uint256 activeContextId, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
-        assertEq(activeContextId, contextId);
-        assertEq(activeEpochId, epochId);
+        _assertActive(contextId, epochId);
         assertEq(protocolConfigReplica.getCurrentKmsContextIdCounter(), contextId);
         assertTrue(protocolConfigReplica.isValidEpochForContext(contextId, epochId));
         _assertMembers(contextId, SEED1);
@@ -49,6 +48,54 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaFixture {
         );
     }
 
+    /// @dev A switch from 4 nodes with t = 1 to 7 nodes with t = 2, then back to 4 nodes. Each switch needs
+    ///      `n - t` signatures of the previous committee and all `n` signatures of the new committee.
+    function test_switchBetweenCommitteeSizes() public {
+        uint256 bigN = 7;
+        KmsNode[] memory bigNodes = _nodes(SEED2, bigN);
+        KmsThresholds memory bigThresholds = _thresholds();
+        bigThresholds.mpc = 2;
+
+        // 4 nodes with t = 1 to 7 nodes: the quorums are 3 previous and 7 new signatures.
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, 2, 3));
+        protocolConfigReplica.submitKmsContextSwitch(
+            _ctxSubmission(CTX1, CTX1 + 1, bigNodes, bigThresholds, SEED0, 2),
+            _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED2, bigN)
+        );
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, 6, 7));
+        protocolConfigReplica.submitKmsContextSwitch(
+            _ctxSubmission(CTX1, CTX1 + 1, bigNodes, bigThresholds, SEED0, 3),
+            _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED2, 6)
+        );
+        protocolConfigReplica.submitKmsContextSwitch(
+            _ctxSubmission(CTX1, CTX1 + 1, bigNodes, bigThresholds, SEED0, 3),
+            _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED2, bigN)
+        );
+        _assertActive(CTX1 + 1, EPOCH1 + 1);
+        assertEq(
+            keccak256(abi.encode(protocolConfigReplica.getKmsNodesForContext(CTX1 + 1))),
+            keccak256(abi.encode(bigNodes))
+        );
+
+        // 7 nodes with t = 2 to 4 nodes: the quorums are 5 previous and 4 new signatures.
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, 4, 5));
+        protocolConfigReplica.submitKmsContextSwitch(
+            _ctxSubmission(CTX1 + 1, CTX1 + 2, SEED1, SEED2, 4),
+            _epochSubmission(CTX1 + 2, EPOCH1 + 1, EPOCH1 + 2, SEED1, N)
+        );
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, 3, 4));
+        protocolConfigReplica.submitKmsContextSwitch(
+            _ctxSubmission(CTX1 + 1, CTX1 + 2, SEED1, SEED2, 5),
+            _epochSubmission(CTX1 + 2, EPOCH1 + 1, EPOCH1 + 2, SEED1, N - 1)
+        );
+        protocolConfigReplica.submitKmsContextSwitch(
+            _ctxSubmission(CTX1 + 1, CTX1 + 2, SEED1, SEED2, 5),
+            _epochSubmission(CTX1 + 2, EPOCH1 + 1, EPOCH1 + 2, SEED1, N)
+        );
+        _assertActive(CTX1 + 2, EPOCH1 + 2);
+        _assertMembers(CTX1 + 2, SEED1);
+    }
+
     function test_revertSwitchEpochNotUnanimous() public {
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsSignatureQuorumNotReached.selector, N - 1, N));
         protocolConfigReplica.submitKmsContextSwitch(
@@ -58,112 +105,91 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaFixture {
     }
 
     function test_revertSwitchEpochSignedByPreviousCommittee() public {
-        KmsEpochSubmission memory epoch = _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED0, N);
-
-        _expectNotInCommittee(_epochDigest(CTX1 + 1, EPOCH1, epoch), epoch.signatures[0], CTX1 + 1);
-        protocolConfigReplica.submitKmsContextSwitch(_ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM), epoch);
+        (KmsContextSubmission memory context, ) = _defaultSwitch();
+        _assertEpochRejected(context, _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED0, N));
     }
 
     function test_revertSwitchDuplicateSigner() public {
-        KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
+        (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
         context.signatures[2] = context.signatures[0];
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.DuplicateKmsSigner.selector, _signers(SEED0)[0]));
-        protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N));
+        protocolConfigReplica.submitKmsContextSwitch(context, epoch);
     }
 
     function test_revertSwitchNonMemberSigner() public {
-        KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
+        (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
         // A signer of the new committee only is not in the previous committee.
         context.signatures[2] = _sign(_contextDigest(CTX1, context), SEED1, 1)[0];
 
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.KmsSignerNotInCommittee.selector, _signers(SEED1)[0], CTX1)
         );
-        protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N));
+        protocolConfigReplica.submitKmsContextSwitch(context, epoch);
     }
 
     function test_revertSwitchTamperedNodes() public {
-        KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
+        (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
         context.nodes[0].ipAddress = "10.0.0.1";
-
-        _expectNotInCommittee(_contextDigest(CTX1, context), context.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N));
+        _assertContextRejected(context, epoch);
     }
 
     /// @dev An invalid `mpc` also pins that the previous committee check runs before the store.
     function test_revertSwitchTamperedThresholds() public {
-        KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
+        (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
         context.thresholds.mpc = N + 1;
-
-        _expectNotInCommittee(_contextDigest(CTX1, context), context.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N));
+        _assertContextRejected(context, epoch);
     }
 
     function test_revertSwitchTamperedExtraData() public {
-        KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
+        (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
         context.extraData = hex"bad0";
-
-        _expectNotInCommittee(_contextDigest(CTX1, context), context.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N));
+        _assertContextRejected(context, epoch);
     }
 
     function test_revertSwitchTamperedContextId() public {
         KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
         context.contextId = CTX1 + 2;
-
-        _expectNotInCommittee(_contextDigest(CTX1, context), context.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 2, EPOCH1, EPOCH1 + 1, SEED1, N));
+        _assertContextRejected(context, _epochSubmission(CTX1 + 2, EPOCH1, EPOCH1 + 1, SEED1, N));
     }
 
     function test_revertSwitchTamperedEpochMaterial() public {
-        KmsEpochSubmission memory epoch = _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N);
+        (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
         epoch.epochMaterialHash = keccak256("other material");
-
-        _expectNotInCommittee(_epochDigest(CTX1 + 1, EPOCH1, epoch), epoch.signatures[0], CTX1 + 1);
-        protocolConfigReplica.submitKmsContextSwitch(_ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM), epoch);
+        _assertEpochRejected(context, epoch);
     }
 
     function test_revertSwitchTamperedEpochExtraData() public {
-        KmsEpochSubmission memory epoch = _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N);
+        (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
         epoch.extraData = hex"bad0";
-
-        _expectNotInCommittee(_epochDigest(CTX1 + 1, EPOCH1, epoch), epoch.signatures[0], CTX1 + 1);
-        protocolConfigReplica.submitKmsContextSwitch(_ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM), epoch);
+        _assertEpochRejected(context, epoch);
     }
 
     function test_revertSwitchTamperedEpochId() public {
-        KmsEpochSubmission memory epoch = _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N);
+        (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
         epoch.epochId = EPOCH1 + 2;
-
-        _expectNotInCommittee(_epochDigest(CTX1 + 1, EPOCH1, epoch), epoch.signatures[0], CTX1 + 1);
-        protocolConfigReplica.submitKmsContextSwitch(_ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM), epoch);
+        _assertEpochRejected(context, epoch);
     }
 
     function test_revertSwitchSignedForOtherPreviousContext() public {
-        KmsContextSubmission memory context = _ctxSubmission(CTX1 + 5, CTX1 + 6, SEED1, SEED0, QUORUM);
-
-        _expectNotInCommittee(_contextDigest(CTX1, context), context.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsContextSwitch(context, _epochSubmission(CTX1 + 6, EPOCH1, EPOCH1 + 1, SEED1, N));
+        _assertContextRejected(
+            _ctxSubmission(CTX1 + 5, CTX1 + 6, SEED1, SEED0, QUORUM),
+            _epochSubmission(CTX1 + 6, EPOCH1, EPOCH1 + 1, SEED1, N)
+        );
     }
 
     function test_revertSwitchSignedForOtherPreviousEpoch() public {
-        KmsEpochSubmission memory epoch = _epochSubmission(CTX1 + 1, EPOCH1 + 3, EPOCH1 + 4, SEED1, N);
-
-        _expectNotInCommittee(_epochDigest(CTX1 + 1, EPOCH1, epoch), epoch.signatures[0], CTX1 + 1);
-        protocolConfigReplica.submitKmsContextSwitch(_ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM), epoch);
+        (KmsContextSubmission memory context, ) = _defaultSwitch();
+        _assertEpochRejected(context, _epochSubmission(CTX1 + 1, EPOCH1 + 3, EPOCH1 + 4, SEED1, N));
     }
 
     function test_revertSwitchEpochContextMismatch() public {
-        KmsEpochSubmission memory epoch = _epochSubmission(CTX1 + 7, EPOCH1, EPOCH1 + 1, SEED1, N);
-
-        _expectNotInCommittee(_epochDigest(CTX1 + 1, EPOCH1, epoch), epoch.signatures[0], CTX1 + 1);
-        protocolConfigReplica.submitKmsContextSwitch(_ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM), epoch);
+        (KmsContextSubmission memory context, ) = _defaultSwitch();
+        _assertEpochRejected(context, _epochSubmission(CTX1 + 7, EPOCH1, EPOCH1 + 1, SEED1, N));
     }
 
     function test_revertSwitchReplayAlreadyApplied() public {
-        KmsContextSubmission memory context = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
-        KmsEpochSubmission memory epoch = _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N);
+        (KmsContextSubmission memory context, KmsEpochSubmission memory epoch) = _defaultSwitch();
         protocolConfigReplica.submitKmsContextSwitch(context, epoch);
 
         vm.expectRevert(
@@ -197,20 +223,16 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaFixture {
     }
 
     function test_switchesApplyInCanonicalOrder() public {
-        KmsContextSubmission memory contextB = _ctxSubmission(CTX1, CTX1 + 1, SEED1, SEED0, QUORUM);
-        KmsEpochSubmission memory epochB = _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED1, N);
+        (KmsContextSubmission memory contextB, KmsEpochSubmission memory epochB) = _defaultSwitch();
         KmsContextSubmission memory contextC = _ctxSubmission(CTX1 + 1, CTX1 + 2, SEED2, SEED1, QUORUM);
         KmsEpochSubmission memory epochC = _epochSubmission(CTX1 + 2, EPOCH1 + 1, EPOCH1 + 2, SEED2, N);
 
-        _expectNotInCommittee(_contextDigest(CTX1, contextC), contextC.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsContextSwitch(contextC, epochC);
+        _assertContextRejected(contextC, epochC);
 
         protocolConfigReplica.submitKmsContextSwitch(contextB, epochB);
         protocolConfigReplica.submitKmsContextSwitch(contextC, epochC);
 
-        (uint256 activeContextId, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
-        assertEq(activeContextId, CTX1 + 2);
-        assertEq(activeEpochId, EPOCH1 + 2);
+        _assertActive(CTX1 + 2, EPOCH1 + 2);
         _assertMembers(CTX1 + 2, SEED2);
     }
 
@@ -251,9 +273,7 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaFixture {
         emit IProtocolConfigReplica.KmsKeyResharingSubmitted(CTX1, EPOCH1 + 1);
         protocolConfigReplica.submitKmsKeyResharing(_epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, N));
 
-        (uint256 activeContextId, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
-        assertEq(activeContextId, CTX1);
-        assertEq(activeEpochId, EPOCH1 + 1);
+        _assertActive(CTX1, EPOCH1 + 1);
         assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1 + 1));
     }
 
@@ -262,42 +282,30 @@ contract ProtocolConfigReplicaSubmitTest is ProtocolConfigReplicaFixture {
         protocolConfigReplica.submitKmsKeyResharing(_epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, N - 1));
     }
 
-    function test_revertResharingTampered() public {
+    function test_revertResharingTamperedEpochMaterial() public {
         KmsEpochSubmission memory epoch = _epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, N);
         epoch.epochMaterialHash = keccak256("other material");
-
-        _expectNotInCommittee(_epochDigest(CTX1, EPOCH1, epoch), epoch.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsKeyResharing(epoch);
+        _assertResharingRejected(epoch);
     }
 
     function test_revertResharingTamperedExtraData() public {
         KmsEpochSubmission memory epoch = _epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, N);
         epoch.extraData = hex"bad0";
-
-        _expectNotInCommittee(_epochDigest(CTX1, EPOCH1, epoch), epoch.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsKeyResharing(epoch);
+        _assertResharingRejected(epoch);
     }
 
     function test_revertResharingTamperedEpochId() public {
         KmsEpochSubmission memory epoch = _epochSubmission(CTX1, EPOCH1, EPOCH1 + 1, SEED0, N);
         epoch.epochId = EPOCH1 + 2;
-
-        _expectNotInCommittee(_epochDigest(CTX1, EPOCH1, epoch), epoch.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsKeyResharing(epoch);
+        _assertResharingRejected(epoch);
     }
 
     function test_revertResharingSignedForOtherPreviousEpoch() public {
-        KmsEpochSubmission memory epoch = _epochSubmission(CTX1, EPOCH1 + 1, EPOCH1 + 2, SEED0, N);
-
-        _expectNotInCommittee(_epochDigest(CTX1, EPOCH1, epoch), epoch.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsKeyResharing(epoch);
+        _assertResharingRejected(_epochSubmission(CTX1, EPOCH1 + 1, EPOCH1 + 2, SEED0, N));
     }
 
     function test_revertResharingWrongContext() public {
-        KmsEpochSubmission memory epoch = _epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED0, N);
-
-        _expectNotInCommittee(_epochDigest(CTX1, EPOCH1, epoch), epoch.signatures[0], CTX1);
-        protocolConfigReplica.submitKmsKeyResharing(epoch);
+        _assertResharingRejected(_epochSubmission(CTX1 + 1, EPOCH1, EPOCH1 + 1, SEED0, N));
     }
 
     function test_revertResharingReplayAlreadyApplied() public {

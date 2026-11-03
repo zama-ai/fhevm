@@ -430,7 +430,7 @@ The MPC metadata (`partyId`, `mpcIdentity`, `caCert`, `storagePrefix`), software
 PCR values are not stored on-chain. The replica's `MirrorKmsContextAndEpoch` event does not
 carry them. Read them from canonical's `NewKmsContext` event.
 
-**Upgrade precondition (ProtocolConfig v0.3.0)**: settle any in-flight lifecycle operation
+**Upgrade precondition (ProtocolConfig v0.4.0)**: settle any in-flight lifecycle operation
 first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. A pending epoch would keep its v0.3.0
 per-signer flags, so its signers could not confirm again. A pending context would have no node config
 hash, so its signed creation confirmation would commit to a zero hash. An epoch or a context
@@ -443,9 +443,8 @@ after that block.
 
 A destruction on canonical reaches a replica through `submitKmsContextDestruction` /
 `submitKmsEpochDestruction` with the destruction confirmations, or through the owner
-`mirrorKmsContextDestruction` / `mirrorKmsEpochDestruction`. A submitted destruction of an id
-at or above the replica's active id reverts with `KmsContextDestructionAheadOfReplica` or
-`KmsEpochDestructionAheadOfReplica`. Retry it after the replica moves past that id.
+`mirrorKmsContextDestruction` / `mirrorKmsEpochDestruction`. The ordering and retry rules for a
+submitted destruction are in the `submitKmsContextDestruction` NatSpec of `IProtocolConfigReplica`.
 
 `task:kmsContextSwitchStatus` is a canonical-side tool. Pointed at a replica it reports
 `idle`, because it tracks the pending/quorum path that replicas never run — that is the

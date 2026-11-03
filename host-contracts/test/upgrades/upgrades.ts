@@ -5,7 +5,13 @@ import { ethers, upgrades } from 'hardhat';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { ACL, ACLUpgradedExample } from '../../types';
 import { getSigners, initSigners } from '../signers';
-import { buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from '../tasks/taskHelpers';
+import {
+  PLACEHOLDER_CANONICAL_CHAIN_ID,
+  PLACEHOLDER_CANONICAL_PROTOCOL_CONFIG,
+  buildProtocolConfigNodes,
+  buildProtocolConfigThresholds,
+  readHostAddress,
+} from '../tasks/taskHelpers';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 describe('Upgrades', function () {
@@ -50,7 +56,7 @@ describe('Upgrades', function () {
       },
     });
     await pc.waitForDeployment();
-    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.3.0');
+    expect(await pc.getVersion()).to.equal('ProtocolConfig v0.4.0');
     const expectThresholds = async (c: any) => {
       expect(await c.getPublicDecryptionThreshold()).to.equal(1n);
       expect(await c.getUserDecryptionThreshold()).to.equal(2n);
@@ -60,11 +66,11 @@ describe('Upgrades', function () {
     await expectThresholds(pc);
     const pc2 = await upgrades.upgradeProxy(pc, factoryUpgraded);
     await pc2.waitForDeployment();
-    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.4.0');
+    expect(await pc2.getVersion()).to.equal('ProtocolConfig v0.5.0');
     await expectThresholds(pc2);
   });
 
-  // These tests run the plugin storage layout check against v0.14. State after reinitializeV3 is covered in Foundry.
+  // These tests run the plugin storage layout check against v0.14. State after reinitializeV4 is covered in Foundry.
   async function deployV014ProtocolConfig(deployer: Signer, emptyUUPSFactory: ContractFactory) {
     const factory = await ethers.getContractFactory('ProtocolConfigV014LayoutExample', deployer);
     const pc = await upgrades.upgradeProxy(await deployEmptyProxy(emptyUUPSFactory), factory, {
@@ -76,16 +82,16 @@ describe('Upgrades', function () {
 
   for (const [version, getFactory, args] of [
     [
-      'ProtocolConfigReplica v0.3.0',
+      'ProtocolConfigReplica v0.4.0',
       (s: Signer) => ethers.getContractFactory('ProtocolConfigReplica', s),
-      [1, '0x0000000000000000000000000000000000000001'],
+      [PLACEHOLDER_CANONICAL_CHAIN_ID, PLACEHOLDER_CANONICAL_PROTOCOL_CONFIG],
     ],
-    ['ProtocolConfig v0.3.0', (s: Signer) => ethers.getContractFactory('ProtocolConfig', s), []],
+    ['ProtocolConfig v0.4.0', (s: Signer) => ethers.getContractFactory('ProtocolConfig', s), []],
   ] as const) {
     it(`upgrades a v0.14 ProtocolConfig proxy in place to ${version}`, async function () {
       const factory = await getFactory(this.signers.fred);
       const pc = await deployV014ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
-      const upgraded = await upgrades.upgradeProxy(pc, factory, { call: { fn: 'reinitializeV3', args: [...args] } });
+      const upgraded = await upgrades.upgradeProxy(pc, factory, { call: { fn: 'reinitializeV4', args: [...args] } });
       await upgraded.waitForDeployment();
       expect(await upgraded.getVersion()).to.equal(version);
     });
