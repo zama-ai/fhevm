@@ -120,7 +120,7 @@ CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `preview-env-deplo
 Preview-env **never builds** kms-core. It sparse-checkouts `zama-ai/kms` at
 `kms_repo_ref`, pulls the enclave image that checkout's `deploy.sh` will
 install (`core-service-enclave-insecure` on current kms main,
-`core-service-enclave` on `v0.14.1`) at `<kms_core_version>` for PCR
+`core-service-enclave` on older releases such as `v0.14.1`) at `<kms_core_version>` for PCR
 attestation, and runs `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`.
 
 | Input | Override key | Meaning |
@@ -302,8 +302,11 @@ The two host chains are the real public testnets, so this is the only preview sh
   - `default-insecure` (the default): production-size **Default**
     parameters (`params-type=0`), and each kms-worker reaches its core through
     `kms-insecure-keygen-redirect-<i>` (the docker stack's keygen proxy script), which switches keygen to
-    the KMS insecure keygen (minutes, no DKG). The redirect also sits on every other
-    kms-worker call, decryptions included. The CRS ceremony is the real one; key
+    the KMS insecure keygen (minutes, no DKG). The redirect is single-threaded and
+    would sit on every other kms-worker call, so once `trigger-keygen` returns,
+    `scripts/deploy/bypass-kms-keygen-redirect.sh` points each kms-worker straight
+    at its core and uninstalls the redirect. A later insecure keygen needs
+    `deploy-kms-connector.sh` re-run to restore it. The CRS ceremony is the real one; key
     and CRS took about 6 min on a 4-party Anvil preview, so the 15 m waits and
     45 m Helm stay; testnets 60 m / 40 m and 110 m Helm.
   - `default-secure`: Default parameters from the real DKG. A four-party Default
