@@ -101,6 +101,12 @@ on:
         description: "Uploaded lock artifact name used to freeze the resolved bundle"
         default: ""
         type: string
+      lock-file:
+        description: >-
+          Lock file in test-suite/fhevm to boot from, such as profiles/<name>.json. It pins every
+          image, so only the branch's test-suite is built on top of it and `build` is ignored.
+        default: ""
+        type: string
       kms-core-version:
         description: "KMS Core version"
         default: ""
@@ -185,6 +191,7 @@ jobs:
       ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario || 'two-of-three-multi-chain' }}
       TEST_PROFILE: ${{ inputs.test-profile || 'standard' }}
+      REPO_LOCK_FILE: ${{ inputs.lock-file }}
     # The default is unchanged; the override applies only when a caller passes one.
     runs-on: ${{ inputs.runner || format('runs-on={0}/runner=32cpu-linux-x64/spot=false/volume=160gb', github.run_id) }}
     steps:
@@ -282,8 +289,12 @@ jobs:
           echo "Orchestrated e2e requires a frozen baseline lock artifact" >&2
           exit 1
 
+      - name: Use the requested lock file
+        if: ${{ inputs.lock-file != '' }}
+        run: echo "LOCK_FILE=$REPO_LOCK_FILE" >> "$GITHUB_ENV"
+
       - name: Resolve latest-main lock once
-        if: ${{ inputs.lock-artifact-name == '' && !inputs.orchestrated }}
+        if: ${{ inputs.lock-artifact-name == '' && inputs.lock-file == '' && !inputs.orchestrated }}
         working-directory: test-suite/fhevm
         run: |
           lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
@@ -294,7 +305,7 @@ jobs:
           echo "LOCK_FILE=$lock_file" >> "$GITHUB_ENV"
 
       - name: Resolve orchestrated manual baseline lock once
-        if: ${{ inputs.lock-artifact-name == '' && inputs.orchestrated && github.event_name == 'workflow_dispatch' }}
+        if: ${{ inputs.lock-artifact-name == '' && inputs.lock-file == '' && inputs.orchestrated && github.event_name == 'workflow_dispatch' }}
         working-directory: test-suite/fhevm
         run: |
           lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"
@@ -316,7 +327,9 @@ jobs:
           else
             args+=(--target latest-main)
           fi
-          if [ "$BUILD" = "true" ]; then
+          if [ -n "$REPO_LOCK_FILE" ]; then
+            args+=(--override test-suite)
+          elif [ "$BUILD" = "true" ]; then
             args+=(--build)
           fi
           ./fhevm-cli up "${args[@]}" --dry-run
@@ -354,7 +367,9 @@ jobs:
           else
             args+=(--target latest-main)
           fi
-          if [ "$BUILD" = "true" ]; then
+          if [ -n "$REPO_LOCK_FILE" ]; then
+            args+=(--override test-suite)
+          elif [ "$BUILD" = "true" ]; then
             args+=(--build)
           fi
           ./fhevm-cli up "${args[@]}"
