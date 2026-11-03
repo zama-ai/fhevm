@@ -317,6 +317,46 @@ describe('FHE module', () => {
     }
   });
 
+  it('refuses a decryption without handles before anything is sent', async () => {
+    const { fhe, fake } = setup();
+    await assert.rejects(
+      fhe.userDecrypt({ handles: [], contract: CONTRACT, user: 'alice' }),
+      /a decryption needs a handle or a non-empty handles list/,
+    );
+    await assert.rejects(fhe.publicDecrypt([]), /a public decryption needs at least one handle/);
+    assert.equal(fake.calls.length, 0);
+  });
+
+  it('keeps the client created after destroy() when the earlier creation fails late', async () => {
+    let rejectFirst: (error: Error) => void = () => undefined;
+    const readies = [
+      new Promise<void>((_, reject) => {
+        rejectFirst = reject;
+      }),
+      Promise.resolve(),
+    ];
+    const base = fakeSdk();
+    let created = 0;
+    const sdk = {
+      ...base.sdk,
+      createClient: (parameters: Parameters<typeof base.sdk.createClient>[0]) => {
+        const client = base.sdk.createClient(parameters);
+        return { ...client, ready: readies[created++]! } as typeof client;
+      },
+    };
+    const { fhe } = setup({}, { sdk });
+    const first = fhe.publicDecrypt([HANDLE]);
+    await new Promise((resolve) => setImmediate(resolve));
+    fhe.destroy();
+    const second = fhe.publicDecrypt([HANDLE]);
+    rejectFirst(new Error('late failure'));
+    await assert.rejects(first, /could not be created: late failure/);
+    await second;
+    await fhe.publicDecrypt([HANDLE]);
+    assert.equal(created, 2, 'the second client is kept');
+    assert.equal(base.calls.filter((call) => call.method === 'decryptPublicValuesWithSignatures').length, 2);
+  });
+
   it('drops the cache when destroyed', async () => {
     const { fhe, count, ofKind } = setup();
     await fhe.userDecrypt({ handle: HANDLE, contract: CONTRACT, user: 'alice' });

@@ -10,7 +10,7 @@ A manifest-driven, Cucumber-based engine for fhEVM end-to-end scenarios.
 
 The engine runs on Node.js (>= 22) and TypeScript compiled with `tsc`. No TypeScript loader is involved at runtime; Cucumber always loads plain JavaScript from `dist/`.
 
-> **Status:** Phase 1b, in progress. The engine infrastructure (profiles, planner rules, the scenario World, evidence, secret handling) is in place, and so are the first fhEVM building blocks: the typed `chain` profile section and the [Chain module](#using-the-chain) (wallets, transactions and deployments recorded as evidence). No fhEVM scenario has been ported yet: the only shipped scenario is `smoke.arithmetic`, which has no dependency on the stack. The FHE and contract-configuration modules come next.
+> **Status:** Phase 1b, in progress. The engine infrastructure (profiles, planner rules, the scenario World, evidence, secret handling) is in place, and so are the first fhEVM building blocks: the typed `chain` profile section, the [Chain module](#using-the-chain) (wallets, transactions and deployments recorded as evidence), the typed `relayer` and `contracts` sections and the [FHE module](#using-fhe) (encryption, user, delegated and public decryption, with relayer job IDs as evidence). No fhEVM scenario has been ported yet: the only shipped scenario is `smoke.arithmetic`, which has no dependency on the stack; the engine's own FHE scenarios run with `npm run test:integration:fhe`. Contract configuration comes next.
 
 ## Quick start
 
@@ -175,6 +175,46 @@ When('alice deploys a counter and bob increments it', async function (this: Engi
 - **Keep the engine wallets.** `wallet.connect()` throws: ethers would return a plain wallet without the gas buffer and the chain ID check. A transaction broadcast whose receipt cannot be obtained is recorded with status `unknown` and its hash.
 - **Funding.** Wallets are expected to be funded: Anvil and the local stack pre-fund the mnemonic accounts; live networks rely on pre-funded wallets.
 
+### Using FHE
+
+`this.engine.fhe` encrypts and decrypts through the fhEVM SDK (`@fhevm/sdk`), configured by the profile's [`relayer` and `contracts` sections](#the-relayer-and-contracts-sections), on top of `this.engine.chain` (same provider, same wallet roles):
+
+```ts
+import { type EngineWorld, FheError, loadArtifact } from '#engine';
+import { When } from '@cucumber/cucumber';
+import assert from 'node:assert/strict';
+import path from 'node:path';
+
+When('alice adds 42 to an encrypted 7', async function (this: EngineWorld) {
+  const { chain, fhe } = this.engine;
+  const artifact = loadArtifact(path.join(this.engine.scenario.directory, 'artifacts', 'TestInput.json'));
+  const contract = await chain.deploy(artifact, [], { from: 'alice' });
+  const input = await fhe.encrypt({ contract, user: 'alice', values: [{ type: 'uint64', value: 7n }] });
+  await chain.send(contract.getFunction('add42ToInput64')(input.handles[0], input.inputProof));
+
+  const handle = await contract.getFunction('resUint64')();
+  assert.equal(await fhe.userDecrypt({ handle, contract, user: 'alice' }), 49n);
+  assert.deepEqual((await fhe.publicDecrypt([handle])).values, [49n]);
+  await assert.rejects(fhe.userDecrypt({ handle, contract, user: 'carol' }), FheError);
+});
+```
+
+| Member                                                                                   | What it does                                                                                                                                                                                                        |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `encrypt({ contract, user, values })`                                                    | Encrypts `values` (`{ type, value }`, types `bool`, `uint8` … `uint256`, `address`) into one input proof for `contract` and the `user` role. Returns `{ handles, inputProof }` as bytes, ready for a contract call. |
+| `userDecrypt({ handle \| handles, contract, user, ...options })`                         | User decryption of one handle, or of several in one request (values in the same order).                                                                                                                             |
+| `delegatedUserDecrypt({ handle \| handles, contract, delegate, delegator, ...options })` | Decryption by the `delegate` role of handles the `delegator` (a role or any address, such as a smart wallet) delegated on the host ACL.                                                                             |
+| `publicDecrypt(handles, options)`                                                        | Public decryption of handles made publicly decryptable. Returns `{ values, abiEncodedClearValues, decryptionProof }`: the last two are what `FHE.checkSignatures` takes on chain.                                   |
+| `canUseUnifiedPermit()`                                                                  | Whether the relayer offers the unified (v3) user decryption route.                                                                                                                                                  |
+
+- **Values.** `contract` is an address or an ethers `Contract`; handles are hex strings (what contract getters return) or bytes. Decrypted numbers are always `bigint`, booleans stay booleans, addresses are strings.
+- **Options.** Every call takes `label` (evidence label; a default describes the operation) and `timeoutMs` (relayer timeout). Decryptions also take `permit: 'legacy' | 'unified'` (default `legacy`, which every relayer supports; `unified` fails clearly on a relayer without the v3 route).
+- **Keypairs and permits are cached for the scenario:** one transport keypair per wallet role, one permit per (permit kind, signer, contract, delegator), valid 10 days and renewed 60 s before it expires. `fresh: true`, `startTimestamp`, `durationSeconds` or `transportKeyPair` (serialised) give a call its own keypair and permit, without touching the cache: use them for expiry or signature-invalidation tests.
+- **Failures.** A failed operation is recorded as evidence, then thrown as `FheError` with `operation`, `relayerLabel` (e.g. `not_allowed_on_host_acl`) and `jobId`. Some checks are made by the SDK before any relayer call: a user without ACL rights fails with the SDK's message (`… is not authorized to decrypt handle …`), no relayer label and no job ID. Assert on the label for relayer checks and on the message for SDK checks.
+- **API key.** When the profile has a non-empty `relayer.apiKey`, it is sent on every relayer call, including the FHE key download.
+- **Lazy, one per scenario.** The SDK client is created on the first operation (it downloads the FHE public key); nothing is shared between Gherkin scenarios. On a profile without the `chain`, `relayer` or `contracts` section, accessing `this.engine.fhe` fails the step and names the missing sections: declare `targets`.
+- **Run in the stack's network.** The relayer hands out addresses (the object store holding the FHE key) that only resolve inside the stack's Docker network, so FHE steps against the local stack run in a container on it (the e2e container). `npm run test:integration:fhe` does this for the engine's own FHE scenarios.
+
 ## Manifest reference
 
 The schema is [`schema/scenario.v1.schema.json`](schema/scenario.v1.schema.json) (JSON Schema draft-07). Point your editor's YAML extension at it to get validation and completion.
@@ -277,17 +317,17 @@ A **typed section** has fields fixed by the schema and is owned by one engine mo
 
 ### The `relayer` and `contracts` sections
 
-Both are read by the FHE module (coming next). `relayer` holds what is reached through the relayer and the gateway chain; `contracts` holds the protocol contracts deployed on the host chain (the contract configuration will add to it). Every field is a value source.
+Both are read by the [FHE module](#using-fhe). `relayer` holds what is reached through the relayer and the gateway chain; `contracts` holds the protocol contracts deployed on the host chain (the contract configuration will add to it). Every field is a value source.
 
-| Field                                                             | Required | Description                                                                                                      |
-| ----------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------- |
-| `relayer.url`                                                     | yes      | An http(s) URL, with or without the API version suffix (`/v1`, `/v2`).                                           |
-| `relayer.apiKey`                                                  | no       | Sent on every relayer call. `secret: true` is mandatory; an empty value (`default: ""`) means no authentication. |
-| `relayer.gateway.chainId`                                         | yes      | A positive integer. Never a secret.                                                                              |
-| `relayer.gateway.decryption`, `inputVerification`                 | yes      | Addresses of the Decryption and InputVerification contracts on the gateway chain.                                |
-| `contracts.acl`, `inputVerifier`, `kmsVerifier`, `protocolConfig` | yes      | Addresses of the host-chain protocol contracts.                                                                  |
+| Field                                                             | Required | Description                                                                                                                                                   |
+| ----------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `relayer.url`                                                     | yes      | An http(s) URL, with or without the API version suffix (`/v1`, `/v2`); no `user:pass@`; https when `apiKey` is set (except `localhost`), as the SDK requires. |
+| `relayer.apiKey`                                                  | no       | Sent on every relayer call. `secret: true` is mandatory; an empty value (`default: ""`) means no authentication.                                              |
+| `relayer.gateway.chainId`                                         | yes      | A positive integer. Never a secret.                                                                                                                           |
+| `relayer.gateway.decryption`, `inputVerification`                 | yes      | Addresses of the Decryption and InputVerification contracts on the gateway chain.                                                                             |
+| `contracts.acl`, `inputVerifier`, `kmsVerifier`, `protocolConfig` | yes      | Addresses of the host-chain protocol contracts.                                                                                                               |
 
-An address must be 20-byte hex; a mixed-case address must have a valid checksum (a wrong one usually means a typo). As for `chain`, types are checked once resolved and every problem stops the run with exit 2.
+An address must be 20-byte hex; a mixed-case address must have a valid checksum (a wrong one usually means a typo). Error messages never quote a secret value. A secret `relayer.url` is also redacted without its API version suffix, the form the SDK logs. As for `chain`, types are checked once resolved and every problem stops the run with exit 2.
 
 ## Planner rules
 
@@ -388,6 +428,18 @@ The Chain module records its evidence through `record()`, on the running step:
 | `chain.tx`     | `chain.send()`   | `chainId`, `hash`, `from` (`role`, `address`), `to`, `blockNumber`, `gasUsed`, `status` (`success`, `reverted`, `rejected` or `unknown`, the last two with `error`) |
 | `chain.deploy` | `chain.deploy()` | `chainId`, `contract`, `address`, `hash`, `deployer` (`role`, `address`), `blockNumber`, `gasUsed`, `status`                                                        |
 
+The FHE module records one entry per operation, with the relayer's job and request IDs:
+
+| Kind                    | Recorded by                  | Data                                                                                                                        |
+| ----------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `fhe.client`            | first FHE operation          | `relayerUrl`, `chainId`, `gatewayChainId`, `sdkVersion`, `authenticated` (never the key), `threads`, `readyMs`, `status`    |
+| `fhe.encrypt`           | `fhe.encrypt()`              | `contract`, `user` (`role`, `address`), `types`, `handles`, `inputProofBytes`, `relayer`, `durationMs`, `status`            |
+| `fhe.user-decrypt`      | `fhe.userDecrypt()`          | `contract`, `user`, `permit`, `handles`, `cache` (`hit`, `miss` or `bypassed`), `values`, `relayer`, `durationMs`, `status` |
+| `fhe.delegated-decrypt` | `fhe.delegatedUserDecrypt()` | as `fhe.user-decrypt`, with `delegate` and `delegator` instead of `user`                                                    |
+| `fhe.public-decrypt`    | `fhe.publicDecrypt()`        | `handles`, `values`, `decryptionProofBytes`, `relayer`, `durationMs`, `status`                                              |
+
+`relayer` holds what the relayer reported: `operation`, `jobId`, `requestId`, `status`, `httpStatus` and, on a rejection, `error` (`label`, `message`). `status` is `success`, `failed` (with `error`) or `timeout`. Clear values are recorded (as strings for big integers); transport keys and permits never are.
+
 Wallets are recorded by role and address; the mnemonic never appears in evidence.
 
 ## Secret handling
@@ -448,7 +500,7 @@ flowchart LR
     Orchestrator -->|"job via stdin, allowlisted env"| Worker
     subgraph Worker["Worker process (per scenario)"]
         JobContext["Job-context holder"] --> Cucumber
-        Cucumber --> World["Engine World<br/>scenario · profile · evidence · chain · log"]
+        Cucumber --> World["Engine World<br/>scenario · profile · evidence · chain · fhe · log"]
     end
     Worker -->|"redacted output, messages.ndjson"| Orchestrator
     Orchestrator -->|"outcomes"| Report
@@ -463,7 +515,7 @@ flowchart LR
 | `config/`         | both            | what the user declares: `manifest/`, `profiles/`                                                       | `infrastructure`                                     |
 | `model/`          | both            | data and rules shared by the two processes: worker job, outcomes, evidence payload, execution problems | `config`, `infrastructure`                           |
 | `orchestration/`  | main process    | `discovery/`, `planning/`, `execution/`, `reporting/`                                                  | `model`, `config`, `infrastructure`                  |
-| `runtime/`        | scenario worker | `worker/`, `cucumber/` (engine support code), `world/`, `modules/` (capabilities such as `chain/`)     | `model`, `config`, `infrastructure`                  |
+| `runtime/`        | scenario worker | `worker/`, `cucumber/` (engine support code), `world/`, `modules/` (`chain/`, `fhe/`)                  | `model`, `config`, `infrastructure`                  |
 | `infrastructure/` | both            | technical code with no engine rule: `secrets/`, `yaml/`, `paths.ts`                                    | nothing internal                                     |
 | `api/`            | scenario worker | the public barrel `#engine`, re-exports only                                                           | `runtime`, `model`, `config`                         |
 

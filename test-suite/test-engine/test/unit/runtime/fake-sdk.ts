@@ -58,7 +58,11 @@ export function fakeSdk(behaviour: FakeBehaviour = {}) {
     async (parameters: Record<string, unknown>) => {
       calls.push({ method, parameters });
       const options = parameters.options as RelayerOptions | undefined;
-      for (const event of behaviour.events ?? SUCCESS_EVENTS) options?.onProgress?.(event);
+      const events = behaviour.events ?? SUCCESS_EVENTS;
+      // Like the SDK, progress is reported in a microtask queued before the call settles.
+      queueMicrotask(() => {
+        for (const event of events) options?.onProgress?.(event);
+      });
       if (behaviour.fail) throw behaviour.fail;
       return answer(parameters);
     };
