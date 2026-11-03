@@ -162,7 +162,7 @@ export const renderRelayerHttpConfig = (
     kms_aggregator: {
       public_decrypt: { threshold: number };
       user_decrypt: { threshold: number };
-      auth: { chain_id: number; protocol_config: string };
+      auth: { chain_id: number; protocol_config: string; address: string };
       endpoints: unknown[];
     };
   };
@@ -174,6 +174,8 @@ export const renderRelayerHttpConfig = (
   config.kms_aggregator.user_decrypt.threshold = Number(envs["gateway-sc"].USER_DECRYPTION_THRESHOLD);
   config.kms_aggregator.auth.chain_id = Number(envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID);
   config.kms_aggregator.auth.protocol_config = envs["kms-connector"].KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS;
+  // The proxies' one allowed sender; relayer-http refuses to start unless its signing key has it.
+  config.kms_aggregator.auth.address = envs["kms-connector"].KMS_CONNECTOR_ALLOWED_SENDERS;
   config.kms_aggregator.endpoints = kmsPartyIds(plan.kms.parties).map((party) => ({
     name: relayerHttpNodeName(party),
     url: kmsConnectorProxyUrl(envs, party),

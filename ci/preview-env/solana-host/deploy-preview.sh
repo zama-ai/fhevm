@@ -111,7 +111,8 @@ require_nonempty "$endpoint_urls" "kms-connector-http[endpoint-urls] is empty"
 tx_senders=$(kubectl get configmap kms-connector-http -n "$NAMESPACE" -o jsonpath='{.data.tx-sender-addresses}')
 require_nonempty "$tx_senders" "kms-connector-http[tx-sender-addresses] is empty"
 # FhevmSig: the domain is the one each proxy verifies (the connector's Ethereum chain id and
-# ProtocolConfig); each endpoint's audience is that party's tx-sender, aligned with the URLs.
+# ProtocolConfig); the signer address is the proxies' one allowed sender, which relayer-http checks
+# its key against at startup; each endpoint's audience is that party's tx-sender, aligned with the URLs.
 ENDPOINT_URLS="$endpoint_urls" TX_SENDERS="$tx_senders" THRESHOLD=$(kms_reconstruct "$NB_KMS_CORE") yq '
   load("relayer-http/config/config.yaml") * {
       "log": {"format": "json"},
@@ -123,7 +124,8 @@ ENDPOINT_URLS="$endpoint_urls" TX_SENDERS="$tx_senders" THRESHOLD=$(kms_reconstr
         "user_decrypt": {"threshold": env(THRESHOLD)},
         "auth": {
           "chain_id": (.commonConfig.hostChains.ethereum.chainId | tonumber),
-          "protocol_config": .commonConfig.ethereumContractAddresses.protocolConfig
+          "protocol_config": .commonConfig.ethereumContractAddresses.protocolConfig,
+          "address": .kmsConnectorProxy.allowedSenders[0]
         },
         "endpoints": [strenv(ENDPOINT_URLS) | split(",") | to_entries | .[] | {"name": "kms_" + (.key | tostring), "url": .value, "audience": (strenv(TX_SENDERS) | split(","))[.key]}]
       }
