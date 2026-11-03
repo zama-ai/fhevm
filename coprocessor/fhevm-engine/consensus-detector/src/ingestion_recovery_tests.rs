@@ -64,8 +64,8 @@ pub(crate) async fn partial_block() -> anyhow::Result<(Database, PgPool, DBInsta
 }
 
 /// Seed one in-progress GCS attempt: state-hash uploads are keyed by the
-/// attempt (`version`/`proposal`/`attempt` scopes), so without one there is
-/// nothing to upload to.
+/// attempt (`proposal`/`attempt` scopes), so without one there is nothing to
+/// upload to.
 pub(crate) async fn seed_attempt(pool: &PgPool) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO upgrade_state

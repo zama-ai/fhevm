@@ -94,7 +94,7 @@ while true; do
         # The control acknowledgement precedes upload. Independently fetch the
         # exact public bytes consumed by all detectors before accepting it.
         hc_run docker exec "${TEST_CONTAINER:-fhevm-test-suite-e2e-debug}" node test/consensus/hostReportObservation.cjs \
-          "$UPGRADE_FAULT_CHAIN" "$block" "$candidate" "$UPGRADE_FAULT_VERSION" "$attempt_proposal" "$attempt_block" \
+          "$UPGRADE_FAULT_CHAIN" "$block" "$candidate" "$attempt_proposal" "$attempt_block" \
           > "$(dirname "$SC_RESTORE_LOG")/divergent-host-report.json" || complete=0
       fi
       if [[ "$complete" == 1 ]]; then

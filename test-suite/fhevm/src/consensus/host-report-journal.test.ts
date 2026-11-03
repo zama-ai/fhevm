@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { hostReportOriginals } from "./host-report-journal";
 
 test("host report recovery cannot target arbitrary buckets, paths or malformed bytes", () => {
-  const key = "state_hash/version=0.15.0/proposal=" + "00".repeat(31) + "01/attempt=10/chain=12345/block=150.bin";
+  const key = "state_hash/proposal=" + "00".repeat(31) + "01/attempt=10/chain=12345/block=150.bin";
   const row = { chain: "12345", block: "150", original: "42".repeat(32), blockHash: "0x" + "ab".repeat(32), bucket: "coproc-1", key };
   expect(hostReportOriginals({ "150": row })).toEqual([row]);
   expect(hostReportOriginals({})).toEqual([]); // Aborted before any upload.

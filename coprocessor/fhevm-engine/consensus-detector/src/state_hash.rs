@@ -23,11 +23,11 @@ pub const EMPTY_BLOCK_STATE_HASH: &str =
 const STATE_HASH_UPLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// One upgrade attempt, as the decision records already name it: the proposal
-/// and the block it was (re-)activated at, plus the stack version the proposal
-/// targets (redundant with the proposal, but it keeps buckets human-browsable).
+/// and the block it was (re-)activated at. The stack version the proposal
+/// targets is deliberately NOT part of the identity: it is redundant with the
+/// proposal, and it belongs in the signed decision payload, not in S3 keys.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UpgradeAttempt {
-    pub stack_version: String,
     pub proposal_id: Vec<u8>,
     pub proposal_block: i64,
 }
@@ -45,17 +45,52 @@ pub struct UpgradeAttempt {
 // is what names the attempt: re-activating the same proposal reuses its
 // `proposal_id` but never its `proposal_block`. The `state_hash/` family
 // prefix stays first so prefix-based listing, lifecycle rules and the reader's
-// `{s3_url}/{key}` GET keep working.
+// `{s3_url}/{key}` GET keep working. The target stack version is NOT in the
+// key: it is redundant with the proposal and lives in the signed decision
+// payload instead, exactly like the decision-record keys.
 //
-//   <s3BucketUrl>/state_hash/version=<stack_version>/proposal=<proposal_id_hex>
+//   <s3BucketUrl>/state_hash/proposal=<proposal_id_hex>
 //     /attempt=<proposal_block>/chain=<chain_id>/block=<block_number>.bin
 //   body = raw 32-byte SHA-256 (decoded from the hex stored in `state_hash`).
 pub fn state_hash_key(attempt: &UpgradeAttempt, chain_id: i64, block_number: i64) -> String {
-    format!(
-        "state_hash/version={}/proposal={}/attempt={}/chain={chain_id}/block={block_number}.bin",
-        attempt.stack_version,
-        hex::encode(&attempt.proposal_id),
+    scoped_key(
+        &hex::encode(&attempt.proposal_id),
         attempt.proposal_block,
+        chain_id,
+        block_number,
+    )
+}
+
+/// The key as shown in logs: same shape as [`state_hash_key`], but the
+/// proposal id abbreviated by [`display_proposal_id`] so a 32-byte L1 id does
+/// not drown the line. Display only - never a real object key.
+pub fn state_hash_log_key(attempt: &UpgradeAttempt, chain_id: i64, block_number: i64) -> String {
+    scoped_key(
+        &display_proposal_id(&attempt.proposal_id),
+        attempt.proposal_block,
+        chain_id,
+        block_number,
+    )
+}
+
+fn scoped_key(proposal_hex: &str, proposal_block: i64, chain_id: i64, block_number: i64) -> String {
+    format!(
+        "state_hash/proposal={proposal_hex}/attempt={proposal_block}/chain={chain_id}/block={block_number}.bin"
+    )
+}
+
+/// Abbreviates a proposal id for logs: hex of the first 2 and last 4 bytes,
+/// e.g. `0000...00111122`. Ids of 6 bytes or fewer print in full. The L1
+/// proposal id is a caller-chosen uint256, so only the full 32 bytes identify
+/// an attempt; this form is for human eyes, never for keys or comparisons.
+pub fn display_proposal_id(proposal_id: &[u8]) -> String {
+    if proposal_id.len() <= 6 {
+        return hex::encode(proposal_id);
+    }
+    format!(
+        "{}...{}",
+        hex::encode(&proposal_id[..2]),
+        hex::encode(&proposal_id[proposal_id.len() - 4..]),
     )
 }
 
@@ -466,16 +501,13 @@ where
 /// the same S3 key repeatedly with whichever branch's `block-hash` metadata the
 /// planner happened to pick. Finalization leaves exactly one canonical row per
 /// height, so the join now yields a single deterministic block_hash per upload.
-/// The in-progress attempt `(proposal_id, proposal_block, stack_version)`, if
-/// any. `stack_version` stays optional here: a proposal row might not carry its
-/// version yet, and the window guard must still see the attempt (and any change
-/// to it) rather than treat it as absent.
-type Attempt = Option<(Vec<u8>, i64, Option<String>)>;
+/// The in-progress attempt `(proposal_id, proposal_block)`, if any.
+type Attempt = Option<(Vec<u8>, i64)>;
 
 /// How an upload pass keys its objects.
 enum Keying {
-    /// An active attempt whose version is known - the only production shape.
-    /// Every object is scoped to the attempt, so retries never collide.
+    /// An active attempt - the only production shape. Every object is scoped
+    /// to the attempt, so retries never collide.
     Attempt(UpgradeAttempt),
     /// Test-box builds keep uploading after cutover, when no attempt exists,
     /// under the legacy unscoped layout the box consensus loop reads.
@@ -485,32 +517,18 @@ enum Keying {
 
 impl Keying {
     /// `None` means there is nothing to publish this pass: the consensus
-    /// readers only ever fetch attempt-scoped keys, so with no attempt (or an
-    /// attempt whose version is not yet known) an upload could serve no one.
+    /// readers only ever fetch attempt-scoped keys, so with no attempt an
+    /// upload could serve no one.
     fn of(started: &Attempt) -> Option<Keying> {
-        match started {
-            Some((proposal_id, proposal_block, Some(stack_version))) => {
-                Some(Keying::Attempt(UpgradeAttempt {
-                    stack_version: stack_version.clone(),
-                    proposal_id: proposal_id.clone(),
-                    proposal_block: *proposal_block,
-                }))
-            }
-            Some(_) => {
-                warn!("active GCS attempt has no stack version yet; state_hash upload deferred");
-                None
-            }
-            None => {
-                #[cfg(feature = "post-cutover-state-hash")]
-                {
-                    Some(Keying::PostCutover)
-                }
-                #[cfg(not(feature = "post-cutover-state-hash"))]
-                {
-                    None
-                }
-            }
-        }
+        let keying = started.as_ref().map(|(proposal_id, proposal_block)| {
+            Keying::Attempt(UpgradeAttempt {
+                proposal_id: proposal_id.clone(),
+                proposal_block: *proposal_block,
+            })
+        });
+        #[cfg(feature = "post-cutover-state-hash")]
+        let keying = keying.or(Some(Keying::PostCutover));
+        keying
     }
 
     fn key(&self, chain_id: i64, block_number: i64) -> String {
@@ -518,6 +536,15 @@ impl Keying {
             Keying::Attempt(attempt) => state_hash_key(attempt, chain_id, block_number),
             #[cfg(feature = "post-cutover-state-hash")]
             Keying::PostCutover => format!("state_hash/chain={chain_id}/block={block_number}.bin"),
+        }
+    }
+
+    /// The key as logged: the proposal id abbreviated, everything else exact.
+    fn log_key(&self, chain_id: i64, block_number: i64) -> String {
+        match self {
+            Keying::Attempt(attempt) => state_hash_log_key(attempt, chain_id, block_number),
+            #[cfg(feature = "post-cutover-state-hash")]
+            Keying::PostCutover => self.key(chain_id, block_number),
         }
     }
 }
@@ -550,13 +577,11 @@ pub(crate) async fn upload_window<'e>(
     executor: impl sqlx::Executor<'e, Database = Postgres>,
     cutoff: Duration,
 ) -> Result<(Attempt, bool), sqlx::Error> {
-    type WindowRow = (Option<Vec<u8>>, Option<i64>, Option<String>, bool);
-    let (proposal_id, proposal_block, stack_version, closed): WindowRow = sqlx::query_as(
+    type WindowRow = (Option<Vec<u8>>, Option<i64>, bool);
+    let (proposal_id, proposal_block, closed): WindowRow = sqlx::query_as(
         "SELECT (SELECT proposal_id FROM upgrade_state
                   WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
                 (SELECT COALESCE(proposal_block, -1) FROM upgrade_state
-                  WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
-                (SELECT version FROM upgrade_state
                   WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
                 COALESCE(BOOL_AND(EXISTS(
             SELECT 1 FROM public.host_chain_blocks_valid b
@@ -567,12 +592,7 @@ pub(crate) async fn upload_window<'e>(
     .bind(cutoff.as_secs_f64())
     .fetch_one(executor)
     .await?;
-    Ok((
-        proposal_id
-            .zip(proposal_block)
-            .map(|(id, block)| (id, block, stack_version)),
-        closed,
-    ))
+    Ok((proposal_id.zip(proposal_block), closed))
 }
 
 /// Fence each upload and its bookkeeping against containment and cutover.
@@ -687,6 +707,7 @@ async fn upload_pending_state_hashes(
         let chain_id = row.0;
         let block_number = row.1;
         let key = keying.key(chain_id, block_number);
+        let log_key = keying.log_key(chain_id, block_number);
         #[cfg(feature = "test-failpoints")]
         let report_fault = crate::test_host_report::fault(pool, chain_id, block_number).await?;
         #[cfg(feature = "test-failpoints")]
@@ -719,6 +740,9 @@ async fn upload_pending_state_hashes(
             bytes
         };
         let block_hash_hex = format!("0x{}", hex::encode(&row.3));
+        // The hex of the exact bytes PUT as the object body (the state-hash
+        // itself), not the DB column: test failpoints may diverge the body.
+        let payload_hex = hex::encode(&bytes);
         let Some(mut tx) = begin_hash_upload(pool, cutoff, &started).await? else {
             return Ok(());
         };
@@ -742,11 +766,11 @@ async fn upload_pending_state_hashes(
                 .execute(&mut *tx)
                 .await?;
                 tx.commit().await?;
-                info!(chain_id, block_number, block_hash = %block_hash_hex, bucket = my_bucket, "state_hash uploaded");
+                info!(chain_id, block_number, block_hash = %block_hash_hex, bucket = my_bucket, key = %log_key, state_hash = %payload_hex, "state_hash uploaded");
             }
             Err(e) => {
                 tx.rollback().await?;
-                warn!(chain_id, block_number, error = %e, "state_hash upload failed; will retry");
+                warn!(chain_id, block_number, bucket = my_bucket, key = %log_key, state_hash = %payload_hex, error = %e, "state_hash upload failed; will retry");
             }
         }
     }
@@ -800,6 +824,7 @@ async fn upload_pending_gw_state_hashes(
             }
         };
         let key = keying.key(gw_chain_id, block_number);
+        let log_key = keying.log_key(gw_chain_id, block_number);
         let Some(mut tx) = begin_hash_upload(pool, cutoff, &started).await? else {
             return Ok(());
         };
@@ -824,12 +849,14 @@ async fn upload_pending_gw_state_hashes(
                     gw_chain_id,
                     block_number,
                     bucket = my_bucket,
+                    key = %log_key,
+                    state_hash = %state_hash,
                     "gw state_hash uploaded"
                 );
             }
             Err(e) => {
                 tx.rollback().await?;
-                warn!(gw_chain_id, block_number, error = %e, "gw state_hash upload failed; will retry");
+                warn!(gw_chain_id, block_number, bucket = my_bucket, key = %log_key, state_hash = %state_hash, error = %e, "gw state_hash upload failed; will retry");
             }
         }
     }
@@ -1353,7 +1380,6 @@ mod tests {
         .await
         .unwrap();
         let attempt = UpgradeAttempt {
-            stack_version: "1.2.3".into(),
             proposal_id: vec![2],
             proposal_block: 10,
         };
@@ -1493,7 +1519,6 @@ mod tests {
             .await
             .unwrap();
         let attempt = UpgradeAttempt {
-            stack_version: "1.2.3".into(),
             proposal_id: vec![2],
             proposal_block: 10,
         };
@@ -1517,7 +1542,7 @@ mod tests {
             .await
             .is_ok());
 
-        let started = Some((vec![2u8], 10, Some("1.2.3".to_owned())));
+        let started = Some((vec![2u8], 10));
         sqlx::query("UPDATE public.upgrade_state SET status = 'failed'")
             .execute(&pool)
             .await
@@ -1561,22 +1586,10 @@ mod tests {
                 .is_none(),
             "same proposal re-proposed at another block"
         );
-        sqlx::query("UPDATE public.upgrade_state SET proposal_block = 10, version = '9.9.9'")
-            .execute(&pool)
-            .await
-            .unwrap();
-        assert!(
-            begin_hash_upload(&pool, cutoff, &started)
-                .await
-                .unwrap()
-                .is_none(),
-            "same attempt re-targeted at another version"
-        );
     }
 
     fn attempt(proposal_id: Vec<u8>, proposal_block: i64) -> UpgradeAttempt {
         UpgradeAttempt {
-            stack_version: "0.15.0".into(),
             proposal_id,
             proposal_block,
         }
@@ -1586,7 +1599,25 @@ mod tests {
     fn key_format_is_stable() {
         assert_eq!(
             state_hash_key(&attempt(vec![0xab, 0xcd], 7), 1, 42),
-            "state_hash/version=0.15.0/proposal=abcd/attempt=7/chain=1/block=42.bin"
+            "state_hash/proposal=abcd/attempt=7/chain=1/block=42.bin"
+        );
+    }
+
+    #[test]
+    fn log_key_abbreviates_the_proposal_id() {
+        // Production ids are 32 bytes (a BE uint256 from the L1 event): the
+        // log form keeps the first 2 and last 4 bytes.
+        let mut id = vec![0u8; 32];
+        id[28..].copy_from_slice(&[0x00, 0x11, 0x11, 0x22]);
+        assert_eq!(
+            state_hash_log_key(&attempt(id, 7), 1, 42),
+            "state_hash/proposal=0000...00111122/attempt=7/chain=1/block=42.bin"
+        );
+        // Short ids print in full - nothing to elide.
+        let short = attempt(vec![0xab, 0xcd], 7);
+        assert_eq!(
+            state_hash_log_key(&short, 1, 42),
+            state_hash_key(&short, 1, 42)
         );
     }
 
@@ -1597,7 +1628,7 @@ mod tests {
         let a = attempt(vec![0xab, 0xcd], 7);
         assert_eq!(
             state_hash_key(&a, 54321, 7),
-            "state_hash/version=0.15.0/proposal=abcd/attempt=7/chain=54321/block=7.bin"
+            "state_hash/proposal=abcd/attempt=7/chain=54321/block=7.bin"
         );
         assert_ne!(state_hash_key(&a, 1, 7), state_hash_key(&a, 54321, 7));
     }
@@ -1611,9 +1642,7 @@ mod tests {
         let first = attempt(vec![0xab], 10);
         let retried = attempt(vec![0xab], 20);
         let other_proposal = attempt(vec![0xcd], 10);
-        let mut other_version = attempt(vec![0xab], 10);
-        other_version.stack_version = "0.16.0".into();
-        let keys: Vec<String> = [&first, &retried, &other_proposal, &other_version]
+        let keys: Vec<String> = [&first, &retried, &other_proposal]
             .iter()
             .map(|a| state_hash_key(a, 1, 42))
             .collect();

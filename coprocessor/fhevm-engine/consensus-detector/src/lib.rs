@@ -687,51 +687,44 @@ where
     let urls: Vec<String> = members.iter().map(|m| m.url.clone()).collect();
 
     // The attempt identity scopes every state-hash S3 key (one key family per
-    // retry - see state_hash_key). Until the proposal's version is known the
-    // scoped key cannot be built, so the poll waits; the deadline/abort
-    // machinery below still runs, so a version-less attempt still ends.
-    let attempt = stack_version.clone().map(|stack_version| UpgradeAttempt {
-        stack_version,
+    // retry - see state_hash_key). The target stack version is deliberately
+    // not part of it: it lives in the signed decision payload, not in keys.
+    let attempt = UpgradeAttempt {
         proposal_id: proposal_id.clone(),
         proposal_block,
-    });
-    if let Some(attempt) = &attempt {
-        // Host tracks: one per chain window, each anchoring independently.
-        for &(chain_id, start, end) in &windows {
-            let track = host_tracks
-                .entry(chain_id)
-                .or_insert_with(|| ConsensusTrack::new(chain_id));
-            if track.anchored.is_none() {
-                let candidates =
-                    host_consensus_candidates(pool, chain_id, start, end, true).await?;
-                poll_track(http, &urls, attempt, track, &candidates, true).await?;
-                // No FHE op in the whole window: let this chain anchor on any block so it
-                // doesn't block the upgrade. Require every window block hashed (no gap), so a
-                // finalized-but-unfinished non-trivial block can't be mistaken for quiet.
-                if track.anchored.is_none()
-                    && candidates.is_empty()
-                    && gcs_window_fully_hashed(pool, chain_id, start, end).await?
-                {
-                    let readiness =
-                        host_consensus_candidates(pool, chain_id, start, end, false).await?;
-                    poll_track(http, &urls, attempt, track, &readiness, false).await?;
-                }
+    };
+    // Host tracks: one per chain window, each anchoring independently.
+    for &(chain_id, start, end) in &windows {
+        let track = host_tracks
+            .entry(chain_id)
+            .or_insert_with(|| ConsensusTrack::new(chain_id));
+        if track.anchored.is_none() {
+            let candidates = host_consensus_candidates(pool, chain_id, start, end, true).await?;
+            poll_track(http, &urls, &attempt, track, &candidates, true).await?;
+            // No FHE op in the whole window: let this chain anchor on any block so it
+            // doesn't block the upgrade. Require every window block hashed (no gap), so a
+            // finalized-but-unfinished non-trivial block can't be mistaken for quiet.
+            if track.anchored.is_none()
+                && candidates.is_empty()
+                && gcs_window_fully_hashed(pool, chain_id, start, end).await?
+            {
+                let readiness =
+                    host_consensus_candidates(pool, chain_id, start, end, false).await?;
+                poll_track(http, &urls, &attempt, track, &readiness, false).await?;
             }
         }
+    }
 
-        // Gateway track: needs gw_start_block + the gw-listener tip (sealed blocks).
-        if gateway.anchored.is_none() {
-            if let (Some(gw_start), Some(gw_tip)) = (
-                state_hash::gw_start_block(pool).await?,
-                state_hash::gw_listener_tip(pool).await?,
-            ) {
-                let candidates =
-                    pending_gw_consensus_blocks(pool, gateway.chain_id, gw_start, gw_tip).await?;
-                poll_track(http, &urls, attempt, gateway, &candidates, true).await?;
-            }
+    // Gateway track: needs gw_start_block + the gw-listener tip (sealed blocks).
+    if gateway.anchored.is_none() {
+        if let (Some(gw_start), Some(gw_tip)) = (
+            state_hash::gw_start_block(pool).await?,
+            state_hash::gw_listener_tip(pool).await?,
+        ) {
+            let candidates =
+                pending_gw_consensus_blocks(pool, gateway.chain_id, gw_start, gw_tip).await?;
+            poll_track(http, &urls, &attempt, gateway, &candidates, true).await?;
         }
-    } else {
-        warn!("active GCS proposal has no version; state-hash poll paused");
     }
 
     let all_host_anchored =

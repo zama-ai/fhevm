@@ -64,7 +64,7 @@ type RollbackCase = {
   extraAssertions?: (attempt: Attempt) => Promise<void>;
 };
 
-type Attempt = { proposalHex: string; proposalBlock: string; version: string };
+type Attempt = { proposalHex: string; proposalBlock: string };
 
 /** How long every operator must hold the old version after the rollback. */
 const SPLIT_WATCH_SECONDS = 120;
@@ -191,16 +191,16 @@ const decisionRecord = async (operator: number, attempt: Attempt) => {
 const attemptOf = async (ctx: RollbackCaseContext): Promise<Attempt> => {
   const row = await ctx.psqlQuery(
     ctx.operatorDatabases[0]!,
-    "SELECT encode(proposal_id,'hex')||'|'||proposal_block||'|'||version FROM upgrade_state WHERE stack_role='GCS' LIMIT 1;",
+    "SELECT encode(proposal_id,'hex')||'|'||proposal_block FROM upgrade_state WHERE stack_role='GCS' LIMIT 1;",
   );
-  const [proposalHex, proposalBlock, version] = row.split("|");
-  if (!proposalHex || !proposalBlock || !version) throw new Error(`cannot read the active attempt: "${row}"`);
-  return { proposalHex, proposalBlock, version };
+  const [proposalHex, proposalBlock] = row.split("|");
+  if (!proposalHex || !proposalBlock) throw new Error(`cannot read the active attempt: "${row}"`);
+  return { proposalHex, proposalBlock };
 };
 
 /** The S3 prefix every state-hash object of one attempt lives under. */
 const stateHashPrefix = (attempt: Attempt) =>
-  `state_hash/version=${attempt.version}/proposal=${attempt.proposalHex}/attempt=${attempt.proposalBlock}/`;
+  `state_hash/proposal=${attempt.proposalHex}/attempt=${attempt.proposalBlock}/`;
 
 /** First page of keys under a prefix. The buckets allow anonymous listing. */
 const listKeys = async (operator: number, prefix: string) => {
@@ -237,7 +237,7 @@ const assertFreshAttemptPrefixEmpty = async (ctx: RollbackCaseContext, attempt: 
 const assertStateHashesAttemptScoped = async (ctx: RollbackCaseContext, attempt: Attempt) => {
   for (const operator of ctx.operatorDatabases.keys()) {
     const unscoped = (await listKeys(operator, "state_hash/")).filter(
-      key => !key.startsWith("state_hash/version="),
+      key => !key.startsWith("state_hash/proposal="),
     );
     if (unscoped.length > 0) {
       throw new Error(`coproc-${operator} published ${unscoped.length} unscoped state-hash object(s): ${unscoped[0]}`);

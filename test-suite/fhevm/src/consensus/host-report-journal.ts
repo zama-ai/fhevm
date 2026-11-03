@@ -9,7 +9,7 @@ export function hostReportOriginals(value: unknown): HostReportOriginal[] {
     // at (state_hash.rs:state_hash_key); restoration must target exactly that
     // object, and only within this row's own (chain, block) scope.
     const scopedKey = digits && new RegExp(
-      `^state_hash/version=[A-Za-z0-9.+_-]+/proposal=[0-9a-f]+/attempt=[0-9]+/chain=${row.chain}/block=${row.block}\\.bin$`,
+      `^state_hash/proposal=[0-9a-f]+/attempt=[0-9]+/chain=${row.chain}/block=${row.block}\\.bin$`,
     ).test(row.key);
     if (!row || row.block !== key || !digits ||
         !/^[0-9a-f]{64}$/.test(row.original) || !/^0x[0-9a-f]{64}$/.test(row.blockHash) || row.bucket !== "coproc-1" ||
