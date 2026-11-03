@@ -102,7 +102,8 @@ where
         Ok(())
     }
 
-    /// Returns the client of the host chain `chain_id`.
+    /// Returns the client of the EVM host chain `chain_id`. A Solana chain id is refused at once,
+    /// see [`refuse_solana_host_chain`].
     fn host_client(&self, chain_id: u64) -> Result<&HostRpcClient<HP>, RequestCheckError> {
         refuse_solana_host_chain(chain_id)?;
         self.host_clients.get(&chain_id).ok_or_else(|| {
