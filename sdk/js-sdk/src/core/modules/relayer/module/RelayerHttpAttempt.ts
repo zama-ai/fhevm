@@ -38,6 +38,9 @@ export type RelayerHttpOperation = Extract<RelayerPostOperation, 'USER_DECRYPT' 
 // roughly 10 MB for relayer-http's ASCII JSON. Checked after reading, before JSON.parse.
 const MAX_BODY_TEXT_LENGTH = 10 * 1024 * 1024;
 
+// Largest body excerpt kept in an error, in characters.
+const BODY_EXCERPT_LENGTH = 500;
+
 /** @internal Already-validated values from the owner; no raw options, payload or auth. */
 export type RelayerHttpAttemptParams<O extends RelayerHttpOperation> = {
   readonly relayerOperation: O;
@@ -156,7 +159,7 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
         url: params.url,
         status: response.status,
         contentType: response.headers.get('content-type') ?? undefined,
-        body: bodyText.slice(0, 500),
+        body: _bodyExcerpt(bodyText),
         message: `relayer-http response body too large (${bodyText.length} characters, limit ${MAX_BODY_TEXT_LENGTH}).`,
       });
     }
@@ -175,7 +178,7 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
         cause,
         status: response.status,
         contentType: response.headers.get('content-type') ?? undefined,
-        body: bodyText.slice(0, 500),
+        body: _bodyExcerpt(bodyText),
         message: 'Failed to parse relayer-http response body as JSON.',
       });
     }
@@ -211,7 +214,7 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
       url: params.url,
       status: response.status,
       contentType: response.headers.get('content-type') ?? undefined,
-      body: bodyText.slice(0, 500),
+      body: _bodyExcerpt(bodyText),
     });
   }
 
@@ -254,7 +257,7 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
       url: params.url,
       cause: cause as InvalidPropertyError,
       // By design, the raw text, not the parsed JSON, despite the field name.
-      bodyJson: bodyText.slice(0, 500),
+      bodyJson: _bodyExcerpt(bodyText),
     });
   }
 
@@ -269,6 +272,22 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
       during,
     });
   }
+}
+
+/**
+ * The first characters of `bodyText`, as a new string that does not keep `bodyText` alive.
+ * A plain slice may: engines (e.g. V8) can store it as a pointer into the whole body.
+ *
+ * @param bodyText - The full response body.
+ * @returns At most BODY_EXCERPT_LENGTH characters, copied.
+ *
+ * @example
+ * ```typescript
+ * _bodyExcerpt('x'.repeat(10_000)).length; // 500
+ * ```
+ */
+function _bodyExcerpt(bodyText: string): string {
+  return bodyText.slice(0, BODY_EXCERPT_LENGTH).split('').join('');
 }
 
 /**
