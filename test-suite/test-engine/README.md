@@ -120,13 +120,14 @@ When('Alice deposits {int}', function (this: MyWorld, amount: number) {
 });
 ```
 
-| Member                 | Content                                                                          |
-| ---------------------- | -------------------------------------------------------------------------------- |
-| `this.engine.scenario` | id, name, owner, tags, origin and source `directory` of the running scenario     |
-| `this.engine.profile`  | `name`, `settingKeys()`, `setting(key)`                                          |
-| `this.engine.evidence` | `record(kind, data, { label })`: structured evidence (see [Evidence](#evidence)) |
-| `this.engine.chain`    | the [Chain module](#using-the-chain), created on first access                    |
-| `this.engine.log(...)` | a console line, with secrets redacted                                            |
+| Member                 | Content                                                                                                                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `this.engine.scenario` | id, name, owner, tags, origin and source `directory` of the running scenario                                                                                                  |
+| `this.engine.profile`  | `name`, `settingKeys()`, `setting(key)`                                                                                                                                       |
+| `this.engine.evidence` | `record(kind, data, { label })`: structured evidence (see [Evidence](#evidence))                                                                                              |
+| `this.engine.chain`    | the [Chain module](#using-the-chain), created on first access                                                                                                                 |
+| `this.engine.fhe`      | the FHE module (encrypt, user, delegated and public decryption), created on first access; needs the [`relayer` and `contracts` sections](#the-relayer-and-contracts-sections) |
+| `this.engine.log(...)` | a console line, with secrets redacted                                                                                                                                         |
 
 ### Rules for support code
 

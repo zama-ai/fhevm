@@ -6,6 +6,7 @@ import type { ResolvedProfile, SettingValue } from '../../config/profiles/types.
 import { type Redactor, createRedactor } from '../../infrastructure/secrets/redactor.js';
 import type { EngineWorldParameters, ScenarioInfo } from '../../model/execution.js';
 import { Chain } from '../modules/chain/chain.js';
+import { Fhe } from '../modules/fhe/fhe.js';
 import { Evidence } from './evidence.js';
 
 /** Read-only view of the resolved profile of the run. */
@@ -42,18 +43,31 @@ export interface EngineContext {
    * that never uses it opens no connection). Throws when the profile has no `chain` section.
    */
   readonly chain: Chain;
+  /**
+   * FHE operations built from the profile's `relayer` and `contracts` sections on top of `chain`,
+   * created on first access (the SDK client and the FHE key only when a step uses them). Throws
+   * when the profile lacks one of the `chain`, `relayer` or `contracts` sections.
+   */
+  readonly fhe: Fhe;
   /** Writes a line to the scenario console output, with secrets redacted. */
   log: (...parts: unknown[]) => void;
 }
 
-/** Chain instances created by Worlds, so that the engine can close them after each scenario. */
+/** Chain and FHE instances created by Worlds, so that the engine can release them after each scenario. */
 const chains = new WeakMap<EngineWorld, Chain>();
+const fhes = new WeakMap<EngineWorld, Fhe>();
 
-/** Releases what a World opened (the chain provider). Called by an engine `After` hook. */
+/** Releases what a World opened (the FHE client and cache, the chain provider). Called by an engine `After` hook. */
 export function disposeWorld(world: EngineWorld): void {
+  fhes.get(world)?.destroy();
+  fhes.delete(world);
   chains.get(world)?.destroy();
   chains.delete(world);
 }
+
+/** The P-002 message: a module used on a profile without the sections it needs. */
+const missingSections = (profileName: string, sections: string[]): string =>
+  `profile '${profileName}' has no ${sections.join(', ')} section${sections.length > 1 ? 's' : ''}; declare spec.targets for this scenario so that it only runs on profiles that have ${sections.length > 1 ? 'them' : 'one'}`;
 
 /**
  * Base World of every scenario. Cucumber creates one instance per Gherkin scenario; scenarios
@@ -75,15 +89,29 @@ export class EngineWorld<P extends EngineWorldParameters = EngineWorldParameters
       get chain(): Chain {
         let chain = chains.get(world);
         if (!chain) {
-          if (!profile.chain) {
-            throw new Error(
-              `profile '${profile.name}' has no chain section; declare spec.targets for this scenario so that it only runs on profiles that have one`,
-            );
-          }
+          if (!profile.chain) throw new Error(missingSections(profile.name, ['chain']));
           chain = new Chain({ profileName: profile.name, section: profile.chain, evidence });
           chains.set(world, chain);
         }
         return chain;
+      },
+      get fhe(): Fhe {
+        let fhe = fhes.get(world);
+        if (!fhe) {
+          const { relayer, contracts } = profile;
+          const missing = (['chain', 'relayer', 'contracts'] as const).filter((section) => !profile[section]);
+          if (!relayer || !contracts || missing.length > 0) throw new Error(missingSections(profile.name, missing));
+          fhe = new Fhe({
+            profileName: profile.name,
+            relayer,
+            contracts,
+            chain: this.chain,
+            evidence,
+            log: (message) => this.log(message),
+          });
+          fhes.set(world, fhe);
+        }
+        return fhe;
       },
       log: (...parts) => {
         process.stdout.write(`${redactor.redact(format(...parts))}\n`);
