@@ -252,7 +252,7 @@ export async function fetchWithRetry(
 
       if (attempt < retries) {
         args.logger?.warn?.(
-          `[fetchWithRetry] Fetch to ${url} failed (attempt ${attempt + 1}/${retries + 1}): ${formatFetchErrorMetaMessages(error).join('. ')}. Retrying.`,
+          `[fetchWithRetry] Fetch to ${_urlForLog(url)} failed (attempt ${attempt + 1}/${retries + 1}): ${formatFetchErrorMetaMessages(error).join('. ')}. Retrying.`,
         );
         // Abortable delay between retries
         await abortableSleep(retryDelayMs, init?.signal ?? undefined);
@@ -261,6 +261,19 @@ export async function fetchWithRetry(
   }
 
   throw lastError;
+}
+
+// Logging must not interrupt retries or expose the raw URL when formatting fails.
+function _urlForLog(url: string): string {
+  try {
+    if (typeof url !== 'string') {
+      return '[unavailable URL]';
+    }
+    const endpoint = url.split(/[?#]/, 1)[0];
+    return typeof endpoint === 'string' ? endpoint : '[unavailable URL]';
+  } catch {
+    return '[unavailable URL]';
+  }
 }
 
 /**

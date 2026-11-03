@@ -72,6 +72,76 @@ describe('fetchWithRetry', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['', '?token=private%2Fvalue', '#private-fragment', '?token=private%2Fvalue#private-fragment'])(
+    'omits query and fragment from retry warnings while preserving the fetch URL: %s',
+    async (suffix) => {
+      const endpoint = 'https://example.com/data';
+      const url = endpoint + suffix;
+      const response = new Response('ok');
+      const init = { method: 'POST', body: '{}' };
+      const logger = { warn: vi.fn() };
+      global.fetch = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce(response);
+
+      const pending = fetchWithRetry({ url, init, retries: 1, retryDelayMs: 100, logger });
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(await pending).toBe(response);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch).toHaveBeenNthCalledWith(1, url, init);
+      expect(global.fetch).toHaveBeenNthCalledWith(2, url, init);
+      expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
+        `[fetchWithRetry] Fetch to ${endpoint} failed (attempt 1/2): TypeError: fetch failed. Retrying.`,
+      );
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each([
+    null,
+    undefined,
+    42,
+    Symbol('url'),
+    {
+      toString: () => {
+        throw new Error('do not coerce');
+      },
+    },
+  ])('keeps retrying with a safe log placeholder for an unexpected URL value: %#', async (url) => {
+    const response = new Response('ok');
+    const logger = { warn: vi.fn() };
+    global.fetch = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce(response);
+    const pending = fetchWithRetry({ url: url as unknown as string, retries: 1, retryDelayMs: 100, logger });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await pending).toBe(response);
+    expect(global.fetch).toHaveBeenNthCalledWith(2, url, undefined);
+    expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
+      '[fetchWithRetry] Fetch to [unavailable URL] failed (attempt 1/2): TypeError: fetch failed. Retrying.',
+    );
+  });
+
+  it('keeps retrying when URL formatting throws', async () => {
+    const url = 'https://example.com/data?token=private';
+    const response = new Response('ok');
+    const logger = { warn: vi.fn() };
+    global.fetch = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce(response);
+    const originalSplit = String.prototype.split;
+    const split = vi.spyOn(String.prototype, 'split').mockImplementation(function (this: string, ...args) {
+      if (this === url) throw new Error('formatting failed');
+      return originalSplit.apply(this, args);
+    });
+    try {
+      const pending = fetchWithRetry({ url, retries: 1, retryDelayMs: 100, logger });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(await pending).toBe(response);
+      expect(global.fetch).toHaveBeenNthCalledWith(2, url, undefined);
+      expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
+        '[fetchWithRetry] Fetch to [unavailable URL] failed (attempt 1/2): TypeError: fetch failed. Retrying.',
+      );
+    } finally {
+      split.mockRestore();
+    }
+  });
+
   it('returns response on HTTP error (does not retry 4xx/5xx)', async () => {
     const mockResponse = { ok: false, status: 500 };
     global.fetch = vi.fn().mockResolvedValue(mockResponse);
