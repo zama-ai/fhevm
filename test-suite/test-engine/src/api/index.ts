@@ -11,3 +11,18 @@ export type { ChainGas, SettingValue } from '../config/profiles/types.js';
 export { Chain, type DeployOptions, type EvidenceAccount, type SendOptions } from '../runtime/modules/chain/chain.js';
 export { type ContractArtifact, loadArtifact, parseArtifact } from '../runtime/modules/chain/artifacts.js';
 export { EngineWallet } from '../runtime/modules/chain/wallets.js';
+export {
+  type ClearValue,
+  type ContractLike,
+  type DecryptOptions,
+  type DelegatedDecryptParameters,
+  type EncryptParameters,
+  type EncryptedInput,
+  Fhe,
+  type FheCallOptions,
+  FheError,
+  type FheType,
+  type HandleLike,
+  type PublicDecryption,
+  type UserDecryptParameters,
+} from '../runtime/modules/fhe/fhe.js';

@@ -1,0 +1,14 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.fhe-on-none
+  name: Fixture FHE on none
+  owner: qa
+  description:
+    Engine test fixture - a scenario without targets that uses the FHE module on a profile without its sections.
+  tags: [fixture, fhe]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30

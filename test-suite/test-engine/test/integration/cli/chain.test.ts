@@ -64,6 +64,13 @@ describe('Chain through the engine (no Anvil)', () => {
 describe('Relayer and contracts sections through the CLI', () => {
   const apiKey = 'relayer-api-key-0123456789';
 
+  it('fails a step that uses the FHE module on a profile without its sections (P-002)', () => {
+    const result = runCli(['run', 'fixture.fhe-on-none'], { scenariosDir: FHE_SCENARIOS, profilesDir: FHE_PROFILES });
+    assert.equal(result.code, 1, result.stdout + result.stderr);
+    assert.equal(scenarioOf(readReport(result.outputDir), 'fixture.fhe-on-none').outcome, 'failed');
+    assert.match(result.stdout, /profile 'none' has no chain, relayer, contracts sections; declare spec\.targets/);
+  });
+
   it('lists the typed sections of each profile', () => {
     const result = runCli(['profiles'], { profilesDir: FHE_PROFILES });
     assert.equal(result.code, 0, result.stderr);
