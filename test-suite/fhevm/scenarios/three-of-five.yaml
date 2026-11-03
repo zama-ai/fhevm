@@ -1,0 +1,12 @@
+version: 1
+kind: coprocessor-consensus
+name: Three Of Five
+description: >-
+  Five coprocessors with threshold 3, the testnet topology. Booted from the
+  testnet-before-coprocessor-v0.14 profile, it reproduces testnet before its coprocessors
+  move from 0.13 to 0.14.
+
+    ./fhevm-cli up --scenario three-of-five --lock-file profiles/testnet-before-coprocessor-v0.14.json --override test-suite
+topology:
+  count: 5
+  threshold: 3
