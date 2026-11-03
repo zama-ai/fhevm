@@ -77,9 +77,49 @@ describe('abortableSleep', () => {
     }
   });
 
+  // Unlike an abort during the sleep, the raw reason is thrown, not wrapped.
+  it.each([
+    ['a string', 'early'],
+    ['null', null],
+  ])('throws the raw reason (%s) synchronously if signal already aborted', (_label, reason) => {
+    const controller = new AbortController();
+    controller.abort(reason);
+
+    let thrown: unknown = 'nothing thrown';
+    try {
+      void abortableSleep(1000, controller.signal);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(reason);
+  });
+
   //////////////////////////////////////////////////////////////////////////////
   // Abort during sleep
   //////////////////////////////////////////////////////////////////////////////
+
+  it.each([
+    ['a string', 'stop'],
+    ['null', null],
+  ])(
+    'wraps a non-Error reason (%s) in an AbortError with that cause when aborted during sleep',
+    async (_label, reason) => {
+      const controller = new AbortController();
+      const promise = abortableSleep(1000, controller.signal);
+
+      vi.advanceTimersByTime(500);
+      controller.abort(reason);
+
+      const error = await promise.then(
+        () => undefined,
+        (e: unknown) => e,
+      );
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).name).toBe('AbortError');
+      expect((error as Error).cause).toBe(reason);
+    },
+  );
 
   it('rejects when signal is aborted during sleep', async () => {
     const controller = new AbortController();
@@ -206,5 +246,20 @@ describe('abortableSleep', () => {
     vi.advanceTimersByTime(100);
 
     await expect(promise).resolves.toBeUndefined();
+  });
+
+  it('removes its abort listener after resolving normally', async () => {
+    const controller = new AbortController();
+    const addSpy = vi.spyOn(controller.signal, 'addEventListener');
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+    const promise = abortableSleep(100, controller.signal);
+
+    vi.advanceTimersByTime(100);
+    await promise;
+
+    expect(addSpy).toHaveBeenCalledTimes(1);
+    expect(removeSpy).toHaveBeenCalledTimes(1);
+    expect(removeSpy).toHaveBeenCalledWith('abort', addSpy.mock.calls[0]![1]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
