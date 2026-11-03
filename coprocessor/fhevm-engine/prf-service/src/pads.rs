@@ -12,10 +12,10 @@ use std::{
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-/// The response body and the attestation of a complete row.
+/// The attestation and the body length of a complete row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PadOutput {
-    pub ciphertext128: Vec<u8>,
+    pub body_length: u64,
     pub attestation: PrfOutputAttestation,
 }
 
@@ -142,10 +142,11 @@ async fn add(
     })
 }
 
-/// Reads the row of `path`, if it exists.
+/// Reads the row of `path`, if it exists, without its body.
 pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<PadState>> {
     let Some(row) = sqlx::query!(
-        "SELECT is_error, ciphertext128, ciphertext_digest, sns_ciphertext_digest, signer, signature
+        "SELECT is_error, OCTET_LENGTH(ciphertext128) AS body_length, ciphertext_digest,
+                sns_ciphertext_digest, signer, signature
            FROM pads
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
         i32::from(path.prf_id),
@@ -162,8 +163,8 @@ pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<P
         return Ok(Some(PadState::Failed));
     }
     // A CHECK makes the output columns all set or all NULL.
-    let (Some(ciphertext128), Some(digest), Some(sns_digest), Some(signer), Some(signature)) = (
-        row.ciphertext128,
+    let (Some(body_length), Some(digest), Some(sns_digest), Some(signer), Some(signature)) = (
+        row.body_length,
         row.ciphertext_digest,
         row.sns_ciphertext_digest,
         row.signer,
@@ -180,7 +181,22 @@ pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<P
         signature,
     };
     Ok(Some(PadState::Complete(PadOutput {
-        ciphertext128,
+        body_length: u64::try_from(body_length).context("body_length")?,
         attestation,
     })))
+}
+
+/// Reads the body of the row of `path`. `None` if the row has no body.
+pub async fn read_body(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<Vec<u8>>> {
+    let body = sqlx::query_scalar!(
+        "SELECT ciphertext128
+           FROM pads
+          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
+        i32::from(path.prf_id),
+        path.label.as_slice(),
+        i32::from(path.pad_length),
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(body.flatten())
 }

@@ -48,6 +48,7 @@ impl PrfService {
     ) -> anyhow::Result<Self> {
         let waiter = Arc::new(PadWaiter::new(pool.clone(), config.pad_poll_interval));
         let state = web::Data::new(http::AppState {
+            pool: pool.clone(),
             in_flight: InFlight::new(config.max_in_flight_per_connector),
             admissions: Admissions::new(
                 pool.clone(),
