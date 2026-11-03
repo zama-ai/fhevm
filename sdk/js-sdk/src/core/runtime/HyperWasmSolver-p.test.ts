@@ -32,6 +32,7 @@ function makeParameters(parameters: {
     options: Object.freeze<ResolvedFhevmOptions>({
       batchRpcCalls: false,
       moduleVersions: parameters.clientModuleVersions,
+      keyVerification: undefined,
     }),
   };
 }

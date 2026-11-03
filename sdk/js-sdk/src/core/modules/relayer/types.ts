@@ -207,7 +207,15 @@ export type RelayerModule = Prettify<
     FetchCoprocessorSignaturesModuleFunction &
     FetchUserDecryptModuleFunction &
     FetchPublicDecryptModuleFunction &
-    FetchDelegatedUserDecryptModuleFunction
+    FetchDelegatedUserDecryptModuleFunction & {
+      /**
+       * `true` when the module's key / CRS bytes are never checked against
+       * KMSGeneration. Set only inside the SDK: cleartext mode (filler bytes,
+       * no FHE) and test harnesses. Apps cannot set it, and the production
+       * relayer module never does, so real keys are always checked.
+       */
+      readonly skipsFheEncryptionKeyVerification?: boolean | undefined;
+    }
 >;
 
 // Relayer is a base module. It does not take any runtime argument

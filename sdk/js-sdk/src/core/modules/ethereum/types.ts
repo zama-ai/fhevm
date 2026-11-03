@@ -38,6 +38,40 @@ export type RecoverTypedDataAddressModuleFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+// call (raw eth_call / STATICCALL)
+////////////////////////////////////////////////////////////////////////////////
+
+export type EthCallParameters = Readonly<{
+  readonly to: ChecksummedAddress;
+  readonly data: BytesHex;
+  /** Optional gas cap for the call. */
+  readonly gas?: bigint | undefined;
+}>;
+
+/**
+ * Outcome of a raw `eth_call`.
+ *
+ * - `{ success: true }` — the node returned (possibly empty) returndata. A no-code
+ *   address yields empty `0x` data, mirroring EVM `STATICCALL` semantics.
+ * - `{ success: false }` — the call reverted cleanly at the EVM level. This is a
+ *   *definitive* on-chain rejection (distinct from a transport-level failure,
+ *   which the adapter rethrows so the caller can degrade gracefully).
+ */
+export type EthCallResult =
+  | { readonly success: true; readonly data: BytesHex }
+  | { readonly success: false; readonly reason: string };
+
+export type CallModuleFunction = {
+  /**
+   * Performs a raw `eth_call` (STATICCALL semantics) and returns the raw
+   * returndata. Reverts are surfaced as `{ success: false }`; transport-level
+   * errors (network, timeout, rate limit, …) are thrown so callers can decide
+   * whether to fail or degrade.
+   */
+  call(hostPublicClient: TrustedClient, parameters: EthCallParameters): Promise<EthCallResult>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
 // signTypedData
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -144,7 +178,8 @@ export type EthereumModule = Prettify<
     EncodeModuleFunction &
     EncodePackedModuleFunction &
     DecodeModuleFunction &
-    GetChainIdModuleFunction
+    GetChainIdModuleFunction &
+    CallModuleFunction
 >;
 
 // No runtime as argument. The EthereumModule is passed as argument of the runtime constructor

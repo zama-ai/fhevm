@@ -16,7 +16,7 @@ export function createFhevmCleartextBaseClient<
 >(parameters: {
   readonly provider: provider;
   readonly chain: chain;
-  readonly options?: FhevmOptions | undefined;
+  readonly options?: FhevmOptions<EthersT.ContractRunner> | undefined;
 }): FhevmBaseClient<chain, FhevmRuntime, provider> {
   const c = createCoreFhevm(PRIVATE_ETHERS_TOKEN, {
     chain: parameters.chain,

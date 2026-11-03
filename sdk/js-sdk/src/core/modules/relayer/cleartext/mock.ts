@@ -19,6 +19,7 @@ import { fetchCoprocessorSignatures } from './fetchCoprocessorSignatures.js';
 export const relayerModule: RelayerModuleFactory = () => {
   return Object.freeze({
     relayer: Object.freeze({
+      skipsFheEncryptionKeyVerification: true,
       fetchFheEncryptionKeySource: (
         _relayerClient: RelayerClient,
         _parameters: FetchFheEncryptionKeySourceParameters,
