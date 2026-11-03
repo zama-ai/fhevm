@@ -25,9 +25,8 @@ export function encodeMirrorKmsContextAndEpoch(iface: Interface, snapshot: Canon
   ]);
 }
 
-// Rejects a stale context switch before the calldata reaches a DAO proposal. The build-calldata task
-// never broadcasts, so without this check the DAO votes on calldata that reverts with
-// NonIncreasingKmsContextId when the proposal executes.
+// Rejects a stale context switch. The mirror methods have no ordering check, so stale calldata moves
+// the replica back. A DAO proposal can execute later, so check the replica again before it executes.
 export async function assertReplicaNeedsContextSwitch(
   hre: HardhatRuntimeEnvironment,
   replicaProtocolConfigAddress: string,

@@ -1229,7 +1229,6 @@ interface ProtocolConfig {
     error KmsTxSenderAlreadyRegistered(address txSender);
     error LatestActiveKmsContextCannotBeDestroyed(uint256 kmsContextId);
     error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
-    error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
     error NotHostOwner(address sender);
     error NotInitializing();
     error NotInitializingFromEmptyProxy();
@@ -3187,22 +3186,6 @@ interface ProtocolConfig {
     "inputs": [
       {
         "name": "epochId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NonIncreasingKmsContextId",
-    "inputs": [
-      {
-        "name": "contextId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "latestActiveKmsContextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -7532,105 +7515,6 @@ error LatestActiveKmsEpochCannotBeDestroyed(uint256 epochId);
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.epochId),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NonIncreasingKmsContextId(uint256,uint256)` and selector `0xefd55f67`.
-```solidity
-error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NonIncreasingKmsContextId {
-        #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub latestActiveKmsContextId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        #[allow(dead_code)]
-        type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Uint<256>,
-            alloy::sol_types::sol_data::Uint<256>,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NonIncreasingKmsContextId>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: NonIncreasingKmsContextId) -> Self {
-                (value.contextId, value.latestActiveKmsContextId)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for NonIncreasingKmsContextId {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    contextId: tuple.0,
-                    latestActiveKmsContextId: tuple.1,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NonIncreasingKmsContextId {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NonIncreasingKmsContextId(uint256,uint256)";
-            const SELECTOR: [u8; 4] = [239u8, 213u8, 95u8, 103u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(
-                        &self.latestActiveKmsContextId,
-                    ),
                 )
             }
             #[inline]
@@ -18160,8 +18044,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         #[allow(missing_docs)]
         LatestActiveKmsEpochCannotBeDestroyed(LatestActiveKmsEpochCannotBeDestroyed),
         #[allow(missing_docs)]
-        NonIncreasingKmsContextId(NonIncreasingKmsContextId),
-        #[allow(missing_docs)]
         NotHostOwner(NotHostOwner),
         #[allow(missing_docs)]
         NotInitializing(NotInitializing),
@@ -18219,7 +18101,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             [215u8, 139u8, 206u8, 12u8],
             [215u8, 230u8, 188u8, 248u8],
             [224u8, 124u8, 141u8, 186u8],
-            [239u8, 213u8, 95u8, 103u8],
             [240u8, 231u8, 129u8, 193u8],
             [242u8, 25u8, 220u8, 14u8],
             [245u8, 26u8, 246u8, 187u8],
@@ -18264,7 +18145,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             ::core::stringify!(ECDSAInvalidSignatureS),
             ::core::stringify!(NotInitializing),
             ::core::stringify!(UUPSUnauthorizedCallContext),
-            ::core::stringify!(NonIncreasingKmsContextId),
             ::core::stringify!(LatestActiveKmsEpochCannotBeDestroyed),
             ::core::stringify!(InvalidBlockWindow),
             ::core::stringify!(KmsSignerAlreadyRegistered),
@@ -18309,7 +18189,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             <ECDSAInvalidSignatureS as alloy_sol_types::SolError>::SIGNATURE,
             <NotInitializing as alloy_sol_types::SolError>::SIGNATURE,
             <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::SIGNATURE,
-            <NonIncreasingKmsContextId as alloy_sol_types::SolError>::SIGNATURE,
             <LatestActiveKmsEpochCannotBeDestroyed as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidBlockWindow as alloy_sol_types::SolError>::SIGNATURE,
             <KmsSignerAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
@@ -18342,7 +18221,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
     impl alloy_sol_types::SolInterface for ProtocolConfigErrors {
         const NAME: &'static str = "ProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 42usize;
+        const COUNT: usize = 41usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -18447,9 +18326,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::LatestActiveKmsEpochCannotBeDestroyed(_) => {
                     <LatestActiveKmsEpochCannotBeDestroyed as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NonIncreasingKmsContextId(_) => {
-                    <NonIncreasingKmsContextId as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotHostOwner(_) => {
                     <NotHostOwner as alloy_sol_types::SolError>::SELECTOR
@@ -18875,17 +18751,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                             .map(ProtocolConfigErrors::UUPSUnauthorizedCallContext)
                     }
                     UUPSUnauthorizedCallContext
-                },
-                {
-                    fn NonIncreasingKmsContextId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ProtocolConfigErrors> {
-                        <NonIncreasingKmsContextId as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ProtocolConfigErrors::NonIncreasingKmsContextId)
-                    }
-                    NonIncreasingKmsContextId
                 },
                 {
                     fn LatestActiveKmsEpochCannotBeDestroyed(
@@ -19367,17 +19232,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     UUPSUnauthorizedCallContext
                 },
                 {
-                    fn NonIncreasingKmsContextId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ProtocolConfigErrors> {
-                        <NonIncreasingKmsContextId as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ProtocolConfigErrors::NonIncreasingKmsContextId)
-                    }
-                    NonIncreasingKmsContextId
-                },
-                {
                     fn LatestActiveKmsEpochCannotBeDestroyed(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ProtocolConfigErrors> {
@@ -19625,11 +19479,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
-                Self::NonIncreasingKmsContextId(inner) => {
-                    <NonIncreasingKmsContextId as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::NotHostOwner(inner) => {
                     <NotHostOwner as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
@@ -19863,12 +19712,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::LatestActiveKmsEpochCannotBeDestroyed(inner) => {
                     <LatestActiveKmsEpochCannotBeDestroyed as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NonIncreasingKmsContextId(inner) => {
-                    <NonIncreasingKmsContextId as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

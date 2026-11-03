@@ -288,7 +288,7 @@ chain (e.g. Polygon) runs `ProtocolConfigReplica`, which has no lifecycle: no pe
 collection, no reshare and no `KMSGeneration`. Anyone may apply a canonical step on it with the
 KMS confirmation signatures, through the `submitKms*` methods. This is the permissionless path.
 No task in this repo calls them yet. The owner mirror methods are the path the tasks below use
-for rotations. `recoverKmsState` is the recovery path (§5.7). The mirror methods import state
+for rotations. The owner also uses them for recovery (§5.7). The mirror methods import state
 Ethereum has already finalized and land it as immediately `Active`. `mirrorKmsContextDestruction`
 and `mirrorKmsEpochDestruction` copy a canonical `destroyKmsContext` / `destroyKmsEpoch`.
 Mirroring a switch activates the new context without retiring the previous one, so a context
@@ -345,10 +345,13 @@ host-contracts README. Use the mirror tasks for every rotation after that.
   `--use-internal-proxy-address` to resolve it from `addresses/`.
 - **Authorization**: the mirror methods are `onlyACLOwner` on the replica chain, so the
   broadcaster (or the DAO executing the calldata) must be that chain's ACL owner.
-- **The tasks only move ids forward, and gaps are fine.** The mirror methods revert with
-  `NonIncreasingKmsContextId` or `NonIncreasingEpochId` for an id that is not above the replica's
-  active one. The tasks refuse such a context id before they build the calldata. For
-  `mirrorKmsEpoch` they also refuse such an epoch id. A replica that missed
+- **The tasks only move ids forward, and gaps are fine.** The mirror methods have no ordering
+  check, so a call with a lower id moves the replica back. The tasks refuse a context id that is
+  not above the replica's active one before they build the calldata. For `mirrorKmsEpoch` they
+  also refuse such an epoch id. A DAO
+  proposal can execute after the permissionless path moved the replica past its ids, and then
+  it moves the replica back. Check the replica's active pair again before the proposal executes.
+  Cancel the proposal if the replica is already at or past its ids. A replica that missed
   several canonical rotations does not have to replay them one by one: it jumps straight to
   canonical's current pair in a single call.
 - **Gateway: nothing to do.** The gateway registers a context once, from the canonical
@@ -477,21 +480,26 @@ compromised, every replica trusts it until this step is done.
 
 ### 5.7 Recover a replica from a forged context
 
-If a replica activated a context or epoch that canonical never activated, the owner calls
-`recoverKmsState` once. It takes canonical's active context id, epoch id, nodes and thresholds,
-and the lists of forged context and epoch ids. List every id that the forged state activated,
-from the `KmsContextSwitchSubmitted` and `KmsKeyResharingSubmitted` events. Leave out an id that
-is already destroyed, because the call reverts on it. The call activates canonical's pair and
-destroys the listed ids in the same transaction. So the forged calldata has no window to replay,
-and the submit path rejects the destroyed ids after.
+If a replica activated a context that canonical never activated, the owner takes three actions.
+Get the forged context id and its first epoch id from the `KmsContextSwitchSubmitted` events.
 
-A forged epoch that is not listed stays active. It is valid at once if its context is the
-restored context, for example a resharing epoch under canonical's active context. It is valid
-later if its context is activated again.
+1. `mirrorKmsContextAndEpoch` with canonical's active context id, epoch id, nodes and thresholds.
+   This moves the replica back to canonical's pair.
+2. `mirrorKmsContextDestruction` for the forged context id. The submit path then rejects the
+   forged calldata with `DestroyedKmsContextCannotBeActivated`.
+3. `mirrorKmsEpochDestruction` for the first epoch id of the forged context. Otherwise that epoch
+   stays Active and becomes valid if canonical later uses the destroyed context id.
+
+Put all actions in one DAO proposal, in order, because anyone can replay the public signatures
+between separate executions.
+
+For a forged resharing epoch, the owner calls `mirrorKmsEpoch` with canonical's active pair, then
+`mirrorKmsEpochDestruction` for the forged epoch id. Put both actions in one DAO proposal, in this
+order.
 
 If canonical later uses a destroyed id, mirror it with `mirrorKmsContextAndEpoch` or
-`mirrorKmsEpoch`. The activation replaces the Destroyed state. No task wraps `recoverKmsState`, so the owner
-calls it directly.
+`mirrorKmsEpoch`. The activation replaces the Destroyed state. No task wraps the recovery, so the
+owner builds the calls directly.
 
 ## 6. Quick reference
 
@@ -589,18 +597,16 @@ Quorum cheat-sheet:
   and no `KMSGeneration`. It has three write paths. The signed `submitKms*` methods
   verify the canonical's KMS confirmation signatures. The owner `mirrorKmsContextAndEpoch` /
   `mirrorKmsEpoch` methods import already-finalized canonical state as immediately `Active`.
-  `mirrorKmsContextAndEpoch` requires both ids strictly above the active ones.
-  `mirrorKmsEpoch` requires the active context id and an epoch id strictly above the active
-  one. The owner `mirrorKmsContextDestruction` / `mirrorKmsEpochDestruction` methods copy
-  canonical destructions. The owner `recoverKmsState` method is the only one that moves a
-  replica back (§5.7). Keeping every replica current, and mirroring every destruction, is
+  They have no ordering check on the ids, so they can also move a replica back (§5.7).
+  The owner `mirrorKmsContextDestruction` / `mirrorKmsEpochDestruction` methods copy
+  canonical destructions. Keeping every replica current, and mirroring every destruction, is
   operational discipline (§5).
 - **Do not abort a canonical step after `n − 1` confirmations without a replica recovery plan.**
   A confirmation tx that lands after the abort reverts, but its signature is public calldata.
   With the earlier confirmations, anyone can then apply the aborted step on every replica
   through `submitKmsContextSwitch` or `submitKmsKeyResharing`. The replica cannot tell a
   finished step from an aborted one. Later canonical steps then fail on that replica until the
-  owner calls `recoverKmsState` (§5.7).
+  owner recovers it (§5.7).
 - **`mpcIdentity` must equal the identity the core itself is configured with** (its
   `mpc_identity` in the core/peers config). A mismatch makes the reshare role-resolution
   fail on the on-chain-vs-config merge and the reshare never starts (observed failure:

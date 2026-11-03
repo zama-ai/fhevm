@@ -18,7 +18,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  * @dev Ethereum is the canonical host and the single source of truth. Anyone may apply a canonical
  *      lifecycle step with the KMS confirmation signatures the canonical collected (RFC 037). The
  *      replica verifies them under the canonical's EIP-712 domain. The owner mirror functions stay
- *      as the fallback path, and `recoverKmsState` is the recovery path.
+ *      as the fallback and recovery path.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract ProtocolConfigReplica is
@@ -224,17 +224,9 @@ contract ProtocolConfigReplica is
         KmsNode[] calldata nodes,
         KmsThresholds calldata thresholds
     ) external virtual onlyACLOwner {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        uint256 activeContextId = $.latestActiveKmsContextId;
-        if (contextId <= activeContextId) {
-            revert NonIncreasingKmsContextId(contextId, activeContextId);
-        }
-        uint256 activeEpochId = $.latestActiveEpochId;
-        if (epochId <= activeEpochId) {
-            revert NonIncreasingEpochId(epochId, activeEpochId);
-        }
-
-        _replaceAndActivateKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
+        _replaceKmsContext(contextId, nodes, thresholds);
+        _activateKmsContextAndEpoch(contextId, epochId);
+        emit MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
     }
 
     /// @inheritdoc IProtocolConfigReplica
@@ -243,32 +235,9 @@ contract ProtocolConfigReplica is
         if (contextId != $.latestActiveKmsContextId || !_isLiveKmsContext(contextId)) {
             revert InvalidKmsContext(contextId);
         }
-        uint256 activeEpochId = $.latestActiveEpochId;
-        if (epochId <= activeEpochId) {
-            revert NonIncreasingEpochId(epochId, activeEpochId);
-        }
 
         _activateKmsContextAndEpoch(contextId, epochId);
         emit MirrorKmsEpoch(contextId, epochId);
-    }
-
-    /// @inheritdoc IProtocolConfigReplica
-    function recoverKmsState(
-        uint256 contextId,
-        uint256 epochId,
-        KmsNode[] calldata nodes,
-        KmsThresholds calldata thresholds,
-        uint256[] calldata destroyedContextIds,
-        uint256[] calldata destroyedEpochIds
-    ) external virtual onlyACLOwner {
-        // Activate first, so a listed ID that was active can be destroyed and the restored pair cannot.
-        _replaceAndActivateKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
-        for (uint256 i = 0; i < destroyedContextIds.length; i++) {
-            _destroyKmsContext(destroyedContextIds[i]);
-        }
-        for (uint256 i = 0; i < destroyedEpochIds.length; i++) {
-            _destroyKmsEpoch(destroyedEpochIds[i]);
-        }
     }
 
     /// @inheritdoc IProtocolConfigReplica
@@ -344,21 +313,6 @@ contract ProtocolConfigReplica is
         delete $.kmsSignerAddressesForContext[contextId];
 
         _storeKmsCommittee(contextId, nodes, thresholds);
-    }
-
-    /**
-     * @dev Stores the committee under `contextId` and activates the pair, which also replaces a
-     *      Destroyed state. No ordering check.
-     */
-    function _replaceAndActivateKmsContextAndEpoch(
-        uint256 contextId,
-        uint256 epochId,
-        KmsNode[] calldata nodes,
-        KmsThresholds calldata thresholds
-    ) private {
-        _replaceKmsContext(contextId, nodes, thresholds);
-        _activateKmsContextAndEpoch(contextId, epochId);
-        emit MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
     }
 
     /**

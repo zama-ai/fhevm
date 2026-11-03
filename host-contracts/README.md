@@ -114,7 +114,7 @@ lifecycle (pending states and confirmation collection), since KMS resharing and 
 once, on Ethereum. They have no `KMSGeneration`. Anyone may apply a canonical lifecycle step on a
 replica with the KMS confirmation signatures, through the `submitKms*` methods. This is the
 permissionless path. No task in this repo calls them yet. The owner mirror methods below are the
-path the repo tasks use for rotations. `recoverKmsState` is the recovery path.
+path the repo tasks use for rotations. The owner also uses them to recover a replica.
 
 A submitted destruction of an id at or above the replica's active id reverts with
 `KmsContextDestructionAheadOfReplica` or `KmsEpochDestructionAheadOfReplica`. The submitter retries
@@ -132,16 +132,12 @@ rotation.
   `MirrorKmsEpoch`.
 - `mirrorKmsContextDestruction(contextId)` and `mirrorKmsEpochDestruction(epochId)` mark an id
   destroyed. They emit `KmsContextDestroyed` and `KmsEpochDestroyed`.
-- `recoverKmsState(contextId, epochId, nodes, thresholds, destroyedContextIds, destroyedEpochIds)`
-  recovers a replica from a forged context or epoch in one call. It activates the given pair with no
-  ordering check and destroys every listed id. It emits `MirrorKmsContextAndEpoch`, then
-  `KmsContextDestroyed` and `KmsEpochDestroyed` for each listed id.
 
-`mirrorKmsContextAndEpoch` requires a context id and an epoch id **strictly above** the active ones.
-`mirrorKmsEpoch` requires the active context id and an epoch id strictly above the active one. An
-activation replaces the Destroyed state of the ids it activates, on every owner path. The submit path
-rejects a destroyed id, so only the owner can land a canonical id that
-`recoverKmsState` destroyed. Only `recoverKmsState` moves a replica back. Gaps are fine (contexts/epochs
+`mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` have **no ordering check** on the ids. They overwrite
+a context or epoch already stored under the given id, and a lower id moves the replica back.
+`mirrorKmsEpoch` requires the active context id. An activation replaces the Destroyed state of the
+ids it activates, on every owner path. The submit path rejects a destroyed id, so only the owner can
+land it. See runbook §5.7 to recover a replica. Gaps are fine (contexts/epochs
 aborted or never activated on Ethereum are just never mirrored). Nothing stops a replica from
 **drifting** if a mirror call is skipped: replaying each Ethereum rotation to every replica is the
 operator's responsibility.

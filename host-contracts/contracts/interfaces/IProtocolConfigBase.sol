@@ -77,11 +77,6 @@ interface IProtocolConfigBase {
     /// @param epochId The epoch ID.
     error InvalidKmsEpoch(uint256 epochId);
 
-    /// @notice The new context ID is not strictly greater than the latest active context ID.
-    /// @param contextId The rejected context ID.
-    /// @param latestActiveKmsContextId The latest active context ID.
-    error NonIncreasingKmsContextId(uint256 contextId, uint256 latestActiveKmsContextId);
-
     /**
      * @notice Returns the active KMS context and epoch IDs.
      * @return contextId The active context ID.

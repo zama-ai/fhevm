@@ -52,18 +52,16 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaFixture {
         protocolConfigReplica.mirrorKmsEpoch(supersededContextId, EPOCH1 + 2);
     }
 
-    function test_revertMirrorKmsEpochNonIncreasingId() public {
+    function test_mirrorKmsEpochMovesEpochBack() public {
         vm.startPrank(owner);
         protocolConfigReplica.mirrorKmsEpoch(CTX1, EPOCH1 + 5);
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigReplica.NonIncreasingEpochId.selector, EPOCH1 + 2, EPOCH1 + 5)
-        );
         protocolConfigReplica.mirrorKmsEpoch(CTX1, EPOCH1 + 2);
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigReplica.NonIncreasingEpochId.selector, EPOCH1 + 5, EPOCH1 + 5)
-        );
-        protocolConfigReplica.mirrorKmsEpoch(CTX1, EPOCH1 + 5);
         vm.stopPrank();
+
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
+        assertEq(activeContextId, CTX1);
+        assertEq(activeEpochId, EPOCH1 + 2);
+        assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1 + 2));
     }
 
     // -----------------------------------------------------------------------
@@ -104,23 +102,17 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaFixture {
         assertFalse(protocolConfigReplica.isValidKmsContext(CTX1 + 4));
     }
 
-    function test_revertMirrorKmsContextAndEpochNonIncreasingId() public {
+    function test_mirrorKmsContextAndEpochMovesBack() public {
         _switch(SEED0, CTX1 + 2, EPOCH1 + 2, SEED1);
 
-        vm.startPrank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigBase.NonIncreasingKmsContextId.selector, CTX1 + 2, CTX1 + 2)
-        );
-        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1 + 2, EPOCH1 + 3, _nodes(SEED2), _thresholds());
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigBase.NonIncreasingKmsContextId.selector, CTX1 + 1, CTX1 + 2)
-        );
-        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1 + 1, EPOCH1 + 3, _nodes(SEED2), _thresholds());
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigReplica.NonIncreasingEpochId.selector, EPOCH1 + 2, EPOCH1 + 2)
-        );
-        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1 + 3, EPOCH1 + 2, _nodes(SEED2), _thresholds());
-        vm.stopPrank();
+        // Lower IDs move the replica back.
+        vm.prank(owner);
+        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1 + 1, EPOCH1 + 1, _nodes(SEED0), _thresholds());
+
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
+        assertEq(activeContextId, CTX1 + 1);
+        assertEq(activeEpochId, EPOCH1 + 1);
+        _assertMembers(CTX1 + 1, SEED0);
     }
 
     function test_recoveryFromLateActivation() public {
@@ -128,15 +120,10 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaFixture {
         // activates C2 on the replica.
         _switch(SEED0, CTX1 + 1, EPOCH1 + 1, SEED1);
 
-        vm.prank(owner);
-        protocolConfigReplica.recoverKmsState(
-            CTX1,
-            EPOCH1,
-            _nodes(SEED0),
-            _thresholds(),
-            _ids(CTX1 + 1),
-            _ids(EPOCH1 + 1)
-        );
+        vm.startPrank(owner);
+        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1, EPOCH1, _nodes(SEED0), _thresholds());
+        protocolConfigReplica.mirrorKmsContextDestruction(CTX1 + 1);
+        vm.stopPrank();
 
         // The ID is still ahead of the replica, so the owner flag does not settle it.
         vm.expectRevert(
@@ -156,20 +143,13 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaFixture {
         assertFalse(protocolConfigReplica.isValidKmsContext(CTX1 + 1));
     }
 
-    function test_recoverKmsStateOverridesCompromisedCommittee() public {
+    function test_mirrorKmsContextAndEpochOverridesCompromisedCommittee() public {
         uint256 forgedId = CTX1 + 1;
         // A compromised committee forges a switch to committee SEED1.
         _switch(SEED0, forgedId, EPOCH1 + 1, SEED1);
 
         vm.prank(owner);
-        protocolConfigReplica.recoverKmsState(
-            forgedId,
-            EPOCH1 + 1,
-            _nodes(SEED2),
-            _thresholds(),
-            new uint256[](0),
-            new uint256[](0)
-        );
+        protocolConfigReplica.mirrorKmsContextAndEpoch(forgedId, EPOCH1 + 1, _nodes(SEED2), _thresholds());
 
         _assertNotMembers(forgedId, SEED1);
         _assertMembers(forgedId, SEED2);
@@ -179,28 +159,16 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaFixture {
         assertEq(activeEpochId, EPOCH1 + 2);
     }
 
-    function test_recoverKmsStateBlocksForgedReplay() public {
+    function test_recoveryBlocksContextSwitchReplay() public {
         uint256 forgedId = CTX1 + 1;
-        uint256 forgedEpochId = EPOCH1 + 7;
         KmsContextSubmission memory context = _ctxSubmission(CTX1, forgedId, SEED1, SEED0, QUORUM);
-        KmsEpochSubmission memory epoch = _epochSubmission(forgedId, EPOCH1, forgedEpochId, SEED1, N);
+        KmsEpochSubmission memory epoch = _epochSubmission(forgedId, EPOCH1, EPOCH1 + 1, SEED1, N);
         protocolConfigReplica.submitKmsContextSwitch(context, epoch);
 
-        vm.expectEmit(true, true, false, true, address(protocolConfigReplica));
-        emit IProtocolConfigReplica.MirrorKmsContextAndEpoch(CTX1, EPOCH1, _nodes(SEED0), _thresholds());
-        vm.expectEmit(true, false, false, false, address(protocolConfigReplica));
-        emit IProtocolConfigBase.KmsContextDestroyed(forgedId);
-        vm.expectEmit(true, false, false, false, address(protocolConfigReplica));
-        emit IProtocolConfigBase.KmsEpochDestroyed(forgedEpochId);
-        vm.prank(owner);
-        protocolConfigReplica.recoverKmsState(
-            CTX1,
-            EPOCH1,
-            _nodes(SEED0),
-            _thresholds(),
-            _ids(forgedId),
-            _ids(forgedEpochId)
-        );
+        vm.startPrank(owner);
+        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1, EPOCH1, _nodes(SEED0), _thresholds());
+        protocolConfigReplica.mirrorKmsContextDestruction(forgedId);
+        vm.stopPrank();
 
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
         assertEq(activeContextId, CTX1);
@@ -208,157 +176,62 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaFixture {
         _assertMembers(CTX1, SEED0);
         assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1));
         assertFalse(protocolConfigReplica.isValidKmsContext(forgedId));
-        assertFalse(protocolConfigReplica.isValidEpochForContext(forgedId, forgedEpochId));
 
-        // The forged calldata still matches the digest built from the restored pair.
+        // The replayed calldata still matches the digest built from the restored pair.
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsContextCannotBeActivated.selector, forgedId)
         );
         protocolConfigReplica.submitKmsContextSwitch(context, epoch);
     }
 
-    function test_recoverKmsStateThenCanonicalUsesDestroyedId() public {
-        uint256 forgedId = CTX1 + 1;
+    function test_recoveryBlocksResharingReplay() public {
         uint256 forgedEpochId = EPOCH1 + 1;
-        _switch(SEED0, forgedId, forgedEpochId, SEED1);
-        vm.prank(owner);
-        protocolConfigReplica.recoverKmsState(
-            CTX1,
-            EPOCH1,
-            _nodes(SEED0),
-            _thresholds(),
-            _ids(forgedId),
-            _ids(forgedEpochId)
-        );
-
-        // Canonical later allocates the same IDs to a real committee. The submit path rejects them.
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsContextCannotBeActivated.selector, forgedId)
-        );
-        protocolConfigReplica.submitKmsContextSwitch(
-            _ctxSubmission(CTX1, forgedId, SEED2, SEED0, QUORUM),
-            _epochSubmission(forgedId, EPOCH1, forgedEpochId, SEED2, N)
-        );
-
-        // The owner mirrors them, which replaces the forged nodes and the Destroyed state.
-        vm.prank(owner);
-        protocolConfigReplica.mirrorKmsContextAndEpoch(forgedId, forgedEpochId, _nodes(SEED2), _thresholds());
-        _assertNotMembers(forgedId, SEED1);
-        _assertMembers(forgedId, SEED2);
-        assertTrue(protocolConfigReplica.isValidEpochForContext(forgedId, forgedEpochId));
-
-        // The real committee signs the next resharing, and a later canonical destruction applies.
-        protocolConfigReplica.submitKmsKeyResharing(
-            _epochSubmission(forgedId, forgedEpochId, forgedEpochId + 1, SEED2, N)
-        );
-        _switch(SEED2, CTX1 + 2, EPOCH1 + 3, SEED1);
-        _destroyContext(forgedId, SEED1, QUORUM);
-        assertFalse(protocolConfigReplica.isValidKmsContext(forgedId));
-    }
-
-    function test_recoverKmsStateClearsDestroyedRestoredPair() public {
-        uint256 forgedId = CTX1 + 1;
-        uint256 forgedEpochId = EPOCH1 + 1;
-        _switch(SEED0, forgedId, forgedEpochId, SEED1);
-        // The forged committee is the active one, so it can destroy the canonical pair.
-        _destroyContext(CTX1, SEED1, QUORUM);
-        _destroyEpoch(EPOCH1, SEED1, QUORUM);
-
-        vm.prank(owner);
-        protocolConfigReplica.recoverKmsState(
-            CTX1,
-            EPOCH1,
-            _nodes(SEED0),
-            _thresholds(),
-            _ids(forgedId),
-            _ids(forgedEpochId)
-        );
-        assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1));
-
-        // A later canonical destruction of the restored pair applies.
-        _switch(SEED0, CTX1 + 2, EPOCH1 + 2, SEED2);
-        _destroyContext(CTX1, SEED2, QUORUM);
-        _destroyEpoch(EPOCH1, SEED2, QUORUM);
-        assertFalse(protocolConfigReplica.isValidKmsContext(CTX1));
-    }
-
-    function test_revertRecoverKmsStateListsRestoredId() public {
-        _switch(SEED0, CTX1 + 1, EPOCH1 + 1, SEED1);
+        KmsEpochSubmission memory epoch = _epochSubmission(CTX1, EPOCH1, forgedEpochId, SEED0, N);
+        protocolConfigReplica.submitKmsKeyResharing(epoch);
 
         vm.startPrank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigBase.LatestActiveKmsContextCannotBeDestroyed.selector, CTX1)
-        );
-        protocolConfigReplica.recoverKmsState(CTX1, EPOCH1, _nodes(SEED0), _thresholds(), _ids(CTX1), _ids(EPOCH1 + 1));
-        vm.expectRevert(
-            abi.encodeWithSelector(IProtocolConfigBase.LatestActiveKmsEpochCannotBeDestroyed.selector, EPOCH1)
-        );
-        protocolConfigReplica.recoverKmsState(CTX1, EPOCH1, _nodes(SEED0), _thresholds(), _ids(CTX1 + 1), _ids(EPOCH1));
+        protocolConfigReplica.mirrorKmsEpoch(CTX1, EPOCH1);
+        protocolConfigReplica.mirrorKmsEpochDestruction(forgedEpochId);
         vm.stopPrank();
-    }
-
-    function test_revertRecoverKmsStateDuplicateId() public {
-        uint256 forgedId = CTX1 + 1;
-        _switch(SEED0, forgedId, EPOCH1 + 1, SEED1);
-        uint256[] memory destroyedContextIds = new uint256[](2);
-        destroyedContextIds[0] = forgedId;
-        destroyedContextIds[1] = forgedId;
-
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsContextAlreadyDestroyed.selector, forgedId));
-        protocolConfigReplica.recoverKmsState(
-            CTX1,
-            EPOCH1,
-            _nodes(SEED0),
-            _thresholds(),
-            destroyedContextIds,
-            new uint256[](0)
-        );
-
-        // The whole recovery reverts, so the forged pair stays active.
-        assertEq(protocolConfigReplica.getCurrentKmsContextId(), forgedId);
-        _assertMembers(forgedId, SEED1);
-    }
-
-    function test_revertRecoverKmsStateAlreadyDestroyedId() public {
-        // The owner already mirrored the destruction of EPOCH1, then a forged switch lands.
-        vm.startPrank(owner);
-        protocolConfigReplica.mirrorKmsEpoch(CTX1, EPOCH1 + 1);
-        protocolConfigReplica.mirrorKmsEpochDestruction(EPOCH1);
-        vm.stopPrank();
-        uint256 forgedId = CTX1 + 1;
-        _switch(SEED0, forgedId, EPOCH1 + 2, SEED1);
-
-        uint256[] memory destroyedEpochIds = new uint256[](2);
-        destroyedEpochIds[0] = EPOCH1 + 2;
-        destroyedEpochIds[1] = EPOCH1;
-        vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(IProtocolConfigReplica.KmsEpochAlreadyDestroyed.selector, EPOCH1));
-        protocolConfigReplica.recoverKmsState(
-            CTX1,
-            EPOCH1 + 1,
-            _nodes(SEED0),
-            _thresholds(),
-            _ids(forgedId),
-            destroyedEpochIds
-        );
 
         (uint256 activeContextId, uint256 activeEpochId) = protocolConfigReplica.getCurrentKmsContextAndEpoch();
-        assertEq(activeContextId, forgedId);
-        assertEq(activeEpochId, EPOCH1 + 2);
+        assertEq(activeContextId, CTX1);
+        assertEq(activeEpochId, EPOCH1);
+        assertTrue(protocolConfigReplica.isValidEpochForContext(CTX1, EPOCH1));
+        assertFalse(protocolConfigReplica.isValidEpochForContext(CTX1, forgedEpochId));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IProtocolConfigReplica.DestroyedKmsEpochCannotBeActivated.selector, forgedEpochId)
+        );
+        protocolConfigReplica.submitKmsKeyResharing(epoch);
     }
 
-    function test_revertRecoverKmsStateNotOwner() public {
-        vm.prank(address(0x999));
-        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, address(0x999)));
-        protocolConfigReplica.recoverKmsState(
-            CTX1,
-            EPOCH1,
-            _nodes(SEED0),
-            _thresholds(),
-            new uint256[](0),
-            new uint256[](0)
-        );
+    function test_recoveryThenCanonicalUsesDestroyedId() public {
+        uint256 forgedId = CTX1 + 1;
+        uint256 forgedEpochId = EPOCH1 + 1;
+        uint256 realEpochId = EPOCH1 + 2;
+        _switch(SEED0, forgedId, forgedEpochId, SEED1);
+        vm.startPrank(owner);
+        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1, EPOCH1, _nodes(SEED0), _thresholds());
+        protocolConfigReplica.mirrorKmsContextDestruction(forgedId);
+        protocolConfigReplica.mirrorKmsEpochDestruction(forgedEpochId);
+        vm.stopPrank();
+
+        // Canonical later allocates the same context ID to a real committee. The owner mirrors it, which
+        // replaces the forged nodes and the Destroyed state.
+        vm.prank(owner);
+        protocolConfigReplica.mirrorKmsContextAndEpoch(forgedId, realEpochId, _nodes(SEED2), _thresholds());
+        _assertNotMembers(forgedId, SEED1);
+        _assertMembers(forgedId, SEED2);
+        assertTrue(protocolConfigReplica.isValidEpochForContext(forgedId, realEpochId));
+        // The forged epoch stays destroyed, so it is not valid for the reused context ID.
+        assertFalse(protocolConfigReplica.isValidEpochForContext(forgedId, forgedEpochId));
+
+        // The real committee signs the next resharing, and a later canonical destruction applies.
+        protocolConfigReplica.submitKmsKeyResharing(_epochSubmission(forgedId, realEpochId, realEpochId + 1, SEED2, N));
+        _switch(SEED2, CTX1 + 2, EPOCH1 + 4, SEED1);
+        _destroyContext(forgedId, SEED1, QUORUM);
+        assertFalse(protocolConfigReplica.isValidKmsContext(forgedId));
     }
 
     function test_mirroredDestroyedEpochCanBeDestroyedAgain() public {
@@ -400,16 +273,9 @@ contract ProtocolConfigReplicaMirrorTest is ProtocolConfigReplicaFixture {
         uint256 forgedId = CTX1 + 1;
         _switch(SEED0, forgedId, EPOCH1 + 1, SEED1);
 
-        // The owner leaves the forged ID out of the lists.
+        // The owner moves the replica back and does not destroy the forged ID.
         vm.prank(owner);
-        protocolConfigReplica.recoverKmsState(
-            CTX1,
-            EPOCH1,
-            _nodes(SEED0),
-            _thresholds(),
-            new uint256[](0),
-            new uint256[](0)
-        );
+        protocolConfigReplica.mirrorKmsContextAndEpoch(CTX1, EPOCH1, _nodes(SEED0), _thresholds());
 
         _switch(SEED0, forgedId, EPOCH1 + 1, SEED2);
         assertEq(protocolConfigReplica.getCurrentKmsContextId(), forgedId);

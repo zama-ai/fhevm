@@ -232,11 +232,6 @@ abstract contract ProtocolConfigReplicaTestBase is HostContractsDeployerTestUtil
             )
         );
     }
-
-    function _ids(uint256 id) internal pure returns (uint256[] memory ids) {
-        ids = new uint256[](1);
-        ids[0] = id;
-    }
 }
 
 /// @dev Starts each test from the replica that `_setupReplica` bootstraps.

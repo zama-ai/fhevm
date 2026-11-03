@@ -46,8 +46,7 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------
 
     /**
-     * @notice Emitted when the owner mirrors and activates a canonical KMS context, through
-     *         `mirrorKmsContextAndEpoch` or `recoverKmsState`.
+     * @notice Emitted when the owner mirrors and activates a canonical KMS context.
      * @param contextId The mirrored canonical context ID.
      * @param epochId The mirrored canonical epoch ID activated for the context.
      * @param nodes The KMS nodes mirrored from the canonical context.
@@ -216,17 +215,15 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------
     // Mirror functions
     //
-    // The owner path. The repo mirror tasks use it for rotations. The owner functions do not check
-    // signatures. `mirrorKmsContextAndEpoch` requires both IDs above the active ones. `mirrorKmsEpoch`
-    // requires the active context and an epoch above the active one. They overwrite a context or epoch
-    // already stored under the given ID. Activation replaces the Destroyed state of the pair.
-    // `recoverKmsState` is the only function that moves the replica back.
+    // The owner path. The repo mirror tasks use it for rotations. The owner also uses it for
+    // recovery. The owner functions do not check signatures. `mirrorKmsContextAndEpoch` and
+    // `mirrorKmsEpoch` have no ordering check on the IDs, so they can move the replica back.
+    // Activation replaces the Destroyed state of the pair.
     // -----------------------------------------------------------------------------------------
 
     /**
      * @notice Mirror and immediately activate a canonical KMS context.
-     * @dev Requires `contextId` above the active context and `epochId` above the active epoch.
-     *      Replaces any committee stored under `contextId`.
+     * @dev Replaces any committee stored under `contextId`.
      * @param contextId The canonical context ID to mirror.
      * @param epochId The canonical epoch ID to activate for the mirrored context.
      * @param nodes The KMS nodes of the canonical context.
@@ -242,41 +239,11 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     /**
      * @notice Mirror and immediately activate a canonical KMS epoch for the active context.
      * @dev The context must already be the active mirrored context (mirror the context first with
-     *      `mirrorKmsContextAndEpoch`). Requires `epochId` above the active epoch.
+     *      `mirrorKmsContextAndEpoch`).
      * @param contextId The active mirrored context the epoch belongs to.
      * @param epochId The canonical epoch ID to mirror.
      */
     function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
-
-    /**
-     * @notice Recovers the replica from a forged context or epoch in one call.
-     * @dev Use it when the replica activated a context or epoch that canonical never activated: a
-     *      forged submission, or a canonical step that governance aborted after its signatures became
-     *      public. Activates `contextId` and `epochId` with no ordering check, including a
-     *      destroyed ID, and replaces any committee stored under `contextId`. Then destroys every
-     *      listed ID, so the submit path rejects the forged calldata. List every context and epoch ID
-     *      that the forged state activated, from the `KmsContextSwitchSubmitted` and
-     *      `KmsKeyResharingSubmitted` events. A forged epoch that is not listed stays active. It is
-     *      valid at once if its context is the restored context, or valid later if its context is
-     *      activated again. Reverts if a list holds the restored ID or an ID that is already
-     *      destroyed. If canonical later uses a destroyed ID, mirror it with
-     *      `mirrorKmsContextAndEpoch` or `mirrorKmsEpoch`. Emits `MirrorKmsContextAndEpoch`, then
-     *      `KmsContextDestroyed` and `KmsEpochDestroyed` for each listed ID.
-     * @param contextId The canonical active context ID.
-     * @param epochId The canonical active epoch ID.
-     * @param nodes The KMS nodes of the canonical context.
-     * @param thresholds The thresholds of the canonical context.
-     * @param destroyedContextIds The forged context IDs to destroy.
-     * @param destroyedEpochIds The forged epoch IDs to destroy.
-     */
-    function recoverKmsState(
-        uint256 contextId,
-        uint256 epochId,
-        KmsNode[] calldata nodes,
-        KmsThresholds calldata thresholds,
-        uint256[] calldata destroyedContextIds,
-        uint256[] calldata destroyedEpochIds
-    ) external;
 
     /**
      * @notice Mirror a canonical context destruction.
