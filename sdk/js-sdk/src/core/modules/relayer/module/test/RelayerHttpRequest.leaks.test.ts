@@ -369,7 +369,7 @@ const EXITS: Exit[] = [
     expected: rejectsWith(RelayerHttpResponseError, 1),
   },
   {
-    name: 'a throwing logger warn during a retry',
+    name: 'a throwing logger warn during a retry (swallowed)',
     steps: [S503, S200],
     decide: () => scriptOf([10]),
     logger: {
@@ -379,8 +379,8 @@ const EXITS: Exit[] = [
       },
       error: undefined,
     },
-    advanceMs: 0,
-    expected: rejectsWithMessage('warn hook failed', 1),
+    advanceMs: 10,
+    expected: resolvesShares(2),
   },
 ];
 

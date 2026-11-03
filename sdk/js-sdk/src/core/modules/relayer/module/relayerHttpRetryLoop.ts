@@ -215,9 +215,13 @@ function _logRetry<T>(
   attempt: number,
   delayMs: number,
 ): void {
-  params.logger?.warn?.(
-    `[RelayerHttpRequest] relayer-http error on ${params.url} (status=${error.status}, code=${error.code}, requestId=${error.requestId}): ${error.responseMessage}. Retrying in ${delayMs} ms (attempt ${attempt}).`,
-  );
+  try {
+    params.logger?.warn?.(
+      `[RelayerHttpRequest] relayer-http error on ${params.url} (status=${error.status}, code=${error.code}, requestId=${error.requestId}): ${error.responseMessage}. Retrying in ${delayMs} ms (attempt ${attempt}).`,
+    );
+  } catch {
+    // A throwing logger must never change the outcome.
+  }
 }
 
 /**
@@ -232,8 +236,12 @@ function _logRetry<T>(
  * ```
  */
 function _logResponseError<T>(params: RelayerHttpRetryLoopParams<T>, error: RelayerHttpResponseError): void {
-  params.logger?.error?.(
-    `[RelayerHttpRequest] relayer-http error on ${params.url} (status=${error.status}, code=${error.code}, requestId=${error.requestId}): ${error.responseMessage}`,
-    undefined,
-  );
+  try {
+    params.logger?.error?.(
+      `[RelayerHttpRequest] relayer-http error on ${params.url} (status=${error.status}, code=${error.code}, requestId=${error.requestId}): ${error.responseMessage}`,
+      undefined,
+    );
+  } catch {
+    // A throwing logger must never change the outcome.
+  }
 }

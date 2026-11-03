@@ -624,4 +624,18 @@ describe('throwIfRelayerHttpAborted', () => {
     expect(check(signal, undefined, '', undefined)).toBe('gone');
     expect(check(signal, undefined, '', { debug: undefined, warn: undefined, error: undefined })).toBe('gone');
   });
+
+  // A throwing warn hook is swallowed: the caller reason and our timeout are still thrown as-is.
+  it('a throwing warn hook does not replace the classified abort', () => {
+    const throwingLogger: Logger = {
+      debug: undefined,
+      warn: () => {
+        throw new Error('warn hook failed');
+      },
+      error: undefined,
+    };
+
+    expect(check(AbortSignal.abort('gone'), undefined, '', throwingLogger)).toBe('gone');
+    expect(check(AbortSignal.abort('gone'), 250, '', throwingLogger)).toBeInstanceOf(RelayerHttpTimeoutError);
+  });
 });

@@ -296,41 +296,44 @@ describe('RelayerHttpRequest reentrancy', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('a warn hook that throws: that value propagates, cleanup runs, no second fetch', async () => {
+    // The warn hook throws: swallowed, the retry goes on and succeeds, cleanup runs.
+    it('a warn hook that throws: swallowed, the retry succeeds, cleanup runs', async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503, S200] });
       const controller = new AbortController();
       const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
-      const hookError = new Error('warn hook failed');
       const logger = makeLogger();
       logger.warn.mockImplementationOnce(() => {
-        throw hookError;
+        throw new Error('warn hook failed');
       });
 
       const run = scripted(() => 1000, { signal: controller.signal, timeout: 60_000 }, logger)
         .run()
         .catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(1000);
 
-      expect(await run).toBe(hookError);
-      expect(global.fetch).toHaveBeenCalledTimes(1);
+      expect(await run).toEqual(SHARES);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
       expect(vi.getTimerCount()).toBe(0);
       expect(removeSpy).toHaveBeenCalledTimes(1);
     });
 
-    it('an error hook that throws at the stop: that value propagates, cleanup runs', async () => {
+    // The error hook throws when the run stops: swallowed, the response error still rejects, no timer left.
+    it('an error hook that throws at the stop: swallowed, the response error rejects, cleanup runs', async () => {
       vi.useFakeTimers();
       global.fetch = fetchByUrl({ [RELAYER_URL]: [S503] });
-      const hookError = new Error('error hook failed');
       const logger = makeLogger();
       logger.error.mockImplementationOnce(() => {
-        throw hookError;
+        throw new Error('error hook failed');
       });
 
-      expect(
-        await scripted(() => undefined, { timeout: 60_000 }, logger)
-          .run()
-          .catch((e: unknown) => e),
-      ).toBe(hookError);
+      const error = await scripted(() => undefined, { timeout: 60_000 }, logger)
+        .run()
+        .catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(RelayerHttpResponseError);
+      expect((error as RelayerHttpResponseError).status).toBe(503);
+      expect(logger.error).toHaveBeenCalledTimes(1);
       expect(vi.getTimerCount()).toBe(0);
     });
 

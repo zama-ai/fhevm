@@ -176,11 +176,19 @@ export function throwIfRelayerHttpAborted(args: {
 
   const timeoutMs = args.timedOutAfterMs();
   if (timeoutMs !== undefined) {
-    logger?.warn?.(`[RelayerHttpRequest] Request to ${url} timed out${during}.`);
+    try {
+      logger?.warn?.(`[RelayerHttpRequest] Request to ${url} timed out${during}.`);
+    } catch {
+      // A throwing logger must never change the outcome.
+    }
     throw new RelayerHttpTimeoutError({ url, timeoutMs });
   }
 
-  logger?.warn?.(`[RelayerHttpRequest] Request aborted on ${url}${during}.`);
+  try {
+    logger?.warn?.(`[RelayerHttpRequest] Request aborted on ${url}${during}.`);
+  } catch {
+    // A throwing logger must never change the outcome.
+  }
 
   throw signal.reason;
 }

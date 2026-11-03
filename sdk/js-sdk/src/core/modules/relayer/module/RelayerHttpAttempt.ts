@@ -129,7 +129,11 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
       // An aborted request is our timeout or the caller's cancellation, never a network failure.
       this._throwIfAborted('');
 
-      params.logger?.error?.(`[RelayerHttpRequest] Fetch failed on ${params.url}.`, cause);
+      try {
+        params.logger?.error?.(`[RelayerHttpRequest] Fetch failed on ${params.url}.`, cause);
+      } catch {
+        // A throwing logger must never change the outcome.
+      }
 
       throw new RelayerHttpFetchError({
         url: params.url,
@@ -153,7 +157,11 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
       // Headers arrived but the body can still fail: dropped connection, timeout or abort.
       this._throwIfAborted(' while reading the response body');
 
-      params.logger?.error?.(`[RelayerHttpRequest] Failed to read the response body on ${params.url}.`, cause);
+      try {
+        params.logger?.error?.(`[RelayerHttpRequest] Failed to read the response body on ${params.url}.`, cause);
+      } catch {
+        // A throwing logger must never change the outcome.
+      }
 
       throw new RelayerHttpFetchError({
         url: params.url,
@@ -171,10 +179,14 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
 
     // 2.1. Reject an oversized body first: the parsed value can take several times its memory.
     if (bodyText.length > MAX_BODY_TEXT_LENGTH) {
-      params.logger?.error?.(
-        `[RelayerHttpRequest] Response body on ${params.url} is too large to parse (${bodyText.length} characters, status=${response.status}).`,
-        undefined,
-      );
+      try {
+        params.logger?.error?.(
+          `[RelayerHttpRequest] Response body on ${params.url} is too large to parse (${bodyText.length} characters, status=${response.status}).`,
+          undefined,
+        );
+      } catch {
+        // A throwing logger must never change the outcome.
+      }
 
       throw new RelayerHttpFetchError({
         url: params.url,
@@ -189,10 +201,14 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
     try {
       return JSON.parse(bodyText) as unknown;
     } catch (cause) {
-      params.logger?.error?.(
-        `[RelayerHttpRequest] Response body on ${params.url} is not valid JSON (status=${response.status}).`,
-        cause,
-      );
+      try {
+        params.logger?.error?.(
+          `[RelayerHttpRequest] Response body on ${params.url} is not valid JSON (status=${response.status}).`,
+          cause,
+        );
+      } catch {
+        // A throwing logger must never change the outcome.
+      }
 
       throw new RelayerHttpFetchError({
         url: params.url,
@@ -226,10 +242,14 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
     }
 
     // Not relayer-http's error contract: most likely an intermediary (gateway, proxy, load balancer).
-    params.logger?.error?.(
-      `[RelayerHttpRequest] Unexpected non-relayer-http error response on ${params.url} (status=${response.status}).`,
-      undefined,
-    );
+    try {
+      params.logger?.error?.(
+        `[RelayerHttpRequest] Unexpected non-relayer-http error response on ${params.url} (status=${response.status}).`,
+        undefined,
+      );
+    } catch {
+      // A throwing logger must never change the outcome.
+    }
 
     throw new RelayerHttpUnexpectedResponseError({
       url: params.url,
@@ -270,10 +290,14 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
   // Logs a success body that failed its schema check and wraps the guard's error.
   private _resultError(cause: unknown, bodyText: string): RelayerHttpResultError {
     const params = this._params;
-    params.logger?.error?.(
-      `[RelayerHttpRequest] Response body on ${params.url} does not match the expected schema.`,
-      cause,
-    );
+    try {
+      params.logger?.error?.(
+        `[RelayerHttpRequest] Response body on ${params.url} does not match the expected schema.`,
+        cause,
+      );
+    } catch {
+      // A throwing logger must never change the outcome.
+    }
     return new RelayerHttpResultError({
       url: params.url,
       cause: cause as InvalidPropertyError,
@@ -364,6 +388,7 @@ function _assertIsRelayerHttpSucceeded(
 ): asserts value is { status: 'succeeded'; requestId: string } {
   assertRecordStringProperty(value, 'status', name, { expectedValue: 'succeeded' });
   assertRecordStringProperty(value, 'requestId', name, {});
+
   if (!isUuidV7(value.requestId)) {
     throw new InvalidPropertyError(
       {
@@ -421,10 +446,13 @@ function _assertIsRelayerHttpUserDecryptResult(
   _assertIsRelayerHttpSucceeded(value, name);
 
   assertRecordNonNullableProperty(value, 'result', name, {});
+
   const result: unknown = value.result;
   const resultName = `${name}.result`;
   assertRecordArrayProperty(result, 'result', resultName, {});
+
   const shares = result.result;
+
   // A 200 success with zero shares is anomalous: the aggregator only returns
   // success after reaching its threshold, so at least one share is expected.
   if (shares.length === 0) {
@@ -439,12 +467,14 @@ function _assertIsRelayerHttpUserDecryptResult(
       {},
     );
   }
+
   for (let i = 0; i < shares.length; ++i) {
     const item: unknown = shares[i];
     const itemName = `${resultName}.result[${i}]`;
     assertRecordBytesHexNo0xProperty(item, 'payload', itemName, {});
     assertRecordBytesHexNo0xProperty(item, 'signature', itemName, { byteLength: 65 });
   }
+
   // relayer-http always includes extraData on every share (UserDecryptShare.extra_data
   // is a required field, not Option<...>) — no v11-style legacy omission to tolerate here.
   assertExtraDataFieldOnResultItems(shares, resultName, /* required */ true, {});

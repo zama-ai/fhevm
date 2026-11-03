@@ -660,35 +660,41 @@ describe('runRelayerHttpRetryLoop', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
-    // The catch covers only runAttempt: a throwing hook is not an attempt failure.
-    it('a warn hook that throws: that value propagates, no wait, no further run', async () => {
+    // Retry warn hook throws: swallowed, the retry goes on as if the hook had not thrown.
+    it('a warn hook that throws: swallowed, the wait and the next run still happen', async () => {
       vi.useFakeTimers();
       const h = makeHarness();
-      const hookError = new Error('warn hook failed');
       h.logger.warn.mockImplementationOnce(() => {
-        throw hookError;
+        throw new Error('warn hook failed');
       });
-      h.runAttempt.mockRejectedValueOnce(responseError()).mockResolvedValueOnce('should not run');
+      h.runAttempt.mockRejectedValueOnce(responseError()).mockResolvedValueOnce('ok');
       h.decide.mockReturnValue(1000);
 
-      expect(await runRelayerHttpRetryLoop(h.params).catch((e: unknown) => e)).toBe(hookError);
-      expect(h.runAttempt).toHaveBeenCalledTimes(1);
+      const out = runRelayerHttpRetryLoop(h.params);
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(await out).toBe('ok');
+      expect(h.logger.warn).toHaveBeenCalledTimes(1);
+      expect(h.runAttempt).toHaveBeenCalledTimes(2);
       expect(h.decide).toHaveBeenCalledTimes(1);
       expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('a warn hook throwing a RelayerHttpResponseError: propagates, never retried', async () => {
+    // Retry warn hook throws a RelayerHttpResponseError: swallowed, never mistaken for an attempt failure.
+    it('a warn hook throwing a RelayerHttpResponseError: swallowed, not decided on, the retry goes on', async () => {
       vi.useFakeTimers();
       const h = makeHarness();
-      const hookError = responseError('from the warn hook');
       h.logger.warn.mockImplementationOnce(() => {
-        throw hookError;
+        throw responseError('from the warn hook');
       });
-      h.runAttempt.mockRejectedValueOnce(responseError()).mockResolvedValueOnce('should not run');
+      h.runAttempt.mockRejectedValueOnce(responseError()).mockResolvedValueOnce('ok');
       h.decide.mockReturnValue(10);
 
-      expect(await runRelayerHttpRetryLoop(h.params).catch((e: unknown) => e)).toBe(hookError);
-      expect(h.runAttempt).toHaveBeenCalledTimes(1);
+      const out = runRelayerHttpRetryLoop(h.params);
+      await vi.advanceTimersByTimeAsync(10);
+
+      expect(await out).toBe('ok');
+      expect(h.runAttempt).toHaveBeenCalledTimes(2);
       expect(h.decide).toHaveBeenCalledTimes(1);
       expect(vi.getTimerCount()).toBe(0);
     });
@@ -713,16 +719,18 @@ describe('runRelayerHttpRetryLoop', () => {
       expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('an error hook that throws at stop: that value propagates', async () => {
+    // Stop error hook throws: swallowed, the relayer-http error still propagates.
+    it('an error hook that throws at stop: swallowed, the response error propagates', async () => {
       const h = makeHarness();
-      const hookError = new Error('error hook failed');
       h.logger.error.mockImplementationOnce(() => {
-        throw hookError;
+        throw new Error('error hook failed');
       });
-      h.runAttempt.mockRejectedValueOnce(responseError());
+      const stopError = responseError();
+      h.runAttempt.mockRejectedValueOnce(stopError);
       h.decide.mockReturnValueOnce(undefined);
 
-      expect(await runRelayerHttpRetryLoop(h.params).catch((e: unknown) => e)).toBe(hookError);
+      expect(await runRelayerHttpRetryLoop(h.params).catch((e: unknown) => e)).toBe(stopError);
+      expect(h.logger.error).toHaveBeenCalledTimes(1);
       expect(h.runAttempt).toHaveBeenCalledTimes(1);
     });
 

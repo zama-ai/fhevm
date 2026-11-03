@@ -429,6 +429,23 @@ describe('fetchWithRetry', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  // A throwing retry warn hook is swallowed: the retry still happens and its response is returned.
+  it('keeps retrying when the logger warn hook throws', async () => {
+    const mockResponse = { ok: true, status: 200 };
+    global.fetch = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce(mockResponse);
+    const logger = warnLogger();
+    logger.warn.mockImplementation(() => {
+      throw new Error('warn hook failed');
+    });
+
+    const promise = fetchWithRetry({ url: 'https://example.com', retries: 1, retryDelayMs: 100, logger });
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(await promise).toBe(mockResponse);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
 });
 
 ////////////////////////////////////////////////////////////////////////////////

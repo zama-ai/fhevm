@@ -522,3 +522,43 @@ describe('RelayerHttpAttempt', () => {
     });
   });
 });
+
+describe('RelayerHttpAttempt with a throwing logger', () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  const brokenBody = (): ReadableStream<Uint8Array> =>
+    new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(new Error('connection dropped'));
+      },
+    });
+
+  const loggedFailures: Array<[string, () => Mock, abstract new (...args: never[]) => unknown]> = [
+    ['a network failure', () => vi.fn().mockRejectedValue(new TypeError('fetch failed')), RelayerHttpFetchError],
+    ['an unreadable body', () => respondWith(brokenBody, 200), RelayerHttpFetchError],
+    ['an oversized body', () => respondWith(() => 'x'.repeat(MAX_BODY_TEXT_LENGTH + 1), 200), RelayerHttpFetchError],
+    ['a non-JSON body', () => respondWith(() => '<html>bad gateway</html>', 502), RelayerHttpFetchError],
+    ['a non-relayer JSON error', () => respondWith(() => '{"oops":1}', 502), RelayerHttpUnexpectedResponseError],
+    ['a success body with the wrong shape', () => respondWith(() => '{}', 200), RelayerHttpResultError],
+  ];
+
+  // A throwing error hook is swallowed: the attempt still throws its own typed error.
+  it.each(loggedFailures)('%s: the typed error is thrown, not the hook error', async (_label, makeFetch, type) => {
+    global.fetch = makeFetch();
+    const logger = makeLogger();
+    logger.error.mockImplementation(() => {
+      throw new Error('error hook failed');
+    });
+    const { attempt } = makeAttempt({ relayerOperation: 'USER_DECRYPT', logger });
+
+    const error = await attempt.run().catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(type);
+    expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+});

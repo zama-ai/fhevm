@@ -251,9 +251,13 @@ export async function fetchWithRetry(
       lastError = error;
 
       if (attempt < retries) {
-        args.logger?.warn?.(
-          `[fetchWithRetry] Fetch to ${_urlForLog(url)} failed (attempt ${attempt + 1}/${retries + 1}): ${formatFetchErrorMetaMessages(error).join('. ')}. Retrying.`,
-        );
+        try {
+          args.logger?.warn?.(
+            `[fetchWithRetry] Fetch to ${_urlForLog(url)} failed (attempt ${attempt + 1}/${retries + 1}): ${formatFetchErrorMetaMessages(error).join('. ')}. Retrying.`,
+          );
+        } catch {
+          // A throwing logger must never change the outcome.
+        }
         // Abortable delay between retries
         await abortableSleep(retryDelayMs, init?.signal ?? undefined);
       }
