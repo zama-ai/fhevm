@@ -12,7 +12,7 @@ spec:
       decryption: { env: TE_DECRYPTION }
       inputVerification: { value: "0x0000000000000000000000000000000000000002" }
   contracts:
-    acl: { env: TE_ACL }
+    acl: { env: TE_ACL, secret: true }
     inputVerifier: { value: "0x0000000000000000000000000000000000000004" }
     kmsVerifier: { value: "0x0000000000000000000000000000000000000005" }
     protocolConfig: { value: "0x0000000000000000000000000000000000000006" }

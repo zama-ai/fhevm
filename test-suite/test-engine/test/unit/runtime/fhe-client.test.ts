@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { FheClient, RelayerCallError, relayerBaseUrl } from '../../../src/runtime/modules/fhe/client.js';
+import { relayerBaseUrl } from '../../../src/config/profiles/profile.js';
+import { FheClient, RelayerCallError } from '../../../src/runtime/modules/fhe/client.js';
 import { API_KEY, type RelayerOptions as Options, address, config, fakeSdk, provider } from './fake-sdk.js';
 
 const permit = { transportKeyPair: {} as never, signedPermit: {} as never };

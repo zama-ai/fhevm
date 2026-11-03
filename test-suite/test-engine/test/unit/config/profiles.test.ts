@@ -340,7 +340,9 @@ describe('relayer and contracts sections', () => {
 
   it('exposes a set API key for redaction and redacts the printable sections', () => {
     const apiKey = 'relayer-api-key-0123456789';
-    const profile = loadProfile('fx-fhe', { profilesDir: FHE_PROFILES, env: { TE_FHE_API_KEY: apiKey } });
+    // A key requires https (SDK rule).
+    const env = { TE_FHE_API_KEY: apiKey, TE_FHE_RELAYER_URL: 'https://relayer.example/v2' };
+    const profile = loadProfile('fx-fhe', { profilesDir: FHE_PROFILES, env });
     assert.deepEqual(
       secretsOf(profile).find((secret) => secret.key === 'relayer.apiKey'),
       { key: 'relayer.apiKey', value: apiKey },
@@ -351,7 +353,7 @@ describe('relayer and contracts sections', () => {
       secret: true,
       source: 'env:TE_FHE_API_KEY',
     });
-    assert.equal(printable.url.value, 'http://fhevm-relayer:3000/v2');
+    assert.equal(printable.url.value, 'https://relayer.example/v2');
     assert.ok(!JSON.stringify(printable).includes(apiKey));
     assert.deepEqual(redactedContracts(profile), profile.contracts, 'no contract address is secret here');
     assert.equal(profile.relayer!.apiKey!.value, apiKey, 'the resolved profile is not modified');
@@ -375,11 +377,47 @@ describe('relayer and contracts sections', () => {
     assert.match(problems, /spec\.relayer\.apiKey: secret value must be at least 8 characters/);
     assert.match(problems, /spec\.relayer\.gateway\.chainId: must be a positive integer, got '0'/);
     assert.match(problems, /spec\.relayer\.gateway\.decryption: must be a 20-byte hex address .*got 'not-an-address'/);
-    assert.match(problems, /spec\.contracts\.acl: must be a 20-byte hex address/);
+    assert.match(
+      problems,
+      /spec\.contracts\.acl: must be a 20-byte hex address \(with a valid checksum if mixed-case\)(;|$)/,
+    );
+    assert.ok(!problems.includes('0x5fFdAaA37C1D40b2e0DE7b4F1e5A1B1d6bDea7E9'), 'a secret address is never quoted');
     assert.ok(!problems.includes("'short'"));
     assert.match(
       problemsOf(() => loadProfile('relayer-types', { profilesDir: INVALID_PROFILES, env: {} })),
       /spec\.relayer\.url: environment variable 'TE_RELAYER_URL' is not set.*spec\.contracts\.acl: environment variable 'TE_ACL' is not set/,
+    );
+  });
+
+  it('applies the SDK rules for relayer URLs: no credentials, https when an API key is set', () => {
+    const env = {
+      TE_RELAYER_API_KEY: 'relayer-api-key-0123456789',
+      TE_GATEWAY_CHAIN_ID: '54321',
+      TE_DECRYPTION: '0x0000000000000000000000000000000000000001',
+      TE_ACL: '0x0000000000000000000000000000000000000003',
+    };
+    const load = (url: string) => () =>
+      loadProfile('relayer-types', { profilesDir: INVALID_PROFILES, env: { ...env, TE_RELAYER_URL: url } });
+    const problems = problemsOf(load('http://user:pw@relayer.example/v2'));
+    assert.match(problems, /spec\.relayer\.url: must not contain credentials/);
+    assert.match(problems, /spec\.relayer\.url: must use https when relayer\.apiKey is set/);
+    assert.ok(!problems.includes('pw@'), 'the URL is never quoted');
+    assert.equal(load('http://127.0.0.1:3000/v2')().relayer!.url.value, 'http://127.0.0.1:3000/v2');
+    assert.equal(load('https://relayer.example/v2')().relayer!.url.value, 'https://relayer.example/v2');
+    // Without a key, http is fine (the local stack's relayer).
+    const keyless = loadProfile('fx-fhe', { profilesDir: FHE_PROFILES, env: {} });
+    assert.equal(keyless.relayer!.url.value, 'http://fhevm-relayer:3000/v2');
+  });
+
+  it('also redacts a secret relayer URL without its API version, as the SDK logs it', () => {
+    const profile = loadProfile('fx-fhe', { profilesDir: FHE_PROFILES, env: {} });
+    profile.relayer!.url = { value: 'https://relayer.example/key-123/v2', secret: true, source: 'env:X' };
+    assert.deepEqual(
+      secretsOf(profile).filter((secret) => secret.key === 'relayer.url'),
+      [
+        { key: 'relayer.url', value: 'https://relayer.example/key-123/v2' },
+        { key: 'relayer.url', value: 'https://relayer.example/key-123' },
+      ],
     );
   });
 
