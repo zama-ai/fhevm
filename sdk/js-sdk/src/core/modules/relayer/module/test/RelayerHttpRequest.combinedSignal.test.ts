@@ -481,14 +481,15 @@ describe('createRelayerHttpSignal', () => {
       combined.cleanup();
     });
 
-    // Caller signal already aborted: our timer stays armed until cleanup.
-    it('a pre-aborted caller signal still arms our timer until cleanup', () => {
+    // Caller signal already aborted: our signal is dead from the start, so no timer is armed.
+    it('a pre-aborted caller signal arms no timer', () => {
       vi.useFakeTimers();
       const controller = new AbortController();
       controller.abort('early');
       const combined = createRelayerHttpSignal(controller.signal, 500);
 
-      expect(vi.getTimerCount()).toBe(1);
+      expect(combined.signal.reason).toBe('early');
+      expect(vi.getTimerCount()).toBe(0);
       combined.cleanup();
       expect(vi.getTimerCount()).toBe(0);
     });

@@ -281,6 +281,34 @@ describe('RelayerHttpRequest abort classification', () => {
     expect(error).toBeNull();
   });
 
+  // Caller signal already aborted: run() stops at once, before arming a timer, adding a listener or building the request.
+  it('stops at once on an already-aborted caller signal: no timer, no listener, one warn before the request was sent', async () => {
+    const fetchMock = vi.fn();
+    global.fetch = fetchMock;
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    const controller = new AbortController();
+    controller.abort('gone');
+    const addSpy = vi.spyOn(controller.signal, 'addEventListener');
+    const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
+      url: RELAYER_URL,
+      payload: {},
+      options: { signal: controller.signal, timeout: 5000 },
+      logger,
+    });
+
+    expect(await request.run().catch((e: unknown) => e)).toBe('gone');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(setTimeoutSpy).not.toHaveBeenCalled();
+    expect(addSpy).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      `[RelayerHttpRequest] Request aborted on ${RELAYER_URL} before the request was sent.`,
+    );
+  });
+
   // Caller aborts with a string while the body is read: run() rejects with that string.
   it('rethrows the caller reason when the caller aborts with a string while the body is being read', async () => {
     global.fetch = stalledBodyFetch();
