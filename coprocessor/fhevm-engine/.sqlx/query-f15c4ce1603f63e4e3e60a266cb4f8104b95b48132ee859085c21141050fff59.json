@@ -1,0 +1,37 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE dependence_chain AS dc\n            SET\n                worker_id = NULL,\n                lock_acquired_at = NULL,\n                lock_expires_at = NULL,\n                status = CASE\n                    -- If the listener refreshed this DCID while it was owned,\n                    -- preserve its update so the new work is acquired again\n                    -- instead of being hidden as processed.\n                    WHEN dc.status = 'processing' THEN 'processed'\n                    ELSE dc.status\n                END\n            WHERE dc.worker_id = $1\n              AND dc.dependence_chain_id = ANY($2)\n              AND NOT EXISTS (\n                  SELECT 1\n                  FROM computations c\n                  WHERE c.dependence_chain_id = dc.dependence_chain_id\n                    AND c.is_allowed = TRUE\n                    AND c.is_completed = FALSE\n                    -- Mirror the work window's predicate exactly. A RETRYABLE\n                    -- stamp is NOT terminal: the window re-selects it and\n                    -- success heals it, so while it still has attempts it must\n                    -- keep the chain open \u2014 retiring on it would leave the row\n                    -- unreachable to every acquisition predicate.\n                    --\n                    -- Past the demote threshold the window has stopped\n                    -- selecting it, so it must stop counting here too, or the\n                    -- chain never retires and its dependents stay gated on work\n                    -- that is no longer being attempted in this lane. The row\n                    -- is NOT abandoned: the slow sweep re-arms the chain and\n                    -- resets the count.\n                    AND (c.is_error = FALSE\n                         OR (c.error_message LIKE '%' || $3 || '%'\n                             AND c.error_retry_count < $4))\n                    -- Retirement/rearm operates on whole chains. A demoted\n                    -- producer can block a descendant in ANOTHER transaction\n                    -- on this chain; counting that descendant here would keep\n                    -- the chain processing forever, while the slow sweep only\n                    -- re-arms processed, unowned chains (CFI-0024).\n                    -- Move the whole chain to that recovery path when it owns\n                    -- a demoted row. All pending computations, including any\n                    -- healthy work sharing the chain, survive and become\n                    -- eligible again after rearm resets the retry counts.\n                    -- Work-window selection stays transaction-scoped.\n                    --\n                    -- Keep this CHAIN-LOCAL: the sweep only re-arms chains\n                    -- that OWN a pending retryable row. A demoted sibling in\n                    -- another chain must not retire this one, or its pending\n                    -- work would become unreachable. Internal, non-allowed\n                    -- producers count too, just as they do in the sweep.\n                    AND NOT EXISTS (\n                        SELECT 1\n                        FROM computations demoted\n                        WHERE demoted.dependence_chain_id = c.dependence_chain_id\n                          AND demoted.is_completed = FALSE\n                          AND demoted.is_error = TRUE\n                          AND demoted.error_message LIKE '%' || $3 || '%'\n                          AND demoted.error_retry_count >= $4\n                    )\n              )\n            RETURNING\n                dc.dependence_chain_id,\n                dc.dependents,\n                dc.status = 'processed' AS \"marked_processed!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "dependents",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 2,
+        "name": "marked_processed!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "ByteaArray",
+        "Text",
+        "Int2"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "f15c4ce1603f63e4e3e60a266cb4f8104b95b48132ee859085c21141050fff59"
+}
