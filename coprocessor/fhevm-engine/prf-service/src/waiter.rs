@@ -111,11 +111,12 @@ impl PadWaiter {
         if prfs.is_empty() {
             return Ok(());
         }
+        // A deleted row also wakes its requests, so they fail and the connector retries.
         let finished = sqlx::query!(
-            "SELECT p.prf_instance, p.label, p.pad_length
+            r#"SELECT w.prf_instance AS "prf_instance!", w.label AS "label!", w.pad_length AS "pad_length!"
                FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::INTEGER[]) AS w (prf_instance, label, pad_length)
-               JOIN pads p USING (prf_instance, label, pad_length)
-              WHERE p.signature IS NOT NULL OR p.is_error",
+               LEFT JOIN pads p USING (prf_instance, label, pad_length)
+              WHERE p.label IS NULL OR p.signature IS NOT NULL OR p.is_error"#,
             &prfs,
             &labels,
             &pad_lengths,
