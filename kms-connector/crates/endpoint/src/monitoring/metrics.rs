@@ -1,6 +1,8 @@
 use crate::core::LOOKUP_OUTCOME_LABELS;
 use connector_utils::monitoring::http::{DURATION_BUCKETS, HttpMetrics};
-use kms_connector_api::{PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE};
+use kms_connector_api::{
+    PAD_DECRYPTION_ROUTE, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
+};
 use prometheus::{
     HistogramOpts, HistogramVec, IntCounterVec, IntGauge,
     core::{Collector, Desc},
@@ -48,13 +50,18 @@ pub(crate) fn init(decryption_limiter: Arc<Semaphore>, capacity: usize) {
     for route in [
         PUBLIC_DECRYPTION_ROUTE,
         USER_DECRYPTION_ROUTE,
+        PAD_DECRYPTION_ROUTE,
         VERSION_ROUTE,
     ] {
         HTTP_METRICS
             .requests
             .with_label_values(&[route, "200", "success"]);
     }
-    for route in [PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE] {
+    for route in [
+        PUBLIC_DECRYPTION_ROUTE,
+        USER_DECRYPTION_ROUTE,
+        PAD_DECRYPTION_ROUTE,
+    ] {
         for outcome in LOOKUP_OUTCOME_LABELS {
             DECRYPTION_LOOKUP_COUNTER.with_label_values(&[route, outcome]);
         }
