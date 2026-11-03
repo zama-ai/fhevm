@@ -7,7 +7,7 @@ import {
   requiresLegacyRelayerKeyUrlConfig,
   requiresLegacyRelayerReadinessConfig,
 } from "../compat/compat";
-import { hostChainRuntimes, OBJECT_STORE_INTERNAL_URL } from "../layout";
+import { hostChainRuntimes, OBJECT_STORE_INTERNAL_URL, RELAYER_HTTP_PORT } from "../layout";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
 import { hostReachableMaterialUrl, predictedCrsId, predictedKeyId } from "../utils/fs";
@@ -124,5 +124,48 @@ export const renderRelayerConfig = (
     config = rewriteHostChains(config, state, chains);
     config = rewriteProtocolConfig(config, state, chains);
   }
+  return YAML.stringify(config);
+};
+
+/**
+ * Renders the relayer-http config: the KMS proxies and audiences the e2e suite gets
+ * (KMS_CONNECTOR_ENDPOINT_URLS / KMS_CONNECTOR_TX_SENDER_ADDRESSES), thresholds from the MPC
+ * threshold t (public t+1, user 2t+1), the host chains' ids, and the discovered ProtocolConfig.
+ */
+export const renderRelayerHttpConfig = (
+  state: Pick<State, "discovery">,
+  templateText: string,
+  plan: Pick<StackSpec, "hostChains" | "kms">,
+  envs: Record<string, Record<string, string>>,
+) => {
+  const config = YAML.parse(templateText) as {
+    http: Record<string, unknown>;
+    kms_aggregator: {
+      public_decrypt: Record<string, unknown>;
+      user_decrypt: Record<string, unknown>;
+      auth: Record<string, unknown>;
+      endpoints: unknown[];
+    };
+  };
+  const chains = hostChainRuntimes(plan.hostChains);
+  const defaultChain = chains[0];
+  if (!defaultChain) throw new Error("Missing default host chain");
+  const t = plan.kms.threshold;
+  const aggregator = config.kms_aggregator;
+  config.http.endpoint = `0.0.0.0:${RELAYER_HTTP_PORT}`;
+  config.http.supported_chain_ids = chains.map((chain) => Number(chain.chainId));
+  aggregator.public_decrypt.threshold = t + 1;
+  aggregator.user_decrypt.threshold = 2 * t + 1;
+  aggregator.auth.chain_id = Number(defaultChain.chainId);
+  aggregator.auth.protocol_config =
+    state.discovery?.hosts[defaultChain.key]?.PROTOCOL_CONFIG_CONTRACT_ADDRESS ?? aggregator.auth.protocol_config;
+  aggregator.auth.address = envs["kms-connector"]?.KMS_CONNECTOR_ALLOWED_SENDERS ?? "";
+  const list = (value?: string) => (value ? value.split(",") : []);
+  const audiences = list(envs["test-suite"]?.KMS_CONNECTOR_TX_SENDER_ADDRESSES);
+  aggregator.endpoints = list(envs["test-suite"]?.KMS_CONNECTOR_ENDPOINT_URLS).map((url, index) => ({
+    name: `kms_${index + 1}`,
+    url,
+    audience: audiences[index] ?? "",
+  }));
   return YAML.stringify(config);
 };

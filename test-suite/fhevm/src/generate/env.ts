@@ -573,6 +573,8 @@ const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, pla
     .map((party) => envs["gateway-sc"][`KMS_TX_SENDER_ADDRESS_${party - 1}`])
     .join(",");
   envs["test-suite"].KMS_THRESHOLD = String(plan.kms.threshold);
+  // relayer-http signs with the e2e test key, the one sender every proxy allows.
+  envs["relayer-http"].RELAYER_SIGNER_KEY = envs["test-suite"].KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY ?? "";
 };
 
 /** Renders component and per-instance env maps from state, topology, and discovery. */
