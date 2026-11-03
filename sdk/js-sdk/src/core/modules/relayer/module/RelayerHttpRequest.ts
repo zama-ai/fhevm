@@ -15,11 +15,26 @@ import { RelayerHttpAttempt } from './RelayerHttpAttempt.js';
 import { runRelayerHttpRetryLoop } from './relayerHttpRetryLoop.js';
 import { MAX_TIMEOUT_MS, createRelayerHttpSignal, throwIfRelayerHttpAborted } from './relayerHttpSignal.js';
 
-// One-shot request/response client for relayer-http's synchronous routes (e.g. POST
-// /v4/user-decrypt): a single POST, a single JSON response, no job id, no polling —
-// unlike RelayerAsyncRequest, which targets the existing relayer's async job-queue API.
-// Owns the run's lifetime (combined signal, timer, cleanup); each HTTP attempt is a
-// RelayerHttpAttempt, and _retryDecision alone decides whether another one follows.
+// One-shot client for relayer-http's synchronous routes (e.g. POST /v4/user-decrypt,
+// /v4/public-decrypt): one POST, one JSON response, no job id, no polling
+// (unlike RelayerAsyncRequest).
+//
+// Flow:
+//
+//   RelayerHttpRequest.run()
+//     │  combine caller signal + timeout ──► relayerHttpSignal
+//     ▼
+//   runRelayerHttpRetryLoop ◄──── _retryDecision: retry after a delay, or stop
+//     │  one fresh attempt per try
+//     ▼
+//   RelayerHttpAttempt.run()
+//     fetch ──► read body ──► parse JSON ──► check status ──► validate result
+//
+// Files:
+//   RelayerHttpRequest.ts    Entry point. Owns the run: signal, timeout, cleanup, retry policy.
+//   relayerHttpSignal.ts     Merges the caller's abort signal and the timeout into one signal.
+//   relayerHttpRetryLoop.ts  Runs attempts, waits between them, stops on success or a final error.
+//   RelayerHttpAttempt.ts    One HTTP call: sends the request, checks and returns the response.
 
 type RelayerHttpRequestParams<O extends RelayerHttpOperation> = {
   relayerOperation: O;

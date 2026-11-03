@@ -23,9 +23,30 @@ import { RelayerHttpResponseError } from '../../../errors/RelayerHttpResponseErr
 import { RelayerHttpUnexpectedResponseError } from '../../../errors/RelayerHttpUnexpectedResponseError.js';
 import { RelayerHttpResultError } from '../../../errors/RelayerHttpResultError.js';
 
-// One HTTP attempt against relayer-http: fetch (with network retries) → read → size check
-// → parse → status/shape → validate. Stateless: the owner (RelayerHttpRequest) holds the
-// signal, timer and cleanup; this class only uses the signal it is given.
+// One HTTP attempt against relayer-http. Stateless: the owner (RelayerHttpRequest) holds
+// the signal, timer and cleanup; this class only uses the signal it is given.
+//
+// Flow:
+//
+//   fetch ──► read body ──► size check ──► parse JSON ──┬──► not ok ──► throw an error
+//                                                       └──► ok ──► validate ──► return result
+//
+//   fetch or read body fails ──► aborted? ──► yes ──► throw the abort
+//                                   └──► no ──► RelayerHttpFetchError
+//   (fetchWithRetry first retries network errors itself.)
+//
+// Errors thrown:
+//   RelayerHttpFetchError               Network failure, unreadable, oversized or non-JSON body.
+//   RelayerHttpResponseError            relayer-http's own error body (code, message, requestId).
+//   RelayerHttpUnexpectedResponseError  Non-ok from someone else (proxy, gateway, load balancer).
+//   RelayerHttpResultError              Ok status, but the result has the wrong shape.
+//   RelayerHttpTimeoutError / reason    Aborted by our timeout / by the caller.
+//
+// Files:
+//   base/fetch.ts                    fetchWithRetry: the HTTP call, retried on network errors.
+//   relayerUrl.ts                    Appends the query string to the URL.
+//   relayerHttpSignal.ts             Tells our timeout apart from a caller abort.
+//   guards/, base/record|string|...  Field checks used to validate the result.
 
 // relayer-http nests user-decrypt shares like the existing relayer (`result.result`),
 // but `RelayerUserDecryptSucceeded` tolerates v11's missing extraData and skips the

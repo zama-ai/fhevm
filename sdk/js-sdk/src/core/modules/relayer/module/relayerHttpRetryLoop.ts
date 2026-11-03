@@ -79,7 +79,9 @@ export async function runRelayerHttpRetryLoop<T>(params: RelayerHttpRetryLoopPar
       _logResponseError(params, error);
       throw error;
     }
+
     _logRetry(params, error, attempt, delayMs);
+
     await waitBeforeHttpRetry({
       delayMs,
       signal: params.signal,
@@ -117,9 +119,11 @@ function _retryDelay<T>(
   if (!_isValidRetryDelay(delayMs)) {
     return undefined;
   }
+
   if (!_fitsRemaining(delayMs, params.remainingMs())) {
     return undefined;
   }
+
   return delayMs;
 }
 

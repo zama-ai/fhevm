@@ -47,6 +47,7 @@ export function createRelayerHttpSignal(
   const onCallerAbort = (): void => {
     controller.abort(callerSignal?.reason);
   };
+
   if (callerSignal?.aborted === true) {
     controller.abort(callerSignal.reason);
   } else {
@@ -59,8 +60,10 @@ export function createRelayerHttpSignal(
 
   // Set only by our own timer, to tell our timeout apart from the caller's abort.
   let firedTimeoutMs: number | undefined;
+
   // performance.now() is monotonic: unaffected by system clock changes.
   const startedAtMs = performance.now();
+
   const onTimeout = (): void => {
     // Already aborted (by the caller): the first reason stands.
     if (controller.signal.aborted) {
@@ -70,6 +73,7 @@ export function createRelayerHttpSignal(
     // Same reason AbortSignal.timeout() uses; a clearable timer, unlike that one.
     controller.abort(new DOMException('Timed out', 'TimeoutError'));
   };
+
   const timeoutId = timeoutMs === undefined ? undefined : setTimeout(onTimeout, timeoutMs);
 
   // -------------------------------------------------------------------------
@@ -106,6 +110,7 @@ function _remainingMs(timeoutMs: number | undefined, startedAtMs: number): numbe
   if (timeoutMs === undefined) {
     return undefined;
   }
+
   return Math.max(0, timeoutMs - (performance.now() - startedAtMs));
 }
 
@@ -131,14 +136,18 @@ export function throwIfRelayerHttpAborted(args: {
   readonly during: string;
 }): void {
   const { signal, url, logger, during } = args;
+
   if (!signal.aborted) {
     return;
   }
+
   const timeoutMs = args.timedOutAfterMs();
   if (timeoutMs !== undefined) {
     logger?.warn?.(`[RelayerHttpRequest] Request to ${url} timed out${during}.`);
     throw new RelayerHttpTimeoutError({ url, timeoutMs });
   }
+
   logger?.warn?.(`[RelayerHttpRequest] Request aborted on ${url}${during}.`);
+
   throw signal.reason;
 }
