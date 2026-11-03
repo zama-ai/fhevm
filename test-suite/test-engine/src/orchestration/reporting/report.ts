@@ -1,8 +1,14 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { redactedChain, redactedSettings } from '../../config/profiles/profile.js';
-import type { ResolvedChainSection, ResolvedProfile, ResolvedSetting } from '../../config/profiles/types.js';
+import { redactedChain, redactedContracts, redactedRelayer, redactedSettings } from '../../config/profiles/profile.js';
+import type {
+  ResolvedChainSection,
+  ResolvedContractsSection,
+  ResolvedProfile,
+  ResolvedRelayerSection,
+  ResolvedSetting,
+} from '../../config/profiles/types.js';
 import type { Redactor } from '../../infrastructure/secrets/redactor.js';
 import { ARTIFACTS, type RunMode, type ScenarioOutcome, type ScenarioRunResult } from '../../model/execution.js';
 import type { DiscoveredScenario } from '../discovery/discovery.js';
@@ -53,6 +59,10 @@ export interface ProfileSnapshot {
   requiresConfirmation: boolean;
   /** Secret values replaced by `[REDACTED:chain.<field>]`; the source of every value is kept. */
   chain?: ResolvedChainSection;
+  /** Secret values replaced by `[REDACTED:relayer.<field>]`; the source of every value is kept. */
+  relayer?: ResolvedRelayerSection;
+  /** Secret values replaced by `[REDACTED:contracts.<field>]`; the source of every value is kept. */
+  contracts?: ResolvedContractsSection;
   /** Secret values replaced by `[REDACTED:<key>]`; the source of every value is kept. */
   settings: Record<string, ResolvedSetting>;
 }
@@ -187,6 +197,8 @@ export function buildRunReport(input: BuildReportInput): RunReport {
         description: profile.description,
         requiresConfirmation: profile.requiresConfirmation,
         ...(profile.chain ? { chain: redactedChain(profile) } : {}),
+        ...(profile.relayer ? { relayer: redactedRelayer(profile) } : {}),
+        ...(profile.contracts ? { contracts: redactedContracts(profile) } : {}),
         settings: redactedSettings(profile),
       },
       ...(input.gitCommit ? { gitCommit: input.gitCommit } : {}),

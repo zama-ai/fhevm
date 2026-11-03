@@ -9,5 +9,17 @@ spec:
     rpcUrl: { env: RPC_URL, secret: true }
     chainId: { value: 1337 }
     mnemonic: { env: MNEMONIC, secret: true }
-  # The relayer and contracts sections arrive with the modules that own them.
+  relayer:
+    url: { env: RELAYER_URL }
+    # Empty means no authentication; set it once the DevNet relayer requires a key.
+    apiKey: { env: ZAMA_FHEVM_API_KEY, secret: true, default: "" }
+    gateway:
+      chainId: { env: CHAIN_ID_GATEWAY }
+      decryption: { env: DECRYPTION_ADDRESS }
+      inputVerification: { env: INPUT_VERIFICATION_ADDRESS }
+  contracts:
+    acl: { env: ACL_CONTRACT_ADDRESS }
+    inputVerifier: { env: INPUT_VERIFIER_CONTRACT_ADDRESS }
+    kmsVerifier: { env: KMS_VERIFIER_CONTRACT_ADDRESS }
+    protocolConfig: { env: PROTOCOL_CONFIG_CONTRACT_ADDRESS }
   settings: {}

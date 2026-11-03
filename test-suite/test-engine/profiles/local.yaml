@@ -14,15 +14,18 @@ spec:
     rpcUrl: { env: RPC_URL }
     chainId: { env: CHAIN_ID_HOST, default: 12345 }
     mnemonic: { env: MNEMONIC, secret: true }
-  # The relayer and contracts sections arrive with the modules that own them. Until then, the SDK
-  # spike (scenarios/spikes/fhe-sdk) reads the values it needs from these temporary settings.
+  # The local relayer requires no API key.
+  relayer:
+    url: { env: RELAYER_URL }
+    gateway:
+      chainId: { env: CHAIN_ID_GATEWAY, default: 54321 }
+      decryption: { env: DECRYPTION_ADDRESS }
+      inputVerification: { env: INPUT_VERIFICATION_ADDRESS }
+  contracts:
+    acl: { env: ACL_CONTRACT_ADDRESS }
+    inputVerifier: { env: INPUT_VERIFIER_CONTRACT_ADDRESS }
+    kmsVerifier: { env: KMS_VERIFIER_CONTRACT_ADDRESS }
+    protocolConfig: { env: PROTOCOL_CONFIG_CONTRACT_ADDRESS }
+  # Temporary, removed with the SDK spike (scenarios/spikes/fhe-sdk).
   settings:
-    relayer.url: { env: RELAYER_URL }
-    gateway.chain-id: { env: CHAIN_ID_GATEWAY, default: 54321 }
-    gateway.decryption: { env: DECRYPTION_ADDRESS }
-    gateway.input-verification: { env: INPUT_VERIFICATION_ADDRESS }
-    contracts.acl: { env: ACL_CONTRACT_ADDRESS }
-    contracts.input-verifier: { env: INPUT_VERIFIER_CONTRACT_ADDRESS }
-    contracts.kms-verifier: { env: KMS_VERIFIER_CONTRACT_ADDRESS }
-    contracts.protocol-config: { env: PROTOCOL_CONFIG_CONTRACT_ADDRESS }
     spike.single-thread: { env: FHE_SPIKE_SINGLE_THREAD, default: false }

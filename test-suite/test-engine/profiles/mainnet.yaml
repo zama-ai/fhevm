@@ -9,5 +9,18 @@ spec:
     rpcUrl: { env: MAINNET_ETH_RPC_URL, secret: true }
     chainId: { value: 1 }
     mnemonic: { env: MNEMONIC, secret: true }
-  # The relayer and contracts sections arrive with the modules that own them.
+  # Placeholder: the relayer and contracts sections are not validated against this network yet.
+  # Every value comes from the environment; the e2e suite's public values are the starting point.
+  relayer:
+    url: { env: RELAYER_URL }
+    apiKey: { env: ZAMA_FHEVM_API_KEY, secret: true, default: "" }
+    gateway:
+      chainId: { env: CHAIN_ID_GATEWAY }
+      decryption: { env: DECRYPTION_ADDRESS }
+      inputVerification: { env: INPUT_VERIFICATION_ADDRESS }
+  contracts:
+    acl: { env: ACL_CONTRACT_ADDRESS }
+    inputVerifier: { env: INPUT_VERIFIER_CONTRACT_ADDRESS }
+    kmsVerifier: { env: KMS_VERIFIER_CONTRACT_ADDRESS }
+    protocolConfig: { env: PROTOCOL_CONFIG_CONTRACT_ADDRESS }
   settings: {}

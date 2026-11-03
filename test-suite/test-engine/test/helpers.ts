@@ -19,6 +19,9 @@ export const RESERVED_PROFILES = path.join(FIXTURES_DIR, 'reserved-profiles');
 /** Chain fixtures live apart, so that the other fixture listings stay unchanged. */
 export const CHAIN_SCENARIOS = path.join(FIXTURES_DIR, 'chain-scenarios');
 export const CHAIN_PROFILES = path.join(FIXTURES_DIR, 'chain-profiles');
+/** Profiles with the relayer and contracts sections (FHE module), apart for the same reason. */
+export const FHE_PROFILES = path.join(FIXTURES_DIR, 'fhe-profiles');
+export const FHE_SCENARIOS = path.join(FIXTURES_DIR, 'fhe-scenarios');
 export const COUNTER_ARTIFACT = path.join(FIXTURES_DIR, 'contracts', 'Counter.json');
 /** Public test mnemonic of Anvil and Hardhat, used by the `fx-anvil` fixture profile. */
 export const ANVIL_MNEMONIC = 'test test test test test test test test test test test junk';
