@@ -118,4 +118,28 @@ describe('RelayerHttpRequest error responses', () => {
     expect((error as RelayerHttpFetchError).status).toBe(200);
     expect((error as Error).cause).toBe(streamError);
   });
+
+  // A custom fetch rejecting with null (no abort): still a RelayerHttpFetchError, not a TypeError from the SDK.
+  it.each([
+    ['fetch', () => vi.fn().mockRejectedValue(null)],
+    [
+      'the body read',
+      () =>
+        vi
+          .fn()
+          .mockResolvedValue(Object.assign(new Response('{}', { status: 200 }), { text: () => Promise.reject(null) })),
+    ],
+  ])('throws RelayerHttpFetchError when %s rejects with null', async (_label, makeFetch) => {
+    global.fetch = makeFetch();
+
+    const request = new RelayerHttpRequest({
+      relayerOperation: 'USER_DECRYPT',
+      url: RELAYER_URL,
+      payload: {},
+      options: { fetchRetries: 0 },
+    });
+    const error = await request.run().catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(RelayerHttpFetchError);
+  });
 });
