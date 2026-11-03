@@ -100,6 +100,9 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
     // -------------------------------------------------------------------------
 
     const bodyText = await this._readBody(response);
+    // No abort check here, by design: an abort landing after the read is caught by run()'s exit
+    // check, which replaces the outcome. The cost is a wasted parse and, for a non-relayer body,
+    // one extra error line before the abort's warn.
     const bodyJson = this._parseBody(response, bodyText);
 
     // -------------------------------------------------------------------------
