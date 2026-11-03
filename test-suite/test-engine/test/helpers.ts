@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -81,6 +81,26 @@ export function runCli(args: string[], options: CliOptions = {}): CliResult {
     },
   );
   return { code: result.status, stdout: result.stdout, stderr: result.stderr, outputDir };
+}
+
+/**
+ * `runCli` without blocking the test's event loop: needed when the test itself serves what the CLI
+ * connects to (the preflight's fake environment).
+ */
+export function runCliAsync(args: string[], options: CliOptions = {}): Promise<CliResult> {
+  const outputDir = tempDir();
+  const scenariosDir = options.scenariosDir ?? FIXTURE_SCENARIOS;
+  const profilesDir = options.profilesDir ?? FIXTURE_PROFILES;
+  const child = spawn(
+    process.execPath,
+    [CLI, ...args, '--scenarios-dir', scenariosDir, '--profiles-dir', profilesDir, '--output-dir', outputDir],
+    { cwd: PACKAGE_ROOT, env: { ...process.env, NO_COLOR: '1', ...options.env } },
+  );
+  let stdout = '';
+  let stderr = '';
+  child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString('utf8')));
+  child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString('utf8')));
+  return new Promise((resolve) => child.on('close', (code) => resolve({ code, stdout, stderr, outputDir })));
 }
 
 export function readReport(outputDir: string): RunReport {

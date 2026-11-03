@@ -171,7 +171,7 @@ When('alice deploys a counter and bob increments it', async function (this: Engi
 | `waitForBlock(n, timeoutMs)`, `sleep(ms)` | Utilities ported from the e2e suite.                                                                                                                                                               |
 
 - **Lazy.** The chain is created on first access: a scenario that never touches it opens no connection. The engine closes the provider after each Gherkin scenario.
-- **Declare `targets`.** On a profile without a `chain` section (such as `none`), accessing `this.engine.chain` fails the step: `profile 'none' has no chain section; declare spec.targets for this scenario …`. A scenario that uses the chain should list the profiles it can run on.
+- **Declare `targets`.** On a profile without a `chain` section (such as `none`), accessing `this.engine.chain` fails the step with `profile 'none' has no chain section; declare spec.targets for this scenario …`, and the scenario ends as `error` with the reason `configuration error (P-002): …`. A scenario that uses the chain should list the profiles it can run on.
 - **Keep the engine wallets.** `wallet.connect()` throws: ethers would return a plain wallet without the gas buffer and the chain ID check. A transaction broadcast whose receipt cannot be obtained is recorded with status `unknown` and its hash.
 - **Funding.** Wallets are expected to be funded: Anvil and the local stack pre-fund the mnemonic accounts; live networks rely on pre-funded wallets.
 
@@ -212,7 +212,7 @@ When('alice adds 42 to an encrypted 7', async function (this: EngineWorld) {
 - **Keypairs and permits are cached for the scenario:** one transport keypair per wallet role, one permit per (permit kind, signer, contract, delegator), valid 10 days and renewed 60 s before it expires. `fresh: true`, `startTimestamp`, `durationSeconds` or `transportKeyPair` (serialised) give a call its own keypair and permit, without touching the cache: use them for expiry or signature-invalidation tests.
 - **Failures.** A failed operation is recorded as evidence, then thrown as `FheError` with `operation`, `relayerLabel` (e.g. `not_allowed_on_host_acl`) and `jobId`. Some checks are made by the SDK before any relayer call: a user without ACL rights fails with the SDK's message (`… is not authorized to decrypt handle …`), no relayer label and no job ID. Assert on the label for relayer checks and on the message for SDK checks.
 - **API key.** When the profile has a non-empty `relayer.apiKey`, it is sent on every relayer call, including the FHE key download.
-- **Lazy, one per scenario.** The SDK client is created on the first operation (it downloads the FHE public key); nothing is shared between Gherkin scenarios. On a profile without the `chain`, `relayer` or `contracts` section, accessing `this.engine.fhe` fails the step and names the missing sections: declare `targets`.
+- **Lazy, one per scenario.** The SDK client is created on the first operation (it downloads the FHE public key); nothing is shared between Gherkin scenarios. On a profile without the `chain`, `relayer` or `contracts` section, accessing `this.engine.fhe` fails the step and names the missing sections; the scenario ends as a P-002 configuration error. Declare `targets`.
 - **Run in the stack's network.** The relayer hands out addresses (the object store holding the FHE key) that only resolve inside the stack's Docker network, so FHE steps against the local stack run in a container on it (the e2e container). `npm run test:integration:fhe` does this for the engine's own FHE scenarios.
 
 ## Manifest reference
@@ -361,6 +361,21 @@ A scenario that uses the stack must declare `targets`: under the default `none` 
 - **Nothing executed is never a success.** When every selected scenario is skipped by the planner, the run exits 3 and still writes its report.
 - **Tags select whole scenarios only.** There is no Gherkin-level tag filter.
 
+## Preflight
+
+Before `run` starts any scenario, the engine checks that the environment of the profile answers:
+
+| Check             | When                                | What                                                                                               |
+| ----------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `chain.rpc`       | the profile has a `chain` section   | the RPC answers `eth_chainId` with the profile's chain ID                                          |
+| `relayer.keyurl`  | the profile has a `relayer` section | `GET <relayer>/v2/keyurl` answers (with the API key when set) and holds an FHE public key URL      |
+| `relayer.fhe-key` | `relayer.keyurl` passed             | the FHE public key URL answers a `HEAD`: it fails when the engine runs outside the stack's network |
+
+- A failed check prints the table with the reason of each failure, and the run **exits 2 before any scenario** (no report, as for other configuration errors).
+- Passed checks are printed and recorded in `report.json` (`run.preflight`) and as `engine.preflight` evidence.
+- Each check has a 10 s timeout. The checks use ethers and `fetch`, never the SDK (whose thread pool would keep the main process alive), and never download the FHE key. Secrets are redacted from the table and the report.
+- It runs in `run` only, when at least one scenario is planned and the profile has a `chain` or `relayer` section. `dry-run`, `list` and `profiles` never connect. `--no-preflight` skips it; the report then says so.
+
 ## CLI reference
 
 ```
@@ -381,6 +396,7 @@ Options:
       --scenarios-dir <dir>  Directory scanned for scenario.yaml files (default: <package>/scenarios)
       --profiles-dir <dir>   Directory holding <profile>.yaml files (default: <package>/profiles)
   -o, --output-dir <dir>     Run output directory (default: <package>/reports/<run-id>)
+      --no-preflight         run: skip the checks of the RPC, relayer and FHE key made before any scenario
       --json                 list: print JSON instead of a table
   -v, --version              Print the engine version
 ```
@@ -389,13 +405,13 @@ Options:
 
 **Exit codes** (precedence when several apply: 130 > 1 > 3 > 0):
 
-| Code | Meaning                                                                                                                                                                                                                  |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 0    | At least one scenario executed, and all executed scenarios passed (dry-run: are valid).                                                                                                                                  |
-| 1    | At least one scenario failed, timed out or errored (dry-run: is invalid).                                                                                                                                                |
-| 2    | Usage or configuration error: bad option, invalid manifest or profile, missing env var or env file, unknown id or profile, empty selection, missing or wrong `--confirm`. Nothing was executed and no report is written. |
-| 3    | Nothing executed: every selected scenario was skipped by the planner. The report is written.                                                                                                                             |
-| 130  | Interrupted (Ctrl+C / SIGTERM). The report of what already ran is written.                                                                                                                                               |
+| Code | Meaning                                                                                                                                                                                                                                                  |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | At least one scenario executed, and all executed scenarios passed (dry-run: are valid).                                                                                                                                                                  |
+| 1    | At least one scenario failed, timed out or errored (dry-run: is invalid).                                                                                                                                                                                |
+| 2    | Usage or configuration error: bad option, invalid manifest or profile, missing env var or env file, unknown id or profile, empty selection, missing or wrong `--confirm`, failed [preflight](#preflight). Nothing was executed and no report is written. |
+| 3    | Nothing executed: every selected scenario was skipped by the planner. The report is written.                                                                                                                                                             |
+| 130  | Interrupted (Ctrl+C / SIGTERM). The report of what already ran is written.                                                                                                                                                                               |
 
 An unexpected internal error after scenarios started (for example, the report cannot be written) exits 1, never 2.
 
@@ -414,12 +430,12 @@ Each call adds a Cucumber attachment (media type `application/vnd.fhevm.evidence
 
 `evidence.json` (`schemaVersion: 1`, type `EvidenceFile` in [`src/orchestration/reporting/evidence.ts`](src/orchestration/reporting/evidence.ts)) holds one entry per piece of evidence, each with a `scope`:
 
-| Scope      | Produced by | Content                                                                                                                                                                   |
-| ---------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run`      | the engine  | `engine.run` (engine and Node versions, git commit, times, filters) and `engine.profile` (name, confirmation, typed sections and settings with sources, secrets redacted) |
-| `scenario` | the engine  | `engine.scenario`: plan decision and reason, outcome, timings (also for skipped scenarios)                                                                                |
-| `step`     | `record()`  | kind, label, data, timestamp, Gherkin scenario and step                                                                                                                   |
-| `hook`     | `record()`  | same, with the hook instead of the step                                                                                                                                   |
+| Scope      | Produced by | Content                                                                                                                                                                                                                                                                |
+| ---------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `run`      | the engine  | `engine.run` (engine and Node versions, git commit, times, filters) `engine.profile` (name, confirmation, typed sections and settings with sources, secrets redacted) and, in `run`, `engine.preflight` (the [preflight](#preflight) checks, or why they were skipped) |
+| `scenario` | the engine  | `engine.scenario`: plan decision and reason, outcome, timings (also for skipped scenarios)                                                                                                                                                                             |
+| `step`     | `record()`  | kind, label, data, timestamp, Gherkin scenario and step                                                                                                                                                                                                                |
+| `hook`     | `record()`  | same, with the hook instead of the step                                                                                                                                                                                                                                |
 
 The Chain module records its evidence through `record()`, on the running step:
 
@@ -473,13 +489,13 @@ reports/20261006-143006-run-ae7e/
 
 `report.json` (`schemaVersion: 1`, type `RunReport` in [`src/orchestration/reporting/report.ts`](src/orchestration/reporting/report.ts)) contains the engine and Node versions; the run (id, mode, times, filters, profile snapshot, git commit, interrupted flag); a summary (counts per outcome, `executed`, `success`); and per scenario its metadata, targets, requirements, plan decision, outcome, reason, timings, evidence count, artifact paths and the parsed Cucumber execution (Gherkin scenarios, steps, hooks that failed or recorded evidence, issues).
 
-| Outcome     | Meaning                                                                                                                           |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `passed`    | Cucumber reported success and the engine found no problem (dry-run: valid).                                                       |
-| `failed`    | A step or hook failed, or a step is undefined, ambiguous or skipped at runtime, or the feature does not parse (dry-run: invalid). |
-| `skipped`   | Not executed. `reason` says why (planner rule, or run interrupted).                                                               |
-| `timed-out` | The scenario exceeded its budget and was stopped. The partial message stream is kept.                                             |
-| `error`     | The worker could not run Cucumber, e.g. support code throwing at import. `reason` holds the error.                                |
+| Outcome     | Meaning                                                                                                                                                                                                                 |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `passed`    | Cucumber reported success and the engine found no problem (dry-run: valid).                                                                                                                                             |
+| `failed`    | A step or hook failed, or a step is undefined, ambiguous or skipped at runtime, or the feature does not parse (dry-run: invalid).                                                                                       |
+| `skipped`   | Not executed. `reason` says why (planner rule, or run interrupted).                                                                                                                                                     |
+| `timed-out` | The scenario exceeded its budget and was stopped. The partial message stream is kept.                                                                                                                                   |
+| `error`     | The worker could not run Cucumber (e.g. support code throwing at import), or a step used a module its profile has no section for (P-002, `reason` starts with `configuration error (P-002)`). `reason` holds the error. |
 
 ## Timeouts
 
@@ -496,7 +512,8 @@ flowchart LR
     CLI --> Profiles["Profile loader"]
     Validator --> Planner
     Profiles -->|"resolved profile"| Planner
-    Planner -->|"plan: run / skip + reason"| Orchestrator
+    Planner -->|"plan: run / skip + reason"| Preflight["Preflight<br/>RPC · relayer · FHE key"]
+    Preflight -->|"environment answers"| Orchestrator
     Orchestrator -->|"job via stdin, allowlisted env"| Worker
     subgraph Worker["Worker process (per scenario)"]
         JobContext["Job-context holder"] --> Cucumber
@@ -509,34 +526,37 @@ flowchart LR
 
 `src/` is organised in two levels: the first says where and when the code runs, the second which domain it deals with.
 
-| Layer             | Runs in         | Holds                                                                                                  | May import from                                      |
-| ----------------- | --------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| `cli/`            | main process    | the entry point                                                                                        | `orchestration`, `model`, `config`, `infrastructure` |
-| `config/`         | both            | what the user declares: `manifest/`, `profiles/`                                                       | `infrastructure`                                     |
-| `model/`          | both            | data and rules shared by the two processes: worker job, outcomes, evidence payload, execution problems | `config`, `infrastructure`                           |
-| `orchestration/`  | main process    | `discovery/`, `planning/`, `execution/`, `reporting/`                                                  | `model`, `config`, `infrastructure`                  |
-| `runtime/`        | scenario worker | `worker/`, `cucumber/` (engine support code), `world/`, `modules/` (`chain/`, `fhe/`)                  | `model`, `config`, `infrastructure`                  |
-| `infrastructure/` | both            | technical code with no engine rule: `secrets/`, `yaml/`, `paths.ts`                                    | nothing internal                                     |
-| `api/`            | scenario worker | the public barrel `#engine`, re-exports only                                                           | `runtime`, `model`, `config`                         |
+| Layer             | Runs in         | Holds                                                                                                  | May import from                                              |
+| ----------------- | --------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------ |
+| `cli/`            | main process    | the entry point                                                                                        | `boot`, `orchestration`, `model`, `config`, `infrastructure` |
+| `boot/`           | main process    | start-up checks between planning and execution: `preflight.ts`, calling the checks the modules expose  | `runtime`, `model`, `config`, `infrastructure`               |
+| `config/`         | both            | what the user declares: `manifest/`, `profiles/`                                                       | `infrastructure`                                             |
+| `model/`          | both            | data and rules shared by the two processes: worker job, outcomes, evidence payload, execution problems | `config`, `infrastructure`                                   |
+| `orchestration/`  | main process    | `discovery/`, `planning/`, `execution/`, `reporting/`                                                  | `model`, `config`, `infrastructure`                          |
+| `runtime/`        | scenario worker | `worker/`, `cucumber/` (engine support code), `world/`, `modules/` (`chain/`, `fhe/`)                  | `model`, `config`, `infrastructure`                          |
+| `infrastructure/` | both            | technical code with no engine rule: `secrets/`, `yaml/`, `paths.ts`                                    | nothing internal                                             |
+| `api/`            | scenario worker | the public barrel `#engine`, re-exports only                                                           | `runtime`, `model`, `config`                                 |
 
 `orchestration` and `runtime` never import each other. `test/unit/architecture.test.ts` fails on any import outside this table, and on a new first-level folder that is not in it.
 
-| Component      | Code                           | Contract (input → output)                                                                                                           |
-| -------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| Manifest       | `src/config/manifest/`         | YAML → `ScenarioManifest` or `ManifestError(problems[])`. Pure.                                                                     |
-| Profiles       | `src/config/profiles/`         | profiles dir + name + environment → `ResolvedProfile` (plain data) or `ProfileError(problems[])`; wallet account derivation.        |
-| Discovery      | `src/orchestration/discovery/` | scenarios dir + known profiles → valid `DiscoveredScenario`s + one error per invalid manifest.                                      |
-| Planner        | `src/orchestration/planning/`  | scenarios + filters + profile → `ExecutionPlan` (run/skip + reason); confirmation rules. Pure.                                      |
-| Orchestrator   | `src/orchestration/execution/` | `ExecutionPlan` → `ScenarioRunResult[]`, one per plan item; redacted console tee.                                                   |
-| Report         | `src/orchestration/reporting/` | plan + results + message streams → `RunReport` → `report.html`, `evidence.json`.                                                    |
-| Shared model   | `src/model/`                   | `WorkerJob`, `ScenarioRunResult`, `EvidencePayload`; `findExecutionProblems`, used by the worker and the report.                    |
-| Worker         | `src/runtime/worker/`          | `WorkerJob` (stdin) → redacted Cucumber artifacts + exit code (`0` passed, `1` failed/invalid, `2` engine error, `143` terminated). |
-| Engine support | `src/runtime/cucumber/`        | loaded first in every worker: default step timeout, default World, EngineWorld check, chain provider closed after each scenario.    |
-| World          | `src/runtime/world/`           | `EngineWorld`, `ProfileView`, `Evidence`.                                                                                           |
-| Chain          | `src/runtime/modules/chain/`   | resolved `chain` section → provider, role wallets with gas buffer, `send`/`deploy` recording `chain.tx`/`chain.deploy`.             |
-| Secrets        | `src/infrastructure/secrets/`  | secret values → redactor for text, objects and streams.                                                                             |
-| Engine API     | `src/api/` (`#engine`)         | re-exports `EngineWorld`, `ProfileView`, `Evidence`, `Chain`, `loadArtifact` for scenario support code.                             |
-| CLI            | `src/cli/`                     | argv → exit code.                                                                                                                   |
+| Component      | Code                           | Contract (input → output)                                                                                                                                                |
+| -------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Manifest       | `src/config/manifest/`         | YAML → `ScenarioManifest` or `ManifestError(problems[])`. Pure.                                                                                                          |
+| Profiles       | `src/config/profiles/`         | profiles dir + name + environment → `ResolvedProfile` (plain data) or `ProfileError(problems[])`; wallet account derivation.                                             |
+| Discovery      | `src/orchestration/discovery/` | scenarios dir + known profiles → valid `DiscoveredScenario`s + one error per invalid manifest.                                                                           |
+| Planner        | `src/orchestration/planning/`  | scenarios + filters + profile → `ExecutionPlan` (run/skip + reason); confirmation rules. Pure.                                                                           |
+| Preflight      | `src/boot/`                    | resolved profile → `PreflightResult` (`chain.rpc`, `relayer.keyurl`, `relayer.fhe-key`: passed/failed/skipped with detail).                                              |
+| Orchestrator   | `src/orchestration/execution/` | `ExecutionPlan` → `ScenarioRunResult[]`, one per plan item; redacted console tee.                                                                                        |
+| Report         | `src/orchestration/reporting/` | plan + results + message streams → `RunReport` → `report.html`, `evidence.json`.                                                                                         |
+| Shared model   | `src/model/`                   | `WorkerJob`, `ScenarioRunResult`, `EvidencePayload`; `findExecutionProblems`, used by the worker and the report.                                                         |
+| Worker         | `src/runtime/worker/`          | `WorkerJob` (stdin) → redacted Cucumber artifacts + exit code (`0` passed, `1` failed/invalid, `2` engine error, `3` configuration error (P-002), `143` terminated).     |
+| Engine support | `src/runtime/cucumber/`        | loaded first in every worker: default step timeout, default World, EngineWorld check, FHE module and chain provider released after each scenario.                        |
+| World          | `src/runtime/world/`           | `EngineWorld`, `ProfileView`, `Evidence`.                                                                                                                                |
+| Chain          | `src/runtime/modules/chain/`   | resolved `chain` section → provider, role wallets with gas buffer, `send`/`deploy` recording `chain.tx`/`chain.deploy`.                                                  |
+| FHE            | `src/runtime/modules/fhe/`     | resolved `relayer` and `contracts` sections + Chain → encrypt and decryptions recording `fhe.*`; the relayer checks of the preflight.                                    |
+| Secrets        | `src/infrastructure/secrets/`  | secret values → redactor for text, objects and streams.                                                                                                                  |
+| Engine API     | `src/api/` (`#engine`)         | re-exports `EngineWorld`, `ProfileView`, `Evidence`, `Chain`, `Fhe`, `FheError`, `MissingProfileSectionError`, `loadArtifact` and their types for scenario support code. |
+| CLI            | `src/cli/`                     | argv → exit code.                                                                                                                                                        |
 
 ## Development
 

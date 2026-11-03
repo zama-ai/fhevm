@@ -51,6 +51,12 @@ export const ARTIFACTS = {
   console: 'console.log',
 } as const;
 
+/**
+ * Name of the error the World throws when a step uses a module the profile has no section for. The
+ * worker recognises it in the Cucumber messages (P-002).
+ */
+export const MISSING_SECTION_ERROR = 'MissingProfileSectionError';
+
 /** Prefix of the single stderr line in which the worker reports why it could not run Cucumber. */
 export const ENGINE_ERROR_PREFIX = '[test-engine] worker error: ';
 
@@ -59,6 +65,8 @@ export const WORKER_EXIT = {
   success: 0,
   scenarioFailed: 1,
   engineError: 2,
+  /** A step used a module the profile has no section for (P-002): a configuration error. */
+  configurationError: 3,
   /** Exited after SIGTERM/SIGINT (timeout or interruption), once pending output was flushed. */
   terminated: 143,
 } as const;
@@ -68,7 +76,8 @@ export const WORKER_EXIT = {
  * - `failed` — Cucumber reported a failure (in dry-run: undefined/ambiguous steps or parse errors).
  * - `skipped` — not executed, see `reason`.
  * - `timed-out` — killed after exceeding `spec.timeoutSeconds`.
- * - `error` — the worker could not run Cucumber (crash, support code failing to load, signal).
+ * - `error` — the worker could not run Cucumber (crash, support code failing to load, signal), or
+ *   a step used a module the profile has no section for (P-002, a configuration error).
  */
 export type ScenarioOutcome = 'passed' | 'failed' | 'skipped' | 'timed-out' | 'error';
 

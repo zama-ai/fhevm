@@ -69,6 +69,15 @@ export function buildEvidence(report: RunReport): EvidenceFile {
       data: { ...run.profile },
     },
   ];
+  if (run.preflight) {
+    entries.push({
+      scope: 'run',
+      kind: 'engine.preflight',
+      label: `Preflight ${run.preflight.status}`,
+      timestamp: run.startedAt,
+      data: { ...run.preflight },
+    });
+  }
 
   for (const scenario of report.scenarios) {
     entries.push({

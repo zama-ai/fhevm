@@ -177,6 +177,9 @@ function runWorker(scenario: DiscoveredScenario, options: OrchestratorOptions): 
         result = { ...base, outcome: 'passed' };
       } else if (exitCode === WORKER_EXIT.scenarioFailed) {
         result = { ...base, outcome: 'failed' };
+      } else if (exitCode === WORKER_EXIT.configurationError) {
+        const reason = options.redactor.redact(workerError ?? 'a step used a module the profile has no section for');
+        result = { ...base, outcome: 'error', reason: `configuration error (P-002): ${reason}` };
       } else {
         const how = signal ? `killed by ${signal}` : `exited with code ${String(exitCode)}`;
         const detail = stdinError ? ` before reading its job (${stdinError.message})` : '';

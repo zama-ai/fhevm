@@ -21,7 +21,13 @@ import { fileURLToPath } from 'node:url';
 import { secretsOf } from '../../config/profiles/profile.js';
 import { createRedactor } from '../../infrastructure/secrets/redactor.js';
 import { findExecutionProblems } from '../../model/execution-problems.js';
-import { ARTIFACTS, ENGINE_ERROR_PREFIX, WORKER_EXIT, type WorkerJob } from '../../model/execution.js';
+import {
+  ARTIFACTS,
+  ENGINE_ERROR_PREFIX,
+  MISSING_SECTION_ERROR,
+  WORKER_EXIT,
+  type WorkerJob,
+} from '../../model/execution.js';
 import { setCurrentJob } from './job-context.js';
 
 const SIGNAL_FLUSH_MS = 500;
@@ -89,6 +95,14 @@ async function runJob(job: WorkerJob): Promise<number> {
   if (problems.length > 0) {
     console.error(`[test-engine] scenario is invalid: ${problems.map((problem) => problem.message).join('; ')}`);
     return WORKER_EXIT.scenarioFailed;
+  }
+  // P-002: a step used a module the profile has no section for. Reported as a configuration error.
+  const missingSection = envelopes.find(
+    (envelope) => envelope.testStepFinished?.testStepResult.exception?.type === MISSING_SECTION_ERROR,
+  )?.testStepFinished?.testStepResult.exception;
+  if (missingSection) {
+    console.error(`${ENGINE_ERROR_PREFIX}${missingSection.message ?? MISSING_SECTION_ERROR}`);
+    return WORKER_EXIT.configurationError;
   }
   return success ? WORKER_EXIT.success : WORKER_EXIT.scenarioFailed;
 }
