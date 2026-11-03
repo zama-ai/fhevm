@@ -11,6 +11,7 @@ import { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from 
 import type { ContractRunner } from 'ethers';
 import { createRequire } from 'node:module';
 
+import { relayerBaseUrl } from '../../../config/profiles/profile.js';
 import type { ResolvedContractsSection, ResolvedRelayerSection } from '../../../config/profiles/types.js';
 
 /** Version of the installed `@fhevm/sdk` package, for the evidence. */
@@ -131,9 +132,6 @@ export interface CreateOptions {
   /** Replaces the SDK (unit tests). */
   sdk?: SdkBindings;
 }
-
-/** The SDK takes the relayer base URL; profiles give it with the API version, as the e2e suite does. */
-export const relayerBaseUrl = (url: string): string => url.replace(/\/v[12]\/?$/, '');
 
 /** Where the SDK logger writes: the client created last (one profile per process). */
 let logSink: ((message: string) => void) | undefined;

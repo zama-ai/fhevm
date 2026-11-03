@@ -316,7 +316,7 @@ function resolveRelayer(
     problems,
   );
 
-  if (url && !isHttpUrl(String(url.value))) problems.push(`spec.relayer.url: must be an http(s) URL`);
+  if (url) problems.push(...relayerUrlProblems(String(url.value), String(apiKey?.value ?? '') !== ''));
   const chainIdValue = chainId ? toChainId(chainId.value) : undefined;
   if (chainId && chainIdValue === undefined) {
     problems.push(`spec.relayer.gateway.chainId: must be a positive integer, got '${String(chainId.value)}'`);
@@ -330,6 +330,39 @@ function resolveRelayer(
     gateway: { chainId: { ...chainId, value: chainIdValue }, decryption, inputVerification },
   };
 }
+
+/**
+ * The URL rules of the SDK, checked here so that a bad URL stops the run before any scenario
+ * instead of failing the first FHE step. The messages never quote the URL (it may be secret).
+ */
+function relayerUrlProblems(url: string, withApiKey: boolean): string[] {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return [`spec.relayer.url: must be an http(s) URL`];
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return [`spec.relayer.url: must be an http(s) URL`];
+  const problems: string[] = [];
+  if (parsed.username !== '' || parsed.password !== '') {
+    problems.push(`spec.relayer.url: must not contain credentials (user:pass@host); use relayer.apiKey`);
+  }
+  if (withApiKey && parsed.protocol === 'http:' && !LOCAL_HOSTS.includes(parsed.hostname)) {
+    problems.push(
+      `spec.relayer.url: must use https when relayer.apiKey is set (the SDK refuses to send a key over http)`,
+    );
+  }
+  return problems;
+}
+
+/** Hosts the SDK accepts over http with an API key. */
+const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+
+/**
+ * The relayer base URL the SDK takes: profiles give the URL with the API version (`/v1`, `/v2`), as
+ * `test-suite.env` and the e2e suite do.
+ */
+export const relayerBaseUrl = (url: string): string => url.replace(/\/v[12]\/?$/, '');
 
 /** Resolves the `contracts` section; every value must be an address. */
 function resolveContracts(
@@ -359,7 +392,9 @@ function resolveAddress(
   if (!resolved) return undefined;
   const value = String(resolved.value);
   if (!isAddress(value)) {
-    problems.push(`${where}: must be a 20-byte hex address (with a valid checksum if mixed-case), got '${value}'`);
+    // A secret value is never quoted (the profile is resolved before any redactor exists).
+    const got = resolved.secret ? '' : `, got '${value}'`;
+    problems.push(`${where}: must be a 20-byte hex address (with a valid checksum if mixed-case)${got}`);
     return undefined;
   }
   return { ...resolved, value };
@@ -458,6 +493,13 @@ export function secretsOf(profile: ResolvedProfile): SecretValue[] {
     // An empty secret means "not set": there is nothing to redact.
     .filter(([, setting]) => setting.secret && String(setting.value) !== '')
     .map(([key, setting]) => ({ key, value: String(setting.value) }));
+  // The SDK is given (and logs) the relayer URL without its API version suffix.
+  const relayerUrl = profile.relayer?.url;
+  if (relayerUrl?.secret) {
+    const base = relayerBaseUrl(relayerUrl.value);
+    if (base !== relayerUrl.value && base.length >= MIN_SECRET_LENGTH)
+      secrets.push({ key: 'relayer.url', value: base });
+  }
   if (profile.chain) {
     const { mnemonic, hdPath, wallets } = profile.chain;
     for (const [role, account] of Object.entries(deriveAccounts(mnemonic.value, hdPath, wallets))) {

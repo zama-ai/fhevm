@@ -80,7 +80,7 @@ describe('Relayer and contracts sections through the CLI', () => {
   it('prints the resolved relayer and contracts sections with the API key redacted', () => {
     const result = runCli(['profiles', '--profile', 'fx-fhe'], {
       profilesDir: FHE_PROFILES,
-      env: { TE_FHE_API_KEY: apiKey },
+      env: { TE_FHE_API_KEY: apiKey, TE_FHE_RELAYER_URL: 'https://relayer.example/v2' },
     });
     assert.equal(result.code, 0, result.stderr);
     assert.match(result.stdout, /Section relayer:/);
@@ -95,7 +95,7 @@ describe('Relayer and contracts sections through the CLI', () => {
     const result = runCli(['dry-run', '--profile', 'fx-fhe'], {
       scenariosDir: FHE_SCENARIOS,
       profilesDir: FHE_PROFILES,
-      env: { TE_FHE_API_KEY: apiKey },
+      env: { TE_FHE_API_KEY: apiKey, TE_FHE_RELAYER_URL: 'https://relayer.example/v2' },
     });
     assert.equal(result.code, 0, result.stdout + result.stderr);
     for (const file of ['report.json', 'evidence.json']) {

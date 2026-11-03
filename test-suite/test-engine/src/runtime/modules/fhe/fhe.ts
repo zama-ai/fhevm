@@ -218,6 +218,7 @@ export class Fhe {
 
   /** Public decryption of handles made publicly decryptable; records `fhe.public-decrypt`. */
   async publicDecrypt(handles: HandleLike[], options: FheCallOptions = {}): Promise<PublicDecryption> {
+    if (handles.length === 0) throw new Error('a public decryption needs at least one handle');
     const hexHandles = handles.map(toHex);
     const data = { handles: hexHandles };
     const label = options.label ?? `public decryption of ${hexHandles.length} handle(s)`;
@@ -263,7 +264,9 @@ export class Fhe {
   ): Promise<ClearValue[]> {
     const contract = await addressOf(parameters.contract);
     const signer = this.account(signerRole);
-    const handles = (parameters.handles ?? [parameters.handle!]).map(toHex);
+    const given = parameters.handles ?? (parameters.handle === undefined ? [] : [parameters.handle]);
+    if (given.length === 0) throw new Error('a decryption needs a handle or a non-empty handles list');
+    const handles = given.map(toHex);
     const permitKind = parameters.permit ?? 'legacy';
     const data: Record<string, unknown> = {
       contract,
@@ -350,19 +353,27 @@ export class Fhe {
   private keyPairOf(client: FheClient, role: string): Promise<TransportKeyPair> {
     let keyPair = this.keyPairs.get(role);
     if (!keyPair) {
-      keyPair = client.generateTransportKeyPair();
-      keyPair.catch(() => this.keyPairs.delete(role));
-      this.keyPairs.set(role, keyPair);
+      const generation = client.generateTransportKeyPair();
+      // Only this generation's entry is dropped on failure, never one that replaced it.
+      generation.catch(() => {
+        if (this.keyPairs.get(role) === generation) this.keyPairs.delete(role);
+      });
+      this.keyPairs.set(role, generation);
+      keyPair = generation;
     }
     return keyPair;
   }
 
   /** The SDK client, created on first use; records `fhe.client`. A failed creation is retried next time. */
   private client(): Promise<FheClient> {
-    this.clientPromise ??= this.createClient().catch((error: unknown) => {
-      this.clientPromise = undefined;
-      throw error;
-    });
+    if (!this.clientPromise) {
+      const creation: Promise<FheClient> = this.createClient().catch((error: unknown) => {
+        // A creation that fails after `destroy()` must not clear the client created since.
+        if (this.clientPromise === creation) this.clientPromise = undefined;
+        throw error;
+      });
+      this.clientPromise = creation;
+    }
     return this.clientPromise;
   }
 
