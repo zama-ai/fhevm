@@ -1,6 +1,6 @@
 # RelayerHttpRequest HTTP-level retry — merged design (r5)
 
-Requirements: `RELAYER-HTTP-RETRY-REQUIREMENTS.md` in this folder — R1–R16 in its §2, S1–S26 in
+Requirements: `requirements-relayer-http-request.md` in this folder — R1–R16 in its §2, S1–S26 in
 its §3 (S18, S19 and the policy part of S22 deferred by R13), the known gaps G1–G9 in its §4.
 Paths relative to `sdk/js-sdk/`. Signatures only, no implementation (R12).
 
