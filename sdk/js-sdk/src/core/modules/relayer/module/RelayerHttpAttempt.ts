@@ -474,7 +474,8 @@ function _assertIsRelayerHttpUserDecryptResult(
   for (let i = 0; i < shares.length; ++i) {
     const item: unknown = shares[i];
     const itemName = `${resultName}.result[${i}]`;
-    assertRecordBytesHexNo0xProperty(item, 'payload', itemName, {});
+    // A share payload is never empty: reject it here, not at a late deserialization failure.
+    assertRecordBytesHexNo0xProperty(item, 'payload', itemName, { minByteLength: 1 });
     assertRecordBytesHexNo0xProperty(item, 'signature', itemName, { byteLength: 65 });
   }
 
@@ -520,7 +521,8 @@ function _assertIsRelayerHttpPublicDecryptResult(
   assertRecordNonNullableProperty(value, 'result', name, {});
   const result: unknown = value.result;
   const resultName = `${name}.result`;
-  assertRecordBytesHexNo0xProperty(result, 'decryptedValue', resultName, {});
+  // A decrypted value is never empty: reject it here, not at a late signature verification failure.
+  assertRecordBytesHexNo0xProperty(result, 'decryptedValue', resultName, { minByteLength: 1 });
   assertRecordBytesHexNo0xArrayProperty(result, 'signatures', resultName, { byteLength: 65 });
   // Success is only returned once the KMS threshold is reached, so at least one signature.
   if (result.signatures.length === 0) {
