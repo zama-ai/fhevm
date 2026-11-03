@@ -2391,6 +2391,48 @@ export const upgradeBootstrappedStack = async (state: State, steps: readonly Upg
   }
 };
 
+/** One operator's runtime services in the operator runbook's order, after its database migration. */
+const COPROCESSOR_OPERATOR_PHASES = [
+  ["tfhe-worker", "zkproof-worker", "sns-worker"],
+  ["host-listener", "host-listener-poller", "host-listener-consumer"],
+  ["gw-listener", "transaction-sender"],
+];
+
+/**
+ * Moves one coprocessor operator to the release `tag` in place, as an operator without Blue/Green does:
+ * its database migration runs to completion while its old services keep running, then each phase of
+ * services restarts on the new images. The other operators keep running their own versions.
+ */
+export const upgradeCoprocessorOperator = async (state: State, index: number, tag: string) => {
+  const instance = state.scenario.kind === "coprocessor-consensus" ? state.scenario.instances[index] : undefined;
+  if (!instance) {
+    throw new PreflightError(`coprocessor operator ${index} needs a coprocessor-consensus stack with that operator`);
+  }
+  instance.source = { mode: "registry", tag };
+  await saveState(state);
+  await generateRuntime(state, stackSpecForState(state));
+
+  const migration = toServiceName("db-migration", index);
+  console.log(`[upgrade] coprocessor operator ${index}: migrating its database to ${tag}`);
+  await composeUp("coprocessor", [migration], { noDeps: true, forceRecreate: true });
+  await waitForContainer(migration, "complete");
+
+  const prefix = toServiceName("", index);
+  const services = serviceNameList(state, "coprocessor").filter((name) => name.startsWith(prefix) && name !== migration);
+  const phased = COPROCESSOR_OPERATOR_PHASES.map((phase) =>
+    phase.map((suffix) => toServiceName(suffix, index)).filter((name) => services.includes(name)),
+  );
+  // Services outside the runbook's phases, such as the consensus detector, restart last.
+  phased.push(services.filter((name) => !phased.flat().includes(name)));
+  for (const phase of phased.filter((names) => names.length)) {
+    console.log(`[upgrade] coprocessor operator ${index}: restarting ${phase.join(", ")} on ${tag}`);
+    await composeUp("coprocessor", phase, { noDeps: true, forceRecreate: true });
+    for (const name of phase) {
+      await waitForContainer(name, "running");
+    }
+  }
+};
+
 type DeferredGreenOperations = {
   composeUp: typeof composeUp;
   generateRuntime: typeof generateRuntime;

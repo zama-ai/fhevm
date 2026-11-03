@@ -318,4 +318,6 @@ export type TestOptions = {
   verbose: boolean;
   noHardhatCompile: boolean;
   parallel?: boolean;
+  /** Extra environment for the test process inside the test-suite container. */
+  env?: Record<string, string>;
 };

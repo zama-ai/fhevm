@@ -1,3 +1,11 @@
+/** The gw-listener's warnings for a drifted ciphertext, as they appear in its JSON logs. */
+export const DRIFT_WARNING = '"message":"Drift detected: observed multiple digest variants for handle"';
+// Peer-submission divergence (DRIFT_WARNING) only flags that submissions differ; it never starts a
+// revert. Auto-recovery is driven solely by the consensus-vs-local mismatch below, which is emitted
+// right where on_drift_detected (the revert trigger) runs. Gating the recovery test on this avoids
+// racing ahead of consensus formation and landing on an empty drift_revert_signal.
+export const DRIFT_CONSENSUS_WARNING = '"message":"Drift detected: local digest does not match consensus"';
+
 export const DRIFT_INSTALL_SQL = `CREATE TABLE IF NOT EXISTS drift_injection_state (
   id BOOLEAN PRIMARY KEY DEFAULT TRUE,
   enabled BOOLEAN NOT NULL,

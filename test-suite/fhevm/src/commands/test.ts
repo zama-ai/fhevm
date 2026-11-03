@@ -16,11 +16,19 @@ import { compatPolicyForState, supportsConnectorHttp, supportsCoprocessorDbState
 import { consumerOnlyHostListeners } from "../host-listener-mode";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
+import { runCoprocessorRollingUpgrade } from "../../rollouts/coprocessor-rolling-upgrade/run";
 import { runKeyMigrationProfile } from "../../rollouts/key-migration-from-v0.14/run";
 import { isDeferredBootstrap } from "../flow/bootstrap";
 import { runKmsContextSwitchProfile } from "./kms-context-switch";
 import { runStackTest } from "./stack";
-import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
+import {
+  DRIFT_CLEANUP_SQL,
+  DRIFT_CONSENSUS_WARNING,
+  DRIFT_INSTALL_SQL,
+  DRIFT_WARNING,
+  parseDriftInstanceIndex,
+  parsePositiveInteger,
+} from "../drift";
 
 import { PreflightError, formatCliError } from "../errors";
 import { runContractTask } from "../flow/contracts";
@@ -58,12 +66,6 @@ import {
 } from "../layout";
 import type { State, TestOptions } from "../types";
 
-const DRIFT_WARNING = '"message":"Drift detected: observed multiple digest variants for handle"';
-// Peer-submission divergence (DRIFT_WARNING) only flags that submissions differ; it never starts a
-// revert. Auto-recovery is driven solely by the consensus-vs-local mismatch below, which is emitted
-// right where on_drift_detected (the revert trigger) runs. Gating the recovery test on this avoids
-// racing ahead of consensus formation and landing on an empty drift_revert_signal.
-const DRIFT_CONSENSUS_WARNING = '"message":"Drift detected: local digest does not match consensus"';
 const DRIFT_HANDLE = /"handle":"0x([0-9a-f]+)"/i;
 const DB_REVERT_CONTAINERS = [
   "host-listener",
@@ -103,6 +105,7 @@ const TEST_PROFILE_NAMES = [
   "ciphertext-drift",
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
+  "coprocessor-rolling-upgrade",
   "heavy",
   "key-migration-from-v0.14",
   "kms-context-switch",
@@ -199,6 +202,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
   "kms-generation-abort":
     "Abort an in-flight keygen and crsgen, prove the contract and every kms-connector retire the requests, then prove the pipeline recovers with a fresh keygen/crsgen to full activation. Disruptive: rotates the active key/CRS — run last or re-up afterwards.",
+  "coprocessor-rolling-upgrade":
+    "Upgrade five 0.13 coprocessor operators to v0.14.5 one at a time without Blue/Green, under erc20-traffic, failing on a wrong balance, a consensus divergence or stall, or a drift warning (requires --scenario three-of-five --lock-file profiles/testnet-before-coprocessor-v0.14.json). Disruptive + single-run: re-up between runs.",
   "key-migration-from-v0.14":
     "Upgrade a 0.14 stack to this branch step by step with checks in between, then migrate the existing key to compressed material and reshare it (requires --scenario key-migration-from-v0.14; the GPU phase needs key-migration-from-v0.14-gpu and RFC029_GPU_IMAGES). Disruptive + single-run: re-up between runs.",
   "kms-context-switch":
@@ -2330,6 +2335,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     if (name === "key-migration-from-v0.14") {
       return runStackTest(name, runKeyMigrationProfile, test);
     }
+    if (name === "coprocessor-rolling-upgrade") {
+      return runStackTest(name, runCoprocessorRollingUpgrade, test);
+    }
     if (name === "blue-green") {
       return runBlueGreenProfile(state, options);
     }
@@ -2598,7 +2606,8 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         if (KEY_BOOTSTRAP_PROFILES.has(name)) {
           await waitForKeyBootstrap(state);
         }
-        const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), `test ${name}`);
+        const env = Object.entries(options.env ?? {}).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
+        const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command], env), `test ${name}`);
         assertMatchedTests(result.stdout + result.stderr, `test ${name}`);
       });
     };

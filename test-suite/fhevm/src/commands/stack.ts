@@ -7,7 +7,7 @@ import type { UpgradeStep } from "../flow/bootstrap";
 import { runContractTask } from "../flow/contracts";
 import { waitForTestSuite } from "../flow/readiness";
 import { composeUp } from "../flow/runtime-compose";
-import { upgradeBootstrappedStack } from "../flow/up-flow";
+import { upgradeBootstrappedStack, upgradeCoprocessorOperator } from "../flow/up-flow";
 import { loadState } from "../state/state";
 import type { State } from "../types";
 import { type RolloutReceipt, startRolloutReceipt } from "./rollout-receipt";
@@ -17,6 +17,8 @@ import type { test } from "./test";
 type StackTestOptions = {
   /** Commit whose Solidity library the fixtures compile against, for a stack on an older host ABI. */
   solidityLibraryRevision?: string;
+  /** Extra environment for the test process, such as the stop file of a background traffic test. */
+  env?: Record<string, string>;
 };
 type ContractTaskOptions = {
   env?: Record<string, string>;
@@ -25,6 +27,8 @@ type ContractTaskOptions = {
 export type Stack = {
   /** Runs the next bootstrap upgrade steps, after checking that the list continues `upgradeOrder`. */
   upgrade(first: UpgradeStep, ...rest: UpgradeStep[]): Promise<void>;
+  /** Moves one coprocessor operator to the release `tag` in place, without Blue/Green. */
+  upgradeCoprocessor(index: number, tag: string): Promise<void>;
   test(profile: string, options?: StackTestOptions): Promise<void>;
   runGatewayContractTask(command: string, options?: ContractTaskOptions): Promise<void>;
   runHostContractTask(command: string, options?: ContractTaskOptions): Promise<void>;
@@ -67,6 +71,10 @@ const createStack = (receipt: RolloutReceipt, runTest: typeof test): Stack => ({
       versions: state.versions.env,
     });
   },
+  async upgradeCoprocessor(index, tag) {
+    await upgradeCoprocessorOperator(await readState(), index, tag);
+    await receipt.record("coprocessor-upgrade", `operator ${index} to ${tag}`, { docker: true });
+  },
   async test(profile, options = {}) {
     console.log("[test-suite] recreate container to load current generated env");
     await composeUp("test-suite", ["test-suite-e2e-debug"], { noDeps: true, forceRecreate: true });
@@ -77,7 +85,13 @@ const createStack = (receipt: RolloutReceipt, runTest: typeof test): Stack => ({
         details: { profile, ...library },
       });
     }
-    await runTest(profile, { network: "staging", verbose: false, noHardhatCompile: true, parallel: false });
+    await runTest(profile, {
+      network: "staging",
+      verbose: false,
+      noHardhatCompile: true,
+      parallel: false,
+      env: options.env,
+    });
     await receipt.record("test", `${profile} passed`);
   },
   async runGatewayContractTask(command, options = {}) {
