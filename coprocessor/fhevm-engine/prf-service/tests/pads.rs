@@ -444,6 +444,22 @@ async fn poll_wakes_a_request_without_notification() {
 }
 
 #[tokio::test]
+async fn poll_wakes_a_request_whose_row_is_deleted() {
+    let (_instance, pool, service, admissions) = test_db().await;
+    let row = path(1, 64);
+    admissions.admit(&row, CONNECTOR).await.unwrap();
+    let (waiter, _cancel, _run) = start_waiter(&pool, &service, Duration::from_millis(100)).await;
+    let wait = start_wait(&waiter, row).await;
+
+    sqlx::query("DELETE FROM pads")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert!(timeout(DEADLINE, wait).await.unwrap().unwrap().is_err());
+}
+
+#[tokio::test]
 async fn failed_poll_does_not_stop_the_waiter() {
     let (_instance, pool, service, admissions) = test_db().await;
     let row = path(1, 64);
