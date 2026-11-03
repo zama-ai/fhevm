@@ -11,6 +11,7 @@ import type {
 } from '../../config/profiles/types.js';
 import type { Redactor } from '../../infrastructure/secrets/redactor.js';
 import { ARTIFACTS, type RunMode, type ScenarioOutcome, type ScenarioRunResult } from '../../model/execution.js';
+import type { PreflightResult } from '../../model/preflight.js';
 import type { DiscoveredScenario } from '../discovery/discovery.js';
 import type { ExecutionPlan, PlanDecision, SelectionFilters } from '../planning/planner.js';
 import { EVIDENCE_FILE, buildEvidence } from './evidence.js';
@@ -80,6 +81,8 @@ export interface RunReport {
     scenariosDir: string;
     profile: ProfileSnapshot;
     gitCommit?: string;
+    /** `run` only: the preflight checks (secrets redacted), or why they were skipped. */
+    preflight?: PreflightResult;
     interrupted: boolean;
   };
   /**
@@ -101,6 +104,7 @@ export interface BuildReportInput {
   profile: ResolvedProfile;
   interrupted: boolean;
   gitCommit?: string;
+  preflight?: PreflightResult;
   outputDir: string;
   scenariosDir: string;
   packageRoot: string;
@@ -202,6 +206,7 @@ export function buildRunReport(input: BuildReportInput): RunReport {
         settings: redactedSettings(profile),
       },
       ...(input.gitCommit ? { gitCommit: input.gitCommit } : {}),
+      ...(input.preflight ? { preflight: input.preflight } : {}),
       interrupted: input.interrupted,
     },
     summary,

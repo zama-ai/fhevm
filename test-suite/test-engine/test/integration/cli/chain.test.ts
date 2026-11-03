@@ -22,7 +22,9 @@ describe('Chain through the engine (no Anvil)', () => {
       profilesDir: CHAIN_PROFILES,
     });
     assert.equal(result.code, 1, result.stdout + result.stderr);
-    assert.equal(scenarioOf(readReport(result.outputDir), 'fixture.chain-on-none').outcome, 'failed');
+    const scenario = scenarioOf(readReport(result.outputDir), 'fixture.chain-on-none');
+    assert.equal(scenario.outcome, 'error', 'P-002 is a configuration error');
+    assert.match(scenario.reason ?? '', /^configuration error \(P-002\): profile 'none' has no chain section/);
     const output = [result.stdout, ...filesBelow(result.outputDir).map((file) => readFileSync(file, 'utf8'))].join(
       '\n',
     );
@@ -67,7 +69,12 @@ describe('Relayer and contracts sections through the CLI', () => {
   it('fails a step that uses the FHE module on a profile without its sections (P-002)', () => {
     const result = runCli(['run', 'fixture.fhe-on-none'], { scenariosDir: FHE_SCENARIOS, profilesDir: FHE_PROFILES });
     assert.equal(result.code, 1, result.stdout + result.stderr);
-    assert.equal(scenarioOf(readReport(result.outputDir), 'fixture.fhe-on-none').outcome, 'failed');
+    const scenario = scenarioOf(readReport(result.outputDir), 'fixture.fhe-on-none');
+    assert.equal(scenario.outcome, 'error', 'P-002 is a configuration error');
+    assert.match(
+      scenario.reason ?? '',
+      /^configuration error \(P-002\): profile 'none' has no chain, relayer, contracts/,
+    );
     assert.match(result.stdout, /profile 'none' has no chain, relayer, contracts sections; declare spec\.targets/);
   });
 

@@ -3,7 +3,7 @@
  *
  *   import { EngineWorld } from '#engine';
  */
-export { EngineWorld, ProfileView, type EngineContext } from '../runtime/world/world.js';
+export { EngineWorld, MissingProfileSectionError, ProfileView, type EngineContext } from '../runtime/world/world.js';
 export { Evidence, type RecordOptions } from '../runtime/world/evidence.js';
 export { EVIDENCE_MEDIA_TYPE, type EvidencePayload } from '../model/evidence.js';
 export type { EngineWorldParameters, ScenarioInfo } from '../model/execution.js';

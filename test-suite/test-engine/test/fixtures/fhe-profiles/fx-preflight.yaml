@@ -1,0 +1,23 @@
+apiVersion: fhevm.zama.ai/profile/v1
+kind: Profile
+metadata:
+  name: fx-preflight
+  description: Fixture profile whose RPC and relayer are the fake environment of the preflight tests.
+spec:
+  envFiles:
+    - ./fx-fhe.env
+  chain:
+    rpcUrl: { env: TE_PF_RPC_URL }
+    chainId: { value: 12345 }
+    mnemonic: { env: TE_FHE_MNEMONIC, secret: true }
+  relayer:
+    url: { env: TE_PF_RELAYER_URL }
+    gateway:
+      chainId: { value: 54321 }
+      decryption: { value: "0x0000000000000000000000000000000000000001" }
+      inputVerification: { value: "0x0000000000000000000000000000000000000002" }
+  contracts:
+    acl: { value: "0x0000000000000000000000000000000000000003" }
+    inputVerifier: { value: "0x0000000000000000000000000000000000000004" }
+    kmsVerifier: { value: "0x0000000000000000000000000000000000000005" }
+    protocolConfig: { value: "0x0000000000000000000000000000000000000006" }

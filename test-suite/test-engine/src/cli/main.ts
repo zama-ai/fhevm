@@ -5,8 +5,9 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { redactedPreflight, runPreflight } from '../boot/preflight.js';
 import { listProfileNames, listProfiles, loadProfile, secretsOf } from '../config/profiles/profile.js';
-import { BUILTIN_PROFILE, ProfileError } from '../config/profiles/types.js';
+import { BUILTIN_PROFILE, ProfileError, type ResolvedProfile } from '../config/profiles/types.js';
 import {
   DEFAULT_PROFILES_DIR,
   DEFAULT_REPORTS_DIR,
@@ -15,11 +16,13 @@ import {
   PACKAGE_ROOT,
   readEngineVersion,
 } from '../infrastructure/paths.js';
-import { createRedactor } from '../infrastructure/secrets/redactor.js';
+import { type Redactor, createRedactor } from '../infrastructure/secrets/redactor.js';
 import type { RunMode } from '../model/execution.js';
+import type { PreflightResult } from '../model/preflight.js';
 import { type DiscoveryResult, discoverScenarios } from '../orchestration/discovery/discovery.js';
 import { executePlan } from '../orchestration/execution/orchestrator.js';
 import {
+  type ExecutionPlan,
   PlanError,
   type SelectionFilters,
   checkConfirmation,
@@ -31,6 +34,7 @@ import { buildRunReport, writeRunReport } from '../orchestration/reporting/repor
 import {
   printDiscoveryErrors,
   printPlan,
+  printPreflight,
   printProfileErrors,
   printProfileList,
   printProfileSettings,
@@ -68,6 +72,7 @@ Options:
       --scenarios-dir <dir>  Directory scanned for scenario.yaml files (default: <package>/scenarios)
       --profiles-dir <dir>   Directory holding <profile>.yaml files (default: <package>/profiles)
   -o, --output-dir <dir>     Run output directory (default: <package>/reports/<run-id>)
+      --no-preflight         run: skip the checks of the RPC, relayer and FHE key made before any scenario
       --json                 list: print JSON instead of a table
   -v, --version              Print the engine version
 
@@ -150,7 +155,26 @@ function commandProfiles(options: CommonOptions, profileGiven: boolean): number 
   return EXIT.success;
 }
 
-async function commandRun(mode: RunMode, options: CommonOptions, outputDirOption: string | undefined): Promise<number> {
+/** `run` only: the preflight result to record, or `undefined` in `dry-run` (which never connects). */
+async function preflightFor(
+  mode: RunMode,
+  plan: ExecutionPlan,
+  profile: ResolvedProfile,
+  redactor: Redactor,
+  skip: boolean,
+): Promise<PreflightResult | undefined> {
+  if (mode !== 'run') return undefined;
+  if (skip) return { status: 'skipped', reason: '--no-preflight', checks: [] };
+  if (!hasRunnableItems(plan)) return { status: 'skipped', reason: 'no scenario to run', checks: [] };
+  return redactedPreflight(await runPreflight(profile), redactor);
+}
+
+async function commandRun(
+  mode: RunMode,
+  options: CommonOptions,
+  outputDirOption: string | undefined,
+  skipPreflight: boolean,
+): Promise<number> {
   const discovery = await discover(options);
   if (discovery.errors.length > 0) {
     printDiscoveryErrors(discovery.errors);
@@ -163,10 +187,18 @@ async function commandRun(mode: RunMode, options: CommonOptions, outputDirOption
   const redactor = createRedactor(secretsOf(profile));
 
   const startedAt = new Date();
+  printPlan(plan, mode);
+  // Before any scenario: an environment that does not answer is a configuration error (exit 2).
+  const preflight = await preflightFor(mode, plan, profile, redactor, skipPreflight);
+  if (preflight) printPreflight(preflight);
+  if (preflight?.status === 'failed') {
+    console.error(`\ntest-engine: preflight failed; no scenario was run (--no-preflight skips the checks).`);
+    return EXIT.usage;
+  }
+
   const runId = createRunId(mode, startedAt);
   const outputDir = path.resolve(outputDirOption ?? path.join(DEFAULT_REPORTS_DIR, runId));
   mkdirSync(outputDir, { recursive: true });
-  printPlan(plan, mode);
 
   const abort = new AbortController();
   const onSignal = () => abort.abort();
@@ -200,6 +232,7 @@ async function commandRun(mode: RunMode, options: CommonOptions, outputDirOption
     profile,
     interrupted: abort.signal.aborted,
     ...(gitCommit ? { gitCommit } : {}),
+    ...(preflight ? { preflight } : {}),
     outputDir,
     scenariosDir: options.scenariosDir,
     packageRoot: PACKAGE_ROOT,
@@ -226,6 +259,7 @@ async function main(argv: string[]): Promise<number> {
       'profiles-dir': { type: 'string' },
       'output-dir': { type: 'string', short: 'o' },
       json: { type: 'boolean', default: false },
+      'no-preflight': { type: 'boolean', default: false },
       version: { type: 'boolean', short: 'v', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
@@ -251,6 +285,9 @@ async function main(argv: string[]): Promise<number> {
   if (options.confirm !== undefined && command !== 'run' && command !== 'dry-run') {
     throw new UsageError(`--confirm is only accepted by 'run' and 'dry-run'`);
   }
+  if (values['no-preflight'] && command !== 'run') {
+    throw new UsageError(`--no-preflight is only accepted by 'run' (the other commands never connect)`);
+  }
 
   switch (command) {
     case 'list':
@@ -259,7 +296,7 @@ async function main(argv: string[]): Promise<number> {
       return commandProfiles(options, values.profile !== undefined);
     case 'run':
     case 'dry-run':
-      return commandRun(command, options, values['output-dir']);
+      return commandRun(command, options, values['output-dir'], values['no-preflight']);
     default:
       throw new UsageError(`Unknown command '${command}'.`);
   }

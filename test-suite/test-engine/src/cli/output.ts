@@ -10,6 +10,7 @@ import {
   type ResolvedSetting,
 } from '../config/profiles/types.js';
 import type { RunMode, ScenarioOutcome } from '../model/execution.js';
+import type { PreflightResult } from '../model/preflight.js';
 import type { DiscoveredScenario } from '../orchestration/discovery/discovery.js';
 import type { ExecutionPlan } from '../orchestration/planning/planner.js';
 import type { ReportFiles, RunReport, ScenarioReport } from '../orchestration/reporting/report.js';
@@ -167,6 +168,25 @@ export function printPlan(plan: ExecutionPlan, mode: RunMode): void {
   );
 }
 
+/** Prints the preflight checks (already redacted). */
+export function printPreflight(result: PreflightResult): void {
+  if (result.status === 'skipped') {
+    console.log(`\nPreflight skipped: ${result.reason}.`);
+    return;
+  }
+  console.log(`\nPreflight (${result.status}):`);
+  printTable(
+    ['CHECK', 'STATUS', 'DURATION', 'TARGET', 'DETAIL'],
+    result.checks.map((check) => [
+      check.name,
+      check.status,
+      check.status === 'skipped' ? '-' : `${check.durationMs}ms`,
+      check.target,
+      check.detail ?? '',
+    ]),
+  );
+}
+
 export function printScenarioHeader(scenario: DiscoveredScenario, plan: ExecutionPlan, mode: RunMode): void {
   const item = plan.items.find((candidate) => candidate.scenario === scenario);
   if (item?.decision.action !== 'run') return;
@@ -199,7 +219,10 @@ export function printRunSummary(report: RunReport, files: ReportFiles, runnable:
   printTable(
     ['ID', 'OUTCOME', 'DURATION', 'DETAILS'],
     report.scenarios.map((scenario) => {
-      const details = [scenario.reason, firstStepFailure(scenario), ...new Set(scenario.cucumber?.issues ?? [])]
+      // A reason that already carries the step's error (P-002) is not repeated by the step failure.
+      const failure = firstStepFailure(scenario);
+      const repeated = failure && scenario.reason && failure.includes(scenario.reason.replace(/^[^:]*:\s*/, ''));
+      const details = [scenario.reason, repeated ? undefined : failure, ...new Set(scenario.cucumber?.issues ?? [])]
         .filter(Boolean)
         .join(' | ');
       return [
