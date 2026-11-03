@@ -77,7 +77,8 @@ export function createRelayerHttpSignal(
     release();
   };
 
-  const timeoutId = timeoutMs === undefined ? undefined : setTimeout(onTimeout, timeoutMs);
+  // Already aborted (by the caller): our signal is dead from the start, so no timer is armed.
+  const timeoutId = timeoutMs === undefined || controller.signal.aborted ? undefined : setTimeout(onTimeout, timeoutMs);
 
   // Once aborted, the timer and the caller listener are useless: release them now,
   // so a fetch that ignores the signal and never settles cannot keep them alive. Idempotent.

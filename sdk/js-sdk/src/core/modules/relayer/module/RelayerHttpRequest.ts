@@ -90,6 +90,17 @@ export class RelayerHttpRequest<O extends RelayerHttpOperation> {
     }
     this._hasRun = true;
 
+    // A caller signal already aborted: stop now, before arming a timer or building the request.
+    if (this._signal !== undefined) {
+      throwIfRelayerHttpAborted({
+        signal: this._signal,
+        timedOutAfterMs: () => undefined,
+        url: this._url,
+        logger: this._logger,
+        during: ' before the request was sent',
+      });
+    }
+
     // -------------------------------------------------------------------------
     // 2. Combine the caller's signal with options.timeout
     // -------------------------------------------------------------------------
