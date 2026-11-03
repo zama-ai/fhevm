@@ -25,6 +25,7 @@ import {
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
   supportsConnectorHttp,
+  supportsCoprocessorProxy,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
   supportsUpgradeController,
@@ -451,6 +452,21 @@ describe("compat", () => {
     // Unparsed main sha tags are published by CI and count as modern.
     expect(supportsConsensusDetector(stateFor({ COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "02f6cc0" }))).toBe(true);
     expect(supportsUpgradeController(stateFor({ COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "02f6cc0" }))).toBe(true);
+  });
+
+  test("enables coprocessor-proxy only when its image is pinned or locally built", () => {
+    const stateFor = (env: Record<string, string>, overrides: LocalOverride[] = []) => ({
+      versions: { target: "latest-main" as const, lockName: "latest-main.json", env, sources: [] },
+      overrides,
+    });
+    // Pinned profiles and shas that predate the proxy image omit the (optional) key.
+    expect(supportsCoprocessorProxy(stateFor({}))).toBe(false);
+    expect(supportsCoprocessorProxy(stateFor({ COPROCESSOR_PROXY_VERSION: "02f6cc0" }))).toBe(true);
+    // A coprocessor override builds the proxy from the working tree when it covers the proxy.
+    expect(supportsCoprocessorProxy(stateFor({}, [{ group: "coprocessor" }]))).toBe(true);
+    expect(supportsCoprocessorProxy(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-proxy"] }]))).toBe(true);
+    expect(supportsCoprocessorProxy(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-tfhe-worker"] }]))).toBe(false);
+    expect(supportsCoprocessorProxy(stateFor({}, [{ group: "kms-connector" }]))).toBe(false);
   });
 
   test("enables the kms-connector HTTP path only when both the endpoint and proxy images are pinned or locally built", () => {
