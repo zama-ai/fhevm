@@ -51,14 +51,14 @@ npx hardhat task:buildProposeCoprocessorUpgradeCalldata \
   --software-version v0.15.0
 ```
 
-| Flag                 | Value                                                                                                                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--environment`      | `devnet`, `testnet`, or `mainnet`.                                                                                                                                                                      |
-| `--start-time`       | ISO 8601 with an explicit time zone, `Z` or an offset: `2026-07-01T12:00:00Z` or `2026-07-01T14:00:00+02:00` (the same instant).                                                                        |
-| `--duration`         | Window length, e.g. `30m`. At least the floor of every chain in the environment (`30m` where Ethereum, Sepolia or Hoodi is included): the dry run cannot start before the chain finalizes `startBlock`. |
-| `--buffer`           | DAO lead time, e.g. `2h`.                                                                                                                                                                               |
-| `--proposal-id`      | Any positive integer never used before on this `ProtocolConfig` (completed and aborted ids stay reserved on the coprocessors).                                                                          |
-| `--software-version` | The coprocessor release tag, `vMAJOR.MINOR.PATCH`, e.g. `v0.15.0`. Must match the green binaries' `STACK_VERSION`.                                                                                      |
+| Flag                 | Value                                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--environment`      | `devnet`, `testnet`, or `mainnet`.                                                                                                                                                               |
+| `--start-time`       | ISO 8601 with an explicit time zone, `Z` or an offset: `2026-07-01T12:00:00Z` or `2026-07-01T14:00:00+02:00` (the same instant).                                                                 |
+| `--duration`         | Window length, e.g. `30m`. At least the floor of every chain in the environment (`30m` where Ethereum or Sepolia is included): the dry run cannot start before the chain finalizes `startBlock`. |
+| `--buffer`           | DAO lead time, e.g. `2h`.                                                                                                                                                                        |
+| `--proposal-id`      | Any positive integer never used before on this `ProtocolConfig` (completed and aborted ids stay reserved on the coprocessors).                                                                   |
+| `--software-version` | The coprocessor release tag, `vMAJOR.MINOR.PATCH`, e.g. `v0.15.0`. Must match the green binaries' `STACK_VERSION`.                                                                               |
 
 ## Step 2 — Copy the proposal action
 
