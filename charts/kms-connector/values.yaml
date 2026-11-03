@@ -223,6 +223,9 @@ kmsConnectorKmsWorker:
       - url: "$(KMS_CONNECTOR_POLYGON_URL)"
         chainId: "$(KMS_CONNECTOR_POLYGON_CHAIN_ID)"
         aclAddress: "$(KMS_CONNECTOR_POLYGON_ACL_ADDRESS)"
+      - url: "$(KMS_CONNECTOR_BNB_TESTNET_URL)"
+        chainId: "$(KMS_CONNECTOR_BNB_TESTNET_CHAIN_ID)"
+        aclAddress: "$(KMS_CONNECTOR_BNB_TESTNET_ACL_ADDRESS)"
 
     # Override commonConfig.gatewayUrl if needed
     # gatewayUrl:
