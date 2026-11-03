@@ -4,7 +4,7 @@ use alloy::primitives::{Address, B256};
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation, PrfOutputRef};
 use common::GRANTS;
 use prf_service::{
-    pads::{read, Admission, Admissions, PadOutput, PadState},
+    pads::{read, read_body, Admission, Admissions, PadOutput, PadState},
     waiter::{PadWaiter, PAD_READY},
 };
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -95,8 +95,9 @@ fn path(label: u8, pad_length: u16) -> PrfOutputRef {
     }
 }
 
-async fn set_output(pool: &PgPool, path: &PrfOutputRef, output: &PadOutput) {
-    let attestation = &output.attestation;
+/// Completes the row with `output(byte)` and a body of 32 `byte`s.
+async fn set_output(pool: &PgPool, path: &PrfOutputRef, byte: u8) {
+    let attestation = &output(byte).attestation;
     sqlx::query(
         "UPDATE pads SET ciphertext128 = $4, ciphertext_digest = $5, sns_ciphertext_digest = $6,
                 signer = $7, signature = $8
@@ -105,7 +106,7 @@ async fn set_output(pool: &PgPool, path: &PrfOutputRef, output: &PadOutput) {
     .bind(i32::from(path.prf_id))
     .bind(path.label.as_slice())
     .bind(i32::from(path.pad_length))
-    .bind(&output.ciphertext128)
+    .bind(vec![byte; 32])
     .bind(attestation.ciphertext_digest.as_slice())
     .bind(attestation.sns_ciphertext_digest.as_slice())
     .bind(attestation.signer.as_slice())
@@ -289,11 +290,12 @@ async fn complete_row_gives_the_output() {
         Admission::Created
     );
 
-    let output = output(1);
-    set_output(&pool, &path, &output).await;
+    assert_eq!(read_body(&pool, &path).await.unwrap(), None);
+    set_output(&pool, &path, 1).await;
 
-    let complete = PadState::Complete(output);
+    let complete = PadState::Complete(output(1));
     assert_eq!(read(&pool, &path).await.unwrap(), Some(complete.clone()));
+    assert_eq!(read_body(&pool, &path).await.unwrap(), Some(vec![1; 32]));
     assert_eq!(
         admissions.admit(&path, OTHER_CONNECTOR).await.unwrap(),
         Admission::Existing(complete)
@@ -324,7 +326,7 @@ async fn table_refuses_a_pad_length_above_the_max() {
 /// A different byte in each field, so a test finds two swapped columns.
 fn output(byte: u8) -> PadOutput {
     PadOutput {
-        ciphertext128: vec![byte; 32],
+        body_length: 32,
         attestation: PrfOutputAttestation {
             version: Version::V1,
             ciphertext_digest: B256::repeat_byte(byte + 1),
@@ -412,7 +414,7 @@ async fn trigger_wakes_the_request_of_each_row() {
     // A bad payload wakes nobody.
     notify(&pool, "not a row").await;
     // The trigger sends `pad_ready`.
-    set_output(&pool, &short, &output(1)).await;
+    set_output(&pool, &short, 1).await;
     assert_eq!(finished(short_wait).await, PadState::Complete(output(1)));
     assert!(!long_wait.is_finished());
 
@@ -436,7 +438,7 @@ async fn poll_wakes_a_request_without_notification() {
         .execute(&pool)
         .await
         .unwrap();
-    set_output(&pool, &row, &output(1)).await;
+    set_output(&pool, &row, 1).await;
 
     assert_eq!(finished(wait).await, PadState::Complete(output(1)));
 }
@@ -461,7 +463,7 @@ async fn failed_poll_does_not_stop_the_waiter() {
         .await
         .unwrap();
 
-    set_output(&pool, &row, &output(1)).await;
+    set_output(&pool, &row, 1).await;
     notify(&pool, &payload(&row)).await;
     assert_eq!(finished(wait).await, PadState::Complete(output(1)));
 }
@@ -479,7 +481,7 @@ async fn waiter_reads_the_rows_after_a_lost_connection() {
         .execute(&pool)
         .await
         .unwrap();
-    set_output(&pool, &row, &output(1)).await;
+    set_output(&pool, &row, 1).await;
     sqlx::query(
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE 'LISTEN%'",
     )

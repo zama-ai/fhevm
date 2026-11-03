@@ -3,21 +3,31 @@ use crate::{
     in_flight::InFlight,
     instance,
     metrics::REQUESTS_COUNTER,
-    pads::{Admission, Admissions, PadOutput, PadState},
+    pads::{self, Admission, Admissions, PadState},
     waiter::PadWaiter,
 };
 use actix_web::{
+    body::{BodySize, MessageBody},
     dev::Server,
     http::{
         header::{ContentType, ALLOW, CACHE_CONTROL},
         Method,
     },
-    web, App, HttpRequest, HttpResponse, HttpServer, ResponseError,
+    web::{self, Bytes},
+    App, HttpRequest, HttpResponse, HttpServer, ResponseError,
 };
 use alloy::primitives::Address;
 use anyhow::anyhow;
 use ciphertext_attestation::{prf::PRF_ATTESTATION_HEADER, PrfOutputRef};
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use sqlx::PgPool;
+use std::{
+    convert::Infallible,
+    net::SocketAddr,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
@@ -29,6 +39,7 @@ const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 const KEEP_ALIVE: Duration = Duration::from_secs(15);
 
 pub(crate) struct AppState {
+    pub pool: PgPool,
     pub in_flight: InFlight,
     pub admissions: Admissions,
     pub waiter: Arc<PadWaiter>,
@@ -62,23 +73,16 @@ async fn prf_output(req: HttpRequest, state: web::Data<AppState>) -> HttpRespons
             .insert_header((CACHE_CONTROL, NO_STORE))
             .finish();
     }
-    let response = match serve(&req, &state).await {
-        Ok(output) => HttpResponse::Ok()
-            .content_type(ContentType::octet_stream())
-            .insert_header((
-                PRF_ATTESTATION_HEADER,
-                serde_json::to_string(&output.attestation).expect("attestation serializes"),
-            ))
-            .body(output.ciphertext128),
-        Err(e) => e.error_response(),
-    };
+    let response = serve(&req, &state)
+        .await
+        .unwrap_or_else(|e| e.error_response());
     REQUESTS_COUNTER
         .with_label_values(&[req.method().as_str(), response.status().as_str()])
         .inc();
     response
 }
 
-async fn serve(req: &HttpRequest, state: &AppState) -> Result<PadOutput, PrfError> {
+async fn serve(req: &HttpRequest, state: &AppState) -> Result<HttpResponse, PrfError> {
     let connector = signer(req)?;
     // The proxy also refuses a query string. This check is for a request that did not pass the proxy.
     if req.uri().query().is_some() {
@@ -105,11 +109,46 @@ async fn serve(req: &HttpRequest, state: &AppState) -> Result<PadOutput, PrfErro
         }
         Admission::Existing(pad) => pad,
     };
-    match pad {
-        PadState::Complete(output) => Ok(output),
-        PadState::Failed => Err(PrfError::EvaluationFailed),
+    let output = match pad {
+        PadState::Complete(output) => output,
+        PadState::Failed => return Err(PrfError::EvaluationFailed),
         // `wait` returns only a complete or failed row.
-        PadState::Pending => Err(PrfError::Unavailable),
+        PadState::Pending => return Err(PrfError::Unavailable),
+    };
+
+    let mut response = HttpResponse::Ok();
+    response
+        .content_type(ContentType::octet_stream())
+        .insert_header((
+            PRF_ATTESTATION_HEADER,
+            serde_json::to_string(&output.attestation).expect("attestation serializes"),
+        ));
+    if req.method() == Method::HEAD {
+        return Ok(response.body(HeadBody(output.body_length)));
+    }
+    // No body: the row was deleted after the read.
+    let body = pads::read_body(&state.pool, &path)
+        .await
+        .map_err(unavailable)?
+        .ok_or(PrfError::Unavailable)?;
+    Ok(response.body(body))
+}
+
+/// A `HEAD` body: the `Content-Length` of the `GET` body, and no bytes.
+struct HeadBody(u64);
+
+impl MessageBody for HeadBody {
+    type Error = Infallible;
+
+    fn size(&self) -> BodySize {
+        BodySize::Sized(self.0)
+    }
+
+    fn poll_next(
+        self: Pin<&mut Self>,
+        _: &mut Context<'_>,
+    ) -> Poll<Option<Result<Bytes, Self::Error>>> {
+        Poll::Ready(None)
     }
 }
 

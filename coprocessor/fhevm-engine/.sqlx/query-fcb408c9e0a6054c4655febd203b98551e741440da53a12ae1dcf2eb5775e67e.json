@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ciphertext128\n           FROM pads\n          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "fcb408c9e0a6054c4655febd203b98551e741440da53a12ae1dcf2eb5775e67e"
+}
