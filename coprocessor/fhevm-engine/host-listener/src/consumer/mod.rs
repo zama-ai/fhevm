@@ -586,7 +586,9 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             payload.flow,
             BlockFlow::Catchup | BlockFlow::FinalCatchup
         );
-        if !is_catchup {
+        // Other flows can continue while LIVE is stalled; they must not
+        // refresh the heartbeat used to detect that stalled subscription.
+        if payload.flow == BlockFlow::Live {
             blockchain_tick.update();
         }
         set_received_block(&chain_id_str, payload.flow, payload.block_number);
