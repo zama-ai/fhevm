@@ -1,4 +1,4 @@
-# Relayer module tests
+# Relayer http request module tests
 
 This folder holds the unit tests of the relayer module. Most of them cover `RelayerHttpRequest`,
 the client for relayer-http's synchronous routes (`POST /v4/user-decrypt`, `/v4/public-decrypt`).
@@ -94,12 +94,12 @@ the information a caller needs.
 
 **Examples:**
 
-| Alice… | Then… | Alice should get… |
-|---|---|---|
-| asks to decrypt a value | the relayer answers 200 with a valid body | the decrypted result |
+| Alice…                  | Then…                                               | Alice should get…                                       |
+| ----------------------- | --------------------------------------------------- | ------------------------------------------------------- |
+| asks to decrypt a value | the relayer answers 200 with a valid body           | the decrypted result                                    |
 | asks to decrypt a value | the relayer answers 403 `{ code: "acl_denied", … }` | a `RelayerHttpResponseError` with `code = "acl_denied"` |
-| asks to decrypt a value | a proxy answers 502 with an HTML page | a `RelayerHttpUnexpectedResponseError` |
-| asks to decrypt a value | the relayer answers 200 with a 20 MB body | a `RelayerHttpFetchError`, and the body is never parsed |
+| asks to decrypt a value | a proxy answers 502 with an HTML page               | a `RelayerHttpUnexpectedResponseError`                  |
+| asks to decrypt a value | the relayer answers 200 with a 20 MB body           | a `RelayerHttpFetchError`, and the body is never parsed |
 
 **Files:** `errors`, `attempt`, `userDecrypt`, `publicDecrypt`, and `blackbox` › security ›
 "relayer-http error body recognition" and "body size limit".
@@ -125,13 +125,13 @@ the information a caller needs.
 
 **Examples:** Alice starts a request with `timeout: 5000` and her own signal; the relayer is slow.
 
-| Alice… | Then… | Alice should get… |
-|---|---|---|
-| clicks "Cancel" after 1 s with reason `"user left"` | — | exactly `"user left"` |
-| waits | 5 s pass | a `RelayerHttpTimeoutError` |
-| cancels just after the answer arrived, before `run()` returned | — | `"user left"`, not the result |
-| cancels after `run()` returned | — | the result she already has, unchanged |
-| uses her own `AbortSignal.timeout(1000)` | 1 s passes | her own `TimeoutError`, not a `RelayerHttpTimeoutError` |
+| Alice…                                                         | Then…      | Alice should get…                                       |
+| -------------------------------------------------------------- | ---------- | ------------------------------------------------------- |
+| clicks "Cancel" after 1 s with reason `"user left"`            | —          | exactly `"user left"`                                   |
+| waits                                                          | 5 s pass   | a `RelayerHttpTimeoutError`                             |
+| cancels just after the answer arrived, before `run()` returned | —          | `"user left"`, not the result                           |
+| cancels after `run()` returned                                 | —          | the result she already has, unchanged                   |
+| uses her own `AbortSignal.timeout(1000)`                       | 1 s passes | her own `TimeoutError`, not a `RelayerHttpTimeoutError` |
 
 **Files:** `combinedSignal`, `signal`, `phases`, `blackbox` › abort, `blackbox.abortWins` › abort.
 
@@ -152,12 +152,12 @@ the information a caller needs.
 
 **Examples:** Alice uses a subclass that retries "overloaded" errors after 1 s.
 
-| Alice… | Then… | Alice should get… |
-|---|---|---|
-| sends a request | the relayer answers 503 "overloaded", then 200 | the result, after exactly 2 calls |
-| sends a request | the relayer keeps answering 503 | the last `RelayerHttpResponseError`, after at most 5 calls |
-| sends a request with `timeout: 1500` | the relayer answers 503 after 1 s | the error at once: a 1 s wait would end past her timeout |
-| uses the base class (no subclass) | the relayer answers 503 | the error after 1 call: no retry |
+| Alice…                               | Then…                                          | Alice should get…                                          |
+| ------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------- |
+| sends a request                      | the relayer answers 503 "overloaded", then 200 | the result, after exactly 2 calls                          |
+| sends a request                      | the relayer keeps answering 503                | the last `RelayerHttpResponseError`, after at most 5 calls |
+| sends a request with `timeout: 1500` | the relayer answers 503 after 1 s              | the error at once: a 1 s wait would end past her timeout   |
+| uses the base class (no subclass)    | the relayer answers 503                        | the error after 1 call: no retry                           |
 
 **Files:** `retry`, `retryLoop`, `blackbox` › retry.
 
@@ -195,13 +195,13 @@ Two cases go further:
 
 **Examples:**
 
-| Alice… | Then… | Alice should see… |
-|---|---|---|
-| sends many requests with one page-wide signal | they succeed, fail or get cancelled | no SDK listener left on her signal, no SDK timer pending |
-| sends a request with `timeout: 60000` | it succeeds after 1 s | no timer left running for the other 59 s |
-| sends a request through a broken `fetch` that never answers | our timeout fires | the timer and listener freed at once (`run()` stays pending, by design) |
-| sends a request that succeeds, with her own signal | her signal never aborts | the SDK's listener removed anyway, with the same handler it added |
-| stores every error in her error tracker | a proxy answers with 10 MB HTML pages | each stored error holds a 500-character copy, not the 10 MB page |
+| Alice…                                                      | Then…                                 | Alice should see…                                                       |
+| ----------------------------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------- |
+| sends many requests with one page-wide signal               | they succeed, fail or get cancelled   | no SDK listener left on her signal, no SDK timer pending                |
+| sends a request with `timeout: 60000`                       | it succeeds after 1 s                 | no timer left running for the other 59 s                                |
+| sends a request through a broken `fetch` that never answers | our timeout fires                     | the timer and listener freed at once (`run()` stays pending, by design) |
+| sends a request that succeeds, with her own signal          | her signal never aborts               | the SDK's listener removed anyway, with the same handler it added       |
+| stores every error in her error tracker                     | a proxy answers with 10 MB HTML pages | each stored error holds a 500-character copy, not the 10 MB page        |
 
 **Files:** `leaks`, `signal` › "external signal cleanup", `combinedSignal` › cleanup and
 "release on abort", `blackbox` › leaks, `blackbox.abortWins` › leaks.
@@ -220,11 +220,11 @@ gated promises, hooks and fake timers:
 
 **Examples:** Alice sets `timeout: 500` and also cancels her own signal at exactly 500 ms.
 
-| First to fire at 500 ms | Then… | Alice should get… |
-|---|---|---|
-| Alice's cancel | our timer fires right after | her own reason |
-| our timer | Alice's cancel lands right after | a `RelayerHttpTimeoutError` |
-| either | the response arrives right after | the abort, never the result and never a mix |
+| First to fire at 500 ms | Then…                            | Alice should get…                           |
+| ----------------------- | -------------------------------- | ------------------------------------------- |
+| Alice's cancel          | our timer fires right after      | her own reason                              |
+| our timer               | Alice's cancel lands right after | a `RelayerHttpTimeoutError`                 |
+| either                  | the response arrives right after | the abort, never the result and never a mix |
 
 **Files:** `blackbox` › races, `blackbox.abortWins` › races, `phases` › "caller abort vs our timer
 at the same instant".
@@ -241,12 +241,12 @@ at the same instant".
 
 **Examples:** Alice and Bob start two requests that share Alice's signal.
 
-| Who… | Then… | Should get… |
-|---|---|---|
-| Bob's request finishes, then Alice cancels | — | Alice: her reason. Bob: his result, unchanged |
-| both are still running, Alice cancels | — | both: Alice's reason |
-| Alice calls `run()` twice on the same object | — | the second call: an error asking for a new instance |
-| Alice's retry hook cancels her own signal | — | Alice: her reason, and no second call to the relayer |
+| Who…                                         | Then… | Should get…                                          |
+| -------------------------------------------- | ----- | ---------------------------------------------------- |
+| Bob's request finishes, then Alice cancels   | —     | Alice: her reason. Bob: his result, unchanged        |
+| both are still running, Alice cancels        | —     | both: Alice's reason                                 |
+| Alice calls `run()` twice on the same object | —     | the second call: an error asking for a new instance  |
+| Alice's retry hook cancels her own signal    | —     | Alice: her reason, and no second call to the relayer |
 
 **Files:** `reentrancy`, `blackbox` › reentrancy, `blackbox.abortWins` › reentrancy.
 
@@ -263,12 +263,12 @@ at the same instant".
 
 **Examples:**
 
-| Alice… | Then… | Alice should get… |
-|---|---|---|
-| sends a request with an API key | the relayer answers with an error | an error and log lines that never contain her key |
-| uses an auth token containing a line break | — | an error at once, and nothing sent to the relayer |
-| sends a payload containing a `BigInt` | — | an error at once, and nothing sent to the relayer |
-| sends a request | something answers 503 with a look-alike error body (no `requestId`) | a `RelayerHttpUnexpectedResponseError`, never retried |
+| Alice…                                     | Then…                                                               | Alice should get…                                     |
+| ------------------------------------------ | ------------------------------------------------------------------- | ----------------------------------------------------- |
+| sends a request with an API key            | the relayer answers with an error                                   | an error and log lines that never contain her key     |
+| uses an auth token containing a line break | —                                                                   | an error at once, and nothing sent to the relayer     |
+| sends a payload containing a `BigInt`      | —                                                                   | an error at once, and nothing sent to the relayer     |
+| sends a request                            | something answers 503 with a look-alike error body (no `requestId`) | a `RelayerHttpUnexpectedResponseError`, never retried |
 
 **Files:** `blackbox` › security, plus `attempt` › "request shape".
 
@@ -287,35 +287,35 @@ These files test the helpers used by both relayer clients.
 
 **Examples:** Alice sits behind a proxy that strips custom headers.
 
-| Alice… | Then… | Alice should get… |
-|---|---|---|
-| passes her API key in `options.query` | — | the key added to the URL, correctly encoded |
-| configures `ftp://relayer.example` as the base URL | — | an error before any request |
-| sends a request | the edge (Cloudflare, Kong) answers 403 `{ message: "invalid api key" }` | "invalid api key" in the error, not a generic "HTTP error 403" |
-| sends a request | the edge answers 403 with a plain-text body | the generic message: nothing to extract |
+| Alice…                                             | Then…                                                                    | Alice should get…                                              |
+| -------------------------------------------------- | ------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| passes her API key in `options.query`              | —                                                                        | the key added to the URL, correctly encoded                    |
+| configures `ftp://relayer.example` as the base URL | —                                                                        | an error before any request                                    |
+| sends a request                                    | the edge (Cloudflare, Kong) answers 403 `{ message: "invalid api key" }` | "invalid api key" in the error, not a generic "HTTP error 403" |
+| sends a request                                    | the edge answers 403 with a plain-text body                              | the generic message: nothing to extract                        |
 
 ## 5. File index
 
-| File | Family | Kind |
-|---|---|---|
-| `RelayerHttpRequest.attempt` | Responses and errors, request shape | Implementation-aware |
-| `RelayerHttpRequest.blackbox` | All families | Black-box |
-| `RelayerHttpRequest.blackbox.abortWins` | Abort wins, leaks, races | Black-box |
-| `RelayerHttpRequest.combinedSignal` | Abort and timeout, cleanup | Implementation-aware |
-| `RelayerHttpRequest.errors` | Responses and errors | Implementation-aware |
-| `RelayerHttpRequest.leaks` | Resource cleanup | Implementation-aware |
-| `RelayerHttpRequest.phases` | Abort in every phase | Implementation-aware |
-| `RelayerHttpRequest.publicDecrypt` | Responses (public decrypt) | Implementation-aware |
-| `RelayerHttpRequest.reentrancy` | Reentrancy and lifetime | Implementation-aware |
-| `RelayerHttpRequest.retry` | Retry policy through `run()` | Implementation-aware |
-| `RelayerHttpRequest.retryLoop` | Retry loop and wait, directly | Implementation-aware |
-| `RelayerHttpRequest.signal` | Abort classification, options, cleanup | Implementation-aware |
-| `RelayerHttpRequest.userDecrypt` | Responses (user decrypt) | Implementation-aware |
-| `relayerUrl` | Shared helpers | — |
-| `readErrorMessage` | Shared helpers | — |
-| `fetchFheEncryptionKeySource` | Shared helpers | — |
-| `RelayerAsyncRequest.errors` | Async client | — |
-| `RelayerAsyncRequest.query` | Async client | — |
+| File                                    | Family                                 | Kind                 |
+| --------------------------------------- | -------------------------------------- | -------------------- |
+| `RelayerHttpRequest.attempt`            | Responses and errors, request shape    | Implementation-aware |
+| `RelayerHttpRequest.blackbox`           | All families                           | Black-box            |
+| `RelayerHttpRequest.blackbox.abortWins` | Abort wins, leaks, races               | Black-box            |
+| `RelayerHttpRequest.combinedSignal`     | Abort and timeout, cleanup             | Implementation-aware |
+| `RelayerHttpRequest.errors`             | Responses and errors                   | Implementation-aware |
+| `RelayerHttpRequest.leaks`              | Resource cleanup                       | Implementation-aware |
+| `RelayerHttpRequest.phases`             | Abort in every phase                   | Implementation-aware |
+| `RelayerHttpRequest.publicDecrypt`      | Responses (public decrypt)             | Implementation-aware |
+| `RelayerHttpRequest.reentrancy`         | Reentrancy and lifetime                | Implementation-aware |
+| `RelayerHttpRequest.retry`              | Retry policy through `run()`           | Implementation-aware |
+| `RelayerHttpRequest.retryLoop`          | Retry loop and wait, directly          | Implementation-aware |
+| `RelayerHttpRequest.signal`             | Abort classification, options, cleanup | Implementation-aware |
+| `RelayerHttpRequest.userDecrypt`        | Responses (user decrypt)               | Implementation-aware |
+| `relayerUrl`                            | Shared helpers                         | —                    |
+| `readErrorMessage`                      | Shared helpers                         | —                    |
+| `fetchFheEncryptionKeySource`           | Shared helpers                         | —                    |
+| `RelayerAsyncRequest.errors`            | Async client                           | —                    |
+| `RelayerAsyncRequest.query`             | Async client                           | —                    |
 
 ## 6. How the tests are written
 
