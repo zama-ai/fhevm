@@ -9,8 +9,13 @@ import { canUseUnifiedDecryptionPermit } from '@fhevm/sdk/actions/base';
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { createFhevmClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import type { ContractRunner } from 'ethers';
+import { createRequire } from 'node:module';
 
 import type { ResolvedContractsSection, ResolvedRelayerSection } from '../../../config/profiles/types.js';
+
+/** Version of the installed `@fhevm/sdk` package, for the evidence. */
+export const SDK_VERSION: string = (createRequire(import.meta.url)('@fhevm/sdk/package.json') as { version: string })
+  .version;
 
 type Address = `0x${string}`;
 type SdkClient = ReturnType<typeof createFhevmClient>;

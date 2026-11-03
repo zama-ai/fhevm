@@ -1,91 +1,9 @@
-import { JsonRpcProvider } from 'ethers';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { ResolvedContractsSection, ResolvedRelayerSection } from '../../../src/config/profiles/types.js';
-import {
-  FheClient,
-  type FheClientConfig,
-  RelayerCallError,
-  type SdkBindings,
-  type SdkClientLike,
-  relayerBaseUrl,
-} from '../../../src/runtime/modules/fhe/client.js';
+import { FheClient, RelayerCallError, relayerBaseUrl } from '../../../src/runtime/modules/fhe/client.js';
+import { API_KEY, type RelayerOptions as Options, address, config, fakeSdk, provider } from './fake-sdk.js';
 
-const API_KEY = 'relayer-api-key-0123456789';
-const value = <T extends string | number>(v: T) => ({ value: v, secret: false, source: 'literal' });
-const address = (n: number) => `0x${String(n).padStart(40, '0')}`;
-
-const relayer = (apiKey?: string): ResolvedRelayerSection => ({
-  url: value('http://fhevm-relayer:3000/v2'),
-  ...(apiKey !== undefined ? { apiKey: { value: apiKey, secret: true, source: 'env:KEY' } } : {}),
-  gateway: { chainId: value(54321), decryption: value(address(1)), inputVerification: value(address(2)) },
-});
-const contracts: ResolvedContractsSection = {
-  acl: value(address(3)),
-  inputVerifier: value(address(4)),
-  kmsVerifier: value(address(5)),
-  protocolConfig: value(address(6)),
-};
-const config = (apiKey?: string): FheClientConfig => ({ relayer: relayer(apiKey), contracts, chainId: 12345 });
-
-type Options = { auth?: unknown; timeout?: number; onProgress?: (event: object) => void };
-type Call = { method: string; parameters: Record<string, unknown> };
-
-const SUCCESS_EVENTS = [
-  { type: 'queued', operation: 'INPUT_PROOF', jobId: 'job-1', requestId: 'req-1', status: 202 },
-  { type: 'succeeded', operation: 'INPUT_PROOF', jobId: 'job-1', requestId: 'req-1', status: 200 },
-];
-
-/** A fake SDK: records every call and replays `events` through `onProgress` before answering. */
-function fakeSdk(behaviour: { events?: object[]; fail?: Error; unified?: boolean } = {}) {
-  const calls: Call[] = [];
-  const runtimeConfigs: Record<string, unknown>[] = [];
-  let chain: Record<string, unknown> | undefined;
-  const relayerCall =
-    <T>(method: string, answer: T) =>
-    async (parameters: Record<string, unknown>) => {
-      calls.push({ method, parameters });
-      const options = parameters.options as Options | undefined;
-      for (const event of behaviour.events ?? SUCCESS_EVENTS) options?.onProgress?.(event);
-      if (behaviour.fail) throw behaviour.fail;
-      return answer;
-    };
-  const plainCall =
-    <T>(method: string, answer: T) =>
-    async (parameters?: Record<string, unknown>) => {
-      calls.push({ method, parameters: parameters ?? {} });
-      return answer;
-    };
-  const client = {
-    ready: Promise.resolve(),
-    encryptValues: relayerCall('encryptValues', { encryptedValues: ['0xaa', '0xbb'], inputProof: '0xproof' }),
-    decryptValues: relayerCall('decryptValues', [{ type: 'uint64', value: 49n }]),
-    decryptPublicValuesWithSignatures: relayerCall('decryptPublicValuesWithSignatures', {
-      clearValues: [{ type: 'bool', value: true }],
-      checkSignaturesArgs: { handlesList: ['0xaa'], abiEncodedCleartexts: '0xabi', decryptionProof: '0xdp' },
-    }),
-    generateTransportKeyPair: plainCall('generateTransportKeyPair', { tkmsVersion: 'v1' }),
-    parseTransportKeyPair: plainCall('parseTransportKeyPair', { tkmsVersion: 'v1' }),
-    signLegacyDecryptionPermit: plainCall('signLegacyDecryptionPermit', { version: 1 }),
-    signUnifiedDecryptionPermit: plainCall('signUnifiedDecryptionPermit', { version: 2 }),
-  } as unknown as SdkClientLike;
-  const sdk: SdkBindings = {
-    hasRuntimeConfig: () => runtimeConfigs.length > 0,
-    setRuntimeConfig: (runtimeConfig) => void runtimeConfigs.push(runtimeConfig as Record<string, unknown>),
-    createClient: (parameters) => {
-      chain = parameters.chain as unknown as Record<string, unknown>;
-      return client;
-    },
-    canUseUnifiedPermit: async (_client, options) => {
-      calls.push({ method: 'canUseUnifiedPermit', parameters: options });
-      return behaviour.unified ?? true;
-    },
-  };
-  return { sdk, calls, runtimeConfigs, chain: () => chain! };
-}
-
-const provider = new JsonRpcProvider('http://127.0.0.1:1', 12345, { staticNetwork: true });
 const permit = { transportKeyPair: {} as never, signedPermit: {} as never };
 
 /** Runs every relayer operation of the client once. */
@@ -157,7 +75,7 @@ describe('FHE client', () => {
       { contractAddress: address(9), userAddress: address(8), values: [{ type: 'bool', value: true }] },
       { timeoutMs: 5_000 },
     );
-    assert.deepEqual(encrypted.result, { handles: ['0xaa', '0xbb'], inputProof: '0xproof' });
+    assert.deepEqual(encrypted.result, { handles: [`0x${'0a'.repeat(31)}00`], inputProof: '0x0102030405' });
     assert.deepEqual(encrypted.trace, {
       events: 2,
       operation: 'INPUT_PROOF',
@@ -171,9 +89,9 @@ describe('FHE client', () => {
     assert.deepEqual(decrypted.result, [{ type: 'uint64', value: 49n }]);
     const opened = await client.publicDecrypt(['0xaa']);
     assert.deepEqual(opened.result, {
-      values: [{ type: 'bool', value: true }],
+      values: [{ type: 'uint64', value: 49n }],
       abiEncodedClearValues: '0xabi',
-      decryptionProof: '0xdp',
+      decryptionProof: '0x0d0e',
     });
   });
 
@@ -246,8 +164,8 @@ describe('FHE client', () => {
       delegatorAddress: address(7),
       transportKeyPair: {} as never,
     };
-    assert.deepEqual(await client.signPermit('legacy', parameters), { version: 1 });
-    assert.deepEqual(await client.signPermit('unified', parameters), { version: 2 });
+    assert.deepEqual(await client.signPermit('legacy', parameters), { id: 1, version: 1 });
+    assert.deepEqual(await client.signPermit('unified', parameters), { id: 2, version: 2 });
     assert.deepEqual(
       fake.calls.map((call) => [call.method, call.parameters.delegatorAddress]),
       [
