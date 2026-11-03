@@ -207,8 +207,8 @@ export type FetchWithRetryParameters = {
  * is returned as-is for the caller to handle.
  *
  * The operation is abortable via `init.signal`. If the signal is aborted, nothing is
- * retried: the signal's abort reason is thrown unchanged, or, if the abort lands
- * during the delay between retries, the Error that `abortableSleep` wraps it in.
+ * retried: the signal's abort reason is thrown unchanged, whether the abort lands
+ * during `fetch` or during the delay between retries.
  *
  * @param url - The URL to fetch
  * @param init - Optional fetch init options (method, headers, body, etc.)
@@ -216,8 +216,7 @@ export type FetchWithRetryParameters = {
  * @param retryDelayMs - Delay in milliseconds between retries (default: 1000)
  * @returns The fetch Response
  * @throws The last network error if all retries are exhausted
- * @throws The signal's abort reason (any value) if the signal is aborted, or the
- * Error `abortableSleep` wraps it in if the abort lands during the delay between retries
+ * @throws The signal's abort reason (any value, unchanged) if the signal is aborted
  */
 export async function fetchWithRetry(
   args: {

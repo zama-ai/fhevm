@@ -1,33 +1,8 @@
-import { isRecordStringProperty } from './string.js';
-
-/**
- * Creates an Error for an aborted sleep. Preserves the original abort reason as
- * the error's cause, and reuses the reason's own `name` when it has one (e.g. a
- * `DOMException('…', 'TimeoutError')` passed to `controller.abort(reason)`) so a
- * caller can tell a timeout from a plain cancellation; defaults to 'AbortError'
- * otherwise, for consistency with fetch's own abort behavior.
- */
-function createAbortError(reason?: unknown): Error {
-  const error = new Error('Aborted', { cause: reason });
-  error.name = readReasonName(reason) ?? 'AbortError';
-  return error;
-}
-
-// The reason can be any value: a throwing `name` getter or Proxy trap must not
-// break the abort listener, or the sleep would never settle.
-function readReasonName(reason: unknown): string | undefined {
-  try {
-    return isRecordStringProperty(reason, 'name') ? reason.name : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Returns a Promise that resolves after the specified delay, but can be aborted.
  *
- * @throws {Error} An error whose `name` is the abort reason's own `name` if it has
- * one (e.g. 'TimeoutError'), or 'AbortError' otherwise, if the signal is aborted
+ * @throws The signal's abort reason itself (any value, unchanged), whether the signal
+ * is already aborted or aborts during the sleep, as `fetch` does.
  */
 export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
   // Check if already aborted before creating the Promise
@@ -36,7 +11,9 @@ export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> 
   return new Promise((resolve, reject) => {
     const onAbort = (): void => {
       clearTimeout(timeoutId);
-      reject(createAbortError(signal?.reason));
+      // The reason is caller-chosen (any value) and must pass through unchanged, like fetch and throwIfAborted().
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      reject(signal?.reason);
     };
     const timeoutId = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);

@@ -77,7 +77,7 @@ describe('abortableSleep', () => {
     }
   });
 
-  // Unlike an abort during the sleep, the raw reason is thrown, not wrapped.
+  // Like an abort during the sleep, the raw reason is thrown, not wrapped.
   it.each([
     ['a string', 'early'],
     ['null', null],
@@ -99,27 +99,26 @@ describe('abortableSleep', () => {
   // Abort during sleep
   //////////////////////////////////////////////////////////////////////////////
 
+  // Aborted during the sleep: rejects with signal.reason itself, never a wrapper, like fetch does.
   it.each([
-    ['a string', 'stop'],
-    ['null', null],
-  ])(
-    'wraps a non-Error reason (%s) in an AbortError with that cause when aborted during sleep',
-    async (_label, reason) => {
-      const controller = new AbortController();
-      const promise = abortableSleep(1000, controller.signal);
+    ['a string', (c: AbortController) => c.abort('stop')],
+    ['null', (c: AbortController) => c.abort(null)],
+    ['an Error', (c: AbortController) => c.abort(new Error('Custom reason'))],
+    ['a TimeoutError DOMException', (c: AbortController) => c.abort(new DOMException('Timed out', 'TimeoutError'))],
+    ['no reason (platform AbortError)', (c: AbortController) => c.abort()],
+  ])('rejects with the raw reason (%s), unchanged, when aborted during sleep', async (_label, abort) => {
+    const controller = new AbortController();
+    const promise = abortableSleep(1000, controller.signal);
 
-      vi.advanceTimersByTime(500);
-      controller.abort(reason);
+    vi.advanceTimersByTime(500);
+    abort(controller);
 
-      const error = await promise.then(
-        () => undefined,
-        (e: unknown) => e,
-      );
-      expect(error).toBeInstanceOf(Error);
-      expect((error as Error).name).toBe('AbortError');
-      expect((error as Error).cause).toBe(reason);
-    },
-  );
+    const error = await promise.then(
+      () => 'resolved',
+      (e: unknown) => e,
+    );
+    expect(error).toBe(controller.signal.reason);
+  });
 
   it('rejects when signal is aborted during sleep', async () => {
     const controller = new AbortController();
@@ -134,56 +133,7 @@ describe('abortableSleep', () => {
     await expect(promise).rejects.toThrow();
   });
 
-  it('rejected error has name AbortError when aborted during sleep', async () => {
-    const controller = new AbortController();
-    const promise = abortableSleep(1000, controller.signal);
-
-    vi.advanceTimersByTime(500);
-    controller.abort();
-
-    try {
-      await promise;
-      throw new Error('Expected to throw');
-    } catch (error) {
-      expect((error as Error).name).toBe('AbortError');
-    }
-  });
-
-  it('preserves abort reason as cause', async () => {
-    const controller = new AbortController();
-    const customReason = new Error('Custom reason');
-
-    const promise = abortableSleep(1000, controller.signal);
-
-    vi.advanceTimersByTime(500);
-    controller.abort(customReason);
-
-    try {
-      await promise;
-      throw new Error('Expected to throw');
-    } catch (error) {
-      expect((error as Error).cause).toBe(customReason);
-    }
-  });
-
-  it('reuses the abort reason name (e.g. TimeoutError) instead of always AbortError', async () => {
-    const controller = new AbortController();
-    const timeoutReason = new DOMException('Timed out', 'TimeoutError');
-
-    const promise = abortableSleep(1000, controller.signal);
-
-    vi.advanceTimersByTime(500);
-    controller.abort(timeoutReason);
-
-    try {
-      await promise;
-      throw new Error('Expected to throw');
-    } catch (error) {
-      expect((error as Error).name).toBe('TimeoutError');
-      expect((error as Error).cause).toBe(timeoutReason);
-    }
-  });
-
+  // A reason whose name getter throws: the sleep still settles at once, with that reason unchanged.
   it('rejects when aborted during sleep with a reason whose name getter throws', async () => {
     const controller = new AbortController();
     const hostileReason = {
@@ -203,8 +153,7 @@ describe('abortableSleep', () => {
     // Flush promise jobs only: the sleep timer must not be what settles it.
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(outcome).toBeInstanceOf(Error);
-    expect((outcome as Error).cause).toBe(hostileReason);
+    expect(outcome).toBe(hostileReason);
   });
 
   //////////////////////////////////////////////////////////////////////////////
