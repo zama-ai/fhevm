@@ -13,11 +13,14 @@ import type { ZkProof } from '../../../src/core/types/zkProof-p.js';
 import { setFhevmRuntimeConfig } from '../../../src/ethers/index.js';
 import { createLogger } from './common.js';
 import { getEthersRuntime } from '../../../src/ethers/internal/runtime.js';
+import { PRIVATE_ETHERS_TOKEN } from '../../../src/ethers/internal/ethers-p.js';
+import { createCoreFhevm } from '../../../src/core/runtime/CoreFhevm-p.js';
 import { encryptModule } from '../../../src/core/modules/encrypt/module/index.js';
 import { decryptModule } from '../../../src/core/modules/decrypt/module/index.js';
 import { defineFhevmChain } from '../../../src/core/chains/utils.js';
 import { createZkProofBuilder } from '../../../src/core/coprocessor/ZkProofBuilder-p.js';
 import { globalFheEncryptionKeyCache } from '../../../src/core/key/FheEncryptionKeyCache-p.js';
+import { getFheEncryptionKeySlot } from '../../../src/core/key/ensureFheEncryptionKeyDownload.js';
 import { createFhevmClientFrozenContext } from '../../../src/core/frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -298,13 +301,33 @@ export function toFheEncryptionKeyBytes(keyFile: SerializedKeyFile, chain: Fhevm
 }
 
 /**
- * Loads test/keys/key.<keyTfheVersion>.json and injects it into `chain`'s cache
- * slot (its relayer URL), so an encryption can resolve the key offline.
+ * A view of `runtime` whose relayer module skips the key check: the test keys
+ * are not the active ones in any `KMSGeneration`, so the SDK caches them in
+ * their own (unverified) slot.
+ */
+function unverifiedKeyRuntime<runtime extends FhevmRuntime>(runtime: runtime): runtime {
+  const relayer = { ...runtime.relayer, skipsFheEncryptionKeyVerification: true };
+  // A proxy, not Object.create: the runtime getters read private fields.
+  return new Proxy(runtime, {
+    get: (target, property) => (property === 'relayer' ? relayer : Reflect.get(target, property)),
+  });
+}
+
+/**
+ * Loads test/keys/key.<keyTfheVersion>.json and injects it into `chain`'s
+ * unverified cache slot (see unverifiedKeyRuntime), so an encryption can
+ * resolve the key offline.
  */
 export async function loadAndCacheKey(runtime: FhevmRuntime, chain: FhevmChain, keyTfheVersion: string): Promise<void> {
   const keyFile = await fetchSerializedKeyFile(keyTfheVersion);
   const keyBytes = toFheEncryptionKeyBytes(keyFile, chain);
-  globalFheEncryptionKeyCache.setBytes(runtime, chain.fhevm.relayerUrl, keyBytes);
+  const view = unverifiedKeyRuntime(runtime);
+  globalFheEncryptionKeyCache.setBytes(
+    view,
+    getFheEncryptionKeySlot({ chain, runtime: view, options: { keyVerification: undefined } }),
+    chain.fhevm.relayerUrl,
+    keyBytes,
+  );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -323,7 +346,10 @@ export async function buildUint64Proof(
   const builder = createZkProofBuilder();
   builder.addUint64(42n);
   return builder.build(
-    { chain, runtime },
+    // No host-chain client: the test key is never verified, already cached
+    // (see loadAndCacheKey), so build() reads it with no fetch and no check.
+    // A core client, not a plain context: key lookups read its options.
+    createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain, runtime: unverifiedKeyRuntime(runtime) }),
     {
       contractAddress: DUMMY_CONTRACT_ADDRESS,
       userAddress: DUMMY_USER_ADDRESS,

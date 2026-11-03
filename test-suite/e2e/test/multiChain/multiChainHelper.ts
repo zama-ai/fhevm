@@ -1,8 +1,9 @@
+import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { ethers } from 'ethers';
 import { ethers as hardhatEthers } from 'hardhat';
 import { vars } from 'hardhat/config';
 
-import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
+import { FhevmSdk, requireKmsGenerationAddress } from '../sdk/fhevm-sdk/sdk';
 
 const defaultMnemonic =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
@@ -45,7 +46,7 @@ function parseHostChains(): ChainConfig[] {
     kmsVerifierAddress: requireEnv('KMS_VERIFIER_CONTRACT_ADDRESS'),
     inputVerifierAddress: requireEnv('INPUT_VERIFIER_CONTRACT_ADDRESS'),
     protocolConfigAddress: optionalEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
-    kmsGenerationAddress: optionalEnv('KMS_GENERATION_CONTRACT_ADDRESS'),
+    kmsGenerationAddress: requireKmsGenerationAddress(),
   };
   const chains: ChainConfig[] = [primary];
   for (let i = 1; ; i++) {
@@ -120,6 +121,38 @@ export function getWallet(chain: ChainConfig, index: number): ManagedWallet {
   return wrapWithNonceManager(new ethers.Wallet(hdNode.deriveChild(index).privateKey, provider));
 }
 
+type KeyVerification = NonNullable<Parameters<typeof FhevmSdk.create>[0]['keyVerification']>;
+
+/**
+ * KMSGeneration lives on the primary (Ethereum) host only. Other hosts read the
+ * FHE key / CRS digests from it through the primary chain def and client.
+ */
+function primaryKeyVerification(): KeyVerification {
+  const primary = HOST_CHAINS[0];
+  return {
+    chain: defineFhevmChain({
+      id: primary.chainId,
+      fhevm: {
+        contracts: {
+          acl: { address: primary.aclAddress as `0x${string}` },
+          inputVerifier: { address: primary.inputVerifierAddress as `0x${string}` },
+          kmsVerifier: { address: primary.kmsVerifierAddress as `0x${string}` },
+          kmsGeneration: { address: primary.kmsGenerationAddress as `0x${string}` },
+        },
+        relayerUrl,
+        gateway: {
+          id: gatewayChainId,
+          contracts: {
+            decryption: { address: decryptionAddress as `0x${string}` },
+            inputVerification: { address: inputVerificationAddress as `0x${string}` },
+          },
+        },
+      },
+    }),
+    client: getProvider(primary) as unknown as KeyVerification['client'],
+  };
+}
+
 export async function createInstance(chain: ChainConfig) {
   const cfg = {
     verifyingContractAddressDecryption: decryptionAddress,
@@ -128,6 +161,9 @@ export async function createInstance(chain: ChainConfig) {
     inputVerifierContractAddress: chain.inputVerifierAddress,
     aclContractAddress: chain.aclAddress,
     protocolConfigAddress: chain.protocolConfigAddress,
+    ...(chain.kmsGenerationAddress
+      ? { kmsGenerationAddress: chain.kmsGenerationAddress }
+      : { keyVerification: primaryKeyVerification() }),
     rpcUrl: chain.rpcUrl,
     relayerUrl,
     gatewayChainId,
