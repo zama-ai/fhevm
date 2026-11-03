@@ -26,9 +26,9 @@
   `generateTransportKeyPair` action accepts it too). Also added:
   the matching standalone actions in `@fhevm/sdk/actions/encrypt`,
   `initFhevmEncryptWithPadRuntime`, and the `FhevmEncryptWithPadClient` type. Only the cleartext
-  pad-share encoding is supported for now, so this works against the v0.16 cleartext host
-  contracts only. The input-proof flow (`encryptValue` / `encryptValues`, `inputProof`) is
-  unchanged.
+  pad-share encoding is supported for now, so this works against the v1.0.0 cleartext host
+  contracts only (`npm run start:localcleartext:v1`). The input-proof flow
+  (`encryptValue` / `encryptValues`, `inputProof`) is unchanged.
 
 #### Changed
 
