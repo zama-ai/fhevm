@@ -298,7 +298,7 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
         let mut host = SolanaHost {
             program_id: PROGRAM_ID,
             reader: SolanaRpcClient::new(
-                good.rpc.base_url().unwrap().clone(),
+                good.rpc.base_url().unwrap().clone().into(),
                 Duration::from_millis(100),
                 std::num::NonZeroUsize::MIN,
             ),
@@ -315,7 +315,7 @@ async fn stalled_http_does_not_block_healthy_proofs_or_rpc_failure() {
             .expect("the stalled coprocessor does not hold the request")
             .expect("the healthy coprocessor authorizes");
         host.reader = SolanaRpcClient::new(
-            stalled,
+            stalled.into(),
             Duration::from_millis(100),
             std::num::NonZeroUsize::MIN,
         );

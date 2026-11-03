@@ -41,7 +41,6 @@ export abstract class FhevmErrorBase extends ErrorBase {
 
     super({
       ...params,
-      name: 'FhevmErrorBase',
       version: FhevmErrorBase.FULL_VERSION,
       docsUrl,
     });

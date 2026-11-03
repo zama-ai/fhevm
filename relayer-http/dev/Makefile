@@ -6,11 +6,9 @@ REPO    := $(abspath ../..)
 KMS     ?= $(shell docker ps --format '{{.Names}}' 2>/dev/null | grep -cE '^kms-connector(-[0-9]+)?-endpoint$$')
 T       ?= $(shell grep -s '^KMS_THRESHOLD=' $(REPO)/.fhevm/runtime/env/test-suite.env | cut -d= -f2)
 CONFIG  ?= $(ROOT)/dev/config/kms-$(KMS).yaml
-API_KEY ?= fhevm-e2e-kms-connector-api-key
-export API_KEY
 CLIPPY  := cargo clippy --workspace --all-targets -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
 
-.PHONY: help fmt fmt-fix clippy test check build up down status run config public-decrypt user-decrypt
+.PHONY: help fmt fmt-fix clippy test test-aws check build up down status run config public-decrypt user-decrypt
 
 help: ## this list
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{ printf "  %-16s %s\n", $$1, $$2 }'
@@ -23,8 +21,10 @@ fmt-fix: ## cargo fmt
 	cd $(ROOT) && cargo fmt
 clippy: ## the clippy line every change must pass
 	cd $(ROOT) && $(CLIPPY)
-test: ## cargo test --workspace
-	cd $(ROOT) && cargo test --workspace
+test: ## cargo nextest run --workspace (the emulator tests are ignored; see test-aws)
+	cd $(ROOT) && cargo nextest run --workspace
+test-aws: ## the AWS KMS signer as deployed (IRSA credentials), against an AWS emulator (Floci) started for the run
+	$(ROOT)/dev/scripts/test-aws.sh
 check: fmt clippy test ## fmt + clippy + test
 build: ## cargo build -p relayer-http
 	cd $(ROOT) && cargo build -p relayer-http

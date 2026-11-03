@@ -464,8 +464,7 @@ async fn a_node_outside_the_requests_context_sends_no_proof_request(#[case] publ
     );
     let context_id = parse_extra_data(&scenario.request().extra_data())
         .unwrap()
-        .context_id
-        .unwrap();
+        .context_id;
     let asked: Vec<_> = calls
         .lock()
         .unwrap()

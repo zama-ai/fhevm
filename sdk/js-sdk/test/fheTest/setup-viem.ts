@@ -3,6 +3,7 @@ import type {
   createFhevmBaseClient as createViemFhevmBaseClient,
   createFhevmDecryptClient as createViemFhevmDecryptClient,
   createFhevmEncryptClient as createViemFhevmEncryptClient,
+  createFhevmEncryptTransciClient as createViemFhevmEncryptTransciClient,
 } from '@fhevm/sdk/viem';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
@@ -44,19 +45,25 @@ type CreateViemClientParameters = {
 
 export type CreateViemBaseClientFn = (
   params: CreateViemClientParameters & {
-    readonly options?: FhevmOptions | undefined;
+    readonly options?: FhevmOptions<PublicClient> | undefined;
   },
 ) => ReturnType<typeof createViemFhevmBaseClient>;
 
 export type CreateViemEncryptClientFn = (
   params: CreateViemClientParameters & {
-    readonly options?: FhevmEncryptOptions | undefined;
+    readonly options?: FhevmEncryptOptions<PublicClient> | undefined;
   },
 ) => ReturnType<typeof createViemFhevmEncryptClient>;
 
+export type CreateViemEncryptTransciClientFn = (
+  params: CreateViemClientParameters & {
+    readonly options?: FhevmEncryptOptions<PublicClient> | undefined;
+  },
+) => ReturnType<typeof createViemFhevmEncryptTransciClient>;
+
 export type CreateViemDecryptClientFn = (
   params: CreateViemClientParameters & {
-    readonly options?: FhevmDecryptOptions | undefined;
+    readonly options?: FhevmDecryptOptions<PublicClient> | undefined;
   },
 ) => ReturnType<typeof createViemFhevmDecryptClient>;
 

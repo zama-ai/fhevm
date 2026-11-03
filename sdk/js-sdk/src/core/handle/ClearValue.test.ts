@@ -11,7 +11,8 @@ import {
   clearValueToTypedValue,
   abiEncodeClearValues,
 } from './ClearValue.js';
-import { buildHandle } from './FhevmHandle.js';
+import { bytes32ToHandle, FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION } from './FhevmHandle.js';
+import { asBytes32, hexToBytes } from '../base/bytes.js';
 import { asUint8Number, asUint64BigInt } from '../base/uint.js';
 import { asAddress } from '../base/address.js';
 
@@ -23,10 +24,34 @@ const HASH21 = `0x${'ab'.repeat(21)}`;
 const CHAIN_ID = 12345n;
 const ADDRESS = asAddress(`0x${'ab'.repeat(20)}`);
 
+/**
+ * Test helper: builds a computed handle
+ * hash21 (bytes 0..20) | 0xFF (byte 21) | chainId (bytes 22..29) | fheTypeId (30) | version (31).
+ */
+function buildHandle({
+  chainId,
+  hash21,
+  fheTypeId,
+  version = FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION,
+}: {
+  chainId: bigint;
+  hash21: string;
+  fheTypeId: number;
+  version?: number;
+}): Handle {
+  const bytes = new Uint8Array(32);
+  bytes.set(hexToBytes(hash21), 0);
+  bytes[21] = 0xff;
+  new DataView(bytes.buffer).setBigUint64(22, chainId);
+  bytes[30] = fheTypeId;
+  bytes[31] = version;
+  return bytes32ToHandle(asBytes32(bytes));
+}
+
 const EUINT8_HANDLE: Handle = buildHandle({ chainId: CHAIN_ID, hash21: HASH21, fheTypeId: 2 });
-const EUINT64_HANDLE: Handle = buildHandle({ chainId: CHAIN_ID, hash21: HASH21, fheTypeId: 5, index: 0 });
-const EBOOL_HANDLE: Handle = buildHandle({ chainId: CHAIN_ID, hash21: HASH21, fheTypeId: 0, index: 1 });
-const EADDRESS_HANDLE: Handle = buildHandle({ chainId: CHAIN_ID, hash21: HASH21, fheTypeId: 7, index: 2 });
+const EUINT64_HANDLE: Handle = buildHandle({ chainId: CHAIN_ID, hash21: HASH21, fheTypeId: 5 });
+const EBOOL_HANDLE: Handle = buildHandle({ chainId: CHAIN_ID, hash21: HASH21, fheTypeId: 0 });
+const EADDRESS_HANDLE: Handle = buildHandle({ chainId: CHAIN_ID, hash21: HASH21, fheTypeId: 7 });
 
 describe('ClearValue', () => {
   //////////////////////////////////////////////////////////////////////////////

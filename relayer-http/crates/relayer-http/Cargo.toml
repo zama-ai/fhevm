@@ -10,9 +10,12 @@ publish.workspace = true
 [dependencies]
 alloy.workspace = true
 async-trait.workspace = true
+aws-config.workspace = true
+aws-sdk-kms.workspace = true
 axum.workspace = true
 bytes.workspace = true
 config.workspace = true
+fhevm-sig-auth.workspace = true
 humantime-serde.workspace = true
 kms-connector-api.workspace = true
 reqwest.workspace = true

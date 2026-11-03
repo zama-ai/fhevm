@@ -31,11 +31,11 @@ import type { Scenario } from './scenario.js';
 // "N fresh clients" against the same chain would NOT exercise this path more
 // than once. `globalFheEncryptionKeyCache`
 // (src/core/key/FheEncryptionKeyCache-p.ts) is a process-wide singleton keyed
-// by relayerUrl with "first write wins" semantics — the key is deserialized
-// once per relayerUrl for the life of the process, and every later client
+// by slot (relayer URL and KMSGeneration, or `unverified`) with "first write wins" semantics —
+// the key is deserialized once per slot for the life of the process, and every later client
 // just awaits the same cached entry. Its own doc comment says as much: "To
-// force a re-fetch, call `remove(relayerUrl)` before `ensureBytes`." — so
-// this scenario does exactly that before every iteration, which is also what
+// force a re-fetch, `remove(key)` the entry first." — so
+// this scenario clears the cache before every iteration, which is also what
 // makes the old entry's wasm objects unreachable (and thus GC/finalizer
 // eligible) in the first place.
 
@@ -59,8 +59,6 @@ export const clientChurnScenario: Scenario = {
       });
     }
 
-    const relayerUrl = config.fhevmChain.fhevm.relayerUrl;
-
     const readTfheMemory = await createTfheMemoryReader();
 
     const uint8Case = encryptTestCases.find((tc) => tc.type === 'uint8');
@@ -69,7 +67,7 @@ export const clientChurnScenario: Scenario = {
     }
 
     const iterate = async (): Promise<void> => {
-      globalFheEncryptionKeyCache.remove(relayerUrl);
+      globalFheEncryptionKeyCache.clear();
 
       const client = createFhevmEncryptClient({
         chain: config.fhevmChain,

@@ -188,6 +188,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
             ? 'DelegatedUserDecryptRequestVerification'
             : 'UserDecryptRequestVerification';
         expect(legacySignedPermit.eip712.primaryType).toBe(expectedPrimaryType);
+        expect(legacySignedPermit.isDelegated).toBe(true);
         expect(legacySignedPermit.signerAddress.toLowerCase()).toBe(config.bob.account.address.toLowerCase());
         expect(legacySignedPermit.encryptedDataOwnerAddress.toLowerCase()).toBe(
           config.alice.account.address.toLowerCase(),

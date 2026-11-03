@@ -37,7 +37,6 @@ export { createFhevmPublicDecryptClient } from './clients/createFhevmPublicDecry
 export type { FhevmSolanaPublicDecryptClient } from './clients/createFhevmPublicDecryptClient.js';
 export { createFhevmEncryptClient } from './clients/createFhevmEncryptClient.js';
 export type { FhevmSolanaEncryptClient } from './clients/createFhevmEncryptClient.js';
-export { clearSolanaEncryptionKeyCache } from './encryptionKeyCache.js';
 
 export type {
   SolanaPublicDecryptCertificateClaim,

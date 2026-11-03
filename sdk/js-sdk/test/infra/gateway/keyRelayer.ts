@@ -1,13 +1,15 @@
-// Mini-relayer key logic: load a `test/keys/key.<ver>.json` file and produce the
-// exact relayer wire format the SDK expects.
-//
-// The SDK fetches keys in two steps (see
-// src/core/modules/relayer/module/fetchFheEncryptionKeySource.ts):
-//   1. GET {relayerUrl}/v2/keyurl  ->  JSON pointing at the byte URLs
-//   2. GET <those URLs>            ->  the raw public-key / CRS bytes
-//
-// The CRS capacity is hard-coded to 2048 in the SDK, so we only ever serve the
-// "2048" slot and assert the key file matches.
+/**
+ * Mini-relayer key logic: load a `test/keys/key.<ver>.json` file and produce the
+ * exact relayer wire format the SDK expects.
+ *
+ * The SDK fetches keys in two steps (see
+ * src/core/modules/relayer/module/fetchFheEncryptionKeySource.ts):
+ *   1. GET {relayerUrl}/v2/keyurl  ->  JSON pointing at the byte URLs
+ *   2. GET <those URLs>            ->  the raw public-key / CRS bytes
+ *
+ * The CRS capacity is hard-coded to 2048 in the SDK, so we only ever serve the
+ * "2048" slot and assert the key file matches.
+ */
 
 import { readFileSync } from 'node:fs';
 

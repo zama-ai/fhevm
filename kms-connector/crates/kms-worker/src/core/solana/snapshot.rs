@@ -11,6 +11,7 @@
 //! retried internally, so its caller receives `upstream_transient` and resubmits, as for any
 //! transient failure of an EVM HTTP request.
 
+use connector_utils::config::RpcUrl;
 use solana_account_decoder_client_types::{UiAccountData, UiAccountEncoding};
 use solana_commitment_config::CommitmentConfig;
 use solana_pubkey::Pubkey;
@@ -22,7 +23,6 @@ use solana_rpc_client::{api::config::RpcAccountInfoConfig, nonblocking::rpc_clie
 use std::num::NonZeroUsize;
 use std::{future::Future, sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
-use url::Url;
 use zama_solana_acl::{AccountView, CLOCK_SYSVAR_ID, decode_clock_unix_timestamp};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -183,6 +183,8 @@ fn unix_timestamp(clock: Option<SnapshotAccount>) -> Result<u64, SnapshotError> 
 #[derive(Clone)]
 pub struct SolanaRpcClient {
     client: Arc<RpcClient>,
+    /// Printed in place of the client's URL, which may hold an API key.
+    url: RpcUrl,
     permits: Arc<Semaphore>,
     timeout: Duration,
 }
@@ -190,19 +192,20 @@ pub struct SolanaRpcClient {
 impl std::fmt::Debug for SolanaRpcClient {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("SolanaRpcClient")
-            .field(&self.client.url())
+            .field(&format_args!("{}", self.url))
             .finish()
     }
 }
 
 impl SolanaRpcClient {
-    pub fn new(url: Url, timeout: Duration, max_concurrent_calls: NonZeroUsize) -> Self {
+    pub fn new(url: RpcUrl, timeout: Duration, max_concurrent_calls: NonZeroUsize) -> Self {
         Self {
             client: Arc::new(RpcClient::new_with_timeout_and_commitment(
-                url.to_string(),
+                url.as_url().to_string(),
                 timeout,
                 CommitmentConfig::finalized(),
             )),
+            url,
             permits: Arc::new(Semaphore::new(max_concurrent_calls.get())),
             timeout,
         }

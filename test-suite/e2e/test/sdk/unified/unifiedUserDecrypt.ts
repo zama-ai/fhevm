@@ -32,8 +32,8 @@
 //     wallet-owned handles (`userAddress` = a contract) cannot be decrypted
 //     through the public SDK, so those positives assert `succeeded` only.
 import { expect } from 'chai';
-import { TypedDataEncoder } from 'ethers';
-import type { Signer, TypedDataDomain } from 'ethers';
+import { Contract, TypedDataEncoder, solidityPacked } from 'ethers';
+import type { Provider, Signer, TypedDataDomain } from 'ethers';
 
 /**
  * EIP-712 type list for the unified `UserDecryptRequestVerification` struct.
@@ -60,8 +60,27 @@ export const UNIFIED_ATTESTATION_TYPE = 'eip712-unified-user-decrypt-v1';
 const DOMAIN_NAME = 'Decryption';
 const DOMAIN_VERSION = '1';
 
-/** Default `extraData` (version byte `0x00`, no context id). */
-export const DEFAULT_EXTRA_DATA = '0x00';
+/** `extraData` version carrying a KMS context id and an epoch id (RFC 005). */
+const EXTRA_DATA_V2_VERSION = 0x02;
+
+/** v2 `extraData`: `0x02 || contextId (32B) || epochId (32B)`. */
+export const kmsExtraDataV2 = (contextId: bigint, epochId: bigint): string =>
+  solidityPacked(['uint8', 'uint256', 'uint256'], [EXTRA_DATA_V2_VERSION, contextId, epochId]);
+
+/**
+ * v2 `extraData` targeting the current KMS context and its active epoch, read
+ * from the host-chain `ProtocolConfig`. The KMS Connector rejects any
+ * decryption request whose `extraData` carries no context id.
+ */
+export async function currentKmsExtraData(provider: Provider, protocolConfigAddress: string): Promise<string> {
+  const protocolConfig = new Contract(
+    protocolConfigAddress,
+    ['function getCurrentKmsContextAndEpoch() view returns (uint256 contextId, uint256 epochId)'],
+    provider,
+  );
+  const [contextId, epochId] = await protocolConfig.getCurrentKmsContextAndEpoch();
+  return kmsExtraDataV2(contextId, epochId);
+}
 
 /** ERC-1271 magic value returned by a compliant wallet for a valid signature. */
 export const ERC1271_MAGIC_VALUE = '0x1626ba7e';
@@ -76,6 +95,8 @@ export interface UnifiedConfig {
    * Empty/undefined on local stacks — no header is sent.
    */
   readonly apiKey?: string;
+  /** `extraData` of requests that do not set their own (see `currentKmsExtraData`). */
+  readonly extraData: string;
 }
 
 export interface UnifiedHandleEntry {
@@ -99,7 +120,7 @@ export interface UnifiedDecryptRequest {
   readonly startTimestamp: number;
   /** Validity window length in seconds. */
   readonly durationSeconds: number;
-  /** Defaults to `0x00`. */
+  /** Defaults to `UnifiedConfig.extraData`. */
   readonly extraData?: string;
 }
 
@@ -206,14 +227,14 @@ function domainOf(cfg: UnifiedConfig, chainId: number): TypedDataDomain {
   };
 }
 
-function messageOf(req: UnifiedDecryptRequest): Record<string, unknown> {
+function messageOf(cfg: UnifiedConfig, req: UnifiedDecryptRequest): Record<string, unknown> {
   return {
     userAddress: req.userAddress,
     publicKey: ensure0x(req.publicKey),
     allowedContracts: [...req.allowedContracts],
     startTimestamp: req.startTimestamp,
     durationSeconds: req.durationSeconds,
-    extraData: req.extraData ?? DEFAULT_EXTRA_DATA,
+    extraData: req.extraData ?? cfg.extraData,
   };
 }
 
@@ -239,7 +260,7 @@ function requestChainId(req: UnifiedDecryptRequest): number {
  */
 export function computeUnifiedDigest(cfg: UnifiedConfig, req: UnifiedDecryptRequest): string {
   const chainId = requestChainId(req);
-  return TypedDataEncoder.hash(domainOf(cfg, chainId), UNIFIED_USER_DECRYPT_TYPES, messageOf(req));
+  return TypedDataEncoder.hash(domainOf(cfg, chainId), UNIFIED_USER_DECRYPT_TYPES, messageOf(cfg, req));
 }
 
 /**
@@ -291,10 +312,10 @@ export async function signRequest(cfg: UnifiedConfig, req: UnifiedDecryptRequest
   }
   const signer = mode.kind === 'eoa' ? mode.signer : mode.ownerSigner;
   const chainId = requestChainId(req);
-  return signer.signTypedData(domainOf(cfg, chainId), UNIFIED_USER_DECRYPT_TYPES, messageOf(req));
+  return signer.signTypedData(domainOf(cfg, chainId), UNIFIED_USER_DECRYPT_TYPES, messageOf(cfg, req));
 }
 
-function buildEnvelope(req: UnifiedDecryptRequest, signature: string): unknown {
+function buildEnvelope(cfg: UnifiedConfig, req: UnifiedDecryptRequest, signature: string): unknown {
   return {
     attestationType: UNIFIED_ATTESTATION_TYPE,
     attestedPayload: {
@@ -312,7 +333,7 @@ function buildEnvelope(req: UnifiedDecryptRequest, signature: string): unknown {
         durationSeconds: String(req.durationSeconds),
       },
       publicKey: ensure0x(req.publicKey),
-      extraData: req.extraData ?? DEFAULT_EXTRA_DATA,
+      extraData: req.extraData ?? cfg.extraData,
     },
     signature,
   };
@@ -354,7 +375,7 @@ export async function submitUnifiedRequest(
 ): Promise<{ post: PostResult; digest: string }> {
   const digest = computeUnifiedDigest(cfg, req);
   const signature = await signRequest(cfg, req, mode);
-  const envelope = buildEnvelope(req, signature);
+  const envelope = buildEnvelope(cfg, req, signature);
 
   const url = `${relayerBaseUrl(cfg.relayerUrl)}/v3/user-decrypt`;
   // Log the route we drive. The SDK client logs its own (legacy `/v2`) calls,

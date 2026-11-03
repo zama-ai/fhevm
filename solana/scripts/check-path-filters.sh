@@ -100,7 +100,7 @@ check relayer-tests.yaml rust-files relayer cargo tests
 check relayer-dependency-analysis.yml rust-files relayer cargo -
 check relayer-http-tests.yml rust-files relayer-http cargo tests
 check relayer-http-dependency-analysis.yml rust-files relayer-http cargo -
-check js-sdk-tests.yml '' sdk/js-sdk - tests
+check js-sdk-tests.yml sdk sdk/js-sdk - tests
 
 if ((failures > 0)); then
   echo "$failures path filter entries are missing." >&2

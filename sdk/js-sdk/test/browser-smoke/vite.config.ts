@@ -16,9 +16,13 @@ export default defineConfig({
       '@fhevm/sdk': resolve(projectRoot, 'src'),
     },
   },
+  // Served over HTTPS (HTTP/1.1) by server.ts; see the comment there.
   plugins: [rawWasmAssetPlugin()],
   server: {
-    port: 3333,
+    // Vite 7's DNS-rebinding protection blocks unrecognized Host headers;
+    // bs-local.com is BrowserStack Local's dedicated tunnel-back domain (see
+    // playwright.config.ts baseURL).
+    allowedHosts: ['bs-local.com'],
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp',

@@ -1,5 +1,4 @@
 import type { EncryptedValue } from '../../../core/types/encryptedTypes.js';
-import { asEncryptedValue } from '../../../core/handle/EncryptedValue.js';
 import type { RelayerInputProofOptions } from '../../../core/types/relayer.js';
 import type { Bytes32Hex } from '../../../core/types/primitives.js';
 import type { FhevmSolanaChain } from '../../../core/types/fhevmSolanaChain.js';
@@ -84,7 +83,7 @@ export function solanaEncryptActions(
 
     const generateZkProof: SolanaEncryptActions['generateZkProof'] = async (parameters) => {
       await initPublicAction(fhevm);
-      return encryptInput({ chain: solanaChain, aclProgramAddress, runtime }, parameters);
+      return encryptInput({ fhevm, chain: solanaChain, aclProgramAddress, runtime }, parameters);
     };
 
     return {
@@ -94,7 +93,7 @@ export function solanaEncryptActions(
           const inputProof = await generateZkProof(parameters);
           const result = await attest({ runtime, solanaChain }, { inputProof, options: parameters.options });
           return {
-            encryptedValues: result.handles.map(asEncryptedValue),
+            encryptedValues: result.handles.map((handle) => handle.bytes32Hex as unknown as EncryptedValue),
             inputProof: {
               ...result,
               chainId: inputProof.chainId,

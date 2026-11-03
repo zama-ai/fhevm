@@ -253,6 +253,7 @@ interface IProtocolConfig is IProtocolConfigBase {
 
     /**
      * @notice Create a pending KMS context and pending epoch.
+     * @dev Must not be called while a keygen or CRS request is pending.
      * @param kmsNodeParams The KMS nodes to register, including MPC metadata.
      * @param thresholds The thresholds for the new context.
      * @param softwareVersion The KMS software version expected for the context.
@@ -267,6 +268,7 @@ interface IProtocolConfig is IProtocolConfigBase {
 
     /**
      * @notice Create a pending epoch under the current active KMS context.
+     * @dev Must not be called while a keygen or CRS request is pending.
      */
     function defineNewEpochForCurrentKmsContext() external;
 

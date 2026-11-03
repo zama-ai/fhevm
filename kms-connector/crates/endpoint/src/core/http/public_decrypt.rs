@@ -23,8 +23,8 @@ use connector_utils::types::{
     db::insert_solana_public_decryption, solana_request::SolanaPublicDecryptionRequest,
 };
 use kms_connector_api::{
-    ErrorCode, ErrorResponse, PublicDecryptionRequest, PublicDecryptionResponse,
-    SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody,
+    ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, PublicDecryptionRequest,
+    PublicDecryptionResponse, SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody,
 };
 use serde_json::Value;
 use sqlx::{
@@ -71,6 +71,7 @@ fn validate(
 pub struct PublicRoute;
 
 impl DecryptionRoute for PublicRoute {
+    const ROUTE: &'static str = PUBLIC_DECRYPTION_ROUTE;
     type Request = ValidatedPublicDecryption;
     type ResponseRow = PublicDecryptionResponseRow;
 
@@ -166,7 +167,7 @@ mod tests {
         let evm_body = |handles| {
             serde_json::to_value(PublicDecryptionRequest {
                 ctHandles: handles,
-                extraData: Bytes::new(),
+                extraData: extra_data_v2_payload(U256::ONE, U256::ONE).into(),
             })
             .unwrap()
         };

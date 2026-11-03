@@ -11,7 +11,7 @@ http:
   body_read_timeout: 10s       # total time to receive a request body; after headers a request lasts at most this + call.timeout
   supported_chain_ids: [1, 137]   # host chain ids a ciphertext handle may carry (bytes 22..30 of the handle)
 kms_aggregator:
-  allow_insecure_http: false   # local/compose only: allows plain http and `auth: none` to non-loopback hosts (an api_key over http travels in clear)
+  allow_insecure_http: false   # local/compose only: allows plain http to non-loopback hosts
   max_concurrent_calls: 4096   # HTTP calls in flight at once, all aggregations together (>= number of endpoints); ~200 decryptions/s with 13 nodes, see kms_aggregator/docs.md
   call:
     timeout: 5000ms            # the deadline: one aggregation, and every call in it, ends by then
@@ -26,47 +26,54 @@ kms_aggregator:
     checks:                    # optional response checks, all off by default
       decryption_id_match: false     # reject a response whose decryptionId is not the request's content hash
       decryption_id_majority: false  # count and return only the shares carrying the majority decryptionId
-  endpoints:                   # one entry per KMS node; `auth` is required
+  auth:                        # FhevmSig (RFC-038) signing of every connector call; each connector allows the signer's address
+    chain_id: 1                # Ethereum chain id, part of the EIP-712 domain
+    protocol_config: "0x0000000000000000000000000000000000000000"   # ProtocolConfig address on Ethereum, part of the EIP-712 domain (placeholder)
+    validity: 2m               # header lifetime: > call.timeout, <= 5m (the longest the connectors accept)
+    address: "0x00000000000000000000000000000000000000ee"   # the signing key's address, allowed by every connector; startup fails on a mismatch (placeholder)
+    signer: { type: private_key, value_env: RELAYER_SIGNER_KEY }   # or { type: aws_kms, key_id: "..." }, region and credentials from the AWS environment (IRSA)
+  endpoints:                   # one entry per KMS node; `audience` is required: the FhevmSig audience the connector accepts, today its KMS
+                               # tx-sender address (the proxy's `tx_sender_address`); non-zero, unique per endpoint
     - name: kms_00
       url: "https://kms-00.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_00_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x0000000000000000000000000000000000000001"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_01
       url: "https://kms-01.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_01_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x0000000000000000000000000000000000000002"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_02
       url: "https://kms-02.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_02_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x0000000000000000000000000000000000000003"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_03
       url: "https://kms-03.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_03_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x0000000000000000000000000000000000000004"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_04
       url: "https://kms-04.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_04_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x0000000000000000000000000000000000000005"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_05
       url: "https://kms-05.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_05_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x0000000000000000000000000000000000000006"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_06
       url: "https://kms-06.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_06_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x0000000000000000000000000000000000000007"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_07
       url: "https://kms-07.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_07_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x0000000000000000000000000000000000000008"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_08
       url: "https://kms-08.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_08_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x0000000000000000000000000000000000000009"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_09
       url: "https://kms-09.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_09_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x000000000000000000000000000000000000000a"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_10
       url: "https://kms-10.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_10_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x000000000000000000000000000000000000000b"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_11
       url: "https://kms-11.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_11_API_KEY }   # sent as `authorization: Bearer <key>`
+      audience: "0x000000000000000000000000000000000000000c"   # FhevmSig audience that node accepts (placeholder)
     - name: kms_12
       url: "https://kms-12.example.net:8443"   # origin only: the connector proxy matches /v1/... exactly
-      auth: { type: api_key, value_env: KMS_12_API_KEY }   # sent as `authorization: Bearer <key>`
-    # Local connector without authentication (loopback: allowed without allow_insecure_http):
+      audience: "0x000000000000000000000000000000000000000d"   # FhevmSig audience that node accepts (placeholder)
+    # Local connector (loopback: plain http allowed without allow_insecure_http):
     #   - name: kms_local
     #     url: "http://localhost:3002"
-    #     auth: { type: none }
+    #     audience: "0x..."

@@ -11,8 +11,9 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FhevmRuntime } from '../../core/types/coreFhevmRuntime.js';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
-import { asBytes32Hex } from '../../core/base/bytes.js';
-import { buildHandle } from '../../core/handle/FhevmHandle.js';
+import { asBytes32, asBytes32Hex, hexToBytes } from '../../core/base/bytes.js';
+import type { Handle } from '../../core/types/encryptedTypes-p.js';
+import { bytes32ToHandle, FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION } from '../../core/handle/FhevmHandle.js';
 import { publicDecryptCertificate } from '../actions/publicDecryptCertificate.js';
 import {
   PERMIT_IDENTITY_LEN,
@@ -23,6 +24,28 @@ import {
   decodeSolanaPermitFields,
 } from '../permit/index.js';
 import { buildSolanaUserDecryptRequest } from '../userDecrypt/index.js';
+
+/**
+ * Test helper, as main's handle tests have it: a computed handle
+ * hash21 (bytes 0..20) | 0xFF (byte 21) | chainId (bytes 22..29) | fheTypeId (30) | version (31).
+ */
+function buildHandle({
+  chainId,
+  hash21,
+  fheTypeId,
+}: {
+  chainId: number | bigint;
+  hash21: string;
+  fheTypeId: number;
+}): Handle {
+  const bytes = new Uint8Array(32);
+  bytes.set(hexToBytes(hash21), 0);
+  bytes[21] = 0xff;
+  new DataView(bytes.buffer).setBigUint64(22, BigInt(chainId));
+  bytes[30] = fheTypeId;
+  bytes[31] = FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION;
+  return bytes32ToHandle(asBytes32(bytes));
+}
 
 type Vector = { readonly name: string; readonly request: unknown };
 const vectors = JSON.parse(

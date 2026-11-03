@@ -2,6 +2,7 @@
 {{- if not .Values.kmsConnectorEndpoint.enabled }}{{ fail "kmsConnectorProxy requires kmsConnectorEndpoint.enabled" }}{{ end -}}
 {{- $contracts := include "kmsConnector.contracts" . | fromYaml -}}
 {{- $ethereum := include "kmsConnector.ethereumHostChain" . | fromYaml -}}
+{{- $shutdownGrace := int (default 60 .Values.kmsConnectorProxy.shutdownGracePeriodSeconds) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,6 +35,8 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
+      # The shutdown grace period, then Pingora's 5s to close what is left, then 5s margin.
+      terminationGracePeriodSeconds: {{ add $shutdownGrace 10 }}
       {{- with .Values.kmsConnectorProxy.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -73,6 +76,10 @@ spec:
           {{- with .Values.kmsConnectorProxy.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
+            # Set from `shutdownGracePeriodSeconds`, after `env`, so it always matches
+            # `terminationGracePeriodSeconds`.
+            - name: KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD
+              value: "{{ $shutdownGrace }}s"
             - name: KMS_CONNECTOR_TLS_CONFIG__CERT_PATH
               value: /etc/kms-connector/proxy/tls.crt
             - name: KMS_CONNECTOR_TLS_CONFIG__KEY_PATH

@@ -1,5 +1,3 @@
-// `solana/test-fixtures/host-chain/host_chain_v1.json` pins the DD-052 chain-type layout that
-// `zama_solana_acl::host_chain` generates; these helpers must agree with it.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
@@ -18,6 +16,8 @@ type HostChainVectorFile = {
   solana_host_chain_ids: { chain_id: string; cluster_tag: string }[];
 };
 
+// `solana/test-fixtures/host-chain/host_chain_v1.json` pins the DD-052 chain-type layout that
+// `zama_solana_acl::host_chain` generates; these helpers must agree with it.
 const VECTOR_FILE = new URL('../../../../../solana/test-fixtures/host-chain/host_chain_v1.json', import.meta.url);
 const file = JSON.parse(readFileSync(VECTOR_FILE, 'utf8')) as HostChainVectorFile;
 

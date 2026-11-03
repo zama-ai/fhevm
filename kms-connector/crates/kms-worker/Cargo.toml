@@ -64,8 +64,8 @@ ring.workspace = true
 rstest.workspace = true
 serial_test.workspace = true
 testcontainers.workspace = true
-# Paused time for the hedging tests.
-tokio = { workspace = true, features = ["test-util"] }
+# Paused time for the hedging tests; a raw TCP listener for the gRPC keep-alive tests.
+tokio = { workspace = true, features = ["io-util", "net", "test-util"] }
 tower.workspace = true
 toml.workspace = true
 tracing-test.workspace = true

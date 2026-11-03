@@ -16,7 +16,7 @@ use connector_utils::tests::{
     },
     rand::{rand_digest, rand_handle},
     setup::{
-        DbInstance, TestInstanceBuilder, erc1271_magic_response,
+        DbInstance, TestInstanceBuilder, acl_multicall_response, erc1271_magic_response,
         init_host_chains_acl_contracts_mock,
     },
 };
@@ -81,30 +81,31 @@ async fn test_decryption_acl_failure(
     info!("Gateway + Ethereum mock started!");
 
     // Mocking Host chain ACL to DENY decryption.
-    // Per attempt: Public → 1 bool; Legacy user → 1 U256 (invalidation) + 2 bools;
+    // Per attempt (ACL reads batched in one multicall): Public → 1 bool;
+    // Legacy user → 1 U256 (invalidation) + 2 bools;
     // V2 → 1 `isValidSignature` (RFC-012) + 1 U256 (invalidation) + 1 bool (ownership, denied).
     let acl_responses = match event_type {
         TestEventType::PublicDecryption => {
-            vec![false.abi_encode(); MAX_DECRYPTION_ATTEMPTS as usize]
+            vec![acl_multicall_response(vec![false.abi_encode()]); MAX_DECRYPTION_ATTEMPTS as usize]
         }
         TestEventType::UserDecryptionV2 => (0..MAX_DECRYPTION_ATTEMPTS)
             .flat_map(|_| {
                 vec![
                     erc1271_magic_response(),
-                    U256::ZERO.abi_encode(),
-                    false.abi_encode(),
+                    acl_multicall_response(vec![U256::ZERO.abi_encode(), false.abi_encode()]),
                 ]
             })
             .collect(),
-        TestEventType::UserDecryption => (0..MAX_DECRYPTION_ATTEMPTS)
-            .flat_map(|_| {
-                vec![
+        TestEventType::UserDecryption => {
+            vec![
+                acl_multicall_response(vec![
                     U256::ZERO.abi_encode(),
                     false.abi_encode(),
                     false.abi_encode(),
-                ]
-            })
-            .collect(),
+                ]);
+                MAX_DECRYPTION_ATTEMPTS as usize
+            ]
+        }
         _ => vec![],
     };
     let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);

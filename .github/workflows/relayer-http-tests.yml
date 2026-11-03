@@ -68,6 +68,11 @@ jobs:
           cache-targets: true
           cache-all-crates: true
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@a37010ded18ff788be4440302bd6830b1ae50d8b # v2.68.25
+        with:
+          tool: cargo-nextest
+
       - name: Format
         working-directory: relayer-http
         # Not `--all`: cargo-fmt would follow the `kms-connector-api` path dependency into the
@@ -76,7 +81,12 @@ jobs:
 
       - name: Tests
         working-directory: relayer-http
-        run: RUST_BACKTRACE=full cargo test --workspace
+        run: RUST_BACKTRACE=full cargo nextest run --workspace
+
+      - name: AWS KMS signer against an AWS emulator
+        working-directory: relayer-http
+        # Starts Floci, then runs the ignored `aws_kms_emulator` tests with IRSA-style credentials.
+        run: RUST_BACKTRACE=full make -C dev test-aws
 
   clippy:
     name: relayer-http-test/clippy (bpr)

@@ -16,7 +16,11 @@ use connector_utils::{
         },
         setup::{TestInstance, TestInstanceBuilder, pick_free_port},
     },
-    types::db::{OperationStatus, RequestSource},
+    types::{
+        DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT,
+        db::{OperationStatus, RequestSource},
+        extra_data::extra_data_v2_payload,
+    },
 };
 use endpoint::core::{Config, Endpoint};
 use kms_connector_api::{
@@ -29,6 +33,7 @@ use rstest::rstest;
 use sqlx::{Pool, Postgres, Row, types::chrono::Utc};
 use std::{
     net::SocketAddr,
+    num::NonZeroUsize,
     str::FromStr,
     time::{Duration, Instant},
 };
@@ -668,6 +673,7 @@ async fn test_client_disconnect_releases_permit() -> anyhow::Result<()> {
 async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Result<()> {
     let endpoint = setup_with(|config| Config {
         max_body_bytes: 1024,
+        max_handles_per_decryption: NonZeroUsize::new(2).unwrap(),
         ..config
     })
     .await?;
@@ -684,8 +690,9 @@ async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Resul
 
     // Unknown field.
     let raw = format!(
-        r#"{{"ctHandles":["{}"],"extraData":"0x00","sneaky":1}}"#,
-        rand_handle(CHAIN_ID)
+        r#"{{"ctHandles":["{}"],"extraData":"{}","sneaky":1}}"#,
+        rand_handle(CHAIN_ID),
+        extra_data()
     );
     let response = endpoint.post_raw(PUBLIC_DECRYPTION_ROUTE, raw).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -695,7 +702,7 @@ async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Resul
     let response = endpoint
         .post_public(&PublicDecryptionRequest {
             ctHandles: vec![rand_handle(CHAIN_ID); 32],
-            extraData: Bytes::from(vec![0x00]),
+            extraData: extra_data(),
         })
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -705,20 +712,30 @@ async fn test_malformed_requests_answer_400_without_db_access() -> anyhow::Resul
     let response = endpoint
         .post_public(&PublicDecryptionRequest {
             ctHandles: vec![],
-            extraData: Bytes::new(),
+            extraData: extra_data(),
         })
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let response = endpoint
         .post_public(&PublicDecryptionRequest {
             ctHandles: vec![rand_handle(CHAIN_ID + 1)],
-            extraData: Bytes::new(),
+            extraData: extra_data(),
         })
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body = error_body(response).await;
     assert_eq!(body.code, ErrorCode::Malformed);
     assert!(body.message.contains("unsupported chain id"));
+    let response = endpoint
+        .post_public(&PublicDecryptionRequest {
+            ctHandles: vec![rand_handle(CHAIN_ID); 3],
+            extraData: extra_data(),
+        })
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = error_body(response).await;
+    assert_eq!(body.code, ErrorCode::Malformed);
+    assert!(body.message.contains("too many handles"));
 
     // Empty handle list.
     let mut request = user_request();
@@ -861,7 +878,7 @@ async fn setup_with(configure: impl FnOnce(Config) -> Config) -> anyhow::Result<
     let mut test_instance = TestInstanceBuilder::db_setup().await?;
     let db = test_instance.db().clone();
     let config = configure(Config {
-        database_url: test_instance.db_url().to_string(),
+        database_url: test_instance.db_url().parse().unwrap(),
         database_pool_size: 3,
         http_endpoint: SocketAddr::from_str(&format!("127.0.0.1:{}", pick_free_port())).unwrap(),
         supported_chain_ids: vec![CHAIN_ID],
@@ -963,10 +980,15 @@ fn rand_handle(chain_id: u64) -> B256 {
     B256::from(bytes)
 }
 
+/// A well-formed v2 `extraData` targeting the testing KMS context and default epoch.
+fn extra_data() -> Bytes {
+    Bytes::from(extra_data_v2_payload(TESTING_KMS_CONTEXT, DEFAULT_EPOCH_ID))
+}
+
 fn public_request() -> PublicDecryptionRequest {
     PublicDecryptionRequest {
         ctHandles: vec![rand_handle(CHAIN_ID), rand_handle(CHAIN_ID)],
-        extraData: Bytes::from(vec![0x00]),
+        extraData: extra_data(),
     }
 }
 
@@ -986,7 +1008,7 @@ fn user_request() -> UserDecryptionRequest {
                 startTimestamp: Utc::now().timestamp() as u64 - 60,
                 durationSeconds: 300,
             },
-            extraData: Bytes::from(vec![0x00]),
+            extraData: extra_data(),
         },
         signature: Bytes::from(vec![0x66; 65]),
     }

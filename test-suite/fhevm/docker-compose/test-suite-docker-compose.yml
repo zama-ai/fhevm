@@ -12,7 +12,7 @@ services:
     network_mode: "container:fhevm-object-store"
     env_file:
       - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/test-suite.env
-    # The CA of the kms-connector proxies' test certificate, trusted through NODE_EXTRA_CA_CERTS.
+    # The kms-connector proxies' test CA, trusted through NODE_EXTRA_CA_CERTS.
     volumes:
       - ../static/config/kms-connector-proxy/ca.crt:/etc/kms-connector/proxy/ca.crt:ro
     command:

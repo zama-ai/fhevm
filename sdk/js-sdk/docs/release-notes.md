@@ -10,6 +10,25 @@
   **Breaking:** this SDK release only supports FHEVM protocol `0.15.0` through `0.17.0` — older
   protocol lines are no longer supported. Upgrade your host chain to protocol `>= 0.15.0` before
   upgrading to this SDK version.
+- **Custom query parameters for relayer requests.** `RelayerCommonOptions` now accepts a
+  `query: Record<string, string>` field next to `headers`. Its entries are appended,
+  percent-encoded, to the URL of job requests (submission and polling) and the key-URL
+  lookup. `headers` remains the preferred option; use `query` only when a proxy in front of
+  the relayer strips custom headers before they reach it.
+- **Experimental: RFC-030 pad-based input encryption ("transciphering").** A new client,
+  `createFhevmEncryptTransciClient` (and `createFhevmCleartextEncryptTransciClient` in the
+  cleartext entry points), exposes `encryptValueTransci` / `encryptValuesTransci`: values are
+  masked with a one-time pad fetched from the KMS instead of being proven with a ZK proof. They
+  require a `signedPermit` (a v2 permit from `signUnifiedDecryptionPermit`, signed by
+  `userAddress`), take `RelayerCommonOptions`, and return an `inputPackage` to pass as the `bytes`
+  argument of your contract call. The client loads the TKMS WASM, not the TFHE one, and also
+  exposes `generateTransportKeyPair`, so no decrypt client is needed to build the permit (the
+  `generateTransportKeyPair` action accepts it too). Also added:
+  the matching standalone actions in `@fhevm/sdk/actions/encrypt`,
+  `initFhevmEncryptTransciRuntime`, and the `FhevmEncryptTransciClient` type. Only the cleartext
+  pad-share encoding is supported for now, so this works against the v0.16 cleartext host
+  contracts only. The input-proof flow (`encryptValue` / `encryptValues`, `inputProof`) is
+  unchanged.
 
 #### Changed
 

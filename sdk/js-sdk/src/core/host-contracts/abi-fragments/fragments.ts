@@ -486,3 +486,72 @@ export const getContextSignersAndThresholdFromExtraDataAbi: readonly [
     stateMutability: 'view',
   },
 ] as const;
+
+////////////////////////////////////////////////////////////////////////////////
+// KMSGeneration.getActiveKeyId()
+////////////////////////////////////////////////////////////////////////////////
+
+export const getActiveKeyIdAbi: readonly [Record<string, unknown> & { readonly name: 'getActiveKeyId' }] = [
+  {
+    type: 'function',
+    name: 'getActiveKeyId',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+] as const;
+
+////////////////////////////////////////////////////////////////////////////////
+// KMSGeneration.getActiveCrsId()
+////////////////////////////////////////////////////////////////////////////////
+
+export const getActiveCrsIdAbi: readonly [Record<string, unknown> & { readonly name: 'getActiveCrsId' }] = [
+  {
+    type: 'function',
+    name: 'getActiveCrsId',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+] as const;
+
+////////////////////////////////////////////////////////////////////////////////
+// KMSGeneration.getKeyMaterials()
+////////////////////////////////////////////////////////////////////////////////
+
+export const getKeyMaterialsAbi: readonly [Record<string, unknown> & { readonly name: 'getKeyMaterials' }] = [
+  {
+    type: 'function',
+    name: 'getKeyMaterials',
+    inputs: [{ name: 'keyId', type: 'uint256' }],
+    outputs: [
+      { name: '', type: 'string[]' },
+      {
+        name: '',
+        type: 'tuple[]',
+        components: [
+          { name: 'keyType', type: 'uint8' },
+          { name: 'digest', type: 'bytes' },
+        ],
+      },
+    ],
+    stateMutability: 'view',
+  },
+] as const;
+
+////////////////////////////////////////////////////////////////////////////////
+// KMSGeneration.getCrsMaterials()
+////////////////////////////////////////////////////////////////////////////////
+
+export const getCrsMaterialsAbi: readonly [Record<string, unknown> & { readonly name: 'getCrsMaterials' }] = [
+  {
+    type: 'function',
+    name: 'getCrsMaterials',
+    inputs: [{ name: 'crsId', type: 'uint256' }],
+    outputs: [
+      { name: '', type: 'string[]' },
+      { name: '', type: 'bytes' },
+    ],
+    stateMutability: 'view',
+  },
+] as const;

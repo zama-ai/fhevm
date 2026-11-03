@@ -9,7 +9,13 @@ import {
   EncryptedValueHolder,
   UserDecrypt,
 } from '../../types';
-import { createInstances, relayerApiKey, relayerUrl, verifyingContractAddressDecryption } from '../instance';
+import {
+  createInstances,
+  protocolConfigAddress,
+  relayerApiKey,
+  relayerUrl,
+  verifyingContractAddressDecryption,
+} from '../instance';
 import { isLiveNetwork } from '../network';
 import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
 import {
@@ -17,6 +23,7 @@ import {
   chainIdFromHandle,
   computeUnifiedDigest,
   concatSignatureParts,
+  currentKmsExtraData,
   describeUnifiedFailure,
   directHandle,
   isSignatureRejection,
@@ -145,6 +152,7 @@ describe('ERC-1271 user decryption', function () {
       relayerUrl,
       decryptionContractAddress: verifyingContractAddressDecryption,
       apiKey: relayerApiKey || undefined,
+      extraData: await currentKmsExtraData(ethers.provider, protocolConfigAddress),
     };
 
     // A normal dapp contract with an alice-owned handle (for the EOA fast path).
@@ -812,7 +820,7 @@ describe('ERC-1271 user decryption', function () {
       userAddress: fixture.safe.address,
       signature: blob,
       publicKey: req.publicKey.replace(/^0x/, ''),
-      extraData: '0x00',
+      extraData: cfg.extraData,
     };
     const baseUrl = relayerUrl.replace(/\/(v[0-9]+)\/?$/, '').replace(/\/$/, '');
     const resp = await fetch(`${baseUrl}/v2/user-decrypt`, {

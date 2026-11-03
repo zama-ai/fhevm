@@ -1,5 +1,6 @@
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { FhevmBase } from '../types/coreFhevmClient.js';
 import type { BytesHex, ChecksummedAddress, TypedValue } from '../types/primitives.js';
 import type { RelayerInputProofOptions } from '../types/relayer.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
@@ -9,12 +10,10 @@ import { createZkProof } from './ZkProofBuilder-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Context = {
-  readonly chain: FhevmChain;
-  readonly runtime: WithEncrypt;
-  readonly client: NonNullable<object>;
-  readonly options: { readonly batchRpcCalls: boolean };
-};
+// The SDK client itself, not a copy of its fields: on a key cache miss, the
+// key check reads KMSGeneration through the client's trusted host-chain
+// client, which only a genuine client instance carries.
+type Context = FhevmBase<FhevmChain, WithEncrypt>;
 
 type Parameters = {
   readonly contractAddress: ChecksummedAddress;
@@ -34,10 +33,11 @@ type ReturnType = {
 export async function encrypt(context: Context, parameters: Parameters): Promise<ReturnType> {
   const hardCodedExtraData = '0x00' as BytesHex;
 
-  const zkProof = await createZkProof(
-    { chain: context.chain, runtime: context.runtime },
-    { ...parameters, extraData: hardCodedExtraData, fhevmContext: parameters.fhevmContext },
-  );
+  const zkProof = await createZkProof(context, {
+    ...parameters,
+    extraData: hardCodedExtraData,
+    fhevmContext: parameters.fhevmContext,
+  });
 
   const inputProof = await fetchVerifiedInputProof(context, {
     zkProof,

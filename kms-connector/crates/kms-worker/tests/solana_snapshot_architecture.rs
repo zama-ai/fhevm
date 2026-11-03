@@ -551,7 +551,7 @@ async fn node_answering(
     });
     server.start().await.unwrap();
     let client = SolanaRpcClient::new(
-        server.base_url().unwrap().clone(),
+        server.base_url().unwrap().clone().into(),
         std::time::Duration::from_secs(1),
         std::num::NonZeroUsize::new(1).unwrap(),
     );
@@ -674,7 +674,7 @@ async fn rpc_throttling_retries_fit_inside_the_configured_deadline() {
     });
     server.start().await.unwrap();
     let client = SolanaRpcClient::new(
-        server.base_url().unwrap().clone(),
+        server.base_url().unwrap().clone().into(),
         std::time::Duration::from_millis(50),
         std::num::NonZeroUsize::new(1).unwrap(),
     );

@@ -1,6 +1,8 @@
-// Web (Fetch API) adapter for the gateway — for Next.js route handlers, which
-// receive a `Request` and return a `Response`. Mirrors nodeAdapter.ts; both call
-// the same `handleGateway`.
+/**
+ * Web (Fetch API) adapter for the gateway — for Next.js route handlers, which
+ * receive a `Request` and return a `Response`. Mirrors nodeAdapter.ts; both call
+ * the same `handleGateway`.
+ */
 
 import { type GatewayConfig, handleGateway } from './gateway.js';
 

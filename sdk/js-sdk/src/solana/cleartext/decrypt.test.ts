@@ -6,8 +6,13 @@ import { address, getAddressEncoder, type Address } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaRpc } from '../encryptedStore.js';
 import type { SolanaLeafReader } from './leafRecord.js';
-import { bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
-import { buildHandle, toFhevmHandle } from '../../core/handle/FhevmHandle.js';
+import { asBytes32, bytesToHex, bytesToHexNo0x, concatBytes, hexToBytes } from '../../core/base/bytes.js';
+import type { Handle } from '../../core/types/encryptedTypes-p.js';
+import {
+  bytes32ToHandle,
+  FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION,
+  toFhevmHandle,
+} from '../../core/handle/FhevmHandle.js';
 import { createKmsPublicDecryptEip712 } from '../../core/kms/createKmsPublicDecryptEip712.js';
 import { publicDecryptDigest, verifyPublicDecryptSignatures } from '../actions/decryptPublicValue.js';
 import { RelayerAbortError } from '../../core/errors/RelayerAbortError.js';
@@ -29,6 +34,28 @@ import {
   cleartextUserDecryptExecution,
 } from './decrypt.js';
 import { SOLANA_CLEARTEXT_SIGNER_ADDRESSES } from './parties.js';
+
+/**
+ * Test helper, as main's handle tests have it: a computed handle
+ * hash21 (bytes 0..20) | 0xFF (byte 21) | chainId (bytes 22..29) | fheTypeId (30) | version (31).
+ */
+function buildHandle({
+  chainId,
+  hash21,
+  fheTypeId,
+}: {
+  chainId: number | bigint;
+  hash21: string;
+  fheTypeId: number;
+}): Handle {
+  const bytes = new Uint8Array(32);
+  bytes.set(hexToBytes(hash21), 0);
+  bytes[21] = 0xff;
+  new DataView(bytes.buffer).setBigUint64(22, BigInt(chainId));
+  bytes[30] = fheTypeId;
+  bytes[31] = FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION;
+  return bytes32ToHandle(asBytes32(bytes));
+}
 
 const host = address('11111111111111111111111111111112');
 const signer = address('SysvarRent111111111111111111111111111111111');

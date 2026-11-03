@@ -4,6 +4,7 @@ import type { EncryptionBits, FheType } from '../types/fheType.js';
 import type { SolanaProofContext, ZkProofBuilder } from '../types/zkProofBuilder-p.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { FhevmBase, OptionalNativeClient } from '../types/coreFhevmClient.js';
 import type {
   TypedValue,
   Uint32ValueLike,
@@ -17,6 +18,7 @@ import type {
 } from '../types/primitives.js';
 import type { SolanaZkProof } from './SolanaZkProof-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { FheEncryptionKeyWasm } from '../types/fheEncryptionKey.js';
 import { assert } from '../base/errors/InternalError.js';
 import { isUint64 } from '../base/uint.js';
 import { asBytesHex } from '../base/bytes.js';
@@ -27,15 +29,12 @@ import { toSolanaZkProof } from './SolanaZkProof-p.js';
 import { createTypedValue, TypedValueArrayBuilder } from '../base/typedValue.js';
 import { toZkProof } from './ZkProof-p.js';
 import { encryptionBitsFromFheType, fheTypeNameFromTypeName } from '../handle/FheType.js';
-import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
+import { fetchFheEncryptionKeyWasm, fetchSolanaFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
 import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Context = {
-  readonly chain: FhevmChain;
-  readonly runtime: WithEncrypt;
-};
+type Context = FhevmBase<FhevmChain, WithEncrypt, OptionalNativeClient>;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -169,18 +168,19 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       });
     }
 
+    // Fetch the FheEncryptionKey (in wasm format) through the key cache.
+    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext });
     const {
       aclContractAddress,
       ciphertextWithZkProof,
       extraData: finalExtraData,
-    } = await this.#encodeAndProve(
-      context,
-      context.chain.fhevm.contracts.acl.address,
+    } = await this.#encodeAndProve(context.runtime, fheEncryptionKeyWasm, {
+      chainId,
+      aclContractAddress: context.chain.fhevm.contracts.acl.address,
       contractAddress,
       userAddress,
-      asBytesHex(extraData),
-      fhevmContext,
-    );
+      extraData: asBytesHex(extraData),
+    });
 
     return toZkProof(
       {
@@ -199,8 +199,8 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
   /**
    * Solana counterpart of {@link build}: produces a {@link SolanaZkProof} bound to
    * DD-026 bytes32 host identities and the 128-byte aux layout. The proof-generation
-   * core is shared with {@link build}; only the aux layout (selected by host chain
-   * type inside `buildInputProofMetaData`) and the returned proof type differ.
+   * core is shared with {@link build}; only the key fetch, the aux layout (selected by
+   * host chain type inside `buildInputProofMetaData`) and the returned proof type differ.
    */
   public async buildSolana(
     context: SolanaProofContext,
@@ -220,15 +220,21 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       });
     }
 
+    const fheEncryptionKeyWasm = await fetchSolanaFheEncryptionKeyWasm(context, {
+      fhevmContext: createFhevmClientFrozenContext({}),
+    });
     // Solana input-proof extraData is fixed (`0x00`): the host binding lives in the 128-byte aux
     // (`buildInputProofMetaData`), and SolanaZkProof carries no extraData field.
     const { aclContractAddress, ciphertextWithZkProof } = await this.#encodeAndProve(
-      context,
-      context.aclProgramAddress,
-      contractAddress,
-      userAddress,
-      asBytesHex('0x00'),
-      createFhevmClientFrozenContext({}),
+      context.runtime,
+      fheEncryptionKeyWasm,
+      {
+        chainId,
+        aclContractAddress: context.aclProgramAddress,
+        contractAddress,
+        userAddress,
+        extraData: asBytesHex('0x00'),
+      },
     );
 
     return toSolanaZkProof(
@@ -249,26 +255,32 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
   //////////////////////////////////////////////////////////////////////////////
 
   /**
-   * Shared proof-generation core for {@link build} and {@link buildSolana}: fetches the
-   * FHE key, assembles the host-appropriate input-proof aux, and produces the packed
-   * proven ciphertext. The aux layout is chosen by host chain type inside
-   * `buildInputProofMetaData`; the caller wraps the result in the matching proof type.
+   * Shared proof-generation core for {@link build} and {@link buildSolana}: assembles the
+   * host-appropriate input-proof aux and produces the packed proven ciphertext. The aux layout
+   * is chosen by host chain type inside `buildInputProofMetaData`; the caller wraps the result
+   * in the matching proof type.
    */
   async #encodeAndProve(
-    context: Parameters<typeof fetchFheEncryptionKeyWasm>[0],
-    aclContractAddress: string,
-    contractAddress: string,
-    userAddress: string,
-    extraData: BytesHex,
-    fhevmContext: FhevmClientFrozenContext,
+    runtime: WithEncrypt,
+    fheEncryptionKeyWasm: FheEncryptionKeyWasm,
+    {
+      chainId,
+      aclContractAddress,
+      contractAddress,
+      userAddress,
+      extraData,
+    }: {
+      readonly chainId: number | bigint;
+      readonly aclContractAddress: string;
+      readonly contractAddress: string;
+      readonly userAddress: string;
+      readonly extraData: BytesHex;
+    },
   ): Promise<{
     readonly aclContractAddress: string;
     readonly ciphertextWithZkProof: Uint8Array;
     readonly extraData: BytesHex;
   }> {
-    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext });
-    const chainId = context.chain.id;
-
     // Prover side of the input-proof auxiliary data. It MUST agree with the
     // coprocessor zkproof-worker verifier byte-for-byte: EVM hosts use the
     // 92-byte 20-byte-address layout, Solana hosts (DD-026) the 128-byte bytes32
@@ -280,13 +292,12 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       aclContractAddress,
     });
 
-    const { ciphertextWithZKProofBytes, extraData: finalExtraData } =
-      await context.runtime.encrypt.buildWithProofPacked({
-        typedValues: [...this.#builder.build()],
-        fheEncryptionKey: fheEncryptionKeyWasm,
-        metaData,
-        extraData: asBytesHex(extraData),
-      });
+    const { ciphertextWithZKProofBytes, extraData: finalExtraData } = await runtime.encrypt.buildWithProofPacked({
+      typedValues: [...this.#builder.build()],
+      fheEncryptionKey: fheEncryptionKeyWasm,
+      metaData,
+      extraData: asBytesHex(extraData),
+    });
 
     return {
       aclContractAddress,

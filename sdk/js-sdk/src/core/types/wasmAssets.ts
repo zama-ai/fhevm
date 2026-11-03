@@ -1,4 +1,4 @@
-/*
+/**
  * verified-blob:
  * --------------
  * Creates a worker from the configured URL after SHA-256 verification.

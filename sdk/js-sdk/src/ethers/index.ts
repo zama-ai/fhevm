@@ -4,7 +4,9 @@ export { createFhevmBaseClient } from './clients/createFhevmBaseClient.js';
 export { createFhevmClient } from './clients/createFhevmClient.js';
 export { createFhevmDecryptClient } from './clients/createFhevmDecryptClient.js';
 export { createFhevmEncryptClient } from './clients/createFhevmEncryptClient.js';
+export { createFhevmEncryptTransciClient } from './clients/createFhevmEncryptTransciClient.js';
 
 export { initFhevmRuntime } from './runtime/initFhevmRuntime.js';
 export { initFhevmEncryptRuntime } from './runtime/initFhevmEncryptRuntime.js';
+export { initFhevmEncryptTransciRuntime } from './runtime/initFhevmEncryptTransciRuntime.js';
 export { initFhevmDecryptRuntime } from './runtime/initFhevmDecryptRuntime.js';

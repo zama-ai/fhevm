@@ -42,6 +42,7 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 fhevm_gateway_bindings = { path = "../../../gateway-contracts/rust_bindings" }
 
 [dev-dependencies]
+axum = { workspace = true }
 host-listener = { path = "../host-listener" }
 serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }

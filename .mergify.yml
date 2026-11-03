@@ -60,6 +60,14 @@ queue_rules:
       - check-success = run-e2e-tests / fhevm-e2e-test
       - check-success = run-e2e-tests-shard-decryption / fhevm-e2e-test
       - check-success = run-e2e-tests-shard-stateful / fhevm-e2e-test
+      # js-sdk-tests always runs and skips its test job when the SDK is
+      # untouched, so the check always reports; a path-filtered workflow
+      # would report nothing and hang the queue.
+      - or:
+        - check-success = js-sdk-tests/test
+        - check-skipped = js-sdk-tests/test
+      # Always runs, so no hang; if it fails, dequeue instead of skipping tests.
+      - check-success = js-sdk-tests/check-changes
     queue_conditions:
       - base = main
       - label!=do-not-merge

@@ -16,7 +16,11 @@ kms-connector-api = { path = "../kms-connector/crates/api", default-features = f
 zama-solana-acl = { path = "../solana/crates/zama-solana-acl" }
 zama-solana-permit = { path = "../solana/crates/zama-solana-permit" }
 zama-solana-request = { path = "../solana/crates/zama-solana-request" }
-alloy = { version = "=2.2.0", default-features = false, features = ["std", "serde", "sol-types"] }
+# FhevmSig (RFC-038) signing of the connector calls.
+fhevm-sig-auth = { path = "../shared/fhevm-sig-auth" }
+alloy = { version = "=2.2.0", default-features = false, features = ["std", "serde", "sol-types", "signer-local", "signer-aws"] }
+aws-config = { version = "=1.8.6", default-features = false, features = ["default-https-client", "rt-tokio"] }
+aws-sdk-kms = { version = "=1.86.0", default-features = false, features = ["default-https-client", "rt-tokio"] }
 async-trait = "=0.1.89"
 bytes = "=1.11.1"
 config = { version = "=0.15.19", default-features = false, features = ["yaml"] }

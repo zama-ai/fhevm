@@ -1,9 +1,11 @@
-// Launch the full test infra (2 cleartext anvils + the same-origin gateway) and
-// keep it running until Ctrl-C. While it's up, run any number of tests against
-// it — Playwright globalSetup reuses the live anvils and gateway instead of
-// starting its own (and teardown leaves them running).
-//
-//   npx tsx test/infra/up.ts        (or: test/infra/up.sh [-d|--detach])
+/**
+ * Launch the full test infra (2 cleartext anvils + the same-origin gateway) and
+ * keep it running until Ctrl-C. While it's up, run any number of tests against
+ * it — Playwright globalSetup reuses the live anvils and gateway instead of
+ * starting its own (and teardown leaves them running).
+ *
+ *   npx tsx test/infra/up.ts        (or: test/infra/up.sh [-d|--detach])
+ */
 
 import { startAnvils, stopAnvils } from './anvil/anvils.js';
 import { closeGatewayServer, createGatewayServer, listenGatewayServer } from './gateway/server.js';

@@ -26,15 +26,15 @@ source "$SCRIPT_DIR/fhevm-lib.sh"
 # ==============================================================================
 # `latest` is a friendly alias for whichever profile we currently consider the
 # tip of the supported set. Bump this when promoting a new version.
-LATEST_PROFILE_ALIAS="v13"
+LATEST_PROFILE_ALIAS="v16"
 
 # ==============================================================================
 # CLI options
 # 
 # Usage:
-#   ./fhevm-deploy.sh --profile v13 
-#   ./fhevm-deploy.sh --profile v13 --dry-run
-#   ./fhevm-deploy.sh --profile v13 --chain localcleartext
+#   ./fhevm-deploy.sh --profile v16
+#   ./fhevm-deploy.sh --profile v16 --dry-run
+#   ./fhevm-deploy.sh --profile v16 --chain localcleartext
 # ==============================================================================
 
 chain_default="localcleartext"
@@ -63,7 +63,7 @@ Usage: fhevm-deploy.sh [options]
 Options:
   --chain <name>        FHEVM chain (mainnet | testnet | devnet | localcleartext | localstack) [default: localcleartext].
                         Precedence: --chain flag > \$CHAIN env > $chain_default
-  --profile <name>      Foundry profile (v12 | v13 | latest) [default: $profile_default].
+  --profile <name>      Foundry profile (v12 | v13 | v16 | latest) [default: $profile_default].
   --dry-run             Print precomputed FHEVM host addresses and exit. No anvil, no broadcast,
                         no addresses file written.
   -h, --help            Show this help.
@@ -81,7 +81,7 @@ profile="${profile_cli:-$profile_default}"
 fhevm_assert_foundry_profile "$profile"
 
 # Resolve `latest` to its concrete alias so the rest of the script works on a
-# canonical profile name (v12 / v13). The CLI surface still accepts `latest`.
+# canonical profile name (v12 / v13 / v16). The CLI surface still accepts `latest`.
 if [[ "$profile" == "latest" ]]; then
     echo "ℹ️  profile=latest → resolving as ${LATEST_PROFILE_ALIAS}"
     profile="$LATEST_PROFILE_ALIAS"
@@ -130,6 +130,7 @@ fhevm_host_addresses_file="$(fhevm_host_addresses_file "$profile")"
 case "$profile" in
     v12) host_contracts_version="v0.12.0" ;;
     v13) host_contracts_version="v0.13.0" ;;
+    v16) host_contracts_version="v0.16.0" ;;
     *)
         echo "❌ Error: cannot resolve host_contracts_version for profile '$profile'" >&2
         exit 1

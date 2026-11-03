@@ -1,0 +1,4 @@
+# The zama-ai/kms git dependencies are private: fetch them with the git CLI so cargo uses the
+# credentials git is configured with (credential helper, `insteadOf` rewrite, ...).
+[net]
+git-fetch-with-cli = true

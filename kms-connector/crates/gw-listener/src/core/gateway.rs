@@ -1,6 +1,7 @@
 use crate::{
     core::{
         Config,
+        head::HeadTracker,
         publish::{ChainName, publish_batch},
     },
     monitoring::metrics::EVENT_LISTENING_ERRORS,
@@ -21,6 +22,7 @@ use connector_utils::{
 };
 use fhevm_gateway_bindings::decryption::Decryption::DecryptionEvents;
 use sqlx::{Pool, Postgres};
+use std::time::Instant;
 use tokio::select;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, info_span, warn};
@@ -76,7 +78,7 @@ where
             biased;
             _ = self.cancel_token.cancelled() => info!("Decryption polling cancelled..."),
             result = self.run_poll_loop() => if let Err(e) = result {
-                error!("Decryption polling failed: {e}");
+                error!("Decryption polling failed: {e:#}");
             }
         }
         self.cancel_token.cancel();
@@ -111,13 +113,18 @@ where
 
         info!("Started Decryption polling from block {from_block}");
 
+        let mut head_tracker = HeadTracker::new(
+            ChainName::Gateway,
+            &self.config.gateway_url,
+            self.config.gateway_stale_head_threshold,
+        );
         let mut ticker = tokio::time::interval(poll_interval);
         let max_errors = self.config.max_consecutive_polling_errors;
         let mut consecutive_errors: usize = 0;
         loop {
             ticker.tick().await;
             match self
-                .fetch_and_publish(base_filter.clone(), from_block)
+                .fetch_and_publish(base_filter.clone(), from_block, &mut head_tracker)
                 .await
             {
                 Ok((new_from_block, has_more)) => {
@@ -132,7 +139,7 @@ where
                         .with_label_values(&["decryption"])
                         .inc();
                     consecutive_errors = consecutive_errors.saturating_add(1);
-                    warn!("Decryption listening error: {e} ({consecutive_errors}/{max_errors})");
+                    warn!("Decryption listening error: {e:#} ({consecutive_errors}/{max_errors})");
                     if consecutive_errors >= max_errors {
                         anyhow::bail!("Too many consecutive errors for Decryption");
                     }
@@ -148,8 +155,10 @@ where
         &self,
         base_filter: Filter,
         from_block: u64,
+        head_tracker: &mut HeadTracker,
     ) -> anyhow::Result<(u64, bool)> {
         let current_block = self.provider.get_block_number().await?;
+        head_tracker.observe(current_block, from_block, Instant::now());
 
         if from_block > current_block {
             return Ok((from_block, false));
@@ -246,6 +255,26 @@ mod tests {
         }
 
         gw_listener.start().await;
+    }
+
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(90))]
+    #[tokio::test]
+    async fn test_stale_head_is_logged() {
+        // The listener is already past the head, so polling never reaches the DB.
+        let (mut test_instance, asserter, mut gw_listener) = test_setup(Some(101));
+        gw_listener.config.decryption_polling = Duration::from_millis(50);
+        gw_listener.config.gateway_stale_head_threshold = Duration::from_millis(500);
+        for _ in 0..1000 {
+            asserter.push_success(&100_u64);
+        }
+
+        let cancel_token = gw_listener.cancel_token.clone();
+        let listener_task = tokio::spawn(gw_listener.start());
+        test_instance.wait_for_log("has stayed at block 100").await;
+
+        cancel_token.cancel();
+        listener_task.await.unwrap();
     }
 
     #[rstest::rstest]

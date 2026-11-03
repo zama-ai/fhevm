@@ -14,6 +14,7 @@ import {
 } from '../../actions/encrypt/encryptValues.js';
 import { assertIsFhevmClientWith } from '../../runtime/CoreFhevm-p.js';
 import { _initEncrypt } from './encrypt-p.js';
+import { assertKeyVerificationConfig, requiresKeyVerification } from '../../key/verifyFheEncryptionKeyBytes-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -41,6 +42,11 @@ export function encryptActionsWithModule(
 ): FhevmExtension<EncryptActions, WithEncrypt> {
   const runtime = fhevm.runtime.extend(factory);
   assertIsFhevmClientWith(fhevm, 'encrypt');
+  // Fail at client creation, not at the first encryption, when key material
+  // cannot be verified against KMSGeneration (no RPC call).
+  if (requiresKeyVerification(runtime)) {
+    assertKeyVerificationConfig(fhevm);
+  }
   return {
     actions: _encryptActions(fhevm) as EncryptActions,
     runtime,

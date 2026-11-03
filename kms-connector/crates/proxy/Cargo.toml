@@ -18,14 +18,18 @@ async-trait.workspace = true
 bytes.workspace = true
 http.workspace = true
 humantime-serde.workspace = true
+opentelemetry.workspace = true
 pingora.workspace = true
+pingora-limits.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+tracing-opentelemetry.workspace = true
 
 [dev-dependencies]
+futures.workspace = true
 rcgen.workspace = true
 rstest.workspace = true
 rustls.workspace = true
