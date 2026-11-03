@@ -233,6 +233,22 @@ impl std::error::Error for RpcRequestError {
 
 static INSTALL_CRYPTO_PROVIDER_ONCE: Once = Once::new();
 
+/// Creates the Solana host's RPC client, Anza's `solana-rpc-client`, reading at finalized
+/// commitment. `timeout` bounds each HTTP request.
+///
+/// The client prints its URL in the errors of failed requests; its callers must strip it.
+#[cfg(feature = "solana-rpc")]
+pub fn solana_rpc_client(
+    rpc_url: &RpcUrl,
+    timeout: Duration,
+) -> solana_rpc_client::nonblocking::rpc_client::RpcClient {
+    solana_rpc_client::nonblocking::rpc_client::RpcClient::new_with_timeout_and_commitment(
+        rpc_url.as_url().to_string(),
+        timeout,
+        solana_commitment_config::CommitmentConfig::finalized(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

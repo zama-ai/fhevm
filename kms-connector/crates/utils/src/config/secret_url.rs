@@ -105,9 +105,9 @@ impl fmt::Debug for DatabaseUrl {
 pub struct RpcUrl(Url);
 
 impl RpcUrl {
-    /// Returns the URL with its secrets, to connect to the node. Only RPC clients call it: the
-    /// alloy providers of `conn.rs` and kms-worker's Solana host reader.
-    pub fn as_url(&self) -> &Url {
+    /// Returns the URL with its secrets, to connect to the node. Only the RPC clients of
+    /// `conn.rs` call it.
+    pub(crate) fn as_url(&self) -> &Url {
         &self.0
     }
 }

@@ -46,6 +46,8 @@ tracing-subscriber.workspace = true
 
 ciphertext-attestation = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
+solana-commitment-config = { workspace = true, optional = true }
+solana-rpc-client = { workspace = true, optional = true }
 testcontainers = { workspace = true, optional = true }
 toml = { workspace = true, optional = true }
 zama-solana-acl = { workspace = true, optional = true }
@@ -58,6 +60,8 @@ serial_test.workspace = true
 toml.workspace = true
 
 [features]
+# The Solana host's RPC client, which kms-worker reads Solana hosts with.
+solana-rpc = ["dep:solana-commitment-config", "dep:solana-rpc-client"]
 tests = [
     "alloy/node-bindings",
     "dep:ciphertext-attestation",
