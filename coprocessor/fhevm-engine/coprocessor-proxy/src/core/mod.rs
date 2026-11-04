@@ -5,6 +5,7 @@ mod http_proxy;
 mod proxy;
 mod routing;
 
+pub use client_limits::NEXT_HEAD_TIMEOUT;
 pub use config::Config;
 pub use error::{ErrorCode, ErrorResponse};
 pub use http_proxy::{CLIENT_IDLE_TIMEOUT, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT};

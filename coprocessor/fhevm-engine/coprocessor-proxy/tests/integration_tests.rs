@@ -13,7 +13,9 @@ use common::{
     auth_header_expiring, auth_header_for, now, prf_path, rate_limited_path, sender,
     stub_attestation, stub_output,
 };
-use coprocessor_proxy::core::{CLIENT_IDLE_TIMEOUT, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT};
+use coprocessor_proxy::core::{
+    CLIENT_IDLE_TIMEOUT, NEXT_HEAD_TIMEOUT, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT,
+};
 use coprocessor_proxy::kms_tx_senders::WOKEN_POLL_SPACING;
 use serde_json::{Value, json};
 use std::{
@@ -782,7 +784,7 @@ async fn test_refuses_a_request_body_and_closes_a_connection_that_drips_it() {
     });
 
     let mut response = Vec::new();
-    let bound = head_timeout + CLIENT_IDLE_TIMEOUT + Duration::from_secs(5);
+    let bound = head_timeout + NEXT_HEAD_TIMEOUT + Duration::from_secs(5);
     let read = tokio::time::timeout(bound, reader.read_to_end(&mut response)).await;
     dripping.abort();
     let response = String::from_utf8_lossy(&response);

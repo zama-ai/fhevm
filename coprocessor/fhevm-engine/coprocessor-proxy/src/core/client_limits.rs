@@ -13,7 +13,7 @@
 //!   ([`ClientLimits::response_sent`]).
 //!
 //! Pingora calls nothing when a handshake fails, so a pending entry that never completes expires
-//! after [`PINGORA_HANDSHAKE_TIMEOUT`], when its handshake has ended either way.
+//! after [`PENDING_HANDSHAKE_EXPIRY`], when its handshake has ended either way.
 
 use crate::core::CLIENT_IDLE_TIMEOUT;
 use async_trait::async_trait;
@@ -39,6 +39,18 @@ use tokio::{sync::watch, time::Instant};
 /// The time Pingora 0.9 gives a TLS handshake, fixed in `Service::run_endpoint`
 /// (pingora-core `services/listening.rs`).
 const PINGORA_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// When a pending entry expires. Pingora starts its handshake timer only when the connection's
+/// task runs, after the filter accepted it, so an entry outlives that timer by a margin that
+/// covers the delay under load.
+const PENDING_HANDSHAKE_EXPIRY: Duration =
+    Duration::from_secs(PINGORA_HANDSHAKE_TIMEOUT.as_secs() + 5);
+
+/// The time a client has, after a response, to send the next request head on the connection.
+/// Later than Pingora's keep-alive ([`CLIENT_IDLE_TIMEOUT`]), which starts once the response is
+/// finished: Pingora closes an idle connection itself, and this deadline only closes one whose
+/// next head, or previous body, is still arriving.
+pub const NEXT_HEAD_TIMEOUT: Duration = Duration::from_secs(CLIENT_IDLE_TIMEOUT.as_secs() + 5);
 
 static CONNECTIONS_REFUSED: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
@@ -121,7 +133,7 @@ impl ClientLimits {
     ) -> Self {
         Self {
             head_timeout,
-            next_head_timeout: CLIENT_IDLE_TIMEOUT,
+            next_head_timeout: NEXT_HEAD_TIMEOUT,
             max_connections_per_ip,
             max_pending_handshakes_per_ip,
             pending: Mutex::new(PendingHandshakes {
@@ -138,7 +150,8 @@ impl ClientLimits {
         self.set_deadline(connection, None);
     }
 
-    /// The connection's response is sent: the next request head is due within the idle timeout.
+    /// The connection's response is sent: the next request head is due within
+    /// [`NEXT_HEAD_TIMEOUT`].
     pub fn response_sent(&self, connection: ConnectionId) {
         self.set_deadline(connection, Some(Instant::now() + self.next_head_timeout));
     }
@@ -155,10 +168,10 @@ impl ClientLimits {
             return Ok(());
         }
         let now = Instant::now();
-        let is_live = |accepted_at: &Instant| now - *accepted_at < PINGORA_HANDSHAKE_TIMEOUT;
+        let is_live = |accepted_at: &Instant| now - *accepted_at < PENDING_HANDSHAKE_EXPIRY;
         let ip = canonical_ip(peer);
         let mut pending = lock(&self.pending);
-        if now - pending.swept_at >= PINGORA_HANDSHAKE_TIMEOUT {
+        if now - pending.swept_at >= PENDING_HANDSHAKE_EXPIRY {
             pending.by_ip.retain(|_, peers| {
                 peers.retain(|_, accepted_at| is_live(accepted_at));
                 !peers.is_empty()
@@ -384,7 +397,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_request_being_answered_has_no_deadline_and_the_next_head_is_due_after_the_idle_timeout()
+    async fn a_request_being_answered_has_no_deadline_and_the_next_head_is_due_after_pingoras_keep_alive()
      {
         let limits = ClientLimits::new(Duration::from_secs(1), 0, 0);
         let mut tracked = track(&limits, A);
@@ -392,13 +405,7 @@ mod tests {
         // prf-service can hold a request for minutes.
         assert!(!overdue(&mut tracked, Duration::from_secs(300)).await);
         limits.response_sent(id(A));
-        assert!(
-            !overdue(
-                &mut tracked,
-                CLIENT_IDLE_TIMEOUT - Duration::from_millis(100)
-            )
-            .await
-        );
+        assert!(!overdue(&mut tracked, NEXT_HEAD_TIMEOUT - Duration::from_millis(100)).await);
         assert!(overdue(&mut tracked, Duration::from_millis(200)).await);
     }
 
@@ -414,7 +421,7 @@ mod tests {
         drop(second);
         // The second connection's end leaves the first's deadline in place.
         limits.response_sent(1);
-        assert!(!overdue(&mut first, CLIENT_IDLE_TIMEOUT - Duration::from_millis(100)).await);
+        assert!(!overdue(&mut first, NEXT_HEAD_TIMEOUT - Duration::from_millis(100)).await);
         assert!(overdue(&mut first, Duration::from_millis(200)).await);
     }
 
@@ -499,9 +506,9 @@ mod tests {
 
         // A handshake completing after its entry expired frees no other connection's slot.
         let late = peer([10, 0, 0, 1], 200);
-        tokio::time::advance(PINGORA_HANDSHAKE_TIMEOUT).await;
+        tokio::time::advance(PENDING_HANDSHAKE_EXPIRY).await;
         assert!(limits.should_accept(Some(&late)).await);
-        tokio::time::advance(PINGORA_HANDSHAKE_TIMEOUT).await;
+        tokio::time::advance(PENDING_HANDSHAKE_EXPIRY).await;
         // These accepts expire the late entry and fill both slots.
         assert!(limits.should_accept(Some(&slow(4))).await);
         assert!(limits.should_accept(Some(&slow(5))).await);
@@ -510,11 +517,17 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_pending_entry_expires_with_the_pingora_handshake_timeout() {
+    async fn a_pending_entry_outlives_the_pingora_handshake_timeout() {
         let limits = ClientLimits::new(Duration::from_secs(10), 0, 1);
         assert!(limits.should_accept(Some(&peer([10, 0, 0, 1], 1))).await);
         assert!(limits.should_accept(Some(&peer([10, 0, 0, 2], 1))).await);
-        tokio::time::advance(PINGORA_HANDSHAKE_TIMEOUT - Duration::from_millis(1)).await;
+        // Still held when Pingora's own timer, started later, may not have fired yet.
+        tokio::time::advance(PINGORA_HANDSHAKE_TIMEOUT).await;
+        assert!(!limits.should_accept(Some(&peer([10, 0, 0, 1], 2))).await);
+        tokio::time::advance(
+            PENDING_HANDSHAKE_EXPIRY - PINGORA_HANDSHAKE_TIMEOUT - Duration::from_millis(1),
+        )
+        .await;
         assert!(!limits.should_accept(Some(&peer([10, 0, 0, 1], 2))).await);
         tokio::time::advance(Duration::from_millis(1)).await;
         assert!(limits.should_accept(Some(&peer([10, 0, 0, 1], 2))).await);
