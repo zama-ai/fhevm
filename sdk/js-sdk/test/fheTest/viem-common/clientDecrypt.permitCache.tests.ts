@@ -2,7 +2,12 @@ import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { parseTransportKeyPair, serializeTransportKeyPair } from '@fhevm/sdk/actions/chain';
-import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import {
+  getViemTestConfig,
+  latestBlockTimestamp,
+  type CreateViemDecryptClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import { decryptTestCases, fheTypeIdFromName, createLogger } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
@@ -53,7 +58,7 @@ export function defineClientDecryptPermitCacheTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
