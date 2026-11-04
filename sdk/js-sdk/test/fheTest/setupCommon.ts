@@ -30,7 +30,6 @@ export const FHE_TEST_CHAIN_NAMES = [
   'localcleartext_legacy',
   'localcleartext_v12',
   'localcleartext_v13',
-  'localcleartext_v16',
   'localcleartext_v1_0',
   'localstack',
   'localstack_v14',
@@ -96,7 +95,7 @@ export function protocolEraOf(chainName: FheTestChainName): 12 | 13 | 14 | 16 {
     return 12;
   }
   // v1.0 counts as the newest era the tests know, so every "at or above 16" gate stays on.
-  if (chainName === 'localcleartext_v16' || chainName === 'localcleartext_v1_0') {
+  if (chainName === 'localcleartext_v1_0') {
     return 16;
   }
   if (chainName === 'localstack' || chainName === 'localstack_v14') {
@@ -133,7 +132,6 @@ const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestC
   localcleartext_legacy: 'cleartext',
   localcleartext_v12: 'cleartext',
   localcleartext_v13: 'cleartext',
-  localcleartext_v16: 'cleartext',
   localcleartext_v1_0: 'cleartext',
   ingen_trex_cleartext: 'cleartext',
 };
@@ -537,7 +535,6 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     localcleartext,
     localcleartext_v12: localcleartext_legacy,
     localcleartext_v13: localcleartext,
-    localcleartext_v16: localcleartext,
     localcleartext_v1_0,
     polygon_devnet,
     ingen_trex_cleartext,
