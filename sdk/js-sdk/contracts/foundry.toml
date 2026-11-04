@@ -94,7 +94,7 @@ remappings = [
     "@fhevm/cleartext-0.16.0/=./src/v0.16.0/cleartext/",
 ]
 
-[profile.v1]
+[profile."v1.0"]
 remappings = [
     "forge-std/=dependencies/forge-std-1.11.0/src/",
     "encrypted-types/=dependencies/@encrypted-types-0.0.4/",

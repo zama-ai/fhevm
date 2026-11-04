@@ -108,10 +108,10 @@ at 22,834 B and `CleartextHCULimit` at 20,511 B, all under EIP-170. The test anv
 ### Optional profile (convention only)
 
 Imports are relative, so no remapping is required. To match the siblings, add a profile. The name is your choice,
-for example `v1`, and §7 assumes `v1`:
+for example `v1.0`, and §7 assumes `v1.0`:
 
 ```toml
-[profile.v1]
+[profile."v1.0"]
 remappings = [ <the 7 shared lines of [profile.v16]>,
     "@fhevm/host-contracts/=./src/v1.0.0/host-contracts/",
     "@fhevm/cleartext/=./src/v1.0.0/cleartext/",
@@ -283,7 +283,7 @@ Use the v0.16.0 path as the template: `scripts/fhevm-deploy.sh` → `scripts/v0.
 → `scripts/v0.16.0/libraries/DeployLib.sol`.
 
 1. `contracts/foundry.toml`:
-   - add `[profile.v1]` (optional, §3);
+   - add `[profile."v1.0"]` (optional, §3);
    - add `fs_permissions` write on `src/v1.0.0/config`.
 2. `contracts/scripts/v1.0.0/`:
    - Appendix A as `DeployCleartextFHEVMHost.s.sol`.
@@ -297,11 +297,11 @@ Use the v0.16.0 path as the template: `scripts/fhevm-deploy.sh` → `scripts/v0.
      - `Deploy`.
      - `Verify`, which needs `ACL_OWNER_ADDRESS = CREATE(deployer, N+14)`.
 3. `contracts/scripts/fhevm-lib.sh`:
-   - `fhevm_assert_foundry_profile`: accept `v1`.
-   - `fhevm_host_addresses_file v1`: return `…/src/v1.0.0/config/addresses.sol`, the file to regenerate.
-4. `contracts/scripts/fhevm-deploy.sh`: map `v1 → host_contracts_version="v1.0.0"`, and consider `LATEST_PROFILE_ALIAS`.
-5. `test/scripts/localcleartext-run-tests.sh`: accept `v1` in both `case "$PROFILE"` checks.
-6. `test/chains/`: a `localcleartext_v1` entry in `chain-defaults.json` and a chain definition if one is needed. The
+   - `fhevm_assert_foundry_profile`: accept `v1.0`.
+   - `fhevm_host_addresses_file v1.0.0`: return `…/src/v1.0.0/config/addresses.sol`, the file to regenerate.
+4. `contracts/scripts/fhevm-deploy.sh`: map `v1.0 → host_contracts_version="v1.0.0"`, and consider `LATEST_PROFILE_ALIAS`.
+5. `test/scripts/localcleartext-run-tests.sh`: accept `v1.0` in both `case "$PROFILE"` checks.
+6. `test/chains/`: a `localcleartext_v1_0` entry in `chain-defaults.json` and a chain definition if one is needed. The
    addresses match `localcleartext.ts` for the canonical deployer; v1.0 adds `paddedInputter` at `0xded0…2327`.
 7. `test/infra/config.ts` and `test/infra/anvil/anvils.ts`: update the slot and `profileVersionDir` if v1.0 becomes a slot.
    anvils.ts restores the regenerated address file after deploy, which here is `src/v1.0.0/config/addresses.sol`.
