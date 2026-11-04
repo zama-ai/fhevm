@@ -6837,6 +6837,7 @@ dependencies = [
  "ciphertext-attestation",
  "clap",
  "fhevm-engine-common",
+ "fhevm-sig-auth",
  "hex",
  "prometheus",
  "reqwest 0.12.23",
