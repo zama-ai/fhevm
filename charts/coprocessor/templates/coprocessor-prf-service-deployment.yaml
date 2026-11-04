@@ -4,6 +4,15 @@
 {{- fail "prfService needs coprocessorProxy.enabled and coprocessorProxy.prfServiceNetworkPolicy.enabled" }}
 {{- end }}
 {{- $component := .Values.prfService -}}
+{{- /* The commonConfig user owns every table: prf-service must use its own role. */}}
+{{- if not (or $component.databaseUser.value $component.databaseUser.valueFrom) }}
+{{- fail "prfService.databaseUser must name the prf_service role" }}
+{{- end }}
+{{- with .Values.commonConfig.databaseUrl }}
+{{- if not (contains "$(DATABASE_USER)" .) }}
+{{- fail "commonConfig.databaseUrl must use $(DATABASE_USER), or prf-service logs in as another role" }}
+{{- end }}
+{{- end }}
 {{- /* A policy that does not select these pods leaves their port open. */}}
 {{- $pod := dict "app" "coprocessor-prf-service" "app.kubernetes.io/name" (include "prfServiceName" .) }}
 {{- $pod = mergeOverwrite $pod (.Values.commonConfig.extraSelectorLabels | default dict) }}
@@ -92,8 +101,8 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           env:
-            {{- /* The prf_service role when set: it can only add and read pads rows. */}}
-            {{- with (default .Values.commonConfig.databaseUser $component.databaseUser) }}
+            {{- /* The prf_service role: it can only add and read pads rows. */}}
+            {{- with $component.databaseUser }}
             - name: DATABASE_USER
               {{- if .value }}
               value: {{ .value | quote }}
