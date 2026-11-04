@@ -7,15 +7,15 @@ use connector_utils::types::{
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{self, KMSGenerationInstance},
     protocol_config::ProtocolConfig::{
-        KmsEpochDestroyed, NewKmsContext, NewKmsEpoch, ProtocolConfigInstance,
+        KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch, ProtocolConfigInstance,
     },
 };
 use kms_connector_api::ErrorCode;
 use kms_context::read_kms_context;
 use kms_grpc::kms::v1::{
-    CrsInfo, DestroyMpcEpochRequest, Eip712DomainMsg, FheParameter, KeyDigest, KeyInfo, MpcContext,
-    MpcNode, NewMpcContextRequest, NewMpcEpochRequest, PcrValues, PreviousEpochInfo, SchemeDigest,
-    SigningSchemeType,
+    CrsInfo, DestroyMpcContextRequest, DestroyMpcEpochRequest, Eip712DomainMsg, FheParameter,
+    KeyDigest, KeyInfo, MpcContext, MpcNode, NewMpcContextRequest, NewMpcEpochRequest, PcrValues,
+    PreviousEpochInfo, SchemeDigest, SigningSchemeType,
 };
 
 /// Builder for the KMS Core gRPC requests triggered by `ProtocolConfig` events.
@@ -99,6 +99,19 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
 
     /// The KMS signs its confirmation of the destruction under the `ProtocolConfig` domain. The
     /// connector does not forward that confirmation yet, so the request carries no extra data.
+    pub fn prepare_destroy_kms_context_request(
+        &self,
+        event: &KmsContextDestroyed,
+    ) -> KmsGrpcRequest {
+        KmsGrpcRequest::DestroyMpcContext(DestroyMpcContextRequest {
+            context_id: Some(u256_to_request_id(event.kmsContextId)),
+            domain: Some(self.domain.clone()),
+            extra_data: Vec::new(),
+            signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
+        })
+    }
+
+    /// See [`Self::prepare_destroy_kms_context_request`].
     pub fn prepare_destroy_kms_epoch_request(&self, event: &KmsEpochDestroyed) -> KmsGrpcRequest {
         KmsGrpcRequest::DestroyMpcEpoch(DestroyMpcEpochRequest {
             epoch_id: Some(u256_to_request_id(event.epochId)),
