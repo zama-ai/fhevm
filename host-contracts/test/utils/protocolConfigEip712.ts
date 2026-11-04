@@ -1,4 +1,4 @@
-// ProtocolConfig EIP-712 types, digest-input hashes (RFC 037 section 2) and confirmation loops. The
+// ProtocolConfig EIP-712 types, digest-input hashes and confirmation loops. The
 // host-contracts tests use them to sign and submit lifecycle confirmations. library-solidity keeps a reduced copy.
 import { AbiCoder, Signer, TypedDataDomain, TypedDataEncoder, TypedDataField, keccak256, solidityPacked } from 'ethers';
 
