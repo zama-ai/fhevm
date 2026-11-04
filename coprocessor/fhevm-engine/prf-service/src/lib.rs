@@ -15,9 +15,13 @@ use in_flight::InFlight;
 use pads::Admissions;
 use sqlx::PgPool;
 use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use waiter::PadWaiter;
+
+/// The same limit as the database check of `HealthStatus`.
+const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct Config {
     pub http_endpoint: SocketAddr,
@@ -91,12 +95,23 @@ impl PrfService {
     }
 }
 
-pub struct Health(PgPool);
+/// Readiness: the database, and the rights of the service on `pads`.
+pub struct Health(pub PgPool);
 
 impl HealthCheckService for Health {
     async fn health_check(&self) -> HealthStatus {
         let mut status = HealthStatus::default();
         status.set_db_connected(&self.0).await;
+        // Without these rights the role connects, but every request gets `503`. INSERT is on columns.
+        let rights = sqlx::query_scalar::<_, bool>(
+            "SELECT has_table_privilege('pads', 'SELECT') AND has_any_column_privilege('pads', 'INSERT')",
+        )
+        .fetch_one(&self.0);
+        let has_rights = matches!(timeout(DB_CHECK_TIMEOUT, rights).await, Ok(Ok(true)));
+        if !has_rights {
+            status.add_error_details("No SELECT and INSERT rights on pads".to_string());
+        }
+        status.set_custom_check("pads", has_rights, true);
         status
     }
 

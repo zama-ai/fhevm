@@ -3,9 +3,11 @@ mod common;
 use alloy::primitives::{Address, B256};
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation, PrfOutputRef};
 use common::GRANTS;
+use fhevm_engine_common::healthz_server::HealthCheckService;
 use prf_service::{
     pads::{read, read_body, Admission, Admissions, PadOutput, PadState, CONNECTOR_LOCK},
     waiter::{PadWaiter, PAD_READY},
+    Health,
 };
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{num::NonZeroUsize, sync::Arc, time::Duration};
@@ -300,6 +302,23 @@ async fn complete_row_gives_the_output() {
         admissions.admit(&path, OTHER_CONNECTOR).await.unwrap(),
         Admission::Existing(complete)
     );
+}
+
+#[tokio::test]
+async fn health_needs_the_rights_on_pads() {
+    let (_instance, pool, service, _admissions) = test_db().await;
+    let health = Health(service);
+    assert!(health.health_check().await.is_healthy());
+
+    for sql in [
+        "REVOKE INSERT ON pads FROM prf_service",
+        "GRANT INSERT ON pads TO prf_service",
+        "REVOKE SELECT ON pads FROM prf_service",
+    ] {
+        sqlx::query(sql).execute(&pool).await.unwrap();
+        let healthy = sql.starts_with("GRANT");
+        assert_eq!(health.health_check().await.is_healthy(), healthy, "{sql}");
+    }
 }
 
 #[tokio::test]
