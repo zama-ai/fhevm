@@ -1,3 +1,6 @@
+# Config for `kms-server` in the KMS Core test container. It runs one threshold party without a
+# peer list: the server starts and serves gRPC health, but it has no MPC context and cannot run
+# MPC requests (key generation, decryption, ...).
 
 [service]
 listen_address = "0.0.0.0"
@@ -6,7 +9,7 @@ timeout_secs = 360
 grpc_max_message_size = 104857600 # 100 MiB
 
 [telemetry]
-tracing_service_name = "kms-centralized"
+tracing_service_name = "kms-threshold-test-1"
 tracing_otlp_timeout_ms = 10000
 metrics_bind_address = "0.0.0.0:9646"
 enable_sys_metrics = true
@@ -29,11 +32,17 @@ prefix = "PUB"
 [private_vault.storage.file]
 path = "./keys"
 
-[rate_limiter_conf]
-bucket_size = 50000
-pub_decrypt = 1
-user_decrypt = 1
-crsgen = 100
-preproc = 25000
-keygen = 1000
-new_epoch = 1
+[threshold]
+listen_address = "0.0.0.0"
+listen_port = 50001
+my_id = 1
+threshold = 1
+dec_capacity = 10000
+min_dec_cache = 6000
+decryption_mode = "NoiseFloodSmall"
+
+# Written by `kms-gen-tls-certs` before the server starts. Secure builds require TLS for the
+# core-to-core network, even without peers.
+[threshold.tls.manual]
+cert.path = "certs/cert_kms-threshold-test-1.pem"
+key.path = "certs/key_kms-threshold-test-1.pem"
