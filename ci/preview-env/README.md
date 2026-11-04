@@ -448,8 +448,9 @@ The proxy's TLS certificate comes from the chart, and its auth inputs are set by
 `scripts/deploy-kms-connector.sh` instead of being checked in:
 
 - **TLS**: each release's chart creates a self-signed P-256 certificate with
-  cert-manager (installed on zws-dev): 10-year lifetime, SANs = that party's proxy
-  Service name and its in-cluster forms. The script gives each release its own
+  cert-manager (installed on zws-dev; the overlay turns on
+  `kmsConnectorProxy.tls.certManager.enabled`, off by default): 10-year
+  lifetime, SANs = that party's proxy Service name and its in-cluster forms. The script gives each release its own
   `kubernetes.io/tls` Secret `kms-connector-<i>-proxy-tls`
   (`kmsConnectorProxy.tls.secretName`). The Certificate is unchanged on re-runs, so
   it is not rotated under proxies that only read it at startup. The compose path's
