@@ -6,9 +6,24 @@
 {{- if not $policy.ports }}
 {{- fail "coprocessorProxy.prfServiceNetworkPolicy.ports must list the prf-service pod ports" }}
 {{- end }}
+{{- $prfServicePorts := list }}
+{{- range $policy.ports }}
+{{- $prfServicePorts = append $prfServicePorts (toString .port) }}
+{{- end }}
 {{- range $policy.extraIngress }}
 {{- if not .from }}
 {{- fail "coprocessorProxy.prfServiceNetworkPolicy.extraIngress rules must set `from`: a rule without it admits every source" }}
+{{- end }}
+{{- if not .ports }}
+{{- fail "coprocessorProxy.prfServiceNetworkPolicy.extraIngress rules must set `ports`: a rule without it admits its sources on every port, prf-service's included" }}
+{{- end }}
+{{- range .ports }}
+{{- if not .port }}
+{{- fail "coprocessorProxy.prfServiceNetworkPolicy.extraIngress ports must each set `port`: an entry without it admits every port" }}
+{{- end }}
+{{- if has (toString .port) $prfServicePorts }}
+{{- fail (printf "coprocessorProxy.prfServiceNetworkPolicy.extraIngress must not admit prf-service port %v: prf-service trusts X-Fhevm-Signer, so only the proxy may reach that port" .port) }}
+{{- end }}
 {{- end }}
 {{- end }}
 apiVersion: networking.k8s.io/v1
