@@ -35,6 +35,7 @@ spec:
   selector:
     matchLabels:
       app: coprocessor-prf-service
+      app.kubernetes.io/name: {{ include "prfServiceName" . }}
       {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
   {{- with $component.updateStrategy }}
   strategy:
