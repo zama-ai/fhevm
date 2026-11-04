@@ -397,10 +397,20 @@ impl Matcher for SignedDestruction {
             return false;
         };
         let decoded = match self.destruction {
-            Destruction::Context => DestroyMpcContextRequest::decode(body)
-                .map(|request| (request.domain, request.signing_schemes)),
-            Destruction::Epoch => DestroyMpcEpochRequest::decode(body)
-                .map(|request| (request.domain, request.signing_schemes)),
+            Destruction::Context => DestroyMpcContextRequest::decode(body).map(
+                |DestroyMpcContextRequest {
+                     domain,
+                     signing_schemes,
+                     ..
+                 }| (domain, signing_schemes),
+            ),
+            Destruction::Epoch => DestroyMpcEpochRequest::decode(body).map(
+                |DestroyMpcEpochRequest {
+                     domain,
+                     signing_schemes,
+                     ..
+                 }| (domain, signing_schemes),
+            ),
         };
         let Ok((domain, signing_schemes)) = decoded else {
             return false;
