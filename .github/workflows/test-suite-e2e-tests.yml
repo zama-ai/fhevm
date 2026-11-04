@@ -114,7 +114,7 @@ on:
         default: "two-of-three-multi-chain"
         type: string
       test-profile:
-        description: "Named test profile to run instead of the default standard suite"
+        description: "Named test profiles to run in order, space-separated, instead of the default standard suite"
         default: "standard"
         type: string
   workflow_call:
@@ -379,8 +379,10 @@ jobs:
           # The upgrade profile builds the connector mid-test, like `--build` at boot; other profiles never need it.
           BLOCKCHAIN_ACTIONS_TOKEN: ${{ env.TEST_PROFILE == 'key-migration-from-v0.14' && secrets.BLOCKCHAIN_ACTIONS_TOKEN || '' }} # zizmor: ignore[secrets-outside-env] Same secret and trust boundary as the boot step of this job: dispatches, callers, and same-repo PRs with the e2e label.
         run: |
-          args=("$TEST_PROFILE")
-          ./fhevm-cli test "${args[@]}"
+          read -ra profiles <<< "$TEST_PROFILE"
+          for profile in "${profiles[@]}"; do
+            ./fhevm-cli test "$profile"
+          done
 
       - name: Verify consumer-only topology after tests
         if: ${{ always() && env.SCENARIO == 'two-of-three-multi-chain-consumer' }}
