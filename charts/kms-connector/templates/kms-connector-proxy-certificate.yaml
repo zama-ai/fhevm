@@ -1,4 +1,4 @@
-{{- if and .Values.kmsConnectorProxy.enabled .Values.kmsConnectorProxy.tls.certManager.enabled -}}
+{{- if and .Values.kmsConnectorProxy.enabled (dig "certManager" "enabled" false .Values.kmsConnectorProxy.tls) -}}
 {{- $name := include "kmsConnectorProxyName" . -}}
 apiVersion: cert-manager.io/v1
 kind: Issuer
@@ -23,12 +23,13 @@ spec:
     - {{ $name }}
     - {{ $name }}.{{ .Release.Namespace }}.svc
     - {{ $name }}.{{ .Release.Namespace }}.svc.cluster.local
-  # The proxy reads its certificate at startup only: a long lifetime avoids renewals
+  # The proxy reads its certificate at startup only: a long lifetime avoids renewals, and a
+  # re-issue keeps the key the running proxy still serves
   duration: 87600h  # 10 years
   privateKey:
     algorithm: ECDSA
     size: 256
-    rotationPolicy: Always
+    rotationPolicy: Never
   issuerRef:
     kind: Issuer
     name: {{ $name }}-selfsigned
