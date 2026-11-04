@@ -15,32 +15,7 @@ This chart deploys the following components:
 
 The proxy needs a `kubernetes.io/tls` secret (`kmsConnectorProxy.tls.secretName`) with the certificate it serves. TLS can be disabled explicitly with `kmsConnectorProxy.tls.enabled: false`, only when the proxy sits behind a TLS-terminating layer (ingress, service mesh...): it then serves plain HTTP and needs no secret. It accepts requests signed by one of `kmsConnectorProxy.allowedSenders` for this connector's tx-sender address (`kmsConnectorProxy.txSenderAddress`), and takes the EIP-712 domain (Ethereum chain id and ProtocolConfig address) from the contract settings below. Its Service is a ClusterIP; exposing it outside the cluster (TLS passthrough when the proxy terminates TLS, TLS termination at the ingress with `kmsConnectorProxy.tls.enabled: false`) is left to the deployment.
 
-### Proxy TLS certificate
-
-By default the chart does not create the TLS secret: create it before the proxy starts. If cert-manager runs in the cluster, set `kmsConnectorProxy.tls.certManager.enabled` to have the chart create a cert-manager `Certificate` that writes the secret:
-
-```yaml
-kmsConnectorProxy:
-  tls:
-    certManager:
-      enabled: true
-```
-
-With an empty `issuerRef`, the chart also creates a self-signed `Issuer` (`<release>-kms-connector-proxy-selfsigned`). The certificate covers the proxy Service name and its `.<namespace>.svc` and `.<namespace>.svc.cluster.local` forms, and it is valid for 10 years. A self-signed certificate suits a client that does not check it, such as an AWS load balancer in front of the proxy, or a client that trusts this exact certificate. To serve a publicly trusted certificate instead, set `issuerRef` to an existing issuer, for example a Let's Encrypt `ClusterIssuer`, and `dnsNames` to the public hostname:
-
-```yaml
-kmsConnectorProxy:
-  tls:
-    certManager:
-      enabled: true
-      issuerRef:
-        name: letsencrypt-dns01
-        kind: ClusterIssuer
-      dnsNames:
-        - kms-connector.partner.example
-```
-
-The proxy reads its certificate at startup only. A renewed secret takes effect after the proxy pods restart, for example with Stakater Reloader.
+By default the chart does not create the TLS secret: create it before the proxy starts. If cert-manager runs in the cluster, `kmsConnectorProxy.tls.certManager.enabled` makes the chart create a self-signed `Issuer` and a `Certificate` that writes the secret. The certificate covers the proxy Service name and its `.<namespace>.svc` and `.<namespace>.svc.cluster.local` forms, and it is valid for 10 years.
 
 ## Installing the Chart
 
@@ -137,9 +112,6 @@ The following table lists the configurable parameters of the `kms-connector` cha
 | `kmsConnectorProxy.txSenderAddress`           | This connector's tx-sender address, the signed audience (required). | `""`                                                                                                                                                |
 | `kmsConnectorProxy.tls.enabled`               | Serve TLS. `false` (explicit only, bool or string) serves plain HTTP. | `true`                                                                                                                                                            |
 | `kmsConnectorProxy.tls.secretName`            | TLS secret served by the proxy, required if TLS enabled. | `kms-connector-proxy-tls`                                                                                                                                         |
-| `kmsConnectorProxy.tls.certManager.issuerRef` | The issuer that signs the certificate. Empty: a self-signed `Issuer` created by the chart. | `{}`                                                                                                                             |
-| `kmsConnectorProxy.tls.certManager.dnsNames`  | Names in the certificate. Empty: the proxy Service name and its in-cluster forms. | `[]`                                                                                                                                      |
-| `kmsConnectorProxy.tls.certManager.duration`  | Requested certificate lifetime. ACME issuers set their own. | `87600h`                                                                                                                                                        |
-| `kmsConnectorProxy.tls.certManager.renewBefore` | When to renew before expiry. Empty: after 2/3 of the lifetime. | `""`                                                                                                                                                       |
+| `kmsConnectorProxy.tls.certManager.enabled`   | If `true`, create a self-signed certificate in `tls.secretName` with cert-manager. | `false`                                                                                                                                  |
 | `podAnnotations`                              | Annotations to be added to all pods.                      | `{}`                                                                                                                                                              |
 | `podLabels`                                   | Labels to be added to all pods.                           | `{}`                                                                                                                                                              |
