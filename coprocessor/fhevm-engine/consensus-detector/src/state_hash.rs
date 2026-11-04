@@ -7,6 +7,7 @@ use aws_sdk_s3::primitives::ByteStream;
 use fhevm_engine_common::database::{GCS_SCHEMA, GCS_SCHEMA_QUOTED};
 use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
 use fhevm_engine_common::versioning::{begin_write_guarded, GcsRollbackPolicy, WriteGuard};
+use serde::{Deserialize, Serialize};
 use sqlx::{postgres::PgListener, Pool, Postgres, Row, Transaction};
 use tokio::select;
 use tokio_util::sync::CancellationToken;
@@ -58,7 +59,11 @@ pub struct UpgradeAttempt {
 //
 //   <s3BucketUrl>/state_hash/proposal=<proposal_id_hex>
 //     /attempt=<proposal_block>/chain=<chain_id>/block=<block_number>.bin
-//   body = raw 32-byte SHA-256 (decoded from the hex stored in `state_hash`).
+//   body (host-chain rows)    = compact-JSON [`StateHashRecord`], byte-for-byte as
+//                               stored in `state_hash.state_hash`.
+//   body (gateway-input rows) = raw 32-byte SHA-256 (decoded from the stored hex).
+//                               Gateway blocks have no PBS work, so there is
+//                               nothing to attribute and the format stays flat.
 pub fn state_hash_key(attempt: &UpgradeAttempt, chain_id: i64, block_number: i64) -> String {
     scoped_key(
         &hex::encode(&attempt.proposal_id),
@@ -101,6 +106,157 @@ pub fn display_proposal_id(proposal_id: &[u8]) -> String {
     )
 }
 
+/// Version tag of [`StateHashRecord`]; bump on any change to the record layout.
+pub const STATE_HASH_RECORD_VERSION: u8 = 1;
+
+/// The host-chain state-hash commitment, stored in `state_hash.state_hash` and
+/// uploaded verbatim as the S3 object body.
+///
+/// The two pipelines that can diverge are committed separately so a divergence
+/// is attributable from the S3 records alone, which survive GCS rollback and
+/// table cleanup: `fhe` covers the tfhe-worker's ct64 output, `pbs` the
+/// sns-worker's squash (ct128 digests). The previous combined
+/// `sha256(ct64 || ct128)` destroyed that attribution - and, with no length
+/// separator between the two aggregates, did not even commit to their boundary.
+///
+/// Consensus parses this defensively ([`evaluate_host_slots`]): operators agree
+/// exactly when every record validates and all `fhe` hashes match and all `pbs`
+/// hashes match. Both components are always part of the commitment - a
+/// divergence in either alone blocks the anchor and is reported naming the
+/// failing pipeline - and a malformed or invalid peer object can only fail to
+/// match, never force an anchor. Serialization must stay deterministic: compact
+/// `serde_json` over this struct (fields serialize in declaration order),
+/// serialized once at compute time and never re-serialized on read.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StateHashRecord {
+    /// Record-format version ([`STATE_HASH_RECORD_VERSION`]). Lets a reader
+    /// report "format skew" instead of a bare unexplained divergence when
+    /// operators run different detector versions.
+    pub v: u8,
+    /// Hex SHA-256 of the block's ct64 ciphertext aggregate (FHE compute).
+    pub fhe: String,
+    /// Hex SHA-256 of the block's ct128 digest aggregate (PBS squash); the
+    /// hash of the empty aggregate when the block schedules no PBS work.
+    pub pbs: String,
+}
+
+impl StateHashRecord {
+    fn to_json(&self) -> String {
+        // Infallible: no map keys, no non-string keys, no non-finite floats.
+        serde_json::to_string(self).expect("state-hash record serialization cannot fail")
+    }
+
+    /// A record fit for consensus: both components are 64-char hex digests, and
+    /// `pbs` actually commits to ct128 digests - the hash of the EMPTY aggregate
+    /// (`sha256('')` = [`EMPTY_BLOCK_STATE_HASH`]) is rejected. A block whose
+    /// record carries an empty-aggregate `pbs` exercised no squash work, so it
+    /// proves nothing about PBS determinism and must not anchor consensus.
+    /// Enforced on both sides: locally before publishing (the upload sweep) and
+    /// remotely when counting votes ([`evaluate_host_slots`]). Error strings
+    /// truncate the offending value - peers control it.
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        fn hex64(s: &str) -> bool {
+            s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
+        }
+        fn clip(s: &str) -> String {
+            s.chars().take(16).collect()
+        }
+        if !hex64(&self.fhe) {
+            return Err(format!(
+                "fhe is not a 64-char hex digest: '{}…'",
+                clip(&self.fhe)
+            ));
+        }
+        if !hex64(&self.pbs) {
+            return Err(format!(
+                "pbs is not a 64-char hex digest: '{}…'",
+                clip(&self.pbs)
+            ));
+        }
+        if self.pbs == EMPTY_BLOCK_STATE_HASH {
+            return Err(
+                "empty pbs state-hash (sha256 of the empty ct128 aggregate) is not allowed".into(),
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Verdict over one block's operator slots on a HOST track, where every vote is
+/// a [`StateHashRecord`]. Votes are counted on the PARSED component hashes, not
+/// on raw bytes: operators agree exactly when every record validates and all
+/// `fhe` hashes match and all `pbs` hashes match. A divergence in either
+/// component alone is still a divergence - there is no partial agreement - but
+/// it is reported as such so the failing pipeline is named.
+pub(crate) enum HostSlotsVerdict {
+    /// Every operator's record validates and both components agree everywhere.
+    /// `encoding_skew` is true when the raw bytes still differ (`v` or encoding
+    /// differences across detector versions): the anchor stands, since the
+    /// commitment is the hashes, but it is worth a warning.
+    Anchor { encoding_skew: bool },
+    /// Some operator's payload is not a valid record (unparsable, non-hex
+    /// digest, or empty pbs). The block cannot anchor.
+    Invalid { why: String },
+    /// All records valid, but the hashes disagree across operators.
+    Diverged { fhe: bool, pbs: bool },
+}
+
+/// Evaluates a host-track block's slots; `None` while any operator has not
+/// responded yet. Parses peer-controlled bytes, so every failure mode is a
+/// verdict, never a panic, and can only prevent an anchor, never force one.
+pub(crate) fn evaluate_host_slots(slots: &[Option<Vec<u8>>]) -> Option<HostSlotsVerdict> {
+    if slots.is_empty() || slots.iter().any(Option::is_none) {
+        return None;
+    }
+    let mut records = Vec::with_capacity(slots.len());
+    for (idx, slot) in slots.iter().enumerate() {
+        let bytes = slot.as_deref().unwrap_or_default();
+        let record = match serde_json::from_slice::<StateHashRecord>(bytes) {
+            Ok(record) => record,
+            Err(e) => {
+                return Some(HostSlotsVerdict::Invalid {
+                    why: format!("op{idx}: unparsable state-hash record: {e}"),
+                })
+            }
+        };
+        if let Err(why) = record.validate() {
+            return Some(HostSlotsVerdict::Invalid {
+                why: format!("op{idx}: {why}"),
+            });
+        }
+        records.push(record);
+    }
+    let first = &records[0];
+    let fhe = records.iter().any(|r| r.fhe != first.fhe);
+    let pbs = records.iter().any(|r| r.pbs != first.pbs);
+    if fhe || pbs {
+        return Some(HostSlotsVerdict::Diverged { fhe, pbs });
+    }
+    let first_bytes = slots[0].as_deref();
+    let encoding_skew = slots.iter().any(|s| s.as_deref() != first_bytes);
+    Some(HostSlotsVerdict::Anchor { encoding_skew })
+}
+
+/// Compact per-operator view for the divergence error: enough hex to see who
+/// disagrees with whom without dumping full records into one log line.
+pub(crate) fn divergence_summary(slots: &[Option<Vec<u8>>]) -> String {
+    // chars().take over byte slicing: the payload is peer-controlled, so a
+    // non-ASCII component value must not panic a mid-char slice.
+    let prefix = |s: &str| s.chars().take(12).collect::<String>();
+    slots
+        .iter()
+        .enumerate()
+        .map(|(idx, slot)| match slot {
+            None => format!("op{idx}: <missing>"),
+            Some(bytes) => match serde_json::from_slice::<StateHashRecord>(bytes) {
+                Ok(r) => format!("op{idx}: fhe={} pbs={}", prefix(&r.fhe), prefix(&r.pbs)),
+                Err(_) => format!("op{idx}: <non-record, {} bytes>", bytes.len()),
+            },
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 /// Outcome of a guarded state-hash insert.
 enum HashInsert {
     /// Inserted a new row.
@@ -136,9 +292,10 @@ async fn insert_state_hash(
 
 /// GCS path: stamp the GCS `state_hash` for one chain's blocks in `[start, end]`
 /// that don't already have an entry. Empty blocks (`fhe_event_count = 0`) get
-/// [`EMPTY_BLOCK_STATE_HASH`]; non-empty blocks get the SHA-256 over their
-/// GCS `ciphertexts` plus the ct128 digests of the block's PBS work, and are
-/// held back until that PBS work is done (see [`compute_gcs_hash`]).
+/// [`EMPTY_BLOCK_STATE_HASH`]; non-empty blocks get a [`StateHashRecord`]
+/// committing separately to their GCS `ciphertexts` (`fhe`) and to the ct128
+/// digests of the block's PBS work (`pbs`), and are held back until that PBS
+/// work is done (see [`compute_gcs_hash`]).
 async fn compute_and_insert_gcs(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: i64,
@@ -216,18 +373,21 @@ async fn compute_and_insert_gcs(
     Ok(())
 }
 
-/// SHA-256 over the block's GCS `ciphertexts`, followed by the ct128 digests
-/// of the block's PBS (squash) work; `None` until every non-errored
-/// computation completes AND every PBS computation scheduled for the block's
-/// output handles is squashed with its `ciphertext_digest.ciphertext128`
-/// recorded. Errored computations are excluded so operators agree.
+/// The block's [`StateHashRecord`] as compact JSON (`fhe` = SHA-256 over the
+/// block's GCS `ciphertexts`, `pbs` = SHA-256 over the ct128 digests of the
+/// block's PBS (squash) work); `None` until every non-errored computation
+/// completes AND every PBS computation scheduled for the block's output
+/// handles is squashed with its `ciphertext_digest.ciphertext128` recorded.
+/// Errored computations are excluded so operators agree.
 ///
 /// The PBS anchor (fhevm-internal#1960): the plain ct64 hash is blind to the
 /// sns-worker, so a divergent squash stack (e.g. a CPU worker in a GPU fleet)
-/// would still reach consensus and break decryption after cutover. Folding the
-/// ct128 digests in makes operators agree on the squash output too, and the
-/// completeness gate keeps the hash (and therefore its upload - the insert is
-/// what the upload sweep reads) back until the block's PBS work is done.
+/// would still reach consensus and break decryption after cutover. Committing
+/// to the ct128 digests makes operators agree on the squash output too, and the
+/// completeness gate keeps the record (and therefore its upload - the insert is
+/// what the upload sweep reads) back until the block's PBS work is done. The
+/// two components are separate hashes, not one combined digest, so a
+/// divergence names the pipeline that produced it (see [`StateHashRecord`]).
 ///
 /// Determinism of the PBS set: the ACL `Allowed` ingest inserts the
 /// `pbs_computations` row in the same transaction as the allow, and a
@@ -235,8 +395,12 @@ async fn compute_and_insert_gcs(
 /// the completion gate opens the joined set is exactly the block's allowed
 /// output handles at every operator. The sns-worker commits `is_completed` and
 /// the `ciphertext_digest.ciphertext128` digest in one transaction, so the
-/// gate never admits a half-written squash. Blocks with no PBS rows hash to
-/// the previous recipe byte-for-byte (the digest aggregate degrades to `''`).
+/// gate never admits a half-written squash. Blocks with no PBS rows carry the
+/// empty-aggregate hash in `pbs` (the digest aggregate degrades to `''`), a
+/// recognizable constant that reads as "no PBS work scheduled" - such records
+/// exist locally for completeness but are barred from upload, candidacy and
+/// vote counting (see [`StateHashRecord::validate`]): with no squash work they
+/// prove nothing about PBS determinism, so they must not anchor consensus.
 ///
 /// Like [`compute_and_insert_gcs`], the source tables are explicitly qualified
 /// with the versioned GCS schema (`GCS_SCHEMA_QUOTED`) and never fall back to
@@ -279,7 +443,17 @@ async fn compute_gcs_hash(
                            FROM bc
                            JOIN {schema}.ciphertexts ct
                              ON ct.tenant_id = bc.tenant_id AND ct.handle = bc.output_handle)
-                        || COALESCE(
+                    ),
+                    'hex'
+                )
+            END AS fhe_hash,
+            CASE WHEN (SELECT bool_and(is_completed) FROM bc)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM pbs
+                       WHERE NOT pbs.is_completed OR pbs.ciphertext128 IS NULL)
+                THEN encode(
+                    sha256(
+                        COALESCE(
                             (SELECT string_agg(pbs.ciphertext128, ''::bytea
                                                ORDER BY pbs.handle)
                                FROM pbs),
@@ -287,7 +461,7 @@ async fn compute_gcs_hash(
                     ),
                     'hex'
                 )
-            END AS state_hash
+            END AS pbs_hash
         "#
     );
     let row = sqlx::query(&sql)
@@ -298,7 +472,19 @@ async fn compute_gcs_hash(
     let fhe_done: Option<bool> = row.try_get("fhe_done")?;
     let pbs_total: i64 = row.try_get("pbs_total")?;
     let pbs_pending: i64 = row.try_get("pbs_pending")?;
-    let state_hash: Option<String> = row.try_get("state_hash")?;
+    // fhe_hash stays NULL when the gate is closed OR the ct64 aggregate is
+    // empty (e.g. every completed row lacks a ciphertext): both held back,
+    // exactly as the combined recipe behaved (sha256(NULL) was NULL).
+    let fhe_hash: Option<String> = row.try_get("fhe_hash")?;
+    let pbs_hash: Option<String> = row.try_get("pbs_hash")?;
+    let state_hash: Option<String> = fhe_hash.zip(pbs_hash).map(|(fhe, pbs)| {
+        StateHashRecord {
+            v: STATE_HASH_RECORD_VERSION,
+            fhe,
+            pbs,
+        }
+        .to_json()
+    });
     if state_hash.is_some() {
         // Fires once per block: the insert that follows removes it from the
         // pending scan.
@@ -747,6 +933,11 @@ async fn upload_pending_state_hashes(
            -- FheAdd is computed, yet carries a non-trivial computation) both hash
            -- to EMPTY_BLOCK_STATE_HASH, so consensus must not anchor on them.
            AND sh.state_hash <> '{empty}'
+           -- Likewise never publish a record whose pbs is the empty-aggregate
+           -- hash: no squash work means nothing proven about PBS determinism,
+           -- and consensus rejects such votes anyway (StateHashRecord::validate).
+           -- Filtered here so the row is not re-selected and re-refused forever.
+           AND sh.state_hash NOT LIKE '%"pbs":"{empty}"%'
            -- Also exclude trivial-only blocks (non-empty but vacuous hash).
            AND EXISTS (
                SELECT 1 FROM computations c
@@ -780,13 +971,25 @@ async fn upload_pending_state_hashes(
         if matches!(report_fault, Some(crate::test_host_report::Fault::Withhold)) {
             continue;
         }
-        let bytes = match hex::decode(&row.2) {
-            Ok(b) => b,
+        // The stored record IS the payload: uploaded byte-for-byte, never
+        // re-serialized, so the object is the exact bytes the compute pass
+        // committed. Parsed here only to refuse publishing a corrupt row.
+        match serde_json::from_str::<StateHashRecord>(&row.2) {
+            Ok(record) => {
+                if let Err(why) = record.validate() {
+                    error!(
+                        chain_id,
+                        block_number, why, "invalid state-hash record in DB; refusing to publish"
+                    );
+                    continue;
+                }
+            }
             Err(e) => {
-                warn!(chain_id, block_number, error = %e, "malformed state_hash hex in DB; skipping row");
+                error!(chain_id, block_number, error = %e, "malformed state-hash record in DB; skipping row");
                 continue;
             }
-        };
+        }
+        let bytes = row.2.clone().into_bytes();
         #[cfg(feature = "test-failpoints")]
         let bytes = {
             let mut bytes = bytes;
@@ -1179,7 +1382,7 @@ mod tests {
         let (s3, uploaded) = object_store().await?;
         upload_pending_state_hashes(&pool, &s3, "test", 10, Duration::from_secs(3600)).await?;
         let body = tokio::time::timeout(Duration::from_secs(10), uploaded).await??;
-        assert_eq!(body, hex::decode(&hash)?);
+        assert_eq!(body, hash.as_bytes(), "record uploads byte-for-byte");
         repair_is_contained(&mut db, &pool).await?;
         let retained: (String, bool) = sqlx::query_as("SELECT state_hash, s3_uploaded_at IS NOT NULL FROM state_hash WHERE chain_id=42 AND block_number=100").fetch_one(&pool).await?;
         assert_eq!(retained, (hash, true));
@@ -1278,8 +1481,9 @@ mod tests {
         compute_and_insert_gcs(&mut tx, 42, 100, 100, 10, "public").await?;
         tx.commit().await?;
         let includes_b: bool = sqlx::query_scalar(
-            "SELECT state_hash = encode(sha256('\\xaabb'::bytea), 'hex')
-            FROM state_hash WHERE chain_id = 42 AND block_number = 100",
+            r#"SELECT state_hash = '{"v":1,"fhe":"' || encode(sha256('\xaabb'::bytea), 'hex')
+                   || '","pbs":"' || encode(sha256(''::bytea), 'hex') || '"}'
+            FROM state_hash WHERE chain_id = 42 AND block_number = 100"#,
         )
         .fetch_one(&pool)
         .await?;
@@ -1373,14 +1577,15 @@ mod tests {
         .await?;
         pass(pool.clone()).await?;
         let binds_ct128: bool = sqlx::query_scalar(
-            "SELECT state_hash = encode(sha256('\\xaadd'::bytea), 'hex')
-            FROM state_hash WHERE chain_id = 42 AND block_number = 100",
+            r#"SELECT state_hash = '{"v":1,"fhe":"' || encode(sha256('\xaa'::bytea), 'hex')
+                   || '","pbs":"' || encode(sha256('\xdd'::bytea), 'hex') || '"}'
+            FROM state_hash WHERE chain_id = 42 AND block_number = 100"#,
         )
         .fetch_one(&pool)
         .await?;
         assert!(
             binds_ct128,
-            "hash is sha256(ct64 bytes || ct128 digest) once PBS is done"
+            "record commits fhe=sha256(ct64 bytes) and pbs=sha256(ct128 digest) once PBS is done"
         );
         Ok(())
     }
@@ -1577,11 +1782,15 @@ mod tests {
                 .execute(&pool)
                 .await
                 .unwrap();
-                sqlx::query("INSERT INTO state_hash (chain_id, block_number, state_hash) VALUES (1, $1, 'aa')")
-                    .bind(block)
-                    .execute(&pool)
-                    .await
-                    .unwrap();
+                sqlx::query(
+                    r#"INSERT INTO state_hash (chain_id, block_number, state_hash)
+                       VALUES (1, $1, '{"v":1,"fhe":"' || repeat('a', 64)
+                                  || '","pbs":"' || repeat('b', 64) || '"}')"#,
+                )
+                .bind(block)
+                .execute(&pool)
+                .await
+                .unwrap();
             }
         };
         let uploaded = |block: i64| {
@@ -1834,6 +2043,147 @@ mod tests {
             EMPTY_BLOCK_STATE_HASH,
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
+    }
+
+    /// The exact bytes are the consensus commitment: any serialization change
+    /// (field order, spacing, version) diverges the whole fleet against
+    /// operators on the previous build. This pins the canonical form.
+    #[test]
+    fn record_serialization_is_canonical_and_stable() {
+        let record = StateHashRecord {
+            v: STATE_HASH_RECORD_VERSION,
+            fhe: "aa".into(),
+            pbs: "bb".into(),
+        };
+        assert_eq!(record.to_json(), r#"{"v":1,"fhe":"aa","pbs":"bb"}"#);
+        let parsed: StateHashRecord = serde_json::from_str(&record.to_json()).unwrap();
+        assert_eq!(parsed, record);
+    }
+
+    #[test]
+    fn evaluate_host_slots_counts_votes_on_parsed_components() {
+        let hex = |c: char| c.to_string().repeat(64);
+        let rec = |fhe: char, pbs: char| {
+            Some(
+                StateHashRecord {
+                    v: STATE_HASH_RECORD_VERSION,
+                    fhe: hex(fhe),
+                    pbs: hex(pbs),
+                }
+                .to_json()
+                .into_bytes(),
+            )
+        };
+        // Any missing operator: no verdict yet.
+        assert!(evaluate_host_slots(&[]).is_none());
+        assert!(evaluate_host_slots(&[rec('a', 'c'), None]).is_none());
+        // Full agreement anchors, without encoding skew for identical bytes.
+        assert!(matches!(
+            evaluate_host_slots(&[rec('a', 'c'), rec('a', 'c'), rec('a', 'c')]),
+            Some(HostSlotsVerdict::Anchor {
+                encoding_skew: false
+            })
+        ));
+        // Same components under a different version: anchors, flags the skew.
+        let skewed =
+            Some(format!(r#"{{"v":2,"fhe":"{}","pbs":"{}"}}"#, hex('a'), hex('c')).into_bytes());
+        assert!(matches!(
+            evaluate_host_slots(&[rec('a', 'c'), skewed]),
+            Some(HostSlotsVerdict::Anchor {
+                encoding_skew: true
+            })
+        ));
+        // Partial divergence names the component; it never anchors.
+        assert!(matches!(
+            evaluate_host_slots(&[rec('a', 'c'), rec('b', 'c')]),
+            Some(HostSlotsVerdict::Diverged {
+                fhe: true,
+                pbs: false
+            })
+        ));
+        assert!(matches!(
+            evaluate_host_slots(&[rec('a', 'c'), rec('a', 'd')]),
+            Some(HostSlotsVerdict::Diverged {
+                fhe: false,
+                pbs: true
+            })
+        ));
+        assert!(matches!(
+            evaluate_host_slots(&[rec('a', 'c'), rec('b', 'd')]),
+            Some(HostSlotsVerdict::Diverged {
+                fhe: true,
+                pbs: true
+            })
+        ));
+        // A gateway blob / old flat payload / corrupt object: invalid, no anchor.
+        assert!(matches!(
+            evaluate_host_slots(&[rec('a', 'c'), Some(vec![0x42; 32])]),
+            Some(HostSlotsVerdict::Invalid { .. })
+        ));
+    }
+
+    #[test]
+    fn record_validation_rejects_empty_or_non_hex_components() {
+        let rec = |fhe: &str, pbs: &str| StateHashRecord {
+            v: STATE_HASH_RECORD_VERSION,
+            fhe: fhe.into(),
+            pbs: pbs.into(),
+        };
+        let a64 = "a".repeat(64);
+        assert!(rec(&a64, &"b".repeat(64)).validate().is_ok());
+        // Empty, short, or non-hex components are refused.
+        assert!(rec("", &a64).validate().is_err());
+        assert!(rec(&a64, "").validate().is_err());
+        assert!(rec(&a64, "zz").validate().is_err());
+        assert!(rec(&"g".repeat(64), &a64).validate().is_err());
+        // The empty-aggregate pbs hash (sha256('')) is not allowed: a record
+        // that committed to no squash work must not vote.
+        let err = rec(&a64, EMPTY_BLOCK_STATE_HASH).validate().unwrap_err();
+        assert!(err.contains("empty pbs"), "{err}");
+        // ...and such a record never anchors through the vote count either.
+        let slot = Some(rec(&a64, EMPTY_BLOCK_STATE_HASH).to_json().into_bytes());
+        assert!(matches!(
+            evaluate_host_slots(&[slot.clone(), slot]),
+            Some(HostSlotsVerdict::Invalid { .. })
+        ));
+    }
+
+    /// The slots hold peer-controlled bytes: every malformed shape must come
+    /// back as a verdict (never a panic), and none may anchor.
+    #[test]
+    fn evaluate_host_slots_never_panics_on_hostile_payloads() {
+        let a64 = "a".repeat(64);
+        let b64 = "b".repeat(64);
+        let good = Some(format!(r#"{{"v":1,"fhe":"{a64}","pbs":"{b64}"}}"#).into_bytes());
+        let hostiles: Vec<Vec<u8>> = vec![
+            vec![],                                                              // empty body
+            vec![0xff, 0xfe, 0x00],                                              // invalid UTF-8
+            b"{".to_vec(),                                                       // truncated JSON
+            "[".repeat(100_000).into_bytes(),                                    // nesting bomb
+            format!(r#"{{"v":4096,"fhe":"{a64}","pbs":"{b64}"}}"#).into_bytes(), // v > u8
+            format!(r#"{{"fhe":"{a64}","pbs":"{b64}"}}"#).into_bytes(),          // missing v
+            br#"{"v":1,"fhe":123,"pbs":[]}"#.to_vec(), // wrong field types
+            format!(r#"{{"v":1,"fhe":"{a64}","pbs":"é{b64}"}}"#).into_bytes(), // non-ASCII
+        ];
+        for hostile in hostiles {
+            let verdict = evaluate_host_slots(&[good.clone(), Some(hostile)]);
+            assert!(
+                matches!(verdict, Some(HostSlotsVerdict::Invalid { .. })),
+                "hostile payload must be Invalid, never anchor"
+            );
+        }
+        // divergence_summary must also stay panic-free on the same inputs.
+        let _ = divergence_summary(&[good, Some(vec![0xff; 3]), None]);
+    }
+
+    #[test]
+    fn divergence_summary_is_safe_on_hostile_payloads() {
+        // Multibyte chars in a component must not panic the prefix slice.
+        let hostile = r#"{"v":1,"fhe":"ééé","pbs":"bb"}"#.as_bytes().to_vec();
+        let summary = divergence_summary(&[Some(hostile), None, Some(vec![0xff, 0xfe])]);
+        assert!(summary.contains("op0: fhe="));
+        assert!(summary.contains("op1: <missing>"));
+        assert!(summary.contains("op2: <non-record, 2 bytes>"));
     }
 }
 
