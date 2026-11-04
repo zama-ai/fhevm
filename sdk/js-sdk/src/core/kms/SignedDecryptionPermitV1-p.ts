@@ -310,14 +310,14 @@ async function _createSignedDecryptionPermitV1(
       message: eip712.message,
       signature,
     });
-    return new SignedDecryptionPermitV1Impl(PRIVATE_TOKEN, parameters);
+    return Object.freeze(new SignedDecryptionPermitV1Impl(PRIVATE_TOKEN, parameters));
   } else {
     await verifyKmsDelegatedUserDecryptEip712V1(context, {
       signer: signerAddress,
       message: eip712.message,
       signature,
     });
-    return new SignedDecryptionPermitV1Impl(PRIVATE_TOKEN, parameters);
+    return Object.freeze(new SignedDecryptionPermitV1Impl(PRIVATE_TOKEN, parameters));
   }
 }
 

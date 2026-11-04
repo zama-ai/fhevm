@@ -146,7 +146,7 @@ async function _createSignedDecryptionPermitV2(
     signature,
   });
 
-  return new SignedDecryptionPermitV2Impl(PRIVATE_TOKEN, parameters);
+  return Object.freeze(new SignedDecryptionPermitV2Impl(PRIVATE_TOKEN, parameters));
 }
 
 ////////////////////////////////////////////////////////////////////////////////

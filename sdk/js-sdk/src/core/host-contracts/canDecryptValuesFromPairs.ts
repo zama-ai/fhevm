@@ -6,7 +6,10 @@ import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
 import { addressToChecksummedAddress, assertIsAddress } from '../base/address.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
-import { assertIsSignedDecryptionPermit } from '../kms/SignedDecryptionPermit-p.js';
+import {
+  assertIsSignedDecryptionPermit,
+  assertSignedDecryptionPermitExtraDataSupported,
+} from '../kms/SignedDecryptionPermit-p.js';
 import { assertPermitV1IncludesContractAddresses } from '../kms/fetchKmsSigncryptedSharesV1-p.js';
 import { assertPermitMatchesKeyPair } from '../utils-p/decrypt/assertPermitMatchesKeyPair.js';
 import { isUserDecryptable } from '../host-contracts/isUserDecryptable.js';
@@ -62,6 +65,7 @@ export async function canDecryptValuesFromPairs(context: Context, parameters: Pa
 
     assertIsSignedDecryptionPermit(signedPermit, { subject: 'signedPermit' });
     signedPermit.assertNotExpired();
+    assertSignedDecryptionPermitExtraDataSupported(signedPermit);
     if (signedPermit.version === 1) {
       assertPermitV1IncludesContractAddresses(signedPermit, contractAddresses);
     }

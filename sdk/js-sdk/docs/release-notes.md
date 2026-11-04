@@ -47,6 +47,13 @@
 - The ERC-1271 `isValidSignature` STATICCALL gas cap (`ERC1271_GAS_LIMIT`) is raised from `100_000`
   to `250_000`, matching the relayer/KMS default — a nested Safe (a Safe owning a Safe) alone costs
   ~91k gas, so the old cap could reject valid nested-multisig signatures.
+- **Breaking: legacy permits with `extraData` v0 are refused at decrypt, with `InvalidSignedPermitError`.**
+  The KMS connector no longer accepts `extraData` v0 (`0x00`, protocol v0.11), so such a permit used
+  to hang until the relayer polling timed out. `decryptValue`/`decryptValues` and
+  `canDecryptValue`/`canDecryptValues` now throw the new `InvalidSignedPermitError` up front, before any
+  request; parsing the permit still succeeds. Sign a new permit. `InvalidSignedPermitError` is also thrown
+  for a value that isn't an SDK-created permit (previously `InvalidTypeError`), and for a unified
+  (v2) permit whose `extraData` is older than v2.
 
 #### Fixed
 
