@@ -22,6 +22,7 @@ tracing = { workspace = true }
 
 ciphertext-attestation = { path = "../../../shared/ciphertext-attestation" }
 fhevm-engine-common = { path = "../fhevm-engine-common" }
+fhevm-sig-auth = { path = "../../../shared/fhevm-sig-auth" }
 
 [dev-dependencies]
 reqwest = { workspace = true, features = ["json"] }

@@ -32,7 +32,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
 /// The signer that coprocessor-proxy verified with `FhevmSig`. The proxy drops a client copy of it.
-pub const SIGNER_HEADER: &str = "x-fhevm-signer";
+pub use fhevm_sig_auth::SIGNER_HEADER;
 /// A stop does not wait for held requests: the connector retries, and the retry joins the same row.
 const SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 /// Above the 10 s idle time of the proxy pool, so the proxy closes idle connections first.
