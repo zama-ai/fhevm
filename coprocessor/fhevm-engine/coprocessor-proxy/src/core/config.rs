@@ -115,7 +115,7 @@ pub struct Config {
     pub shutdown_delay: Duration,
     /// How long a client has, once its TLS handshake completes, to send the head of its first
     /// request; the connection is closed after. A later request head on the connection is due
-    /// within the idle timeout (15 s) of the previous response.
+    /// within 20 s of the previous response, 5 s after the idle timeout.
     #[arg(
         long,
         env = "COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT",
@@ -124,21 +124,22 @@ pub struct Config {
     )]
     pub request_head_timeout: Duration,
     /// How many connections one client IP can hold, in their TLS handshake or past it; more are
-    /// refused before TLS. 0 disables the limit, as needed when the proxy does not see the
-    /// clients' own addresses.
+    /// refused before TLS. 0, the default, disables the limit: set it only when the proxy sees
+    /// the clients' own addresses, for example 512.
     #[arg(
         long,
         env = "COPROCESSOR_PROXY_MAX_CONNECTIONS_PER_IP",
-        default_value_t = 512
+        default_value_t = 0
     )]
     pub max_connections_per_ip: usize,
     /// How many connections one client IP can hold in their TLS handshake, which Pingora gives
     /// up to 60 s; more are refused before TLS. A handshake that fails holds its place until
-    /// those 60 s pass. 0 disables the limit.
+    /// those 60 s pass. 0, the default, disables the limit: set it only when the proxy sees the
+    /// clients' own addresses, for example 256.
     #[arg(
         long,
         env = "COPROCESSOR_PROXY_MAX_PENDING_HANDSHAKES_PER_IP",
-        default_value_t = 256
+        default_value_t = 0
     )]
     pub max_pending_handshakes_per_ip: usize,
     /// The worker threads of the proxy service. TLS handshakes, signature checks and forwarding
@@ -248,8 +249,8 @@ mod tests {
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(10));
         assert_eq!(config.shutdown_delay, Duration::ZERO);
         assert_eq!(config.request_head_timeout, Duration::from_secs(10));
-        assert_eq!(config.max_connections_per_ip, 512);
-        assert_eq!(config.max_pending_handshakes_per_ip, 256);
+        assert_eq!(config.max_connections_per_ip, 0);
+        assert_eq!(config.max_pending_handshakes_per_ip, 0);
         assert_eq!(config.threads.get(), 2);
         assert_eq!(config.max_requests_per_signer.get(), 200);
         assert_eq!(config.bind_address, "0.0.0.0:8443".parse().unwrap());

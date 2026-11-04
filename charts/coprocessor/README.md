@@ -140,36 +140,38 @@ The proxy authenticates every request before forwarding it, and bounds what one 
 can hold of it:
 
 - A client has `coprocessorProxy.requestHeadTimeoutSeconds` (10 by default) after its TLS handshake
-  to send the whole head of its first request, and 15 s after a response to send the whole head
-  of the next one. A connection that misses its deadline is closed, however slowly bytes still
+  to send the whole head of its first request, and 20 s after a response to send the whole head
+  of the next one. Pingora closes a connection idle for 15 s before that deadline, so the deadline
+  only closes one whose next head, or previous body, is still arriving. A connection that misses its deadline is closed, however slowly bytes still
   arrive. No deadline runs while prf-service holds a request.
-- One client IP can hold `coprocessorProxy.maxConnectionsPerIp` connections (512 by default), of
-  which `coprocessorProxy.maxPendingHandshakesPerIp` in their TLS handshake (256 by default). The
-  proxy drops a connection above either limit before TLS. `0` disables a limit.
+- One client IP can hold `coprocessorProxy.maxConnectionsPerIp` connections, of which
+  `coprocessorProxy.maxPendingHandshakesPerIp` in their TLS handshake. The proxy drops a
+  connection above either limit before TLS. Both are `0`, disabled, by default, because they need
+  each client's own address (below); 512 and 256 are a starting point where the proxy sees it.
 
 Pingora 0.9 gives a TLS handshake up to 60 s and reports no failed handshake, so a connection that
 fails or aborts its handshake, or never starts it, keeps its place until those 60 s pass. A
 TCP-only health check against the TLS port therefore holds one place per probe for 60 s; check
-the health port instead. A connector's handshakes complete in milliseconds, so the pending limit
-refuses it only when more than 256 of its handshakes are in flight at once. On a replica with 2
+the health port instead. A connector's handshakes complete in milliseconds, so a pending limit of
+256 refuses it only when more than 256 of its handshakes are in flight at once. On a replica with 2
 threads, a burst of 200 simultaneous connections from one IP completed without a refusal, and a
 burst of 300 reached the limit. A connector whose connect timeout fires under overload and that
 retries its 128 connections twice can also reach it, since the abandoned handshakes keep their
 places. Each request a connector holds open takes one connection, so `maxConnectionsPerIp` must
 exceed a connector's concurrent PRF requests to one replica.
 
-The per-IP limits need each client's own address. With a TLS-passthrough `LoadBalancer` or
-`NodePort` Service, set `externalTrafficPolicy: Local`: with `Cluster`, kube-proxy replaces the
-client's address with a node's, so the limits apply per node, and at peak they refuse honest
-connectors that share a node. Otherwise set both limits to `0`, as behind an HTTP-aware front
-layer, where every client appears with the front layer's addresses. The proxy does not read the
-PROXY protocol.
+The per-IP limits need each client's own address, which is why they are off by default. Turn
+them on only with a TLS-passthrough `LoadBalancer` or `NodePort` Service whose
+`externalTrafficPolicy` is `Local`. With `Cluster`, kube-proxy replaces the client's address with a
+node's, so the limits apply per node, and at peak they refuse honest connectors that share a node.
+Behind an HTTP-aware front layer every client appears with the front layer's addresses, so leave
+them at `0` there. The proxy does not read the PROXY protocol or forwarding headers.
 
 These limits bound one address, not a flood from many: over IPv6, one host can use every address
 of its /64. Each slow connection holds about 48 KB
 (measured with slow request heads), so the 512Mi memory limit fills at about 10,000 connections and
-the replica is OOM-killed, at any thread count. One address can hold up to 512 connections, about
-24 MB, so about 21 addresses can still fill a replica.
+the replica is OOM-killed, at any thread count. With a limit of 512, one address holds up to 512
+connections, about 24 MB, so about 21 addresses can still fill a replica.
 A bound across all clients is tracked in
 [fhevm-internal issue 2271](https://github.com/zama-ai/fhevm-internal/issues/2271). The proxy must
 therefore not be reachable directly from the internet. Put it behind one of:

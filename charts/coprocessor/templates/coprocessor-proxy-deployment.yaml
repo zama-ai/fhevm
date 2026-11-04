@@ -18,6 +18,9 @@
 {{- if not $proxy.prfServiceAddress }}
 {{- fail "coprocessorProxy.prfServiceAddress must be prf-service's host:port" }}
 {{- end }}
+{{- if lt (int $proxy.requestHeadTimeoutSeconds) 1 }}
+{{- fail "coprocessorProxy.requestHeadTimeoutSeconds must be a whole number of seconds, at least 1: the head deadline cannot be disabled" }}
+{{- end }}
 {{- if not (or $protocolConfigChain.httpUrl $protocolConfigChain.httpUrlValueFrom) }}
 {{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with httpUrl or httpUrlValueFrom" $canonicalChainId) }}
 {{- end }}
