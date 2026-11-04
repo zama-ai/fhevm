@@ -483,14 +483,17 @@ The proxy's TLS certificate comes from the chart, and its auth inputs are set by
 
 `deploy-relayer.sh relayer-http` installs `relayer-http` (port `3002`, as in the
 compose stack) with the generic `common` chart once the kms-connectors are up.
-`relayer/values-relayer-http-e2e.yaml` carries the static config; the script fills
+Its config is the compose stack's template
+(`test-suite/fhevm/templates/config/relayer-http.yaml`) with the preview-only
+fields of `relayer/values-relayer-http-e2e.yaml` merged over it; the script fills
 in the per-deploy fields from the same **`kms-connector-http`** ConfigMap the
 test-suite reads: one endpoint per party (proxy URL + tx-sender `audience`),
-thresholds `t+1` (public) / `2t+1` (user), the host chain ids, and the host
-`ProtocolConfig` address for FhevmSig. It signs with the same fixed test key as the
-e2e suite. The proxies' cert-manager certificates (`ca.crt`) are mounted and
-trusted through `SSL_CERT_FILE`. Nothing calls it yet: it is deployed so the next
-step can point the e2e suites at it. Pin the image with `relayer_http_version`.
+thresholds `t+1` (public) / `n-t` (user, as for the relayer), the host chain ids,
+and the host `ProtocolConfig` address for FhevmSig. It signs with the same fixed
+test key as the e2e suite. The proxies' cert-manager certificates (`ca.crt`) are
+mounted and trusted through `SSL_CERT_FILE`. Nothing calls it yet: it is deployed
+so the next step can point the e2e suites at it, and a failed install does not
+fail the deploy. Pin the image with `relayer_http_version`.
 
 ## coprocessor-proxy
 

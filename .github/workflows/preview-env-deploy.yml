@@ -1387,7 +1387,10 @@ jobs:
         run: bash ci/preview-env/scripts/deploy/deploy-relayer.sh relayer
 
       # Reads the kms-connector-http ConfigMap published by the kms-connector step.
+      # Nothing consumes relayer-http yet, so a failure is reported without
+      # failing the deploy; drop continue-on-error once the e2e suites use it.
       - name: Deploy relayer-http
+        continue-on-error: true
         run: bash ci/preview-env/scripts/deploy/deploy-relayer.sh relayer-http
 
       - name: Deploy test-suite
