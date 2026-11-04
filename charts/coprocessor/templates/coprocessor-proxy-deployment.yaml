@@ -15,7 +15,16 @@
 {{- if not (or $protocolConfigChain.protocolConfigContractAddress $protocolConfigChain.protocolConfigContractAddressValueFrom) }}
 {{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with protocolConfigContractAddress or protocolConfigContractAddressValueFrom" $canonicalChainId) }}
 {{- end }}
-{{- if not $proxy.prfServiceAddress }}
+{{- /* With prf-service in this release, the proxy must reach its Service. */}}
+{{- $prfServiceAddress := $proxy.prfServiceAddress }}
+{{- if .Values.prfService.enabled }}
+{{- $own := printf "%s:%d" (include "prfServiceName" .) (int .Values.prfService.ports.http) }}
+{{- $prfServiceAddress = default $own $prfServiceAddress }}
+{{- if ne $prfServiceAddress $own }}
+{{- fail (printf "coprocessorProxy.prfServiceAddress must be empty or %s, the prf-service of this release" $own) }}
+{{- end }}
+{{- end }}
+{{- if not $prfServiceAddress }}
 {{- fail "coprocessorProxy.prfServiceAddress must be prf-service's host:port" }}
 {{- end }}
 {{- if not (or $protocolConfigChain.httpUrl $protocolConfigChain.httpUrlValueFrom) }}
@@ -147,7 +156,7 @@ spec:
             - name: COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS
               value: {{ required "coprocessorProxy.coprocessorSignerAddress must be set" $proxy.coprocessorSignerAddress | quote }}
             - name: COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS
-              value: {{ $proxy.prfServiceAddress | quote }}
+              value: {{ $prfServiceAddress | quote }}
             - name: COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT
               value: "{{ int $proxy.prfServiceResponseTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER
