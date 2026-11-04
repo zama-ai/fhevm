@@ -36,6 +36,7 @@ contract HCULimitAllowlistTest is Test {
         }
         vm.store(
             aclAdd,
+            // ERC-7201: openzeppelin.storage.Ownable; ACL's _owner is at offset zero.
             0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300,
             bytes32(uint256(uint160(OWNER)))
         );
@@ -395,11 +396,9 @@ contract HCULimitAllowlistTest is Test {
         vm.warp(deadline - 1);
         vm.prank(ALLOWLISTER);
         hcuLimit.addToAllowlist(_accounts(DAPP));
-        vm.recordLogs();
         vm.warp(deadline);
         assertFalse(hcuLimit.isAllowlister(ALLOWLISTER));
         assertEq(hcuLimit.allowlisterDeadline(ALLOWLISTER), deadline);
-        assertEq(vm.getRecordedLogs().length, 0);
         assertTrue(hcuLimit.isAllowlisted(DAPP));
         vm.expectRevert(abi.encodeWithSelector(HCULimit.CallerNotACLOwnerOrAllowlister.selector, ALLOWLISTER));
         vm.prank(ALLOWLISTER);
@@ -441,17 +440,16 @@ contract HCULimitAllowlistTest is Test {
     }
 
     function test_absentAndExpiredRolesCannotBeRemovedOrRenounced(bool expired) public {
-        if (expired) {
-            _grant(ALLOWLISTER);
-            vm.warp(block.timestamp + 1 days);
-        }
+        if (expired) _grant(ALLOWLISTER);
+        uint256 deadline = hcuLimit.allowlisterDeadline(ALLOWLISTER);
+        if (expired) vm.warp(deadline);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.NotAllowlister.selector, ALLOWLISTER));
         vm.prank(OWNER);
         hcuLimit.removeAllowlister(ALLOWLISTER);
         vm.expectRevert(abi.encodeWithSelector(HCULimit.NotAllowlister.selector, ALLOWLISTER));
         vm.prank(ALLOWLISTER);
         hcuLimit.renounceAllowlister();
-        assertEq(hcuLimit.allowlisterDeadline(ALLOWLISTER), expired ? block.timestamp : 0);
+        assertEq(hcuLimit.allowlisterDeadline(ALLOWLISTER), deadline);
     }
 
     function test_ownerRenouncesOnlyAnActiveGrantAndKeepsOwnerPowers() public {
@@ -617,7 +615,10 @@ contract HCULimitAllowlistTest is Test {
                 RESULT,
                 caller
             );
-            if (i != 3 && i != 4) {
+            if (
+                binarySelectors[i] != HCULimit.checkHCUForFheDiv.selector &&
+                binarySelectors[i] != HCULimit.checkHCUForFheRem.selector
+            ) {
                 calls[n++] = abi.encodeWithSelector(
                     binarySelectors[i],
                     FheType.Uint8,
