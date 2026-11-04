@@ -229,7 +229,7 @@ describe('RelayerHttpRequest abort in every phase', () => {
   // S14: the abort lands after the wait resolved, before the next attempt's fetch.
   describe('between the end of the wait and the next fetch', () => {
     async function hookAfterWait(afterSleep: () => void): Promise<void> {
-      const actual = await vi.importActual<typeof import('../../../base/timeout.js')>('../../../../base/timeout.js');
+      const actual = await vi.importActual<typeof import('../../../../base/timeout.js')>('../../../../base/timeout.js');
       vi.mocked(abortableSleep).mockImplementationOnce(async (ms, signal) => {
         await actual.abortableSleep(ms, signal);
         afterSleep();

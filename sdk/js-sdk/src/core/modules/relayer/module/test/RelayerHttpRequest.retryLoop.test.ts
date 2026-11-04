@@ -758,7 +758,7 @@ describe('runRelayerHttpRetryLoop', () => {
     it('abort between the end of the wait and the next attempt: next attempt runs, its throw is rethrown', async () => {
       vi.useFakeTimers();
       const h = makeHarness();
-      const actual = await vi.importActual<typeof import('../../../base/timeout.js')>('../../../../base/timeout.js');
+      const actual = await vi.importActual<typeof import('../../../../base/timeout.js')>('../../../../base/timeout.js');
       vi.mocked(abortableSleep).mockImplementationOnce(async (ms, signal) => {
         await actual.abortableSleep(ms, signal);
         h.controller.abort('between');
