@@ -63,9 +63,13 @@ export async function canDecryptValuesFromPairs(context: Context, parameters: Pa
   } else {
     const { signedPermit } = parameters;
 
+    // Order: brand → version → extraData → expiry (same as the decrypt share fetchers).
+    // The version is checked by assertSignedDecryptionPermitExtraDataSupported.
     assertIsSignedDecryptionPermit(signedPermit, { subject: 'signedPermit' });
-    signedPermit.assertNotExpired();
     assertSignedDecryptionPermitExtraDataSupported(signedPermit);
+
+    signedPermit.assertNotExpired();
+
     if (signedPermit.version === 1) {
       assertPermitV1IncludesContractAddresses(signedPermit, contractAddresses);
     }

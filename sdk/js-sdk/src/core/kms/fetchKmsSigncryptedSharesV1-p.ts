@@ -90,9 +90,13 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
 
   const signedPermitV1: SignedDecryptionPermitV1 = parameters.signedPermit;
 
+  // Order: brand → version → extraData → expiry (same as canDecryptValuesFromPairs).
+
   // An unsupported extraData (v0, protocol v0.11) is refused by the KMS connector: fail here rather
   // than wait for a response that never comes.
   const signedPermitExtraData: KmsExtraData = assertSignedDecryptionPermitExtraDataSupported(signedPermitV1);
+
+  signedPermitV1.assertNotExpired();
 
   const tkmsVersion = fhevmContext.tkmsVersion;
 
@@ -139,8 +143,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
   // 5. Check: 2048 bits limit
   assertKmsDecryptionBitLimit(handles);
 
-  // 6. Check: Expiration date
-  signedPermitV1.assertNotExpired();
+  // 6. Check: Expiration date — done up front, with the other permit checks
 
   // 7. Check: ACL permissions (user is signer or delegatorAddress)
   if (signedPermitV1.eip712.primaryType === 'DelegatedUserDecryptRequestVerification') {

@@ -70,12 +70,12 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
     });
   }
 
-  const signedPermit: SignedDecryptionPermitV2 = parameters.signedPermit;
+  const signedPermitV2: SignedDecryptionPermitV2 = parameters.signedPermit;
 
-  const signedPermitExtraData: KmsExtraData = assertSignedDecryptionPermitExtraDataSupported(signedPermit);
+  // Order: brand → version → extraData → expiry (same as canDecryptValuesFromPairs).
+  const signedPermitExtraData: KmsExtraData = assertSignedDecryptionPermitExtraDataSupported(signedPermitV2);
 
-  // Expiration date
-  signedPermit.assertNotExpired();
+  signedPermitV2.assertNotExpired();
 
   // The v3 / unified user-decrypt route only exists on relayers that advertise it. Guard here — not
   // only at callers — so any direct caller of this V2 path is protected too. Resolved once per client
@@ -97,8 +97,8 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
     ...options,
   };
 
-  const { signerAddress, signature } = signedPermit;
-  const userAddress = signedPermit.eip712.message.userAddress;
+  const { signerAddress, signature } = signedPermitV2;
+  const userAddress = signedPermitV2.eip712.message.userAddress;
 
   // 1. Check: At least one handle/contract pair is required
   if (pairs.length === 0) {
@@ -177,7 +177,7 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
     payload: {
       handleContractPairs: resolvedPairs,
       kmsDecryptEip712Signer: signerAddress,
-      kmsDecryptEip712Message: signedPermit.eip712.message,
+      kmsDecryptEip712Message: signedPermitV2.eip712.message,
       kmsDecryptEip712Signature: signature,
     },
     options: relayerOptions,
@@ -191,7 +191,7 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
       chainId: context.chain.fhevm.gateway.id,
       verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address,
     }),
-    eip712ExtraData: signedPermit.eip712.message.extraData,
+    eip712ExtraData: signedPermitV2.eip712.message.extraData,
     eip712Signature: signature,
     eip712SignerAddress: signerAddress,
     handles,

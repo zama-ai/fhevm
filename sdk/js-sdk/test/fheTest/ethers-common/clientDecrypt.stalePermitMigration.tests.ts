@@ -315,15 +315,37 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
       ).rejects.toThrow();
     });
 
-    // Order-of-checks pin: a permit that is BOTH stale and expired must fail
-    // with the clear expiration error, not a confusing context error.
-    it('rejects an expired stale permit with the expiration error', async () => {
+    // Order-of-checks pin (brand → version → extraData → expiry): a permit that
+    // is BOTH stale and expired fails with the extraData error. A new permit is
+    // needed either way.
+    it('rejects an expired stale permit with the extraData error', async () => {
+      const { encryptedValue } = await readHandleAndExpected(config.wallet.address);
+
+      const client = await createReadyClient();
+      const transportKeyPair = await client.generateTransportKeyPair();
+      const expiredStalePermit = await forgeV1Permit(client, transportKeyPair, {
+        extraData: STALE_V11_EXTRA_DATA,
+        startTimestamp: (await latestBlockTimestamp(config)) - 3 * 86400,
+        durationDays: 1,
+      });
+
+      await expect(
+        client.decryptValue({
+          contractAddress: config.fheTestAddress,
+          encryptedValue,
+          signedPermit: expiredStalePermit,
+          transportKeyPair,
+        }),
+      ).rejects.toMatchObject(EXTRA_DATA_V0_REFUSED);
+    });
+
+    it('rejects an expired permit with the expiration error', async () => {
       const { encryptedValue } = await readHandleAndExpected(config.wallet.address);
 
       const client = await createReadyClient();
       const transportKeyPair = await client.generateTransportKeyPair();
       const expiredPermit = await forgeV1Permit(client, transportKeyPair, {
-        extraData: STALE_V11_EXTRA_DATA,
+        extraData: await currentPermitExtraData(client),
         startTimestamp: (await latestBlockTimestamp(config)) - 3 * 86400,
         durationDays: 1,
       });
@@ -335,7 +357,10 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
           signedPermit: expiredPermit,
           transportKeyPair,
         }),
-      ).rejects.toThrow('request has expired');
+      ).rejects.toMatchObject({
+        name: 'InvalidSignedPermitError',
+        message: expect.stringContaining('request has expired'),
+      });
     });
 
     // Delegated flow: same stale-cache scenario, with a delegated V1 permit
