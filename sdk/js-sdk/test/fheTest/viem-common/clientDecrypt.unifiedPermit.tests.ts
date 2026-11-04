@@ -4,7 +4,12 @@ import { createWalletClient, http } from 'viem';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { canUseUnifiedDecryptionPermit, createUnsignedUnifiedDecryptionPermitEip712 } from '@fhevm/sdk/actions/base';
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
-import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import {
+  getViemTestConfig,
+  latestBlockTimestamp,
+  type CreateViemDecryptClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
 import {
   decryptTestCases,
@@ -100,7 +105,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
@@ -121,7 +126,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
@@ -150,7 +155,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
       });
 
@@ -186,7 +191,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.bob.account.address,
       });
 
@@ -222,7 +227,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.bob.account.address,
         signer: config.bob.account,
         delegatorAddress: config.alice.account.address,
@@ -253,7 +258,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
           transportKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
-          startTimestamp: Math.floor(Date.now() / 1000) - 5,
+          startTimestamp: (await latestBlockTimestamp(config)) - 5,
           signerAddress: config.bob.account.address,
           signer: config.bob.account,
           delegatorAddress: config.bob.account.address,
@@ -312,7 +317,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
           transportKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
-          startTimestamp: Math.floor(Date.now() / 1000) - 5,
+          startTimestamp: (await latestBlockTimestamp(config)) - 5,
           signerAddress: config.account.address,
           signer: config.account,
         });
@@ -371,7 +376,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
@@ -432,7 +437,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
@@ -528,7 +533,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
             transportKeyPair,
             contractAddresses: [config.fheTestAddress],
             durationSeconds: 24 * 3600,
-            startTimestamp: Math.floor(Date.now() / 1000) - 5,
+            startTimestamp: (await latestBlockTimestamp(config)) - 5,
             signerAddress: config.bob.account.address,
             signer: config.bob.account,
             delegatorAddress: config.alice.account.address,
@@ -567,7 +572,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
             transportKeyPair,
             contractAddresses: [config.fheTestAddress],
             durationSeconds: 24 * 3600,
-            startTimestamp: Math.floor(Date.now() / 1000) - 5,
+            startTimestamp: (await latestBlockTimestamp(config)) - 5,
             signerAddress: config.bob.account.address,
             signer: config.bob.account,
             delegatorAddress: config.alice.account.address,

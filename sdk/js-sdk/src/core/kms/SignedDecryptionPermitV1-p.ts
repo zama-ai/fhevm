@@ -21,6 +21,7 @@ import { assertIsTransportKeyPair, type TransportKeyPair } from './TransportKeyP
 import { readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
 import { isUintNumber, isUintString, MAX_UINT256, secondsToDays } from '../base/uint.js';
+import { InvalidSignedPermitError } from '../errors/InvalidSignedPermitError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -310,14 +311,14 @@ async function _createSignedDecryptionPermitV1(
       message: eip712.message,
       signature,
     });
-    return new SignedDecryptionPermitV1Impl(PRIVATE_TOKEN, parameters);
+    return Object.freeze(new SignedDecryptionPermitV1Impl(PRIVATE_TOKEN, parameters));
   } else {
     await verifyKmsDelegatedUserDecryptEip712V1(context, {
       signer: signerAddress,
       message: eip712.message,
       signature,
     });
-    return new SignedDecryptionPermitV1Impl(PRIVATE_TOKEN, parameters);
+    return Object.freeze(new SignedDecryptionPermitV1Impl(PRIVATE_TOKEN, parameters));
   }
 }
 
@@ -337,21 +338,23 @@ function _assertKmsEip712V1DeadlineValidity(
 ): void {
   const durationDaysBigInt = BigInt(durationDays);
   if (durationDaysBigInt === 0n) {
-    throw Error('durationDays is zero');
+    throw new InvalidSignedPermitError({ message: 'Invalid permit: durationDays is zero, sign a new permit' });
   }
   if (durationDaysBigInt > BigInt(maxDurationDays)) {
-    throw Error(`durationDays is above max duration of ${maxDurationDays}`);
+    throw new InvalidSignedPermitError({
+      message: `Invalid permit: durationDays is above max duration of ${maxDurationDays}, sign a new permit`,
+    });
   }
 
   const startTimestampBigInt = BigInt(startTimestamp);
 
   const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
   if (startTimestampBigInt > currentTimestamp) {
-    throw Error('startTimestamp is set in the future');
+    throw new InvalidSignedPermitError({ message: 'Invalid permit: startTimestamp is set in the future' });
   }
 
   const durationInSeconds = durationDaysBigInt * BigInt(24 * 60 * 60);
   if (startTimestampBigInt + durationInSeconds < currentTimestamp) {
-    throw Error('request has expired');
+    throw new InvalidSignedPermitError({ message: 'Invalid permit: request has expired, sign a new permit' });
   }
 }
