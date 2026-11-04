@@ -811,23 +811,23 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /// @notice Returns whether HCU-charged computation requires allowlist membership.
-    function isAllowlistActivated() external view returns (bool) {
+    function isAllowlistActivated() public view virtual returns (bool) {
         return _getHCULimitStorage().isAllowlistActivated;
     }
 
     /// @notice Returns whether a dapp is on the computation allowlist, independently of activation.
     /// @dev Membership grants no exemption from the block cap, transaction limit, or depth limit.
-    function isAllowlisted(address account) external view returns (bool) {
+    function isAllowlisted(address account) public view virtual returns (bool) {
         return _getHCULimitStorage().isAllowlisted[account];
     }
 
     /// @notice Returns whether the account's allowlister deadline is strictly in the future.
-    function isAllowlister(address account) external view returns (bool) {
+    function isAllowlister(address account) public view virtual returns (bool) {
         return _getHCULimitStorage().allowlisters[account] > block.timestamp;
     }
 
     /// @notice Returns the stored Unix deadline in seconds, including expired grants; zero means no grant.
-    function allowlisterDeadline(address account) external view returns (uint256) {
+    function allowlisterDeadline(address account) public view virtual returns (uint256) {
         return _getHCULimitStorage().allowlisters[account];
     }
 
