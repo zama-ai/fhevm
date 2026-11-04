@@ -172,11 +172,17 @@ readers before groups are released. Cancellation here does not perform drift cle
 restart replay after cleanup. Replay waits while drift cleanup is unfinished;
 live ingestion retains its existing drift recovery policy.
 
-A delivery waiting for missing finalized history requests a repair and yields
-without opening the circuit breaker. AMQP retries that delivery after a fixed
-five-second delay, leaving the queue free to consume the repair. Redis leaves it
-pending and retries using its configured claim timing. Delivery order is not
-guaranteed; the history admission guard still checks continuity on each attempt.
+A delivery waiting for missing finalized history requests a repair without
+replacing manual requests. The repair's finalized bound is persisted
+atomically with its request, using the incoming finalized block or an existing
+finalized history anchor as evidence. A replica claiming the repair uses this
+stored bound even if its own observed FINAL head is behind.
+
+The waiting delivery yields without opening the circuit breaker. AMQP retries
+that delivery after a fixed five-second delay, leaving the queue free to consume
+the repair. Redis leaves it pending and retries using its configured claim
+timing. Delivery order is not guaranteed; the history admission guard still
+checks continuity on each attempt.
 
 
 ## Status and completion

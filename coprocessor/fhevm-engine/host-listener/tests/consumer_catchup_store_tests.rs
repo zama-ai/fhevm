@@ -1010,6 +1010,103 @@ async fn waiting_for_a_reference_and_empty_startup_leave_intent_untouched() {
 }
 
 #[tokio::test]
+async fn repair_bounds_survive_a_lagging_owner_and_takeover() {
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    let requester = PgPool::connect(instance.db_url.as_str()).await.unwrap();
+    let owner = PgPool::connect(instance.db_url.as_str()).await.unwrap();
+    for reuse_manual in [false, true] {
+        let consumer = format!("host.{reuse_manual}");
+        let manual = if reuse_manual {
+            store::ensure_requested(
+                &requester,
+                1,
+                &consumer,
+                &args(901, Some(901), true),
+                Some(902),
+                None,
+                false,
+            )
+            .await
+            .unwrap()
+        } else {
+            None
+        };
+        let id = store::ensure_repair_requested(
+            &requester, 1, &consumer, 901, 902, false,
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        if let Some(manual) = manual {
+            assert_eq!(id, manual);
+        }
+        let row: (i64, i64, i64, bool) = sqlx::query_as(
+            "SELECT block_start, block_end, observed_head,
+                    status = 'ONGOING' AND request_pending
+                    AND owner_id IS NULL AND lease_until IS NULL
+             FROM host_consumer_catchups WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&requester)
+        .await
+        .unwrap();
+        assert_eq!(row, (901, 901, 902, true));
+
+        let request =
+            store::take_request_ownership(&owner, 1, &consumer, false)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
+        assert_eq!(request.id, id);
+        assert_eq!(
+            store::bound_for_publication(&owner, &request, Some(800), false)
+                .await
+                .unwrap(),
+            Some(901),
+            "the owner's lagging FINAL head must not skip the repair"
+        );
+        assert_eq!(
+            store::ensure_repair_requested(
+                &requester, 1, &consumer, 901, 1000, false
+            )
+            .await
+            .unwrap(),
+            Some(id),
+        );
+        let frozen: (i64, uuid::Uuid) = sqlx::query_as(
+            "SELECT observed_head, owner_id FROM host_consumer_catchups WHERE id = $1",
+        ).bind(id).fetch_one(&owner).await.unwrap();
+        assert_eq!(frozen, (902, request.owner_id));
+        sqlx::query("UPDATE host_consumer_catchups SET lease_until = clock_timestamp() - interval '1 second' WHERE id = $1")
+            .bind(id).execute(&owner).await.unwrap();
+        let successor =
+            store::take_request_ownership(&requester, 1, &consumer, false)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
+        assert_ne!(successor.owner_id, request.owner_id);
+        assert_eq!(
+            store::bound_for_publication(&requester, &successor, None, false)
+                .await
+                .unwrap(),
+            Some(901),
+            "takeover needs no local FINAL observation"
+        );
+        let rows: (i64, i64) = sqlx::query_as(
+            "SELECT count(*), count(*) FILTER (WHERE status = 'ONGOING')
+             FROM host_consumer_catchups WHERE consumer_id = $1",
+        )
+        .bind(&consumer)
+        .fetch_one(&owner)
+        .await
+        .unwrap();
+        assert_eq!(rows, (1, 1));
+    }
+}
+
+#[tokio::test]
 async fn publication_bounds_are_persisted_once_and_survive_takeover() {
     let instance = setup_test_db(ImportMode::None).await.unwrap();
     let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
