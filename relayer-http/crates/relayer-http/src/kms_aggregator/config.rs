@@ -21,7 +21,7 @@ pub struct KmsAggregatorConfig {
     /// Allow plain http towards non-loopback hosts. Local/compose only.
     #[serde(default)]
     pub allow_insecure_http: bool,
-    /// Accept any TLS certificate from the connectors: no CA, expiry or hostname check. Local/test only.
+    /// Accept any TLS certificate from the connectors: no CA, expiry or hostname check. Local/devnet only.
     #[serde(default)]
     pub danger_accept_invalid_certs: bool,
     /// HTTP calls in flight at once, all aggregations together (one semaphore per process).
