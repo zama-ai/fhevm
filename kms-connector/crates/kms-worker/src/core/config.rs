@@ -80,12 +80,12 @@ pub struct Config {
         default = "default_kms_connect_timeout"
     )]
     pub kms_connect_timeout: Duration,
-    /// Timeout for one decryption submission, including the KMS Core acknowledgement.
+    /// Timeout for KMS RPCs.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
-        default = "default_kms_decryption_submission_timeout"
+        default = "default_kms_req_timeout"
     )]
-    pub kms_decryption_submission_timeout: Duration,
+    pub kms_req_timeout: Duration,
     /// Interval between HTTP/2 keepalive pings sent to the KMS Core, even when the channel is idle.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
@@ -245,8 +245,11 @@ fn default_kms_connect_timeout() -> Duration {
     Duration::from_secs(5)
 }
 
-fn default_kms_decryption_submission_timeout() -> Duration {
-    Duration::from_secs(30)
+fn default_kms_req_timeout() -> Duration {
+    // Core's retrieve_from_meta_store_with_timeout currently waits up to 60s for pending
+    // decryption results, so normal polls can time out here and consume retries while
+    // computation continues. Core's wait should be shorter than this timeout (e.g. 15s).
+    Duration::from_secs(20)
 }
 
 fn default_kms_keep_alive_interval() -> Duration {
@@ -336,7 +339,7 @@ impl Default for Config {
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
             grpc_request_retries: default_grpc_request_retries(),
             kms_connect_timeout: default_kms_connect_timeout(),
-            kms_decryption_submission_timeout: default_kms_decryption_submission_timeout(),
+            kms_req_timeout: default_kms_req_timeout(),
             kms_keep_alive_interval: default_kms_keep_alive_interval(),
             kms_keep_alive_timeout: default_kms_keep_alive_timeout(),
             max_decryption_attempts: default_max_decryption_attempts(),
@@ -383,7 +386,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES");
             env::remove_var("KMS_CONNECTOR_KMS_CONNECT_TIMEOUT");
-            env::remove_var("KMS_CONNECTOR_KMS_DECRYPTION_SUBMISSION_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_KMS_REQ_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL");
             env::remove_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
@@ -461,7 +464,7 @@ mod tests {
             );
             env::set_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES", "5");
             env::set_var("KMS_CONNECTOR_KMS_CONNECT_TIMEOUT", "7s");
-            env::set_var("KMS_CONNECTOR_KMS_DECRYPTION_SUBMISSION_TIMEOUT", "12s");
+            env::set_var("KMS_CONNECTOR_KMS_REQ_TIMEOUT", "12s");
             env::set_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL", "20s");
             env::set_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT", "8s");
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
@@ -522,7 +525,7 @@ mod tests {
         );
         assert_eq!(config.grpc_request_retries, 5);
         assert_eq!(config.kms_connect_timeout.as_secs(), 7);
-        assert_eq!(config.kms_decryption_submission_timeout.as_secs(), 12);
+        assert_eq!(config.kms_req_timeout.as_secs(), 12);
         assert_eq!(config.kms_keep_alive_interval.as_secs(), 20);
         assert_eq!(config.kms_keep_alive_timeout.as_secs(), 8);
         assert_eq!(config.max_decryption_attempts, 300);
@@ -562,11 +565,12 @@ mod tests {
         cleanup_env_vars();
     }
 
+    // Configuration rejects a zero RPC timeout supplied through the environment.
     #[test]
     #[serial(config_tests)]
-    fn test_zero_submission_timeout_is_rejected() {
+    fn test_zero_kms_req_timeout_is_rejected() {
         cleanup_env_vars();
-        unsafe { env::set_var("KMS_CONNECTOR_KMS_DECRYPTION_SUBMISSION_TIMEOUT", "0s") }
+        unsafe { env::set_var("KMS_CONNECTOR_KMS_REQ_TIMEOUT", "0s") }
         let result = Config::from_env_and_file(Some(example_config_path()));
         cleanup_env_vars();
         assert!(result.is_err());
