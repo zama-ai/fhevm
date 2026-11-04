@@ -20,7 +20,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  *      `confirmKmsContextCreation` / `confirmEpochActivation`) runs only there, alongside
  *      `KMSGeneration`. Every other host chain runs `ProtocolConfigReplica` instead.
  *      Each lifecycle confirmation is a KMS signer's EIP-712 signature, so any caller may submit it.
- *      The signatures let other chains verify lifecycle steps (RFC 037).
+ *      The signatures let other chains verify lifecycle steps.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
 contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableEmptyProxy, ACLOwnable {
@@ -74,7 +74,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     // -----------------------------------------------------------------------------------------
 
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfigCanonical
-    /// @dev Canonical-only state added in v0.4.0. `ProtocolConfigReplica` does not carry it.
     struct ProtocolConfigCanonicalStorage {
         /// @notice Hash of the stored node set and thresholds, signed in ContextCreationConfirmation.
         mapping(uint256 contextId => bytes32) nodeConfigHashForContext;
@@ -390,7 +389,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /// @inheritdoc IProtocolConfig
     /// @dev Each signer confirms once. The confirmation counts toward the active committee's `n - t`
-    ///      quorum. The DAO does not rotate before a destruction reaches the quorum (RFC 037).
+    ///      quorum. The DAO does not rotate before a destruction reaches the quorum.
     ///      The contract does not check that the context was destroyed. KMS nodes sign only after
     ///      they see the KmsContextDestroyed event.
     function confirmKmsContextDestruction(
@@ -414,7 +413,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /// @inheritdoc IProtocolConfig
     /// @dev Counts like confirmKmsContextDestruction. The contract does not check that the epoch was
     ///      destroyed. KMS nodes sign only after they see the KmsEpochDestroyed event, so an epoch
-    ///      destroyed before v0.4.0 can still collect confirmations. An epoch cleared by
+    ///      destroyed before this upgrade can still collect confirmations. An epoch cleared by
     ///      destroyKmsContext is confirmed through confirmKmsContextDestruction instead.
     function confirmKmsEpochDestruction(
         uint256 destroyedEpochId,
@@ -590,7 +589,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /**
      * @dev Records the active-committee signer's confirmation of `destroyedId`. Returns whether this
-     *      confirmation reaches the quorum. A rotation does not reset the count (RFC 037 forbids rotating before it).
+     *      confirmation reaches the quorum. A rotation does not reset the count.
+     *      The DAO does not rotate before a destruction reaches the quorum.
      */
     function _confirmDestruction(
         mapping(address signer => bool confirmed) storage confirmedBySigner,
