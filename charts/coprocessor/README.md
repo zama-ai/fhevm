@@ -51,8 +51,11 @@ A NetworkPolicy allows this release's proxy pods to reach the prf-service pods s
 `prfServiceNetworkPolicy.podSelector`, on `prfServiceNetworkPolicy.ports` (TCP 8090 by default).
 Set these to the prf-service **pod** ports, which may differ from the Service port in
 `prfServiceAddress`. Add other required ingress, such as metrics scraping, to
-`prfServiceNetworkPolicy.extraIngress`; rendering fails on a rule without `from`, which would
-admit every source. Isolation requires a CNI that enforces NetworkPolicy and no other policy
+`prfServiceNetworkPolicy.extraIngress`, with both `from` and `ports`, for example
+`ports: [{port: 9100}]` for metrics. Rendering fails on a rule without `from`, which would admit
+every source, on a rule without `ports`, which would admit its sources on every port, and on a
+rule that lists a port of `prfServiceNetworkPolicy.ports`: prf-service trusts the proxy's
+`X-Fhevm-Signer` header, so only the proxy may reach that port. Isolation requires a CNI that enforces NetworkPolicy and no other policy
 granting broader access: Kubernetes policies are additive. A `podSelector` that matches no
 prf-service pod, for example after a typo or a label change, renders without error and leaves
 prf-service open. After each deployment, check from a pod that is not the proxy that prf-service's

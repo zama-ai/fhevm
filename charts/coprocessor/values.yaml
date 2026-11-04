@@ -1937,7 +1937,9 @@ coprocessorProxy:
     ports:
       - {port: 8090, protocol: TCP}
     # More ingress rules for those pods, e.g. Prometheus scraping their metrics port. Each rule
-    # must set `from`: a rule without it admits every source.
+    # must set `from` and `ports`, and must not list a port of `ports` above: a rule without
+    # `from` admits every source, and one without `ports` admits its sources on every port.
+    # Example: [{from: [{namespaceSelector: {matchLabels: {name: monitoring}}}], ports: [{port: 9100}]}]
     extraIngress: []
 
   # Additional environment variables, e.g. COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL.
