@@ -9,7 +9,10 @@ use prf_service::{
     waiter::{PadWaiter, PAD_READY},
     Health,
 };
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{
+    postgres::{PgConnectOptions, PgPoolOptions},
+    PgPool,
+};
 use std::{num::NonZeroUsize, sync::Arc, time::Duration};
 use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
 use tokio::{task::JoinHandle, time::timeout};
@@ -374,11 +377,7 @@ async fn start_waiter(
     pool: &PgPool,
     service: &PgPool,
     poll_interval: Duration,
-) -> (
-    Arc<PadWaiter>,
-    CancellationToken,
-    JoinHandle<anyhow::Result<()>>,
-) {
+) -> (Arc<PadWaiter>, CancellationToken, JoinHandle<()>) {
     let waiter = Arc::new(PadWaiter::new(service.clone(), poll_interval));
     let cancel = CancellationToken::new();
     let run = tokio::spawn({
@@ -441,7 +440,7 @@ async fn trigger_wakes_the_request_of_each_row() {
     assert_eq!(finished(long_wait).await, PadState::Failed);
 
     cancel.cancel();
-    run.await.unwrap().unwrap();
+    run.await.unwrap();
 }
 
 #[tokio::test]
@@ -524,6 +523,50 @@ async fn waiter_reads_the_rows_after_a_lost_connection() {
     .await
     .unwrap();
 
+    assert_eq!(finished(wait).await, PadState::Complete(output(1)));
+    assert!(!run.is_finished());
+}
+
+#[tokio::test]
+async fn waiter_makes_a_new_listener_after_a_failed_reconnect() {
+    let (instance, pool, _service, admissions) = test_db().await;
+    let row = path(1, 64);
+    admissions.admit(&row, CONNECTOR).await.unwrap();
+    // A role of this test only: the other tests use `prf_service` at the same time.
+    sqlx::raw_sql(
+        "DO $$ BEGIN CREATE ROLE prf_probe LOGIN PASSWORD 'prf_probe';
+         EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+         ALTER ROLE prf_probe LOGIN;
+         GRANT SELECT ON pads TO prf_probe;",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let options: PgConnectOptions = instance.db_url().parse().unwrap();
+    let probe = PgPoolOptions::new()
+        .acquire_timeout(Duration::from_millis(200))
+        .connect_with(options.username("prf_probe").password("prf_probe"))
+        .await
+        .unwrap();
+    let (waiter, _cancel, run) = start_waiter(&pool, &probe, Duration::from_millis(100)).await;
+    let wait = start_wait(&waiter, row).await;
+
+    // Cut every connection of the role and refuse new ones: sqlx cannot connect again.
+    sqlx::raw_sql(
+        "ALTER ROLE prf_probe NOLOGIN;
+         SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = 'prf_probe';",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert!(!run.is_finished());
+
+    sqlx::query("ALTER ROLE prf_probe LOGIN")
+        .execute(&pool)
+        .await
+        .unwrap();
+    set_output(&pool, &row, 1).await;
     assert_eq!(finished(wait).await, PadState::Complete(output(1)));
     assert!(!run.is_finished());
 }

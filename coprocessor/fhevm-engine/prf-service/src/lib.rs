@@ -76,14 +76,13 @@ impl PrfService {
         Health(self.pool.clone())
     }
 
-    /// Serves until `cancel_token`. Returns an error if the server or the `pad_ready` listener stops.
+    /// Serves until `cancel_token`. Returns an error if the server stops.
     pub async fn start(self) -> anyhow::Result<()> {
         let server = self.server;
         tokio::pin!(server);
         tokio::select! {
             res = &mut server => res.context("HTTP server error")?,
-            res = self.waiter.run(self.cancel_token.clone()) => {
-                res.context("pad_ready listener error")?;
+            () = self.waiter.run(self.cancel_token.clone()) => {
                 server.await.context("HTTP server error")?;
             }
         }

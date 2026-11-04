@@ -62,11 +62,11 @@ and reads rows. The `pad-worker` computes the output and writes it to the row.
 
 `db-migration/db-scripts/grant_pad_roles.sql` gives the role `prf_service` its rights: read `pads` and
 add rows, nothing more. The migration job runs it on each deploy. The operator creates the role, and
-sets `prfService.databaseUser` and `prfService.databasePassword` in the chart. Without them,
-`prf-service` uses the user of `commonConfig`.
+sets `prfService.databaseUser` (required) and `prfService.databasePassword` in the chart.
 
-`--database-url` (or `DATABASE_URL`) selects the database. Readiness checks the database. If the
-`pad_ready` listener cannot connect again, the process exits.
+`--database-url` (or `DATABASE_URL`) selects the database. Readiness checks the database and the
+rights on `pads`. If the `pad_ready` listener fails, `prf-service` makes a new one. Until then, the
+poll wakes the requests.
 
 ## Limits
 
