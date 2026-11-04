@@ -53,6 +53,9 @@ impl Cleaner {
     /// cleaner is inactive — the loop deliberately ends). The next-iteration
     /// publish lives in [`CleanerHandler`](crate::core::workers::CleanerHandler)
     /// so it can happen after the flow lock is released.
+    ///
+    /// Catchup requests are not cleaned here. They are never deleted at all —
+    /// see the retention note in the `catchup_requests` migration.
     pub async fn run(&self) -> bool {
         if !self.active {
             info!("Cleaner: inactive — skipping cleanup and not re-triggering");
