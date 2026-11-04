@@ -57,6 +57,9 @@
   their wording), for an expired permit, a permit whose `startTimestamp` is in the future, and a
   legacy (v1) permit that doesn't list the requested contract. A unified (v2) permit is now checked
   for expiry before the relayer-features request.
+- `canDecryptValue`/`canDecryptValues` throw `InvalidSignedPermitError` instead of a plain `Error` when
+  the permit's publicKey doesn't match the given `transportKeyPair`. The message keeps its wording, minus
+  a typo (`TransportKeyPairKeyPair` → `TransportKeyPair`).
 
 #### Fixed
 
