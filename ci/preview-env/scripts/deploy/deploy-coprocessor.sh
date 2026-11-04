@@ -3,8 +3,56 @@
 # Env: NAMESPACE, NB_COPROCESSOR, BLUE_GREEN, GPU, DEPLOY_POLYGON, OBSERVABILITY,
 # AUTOMATED_TESTS, COPROCESSOR_CHART, TAGS_JSON, BCS_IMAGE_TAG, GPU_IMAGE_TAG,
 # OTLP_ENDPOINT, COPROC_WALLETS_JSON, GCS_STACK_VERSION (pod label for the GCS
-# fleet; optional).
+# fleet; optional), COMMON_CHART, COMMON_CHART_VERSION.
 set -euo pipefail
+
+script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=../lib.sh
+source "${script_dir}/../lib.sh"
+
+######################################################################
+# coprocessor-proxy, except on blue-green stacks: one per party in its
+# coprocessor-<i> release, forwarding to that party's fake prf-service
+# (values-prf-service-fake-e2e.yaml) until prf-service deploys here.
+# What the e2e suite needs (test-suite/e2e/test/coprocessorProxy) goes in
+# the coprocessor-proxy ConfigMap:
+#   urls              COPROCESSOR_PROXY_URLS, one https proxy URL per party
+#   signer-addresses  COPROCESSOR_SIGNER_ADDRESSES, the audience of each
+#   count-urls        PRF_SERVICE_FAKE_COUNT_URLS, each fake's request count
+#   metrics-urls      COPROCESSOR_PROXY_METRICS_URLS
+#   ca.crt            the proxies' certificate
+######################################################################
+# Must match charts/coprocessor/templates/_helpers.tpl (coprocessorProxyName:
+# "<release>-coprocessor-proxy") and coprocessorProxy.ports.
+proxy_service() { echo "coprocessor-${1}-coprocessor-proxy"; }
+fake_service() { echo "coprocessor-${1}-prf-service-fake"; }
+proxy_tls_secret=coprocessor-proxy-tls  # tls.secretName in values-coprocessor-proxy-e2e.yaml
+coproc_signer() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}"; }
+with_proxy="false"
+if [[ "${BLUE_GREEN}" != "true" ]]; then
+  with_proxy="true"
+fi
+
+# One self-signed certificate for every party's proxy, as for the kms-connector proxies.
+if [[ "${with_proxy}" == "true" ]] && ! kubectl get secret "${proxy_tls_secret}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+  sans=""
+  for i in $(seq 1 "${NB_COPROCESSOR}"); do
+    svc=$(proxy_service "${i}")
+    sans="${sans:+${sans},}DNS:${svc},DNS:${svc}.${NAMESPACE}.svc,DNS:${svc}.${NAMESPACE}.svc.cluster.local"
+  done
+  tls_dir=$(mktemp -d)
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 30 \
+    -keyout "${tls_dir}/tls.key" -out "${tls_dir}/tls.crt" -subj "/CN=$(proxy_service 1)" \
+    -addext "subjectAltName=${sans}" \
+    -addext "basicConstraints=critical,CA:TRUE" \
+    -addext "keyUsage=critical,digitalSignature,keyCertSign" \
+    -addext "extendedKeyUsage=serverAuth" 2>/dev/null
+  kubectl create secret tls "${proxy_tls_secret}" -n "${NAMESPACE}" \
+    --cert="${tls_dir}/tls.crt" --key="${tls_dir}/tls.key"
+  rm -rf "${tls_dir}"
+  echo "Created ${proxy_tls_secret} (SANs: ${sans})"
+fi
 
 polygon_args=()
 if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
@@ -135,16 +183,54 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
   if [[ "${BLUE_GREEN}" == "true" ]]; then
     fleet_json=(--set-json "commonConfig.extraSelectorLabels={\"fhevm.zama.ai/fleet\":\"${i}-bcs\"}")
   fi
+  proxy_args=()
+  if [[ "${with_proxy}" == "true" ]]; then
+    signer=$(coproc_signer "${i}")
+    require_nonempty "${signer}" "no coprocessor signer address for party ${i} in COPROC_WALLETS_JSON"
+    helm upgrade --install "$(fake_service "${i}")" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+      -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-prf-service-fake-e2e.yaml \
+      --set-string "fake.image=hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e:$(jq -r .test_suite <<<"${TAGS_JSON}")" \
+      --set-string "fake.party=${i}"
+    proxy_args=(
+      -f ci/preview-env/coprocessor/values-coprocessor-proxy-e2e.yaml
+      --set-string "coprocessorProxy.image.tag=$(jq -r .coprocessor_proxy <<<"${TAGS_JSON}")"
+      --set-string "coprocessorProxy.coprocessorSignerAddress=${signer}"
+      --set-string "coprocessorProxy.prfServiceAddress=$(fake_service "${i}"):8080"
+      --set-json "coprocessorProxy.prfServiceNetworkPolicy.podSelector={\"app\":\"prf-service-fake\",\"fhevm.zama.ai/party\":\"${i}\"}"
+    )
+  fi
   helm upgrade --install "coprocessor-${i}" "${COPROCESSOR_CHART}" \
     -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-coprocessor-e2e.yaml \
     "${polygon_args[@]}" \
     "${bcs_overlay[@]}" \
     ${coproc_gpu_overlay[@]+"${coproc_gpu_overlay[@]}"} \
+    ${proxy_args[@]+"${proxy_args[@]}"} \
     "${fleet_json[@]}" \
     --set-string "fullnameOverride=coprocessor-${i}" \
     "${common_args[@]}" \
     "${bcs_images[@]}"
 done
+
+if [[ "${with_proxy}" == "true" ]]; then
+  urls="" signers="" count_urls="" metrics_urls=""
+  for i in $(seq 1 "${NB_COPROCESSOR}"); do
+    urls="${urls:+${urls},}https://$(proxy_service "${i}"):8443"
+    signers="${signers:+${signers},}$(coproc_signer "${i}")"
+    count_urls="${count_urls:+${count_urls},}http://$(fake_service "${i}"):9090/count"
+    metrics_urls="${metrics_urls:+${metrics_urls},}http://$(proxy_service "${i}"):9100/metrics"
+  done
+  ca_file=$(mktemp)
+  kubectl get secret "${proxy_tls_secret}" -n "${NAMESPACE}" -o jsonpath='{.data.tls\.crt}' | base64 -d > "${ca_file}"
+  kubectl create configmap coprocessor-proxy -n "${NAMESPACE}" \
+    --from-literal=urls="${urls}" \
+    --from-literal=signer-addresses="${signers}" \
+    --from-literal=count-urls="${count_urls}" \
+    --from-literal=metrics-urls="${metrics_urls}" \
+    --from-file=ca.crt="${ca_file}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  rm -f "${ca_file}"
+  echo "coprocessor-proxy: urls=${urls} signers=${signers}"
+fi
 
 if [[ "${BLUE_GREEN}" == "true" ]]; then
   for i in $(seq 1 "${NB_COPROCESSOR}"); do

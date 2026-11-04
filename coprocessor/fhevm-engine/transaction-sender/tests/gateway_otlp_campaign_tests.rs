@@ -1,9 +1,6 @@
 use alloy::providers::{Provider, ProviderBuilder};
 use fhevm_engine_common::telemetry;
-use transaction_sender::{
-    diagnostics::{gateway_tracing_filter, safe_rpc_error},
-    gateway_http_client,
-};
+use transaction_sender::{diagnostics::safe_rpc_error, gateway_http_client};
 
 /// The Python campaign runner captures actual gRPC export payloads and JSON
 /// stdout, requires the positive marker, and rejects every synthetic secret.
@@ -14,7 +11,7 @@ async fn actual_json_and_otlp_exports_exclude_gateway_credentials() -> anyhow::R
         tracing::Level::TRACE,
         "gateway-privacy-campaign",
         "campaign",
-        gateway_tracing_filter,
+        telemetry::transport_dependency_filter,
     )
     .map_err(|_| anyhow::anyhow!("tracing setup failed"))?;
     let socket = std::net::TcpListener::bind("127.0.0.1:0")?;

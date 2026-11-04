@@ -8,7 +8,7 @@ import {
   backdatedStartTimestamp,
   signRequest,
 } from '../../test/sdk/unified/unifiedUserDecrypt';
-import { RELAYER, alice, deploy, fail, postUntilSettled, requireRelayer, run } from './common';
+import { RELAYER, alice, deploy, fail, kmsExtraData, postUntilSettled, requireRelayer, run } from './common';
 
 interface UserReply {
   status: string;
@@ -42,7 +42,7 @@ run(async () => {
     publicKey,
     startTimestamp: backdatedStartTimestamp(),
     durationSeconds: 3600,
-    extraData: '0x00',
+    extraData: await kmsExtraData(),
   };
   const signature = await signRequest(
     { relayerUrl: RELAYER, decryptionContractAddress: verifyingContractAddressDecryption },

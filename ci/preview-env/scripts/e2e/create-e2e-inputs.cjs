@@ -64,6 +64,13 @@ const mappings = [
     'COPROCESSOR_UPGRADE_CONTROLLER_VERSION',
   ],
   [
+    'coprocessor-docker-build',
+    'coprocessor_proxy_build_result',
+    'coprocessor-proxy-version',
+    'fhevm/coprocessor/coprocessor-proxy',
+    'COPROCESSOR_PROXY_VERSION',
+  ],
+  [
     'listener-docker-build',
     'build_result',
     'listener-core-version',

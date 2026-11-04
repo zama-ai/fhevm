@@ -42,7 +42,6 @@ export interface EnvironmentDef {
 // called via devnet or testnet, so reused.
 const PUBLIC_SEPOLIA_RPC = 'https://ethereum-sepolia-rpc.publicnode.com';
 const PUBLIC_AMOY_RPC = 'https://rpc-amoy.polygon.technology';
-const PUBLIC_HOODI_RPC = 'https://ethereum-hoodi-rpc.publicnode.com';
 const PUBLIC_BNB_TESTNET_RPC = 'https://bsc-testnet-rpc.publicnode.com';
 
 export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
@@ -64,14 +63,6 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
         fallbackBlockTimeSeconds: 1.5,
         rpcUrlEnv: 'POLYGON_AMOY_RPC_URL',
         defaultRpcUrl: PUBLIC_AMOY_RPC,
-      },
-      {
-        chainId: 560048,
-        label: 'hoodi',
-        minWindowSeconds: 1800,
-        fallbackBlockTimeSeconds: 12,
-        rpcUrlEnv: 'HOODI_RPC_URL',
-        defaultRpcUrl: PUBLIC_HOODI_RPC,
       },
       {
         chainId: 97,
@@ -103,14 +94,6 @@ export const ENVIRONMENTS: Record<string, EnvironmentDef> = {
         fallbackBlockTimeSeconds: 1.5,
         rpcUrlEnv: 'POLYGON_AMOY_RPC_URL',
         defaultRpcUrl: PUBLIC_AMOY_RPC,
-      },
-      {
-        chainId: 560048,
-        label: 'hoodi',
-        minWindowSeconds: 1800,
-        fallbackBlockTimeSeconds: 12,
-        rpcUrlEnv: 'HOODI_RPC_URL',
-        defaultRpcUrl: PUBLIC_HOODI_RPC,
       },
       {
         chainId: 97,
