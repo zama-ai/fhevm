@@ -3,6 +3,7 @@ use crate::core::event_processor::{
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
+    pad,
     protocol_config::ProtocolConfigProcessor,
 };
 use alloy::{primitives::B256, providers::Provider};
@@ -212,6 +213,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                 )?;
                 Ok(())
             }
+            ProtocolEventKind::PadDecryption(_) => Err(pad::unsupported()),
             ProtocolEventKind::PrepKeygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Keygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Crsgen(req) => self.check_context(&req.extraData).await,
@@ -276,6 +278,9 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                         )),
                     )
                     .await
+            }
+            ProtocolEventKind::PadDecryption(_) => {
+                unreachable!("pad decryptions are rejected by `check_request`")
             }
             ProtocolEventKind::PrepKeygen(req) => {
                 self.kms_generation_processor
