@@ -7,8 +7,9 @@ proxy chart lets only the proxy reach port 8090.
 
 ## Status
 
-- The `pad-worker` (#2193) does not exist yet. So no row completes, and each request waits until the
-  Connector or the proxy stops it.
+- The `pad-worker` ([fhevm-internal#2193](https://github.com/zama-ai/fhevm-internal/issues/2193))
+  does not exist yet. So no row completes, and each request waits until the Connector or the proxy
+  stops it.
 
 ## Request
 

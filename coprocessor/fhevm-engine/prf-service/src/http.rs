@@ -95,7 +95,9 @@ async fn serve(req: &HttpRequest, state: &AppState) -> Result<HttpResponse, PrfE
         return Err(PrfError::NonCanonicalPath);
     }
     let path = PrfOutputRef::from_path(req.uri().path()).ok_or(PrfError::NonCanonicalPath)?;
-    instance::block_bits(path.prf_id).ok_or(PrfError::UnknownPrf)?;
+    if !instance::is_known(path.prf_id) {
+        return Err(PrfError::UnknownPrf);
+    }
     debug!(prf = path.prf_id, label = %path.label, pad_length = path.pad_length, %connector, "PRF output request");
 
     // Held until the request ends, also when the client disconnects.

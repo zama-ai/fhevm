@@ -1,10 +1,7 @@
 // TODO: read the instances from the PRF module.
-/// The bits of one PRF block of a known instance. `None` for an instance this coprocessor cannot serve.
-pub fn block_bits(prf: u16) -> Option<u32> {
-    match prf {
-        0 => Some(2),
-        _ => None,
-    }
+/// Whether this coprocessor serves the instance `prf`.
+pub fn is_known(prf: u16) -> bool {
+    prf == 0
 }
 
 #[cfg(test)]
@@ -13,7 +10,7 @@ mod tests {
 
     #[test]
     fn serves_only_known_instances() {
-        assert_eq!(block_bits(0), Some(2));
-        assert_eq!(block_bits(1), None);
+        assert!(is_known(0));
+        assert!(!is_known(1));
     }
 }

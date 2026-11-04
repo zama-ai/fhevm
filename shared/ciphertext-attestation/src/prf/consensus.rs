@@ -43,6 +43,16 @@ impl PrfOutputRef {
             pad_length: decimal(pad_length).filter(|n| (1..=MAX_PAD_LENGTH).contains(n))?,
         })
     }
+
+    /// The endpoint path of this output: the inverse of [`Self::from_path`].
+    pub fn path(&self) -> String {
+        format!(
+            "/v1/prf/{}/labels/{}/{}",
+            self.prf_id,
+            hex::encode(self.label),
+            self.pad_length
+        )
+    }
 }
 
 /// A decimal `u16` with no sign and no leading zero.
@@ -88,10 +98,12 @@ mod tests {
     #[test]
     fn parses_canonical_paths() {
         for (prf, pad_length) in [("0", "1"), ("7", "64"), ("65535", "2048")] {
-            let parsed = PrfOutputRef::from_path(&path(prf, LABEL, pad_length)).unwrap();
+            let canonical = path(prf, LABEL, pad_length);
+            let parsed = PrfOutputRef::from_path(&canonical).unwrap();
             assert_eq!(parsed.prf_id.to_string(), prf);
             assert_eq!(hex::encode(parsed.label), LABEL);
             assert_eq!(parsed.pad_length.to_string(), pad_length);
+            assert_eq!(parsed.path(), canonical);
         }
     }
 

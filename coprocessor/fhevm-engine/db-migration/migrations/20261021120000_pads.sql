@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS pads
 (
     prf_instance INTEGER NOT NULL CHECK (prf_instance BETWEEN 0 AND 65535),
     label BYTEA NOT NULL CHECK (OCTET_LENGTH(label) = 32),
-    -- `MAX_PAD_LENGTH` of prf-service, so a row added outside the service cannot ask for more.
+    -- `MAX_PAD_LENGTH` of ciphertext-attestation, also for a row added outside prf-service.
     pad_length INTEGER NOT NULL CHECK (pad_length BETWEEN 1 AND 2048),
     -- The KMS Connector that pays for the evaluation while the row is pending.
     triggered_by BYTEA NOT NULL CHECK (OCTET_LENGTH(triggered_by) = 20),
@@ -36,6 +36,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS pads_ready ON pads;
 CREATE TRIGGER pads_ready
     AFTER UPDATE
     ON pads
