@@ -40,7 +40,6 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
-http-body.workspace = true
 ciphertext-attestation = { workspace = true, features = ["test-utils"] }
 connector-utils = { workspace = true, features = ["tests"] }
 mocktail.workspace = true

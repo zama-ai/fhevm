@@ -4528,7 +4528,6 @@ dependencies = [
  "fhevm_gateway_bindings",
  "fhevm_host_bindings",
  "futures",
- "http-body 1.0.1",
  "humantime-serde",
  "kms-connector-api",
  "kms-grpc",
