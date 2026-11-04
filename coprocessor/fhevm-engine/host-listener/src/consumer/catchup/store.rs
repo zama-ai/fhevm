@@ -21,7 +21,8 @@ pub struct Request {
 /// reference is available. None means that a new request still needs that
 /// reference. Every replica serializes changes to this consumer's intent.
 /// A supplied owner leases a new row in the same transaction. Reusing an
-/// existing request never takes its current owner's lease.
+/// existing request never takes its current owner's lease. Recovery halts do not
+/// block persistence; a new request stays unowned until coordination can resume.
 pub async fn ensure_requested(
     pool: &PgPool,
     chain_id: i64,
@@ -33,9 +34,21 @@ pub async fn ensure_requested(
 ) -> Result<Option<Uuid>> {
     args.validate()?;
     let (requested_from, requested_to) = args.requested()?;
-    let Some(mut tx) = write_transaction(pool, gcs_mode).await? else {
+    let Some(mut tx) =
+        fhevm_engine_common::versioning::begin_request_write_guarded(
+            pool, gcs_mode,
+        )
+        .await?
+        .into_tx()
+    else {
         return Ok(None);
     };
+    let owner =
+        if fhevm_engine_common::chain_recovery::is_halted_tx(&mut tx).await? {
+            None
+        } else {
+            owner
+        };
     sqlx::query_scalar!(
         "WITH locked AS (SELECT pg_advisory_xact_lock(hashtextextended($1, $2)))
          SELECT 1 AS \"locked!\" FROM locked",

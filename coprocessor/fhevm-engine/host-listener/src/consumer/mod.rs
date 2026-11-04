@@ -560,12 +560,6 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
         None
     } else {
         Some(tokio::spawn(async move {
-            // WATCH confirms publication, not activation. Delay replay requests
-            // while all readers can already drain their delivery queues.
-            tokio::select! {
-                _ = catchup_client.cancel_token.cancelled() => return Ok(()),
-                _ = tokio::time::sleep_until(catchup_not_before) => {}
-            }
             let result = catchup::run(
                 catchup_db,
                 catchup_client,
@@ -573,6 +567,7 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
                 reference_rx,
                 catchup_heads,
                 catchup_mode,
+                catchup_not_before,
             )
             .await;
             if let Err(error) = &result {

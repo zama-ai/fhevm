@@ -13,6 +13,7 @@ pub(super) async fn run(
     reference: tokio::sync::oneshot::Receiver<u64>,
     heads: LiveReference,
     mode: std::sync::Arc<fhevm_engine_common::versioning::StackMode>,
+    not_before: tokio::time::Instant,
 ) -> Result<()> {
     let creator_owner = uuid::Uuid::new_v4();
     let (requested, requested_id) = tokio::sync::oneshot::channel();
@@ -32,7 +33,8 @@ pub(super) async fn run(
                 &heads,
                 &mode,
                 creator_owner,
-                requested_id
+                requested_id,
+                not_before
             ),
         )?;
         Ok(())
@@ -121,7 +123,10 @@ async fn maintain_leases(
     mode: &fhevm_engine_common::versioning::StackMode,
     creator_owner: uuid::Uuid,
     mut requested_id: tokio::sync::oneshot::Receiver<uuid::Uuid>,
+    not_before: tokio::time::Instant,
 ) -> Result<()> {
+    // WATCH activation delays broker requests, not persistence of CLI intent.
+    tokio::time::sleep_until(not_before).await;
     if mode.is_paused() {
         return Ok(());
     }
