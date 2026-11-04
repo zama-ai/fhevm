@@ -67,47 +67,46 @@ case "${kind}" in
     bash "${script_dir}/expose-relayer-tailscale.sh"
     ;;
   relayer-http)
-    # values-relayer-http-e2e.yaml only holds placeholders for what depends on the
-    # deploy. Fill them in from the kms-connector-http ConfigMap that
-    # deploy-kms-connector.sh publishes (same source as the test-suite overlays),
-    # mirroring renderRelayerHttpConfig in test-suite/fhevm/src/generate/config.ts.
-    http_cm() { kubectl get configmap kms-connector-http -n "${NAMESPACE}" -o jsonpath="{.data.${1}}"; }
-    IFS=, read -ra urls <<<"$(http_cm endpoint-urls)"
-    IFS=, read -ra audiences <<<"$(http_cm tx-sender-addresses)"
-    t=$(http_cm kms-threshold)
-    protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.protocol_config\.address}')
-    require_nonempty "${t}" "kms-connector-http[kms-threshold] is empty"
-    require_nonempty "${protocol_config}" "host-sc-addresses[protocol_config.address] is empty"
-    require_nonempty "${HOST_CHAIN_ID:-}" "HOST_CHAIN_ID is not set"
-    if [[ ${#urls[@]} -eq 0 || ${#urls[@]} -ne ${#audiences[@]} ]]; then
-      echo "::error::kms-connector-http has ${#urls[@]} endpoint URLs for ${#audiences[@]} tx-sender addresses" >&2
+    # The config is the local stack's template with the overlay's preview-only
+    # fields merged over it, then filled in from the deploy as
+    # renderRelayerHttpConfig (test-suite/fhevm/src/generate/config.ts) does.
+    # One endpoint per party from the kms-connector-http ConfigMap that
+    # deploy-kms-connector.sh publishes: its proxy URL, and as audience the
+    # tx-sender address that proxy accepts (the lists are aligned by party).
+    endpoints=$(kubectl get configmap kms-connector-http -n "${NAMESPACE}" -o json | jq -c '
+      .data | [(."endpoint-urls" // "" | split(",")), (."tx-sender-addresses" // "" | split(","))]
+      | transpose | to_entries | map({name: "kms_\(.key + 1)", url: .value[0], audience: .value[1]})')
+    if ! jq -e 'length > 0 and all(.[]; .url and .audience)' <<<"${endpoints}" >/dev/null; then
+      echo "::error::kms-connector-http endpoint-urls and tx-sender-addresses are empty or not one per party" >&2
       exit 1
     fi
+    n=$(jq length <<<"${endpoints}")
+    protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.protocol_config\.address}')
+    require_nonempty "${protocol_config}" "host-sc-addresses[protocol_config.address] is empty"
+    require_nonempty "${HOST_CHAIN_ID:-}" "HOST_CHAIN_ID is not set"
     chains="[${HOST_CHAIN_ID}]"
     if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
       chains="[${HOST_CHAIN_ID}, ${POLYGON_CHAIN_ID:-80002}]"
     fi
+    # Same quorums as the relayer: public decrypt t+1 matching answers, user
+    # decrypt n-t shares. FhevmSig is signed for the first host chain, as the
+    # local stack does.
+    public_t=$(kms_majority "${n}")
+    user_t=$(kms_reconstruct "${n}")
     http_values=$(mktemp --suffix=.yaml)
     cp ci/preview-env/relayer/values-relayer-http-e2e.yaml "${http_values}"
-    # Quorums: public decrypt t+1 matching shares, user decrypt 2t+1 shares.
-    # FhevmSig is signed for the first host chain, as the local stack does.
-    CHAINS="${chains}" CHAIN_ID="${HOST_CHAIN_ID}" PROTOCOL_CONFIG="${protocol_config}" \
-      PUBLIC_T=$((t + 1)) USER_T=$((2 * t + 1)) yq -i '
-      .configmapFiles.files."config.yaml" |= (
+    TEMPLATE=test-suite/fhevm/templates/config/relayer-http.yaml ENDPOINTS="${endpoints}" \
+      CHAINS="${chains}" CHAIN_ID="${HOST_CHAIN_ID}" PROTOCOL_CONFIG="${protocol_config}" \
+      PUBLIC_T="${public_t}" USER_T="${user_t}" yq -i '
+      .configmapFiles.files."config.yaml" |= (load(strenv(TEMPLATE)) * . |
         .http.supported_chain_ids = env(CHAINS) |
         .kms_aggregator.public_decrypt.threshold = env(PUBLIC_T) |
         .kms_aggregator.user_decrypt.threshold = env(USER_T) |
         .kms_aggregator.auth.chain_id = env(CHAIN_ID) |
-        .kms_aggregator.auth.protocol_config = strenv(PROTOCOL_CONFIG)
+        .kms_aggregator.auth.protocol_config = strenv(PROTOCOL_CONFIG) |
+        .kms_aggregator.endpoints = env(ENDPOINTS)
       )' "${http_values}"
-    # One endpoint per party: its proxy URL, and as audience the tx-sender
-    # address that proxy accepts (the lists are aligned by party).
-    for i in "${!urls[@]}"; do
-      NAME="kms_$((i + 1))" URL="${urls[i]}" AUDIENCE="${audiences[i]}" yq -i \
-        '.configmapFiles.files."config.yaml".kms_aggregator.endpoints += [{"name": strenv(NAME), "url": strenv(URL), "audience": strenv(AUDIENCE)}]' \
-        "${http_values}"
-    done
-    echo "relayer-http: ${#urls[@]} endpoints, public/user thresholds $((t + 1))/$((2 * t + 1)), chains ${chains}"
+    echo "relayer-http: ${n} endpoints, public/user thresholds ${public_t}/${user_t}, chains ${chains}"
     # No dependency at startup (/healthz is ready as soon as it serves), so a
     # short wait is enough.
     helm upgrade --install relayer-http "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \

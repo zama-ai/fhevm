@@ -3,16 +3,14 @@
 # proxy over HTTPS and aggregates the answers (relayer-http/docs.md); it has no
 # DB, queue, or gateway dependency.
 #
-# The config file below must match relayer-http/crates/relayer-http/src/config.rs
-# at the commit the deployed image resolves from: every nested section denies
-# unknown fields, so a stale key crashes the pod at startup.
-#
-# Values that depend on the deploy (proxy URLs and audiences, thresholds, host
-# chain ids, ProtocolConfig address) are placeholders here and are rendered into
-# the file by scripts/deploy/deploy-relayer.sh from the `kms-connector-http`
-# ConfigMap (published by deploy-kms-connector.sh), `host-sc-addresses`, and the
-# chain-mode env. They go in the file rather than in APP_* env because
-# `endpoints` is a list.
+# config.yaml below only holds the preview-only fields. scripts/deploy/deploy-relayer.sh
+# merges them over the local stack's template (test-suite/fhevm/templates/config/
+# relayer-http.yaml, kept in step with relayer-http's config.rs, whose sections deny
+# unknown fields), then fills in what depends on the deploy (proxy URLs and
+# audiences, thresholds, host chain ids, ProtocolConfig address) from the
+# `kms-connector-http` ConfigMap (published by deploy-kms-connector.sh),
+# `host-sc-addresses`, and the chain-mode env. They go in the file rather than in
+# APP_* env because `endpoints` is a list.
 #
 # Deployed as:
 #   helm upgrade --install relayer-http oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
@@ -59,37 +57,22 @@ configmapFiles:
   enabled: true
   volumeMount:
     mountPath: /app/config
+    subPath: ""
     readOnly: true
   files:
     config.yaml:
       name: relayer-http-preview
+      log: {format: json}
       http:
         endpoint: "0.0.0.0:3002"
-        max_body_bytes: 1048576
-        body_read_timeout: 10s
-        supported_chain_ids: [12345]       # set by deploy-relayer.sh
       kms_aggregator:
-        allow_insecure_http: false
+        # Every request takes one permit per party: the template's 16 would let
+        # about one request through at a time with 13 parties.
         max_concurrent_calls: 4096
-        call:
-          timeout: 5s
-          retries:
-            max_retries: 5
-            delay: 200ms
-            backoff_max: 4s
-        public_decrypt:
-          threshold: 2                     # t + 1, set by deploy-relayer.sh
-        user_decrypt:
-          threshold: 3                     # 2t + 1, set by deploy-relayer.sh
         auth:
-          chain_id: 12345                  # first host chain, set by deploy-relayer.sh
-          protocol_config: "0x0000000000000000000000000000000000000000"   # set by deploy-relayer.sh
-          validity: 2m
           # Address of RELAYER_SIGNER_KEY below, i.e. kmsConnectorProxy.allowedSenders
           # in ../kms-connector/values-kms-connector-e2e.yaml. Startup fails on a mismatch.
           address: "0xAE808c0968fF9557C8E0EAbcf57747c75B490Aa0"
-          signer: {type: private_key, value_env: RELAYER_SIGNER_KEY}
-        endpoints: []                      # one per KMS party, set by deploy-relayer.sh
 
 # The proxies serve cert-manager self-signed certificates; deploy-kms-connector.sh
 # concatenates all of them into the `kms-connector-http` ConfigMap's ca.crt.
