@@ -1802,6 +1802,8 @@ prfService:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
+      # The check runs 2 database queries, each with a 5 s limit.
+      timeoutSeconds: 10
 
   tracing:
     enabled: false
