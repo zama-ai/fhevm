@@ -1750,7 +1750,7 @@ prfService:
 
   replicas: 1
 
-  # User and password of the `prf_service` role, as in commonConfig. Empty: the commonConfig user.
+  # The `prf_service` role, as in commonConfig. The user is required. No password: the commonConfig one.
   databaseUser: {}
   databasePassword: {}
   # The listener, two admissions for each connector, and reads: 32 for 13 connectors. At least 4.

@@ -169,7 +169,8 @@ deploys it only with `coprocessorProxy.enabled` and `coprocessorProxy.prfService
 Before you enable it:
 
 - Create the database role `prf_service` with `LOGIN`, and `GRANT rds_iam TO prf_service` for IAM
-  authentication. Set `prfService.databaseUser`, and `prfService.databasePassword` for password
-  authentication. The migration job gives the table rights on each deploy.
+  authentication. Set `prfService.databaseUser` (required), and `prfService.databasePassword` for
+  password authentication. `commonConfig.databaseUrl` must use `$(DATABASE_USER)`. The migration job
+  gives the table rights on each deploy.
 - With `prfService.serviceMonitor.enabled`, add an ingress rule for the metrics port to
   `coprocessorProxy.prfServiceNetworkPolicy.extraIngress`. The NetworkPolicy admits only the proxy.
