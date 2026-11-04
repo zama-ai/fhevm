@@ -29,6 +29,11 @@ async fn startup_new_catchup_with_unowned_requests() {
 }
 
 #[tokio::test]
+async fn startup_persists_during_recovery_halt_and_resumes_without_restart() {
+    exercise_startup(Startup::RecoveryHalt, false).await;
+}
+
+#[tokio::test]
 async fn invalid_range_at_first_live_block_keeps_ingesting() {
     exercise_startup(Startup::InvalidCatchup(2000), false).await;
 }
@@ -337,6 +342,7 @@ async fn final_deliveries_do_not_hide_a_stopped_live_stream() {
 enum Startup {
     NoFlags,
     NewCatchup,
+    RecoveryHalt,
     ClampedCatchup,
     CoreClampedCatchup,
     SameCatchup,
@@ -366,7 +372,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
                 // without --no-override-catchup.
                 ..Default::default()
             },
-            Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup | Startup::SameCatchup => ManualCatchupArgs {
+            Startup::NewCatchup | Startup::RecoveryHalt | Startup::ClampedCatchup | Startup::CoreClampedCatchup | Startup::SameCatchup => ManualCatchupArgs {
                 catchup_from_block: Some(-100),
                 catchup_up_to_block: matches!(startup, Startup::ClampedCatchup | Startup::CoreClampedCatchup).then_some(2100),
                 catchup_unfinalized: false,
@@ -397,13 +403,20 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         for (_, start, end) in &expected {
             seed_history(&pool, chain_id.as_i64(), &[start - 1, end - 1]).await;
         }
-        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup) {
+        if matches!(startup, Startup::NewCatchup | Startup::RecoveryHalt | Startup::ClampedCatchup | Startup::CoreClampedCatchup) {
             seed_history(&pool, chain_id.as_i64(), &[1899, 1998]).await;
         }
         seed_history(&pool, chain_id.as_i64(), &[1799, 1999]).await;
         // These requests were bounded and published before their listeners died.
         sqlx::query("UPDATE host_consumer_catchups SET request_pending = false, observed_head = 1000 WHERE chain_id = $1 AND consumer_id = $2")
             .bind(chain_id.as_i64()).bind(&identity).execute(&pool).await.unwrap();
+
+        if matches!(startup, Startup::RecoveryHalt) {
+            sqlx::query("INSERT INTO public.chain_recovery_halts
+                (source, stack_role, chain_id, block_number, reason)
+                VALUES ('host', 'BCS', $1, 2000, 'test recovery halt')")
+                .bind(chain_id.as_i64()).execute(&pool).await.unwrap();
+        }
 
         let broker_url = std::env::var("CATCHUP_BROKER_URL").unwrap();
         let broker = Broker::from_url(&broker_url).await.unwrap();
@@ -448,15 +461,17 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
             &event_block(chain_id.as_u64(), 2000, BlockFlow::Final, None, false),
         ).await.unwrap();
         let mut blocks = vec![2000];
-        wait_for_events(&pool, chain_id, &blocks).await;
+        if !matches!(startup, Startup::RecoveryHalt) {
+            wait_for_events(&pool, chain_id, &blocks).await;
+        }
         let mut pending_requests = Vec::new();
-        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup) && previous_requests {
+        if matches!(startup, Startup::NewCatchup | Startup::RecoveryHalt | Startup::ClampedCatchup | Startup::CoreClampedCatchup) && previous_requests {
             let request = requests.recv().await.unwrap();
             assert!(expected.iter().any(|(id, _, _)| Some(*id) == request.catchup_id),
                 "retained requests must resume while the new range waits for a live block");
             pending_requests.push(request);
         }
-        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup | Startup::InvalidCatchup(_))
+        if matches!(startup, Startup::NewCatchup | Startup::RecoveryHalt | Startup::ClampedCatchup | Startup::CoreClampedCatchup | Startup::InvalidCatchup(_))
             || (matches!(startup, Startup::NoFlags) && !previous_requests)
         {
             publisher.publish(
@@ -466,7 +481,7 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
         }
         // Resuming existing requests needs no new live reference. A new request
         // resolves relative bounds against this startup's first live block.
-        if matches!(startup, Startup::NewCatchup | Startup::ClampedCatchup | Startup::CoreClampedCatchup) {
+        if matches!(startup, Startup::NewCatchup | Startup::RecoveryHalt | Startup::ClampedCatchup | Startup::CoreClampedCatchup) {
             let id = loop {
                 let id: Option<uuid::Uuid> = sqlx::query_scalar(
                     "SELECT id FROM host_consumer_catchups WHERE chain_id = $1 AND consumer_id = $2 AND requested_from = -100 AND requested_to = $3",
@@ -475,6 +490,29 @@ async fn exercise_startup(startup: Startup, previous_requests: bool) {
                 assert!(!run.is_finished(), "listener stopped before creating catchup");
                 tokio::time::sleep(std::time::Duration::from_millis(20)).await;
             };
+            if matches!(startup, Startup::RecoveryHalt) {
+                let pending: (i64, i64, bool) = sqlx::query_as(
+                    "SELECT block_start, block_end,
+                            status = 'ONGOING' AND request_pending AND observed_head IS NULL
+                            AND owner_id IS NULL AND lease_until IS NULL
+                     FROM host_consumer_catchups WHERE id = $1",
+                ).bind(id).fetch_one(&pool).await.unwrap();
+                assert_eq!(pending, (1900, 1999, true),
+                    "the first LIVE reference must be persisted even while recovery is halted");
+                assert_event_sets(&pool, chain_id, &[]).await;
+                assert!(matches!(requests.try_recv(), Err(mpsc::error::TryRecvError::Empty)),
+                    "recovery halt must still block catchup publication");
+                sqlx::query("UPDATE public.chain_recovery_halts SET resolved_at = NOW(), recovery_note = 'test baseline verified'
+                             WHERE chain_id = $1")
+                    .bind(chain_id.as_i64()).execute(&pool).await.unwrap();
+                wait_for_events(&pool, chain_id, &blocks).await;
+                publisher.publish(
+                    &routing::consumer_new_event_routing(identity.clone()),
+                    &event_block(chain_id.as_u64(), 2001, BlockFlow::Live, None, false),
+                ).await.unwrap();
+                blocks.push(2001);
+                wait_for_events(&pool, chain_id, &blocks).await;
+            }
             expected.push((id, 1900, if matches!(startup, Startup::ClampedCatchup | Startup::CoreClampedCatchup) { 2000 } else { 1999 }));
         }
         if let Startup::InvalidCatchup(from) = startup {

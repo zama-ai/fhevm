@@ -25,6 +25,13 @@ ingestion and retained catchups continue. A failed replacement does not suppress
 ongoing requests. No command is published for the failed attempt; correct the
 flags and restart to retry manually. The same flags can also be retried against a
 later live reference; failed attempts are never resumed automatically.
+
+A recovery halt does not prevent saving a manual request after its first LIVE
+reference arrives. The resolved request stays persisted and unowned while the
+halt blocks coordination and ingestion. Clearing the halt lets the coordinator
+claim and publish that same request without restarting or resolving its bounds
+again. The WATCH propagation delay applies to publication, not persistence.
+
 Before first publication, the consumer bounds the end to its highest observed
 FINAL payload for finalized replay, or LIVE payload for `--catchup-unfinalized`.
 It waits for a payload of the appropriate flow if no head has been observed.

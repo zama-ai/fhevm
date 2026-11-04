@@ -12,6 +12,143 @@ fn args(from: i64, to: Option<i64>, keep: bool) -> ManualCatchupArgs {
 }
 
 #[tokio::test]
+async fn recovery_halt_preserves_manual_intent_and_blocks_coordination() {
+    use fhevm_engine_common::versioning::{
+        begin_write_guarded, GcsRollbackPolicy, WriteGuard,
+    };
+
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
+    sqlx::query(
+        "INSERT INTO public.chain_recovery_halts
+                 (source, stack_role, chain_id, block_number, reason)
+                 VALUES ('host', 'BCS', 1, 1000, 'test recovery halt')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let flags = args(-100, None, false);
+    let id = store::ensure_requested(
+        &pool,
+        1,
+        "host.1",
+        &flags,
+        Some(1000),
+        Some(uuid::Uuid::new_v4()),
+        false,
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let pending: (i64, i64, bool) = sqlx::query_as(
+        "SELECT block_start, block_end,
+                status = 'ONGOING' AND request_pending AND observed_head IS NULL
+                AND owner_id IS NULL AND lease_until IS NULL
+         FROM host_consumer_catchups WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(pending, (900, 999, true));
+    assert_eq!(
+        store::ensure_requested(
+            &pool,
+            1,
+            "host.1",
+            &flags,
+            Some(2000),
+            Some(uuid::Uuid::new_v4()),
+            false,
+        )
+        .await
+        .unwrap(),
+        Some(id),
+        "a later reference must not replace the persisted bounds"
+    );
+    assert!(store::take_request_ownership(&pool, 1, "host.1", false)
+        .await
+        .unwrap()
+        .is_empty());
+    assert!(
+        matches!(
+            begin_write_guarded(&pool, false, GcsRollbackPolicy::Continue)
+                .await
+                .unwrap(),
+            WriteGuard::Skip
+        ),
+        "ordinary writes must remain contained"
+    );
+
+    sqlx::query("UPDATE public.chain_recovery_halts SET resolved_at = NOW(), recovery_note = 'test baseline verified'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let requests = store::take_request_ownership(&pool, 1, "host.1", false)
+        .await
+        .unwrap();
+    assert_eq!(
+        requests.len(),
+        1,
+        "no creation lease may delay resumption after the halt"
+    );
+    assert_eq!(
+        (
+            requests[0].id,
+            requests[0].block_start,
+            requests[0].block_end
+        ),
+        (id, 900, 999)
+    );
+    assert_eq!(
+        store::bound_for_publication(&pool, &requests[0], Some(2000), false)
+            .await
+            .unwrap(),
+        Some(999)
+    );
+}
+
+#[tokio::test]
+async fn retired_stack_cannot_persist_manual_intent_during_recovery_halt() {
+    let instance = setup_test_db(ImportMode::None).await.unwrap();
+    let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
+    sqlx::query(
+        "INSERT INTO public.chain_recovery_halts
+                 (source, stack_role, chain_id, block_number, reason)
+                 VALUES ('host', 'BCS', 1, 1000, 'test recovery halt')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE versioning SET consensus_version = $1")
+        .bind(i64::from(fhevm_engine_common::CONSENSUS_PROTOCOL_VERSION) + 1)
+        .execute(&pool)
+        .await
+        .unwrap();
+    for gcs_mode in [false, true] {
+        let error = store::ensure_requested(
+            &pool,
+            1,
+            "host.1",
+            &args(-100, None, false),
+            Some(1000),
+            None,
+            gcs_mode,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("retired stack"), "{error:#}");
+    }
+    let rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM host_consumer_catchups")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rows, 0);
+}
+
+#[tokio::test]
 async fn flow_is_part_of_identity_and_delivery_admission() {
     let instance = setup_test_db(ImportMode::None).await.unwrap();
     let pool = PgPool::connect(instance.db_url.as_str()).await.unwrap();
