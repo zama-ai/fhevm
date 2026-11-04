@@ -21,6 +21,9 @@ pub struct KmsAggregatorConfig {
     /// Allow plain http towards non-loopback hosts. Local/compose only.
     #[serde(default)]
     pub allow_insecure_http: bool,
+    /// Accept any TLS certificate from the connectors: no CA, expiry or hostname check. Local/test only.
+    #[serde(default)]
+    pub danger_accept_invalid_certs: bool,
     /// HTTP calls in flight at once, all aggregations together (one semaphore per process).
     #[serde(default = "default_max_concurrent_calls")]
     pub max_concurrent_calls: usize,
@@ -282,6 +285,7 @@ pub(crate) mod tests {
     pub(crate) fn valid(n: usize) -> KmsAggregatorConfig {
         KmsAggregatorConfig {
             allow_insecure_http: false,
+            danger_accept_invalid_certs: false,
             max_concurrent_calls: 64.max(n),
             call: CallConfig {
                 timeout: Duration::from_secs(5),

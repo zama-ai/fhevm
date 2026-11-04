@@ -156,9 +156,15 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    /// `https_only` unless some endpoint is plain http (validated: loopback or `allow_insecure_http`).
+    /// `https_only` unless some endpoint is plain http (validated: loopback or `allow_insecure_http`); certificates
+    /// verified unless `danger_accept_invalid_certs`.
     pub fn new(cfg: &KmsAggregatorConfig) -> Result<Self, ConfigError> {
         let https_only = cfg.endpoints.iter().all(|e| e.url.scheme() == "https");
+        if cfg.danger_accept_invalid_certs {
+            tracing::warn!(
+                "kms_aggregator.danger_accept_invalid_certs is set: connector TLS certificates are not verified"
+            );
+        }
         let inner = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT.min(cfg.call.timeout))
             // Safety net for a socket that stops answering; the aggregator's deadline is the decision.
@@ -166,6 +172,7 @@ impl HttpClient {
             // Never forward the signed header to another host.
             .redirect(reqwest::redirect::Policy::none())
             .https_only(https_only)
+            .danger_accept_invalid_certs(cfg.danger_accept_invalid_certs)
             .no_proxy()
             .pool_idle_timeout(Duration::from_secs(10))
             .tcp_keepalive(Duration::from_secs(15))
@@ -638,5 +645,68 @@ mod tests {
             .unwrap_err();
         assert!(matches!(err, AttemptError::Transport(_)), "{err}");
         assert!(err.is_retryable());
+    }
+
+    /// An https server on loopback with a self-signed certificate; answers one request with 200 and an empty body.
+    async fn self_signed_server() -> Url {
+        use tokio::io::AsyncWriteExt;
+        use tokio_rustls::rustls::{self, pki_types::pem::PemObject};
+        let cert = rustls::pki_types::CertificateDer::from_pem_slice(include_bytes!(
+            "testdata/self_signed.crt"
+        ));
+        let key = rustls::pki_types::PrivateKeyDer::from_pem_slice(include_bytes!(
+            "testdata/self_signed.key"
+        ));
+        let tls = rustls::ServerConfig::builder_with_provider(
+            rustls::crypto::aws_lc_rs::default_provider().into(),
+        )
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert.unwrap()], key.unwrap())
+        .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(tls));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            // A rejected handshake ends here: the client closed the connection.
+            if let Ok(mut stream) = acceptor.accept(tcp).await {
+                let reply = b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+                stream.write_all(reply).await.unwrap();
+                stream.shutdown().await.unwrap();
+            }
+        });
+        Url::parse(&format!("https://localhost:{port}")).unwrap()
+    }
+
+    /// One post to a fresh self-signed server, with `danger_accept_invalid_certs` set as given.
+    async fn post_self_signed(
+        danger_accept_invalid_certs: bool,
+    ) -> Result<HttpReply, AttemptError> {
+        let mut cfg = valid(1);
+        cfg.endpoints[0].url = self_signed_server().await;
+        cfg.call.timeout = Duration::from_secs(2);
+        cfg.danger_accept_invalid_certs = danger_accept_invalid_certs;
+        HttpClient::new(&cfg)
+            .unwrap()
+            .post(
+                &Endpoint::from(&cfg.endpoints[0]),
+                kms_connector_api::USER_DECRYPTION_ROUTE,
+                Bytes::new(),
+                &HeaderValue::from_static(AUTH),
+            )
+            .await
+    }
+
+    #[tokio::test]
+    async fn wire_self_signed_certificate_rejected_by_default() {
+        let err = post_self_signed(false).await.unwrap_err();
+        assert!(err.to_string().contains("connect:"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn wire_self_signed_certificate_accepted_when_opted_in() {
+        assert_eq!(post_self_signed(true).await.unwrap().status, 200);
     }
 }
