@@ -12,7 +12,7 @@ use sqlx::postgres::PgPoolOptions;
 use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
-use tracing::Level;
+use tracing::{info, Level};
 
 /// The longest pad. A smaller budget refuses it forever.
 const MIN_PENDING_BITS: i64 = MAX_PAD_LENGTH as i64;
@@ -47,6 +47,10 @@ struct Args {
     #[arg(long, env = "PRF_MAX_IN_FLIGHT_PER_CONNECTOR", default_value = "256")]
     max_in_flight_per_connector: NonZeroUsize,
 
+    /// Time to serve after SIGTERM, closing each connection after its response, before the stop.
+    #[arg(long, env = "PRF_SHUTDOWN_DELAY", default_value = "0s", value_parser = humantime::parse_duration)]
+    shutdown_delay: Duration,
+
     /// HTTP server port for health checks
     #[arg(long, default_value_t = 8080)]
     health_check_port: u16,
@@ -69,13 +73,21 @@ struct Args {
     stack_version: bool,
 }
 
-fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
+fn install_signal_handlers(
+    cancel_token: CancellationToken,
+    draining: CancellationToken,
+    shutdown_delay: Duration,
+) -> anyhow::Result<()> {
     let mut sigint = signal(SignalKind::interrupt())?;
     let mut sigterm = signal(SignalKind::terminate())?;
     tokio::spawn(async move {
         tokio::select! {
             _ = sigint.recv() => (),
-            _ = sigterm.recv() => ()
+            _ = sigterm.recv() => {
+                info!("SIGTERM received, closing connections after their next response for {shutdown_delay:?}");
+                draining.cancel();
+                tokio::time::sleep(shutdown_delay).await;
+            }
         }
         cancel_token.cancel();
     });
@@ -94,7 +106,8 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let cancel_token = CancellationToken::new();
-    install_signal_handlers(cancel_token.clone())?;
+    let draining = CancellationToken::new();
+    install_signal_handlers(cancel_token.clone(), draining.clone(), args.shutdown_delay)?;
 
     let database_url = resolve_database_url_from_option(args.database_url)?;
     let (pool, _refresh) = connect_pool_with_options(
@@ -114,6 +127,7 @@ async fn main() -> anyhow::Result<()> {
         },
         pool,
         cancel_token.clone(),
+        draining,
     )?;
 
     // The health server runs until the process exits, so a stop does not look like a crash.

@@ -45,14 +45,17 @@ pub struct PrfService {
 
 impl PrfService {
     /// Binds the HTTP server. It answers requests after `start`, until `cancel_token` is cancelled.
+    /// After `draining`, each response closes its connection, so the proxy moves to another pod.
     pub fn new(
         config: Config,
         pool: PgPool,
         cancel_token: CancellationToken,
+        draining: CancellationToken,
     ) -> anyhow::Result<Self> {
         let waiter = Arc::new(PadWaiter::new(pool.clone(), config.pad_poll_interval));
         let state = web::Data::new(http::AppState {
             pool: pool.clone(),
+            draining,
             in_flight: InFlight::new(config.max_in_flight_per_connector),
             admissions: Admissions::new(
                 pool.clone(),

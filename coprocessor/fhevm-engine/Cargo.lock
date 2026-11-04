@@ -6839,6 +6839,7 @@ dependencies = [
  "fhevm-engine-common",
  "fhevm-sig-auth",
  "hex",
+ "humantime",
  "prometheus",
  "reqwest 0.12.23",
  "serde",

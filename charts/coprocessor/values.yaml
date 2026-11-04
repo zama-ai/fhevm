@@ -1755,6 +1755,9 @@ prfService:
   databasePassword: {}
   # The listener, two admissions for each connector, and reads: 32 for 13 connectors. At least 4.
   databasePoolSize: 32
+  # Time to serve after SIGTERM, closing each connection after its response. It must exceed the
+  # time the pod's removal takes to reach every node. Termination grace: this delay + 10 s.
+  shutdownDelaySeconds: 5
 
   # Limits for each connector. Above a limit, prf-service answers `429 concurrency_limited`.
   limits:
