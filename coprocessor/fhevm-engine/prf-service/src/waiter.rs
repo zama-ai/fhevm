@@ -49,32 +49,63 @@ impl PadWaiter {
         }
     }
 
-    /// Listens for `pad_ready` until `cancel`. On an error, the process must exit.
-    pub async fn run(&self, cancel: CancellationToken) -> anyhow::Result<()> {
-        let mut listener = PgListener::connect_with(&self.pool).await?;
-        listener.listen(PAD_READY).await?;
+    /// Listens for `pad_ready` until `cancel`. After an error, it makes a new listener.
+    pub async fn run(&self, cancel: CancellationToken) {
         let mut poll = tokio::time::interval(self.poll_interval);
         loop {
-            tokio::select! {
-                _ = cancel.cancelled() => return Ok(()),
-                notification = listener.try_recv() => match notification? {
-                    Some(notification) => match parse_payload(notification.payload()) {
-                        Some(path) => self.wake(&path),
-                        None => debug!(payload = notification.payload(), "ignored a bad {PAD_READY} payload"),
-                    },
-                    // sqlx connected again. Read the rows: notifications of the gap are lost.
-                    None => {
-                        warn!("the {PAD_READY} connection was lost and restored");
-                        poll.reset_immediately();
+            let mut listener = tokio::select! {
+                _ = cancel.cancelled() => return,
+                listener = self.listen() => match listener {
+                    Ok(listener) => listener,
+                    Err(err) => {
+                        warn!(error = %err, "cannot listen for {PAD_READY}");
+                        // Try again after the next poll.
+                        tokio::select! {
+                            _ = cancel.cancelled() => return,
+                            _ = poll.tick() => self.poll().await,
+                        }
+                        continue;
                     }
                 },
-                // Postgres can lose a notification. A failed poll does not stop the waiter.
-                _ = poll.tick() => {
-                    if let Err(err) = self.wake_finished().await {
-                        warn!(error = %err, "pad poll failed");
-                    }
+            };
+            // Read the rows: notifications sent without a listener are lost.
+            poll.reset_immediately();
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    notification = listener.try_recv() => match notification {
+                        Ok(Some(notification)) => match parse_payload(notification.payload()) {
+                            Some(path) => self.wake(&path),
+                            None => debug!(payload = notification.payload(), "ignored a bad {PAD_READY} payload"),
+                        },
+                        // sqlx connected again. Read the rows: notifications of the gap are lost.
+                        Ok(None) => {
+                            warn!("the {PAD_READY} connection was lost and restored");
+                            poll.reset_immediately();
+                        }
+                        // sqlx connects again only after some errors. Make a new listener.
+                        Err(err) => {
+                            warn!(error = %err, "the {PAD_READY} listener failed");
+                            break;
+                        }
+                    },
+                    // Postgres can lose a notification.
+                    _ = poll.tick() => self.poll().await,
                 }
             }
+        }
+    }
+
+    async fn listen(&self) -> sqlx::Result<PgListener> {
+        let mut listener = PgListener::connect_with(&self.pool).await?;
+        listener.listen(PAD_READY).await?;
+        Ok(listener)
+    }
+
+    /// Wakes the requests of finished rows. A failed poll does not stop the waiter.
+    async fn poll(&self) {
+        if let Err(err) = self.wake_finished().await {
+            warn!(error = %err, "pad poll failed");
         }
     }
 
