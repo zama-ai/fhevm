@@ -59,8 +59,11 @@ async fn containment_during_upload(track: Track, completion: Completion) -> anyh
         sqlx::raw_sql(&format!(
             "CREATE SCHEMA {GCS_SCHEMA_QUOTED};
              CREATE TABLE {GCS_SCHEMA_QUOTED}.state_hash (LIKE public.state_hash INCLUDING ALL);
+             -- Gateway rows store a plain hex hash (no PBS component), unlike
+             -- the JSON records host rows now hold, so don't copy those.
              INSERT INTO {GCS_SCHEMA_QUOTED}.state_hash (chain_id, block_number, state_hash)
-               SELECT 54321, block_number, state_hash FROM public.state_hash"
+               SELECT 54321, block_number, encode(sha256('gw-input'::bytea), 'hex')
+                 FROM public.state_hash"
         ))
         .execute(&pool)
         .await?;
