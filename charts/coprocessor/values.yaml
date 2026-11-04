@@ -1999,8 +1999,9 @@ coprocessorProxy:
   # This coprocessor's signer address: the audience requests must be signed for (required).
   coprocessorSignerAddress:
 
-  # `host:port` of prf-service's Service, which serves the PRF route (required), e.g.
-  # "<release>-prf-service:8090". The Service routes each connection to a ready pod.
+  # `host:port` of prf-service's Service, which serves the PRF route, e.g.
+  # "<release>-prf-service:8090". The Service routes each connection to a ready pod. With
+  # prfService.enabled, leave it empty: the chart uses this release's prf-service.
   prfServiceAddress: ""
   # Last in the timeout chain: the connector's PRF_RETRIEVAL_DEADLINE (RFC-038) < every
   # front-layer timeout < this. Also sets the SIGTERM drain grace, which Pingora waits even when

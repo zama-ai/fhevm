@@ -172,5 +172,8 @@ Before you enable it:
   authentication. Set `prfService.databaseUser` (required), and `prfService.databasePassword` for
   password authentication. `commonConfig.databaseUrl` must use `$(DATABASE_USER)`. The migration job
   gives the table rights on each deploy.
+- Leave `coprocessorProxy.prfServiceAddress` empty: the chart uses this release's prf-service. The
+  render fails if the address or `prfServiceNetworkPolicy.ports` does not match
+  `prfService.ports.http`.
 - With `prfService.serviceMonitor.enabled`, add an ingress rule for the metrics port to
   `coprocessorProxy.prfServiceNetworkPolicy.extraIngress`. The NetworkPolicy admits only the proxy.
