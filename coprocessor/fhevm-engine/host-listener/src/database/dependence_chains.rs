@@ -12,6 +12,14 @@ use crate::database::tfhe_event_propagate::{
     SealedChainGuard, TransactionHash,
 };
 
+/// Provenance read in the ingestion transaction, before assigning chains.
+#[derive(Default)]
+pub struct PersistedDependencies {
+    pub minted: HashMap<(TransactionHash, Handle), u64>,
+    /// Per-consumer lookup of eligible producers absent from the bounded LRU.
+    pub boundary_chains: HashMap<(TransactionHash, Handle), ChainHash>,
+}
+
 #[derive(Clone, Debug)]
 struct Transaction {
     tx_hash: TransactionHash,
@@ -127,6 +135,7 @@ async fn fill_tx_dependence_maps(
     used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
     past_chains: &ChainCache,
     consumed_boundaries: &ConsumedBoundaryGuard,
+    boundary_chains: &HashMap<(TransactionHash, Handle), ChainHash>,
 ) {
     let mut allowed_handle_tx: HashMap<Handle, TransactionHash> =
         HashMap::new();
@@ -161,9 +170,22 @@ async fn fill_tx_dependence_maps(
                     });
                 // memorize as producer
                 producer_tx.push(*dep_tx);
-            } else if let Some(dep_tx_hash) =
-                past_chains.write().await.get(input_handle)
-            {
+            } else {
+                let cached =
+                    past_chains.write().await.get(input_handle).copied();
+                let Some(dep_tx_hash) = cached.or_else(|| {
+                    boundary_chains.get(&(*tx_hash, *input_handle)).copied()
+                }) else {
+                    continue;
+                };
+                // After eviction or restart, the bounded consumption/seal
+                // guards cannot prove that extending this chain is safe.
+                // Keep the recovered dependency as a separate gated chain.
+                // Do not repopulate the LRU: a wide join must retain every
+                // recovered parent, even when it exceeds cache capacity.
+                if cached.is_none() {
+                    tx.forked_cross_block = true;
+                }
                 // extra block, this is directly a chain hash
                 // A boundary handle feeds exactly one linear continuation:
                 // its first cross-batch consumer may extend the producer
@@ -178,10 +200,10 @@ async fn fill_tx_dependence_maps(
                         tx.forked_cross_block = true;
                     }
                 }
-                tx.input_tx.insert(*dep_tx_hash);
-                tx.outer_boundary.push((*dep_tx_hash, *input_handle));
+                tx.input_tx.insert(dep_tx_hash);
+                tx.outer_boundary.push((dep_tx_hash, *input_handle));
                 used_txs_chains
-                    .entry(*dep_tx_hash)
+                    .entry(dep_tx_hash)
                     .and_modify(|v| {
                         v.insert(tx.tx_hash);
                     })
@@ -528,7 +550,7 @@ pub async fn dependence_chains(
         sealed_chains,
         connex,
         across_blocks,
-        &HashMap::new(),
+        &PersistedDependencies::default(),
     )
     .await
 }
@@ -537,6 +559,8 @@ pub async fn dependence_chains(
 /// were persisted by an earlier contiguous batch of the same block. Their
 /// cache entry is not an external chain dependency: the executor already
 /// established the ordering inside the transaction.
+/// Eligible persisted boundary producers recover dependencies lost to cache
+/// eviction without relying on that bounded cache for correctness.
 pub async fn dependence_chains_with_prior(
     logs: &mut [LogTfhe],
     past_chains: &ChainCache,
@@ -544,10 +568,10 @@ pub async fn dependence_chains_with_prior(
     sealed_chains: &SealedChainGuard,
     connex: bool,
     across_blocks: bool,
-    prior_minted: &HashMap<(TransactionHash, Handle), u64>,
+    prior: &PersistedDependencies,
 ) -> OrderedChains {
     ensure_logs_order(logs);
-    let (ordered_hash, mut txs) = scan_transactions(logs, prior_minted);
+    let (ordered_hash, mut txs) = scan_transactions(logs, &prior.minted);
     let mut used_txs_chains: HashMap<
         TransactionHash,
         HashSet<TransactionHash>,
@@ -558,6 +582,7 @@ pub async fn dependence_chains_with_prior(
         &mut used_txs_chains,
         past_chains,
         consumed_boundaries,
+        &prior.boundary_chains,
     )
     .await;
     debug!("Transactions: {:?}", txs.values());
@@ -958,7 +983,7 @@ mod tests {
 
     #[tokio::test]
     async fn split_same_transaction_output_does_not_create_outer_self_gate() {
-        use super::dependence_chains_with_prior;
+        use super::{dependence_chains_with_prior, PersistedDependencies};
         use std::collections::HashMap;
 
         let cache = new_cache();
@@ -980,7 +1005,10 @@ mod tests {
             &sealed,
             false,
             true,
-            &prior_minted,
+            &PersistedDependencies {
+                minted: prior_minted,
+                ..Default::default()
+            },
         )
         .await;
 

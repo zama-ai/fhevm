@@ -25,7 +25,7 @@ use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
 use crate::database::dependence_chains::{
-    dependence_chains, dependence_chains_with_prior,
+    dependence_chains, dependence_chains_with_prior, PersistedDependencies,
 };
 use crate::database::derived_history::{
     CommittedInventory, COMMITTED_INVENTORY_CHANGED,
@@ -43,8 +43,8 @@ use crate::database::synthetic_ops::{
 };
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handles,
-    uniform_allowed_outputs, Chain, ChainHash, Database, Handle as EventHandle,
-    LogTfhe, TransactionHash, REPLAY_METADATA_CONFLICT,
+    uniform_allowed_outputs, Chain, ChainCache, ChainHash, Database,
+    Handle as EventHandle, LogTfhe, TransactionHash, REPLAY_METADATA_CONFLICT,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -570,6 +570,110 @@ async fn persisted_prior_minted_outputs(
         prior_minted.insert((transaction_hash, handle), producer_log_index);
     }
     Ok(prior_minted)
+}
+
+/// Resolve cache misses from committed producer provenance in one bounded
+/// batch. A cache eviction (or restart) must not turn a pending producer into
+/// an unknown input. The result is per delivery, not put back into the LRU,
+/// so a join wider than the cache can still retain all of its parents.
+async fn persisted_boundary_chains(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    logs: &[LogTfhe],
+    cache: &ChainCache,
+    prior_minted: &HashMap<(TransactionHash, EventHandle), u64>,
+) -> Result<HashMap<(TransactionHash, EventHandle), ChainHash>, sqlx::Error> {
+    let mut requested = HashMap::new();
+    {
+        let cache = cache.read().await;
+        for log in logs {
+            let (Some(transaction), Some(index)) =
+                (log.transaction_hash, log.log_index)
+            else {
+                // Computation metadata was already validated by mask derivation.
+                continue;
+            };
+            for (_, handle) in tfhe_encrypted_operand_positions(&log.event) {
+                if cache.contains(&handle)
+                    || prior_minted
+                        .get(&(transaction, handle))
+                        .is_some_and(|producer| *producer < index)
+                {
+                    continue;
+                }
+                requested
+                    .entry((transaction, handle))
+                    .and_modify(|first: &mut u64| *first = (*first).min(index))
+                    .or_insert(index);
+            }
+        }
+    }
+    if requested.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let pg_index = |value| {
+        i64::try_from(value).map_err(|_| {
+            sqlx::Error::Protocol(
+                "dependency provenance index outside PostgreSQL range".into(),
+            )
+        })
+    };
+    let block_number = pg_index(logs[0].block_number)?;
+    let mut transactions = Vec::with_capacity(requested.len());
+    let mut handles = Vec::with_capacity(requested.len());
+    let mut indexes = Vec::with_capacity(requested.len());
+    for ((transaction, handle), index) in requested {
+        transactions.push(transaction.to_vec());
+        handles.push(handle.to_vec());
+        indexes.push(pg_index(index)?);
+    }
+    // Match the cache's eligible-producer preference, but require the producer
+    // to precede this consumer. In particular, historical replay must not
+    // discover a later transaction/block merely because it is already stored.
+    // This read takes no row locks. Gate registration retains its existing
+    // SKIP LOCKED/processed/materialized checks against concurrent workers.
+    let rows: Vec<(Vec<u8>, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT r.transaction_id, r.handle, p.dependence_chain_id
+         FROM unnest($1::bytea[], $2::bytea[], $3::bigint[])
+              AS r(transaction_id, handle, log_index)
+         CROSS JOIN LATERAL (
+             SELECT c.dependence_chain_id
+             FROM computations c
+             WHERE c.output_handle = r.handle AND c.host_chain_id = $4
+               AND c.is_allowed AND NOT c.is_error
+               AND c.dependence_chain_id IS NOT NULL
+               AND c.transaction_id <> r.transaction_id
+               AND (c.block_number < $5
+                    OR (c.block_number = $5 AND c.log_index < r.log_index))
+             ORDER BY c.is_completed, c.schedule_order, c.transaction_id
+             LIMIT 1
+         ) p",
+    )
+    .bind(transactions)
+    .bind(handles)
+    .bind(indexes)
+    .bind(chain_id.as_i64())
+    .bind(block_number)
+    .fetch_all(&mut **tx)
+    .await?;
+
+    let fixed_hash = |bytes: Vec<u8>| {
+        <[u8; 32]>::try_from(bytes.as_slice())
+            .map(ChainHash::from)
+            .map_err(|_| {
+                sqlx::Error::Protocol(
+                    "malformed persisted dependency identity".into(),
+                )
+            })
+    };
+    rows.into_iter()
+        .map(|(transaction, handle, chain)| {
+            Ok((
+                (fixed_hash(transaction)?, fixed_hash(handle)?),
+                fixed_hash(chain)?,
+            ))
+        })
+        .collect()
 }
 
 fn propagate_slow_lane_to_dependents(
@@ -1362,6 +1466,22 @@ pub(crate) async fn ingest_block_logs_with_executor_schedule(
     // not assign later consumers to chains that were never stored.
     let private_cache =
         Arc::new(RwLock::new(db.dependence_chain.read().await.clone()));
+    let boundary_chains = if options.dependence_cross_block {
+        persisted_boundary_chains(
+            &mut tx,
+            chain_id,
+            &tfhe_event_log,
+            &private_cache,
+            &prior_minted,
+        )
+        .await?
+    } else {
+        HashMap::new()
+    };
+    let prior = PersistedDependencies {
+        minted: prior_minted,
+        boundary_chains,
+    };
     let chains = dependence_chains_with_prior(
         &mut tfhe_event_log,
         &private_cache,
@@ -1369,7 +1489,7 @@ pub(crate) async fn ingest_block_logs_with_executor_schedule(
         &db.sealed_chains,
         options.dependence_by_connexity,
         options.dependence_cross_block,
-        &prior_minted,
+        &prior,
     )
     .await;
 
