@@ -1,0 +1,47 @@
+{{- $certManager := .Values.kmsConnectorProxy.tls.certManager -}}
+{{- if and .Values.kmsConnectorProxy.enabled $certManager.enabled -}}
+{{- $name := include "kmsConnectorProxyName" . -}}
+{{- $issuerRef := $certManager.issuerRef | default dict -}}
+{{- if $issuerRef }}
+{{- $_ := required "kmsConnectorProxy.tls.certManager.issuerRef.name must be set (or leave issuerRef empty for a self-signed certificate)" $issuerRef.name }}
+{{- else }}
+{{- $issuerRef = dict "name" (printf "%s-selfsigned" $name) "kind" "Issuer" }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    app: kms-connector-proxy
+    app.kubernetes.io/name: {{ $name }}
+  name: {{ $issuerRef.name }}
+spec:
+  selfSigned: {}
+---
+{{- end }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app: kms-connector-proxy
+    app.kubernetes.io/name: {{ $name }}
+  name: {{ $name }}
+spec:
+  secretName: {{ .Values.kmsConnectorProxy.tls.secretName | quote }}
+  {{- $dnsNames := $certManager.dnsNames }}
+  {{- if not $dnsNames }}
+  {{- $dnsNames = list $name (printf "%s.%s.svc" $name .Release.Namespace) (printf "%s.%s.svc.cluster.local" $name .Release.Namespace) }}
+  {{- end }}
+  dnsNames:
+    {{- toYaml $dnsNames | nindent 4 }}
+  {{- with $certManager.duration }}
+  duration: {{ . }}
+  {{- end }}
+  {{- with $certManager.renewBefore }}
+  renewBefore: {{ . }}
+  {{- end }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  issuerRef:
+    {{- toYaml $issuerRef | nindent 4 }}
+{{- end -}}
