@@ -7,9 +7,21 @@ pub enum Fault {
 
 /// Alter only the test publication. Computed state and production comparison
 /// remain unchanged, so the real all-operator anchor must reject this report.
+///
+/// On a JSON state-hash record the flip targets the first byte of the `fhe`
+/// value, so the divergent object stays a well-formed record and exercises
+/// divergence attribution ("fhe (ct64 compute)"); any other payload has its
+/// first byte flipped. XOR 1 keeps a hex digit a printable JSON string byte.
 pub fn divergent_hash(bytes: &mut [u8]) {
-    if let Some(first) = bytes.first_mut() {
-        *first ^= 1;
+    const FHE_VALUE: &[u8] = b"\"fhe\":\"";
+    let target = bytes
+        .windows(FHE_VALUE.len())
+        .position(|w| w == FHE_VALUE)
+        .map(|pos| pos + FHE_VALUE.len())
+        .filter(|&pos| pos < bytes.len())
+        .unwrap_or(0);
+    if let Some(byte) = bytes.get_mut(target) {
+        *byte ^= 1;
     }
 }
 
@@ -81,5 +93,18 @@ mod tests {
         assert_ne!(report, original);
         assert_eq!(report[0], original[0] ^ 1);
         assert_eq!(report[1..], original[1..]);
+    }
+
+    #[test]
+    fn divergent_report_targets_the_fhe_component_of_a_record() {
+        let record = br#"{"v":1,"fhe":"aabb","pbs":"ccdd"}"#.to_vec();
+        let mut report = record.clone();
+        super::divergent_hash(&mut report);
+        assert_eq!(report.len(), record.len());
+        assert_ne!(report, record);
+        // Still well-formed and attributable: only the fhe value changed.
+        let parsed: crate::state_hash::StateHashRecord = serde_json::from_slice(&report).unwrap();
+        assert_ne!(parsed.fhe, "aabb");
+        assert_eq!(parsed.pbs, "ccdd");
     }
 }
