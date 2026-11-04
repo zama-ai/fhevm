@@ -16,7 +16,7 @@ http:
   supported_chain_ids: []
 kms_aggregator:
   allow_insecure_http: false
-  danger_accept_invalid_certs: false
+  skip_tls_verification: false
   max_concurrent_calls: 16
   call:
     timeout: 5s

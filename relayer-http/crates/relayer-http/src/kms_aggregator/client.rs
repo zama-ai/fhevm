@@ -157,12 +157,12 @@ pub struct HttpClient {
 
 impl HttpClient {
     /// `https_only` unless some endpoint is plain http (validated: loopback or `allow_insecure_http`); certificates
-    /// verified unless `danger_accept_invalid_certs`.
+    /// verified unless `skip_tls_verification`.
     pub fn new(cfg: &KmsAggregatorConfig) -> Result<Self, ConfigError> {
         let https_only = cfg.endpoints.iter().all(|e| e.url.scheme() == "https");
-        if cfg.danger_accept_invalid_certs {
+        if cfg.skip_tls_verification {
             tracing::warn!(
-                "kms_aggregator.danger_accept_invalid_certs is set: connector TLS certificates are not verified"
+                "kms_aggregator.skip_tls_verification is set: connector TLS certificates are not verified"
             );
         }
         let inner = reqwest::Client::builder()
@@ -172,7 +172,7 @@ impl HttpClient {
             // Never forward the signed header to another host.
             .redirect(reqwest::redirect::Policy::none())
             .https_only(https_only)
-            .danger_accept_invalid_certs(cfg.danger_accept_invalid_certs)
+            .danger_accept_invalid_certs(cfg.skip_tls_verification)
             .no_proxy()
             .pool_idle_timeout(Duration::from_secs(10))
             .tcp_keepalive(Duration::from_secs(15))
@@ -680,14 +680,12 @@ mod tests {
         Url::parse(&format!("https://localhost:{port}")).unwrap()
     }
 
-    /// One post to a fresh self-signed server, with `danger_accept_invalid_certs` set as given.
-    async fn post_self_signed(
-        danger_accept_invalid_certs: bool,
-    ) -> Result<HttpReply, AttemptError> {
+    /// One post to a fresh self-signed server, with `skip_tls_verification` set as given.
+    async fn post_self_signed(skip_tls_verification: bool) -> Result<HttpReply, AttemptError> {
         let mut cfg = valid(1);
         cfg.endpoints[0].url = self_signed_server().await;
         cfg.call.timeout = Duration::from_secs(2);
-        cfg.danger_accept_invalid_certs = danger_accept_invalid_certs;
+        cfg.skip_tls_verification = skip_tls_verification;
         HttpClient::new(&cfg)
             .unwrap()
             .post(

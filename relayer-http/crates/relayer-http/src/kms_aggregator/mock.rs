@@ -96,7 +96,7 @@ impl MockClient {
     pub fn config(n: usize, timeout: Duration, max_retries: u32) -> KmsAggregatorConfig {
         KmsAggregatorConfig {
             allow_insecure_http: false,
-            danger_accept_invalid_certs: false,
+            skip_tls_verification: false,
             max_concurrent_calls: n.max(1),
             call: CallConfig {
                 timeout,
