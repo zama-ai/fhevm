@@ -2210,11 +2210,11 @@ function getWasmInfo() {
   const memory = wasm?.memory;
   return {
     name: 'tkms',
-    version: '0.16.0-0-solana.177a2302',
+    version: '0.16.0-0-solana.08f5f65f',
     downloadFiles: [
       {
         filename: "kms_lib_bg.wasm",
-        sha256: "06cbc418f986293d04373cf4dcfd628d0b62baec3c18fca79cae748e0932f9cf",
+        sha256: "025c864cd699d833813640030d2826baef08be6ba3576039c93c03289dc3096e",
       }
     ],
     memory:

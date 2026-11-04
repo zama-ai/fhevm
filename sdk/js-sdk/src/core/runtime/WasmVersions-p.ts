@@ -15,5 +15,5 @@ type WasmModuleVersionByKey = {
  */
 export const CANONICAL_WASM_VERSIONS: WasmModuleVersionByKey = Object.freeze({
   tfhe: '1.8.1',
-  kms: '0.16.0-0-solana.177a2302',
+  kms: '0.16.0-0-solana.08f5f65f',
 });

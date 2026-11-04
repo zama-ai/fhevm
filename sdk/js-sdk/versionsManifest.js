@@ -33,9 +33,9 @@
 export const TFHE_MANIFEST = Object.freeze([Object.freeze({ version: '1.8.1' })]);
 
 // The TKMS version is built by scripts/regen-tkms-wasm.sh (see src/wasm/tkms/KMS_BUILT_FROM); it is not on npm yet.
-export const KMS_MANIFEST = Object.freeze([Object.freeze({ version: '0.16.0-0-solana.177a2302' })]);
+export const KMS_MANIFEST = Object.freeze([Object.freeze({ version: '0.16.0-0-solana.08f5f65f' })]);
 
 export const WASM_DEFAULT_VERSIONS = Object.freeze({
   tfhe: '1.8.1',
-  tkms: '0.16.0-0-solana.177a2302',
+  tkms: '0.16.0-0-solana.08f5f65f',
 });

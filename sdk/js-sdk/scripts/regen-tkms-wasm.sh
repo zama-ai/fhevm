@@ -3,8 +3,7 @@
 # EVM and Solana user decryption both load it through versionsManifest.js.
 #
 # DESIGNED TO BE DELETED: this exists only because Solana user decryption is not yet in a
-# published `tkms` npm release. Build it from a kms `main` commit; until
-# https://github.com/zama-ai/kms/pull/934 merges, pass its branch as KMS_BRANCH. When kms publishes it,
+# published `tkms` npm release. Build it from a kms `main` commit. When kms publishes it,
 # delete this script and .regen-tkms.env, set the published version in versionsManifest.js,
 # src/core/runtime/WasmVersions-p.ts and scripts/wasm/loaders/KmsLibApi.template.d.ts, and run
 # `npm run wasm:install -- --lib tkms --force` (it also regenerates the loaders). Also remove
