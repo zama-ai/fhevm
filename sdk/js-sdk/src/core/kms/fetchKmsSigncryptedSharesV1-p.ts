@@ -50,6 +50,8 @@ const MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 /**
  * Asserts that every address in {@link contractAddresses} is listed in the
  * permit's `contractAddresses` (case-insensitive comparison).
+ *
+ * @throws {InvalidSignedPermitError} If an address is not listed in the permit.
  */
 export function assertPermitV1IncludesContractAddresses(
   permit: SignedDecryptionPermitV1,
@@ -58,7 +60,11 @@ export function assertPermitV1IncludesContractAddresses(
   const permitAddresses = permit.eip712.message.contractAddresses;
   for (const address of contractAddresses) {
     if (!permitAddresses.some((a) => a.toLowerCase() === address.toLowerCase())) {
-      throw Error(`contract address ${address} is not listed in the permit's contractAddresses`);
+      throw new InvalidSignedPermitError({
+        message:
+          `Contract address ${address} is not listed in the permit's contractAddresses: ` +
+          `sign a new permit that includes it`,
+      });
     }
   }
 }

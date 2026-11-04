@@ -52,8 +52,11 @@
   to hang until the relayer polling timed out. `decryptValue`/`decryptValues` and
   `canDecryptValue`/`canDecryptValues` now throw the new `InvalidSignedPermitError` up front, before any
   request; parsing the permit still succeeds. Sign a new permit. `InvalidSignedPermitError` is also thrown
-  for a value that isn't an SDK-created permit (previously `InvalidTypeError`), and for a unified
-  (v2) permit whose `extraData` is older than v2.
+  for a value that isn't an SDK-created permit (previously `InvalidTypeError`), for a unified
+  (v2) permit whose `extraData` is older than v2, and, instead of a plain `Error` (the messages keep
+  their wording), for an expired permit, a permit whose `startTimestamp` is in the future, and a
+  legacy (v1) permit that doesn't list the requested contract. A unified (v2) permit is now checked
+  for expiry before the relayer-features request.
 
 #### Fixed
 

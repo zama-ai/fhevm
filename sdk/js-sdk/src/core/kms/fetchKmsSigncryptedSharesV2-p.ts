@@ -74,6 +74,9 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
 
   const signedPermitExtraData: KmsExtraData = assertSignedDecryptionPermitExtraDataSupported(signedPermit);
 
+  // Expiration date
+  signedPermit.assertNotExpired();
+
   // The v3 / unified user-decrypt route only exists on relayers that advertise it. Guard here — not
   // only at callers — so any direct caller of this V2 path is protected too. Resolved once per client
   // (cached), using the same effective auth this function uses for the actual relayer request.
@@ -121,8 +124,7 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
   // 3. Check: 2048 bits limit
   assertKmsDecryptionBitLimit(handles);
 
-  // 4. Check: Expiration date
-  signedPermit.assertNotExpired();
+  // 4. Check: Expiration date — done up front, with the other permit checks
 
   // 5. Check: ACL permissions — split pairs by direct vs delegated access
   const directPairs = resolvedPairs.filter((p) => p.ownerAddress.toLowerCase() === userAddress.toLowerCase());
