@@ -1,0 +1,48 @@
+userName: ${BROWSERSTACK_USERNAME}
+accessKey: ${BROWSERSTACK_ACCESS_KEY}
+
+envFile: test/.env
+
+projectName: FHEVM SDK (Mobile)
+buildName: bstack-fhevm-sdk-mobile
+buildIdentifier: '#${BUILD_NUMBER}'
+idleTimeout: 300
+
+platforms:
+  - deviceName: Samsung Galaxy S25 Ultra
+    osVersion: 15.0
+    browserName: chrome
+    browserVersion: latest
+  - deviceName: iPhone 16
+    osVersion: 18
+    browserName: safari
+  - deviceName: iPhone 14
+    osVersion: 16
+    browserName: safari
+  - deviceName: Google Pixel 9
+    osVersion: 15.0
+    browserName: chrome
+    browserVersion: latest
+
+parallelsPerPlatform: 1
+
+browserstackLocal: true
+# forceLocal routes ALL traffic (including calls to the public relayer, not
+# just the local Vite server) through the Local tunnel via this machine. That
+# extra hop was unreliable on real mobile devices ("TypeError: Failed to
+# fetch" reaching the relayer). The tests reach the dev server through
+# bs-local.com, which BrowserStack Local always tunnels without forceLocal, so
+# leaving it off lets calls to the public relayer use the device's normal
+# network path.
+forceLocal: false
+
+debug: false
+networkLogs: true
+consoleLogs: errors
+video: true
+
+testReporting: true
+# Session pass/fail is set by test/browser-smoke/fixtures.ts while the page is
+# still open; the SDK's own attempt runs after the page is closed and fails.
+testContextOptions:
+  skipSessionStatus: true

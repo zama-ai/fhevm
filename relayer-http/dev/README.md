@@ -10,6 +10,9 @@ make run  (host :8080) --http--> 127.0.0.1:8081..808N (socat "port-forward pods"
 e2e container: hardhat script --> host-node:8545 (deploy a fixture), http://host.docker.internal:8080 (relayer route)
 ```
 
+The e2e container reaches the relayer on the host at `host.docker.internal` on macOS (Docker Desktop) and at the
+gateway of the stack's network on Linux (`scripts/e2e.sh` picks by `uname`); `RELAYER_HTTP_URL=…` overrides both.
+
 ## Flow
 
 ```sh
@@ -19,6 +22,7 @@ make -C relayer-http/dev public-decrypt   # other terminal: 3 handles, clear val
 make -C relayer-http/dev user-decrypt     # signed unified request, shares checked, timing printed
 make -C relayer-http/dev down
 make -C relayer-http/dev check            # fmt + clippy + test, the CLAUDE.md commands
+make -C relayer-http/dev test-aws         # the AWS KMS signer against Floci (an AWS emulator, started and stopped by the target)
 ```
 
 `N` (the number of KMS connectors) is read from the running containers; `make help` shows what was detected.
@@ -26,7 +30,7 @@ Override with `make up KMS=4`, `make run CONFIG=…`, `make up TAG=<image tag>`.
 
 Every connector call carries an `FhevmSig` header (RFC-038). By default the relayer signs with the e2e test key
 (`KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY` in `test-suite/fhevm/templates/env/.env.test-suite`), which
-`proxies-up.sh` allows. To use another key, pass both `make up SIGNER_ADDRESS=0x…` and `make run SIGNER_KEY=0x…`.
+`proxies-up.sh` allows. To use another key, pass `make up SIGNER_ADDRESS=0x…` and `make run SIGNER_KEY=0x… SIGNER_ADDRESS=0x…`: the relayer refuses to start when the key does not have that address.
 `relayer-run.sh` reads the ProtocolConfig address of the domain from the running stack
 (`.fhevm/runtime/env/kms-connector.env`); each endpoint's `audience` is its party's KMS tx-sender, deterministic in the
 stack and written by `gen-config.sh`.
@@ -55,7 +59,7 @@ writes such a config from the same template (`scripts/gen-config.sh`, which prod
 
 | symptom | where to look |
 |---|---|
-| relayer calls answered `401 sender_authentication_failed` | the message names the check: `auth_unknown_signer` = `SIGNER_KEY` does not match `SIGNER_ADDRESS`, or the stack's tx-sender addresses differ from the `audience`s (`make config`), or the proxies predate the stack's ProtocolConfig (`make down up`) |
+| relayer calls answered `401 sender_authentication_failed` | the message names the check: `auth_unknown_signer` = `make up` allowed another `SIGNER_ADDRESS` than the relayer's, or the stack's tx-sender addresses differ from the `audience`s (`make config`), or the proxies predate the stack's ProtocolConfig (`make down up`) |
 | relayer calls answered `502` | the proxy cannot reach `kms-connector[-i]-endpoint:8080`, or its tag differs from the endpoint's (the proxy health-checks a path that moved); `make down up` |
 | smoke connection refused | forwarder not up, or port 808x taken |
 | relayer exits at start | no stack env (`relayer-run.sh` needs the ProtocolConfig address), or config validation (the message names the field) |

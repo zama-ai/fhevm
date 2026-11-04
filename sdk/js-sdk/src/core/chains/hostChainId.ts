@@ -1,7 +1,7 @@
-// No imports: the Solana deployer imports this file by path, outside the SDK build.
-
 /**
  * High byte of the eight-byte chain-id field. `0x00` is EVM, `0x01` is Solana.
+ *
+ * This file has no imports: the Solana deployer imports it by path, outside the SDK build.
  */
 export const EVM_CHAIN_TYPE = 0x00n;
 export const SOLANA_CHAIN_TYPE = 0x01n;

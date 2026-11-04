@@ -108,6 +108,11 @@ jobs:
           persist-credentials: 'false'
           path: current-fhevm
 
+      - name: Set up Node.js
+        uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
+        with:
+          node-version: '>=22.23.4 <23'
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 

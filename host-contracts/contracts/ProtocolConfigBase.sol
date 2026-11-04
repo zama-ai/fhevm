@@ -62,7 +62,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         /// @notice MPC threshold per context.
         /// @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
-        /// @notice Whether a context has been destroyed.
+        /// @dev Deprecated.
         mapping(uint256 contextId => bool) destroyedContexts;
         /// @notice The most recently activated KMS context ID, the one reads resolve against.
         ///         Several contexts may remain in the `Active` state at once (prior contexts are not
@@ -252,8 +252,9 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Returns true if the context exists and has not been destroyed. Every stored context is
-     * Pending, Created or Active, and only destruction resets it to None.
+     * @dev Returns true if the context is Pending, Created or Active. Destruction resets a context
+     * to None. The v0.14 upgrade gave a state only to the context that was active at that upgrade,
+     * so older contexts also read as None and are not live.
      */
     function _isLiveKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
         return _getProtocolConfigStorage().contextState[kmsContextId] != ContextState.None;

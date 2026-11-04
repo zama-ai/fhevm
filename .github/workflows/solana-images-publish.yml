@@ -132,18 +132,21 @@ jobs:
             image: fhevm/kms-connector/gw-listener
             dockerfile: kms-connector/crates/gw-listener/Dockerfile
             rust_toolchain: kms-connector/rust-toolchain.toml
+            kms_git_auth: true
             context: .
             target: prod
           - name: kms-connector-kms-worker
             image: fhevm/kms-connector/kms-worker
             dockerfile: kms-connector/crates/kms-worker/Dockerfile
             rust_toolchain: kms-connector/rust-toolchain.toml
+            kms_git_auth: true
             context: .
             target: prod
           - name: kms-connector-tx-sender
             image: fhevm/kms-connector/tx-sender
             dockerfile: kms-connector/crates/tx-sender/Dockerfile
             rust_toolchain: kms-connector/rust-toolchain.toml
+            kms_git_auth: true
             context: .
             target: prod
           # Published for preview pins (ci/preview-env/scripts/resolve/resolve-tags.cjs);
@@ -152,12 +155,14 @@ jobs:
             image: fhevm/kms-connector/endpoint
             dockerfile: kms-connector/crates/endpoint/Dockerfile
             rust_toolchain: kms-connector/rust-toolchain.toml
+            kms_git_auth: true
             context: .
             target: prod
           - name: kms-connector-proxy
             image: fhevm/kms-connector/proxy
             dockerfile: kms-connector/crates/proxy/Dockerfile
             rust_toolchain: kms-connector/rust-toolchain.toml
+            kms_git_auth: true
             context: .
             target: prod
     steps:
@@ -195,6 +200,10 @@ jobs:
           RUST_TOOLCHAIN: ${{ matrix.rust_toolchain || '' }}
           CONTEXT: ${{ matrix.context }}
           TARGET: ${{ matrix.target || '' }}
+          # The connector images fetch the private zama-ai/kms git dependencies, through this
+          # BuildKit secret (see their Dockerfiles). The other images do not get it.
+          KMS_GIT_AUTH: ${{ matrix.kms_git_auth || '' }}
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ matrix.kms_git_auth && secrets.BLOCKCHAIN_ACTIONS_TOKEN || '' }} # zizmor: ignore[secrets-outside-env] build secret, as in kms-connector-docker-build.yml
           SHA: ${{ github.sha }}
           # Per-image BuildKit registry cache. This workflow writes and reads its own cache ref.
           BUILDCACHE_TAG: buildcache-feature-solana
@@ -211,6 +220,13 @@ jobs:
               exit 1
             fi
             args+=(--build-arg "RUST_IMAGE_VERSION=$rust_image_version")
+          fi
+          if [ -n "$KMS_GIT_AUTH" ]; then
+            if [ -z "$BLOCKCHAIN_ACTIONS_TOKEN" ]; then
+              echo "::error::No token with read access to zama-ai/kms (is BLOCKCHAIN_ACTIONS_TOKEN available to this workflow?)"
+              exit 1
+            fi
+            args+=(--secret "id=BLOCKCHAIN_ACTIONS_TOKEN,env=BLOCKCHAIN_ACTIONS_TOKEN")
           fi
           args+=(
             --cache-from "type=registry,ref=ghcr.io/zama-ai/$IMAGE:$BUILDCACHE_TAG"

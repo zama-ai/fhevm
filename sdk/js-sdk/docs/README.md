@@ -21,7 +21,7 @@ Requires **Node.js 22** or newer.
 ## What you can do
 
 - **Encrypt** plaintext client-side and produce an input proof your contract can
-  verify.
+  verify — or, experimentally, an RFC-030 pad-based input package.
 - **Decrypt** private results — the plaintext is reconstructed locally and never
   leaves your application.
 - **Read public values** a contract has made publicly readable.

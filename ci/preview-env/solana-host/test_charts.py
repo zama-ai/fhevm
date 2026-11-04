@@ -369,13 +369,16 @@ class SolanaCharts(unittest.TestCase):
         for values in [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
                        VALUES / "values-solana-connector-e2e.yaml"]:
             host_chains.update(yaml.safe_load(values.read_text())["commonConfig"]["hostChains"])
+        allowed_senders = yaml.safe_load((ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml")
+                                         .read_text())["kmsConnectorProxy"]["allowedSenders"]
         proxies = [f"https://kms-connector-{i}-kms-connector-proxy:8443" for i in range(1, 5)]
         tx_senders = [f"0x{i:040x}" for i in range(1, 5)]
         protocol_config = "0x" + "11" * 20
         with tempfile.TemporaryDirectory() as tmp:
             connector = pathlib.Path(tmp) / "connector.yaml"
             connector.write_text(yaml.safe_dump({"commonConfig": {
-                "hostChains": host_chains, "ethereumContractAddresses": {"protocolConfig": protocol_config}}}))
+                "hostChains": host_chains, "ethereumContractAddresses": {"protocolConfig": protocol_config}},
+                "kmsConnectorProxy": {"allowedSenders": allowed_senders}}))
             config = yaml.safe_load(subprocess.check_output(["yq", program, str(connector)], text=True, cwd=ROOT, env={
                 **os.environ, "ENDPOINT_URLS": ",".join(proxies), "TX_SENDERS": ",".join(tx_senders),
                 "THRESHOLD": "3"}))
@@ -386,6 +389,7 @@ class SolanaCharts(unittest.TestCase):
         self.assertEqual([e["audience"] for e in config["kms_aggregator"]["endpoints"]], tx_senders)
         self.assertEqual(config["kms_aggregator"]["auth"]["chain_id"], 12345)
         self.assertEqual(config["kms_aggregator"]["auth"]["protocol_config"], protocol_config)
+        self.assertEqual(config["kms_aggregator"]["auth"]["address"], allowed_senders[0])
         self.assertEqual(config["kms_aggregator"]["auth"]["signer"]["value_env"], "RELAYER_SIGNER_KEY")
         # The rest of relayer-http's own config is kept.
         self.assertEqual(config["kms_aggregator"]["call"]["timeout"], "5000ms")

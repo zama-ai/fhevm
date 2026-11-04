@@ -488,22 +488,6 @@ async fn host_consensus_candidates(
     Ok(rows.into_iter().map(|(b,)| b).collect())
 }
 
-/// Latest finalized GCS host-chain block for `host_chain_id`, or -1 if none.
-async fn gcs_host_watermark(pool: &Pool<Postgres>, host_chain_id: i64) -> Result<i64, Error> {
-    let sql = format!(
-        "SELECT COALESCE(
-                  (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid
-                    WHERE chain_id = $1 AND block_status = 'finalized'),
-                  -1
-                )"
-    );
-    let (watermark,): (i64,) = sqlx::query_as(&sql)
-        .bind(host_chain_id)
-        .fetch_one(pool)
-        .await?;
-    Ok(watermark)
-}
-
 /// True once every block in `[start, end]` has a `state_hash`: counts the hashes and
 /// compares to the window size, so a gap below a hashed block still fails.
 async fn gcs_window_fully_hashed(
@@ -605,7 +589,31 @@ where
     if members.is_empty() {
         return Err(anyhow::anyhow!("no coprocessor signers at block {block}"));
     }
+    // Named, not refused: the attempt still runs, so this operator still
+    // records the Abort that ends it at the deadline.
+    for (signer, url) in &members {
+        if let Err(error) = usable_member_url(url) {
+            error!(
+                %signer,
+                url,
+                %error,
+                "registered s3BucketUrl is unusable; an operator must re-register it"
+            );
+        }
+    }
     Ok(decision::members_of(&members))
+}
+
+/// The state-hash poll and the manifest reader both fetch over HTTP. Any other
+/// scheme never recovers, so name it here instead of leaving it to the timeout.
+fn usable_member_url(url: &str) -> anyhow::Result<()> {
+    let scheme = url::Url::parse(url)?.scheme().to_owned();
+    if !matches!(scheme.as_str(), "http" | "https") {
+        return Err(anyhow::anyhow!(
+            "scheme \"{scheme}\" cannot serve the state-hash reads"
+        ));
+    }
+    Ok(())
 }
 
 /// One pass over every host-chain track plus the Gateway track: resets tracks on
@@ -717,17 +725,21 @@ where
 
     let own_name = fleet.signer.map(|s| decision::name_of(s.address()));
 
-    // One deadline per chain, so an early chain ends the attempt without a wait
-    // for a later window.
+    // One deadline per chain, armed only once that chain is actually READY to
+    // anchor — its whole window is hashed — or a stuck listener's window was
+    // closed by Blue. Arming on the watermark (blocks merely finalized) instead
+    // let an early chain's timer fire while it was still hashing, or while a
+    // later, legitimately staggered window had not even opened yet, aborting a
+    // healthy disjoint-window upgrade. Measuring from "ready to anchor" means a
+    // chain that then stays un-anchored past the timeout is genuinely divergent,
+    // not merely lagging, so ending the attempt on it is correct.
     let mut expired = false;
     if !both_anchored {
-        for &(chain_id, _, end) in &windows {
+        for &(chain_id, start, end) in &windows {
             if window_state.deadlines.contains_key(&chain_id) {
                 continue;
             }
-            // A stuck listener still ends once Blue passed the window. The peers
-            // decided before that moment.
-            if gcs_host_watermark(pool, chain_id).await? >= end
+            if gcs_window_fully_hashed(pool, chain_id, start, end).await?
                 || state_hash::chain_upload_closed(pool, chain_id, end, commitment_timeout).await?
             {
                 window_state
@@ -737,7 +749,7 @@ where
                     chain_id,
                     end_block = end,
                     timeout_secs = commitment_timeout.as_secs(),
-                    "arming consensus timeout (the chain reached end_block, or uploads closed)"
+                    "arming consensus timeout (window fully hashed, or uploads closed)"
                 );
             }
         }
@@ -1215,6 +1227,18 @@ mod tests {
         publication.rollback().await.unwrap();
         drop(listeners);
         pool.close().await;
+    }
+
+    #[test]
+    fn member_url_must_be_fetchable_over_http() {
+        for url in [
+            "http://object-store-2:9000/coproc-2",
+            "https://peer-bucket.s3.eu-west-3.amazonaws.com",
+            "https://coprocessor-3.dev.zama.cloud",
+        ] {
+            usable_member_url(url).unwrap_or_else(|error| panic!("{url}: {error}"));
+        }
+        assert!(usable_member_url("s3://peer-bucket").is_err());
     }
 
     const GW: i64 = 54321;

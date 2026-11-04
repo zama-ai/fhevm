@@ -181,10 +181,15 @@ mod tests {
     use crate::AttestationType;
     use alloy::primitives::Address;
 
+    /// A v2 `extraData` (version, context id, epoch id).
+    fn extra_data_v2() -> Vec<u8> {
+        [vec![0x02], vec![0x07; 32], vec![0x08; 32]].concat()
+    }
+
     fn public_request() -> PublicDecryptionRequest {
         PublicDecryptionRequest {
             ctHandles: vec![B256::repeat_byte(0x11), B256::repeat_byte(0x22)],
-            extraData: Bytes::from(vec![0x00]),
+            extraData: Bytes::from(extra_data_v2()),
         }
     }
 
@@ -204,7 +209,7 @@ mod tests {
                     startTimestamp: 1_770_000_000,
                     durationSeconds: 300,
                 },
-                extraData: Bytes::from(vec![0x00]),
+                extraData: Bytes::from(extra_data_v2()),
             },
             signature: Bytes::from(vec![0x66; 65]),
         }
@@ -298,7 +303,7 @@ mod tests {
     fn unknown_fields_are_rejected() {
         let json = r#"{
             "ctHandles": ["0x1111111111111111111111111111111111111111111111111111111111111111"],
-            "extraData": "0x00",
+            "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000010800000000000000000000000000000000000000000000000000000000000001",
             "sneaky": true
         }"#;
         assert!(serde_json::from_str::<PublicDecryptionRequest>(json).is_err());

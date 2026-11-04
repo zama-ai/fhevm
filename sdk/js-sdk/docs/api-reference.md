@@ -55,6 +55,7 @@ type WasmAssetLoadMode =
 ```ts
 function initFhevmRuntime(): Promise<void>;
 function initFhevmEncryptRuntime(): Promise<void>;
+function initFhevmEncryptTransciRuntime(): Promise<void>; // TKMS WASM, pad-based encryption
 function initFhevmDecryptRuntime(): Promise<void>;
 ```
 
@@ -69,48 +70,71 @@ Exported from both adapter entry points. The ethers variants take `provider`
 function createFhevmClient(parameters: {
   readonly provider: ContractRunner;
   readonly chain: FhevmChain;
-  readonly options?: FhevmOptions | undefined;
+  readonly options?: FhevmOptions<ContractRunner> | undefined;
 }): FhevmClient;
 
 function createFhevmEncryptClient(parameters: {
   readonly provider: ContractRunner;
   readonly chain: FhevmChain;
-  readonly options?: FhevmEncryptOptions | undefined;
+  readonly options?: FhevmEncryptOptions<ContractRunner> | undefined;
 }): FhevmEncryptClient;
+
+function createFhevmEncryptTransciClient(parameters: {
+  readonly provider: ContractRunner;
+  readonly chain: FhevmChain;
+  readonly options?: FhevmEncryptOptions<ContractRunner> | undefined;
+}): FhevmEncryptTransciClient; // RFC-030 pad-based encryption (experimental)
 
 function createFhevmDecryptClient(parameters: {
   readonly provider: ContractRunner;
   readonly chain: FhevmChain;
-  readonly options?: FhevmDecryptOptions | undefined;
+  readonly options?: FhevmDecryptOptions<ContractRunner> | undefined;
 }): FhevmDecryptClient;
 
 function createFhevmBaseClient(parameters: {
   readonly provider: ContractRunner;
   readonly chain: FhevmChain;
-  readonly options?: FhevmOptions | undefined;
+  readonly options?: FhevmOptions<ContractRunner> | undefined;
 }): FhevmBaseClient;
 ```
 
 The viem forms replace `provider: ContractRunner` with
-`publicClient: PublicClient`. See [Clients](clients.md).
+`publicClient: PublicClient`, and the option types' `ContractRunner` with
+`PublicClient`. The cleartext entry points
+(`@fhevm/sdk/ethers/cleartext`, `@fhevm/sdk/viem/cleartext`) export the same
+factories with a `Cleartext` infix, including
+`createFhevmCleartextEncryptTransciClient`. See [Clients](clients.md).
 
 ### Factory options
 
+The option types take the adapter's client type, the one `keyVerification`
+takes: `ContractRunner` (ethers) or `PublicClient` (viem).
+
 ```ts
-type FhevmBaseOptions = {
+type FhevmBaseOptions<client> = {
   readonly batchRpcCalls?: boolean | undefined;
+  readonly keyVerification?: FhevmKeyVerification<client> | undefined;
 };
 
-type FhevmOptions = FhevmBaseOptions & {
+type FhevmOptions<client> = FhevmBaseOptions<client> & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
 };
 
-type FhevmEncryptOptions = FhevmBaseOptions & {
+type FhevmEncryptOptions<client> = FhevmBaseOptions<client> & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
 };
 
-type FhevmDecryptOptions = FhevmBaseOptions;
+type FhevmDecryptOptions<client> = FhevmBaseOptions<client>;
+
+// exported from '@fhevm/sdk/types'
+type FhevmKeyVerification<client> = {
+  readonly chain: FhevmChain;
+  readonly client: client;
+};
 ```
+
+`keyVerification` applies to every client: it is required when the host chain
+is not Ethereum (see [Key verification](clients.md#key-verification)).
 
 ### Client lifecycle members
 
@@ -126,17 +150,18 @@ readonly protocolVersion: ProtocolVersionResolution;
 
 ### Method availability
 
-| Method                              | Base | Encrypt | Decrypt | Full |
-| ----------------------------------- | :--: | :-----: | :-----: | :--: |
-| `encryptValue` / `encryptValues`    |      |   ✅    |         |  ✅  |
-| `decryptValue` / `decryptValues` / `decryptValuesFromPairs` |  |  |  ✅  | ✅ |
-| `generateTransportKeyPair`          |      |         |   ✅    |  ✅  |
-| `decryptPublicValue(s)`             |  ✅  |   ✅    |   ✅    |  ✅  |
-| `decryptPublicValuesWithSignatures` |  ✅  |   ✅    |   ✅    |  ✅  |
-| `signLegacyDecryptionPermit` / `signUnifiedDecryptionPermit` | ✅ | ✅ | ✅ | ✅ |
-| `signDecryptionPermit` (`@deprecated`, alias for `signLegacyDecryptionPermit`) | ✅ | ✅ | ✅ | ✅ |
-| `serialize`/`parse` permit + key    |  ✅  |   ✅    |   ✅    |  ✅  |
-| `fetchFheEncryptionKeyBytes`        |  ✅  |   ✅    |   ✅    |  ✅  |
+| Method                              | Base | Encrypt | Encrypt Transci | Decrypt | Full |
+| ----------------------------------- | :--: | :-----: | :-------------: | :-----: | :--: |
+| `encryptValue` / `encryptValues`    |      |   ✅    |                 |         |  ✅  |
+| `encryptValueTransci` / `encryptValuesTransci` |  |      |       ✅        |         |      |
+| `decryptValue` / `decryptValues` / `decryptValuesFromPairs` |  |  |       |  ✅  | ✅ |
+| `generateTransportKeyPair`          |      |         |       ✅        |   ✅    |  ✅  |
+| `decryptPublicValue(s)`             |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
+| `decryptPublicValuesWithSignatures` |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
+| `signLegacyDecryptionPermit` / `signUnifiedDecryptionPermit` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `signDecryptionPermit` (`@deprecated`, alias for `signLegacyDecryptionPermit`) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `serialize`/`parse` permit + key    |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
+| `fetchFheEncryptionKeyBytes`        |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
 
 The `canDecrypt*` permission checks are not client methods. `canDecryptValue`,
 `canDecryptValues`, and `canDecryptValuesFromPairs` come from
@@ -167,6 +192,32 @@ encryptValue(parameters: {
 ```
 
 Valid `type` strings: `'bool' | 'uint8' | 'uint16' | 'uint32' | 'uint64' | 'uint128' | 'uint256' | 'address'`.
+
+### Pad-based encryption methods
+
+On `createFhevmEncryptTransciClient` only. See
+[Encryption → Pad-based encryption](encryption.md#pad-based-encryption-transciphering).
+
+```ts
+encryptValuesTransci(parameters: {
+  readonly values: ReadonlyArray<{ readonly type: string; readonly value: boolean | bigint | number | string }>;
+  readonly contractAddress: string;
+  readonly userAddress: string;
+  readonly signedPermit: SignedDecryptionPermit; // v2 (unified), signed by userAddress
+  readonly options?: RelayerCommonOptions | undefined;
+}): Promise<{ readonly encryptedValues: readonly EncryptedValue[]; readonly inputPackage: BytesHex }>;
+
+encryptValueTransci(parameters: {
+  readonly value: { readonly type: string; readonly value: boolean | bigint | number | string };
+  readonly contractAddress: string;
+  readonly userAddress: string;
+  readonly signedPermit: SignedDecryptionPermit; // v2 (unified), signed by userAddress
+  readonly options?: RelayerCommonOptions | undefined;
+}): Promise<{ readonly encryptedValue: EncryptedValue; readonly inputPackage: BytesHex }>;
+```
+
+A package holds 1 to 255 values and at most 2048 bits (each value padded to
+whole bytes).
 
 ## Private decryption methods
 
@@ -339,9 +390,11 @@ See [Actions](actions.md) for import paths and examples.
 encryptValue(fhevm, parameters);
 encryptValues(fhevm, parameters);
 generateZkProof(fhevm, parameters);
+encryptValueTransci(fhevm, parameters);
+encryptValuesTransci(fhevm, parameters);
 
 // @fhevm/sdk/actions/decrypt
-generateTransportKeyPair(fhevm);
+generateTransportKeyPair(fhevm); // decrypt, full, or encrypt-transciphering client
 decryptValue(fhevm, parameters);
 decryptValues(fhevm, parameters);
 decryptValuesFromPairs(fhevm, parameters);
@@ -444,6 +497,7 @@ Accepted as the `options` field on every network method. All fields optional.
 type RelayerCommonOptions = {
   readonly auth?: Auth | undefined;
   readonly headers?: Record<string, string> | undefined;
+  readonly query?: Record<string, string> | undefined;
   readonly debug?: boolean | undefined;
   readonly fetchRetries?: number | undefined;
   readonly fetchRetryDelayInMilliseconds?: number | undefined;
@@ -451,6 +505,11 @@ type RelayerCommonOptions = {
   readonly timeout?: number | undefined;
 };
 ```
+
+`query` entries are appended, percent-encoded, to the URL of job requests
+(submission and polling) and the key-URL lookup. Prefer `headers`; fall back
+to `query` only when a proxy in front of the relayer strips custom headers
+before they reach it.
 
 `Auth` (and its variants) are exported from `@fhevm/sdk/types`. Zama's hosted
 relayer accepts only `ApiKeyHeader` (the default `x-api-key` header); a
@@ -464,7 +523,8 @@ type AuthApiKeyCookie = { type: 'ApiKeyCookie'; cookie?: string; value: string }
 type AuthType = Auth['type'];
 ```
 
-Per-operation option types add an `onProgress?` callback:
+Pad-based encryption (`encryptValue[s]Transci`) takes the plain
+`RelayerCommonOptions`. Per-operation option types add an `onProgress?` callback:
 `RelayerInputProofOptions` (encrypt), `RelayerUserDecryptOptions` /
 `RelayerDelegatedUserDecryptOptions` (private decrypt),
 `RelayerPublicDecryptOptions` (public decrypt), `RelayerKeyUrlOptions` (key

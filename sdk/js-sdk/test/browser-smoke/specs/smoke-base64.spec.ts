@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures.js';
 
 test('createFhevmClient initializes with base64 WASM', async ({ page }) => {
   await page.goto('/test/browser-smoke/pages/smoke-base64.html');

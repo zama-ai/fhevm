@@ -11,13 +11,16 @@ import type {
   Uint8ValueLike,
 } from './primitives.js';
 import type { ZkProof, SolanaZkProof } from './zkProof-p.js';
-import type { WithEncrypt } from './coreFhevmRuntime.js';
+import type { FhevmRuntime, WithEncrypt } from './coreFhevmRuntime.js';
+import type { FhevmBase, OptionalNativeClient } from './coreFhevmClient.js';
 import type { FhevmChain } from './fhevmChain.js';
 import type { FhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
 import type { FhevmSolanaChain } from './fhevmSolanaChain.js';
 import type { Bytes32Hex } from './primitives.js';
 
 export type SolanaProofContext = {
+  /** The Solana client's core: it holds the caller-provided FHE encryption key until the first fetch. */
+  readonly fhevm: FhevmBase<undefined, FhevmRuntime, undefined>;
   readonly chain: FhevmSolanaChain;
   readonly aclProgramAddress: Bytes32Hex;
   readonly runtime: WithEncrypt;
@@ -35,7 +38,7 @@ export interface ZkProofBuilder {
   addTypedValue(typedValue: TypedValue): this;
   getBits(): EncryptionBits[];
   build(
-    context: { readonly chain: FhevmChain; readonly runtime: WithEncrypt },
+    context: FhevmBase<FhevmChain, WithEncrypt, OptionalNativeClient>,
     parameters: {
       readonly contractAddress: string;
       readonly userAddress: string;

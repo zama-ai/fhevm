@@ -551,7 +551,7 @@ async fn node_answering(
     });
     server.start().await.unwrap();
     let client = SolanaRpcClient::new(
-        server.base_url().unwrap().clone(),
+        server.base_url().unwrap().clone().into(),
         std::time::Duration::from_secs(1),
         std::num::NonZeroUsize::new(1).unwrap(),
     );
@@ -674,7 +674,7 @@ async fn rpc_throttling_retries_fit_inside_the_configured_deadline() {
     });
     server.start().await.unwrap();
     let client = SolanaRpcClient::new(
-        server.base_url().unwrap().clone(),
+        server.base_url().unwrap().clone().into(),
         std::time::Duration::from_millis(50),
         std::num::NonZeroUsize::new(1).unwrap(),
     );
@@ -688,6 +688,41 @@ async fn rpc_throttling_retries_fit_inside_the_configured_deadline() {
             .expect("SDK retries must fit inside the request deadline")
             .is_err()
     );
+}
+
+/// A failed request's error names its URL, which may hold the API key. What a failed read
+/// records and prints names the node by its redacted URL.
+#[tokio::test]
+async fn a_failed_rpc_read_never_reveals_the_api_key_of_the_url() {
+    let mut server = mocktail::server::MockServer::new_http("unavailable-rpc");
+    server.mock(|when, then| {
+        when.post();
+        then.status(mocktail::StatusCode::SERVICE_UNAVAILABLE);
+    });
+    server.start().await.unwrap();
+    let refused = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let refused_url = format!("http://{}/", refused.local_addr().unwrap());
+    drop(refused);
+
+    for (base, expected) in [
+        (server.base_url().unwrap().to_string(), "503"),
+        (refused_url, "error sending request"),
+    ] {
+        let client = SolanaRpcClient::new(
+            format!("{base}?api-key=SECRET").parse().unwrap(),
+            std::time::Duration::from_secs(1),
+            std::num::NonZeroUsize::new(1).unwrap(),
+        );
+        let error = client.read_accounts(&[pubkey(1)], None).await.unwrap_err();
+        let SnapshotError::Unavailable { reason } = &error else {
+            panic!("expected an unavailable node, got {error:?}");
+        };
+        assert!(reason.contains(expected), "{reason}");
+        assert!(reason.contains("?<redacted>"), "{reason}");
+        for text in [reason.clone(), error.to_string(), format!("{error:?}")] {
+            assert!(!text.contains("SECRET"), "{text}");
+        }
+    }
 }
 
 #[tokio::test]

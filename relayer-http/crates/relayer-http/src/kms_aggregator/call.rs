@@ -115,7 +115,7 @@ impl Caller {
         deadline: Instant,
         attempts: &mut u32,
     ) -> Result<R, CallError> {
-        // Signed once for this node and reused by every attempt: `auth.validity` exceeds the deadline.
+        // One signature per call, reused by every attempt.
         let mut authorization: Option<HeaderValue> = None;
         loop {
             let mut attempt_started = Instant::now();
@@ -128,7 +128,7 @@ impl Caller {
                     Err(failure)
                 }
                 Ok(header) => {
-                    // Signing happens outside the slot: a slow KMS signer never holds one.
+                    // Sign before taking a slot.
                     let Ok(permit) = self.permits.acquire().await else {
                         return Err(CallError::Failed(AttemptError::Transport(
                             "call limiter closed".to_owned(),
@@ -150,7 +150,7 @@ impl Caller {
                 Ok(value) => return Ok(value),
                 Err(failure) => failure,
             };
-            // The node found our header expired (clock drift): the retry carries a fresh one.
+            // Expired at the node: sign again on the next attempt.
             if failure.code() == ErrorCode::AuthExpired {
                 authorization = None;
             }
@@ -176,7 +176,7 @@ impl Caller {
         }
     }
 
-    /// The node's `FhevmSig` header: the cached one, or a fresh signature for its audience.
+    /// The cached header, or a fresh signature for the node's audience.
     async fn authorization(
         &self,
         cached: &mut Option<HeaderValue>,

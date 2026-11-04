@@ -1160,7 +1160,7 @@ pub fn solana_host(rpc: &MockServer, coprocessors: &[&MockServer]) -> SolanaHost
     SolanaHost {
         program_id: PROGRAM_ID,
         reader: SolanaRpcClient::new(
-            rpc.base_url().unwrap().clone(),
+            rpc.base_url().unwrap().clone().into(),
             Duration::from_secs(10),
             NonZeroUsize::MIN,
         ),

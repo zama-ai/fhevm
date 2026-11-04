@@ -54,6 +54,7 @@ kms_aggregator:
     chain_id: 12345                     # the default host chain, the one the connectors read
     protocol_config: "0x0000000000000000000000000000000000000000"   # set by relayer-run.sh from the running stack
     validity: 2m
+    address: "0xAE808c0968fF9557C8E0EAbcf57747c75B490Aa0"   # set by relayer-run.sh from SIGNER_ADDRESS (default: the e2e test key's)
     signer: { type: private_key, value_env: RELAYER_SIGNER_KEY }
   endpoints:
 HDR

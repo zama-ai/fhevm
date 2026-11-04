@@ -119,22 +119,23 @@ pub struct PublicDecryptConfig {
 pub struct EndpointConfig {
     pub name: String,
     pub url: Url,
-    /// The connector's KMS tx-sender address: the `audience` its `FhevmSig` headers are signed for.
+    /// The audience this connector accepts (today its KMS tx-sender address).
     pub audience: Address,
 }
 
-/// `FhevmSig` (RFC-038) signing of every connector call (RFC-033 Stage 1 sender authentication).
+/// `FhevmSig` signing of connector calls (RFC-038).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AuthConfig {
-    /// The Ethereum chain id, part of the EIP-712 domain.
+    /// EIP-712 domain: the Ethereum chain id.
     pub chain_id: u64,
-    /// The `ProtocolConfig` contract address on Ethereum, part of the EIP-712 domain.
+    /// EIP-712 domain: the `ProtocolConfig` address.
     pub protocol_config: Address,
-    /// How long a header stays valid: longer than `call.timeout`, so one header covers every attempt of a call,
-    /// and at most `DEFAULT_MAX_AUTH_VALIDITY` (5 min), the longest the connectors accept by default.
+    /// Signature lifetime: longer than `call.timeout`, at most 5 min.
     #[serde(with = "humantime_serde", default = "default_validity")]
     pub validity: Duration,
+    /// The signing key's address; startup fails on a mismatch.
+    pub address: Address,
     pub signer: SignerConfig,
 }
 
@@ -142,20 +143,16 @@ fn default_validity() -> Duration {
     Duration::from_secs(120)
 }
 
-/// The signing key, as in the relayer's `SignerConfig`. A secret is never in the config, only the name of the env
-/// var holding it.
+/// The signing key; the config names an env var, never holds a secret.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SignerConfig {
-    /// A local private key (local dev and CI), hex-encoded in the env var `value_env`.
+    /// A hex private key in the env var `value_env` (local dev, CI).
     PrivateKey { value_env: String },
     /// An AWS KMS key (deployments).
     AwsKms {
+        /// Key id or ARN; region and credentials come from the AWS environment.
         key_id: String,
-        region: String,
-        /// A custom KMS endpoint (e.g. LocalStack).
-        #[serde(default)]
-        endpoint: Option<String>,
     },
 }
 
@@ -237,16 +234,15 @@ impl KmsAggregatorConfig {
                 "kms_aggregator.auth.validity must be > call.timeout and <= {DEFAULT_MAX_AUTH_VALIDITY:?}"
             ));
         }
+        if auth.address.is_zero() {
+            return fail("kms_aggregator.auth.address must not be the zero address".to_owned());
+        }
         match &auth.signer {
             SignerConfig::PrivateKey { value_env } if value_env.trim().is_empty() => {
                 return fail("kms_aggregator.auth.signer.value_env must not be empty".to_owned());
             }
-            SignerConfig::AwsKms { key_id, region, .. }
-                if key_id.trim().is_empty() || region.trim().is_empty() =>
-            {
-                return fail(
-                    "kms_aggregator.auth.signer.key_id and region must not be empty".to_owned(),
-                );
+            SignerConfig::AwsKms { key_id, .. } if key_id.trim().is_empty() => {
+                return fail("kms_aggregator.auth.signer.key_id must not be empty".to_owned());
             }
             _ => {}
         }
@@ -300,6 +296,7 @@ pub(crate) mod tests {
                 chain_id: 1,
                 protocol_config: Address::repeat_byte(0xc0),
                 validity: default_validity(),
+                address: Address::repeat_byte(0xee),
                 signer: SignerConfig::PrivateKey {
                     value_env: "RELAYER_SIGNER_KEY".to_owned(),
                 },
@@ -413,6 +410,13 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn auth_address_must_not_be_zero() {
+        let mut cfg = valid(1);
+        cfg.auth.address = Address::ZERO;
+        assert!(message(&cfg).contains("kms_aggregator.auth.address must not be the zero address"));
+    }
+
+    #[test]
     fn signer_fields_must_not_be_empty() {
         let mut cfg = valid(1);
         cfg.auth.signer = SignerConfig::PrivateKey {
@@ -420,11 +424,9 @@ pub(crate) mod tests {
         };
         assert!(message(&cfg).contains("auth.signer.value_env must not be empty"));
         cfg.auth.signer = SignerConfig::AwsKms {
-            key_id: "alias/relayer".to_owned(),
-            region: String::new(),
-            endpoint: None,
+            key_id: " ".to_owned(),
         };
-        assert!(message(&cfg).contains("auth.signer.key_id and region must not be empty"));
+        assert!(message(&cfg).contains("auth.signer.key_id must not be empty"));
     }
 
     #[test]
@@ -552,14 +554,11 @@ pub(crate) mod tests {
             }
         );
         let aws: SignerConfig =
-            serde_json::from_str(r#"{"type": "aws_kms", "key_id": "k", "region": "eu-west-1"}"#)
-                .unwrap();
+            serde_json::from_str(r#"{"type": "aws_kms", "key_id": "k"}"#).unwrap();
         assert_eq!(
             aws,
             SignerConfig::AwsKms {
-                key_id: "k".to_owned(),
-                region: "eu-west-1".to_owned(),
-                endpoint: None
+                key_id: "k".to_owned()
             }
         );
         assert!(

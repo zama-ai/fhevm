@@ -191,6 +191,7 @@ describe("config", () => {
           KMS_CONNECTOR_PROXY_BIND_ADDRESS: "0.0.0.0:8443",
           KMS_CONNECTOR_ETHEREUM_CHAIN_ID: "12345",
           KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS: "0xprotocolconfig",
+          KMS_CONNECTOR_ALLOWED_SENDERS: "0xallowedsender",
         },
       },
     );
@@ -200,7 +201,11 @@ describe("config", () => {
     expect(parsed.http.supported_chain_ids).toEqual(["12345", "130140237723663404"]);
     expect(parsed.kms_aggregator.public_decrypt.threshold).toBe(3);
     expect(parsed.kms_aggregator.user_decrypt.threshold).toBe(3);
-    expect(parsed.kms_aggregator.auth).toMatchObject({ chain_id: 12345, protocol_config: "0xprotocolconfig" });
+    expect(parsed.kms_aggregator.auth).toMatchObject({
+      chain_id: 12345,
+      protocol_config: "0xprotocolconfig",
+      address: "0xallowedsender",
+    });
     // The spare (party 5) is listed, so the node swap reaches it without a new config.
     expect(parsed.kms_aggregator.endpoints).toEqual([
       { name: "kms_1", url: "https://kms-connector-proxy:8443", audience: "0xsender1" },

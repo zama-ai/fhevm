@@ -38,16 +38,11 @@ linked_crates() {
         else error("\(ltrimstr($root)) is not a member of solana/Cargo.toml") end'
 }
 
-# The entries of a paths-filter block, one per line, or of `on.pull_request.paths` when no
-# filter is named.
+# The entries of a paths-filter block, one per line.
 filter_entries() {
   local workflow=$workflows/$1 filter=$2
-  if [[ -z $filter ]]; then
-    yq '.on.pull_request.paths[]' "$workflow"
-  else
-    yq '.jobs[].steps[]? | select(.uses // "" | test("paths-filter")) | .with.filters' "$workflow" |
-      yq ".\"$filter\" // [] | .[]"
-  fi
+  yq '.jobs[].steps[]? | select(.uses // "" | test("paths-filter")) | .with.filters' "$workflow" |
+    yq ".\"$filter\" // [] | .[]"
 }
 
 # Whether one of the entries is a `dir/**` glob at or above the path.
@@ -63,7 +58,7 @@ covered() {
 
 failures=0
 # check WORKFLOW FILTER CONSUMER_DIR CARGO TESTS
-#   FILTER: the paths-filter key, or '' for `on.pull_request.paths`.
+#   FILTER: the paths-filter key.
 #   CARGO: whether CONSUMER_DIR is a Cargo workspace whose solana/ crates the filter must name.
 #   TESTS: whether the filter gates a job that compiles the consumer's tests, including
 #     `clippy --all-targets`, which must run when a fixture they load changes.
@@ -71,7 +66,7 @@ check() {
   local workflow=$1 filter=$2 consumer=$3 cargo=$4 tests=$5 entries required="" path
   entries=$(filter_entries "$workflow" "$filter")
   if [[ -z $entries ]]; then
-    echo "$workflow: no filter ${filter:-on.pull_request.paths}" >&2
+    echo "$workflow: no filter $filter" >&2
     failures=$((failures + 1))
     return
   fi
@@ -85,7 +80,7 @@ check() {
   while IFS= read -r path; do
     [[ -n $path ]] || continue
     if ! covered "$path" "$entries"; then
-      echo "$workflow (${filter:-on.pull_request.paths}): misses $path/**, which $consumer uses" >&2
+      echo "$workflow ($filter): misses $path/**, which $consumer uses" >&2
       failures=$((failures + 1))
     fi
   done <<<"$required"
@@ -100,7 +95,7 @@ check relayer-tests.yaml rust-files relayer cargo tests
 check relayer-dependency-analysis.yml rust-files relayer cargo -
 check relayer-http-tests.yml rust-files relayer-http cargo tests
 check relayer-http-dependency-analysis.yml rust-files relayer-http cargo -
-check js-sdk-tests.yml '' sdk/js-sdk - tests
+check js-sdk-tests.yml sdk sdk/js-sdk - tests
 
 if ((failures > 0)); then
   echo "$failures path filter entries are missing." >&2

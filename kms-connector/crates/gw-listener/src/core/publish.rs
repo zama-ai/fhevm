@@ -1,4 +1,4 @@
-use crate::monitoring::metrics::EVENT_RECEIVED_COUNTER;
+use crate::monitoring::metrics::{EVENT_RECEIVED_COUNTER, LAST_POLLED_BLOCK};
 use alloy::{
     primitives::{FixedBytes, U256},
     sol_types::SolValue,
@@ -79,6 +79,10 @@ pub async fn publish_batch(
     }
     update_last_block_polled(&mut *tx, chain, Some(block_number)).await?;
     tx.commit().await?;
+
+    LAST_POLLED_BLOCK
+        .with_label_values(&[chain.as_str()])
+        .set(i64::try_from(block_number).unwrap_or(i64::MAX));
 
     for event_type in stored_events {
         EVENT_RECEIVED_COUNTER

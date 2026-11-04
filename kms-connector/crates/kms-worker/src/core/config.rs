@@ -1,7 +1,7 @@
-use alloy::{primitives::Address, transports::http::reqwest::Url};
+use alloy::primitives::Address;
 use connector_utils::{
     config::{
-        AwsKmsConfig, ContractConfig, DeserializeConfig, TestingPrivateKey,
+        AwsKmsConfig, ContractConfig, DatabaseUrl, DeserializeConfig, RpcUrl, TestingPrivateKey,
         contract::{
             default_decryption_contract_config, default_gateway_config_contract_config,
             default_kms_generation_contract_config, default_protocol_config_contract_config,
@@ -9,7 +9,8 @@ use connector_utils::{
             deserialize_kms_generation_contract_config,
             deserialize_protocol_config_contract_config,
         },
-        default_database_pool_size, deserialize_non_zero_duration,
+        default_database_pool_size, default_max_handles_per_decryption,
+        deserialize_non_zero_duration,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
     tasks::default_task_limit,
@@ -17,14 +18,14 @@ use connector_utils::{
 use serde::{Deserialize, Deserializer};
 use solana_pubkey::Pubkey;
 use std::{net::SocketAddr, num::NonZeroUsize, str::FromStr, time::Duration};
+use url::Url;
 use zama_solana_acl::host_chain::{EVM_CHAIN_TYPE, SOLANA_CHAIN_TYPE, chain_type_byte};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(serde::Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
-    pub database_url: String,
+    pub database_url: DatabaseUrl,
     /// The size of the database connection pool.
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
@@ -33,21 +34,19 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_db_fast_event_polling"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub db_fast_event_polling: Duration,
     /// The timeout for polling the database for long events (prep keygen for ex).
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_db_long_event_polling"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub db_long_event_polling: Duration,
     /// The limit number of events to fetch from the database.
     #[serde(default = "default_events_batch_size")]
     pub events_batch_size: u8,
 
     /// The Gateway RPC endpoint.
-    pub gateway_url: Url,
+    pub gateway_url: RpcUrl,
     /// The Chain ID of the Gateway.
     pub gateway_chain_id: u64,
     /// The `Decryption` contract configuration (on Gateway).
@@ -58,7 +57,7 @@ pub struct Config {
     pub gateway_config_contract: ContractConfig,
 
     /// The Ethereum RPC endpoint.
-    pub ethereum_url: Url,
+    pub ethereum_url: RpcUrl,
     /// The Chain ID of the Ethereum chain.
     pub ethereum_chain_id: u64,
     /// The `KMSGeneration` contract configuration (on Ethereum).
@@ -78,7 +77,6 @@ pub struct Config {
 
     /// The Host Chains configuration.
     #[serde(deserialize_with = "deserialize_host_chains")]
-    #[cfg_attr(test, serde(skip_serializing))]
     pub host_chains: Vec<HostChainConfig>,
 
     /// The KMS Core endpoints.
@@ -87,9 +85,30 @@ pub struct Config {
     /// Number of retries for GRPC requests sent to the KMS Core.
     #[serde(default = "default_grpc_request_retries")]
     pub grpc_request_retries: u8,
+    /// Timeout to establish the connection to a KMS Core shard.
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_kms_connect_timeout"
+    )]
+    pub kms_connect_timeout: Duration,
+    /// Interval between HTTP/2 keepalive pings sent to the KMS Core, even when the channel is idle.
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_kms_keep_alive_interval"
+    )]
+    pub kms_keep_alive_interval: Duration,
+    /// Time to wait for a keepalive ping acknowledgement before closing the KMS Core connection.
+    #[serde(
+        deserialize_with = "deserialize_non_zero_duration",
+        default = "default_kms_keep_alive_timeout"
+    )]
+    pub kms_keep_alive_timeout: Duration,
     /// The maximum number of decryption attempts.
     #[serde(default = "default_max_decryption_attempts")]
     pub max_decryption_attempts: u16,
+    /// The maximum number of handles a single decryption request can contain.
+    #[serde(default = "default_max_handles_per_decryption")]
+    pub max_handles_per_decryption: NonZeroUsize,
 
     /// Number of attempts for S3 ciphertext retrieval.
     #[serde(default = "default_s3_ciphertext_retrieval_attempts")]
@@ -99,21 +118,18 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_s3_connect_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_connect_timeout: Duration,
     /// Timeout of a single attestation `HEAD` on a Coprocessor bucket.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_s3_head_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_head_timeout: Duration,
     /// Timeout of a single ciphertext `GET`.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_s3_get_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub s3_get_timeout: Duration,
     /// Ceiling on the attestation `HEAD`s in flight on a single Coprocessor bucket, across all
     /// requests.
@@ -130,7 +146,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_copro_registry_refresh"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub copro_registry_refresh: Duration,
 
     /// Ceiling on the calls a single host chain endpoint may have in flight, across all requests.
@@ -141,7 +156,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_host_rpc_call_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub host_rpc_call_timeout: Duration,
 
     /// Gas cap for the host-chain `IERC1271.isValidSignature` static call (RFC-012).
@@ -163,7 +177,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_healthcheck_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
@@ -173,7 +186,7 @@ pub struct Config {
 #[serde(try_from = "HostChainEntry")]
 pub struct HostChainConfig {
     /// The host chain RPC endpoint.
-    pub url: Url,
+    pub url: RpcUrl,
     /// The chain id of the host chain.
     pub chain_id: u64,
     /// What the connector verifies decryptions against on this chain.
@@ -212,7 +225,7 @@ pub struct ProofServer {
 /// kind its chain id names.
 #[derive(Deserialize)]
 struct HostChainEntry {
-    url: Url,
+    url: RpcUrl,
     #[serde(alias = "chainId")]
     chain_id: u64,
     #[serde(default, alias = "aclAddress")]
@@ -353,6 +366,18 @@ fn default_grpc_request_retries() -> u8 {
     3
 }
 
+fn default_kms_connect_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
+fn default_kms_keep_alive_interval() -> Duration {
+    Duration::from_secs(10)
+}
+
+fn default_kms_keep_alive_timeout() -> Duration {
+    Duration::from_secs(5)
+}
+
 fn default_max_decryption_attempts() -> u16 {
     20
 }
@@ -409,16 +434,18 @@ impl DeserializeConfig for Config {}
 impl Default for Config {
     fn default() -> Self {
         Self {
-            database_url: "postgres://postgres:postgres@localhost/kms-connector".to_string(),
+            database_url: "postgres://postgres:postgres@localhost/kms-connector"
+                .parse()
+                .unwrap(),
             database_pool_size: default_database_pool_size(),
             db_fast_event_polling: default_db_fast_event_polling(),
             db_long_event_polling: default_db_long_event_polling(),
             events_batch_size: default_events_batch_size(),
-            gateway_url: Url::from_str("http://localhost:8545").unwrap(),
+            gateway_url: "http://localhost:8545".parse().unwrap(),
             gateway_chain_id: 54321,
             decryption_contract: default_decryption_contract_config(),
             gateway_config_contract: default_gateway_config_contract_config(),
-            ethereum_url: Url::from_str("http://localhost:8545").unwrap(),
+            ethereum_url: "http://localhost:8545".parse().unwrap(),
             ethereum_chain_id: 11155111, // Sepolia
             kms_generation_contract: default_kms_generation_contract_config(),
             protocol_config_contract: default_protocol_config_contract_config(),
@@ -427,7 +454,7 @@ impl Default for Config {
             ),
             aws_kms_config: None,
             host_chains: vec![HostChainConfig {
-                url: Url::from_str("http://localhost:8545").unwrap(),
+                url: "http://localhost:8545".parse().unwrap(),
                 chain_id: 12345,
                 host: HostSettings::Evm {
                     acl_address: Address::default(),
@@ -435,7 +462,11 @@ impl Default for Config {
             }],
             kms_core_endpoints: vec!["http://localhost:50051".to_string()],
             grpc_request_retries: default_grpc_request_retries(),
+            kms_connect_timeout: default_kms_connect_timeout(),
+            kms_keep_alive_interval: default_kms_keep_alive_interval(),
+            kms_keep_alive_timeout: default_kms_keep_alive_timeout(),
             max_decryption_attempts: default_max_decryption_attempts(),
+            max_handles_per_decryption: default_max_handles_per_decryption(),
             s3_ciphertext_retrieval_attempts: default_s3_ciphertext_retrieval_attempts(),
             s3_connect_timeout: default_s3_connect_timeout(),
             s3_head_timeout: default_s3_head_timeout(),
@@ -478,7 +509,11 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_HOST_CHAINS");
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES");
+            env::remove_var("KMS_CONNECTOR_KMS_CONNECT_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL");
+            env::remove_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS");
+            env::remove_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION");
             env::remove_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS");
             env::remove_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_S3_HEAD_TIMEOUT");
@@ -551,7 +586,11 @@ mod tests {
                 "http://localhost:50053,http://localhost:50054",
             );
             env::set_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES", "5");
+            env::set_var("KMS_CONNECTOR_KMS_CONNECT_TIMEOUT", "7s");
+            env::set_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL", "20s");
+            env::set_var("KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT", "8s");
             env::set_var("KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS", "300");
+            env::set_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION", "10");
             env::set_var("KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_ATTEMPTS", "5");
             env::set_var("KMS_CONNECTOR_S3_CONNECT_TIMEOUT", "4s");
             env::set_var("KMS_CONNECTOR_S3_HEAD_TIMEOUT", "6s");
@@ -570,14 +609,11 @@ mod tests {
 
         // Verify values
         assert_eq!(config.events_batch_size, 15);
-        assert_eq!(
-            config.gateway_url,
-            Url::from_str("http://localhost:9545").unwrap()
-        );
+        assert_eq!(config.gateway_url, "http://localhost:9545".parse().unwrap());
         assert_eq!(config.gateway_chain_id, 31888);
         assert_eq!(
             config.ethereum_url,
-            Url::from_str("http://localhost:9546").unwrap()
+            "http://localhost:9546".parse().unwrap()
         );
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(
@@ -599,7 +635,7 @@ mod tests {
         assert_eq!(
             config.host_chains,
             vec![HostChainConfig {
-                url: Url::from_str("http://localhost:9545").unwrap(),
+                url: "http://localhost:9545".parse().unwrap(),
                 chain_id: 31888,
                 host: HostSettings::Evm {
                     acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
@@ -612,7 +648,11 @@ mod tests {
             vec!["http://localhost:50053", "http://localhost:50054"]
         );
         assert_eq!(config.grpc_request_retries, 5);
+        assert_eq!(config.kms_connect_timeout.as_secs(), 7);
+        assert_eq!(config.kms_keep_alive_interval.as_secs(), 20);
+        assert_eq!(config.kms_keep_alive_timeout.as_secs(), 8);
         assert_eq!(config.max_decryption_attempts, 300);
+        assert_eq!(config.max_handles_per_decryption.get(), 10);
         assert_eq!(config.s3_ciphertext_retrieval_attempts.get(), 5);
         assert_eq!(config.s3_connect_timeout.as_secs(), 4);
         assert_eq!(config.s3_head_timeout.as_secs(), 6);
@@ -636,6 +676,7 @@ mod tests {
             "KMS_CONNECTOR_S3_MAX_CONCURRENT_GETS",
             "KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE",
             "KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS",
+            "KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION",
         ] {
             cleanup_env_vars();
             unsafe { env::set_var(ceiling, "0") }
@@ -706,7 +747,7 @@ mod tests {
         assert_eq!(
             config.host_chains,
             vec![HostChainConfig {
-                url: Url::from_str("http://localhost:9545").unwrap(),
+                url: "http://localhost:9545".parse().unwrap(),
                 chain_id: 31888,
                 host: HostSettings::Evm {
                     acl_address: Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3")
@@ -745,7 +786,7 @@ mod tests {
         assert_eq!(
             config.host_chains,
             vec![HostChainConfig {
-                url: Url::from_str("http://localhost:8899").unwrap(),
+                url: "http://localhost:8899".parse().unwrap(),
                 // Type byte 0x01, cluster tag 31888.
                 chain_id: solana_host_chain_id(31888),
                 host: HostSettings::Solana(SolanaHostSettings {

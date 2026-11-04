@@ -13,7 +13,9 @@ import {
   parseIsoTimestampToEpochSeconds,
   readChainTip,
 } from './blockWindow';
+import { assertContractMatchesVersionPrefix } from './contractVersion';
 import { ENVIRONMENTS, SUPPORTED_ENVIRONMENTS } from './environments';
+import { formatError } from './formatError';
 import { getRequiredEnvVar } from './loadVariables';
 
 // Pinned inline so the util needs no typechain compile and encodes from tests without hre. Keep in sync with IProtocolConfig.sol.
@@ -22,7 +24,11 @@ export const PROPOSE_UPGRADE_ABI = [
 ];
 
 export interface GatewayConfig {
+  // Short name for reports, e.g. 'gateway-testnet'; shown in place of the RPC URL.
+  label: string;
   rpcUrl: string;
+  // Chain id the RPC must report. Unset only for the local stack, which skips the check.
+  chainId?: number;
 }
 
 export interface CoprocessorUpgradeInputs {
@@ -32,12 +38,16 @@ export interface CoprocessorUpgradeInputs {
   bufferSeconds: number;
   hostChains: ChainConfig[];
   gateway: GatewayConfig;
+  // Host chain holding the canonical ProtocolConfig.
+  canonicalChainId: number;
   proposalId: bigint;
   softwareVersion: string;
 }
 
 export interface HostReport {
   chainId: number;
+  // Short name for reports, e.g. 'sepolia'; shown in place of the RPC URL.
+  label: string;
   rpcUrl: string;
   result: BlockWindowResult;
   bufferOk: boolean;
@@ -74,31 +84,65 @@ function resolveEnvRpc(envName: string, label: string, defaultRpcUrl?: string): 
   throw new Error(`env var ${envName} (RPC URL for ${label}) is not set`);
 }
 
-export function resolveEnvironment(name: string): { chains: ChainConfig[]; gateway: GatewayConfig } {
+// One LOCAL_HOST_CHAINS entry: a ChainConfig whose label and finality floor the harness may leave out.
+type LocalHostChainJson = Omit<ChainConfig, 'label' | 'minWindowSeconds'> & {
+  label?: string;
+  minWindowSeconds?: number;
+};
+
+export function resolveEnvironment(name: string): {
+  canonicalChainId: number;
+  chains: ChainConfig[];
+  gateway: GatewayConfig;
+} {
   const def = ENVIRONMENTS[name];
   if (!def) {
     throw new Error(`--environment must be one of: ${SUPPORTED_ENVIRONMENTS.join(', ')}`);
   }
-  // Local e2e chains are scenario-defined (1..N), so the test passes them as JSON.
-  const chains =
-    name === 'local' && process.env.LOCAL_HOST_CHAINS
-      ? (JSON.parse(process.env.LOCAL_HOST_CHAINS) as ChainConfig[])
-      : def.chains.map((c) => ({
-          chainId: c.chainId,
-          rpcUrl: resolveEnvRpc(c.rpcUrlEnv, c.label, c.defaultRpcUrl),
-          fallbackBlockTimeSeconds: c.fallbackBlockTimeSeconds,
-        }));
-  const gateway = { rpcUrl: resolveEnvRpc(def.gateway.rpcUrlEnv, def.gateway.label, def.gateway.defaultRpcUrl) };
-  return { chains, gateway };
+  // Local e2e chains are scenario-defined (1..N), so the test passes them as JSON, ProtocolConfig chain first.
+  // They have no label or finality floor unless the harness sets one.
+  const scenarioChains = name === 'local' ? process.env.LOCAL_HOST_CHAINS : undefined;
+  const chains: ChainConfig[] = scenarioChains
+    ? (JSON.parse(scenarioChains) as LocalHostChainJson[]).map((c) => ({
+        ...c,
+        label: c.label ?? `chain-${c.chainId}`,
+        minWindowSeconds: c.minWindowSeconds ?? 0,
+      }))
+    : def.chains.map((c) => ({
+        chainId: c.chainId,
+        label: c.label,
+        rpcUrl: resolveEnvRpc(c.rpcUrlEnv, c.label, c.defaultRpcUrl),
+        fallbackBlockTimeSeconds: c.fallbackBlockTimeSeconds,
+        minWindowSeconds: c.minWindowSeconds,
+      }));
+  if (chains.length === 0) {
+    throw new Error('LOCAL_HOST_CHAINS is empty');
+  }
+  const canonicalChainId = scenarioChains ? chains[0].chainId : def.canonicalChainId;
+  const gateway: GatewayConfig = {
+    label: def.gateway.label,
+    rpcUrl: resolveEnvRpc(def.gateway.rpcUrlEnv, def.gateway.label, def.gateway.defaultRpcUrl),
+    chainId: def.gateway.chainId,
+  };
+  return { canonicalChainId, chains, gateway };
+}
+
+// Release tags the coprocessor's version parser reads as intended: vMAJOR.MINOR.PATCH, optional pre-release suffix.
+// Anything else parses as zeros on the coprocessor and fails the cutover gate after the DAO vote.
+const RELEASE_TAG = /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/;
+
+export function isReleaseTag(version: string): boolean {
+  return RELEASE_TAG.test(version);
 }
 
 // Validate + parse raw params into typed inputs, resolving env RPC URLs. Throws on bad/missing input.
 export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams): CoprocessorUpgradeInputs {
-  const { chains: hostChains, gateway } = resolveEnvironment(raw.environment);
+  const { canonicalChainId, chains: hostChains, gateway } = resolveEnvironment(raw.environment);
 
   const startEpochSeconds = parseIsoTimestampToEpochSeconds(raw.startTime);
   const durationSeconds = parseDurationToSeconds(raw.duration);
   const bufferSeconds = parseDurationToSeconds(raw.buffer);
+  assertWindowCoversFinality(durationSeconds, hostChains);
 
   let proposalId: bigint;
   try {
@@ -110,8 +154,11 @@ export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams):
     throw new Error('--proposal-id must be > 0 (contract rejects 0)');
   }
 
-  if (raw.softwareVersion.trim() === '') {
-    throw new Error('--software-version is required');
+  const softwareVersion = raw.softwareVersion.trim();
+  if (!isReleaseTag(softwareVersion)) {
+    throw new Error(
+      `--software-version "${raw.softwareVersion}" is not a release tag (expected vMAJOR.MINOR.PATCH, e.g. v0.15.0)`,
+    );
   }
 
   return {
@@ -121,27 +168,77 @@ export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams):
     bufferSeconds,
     hostChains,
     gateway,
+    canonicalChainId,
     proposalId,
-    softwareVersion: raw.softwareVersion,
+    softwareVersion,
   };
+}
+
+// A window shorter than a chain's floor ends before the chain finalizes startBlock, so the dry run
+// never starts and the attempt rolls back.
+export function assertWindowCoversFinality(durationSeconds: number, chains: ChainConfig[]): void {
+  for (const chain of chains) {
+    const floor = chain.minWindowSeconds;
+    if (durationSeconds < floor) {
+      throw new Error(
+        `--duration ${durationSeconds}s is below the minimum window of chain ${chain.chainId} (${floor}s): ` +
+          'the dry run cannot start before the chain finalizes startBlock',
+      );
+    }
+  }
+}
+
+function chainLabel(chain: ChainConfig): string {
+  return `${chain.label} (chain ${chain.chainId})`;
+}
+
+export type NetworkReader = Pick<JsonRpcProvider, 'getNetwork'>;
+
+// The registry names the chain id and the operator names the RPC URL: refuse a URL that serves another chain.
+export async function assertRpcChainId(provider: NetworkReader, expectedChainId: number, label: string): Promise<void> {
+  let reported: bigint;
+  try {
+    reported = (await provider.getNetwork()).chainId;
+  } catch (err) {
+    throw new Error(`RPC for ${label} did not answer eth_chainId (${formatError(err)})`);
+  }
+  if (reported !== BigInt(expectedChainId)) {
+    throw new Error(
+      `RPC for ${label} reports chain id ${reported}, expected ${expectedChainId}; check its RPC URL env var`,
+    );
+  }
+}
+
+// RPC URLs can carry an API key in the path or query, and the runbook has the operator copy this output.
+export function redactRpcUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return '<unparsable url>';
+  }
 }
 
 async function gatherWindows(
   inputs: CoprocessorUpgradeInputs,
 ): Promise<{ host: HostReport[]; gateway: GatewayReport }> {
+  const nowEpochSeconds = Math.floor(Date.now() / 1000);
   const host: HostReport[] = [];
   for (const chain of inputs.hostChains) {
     const provider = new JsonRpcProvider(chain.rpcUrl);
     try {
+      await assertRpcChainId(provider, chain.chainId, chainLabel(chain));
       const result = await computeBlockWindow({
         provider,
         startEpochSeconds: inputs.startEpochSeconds,
         durationSeconds: inputs.durationSeconds,
         bufferSeconds: inputs.bufferSeconds,
         fallbackBlockTimeSeconds: chain.fallbackBlockTimeSeconds,
+        nowEpochSeconds,
       });
       host.push({
         chainId: chain.chainId,
+        label: chain.label,
         rpcUrl: chain.rpcUrl,
         result,
         bufferOk: bufferSatisfied(result, inputs.bufferSeconds),
@@ -155,9 +252,16 @@ async function gatherWindows(
   const gwProvider = new JsonRpcProvider(inputs.gateway.rpcUrl);
   let gateway: GatewayReport;
   try {
+    if (inputs.gateway.chainId !== undefined) {
+      await assertRpcChainId(gwProvider, inputs.gateway.chainId, inputs.gateway.label);
+    } else {
+      console.warn('WARN: gateway chain id not checked (local stack).');
+    }
     const tip = await readChainTip(gwProvider);
     if (tip.tipBlock === 0) {
-      throw new Error(`Gateway tip is block 0 (contract rejects gwStartBlock=0); check ${inputs.gateway.rpcUrl}`);
+      throw new Error(
+        `Gateway tip is block 0 (contract rejects gwStartBlock=0); check ${redactRpcUrl(inputs.gateway.rpcUrl)}`,
+      );
     }
     gateway = { rpcUrl: inputs.gateway.rpcUrl, ...tip, startBlock: tip.tipBlock };
   } finally {
@@ -207,10 +311,27 @@ export async function executeCoprocessorUpgradeProposal(
   proposal: CoprocessorUpgradeProposal,
   target: string,
 ): Promise<string> {
+  await assertBroadcastTarget(hre, proposal.inputs, target);
   const deployer = new hre.ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(hre.ethers.provider);
   const tx = await deployer.sendTransaction({ to: target, data: proposal.calldata });
   await tx.wait();
   return tx.hash;
+}
+
+// --network and --environment are independent flags: refuse to broadcast unless the connected chain is the
+// environment's ProtocolConfig chain and the target answers as a ProtocolConfig.
+export async function assertBroadcastTarget(
+  hre: HardhatRuntimeEnvironment,
+  inputs: CoprocessorUpgradeInputs,
+  target: string,
+): Promise<void> {
+  const connected = (await hre.ethers.provider.getNetwork()).chainId;
+  if (connected !== BigInt(inputs.canonicalChainId)) {
+    throw new Error(
+      `--network is chain ${connected} but the ${inputs.environment} ProtocolConfig lives on chain ${inputs.canonicalChainId}; refusing to broadcast`,
+    );
+  }
+  await assertContractMatchesVersionPrefix(hre, target, 'ProtocolConfig');
 }
 
 function isoUtc(epochSeconds: number): string {
@@ -240,7 +361,7 @@ function bufferShortageHint(leadSeconds: number, bufferSeconds: number): string 
   return `lead ${formatDuration(lead)}, need ${formatDuration(bufferSeconds)}, short by ${formatDuration(shortBy)}`;
 }
 
-export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProposal, target?: string): void {
+export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProposal, target: string): void {
   const { inputs } = proposal;
   console.log('# proposeCoprocessorUpgrade — computed block windows');
   console.log('');
@@ -248,7 +369,9 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
   console.log(`Proposal id        : ${inputs.proposalId}`);
   console.log(`Software version   : ${inputs.softwareVersion}`);
   console.log(
-    `Evaluation window  : ${isoUtc(inputs.startEpochSeconds)} → ${isoUtc(inputs.startEpochSeconds + inputs.durationSeconds)} (${inputs.durationSeconds}s)`,
+    `Evaluation window  : ${isoUtc(inputs.startEpochSeconds)} → ${isoUtc(
+      inputs.startEpochSeconds + inputs.durationSeconds,
+    )} (${inputs.durationSeconds}s)`,
   );
   console.log(`DAO buffer         : ${inputs.bufferSeconds}s`);
   console.log(
@@ -257,14 +380,18 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
   console.log('');
   console.log('## Host chains');
   for (const report of proposal.host) {
-    console.log(`  chainId=${report.chainId}`);
-    console.log(`    rpc            : ${report.rpcUrl}`);
+    console.log(`  chainId=${report.chainId} (${report.label})`);
+    console.log(`    rpc            : ${redactRpcUrl(report.rpcUrl)}`);
     console.log(
-      `    tip            : block ${report.result.currentTipBlock} @ ${isoUtc(report.result.currentTipTimestamp)}`,
+      `    tip            : block ${report.result.currentTipBlock} @ ${isoUtc(report.result.currentTipTimestamp)} (${
+        report.result.tipAgeSeconds
+      }s behind the clock)`,
     );
     console.log(`    block time     : ${formatBlockTime(report.result.effectiveBlockTimeSeconds)}`);
     console.log(
-      `    startBlock     : ${report.result.startBlock} (estimated ${isoUtc(report.result.startBlockEstimatedTimestamp)}, skew ${report.result.startSkewSeconds >= 0 ? '+' : ''}${report.result.startSkewSeconds}s)`,
+      `    startBlock     : ${report.result.startBlock} (estimated ${isoUtc(
+        report.result.startBlockEstimatedTimestamp,
+      )}, skew ${report.result.startSkewSeconds >= 0 ? '+' : ''}${report.result.startSkewSeconds}s)`,
     );
     console.log(
       `    endBlock       : ${report.result.endBlock} (estimated ${isoUtc(report.result.endBlockEstimatedTimestamp)})`,
@@ -283,7 +410,7 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
   }
   console.log('');
   console.log('## Gateway');
-  console.log(`  rpc              : ${proposal.gateway.rpcUrl}`);
+  console.log(`  rpc              : ${inputs.gateway.label} ${redactRpcUrl(proposal.gateway.rpcUrl)}`);
   console.log(`  tip              : block ${proposal.gateway.tipBlock} @ ${isoUtc(proposal.gateway.tipTimestamp)}`);
   console.log(
     `  gwStartBlock     : ${proposal.gateway.startBlock} (pinned to the tip: the Gateway mints blocks on demand, a projected block may never exist)`,
@@ -304,9 +431,6 @@ export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProp
   }
   console.log('');
   console.log('## Aragon proposal action');
-  console.log(
-    '  target:',
-    target ?? '<unresolved — set PROTOCOL_CONFIG_CONTRACT_ADDRESS or pass --use-internal-proxy-address>',
-  );
+  console.log('  target:', target);
   console.log('  calldata:', proposal.calldata);
 }

@@ -19,6 +19,7 @@ import {
   findPublishedAncestorIndex,
   mustVerifyPublishedImages,
   presetBundle,
+  publishedOptionalKeysAt,
   resolveMissingRepoTagFallbacks,
   selectSupportedMainSha,
   shaRuntimeCompatFloor,
@@ -96,7 +97,7 @@ describe("resolve", () => {
     expect(pinned.env.CONNECTOR_ENDPOINT_VERSION).toBe("abcdef0");
     expect(pinned.env.CONNECTOR_PROXY_VERSION).toBe("abcdef0");
 
-    // Empty published-key set (what `--target sha` passes): optional images are omitted.
+    // Empty published-key set (unverified `--target sha`, GitHub unreachable): optional images are omitted.
     const shaBundle = presetBundle("sha", "abcdef0", "sha-abcdef0.json", [], new Set());
     expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in shaBundle.env).toBe(false);
     expect("COPROCESSOR_UPGRADE_CONTROLLER_VERSION" in shaBundle.env).toBe(false);
@@ -113,6 +114,29 @@ describe("resolve", () => {
     expect("COPROCESSOR_UPGRADE_CONTROLLER_VERSION" in bundle.env).toBe(false);
     // Non-optional repo images are still always pinned.
     expect(bundle.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
+  });
+
+  test("pins connector HTTP images for a sha only when published at that sha", () => {
+    const tagsMap = (endpointTags: string[]) => ({
+      COPROCESSOR_HOST_LISTENER_VERSION: new Set(["abcdef0"]),
+      CONNECTOR_ENDPOINT_VERSION: new Set(endpointTags),
+      CONNECTOR_PROXY_VERSION: new Set(endpointTags),
+    });
+
+    const published = presetBundle(
+      "sha", "abcdef0", "sha-abcdef0.json", [], publishedOptionalKeysAt(tagsMap(["abcdef0"]), "abcdef0"),
+    );
+    expect(published.env.CONNECTOR_ENDPOINT_VERSION).toBe("abcdef0");
+    expect(published.env.CONNECTOR_PROXY_VERSION).toBe("abcdef0");
+    expect("COPROCESSOR_CONSENSUS_DETECTOR_VERSION" in published.env).toBe(false);
+
+    // Published only at an ancestor: stays absent, so the compat layer gates the services out.
+    const unpublished = presetBundle(
+      "sha", "abcdef0", "sha-abcdef0.json", [], publishedOptionalKeysAt(tagsMap(["0000000"]), "abcdef0"),
+    );
+    expect("CONNECTOR_ENDPOINT_VERSION" in unpublished.env).toBe(false);
+    expect("CONNECTOR_PROXY_VERSION" in unpublished.env).toBe(false);
+    expect(unpublished.env.COPROCESSOR_HOST_LISTENER_VERSION).toBe("abcdef0");
   });
 
   test("honors an explicit env pin for an omitted optional image", () => {

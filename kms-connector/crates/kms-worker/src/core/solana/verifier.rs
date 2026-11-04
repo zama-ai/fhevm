@@ -120,15 +120,8 @@ impl SolanaDecryptionVerifier {
                 e,
             )
         })?;
-        let Some(context_id) = extra_data.context_id else {
-            return Err(RequestCheckError::irrecoverable(
-                RequestCheckKind::KmsContext,
-                ErrorCode::Unprocessable,
-                anyhow!("A Solana decryption request names no KMS context"),
-            ));
-        };
         self.members
-            .check(context_id, host.proofs.tx_sender())
+            .check(extra_data.context_id, host.proofs.tx_sender())
             .await
     }
 

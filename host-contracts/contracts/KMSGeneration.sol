@@ -563,12 +563,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function getCrsParamsType(uint256 crsId) external view virtual returns (ParamsType) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
-        if (!$.isRequestDone[crsId]) {
-            revert CrsNotGenerated(crsId);
-        }
-        if ($.consensusDigest[crsId] == bytes32(0)) {
-            revert CrsAborted(crsId);
-        }
+        _checkGeneratedCrsId(crsId);
 
         return $.requestParamsType[crsId];
     }
@@ -653,10 +648,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
 
         _checkGeneratedKeyId(keyId);
 
-        uint256 materialRequestId = $.requestIdByExistingKeyId[keyId];
-        if (materialRequestId == 0 || $.consensusDigest[materialRequestId] == bytes32(0)) {
-            materialRequestId = keyId;
-        }
+        uint256 materialRequestId = _migrationOrKeygenRequestId(keyId);
         bytes32 digest = $.consensusDigest[materialRequestId];
         address[] memory consensusTxSenders = $.consensusTxSenderAddresses[materialRequestId][digest];
         uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[materialRequestId]);
@@ -671,13 +663,19 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     function getKeyInfo(uint256 keyId) external view virtual returns (KeyInfo memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         _checkGeneratedKeyId(keyId);
-        uint256 prepKeygenId = $.keygenIdPairs[keyId];
+        uint256 materialRequestId = _migrationOrKeygenRequestId(keyId);
+        uint256 prepKeygenId = $.keygenIdPairs[materialRequestId];
+        KeyDigest[] memory keyDigests = $.keyDigests[keyId];
+        bool isMigrated = materialRequestId != keyId;
+        if (isMigrated) {
+            keyDigests = _withoutServerDigests(keyDigests);
+        }
         return
             KeyInfo({
                 prepKeygenId: prepKeygenId,
                 keyId: keyId,
                 paramsType: $.requestParamsType[prepKeygenId],
-                keyDigests: $.keyDigests[keyId]
+                keyDigests: keyDigests
             });
     }
 
@@ -686,13 +684,10 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      */
     function getCrsMaterials(uint256 crsId) external view virtual returns (string[] memory, bytes memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-        if (!$.isRequestDone[crsId]) {
-            revert CrsNotGenerated(crsId);
-        }
+
+        _checkGeneratedCrsId(crsId);
+
         bytes32 digest = $.consensusDigest[crsId];
-        if (digest == bytes32(0)) {
-            revert CrsAborted(crsId);
-        }
         address[] memory consensusTxSenders = $.consensusTxSenderAddresses[crsId][digest];
 
         uint256 contextId = _extractContextIdFromExtraData($.requestExtraData[crsId]);
@@ -754,6 +749,20 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         }
         if ($.consensusDigest[keyId] == bytes32(0)) {
             revert KeyAborted(keyId);
+        }
+    }
+
+    function _checkGeneratedCrsId(uint256 crsId) internal view virtual {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+
+        if (crsId > $.crsCounter || crsId <= CRS_COUNTER_BASE) {
+            revert CrsNotGenerated(crsId);
+        }
+        if (!$.isRequestDone[crsId]) {
+            revert CrsNotGenerated(crsId);
+        }
+        if ($.consensusDigest[crsId] == bytes32(0)) {
+            revert CrsAborted(crsId);
         }
     }
 
@@ -827,6 +836,43 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     ) internal view virtual returns (bool) {
         uint256 consensusThreshold = PROTOCOL_CONFIG.getKmsGenThresholdForContext(contextId);
         return kmsCounter >= consensusThreshold;
+    }
+
+    /**
+     * @notice Returns the key's compressed key migration request if it reached consensus, otherwise
+     * the key ID itself, which is also its keygen request ID.
+     * @param keyId The ID of the key.
+     * @return The migration request ID or the key ID.
+     */
+    function _migrationOrKeygenRequestId(uint256 keyId) internal view virtual returns (uint256) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        uint256 migrationRequestId = $.requestIdByExistingKeyId[keyId];
+        if (migrationRequestId == 0 || $.consensusDigest[migrationRequestId] == bytes32(0)) {
+            return keyId;
+        }
+        return migrationRequestId;
+    }
+
+    /**
+     * @notice Returns the given key digests without their `Server` entries.
+     * @param keyDigests The key digests.
+     * @return The key digests without `Server` entries.
+     */
+    function _withoutServerDigests(KeyDigest[] memory keyDigests) internal pure virtual returns (KeyDigest[] memory) {
+        uint256 serverDigestCount = 0;
+        for (uint256 i = 0; i < keyDigests.length; i++) {
+            if (keyDigests[i].keyType == KeyType.Server) {
+                serverDigestCount++;
+            }
+        }
+        KeyDigest[] memory filteredDigests = new KeyDigest[](keyDigests.length - serverDigestCount);
+        uint256 j = 0;
+        for (uint256 i = 0; i < keyDigests.length; i++) {
+            if (keyDigests[i].keyType != KeyType.Server) {
+                filteredDigests[j++] = keyDigests[i];
+            }
+        }
+        return filteredDigests;
     }
 
     /**

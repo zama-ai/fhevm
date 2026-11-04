@@ -1,4 +1,4 @@
-import { clearSolanaEncryptionKeyCache, createFhevmEncryptClient } from "@fhevm/sdk/solana";
+import type { createFhevmEncryptClient } from "@fhevm/sdk/solana";
 
 import { demoApiFetch } from "./demoAuthorization";
 import type { DemoConfig } from "./demoSession";
@@ -70,7 +70,6 @@ export const loadDemoEncryptionKey = async (config: DemoConfig): Promise<Encrypt
       ? (response as { readonly fingerprint: string }).fingerprint
       : "";
   if (fingerprint.length === 0) throw new Error("demo encryption key response has no fingerprint");
-  clearSolanaEncryptionKeyCache(config.relayerUrl);
   const key = parseEncryptionKeyResponse(response, config);
   cachedEncryptionKey = { fingerprint, key };
   return key;

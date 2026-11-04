@@ -14,6 +14,7 @@ import { fetchUserDecrypt } from './fetchUserDecrypt.js';
 import { fetchPublicDecrypt } from './fetchPublicDecrypt.js';
 import { fetchDelegatedUserDecrypt } from './fetchDelegatedUserDecryptV1.js';
 import { fetchCoprocessorSignatures } from './fetchCoprocessorSignatures.js';
+import { fetchPadShares } from './fetchPadShares.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // relayerModule
@@ -22,6 +23,7 @@ import { fetchCoprocessorSignatures } from './fetchCoprocessorSignatures.js';
 export const relayerModule: RelayerModuleFactory = () => {
   return Object.freeze({
     relayer: Object.freeze({
+      skipsFheEncryptionKeyVerification: true,
       fetchFheEncryptionKeySource: (
         _relayerClient: RelayerClient,
         _parameters: FetchFheEncryptionKeySourceParameters,
@@ -52,6 +54,7 @@ export const relayerModule: RelayerModuleFactory = () => {
       fetchPublicDecrypt,
       fetchUserDecrypt,
       fetchDelegatedUserDecrypt,
+      fetchPadShares,
       fetchFeatures: (
         _relayerClient: RelayerClientWithRuntime,
         _parameters: FetchFeaturesParameters,

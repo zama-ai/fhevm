@@ -22,8 +22,8 @@ use connector_utils::types::{
     db::insert_solana_user_decryption, solana_request::SolanaUserDecryptionRequestV1,
 };
 use kms_connector_api::{
-    AttestationType, ErrorCode, ErrorResponse, SolanaUserDecryptionRequest, UserDecryptionRequest,
-    UserDecryptionResponse,
+    AttestationType, ErrorCode, ErrorResponse, SolanaUserDecryptionRequest, USER_DECRYPTION_ROUTE,
+    UserDecryptionRequest, UserDecryptionResponse,
 };
 use serde_json::Value;
 use sqlx::{
@@ -72,6 +72,7 @@ fn validate(
 pub struct UserRoute;
 
 impl DecryptionRoute for UserRoute {
+    const ROUTE: &'static str = USER_DECRYPTION_ROUTE;
     type Request = ValidatedUserDecryption;
     type ResponseRow = UserDecryptionResponseRow;
 

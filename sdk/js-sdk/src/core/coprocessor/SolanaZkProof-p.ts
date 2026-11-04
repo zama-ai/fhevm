@@ -8,7 +8,7 @@ import { keccak_256 } from '@noble/hashes/sha3.js';
 import { asBytes32Hex, bytes32ToHex, concatBytes, hexToBytes32, toBytes } from '../base/bytes.js';
 import { asUint64BigInt, uint256ToBytes32 } from '../base/uint.js';
 import { fheTypeIdFromEncryptionBits } from '../handle/FheType.js';
-import { buildHandle } from '../handle/FhevmHandle.js';
+import { buildInputHandle } from '../handle/FhevmHandle.js';
 import { ZkProofError } from '../errors/ZkProofError.js';
 import { FHEVM_HANDLE_HASH_DOMAIN_SEPARATOR, FHEVM_HANDLE_RAW_CT_HASH_DOMAIN_SEPARATOR } from './ZkProof-p.js';
 
@@ -119,7 +119,7 @@ export function toSolanaZkProof(proofLike: SolanaZkProofLike, options?: { readon
  * `set_ciphertext_metadata` + `finalize_ciphertext` in the coprocessor zkproof-worker
  * for Solana hosts: the handle prehash is
  * `keccak("ZK-w_hdl" || blobHash || index || acl(32) || chainId(32))`, then the
- * trailing metadata (index, chainId, fheType, version) is patched in by `buildHandle`.
+ * trailing metadata (index, chainId, fheType, version) is patched in by `buildInputHandle`.
  * The only divergence from the EVM derivation is the 32-byte bytes32 ACL identity.
  */
 function solanaInputHandles(args: {
@@ -145,7 +145,7 @@ function solanaInputHandles(args: {
     const hash21 = prehash.slice(0, 2 + 2 * 21);
 
     handles.push(
-      buildHandle({
+      buildInputHandle({
         hash21,
         chainId: args.chainId,
         fheTypeId,

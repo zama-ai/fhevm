@@ -29,6 +29,7 @@ export const FHE_TEST_CHAIN_NAMES = [
   'localcleartext_legacy',
   'localcleartext_v12',
   'localcleartext_v13',
+  'localcleartext_v16',
   'localstack',
   'localstack_v14',
   'polygon_devnet',
@@ -82,15 +83,18 @@ export function isRealDeployedChain(chainName: FheTestChainName): boolean {
 }
 
 /**
- * Protocol era (the minor version of the protocol: 12, 13, 14) a test chain
+ * Protocol era (the minor version of the protocol: 12, 13, 14, 16) a test chain
  * runs on, derived from its name. Used to gate migration tests that only make
  * sense on chains at or above a given protocol version.
  *
  * `localstack` (latest) tracks the newest protocol (v0.14 era today).
  */
-export function protocolEraOf(chainName: FheTestChainName): 12 | 13 | 14 {
+export function protocolEraOf(chainName: FheTestChainName): 12 | 13 | 14 | 16 {
   if (chainName === 'localcleartext_v12') {
     return 12;
+  }
+  if (chainName === 'localcleartext_v16') {
+    return 16;
   }
   if (chainName === 'localstack' || chainName === 'localstack_v14') {
     return 14;
@@ -126,6 +130,7 @@ const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestC
   localcleartext_legacy: 'cleartext',
   localcleartext_v12: 'cleartext',
   localcleartext_v13: 'cleartext',
+  localcleartext_v16: 'cleartext',
   ingen_trex_cleartext: 'cleartext',
 };
 
@@ -528,6 +533,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     localcleartext,
     localcleartext_v12: localcleartext_legacy,
     localcleartext_v13: localcleartext,
+    localcleartext_v16: localcleartext,
     polygon_devnet,
     ingen_trex_cleartext,
     hoodi_cleartext,

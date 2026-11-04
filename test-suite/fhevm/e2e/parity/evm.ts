@@ -57,6 +57,7 @@ export const openEvmHost = async (env: TestEnv) => {
           inputVerifier: { address: required("INPUT_VERIFIER_CONTRACT_ADDRESS") as Address },
           kmsVerifier: { address: required("KMS_VERIFIER_CONTRACT_ADDRESS") as Address },
           protocolConfig: { address: required("PROTOCOL_CONFIG_CONTRACT_ADDRESS") as Address },
+          kmsGeneration: { address: required("KMS_GENERATION_CONTRACT_ADDRESS") as Address },
         },
         relayerUrl: env.relayerUrl,
         gateway: {

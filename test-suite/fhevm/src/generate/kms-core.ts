@@ -258,7 +258,7 @@ export const buildKmsThresholdOverride = (
     if (topology.insecureTestKeygen) {
       services[kmsTestKeygenProxyName(partyId)] = {
         container_name: kmsTestKeygenProxyName(partyId),
-        image: "node:22-bookworm-slim@sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9",
+        image: "node:22.23.4-bookworm-slim",
         command: ["node", "/proxy.cjs", `http://${name}:${kmsServicePort(partyId)}`],
         volumes: [`${path.join(REPO_ROOT, "test-suite/fhevm/scripts/lib/kms-test-keygen-proxy.cjs")}:/proxy.cjs:ro`],
         depends_on: { [name]: { condition: "service_healthy" } },

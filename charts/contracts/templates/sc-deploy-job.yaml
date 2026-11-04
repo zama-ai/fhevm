@@ -70,6 +70,10 @@ spec:
         {{- if .Values.scDeploy.env }}
           {{ toYaml .Values.scDeploy.env | nindent 10 }}
         {{- end }}
+        {{- with .Values.scDeploy.envFrom }}
+        envFrom:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
         volumeMounts:
           - mountPath: /app/deploy-contracts.sh
             subPath: deploy-contracts.sh

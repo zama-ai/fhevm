@@ -39,8 +39,8 @@ async fn run() -> anyhow::Result<()> {
         }
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref())?;
-            debug!("{config:?}");
             init_otlp_setup(config.service_name.clone())?;
+            debug!("{config:?}");
 
             let cancel_token = CancellationToken::new();
             set_task_limit(config.task_limit);

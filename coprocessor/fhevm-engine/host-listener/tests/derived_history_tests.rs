@@ -555,6 +555,32 @@ async fn repair_after_manifest_sealing_is_contained() -> anyhow::Result<()> {
     sealed_repair(false, false).await
 }
 
+/// Rollback drops the green schema and marks the epoch failed together. The
+/// seal stays in `public`, and must not freeze inventory that is gone.
+#[tokio::test]
+#[serial(db)]
+async fn a_failed_epoch_seal_does_not_contain_the_repair() -> anyhow::Result<()>
+{
+    let (mut db, pool, _instance) = partial_block().await?;
+    seal_block(&pool, true).await?;
+    sqlx::query(
+        "INSERT INTO consensus_epoch_history (consensus_epoch, outcome, completed_at)
+         VALUES ('2', 'failed', NOW())",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query("UPDATE block_manifest_state SET consensus_epoch = '2'")
+        .execute(&pool)
+        .await?;
+    repair(&mut db, false).await?;
+    assert_eq!(
+        computation_flags(&pool, computed_handle(2)).await?,
+        (true, false)
+    );
+    assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn repair_during_manifest_resealing_is_contained() -> anyhow::Result<()> {

@@ -18,7 +18,7 @@ use super::config::{ConfigError, EndpointConfig, KmsAggregatorConfig};
 pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// One KMS node as the caller sees it: `audience` is the connector's address its `FhevmSig` headers are signed for.
+/// One KMS node as the caller sees it.
 #[derive(Clone)]
 pub struct Endpoint {
     pub name: String,
@@ -80,7 +80,7 @@ pub enum AttemptError {
     /// Connection refused or reset, TLS failure, client-side timeout. Never contains the URL.
     #[error("transport: {0}")]
     Transport(String),
-    /// The `FhevmSig` header could not be signed (e.g. AWS KMS unreachable). Nothing was sent.
+    /// Signing failed (e.g. AWS KMS unreachable); nothing was sent.
     #[error("signer: {0}")]
     Signer(String),
 }
@@ -109,7 +109,8 @@ impl AttemptError {
 
     /// The connector code reported upward as the dominant error: transport and bare 5xx count as
     /// `upstream_transient`, a bare 401 as `sender_authentication_failed`, a bare 429 as `rate_limited` (an ingress
-    /// answers without the connector body), a signing failure (ours, not the node's) as `unknown`.
+    /// or a future proxy rate limit answers without the connector body), a signing failure (ours, not the node's) as
+    /// `unknown`.
     pub fn code(&self) -> ErrorCode {
         match self {
             Self::Api { error, .. } => error.code,

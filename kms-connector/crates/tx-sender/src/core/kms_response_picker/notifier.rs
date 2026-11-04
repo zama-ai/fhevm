@@ -140,7 +140,7 @@ impl DbKmsResponseNotifier {
 
 /// Enum representing the different types of responses that can be notified to the
 /// `DbKmsResponsePicker`.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum KmsResponseNotification {
     PublicDecryption,
     UserDecryption,

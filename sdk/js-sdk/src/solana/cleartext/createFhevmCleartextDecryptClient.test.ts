@@ -6,11 +6,34 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSolanaRpc } from '@solana/kit';
 import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import * as hostKms from '../actions/hostKms.js';
-import { asBytes32Hex } from '../../core/base/bytes.js';
-import { buildHandle } from '../../core/handle/FhevmHandle.js';
+import { asBytes32, asBytes32Hex, hexToBytes } from '../../core/base/bytes.js';
+import type { Handle } from '../../core/types/encryptedTypes-p.js';
+import { bytes32ToHandle, FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION } from '../../core/handle/FhevmHandle.js';
 import { setFhevmRuntimeConfig } from '../internal/config.js';
 import { PERMIT_TRANSPORT_KEY_LEN, solanaPermitWalletFromSecretKey } from '../permit/index.js';
 import { createFhevmCleartextDecryptClient } from './createFhevmCleartextDecryptClient.js';
+
+/**
+ * Test helper, as main's handle tests have it: a computed handle
+ * hash21 (bytes 0..20) | 0xFF (byte 21) | chainId (bytes 22..29) | fheTypeId (30) | version (31).
+ */
+function buildHandle({
+  chainId,
+  hash21,
+  fheTypeId,
+}: {
+  chainId: number | bigint;
+  hash21: string;
+  fheTypeId: number;
+}): Handle {
+  const bytes = new Uint8Array(32);
+  bytes.set(hexToBytes(hash21), 0);
+  bytes[21] = 0xff;
+  new DataView(bytes.buffer).setBigUint64(22, BigInt(chainId));
+  bytes[30] = fheTypeId;
+  bytes[31] = FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION;
+  return bytes32ToHandle(asBytes32(bytes));
+}
 
 // EVM's cleartext path decrypts with no TKMS WASM; this client must not load it either.
 vi.mock('../../core/modules/decrypt/module/init-p.js', async (importOriginal) => ({

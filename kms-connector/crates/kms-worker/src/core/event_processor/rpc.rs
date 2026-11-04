@@ -1,6 +1,6 @@
 use crate::core::event_processor::RequestCheckError;
 use alloy::{
-    primitives::{Address, B256, U256},
+    primitives::{Address, B256, Bytes},
     providers::Provider,
 };
 use fhevm_host_bindings::acl::ACL::ACLInstance;
@@ -21,46 +21,10 @@ impl<P: Provider> HostRpcClient<P> {
         }
     }
 
-    pub async fn is_allowed_for_decryption(&self, handle: B256) -> Result<bool, RequestCheckError> {
+    /// Runs `calls` against the ACL contract in a single `eth_call` through `ACL.multicall`.
+    pub async fn acl_multicall(&self, calls: Vec<Bytes>) -> Result<Vec<Bytes>, RequestCheckError> {
         self.acl_contract
-            .isAllowedForDecryption(handle)
-            .call()
-            .await
-            .map_err(|e| self.acl_err(e))
-    }
-
-    pub async fn is_allowed(
-        &self,
-        handle: B256,
-        account: Address,
-    ) -> Result<bool, RequestCheckError> {
-        self.acl_contract
-            .isAllowed(handle, account)
-            .call()
-            .await
-            .map_err(|e| self.acl_err(e))
-    }
-
-    pub async fn is_handle_delegated_for_user_decryption(
-        &self,
-        delegator: Address,
-        delegate: Address,
-        contract: Address,
-        handle: B256,
-    ) -> Result<bool, RequestCheckError> {
-        self.acl_contract
-            .isHandleDelegatedForUserDecryption(delegator, delegate, contract, handle)
-            .call()
-            .await
-            .map_err(|e| self.acl_err(e))
-    }
-
-    pub async fn decryption_signature_invalidated_before(
-        &self,
-        account: Address,
-    ) -> Result<U256, RequestCheckError> {
-        self.acl_contract
-            .decryptionSignatureInvalidatedBefore(account)
+            .multicall(calls)
             .call()
             .await
             .map_err(|e| self.acl_err(e))

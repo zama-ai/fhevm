@@ -1,9 +1,11 @@
-// CLI: bring up the two cleartext anvils and keep them running until Ctrl-C.
-// Useful for local dev and for non-Playwright platforms (e.g. node-server).
-//
-//   PATH=~/.foundry/bin:$PATH npx tsx test/infra/anvil/spawn-anvils.ts
-//
-// Playwright globalSetup imports startAnvils/stopAnvils directly instead.
+/**
+ * CLI: bring up the two cleartext anvils and keep them running until Ctrl-C.
+ * Useful for local dev and for non-Playwright platforms (e.g. node-server).
+ *
+ *   PATH=~/.foundry/bin:$PATH npx tsx test/infra/anvil/spawn-anvils.ts
+ *
+ * Playwright globalSetup imports startAnvils/stopAnvils directly instead.
+ */
 
 import { startAnvils, stopAnvils } from './anvils.js';
 import { anvilSpecs } from '../topology.js';
