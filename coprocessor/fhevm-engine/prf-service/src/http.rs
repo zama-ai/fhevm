@@ -11,7 +11,7 @@ use actix_web::{
     dev::Server,
     http::{
         header::{ContentType, ALLOW, CACHE_CONTROL},
-        Method,
+        ConnectionType, Method,
     },
     web::{self, Bytes},
     App, HttpRequest, HttpResponse, HttpServer, ResponseError,
@@ -40,6 +40,7 @@ const KEEP_ALIVE: Duration = Duration::from_secs(15);
 
 pub(crate) struct AppState {
     pub pool: PgPool,
+    pub draining: CancellationToken,
     pub in_flight: InFlight,
     pub admissions: Admissions,
     pub waiter: Arc<PadWaiter>,
@@ -73,9 +74,14 @@ async fn prf_output(req: HttpRequest, state: web::Data<AppState>) -> HttpRespons
             .insert_header((CACHE_CONTROL, NO_STORE))
             .finish();
     }
-    let response = serve(&req, &state)
+    let mut response = serve(&req, &state)
         .await
         .unwrap_or_else(|e| e.error_response());
+    if state.draining.is_cancelled() {
+        response
+            .head_mut()
+            .set_connection_type(ConnectionType::Close);
+    }
     REQUESTS_COUNTER
         .with_label_values(&[req.method().as_str(), response.status().as_str()])
         .inc();
