@@ -56,6 +56,7 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
+      terminationGracePeriodSeconds: {{ add (int $component.shutdownDelaySeconds) 5 5 }}
       {{- with $component.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -88,6 +89,7 @@ spec:
             - --metrics-addr=0.0.0.0:{{ $component.ports.metrics }}
             - --database-url=$(DATABASE_URL)
             - --database-pool-size={{ $component.databasePoolSize }}
+            - --shutdown-delay={{ int $component.shutdownDelaySeconds }}s
             - --max-concurrent-per-connector={{ int64 $component.limits.maxConcurrentPerConnector }}
             - --max-in-flight-per-connector={{ $component.limits.maxInFlightPerConnector }}
             {{- with $component.extraArgs }}

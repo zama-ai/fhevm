@@ -24,6 +24,7 @@ struct TestService {
     /// Admin pool: it plays the pad-worker.
     pool: PgPool,
     cancel_token: CancellationToken,
+    draining: CancellationToken,
     task: JoinHandle<anyhow::Result<()>>,
     _db: DBInstance,
 }
@@ -43,6 +44,7 @@ impl TestService {
             .unwrap()
             .port();
         let cancel_token = CancellationToken::new();
+        let draining = CancellationToken::new();
         let service = PrfService::new(
             Config {
                 http_endpoint: ([127, 0, 0, 1], port).into(),
@@ -53,6 +55,7 @@ impl TestService {
             },
             service_pool,
             cancel_token.clone(),
+            draining.clone(),
         )
         .unwrap();
         let task = tokio::spawn(service.start());
@@ -60,6 +63,7 @@ impl TestService {
             base_url: format!("http://127.0.0.1:{port}"),
             pool,
             cancel_token,
+            draining,
             task,
             _db: db,
         }
@@ -378,6 +382,25 @@ async fn returns_rfc_errors() {
         assert_eq!(response.headers()["allow"], "GET, HEAD", "{path}");
         assert!(response.bytes().await.unwrap().is_empty(), "{path}");
     }
+
+    service.stop().await;
+}
+
+#[tokio::test]
+async fn draining_closes_each_connection_after_its_response() {
+    let service = TestService::start().await;
+    let url = format!("{}{}", service.base_url, prf_path("0", LABEL, "64"));
+    let client = Client::new();
+
+    // No signer header: an answer at once.
+    let before = client.get(&url).send().await.unwrap();
+    assert_eq!(before.status(), StatusCode::UNAUTHORIZED);
+    assert!(before.headers().get("connection").is_none());
+
+    service.draining.cancel();
+    let after = client.get(&url).send().await.unwrap();
+    assert_eq!(after.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(after.headers()["connection"], "close");
 
     service.stop().await;
 }
