@@ -82,6 +82,7 @@ ci/preview-env/
 ├── relayer/
 │   ├── values-relayer-e2e.yaml          # `common` chart overlay, relayer server
 │   ├── values-relayer-migrate-e2e.yaml  # `common` chart overlay, relayer DB migration Job
+│   ├── values-relayer-http-e2e.yaml     # `common` chart overlay, relayer-http (KMS connector aggregator)
 │   └── values-postgres-relayer-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to relayer + relayer-migrate
 ├── test-suite/
 │   ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
@@ -477,6 +478,19 @@ The proxy's TLS certificate comes from the chart, and its auth inputs are set by
   The `@zama-fhe/relayer-sdk` workflow is left untouched on purpose: those suites
   use their own client (`test/sdk/connector/connectorHttp.ts`), not the relayer
   SDK, so re-running them there would only duplicate the same code path.
+
+## relayer-http
+
+`deploy-relayer.sh relayer-http` installs `relayer-http` (port `3002`, as in the
+compose stack) with the generic `common` chart once the kms-connectors are up.
+`relayer/values-relayer-http-e2e.yaml` carries the static config; the script fills
+in the per-deploy fields from the same **`kms-connector-http`** ConfigMap the
+test-suite reads: one endpoint per party (proxy URL + tx-sender `audience`),
+thresholds `t+1` (public) / `2t+1` (user), the host chain ids, and the host
+`ProtocolConfig` address for FhevmSig. It signs with the same fixed test key as the
+e2e suite. The proxies' cert-manager certificates (`ca.crt`) are mounted and
+trusted through `SSL_CERT_FILE`. Nothing calls it yet: it is deployed so the next
+step can point the e2e suites at it. Pin the image with `relayer_http_version`.
 
 ## coprocessor-proxy
 
