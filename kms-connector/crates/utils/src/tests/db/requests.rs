@@ -593,6 +593,7 @@ pub async fn insert_rand_kms_epoch_destroyed(
 pub async fn insert_pad_decryption_request(
     db: &Pool<Postgres>,
     request: &PadDecryptionRequest,
+    status: OperationStatus,
 ) -> anyhow::Result<U256> {
     let decryption_id = U256::from_be_bytes(request.id().0);
     let payload = &request.payload;
@@ -605,9 +606,9 @@ pub async fn insert_pad_decryption_request(
         "INSERT INTO pad_decryption_requests(
             decryption_id, witness_version, prf_id, chain_id, pads, user_address, public_key,
             allowed_contracts, start_timestamp, duration_seconds, extra_data, signature,
-            created_at, otlp_context
+            created_at, otlp_context, status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
         decryption_id.as_le_slice(),
         i16::from(payload.witnessVersion),
         i32::from(payload.prfId),
@@ -622,6 +623,7 @@ pub async fn insert_pad_decryption_request(
         request.signature.as_ref(),
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
+        status as OperationStatus,
     )
     .execute(db)
     .await?;

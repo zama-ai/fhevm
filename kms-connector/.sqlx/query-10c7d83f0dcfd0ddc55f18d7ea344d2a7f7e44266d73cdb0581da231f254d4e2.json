@@ -1,0 +1,33 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pad_decryption_responses(\n            decryption_id, encrypted_payload, signature, extra_data, created_at, otlp_context,\n            status\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea",
+        {
+          "Custom": {
+            "name": "operation_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "under_process",
+                "completed",
+                "failed",
+                "aborted"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "10c7d83f0dcfd0ddc55f18d7ea344d2a7f7e44266d73cdb0581da231f254d4e2"
+}

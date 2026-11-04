@@ -10,6 +10,7 @@ use crate::{
 };
 use alloy::{primitives::U256, sol_types::SolValue};
 use fhevm_host_bindings::protocol_config::IProtocolConfig::{EpochCrsResult, EpochKeyResult};
+use kms_connector_api::PadDecryptionResponse;
 use sqlx::{Pool, Postgres, types::chrono::Utc};
 use std::fmt::Display;
 
@@ -381,27 +382,36 @@ pub async fn insert_test_pad_decrypt_error_response(
     Ok(decryption_id)
 }
 
-/// Plays the kms-worker: stores a successful pad decryption response.
-pub async fn insert_test_pad_decrypt_response(
+pub async fn insert_rand_pad_decrypt_response(
     db: &Pool<Postgres>,
-    id: U256,
-    encrypted_payload: &[u8],
-    signature: &[u8],
-) -> anyhow::Result<()> {
+    id: Option<U256>,
+    status: Option<OperationStatus>,
+) -> anyhow::Result<PadDecryptionResponse> {
+    let decryption_id = id.unwrap_or_else(rand_u256);
+    let encrypted_payload = rand_signature();
+    let signature = rand_signature();
+    let status = status.unwrap_or(OperationStatus::Pending);
+
     sqlx::query!(
         "INSERT INTO pad_decryption_responses(
             decryption_id, encrypted_payload, signature, extra_data, created_at, otlp_context,
             status
         )
-        VALUES ($1, $2, $3, $4, $5, $6, 'completed')",
-        id.as_le_slice(),
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+        decryption_id.as_le_slice(),
         encrypted_payload,
         signature,
         Vec::<u8>::new(),
         Utc::now(),
         bc2wrap::serialize(&PropagationContext::empty())?,
+        status as OperationStatus,
     )
     .execute(db)
     .await?;
-    Ok(())
+
+    Ok(kms_connector_api::PadDecryptionResponse {
+        decryption_id: decryption_id.to_be_bytes().into(),
+        encrypted_payload: encrypted_payload.into(),
+        signature: signature.into(),
+    })
 }
