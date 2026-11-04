@@ -58,7 +58,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if an allowlister deadline is not in the future.
     error InvalidAllowlisterDeadline(uint256 deadline);
 
-    /// @notice Returned if the address has no active allowlister role.
+    /// @notice Returned if an account without an active allowlister role tries to renounce.
     error NotAllowlister(address account);
 
     /// @notice Returned if an addition uses the zero address.
@@ -118,7 +118,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Emitted when an allowlister deadline is granted or replaced.
     event AllowlisterAdded(address indexed account, uint256 deadline);
 
-    /// @notice Emitted when an active allowlister is revoked or renounces its role.
+    /// @notice Emitted when a nonzero stored allowlister deadline is cleared.
     event AllowlisterRemoved(address indexed account);
 
     /// @notice Name of the contract.
@@ -522,8 +522,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     /**
-     * @notice Revokes an active allowlister without removing previously admitted dapps.
-     * @param account Active allowlister to revoke.
+     * @notice Clears an allowlister grant without removing previously admitted dapps.
+     * @dev Clears active or expired deadlines. An absent grant succeeds without emitting an event.
+     * @param account Account whose allowlister grant is cleared.
      */
     function removeAllowlister(address account) external onlyACLOwner {
         _removeAllowlister(account);
@@ -531,12 +532,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /// @notice Renounces the sender's active allowlister role without removing previously admitted dapps.
     function renounceAllowlister() external {
+        if (_getHCULimitStorage().allowlisters[msg.sender] <= block.timestamp) revert NotAllowlister(msg.sender);
         _removeAllowlister(msg.sender);
     }
 
     function _removeAllowlister(address account) private {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        if ($.allowlisters[account] <= block.timestamp) revert NotAllowlister(account);
+        if ($.allowlisters[account] == 0) return;
         delete $.allowlisters[account];
         emit AllowlisterRemoved(account);
     }

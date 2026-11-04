@@ -19,7 +19,29 @@ contract MockConfidentialBridge {
     function syncDelegate() external {}
 }
 
+/// @dev Executes owner actions atomically for governance cleanup regression tests.
+contract MockGovernanceBatchExecutor {
+    function executeBatch(address target, bytes[] calldata actions) external {
+        for (uint256 i; i < actions.length; ++i) {
+            (bool success, bytes memory reason) = target.call(actions[i]);
+            if (!success) {
+                assembly {
+                    revert(add(reason, 32), mload(reason))
+                }
+            }
+        }
+    }
+}
+
 contract HCULimitAllowlistTest is Test {
+    enum CleanupRoleState {
+        Active,
+        Renounced,
+        ExpiredAtDeadline,
+        ExpiredPastDeadline,
+        Revoked
+    }
+
     MockHCULimit internal hcuLimit;
     address internal constant OWNER = address(456);
     address internal constant ALLOWLISTER = address(0xA11CE);
@@ -83,6 +105,70 @@ contract HCULimitAllowlistTest is Test {
     function _compute(address caller) internal {
         vm.prank(executor);
         hcuLimit.checkHCUForCast(FheType.Uint8, INPUT, RESULT, caller);
+    }
+
+    function _assertGovernanceCleanupBatch(CleanupRoleState state) internal {
+        _activate(true);
+        _grant(ALLOWLISTER);
+        uint256 deadline = hcuLimit.allowlisterDeadline(ALLOWLISTER);
+        address[] memory dapps = new address[](2);
+        dapps[0] = DAPP;
+        dapps[1] = address(0xBEEF);
+        vm.prank(ALLOWLISTER);
+        hcuLimit.addToAllowlist(dapps);
+        _compute(DAPP);
+
+        MockGovernanceBatchExecutor governance = new MockGovernanceBatchExecutor();
+        vm.prank(OWNER);
+        ACL(aclAdd).transferOwnership(address(governance));
+        vm.prank(address(governance));
+        ACL(aclAdd).acceptOwnership();
+
+        // The proposal is prepared before the role can change ahead of execution.
+        bytes[] memory actions = new bytes[](2);
+        actions[0] = abi.encodeCall(HCULimit.removeAllowlister, (ALLOWLISTER));
+        actions[1] = abi.encodeCall(HCULimit.removeFromAllowlist, (dapps));
+        if (state == CleanupRoleState.Renounced) {
+            vm.prank(ALLOWLISTER);
+            hcuLimit.renounceAllowlister();
+        } else if (state == CleanupRoleState.ExpiredAtDeadline) {
+            vm.warp(deadline);
+        } else if (state == CleanupRoleState.ExpiredPastDeadline) {
+            vm.warp(deadline + 1);
+        } else if (state == CleanupRoleState.Revoked) {
+            vm.prank(address(governance));
+            hcuLimit.removeAllowlister(ALLOWLISTER);
+        }
+
+        governance.executeBatch(address(hcuLimit), actions);
+        assertFalse(hcuLimit.isAllowlister(ALLOWLISTER));
+        assertEq(hcuLimit.allowlisterDeadline(ALLOWLISTER), 0);
+        for (uint256 i; i < dapps.length; ++i) {
+            assertFalse(hcuLimit.isAllowlisted(dapps[i]));
+            vm.expectRevert(abi.encodeWithSelector(HCULimit.CallerNotAllowlisted.selector, dapps[i]));
+            _compute(dapps[i]);
+        }
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.CallerNotACLOwnerOrAllowlister.selector, ALLOWLISTER));
+        vm.prank(ALLOWLISTER);
+        hcuLimit.addToAllowlist(_accounts(address(0xCAFE)));
+    }
+
+    function test_governanceCleanupBatchRevokesActiveAllowlister() public {
+        _assertGovernanceCleanupBatch(CleanupRoleState.Active);
+    }
+
+    function test_governanceCleanupBatchSurvivesRenunciation() public {
+        _assertGovernanceCleanupBatch(CleanupRoleState.Renounced);
+    }
+
+    function test_governanceCleanupBatchSurvivesExpiry(bool pastDeadline) public {
+        _assertGovernanceCleanupBatch(
+            pastDeadline ? CleanupRoleState.ExpiredPastDeadline : CleanupRoleState.ExpiredAtDeadline
+        );
+    }
+
+    function test_governanceCleanupBatchSurvivesPriorRevocation() public {
+        _assertGovernanceCleanupBatch(CleanupRoleState.Revoked);
     }
 
     function test_freshDeploymentIsOpenAndConsumesInitializerVersion() public {
@@ -433,23 +519,53 @@ contract HCULimitAllowlistTest is Test {
         vm.expectRevert(abi.encodeWithSelector(HCULimit.CallerNotACLOwnerOrAllowlister.selector, ALLOWLISTER));
         vm.prank(ALLOWLISTER);
         hcuLimit.addToAllowlist(_accounts(address(0xBEEF)));
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotAllowlister.selector, ALLOWLISTER));
-        vm.prank(renounce ? ALLOWLISTER : OWNER);
-        if (renounce) hcuLimit.renounceAllowlister();
-        else hcuLimit.removeAllowlister(ALLOWLISTER);
+        if (renounce) {
+            vm.expectRevert(abi.encodeWithSelector(HCULimit.NotAllowlister.selector, ALLOWLISTER));
+            vm.prank(ALLOWLISTER);
+            hcuLimit.renounceAllowlister();
+        }
     }
 
-    function test_absentAndExpiredRolesCannotBeRemovedOrRenounced(bool expired) public {
+    function test_absentAndExpiredRolesCannotRenounce(bool expired, bool pastDeadline) public {
         if (expired) _grant(ALLOWLISTER);
         uint256 deadline = hcuLimit.allowlisterDeadline(ALLOWLISTER);
-        if (expired) vm.warp(deadline);
-        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotAllowlister.selector, ALLOWLISTER));
-        vm.prank(OWNER);
-        hcuLimit.removeAllowlister(ALLOWLISTER);
+        if (expired) vm.warp(deadline + (pastDeadline ? 1 : 0));
         vm.expectRevert(abi.encodeWithSelector(HCULimit.NotAllowlister.selector, ALLOWLISTER));
         vm.prank(ALLOWLISTER);
         hcuLimit.renounceAllowlister();
         assertEq(hcuLimit.allowlisterDeadline(ALLOWLISTER), deadline);
+    }
+
+    function test_ownerRevocationClearsInactiveGrants(bool expired, bool pastDeadline, bool activated) public {
+        _activate(activated);
+        _allow(DAPP);
+        if (expired) _grant(ALLOWLISTER);
+        uint256 deadline = hcuLimit.allowlisterDeadline(ALLOWLISTER);
+        if (expired) vm.warp(deadline + (pastDeadline ? 1 : 0));
+
+        vm.recordLogs();
+        vm.prank(OWNER);
+        hcuLimit.removeAllowlister(ALLOWLISTER);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, expired ? 1 : 0);
+        if (expired) {
+            assertEq(logs[0].emitter, address(hcuLimit));
+            assertEq(logs[0].topics.length, 2);
+            assertEq(logs[0].topics[0], keccak256("AllowlisterRemoved(address)"));
+            assertEq(logs[0].topics[1], bytes32(uint256(uint160(ALLOWLISTER))));
+            assertEq(logs[0].data.length, 0);
+        }
+        assertEq(hcuLimit.allowlisterDeadline(ALLOWLISTER), 0);
+        assertFalse(hcuLimit.isAllowlister(ALLOWLISTER));
+        assertTrue(hcuLimit.isAllowlisted(DAPP));
+        assertEq(hcuLimit.isAllowlistActivated(), activated);
+
+        vm.recordLogs();
+        vm.startPrank(OWNER);
+        hcuLimit.removeAllowlister(ALLOWLISTER);
+        hcuLimit.removeAllowlister(address(0));
+        vm.stopPrank();
+        assertEq(vm.getRecordedLogs().length, 0);
     }
 
     function test_ownerRenouncesOnlyAnActiveGrantAndKeepsOwnerPowers() public {
