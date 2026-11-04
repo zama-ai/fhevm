@@ -1,0 +1,124 @@
+# common chart overlay for relayer-http, for the fhevm e2e preview namespace.
+# relayer-http fans user/public decryptions out to every party's kms-connector
+# proxy over HTTPS and aggregates the answers (relayer-http/docs.md); it has no
+# DB, queue, or gateway dependency.
+#
+# The config file below must match relayer-http/crates/relayer-http/src/config.rs
+# at the commit the deployed image resolves from: every nested section denies
+# unknown fields, so a stale key crashes the pod at startup.
+#
+# Values that depend on the deploy (proxy URLs and audiences, thresholds, host
+# chain ids, ProtocolConfig address) are placeholders here and are rendered into
+# the file by scripts/deploy/deploy-relayer.sh from the `kms-connector-http`
+# ConfigMap (published by deploy-kms-connector.sh), `host-sc-addresses`, and the
+# chain-mode env. They go in the file rather than in APP_* env because
+# `endpoints` is a list.
+#
+# Deployed as:
+#   helm upgrade --install relayer-http oci://hub.zama.org/ghcr/zama-zws/helm-charts/common \
+#     -n <namespace> -f <rendered copy of this file>
+fullnameOverride: relayer-http
+
+# The generic `common` chart does not hardcode imagePullSecrets (see
+# values-relayer-e2e.yaml).
+imagePullSecrets:
+  - name: registry-credentials
+
+image:
+  repository: hub.zama.org/ghcr/zama-ai/fhevm/relayer-http
+  tag: latest
+
+deployment:
+  enabled: true
+
+# Same port as the local stack (test-suite/fhevm/src/layout.ts RELAYER_HTTP_PORT).
+service:
+  enabled: true
+  ports:
+    - {name: http, port: 3002}
+
+# /healthz has no dependency checks: 200 while serving, 503 once shutdown starts
+# so the Service stops routing while in-flight requests drain. /liveness is
+# always 200 while the process runs.
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 3002
+  periodSeconds: 5
+  failureThreshold: 3
+livenessProbe:
+  httpGet:
+    path: /liveness
+    port: 3002
+  periodSeconds: 10
+  failureThreshold: 3
+
+# The image runs `/app/bin/relayer-http /app/config/config.yaml` and ships
+# nothing under /app/config, so the ConfigMap is mounted on the whole directory.
+configmapFiles:
+  enabled: true
+  volumeMount:
+    mountPath: /app/config
+    readOnly: true
+  files:
+    config.yaml:
+      name: relayer-http-preview
+      http:
+        endpoint: "0.0.0.0:3002"
+        max_body_bytes: 1048576
+        body_read_timeout: 10s
+        supported_chain_ids: [12345]       # set by deploy-relayer.sh
+      kms_aggregator:
+        allow_insecure_http: false
+        max_concurrent_calls: 4096
+        call:
+          timeout: 5s
+          retries:
+            max_retries: 5
+            delay: 200ms
+            backoff_max: 4s
+        public_decrypt:
+          threshold: 2                     # t + 1, set by deploy-relayer.sh
+        user_decrypt:
+          threshold: 3                     # 2t + 1, set by deploy-relayer.sh
+        auth:
+          chain_id: 12345                  # first host chain, set by deploy-relayer.sh
+          protocol_config: "0x0000000000000000000000000000000000000000"   # set by deploy-relayer.sh
+          validity: 2m
+          # Address of RELAYER_SIGNER_KEY below, i.e. kmsConnectorProxy.allowedSenders
+          # in ../kms-connector/values-kms-connector-e2e.yaml. Startup fails on a mismatch.
+          address: "0xAE808c0968fF9557C8E0EAbcf57747c75B490Aa0"
+          signer: {type: private_key, value_env: RELAYER_SIGNER_KEY}
+        endpoints: []                      # one per KMS party, set by deploy-relayer.sh
+
+# The proxies serve cert-manager self-signed certificates; deploy-kms-connector.sh
+# concatenates all of them into the `kms-connector-http` ConfigMap's ca.crt.
+# rustls reads extra roots from SSL_CERT_FILE, not the system store (same as the
+# local stack's relayer-http compose service).
+volumes:
+  - name: kms-connector-proxy-ca
+    configMap:
+      name: kms-connector-http
+      items:
+        - {key: ca.crt, path: ca.crt}
+volumeMounts:
+  - name: kms-connector-proxy-ca
+    mountPath: /etc/kms-connector/proxy
+    readOnly: true
+
+env:
+  # The e2e suite's FhevmSig test key (KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY in
+  # ../test-suite/values-test-suite-e2e.yaml), the one sender every proxy allows.
+  - {name: RELAYER_SIGNER_KEY, value: "0xdcd7f0c4990a3df000d45f6eb2728a8cf93f0d16b1f6bdffbe07f5a250250e6c"}
+  - {name: SSL_CERT_FILE, value: /etc/kms-connector/proxy/ca.crt}
+  - {name: RUST_LOG, value: "warn,relayer_http=info"}
+
+# Pins onto the zws-pool Karpenter node pool - see
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

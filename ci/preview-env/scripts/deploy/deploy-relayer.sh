@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Relayer migrate, relayer, and idle test-suite (common chart).
-# Usage: deploy-relayer.sh <migrate|relayer|test-suite>
+# Relayer migrate, relayer, relayer-http, and idle test-suite (common chart).
+# Usage: deploy-relayer.sh <migrate|relayer|relayer-http|test-suite>
 # Env: NAMESPACE, COMMON_CHART, COMMON_CHART_VERSION, TAGS_JSON,
-# NB_KMS_CORE, DEPLOY_POLYGON, POLYGON_HTTP, POLYGON_CHAIN_ID, RPC_SECRET_NAME (relayer only).
+# NB_KMS_CORE, DEPLOY_POLYGON, POLYGON_HTTP, POLYGON_CHAIN_ID, RPC_SECRET_NAME (relayer only),
+# HOST_CHAIN_ID (relayer-http only).
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -64,6 +65,55 @@ case "${kind}" in
     # and the admin endpoint stay ClusterIP-only. Sets RELAYER_TS_URL for the
     # deploy summary / PR comment (fhevm-internal#2000).
     bash "${script_dir}/expose-relayer-tailscale.sh"
+    ;;
+  relayer-http)
+    # values-relayer-http-e2e.yaml only holds placeholders for what depends on the
+    # deploy. Fill them in from the kms-connector-http ConfigMap that
+    # deploy-kms-connector.sh publishes (same source as the test-suite overlays),
+    # mirroring renderRelayerHttpConfig in test-suite/fhevm/src/generate/config.ts.
+    http_cm() { kubectl get configmap kms-connector-http -n "${NAMESPACE}" -o jsonpath="{.data.${1}}"; }
+    IFS=, read -ra urls <<<"$(http_cm endpoint-urls)"
+    IFS=, read -ra audiences <<<"$(http_cm tx-sender-addresses)"
+    t=$(http_cm kms-threshold)
+    protocol_config=$(kubectl get configmap host-sc-addresses -n "${NAMESPACE}" -o jsonpath='{.data.protocol_config\.address}')
+    require_nonempty "${t}" "kms-connector-http[kms-threshold] is empty"
+    require_nonempty "${protocol_config}" "host-sc-addresses[protocol_config.address] is empty"
+    require_nonempty "${HOST_CHAIN_ID:-}" "HOST_CHAIN_ID is not set"
+    if [[ ${#urls[@]} -eq 0 || ${#urls[@]} -ne ${#audiences[@]} ]]; then
+      echo "::error::kms-connector-http has ${#urls[@]} endpoint URLs for ${#audiences[@]} tx-sender addresses" >&2
+      exit 1
+    fi
+    chains="[${HOST_CHAIN_ID}]"
+    if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
+      chains="[${HOST_CHAIN_ID}, ${POLYGON_CHAIN_ID:-80002}]"
+    fi
+    http_values=$(mktemp --suffix=.yaml)
+    cp ci/preview-env/relayer/values-relayer-http-e2e.yaml "${http_values}"
+    # Quorums: public decrypt t+1 matching shares, user decrypt 2t+1 shares.
+    # FhevmSig is signed for the first host chain, as the local stack does.
+    CHAINS="${chains}" CHAIN_ID="${HOST_CHAIN_ID}" PROTOCOL_CONFIG="${protocol_config}" \
+      PUBLIC_T=$((t + 1)) USER_T=$((2 * t + 1)) yq -i '
+      .configmapFiles.files."config.yaml" |= (
+        .http.supported_chain_ids = env(CHAINS) |
+        .kms_aggregator.public_decrypt.threshold = env(PUBLIC_T) |
+        .kms_aggregator.user_decrypt.threshold = env(USER_T) |
+        .kms_aggregator.auth.chain_id = env(CHAIN_ID) |
+        .kms_aggregator.auth.protocol_config = strenv(PROTOCOL_CONFIG)
+      )' "${http_values}"
+    # One endpoint per party: its proxy URL, and as audience the tx-sender
+    # address that proxy accepts (the lists are aligned by party).
+    for i in "${!urls[@]}"; do
+      NAME="kms_$((i + 1))" URL="${urls[i]}" AUDIENCE="${audiences[i]}" yq -i \
+        '.configmapFiles.files."config.yaml".kms_aggregator.endpoints += [{"name": strenv(NAME), "url": strenv(URL), "audience": strenv(AUDIENCE)}]' \
+        "${http_values}"
+    done
+    echo "relayer-http: ${#urls[@]} endpoints, public/user thresholds $((t + 1))/$((2 * t + 1)), chains ${chains}"
+    # No dependency at startup (/healthz is ready as soon as it serves), so a
+    # short wait is enough.
+    helm upgrade --install relayer-http "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
+      -n "${NAMESPACE}" -f "${http_values}" \
+      --set-string "image.tag=$(jq -r .relayer_http <<<"${TAGS_JSON}")" \
+      --wait --timeout=5m
     ;;
   test-suite)
     helm upgrade --install test-suite "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
