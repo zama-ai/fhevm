@@ -1,5 +1,5 @@
-.PHONY: test test-unit test-e2e test-e2e-amqp test-e2e-redis test-e2e-consumer clean-e2e-containers clippy \
-       helm-lint
+.PHONY: test test-unit test-e2e test-e2e-amqp test-e2e-redis test-e2e-broker test-e2e-consumer \
+       clean-e2e-containers clippy helm-lint
 
 # ── Unit tests (no Docker required) ──────────────────────────────────────────
 test-unit:
@@ -20,26 +20,34 @@ clean-e2e-containers:
 # even if the tests fail.
 test-e2e-amqp: clean-e2e-containers
 	cargo test -p broker --features amqp --test amqp_e2e -- --include-ignored; \
-	$(MAKE) clean-e2e-containers
+	status=$$?; \
+	$(MAKE) clean-e2e-containers; \
+	exit $$status
 
 # ── broker (redis) e2e ───────────────────────────────────────────────────────
 # Runs the Redis e2e suite and removes the shared container afterwards,
 # even if the tests fail.
 test-e2e-redis: clean-e2e-containers
 	cargo test -p broker --features redis --test redis_e2e -- --include-ignored; \
-	$(MAKE) clean-e2e-containers
+	status=$$?; \
+	$(MAKE) clean-e2e-containers; \
+	exit $$status
 
 # ── broker facade e2e ────────────────────────────────────────────────────────
 # Runs the Broker facade e2e suite (high-level API: Broker → Publisher / ConsumerBuilder)
 # and removes the shared container afterwards.
 test-e2e-broker: clean-e2e-containers
 	cargo test -p broker --features redis --test broker_e2e -- --include-ignored; \
-	$(MAKE) clean-e2e-containers
+	status=$$?; \
+	$(MAKE) clean-e2e-containers; \
+	exit $$status
 
 # ── consumer-lib e2e ─────────────────────────────────────────────────────────
 test-e2e-consumer: clean-e2e-containers
 	cargo test -p consumer --test watch_e2e -- --include-ignored; \
-	$(MAKE) clean-e2e-containers
+	status=$$?; \
+	$(MAKE) clean-e2e-containers; \
+	exit $$status
 
 # ── Run all e2e tests ─────────────────────────────────────────────────────────
 test-e2e: test-e2e-amqp test-e2e-redis test-e2e-broker test-e2e-consumer

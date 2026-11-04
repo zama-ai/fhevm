@@ -47,6 +47,10 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title  }}
         run: |
+          # Only resolve versions older than safe-chain's 48 h minimum package age,
+          # so a fresh transitive release (e.g. semver@5.7.3) cannot break the install.
+          NPM_CONFIG_BEFORE="$(node -e 'console.log(new Date(Date.now() - 3 * 864e5).toISOString())')"
+          export NPM_CONFIG_BEFORE
           npm install @commitlint/config-conventional@^18 conventional-changelog-conventionalcommits@^7 @commitlint/types@^18
           npm install -g @commitlint/cli@^18
           echo "$PR_TITLE" | npx commitlint --config .github/config/commitlint.config.js --verbose
