@@ -61,7 +61,6 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # kms_connect_timeout = "5s"
 
 # Timeout for each KMS RPC attempt, including result polling (optional, defaults to 20s).
-# Retryable failures pause 100-1000ms before retrying; 3 attempts by default.
 # ENV: KMS_CONNECTOR_KMS_REQ_TIMEOUT
 # kms_req_timeout = "20s"
 
