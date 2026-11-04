@@ -246,9 +246,7 @@ fn default_kms_connect_timeout() -> Duration {
 }
 
 fn default_kms_req_timeout() -> Duration {
-    // Core's retrieve_from_meta_store_with_timeout currently waits up to 60s for pending
-    // decryption results, so normal polls can time out here and consume retries while
-    // computation continues. Core's wait should be shorter than this timeout (e.g. 15s).
+    // Core's retrieve_from_meta_store_with_timeout waits up to 15s for pending decryption results.
     Duration::from_secs(20)
 }
 
@@ -554,6 +552,7 @@ mod tests {
             "KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE",
             "KMS_CONNECTOR_HOST_RPC_MAX_CONCURRENT_CALLS",
             "KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION",
+            "KMS_CONNECTOR_KMS_REQ_TIMEOUT",
         ] {
             cleanup_env_vars();
             unsafe { env::set_var(ceiling, "0") }
@@ -563,17 +562,6 @@ mod tests {
         }
 
         cleanup_env_vars();
-    }
-
-    // Configuration rejects a zero RPC timeout supplied through the environment.
-    #[test]
-    #[serial(config_tests)]
-    fn test_zero_kms_req_timeout_is_rejected() {
-        cleanup_env_vars();
-        unsafe { env::set_var("KMS_CONNECTOR_KMS_REQ_TIMEOUT", "0s") }
-        let result = Config::from_env_and_file(Some(example_config_path()));
-        cleanup_env_vars();
-        assert!(result.is_err());
     }
 
     #[test]

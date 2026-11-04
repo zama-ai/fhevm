@@ -811,10 +811,12 @@ where
 mod tests {
     use super::*;
 
-    // Polling retries Cancelled and DeadlineExceeded, then returns the successful response.
     #[rstest::rstest]
     #[case(Code::Cancelled)]
     #[case(Code::DeadlineExceeded)]
+    #[case(Code::ResourceExhausted)]
+    #[case(Code::Unavailable)]
+    #[case(Code::Unknown)]
     #[tokio::test]
     async fn polling_retries_then_returns_success(#[case] code: Code) {
         let mut attempts = 0;
@@ -835,5 +837,32 @@ mod tests {
         assert_eq!(result.unwrap().into_inner(), 42);
         assert_eq!(errors, 1);
         assert_eq!(attempts, 2);
+    }
+
+    #[rstest::rstest]
+    #[case(Code::InvalidArgument)]
+    #[case(Code::NotFound)]
+    #[case(Code::PermissionDenied)]
+    #[case(Code::FailedPrecondition)]
+    #[case(Code::OutOfRange)]
+    #[case(Code::Unimplemented)]
+    #[case(Code::Internal)]
+    #[case(Code::DataLoss)]
+    #[case(Code::Unauthenticated)]
+    #[tokio::test]
+    async fn polling_does_not_retry_non_retryable(#[case] code: Code) {
+        let mut attempts = 0;
+        let (errors, result) = poll_for_result(
+            2,
+            || {
+                attempts += 1;
+                std::future::ready(Err::<Response<u8>, _>(Status::new(code, "fatal")))
+            },
+            EventType::PublicDecryptionRequest,
+        )
+        .await;
+        assert_eq!(result.unwrap_err().code(), code);
+        assert_eq!(attempts, 1);
+        assert_eq!(errors, 1);
     }
 }
