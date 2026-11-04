@@ -44,17 +44,9 @@ spec:
   template:
     metadata:
       labels:
-        app: coprocessor-prf-service
-        app.kubernetes.io/name: {{ include "prfServiceName" . }}
-        {{- include "coprocessor.extraSelectorLabels" . | nindent 8 }}
-        {{- with .Values.commonConfig.stackVersion }}
-        app.kubernetes.io/version: {{ . | quote }}
-        {{- end }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
-        {{- with $component.podLabels }}
-        {{- toYaml . | nindent 8 }}
+        {{- /* The labels that the policy check above reads. */}}
+        {{- range $k, $v := $pod }}
+        {{ $k }}: {{ $v | quote }}
         {{- end }}
       {{- with .Values.podAnnotations }}
       annotations:
