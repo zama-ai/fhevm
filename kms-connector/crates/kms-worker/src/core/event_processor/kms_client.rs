@@ -738,7 +738,8 @@ where
         if RETRYABLE_GRPC_CODE.contains(&error.code()) {
             warn!("#{i}/{retries} GRPC request attempt failed: {error}");
             if i < retries as i16 {
-                pause_before_retry(error.code()).await;
+                let delay = Duration::from_millis(rand::random_range(100..=1000));
+                tokio::time::sleep(delay).await;
             }
         } else {
             return (
@@ -784,7 +785,8 @@ where
                 if RETRYABLE_GRPC_CODE.contains(&status.code()) {
                     info!("#{i}/{retries} Failed to poll result from KMS: {status}");
                     if i < retries as i16 {
-                        pause_before_retry(status.code()).await;
+                        let delay = Duration::from_millis(rand::random_range(100..=1000));
+                        tokio::time::sleep(delay).await;
                     }
                 } else {
                     // Any other error is returned immediately
@@ -803,14 +805,6 @@ where
         retries as i16,
         Err(Status::unavailable("all result polling attempts failed")),
     )
-}
-
-// Spread out retries when multiple RPCs time out or are cancelled together.
-async fn pause_before_retry(code: Code) {
-    if matches!(code, Code::Cancelled | Code::DeadlineExceeded) {
-        let delay = Duration::from_millis(rand::random_range(100..=1000));
-        tokio::time::sleep(delay).await;
-    }
 }
 
 #[cfg(test)]
