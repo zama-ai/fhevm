@@ -1,8 +1,8 @@
 mod common;
 
 use alloy::primitives::{Address, B256};
-use ciphertext_attestation::{prf::Version, PrfOutputAttestation, PrfOutputRef};
-use common::GRANTS;
+use ciphertext_attestation::{prf::consensus::MAX_PAD_LENGTH, PrfOutputRef};
+use common::{attestation, set_error, set_output, CONNECTOR, DEADLINE, GRANTS};
 use fhevm_engine_common::healthz_server::HealthCheckService;
 use prf_service::{
     pads::{read, read_body, Admission, Admissions, PadOutput, PadState, CONNECTOR_LOCK},
@@ -20,7 +20,6 @@ use tokio_util::sync::CancellationToken;
 
 const LIMIT: i64 = 100;
 const MAX_ADDS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
-const CONNECTOR: Address = Address::repeat_byte(0x11);
 const OTHER_CONNECTOR: Address = Address::repeat_byte(0x22);
 
 /// A database and an admin pool.
@@ -63,6 +62,18 @@ async fn lock_waiters(pool: &PgPool) -> i64 {
         .unwrap()
 }
 
+/// Waits until `count` requests wait for a connector lock. Fails after `DEADLINE`.
+async fn wait_for_lock_waiters(pool: &PgPool, count: i64) {
+    let wait = async {
+        while lock_waiters(pool).await < count {
+            tokio::task::yield_now().await;
+        }
+    };
+    timeout(DEADLINE, wait)
+        .await
+        .expect("requests wait for the connector lock");
+}
+
 /// Checks that exactly one request created the row, and that the others got `other`.
 async fn assert_one_created(
     requests: Vec<JoinHandle<anyhow::Result<Admission>>>,
@@ -98,40 +109,6 @@ fn path(label: u8, pad_length: u16) -> PrfOutputRef {
         label: B256::repeat_byte(label),
         pad_length,
     }
-}
-
-/// Completes the row with `output(byte)` and a body of 32 `byte`s.
-async fn set_output(pool: &PgPool, path: &PrfOutputRef, byte: u8) {
-    let attestation = &output(byte).attestation;
-    sqlx::query(
-        "UPDATE pads SET ciphertext128 = $4, ciphertext_digest = $5, sns_ciphertext_digest = $6,
-                signer = $7, signature = $8
-          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
-    )
-    .bind(i32::from(path.prf_id))
-    .bind(path.label.as_slice())
-    .bind(i32::from(path.pad_length))
-    .bind(vec![byte; 32])
-    .bind(attestation.ciphertext_digest.as_slice())
-    .bind(attestation.sns_ciphertext_digest.as_slice())
-    .bind(attestation.signer.as_slice())
-    .bind(&attestation.signature)
-    .execute(pool)
-    .await
-    .unwrap();
-}
-
-async fn set_error(pool: &PgPool, path: &PrfOutputRef) {
-    sqlx::query(
-        "UPDATE pads SET is_error = true
-          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
-    )
-    .bind(i32::from(path.prf_id))
-    .bind(path.label.as_slice())
-    .bind(i32::from(path.pad_length))
-    .execute(pool)
-    .await
-    .unwrap();
 }
 
 #[tokio::test]
@@ -185,9 +162,7 @@ async fn connector_over_budget_joins_a_row_added_during_its_admission() {
         let admissions = admissions.clone();
         async move { admissions.admit(&path(2, 64), CONNECTOR).await }
     });
-    while lock_waiters(&pool).await == 0 {
-        tokio::task::yield_now().await;
-    }
+    wait_for_lock_waiters(&pool, 1).await;
 
     // Another connector adds the row now.
     assert_eq!(
@@ -210,9 +185,7 @@ async fn requests_of_a_connector_wait_in_memory_not_on_the_lock() {
     // Hold the lock of CONNECTOR, so its requests stop before they can add a row.
     let lock = lock_connector(&pool, CONNECTOR).await;
     let requests = spawn_admits(&admissions, 0..10, CONNECTOR);
-    while lock_waiters(&pool).await < MAX_ADDS.get() as i64 {
-        tokio::task::yield_now().await;
-    }
+    wait_for_lock_waiters(&pool, MAX_ADDS.get() as i64).await;
     // Only MAX_ADDS requests wait for the lock with a connection. The others wait in memory.
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(lock_waiters(&pool).await, MAX_ADDS.get() as i64);
@@ -235,9 +208,7 @@ async fn cancelled_requests_keep_their_slots() {
     let (_instance, pool, _service, admissions) = test_db().await;
     let lock = lock_connector(&pool, CONNECTOR).await;
     let cancelled = spawn_admits(&admissions, 0..MAX_ADDS.get() as u8, CONNECTOR);
-    while lock_waiters(&pool).await < MAX_ADDS.get() as i64 {
-        tokio::task::yield_now().await;
-    }
+    wait_for_lock_waiters(&pool, MAX_ADDS.get() as i64).await;
     for request in &cancelled {
         request.abort();
     }
@@ -338,24 +309,17 @@ async fn table_refuses_a_pad_length_above_the_max() {
         .bind(CONNECTOR.as_slice())
         .execute(&pool)
     };
-    insert(2048).await.unwrap();
-    let err = insert(2049).await.unwrap_err();
+    insert(i32::from(MAX_PAD_LENGTH)).await.unwrap();
+    let err = insert(i32::from(MAX_PAD_LENGTH) + 1).await.unwrap_err();
     let code = err.as_database_error().and_then(|e| e.code());
     // 23514 is check_violation.
     assert_eq!(code.as_deref(), Some("23514"), "{err}");
 }
 
-/// A different byte in each field, so a test finds two swapped columns.
 fn output(byte: u8) -> PadOutput {
     PadOutput {
         body_length: 32,
-        attestation: PrfOutputAttestation {
-            version: Version::V1,
-            ciphertext_digest: B256::repeat_byte(byte + 1),
-            sns_ciphertext_digest: B256::repeat_byte(byte + 2),
-            signer: Address::repeat_byte(byte + 3),
-            signature: vec![byte + 4; 65],
-        },
+        attestation: attestation(byte),
     }
 }
 
@@ -411,7 +375,6 @@ async fn start_wait(
 }
 
 const NO_POLL: Duration = Duration::from_secs(3600);
-const DEADLINE: Duration = Duration::from_secs(5);
 
 /// The state that `wait` gives, within `DEADLINE`.
 async fn finished(wait: JoinHandle<anyhow::Result<PadState>>) -> PadState {

@@ -1,10 +1,8 @@
 mod common;
 
-use alloy::primitives::{Address, B256};
-use ciphertext_attestation::{
-    prf::{Version as AttestationVersion, PRF_ATTESTATION_HEADER},
-    PrfOutputAttestation,
-};
+use alloy::primitives::B256;
+use ciphertext_attestation::{prf::PRF_ATTESTATION_HEADER, PrfOutputAttestation, PrfOutputRef};
+use common::{CONNECTOR, DEADLINE};
 use prf_service::{Config, PrfService, SIGNER_HEADER};
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, Version};
 use sqlx::{postgres::PgPoolOptions, PgPool};
@@ -15,9 +13,7 @@ use tokio_util::sync::CancellationToken;
 
 const LABEL: &str = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff";
 const OTHER_LABEL: &str = "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
-const CONNECTOR: Address = Address::repeat_byte(0x11);
 const BUDGET: i64 = 64;
-const DEADLINE: Duration = Duration::from_secs(5);
 
 struct TestService {
     base_url: String,
@@ -91,34 +87,11 @@ impl TestService {
 
     /// Writes the output of a row, as the pad-worker does.
     async fn complete(&self, label: &str, pad_length: i32, byte: u8) {
-        let output = output(byte);
-        sqlx::query(
-            "UPDATE pads SET ciphertext128 = $3, ciphertext_digest = $4, sns_ciphertext_digest = $5,
-                    signer = $6, signature = $7
-              WHERE prf_instance = 0 AND label = $1 AND pad_length = $2",
-        )
-        .bind(label_bytes(label))
-        .bind(pad_length)
-        .bind(vec![byte; 32])
-        .bind(output.ciphertext_digest.as_slice())
-        .bind(output.sns_ciphertext_digest.as_slice())
-        .bind(output.signer.as_slice())
-        .bind(&output.signature)
-        .execute(&self.pool)
-        .await
-        .unwrap();
+        common::set_output(&self.pool, &output_ref(label, pad_length), byte).await;
     }
 
     async fn fail(&self, label: &str, pad_length: i32) {
-        sqlx::query(
-            "UPDATE pads SET is_error = true
-              WHERE prf_instance = 0 AND label = $1 AND pad_length = $2",
-        )
-        .bind(label_bytes(label))
-        .bind(pad_length)
-        .execute(&self.pool)
-        .await
-        .unwrap();
+        common::set_error(&self.pool, &output_ref(label, pad_length)).await;
     }
 
     /// Waits until the request for `label` adds its row.
@@ -153,15 +126,13 @@ fn label_bytes(label: &str) -> Vec<u8> {
     hex::decode(label).unwrap()
 }
 
-/// A different byte in each field, so a test finds two swapped columns.
+fn output_ref(label: &str, pad_length: i32) -> PrfOutputRef {
+    let label = B256::from_slice(&label_bytes(label));
+    PrfOutputRef::new(0, label, u16::try_from(pad_length).unwrap())
+}
+
 fn output(byte: u8) -> PrfOutputAttestation {
-    PrfOutputAttestation {
-        version: AttestationVersion::V1,
-        ciphertext_digest: B256::repeat_byte(byte + 1),
-        sns_ciphertext_digest: B256::repeat_byte(byte + 2),
-        signer: Address::repeat_byte(byte + 3),
-        signature: vec![byte + 4; 65],
-    }
+    common::attestation(byte)
 }
 
 fn attestation(response: &Response) -> PrfOutputAttestation {
