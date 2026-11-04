@@ -212,7 +212,7 @@ describe('prepareCoprocessorUpgrade task utils', function () {
       expect(inputs.durationSeconds).to.equal(1800);
       expect(inputs.bufferSeconds).to.equal(3600);
       expect(inputs.proposalId).to.equal(5n);
-      expect(inputs.hostChains.map((c) => c.chainId)).to.deep.equal([11155111, 80002, 560048, 97]);
+      expect(inputs.hostChains.map((c) => c.chainId)).to.deep.equal([11155111, 80002, 97]);
       expect(inputs.hostChains[0].label).to.equal('sepolia');
       expect(inputs.gateway.rpcUrl).to.equal('https://gw.testnet.invalid');
       expect(inputs.softwareVersion).to.equal('v0.14.0');

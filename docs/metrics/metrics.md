@@ -198,6 +198,33 @@ Metrics for zkproof-worker are to be added in future releases, if/when needed. C
  - **Alarm**: If the counter is a flat line over a period of time.
     - **Recommendation**: 0 for more than 1 minute, i.e. `increase(counter[1m]) == 0`.
 
+### coprocessor-proxy
+
+Metrics are served at `/metrics` on `COPROCESSOR_PROXY_METRICS_ENDPOINT`. The proxy accepts requests signed by the
+tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest finalized block.
+
+#### Metric Name: `coprocessor_proxy_kms_tx_senders`
+ - **Type**: Gauge
+ - **Description**: Number of KMS tx-senders the last successful read of ProtocolConfig allows. At 0, the proxy refuses every request with `auth_unknown_signer`.
+ - **Alarm**: If the gauge is 0.
+    - **Recommendation**: 0 for more than 1 minute, i.e. `max_over_time(coprocessor_proxy_kms_tx_senders[1m]) == 0`.
+
+#### Metric Name: `coprocessor_proxy_kms_tx_senders_block_timestamp_seconds`
+ - **Type**: Gauge
+ - **Description**: Unix timestamp of the finalized block whose KMS tx-senders the proxy applies; 0 before the first read. On Ethereum the finalized block is the first block of the epoch two epochs back, so its age normally runs from about 13 to 19 minutes, and a late finalization can push it past 25 minutes with nothing wrong in the proxy. It stops advancing when reads of ProtocolConfig fail, and the proxy keeps the last set it read.
+ - **Alarm**: If the applied block is older than finality plus a margin for late finalization.
+    - **Recommendation**: more than 30 minutes old, i.e. `time() - coprocessor_proxy_kms_tx_senders_block_timestamp_seconds > 1800`.
+
+#### Metric Name: `coprocessor_proxy_requests_counter`
+ - **Type**: Counter
+ - **Labels**:
+   - `route`: `prf` for the PRF route, `none` for any other path.
+   - `status`: HTTP response status; `0` means no response status.
+   - `signer`: the authenticated signer, EIP-55 checksummed; empty when the request was not authenticated.
+ - **Description**: One count per request the proxy answered. `502` means prf-service could not be reached or failed, `504` that it timed out, `429` that the signer exceeded its request rate (`COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER`).
+ - **Alarm**: Sustained prf-service failures. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
+    - **Recommendation**: `sum(increase(coprocessor_proxy_requests_counter{status=~"502|504"}[5m])) > 5`.
+
 ## kms-connector
 
 ### HTTP decryption: proxy and endpoint

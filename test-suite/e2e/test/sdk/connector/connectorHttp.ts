@@ -1,6 +1,6 @@
 // Minimal client for the kms-connector HTTP decryption endpoint (RFC 033):
 // `GET /version`, `POST /v1/public-decrypt`, `POST /v1/user-decrypt`.
-import type { Signer } from 'ethers';
+import type { BaseWallet, Signer } from 'ethers';
 import { Wallet, getBytes, hexlify, keccak256, toUtf8Bytes } from 'ethers';
 
 import type { SignMode, UnifiedDecryptRequest } from '../unified/unifiedUserDecrypt';
@@ -68,11 +68,19 @@ const fhevmSigDomain = () => ({
   verifyingContract: process.env.PROTOCOL_CONFIG_CONTRACT_ADDRESS!,
 });
 
-/** `Authorization` value for `path` and `body`, signed for `audience` and valid for one minute. */
-export async function fhevmSigHeader(path: string, body: string, audience: string): Promise<string> {
+/**
+ * `Authorization` value for `path` and `body`, signed for `audience`. By default the relayer stand-in
+ * signs it and it is valid for one minute.
+ */
+export async function fhevmSigHeader(
+  path: string,
+  body: string,
+  audience: string,
+  opts?: { signer?: BaseWallet; expires?: number },
+): Promise<string> {
   const bodyDigest = keccak256(toUtf8Bytes(body));
-  const expires = Math.floor(Date.now() / 1000) + 60;
-  const sig = await senderWallet().signTypedData(fhevmSigDomain(), FHEVM_SIG_TYPES, {
+  const expires = opts?.expires ?? Math.floor(Date.now() / 1000) + 60;
+  const sig = await (opts?.signer ?? senderWallet()).signTypedData(fhevmSigDomain(), FHEVM_SIG_TYPES, {
     path,
     bodyDigest,
     expires,

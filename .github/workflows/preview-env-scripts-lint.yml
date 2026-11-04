@@ -33,7 +33,7 @@ jobs:
           curl -fsSL "${url}" | tar -xJ
           bin="shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
           # -x follows `source`d files (e.g. lib.sh) via each script's directives.
-          "${bin}" -x ci/preview-env/scripts/*.sh
+          find ci/preview-env/scripts -name '*.sh' -print0 | xargs -0 "${bin}" -x
 
       - name: Setup Node
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -43,8 +43,8 @@ jobs:
       - name: node --check (*.cjs, *.mjs)
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          for f in ci/preview-env/scripts/*.cjs ci/preview-env/scripts/*.mjs; do
-            echo "checking ${f}"
-            node --check "${f}"
-          done
+          find ci/preview-env/scripts \( -name '*.cjs' -o -name '*.mjs' \) -print0 |
+            while IFS= read -r -d '' f; do
+              echo "checking ${f}"
+              node --check "${f}"
+            done

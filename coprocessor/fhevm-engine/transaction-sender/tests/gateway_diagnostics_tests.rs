@@ -12,8 +12,8 @@ use support::{Fault, FaultProxy};
 use test_harness::db_utils::{insert_ciphertext_digest, insert_random_keys_and_host_chain};
 use tracing_subscriber::prelude::*;
 use transaction_sender::{
-    diagnostics::gateway_tracing_filter, gateway_http_client, get_chain_id, ConfigSettings,
-    FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
+    gateway_http_client, get_chain_id, ConfigSettings, FillersWithoutNonceManagement,
+    NonceManagedProvider, TransactionSender,
 };
 
 #[derive(Clone, Default)]
@@ -42,7 +42,7 @@ async fn gateway_credentials_stay_out_of_logs_health_and_database() -> anyhow::R
     let logs = Logs::default();
     tracing_subscriber::registry()
         .with(tracing_subscriber::filter::filter_fn(
-            gateway_tracing_filter,
+            fhevm_engine_common::telemetry::transport_dependency_filter,
         ))
         .with(
             tracing_subscriber::fmt::layer()
