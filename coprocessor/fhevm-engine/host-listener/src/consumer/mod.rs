@@ -699,25 +699,15 @@ pub async fn run_consumer(config: ConsumerConfig) -> Result<()> {
             .await;
             if let Err(HandlerError::Transient(error)) = &result {
                 if let Some(gap) = error.downcast_ref::<HistoryGap>() {
-                    // Persist intent before publication so replay admission
-                    // accepts the repair. Retries reuse an ongoing absolute
-                    // request without replacing any manual catchup.
-                    let number =
-                        i64::try_from(gap.block_number).map_err(|error| {
-                            HandlerError::Transient(error.into())
-                        })?;
-                    catchup::store::ensure_requested(
+                    // Finalized admission established the repair's eligibility
+                    // from this block or an already-finalized history anchor.
+                    // Persist it before a replica with a lagging head can claim it.
+                    catchup::store::ensure_repair_requested(
                         &db.pool().await,
                         chain_id.as_i64(),
                         &consumer_id,
-                        &catchup::ManualCatchupArgs {
-                            catchup_from_block: Some(number),
-                            catchup_up_to_block: Some(number),
-                            catchup_unfinalized: false,
-                            no_override_catchup: true,
-                        },
-                        Some(gap.block_number),
-                        None,
+                        gap.block_number,
+                        payload.block_number.max(gap.block_number),
                         config.gcs_mode,
                     )
                     .await

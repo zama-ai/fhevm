@@ -145,6 +145,65 @@ pub async fn ensure_requested(
     Ok(Some(id))
 }
 
+/// Persist a single-block repair whose eligibility was established by finalized
+/// history. Freeze that bound before another replica can claim the request;
+/// its own observed head may be behind. Reuse matching ongoing intent without
+/// replacing other manual requests or changing an existing publication bound.
+pub async fn ensure_repair_requested(
+    pool: &PgPool,
+    chain_id: i64,
+    consumer_id: &str,
+    block_number: u64,
+    finalized_head: u64,
+    gcs_mode: bool,
+) -> Result<Option<Uuid>> {
+    anyhow::ensure!(
+        block_number <= finalized_head,
+        "repair block exceeds the known finalized head"
+    );
+    let number =
+        i64::try_from(block_number).context("repair block exceeds BIGINT")?;
+    let head =
+        i64::try_from(finalized_head).context("repair head exceeds BIGINT")?;
+    let Some(mut tx) =
+        fhevm_engine_common::versioning::begin_request_write_guarded(
+            pool, gcs_mode,
+        )
+        .await?
+        .into_tx()
+    else {
+        return Ok(None);
+    };
+    sqlx::query_scalar!(
+        "WITH locked AS (SELECT pg_advisory_xact_lock(hashtextextended($1, $2)))
+         SELECT 1 AS \"locked!\" FROM locked",
+        consumer_id,
+        chain_id,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    let id = sqlx::query_scalar!(
+        "INSERT INTO host_consumer_catchups
+         (id, chain_id, consumer_id, requested_from, requested_to, block_start,
+          block_end, finalized, observed_head)
+         VALUES ($1, $2, $3, $4, $4, $4, $4, TRUE, $5)
+         ON CONFLICT (chain_id, consumer_id, requested_from, requested_to, finalized)
+             WHERE status = 'ONGOING'
+         DO UPDATE SET observed_head = COALESCE(host_consumer_catchups.observed_head,
+                                               EXCLUDED.observed_head)
+         RETURNING id",
+        Uuid::now_v7(),
+        chain_id,
+        consumer_id,
+        number,
+        head,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(Some(id))
+}
+
 async fn suppress_others(
     tx: &mut Transaction<'_, Postgres>,
     chain_id: i64,

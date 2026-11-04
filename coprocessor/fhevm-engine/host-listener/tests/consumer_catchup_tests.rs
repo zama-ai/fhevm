@@ -65,6 +65,87 @@ async fn startup_completes_from_core_last_marker_below_stored_end() {
 }
 
 #[tokio::test]
+async fn lagging_replica_publishes_and_ingests_another_replicas_repair() {
+    use broker::{AsyncHandlerPayloadClassified, Topic};
+    use host_listener::consumer::catchup::store;
+    use primitives::{
+        event::CatchupPayload, routing, utils::chain_id_to_namespace,
+    };
+    use test_harness::instance::{setup_test_db, ImportMode};
+
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        let instance = setup_test_db(ImportMode::None).await.unwrap();
+        let pool = sqlx::PgPool::connect(instance.db_url.as_str()).await.unwrap();
+        let requester = sqlx::PgPool::connect(instance.db_url.as_str()).await.unwrap();
+        let chain_id = ChainId::try_from(
+            (uuid::Uuid::new_v4().as_u128() % 900_000_000) as u64 + 100_000_000,
+        ).unwrap();
+        let identity = format!("host-listener-consumer.{}", chain_id.as_u64());
+        seed_history(&pool, chain_id.as_i64(), &[799, 900]).await;
+        let broker_url = std::env::var("CATCHUP_BROKER_URL").unwrap();
+        let broker = Broker::from_url(&broker_url).await.unwrap();
+        let namespace = chain_id_to_namespace(chain_id.as_u64());
+        let stop = CancellationToken::new();
+        let (request_tx, mut requests) = mpsc::unbounded_channel();
+        let control = broker.consumer(&Topic::namespaced(&namespace, routing::FINAL_CATCHUP))
+            .group("lagging-owner-repairs").with_cancellation(stop.clone()).build().unwrap();
+        control.ensure_topology().await.unwrap();
+        let control = tokio::spawn(control.run(AsyncHandlerPayloadClassified::new(
+            move |request: CatchupPayload| {
+                let tx = request_tx.clone();
+                async move { tx.send(request).unwrap(); Ok(()) }
+            },
+        )));
+        let run = tokio::spawn(run_consumer(test_config(
+            broker_url, instance.db_url.clone(), chain_id, ManualCatchupArgs::default(),
+        )));
+        let observer = consumer::ListenerConsumer::new(&broker, chain_id.as_u64(), &identity);
+        loop {
+            let status = observer.group_status().await.unwrap();
+            if [".final-event", ".final-catchup-event"].iter().all(|suffix| {
+                status.iter().any(|(topic, groups)| topic.ends_with(suffix) && !groups.is_empty())
+            }) { break; }
+            assert!(!run.is_finished(), "listener stopped during startup");
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let publisher = broker.publisher("").await.unwrap();
+        publisher.publish(
+            &routing::consumer_final_event_routing(identity.clone()),
+            &event_block(chain_id.as_u64(), 800, BlockFlow::Final, None, false),
+        ).await.unwrap();
+        wait_for_events(&pool, chain_id, &[800]).await;
+
+        // Another replica has established eligibility at 902. The running
+        // owner's observed FINAL head stays at 800 throughout the repair.
+        let id = store::ensure_repair_requested(
+            &requester, chain_id.as_i64(), &identity, 901, 902, false,
+        ).await.unwrap().unwrap();
+        let request = requests.recv().await.unwrap();
+        assert_eq!((request.catchup_id, request.block_start, request.block_end),
+            (Some(id), 901, 901));
+        publisher.publish(
+            &routing::consumer_final_catchup_event_routing(identity.clone()),
+            &event_block(chain_id.as_u64(), 901, BlockFlow::FinalCatchup, Some(id), true),
+        ).await.unwrap();
+        wait_for_events(&pool, chain_id, &[800, 901]).await;
+        loop {
+            let row: (String, i64) = sqlx::query_as(
+                "SELECT status, observed_head FROM host_consumer_catchups WHERE id = $1",
+            ).bind(id).fetch_one(&pool).await.unwrap();
+            if row.0 == "DONE" { assert_eq!(row.1, 902); break; }
+            assert!(!run.is_finished(), "listener stopped before repair completed");
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert!(!run.is_finished());
+        run.abort();
+        let _ = run.await;
+        stop.cancel();
+        control.await.unwrap().unwrap();
+        instance.parent_token.cancel();
+    }).await.unwrap();
+}
+
+#[tokio::test]
 async fn finalized_catchup_yields_until_repair_on_the_same_queue() {
     exercise_history_gap(std::env::var("CATCHUP_BROKER_URL").unwrap()).await;
 }
@@ -205,6 +286,11 @@ async fn exercise_history_gap(broker_url: String) {
         assert_eq!((repair.block_start, repair.block_end), (901, 901));
         let repair_id = repair.catchup_id.unwrap();
         assert_ne!(repair_id, id);
+        let repair_head: i64 = sqlx::query_scalar(
+            "SELECT observed_head FROM host_consumer_catchups WHERE id = $1",
+        ).bind(repair_id).fetch_one(&pool).await.unwrap();
+        assert!((902..=906).contains(&repair_head),
+            "repair must freeze its triggering finalized delivery, not the owner's head at 1000");
         publisher.publish(
             &replay_routing,
             &event_block(chain_id.as_u64(), 901, BlockFlow::FinalCatchup, Some(repair_id), true),
