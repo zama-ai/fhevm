@@ -475,37 +475,38 @@ The two out-of-chart inputs the proxy needs are produced at deploy time by
   use their own client (`test/sdk/connector/connectorHttp.ts`), not the relayer
   SDK, so re-running them there would only duplicate the same code path.
 
-## coprocessor-proxy
+## coprocessor-proxy and prf-service
 
 Except on blue-green stacks, each `coprocessor-<i>` release also runs the
-coprocessor-proxy (`values-coprocessor-proxy-e2e.yaml`), one replica in front of a
-fake prf-service until prf-service deploys here. `scripts/deploy/deploy-coprocessor.sh`
-provides what the chart does not:
+coprocessor-proxy and the prf-service behind it (`values-coprocessor-proxy-e2e.yaml`),
+one replica each. `scripts/deploy/deploy-coprocessor.sh` provides what the chart does not:
 
-- **The fake**: a `common` chart release `coprocessor-<i>-prf-service-fake`
-  (`values-prf-service-fake-e2e.yaml`) running `test-suite/e2e/scripts/fake-prf-service.ts`
-  from the test-suite image: the PRF route over HTTP/1.1 on 8080, its request count on 9090.
-  The proxy's NetworkPolicy selects its pods (`fhevm.zama.ai/party: <i>`) and lets
-  test-suite pods (`app: fhevm-test-suite`) reach port 9090 only.
+- **The `prf_service` role**: created in `postgres-coprocessor-<i>` before the release,
+  with the overlay's `prfService.databaseUser` and `databasePassword`, so that the
+  release's migration grants it its rights on `pads`.
+- **The PRF output the suite requests**: the pad-worker does not exist yet, so a pod of
+  the test-suite image runs `test-suite/e2e/scripts/seed-prf-pads.ts` once the migration
+  has created `pads`. It writes one complete row signed with party i's coprocessor key
+  (the Secret `coprocessor-<i>-pad-signer`), as the pad-worker will.
 - **TLS**: the Secret `coprocessor-proxy-tls`, made as for the kms-connector proxies,
   with SANs = every party's `coprocessor-<i>-coprocessor-proxy` Service.
-- **Per party**: the image tag (`coprocessor_proxy` in resolve-tags), the signer (the
-  derived coprocessor wallet), the prf-service address and the NetworkPolicy's podSelector.
+- **Per party**: the image tags (`coprocessor_proxy` and `coprocessor_prf_service` in
+  resolve-tags), the signer (the derived coprocessor wallet), and the NetworkPolicy's
+  podSelector: only party i's proxy reaches party i's prf-service on 8090. Test-suite
+  pods (`app: fhevm-test-suite`) reach its metrics port 9100 only.
 - **Test-suite wiring**: the ConfigMap **`coprocessor-proxy`** (`urls`,
-  `signer-addresses`, `count-urls`, `metrics-urls`, `ca.crt`), read `optional` by the
-  `@fhevm/sdk` Argo Workflow, whose `coprocessor-proxy` task runs the
+  `signer-addresses`, `prf-service-metrics-urls`, `metrics-urls`, `ca.crt`), read
+  `optional` by the `@fhevm/sdk` Argo Workflow, whose `coprocessor-proxy` task runs the
   `Coprocessor proxy` suite signing with KMS party 1's tx-sender key
-  (`kms-connector-tx-sender-1`).
+  (`kms-connector-tx-sender-1`). The suite checks the attestation of the output against
+  each party's signer.
 
 With `automated_tests`, `scripts/e2e/check-coprocessor-proxy.sh` then checks that
 every proxy rolled out with its replicas Ready (its `/healthz` answers once the TLS
 listener is up and the KMS tx-senders have been read), and restarts every proxy under a
 steady load of signed requests from a test-suite pod, which stops once every old
 proxy pod is gone: no request may fail. It also checks the NetworkPolicy: that
-test-suite pod must reach each fake's port 9090 and no fake's PRF port.
-
-When prf-service deploys here, the fake release, the NetworkPolicy overrides and the count
-URLs go, and the prf-service address points at prf-service.
+test-suite pod must reach each prf-service's port 9100 and no prf-service's port 8090.
 
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 

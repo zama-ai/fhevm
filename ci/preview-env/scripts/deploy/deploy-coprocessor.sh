@@ -12,27 +12,94 @@ script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "${script_dir}/../lib.sh"
 
 ######################################################################
-# coprocessor-proxy, except on blue-green stacks: one per party in its
-# coprocessor-<i> release, forwarding to that party's fake prf-service
-# (values-prf-service-fake-e2e.yaml) until prf-service deploys here.
+# coprocessor-proxy and prf-service, except on blue-green stacks: one of
+# each per party in its coprocessor-<i> release (values-coprocessor-proxy-e2e.yaml).
 # What the e2e suite needs (test-suite/e2e/test/coprocessorProxy) goes in
 # the coprocessor-proxy ConfigMap:
-#   urls              COPROCESSOR_PROXY_URLS, one https proxy URL per party
-#   signer-addresses  COPROCESSOR_SIGNER_ADDRESSES, the audience of each
-#   count-urls        PRF_SERVICE_FAKE_COUNT_URLS, each fake's request count
-#   metrics-urls      COPROCESSOR_PROXY_METRICS_URLS
-#   ca.crt            the proxies' certificate
+#   urls                      COPROCESSOR_PROXY_URLS, one https proxy URL per party
+#   signer-addresses          COPROCESSOR_SIGNER_ADDRESSES, the audience of each
+#   prf-service-metrics-urls  PRF_SERVICE_METRICS_URLS, the requests each prf-service answered
+#   metrics-urls              COPROCESSOR_PROXY_METRICS_URLS
+#   ca.crt                    the proxies' certificate
 ######################################################################
 # Must match charts/coprocessor/templates/_helpers.tpl (coprocessorProxyName:
-# "<release>-coprocessor-proxy") and coprocessorProxy.ports.
+# "<release>-coprocessor-proxy", prfServiceName: "<release>-prf-service") and the ports.
 proxy_service() { echo "coprocessor-${1}-coprocessor-proxy"; }
-fake_service() { echo "coprocessor-${1}-prf-service-fake"; }
+prf_service() { echo "coprocessor-${1}-prf-service"; }
+coprocessor_values=ci/preview-env/coprocessor/values-coprocessor-e2e.yaml
+proxy_values=ci/preview-env/coprocessor/values-coprocessor-proxy-e2e.yaml
 proxy_tls_secret=coprocessor-proxy-tls  # tls.secretName in values-coprocessor-proxy-e2e.yaml
 coproc_signer() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .address' <<<"${COPROC_WALLETS_JSON}"; }
+coproc_key() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .privateKey' <<<"${COPROC_WALLETS_JSON}"; }
 with_proxy="false"
 if [[ "${BLUE_GREEN}" != "true" ]]; then
   with_proxy="true"
 fi
+
+# The role prf-service logs in as (prfService.databaseUser and databasePassword). It must exist
+# before the release's migration runs, which grants it its rights on pads.
+create_prf_service_role() {
+  local i="$1" owner user password
+  owner=$(yq -r '.commonConfig.databaseUser.value' "${coprocessor_values}")
+  user=$(yq -r '.prfService.databaseUser.value' "${proxy_values}")
+  password=$(yq -r '.prfService.databasePassword.value' "${proxy_values}")
+  kubectl exec -i -n "${NAMESPACE}" "postgres-coprocessor-${i}-0" -- \
+    psql -U "${owner}" -d postgres -qtA -v ON_ERROR_STOP=1 -v user="${user}" -v password="${password}" <<'SQL'
+SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'user', :'password')
+ WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = :'user') \gexec
+SQL
+}
+
+# Writes the PRF output the e2e suite requests into party i's database, signed with the party's
+# coprocessor key, as its pad-worker will (test-suite/e2e/scripts/seed-prf-pads.ts). The pod logs in
+# as the database owner, since prf_service cannot write outputs, and waits for the pads table.
+seed_prf_pads() {
+  local i="$1" pod="coprocessor-${1}-seed-prf-pads" secret="coprocessor-${1}-pad-signer"
+  kubectl create secret generic "${secret}" -n "${NAMESPACE}" --from-literal=private-key="$(coproc_key "${i}")" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl delete pod "${pod}" -n "${NAMESPACE}" --ignore-not-found --wait=true
+  POD="${pod}" SECRET="${secret}" ENDPOINT="postgres-coprocessor-${i}:5432" \
+    IMAGE="hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e:$(jq -r .test_suite <<<"${TAGS_JSON}")" \
+    OWNER="$(yq -r '.commonConfig.databaseUser.value' "${coprocessor_values}")" \
+    OWNER_PASSWORD="$(yq -r '.commonConfig.databasePassword.value' "${coprocessor_values}")" \
+    DATABASE_URL_TEMPLATE="$(yq -r '.commonConfig.databaseUrl' "${coprocessor_values}")" \
+    yq -n '
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {"name": strenv(POD)},
+  "spec": {
+    "restartPolicy": "Never",
+    "imagePullSecrets": [{"name": "registry-credentials"}],
+    "containers": [{
+      "name": "seed",
+      "image": strenv(IMAGE),
+      "workingDir": "/app/test-suite/e2e",
+      "command": ["npx", "ts-node", "--transpile-only", "scripts/seed-prf-pads.ts"],
+      "env": [
+        {"name": "DATABASE_USER", "value": strenv(OWNER)},
+        {"name": "DATABASE_PASSWORD", "value": strenv(OWNER_PASSWORD)},
+        {"name": "DATABASE_ENDPOINT", "value": strenv(ENDPOINT)},
+        {"name": "DATABASE_URL", "value": strenv(DATABASE_URL_TEMPLATE)},
+        {"name": "COPROCESSOR_SIGNER_PRIVATE_KEY", "valueFrom": {"secretKeyRef": {"name": strenv(SECRET), "key": "private-key"}}}
+      ]
+    }]
+  }
+}' | kubectl apply -n "${NAMESPACE}" -f -
+  # The seeder waits up to 10 min for the migration, then fails: stop on Failed too.
+  local phase="" deadline=$((SECONDS + 900))
+  until [[ "${phase}" == "Succeeded" || "${phase}" == "Failed" || ${SECONDS} -ge ${deadline} ]]; do
+    sleep 5
+    phase=$(kubectl get pod "${pod}" -n "${NAMESPACE}" -o jsonpath='{.status.phase}')
+  done
+  if [[ "${phase}" != "Succeeded" ]]; then
+    kubectl logs "${pod}" -n "${NAMESPACE}" || true
+    echo "::error::${pod} did not seed party ${i}'s PRF output (phase ${phase})"
+    exit 1
+  fi
+  kubectl logs "${pod}" -n "${NAMESPACE}"
+  kubectl delete pod "${pod}" -n "${NAMESPACE}" --wait=false
+}
 
 # One self-signed certificate for every party's proxy, as for the kms-connector proxies.
 if [[ "${with_proxy}" == "true" ]] && ! kubectl get secret "${proxy_tls_secret}" -n "${NAMESPACE}" >/dev/null 2>&1; then
@@ -187,16 +254,14 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
   if [[ "${with_proxy}" == "true" ]]; then
     signer=$(coproc_signer "${i}")
     require_nonempty "${signer}" "no coprocessor signer address for party ${i} in COPROC_WALLETS_JSON"
-    helm upgrade --install "$(fake_service "${i}")" "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
-      -n "${NAMESPACE}" -f ci/preview-env/coprocessor/values-prf-service-fake-e2e.yaml \
-      --set-string "fake.image=hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e:$(jq -r .test_suite <<<"${TAGS_JSON}")" \
-      --set-string "fake.party=${i}"
+    create_prf_service_role "${i}"
     proxy_args=(
-      -f ci/preview-env/coprocessor/values-coprocessor-proxy-e2e.yaml
+      -f "${proxy_values}"
       --set-string "coprocessorProxy.image.tag=$(jq -r .coprocessor_proxy <<<"${TAGS_JSON}")"
       --set-string "coprocessorProxy.coprocessorSignerAddress=${signer}"
-      --set-string "coprocessorProxy.prfServiceAddress=$(fake_service "${i}"):8080"
-      --set-json "coprocessorProxy.prfServiceNetworkPolicy.podSelector={\"app\":\"prf-service-fake\",\"fhevm.zama.ai/party\":\"${i}\"}"
+      --set-string "prfService.image.tag=$(jq -r .coprocessor_prf_service <<<"${TAGS_JSON}")"
+      # Only party i's proxy reaches party i's prf-service.
+      --set-json "coprocessorProxy.prfServiceNetworkPolicy.podSelector={\"app\":\"coprocessor-prf-service\",\"app.kubernetes.io/name\":\"$(prf_service "${i}")\"}"
     )
   fi
   helm upgrade --install "coprocessor-${i}" "${COPROCESSOR_CHART}" \
@@ -212,11 +277,14 @@ for i in $(seq 1 "${NB_COPROCESSOR}"); do
 done
 
 if [[ "${with_proxy}" == "true" ]]; then
-  urls="" signers="" count_urls="" metrics_urls=""
+  for i in $(seq 1 "${NB_COPROCESSOR}"); do
+    seed_prf_pads "${i}"
+  done
+  urls="" signers="" prf_metrics_urls="" metrics_urls=""
   for i in $(seq 1 "${NB_COPROCESSOR}"); do
     urls="${urls:+${urls},}https://$(proxy_service "${i}"):8443"
     signers="${signers:+${signers},}$(coproc_signer "${i}")"
-    count_urls="${count_urls:+${count_urls},}http://$(fake_service "${i}"):9090/count"
+    prf_metrics_urls="${prf_metrics_urls:+${prf_metrics_urls},}http://$(prf_service "${i}"):9100/metrics"
     metrics_urls="${metrics_urls:+${metrics_urls},}http://$(proxy_service "${i}"):9100/metrics"
   done
   ca_file=$(mktemp)
@@ -224,7 +292,7 @@ if [[ "${with_proxy}" == "true" ]]; then
   kubectl create configmap coprocessor-proxy -n "${NAMESPACE}" \
     --from-literal=urls="${urls}" \
     --from-literal=signer-addresses="${signers}" \
-    --from-literal=count-urls="${count_urls}" \
+    --from-literal=prf-service-metrics-urls="${prf_metrics_urls}" \
     --from-literal=metrics-urls="${metrics_urls}" \
     --from-file=ca.crt="${ca_file}" \
     --dry-run=client -o yaml | kubectl apply -f -
