@@ -30,7 +30,7 @@ export type ResolveFhevmConfigParameters = {
       readonly hcuLimit?: OptionalChainContract | undefined;
       readonly inputVerifier?: OptionalChainContract | undefined;
       readonly kmsVerifier: { readonly address: string };
-      readonly protocolConfig?: OptionalChainContract | undefined;
+      readonly protocolConfig: { readonly address: string };
     };
     readonly gateway?:
       | {
@@ -54,7 +54,7 @@ export type ResolveFhevmConfigReturnType = {
   readonly fhevmExecutor: FhevmExecutorContractData;
   readonly inputVerifier: InputVerifierContractData;
   readonly kmsVerifier: KmsVerifierContractData;
-  readonly protocolConfig: ChecksummedAddress | undefined;
+  readonly protocolConfig: ChecksummedAddress;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -67,10 +67,8 @@ export async function resolveFhevmConfig(
   const kmsVerifierAddress = parameters.fhevm.contracts.kmsVerifier.address;
   assertIsAddress(kmsVerifierAddress, {});
 
-  const protocolConfigAddress = parameters.fhevm.contracts.protocolConfig?.address;
-  if (protocolConfigAddress !== undefined) {
-    assertIsAddress(protocolConfigAddress, {});
-  }
+  const protocolConfigAddress = parameters.fhevm.contracts.protocolConfig.address;
+  assertIsAddress(protocolConfigAddress, {});
 
   // no context needed
   await initPublicAction(fhevm);
@@ -97,7 +95,7 @@ export async function resolveFhevmConfig(
     () =>
       readKmsVerifierContractData(fhevm, {
         address: addressToChecksummedAddress(kmsVerifierAddress),
-        protocolConfigAddress: protocolConfigAddress ? addressToChecksummedAddress(protocolConfigAddress) : undefined,
+        protocolConfigAddress: addressToChecksummedAddress(protocolConfigAddress),
       }),
   ];
 
@@ -132,7 +130,7 @@ export async function resolveFhevmConfig(
     fhevmExecutor: fhevmExecutorData,
     inputVerifier: inputVerifierData,
     kmsVerifier: kmsVerifierData,
-    protocolConfig: protocolConfigAddress ? addressToChecksummedAddress(protocolConfigAddress) : undefined,
+    protocolConfig: addressToChecksummedAddress(protocolConfigAddress),
   };
 
   return Object.freeze(returnValue);

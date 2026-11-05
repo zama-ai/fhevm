@@ -167,7 +167,7 @@ export async function createUnsignedDecryptionPermitEip712V1(
 
   const kmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig.address as ChecksummedAddress,
     fhevmContext,
   });
 

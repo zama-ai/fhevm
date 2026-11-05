@@ -442,7 +442,7 @@ type FhevmChain = {
       readonly acl: ChainContract;
       readonly inputVerifier: ChainContract;
       readonly kmsVerifier: ChainContract;
-      readonly protocolConfig: ChainContract | undefined;
+      readonly protocolConfig: ChainContract;
     };
     readonly relayerUrl: string;
     readonly gateway: {

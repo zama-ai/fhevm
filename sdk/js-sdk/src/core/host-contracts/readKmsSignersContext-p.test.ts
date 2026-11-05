@@ -16,6 +16,7 @@ import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFroz
 ////////////////////////////////////////////////////////////////////////////////
 
 const KMS_VERIFIER_ADDRESS = sepolia.fhevm.contracts.kmsVerifier.address as ChecksummedAddress;
+const PROTOCOL_CONFIG_ADDRESS = sepolia.fhevm.contracts.protocolConfig.address as ChecksummedAddress;
 const SIGNER_A = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266' as ChecksummedAddress;
 const SIGNER_B = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as ChecksummedAddress;
 
@@ -102,7 +103,7 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
 
     const context = await readKmsSignersContextFromPermitExtraData(client, {
       kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-      protocolConfigAddress: undefined,
+      protocolConfigAddress: PROTOCOL_CONFIG_ADDRESS,
       extraData: createKmsExtraDataV0(),
       fhevmContext,
     });
@@ -127,7 +128,7 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
 
     const context = await readKmsSignersContextFromPermitExtraData(client, {
       kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-      protocolConfigAddress: undefined,
+      protocolConfigAddress: PROTOCOL_CONFIG_ADDRESS,
       extraData: createKmsExtraDataV1({ kmsContextId: 5n as Uint256BigInt }),
       fhevmContext,
     });
@@ -151,7 +152,7 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
 
     const context = await readKmsSignersContextFromPermitExtraData(client, {
       kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-      protocolConfigAddress: undefined,
+      protocolConfigAddress: PROTOCOL_CONFIG_ADDRESS,
       extraData: createKmsExtraDataV2({ kmsContextId: 9n as Uint256BigInt, kmsEpochId: 3n as Uint256BigInt }),
       fhevmContext,
     });
@@ -170,7 +171,7 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
     await expect(
       readKmsSignersContextFromPermitExtraData(client, {
         kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-        protocolConfigAddress: undefined,
+        protocolConfigAddress: PROTOCOL_CONFIG_ADDRESS,
         extraData: {} as unknown as ReturnType<typeof createKmsExtraDataV0>,
         fhevmContext,
       }),
