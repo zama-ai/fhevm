@@ -9,6 +9,7 @@ import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol
 import {ProtocolConfigUpgradedExample} from "@fhevm-host-contracts/examples/ProtocolConfigUpgradedExample.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IProtocolConfigBase} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigBase.sol";
+import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {EmptyUUPSProxy} from "@fhevm-host-contracts/contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {UUPSUpgradeableEmptyProxy} from "@fhevm-host-contracts/contracts/shared/UUPSUpgradeableEmptyProxy.sol";
@@ -1694,10 +1695,47 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         emit IProtocolConfig.EpochActivationConfirmation(
             epochId,
             vm.addr(kmsPk0),
-            _hashEpochMaterial(keys, crsList),
+            _hashEpochMaterial(keys, crsList, extraData),
             signature,
             extraData
         );
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, extraData);
+    }
+
+    /// @dev epochMaterialHash matches a vector computed with the ethers EIP-712 encoder over the inputs of KMS's
+    ///      `epoch_material_hash_matches_the_abi_encoding` test. KMS asserts no literal value, so this checks the
+    ///      Solidity encoding, not agreement with a hash produced by KMS.
+    function test_epochMaterialHashMatchesKmsVector() public {
+        _setupTwoNodeContext();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
+        // KMS key(1, 10): ids of 32 0x01 bytes, Server and Public digests of 32 0x0a bytes.
+        bytes memory keyDigest = hex"0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a";
+        IKMSGeneration.KeyDigest[] memory keyDigests = new IKMSGeneration.KeyDigest[](2);
+        keyDigests[0] = IKMSGeneration.KeyDigest({keyType: IKMSGeneration.KeyType.Server, digest: keyDigest});
+        keyDigests[1] = IKMSGeneration.KeyDigest({keyType: IKMSGeneration.KeyType.Public, digest: keyDigest});
+        uint256 keyIds = 0x0101010101010101010101010101010101010101010101010101010101010101;
+        IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
+        keys[0] = IProtocolConfig.EpochKeyResult({prepKeygenId: keyIds, keyId: keyIds, keyDigests: keyDigests});
+        // KMS crs(3, 30): id of 32 0x03 bytes, maxBitLength 256, digest of 32 0x1e bytes.
+        IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
+        crsList[0] = IProtocolConfig.EpochCrsResult({
+            crsId: 0x0303030303030303030303030303030303030303030303030303030303030303,
+            maxBitLength: 256,
+            crsDigest: hex"1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e"
+        });
+        bytes memory extraData = hex"07";
+        bytes32 expected = 0xedea329c3327a3365c73121b33c78f3278029dbbd25899989a2fac9912416613;
+
+        bytes memory signature = _computeSignature(
+            kmsPk0,
+            _hashEpochActivation(contextId, EPOCH_COUNTER_BASE + 1, epochId, expected, extraData)
+        );
+        vm.expectEmit(true, true, false, true, address(protocolConfig));
+        emit IProtocolConfig.EpochActivationConfirmation(epochId, vm.addr(kmsPk0), expected, signature, extraData);
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, extraData);
     }
 
@@ -1716,7 +1754,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             KMS_CONTEXT_COUNTER_BASE + 1,
             EPOCH_COUNTER_BASE + 1,
             epochId,
-            _hashEpochMaterial(keys, crsList),
+            _hashEpochMaterial(keys, crsList, EMPTY_EXTRA_DATA),
             EMPTY_EXTRA_DATA
         );
         (bytes memory highSSignature, bytes32 highS) = _highSSignature(kmsPk0, digest);
@@ -1965,7 +2003,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _dummyEpochResults();
-        bytes32 epochMaterialHash = _hashEpochMaterial(keys, crsList);
+        bytes32 epochMaterialHash = _hashEpochMaterial(keys, crsList, EMPTY_EXTRA_DATA);
 
         // Over `epochId - 1`, the EpochActivationConfirmation signature recovers an address outside the committee.
         bytes memory signature = _computeSignature(
