@@ -205,4 +205,5 @@ limit they hit (`reason="open_connections"` or `reason="pending_handshakes"`), a
 deadline, including one still receiving the previous request's body.
 `coprocessor_proxy_client_connections` is the number of connections open past their TLS handshake.
 A rise in refusals with no attack under way means a connector shares its address with others, or
-the limits see node addresses.
+the limits see node addresses. [docs/metrics/metrics.md](../../docs/metrics/metrics.md) gives
+their alarms.
