@@ -26,6 +26,7 @@ function successfulBuilds() {
       'consensus_detector',
       'upgrade_controller',
       'coprocessor_proxy',
+      'prf_service',
     ],
     'kms-connector-docker-build': ['db_migration', 'gw_listener', 'kms_worker', 'tx_sender', 'endpoint', 'proxy'],
     'relayer-docker-build': ['relayer_migrate', 'relayer'],
@@ -114,6 +115,12 @@ for (const gpuWorkerTag of [undefined, 'abcdef0-cuda12.8-sm90']) {
       repo: 'fhevm/coprocessor/coprocessor-proxy',
       envKey: 'COPROCESSOR_PROXY_VERSION',
     });
+  });
+
+  test(`prf-service tag and registry check are selected (GPU=${!!gpuWorkerTag})`, () => {
+    const selected = selectImages({ buildResults: successfulBuilds(), headTag: 'abcdef0', gpuWorkerTag });
+    expect(selected.outputs['coprocessor-prf-service-version']).toBe('abcdef0');
+    expect(selected.built).toContainEqual({ repo: 'fhevm/coprocessor/prf-service', tag: 'abcdef0' });
   });
 
   test(`relayer-http tag and registry check are selected (GPU=${!!gpuWorkerTag})`, () => {
