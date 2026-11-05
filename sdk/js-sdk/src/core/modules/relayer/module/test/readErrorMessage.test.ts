@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { readErrorMessage } from './readErrorMessage.js';
+import { readErrorMessage } from '../readErrorMessage.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/readErrorMessage.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/readErrorMessage.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 describe('readErrorMessage', () => {

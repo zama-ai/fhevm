@@ -11,6 +11,7 @@ import {
   assertRecordStringArrayProperty,
   safeJSONstringify,
   isNonEmptyString,
+  isNonBlankString,
 } from './string.js';
 import { InternalError } from './errors/InternalError.js';
 import { InvalidPropertyError } from './errors/InvalidPropertyError.js';
@@ -199,6 +200,21 @@ describe('string', () => {
     const nonStringTypes = [null, undefined, 123, 0, true, false, {}, [], ['a']];
     for (const value of nonStringTypes) {
       expect(isNonEmptyString(value)).toBe(false);
+    }
+  });
+
+  // Like isNonEmptyString, but a whitespace-only string is blank.
+  it('isNonBlankString', () => {
+    expect(isNonBlankString('hello')).toBe(true);
+    expect(isNonBlankString(' a ')).toBe(true);
+    expect(isNonBlankString('0')).toBe(true);
+
+    for (const blank of ['', ' ', '   ', '\t', '\n', '\t\n \r']) {
+      expect(isNonBlankString(blank)).toBe(false);
+    }
+
+    for (const value of [null, undefined, 123, 0, true, false, {}, [], ['a']]) {
+      expect(isNonBlankString(value)).toBe(false);
     }
   });
 });

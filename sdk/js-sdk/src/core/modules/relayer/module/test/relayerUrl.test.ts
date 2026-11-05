@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { InvalidUrlError } from '../../../base/errors/InvalidUrlError.js';
+import { InvalidUrlError } from '../../../../base/errors/InvalidUrlError.js';
 import {
   appendRelayerQuery,
   buildRelayerUrlString,
   normalizeRelayerQuery,
   validateRelayerBaseUrl,
-} from './relayerUrl.js';
+} from '../relayerUrl.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/relayerUrl.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/relayerUrl.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 describe('validateRelayerBaseUrl', () => {
