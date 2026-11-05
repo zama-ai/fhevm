@@ -73,12 +73,14 @@ export const createTransaction = async <A extends [...{ [I in keyof A]-?: A[I] |
   const gasLimit = await method.estimateGas(...params);
   const updatedParams: ContractMethodArgs<A> = [
     ...params,
-    { gasLimit: Math.min(Math.round(+gasLimit.toString() * 1.2), 10000000) },
+    { gasLimit: Math.max(Math.min(Math.round(+gasLimit.toString() * 1.2), 10000000), +gasLimit.toString()) },
   ];
   return method(...updatedParams);
 };
 
-// Headroom (%) over `eth_estimateGas`, capped at GAS_LIMIT_CAP.
+// Headroom (%) over `eth_estimateGas`. The cap bounds the headroom only: a tx whose estimate
+// already exceeds GAS_LIMIT_CAP is sent at its estimate (a 22 KB fixture deploys at ~36M gas
+// on Sepolia, which prices code deposit far above 200 gas/byte).
 const GAS_LIMIT_BUFFER_PERCENT = 50n;
 const GAS_LIMIT_CAP = 10_000_000n;
 const GAS_BUFFERED = Symbol.for('fhevm-e2e/gas-buffered');
@@ -100,7 +102,7 @@ export function withGasBuffer<T extends Signer>(signer: T): T {
     if (tx.gasLimit == null) {
       const estimated = await signer.estimateGas(tx);
       const buffered = (estimated * (100n + GAS_LIMIT_BUFFER_PERCENT)) / 100n;
-      tx = { ...tx, gasLimit: buffered < GAS_LIMIT_CAP ? buffered : GAS_LIMIT_CAP };
+      tx = { ...tx, gasLimit: buffered < GAS_LIMIT_CAP ? buffered : estimated > GAS_LIMIT_CAP ? estimated : GAS_LIMIT_CAP };
     }
     return originalSendTransaction(tx);
   };
