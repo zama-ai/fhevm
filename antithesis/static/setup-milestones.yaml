@@ -12,6 +12,7 @@ metadata: {name: setup-milestones}
 rules:
   - {apiGroups: [""], resources: [configmaps], verbs: [get]}
   - {apiGroups: [batch], resources: [jobs], verbs: [get]}
+  - {apiGroups: [apps], resources: [deployments], verbs: [get]}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -52,6 +53,7 @@ spec:
               }
               job_done() { [ "$(kubectl get job "$1" -o jsonpath='{.status.succeeded}' 2>/dev/null)" = 1 ]; }
               cm() { kubectl get configmap "$1" -o json 2>/dev/null | jq -c '.data // empty'; }
+              deploy_ready() { [ "$(kubectl get deploy "$1" -o jsonpath='{.status.readyReplicas}' 2>/dev/null)" = 1 ]; }
               steps=(
                 "setup: S3 buckets provisioned|job_done minio-provision"
                 "setup: KMS signers discovered|cm kms-signers"
@@ -60,6 +62,7 @@ spec:
                 "setup: host chain registered on the gateway|job_done gateway-add-host-chains-deploy"
                 "setup: KMS key and CRS activated on-chain|job_done host-trigger-keygen-deploy"
                 "setup: coprocessor holds the activated key|job_done coprocessor-keys-ready"
+                "setup: relayer and e2e driver ready|deploy_ready relayer && deploy_ready e2e-driver"
               )
               for s in "${steps[@]}"; do assert false "${s%%|*}"; done
               for s in "${steps[@]}"; do

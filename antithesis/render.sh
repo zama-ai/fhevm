@@ -16,8 +16,6 @@ source "${here}/lib.sh"
 cd "${here}/.."
 
 NAMESPACE=fhevm
-# fhevm images: CI tags every main commit's images with its short SHA.
-FHEVM_TAG="${FHEVM_TAG:-89e9380}"
 KMS_REF=v0.15.0-1 # KMS_REPO_REF / KMS_CORE_TAG in .github/workflows/preview-env-deploy.yml
 # Keygen params type for host-trigger-keygen: 0 = Default (production-size), 1 = Test.
 KEYGEN_PARAMS_TYPE="${KEYGEN_PARAMS_TYPE:-1}"
@@ -111,7 +109,7 @@ normalize() {
   local src dst
   while read -r src; do
     dst=$(antithesis_image "${src}")
-    echo "${src}" >>"${work}/images.txt"
+    [[ "${dst}" == "${src}" ]] || echo "${src}" >>"${work}/images.txt"
     SRC="${src}" DST="${dst}" yq -i '
       (select(.spec.template.spec != null)
         | (.spec.template.spec.containers[], .spec.template.spec.initContainers[]))
@@ -173,6 +171,7 @@ sed "s|host-contracts:TAG|host-contracts:${FHEVM_TAG}|" "${here}/static/setup-mi
 static "${work}/setup-milestones.yaml" s3 namespace
 for db in coprocessor-1:coprocessor-infra/values-postgres-coprocessor-e2e.yaml \
   listener-1:listener/values-postgres-listener-e2e.yaml \
+  relayer:relayer/values-postgres-relayer-e2e.yaml \
   $(for i in $(seq 1 "${NB_KMS_CORE}"); do echo "connector-${i}:kms-connector/values-postgres-connector-e2e.yaml"; done); do
   render "postgres-${db%%:*}" "${COMMON_CHART}" base namespace -- --version "${COMMON_CHART_VERSION}" \
     -f "ci/preview-env/${db#*:}" --set-string "fullnameOverride=postgres-${db%%:*}"
@@ -447,6 +446,21 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
   ' "${out}/app--kms-connector-${i}.yaml"
 done
 
+# What the e2e suite needs for the HTTP decryption path, as deploy-kms-connector.sh
+# publishes it: proxy URLs and tx-senders per party, MPC t, and the proxies' certificate.
+urls="" tx_senders=""
+for i in $(seq 1 "${NB_KMS_CORE}"); do
+  urls="${urls},https://kms-connector-${i}-kms-connector-proxy:8443"
+  tx_senders="${tx_senders},$(kms_wallet "${i}" address)"
+done
+kubectl create configmap kms-connector-http --dry-run=client -o yaml \
+  --from-literal=endpoint-urls="${urls#,}" --from-literal=tx-sender-addresses="${tx_senders#,}" \
+  --from-literal=kms-threshold="$(((NB_KMS_CORE - 1) / 3))" --from-file=ca.crt="${work}/tls.crt" \
+  >"${work}/kms-connector-http.yaml"
+static "${work}/kms-connector-http.yaml" app add-host-chains
+render relayer-migrate "${COMMON_CHART}" app add-host-chains -- --version "${COMMON_CHART_VERSION}" \
+  -f ci/preview-env/relayer/values-relayer-migrate-e2e.yaml --set-string "image.tag=${FHEVM_TAG}"
+
 # --- 06 keygen: trigger key + CRS generation and wait for ActivateKey/ActivateCrs -------
 keygen_values="${work}/values-host-trigger-keygen.yaml"
 cp ci/preview-env/host-chain/values-host-trigger-keygen-e2e.yaml "${keygen_values}"
@@ -481,6 +495,46 @@ spec:
               echo "coprocessor key material present"
 EOF
 static "${work}/keys-ready.yaml" ready keygen
+
+# --- 08 e2e: relayer and the e2e test driver (Test Composer commands in its image) -------
+# As deploy-relayer.sh: user decryption needs n - t KMS shares.
+relayer_values="${work}/values-relayer.yaml"
+cp ci/preview-env/relayer/values-relayer-e2e.yaml "${relayer_values}"
+UDST="$((NB_KMS_CORE - (NB_KMS_CORE - 1) / 3))" yq -i \
+  '.env += [{"name": "APP_GATEWAY__CONTRACTS__USER_DECRYPT_SHARES_THRESHOLD", "value": strenv(UDST)}]' \
+  "${relayer_values}"
+render relayer "${COMMON_CHART}" e2e keygen -- --version "${COMMON_CHART_VERSION}" \
+  -f "${relayer_values}" --set-string "image.tag=${FHEVM_TAG}"
+# The preview e2e run-test container env, on an idle Deployment that compiled once
+# (images/test-suite-e2e/prepare.sh); Test Composer runs the tests in it.
+cat >"${work}/e2e-driver.yaml" <<EOF
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: e2e-driver}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: e2e-driver}}
+  template:
+    metadata: {labels: {app: e2e-driver}}
+    spec:
+      containers:
+        - name: e2e
+          image: ${ANTITHESIS_REGISTRY}/fhevm/antithesis/test-suite-e2e:${FHEVM_TAG}
+          command: [/opt/antithesis/prepare.sh]
+          readinessProbe:
+            exec: {command: [test, -f, /tmp/ready]}
+            periodSeconds: 5
+EOF
+yq -r '.additionalResources[].object | select(.kind == "Workflow") | .spec.templates[]
+  | select(.name == "run-test") | .script.env' ci/preview-env/test-suite/values-test-suite-workflow-e2e.yaml \
+  >"${work}/e2e-env.yaml"
+# The SDK requires KMS_GENERATION_CONTRACT_ADDRESS since fhevm PR 4626; the preview
+# workflow values do not set it yet.
+ENV_FILE="${work}/e2e-env.yaml" yq -i '.spec.template.spec.containers[0].env = load(strenv(ENV_FILE)) + [
+  {"name": "KMS_GENERATION_CONTRACT_ADDRESS",
+   "valueFrom": {"configMapKeyRef": {"name": "host-sc-addresses", "key": "kms_generation.address"}}}]' \
+  "${work}/e2e-driver.yaml"
+static "${work}/e2e-driver.yaml" e2e keygen
 
 # Every image anywhere in the output must come from the Antithesis registry.
 stray=$(yq -N '.. | select(tag == "!!map" and has("image")) | .image | select(tag == "!!str")' "${out}"/*.yaml |
