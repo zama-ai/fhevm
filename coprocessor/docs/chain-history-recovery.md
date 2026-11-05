@@ -162,8 +162,9 @@ rewrite published commitments: a genuinely new computation or eligibility
 change still triggers containment and requires the audited recovery below.
 
 Hash creation, manifest preparation/sealing and ingestion share the per-stack,
-per-host-chain history fence. Manifest selection skips a busy history fence.
-Preparation commits its seals and range commitments before upload, releasing
+per-host-chain history fence. Manifest selection waits up to 2 s for a busy
+history fence, then skips it until the next discovery interval. Preparation
+commits its seals and range commitments before upload, releasing
 history admission for ingestion. A separate publisher lock spans both phases on
 one database connection. Upload rechecks the selected seal and stack role, and
 retains the cutover fence and publication row lock through the bounded S3 operation.

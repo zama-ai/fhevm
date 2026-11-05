@@ -49,6 +49,10 @@ impl ManifestProgressCursor {
 // This query protects lineage ordering only; it must never monopolize a
 // database connection while a large recovery backlog is present.
 const MANIFEST_WORK_SELECTION_TIMEOUT: Duration = Duration::from_secs(5);
+// Ingestion holds the history lock for one short transaction at a time. Skipping
+// on every contention ends the publication pass and costs a whole discovery
+// interval, so wait for the current holder. Must stay below the selection timeout.
+pub(super) const MANIFEST_HISTORY_LOCK_TIMEOUT: Duration = Duration::from_secs(2);
 /// How far an established frontier walks back to pick up late producer rows.
 const MANIFEST_DISCOVERY_BLOCK_OVERLAP: i64 = 5;
 
@@ -564,9 +568,19 @@ pub(crate) async fn lock_next_block_to_progress_for_consensus_epoch(
     // history lock before selecting/locking a manifest row: sealing and replay
     // must not each certify a different inventory. Commit preparation (including
     // ancestor seals) before upload; the publisher-only lock spans both phases.
-    use fhevm_engine_common::chain_recovery::{host_role_tx, try_lock_history_tx, ListenerSource};
+    use fhevm_engine_common::chain_recovery::{
+        host_role_tx, lock_history_within_tx, ListenerSource,
+    };
     let role = host_role_tx(trx).await?;
-    if !try_lock_history_tx(trx, ListenerSource::Host, role, host_chain_id).await? {
+    if !lock_history_within_tx(
+        trx,
+        ListenerSource::Host,
+        role,
+        host_chain_id,
+        MANIFEST_HISTORY_LOCK_TIMEOUT,
+    )
+    .await?
+    {
         return Ok(None);
     }
     let result = sqlx::query!(
