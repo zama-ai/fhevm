@@ -104,6 +104,18 @@ async fn main() -> anyhow::Result<()> {
         &args.service_name,
         "otlp-layer",
     );
+    info!(
+        http_endpoint = %args.http_endpoint,
+        database_pool_size = args.database_pool_size,
+        max_concurrent_per_connector = args.max_concurrent_per_connector,
+        max_in_flight_per_connector = args.max_in_flight_per_connector,
+        max_adds_per_connector = MAX_ADDS_PER_CONNECTOR,
+        pad_poll_interval = ?PAD_POLL_INTERVAL,
+        shutdown_delay = ?args.shutdown_delay,
+        health_check_port = args.health_check_port,
+        metrics_addr = args.metrics_addr.as_deref().unwrap_or("none"),
+        "Starting prf-service"
+    );
 
     let cancel_token = CancellationToken::new();
     let draining = CancellationToken::new();
