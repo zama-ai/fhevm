@@ -361,6 +361,7 @@ jobs:
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
           - shared/ciphertext-attestation/**
+          - shared/fhevm-sig-auth/**
 
   ########################################################################
   #                        BUILD DECISIONS                               #
