@@ -35,6 +35,7 @@ use std::{
     time::Duration,
 };
 use tokio::{sync::watch, time::Instant};
+use tracing::warn;
 
 /// The time Pingora 0.9 gives a TLS handshake, fixed in `Service::run_endpoint`
 /// (pingora-core `services/listening.rs`).
@@ -51,6 +52,10 @@ const PENDING_HANDSHAKE_EXPIRY: Duration =
 /// finished: Pingora closes an idle connection itself, and this deadline only closes one whose
 /// next head, or previous body, is still arriving.
 pub const NEXT_HEAD_TIMEOUT: Duration = Duration::from_secs(CLIENT_IDLE_TIMEOUT.as_secs() + 5);
+
+/// The shortest time between two warnings about refused connections, or about connections closed
+/// at a head deadline: a flood closes thousands a minute.
+const CLOSED_CONNECTION_WARN_INTERVAL: Duration = Duration::from_secs(10);
 
 static CONNECTIONS_REFUSED: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
@@ -100,6 +105,29 @@ struct PendingHandshakes {
     swept_at: Instant,
 }
 
+/// Connections of one kind closed since the last warning about them, and when it was logged.
+#[derive(Default)]
+struct UnloggedCloses {
+    count: u64,
+    warned_at: Option<Instant>,
+}
+
+impl UnloggedCloses {
+    /// Counts a closed connection, and returns the count to warn about, at most once per
+    /// [`CLOSED_CONNECTION_WARN_INTERVAL`].
+    fn record(&mut self, now: Instant) -> Option<u64> {
+        self.count += 1;
+        if self
+            .warned_at
+            .is_some_and(|at| now - at < CLOSED_CONNECTION_WARN_INTERVAL)
+        {
+            return None;
+        }
+        self.warned_at = Some(now);
+        Some(std::mem::take(&mut self.count))
+    }
+}
+
 #[derive(Clone, Copy)]
 enum Refusal {
     OpenConnections,
@@ -119,6 +147,8 @@ pub struct ClientLimits {
     pending: Mutex<PendingHandshakes>,
     open: Mutex<HashMap<IpAddr, usize>>,
     deadlines: Mutex<HashMap<ConnectionId, watch::Sender<HeadDeadline>>>,
+    unlogged_refusals: Mutex<UnloggedCloses>,
+    unlogged_head_timeouts: Mutex<UnloggedCloses>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -142,6 +172,8 @@ impl ClientLimits {
             }),
             open: Mutex::default(),
             deadlines: Mutex::default(),
+            unlogged_refusals: Mutex::default(),
+            unlogged_head_timeouts: Mutex::default(),
         }
     }
 
@@ -261,6 +293,15 @@ impl ConnectionFilter for ClientLimits {
                     Refusal::PendingHandshakes => "pending_handshakes",
                 };
                 CONNECTIONS_REFUSED.with_label_values(&[reason]).inc();
+                let unlogged = lock(&self.unlogged_refusals).record(Instant::now());
+                if let Some(count) = unlogged {
+                    warn!(
+                        count,
+                        latest_ip = %canonical_ip(peer),
+                        latest_reason = reason,
+                        "Client connections refused before TLS at a per-IP limit"
+                    );
+                }
                 false
             }
         }
@@ -350,6 +391,14 @@ impl<A: ServerApp + Send + Sync + 'static> ServerApp for LimitedApp<A> {
             reused = self.inner.process_new(stream, shutdown) => reused,
             () = tracked.head_overdue() => {
                 HEAD_TIMEOUTS.inc();
+                let unlogged = lock(&self.limits.unlogged_head_timeouts).record(Instant::now());
+                if let Some(count) = unlogged {
+                    warn!(
+                        count,
+                        latest_ip = %canonical_ip(peer),
+                        "Client connections closed at a request head deadline"
+                    );
+                }
                 None
             }
         };
@@ -546,5 +595,19 @@ mod tests {
             assert!(limits.should_accept(Some(&peer([10, 0, 0, 1], port))).await);
         }
         assert!(limits.pending.lock().unwrap().by_ip.is_empty());
+    }
+
+    #[test]
+    fn closed_connections_are_warned_about_at_most_once_per_interval_with_the_count_since() {
+        let mut closes = UnloggedCloses::default();
+        let start = Instant::now();
+        assert_eq!(closes.record(start), Some(1));
+        for _ in 0..3 {
+            assert_eq!(closes.record(start + Duration::from_secs(1)), None);
+        }
+        assert_eq!(
+            closes.record(start + CLOSED_CONNECTION_WARN_INTERVAL),
+            Some(4)
+        );
     }
 }
