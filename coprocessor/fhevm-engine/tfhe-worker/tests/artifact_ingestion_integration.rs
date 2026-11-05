@@ -88,6 +88,12 @@ fn start_worker(url: &str) -> Result<Child> {
             "0",
             "--dcid-ignore-dependency-count-threshold",
             "2",
+            // Deleting the legacy producer chain also loses its dependent
+            // links. Its consumers then need the stale-gate repair path,
+            // whose production age (300s) plus probe interval (150s) can
+            // exceed WAIT. Exercise that path promptly in these tests.
+            "--dcid-stale-gate-age-secs",
+            "1",
             "--log-level",
             "warn",
         ])
@@ -219,7 +225,25 @@ async fn wait_for_ciphertexts(pool: &PgPool, handles: &[Vec<u8>]) -> Result {
         .bind(handles)
         .fetch_all(pool)
         .await?;
-        panic!("ciphertexts still missing after {WAIT:?}; computation state: {rows:?}");
+        let chains: Vec<String> = sqlx::query_scalar(
+            "SELECT json_build_object(
+                'id', encode(d.dependence_chain_id, 'hex'),
+                'status', d.status, 'dependency_count', d.dependency_count,
+                'worker_id', d.worker_id, 'lock_expires_at', d.lock_expires_at,
+                'last_updated_at', d.last_updated_at)::text
+             FROM dependence_chain d
+             WHERE EXISTS (
+                 SELECT 1 FROM computations c
+                 WHERE c.dependence_chain_id = d.dependence_chain_id
+                   AND c.output_handle = ANY($1))",
+        )
+        .bind(handles)
+        .fetch_all(pool)
+        .await?;
+        panic!(
+            "ciphertexts still missing after {WAIT:?}; computation state: {rows:?}; \
+             chain state: {chains:?}"
+        );
     }
     result??;
     Ok(())
@@ -598,6 +622,18 @@ async fn recover_unreachable_with_parallel_workers(missing: bool) -> Result {
             .rows_affected(),
         1
     );
+    if missing {
+        let gated_consumers: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM dependence_chain
+             WHERE status = 'updated' AND dependency_count > 0",
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(
+            gated_consumers, 2,
+            "deleting the parent must leave both consumer gates for the worker to repair"
+        );
+    }
     let mut workers = [
         start_worker(instance.db_url())?,
         start_worker(instance.db_url())?,
