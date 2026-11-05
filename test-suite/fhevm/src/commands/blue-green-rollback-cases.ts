@@ -198,6 +198,58 @@ const attemptOf = async (ctx: RollbackCaseContext): Promise<Attempt> => {
   return { proposalHex, proposalBlock };
 };
 
+/** The S3 prefix every state-hash object of one attempt lives under. */
+const stateHashPrefix = (attempt: Attempt) =>
+  `state_hash/proposal=${attempt.proposalHex}/attempt=${attempt.proposalBlock}/`;
+
+/** First page of keys under a prefix. The buckets allow anonymous listing. */
+const listKeys = async (operator: number, prefix: string) => {
+  const url = `${OBJECT_STORE_EXTERNAL_URL}/coproc-${operator}/?list-type=2&prefix=${encodeURIComponent(prefix)}`;
+  const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`bucket listing failed (${response.status}) for coproc-${operator}`);
+  return [...(await response.text()).matchAll(/<Key>([^<]+)<\/Key>/g)].map(match => match[1]!);
+};
+
+/**
+ * A fresh attempt must start with no objects at its own keys: leftovers of an
+ * aborted attempt live under that attempt's prefix and must never be readable
+ * at the new one (fhevm-internal#2273). From the second case on, the buckets
+ * hold the previous cases' leftovers, so this checks real separation.
+ */
+const assertFreshAttemptPrefixEmpty = async (ctx: RollbackCaseContext, attempt: Attempt) => {
+  for (const operator of ctx.operatorDatabases.keys()) {
+    const keys = await listKeys(operator, stateHashPrefix(attempt));
+    if (keys.length > 0) {
+      throw new Error(
+        `coproc-${operator} already holds ${keys.length} state-hash object(s) at the new attempt's prefix: ${keys[0]}`,
+      );
+    }
+  }
+  console.log("OK:   the new attempt starts with no state-hash objects at its own keys");
+};
+
+/**
+ * Every published state-hash object must be attempt-scoped; an unscoped
+ * `state_hash/chain=...` key is the pre-#2273 layout that the next attempt
+ * would read. The healthy operator must also have published under THIS
+ * attempt's prefix, so the check cannot pass vacuously.
+ */
+const assertStateHashesAttemptScoped = async (ctx: RollbackCaseContext, attempt: Attempt) => {
+  for (const operator of ctx.operatorDatabases.keys()) {
+    const unscoped = (await listKeys(operator, "state_hash/")).filter(
+      key => !key.startsWith("state_hash/proposal="),
+    );
+    if (unscoped.length > 0) {
+      throw new Error(`coproc-${operator} published ${unscoped.length} unscoped state-hash object(s): ${unscoped[0]}`);
+    }
+  }
+  const published = await listKeys(0, stateHashPrefix(attempt));
+  if (published.length === 0) {
+    throw new Error("the healthy operator published no state-hash object under the attempt's prefix");
+  }
+  console.log(`OK:   every state-hash object is attempt-scoped (${published.length} under this attempt on coproc-0)`);
+};
+
 const waitForRollback = async (ctx: RollbackCaseContext, database: string, timeoutSecs: number) =>
   ctx.waitUntil({
     label: `${database}  GCS rolled back to PAUSED/failed`,
@@ -304,6 +356,7 @@ const runRollbackCase = async (ctx: RollbackCaseContext, item: RollbackCase) => 
   // Assert after the traffic stops, so the catch-up wait sees a still chain.
   const attempt = await ctx.withTraffic(() => runRollbackCaseBody(ctx, item));
   await assertEveryOperatorRolledBack(ctx);
+  await assertStateHashesAttemptScoped(ctx, attempt);
   await item.extraAssertions?.(attempt);
   console.log(`OK:   rollback case ${item.proposalId} passed`);
 };
@@ -312,6 +365,7 @@ const runRollbackCaseBody = async (ctx: RollbackCaseContext, item: RollbackCase)
   console.log(`\n==== rollback case ${item.proposalId}: ${item.label} ====`);
   const tips = await ctx.propose(item.proposalId, CASE_WINDOW);
   const attempt = await attemptOf(ctx);
+  await assertFreshAttemptPrefixEmpty(ctx, attempt);
 
   // An operator that goes before the window opens never reaches DryRunStarted,
   // so this asserts the Gateway gate on the operators that stay.

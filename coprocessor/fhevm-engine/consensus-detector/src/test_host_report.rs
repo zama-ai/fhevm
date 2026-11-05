@@ -43,6 +43,8 @@ pub async fn fault(
 
 /// Persist restoration material before publishing a divergent object. This
 /// table is outside the GCS schema, whose failed-proposal reset deletes rows.
+/// `key` is the exact attempt-scoped S3 key the divergent object is published
+/// at, so restoration targets the same object without re-deriving the attempt.
 pub async fn journal(
     pool: &sqlx::PgPool,
     chain: i64,
@@ -50,6 +52,7 @@ pub async fn journal(
     original: &str,
     block_hash: &str,
     bucket: &str,
+    key: &str,
 ) -> Result<(), sqlx::Error> {
     let updated = sqlx::query(include_str!("test_host_report_journal.sql"))
         .bind(chain)
@@ -57,6 +60,7 @@ pub async fn journal(
         .bind(original)
         .bind(block_hash)
         .bind(bucket)
+        .bind(key)
         .execute(pool)
         .await?;
     if updated.rows_affected() != 1 {
