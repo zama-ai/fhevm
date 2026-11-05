@@ -16,7 +16,8 @@ source "${here}/lib.sh"
 cd "${here}/.."
 
 NAMESPACE=fhevm
-FHEVM_TAG="${FHEVM_TAG:-$(git rev-parse --short=7 HEAD)}"
+# fhevm images: CI tags every main commit's images with its short SHA.
+FHEVM_TAG="${FHEVM_TAG:-89e9380}"
 KMS_REF=v0.15.0-1 # KMS_REPO_REF / KMS_CORE_TAG in .github/workflows/preview-env-deploy.yml
 # Keygen params type for host-trigger-keygen: 0 = Default (production-size), 1 = Test.
 KEYGEN_PARAMS_TYPE="${KEYGEN_PARAMS_TYPE:-1}"
@@ -65,9 +66,14 @@ coproc_wallets=$(jq -nc --arg a "$(wallet_addr "${coproc_key}")" --arg k "${copr
 normalize() {
   local file="$1" group="$2"
   shift 2
-  local rule=""
-  for g in "$@"; do rule="${rule}upsert after upserting ${g}"$'\n'; done
-  GROUP="${group}" RULE="${rule%$'\n'}" NS="${NAMESPACE}" yq -i '
+  # kapp takes one rule per annotation: change-rule.0, change-rule.1, ...
+  local rules="{}" n=0
+  for g in "$@"; do
+    rules=$(jq -c --arg k "kapp.k14s.io/change-rule.${n}" --arg v "upsert after upserting ${g}" \
+      '. + {($k): $v}' <<<"${rules}")
+    n=$((n + 1))
+  done
+  GROUP="${group}" RULES="${rules}" NS="${NAMESPACE}" yq -i '
     select(.kind != null and .kind != "ServiceMonitor" and .kind != "PodMonitor"
       and .kind != "PrometheusRule" and .kind != "Ingress" and .kind != "ExternalSecret"
       and .kind != "ClusterPolicy" and .kind != "Policy"
@@ -75,7 +81,7 @@ normalize() {
     | (select(.kind != "Namespace" and .kind != "ClusterRole" and .kind != "ClusterRoleBinding")
         | .metadata.namespace) = strenv(NS)
     | .metadata.annotations["kapp.k14s.io/change-group"] = strenv(GROUP)
-    | (select(strenv(RULE) != "") | .metadata.annotations["kapp.k14s.io/change-rule"]) = strenv(RULE)
+    | .metadata.annotations *= (strenv(RULES) | from_json)
     | del(.metadata.annotations["helm.sh/hook"], .metadata.annotations["helm.sh/hook-weight"],
         .metadata.annotations["helm.sh/hook-delete-policy"])
     | del(.spec.ttlSecondsAfterFinished)
