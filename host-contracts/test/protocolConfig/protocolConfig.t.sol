@@ -1716,12 +1716,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         IKMSGeneration.KeyDigest[] memory keyDigests = new IKMSGeneration.KeyDigest[](2);
         keyDigests[0] = IKMSGeneration.KeyDigest({keyType: IKMSGeneration.KeyType.Server, digest: keyDigest});
         keyDigests[1] = IKMSGeneration.KeyDigest({keyType: IKMSGeneration.KeyType.Public, digest: keyDigest});
+        uint256 keyIds = 0x0101010101010101010101010101010101010101010101010101010101010101;
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](1);
-        keys[0] = IProtocolConfig.EpochKeyResult({
-            prepKeygenId: 0x0101010101010101010101010101010101010101010101010101010101010101,
-            keyId: 0x0101010101010101010101010101010101010101010101010101010101010101,
-            keyDigests: keyDigests
-        });
+        keys[0] = IProtocolConfig.EpochKeyResult({prepKeygenId: keyIds, keyId: keyIds, keyDigests: keyDigests});
         // KMS crs(3, 30): id of 32 0x03 bytes, maxBitLength 256, digest of 32 0x1e bytes.
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](1);
         crsList[0] = IProtocolConfig.EpochCrsResult({

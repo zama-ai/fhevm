@@ -514,6 +514,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         IProtocolConfig.EpochCrsResult[] memory crsList,
         bytes memory extraData
     ) internal pure returns (bytes32) {
+        bytes32 extraDataHash = keccak256(extraData);
         bytes32[] memory keyHashes = new bytes32[](keys.length);
         for (uint256 i = 0; i < keys.length; i++) {
             keyHashes[i] = keccak256(
@@ -522,7 +523,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
                     keys[i].prepKeygenId,
                     keys[i].keyId,
                     _hashKeyDigests(keys[i].keyDigests),
-                    keccak256(extraData)
+                    extraDataHash
                 )
             );
         }
@@ -534,7 +535,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
                     crsList[i].crsId,
                     crsList[i].maxBitLength,
                     keccak256(crsList[i].crsDigest),
-                    keccak256(extraData)
+                    extraDataHash
                 )
             );
         }
