@@ -3,10 +3,12 @@ import type { Eip712Like } from '../types/kms.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
+import type { KmsExtraData } from '../types/kms-p.js';
 import type { NativeSigner } from '../modules/ethereum/types.js';
 import type { TransportKeyPair } from './TransportKeyPair-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
-import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
+import { InvalidSignedPermitError } from '../errors/InvalidSignedPermitError.js';
+import { EXTRA_DATA_V1, EXTRA_DATA_V2, createKmsExtraDataFromBytesHex } from './kmsExtraData-p.js';
 import {
   isSignedDecryptionPermitV1,
   parseSignedDecryptionPermitV1,
@@ -101,21 +103,60 @@ export function isSignedDecryptionPermit(value: unknown): value is SignedDecrypt
   return isSignedDecryptionPermitV1(value) || isSignedDecryptionPermitV2(value);
 }
 
-/** Throws {@link InvalidTypeError} if value is not a valid {@link SignedDecryptionPermit}. */
+/**
+ * Throws {@link InvalidSignedPermitError} if value is not a {@link SignedDecryptionPermit} created by the SDK.
+ */
 export function assertIsSignedDecryptionPermit(
   value: unknown,
   options: { subject?: string } & ErrorMetadataParams,
 ): asserts value is SignedDecryptionPermit {
   if (!isSignedDecryptionPermit(value)) {
-    throw new InvalidTypeError(
-      {
-        subject: options.subject,
-        type: typeof value,
-        expectedType: 'SignedDecryptionPermit',
-      },
-      options,
-    );
+    const subject = options.subject === undefined ? '' : ` (${options.subject})`;
+    throw new InvalidSignedPermitError({
+      message: `Invalid permit${subject}: not a signed decryption permit created by the SDK`,
+    });
   }
+}
+
+/**
+ * Throws {@link InvalidSignedPermitError} if the permit's extraData is a version the protocol no longer
+ * supports: below v1 for a legacy (v1) permit, below v2 for a unified (v2) permit. Returns the
+ * parsed extraData.
+ */
+export function assertSignedDecryptionPermitExtraDataSupported(signedPermit: SignedDecryptionPermit): KmsExtraData {
+  const extraData = createKmsExtraDataFromBytesHex(signedPermit.eip712.message.extraData);
+  switch (signedPermit.version) {
+    case 1:
+      // extraData v0 (protocol v0.11): the KMS connector refuses it.
+      if (extraData.lt(EXTRA_DATA_V1)) {
+        throw new InvalidSignedPermitError({
+          message:
+            `Unsupported permit extraData version ${String(extraData.version)} ` +
+            `(extraData=${extraData.bytesHex}), expecting version 1 or above: ` +
+            `protocol v0.11 permits are no longer supported, sign a new permit`,
+        });
+      }
+      break;
+    case 2:
+      // A unified (v2) permit carries protocol v0.14+ extraData (context id + epoch id).
+      if (extraData.lt(EXTRA_DATA_V2)) {
+        throw new InvalidSignedPermitError({
+          message:
+            `Unsupported permit extraData version ${String(extraData.version)} ` +
+            `(extraData=${extraData.bytesHex}), expecting version 2 or above: ` +
+            `a unified (v2) permit requires protocol v0.14+ extraData, sign a new permit`,
+        });
+      }
+      break;
+    default: {
+      // `satisfies never`: a new permit version fails to compile until it gets its own case.
+      const unexpectedPermit = signedPermit satisfies never as { readonly version: unknown };
+      throw new InvalidSignedPermitError({
+        message: `Unexpected permit version ${String(unexpectedPermit.version)}, expecting version 1 or 2`,
+      });
+    }
+  }
+  return extraData;
 }
 
 export type KmsSignDecryptionPermitContext = {

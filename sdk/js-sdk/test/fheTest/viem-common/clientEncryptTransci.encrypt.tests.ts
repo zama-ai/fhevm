@@ -1,7 +1,12 @@
 import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type CreateViemEncryptTransciClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import {
+  getViemTestConfig,
+  latestBlockTimestamp,
+  type CreateViemEncryptTransciClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
 import { clearTypeFromHandle, createLogger, encryptTestCases, isBytes32Hex } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
 
@@ -42,7 +47,7 @@ export function defineClientEncryptTransciEncryptTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
