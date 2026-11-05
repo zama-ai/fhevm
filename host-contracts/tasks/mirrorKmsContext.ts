@@ -25,7 +25,8 @@ export function encodeMirrorKmsContextAndEpoch(iface: Interface, snapshot: Canon
   ]);
 }
 
-// Fails with an explicit mismatch message instead of the replica's NonIncreasingKmsContextId revert.
+// Rejects a stale context switch. The mirror methods have no ordering check, so stale calldata moves
+// the replica back. A DAO proposal can execute later, so check the replica again before it executes.
 export async function assertReplicaNeedsContextSwitch(
   hre: HardhatRuntimeEnvironment,
   replicaProtocolConfigAddress: string,

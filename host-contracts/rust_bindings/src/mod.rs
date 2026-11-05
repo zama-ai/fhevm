@@ -55,6 +55,7 @@ pub mod initializable;
 pub mod input_verifier;
 pub mod kms_generation;
 pub mod kms_verifier;
+pub mod key_digest_hash;
 pub mod math;
 pub mod message_hash_utils;
 pub mod multicall_upgradeable;

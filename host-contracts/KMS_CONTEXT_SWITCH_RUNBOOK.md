@@ -11,8 +11,9 @@ parties:
 
 Both run on the canonical host (Ethereum) only, and they can only ever complete there: the
 KMS connectors watch Ethereum's `ProtocolConfig` and no other chain. Non-canonical hosts run
-`ProtocolConfigReplica`, which has no `defineNew*` functions. They are updated by mirroring
-the result of the canonical operation instead (§5).
+`ProtocolConfigReplica`, which has no `defineNew*` functions. They take the result of the
+canonical operation instead, through the signed `submitKms*` methods or the owner mirror
+methods (§5).
 
 Audience: whoever coordinates the governance operation with the external KMS parties.
 
@@ -283,11 +284,13 @@ the new committee. For a node swap remember: the incoming node **inherits the ou
 ## 5. Mirroring onto non-canonical hosts (replicas)
 
 Ethereum is the canonical host: §3 and §4 run there and nowhere else. Every other host
-chain (e.g. Polygon) runs `ProtocolConfigReplica`, which has no lifecycle: no quorum, no
-reshare and no `KMSGeneration`. Its only write paths are four `onlyACLOwner` mirror
-methods. `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` import state Ethereum has already
-finalized and land it as immediately `Active`. `mirrorKmsContextDestruction` and
-`mirrorKmsEpochDestruction` copy a canonical `destroyKmsContext` / `destroyKmsEpoch`.
+chain (e.g. Polygon) runs `ProtocolConfigReplica`, which has no lifecycle: no pending states, no confirmation
+collection, no reshare and no `KMSGeneration`. Anyone may apply a canonical step on it with the
+KMS confirmation signatures, through the `submitKms*` methods. This is the permissionless path.
+No task in this repo calls them yet. The owner mirror methods are the path the tasks below use
+for rotations. The owner also uses them for recovery (§5.7). The mirror methods import state
+Ethereum has already finalized and land it as immediately `Active`. `mirrorKmsContextDestruction`
+and `mirrorKmsEpochDestruction` copy a canonical `destroyKmsContext` / `destroyKmsEpoch`.
 Mirroring a switch activates the new context without retiring the previous one, so a context
 destroyed on Ethereum stays trusted on every replica until its destruction is mirrored there
 as well (§5.6).
@@ -311,10 +314,9 @@ and calldata, never broadcasts) and the bare task broadcasts with
 `DEPLOYER_PRIVATE_KEY`.
 
 **No ids or committee data are passed on the command line** for the two activation mirrors.
-Those methods do take a context
-id, an epoch id and — for a context switch — the node set, thresholds, software version and
-PCR values, but the task reads all of it from canonical and encodes the arguments itself. The
-only inputs you supply are the canonical connection flags below.
+Those methods take a context id, an epoch id and, for a context switch, the node set and thresholds. The task reads all of it
+from canonical and encodes the arguments itself. The only inputs you supply are the canonical
+connection flags below.
 
 These tasks are for a replica that is **already deployed and initialized**. Standing up a
 _new_ replica is a different path — `task:exportCanonicalProtocolConfig` then
@@ -341,12 +343,17 @@ host-contracts README. Use the mirror tasks for every rotation after that.
   `--canonical-protocol-config-address`).
 - **Replica address**: `PROTOCOL_CONFIG_CONTRACT_ADDRESS` for the replica chain, or
   `--use-internal-proxy-address` to resolve it from `addresses/`.
-- **Authorization**: all four mirror methods are `onlyACLOwner` on the replica chain, so the
+- **Authorization**: the mirror methods are `onlyACLOwner` on the replica chain, so the
   broadcaster (or the DAO executing the calldata) must be that chain's ACL owner.
-- **Ids only move forward, and gaps are fine.** The replica rejects any context/epoch id
-  that is not strictly greater than its current one, so a mirror cannot roll it back or be
-  applied twice. A replica that missed several canonical rotations does not have to replay
-  them one by one: it jumps straight to canonical's current pair in a single call.
+- **The tasks only move ids forward, and gaps are fine.** The mirror methods have no ordering
+  check, so a call with a lower id moves the replica back. The tasks refuse a context id that is
+  not above the replica's active one before they build the calldata. For `mirrorKmsEpoch` they
+  also refuse such an epoch id. A DAO
+  proposal can execute after the permissionless path moved the replica past its ids, and then
+  it moves the replica back. Check the replica's active pair again before the proposal executes.
+  Cancel the proposal if the replica is already at or past its ids. A replica that missed
+  several canonical rotations does not have to replay them one by one: it jumps straight to
+  canonical's current pair in a single call.
 - **Gateway: nothing to do.** The gateway registers a context once, from the canonical
   flow (§4.2 step 3). It is not per-replica.
 
@@ -383,8 +390,7 @@ Two errors are worth knowing:
 
 ### 5.4 Mirror an epoch rotation
 
-Same-set rotations carry no committee data, so this path is just the two ids — no event
-read, no anchor check:
+Same-set rotations carry no committee data, so this path mirrors just the two ids:
 
 ```bash
 cd host-contracts
@@ -429,9 +435,39 @@ first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. A pending ep
 per-signer flags, so its signers could not confirm again. A pending context would have no node config
 hash, so its signed creation confirmation would commit to a zero hash. An epoch or a context
 destroyed before the upgrade can still collect signed destruction confirmations.
-Canonical never destroys its latest active context or epoch. A mirror call copies only those
-ids, so it never copies a destroyed id. `ProtocolConfigReplica` has no destruction method. A
-destruction on canonical does not reach a replica that mirrored that id earlier.
+
+Canonical never destroys its latest active context or epoch. By default the mirror tasks read
+those ids at the latest finalized block, so they do not copy an id canonical destroyed as of that block. A task
+pinned with `--block-number` reads an older block. It can copy an id that canonical destroyed
+after that block.
+
+A destruction on canonical reaches a replica through `submitKmsContextDestruction` /
+`submitKmsEpochDestruction` with the destruction confirmations, or through the owner
+`mirrorKmsContextDestruction` / `mirrorKmsEpochDestruction`. Rules for a submitted destruction:
+
+- The replica accepts an ID that it never stored, if the ID is below its active ID. The
+  canonical can destroy a pending context or epoch that never reached this replica.
+- A destruction of an ID above the active ID reverts with `KmsContextDestructionAheadOfReplica`.
+  Retry after the replica activates a higher ID. So an early destruction does not block the
+  switches and resharings that canonical made before it.
+- The replica verifies the signatures against its active committee.
+- A replica that is behind can also revert with `LatestActiveKmsContextCannotBeDestroyed`,
+  `KmsSignatureQuorumNotReached` or `KmsSignerNotInCommittee`. Retry after the replica catches up.
+- If the replica activated a later context, keep only the signatures of signers of the
+  active committee. One signature from another signer reverts the call. The retry succeeds only
+  if at least `n - t` signatures of the active committee remain. Else the owner uses
+  `mirrorKmsContextDestruction`.
+- This rule also applies to a pending ID that canonical destroyed before a switch. Example:
+  canonical destroys the pending C2, and the C1 committee signs the destruction. Then canonical
+  switches from C1 to C3. The replica applies the destruction only after it activates C3. It
+  checks the C1 signatures against C3. So the call succeeds only if at least `n - t` C1 signers
+  are also in C3. Else the owner uses `mirrorKmsContextDestruction`.
+- Two signatures from the same signer revert with `DuplicateKmsSigner`.
+- `submitKmsEpochDestruction` follows the same rules, with `KmsEpochAlreadyDestroyed`,
+  `LatestActiveKmsEpochCannotBeDestroyed`, `KmsEpochDestructionAheadOfReplica` and the
+  `mirrorKmsEpochDestruction` fallback. A resharing keeps the committee, so a retry after a
+  resharing succeeds. A pending epoch whose next activation is a context switch has the same
+  committee rule as a pending context.
 
 `task:kmsContextSwitchStatus` is a canonical-side tool. Pointed at a replica it reports
 `idle`, because it tracks the pending/quorum path that replicas never run — that is the
@@ -455,14 +491,47 @@ npx hardhat task:mirrorKmsEpochDestruction --network <replica-network> --epoch-i
 ```
 
 - **Mirror cancellations too.** The replica records the id of a cancelled switch or reshare
-  as destroyed, so it never activates it later.
+  as destroyed, so the submit path never activates it later.
 - **A context destruction covers its epochs.** Mirror an epoch destruction only after a
   canonical `destroyKmsEpoch`.
 - **The replica refuses to destroy its active context or epoch.** That revert means the
   replica is behind: mirror the successor first (§5.3 or §5.4).
+- **Catch up before you mirror a destruction of an ID that canonical activated.** If the replica
+  has not reached that ID, first mirror the canonical active pair with `mirrorKmsEpoch` or
+  `mirrorKmsContextAndEpoch`. Then mirror the destruction. In the other order, the submit path
+  stalls. The destroyed ID reverts with `DestroyedKmsEpochCannotBeActivated` or
+  `DestroyedKmsContextCannotBeActivated`. The next ID reverts with `KmsSignerNotInCommittee`.
 
 Do this with the same urgency as the canonical call: for a context destroyed because it was
 compromised, every replica trusts it until this step is done.
+
+For a switch that canonical aborted while it was in flight, only this owner step can block it on
+a replica. The signed destruction reverts until the replica passes the ID. Until then, the
+public creation signatures and a full set of activation signatures can still activate the
+aborted context.
+
+### 5.7 Recover a replica from a forged context
+
+If a replica activated a context that canonical never activated, the owner takes three actions.
+Get the forged context id and its first epoch id from the `KmsContextSwitchSubmitted` events.
+
+1. `mirrorKmsContextAndEpoch` with canonical's active context id, epoch id, nodes and thresholds.
+   This moves the replica back to canonical's pair.
+2. `mirrorKmsContextDestruction` for the forged context id. The submit path then rejects the
+   forged calldata with `DestroyedKmsContextCannotBeActivated`.
+3. `mirrorKmsEpochDestruction` for the first epoch id of the forged context. Otherwise that epoch
+   stays Active and becomes valid if canonical later uses the destroyed context id.
+
+Put all actions in one DAO proposal, in order, because anyone can replay the public signatures
+between separate executions.
+
+For a forged resharing epoch, the owner calls `mirrorKmsEpoch` with canonical's active pair, then
+`mirrorKmsEpochDestruction` for the forged epoch id. Put both actions in one DAO proposal, in this
+order.
+
+If canonical later uses a destroyed id, mirror it with `mirrorKmsContextAndEpoch` or
+`mirrorKmsEpoch`. The activation replaces the Destroyed state. No task wraps the recovery, so the
+owner builds the calls directly.
 
 ## 6. Quick reference
 
@@ -526,6 +595,7 @@ Quorum cheat-sheet:
   the active committee confirm one digest, it emits
   `KmsContextDestructionQuorumReached` or `KmsEpochDestructionQuorumReached` once for that
   digest. The DAO does not rotate before a destruction reaches the quorum (RFC 037).
+  `ProtocolConfigReplica` requires the same `n − t` quorum over one digest.
 - **Quorums**:
   - Context creation: **ALL new-committee signers** + **(n − t)
     previous-committee signers** (n = previous committee size, t = previous MPC
@@ -555,13 +625,20 @@ Quorum cheat-sheet:
   that range. In a node swap, the incoming node **takes the dropped node's party id** —
   only the identity fields (addresses, `mpcIdentity`, cert, storage prefix) change.
 - **Canonical vs replica.** The lifecycle above exists only on the canonical host
-  (Ethereum). Other host chains run `ProtocolConfigReplica`, a read-replica: no quorum
-  path, no `KMSGeneration`, and the owner mirror methods as its only write path — `mirrorKmsContextAndEpoch` /
-  `mirrorKmsEpoch`, which import already-finalized canonical state as immediately `Active`,
-  and `mirrorKmsContextDestruction` / `mirrorKmsEpochDestruction`, which copy canonical
-  destructions. The only on-chain guard on activation is that ids strictly increase, which
-  prevents a rollback but not a replica left behind. Keeping every replica current, and
-  mirroring every destruction, is operational discipline (§5).
+  (Ethereum). Other host chains run `ProtocolConfigReplica`, a read-replica: no pending states
+  and no `KMSGeneration`. It has three write paths. The signed `submitKms*` methods
+  verify the canonical's KMS confirmation signatures. The owner `mirrorKmsContextAndEpoch` /
+  `mirrorKmsEpoch` methods import already-finalized canonical state as immediately `Active`.
+  They have no ordering check on the ids, so they can also move a replica back (§5.7).
+  The owner `mirrorKmsContextDestruction` / `mirrorKmsEpochDestruction` methods copy
+  canonical destructions. Keeping every replica current, and mirroring every destruction, is
+  operational discipline (§5).
+- **Do not abort a canonical step after `n − 1` confirmations without a replica recovery plan.**
+  A confirmation tx that lands after the abort reverts, but its signature is public calldata.
+  With the earlier confirmations, anyone can then apply the aborted step on every replica
+  through `submitKmsContextSwitch` or `submitKmsKeyResharing`. The replica cannot tell a
+  finished step from an aborted one. Later canonical steps then fail on that replica until the
+  owner recovers it (§5.7).
 - **`mpcIdentity` must equal the identity the core itself is configured with** (its
   `mpc_identity` in the core/peers config). A mismatch makes the reshare role-resolution
   fail on the on-chain-vs-config merge and the reshare never starts (observed failure:

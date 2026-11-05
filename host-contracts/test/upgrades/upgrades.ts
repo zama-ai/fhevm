@@ -5,7 +5,13 @@ import { ethers, upgrades } from 'hardhat';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { ACL, ACLUpgradedExample } from '../../types';
 import { getSigners, initSigners } from '../signers';
-import { buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from '../tasks/taskHelpers';
+import {
+  PLACEHOLDER_CANONICAL_CHAIN_ID,
+  PLACEHOLDER_CANONICAL_PROTOCOL_CONFIG,
+  buildProtocolConfigNodes,
+  buildProtocolConfigThresholds,
+  readHostAddress,
+} from '../tasks/taskHelpers';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 describe('Upgrades', function () {
@@ -74,14 +80,18 @@ describe('Upgrades', function () {
     return pc;
   }
 
-  for (const [version, getFactory] of [
-    ['ProtocolConfigReplica v0.3.0', (s: Signer) => ethers.getContractFactory('ProtocolConfigReplica', s)],
-    ['ProtocolConfig v0.3.0', (s: Signer) => ethers.getContractFactory('ProtocolConfig', s)],
+  for (const [version, getFactory, args] of [
+    [
+      'ProtocolConfigReplica v0.3.0',
+      (s: Signer) => ethers.getContractFactory('ProtocolConfigReplica', s),
+      [PLACEHOLDER_CANONICAL_CHAIN_ID, PLACEHOLDER_CANONICAL_PROTOCOL_CONFIG],
+    ],
+    ['ProtocolConfig v0.3.0', (s: Signer) => ethers.getContractFactory('ProtocolConfig', s), []],
   ] as const) {
     it(`upgrades a v0.14 ProtocolConfig proxy in place to ${version}`, async function () {
       const factory = await getFactory(this.signers.fred);
       const pc = await deployV014ProtocolConfig(this.signers.fred, this.emptyUUPSFactory);
-      const upgraded = await upgrades.upgradeProxy(pc, factory, { call: 'reinitializeV3' });
+      const upgraded = await upgrades.upgradeProxy(pc, factory, { call: { fn: 'reinitializeV3', args: [...args] } });
       await upgraded.waitForDeployment();
       expect(await upgraded.getVersion()).to.equal(version);
     });

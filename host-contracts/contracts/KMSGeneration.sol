@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {KmsNode} from "./shared/Structs.sol";
+import {KeyDigestHash} from "./shared/KeyDigestHash.sol";
 import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE, EXTRA_DATA_V1, EXTRA_DATA_V2} from "./shared/Constants.sol";
 import {protocolConfigAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -33,20 +34,6 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
      * @notice The hash of the PrepKeygenVerification typed definition.
      */
     bytes32 private constant EIP712_PREP_KEYGEN_TYPE_HASH = keccak256(bytes(EIP712_PREP_KEYGEN_TYPE));
-
-    /**
-     * @notice The EIP-712 type definition for the KeyDigest struct.
-     * @dev The following fields are used for the KeyDigest struct:
-     * - keyType: The type of the generated key.
-     * - digest: The digest of the generated key.
-     * Required because EIP-712 mandates that each nested struct type
-     * used in a primary type (e.g. KeygenVerification) must be explicitly
-     * declared with its own type string and type hash.
-     * These constants are used when computing the struct hash of each
-     * KeyDigest element inside the keyDigests[] array.
-     */
-    string private constant EIP712_KEY_DIGEST_TYPE = "KeyDigest(uint8 keyType,bytes digest)";
-    bytes32 private constant EIP712_KEY_DIGEST_TYPE_HASH = keccak256(bytes(EIP712_KEY_DIGEST_TYPE));
 
     /**
      * @notice The KeygenVerification typed definition.
@@ -912,16 +899,8 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
         KeyDigest[] calldata keyDigests,
         bytes memory extraData
     ) internal view virtual returns (bytes32) {
-        // Encodes each KeyDigest struct and computes its struct hash.
         // The `keyDigests` array must be ordered consistently with the KMS nodes:
         // the first element corresponds to the Server type, and the second to the Public type.
-        bytes32[] memory keyDigestHashes = new bytes32[](keyDigests.length);
-        for (uint256 i = 0; i < keyDigests.length; i++) {
-            keyDigestHashes[i] = keccak256(
-                abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
-            );
-        }
-
         return
             _hashTypedDataV4(
                 keccak256(
@@ -929,7 +908,7 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
                         EIP712_KEYGEN_TYPE_HASH,
                         prepKeygenId,
                         keyId,
-                        keccak256(abi.encodePacked(keyDigestHashes)),
+                        KeyDigestHash.hash(keyDigests),
                         keccak256(extraData)
                     )
                 )
