@@ -1,6 +1,8 @@
 //! Exercise CFI-0020 gate repair through the real worker lease/release API.
 //! Ciphertexts are opaque fixtures; no TFHE operation is evaluated.
 
+// The shared fixture is formatted by host-listener with its own rustfmt config.
+#[rustfmt::skip]
 #[path = "../../host-listener/tests/ingest_fixtures/mod.rs"]
 mod ingest_fixtures;
 use ingest_fixtures::*;
