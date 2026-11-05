@@ -22,17 +22,24 @@ async fn manifest_selection_serializes_with_ingestion_before_locking_rows() {
         .await
         .unwrap();
     let mut publication = pool.begin().await.unwrap();
+    let started = std::time::Instant::now();
     assert!(
         lock_next_block_to_progress(&mut publication, CHAIN_ID, &ManifestProgressCursor::start())
             .await
             .unwrap()
             .is_none(),
-        "busy ingestion must prevent sealing"
+        "ingestion held past the timeout must prevent sealing"
     );
+    assert!(started.elapsed() >= MANIFEST_HISTORY_LOCK_TIMEOUT);
     publication.rollback().await.unwrap();
-    ingestion.commit().await.unwrap();
 
+    // A short ingestion delays sealing instead of skipping the chain.
+    let release = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        ingestion.commit().await.unwrap();
+    });
     let mut publication = pool.begin().await.unwrap();
+    let started = std::time::Instant::now();
     assert!(lock_next_block_to_progress(
         &mut publication,
         CHAIN_ID,
@@ -41,6 +48,16 @@ async fn manifest_selection_serializes_with_ingestion_before_locking_rows() {
     .await
     .unwrap()
     .is_some());
+    assert!(started.elapsed() < MANIFEST_HISTORY_LOCK_TIMEOUT);
+    release.await.unwrap();
+    let lock_timeout: String = sqlx::query_scalar("SELECT current_setting('lock_timeout')")
+        .fetch_one(publication.as_mut())
+        .await
+        .unwrap();
+    assert_eq!(
+        lock_timeout, "0",
+        "the wait bound must not leak into sealing"
+    );
     let mut ingestion = pool.begin().await.unwrap();
     assert!(
         !try_lock_history_tx(&mut ingestion, ListenerSource::Host, false, CHAIN_ID)
