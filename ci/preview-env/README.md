@@ -492,8 +492,8 @@ in the per-deploy fields from the same **`kms-connector-http`** ConfigMap the
 test-suite reads: one endpoint per party (proxy URL + tx-sender `audience`),
 thresholds `t+1` (public) / `n-t` (user, as for the relayer), the host chain ids,
 and the host `ProtocolConfig` address for FhevmSig. It signs with the same fixed
-test key as the e2e suite. The proxies' cert-manager certificates (`ca.crt`) are
-mounted and trusted through `SSL_CERT_FILE`. Like the relayer, it is part of
+test key as the e2e suite. It does not verify the proxies' self-signed
+certificates (`skip_tls_verification: true`). Like the relayer, it is part of
 every preview env (a failed install fails the deploy) and is published on the
 tailnet as `relayer-http-<namespace>` (`RELAYER_HTTP_TS_URL` in the PR comment /
 run summary). Pin the image with `relayer_http_version`.
