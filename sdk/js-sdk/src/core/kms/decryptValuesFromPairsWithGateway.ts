@@ -39,7 +39,7 @@ export type ReturnType = readonly TypedValue[];
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export async function decryptValuesFromPairs(fhevm: Context, parameters: Parameters): Promise<ReturnType> {
+export async function decryptValuesFromPairsWithGateway(fhevm: Context, parameters: Parameters): Promise<ReturnType> {
   const { transportKeyPair: transportKeyPair, fhevmContext } = parameters;
 
   let kmsSigncryptedShares: KmsSigncryptedShares;

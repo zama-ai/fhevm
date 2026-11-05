@@ -1,10 +1,10 @@
-import type { RelayerClient } from '../types.js';
+import type { RelayerClient } from '../../types.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { fetchFheEncryptionKeySource } from './fetchFheEncryptionKeySource.js';
-import { RelayerFetchError } from '../../../errors/RelayerFetchError.js';
+import { fetchFheEncryptionKeySource } from '../fetchFheEncryptionKeySource.js';
+import { RelayerFetchError } from '../../../../errors/RelayerFetchError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/fetchFheEncryptionKeySource.test.ts
+// npx vitest run --config src/vitest.config.ts src/core/modules/relayer/module/test/fetchFheEncryptionKeySource.test.ts
 ////////////////////////////////////////////////////////////////////////////////
 
 const relayerClient: RelayerClient = {
