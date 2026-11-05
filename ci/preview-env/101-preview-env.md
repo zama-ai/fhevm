@@ -270,6 +270,14 @@ curl -sS https://relayer-<namespace>.diplodocus-boa.ts.net/v2/keyurl
 # or point @fhevm/sdk / a toy dapp at that base URL
 ```
 
+relayer-http (`:3002`, `POST /v4/user-decrypt` and `/v4/public-decrypt`) is
+published the same way as `relayer-http-<namespace>`, written as
+`RELAYER_HTTP_TS_URL`:
+
+```bash
+curl -sS https://relayer-http-<namespace>.diplodocus-boa.ts.net/healthz
+```
+
 Deleting the namespace (PR close / `preview-env destroy`) removes the Ingress and
 the operator drops the MagicDNS name. Access is Tailscale-ACL only (tag
 `tag:k8s-zws-dev`), not the public internet.
