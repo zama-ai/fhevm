@@ -944,7 +944,7 @@ contract ProtocolConfigReplicaKmsTest is ProtocolConfigReplicaTestBase {
 
     /// @dev Canonical C2 (SEED1) destroys C1, but the replica switches to C3 (SEED2) before the
     ///      destruction arrives. The C2 signatures no longer match the active committee, so the owner
-    ///      applies the destruction (accepted RFC 037 risk).
+    ///      applies the destruction (accepted risk).
     function test_contextDestructionAfterRotationRecoversThroughMirror() public {
         _switch(SEED0, CTX1 + 1, EPOCH1 + 1, SEED1);
         bytes[] memory signatures = _sign(

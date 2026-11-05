@@ -16,7 +16,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  * @title ProtocolConfigReplica
  * @notice Read-replica of the canonical ProtocolConfig on non-canonical host chains.
  * @dev Ethereum is the canonical host and the single source of truth. Anyone may apply a canonical
- *      lifecycle step with the KMS confirmation signatures the canonical collected (RFC 037). The
+ *      lifecycle step with the KMS confirmation signatures the canonical collected. The
  *      replica verifies them under the canonical's EIP-712 domain. The owner mirror functions stay
  *      as the fallback and recovery path.
  */
