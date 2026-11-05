@@ -39,7 +39,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     // -----------------------------------------------------------------------------------------
     // EIP-712 type hashes
     //
-    // Used to recover the KMS signer from the four KMS lifecycle confirmations.
+    // Used to recover the KMS signer from the four KMS lifecycle confirmations, and to compute
+    // `epochMaterialHash`.
     // -----------------------------------------------------------------------------------------
 
     /// @dev Hash of the EIP-712 domain separator type.
@@ -552,6 +553,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /**
      * @dev Returns the `epochMaterialHash` of the key and CRS results. Each entry is the EIP-712 `hashStruct`
      *      of its KeygenVerification or CrsgenVerification, with `extraData` as the entry's extraData.
+     *      It must equal the value KMS Core signs, so the type strings must match KMSGeneration.
+     *      Entries are hashed in calldata order. The submitter sorts them by ID, as KMS Core does.
      */
     function _hashEpochMaterial(
         EpochKeyResult[] calldata keys,

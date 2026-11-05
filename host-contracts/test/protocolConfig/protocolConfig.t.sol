@@ -1702,8 +1702,9 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, extraData);
     }
 
-    /// @dev epochMaterialHash matches a fixed vector over the inputs of KMS's `epoch_material_hash_matches_the_abi_encoding`
-    ///      test. The vector comes from the ethers EIP-712 encoder, independent of the contract code.
+    /// @dev epochMaterialHash matches a vector computed with the ethers EIP-712 encoder over the inputs of KMS's
+    ///      `epoch_material_hash_matches_the_abi_encoding` test. KMS asserts no literal value, so this checks the
+    ///      Solidity encoding, not agreement with a hash produced by KMS.
     function test_epochMaterialHashMatchesKmsVector() public {
         _setupTwoNodeContext();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
