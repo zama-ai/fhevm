@@ -18,7 +18,9 @@ cd "${here}/.."
 NAMESPACE=fhevm
 KMS_REF=v0.15.0-1 # KMS_REPO_REF / KMS_CORE_TAG in .github/workflows/preview-env-deploy.yml
 # Keygen params type for host-trigger-keygen: 0 = Default (production-size), 1 = Test.
-KEYGEN_PARAMS_TYPE="${KEYGEN_PARAMS_TYPE:-1}"
+# Default, as preview-env: insecure keygen with Test params can yield a key under which
+# FHE rand decrypts to a constant (test-suite/fhevm/README.md).
+KEYGEN_PARAMS_TYPE="${KEYGEN_PARAMS_TYPE:-0}"
 NB_KMS_CORE=4
 COMMON_CHART=oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
 COMMON_CHART_VERSION=0.3.3
