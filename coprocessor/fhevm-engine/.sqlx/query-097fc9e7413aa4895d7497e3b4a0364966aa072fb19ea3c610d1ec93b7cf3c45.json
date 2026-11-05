@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT is_error, OCTET_LENGTH(ciphertext128) AS body_length, ciphertext_digest,\n                sns_ciphertext_digest, signer, signature\n           FROM pads\n          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
+  "query": "SELECT is_error, OCTET_LENGTH(ciphertext128) AS body_length, ciphertext_digest,\n                ciphertext128_digest, signer, signature\n           FROM pads\n          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
   "describe": {
     "columns": [
       {
@@ -20,7 +20,7 @@
       },
       {
         "ordinal": 3,
-        "name": "sns_ciphertext_digest",
+        "name": "ciphertext128_digest",
         "type_info": "Bytea"
       },
       {
@@ -50,5 +50,5 @@
       true
     ]
   },
-  "hash": "abb0b0f10fdf607885986e05682b287bc9465b4af415def848903b1b63337c43"
+  "hash": "097fc9e7413aa4895d7497e3b4a0364966aa072fb19ea3c610d1ec93b7cf3c45"
 }

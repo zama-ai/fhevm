@@ -12,12 +12,12 @@ CREATE TABLE IF NOT EXISTS pads
     -- The pad-worker writes the output and its attestation. A row is complete when it has them.
     ciphertext128 BYTEA NULL,
     ciphertext_digest BYTEA NULL CHECK (OCTET_LENGTH(ciphertext_digest) = 32),
-    sns_ciphertext_digest BYTEA NULL CHECK (OCTET_LENGTH(sns_ciphertext_digest) = 32),
+    ciphertext128_digest BYTEA NULL CHECK (OCTET_LENGTH(ciphertext128_digest) = 32),
     signer BYTEA NULL CHECK (OCTET_LENGTH(signer) = 20),
     signature BYTEA NULL CHECK (OCTET_LENGTH(signature) = 65),
 
     PRIMARY KEY (prf_instance, label, pad_length),
-    CHECK (NUM_NULLS(ciphertext128, ciphertext_digest, sns_ciphertext_digest, signer, signature) IN (0, 5))
+    CHECK (NUM_NULLS(ciphertext128, ciphertext_digest, ciphertext128_digest, signer, signature) IN (0, 5))
 );
 
 CREATE INDEX IF NOT EXISTS idx_pads_pending_by_connector
