@@ -748,7 +748,6 @@ impl EvmListener {
         event: ReorgBacktrackEvent,
     ) -> Result<(), EvmListenerError> {
         let block_number = event.block_number;
-        let chain_id_u64 = self.repositories.chain_id() as u64;
 
         // We don't need to dedup the message, the flow lock + ack will handle the deduplication by itself.
 
@@ -775,7 +774,6 @@ impl EvmListener {
             &self.repositories,
             &block_n,
             &self.provider,
-            chain_id_u64,
             // This block is coming from the live flow, and detect the reorg processing, but was issued from the live flow.
             BlockFlow::Live,
             &self.broker,
@@ -891,7 +889,6 @@ impl EvmListener {
                 &self.repositories,
                 &current_block,
                 &self.provider,
-                chain_id_u64,
                 BlockFlow::Reorged,
                 &self.broker,
                 &self.event_publisher,
@@ -1913,12 +1910,10 @@ async fn cursor_processing(
         // Events MUST be delivered before the block is registered in DB.
         // If publish fails: block is NOT inserted, DB tip unchanged,
         // cursor retries this exact block on next iteration. Zero missed events.
-        let chain_id_u64 = listener.repositories.chain_id() as u64;
         publisher::publish_block_events(
             &listener.repositories,
             &fetched_block,
             &listener.provider,
-            chain_id_u64,
             BlockFlow::Live,
             &listener.broker,
             &listener.event_publisher,
@@ -2023,12 +2018,10 @@ async fn final_processing(
         // can advance the tip meanwhile), exactly like the live cursor flow.
         // The publish inherits the publish_stale/queue-existence behavior of
         // publish_payload_to_consumer.
-        let chain_id_u64 = listener.repositories.chain_id() as u64;
         publisher::publish_final_block_events(
             &listener.repositories,
             &fetched_block,
             &listener.provider,
-            chain_id_u64,
             &listener.broker,
             &listener.event_publisher,
             &listener.publish_config,
@@ -2089,7 +2082,6 @@ async fn catchup_processing(
     request: CatchupPayload,
     last_block: Option<u64>,
 ) -> Result<(), EvmListenerError> {
-    let chain_id_u64 = listener.repositories.chain_id() as u64;
     let CatchupPayload {
         consumer_id,
         catchup_id,
@@ -2120,7 +2112,6 @@ async fn catchup_processing(
             &listener.repositories,
             &fetched_block,
             &listener.provider,
-            chain_id_u64,
             publisher::CatchupTarget {
                 consumer_id: &consumer_id,
                 catchup_id,
@@ -2175,7 +2166,6 @@ async fn final_catchup_processing(
     request: CatchupPayload,
     last_block: Option<u64>,
 ) -> Result<(), EvmListenerError> {
-    let chain_id_u64 = listener.repositories.chain_id() as u64;
     let CatchupPayload {
         consumer_id,
         catchup_id,
@@ -2206,7 +2196,6 @@ async fn final_catchup_processing(
             &listener.repositories,
             &fetched_block,
             &listener.provider,
-            chain_id_u64,
             publisher::CatchupTarget {
                 consumer_id: &consumer_id,
                 catchup_id,

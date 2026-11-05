@@ -1297,8 +1297,11 @@ async fn test_run_retries_pending_in_steady_state() {
         .consumer_name("consumer-1")
         .dead_stream(dead_stream)
         .max_retries(3)
-        .claim_min_idle(Duration::from_millis(300))
-        .claim_interval(Duration::from_millis(400))
+        // This test exercises the consumer's own pending drain. A faster
+        // ClaimSweeper can consume the delivery budget before that 1 s tick.
+        // Keep reclaiming outside the test's deadline, as in the PEL tests.
+        .claim_min_idle(Duration::from_secs(60))
+        .claim_interval(Duration::from_secs(60))
         .prefetch_count(10)
         .block_ms(2000)
         .build_prefetch()
@@ -1330,14 +1333,14 @@ async fn test_run_retries_pending_in_steady_state() {
 
     let handler = PrefetchRetryHandler(call_count.clone());
 
-    let consumer = RedisConsumer::connect(url).await.unwrap();
-    let consumer_handle = tokio::spawn(async move {
-        let _ = consumer.run(config, handler).await;
-    });
-
-    tokio::time::sleep(Duration::from_millis(400)).await;
-
     let conn = RedisConnectionManager::new(url).await.unwrap();
+    StreamManager::new(conn.clone())
+        .ensure_consumer_group("prefetch-retry.events", "prefetch-retry-group", "0")
+        .await
+        .unwrap();
+    let consumer = RedisConsumer::connect(url).await.unwrap();
+    let consumer_handle = tokio::spawn(async move { consumer.run(config, handler).await });
+
     let publisher = RedisPublisher::new(conn);
     publisher
         .publish("prefetch-retry.events", &BlockEvent { block_number: 1 })
@@ -1347,11 +1350,29 @@ async fn test_run_retries_pending_in_steady_state() {
     // Pending drain runs every 1 s. First delivery fails → PEL. Second delivery
     // (from XREADGROUP 0) succeeds. Allow up to 15 s.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while call_count.load(Ordering::SeqCst) < 2 && tokio::time::Instant::now() < deadline {
+    let client = redis::Client::open(url).unwrap();
+    let mut raw_conn = client.get_multiplexed_async_connection().await.unwrap();
+    let pending = loop {
+        assert!(
+            !consumer_handle.is_finished(),
+            "consumer exited before completing the pending retry"
+        );
+        let pending: redis::streams::StreamPendingReply = redis::cmd("XPENDING")
+            .arg("prefetch-retry.events")
+            .arg("prefetch-retry-group")
+            .query_async(&mut raw_conn)
+            .await
+            .unwrap();
+        if (call_count.load(Ordering::SeqCst) >= 2 && pending.count() == 0)
+            || tokio::time::Instant::now() >= deadline
+        {
+            break pending.count();
+        }
         tokio::time::sleep(Duration::from_millis(200)).await;
-    }
+    };
 
     consumer_handle.abort();
+    let _ = consumer_handle.await;
 
     assert!(
         call_count.load(Ordering::SeqCst) >= 2,
@@ -1359,13 +1380,15 @@ async fn test_run_retries_pending_in_steady_state() {
         call_count.load(Ordering::SeqCst)
     );
 
-    let client = redis::Client::open(url).unwrap();
-    let mut raw_conn = client.get_multiplexed_async_connection().await.unwrap();
+    assert_eq!(
+        pending, 0,
+        "the successful retry must acknowledge the message"
+    );
     let dead_len: u64 = redis::cmd("XLEN")
         .arg(dead_stream)
         .query_async(&mut raw_conn)
         .await
-        .unwrap_or(0);
+        .unwrap();
 
     assert_eq!(
         dead_len, 0,

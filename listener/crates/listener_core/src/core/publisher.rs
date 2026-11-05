@@ -547,12 +547,12 @@ pub async fn publish_block_events(
     repositories: &Repositories,
     fetched_block: &FetchedBlock,
     provider: &SemEvmRpcProvider,
-    chain_id: u64,
     flow: BlockFlow,
     broker: &Broker,
     event_publisher: &Publisher,
     publish_config: &PublishConfig,
 ) -> Result<(), PublisherError> {
+    let chain_id = repositories.chain_id() as u64;
     // 1. Fetch filters — propagate DB errors to caller for handler-level retry.
     let filters = repositories
         .filters
@@ -645,11 +645,11 @@ pub async fn publish_final_block_events(
     repositories: &Repositories,
     fetched_block: &FetchedBlock,
     provider: &SemEvmRpcProvider,
-    chain_id: u64,
     broker: &Broker,
     event_publisher: &Publisher,
     publish_config: &PublishConfig,
 ) -> Result<(), PublisherError> {
+    let chain_id = repositories.chain_id() as u64;
     // 1. Fetch FINAL filters — propagate DB errors to caller for handler-level retry.
     let filters = repositories
         .filters
@@ -718,12 +718,12 @@ pub async fn publish_catchup_block_events(
     repositories: &Repositories,
     fetched_block: &FetchedBlock,
     provider: &SemEvmRpcProvider,
-    chain_id: u64,
     target: CatchupTarget<'_>,
     broker: &Broker,
     event_publisher: &Publisher,
     publish_config: &PublishConfig,
 ) -> Result<(), PublisherError> {
+    let chain_id = repositories.chain_id() as u64;
     let CatchupTarget {
         consumer_id,
         catchup_id,
@@ -812,12 +812,12 @@ pub async fn publish_final_catchup_block_events(
     repositories: &Repositories,
     fetched_block: &FetchedBlock,
     provider: &SemEvmRpcProvider,
-    chain_id: u64,
     target: CatchupTarget<'_>,
     broker: &Broker,
     event_publisher: &Publisher,
     publish_config: &PublishConfig,
 ) -> Result<(), PublisherError> {
+    let chain_id = repositories.chain_id() as u64;
     let CatchupTarget {
         consumer_id,
         catchup_id,

@@ -1929,8 +1929,19 @@ mod tests {
         .execute(&db_pool)
         .await?;
         assert!(active_gcs_window(&db_pool).await?.is_none());
+        // Exercise alignment itself here: the lifecycle fixture above creates
+        // a cursor before calling it, which would mask this no-write assertion.
         assert_eq!(
-            align_cursor_to_active_window(&db_pool, Some(140), 150, None).await?,
+            align_cursor_to_active_window_checked(
+                &db_pool,
+                Some(140),
+                150,
+                None,
+                sqlx::types::Uuid::nil(),
+                42,
+                |_| async { anyhow::bail!("a divergent proposal must not fetch an anchor") },
+            )
+            .await?,
             None
         );
         assert_eq!(gcs_watermark().await?, None);

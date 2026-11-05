@@ -1459,8 +1459,10 @@ async fn host_startup_adopts_missing_cursor_and_fences_reset_generations(
         .map_err(|err| anyhow!("{err}"))?;
     let pool = sqlx::PgPool::connect(db.db_url()).await?;
     let green = green_host_pool(&pool, db.db_url()).await?;
+    // Ownership follows the cursor schema, not the mode hint. Seed the
+    // obligation through the same Green pool the replacement will use.
     let old =
-        begin_replay(&pool, ListenerSource::Host, true, 42, 3, 10).await?;
+        begin_replay(&green, ListenerSource::Host, true, 42, 3, 10).await?;
     assert!(matches!(
         prepare_host_replay(&green, true, 42, 64, None).await?,
         HostReplayStartup::NeedsSeed
