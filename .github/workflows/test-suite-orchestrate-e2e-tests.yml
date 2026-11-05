@@ -153,6 +153,13 @@ jobs:
       path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
     permissions: *docker_permissions
     secrets: *docker_secrets
+  relayer-http-docker-build:
+    if: *build-trigger-condition
+    uses: ./.github/workflows/relayer-http-docker-build.yml
+    with:
+      path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
+    permissions: *docker_permissions
+    secrets: *docker_secrets
   test-suite-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/test-suite-docker-build.yml
@@ -171,6 +178,7 @@ jobs:
       - host-contracts-docker-build
       - kms-connector-docker-build
       - relayer-docker-build
+      - relayer-http-docker-build
       - test-suite-docker-build
     if: |
       needs.resolve-baseline.result == 'success' &&
@@ -209,8 +217,7 @@ jobs:
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ steps.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.resolve-baseline.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ steps.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ steps.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ steps.create-e2e-tests-input.outputs.relayer-versions }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
       - name: Checkout code
@@ -275,8 +282,7 @@ jobs:
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: two-of-three-multi-chain
       test-profile: standard-shard-compute
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -307,8 +313,7 @@ jobs:
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       # Host ingestion by listener-core and host-consumers only.
       scenario: two-of-three-multi-chain-consumer
       test-profile: standard
@@ -338,8 +343,7 @@ jobs:
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: two-of-three-multi-chain
       test-profile: standard-shard-decryption
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -367,8 +371,7 @@ jobs:
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: two-of-three-multi-chain
       test-profile: standard-shard-stateful
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -410,8 +413,7 @@ jobs:
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: four-party-threshold-kms
       test-profile: kms-generation
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -446,8 +448,7 @@ jobs:
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: four-party-threshold-kms
       test-profile: kms-generation-abort
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -480,8 +481,7 @@ jobs:
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: blue-green-two-of-three-multi-chain
       test-profile: blue-green
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -518,8 +518,7 @@ jobs:
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: five-party-swap-threshold-kms
       test-profile: kms-context-switch
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}

@@ -93,13 +93,11 @@ on:
         description: "Test suite version"
         default: ""
         type: string
-      relayer-migrate-version:
-        description: "Relayer migrate version"
-        default: ""
-        type: string
-      relayer-version:
-        description: "Relayer version"
-        default: ""
+      relayer-versions:
+        description:
+          'Relayer image versions as a JSON object. Keys: relayer, relayer-migrate, relayer-http.
+          Example: {"relayer":"01cf0ff","relayer-http":"01cf0ff"}'
+        default: "{}"
         type: string
       lock-artifact-name:
         description: "Uploaded lock artifact name used to freeze the resolved bundle"
@@ -184,8 +182,9 @@ jobs:
       CONNECTOR_ENDPOINT_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['endpoint'] }}
       CONNECTOR_PROXY_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['proxy'] }}
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
-      RELAYER_MIGRATE_VERSION: ${{ inputs.relayer-migrate-version }}
-      RELAYER_VERSION: ${{ inputs.relayer-version }}
+      RELAYER_MIGRATE_VERSION: ${{ fromJSON(inputs.relayer-versions || '{}')['relayer-migrate'] }}
+      RELAYER_VERSION: ${{ fromJSON(inputs.relayer-versions || '{}')['relayer'] }}
+      RELAYER_HTTP_VERSION: ${{ fromJSON(inputs.relayer-versions || '{}')['relayer-http'] }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
       ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario || 'two-of-three-multi-chain' }}
