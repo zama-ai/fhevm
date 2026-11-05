@@ -186,9 +186,9 @@ Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 
 ```jsonc
 // user decrypt: every accepted share, acceptance order
-{ "result": [ { "payload": "a1b2…", "signature": "1a2b…", "extraData": "0x00" }, … ] }
+{ "result": [ { "payload": "a1b2…", "signature": "1a2b…", "extraData": "0x02…" }, … ] }
 // public decrypt: the largest agreeing group
-{ "decryptedValue": "0000…2a", "signatures": ["1a2b…", …], "extraData": "0x00" }
+{ "decryptedValue": "0000…2a", "signatures": ["1a2b…", …], "extraData": "0x02…" }
 ```
 
 ## 8. Configuration → behaviour
