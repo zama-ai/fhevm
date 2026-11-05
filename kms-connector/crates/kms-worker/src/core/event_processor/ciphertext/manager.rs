@@ -1,6 +1,6 @@
 use super::{VerifiedCiphertexts, s3};
 use crate::core::{
-    config::Config,
+    Config,
     event_processor::{ProcessingError, RequestCheckError, RequestCheckKind},
 };
 use alloy::{
@@ -15,7 +15,7 @@ use ciphertext_attestation::{
 use futures::future::try_join_all;
 use kms_connector_api::ErrorCode;
 use kms_grpc::kms::v1::TypedCiphertext;
-use std::num::NonZeroUsize;
+use std::{collections::HashMap, num::NonZeroUsize};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info};
 
@@ -62,9 +62,9 @@ where
 
     /// Resolves and retrieves the verified ciphertexts of a decryption request from `handles`.
     ///
-    /// Each handle is resolved independently against the off-chain attestation consensus and its
-    /// ciphertext fetched from a winning-group bucket. The request fails as soon as any single
-    /// handle fails.
+    /// Each distinct handle is resolved once against the off-chain attestation consensus and its
+    /// ciphertext fetched from a winning-group bucket. Repeated entries share the verified body;
+    /// their order and multiplicity are preserved. Any failed resolution fails the request.
     pub async fn verify_and_retrieve(
         &self,
         handles: &[B256],
@@ -75,14 +75,10 @@ where
             handles.len()
         );
 
-        let resolved_handles = try_join_all(
-            handles
-                .iter()
-                .map(|&handle| self.verify_and_retrieve_handle(&registry, handle)),
-        )
+        let verified = resolve_handles(handles, |handle| {
+            self.verify_and_retrieve_handle(&registry, handle)
+        })
         .await?;
-
-        let verified = aggregate_resolved_handles(resolved_handles)?;
 
         info!(
             "All {} handle(s) resolved and verified! (key_id: {:#066x})",
@@ -138,6 +134,35 @@ where
 struct ResolvedHandle {
     key_id: U256,
     ciphertext: TypedCiphertext,
+}
+
+async fn resolve_handles<F, Fut>(
+    handles: &[B256],
+    resolve: F,
+) -> Result<VerifiedCiphertexts, ProcessingError>
+where
+    F: Fn(B256) -> Fut,
+    Fut: Future<Output = Result<ResolvedHandle, ProcessingError>>,
+{
+    let mut unique = Vec::with_capacity(handles.len());
+    let mut indices = HashMap::with_capacity(handles.len());
+    for handle in handles {
+        indices.entry(handle).or_insert_with(|| {
+            let index = unique.len();
+            unique.push(handle);
+            index
+        });
+    }
+    let resolved = try_join_all(unique.iter().map(|&handle| resolve(*handle))).await?;
+    let mut verified = aggregate_resolved_handles(resolved)?;
+    if unique.len() < handles.len() {
+        // TypedCiphertext clones share the large Bytes payload, preserving every wire entry.
+        verified.ciphertexts = handles
+            .iter()
+            .map(|h| verified.ciphertexts[indices[h]].clone())
+            .collect();
+    }
+    Ok(verified)
 }
 
 /// Aggregates the independently-resolved handles of a request into a single [`VerifiedCiphertexts`].
@@ -196,6 +221,50 @@ where
 mod tests {
     use super::*;
     use crate::core::event_processor::ProcessingErrorKind;
+    use std::cell::RefCell;
+    use std::future;
+
+    #[tokio::test]
+    async fn duplicate_handles_resolve_once_and_keep_the_original_order() {
+        let a = B256::repeat_byte(1);
+        let b = B256::repeat_byte(2);
+        let calls = RefCell::new(Vec::new());
+        let verified = resolve_handles(&[b, a, b, a, a], |handle| {
+            calls.borrow_mut().push(handle);
+            future::ready(Ok(resolved(U256::ONE, handle[0])))
+        })
+        .await
+        .unwrap();
+
+        // 5 handles but only 2 calls
+        assert_eq!(*calls.borrow(), vec![b, a]);
+
+        // Check that the payload is exactly what we expect
+        let entries = &verified.ciphertexts;
+        assert_eq!(
+            entries
+                .iter()
+                .map(|c| c.external_handle[0])
+                .collect::<Vec<_>>(),
+            vec![2, 1, 2, 1, 1]
+        );
+
+        // Check equal content
+        assert_eq!(entries[0], entries[2]);
+        assert_eq!(entries[1], entries[3]);
+        assert_eq!(entries[1], entries[4]);
+
+        // Check we're using the same backing memory
+        assert_eq!(
+            entries[0].ciphertext.as_ptr(),
+            entries[2].ciphertext.as_ptr()
+        );
+        assert_eq!(
+            entries[1].ciphertext.as_ptr(),
+            entries[4].ciphertext.as_ptr()
+        );
+        assert_eq!(verified.key_id, U256::ONE);
+    }
 
     fn resolved(key_id: U256, handle_byte: u8) -> ResolvedHandle {
         ResolvedHandle {
