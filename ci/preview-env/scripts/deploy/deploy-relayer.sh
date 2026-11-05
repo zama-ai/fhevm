@@ -88,10 +88,11 @@ case "${kind}" in
     if [[ "${DEPLOY_POLYGON}" == "true" ]]; then
       chains="[${HOST_CHAIN_ID}, ${POLYGON_CHAIN_ID:-80002}]"
     fi
-    # Same quorums as the relayer: public decrypt t+1 matching answers, user
-    # decrypt n-t shares. FhevmSig is signed for the first host chain, as the
-    # local stack does.
-    public_t=$(kms_majority "${n}")
+    # Same thresholds as the relayer and the contracts (wire-contracts-values.sh):
+    # n-t for public and user decrypt, so a public decrypt never returns fewer
+    # signatures than PUBLIC_DECRYPTION_THRESHOLD. FhevmSig is signed for the
+    # first host chain, as the local stack does.
+    public_t=$(kms_reconstruct "${n}")
     user_t=$(kms_reconstruct "${n}")
     http_values=$(mktemp --suffix=.yaml)
     cp ci/preview-env/relayer/values-relayer-http-e2e.yaml "${http_values}"
