@@ -195,7 +195,7 @@ describe('runRelayerHttpRetryLoop', () => {
     expect(h.logger.error).not.toHaveBeenCalled();
   });
 
-  // Anything but a real RelayerHttpResponseError (look-alikes included): rethrown at once, no decision, no log.
+  // Anything but a real RelayerHttpResponseError (look-alike included): rethrown at once, no decision, no log.
   it.each([
     ['a TypeError', new TypeError('x')],
     ['a RelayerHttpTimeoutError', new RelayerHttpTimeoutError({ url: RELAYER_URL, timeoutMs: 1 })],
