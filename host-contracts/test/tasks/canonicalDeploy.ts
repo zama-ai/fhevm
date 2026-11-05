@@ -17,6 +17,7 @@ import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/utils/upgradeProposal
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 import {
   HOST_ENV_FILE,
+  PLACEHOLDER_CANONICAL_CHAIN_ID,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   deployFreshProtocolConfigProxy,
@@ -84,6 +85,16 @@ describe('Canonical prepare tasks', function () {
   describe('ProtocolConfig from canonical artifact', function () {
     // Deploys a canonical ProtocolConfig and reads it. Then puts the snapshot in the CANONICAL_* env
     // variables. A deployment platform injects the export task's `export` map the same way.
+    function expectedThresholds() {
+      const thresholds = buildProtocolConfigThresholds();
+      return {
+        publicDecryption: BigInt(thresholds.publicDecryption),
+        userDecryption: BigInt(thresholds.userDecryption),
+        kmsGen: BigInt(thresholds.kmsGen),
+        mpc: BigInt(thresholds.mpc),
+      };
+    }
+
     async function applyCanonicalSnapshotEnv(): Promise<{ canonicalAddress: string }> {
       const canonicalAddress = await deployFreshProtocolConfigProxy(
         deployer,
@@ -94,7 +105,11 @@ describe('Canonical prepare tasks', function () {
         canonicalProvider: ethers.provider,
         canonicalProtocolConfigAddress: canonicalAddress,
       });
-      applyProtocolConfigCanonicalEnv(buildCanonicalSnapshotEnv(snapshot));
+      applyProtocolConfigCanonicalEnv({
+        ...buildCanonicalSnapshotEnv(snapshot),
+        // A canonical chain that differs from the local one, as for a real replica.
+        CANONICAL_CHAIN_ID: PLACEHOLDER_CANONICAL_CHAIN_ID.toString(),
+      });
       return { canonicalAddress };
     }
 
@@ -117,25 +132,27 @@ describe('Canonical prepare tasks', function () {
       const decoded = iface.decodeFunctionData('initializeFromCanonical', innerCalldata);
       expect(decoded[0]).to.equal(canonicalContextId);
       expect(decoded[1]).to.equal(canonicalEpochId);
-      // Round-trip every KmsNodeParams field (4 stored + 4 MPC-metadata) so a dropped or transposed
-      // field is caught instead of silently passing on txSenderAddress alone. The canonical mirror
-      // path preserves the four stored fields and fills the MPC metadata with deterministic
-      // placeholders (partyId = index, mpcIdentity = '', caCert = '0x', storagePrefix = '').
+      // Round-trip every KmsNode field. A check on txSenderAddress alone misses a dropped or
+      // transposed field.
       const expectedNodes = buildProtocolConfigNodes();
       expect(decoded[2].length).to.equal(expectedNodes.length);
       decoded[2].forEach((node: unknown[], index: number) => {
-        const [txSenderAddress, signerAddress, ipAddress, storageUrl, partyId, mpcIdentity, caCert, storagePrefix] =
-          node;
+        const [txSenderAddress, signerAddress, ipAddress, storageUrl] = node;
         expect(txSenderAddress).to.equal(expectedNodes[index].txSenderAddress);
         expect(signerAddress).to.equal(expectedNodes[index].signerAddress);
         expect(ipAddress).to.equal(expectedNodes[index].ipAddress);
         expect(storageUrl).to.equal(expectedNodes[index].storageUrl);
-        expect(partyId).to.equal(BigInt(index));
-        expect(mpcIdentity).to.equal('');
-        expect(caCert).to.equal('0x');
-        expect(storagePrefix).to.equal('');
       });
-      expect(decoded[3][0]).to.equal(BigInt(buildProtocolConfigThresholds().publicDecryption));
+      // The signature string has no component names, so compare the thresholds in struct order.
+      const thresholds = expectedThresholds();
+      expect(decoded[3].toArray()).to.deep.equal([
+        thresholds.publicDecryption,
+        thresholds.userDecryption,
+        thresholds.kmsGen,
+        thresholds.mpc,
+      ]);
+      expect(decoded[4]).to.equal(PLACEHOLDER_CANONICAL_CHAIN_ID);
+      expect(decoded[5]).to.equal(canonicalAddress);
       expect(outerCalldata).to.equal(
         UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [newImplementationAddress, innerCalldata]),
       );
@@ -158,9 +175,19 @@ describe('Canonical prepare tasks', function () {
       expect((await secondary.getKmsNodesForContext(canonicalContextId)).length).to.equal(
         buildProtocolConfigNodes().length,
       );
-      expect(await secondary.getPublicDecryptionThresholdForContext(canonicalContextId)).to.equal(
-        BigInt(buildProtocolConfigThresholds().publicDecryption),
-      );
+      expect({
+        publicDecryption: await secondary.getPublicDecryptionThresholdForContext(canonicalContextId),
+        userDecryption: await secondary.getUserDecryptionThresholdForContext(canonicalContextId),
+        kmsGen: await secondary.getKmsGenThresholdForContext(canonicalContextId),
+        mpc: await secondary.getMpcThresholdForContext(canonicalContextId),
+      }).to.deep.equal(expectedThresholds());
+      const [, name, version, chainId, verifyingContract] = await secondary.eip712Domain();
+      expect({ name, version, chainId, verifyingContract }).to.deep.equal({
+        name: 'ProtocolConfig',
+        version: '1',
+        chainId: PLACEHOLDER_CANONICAL_CHAIN_ID,
+        verifyingContract: canonicalAddress,
+      });
     });
 
     // Both tasks read the environment before they compile or deploy, so an unset variable leaves the
