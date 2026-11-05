@@ -3,7 +3,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
 use aws_sdk_s3::primitives::ByteStream;
 use fhevm_engine_common::database::{GCS_SCHEMA, GCS_SCHEMA_QUOTED};
 use fhevm_engine_common::gcs_activation::EVENT_GW_NEW_BLOCK;
@@ -23,13 +22,76 @@ pub const EMPTY_BLOCK_STATE_HASH: &str =
 // A stalled object store must not hold the containment/cutover fence forever.
 const STATE_HASH_UPLOAD_TIMEOUT: Duration = Duration::from_secs(15);
 
-// TODO: confirm. RFC 021 defers the state_hash S3
-// layout to RFC 023, but RFC 023 only specifies the layout for ciphertext
-// objects, not state_hash blobs.
-//   <s3BucketUrl>/state_hash/chain=<chain_id>/block=<block_number>.bin
+/// One upgrade attempt, as the decision records already name it: the proposal
+/// and the block it was (re-)activated at. The stack version the proposal
+/// targets is deliberately NOT part of the identity: it is redundant with the
+/// proposal, and it belongs in the signed decision payload, not in S3 keys.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UpgradeAttempt {
+    pub proposal_id: Vec<u8>,
+    pub proposal_block: i64,
+}
+
+// RFC 021 defers the state_hash S3 layout to RFC 023, but RFC 023 only
+// specifies the layout for ciphertext objects, not state_hash blobs.
+//
+// Keys are scoped by the upgrade attempt, mirroring the decision-record layout
+// (`decision/proposal=<hex>/attempt=<proposal_block>/outcome.json`). Nothing
+// deletes these objects, and a rollback resets only the DB: a retry whose
+// `gw_start_block` did not move would otherwise re-use the previous attempt's
+// keys, so peers could read attempt-N blobs early in attempt N+1 (stale-read
+// "divergence"), or a deterministic retry could reach unanimity on leftovers
+// before anyone recomputed (fhevm-internal#2273). `attempt=<proposal_block>`
+// is what names the attempt: re-activating the same proposal reuses its
+// `proposal_id` but never its `proposal_block`. The `state_hash/` family
+// prefix stays first so prefix-based listing, lifecycle rules and the reader's
+// `{s3_url}/{key}` GET keep working. The target stack version is NOT in the
+// key: it is redundant with the proposal and lives in the signed decision
+// payload instead, exactly like the decision-record keys.
+//
+//   <s3BucketUrl>/state_hash/proposal=<proposal_id_hex>
+//     /attempt=<proposal_block>/chain=<chain_id>/block=<block_number>.bin
 //   body = raw 32-byte SHA-256 (decoded from the hex stored in `state_hash`).
-pub fn state_hash_key(chain_id: i64, block_number: i64) -> String {
-    format!("state_hash/chain={chain_id}/block={block_number}.bin")
+pub fn state_hash_key(attempt: &UpgradeAttempt, chain_id: i64, block_number: i64) -> String {
+    scoped_key(
+        &hex::encode(&attempt.proposal_id),
+        attempt.proposal_block,
+        chain_id,
+        block_number,
+    )
+}
+
+/// The key as shown in logs: same shape as [`state_hash_key`], but the
+/// proposal id abbreviated by [`display_proposal_id`] so a 32-byte L1 id does
+/// not drown the line. Display only - never a real object key.
+pub fn state_hash_log_key(attempt: &UpgradeAttempt, chain_id: i64, block_number: i64) -> String {
+    scoped_key(
+        &display_proposal_id(&attempt.proposal_id),
+        attempt.proposal_block,
+        chain_id,
+        block_number,
+    )
+}
+
+fn scoped_key(proposal_hex: &str, proposal_block: i64, chain_id: i64, block_number: i64) -> String {
+    format!(
+        "state_hash/proposal={proposal_hex}/attempt={proposal_block}/chain={chain_id}/block={block_number}.bin"
+    )
+}
+
+/// Abbreviates a proposal id for logs: hex of the first 2 and last 4 bytes,
+/// e.g. `0000...00111122`. Ids of 6 bytes or fewer print in full. The L1
+/// proposal id is a caller-chosen uint256, so only the full 32 bytes identify
+/// an attempt; this form is for human eyes, never for keys or comparisons.
+pub fn display_proposal_id(proposal_id: &[u8]) -> String {
+    if proposal_id.len() <= 6 {
+        return hex::encode(proposal_id);
+    }
+    format!(
+        "{}...{}",
+        hex::encode(&proposal_id[..2]),
+        hex::encode(&proposal_id[proposal_id.len() - 4..]),
+    )
 }
 
 /// Outcome of a guarded state-hash insert.
@@ -442,6 +504,51 @@ where
 /// The in-progress attempt `(proposal_id, proposal_block)`, if any.
 type Attempt = Option<(Vec<u8>, i64)>;
 
+/// How an upload pass keys its objects.
+enum Keying {
+    /// An active attempt - the only production shape. Every object is scoped
+    /// to the attempt, so retries never collide.
+    Attempt(UpgradeAttempt),
+    /// Test-box builds keep uploading after cutover, when no attempt exists,
+    /// under the legacy unscoped layout the box consensus loop reads.
+    #[cfg(feature = "post-cutover-state-hash")]
+    PostCutover,
+}
+
+impl Keying {
+    /// `None` means there is nothing to publish this pass: the consensus
+    /// readers only ever fetch attempt-scoped keys, so with no attempt an
+    /// upload could serve no one.
+    fn of(started: &Attempt) -> Option<Keying> {
+        let keying = started.as_ref().map(|(proposal_id, proposal_block)| {
+            Keying::Attempt(UpgradeAttempt {
+                proposal_id: proposal_id.clone(),
+                proposal_block: *proposal_block,
+            })
+        });
+        #[cfg(feature = "post-cutover-state-hash")]
+        let keying = keying.or(Some(Keying::PostCutover));
+        keying
+    }
+
+    fn key(&self, chain_id: i64, block_number: i64) -> String {
+        match self {
+            Keying::Attempt(attempt) => state_hash_key(attempt, chain_id, block_number),
+            #[cfg(feature = "post-cutover-state-hash")]
+            Keying::PostCutover => format!("state_hash/chain={chain_id}/block={block_number}.bin"),
+        }
+    }
+
+    /// The key as logged: the proposal id abbreviated, everything else exact.
+    fn log_key(&self, chain_id: i64, block_number: i64) -> String {
+        match self {
+            Keying::Attempt(attempt) => state_hash_log_key(attempt, chain_id, block_number),
+            #[cfg(feature = "post-cutover-state-hash")]
+            Keying::PostCutover => self.key(chain_id, block_number),
+        }
+    }
+}
+
 /// Blue ingested the `end_block` of this chain at least `cutoff` ago.
 pub(crate) async fn chain_upload_closed(
     pool: &Pool<Postgres>,
@@ -470,9 +577,9 @@ pub(crate) async fn upload_window<'e>(
     executor: impl sqlx::Executor<'e, Database = Postgres>,
     cutoff: Duration,
 ) -> Result<(Attempt, bool), sqlx::Error> {
-    let (proposal_id, proposal_block, closed): (Option<Vec<u8>>, Option<i64>, bool) =
-        sqlx::query_as(
-            "SELECT (SELECT proposal_id FROM upgrade_state
+    type WindowRow = (Option<Vec<u8>>, Option<i64>, bool);
+    let (proposal_id, proposal_block, closed): WindowRow = sqlx::query_as(
+        "SELECT (SELECT proposal_id FROM upgrade_state
                   WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
                 (SELECT COALESCE(proposal_block, -1) FROM upgrade_state
                   WHERE stack_role = 'GCS' AND status = 'in_progress' LIMIT 1),
@@ -481,10 +588,10 @@ pub(crate) async fn upload_window<'e>(
              WHERE b.chain_id = w.host_chain_id AND b.block_number >= w.end_block
                AND b.created_at <= NOW() - make_interval(secs => $1))), FALSE)
            FROM upgrade_state w WHERE w.stack_role = 'GCS' AND w.status = 'in_progress'",
-        )
-        .bind(cutoff.as_secs_f64())
-        .fetch_one(executor)
-        .await?;
+    )
+    .bind(cutoff.as_secs_f64())
+    .fetch_one(executor)
+    .await?;
     Ok((proposal_id.zip(proposal_block), closed))
 }
 
@@ -509,6 +616,41 @@ async fn begin_hash_upload(
         return Ok(None);
     }
     Ok(Some(tx))
+}
+
+/// One conditional state-hash PUT. `If-None-Match: "*"` because within one
+/// attempt the blob for a (chain, block) is immutable, an overwrite is never
+/// legitimate - so an existing object (`PreconditionFailed`) means a previous
+/// PUT of this same attempt succeeded without its bookkeeping: adopt it.
+async fn put_state_hash(
+    s3: &aws_sdk_s3::Client,
+    bucket: &str,
+    key: &str,
+    block_hash_hex: Option<&str>,
+    bytes: Vec<u8>,
+    timeout_context: &'static str,
+) -> anyhow::Result<()> {
+    use aws_sdk_s3::error::ProvideErrorMetadata;
+    let mut request = s3
+        .put_object()
+        .bucket(bucket)
+        .key(key)
+        .if_none_match("*")
+        .body(ByteStream::from(bytes));
+    if let Some(block_hash_hex) = block_hash_hex {
+        request = request.metadata("block-hash", block_hash_hex);
+    }
+    match tokio::time::timeout(STATE_HASH_UPLOAD_TIMEOUT, request.send()).await {
+        Ok(Ok(_)) => Ok(()),
+        Ok(Err(err))
+            if err.as_service_error().and_then(ProvideErrorMetadata::code)
+                == Some("PreconditionFailed") =>
+        {
+            Ok(())
+        }
+        Ok(Err(err)) => Err(anyhow::Error::from(err)),
+        Err(elapsed) => Err(anyhow::Error::from(elapsed).context(timeout_context)),
+    }
 }
 
 async fn upload_pending_state_hashes(
@@ -553,6 +695,9 @@ async fn upload_pending_state_hashes(
         opcode = crate::FHE_TRIVIAL_ENCRYPT_OPCODE,
     );
     let started = upload_window(pool, cutoff).await?.0;
+    let Some(keying) = Keying::of(&started) else {
+        return Ok(());
+    };
     let pending: Vec<(i64, i64, String, Vec<u8>)> = sqlx::query_as(&sql)
         .bind(batch_limit)
         .fetch_all(pool)
@@ -561,6 +706,8 @@ async fn upload_pending_state_hashes(
     for row in pending {
         let chain_id = row.0;
         let block_number = row.1;
+        let key = keying.key(chain_id, block_number);
+        let log_key = keying.log_key(chain_id, block_number);
         #[cfg(feature = "test-failpoints")]
         let report_fault = crate::test_host_report::fault(pool, chain_id, block_number).await?;
         #[cfg(feature = "test-failpoints")]
@@ -585,6 +732,7 @@ async fn upload_pending_state_hashes(
                     &row.2,
                     &format!("0x{}", hex::encode(&row.3)),
                     my_bucket,
+                    &key,
                 )
                 .await?;
                 crate::test_host_report::divergent_hash(&mut bytes);
@@ -592,22 +740,21 @@ async fn upload_pending_state_hashes(
             bytes
         };
         let block_hash_hex = format!("0x{}", hex::encode(&row.3));
-        let key = state_hash_key(chain_id, block_number);
+        // The hex of the exact bytes PUT as the object body (the state-hash
+        // itself), not the DB column: test failpoints may diverge the body.
+        let payload_hex = hex::encode(&bytes);
         let Some(mut tx) = begin_hash_upload(pool, cutoff, &started).await? else {
             return Ok(());
         };
-        let uploaded = tokio::time::timeout(
-            STATE_HASH_UPLOAD_TIMEOUT,
-            s3.put_object()
-                .bucket(my_bucket)
-                .key(&key)
-                .metadata("block-hash", &block_hash_hex)
-                .body(ByteStream::from(bytes))
-                .send(),
+        let uploaded = put_state_hash(
+            s3,
+            my_bucket,
+            &key,
+            Some(&block_hash_hex),
+            bytes,
+            "state_hash S3 upload timed out",
         )
-        .await
-        .context("state_hash S3 upload timed out")
-        .and_then(|result| result.map_err(anyhow::Error::from));
+        .await;
         match uploaded {
             Ok(_) => {
                 sqlx::query!(
@@ -619,11 +766,11 @@ async fn upload_pending_state_hashes(
                 .execute(&mut *tx)
                 .await?;
                 tx.commit().await?;
-                info!(chain_id, block_number, block_hash = %block_hash_hex, bucket = my_bucket, "state_hash uploaded");
+                info!(chain_id, block_number, block_hash = %block_hash_hex, bucket = my_bucket, key = %log_key, state_hash = %payload_hex, "state_hash uploaded");
             }
             Err(e) => {
                 tx.rollback().await?;
-                warn!(chain_id, block_number, error = %e, "state_hash upload failed; will retry");
+                warn!(chain_id, block_number, bucket = my_bucket, key = %log_key, state_hash = %payload_hex, error = %e, "state_hash upload failed; will retry");
             }
         }
     }
@@ -653,6 +800,9 @@ async fn upload_pending_gw_state_hashes(
         "#
     );
     let started = upload_window(pool, cutoff).await?.0;
+    let Some(keying) = Keying::of(&started) else {
+        return Ok(());
+    };
     let pending = sqlx::query(&select_sql)
         .bind(gw_chain_id)
         .bind(batch_limit)
@@ -673,21 +823,20 @@ async fn upload_pending_gw_state_hashes(
                 continue;
             }
         };
-        let key = state_hash_key(gw_chain_id, block_number);
+        let key = keying.key(gw_chain_id, block_number);
+        let log_key = keying.log_key(gw_chain_id, block_number);
         let Some(mut tx) = begin_hash_upload(pool, cutoff, &started).await? else {
             return Ok(());
         };
-        let uploaded = tokio::time::timeout(
-            STATE_HASH_UPLOAD_TIMEOUT,
-            s3.put_object()
-                .bucket(my_bucket)
-                .key(&key)
-                .body(ByteStream::from(bytes))
-                .send(),
+        let uploaded = put_state_hash(
+            s3,
+            my_bucket,
+            &key,
+            None,
+            bytes,
+            "gw state_hash S3 upload timed out",
         )
-        .await
-        .context("gw state_hash S3 upload timed out")
-        .and_then(|result| result.map_err(anyhow::Error::from));
+        .await;
         match uploaded {
             Ok(_) => {
                 sqlx::query(&update_sql)
@@ -700,12 +849,14 @@ async fn upload_pending_gw_state_hashes(
                     gw_chain_id,
                     block_number,
                     bucket = my_bucket,
+                    key = %log_key,
+                    state_hash = %state_hash,
                     "gw state_hash uploaded"
                 );
             }
             Err(e) => {
                 tx.rollback().await?;
-                warn!(gw_chain_id, block_number, error = %e, "gw state_hash upload failed; will retry");
+                warn!(gw_chain_id, block_number, bucket = my_bucket, key = %log_key, state_hash = %state_hash, error = %e, "gw state_hash upload failed; will retry");
             }
         }
     }
@@ -940,8 +1091,11 @@ mod tests {
     #[tokio::test]
     #[serial_test::serial(db)]
     async fn uploaded_upgrade_hash_contains_replay_that_would_add_work() -> anyhow::Result<()> {
-        use crate::ingestion_recovery_tests::{object_store, partial_block, repair_is_contained};
+        use crate::ingestion_recovery_tests::{
+            object_store, partial_block, repair_is_contained, seed_attempt,
+        };
         let (mut db, pool, _instance) = partial_block().await?;
+        seed_attempt(&pool).await?;
         let mut tx = pool.begin().await?;
         compute_and_insert_gcs(&mut tx, 42, 100, 100, 10, "public").await?;
         tx.commit().await?;
@@ -1219,12 +1373,16 @@ mod tests {
         let cutoff = Duration::from_secs(60);
         sqlx::query(
             "INSERT INTO upgrade_state
-                (stack_role, host_chain_id, state, status, proposal_id, proposal_block, end_block)
-             VALUES ('GCS', 1, 'DryRunStarted', 'in_progress', '\\x02', 10, 200)",
+                (stack_role, host_chain_id, state, status, proposal_id, proposal_block, version, end_block)
+             VALUES ('GCS', 1, 'DryRunStarted', 'in_progress', '\\x02', 10, '1.2.3', 200)",
         )
         .execute(&pool)
         .await
         .unwrap();
+        let attempt = UpgradeAttempt {
+            proposal_id: vec![2],
+            proposal_block: 10,
+        };
         // A finalized block with a non-trivial computation and a pending hash.
         let pending_block = |block: i64| {
             let pool = pool.clone();
@@ -1292,10 +1450,18 @@ mod tests {
         assert!(s3
             .head_object()
             .bucket("hashes")
-            .key(state_hash_key(1, 151))
+            .key(state_hash_key(&attempt, 1, 151))
             .send()
             .await
             .is_err());
+        // The uploaded object sits at the attempt-scoped key.
+        assert!(s3
+            .head_object()
+            .bucket("hashes")
+            .key(state_hash_key(&attempt, 1, 150))
+            .send()
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -1314,8 +1480,8 @@ mod tests {
             format!("CREATE SCHEMA {GCS_SCHEMA_QUOTED}"),
             format!("CREATE TABLE {GCS_SCHEMA_QUOTED}.state_hash (LIKE public.state_hash INCLUDING ALL)"),
             "INSERT INTO public.upgrade_state
-                (stack_role, host_chain_id, state, status, proposal_id, proposal_block, end_block)
-             VALUES ('GCS', 1, 'DryRunStarted', 'in_progress', '\\x02', 10, 200)"
+                (stack_role, host_chain_id, state, status, proposal_id, proposal_block, version, end_block)
+             VALUES ('GCS', 1, 'DryRunStarted', 'in_progress', '\\x02', 10, '1.2.3', 200)"
                 .into(),
         ] {
             sqlx::query(&sql).execute(&pool).await.unwrap();
@@ -1352,6 +1518,10 @@ mod tests {
         upload_pending_gw_state_hashes(&pool, &s3, "hashes", 54321, 10, cutoff)
             .await
             .unwrap();
+        let attempt = UpgradeAttempt {
+            proposal_id: vec![2],
+            proposal_block: 10,
+        };
         assert!(
             !uploaded(2).fetch_one(&pool).await.unwrap(),
             "closed window uploads nothing"
@@ -1359,10 +1529,18 @@ mod tests {
         assert!(s3
             .head_object()
             .bucket("hashes")
-            .key(state_hash_key(54321, 2))
+            .key(state_hash_key(&attempt, 54321, 2))
             .send()
             .await
             .is_err());
+        // The uploaded object sits at the attempt-scoped key.
+        assert!(s3
+            .head_object()
+            .bucket("hashes")
+            .key(state_hash_key(&attempt, 54321, 1))
+            .send()
+            .await
+            .is_ok());
 
         let started = Some((vec![2u8], 10));
         sqlx::query("UPDATE public.upgrade_state SET status = 'failed'")
@@ -1410,20 +1588,71 @@ mod tests {
         );
     }
 
+    fn attempt(proposal_id: Vec<u8>, proposal_block: i64) -> UpgradeAttempt {
+        UpgradeAttempt {
+            proposal_id,
+            proposal_block,
+        }
+    }
+
     #[test]
     fn key_format_is_stable() {
-        assert_eq!(state_hash_key(1, 42), "state_hash/chain=1/block=42.bin");
+        assert_eq!(
+            state_hash_key(&attempt(vec![0xab, 0xcd], 7), 1, 42),
+            "state_hash/proposal=abcd/attempt=7/chain=1/block=42.bin"
+        );
+    }
+
+    #[test]
+    fn log_key_abbreviates_the_proposal_id() {
+        // Production ids are 32 bytes (a BE uint256 from the L1 event): the
+        // log form keeps the first 2 and last 4 bytes.
+        let mut id = vec![0u8; 32];
+        id[28..].copy_from_slice(&[0x00, 0x11, 0x11, 0x22]);
+        assert_eq!(
+            state_hash_log_key(&attempt(id, 7), 1, 42),
+            "state_hash/proposal=0000...00111122/attempt=7/chain=1/block=42.bin"
+        );
+        // Short ids print in full - nothing to elide.
+        let short = attempt(vec![0xab, 0xcd], 7);
+        assert_eq!(
+            state_hash_log_key(&short, 1, 42),
+            state_hash_key(&short, 1, 42)
+        );
     }
 
     #[test]
     fn key_is_chain_scoped_for_gateway() {
         // The Gateway track reuses the same key scheme under the gw chain id, so
         // gateway and host objects never collide (distinct chain ids).
+        let a = attempt(vec![0xab, 0xcd], 7);
         assert_eq!(
-            state_hash_key(54321, 7),
-            "state_hash/chain=54321/block=7.bin"
+            state_hash_key(&a, 54321, 7),
+            "state_hash/proposal=abcd/attempt=7/chain=54321/block=7.bin"
         );
-        assert_ne!(state_hash_key(1, 7), state_hash_key(54321, 7));
+        assert_ne!(state_hash_key(&a, 1, 7), state_hash_key(&a, 54321, 7));
+    }
+
+    #[test]
+    fn key_is_attempt_scoped() {
+        // The motivating failure (fhevm-internal#2273): a retry whose
+        // gw_start_block did not move reuses (chain, block) pairs, so only the
+        // attempt identity keeps its objects apart - including a re-activation
+        // of the SAME proposal, which reuses proposal_id but not proposal_block.
+        let first = attempt(vec![0xab], 10);
+        let retried = attempt(vec![0xab], 20);
+        let other_proposal = attempt(vec![0xcd], 10);
+        let keys: Vec<String> = [&first, &retried, &other_proposal]
+            .iter()
+            .map(|a| state_hash_key(a, 1, 42))
+            .collect();
+        for (i, key) in keys.iter().enumerate() {
+            assert!(key.starts_with("state_hash/"), "family prefix first: {key}");
+            assert!(!key.contains("//") && !key.starts_with('/'), "{key}");
+            for later in &keys[i + 1..] {
+                assert_ne!(key, later);
+            }
+        }
     }
 
     #[test]
