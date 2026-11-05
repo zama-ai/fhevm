@@ -1,0 +1,16 @@
+10702a23009147252950a69059968b8a20599549
+# Line 1 (same convention as ../v0.12.0/sha.txt and ../v0.16.0/sha.txt): the zama-ai/fhevm commit the
+# vendored host contracts (host-contracts/contracts/) are pinned to.
+#
+# upstream repo      https://github.com/zama-ai/fhevm  (path host-contracts/contracts)
+# upstream commit    10702a23009147252950a69059968b8a20599549
+# upstream label     v1.0.0-0-g10702a230  (fhevm main; no upstream tag yet)
+# local patches      ACL.sol, ProtocolConfig.sol, ProtocolConfigReplica.sol, FHEVMExecutor.sol, PaddedInputter.sol
+# earlier pins       v0.15.0-3, then v0.15.0-6 (some comments in the sources still say v0.15.0-3)
+#
+# copied from        zama-ai/fhevm-mocks, branch devex/alexb/v1.0/new
+# commit             c71685cb2712028107b997959cbe4f2f67e325b9 (c71685c)
+# package            host-contracts-cleartext/v1.0/pkg/src  (@fhevm/host-contracts-cleartext 1.0.0-0, generation v1.0)
+# sync history       8b91ae5 (initial copy), then 585442e (CleartextPaddedInputter.sol, shared/LibCleartextPad.sol,
+#                    shared/CleartextArithmeticBase.sol: tech-spec#547 per-share signatures, #553 little-endian block index),
+#                    then c71685c (CleartextPaddedInputter.sol: one-call pad responses, prf renamed prfId)

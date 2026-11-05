@@ -181,9 +181,11 @@ contract CleartextInputVerifier is InputVerifier {
         PadDecryptRequestPayload calldata payload = request.payload;
 
         // 1. Authenticate that the request is from the user (ecrecover, then ERC-1271 fallback).
+        // Production: KMS Connector.
         _authenticatePadRequest(auth, request.signature, payload.chainId);
 
         // 2. Check freshness of the request.
+        // Production: KMS Connector.
         CleartextACL acl = CleartextACL(aclAdd);
         if (block.timestamp > auth.startTimestamp + auth.durationSeconds) {
             revert PadRequestExpired(auth.startTimestamp, auth.durationSeconds);
@@ -194,26 +196,32 @@ contract CleartextInputVerifier is InputVerifier {
         }
 
         // 3. Resolve the context and epoch to serve the request under (v2 extraData only).
+        // Production: KMS Connector, against ProtocolConfig.
         uint256 contextId = _checkPadExtraData(auth.extraData);
 
         // 4.-6. Witness structure, label authentication, pad authorization.
+        // Production: KMS Connector; it verifies each label, the client (SDK) computed it.
         _checkPadPayload(payload);
         for (uint256 i = 0; i < payload.witnesses.length; ++i) {
             _authorizePadWitness(acl, auth, payload.witnesses[i]);
         }
 
         // 7. Release each pad, mock-encrypted under the user's public key.
+        // Production: KMS Core encrypts each node's payload with ML-KEM + AES-128-GCM under auth.publicKey.
         bytes32 mask = _publicKeyMask(auth.publicKey);
         padShares = new PadShare[](payload.witnesses.length);
         for (uint256 i = 0; i < payload.witnesses.length; ++i) {
             PadWitness calldata w = payload.witnesses[i];
             padShares[i] = PadShare({
                 label: w.label,
+                // Production: KMS Core, the MPC session that produced this node's share.
                 sessionId: bytes16(keccak256(abi.encodePacked(CLEARTEXT_SESSION_DOMAIN_SEPARATOR, payload.prf, w.label))),
+                // Production: coprocessor computes FHE(r) = PRF_{FHE(k)}(label); KMS Core threshold-decrypts it.
                 share: _xorMask(CleartextPad.padBlocks(payload.prf, w.label, w.padLength), mask)
             });
         }
 
+        // Production: each KMS Core node signs its own PadDecryptResponsePayload; here the SDK signs locally.
         IProtocolConfigBase protocolConfig = IProtocolConfigBase(protocolConfigAdd);
         signers = protocolConfig.getKmsSignersForContext(contextId);
         threshold = protocolConfig.getUserDecryptionThresholdForContext(contextId);
@@ -226,6 +234,7 @@ contract CleartextInputVerifier is InputVerifier {
      *                   expirationTimestamp ‖ decryptorCount ‖ decryptors ‖ nonce)
      * @dev Fixed-width big-endian fields; each decryptor is 20 bytes (not ABI-padded).
      *      `witness.label` and `witness.padLength` are ignored.
+     *      Production: the client (SDK) computes the label; Connector, PaddedInputter, coprocessor verify it.
      */
     function computePadLabel(
         uint8 witnessVersion,
