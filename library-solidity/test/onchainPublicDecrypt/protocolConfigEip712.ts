@@ -1,6 +1,6 @@
 // Copy of the host-contracts ProtocolConfig EIP-712 test helpers (host-contracts/test/utils/protocolConfigEip712.ts),
 // reduced to what OnchainPublicDecrypt.ts uses to define and activate a KMS context.
-import { AbiCoder, Signer, TypedDataDomain, TypedDataEncoder, TypedDataField, keccak256, solidityPacked } from 'ethers';
+import { AbiCoder, Signer, TypedDataDomain, TypedDataEncoder, TypedDataField, keccak256 } from 'ethers';
 
 import type { ProtocolConfig } from '../../typechain-types';
 import type {
@@ -30,10 +30,25 @@ const CONFIRMATION_TYPES = {
   },
 } satisfies Record<string, Record<string, TypedDataField[]>>;
 
-const KEY_DIGEST_TYPES: Record<string, TypedDataField[]> = {
+const KEYGEN_TYPES: Record<string, TypedDataField[]> = {
+  KeygenVerification: [
+    { name: 'prepKeygenId', type: 'uint256' },
+    { name: 'keyId', type: 'uint256' },
+    { name: 'keyDigests', type: 'KeyDigest[]' },
+    { name: 'extraData', type: 'bytes' },
+  ],
   KeyDigest: [
     { name: 'keyType', type: 'uint8' },
     { name: 'digest', type: 'bytes' },
+  ],
+};
+
+const CRSGEN_TYPES: Record<string, TypedDataField[]> = {
+  CrsgenVerification: [
+    { name: 'crsId', type: 'uint256' },
+    { name: 'maxBitLength', type: 'uint256' },
+    { name: 'crsDigest', type: 'bytes' },
+    { name: 'extraData', type: 'bytes' },
   ],
 };
 
@@ -57,25 +72,20 @@ function hashNodeConfig(
   return keccak256(abi.encode([kmsNodesType, thresholdsType], [params, thresholds]));
 }
 
-// keccak256(abi.encode(prepKeygenId, keyId, keyDigestsHash)), where keyDigestsHash is the EIP-712 hash of
-// the KeyDigest[] array.
-function hashKeyResult(key: IProtocolConfig.EpochKeyResultStruct): string {
-  const keyDigestHashes = key.keyDigests.map((d) => TypedDataEncoder.hashStruct('KeyDigest', KEY_DIGEST_TYPES, d));
-  const keyDigestsHash = keccak256(solidityPacked(['bytes32[]'], [keyDigestHashes]));
-  return keccak256(abi.encode(['uint256', 'uint256', 'bytes32'], [key.prepKeygenId, key.keyId, keyDigestsHash]));
-}
-
-// keccak256(abi.encode(crsId, maxBitLength, crsDigest)). Unlike hashKeyResult, crsDigest is ABI-encoded as raw
-// dynamic bytes, not hashed first.
-function hashCrsResult(crs: IProtocolConfig.EpochCrsResultStruct): string {
-  return keccak256(abi.encode(['uint256', 'uint256', 'bytes'], [crs.crsId, crs.maxBitLength, crs.crsDigest]));
-}
-
+// keccak256(abi.encode(keyHashes, crsHashes)), where each entry is the EIP-712 hashStruct of its
+// KeygenVerification or CrsgenVerification, with the confirmation's extraData.
 function hashEpochMaterial(
   keys: IProtocolConfig.EpochKeyResultStruct[],
   crsList: IProtocolConfig.EpochCrsResultStruct[],
+  extraData: string,
 ): string {
-  return keccak256(abi.encode(['bytes32[]', 'bytes32[]'], [keys.map(hashKeyResult), crsList.map(hashCrsResult)]));
+  const keyHashes = keys.map((key) =>
+    TypedDataEncoder.hashStruct('KeygenVerification', KEYGEN_TYPES, { ...key, extraData }),
+  );
+  const crsHashes = crsList.map((crs) =>
+    TypedDataEncoder.hashStruct('CrsgenVerification', CRSGEN_TYPES, { ...crs, extraData }),
+  );
+  return keccak256(abi.encode(['bytes32[]', 'bytes32[]'], [keyHashes, crsHashes]));
 }
 
 // A pending KMS context: its ID and the definition that defineNewKmsContext submitted.
@@ -125,7 +135,7 @@ async function confirmEpochActivation(
   const { keys, crsList } = DUMMY_EPOCH_MATERIAL;
   const domain = await protocolConfigDomain(pc);
   const [, previousEpochId] = await pc.getCurrentKmsContextAndEpoch();
-  const materialHash = hashEpochMaterial(keys, crsList);
+  const materialHash = hashEpochMaterial(keys, crsList, '0x');
   for (const signer of signers) {
     const signature = await signer.signTypedData(domain, CONFIRMATION_TYPES.EpochActivationConfirmation, {
       contextId,

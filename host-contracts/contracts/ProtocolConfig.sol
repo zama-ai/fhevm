@@ -49,6 +49,17 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /// @dev Hash of the KeyDigest type, used to hash the key digests into `epochMaterialHash`.
     bytes32 private constant EIP712_KEY_DIGEST_TYPE_HASH = keccak256("KeyDigest(uint8 keyType,bytes digest)");
 
+    /// @dev Hash of the KeygenVerification type. The nested KeyDigest type is appended as
+    ///      EIP-712 requires nested struct types to be declared inline with the primary type.
+    bytes32 private constant EIP712_KEYGEN_TYPE_HASH =
+        keccak256(
+            "KeygenVerification(uint256 prepKeygenId,uint256 keyId,KeyDigest[] keyDigests,bytes extraData)KeyDigest(uint8 keyType,bytes digest)"
+        );
+
+    /// @dev Hash of the CrsgenVerification type.
+    bytes32 private constant EIP712_CRSGEN_TYPE_HASH =
+        keccak256("CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest,bytes extraData)");
+
     /// @dev Hash of the ContextCreationConfirmation type.
     bytes32 private constant EIP712_CONTEXT_CREATION_TYPE_HASH =
         keccak256(
@@ -519,7 +530,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         if (keys.length == 0 || crsList.length == 0) {
             revert EmptyEpochActivationResults(epochId);
         }
-        epochMaterialHash = _hashEpochMaterial(keys, crsList);
+        epochMaterialHash = _hashEpochMaterial(keys, crsList, extraData);
         digest = _hashTypedData(
             keccak256(
                 abi.encode(
@@ -539,12 +550,15 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /**
-     * @dev Returns the `epochMaterialHash` of the key and CRS results.
+     * @dev Returns the `epochMaterialHash` of the key and CRS results. Each entry is the EIP-712 `hashStruct`
+     *      of its KeygenVerification or CrsgenVerification, with `extraData` as the entry's extraData.
      */
     function _hashEpochMaterial(
         EpochKeyResult[] calldata keys,
-        EpochCrsResult[] calldata crsList
+        EpochCrsResult[] calldata crsList,
+        bytes calldata extraData
     ) internal pure virtual returns (bytes32) {
+        bytes32 extraDataHash = keccak256(extraData);
         bytes32[] memory keyHashes = new bytes32[](keys.length);
         for (uint256 i = 0; i < keys.length; i++) {
             IKMSGeneration.KeyDigest[] calldata keyDigests = keys[i].keyDigests;
@@ -555,13 +569,27 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
                 );
             }
             keyHashes[i] = keccak256(
-                abi.encode(keys[i].prepKeygenId, keys[i].keyId, keccak256(abi.encodePacked(keyDigestHashes)))
+                abi.encode(
+                    EIP712_KEYGEN_TYPE_HASH,
+                    keys[i].prepKeygenId,
+                    keys[i].keyId,
+                    keccak256(abi.encodePacked(keyDigestHashes)),
+                    extraDataHash
+                )
             );
         }
 
         bytes32[] memory crsHashes = new bytes32[](crsList.length);
         for (uint256 i = 0; i < crsList.length; i++) {
-            crsHashes[i] = keccak256(abi.encode(crsList[i].crsId, crsList[i].maxBitLength, crsList[i].crsDigest));
+            crsHashes[i] = keccak256(
+                abi.encode(
+                    EIP712_CRSGEN_TYPE_HASH,
+                    crsList[i].crsId,
+                    crsList[i].maxBitLength,
+                    keccak256(crsList[i].crsDigest),
+                    extraDataHash
+                )
+            );
         }
 
         return keccak256(abi.encode(keyHashes, crsHashes));
