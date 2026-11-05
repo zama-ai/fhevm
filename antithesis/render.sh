@@ -27,6 +27,9 @@ COMMON_CHART_VERSION=0.3.3
 REDIS_CHART=oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
 REDIS_CHART_VERSION=25.3.8
 S3=http://minio:9000
+# Registered on-chain as each KMS party's storage URL. Not minio:9000: host-listener
+# rewrites that to a docker bridge IP (see static/s3.yaml).
+KMS_STORAGE_URL=http://s3:9000/kms-public
 MNEMONIC="test test test test test test test test test test test junk"
 
 cache="${here}/.cache"
@@ -266,7 +269,7 @@ contracts_values() {
   : >"${gh_out}"
   PATH="${stub_bin}:${PATH}" TARGET="${target}" NB_KMS_CORE="${NB_KMS_CORE}" NB_COPROCESSOR=1 \
     NAMESPACE="${NAMESPACE}" SIGNERS_JSON="${signer_stub}" WALLETS_JSON="${kms_wallets}" \
-    COPROC_WALLETS_JSON="${coproc_wallets}" S3_ENDPOINT="${S3}/kms-public" KMS_CORE_TAG="${KMS_REF}" \
+    COPROC_WALLETS_JSON="${coproc_wallets}" S3_ENDPOINT="${KMS_STORAGE_URL}" KMS_CORE_TAG="${KMS_REF}" \
     PCR0=00 PCR1=00 PCR2=00 GITHUB_OUTPUT="${gh_out}" \
     bash ci/preview-env/scripts/deploy/wire-contracts-values.sh >/dev/null
   # The script writes to a fixed /tmp path; take a private copy right away.

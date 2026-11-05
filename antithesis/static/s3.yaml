@@ -1,11 +1,14 @@
 # In-cluster S3 replacing the preview-env's Crossplane AWS buckets (coprocessor-infra,
 # KMS tkms-infra). Adapted from the KMS team's Antithesis setup on this tenant.
 #
-# DNS: `minio` is what the KMS chart, the on-chain KMS storage URLs and the coprocessor
-# use. The Service is headless and the pod is `coproc-0` under that subdomain, so a
-# virtual-host request for bucket coproc-0 (`coproc-0.minio`) also resolves; the
-# coprocessor's sns-worker S3 client does not force path-style. MINIO_DOMAIN makes MinIO
-# read the bucket from that Host header.
+# DNS: `minio` is the endpoint the KMS chart and the coprocessor use. The coprocessor's
+# S3 clients do not force path-style, so they send virtual-host requests
+# (<bucket>.<host>); MINIO_DOMAIN makes MinIO read the bucket from that Host header.
+# - coproc-0.minio: the MinIO pod is hostname coproc-0 under the headless `minio` Service.
+# - kms-public.s3: the KMS storage URL registered on-chain is http://s3:9000/kms-public,
+#   not minio:9000, because host-listener rewrites any "minio:9000" URL to a docker
+#   bridge IP (host-listener/src/kms_generation/aws_s3.rs split_url). A socat pod named
+#   kms-public under the headless `s3` Service forwards raw TCP, Host header intact.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -37,7 +40,7 @@ spec:
           env:
             - {name: MINIO_ROOT_USER, value: minioadmin}
             - {name: MINIO_ROOT_PASSWORD, value: minioadmin}
-            - {name: MINIO_DOMAIN, value: minio}
+            - {name: MINIO_DOMAIN, value: "minio,s3"}
           ports:
             - containerPort: 9000
           readinessProbe:
@@ -55,6 +58,39 @@ metadata:
 spec:
   clusterIP: None
   selector: {app: minio}
+  ports:
+    - {name: s3, port: 9000, targetPort: 9000}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3-kms-public
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: s3-kms-public}
+  template:
+    metadata:
+      labels: {app: s3-kms-public}
+    spec:
+      hostname: kms-public
+      subdomain: s3
+      containers:
+        - name: forward
+          image: hub.zama.org/zama-protocol/zama.ai/socat:v1.8-dev
+          command: [socat, "TCP-LISTEN:9000,fork,reuseaddr", "TCP:minio:9000"]
+          ports:
+            - containerPort: 9000
+          readinessProbe:
+            tcpSocket: {port: 9000}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+spec:
+  clusterIP: None
+  selector: {app: s3-kms-public}
   ports:
     - {name: s3, port: 9000, targetPort: 9000}
 ---
