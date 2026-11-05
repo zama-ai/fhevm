@@ -109,6 +109,13 @@
   process/WASM memory across six scenarios (client reuse/churn, full roundtrip, value churn,
   permit churn, provider churn) to classify each metric as plateauing or growing. Not wired into
   CI yet — thresholds are placeholders pending tuning.
+- Removed the cleartext `v0.12.0` and `v0.13.0` host-contract stacks, their Foundry profiles
+  (`v12`, `v13`), npm scripts and test chains (`localcleartext`, `localcleartext_legacy`,
+  `localcleartext_v12`, `localcleartext_v13`). `localcleartext_v1_0` is the only local cleartext
+  chain; the deploy scripts default to it and every `localcleartext*` chain shares
+  `test/.env.localcleartext`. The `test/infra` / `test/browser-next` matrix now runs a single
+  `v1.0` slot (the coexistence cell checks one real slot alongside a cleartext runtime), and the
+  `protocolEraOf` test helper is replaced by `isLocalstackChain` / `isLocalCleartextChain`.
 
 ---
 

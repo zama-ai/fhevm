@@ -5,7 +5,7 @@ import { defineClientDecryptDecryptTests } from '../viem-common/clientDecrypt.de
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientDecrypt.decrypt.test.ts
+// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientDecrypt.decrypt.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

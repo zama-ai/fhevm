@@ -82,7 +82,7 @@ export function defineClientDecryptUnifiedPermitTests(parameters: {
   // relayer feature may not be rolled out yet even though the chain itself is on protocol v14+. Set
   // this to have the suite probe `canUseUnifiedDecryptionPermit()` once and skip all its tests if the
   // relayer doesn't actually support the unified route. Not needed for localstack chains, where
-  // `protocolEraOf` already statically guarantees relayer support.
+  // the deployed protocol version (v0.14+) already guarantees relayer support.
   readonly checkRelayerSupportsUnifiedPermit?: boolean;
   readonly createFhevmDecryptClient: CreateEthersDecryptClientFn;
 }): void {

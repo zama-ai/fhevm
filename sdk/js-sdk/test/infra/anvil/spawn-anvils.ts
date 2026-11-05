@@ -1,5 +1,5 @@
 /**
- * CLI: bring up the two cleartext anvils and keep them running until Ctrl-C.
+ * CLI: bring up the cleartext anvils and keep them running until Ctrl-C.
  * Useful for local dev and for non-Playwright platforms (e.g. node-server).
  *
  *   PATH=~/.foundry/bin:$PATH npx tsx test/infra/anvil/spawn-anvils.ts
@@ -10,9 +10,8 @@
 import { startAnvils, stopAnvils } from './anvils.js';
 import { anvilSpecs } from '../topology.js';
 
-// Single source of truth: derives ports, distinct chain ids, per-slot deployer
-// mnemonics and ACL addresses from topology (so this CLI brings the anvils up
-// identically to Playwright's globalSetup).
+// Single source of truth: derives ports, chain ids and ACL addresses from
+// topology (so this CLI brings the anvils up identically to Playwright's globalSetup).
 const handles = await startAnvils(anvilSpecs());
 
 console.log(

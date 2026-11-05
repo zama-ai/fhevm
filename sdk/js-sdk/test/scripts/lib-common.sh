@@ -29,7 +29,8 @@ detect_rpc_client() {
 # Resolves the RPC URL for a chain name. Precedence — matches the
 # convention used by test/setupCommon.ts:
 #   1. RPC_URL in test/.env.<chain> (or test/.env.localstack for any
-#      localstack* variant — v11, v12, ... all share that file)
+#      localstack* variant, and test/.env.localcleartext for any
+#      localcleartext* variant — each family shares one file)
 #   2. RPC_URL in the process environment
 #   3. <chain>.rpcUrl in test/chains/chain-defaults.json
 #      (the canonical source of truth for chain defaults)
@@ -39,7 +40,7 @@ detect_rpc_client() {
 #
 # Usage: resolve_chain_rpc_url <chain>
 #
-#   rpc_url="$(resolve_chain_rpc_url localcleartext)"
+#   rpc_url="$(resolve_chain_rpc_url localcleartext_v1_0)"
 # Validates that <chain_name> is a key in chain-defaults.json. Exits 1
 # (intentionally fail-fast — meant to be called at script entry) when the
 # argument is empty or absent from the JSON.
@@ -94,7 +95,7 @@ fhevm_chain_file() {
             # SDK file is named after the network (sepolia); testnet is an alias.
             printf '%s/src/core/chains/definitions/sepolia.ts\n' "$sdk_root"
             ;;
-        devnet|polygon_devnet|localcleartext|localstack|localstack_*|ingen_trex_*|hoodi_*)
+        devnet|polygon_devnet|localcleartext_*|localstack|localstack_*|ingen_trex_*|hoodi_*)
             printf '%s/test/chains/%s.ts\n' "$sdk_root" "$chain"
             ;;
         *)
@@ -115,10 +116,14 @@ resolve_chain_rpc_url() {
         return 1
     fi
 
-    # All localstack* variants share .env.localstack; everything else uses .env.<chain>.
+    # All localstack* variants share .env.localstack and all localcleartext*
+    # variants share .env.localcleartext (as in setupCommon.ts); everything else
+    # uses .env.<chain>.
     local env_file
     if [[ "$chain" == localstack* ]]; then
         env_file="$test_dir/.env.localstack"
+    elif [[ "$chain" == localcleartext* ]]; then
+        env_file="$test_dir/.env.localcleartext"
     else
         env_file="$test_dir/.env.$chain"
     fi

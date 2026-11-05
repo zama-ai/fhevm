@@ -12,7 +12,7 @@ source "$SCRIPT_DIR/fhevm-lib.sh"
 # Defaults (lowest priority — overridden by env vars or CLI flags below).
 fhevm_mnemonic_default="test test test test test test test future home engine virtual motion"
 fhevm_mnemonic_path="m/44'/60'/0'/0/0"
-chain_default="localcleartext"
+chain_default="localcleartext_v1_0"
 chain_defaults_file="$SCRIPT_DIR/../../test/chains/chain-defaults.json"
 
 # ---- CLI parsing ----
@@ -40,7 +40,7 @@ Usage: fhetest-deploy.sh [options]
 Options:
   --mnemonic <phrase>   BIP-39 mnemonic for the deployer key.
                         Precedence: --mnemonic flag > \$MNEMONIC env > built-in test mnemonic.
-  --chain <name>        FHEVM chain (localstack_* | localstack | localcleartext | polygon_devnet).
+  --chain <name>        FHEVM chain (localstack_* | localstack | localcleartext_v1_0 | polygon_devnet).
                         Precedence: --chain flag > \$CHAIN env > $chain_default
   --dry-run             Resolve and print all addresses + config, then exit
                         before any state-changing call (no funding, no
@@ -66,13 +66,13 @@ chain="${chain_cli:-${CHAIN:-$chain_default}}"
 fhevm_assert_chain "$chain"
 
 # Supported chains:
-# - localcleartext
+# - any localcleartext
 # - any localstack
 # - polygon_devnet
 case "$chain" in
-    localcleartext|localstack|localstack_*|polygon_devnet|devnet|mainnet|ingen_trex_*|hoodi_*) ;;
+    localcleartext_*|localstack|localstack_*|polygon_devnet|devnet|mainnet|ingen_trex_*|hoodi_*) ;;
     *)
-        echo "❌ fhetest-deploy.sh only supports local chains 'localcleartext | localstack | localstack_* | polygon_devnet | devnet | mainnet'; got '$chain'" >&2
+        echo "❌ fhetest-deploy.sh only supports local chains 'localcleartext_* | localstack | localstack_* | polygon_devnet | devnet | mainnet'; got '$chain'" >&2
         exit 1
         ;;
 esac

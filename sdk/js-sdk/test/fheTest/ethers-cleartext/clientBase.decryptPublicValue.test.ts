@@ -5,7 +5,7 @@ import { defineClientBaseDecryptPublicValueTests } from '../ethers-common/client
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientBase.decryptPublicValue.test.ts
+// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientBase.decryptPublicValue.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

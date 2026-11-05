@@ -1,6 +1,6 @@
 import { createFhevmDecryptClient } from '@fhevm/sdk/ethers';
 import { getEthersTestConfig } from '../setup-ethers.js';
-import { isCleartext, protocolEraOf } from '../setupCommon.js';
+import { isCleartext, isLocalstackChain } from '../setupCommon.js';
 import { defineClientDecryptStalePermitMigrationTests } from '../ethers-common/clientDecrypt.stalePermitMigration.tests.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -10,12 +10,9 @@ import { defineClientDecryptStalePermitMigrationTests } from '../ethers-common/c
 ////////////////////////////////////////////////////////////////////////////////
 
 const chainName = getEthersTestConfig().chainName;
-const era = protocolEraOf(chainName);
 
 defineClientDecryptStalePermitMigrationTests({
-  // On protocol v0.11 the current context already encodes to extraData v0
-  // (0x00), so there is no migration scenario to exercise.
-  runIf: !isCleartext(chainName) && era >= 12,
-  era,
+  runIf: !isCleartext(chainName),
+  isProtocolV14OrHigher: isLocalstackChain(chainName),
   createFhevmDecryptClient: (params) => createFhevmDecryptClient(params),
 });

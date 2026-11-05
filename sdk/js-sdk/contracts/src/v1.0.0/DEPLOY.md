@@ -170,12 +170,11 @@ The canonical deployer is account index **5** of the mnemonic
 (`m/44'/60'/0'/0/5` → `0x8B8f5091f8b9817EF69cFC1E8B2f721BafF60DF4`), at start nonce **0**. This is the
 same deployer and mnemonic as `scripts/fhevm-deploy.sh` (`deployer_mnemonic_index=5`). ACL, FHEVMExecutor and
 KMSVerifier therefore land on the three addresses `library-solidity/config/ZamaConfig.sol` `_getLocalConfig()` returns
-for chain 31337, and InputVerifier and ProtocolConfig land where `test/chains/localcleartext.ts` expects them.
+for chain 31337, and InputVerifier and ProtocolConfig land where `test/chains/localcleartext_v1_0.ts` expects them.
 
 The committed `config/addresses.sol` holds exactly this canonical set. **Regenerate it whenever the deployer or the
-start nonce differs.** For example, the multi-chain tests set `DEPLOYER_MNEMONIC=FIRST_ANVIL_MNEMONIC` for the legacy
-slot (`test/infra/config.ts`). After the deploy, restore the canonical file the way `test/infra/anvil/anvils.ts` does for the
-siblings' `FHEVMHostAddresses.sol`. The file must declare all 12 constants with exactly these names. The
+start nonce differs.** The test infra (`test/infra/config.ts`) therefore deploys its single v1.0 slot with the
+default deployer, so the committed file always matches. The file must declare all 12 constants with exactly these names. The
 `WriteAddresses` contract in Appendix A writes it. Never edit `host-contracts/addresses/FHEVMHostAddresses.sol`:
 it is a fixed alias file, unlike the siblings' generated `FHEVMHostAddresses.sol`.
 
@@ -241,7 +240,7 @@ The selector is the same.
 
 | value                                                                                                                        | fhevm-mocks default                                                                                                                                                                    | js-sdk siblings today (`scripts/fhevm-deploy.sh`)                                                          |
 | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| gateway chain id (`GATEWAY_CHAIN_ID`)                                                                                        | `100733346448153` (`uint48(keccak256("fhevm.cheat.chainId cleartext gateway"))`)                                                                                                       | **`654321`**, also hard-coded in `test/chains/localcleartext.ts` (`gateway.id`) and `test/infra/config.ts` |
+| gateway chain id (`GATEWAY_CHAIN_ID`)                                                                                        | `100733346448153` (`uint48(keccak256("fhevm.cheat.chainId cleartext gateway"))`)                                                                                                       | **`654321`** (unused by v1.0); the js-sdk tests use `100733346448153` (`test/chains/localcleartext_v1_0.ts`, `test/infra/config.ts`) |
 | `DECRYPTION_ADDRESS` (KMSVerifier EIP-712 verifyingContract, domain name `"Decryption"`)                                     | `0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721`                                                                                                                                           | same                                                                                                       |
 | `INPUT_VERIFICATION_ADDRESS` (InputVerifier EIP-712 verifyingContract, domain name `"InputVerification"`)                    | `0x6189F6c0c3E40B4a3c72ec86262295D78d845297`                                                                                                                                           | same                                                                                                       |
 | coprocessor signers (`m/44'/60'/0'/2/i` of `test test test test test test test future home engine virtual motion`, i = 0..3) | `0x6727b56B5D1E990C75fE5dCd572D084fc5DC35cb`, `0xF1CDC3ebe04A063EAbfaf5c3129494F6049Ee229`, `0x46A03377bcBE895407ee4842b63f3249bc8327BD`, `0xFd0ea258B3D2b153DD76CAC0E2270574Da8f18E8` | same pool (4 signers)                                                                                      |
@@ -369,8 +368,7 @@ These are implemented in `DeployV1.verify` in Appendix A. The full list is in `f
 
 ## 10. Caveats and open questions
 
-- **Gateway chain id.** fhevm-mocks defaults to `100733346448153`; the js-sdk tests assume `654321`. Pick one
-  consistently (§5).
+- **Gateway chain id.** Resolved: the js-sdk tests use fhevm-mocks' `100733346448153` for v1.0 (§5).
 - **SDK support of v1.0 behaviour is not verified.** Two cases are untested: the js-sdk resolving and using a
   standalone `PaddedInputter` proxy, and the version strings above
   (e.g. `KMSVerifier v0.5.0`, `ACL v0.6.0`). Check `src/core/host-contracts/` and the pad-based encryption

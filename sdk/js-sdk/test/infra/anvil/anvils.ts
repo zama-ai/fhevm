@@ -1,7 +1,7 @@
 /**
  * Reusable anvil orchestration for the fresh test infra.
  *
- * Spawns N cleartext anvils (one per WASM/protocol version) by shelling out to
+ * Spawns one cleartext anvil per slot (one per protocol version) by shelling out to
  * the existing `test/scripts/fhevm-anvil.sh` with `--skip-fhetest`, so each anvil
  * deploys only the FHEVM stack (no TFHETest.sol). Readiness is detected by
  * scanning the script's stdout for its "stack deployed" marker, which prints
@@ -16,7 +16,7 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type FoundryProfile, SLOT_INFO } from '../config.js';
+import type { FoundryProfile } from '../config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FHEVM_ANVIL_SH = resolve(__dirname, '../../scripts/fhevm-anvil.sh');
@@ -30,30 +30,20 @@ const PORT_DOWN_TIMEOUT_MS = 10_000;
 // never responds) would otherwise hang `fetch` forever and stall startAnvils.
 const PROBE_TIMEOUT_MS = 3_000;
 
-// contracts/ lives at the SDK root; anvils.ts is test/infra/anvil/.
-const CONTRACTS_DIR = resolve(__dirname, '../../../contracts');
-
 export type { FoundryProfile };
 
 export type AnvilSpec = {
-  /** Gateway slot id this anvil backs (e.g. 'v12'). */
+  /** Gateway slot id this anvil backs (e.g. 'v1.0'). */
   readonly slot: string;
   /** TCP port for the anvil RPC. */
   readonly port: number;
-  /** Foundry profile → protocol version → WASM version (v12→1.5.4, v13→1.6.1). */
+  /** Foundry profile of the cleartext stack to deploy (e.g. 'v1.0'). */
   readonly foundryProfile: FoundryProfile;
   /** anvil chain id (default 31337). */
   readonly chainId?: number | undefined;
   /**
-   * Deployer mnemonic. If set, passed to the deploy as `DEPLOYER_MNEMONIC` so the
-   * stack lands at a distinct address set, and the regenerated FHEVMHostAddresses.sol
-   * is restored afterwards. If omitted, the deploy's built-in default is used.
-   */
-  readonly deployerMnemonic?: string | undefined;
-  /**
-   * This slot's ACL proxy address (derived from its deployer). Used to confirm a
-   * reused anvil actually has THIS slot's FHEVM stack deployed — not just an open
-   * port, and not another slot's stack at a different address.
+   * This slot's ACL proxy address (derived from the deployer). Used to confirm a
+   * reused anvil actually has the FHEVM stack deployed — not just an open port.
    */
   readonly aclAddress: string;
 };
@@ -118,12 +108,7 @@ async function _startAnvil(spec: AnvilSpec, options?: StartAnvilsOptions): Promi
     await _waitForPortDown(rpcUrl, PORT_DOWN_TIMEOUT_MS);
   }
 
-  // A custom deployer mnemonic lands the stack at distinct addresses; pass it as
-  // DEPLOYER_MNEMONIC (inherited by fhevm-deploy.sh). Omitted → deploy uses default.
   const deployEnv: NodeJS.ProcessEnv = { ...process.env, PORT: String(spec.port), CHAIN_ID: String(chainId) };
-  if (spec.deployerMnemonic !== undefined) {
-    deployEnv.DEPLOYER_MNEMONIC = spec.deployerMnemonic;
-  }
 
   const proc = spawn('bash', [FHEVM_ANVIL_SH, `--foundry-profile=${spec.foundryProfile}`, '--skip-fhetest'], {
     env: deployEnv,
@@ -132,30 +117,7 @@ async function _startAnvil(spec: AnvilSpec, options?: StartAnvilsOptions): Promi
 
   await _waitForDeploy(proc, spec, options?.readyTimeoutMs ?? DEFAULT_READY_TIMEOUT_MS);
 
-  // A custom-deployer deploy regenerates the profile's committed FHEVMHostAddresses.sol
-  // with the new addresses. The anvil already holds the deployed contracts, so restore
-  // the file to keep the working tree clean (the default-mnemonic slot regenerates its
-  // file identically and needs no restore).
-  if (spec.deployerMnemonic !== undefined) {
-    _restoreAddressesFile(spec);
-  }
-
   return { spec, rpcUrl, reused: false, proc };
-}
-
-/** `git checkout` the profile's generated addresses file (best-effort). */
-function _restoreAddressesFile(spec: AnvilSpec): void {
-  const file = resolve(
-    CONTRACTS_DIR,
-    'src',
-    SLOT_INFO[spec.foundryProfile].profileVersionDir,
-    'host-contracts/addresses/FHEVMHostAddresses.sol',
-  );
-  try {
-    execFileSync('git', ['checkout', '--', file], { cwd: CONTRACTS_DIR, stdio: 'ignore' });
-  } catch {
-    process.stderr.write(`[anvil:${spec.slot}] warning: could not restore ${file}\n`);
-  }
 }
 
 function _waitForDeploy(proc: ChildProcess, spec: AnvilSpec, timeoutMs: number): Promise<void> {

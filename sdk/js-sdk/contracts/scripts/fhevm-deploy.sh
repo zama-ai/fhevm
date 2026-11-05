@@ -34,10 +34,10 @@ LATEST_PROFILE_ALIAS="v1.0"
 # Usage:
 #   ./fhevm-deploy.sh --profile v1.0
 #   ./fhevm-deploy.sh --profile v1.0 --dry-run
-#   ./fhevm-deploy.sh --profile v1.0 --chain localcleartext
+#   ./fhevm-deploy.sh --profile v1.0 --chain localcleartext_v1_0
 # ==============================================================================
 
-chain_default="localcleartext"
+chain_default="localcleartext_v1_0"
 chain_cli=""
 profile_default="${FOUNDRY_PROFILE:-latest}"
 profile_cli=""
@@ -61,9 +61,9 @@ while [[ $# -gt 0 ]]; do
 Usage: fhevm-deploy.sh [options]
 
 Options:
-  --chain <name>        FHEVM chain (mainnet | testnet | devnet | localcleartext | localstack) [default: localcleartext].
+  --chain <name>        FHEVM chain (localcleartext_v1_0 | localstack) [default: $chain_default].
                         Precedence: --chain flag > \$CHAIN env > $chain_default
-  --profile <name>      Foundry profile (v12 | v13 | v1.0 | latest) [default: $profile_default].
+  --profile <name>      Foundry profile (v1.0 | latest) [default: $profile_default].
   --dry-run             Print precomputed FHEVM host addresses and exit. No anvil, no broadcast,
                         no addresses file written.
   -h, --help            Show this help.
@@ -81,7 +81,7 @@ profile="${profile_cli:-$profile_default}"
 fhevm_assert_foundry_profile "$profile"
 
 # Resolve `latest` to its concrete alias so the rest of the script works on a
-# canonical profile name (v12 / v13 / v1.0). The CLI surface still accepts `latest`.
+# canonical profile name (v1.0). The CLI surface still accepts `latest`.
 if [[ "$profile" == "latest" ]]; then
     echo "ℹ️  profile=latest → resolving as ${LATEST_PROFILE_ALIAS}"
     profile="$LATEST_PROFILE_ALIAS"
@@ -92,11 +92,11 @@ fi
 chain="${chain_cli:-${CHAIN:-$chain_default}}"
 fhevm_assert_chain "$chain"
 
-# only chain="localcleartext|localstack" for the moment
+# only chain="localcleartext_*|localstack" for the moment
 case "$chain" in
-    localcleartext|localstack) ;;
+    localcleartext_*|localstack) ;;
     *)
-        echo "❌ fhevm-deploy.sh only supports chains 'localcleartext|localstack'; got '$chain'" >&2
+        echo "❌ fhevm-deploy.sh only supports chains 'localcleartext_*|localstack'; got '$chain'" >&2
         exit 1
         ;;
 esac
@@ -128,8 +128,6 @@ foundry_profile="$profile"
 fhevm_host_addresses_file="$(fhevm_host_addresses_file "$profile")"
 
 case "$profile" in
-    v12) host_contracts_version="v0.12.0" ;;
-    v13) host_contracts_version="v0.13.0" ;;
     # v1.0 reads only the deployer from the env below; every other value is its LocalHostBootstrap's.
     v1.0) host_contracts_version="v1.0.0" ;;
     *)
@@ -143,9 +141,9 @@ esac
 fhevm_mnemonic="test test test test test test test future home engine virtual motion"
 fhevm_host_contracts_mnemonic="adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
 
-# DEPLOYER_MNEMONIC may be overridden from the environment so a deploy can land the
-# FHEVM stack at a distinct address set (used by the multi-chain browser tests).
-# Unset → the default below, which reproduces the committed addresses.
+# DEPLOYER_MNEMONIC may be overridden from the environment. The v1.0 deploy checks
+# the committed src/v1.0.0/config/addresses.sol, so only the default below (which
+# reproduces those addresses) deploys successfully without regenerating that file.
 deployer_mnemonic=${DEPLOYER_MNEMONIC:-${fhevm_host_contracts_mnemonic}}
 deployer_mnemonic_index=${DEPLOYER_MNEMONIC_INDEX:-5}
 empty_uups_mnemonic=${fhevm_host_contracts_mnemonic}

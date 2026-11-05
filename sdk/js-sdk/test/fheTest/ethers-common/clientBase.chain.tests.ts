@@ -6,7 +6,7 @@ import { createLogger, safeJSONstringify } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientBase.chain.test.ts
+// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientBase.chain.test.ts
 // CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.chain.test.ts
 // CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.chain.test.ts
 // CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.chain.test.ts

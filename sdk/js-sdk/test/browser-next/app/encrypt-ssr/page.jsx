@@ -134,6 +134,10 @@ export const dynamic = 'force-dynamic';
 export default async function Page() {
   const { status, logs } = await runScenario();
   return (
-    <DiagnosticsView title={`SDK encrypt SSR (v13 · lib=${LIB} · threads=${THREADS})`} status={status} logs={logs} />
+    <DiagnosticsView
+      title={`SDK encrypt SSR (${CURRENT_SLOT} · lib=${LIB} · threads=${THREADS})`}
+      status={status}
+      logs={logs}
+    />
   );
 }

@@ -5,7 +5,7 @@ import { defineClientDecryptTransportKeyPairTests } from '../ethers-common/clien
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientDecrypt.transportKeyPair.test.ts
+// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientDecrypt.transportKeyPair.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

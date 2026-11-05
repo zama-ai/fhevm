@@ -5,7 +5,7 @@ import { defineClientBaseChainTests } from '../ethers-common/clientBase.chain.te
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientBase.chain.test.ts
+// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientBase.chain.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

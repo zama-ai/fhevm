@@ -6,7 +6,7 @@ import { createLogger } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientDecrypt.transportKeyPair.test.ts
+// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientDecrypt.transportKeyPair.test.ts
 // CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeyPair.test.ts
 // CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeyPair.test.ts
 // CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.transportKeyPair.test.ts
