@@ -1,5 +1,5 @@
 /**
- * Playwright globalSetup: bring up the cleartext anvils (one per WASM version)
+ * Playwright globalSetup: bring up the cleartext anvils (one per slot)
  * and the standalone same-origin gateway server. The Next dev server proxies
  * `/gw/*` to the gateway via rewrites (see next.config.mjs). Requires foundry
  * (anvil/cast/forge) on PATH.
@@ -8,7 +8,7 @@
 import type { Server } from 'node:http';
 import { startAnvils } from '../infra/anvil/anvils.js';
 import { createGatewayServer, listenGatewayServer } from '../infra/gateway/server.js';
-import { GATEWAY_MOUNT_PREFIX, GATEWAY_PORT, LEGACY_SLOT } from '../infra/config.js';
+import { CURRENT_SLOT, GATEWAY_MOUNT_PREFIX, GATEWAY_PORT } from '../infra/config.js';
 import { anvilSpecs, gatewayConfig } from '../infra/topology.js';
 import { setSetupState } from './setupState.js';
 
@@ -17,7 +17,7 @@ import { setSetupState } from './setupState.js';
 async function _gatewayAlreadyUp(): Promise<boolean> {
   try {
     const res = await fetch(
-      `http://127.0.0.1:${String(GATEWAY_PORT)}${GATEWAY_MOUNT_PREFIX}/${LEGACY_SLOT}/relayer/v2/keyurl`,
+      `http://127.0.0.1:${String(GATEWAY_PORT)}${GATEWAY_MOUNT_PREFIX}/${CURRENT_SLOT}/relayer/v2/keyurl`,
       {
         // Bounded: never block on a wedged/half-open listener.
         signal: AbortSignal.timeout(3_000),

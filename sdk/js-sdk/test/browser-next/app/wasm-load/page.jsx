@@ -161,7 +161,7 @@ export default function Page() {
 
   return (
     <DiagnosticsView
-      title={`SDK wasm-load (v13 · lib=${LIB} · threads=${THREADS} · ${WASM_LOAD})`}
+      title={`SDK wasm-load (${CURRENT_SLOT} · lib=${LIB} · threads=${THREADS} · ${WASM_LOAD})`}
       status={diagnostics.status}
       logs={diagnostics.logs}
     />

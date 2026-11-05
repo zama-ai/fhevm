@@ -4,7 +4,7 @@ import { defineChainTests } from '../viem-common/chain.tests.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/chain.test.ts
+// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/chain.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

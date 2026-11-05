@@ -122,7 +122,14 @@ function loadBrowserUiConfig(): BrowserUiConfig {
     targets: {
       testnet: resolveBrowserUiTarget(testDir, 'sepolia', defaults, sharedMnemonic),
       localstack: resolveBrowserUiTarget(testDir, 'localstack', defaults, sharedMnemonic),
-      localcleartext: resolveBrowserUiTarget(testDir, 'localcleartext', defaults, sharedMnemonic),
+      // The cleartext target is the v1.0 stack; every localcleartext* chain shares test/.env.localcleartext.
+      localcleartext: resolveBrowserUiTarget(
+        testDir,
+        'localcleartext_v1_0',
+        defaults,
+        sharedMnemonic,
+        'localcleartext',
+      ),
     },
   };
 }
@@ -132,15 +139,16 @@ function resolveBrowserUiTarget(
   chainKey: string,
   defaults: Record<string, ChainDefaults>,
   sharedMnemonic: string | undefined,
+  envKey: string = chainKey,
 ): { readonly rpcUrl: string; readonly mnemonic: string; readonly fheTestAddress: string } {
   const entry = defaults[chainKey];
   if (entry === undefined) {
     throw new Error(`Missing "${chainKey}" entry in ${chainDefaultsPath}`);
   }
-  const chainEnv = parseEnvFile(resolve(testDir, `.env.${chainKey}`));
+  const chainEnv = parseEnvFile(resolve(testDir, `.env.${envKey}`));
   const rpcUrl = chainEnv.RPC_URL ?? process.env.RPC_URL ?? entry.rpcUrl;
   if (rpcUrl === undefined || rpcUrl === '') {
-    throw new Error(`Missing rpcUrl for "${chainKey}" in ${chainDefaultsPath} or test/.env.${chainKey}.`);
+    throw new Error(`Missing rpcUrl for "${chainKey}" in ${chainDefaultsPath} or test/.env.${envKey}.`);
   }
   const mnemonic = sharedMnemonic ?? entry.mnemonic;
   if (mnemonic === undefined || mnemonic === '') {

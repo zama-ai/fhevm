@@ -2,15 +2,10 @@
 
 // Coexistence cell (Chunk 2c — the per-platform definition of done).
 // Proves multiple FHEVM runtimes coexist in ONE realm/process:
-//   - v12 slot (older ACL/protocol, key.1.5.4) — real proof via generateZkProof
-//   - v13 slot (current ACL/protocol, key.1.6.1) — real proof via generateZkProof
+//   - the current slot (key.1.6.1) — real proof via generateZkProof
 //   - a cleartext runtime in parallel (mock encrypt) — the universal scenario
-// This SDK release loads a single canonical TFHE module regardless of the
-// on-chain protocol version, so both real legs are expected to resolve the
-// SAME TFHE version despite running against different ACL/protocol versions —
-// that equality, under concurrent init, is the coexistence proof here (distinct
-// contract addresses + relayer URLs + init/proof-building all interleaving
-// safely in one realm, in ST or MT per NEXT_PUBLIC_FHEVM_TEST_THREADS).
+// Both legs init and build their inputs concurrently, with distinct relayer URLs,
+// interleaving safely in one realm (ST or MT per NEXT_PUBLIC_FHEVM_TEST_THREADS).
 //
 // Selectors (inlined at `next dev` start):
 //   NEXT_PUBLIC_FHEVM_TEST_LIB     viem | ethers   (default viem)
@@ -20,7 +15,7 @@ import { useEffect, useState } from 'react';
 import { generateZkProof } from '@fhevm/sdk/actions/encrypt';
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 import { createTestLogger, logError, DiagnosticsView } from '../_diag/diagnostics.jsx';
-import { CURRENT_SLOT, LEGACY_SLOT } from '../_diag/slots.js';
+import { CURRENT_SLOT } from '../_diag/slots.js';
 
 const LIB = process.env.NEXT_PUBLIC_FHEVM_TEST_LIB ?? 'viem';
 const THREADS = process.env.NEXT_PUBLIC_FHEVM_TEST_THREADS ?? 'st';
@@ -30,9 +25,8 @@ const MT_THREAD_COUNT = 2;
 const CONTRACT_ADDRESS = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const USER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 
-// Each anvil now deploys from a distinct deployer, so contract addresses differ per
-// slot. The gateway is the single source: GET /gw/<slot>/config returns this slot's
-// addresses + chain id. The page supplies only its origin + the slot id.
+// The gateway is the single source of each slot's addresses: GET /gw/<slot>/config
+// returns this slot's addresses + chain id. The page supplies only its origin + the slot id.
 async function fetchSlotConfig(origin, slot) {
   const res = await fetch(`${origin}/gw/${slot}/config`);
   if (!res.ok) {
@@ -53,12 +47,7 @@ function buildChain(origin, cfg, relayerSlot) {
         acl: { address: cfg.contracts.acl },
         inputVerifier: { address: cfg.contracts.inputVerifier },
         kmsVerifier: { address: cfg.contracts.kmsVerifier },
-        // Absent on the legacy (v12) slot — ProtocolConfig doesn't exist on that
-        // deploy. Must be omitted entirely (not `{ address: undefined }`), so the
-        // SDK's frozen-context resolver skips the ProtocolConfig version read.
-        ...(cfg.contracts.protocolConfig === undefined
-          ? {}
-          : { protocolConfig: { address: cfg.contracts.protocolConfig } }),
+        protocolConfig: { address: cfg.contracts.protocolConfig },
       },
       relayerUrl: `${origin}/gw/${relayerSlot}/relayer`,
       gateway: {
@@ -176,37 +165,26 @@ export default function Page() {
         log(`lib=${LIB} threads=${THREADS}`);
         const adapter = await libAdapter(logger);
 
-        const [v12Cfg, v13Cfg] = await Promise.all([
-          fetchSlotConfig(origin, LEGACY_SLOT),
-          fetchSlotConfig(origin, CURRENT_SLOT),
-        ]);
-        const v12 = adapter.mkReal(buildChain(origin, v12Cfg, LEGACY_SLOT), `${origin}/gw/${LEGACY_SLOT}/rpc`);
-        const v13 = adapter.mkReal(buildChain(origin, v13Cfg, CURRENT_SLOT), `${origin}/gw/${CURRENT_SLOT}/rpc`);
+        const currentCfg = await fetchSlotConfig(origin, CURRENT_SLOT);
+        const current = adapter.mkReal(
+          buildChain(origin, currentCfg, CURRENT_SLOT),
+          `${origin}/gw/${CURRENT_SLOT}/rpc`,
+        );
         // Cleartext leg: reuse the current slot's addresses but a UNIQUE relayer URL
         // (its mock returns deadbeef bytes — under the real relayer it would poison
         // the real key).
-        const clear = adapter.mkCleartext(buildChain(origin, v13Cfg, 'cleartext'), `${origin}/gw/${CURRENT_SLOT}/rpc`);
+        const clear = adapter.mkCleartext(
+          buildChain(origin, currentCfg, 'cleartext'),
+          `${origin}/gw/${CURRENT_SLOT}/rpc`,
+        );
 
-        log('initializing legacy + current + cleartext concurrently...');
-        const summaries = await Promise.all([
-          realProofLeg(v12, LEGACY_SLOT, log),
-          realProofLeg(v13, CURRENT_SLOT, log),
-          cleartextLeg(clear, log),
-        ]);
-
-        // Coexistence proof: both real legs — despite running against different
-        // ACL/protocol versions, addresses, and relayer URLs — resolve the SAME
-        // canonical TFHE version, and did so safely under concurrent init.
-        if (String(v12.tfheVersion) !== String(v13.tfheVersion)) {
-          throw new Error(
-            `coexistence: legs resolved different TFHE versions (legacy=${String(v12.tfheVersion)}, current=${String(v13.tfheVersion)})`,
-          );
-        }
+        log('initializing current + cleartext concurrently...');
+        const summaries = await Promise.all([realProofLeg(current, CURRENT_SLOT, log), cleartextLeg(clear, log)]);
 
         for (const s of summaries) {
           log(`[PASS] ${s}`);
         }
-        log('[PASS] multi-chain + cleartext coexistence verified');
+        log('[PASS] real + cleartext coexistence verified');
 
         if (!cancelled) {
           setDiagnostics({ status: 'pass', logs });
@@ -227,7 +205,7 @@ export default function Page() {
 
   return (
     <DiagnosticsView
-      title={`SDK coexistence (v12 + v13 + cleartext · lib=${LIB} · threads=${THREADS})`}
+      title={`SDK coexistence (${CURRENT_SLOT} + cleartext · lib=${LIB} · threads=${THREADS})`}
       status={diagnostics.status}
       logs={diagnostics.logs}
     />

@@ -1,6 +1,6 @@
 import { createFhevmCleartextEncryptWithPadClient } from '@fhevm/sdk/ethers/cleartext';
 import { getEthersTestConfig } from '../setup-ethers.js';
-import { isCleartext, protocolEraOf } from '../setupCommon.js';
+import { isLocalCleartextChain } from '../setupCommon.js';
 import { defineClientEncryptWithPadEncryptTests } from '../ethers-common/clientEncryptWithPad.encrypt.tests.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -11,6 +11,6 @@ import { defineClientEncryptWithPadEncryptTests } from '../ethers-common/clientE
 
 defineClientEncryptWithPadEncryptTests({
   // RFC-030 pad-based encryption needs the v1.0 cleartext stack (PaddedInputter).
-  runIf: isCleartext(getEthersTestConfig().chainName) && protocolEraOf(getEthersTestConfig().chainName) >= 16,
+  runIf: isLocalCleartextChain(getEthersTestConfig().chainName),
   createFhevmEncryptWithPadClient: (params) => createFhevmCleartextEncryptWithPadClient(params),
 });

@@ -20,7 +20,7 @@ import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/s
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientDecrypt.decrypt.test.ts
+// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientDecrypt.decrypt.test.ts
 // CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.decrypt.test.ts
 // CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.decrypt.test.ts
 // CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts viem/clientDecrypt.decrypt.test.ts

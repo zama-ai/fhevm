@@ -27,7 +27,7 @@ Options:
   --ethlib viem            Run only the viem test suite.
   --ethlib ethers,viem     Run both suites (default).
   --ethlib none            Start Anvil + deploy only; wait for Anvil to exit (no tests run).
-  --foundry-profile <name> Required Foundry profile to use. Expected: v12, v13 or v1.0.
+  --foundry-profile <name> Required Foundry profile to use. Expected: v1.0.
   --use-pack               Use vitest-manual-pack.config.ts instead of vitest.config.ts.
   --skip-fhetest           Deploy only the FHEVM stack, not TFHETest.sol (FHETest).
   --verbose                Print Anvil logs to the console instead of redirecting to a file.
@@ -118,13 +118,13 @@ case "$LIB" in
 esac
 
 case "$PROFILE" in
-    v12|v13|v1.0) ;;
+    v1.0) ;;
     "")
-        echo "Error: --foundry-profile is required. Expected: v12, v13 or v1.0." >&2
+        echo "Error: --foundry-profile is required. Expected: v1.0." >&2
         exit 1
         ;;
     *)
-        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v12, v13 or v1.0." >&2
+        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v1.0." >&2
         exit 1
         ;;
 esac
@@ -221,10 +221,10 @@ anvil_deploy_cleartext() {
     echo "🏗️  Deploying FHEVM cleartext stack..."
     (
         cd "$CONTRACTS_DIR"
-        bash "$DEPLOY_FHEVM_SCRIPT" --chain localcleartext
+        bash "$DEPLOY_FHEVM_SCRIPT" --chain "$CLEAR_TEXT_CHAIN"
         if [[ "$SKIP_FHETEST" -eq 0 ]]; then
             sleep 1
-            bash "$DEPLOY_FHE_TEST_SCRIPT" --chain localcleartext
+            bash "$DEPLOY_FHE_TEST_SCRIPT" --chain "$CLEAR_TEXT_CHAIN"
         else
             echo "⏭️  Skipping TFHETest.sol (FHETest) deployment (--skip-fhetest)."
         fi

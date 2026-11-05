@@ -25,9 +25,9 @@ const MT_THREAD_COUNT = 2;
 const CONTRACT_ADDRESS = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const USER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 
-// v13 slot: chain id 31338; cleartext-deploy addresses are deterministic
-// (chain-id independent), matching test/chains/localcleartext.ts.
-function v13Chain(origin) {
+// v1.0 slot: chain id 31338; cleartext-deploy addresses are deterministic
+// (chain-id independent), matching test/chains/localcleartext_v1_0.ts.
+function currentChain(origin) {
   return defineFhevmChain({
     id: 31338,
     fhevm: {
@@ -39,7 +39,8 @@ function v13Chain(origin) {
       },
       relayerUrl: `${origin}/gw/${CURRENT_SLOT}/relayer`,
       gateway: {
-        id: 654_321,
+        // The v1.0 cleartext stack's GATEWAY_CHAIN_ID (test/infra/config.ts).
+        id: 100_733_346_448_153,
         contracts: {
           decryption: { address: '0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721' },
           inputVerification: { address: '0x6189F6c0c3E40B4a3c72ec86262295D78d845297' },
@@ -91,7 +92,7 @@ export default function Page() {
         const origin = window.location.origin;
         log(`lib=${LIB} threads=${THREADS}`);
 
-        const chain = v13Chain(origin);
+        const chain = currentChain(origin);
         log('createFhevmClient...');
         const client = await createClient(chain, `${origin}/gw/${CURRENT_SLOT}/rpc`, logger);
 
@@ -151,7 +152,7 @@ export default function Page() {
 
   return (
     <DiagnosticsView
-      title={`SDK encrypt (v13 · lib=${LIB} · threads=${THREADS})`}
+      title={`SDK encrypt (${CURRENT_SLOT} · lib=${LIB} · threads=${THREADS})`}
       status={diagnostics.status}
       logs={diagnostics.logs}
     />

@@ -73,7 +73,7 @@ async function createClient(chain, rpcUrl, logger) {
   throw new Error(`Unknown NEXT_PUBLIC_FHEVM_TEST_LIB: ${LIB}`);
 }
 
-// Runs one encrypt leg against the v13 slot: init + thread-mode assertion + a real
+// Runs one encrypt leg against the current slot: init + thread-mode assertion + a real
 // proof. `expectMultiThread` differs per leg (CSR needs crossOriginIsolated; SSR
 // does not), so the caller computes it. `log`/`logger` come from createTestLogger.
 // Returns the resolved thread count.
