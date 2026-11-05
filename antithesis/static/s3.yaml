@@ -115,9 +115,10 @@ spec:
           args:
             - |
               set -e
-              mc alias set local http://minio:9000 minioadmin minioadmin
+              # The headless `minio` name only resolves once MinIO is ready.
               i=0
-              until mc ls local >/dev/null 2>&1; do
+              until mc alias set local http://minio:9000 minioadmin minioadmin >/dev/null 2>&1 &&
+                mc ls local >/dev/null 2>&1; do
                 i=$((i + 1)); [ "$i" -gt 60 ] && { echo "minio never became writable"; exit 1; }
                 sleep 2
               done
