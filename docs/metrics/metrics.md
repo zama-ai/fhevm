@@ -236,6 +236,13 @@ tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest fina
  - **Alarm**: Database errors, or a connector at its limit.
     - **Recommendation**: `sum(increase(coprocessor_prf_service_requests_total{status=~"429|503"}[5m])) > 0`.
 
+#### Metric Name: `coprocessor_prf_service_request_duration_seconds`
+ - **Type**: Histogram
+ - **Labels**: see [`coprocessor_prf_service_requests_total`](#metric-name-coprocessor_prf_service_requests_total).
+ - **Description**: Time from the start of a PRF request to its answer, in seconds. A request waits while the pad-worker computes its row, so a `200` can take seconds to minutes. A `429` is immediate. Bucket bounds: 5 ms to 164 s, above the 120 s default `COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT`. A request that the proxy stops at its timeout has no answer, so it is not counted here: the proxy counts it as `504`.
+ - **Alarm**: The pad-worker is slow. A stopped pad-worker gives no `200` answers, so this alarm does not see it: the proxy alarm on `504` does (see [`coprocessor_proxy_requests_counter`](#metric-name-coprocessor_proxy_requests_counter)).
+    - **Recommendation**: the p95 of `200` answers is above half the proxy response timeout for 10 minutes, i.e. `histogram_quantile(0.95, sum by (le) (rate(coprocessor_prf_service_request_duration_seconds_bucket{status="200"}[5m]))) > 60`. Tune it with the pad-worker benchmarks.
+
 ## kms-connector
 
 ### HTTP decryption: proxy and endpoint
