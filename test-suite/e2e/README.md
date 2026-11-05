@@ -153,15 +153,19 @@ coprocessor's `coprocessor[N]-proxy`, until the RFC-038 pad connector and its e2
 land and replace it. It signs `FhevmSig` requests with KMS party 1's
 `KMS_CONNECTOR_PRIVATE_KEY`, a tx-sender of the active KMS context in the host
 ProtocolConfig, for the coprocessor's signer in `COPROCESSOR_SIGNER_ADDRESSES`.
-Behind each proxy runs the fake prf-service of `scripts/fake-prf-service.ts`,
-which answers the PRF route, with prf-service's canonical parameters, with a
-fixed binary body and an attestation of its digest, and reports how many PRF
-requests reached it at `PRF_SERVICE_FAKE_COUNT_URLS`. The suite checks that a
-signed request reaches the fake once and comes back unchanged (the body's
-Keccak-256 is the attestation's `sns_ciphertext_digest`), and that a high-s
-signature (`401 auth_invalid_signature`), an expired one (`401 auth_expired`),
-an unknown signer (`401 auth_unknown_signer`, without `Retry-After`) and an
-unknown route (`404 not_found`) never reach the fake. The proxies serve the self-signed test
+Behind each proxy runs the coprocessor's prf-service. The pad-worker that
+computes PRF outputs does not exist yet, so `scripts/seed-prf-pads.ts` writes the
+one output the suite requests into each coprocessor's database, signed with that
+coprocessor's key as the pad-worker will (`test/coprocessorProxy/prfOutput.ts`).
+The suite counts the requests prf-service answered from its
+`coprocessor_prf_service_requests_total` metric at `PRF_SERVICE_METRICS_URLS`. It
+checks that a signed request reaches prf-service once and comes back with the
+output and an `X-Prf-Attestation` that verifies as a KMS connector checks it:
+signed by the coprocessor's signer over the request path, for the body served.
+`HEAD` answers the same attestation and the `GET` body's `Content-Length`. A
+high-s signature (`401 auth_invalid_signature`), an expired one
+(`401 auth_expired`), an unknown signer (`401 auth_unknown_signer`, without
+`Retry-After`) and an unknown route (`404 not_found`) never reach prf-service. The proxies serve the self-signed test
 certificate under `test-suite/fhevm/static/config/coprocessor-proxy`, read
 through `COPROCESSOR_PROXY_CA_CERT`. The suite skips when
 `COPROCESSOR_PROXY_URLS` is empty (bundles without the proxy image, and
