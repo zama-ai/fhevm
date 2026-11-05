@@ -21,6 +21,11 @@
 {{- if lt (int $proxy.requestHeadTimeoutSeconds) 1 }}
 {{- fail "coprocessorProxy.requestHeadTimeoutSeconds must be a whole number of seconds, at least 1: the head deadline cannot be disabled" }}
 {{- end }}
+{{- range $name := list "maxConnectionsPerIp" "maxPendingHandshakesPerIp" }}
+{{- if lt (int (get $proxy $name)) 0 }}
+{{- fail (printf "coprocessorProxy.%s must be 0, which disables the limit, or a positive number of connections" $name) }}
+{{- end }}
+{{- end }}
 {{- if not (or $protocolConfigChain.httpUrl $protocolConfigChain.httpUrlValueFrom) }}
 {{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with httpUrl or httpUrlValueFrom" $canonicalChainId) }}
 {{- end }}
