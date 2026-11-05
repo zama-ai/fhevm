@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS pads
     -- The KMS Connector that pays for the evaluation while the row is pending.
     triggered_by BYTEA NOT NULL CHECK (OCTET_LENGTH(triggered_by) = 20),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- State: pending (no output, not is_error), complete (output set) or failed (is_error).
     is_error BOOLEAN NOT NULL DEFAULT FALSE,
     -- The pad-worker writes the output and its attestation. A row is complete when it has them.
     ciphertext128 BYTEA NULL,

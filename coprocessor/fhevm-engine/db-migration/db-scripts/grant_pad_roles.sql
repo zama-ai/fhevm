@@ -4,7 +4,7 @@
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'prf_service') THEN
-        -- Start from no rights, so a right that this file no longer gives is also removed.
+        -- Revoke all first, so a right removed from this file is also removed from the role.
         REVOKE ALL ON pads FROM prf_service;
         GRANT SELECT ON pads TO prf_service;
         -- prf-service only adds rows. It cannot change a row after that.
