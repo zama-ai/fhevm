@@ -23,6 +23,18 @@ e2e container: hardhat script --> host-node:8545 (deploy a fixture)
 
 - Logs: `docker logs -f fhevm-relayer-http`.
 
+### Through the relayer proxy
+
+The stack also serves relayer-http through the relayer proxy, on `localhost:3003` (`/v2`, `/v3` → relayer, `/v4` → relayer-http). To run the flows through it, set `RELAYER_HTTP_URL` to the proxy's port on the host:
+
+```sh
+RELAYER_HTTP_URL=http://localhost:3003 make -C relayer-http/dev public-decrypt
+RELAYER_HTTP_URL=http://localhost:3003 make -C relayer-http/dev user-decrypt
+```
+
+- `RELAYER_HTTP_URL` accepts any port the stack publishes on the host. The flows run in the e2e container, so `scripts/e2e.sh` rewrites `localhost` to the host's address as seen from the container.
+- The flows check `/healthz` on `relayer-http:3002` directly, because the proxy does not route `/healthz`.
+
 ## On the host
 
 For debugging and relayer development: `cargo run` with the stack's config, next to the in-stack relayer.
