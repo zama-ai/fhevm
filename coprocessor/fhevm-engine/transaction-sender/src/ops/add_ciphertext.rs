@@ -285,20 +285,59 @@ where
         Ok(())
     }
 
+    /// Run receipt audits independently of new submissions. There is one
+    /// bounded page in flight, no retained PgListener connection, and shutdown
+    /// cancels even a stalled RPC. Every write still takes the live-stack fence.
+    pub(crate) async fn run_reconciliation(
+        &self,
+        mode: Arc<fhevm_engine_common::versioning::StackMode>,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> anyhow::Result<()> {
+        let pause = Duration::from_secs(u64::from(self.conf.db_polling_interval_secs).max(1));
+        loop {
+            let result = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Ok(()),
+                result = tokio::time::timeout(Duration::from_secs(30), async {
+                    if mode.is_paused() || fhevm_engine_common::chain_recovery::is_halted(&self.db_pool).await? {
+                        return Ok(false);
+                    }
+                    self.reconcile_recent_publications().await
+                }) => result,
+            };
+            match result {
+                Ok(Ok(true)) => {
+                    tokio::task::yield_now().await;
+                    continue;
+                }
+                Ok(Ok(false)) => {}
+                Ok(Err(error)) => warn!(error = %crate::diagnostics::safe_error(error.as_ref()),
+                    "Publication reconciliation failed; retrying independently of submissions"),
+                Err(_) => warn!(
+                    "Publication reconciliation timed out; retrying independently of submissions"
+                ),
+            }
+            tokio::select! {
+                _ = cancel.cancelled() => return Ok(()),
+                _ = tokio::time::sleep(pause) => {}
+            }
+        }
+    }
+
     /// Reconcile recent receipt acknowledgments against canonical chain state.
     /// A canonical successful receipt preserves a sender's contribution even
     /// before quorum, when Gateway's public sender-list getter is empty. If the
     /// receipt is orphaned and Gateway has not finalized the handle through
     /// another canonical contribution, restore the row to the retry queue.
-    async fn reconcile_recent_publications(&self) -> anyhow::Result<()> {
+    async fn reconcile_recent_publications(&self) -> anyhow::Result<bool> {
         let Some(sender_address) = self.provider.signer_address() else {
-            return Ok(());
+            return Ok(false);
         };
 
         let mut state = self.reconciliation_state.lock().await;
         let now = Instant::now();
         if state.next_sweep_at.is_some_and(|next| now < next) {
-            return Ok(());
+            return Ok(false);
         }
 
         if !state.sweep_in_progress {
@@ -331,7 +370,7 @@ where
             state.cursor = None;
             state.sweep_in_progress = false;
             state.next_sweep_at = Some(Instant::now() + PUBLICATION_RECONCILIATION_INTERVAL);
-            return Ok(());
+            return Ok(false);
         }
 
         let commits =
@@ -481,7 +520,7 @@ where
             state.sweep_in_progress = false;
             state.next_sweep_at = Some(Instant::now() + PUBLICATION_RECONCILIATION_INTERVAL);
         }
-        Ok(())
+        Ok(state.sweep_in_progress)
     }
 
     async fn update_canonical_publication_block(
@@ -728,7 +767,6 @@ where
     }
 
     async fn execute(&self) -> anyhow::Result<bool> {
-        self.reconcile_recent_publications().await?;
         // Computed digests becoming non-NULL does not prove S3 publication.
         // Only a current postflight verification witness makes a row eligible.
         let rows = sqlx::query!(
@@ -881,6 +919,54 @@ async fn delete_ct128_from_db(
 mod publication_receipt_tests {
     use super::{classify_publication_receipt, PublicationReceiptCheck};
     use alloy::primitives::FixedBytes;
+
+    #[tokio::test]
+    async fn stalled_reconciliation_does_not_block_submissions_or_shutdown() -> anyhow::Result<()> {
+        use super::AddCiphertextOperation;
+        use crate::{ops::TransactionOperation, ConfigSettings, NonceManagedProvider};
+        use alloy::{primitives::Address, providers::ProviderBuilder};
+        use fhevm_engine_common::versioning::StackMode;
+        use std::{sync::Arc, time::Duration};
+        use test_harness::instance::{setup_test_db, ImportMode};
+        use tokio::sync::{Notify, Semaphore};
+        use tokio_util::sync::CancellationToken;
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+        let server = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = server.local_addr()?;
+        let entered = Arc::new(Notify::new());
+        let signal = entered.clone();
+        let rpc = tokio::spawn(async move {
+            let (_connection, _) = server.accept().await.unwrap();
+            signal.notify_one();
+            std::future::pending::<()>().await;
+        });
+        let provider = ProviderBuilder::new().connect_http(format!("http://{address}").parse()?);
+        let operation = Arc::new(AddCiphertextOperation::new(
+            Address::ZERO,
+            NonceManagedProvider::new(provider, Some(Address::ZERO)),
+            ConfigSettings::default(),
+            None,
+            pool,
+            Arc::new(Semaphore::new(1)),
+        ));
+        let token = CancellationToken::new();
+        let audit = operation.clone();
+        let stop = token.clone();
+        let task =
+            tokio::spawn(
+                async move { audit.run_reconciliation(StackMode::new(false), stop).await },
+            );
+        tokio::time::timeout(Duration::from_secs(5), entered.notified()).await?;
+        // Even a healthy empty queue used to wait for receipt/header RPCs.
+        assert!(!tokio::time::timeout(Duration::from_secs(2), operation.execute()).await??);
+        token.cancel();
+        tokio::time::timeout(Duration::from_secs(2), task).await???;
+        rpc.abort();
+        Ok(())
+    }
 
     #[test]
     fn classifies_complete_receipts_against_the_canonical_block() {
