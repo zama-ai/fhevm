@@ -27,6 +27,26 @@ use transaction_sender::{
     true,
     true
 )]
+// Inject low/known responses during estimation: retiring an unbroadcast send
+// nonce would exercise the separate nonce-reconciliation problem, not budgeting.
+#[case::estimate_nonce_too_low("eth_estimateGas", Fault::RpcError {
+    code: -32000, message: "nonce too low".into()
+}, true, true)]
+#[case::estimate_nonce_too_high("eth_estimateGas", Fault::RpcError {
+    code: -32603, message: "nonce too high".into()
+}, false, true)]
+#[case::estimate_already_known("eth_estimateGas", Fault::RpcError {
+    code: -32000, message: "already known".into()
+}, true, false)]
+#[case::estimate_underpriced("eth_estimateGas", Fault::RpcError {
+    code: -32003, message: "replacement transaction underpriced".into()
+}, true, true)]
+#[case::send_nonce_too_high("eth_sendRawTransactionSync", Fault::RpcError {
+    code: -32000, message: "nonce too high".into()
+}, true, true)]
+#[case::send_underpriced("eth_sendRawTransactionSync", Fault::RpcError {
+    code: -32000, message: "replacement transaction underpriced".into()
+}, false, true)]
 #[tokio::test]
 #[serial(db)]
 async fn transient_failure_preserves_near_exhausted_proof_and_recovers(
