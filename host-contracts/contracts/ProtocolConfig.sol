@@ -4,12 +4,12 @@ pragma solidity ^0.8.24;
 import {ProtocolConfigBase} from "./ProtocolConfigBase.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
+import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {KmsContextAnchor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
-import {KeyDigestHash} from "./shared/KeyDigestHash.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 
@@ -42,6 +42,9 @@ contract ProtocolConfig is
 
     /// @dev Shared between `initializeFromEmptyProxy` and `reinitializeV3`.
     uint64 private constant REINITIALIZER_VERSION = 4;
+
+    /// @dev Hash of the KeyDigest type, used to hash the key digests into `epochMaterialHash`.
+    bytes32 private constant EIP712_KEY_DIGEST_TYPE_HASH = keccak256("KeyDigest(uint8 keyType,bytes digest)");
 
     /// @dev Hash of the KeygenVerification type. The nested KeyDigest type is appended as
     ///      EIP-712 requires nested struct types to be declared inline with the primary type.
@@ -537,12 +540,19 @@ contract ProtocolConfig is
             if (i > 0 && keys[i].keyId <= keys[i - 1].keyId) {
                 revert UnsortedEpochActivationResults(epochId);
             }
+            IKMSGeneration.KeyDigest[] calldata keyDigests = keys[i].keyDigests;
+            bytes32[] memory keyDigestHashes = new bytes32[](keyDigests.length);
+            for (uint256 j = 0; j < keyDigests.length; j++) {
+                keyDigestHashes[j] = keccak256(
+                    abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[j].keyType, keccak256(keyDigests[j].digest))
+                );
+            }
             keyHashes[i] = keccak256(
                 abi.encode(
                     EIP712_KEYGEN_TYPE_HASH,
                     keys[i].prepKeygenId,
                     keys[i].keyId,
-                    KeyDigestHash.hash(keys[i].keyDigests),
+                    keccak256(abi.encodePacked(keyDigestHashes)),
                     extraDataHash
                 )
             );
