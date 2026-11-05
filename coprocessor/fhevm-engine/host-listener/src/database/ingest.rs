@@ -576,6 +576,7 @@ pub async fn ingest_block_logs(
     let committed_inventory = CommittedInventory::capture(
         &mut tx,
         chain_id.as_i64(),
+        history_role,
         &[block_logs.summary.number as i64],
         &touched_handles,
     )
