@@ -20,6 +20,7 @@ where
     cancel_token: CancellationToken,
     conf: ConfigSettings,
     operations: Vec<Arc<dyn ops::TransactionOperation<P>>>,
+    publication_reconciliation: Arc<ops::add_ciphertext::AddCiphertextOperation<P>>,
     input_verification_address: Address,
     ciphertext_commits_address: Address,
     db_pool: Pool<Postgres>,
@@ -57,6 +58,14 @@ where
             pool_size,
             submission_limit, "Configured Gateway submission concurrency"
         );
+        let publications = Arc::new(ops::add_ciphertext::AddCiphertextOperation::new(
+            ciphertext_commits_address,
+            gateway_provider.clone(),
+            conf.clone(),
+            gas,
+            db_pool.clone(),
+            submission_slots.clone(),
+        ));
         let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![
             Arc::new(
                 ops::verify_proof::VerifyProofOperation::new(
@@ -70,19 +79,13 @@ where
                 )
                 .await?,
             ),
-            Arc::new(ops::add_ciphertext::AddCiphertextOperation::new(
-                ciphertext_commits_address,
-                gateway_provider.clone(),
-                conf.clone(),
-                gas,
-                db_pool.clone(),
-                submission_slots,
-            )),
+            publications.clone(),
         ];
         Ok(Self {
             cancel_token,
             conf,
             operations,
+            publication_reconciliation: publications,
             input_verification_address,
             ciphertext_commits_address,
             db_pool,
@@ -141,6 +144,14 @@ where
         }
 
         let mut join_set = JoinSet::new();
+        let publications = self.publication_reconciliation.clone();
+        let audit_mode = mode.clone();
+        let audit_cancel = self.cancel_token.clone();
+        join_set.spawn(async move {
+            publications
+                .run_reconciliation(audit_mode, audit_cancel)
+                .await
+        });
 
         for op in self.operations.clone() {
             let op_channel = op.channel().to_owned();
@@ -445,6 +456,14 @@ mod tests {
                 ..Default::default()
             },
             operations: vec![operation.clone()],
+            publication_reconciliation: Arc::new(ops::add_ciphertext::AddCiphertextOperation::new(
+                Address::ZERO,
+                NonceManagedProvider::new(provider.clone(), None),
+                ConfigSettings::default(),
+                None,
+                pool.clone(),
+                Arc::new(Semaphore::new(1)),
+            )),
             input_verification_address: Address::ZERO,
             ciphertext_commits_address: Address::ZERO,
             db_pool: pool.clone(),
