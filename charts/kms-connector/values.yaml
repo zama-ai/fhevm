@@ -448,8 +448,13 @@ kmsConnectorProxy:
   # This connector's tx-sender wallet address: the `audience` accepted requests are signed for
   txSenderAddress: ""
 
-  # `kubernetes.io/tls` secret (tls.crt, tls.key) served by the proxy, not created by this chart
   tls:
+    # Serve TLS from `secretName`. Set to `false` ONLY when the proxy sits behind a
+    # TLS-terminating layer (ingress, service mesh...): it then serves plain HTTP on `ports.http`
+    # instead of `ports.https`. Only a literal `false` disables TLS, a missing or null value keeps it on.
+    enabled: true
+    # `kubernetes.io/tls` secret (tls.crt, tls.key) served by the proxy, not created by this chart.
+    # Required when `enabled` is true.
     secretName: kms-connector-proxy-tls
 
   # Additional environment variables (KMS_CONNECTOR_* settings of the service)
@@ -461,7 +466,10 @@ kmsConnectorProxy:
 
   # Service ports
   ports:
+    # Proxy port when TLS is enabled (`tls.enabled`)
     https: 8443
+    # Proxy port when TLS is disabled
+    http: 8080
     monitoring: 9100
 
   # Prometheus ServiceMonitor for metrics collection
