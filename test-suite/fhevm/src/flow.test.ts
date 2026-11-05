@@ -298,6 +298,38 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(completeState(), running)).toBeUndefined();
   });
 
+  test("repairs from relayer-proxy once that step completed and fhevm-relayer-proxy is missing", () => {
+    const running = [
+      "fhevm-object-store",
+      "coprocessor-and-kms-db",
+      "kms-core",
+      "host-node",
+      "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
+      "coprocessor-gw-listener",
+      "coprocessor-tfhe-worker",
+      "coprocessor-zkproof-worker",
+      "coprocessor-sns-worker",
+      "coprocessor-transaction-sender",
+      "coprocessor-consensus-detector",
+      "coprocessor-upgrade-controller",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+      "fhevm-relayer-db",
+      "fhevm-relayer",
+      "fhevm-test-suite-e2e-debug",
+    ];
+    const state = completeState();
+    state.completedSteps = [...state.completedSteps, "relayer-proxy"];
+    expect(resumeRepairStep(state, running)).toBe("relayer-proxy");
+    expect(resumeRepairStep(state, [...running, "fhevm-relayer-proxy"])).toBeUndefined();
+  });
+
   test("repairs from listener-core when the publisher is missing", () => {
     const running = [
       "fhevm-object-store",
