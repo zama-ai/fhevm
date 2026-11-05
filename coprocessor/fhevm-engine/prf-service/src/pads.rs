@@ -175,8 +175,8 @@ async fn add(
 /// Reads the row of `path`, if it exists, without its body.
 pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<PadState>> {
     let Some(row) = sqlx::query!(
-        "SELECT is_error, OCTET_LENGTH(ciphertext128) AS body_length, ciphertext_digest,
-                ciphertext128_digest, signer, signature
+        "SELECT is_error, OCTET_LENGTH(ciphertext128) AS body_length, attestation_version,
+                ciphertext_digest, ciphertext128_digest, signer, signature
            FROM pads
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
         i32::from(path.prf_id),
@@ -192,23 +192,15 @@ pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<P
     if row.is_error {
         return Ok(Some(PadState::Failed));
     }
-    // A CHECK makes the output columns all set or all NULL.
-    let (Some(body_length), Some(digest), Some(sns_digest), Some(signer), Some(signature)) = (
-        row.body_length,
+    let attestation = attestation(
+        row.attestation_version,
         row.ciphertext_digest,
         row.ciphertext128_digest,
         row.signer,
         row.signature,
-    ) else {
+    )?;
+    let (Some(body_length), Some(attestation)) = (row.body_length, attestation) else {
         return Ok(Some(PadState::Pending));
-    };
-    let attestation = PrfOutputAttestation {
-        version: Version::V1,
-        ciphertext_digest: B256::try_from(digest.as_slice()).context("ciphertext_digest")?,
-        sns_ciphertext_digest: B256::try_from(sns_digest.as_slice())
-            .context("ciphertext128_digest")?,
-        signer: Address::try_from(signer.as_slice()).context("signer")?,
-        signature,
     };
     Ok(Some(PadState::Complete(PadOutput {
         body_length: u64::try_from(body_length).context("body_length")?,
@@ -216,10 +208,15 @@ pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<P
     })))
 }
 
-/// Reads the body of the row of `path`. `None` if the row has no body.
-pub async fn read_body(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<Vec<u8>>> {
-    let body = sqlx::query_scalar!(
-        "SELECT ciphertext128
+/// Reads the attestation and the body of the row of `path` in one SELECT, so they match.
+/// `None` if the row has no output.
+pub async fn read_output(
+    pool: &PgPool,
+    path: &PrfOutputRef,
+) -> anyhow::Result<Option<(PrfOutputAttestation, Vec<u8>)>> {
+    let Some(row) = sqlx::query!(
+        "SELECT ciphertext128, attestation_version, ciphertext_digest, ciphertext128_digest,
+                signer, signature
            FROM pads
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
         i32::from(path.prf_id),
@@ -227,8 +224,45 @@ pub async fn read_body(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Opt
         i32::from(path.pad_length),
     )
     .fetch_optional(pool)
-    .await?;
-    Ok(body.flatten())
+    .await?
+    else {
+        return Ok(None);
+    };
+
+    let attestation = attestation(
+        row.attestation_version,
+        row.ciphertext_digest,
+        row.ciphertext128_digest,
+        row.signer,
+        row.signature,
+    )?;
+    Ok(attestation.zip(row.ciphertext128))
+}
+
+/// The attestation of a row. `None` if the row has no output: a CHECK sets these columns all or none.
+fn attestation(
+    version: Option<i16>,
+    digest: Option<Vec<u8>>,
+    ct128_digest: Option<Vec<u8>>,
+    signer: Option<Vec<u8>>,
+    signature: Option<Vec<u8>>,
+) -> anyhow::Result<Option<PrfOutputAttestation>> {
+    let (Some(version), Some(digest), Some(ct128_digest), Some(signer), Some(signature)) =
+        (version, digest, ct128_digest, signer, signature)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(PrfOutputAttestation {
+        version: u8::try_from(version)
+            .ok()
+            .and_then(|version| Version::try_from(version).ok())
+            .with_context(|| format!("unknown attestation_version {version}"))?,
+        ciphertext_digest: B256::try_from(digest.as_slice()).context("ciphertext_digest")?,
+        sns_ciphertext_digest: B256::try_from(ct128_digest.as_slice())
+            .context("ciphertext128_digest")?,
+        signer: Address::try_from(signer.as_slice()).context("signer")?,
+        signature,
+    }))
 }
 
 #[cfg(test)]

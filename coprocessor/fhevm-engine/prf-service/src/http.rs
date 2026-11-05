@@ -18,7 +18,7 @@ use actix_web::{
 };
 use alloy::primitives::Address;
 use anyhow::anyhow;
-use ciphertext_attestation::{prf::PRF_ATTESTATION_HEADER, PrfOutputRef};
+use ciphertext_attestation::{prf::PRF_ATTESTATION_HEADER, PrfOutputAttestation, PrfOutputRef};
 use sqlx::PgPool;
 use std::{
     convert::Infallible,
@@ -128,21 +128,27 @@ async fn serve(req: &HttpRequest, state: &AppState) -> Result<HttpResponse, PrfE
     };
 
     let mut response = HttpResponse::Ok();
-    response
-        .content_type(ContentType::octet_stream())
-        .insert_header((
-            PRF_ATTESTATION_HEADER,
-            serde_json::to_string(&output.attestation).expect("attestation serializes"),
-        ));
+    response.content_type(ContentType::octet_stream());
     if req.method() == Method::HEAD {
-        return Ok(response.body(HeadBody(output.body_length)));
+        return Ok(response
+            .insert_header(attestation_header(&output.attestation))
+            .body(HeadBody(output.body_length)));
     }
-    // No body: the row was deleted after the read.
-    let body = pads::read_body(&state.pool, &path)
+    // No output: the row was deleted after the read.
+    let (attestation, body) = pads::read_output(&state.pool, &path)
         .await
         .map_err(unavailable)?
         .ok_or(PrfError::Unavailable)?;
-    Ok(response.body(body))
+    Ok(response
+        .insert_header(attestation_header(&attestation))
+        .body(body))
+}
+
+fn attestation_header(attestation: &PrfOutputAttestation) -> (&'static str, String) {
+    (
+        PRF_ATTESTATION_HEADER,
+        serde_json::to_string(attestation).expect("attestation serializes"),
+    )
 }
 
 /// A `HEAD` body: the `Content-Length` of the `GET` body, and no bytes.
@@ -177,6 +183,6 @@ fn signer(req: &HttpRequest) -> Result<Address, PrfError> {
 }
 
 fn unavailable(e: anyhow::Error) -> PrfError {
-    warn!(error = %e, "database error");
+    warn!(error = %e, "cannot read the pad row");
     PrfError::Unavailable
 }

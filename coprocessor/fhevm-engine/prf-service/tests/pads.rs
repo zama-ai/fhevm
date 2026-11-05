@@ -5,7 +5,7 @@ use ciphertext_attestation::{prf::consensus::MAX_PAD_LENGTH, PrfOutputRef};
 use common::{attestation, set_error, set_output, CONNECTOR, DEADLINE, GRANTS};
 use fhevm_engine_common::healthz_server::HealthCheckService;
 use prf_service::{
-    pads::{read, read_body, Admission, Admissions, PadOutput, PadState, CONNECTOR_LOCK},
+    pads::{read, read_output, Admission, Admissions, PadOutput, PadState, CONNECTOR_LOCK},
     waiter::{PadWaiter, PAD_READY},
     Health,
 };
@@ -266,16 +266,41 @@ async fn complete_row_gives_the_output() {
         Admission::Created
     );
 
-    assert_eq!(read_body(&pool, &path).await.unwrap(), None);
+    assert_eq!(read_output(&pool, &path).await.unwrap(), None);
     set_output(&pool, &path, 1).await;
 
     let complete = PadState::Complete(output(1));
     assert_eq!(read(&pool, &path).await.unwrap(), Some(complete.clone()));
-    assert_eq!(read_body(&pool, &path).await.unwrap(), Some(vec![1; 32]));
+    assert_eq!(
+        read_output(&pool, &path).await.unwrap(),
+        Some((attestation(1), vec![1; 32]))
+    );
     assert_eq!(
         admissions.admit(&path, OTHER_CONNECTOR).await.unwrap(),
         Admission::Existing(complete)
     );
+
+    // A changed output: the attestation and the body come from the same read.
+    set_output(&pool, &path, 2).await;
+    assert_eq!(
+        read_output(&pool, &path).await.unwrap(),
+        Some((attestation(2), vec![2; 32]))
+    );
+}
+
+#[tokio::test]
+async fn unknown_attestation_version_is_an_error() {
+    let (_instance, pool, _service, admissions) = test_db().await;
+    let path = path(1, 64);
+    admissions.admit(&path, CONNECTOR).await.unwrap();
+    set_output(&pool, &path, 1).await;
+    sqlx::query("UPDATE pads SET attestation_version = 2")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert!(read(&pool, &path).await.is_err());
+    assert!(read_output(&pool, &path).await.is_err());
 }
 
 #[tokio::test]

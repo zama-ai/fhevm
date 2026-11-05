@@ -15,9 +15,11 @@ CREATE TABLE IF NOT EXISTS pads
     ciphertext128_digest BYTEA NULL CHECK (OCTET_LENGTH(ciphertext128_digest) = 32),
     signer BYTEA NULL CHECK (OCTET_LENGTH(signer) = 20),
     signature BYTEA NULL CHECK (OCTET_LENGTH(signature) = 65),
+    -- The `version` of the signed attestation.
+    attestation_version SMALLINT NULL,
 
     PRIMARY KEY (prf_instance, label, pad_length),
-    CHECK (NUM_NULLS(ciphertext128, ciphertext_digest, ciphertext128_digest, signer, signature) IN (0, 5))
+    CHECK (NUM_NULLS(ciphertext128, ciphertext_digest, ciphertext128_digest, signer, signature, attestation_version) IN (0, 6))
 );
 
 CREATE INDEX IF NOT EXISTS idx_pads_pending_by_connector

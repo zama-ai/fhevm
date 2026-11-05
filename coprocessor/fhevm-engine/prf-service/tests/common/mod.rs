@@ -45,7 +45,7 @@ pub async fn set_output(pool: &PgPool, path: &PrfOutputRef, byte: u8) {
     let attestation = attestation(byte);
     sqlx::query(
         "UPDATE pads SET ciphertext128 = $4, ciphertext_digest = $5, ciphertext128_digest = $6,
-                signer = $7, signature = $8
+                signer = $7, signature = $8, attestation_version = $9
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
     )
     .bind(i32::from(path.prf_id))
@@ -56,6 +56,7 @@ pub async fn set_output(pool: &PgPool, path: &PrfOutputRef, byte: u8) {
     .bind(attestation.sns_ciphertext_digest.as_slice())
     .bind(attestation.signer.as_slice())
     .bind(&attestation.signature)
+    .bind(i16::from(u8::from(attestation.version)))
     .execute(pool)
     .await
     .unwrap();
