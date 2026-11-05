@@ -12,6 +12,10 @@ spec:
     metadata:
       labels:
         app: {{ .Release.Name }}-anvil-node
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- with .Values.nodeSelector }}
       nodeSelector:
