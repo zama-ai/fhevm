@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { sepolia } from '../chains/definitions/sepolia.js';
 import { mainnet } from '../chains/definitions/mainnet.js';
-import { pubKeyCrsVersionForChain } from './ProtocolVersionResolver-p.js';
+import { pubKeyCrsVersionForChain } from './pubKeyCrsVersionForChain-p.js';
 
 function makeChain(relayerUrl: string): typeof sepolia {
   return {
@@ -13,7 +13,7 @@ function makeChain(relayerUrl: string): typeof sepolia {
   };
 }
 
-describe('ProtocolVersionResolver', () => {
+describe('pubKeyCrsVersionForChain', () => {
   it('resolves the PubKey/CRS version served by known public relayers', () => {
     expect(pubKeyCrsVersionForChain(mainnet)).toEqual({
       version: '1.4.0-alpha.3',

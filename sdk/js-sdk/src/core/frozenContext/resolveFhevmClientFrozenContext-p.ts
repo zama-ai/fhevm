@@ -6,7 +6,7 @@ import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext
 import { addressToChecksummedAddress, asAddress } from '../base/address.js';
 import { executeWithBatching } from '../base/promise.js';
 import { assertIsHostContractVersionOf, getHostContractVersion } from '../host-contracts/HostContractVersion-p.js';
-import { pubKeyCrsVersionForChain } from '../runtime/ProtocolVersionResolver-p.js';
+import { pubKeyCrsVersionForChain } from '../runtime/pubKeyCrsVersionForChain-p.js';
 import { createFhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
