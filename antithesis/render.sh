@@ -7,8 +7,8 @@
 # (normalize below). Startup order is kapp change-groups, one per preview-env deploy
 # step, so `kapp deploy` waits the way the preview's `helm --wait` sequence does.
 #
-# Usage (repo root): antithesis/render.sh
-# Needs: helm, yq, jq, cast, kubectl (client only), and the hub.zama.org Helm login.
+# Usage (repo root): antithesis/render.sh, then antithesis/mirror-images.sh < antithesis/images.txt
+# Needs: helm, yq, jq, cast, kubectl (client only), openssl, and the hub.zama.org Helm login.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,19 +30,21 @@ S3=http://minio:9000
 MNEMONIC="test test test test test test test test test test test junk"
 
 cache="${here}/.cache"
-out="${here}/config/manifests"
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
-rm -rf "${out}"
+# Rendered into ${work} and moved into place at the end, so a failed or concurrent run
+# never leaves a partial manifest set behind.
+out="${work}/manifests"
 mkdir -p "${out}" "${cache}"
 
-kms_chart="${cache}/kms/charts/kms-core"
-if [[ ! -d "${kms_chart}" ]]; then
+kms_repo="${cache}/kms-${KMS_REF}"
+if [[ ! -d "${kms_repo}" ]]; then
   git clone --quiet --depth 1 --branch "${KMS_REF}" --filter=blob:none --sparse \
-    https://github.com/zama-ai/kms.git "${cache}/kms"
-  git -C "${cache}/kms" sparse-checkout set charts/kms-core ci/kube-testing ci/values
+    https://github.com/zama-ai/kms.git "${kms_repo}"
+  git -C "${kms_repo}" sparse-checkout set charts/kms-core ci/kube-testing ci/values
 fi
-kms_values="${cache}/kms/ci/kube-testing/kms"
+kms_chart="${kms_repo}/charts/kms-core"
+kms_values="${kms_repo}/ci/kube-testing/kms"
 
 # Wallets: anvil mode derives every role from the Foundry mnemonic. HD offsets as in
 # preview-env-deploy.yml: KMS tx-senders from 10, the coprocessor right after them.
@@ -61,8 +63,8 @@ coproc_wallets=$(jq -nc --arg a "$(wallet_addr "${coproc_key}")" --arg k "${copr
 # normalize <file> <change-group> [after-group...]
 # Fit rendered manifests to the Antithesis k3s cluster: namespace everything, order with
 # kapp, drop what only zws-dev has (karpenter pools, pull secrets, monitoring CRDs,
-# ingress), keep total requests under the 1 CPU / 10 GiB cluster cap (limits stay), and
-# point images at the Antithesis registry.
+# ingress), keep total requests under the 1 CPU / 10 GiB cluster cap (memory limits
+# stay, CPU limits go), and point images at the Antithesis registry.
 normalize() {
   local file="$1" group="$2"
   shift 2
@@ -97,16 +99,20 @@ normalize() {
             | .resources.requests = {"cpu": "10m", "memory": "64Mi"}
             | .env = ((.env // []) | map(select(.name != "NO_COLOR"))) + [{"name": "NO_COLOR", "value": "1"}]))
   ' "${file}"
-  # Same name mapping as mirror-images.sh.
-  local src
+  # Same name mapping as mirror-images.sh; the source refs are what it must copy.
+  local src dst
   while read -r src; do
-    SRC="${src}" DST="$(antithesis_image "${src}")" yq -i '
+    dst=$(antithesis_image "${src}")
+    echo "${src}" >>"${work}/images.txt"
+    SRC="${src}" DST="${dst}" yq -i '
       (select(.spec.template.spec != null)
         | (.spec.template.spec.containers[], .spec.template.spec.initContainers[]))
         |= select(.image == strenv(SRC)).image = strenv(DST)
     ' "${file}"
   done < <(yq -N '.spec.template.spec | (.containers[], .initContainers[]) | .image' "${file}" |
     sort -u | grep -v -e '^---$' -e '^null$' || true)
+  yq -i '(select(.spec.template.spec != null) | .spec.template.spec) |= del(.initContainers | select(. == []))' \
+    "${file}"
 }
 
 # render <release> <chart> <group> <after-groups (space-separated)> -- <helm args...>
@@ -245,7 +251,14 @@ static "${work}/kms-signers.yaml" kms-signers "kms kms-init"
 # coprocessor bucket is the in-cluster one.
 stub_bin="${work}/bin"
 mkdir -p "${stub_bin}"
-printf '#!/bin/sh\necho coproc-0\n' >"${stub_bin}/kubectl"
+# The only kubectl call wire-contracts-values.sh makes is the coprocessor bucket lookup.
+cat >"${stub_bin}/kubectl" <<'EOF'
+#!/bin/sh
+case "$*" in
+  "get configmap coprocessor-1 "*) echo coproc-0 ;;
+  *) echo "render.sh kubectl stub: unexpected call: kubectl $*" >&2; exit 1 ;;
+esac
+EOF
 chmod +x "${stub_bin}/kubectl"
 signer_stub=$(jq -c '[.[] | {party, signer: "0x0", caCert: "0x0"}]' <<<"${kms_wallets}")
 contracts_values() {
@@ -256,8 +269,9 @@ contracts_values() {
     COPROC_WALLETS_JSON="${coproc_wallets}" S3_ENDPOINT="${S3}/kms-public" KMS_CORE_TAG="${KMS_REF}" \
     PCR0=00 PCR1=00 PCR2=00 GITHUB_OUTPUT="${gh_out}" \
     bash ci/preview-env/scripts/deploy/wire-contracts-values.sh >/dev/null
-  local file
-  file=$(sed -n 's/^values_file=//p' "${gh_out}")
+  # The script writes to a fixed /tmp path; take a private copy right away.
+  local file="${work}/values-contracts-${target}.yaml"
+  cp "$(sed -n 's/^values_file=//p' "${gh_out}")" "${file}"
   BUCKET="${S3}/coproc-0" yq -i '
     del(.scDeploy.env[] | select(.name | test("^KMS_SIGNER_ADDRESS_|^KMS_NODE_CA_CERT_")))
     | (.scDeploy.env[] | select(.name == "COPROCESSOR_S3_BUCKET_URL_0")).value = strenv(BUCKET)
@@ -265,10 +279,13 @@ contracts_values() {
   ' "${file}"
   echo "${file}"
 }
+# Assigned first: set -e does not stop on a failure inside "$(...)" used as an argument.
+gateway_values=$(contracts_values gateway)
+host_values=$(contracts_values host)
 render gateway-contracts charts/contracts gateway-contracts "base kms-signers" -- \
-  -f "$(contracts_values gateway)" --set-string "scDeploy.image.tag=${FHEVM_TAG}"
+  -f "${gateway_values}" --set-string "scDeploy.image.tag=${FHEVM_TAG}"
 render host-contracts charts/contracts host-contracts gateway-contracts -- \
-  -f "$(contracts_values host)" --set-string "scDeploy.image.tag=${FHEVM_TAG}"
+  -f "${host_values}" --set-string "scDeploy.image.tag=${FHEVM_TAG}"
 render gateway-add-host-chains charts/contracts add-host-chains host-contracts -- \
   -f ci/preview-env/gateway-chain/values-gateway-add-host-chains-e2e.yaml \
   --set-string "scDeploy.image.tag=${FHEVM_TAG}"
@@ -346,33 +363,33 @@ done
 # kms-connector: contract addresses exist only after the contract Jobs. Rendered as
 # $(VAR) references that Kubernetes expands from env vars read from the address
 # ConfigMaps, including the ACL address inside KMS_CONNECTOR_HOST_CHAINS.
-tls="${cache}/kms-connector-proxy-tls"
-if [[ ! -f "${tls}/tls.crt" ]]; then
-  mkdir -p "${tls}"
-  sans=$(for i in $(seq 1 "${NB_KMS_CORE}"); do
-    s="kms-connector-${i}-kms-connector-proxy"
-    printf 'DNS:%s,DNS:%s.%s.svc,DNS:%s.%s.svc.cluster.local,' "${s}" "${s}" "${NAMESPACE}" "${s}" "${NAMESPACE}"
-  done)
-  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -pkeyopt ec_param_enc:named_curve \
-    -nodes -days 3650 \
-    -keyout "${tls}/tls.key" -out "${tls}/tls.crt" -subj "/CN=kms-connector-1-kms-connector-proxy" \
-    -addext "subjectAltName=${sans%,}" -addext "basicConstraints=critical,CA:TRUE" \
-    -addext "keyUsage=critical,digitalSignature,keyCertSign" -addext "extendedKeyUsage=serverAuth" 2>/dev/null
-fi
-{
-  kubectl create secret tls kms-connector-proxy-tls --cert="${tls}/tls.crt" --key="${tls}/tls.key" \
-    --dry-run=client -o yaml
-  for i in $(seq 1 "${NB_KMS_CORE}"); do
-    echo "---"
-    kubectl create secret generic "kms-connector-tx-sender-${i}" --dry-run=client -o yaml \
-      --from-literal=kms-wallet="$(jq -r --argjson p "${i}" '.[] | select(.party == $p) | .privateKey' <<<"${kms_wallets}")"
-  done
-} >"${work}/kms-connector-secrets.yaml"
+# Self-signed test cert for the connector proxy's HTTPS port, as deploy-kms-connector.sh
+# makes at deploy time; LibreSSL needs named_curve for Go to parse the key.
+sans=""
+for i in $(seq 1 "${NB_KMS_CORE}"); do
+  s="kms-connector-${i}-kms-connector-proxy"
+  sans="${sans}DNS:${s},DNS:${s}.${NAMESPACE}.svc,DNS:${s}.${NAMESPACE}.svc.cluster.local,"
+done
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -pkeyopt ec_param_enc:named_curve \
+  -nodes -days 3650 -keyout "${work}/tls.key" -out "${work}/tls.crt" \
+  -subj "/CN=kms-connector-1-kms-connector-proxy" -addext "subjectAltName=${sans%,}" \
+  -addext "basicConstraints=critical,CA:TRUE" -addext "keyUsage=critical,digitalSignature,keyCertSign" \
+  -addext "extendedKeyUsage=serverAuth" 2>"${work}/openssl.log" || { cat "${work}/openssl.log" >&2; exit 1; }
+kms_wallet() { jq -r --argjson p "$1" ".[] | select(.party == \$p) | .$2" <<<"${kms_wallets}"; }
+kubectl create secret tls kms-connector-proxy-tls --cert="${work}/tls.crt" --key="${work}/tls.key" \
+  --dry-run=client -o yaml >"${work}/kms-connector-secrets.yaml"
+for i in $(seq 1 "${NB_KMS_CORE}"); do
+  key=$(kms_wallet "${i}" privateKey)
+  echo "---" >>"${work}/kms-connector-secrets.yaml"
+  kubectl create secret generic "kms-connector-tx-sender-${i}" --dry-run=client -o yaml \
+    --from-literal=kms-wallet="${key}" >>"${work}/kms-connector-secrets.yaml"
+done
 static "${work}/kms-connector-secrets.yaml" app add-host-chains
 connector_values="${work}/values-kms-connector.yaml"
 cp ci/preview-env/kms-connector/values-kms-connector-e2e.yaml "${connector_values}"
 yq -i '.commonConfig.hostChains.ethereum.aclAddress = "$(ACL_ADDRESS)"' "${connector_values}"
 for i in $(seq 1 "${NB_KMS_CORE}"); do
+  tx_sender=$(kms_wallet "${i}" address)
   connector_images=()
   for c in DbMigration:db-migration GwListener:gw-listener KmsWorker:kms-worker TxSender:tx-sender \
     Endpoint:endpoint Proxy:proxy; do
@@ -388,7 +405,7 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
     --set-string "commonConfig.databaseUrl=postgresql://zama:zama@postgres-connector-${i}:5432/connector" \
     --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=http://kms-insecure-keygen-redirect-${i}:3000" \
     --set-string "kmsConnectorTxSender.wallet.secret.name=kms-connector-tx-sender-${i}" \
-    --set-string "kmsConnectorProxy.txSenderAddress=$(jq -r --argjson p "${i}" '.[] | select(.party == $p) | .address' <<<"${kms_wallets}")" \
+    --set-string "kmsConnectorProxy.txSenderAddress=${tx_sender}" \
     "${connector_images[@]}"
   # $(VAR) only expands from variables defined earlier in the list, so these go first.
   yq -i '
@@ -438,4 +455,17 @@ spec:
 EOF
 static "${work}/keys-ready.yaml" ready keygen
 
-echo "rendered $(ls "${out}" | wc -l | tr -d ' ') files into ${out}"
+# Every image anywhere in the output must come from the Antithesis registry.
+stray=$(yq -N '.. | select(tag == "!!map" and has("image")) | .image | select(tag == "!!str")' "${out}"/*.yaml |
+  grep -v -e "^${ANTITHESIS_REGISTRY}/" -e '^---$' || true)
+if [[ -n "${stray}" ]]; then
+  echo "images not rewritten to ${ANTITHESIS_REGISTRY}:" >&2
+  echo "${stray}" >&2
+  exit 1
+fi
+sort -u "${work}/images.txt" >"${here}/images.txt"
+rm -rf "${here}/config/manifests"
+mkdir -p "${here}/config"
+mv "${out}" "${here}/config/manifests"
+echo "rendered $(find "${here}/config/manifests" -name '*.yaml' | wc -l | tr -d ' ') files;" \
+  "images to mirror: antithesis/images.txt ($(wc -l <"${here}/images.txt" | tr -d ' '))"

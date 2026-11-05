@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copy linux/amd64 images into the Antithesis registry under the names render.sh writes.
-# Usage: mirror-images.sh < refs   (one source image ref per line; blank lines and # ignored)
+# Usage: mirror-images.sh < antithesis/images.txt   (written by render.sh; one source ref per line)
 # Needs `docker login` to the source registries and to us-central1-docker.pkg.dev.
 set -uo pipefail
 
