@@ -137,16 +137,17 @@ Runtime resolution is intentionally fixed:
 
 ## Targets
 
-- `latest-supported`: tracked maintained bundle profile (`profiles/latest-supported.json`)
-- `latest-main`: newest complete repo-owned main SHA bundle at or after the simple-ACL floor (`803f104`)
-- `sha`: exact repo-owned SHA bundle plus `latest-supported` companions
-- `devnet`
-- `testnet`
-- `mainnet`
+All targets except `latest-supported` resolve versions when you run them.
 
-Only `devnet`, `testnet`, and `mainnet` resolve from GitOps today. Non-network targets do not.
-`latest-main` is intentionally modern-only; if the resolver cannot find a complete image set after the floor, it fails instead of walking into older protocol behavior.
-`sha` requires `--sha <git-sha>` and resolves every repo-owned image to that 7-character SHA tag. The CLI does not query GitHub or prove branch ancestry for this target; Docker pull or boot-time validation reports missing images or incompatible stacks.
+| Target                           | Versions come from                                                                                                   | Needs                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `latest-main` (default)          | Newest `main` commit with a complete published image set, at or after the simple-ACL floor (`803f104`)               | `gh` with `read:packages`                    |
+| `sha` (with `--sha <git-sha>`)   | Images tagged with that commit; an image missing there falls back to the nearest ancestor that published it           | `gh` with `read:packages`                    |
+| `devnet` / `testnet` / `mainnet` | The deployed versions in GitOps (`zama-zws/gitops`, branch `main`)                                                   | `gh` with read access to `zama-zws/gitops`   |
+| `latest-supported`               | `profiles/latest-supported.json`, the only tracked profile                                                           | nothing (works offline)                      |
+
+- KMS core is not built from this repository: `latest-main` and `sha` take `CORE_VERSION` from a hand-maintained pin in `src/resolve/presets.ts`.
+- `latest-main` is intentionally modern-only; if the resolver cannot find a complete image set after the floor, it fails instead of walking into older protocol behavior.
 
 ## Pinning an Exact Version Bundle
 
