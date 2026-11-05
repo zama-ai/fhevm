@@ -147,7 +147,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         _storeAndActivateKmsContextAndEpoch(
             newContextId,
             EPOCH_COUNTER_BASE + 1,
-            initialKmsNodeParams,
+            _toKmsNodes(initialKmsNodeParams),
             initialThresholds
         );
 
@@ -196,11 +196,11 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         // is reached, so the (context, epoch) pair announced to connectors is correct by construction.
         uint256 previousContextId = $.latestActiveKmsContextId;
         uint256 contextId = $.currentKmsContextId + 1;
-        _storeKmsContext(contextId, kmsNodeParams, thresholds);
+        KmsNode[] memory nodes = _toKmsNodes(kmsNodeParams);
+        _storeKmsContext(contextId, nodes, thresholds);
         $.contextState[contextId] = ContextState.Pending;
 
         // Commit to the stored node set and thresholds. Both committees sign it in ContextCreationConfirmation.
-        KmsNode[] memory nodes = $.kmsNodesForContext[contextId];
         canonical$.nodeConfigHashForContext[contextId] = keccak256(abi.encode(nodes, thresholds));
 
         // Store context anchor and emit NewKmsContext event.
@@ -687,6 +687,22 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         bool epochPending = $.epochState[$.epochCounter] == EpochState.Pending;
         if (contextInFlight || epochPending) {
             revert KmsLifecycleOperationInFlight($.currentKmsContextId, $.epochCounter);
+        }
+    }
+
+    /**
+     * @dev Projects `kmsNodeParams` onto the stored KmsNode shape.
+     */
+    function _toKmsNodes(KmsNodeParams[] calldata kmsNodeParams) private pure returns (KmsNode[] memory nodes) {
+        nodes = new KmsNode[](kmsNodeParams.length);
+        for (uint256 i = 0; i < kmsNodeParams.length; i++) {
+            KmsNodeParams calldata params = kmsNodeParams[i];
+            nodes[i] = KmsNode({
+                txSenderAddress: params.txSenderAddress,
+                signerAddress: params.signerAddress,
+                ipAddress: params.ipAddress,
+                storageUrl: params.storageUrl
+            });
         }
     }
 
