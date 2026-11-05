@@ -25,7 +25,9 @@ use pingora::{
 use tracing::{Span, error, info};
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-// The `X-Forwarded-*` headers set by the proxy (any inbound value is dropped first).
+// The `X-Forwarded-*` headers set by the proxy (any inbound value is dropped first). They describe
+// the connection received by the proxy: behind a TLS-terminating layer (TLS disabled), that is the
+// connection from that layer, not from the original client.
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto");
 // Client-supplied forwarding header the proxy never sets but must not forward either.
@@ -310,7 +312,7 @@ impl ProxyHttp for Proxy {
         if let Some(addr) = session.client_addr().and_then(|a| a.as_inet()) {
             upstream_request.insert_header(X_FORWARDED_FOR, addr.ip().to_string())?;
         }
-        upstream_request.insert_header(X_FORWARDED_PROTO, "https")?;
+        upstream_request.insert_header(X_FORWARDED_PROTO, self.config.scheme())?;
         Ok(())
     }
 
