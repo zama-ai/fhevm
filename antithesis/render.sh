@@ -67,7 +67,8 @@ coproc_wallets=$(jq -nc --arg a "$(wallet_addr "${coproc_key}")" --arg k "${copr
 # Fit rendered manifests to the Antithesis k3s cluster: namespace everything, order with
 # kapp, drop what only zws-dev has (karpenter pools, pull secrets, monitoring CRDs,
 # ingress), keep total requests under the 1 CPU / 10 GiB cluster cap (memory limits
-# stay, CPU limits go), and point images at the Antithesis registry.
+# stay; CPU and ephemeral-storage limits go, since a limit with no request becomes the
+# request and the node's disk is small), and point images at the Antithesis registry.
 normalize() {
   local file="$1" group="$2"
   shift 2
@@ -100,7 +101,7 @@ normalize() {
             + [{"name": "aws-lc-sysgenid", "configMap": {"name": "aws-lc-sysgenid"}}]
         | (.containers[], .initContainers[]) |= (
             .imagePullPolicy = "IfNotPresent"
-            | del(.resources.limits.cpu)
+            | del(.resources.limits.cpu, .resources.limits["ephemeral-storage"])
             | .resources.requests = {"cpu": "10m", "memory": "64Mi"}
             | .env = ((.env // []) | map(select(.name != "NO_COLOR"))) + [{"name": "NO_COLOR", "value": "1"}]
             | .volumeMounts = ((.volumeMounts // []) | map(select(.name != "aws-lc-sysgenid")))
