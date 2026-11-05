@@ -19,7 +19,6 @@ import type {
   BytesHex,
   ChecksummedAddress,
   Uint16Number,
-  Uint32Number,
   Uint64BigInt,
   Uint8Number,
 } from '../../types/primitives.js';
@@ -253,15 +252,6 @@ export type PadWitness = {
   readonly padLength: Uint16Number;
 };
 
-/** One pad share, keyed by label (`PadShare`). */
-export type PadShare = {
-  readonly label: Bytes32Hex;
-  /** 16 bytes: the MPC session that produced this share. */
-  readonly sessionId: BytesHex;
-  /** This node's share of the label's encrypted pad: a sequence of ring elements. */
-  readonly share: BytesHex;
-};
-
 export type FetchPadSharesParameters = {
   readonly payload: {
     /** RFC-016 signed struct (`PadDecryptRequest.auth`). */
@@ -270,7 +260,7 @@ export type FetchPadSharesParameters = {
     readonly kmsDecryptEip712Signature: BytesHex;
     /** Shared witness fields, fixed for the whole request. */
     readonly witnessVersion: Uint8Number;
-    readonly prf: Uint16Number;
+    readonly prfId: Uint16Number;
     readonly chainId: Uint64BigInt;
     /** One entry per pad. */
     readonly witnesses: readonly PadWitness[];
@@ -281,15 +271,16 @@ export type FetchPadSharesParameters = {
 
 /**
  * One KMS node's answer to a pad decryption request (`PadDecryptResponse` in
- * RFC-030). `requestId` and `partyId` are unauthenticated routing hints; the
- * authenticated content is inside `encrypted`, i.e.
- * `HybridEncrypt_user(PadDecryptResponsePayload ‖ signature)`, which only the
- * holder of the request's transport private key can open.
+ * RFC-030). The node is identified by its signatures, not by a field: the
+ * transport signature covers `requestId` and `encryptedPayload`
+ * (`CompositeEncrypt_user(PadDecryptResponsePayload)`), and every share inside
+ * carries its own signature.
  */
 export type PadDecryptResponse = {
   readonly requestId: Bytes32Hex;
-  readonly partyId: Uint32Number;
-  readonly encrypted: BytesHex;
+  readonly encryptedPayload: BytesHex;
+  /** EIP-712 transport signature over `PadDecryptResponseVerification`. */
+  readonly signature: BytesHex;
 };
 
 /** One response per KMS node that answered; order carries no meaning. */
