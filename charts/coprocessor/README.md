@@ -54,11 +54,12 @@ Set these to the prf-service **pod** ports, which may differ from the Service po
 `prfServiceNetworkPolicy.extraIngress`, with both `from` and `ports`, for example
 `ports: [{port: 9100}]` for metrics. Rendering fails on a rule without `from`, which would admit
 every source, on a rule without `ports`, which would admit its sources on every port, and on a
-rule that lists a port of `prfServiceNetworkPolicy.ports`: prf-service trusts the proxy's
-`X-Fhevm-Signer` header, so only the proxy may reach that port. Isolation requires a CNI that enforces NetworkPolicy and no other policy
-granting broader access: Kubernetes policies are additive. A `podSelector` that matches no
-prf-service pod, for example after a typo or a label change, renders without error and leaves
-prf-service open. After each deployment, check from a pod that is not the proxy that prf-service's
+rule whose port, or `port` to `endPort` range, covers a port of `prfServiceNetworkPolicy.ports`:
+prf-service trusts the proxy's `X-Fhevm-Signer` header, so only the proxy may reach that port.
+Ports must be numbers on both sides: the chart cannot tell which pod port a named port maps to.
+Isolation requires a CNI that enforces NetworkPolicy and no other policy granting broader access:
+Kubernetes policies are additive. A `podSelector` that matches no prf-service pod, for example
+after a typo or a label change, renders without error and leaves prf-service open. After each deployment, check from a pod that is not the proxy that prf-service's
 port refuses the connection, as `ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh` does.
 
 The proxy reads the signers at the latest finalized block. It checks that block every 5 s
