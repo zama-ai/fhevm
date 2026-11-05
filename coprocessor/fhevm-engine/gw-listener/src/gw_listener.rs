@@ -243,6 +243,17 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                         "Gateway progress changed; reload scan state"
                     );
 
+                    // A replica may have died after creating a replay generation.
+                    // Adopt its bounded prefix without incrementing the generation,
+                    // including when the Gateway is idle. Drain the obligation before
+                    // advancing/pruning the live cursor.
+                    if let Some(replay) = chain_recovery::pending_replay(
+                        db_pool, ListenerSource::Gateway, progress.gcs_mode, gateway_chain_id,
+                    ).await? {
+                        self.replay_proof_chunk(db_pool, &progress, gateway_chain_id, &replay).await?;
+                        continue;
+                    }
+
                     self.refresh_registry_if_due(db_pool, &mut next_registry_refresh).await;
 
                     let current_block = self.provider.get_block_number().await.inspect(|_| {
@@ -617,7 +628,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         Ok(())
     }
 
-    /// Replay at most the last 64 committed Gateway blocks on startup. This
+    /// Request the last 64 committed Gateway blocks on startup and process
+    /// one bounded prefix of any adopted obligation. The steady loop drains
+    /// the remainder without discarding older pending work. This
     /// repairs recoverable omissions only when their canonical identities
     /// still match; a changed checkpoint creates a durable containment halt.
     async fn replay_proof_window(
@@ -640,14 +653,24 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             to_block,
         )
         .await?;
+        self.replay_proof_chunk(pool, progress, gateway_chain_id, &replay)
+            .await
+    }
+
+    async fn replay_proof_chunk(
+        &self,
+        pool: &Pool<Postgres>,
+        progress: &ListenerProgress,
+        gateway_chain_id: i64,
+        replay: &chain_recovery::ReplayProgress,
+    ) -> anyhow::Result<()> {
         anyhow::ensure!(
-            replay.from_block >= 0
-                && replay.to_block >= replay.from_block
-                && replay.to_block - replay.from_block < 64,
-            "pending Gateway replay exceeds the 64-block recovery bound"
+            replay.from_block >= 0 && replay.to_block >= replay.from_block,
+            "invalid pending Gateway replay range"
         );
+        let chunk_to = replay.to_block.min(replay.from_block.saturating_add(63));
         let mut batch_from = u64::try_from(replay.from_block)?;
-        let replay_to = u64::try_from(replay.to_block)?;
+        let replay_to = u64::try_from(chunk_to)?;
         let mut replayed_logs = 0_u64;
         while batch_from <= replay_to {
             let batch_to = std::cmp::min(
@@ -688,15 +711,15 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
             progress.gcs_mode,
             gateway_chain_id,
             replay.from_block,
-            replay.to_block,
+            chunk_to,
             replay.generation,
         )
         .await?;
         info!(
             from_block = replay.from_block,
-            to_block = replay.to_block,
+            to_block = chunk_to,
             replayed_logs,
-            "Completed bounded Gateway proof-history replay"
+            "Completed bounded Gateway proof-history replay chunk"
         );
         Ok(())
     }
@@ -1571,7 +1594,10 @@ async fn update_listener_progress(
     sqlx::query(
         "DELETE FROM public.listener_block_checkpoints
          WHERE source = 'gateway' AND stack_role = $1 AND chain_id = $2
-           AND block_number < $3",
+           AND block_number < LEAST($3, COALESCE((
+               SELECT GREATEST(from_block - 1, 0) FROM public.listener_replay_state
+               WHERE source = 'gateway' AND stack_role = $1 AND chain_id = $2 AND pending
+           ), $3))",
     )
     .bind(chain_recovery::stack_role(role))
     .bind(chain_id)
@@ -1687,6 +1713,139 @@ mod tests {
     use test_harness::instance::ImportMode;
 
     use super::*;
+
+    #[tokio::test]
+    async fn adopted_gateway_replay_drains_in_chunks_and_retains_anchors() -> anyhow::Result<()> {
+        use alloy::{
+            node_bindings::Anvil,
+            providers::{ext::AnvilApi, ProviderBuilder},
+        };
+        use chain_recovery::{begin_replay, pending_replay};
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let pool = Pool::<Postgres>::connect(instance.db_url()).await?;
+        let anvil = Anvil::new().chain_id(12345).try_spawn()?;
+        let provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
+        provider.anvil_mine(Some(110), None).await?;
+        let conf = ConfigSettings::default();
+        let listener = GatewayListener::new(
+            Address::ZERO,
+            conf.clone(),
+            CancellationToken::new(),
+            provider,
+        );
+        let initial = get_listener_progress(&pool, false, 12345).await?;
+        listener.pin_log_range(&pool, 12345, 36, 110, &[]).await?;
+        let mut count = 0;
+        let mut progress = update_listener_progress(
+            &pool,
+            &conf,
+            false,
+            12345,
+            ListenerProgress {
+                last_processed_block_num: Some(100),
+                ..initial
+            },
+            &mut count,
+        )
+        .await?;
+        begin_replay(&pool, ListenerSource::Gateway, false, 12345, 37, 100).await?;
+        // A surviving replica advances while the replay owner is gone. This
+        // must retain the unfinished range's anchor even outside the window.
+        progress = update_listener_progress(
+            &pool,
+            &conf,
+            false,
+            12345,
+            ListenerProgress {
+                last_processed_block_num: Some(110),
+                ..progress
+            },
+            &mut count,
+        )
+        .await?;
+        assert!(
+            chain_recovery::checkpoint_hash(&pool, ListenerSource::Gateway, false, 12345, 36)
+                .await?
+                .is_some()
+        );
+        listener
+            .replay_proof_window(&pool, &progress, 12345)
+            .await?;
+        let remainder = pending_replay(&pool, ListenerSource::Gateway, false, 12345)
+            .await?
+            .expect("second chunk remains durable");
+        assert_eq!((remainder.from_block, remainder.to_block), (101, 110));
+        // No new startup generation is necessary: the same steady-state
+        // adoption path can finish an abandoned replay on an idle Gateway.
+        listener
+            .replay_proof_chunk(&pool, &progress, 12345, &remainder)
+            .await?;
+        assert!(pending_replay(&pool, ListenerSource::Gateway, false, 12345)
+            .await?
+            .is_none());
+        assert!(!chain_recovery::readiness_blocked(&pool).await?);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn idle_gateway_adopts_replay_abandoned_after_startup() -> anyhow::Result<()> {
+        use alloy::{
+            node_bindings::Anvil,
+            providers::{ext::AnvilApi, ProviderBuilder},
+        };
+        let instance = test_harness::instance::setup_test_db(ImportMode::None)
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}"))?;
+        let pool = Pool::<Postgres>::connect(instance.db_url()).await?;
+        let anvil = Anvil::new().chain_id(12345).try_spawn()?;
+        let provider = ProviderBuilder::new().connect_http(anvil.endpoint_url());
+        provider.anvil_mine(Some(110), None).await?;
+        let token = CancellationToken::new();
+        let listener = GatewayListener::new(
+            Address::ZERO,
+            ConfigSettings {
+                get_logs_poll_interval: Duration::from_millis(20),
+                ..Default::default()
+            },
+            token.clone(),
+            provider,
+        );
+        let worker_pool = pool.clone();
+        let worker = tokio::spawn(async move { listener.run(worker_pool).await });
+        let observed = tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                let cursor: Option<Option<i64>> = sqlx::query_scalar(
+                    "SELECT last_block_num FROM gw_listener_last_block WHERE dummy_id",
+                )
+                .fetch_optional(&pool)
+                .await?;
+                if cursor.flatten() == Some(110) {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            chain_recovery::begin_replay(&pool, ListenerSource::Gateway, false, 12345, 47, 110)
+                .await?;
+            loop {
+                if chain_recovery::pending_replay(&pool, ListenerSource::Gateway, false, 12345)
+                    .await?
+                    .is_none()
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            Ok::<_, anyhow::Error>(())
+        })
+        .await;
+        token.cancel();
+        tokio::time::timeout(Duration::from_secs(5), worker).await???;
+        observed??;
+        assert!(!chain_recovery::readiness_blocked(&pool).await?);
+        Ok(())
+    }
 
     fn drift_detector() -> DriftDetector {
         DriftDetector::new(

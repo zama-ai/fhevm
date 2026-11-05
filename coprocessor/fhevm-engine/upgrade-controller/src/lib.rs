@@ -4473,9 +4473,16 @@ mod tests {
     #[tokio::test]
     async fn green_schema_reset_invalidates_only_green_replay() {
         use fhevm_engine_common::chain_recovery::{begin_replay, pending_replay, ListenerSource};
-        let (_db, pool) = test_pool().await;
+        let (db, pool) = test_pool().await;
         create_gcs_schema(&pool).await.unwrap();
-        begin_replay(&pool, ListenerSource::Host, true, 42, 1, 64)
+        let green = Pool::<Postgres>::connect_with(
+            fhevm_engine_common::database::apply_gcs_mode_search_path(true)(
+                db.db_url().parse().unwrap(),
+            ),
+        )
+        .await
+        .unwrap();
+        begin_replay(&green, ListenerSource::Host, true, 42, 1, 64)
             .await
             .unwrap();
         begin_replay(&pool, ListenerSource::Host, false, 42, 1, 64)

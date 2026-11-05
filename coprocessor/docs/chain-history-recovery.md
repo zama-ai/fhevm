@@ -192,14 +192,18 @@ the per-chain history lock. Checkpoint admission and cursor updates share the
 cutover fence. A random cursor revision prevents a range fetched before a
 rewind or promotion from committing an obsolete watermark. The listener keeps
 the current cursor and its preceding 64 blocks; the extra anchor supports the
-64-block restart replay.
+64-block restart replay. An unfinished replay retains its older checkpoints
+and predecessor anchor until that obligation is completed.
 
 On startup, a nonzero cursor without a checkpoint is treated as an unverified
 legacy baseline and halts for operator recovery. With a verified cursor, the
-listener replays at most the last 64 blocks of InputVerification request and
-final response events. Matching history is safe to replay through the existing
-idempotent proof handlers. The pending replay is durable; readiness and cutover
-remain closed until it completes. A changed checkpoint or parent records the
+listener requests the last 64 blocks of InputVerification request and final
+response events, retaining any older unfinished range. Startup and the steady
+loop process that obligation in chunks of at most 64 blocks; a surviving
+replica can adopt it without creating a new generation, even on an idle chain.
+Matching history is safe to replay through the existing idempotent proof
+handlers. Readiness and cutover remain closed until the durable obligation
+completes. Completion retains its original stack role across promotion. A changed checkpoint or parent records the
 expected and observed hashes in `public.chain_recovery_halts`, revokes the
 Gateway dry-run latch, closes readiness and prevents cursor advancement. The
 listener does not delete or replace an existing proof row: the service cannot

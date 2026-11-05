@@ -501,7 +501,10 @@ pub async fn begin_replay(
     else {
         anyhow::bail!("chain recovery or stack lifecycle blocks replay progress");
     };
-    let gcs_mode = source_role_tx(&mut tx, source).await?;
+    anyhow::ensure!(
+        source_role_tx(&mut tx, source).await? == gcs_mode,
+        "replay owner changed; reload the listener cursor"
+    );
     lock_history_tx(&mut tx, source, gcs_mode, chain_id).await?;
     let progress =
         begin_replay_tx(&mut tx, source, gcs_mode, chain_id, from_block, to_block).await?;
@@ -558,7 +561,10 @@ pub async fn complete_replay(
     else {
         anyhow::bail!("chain recovery or stack lifecycle blocks replay progress");
     };
-    let gcs_mode = source_role_tx(&mut tx, source).await?;
+    // This is the owner captured when the generation was created, not a
+    // routing hint. Promotion may have redirected the pool to Blue while a
+    // Green replica was replaying. Independent role counters can have the
+    // same generation, so resolving the role again could complete Blue's work.
     lock_history_tx(&mut tx, source, gcs_mode, chain_id).await?;
     let changed = sqlx::query(
         "UPDATE public.listener_replay_state
