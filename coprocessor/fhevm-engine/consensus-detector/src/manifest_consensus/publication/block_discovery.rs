@@ -583,6 +583,7 @@ pub(crate) async fn lock_next_block_to_progress_for_consensus_epoch(
     {
         return Ok(None);
     }
+    set_local_selection_joins(trx, false).await?;
     let result = sqlx::query!(
         r#"
         WITH RECURSIVE blocked_descendants AS (
@@ -673,6 +674,7 @@ pub(crate) async fn lock_next_block_to_progress_for_consensus_epoch(
     // may legitimately issue several ordinary queries in this transaction.
     if result.is_ok() {
         set_local_statement_timeout(trx, Duration::ZERO).await?;
+        set_local_selection_joins(trx, true).await?;
     }
     let row = result?;
 
@@ -700,6 +702,30 @@ pub(super) async fn set_local_statement_timeout(
     sqlx::query!("SELECT set_config('statement_timeout', $1, TRUE)", timeout)
         .fetch_one(trx.as_mut())
         .await?;
+    Ok(())
+}
+
+/// The planner cannot size the recursive blocked set, so by default it hashes
+/// every `block_manifest_state` row of all consensus epochs to expand it (2.6 s
+/// with 12k unsealed BSC blocks). Without hash and merge joins it follows
+/// `idx_block_manifest_state_parent` from each blocked row instead (0.2 s).
+/// Re-enabled after the selector so manifest preparation keeps its plans.
+/// JIT stays off for the transaction: the resulting cost estimate (millions)
+/// would compile a 1 ms selection on every call where JIT is available
+/// (0.6–0.9 s on a local Postgres 15).
+async fn set_local_selection_joins(
+    trx: &mut Transaction<'_, Postgres>,
+    enabled: bool,
+) -> Result<(), ExecutionError> {
+    let value = if enabled { "on" } else { "off" };
+    sqlx::query(
+        "SELECT set_config('enable_hashjoin', $1, TRUE),
+                set_config('enable_mergejoin', $1, TRUE),
+                set_config('jit', 'off', TRUE)",
+    )
+    .bind(value)
+    .fetch_one(trx.as_mut())
+    .await?;
     Ok(())
 }
 

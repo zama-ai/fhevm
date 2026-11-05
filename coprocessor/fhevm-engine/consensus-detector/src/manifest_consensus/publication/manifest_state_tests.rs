@@ -1209,6 +1209,33 @@ async fn transient_manifest_publication_errors_exhaust_the_finite_retry_budget()
 
 #[tokio::test]
 #[serial(db)]
+async fn manifest_work_selection_restores_the_join_settings() {
+    let (_instance, pool) = setup_pool().await;
+    insert_manifest_state(&pool, 30, &[0x30; 32], &[0x29; 32]).await;
+    let mut trx = pool.begin().await.expect("begin selection transaction");
+
+    assert!(
+        lock_next_block_to_progress(&mut trx, CHAIN_ID, &ManifestProgressCursor::start())
+            .await
+            .expect("select manifest work")
+            .is_some()
+    );
+    let settings: (String, String) = sqlx::query_as(
+        "SELECT current_setting('enable_hashjoin'), current_setting('enable_mergejoin')",
+    )
+    .fetch_one(trx.as_mut())
+    .await
+    .expect("read join settings");
+    assert_eq!(
+        settings,
+        ("on".to_owned(), "on".to_owned()),
+        "the selector's join settings must not leak into preparation"
+    );
+    trx.rollback().await.expect("roll back selection");
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn local_statement_timeout_bounds_manifest_work_selection() {
     let (_instance, pool) = setup_pool().await;
     let mut trx = pool
