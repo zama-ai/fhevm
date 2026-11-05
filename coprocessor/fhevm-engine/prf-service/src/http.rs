@@ -29,7 +29,7 @@ use std::{
     time::Duration,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
+use tracing::{info, warn};
 
 /// The signer that coprocessor-proxy verified with `FhevmSig`. The proxy drops a client copy of it.
 pub use fhevm_sig_auth::SIGNER_HEADER;
@@ -98,7 +98,7 @@ async fn serve(req: &HttpRequest, state: &AppState) -> Result<HttpResponse, PrfE
     if !instance::is_known(path.prf_id) {
         return Err(PrfError::UnknownPrf);
     }
-    debug!(prf = path.prf_id, label = %path.label, pad_length = path.pad_length, %connector, "PRF output request");
+    info!(prf = path.prf_id, label = %path.label, pad_length = path.pad_length, %connector, "PRF output request");
 
     // Held until the request ends, also when the client disconnects.
     let _in_flight = state
@@ -119,7 +119,10 @@ async fn serve(req: &HttpRequest, state: &AppState) -> Result<HttpResponse, PrfE
     };
     let output = match pad {
         PadState::Complete(output) => output,
-        PadState::Failed => return Err(PrfError::EvaluationFailed),
+        PadState::Failed => {
+            warn!(prf = path.prf_id, label = %path.label, pad_length = path.pad_length, %connector, "PRF output row failed");
+            return Err(PrfError::EvaluationFailed);
+        }
         // `wait` returns only a complete or failed row.
         PadState::Pending => return Err(PrfError::Unavailable),
     };
