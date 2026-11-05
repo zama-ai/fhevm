@@ -776,6 +776,10 @@ That is intended. The coprocessor runtime services carry `restart: "on-failure:1
 
 `on-failure` and not `unless-stopped`: a clean exit 0 is a service that meant to finish (a retired stack after cutover, a `--stack-version` probe) and restarting it would loop. Docker also treats `docker kill` and `docker stop` as manual and suppresses the policy for both, so fault injection still holds a service down until you start it again. The bound of 10 limits automatic retry attempts; the harness resets the budget with an explicit stop/start before arming the next fault.
 
+**`up` times out waiting for `coprocessor-prf-service`**
+
+Its `/healthz` answers 503 until its `prf_service` database role can read and insert into `pads`. The database's initdb script creates that role only when the `db` volume is created, so a volume from a stack started before the role existed never gets it. Run `./fhevm-cli down`, which removes the volumes, and start again.
+
 **Services exit silently shortly after startup (e.g. `coprocessor-zkproof-worker`)**
 
 This is usually a Docker memory limit. The stack requires at least 16 GB allocated to Docker. Scenarios with both multiple chains and multiple coprocessors need 32 GB.
