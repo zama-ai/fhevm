@@ -126,6 +126,16 @@ impl Proxy {
         let domain =
             fhevm_sig_auth::domain(config.ethereum_chain_id, config.protocol_config_address);
         let verifier = FhevmSigVerifier::new(domain, config.coprocessor_signer_address, signers);
+        let limit = |max: usize| match max {
+            0 => "off".to_string(),
+            max => max.to_string(),
+        };
+        info!(
+            request_head_timeout = ?config.request_head_timeout,
+            max_connections_per_ip = %limit(config.max_connections_per_ip),
+            max_pending_handshakes_per_ip = %limit(config.max_pending_handshakes_per_ip),
+            "Client limits"
+        );
         let client_limits = Arc::new(ClientLimits::new(
             config.request_head_timeout,
             config.max_connections_per_ip,
