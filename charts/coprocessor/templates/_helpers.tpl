@@ -38,6 +38,10 @@ Usage: include "coprocessor.versionedName" (dict "root" $ "name" "eth-sc-address
 {{- include "coprocessor.versionedName" (dict "root" . "name" .Values.polygonContractConfigMap.name) -}}
 {{- end -}}
 
+{{- define "coprocessor.bnbContractConfigMapName" -}}
+{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.bnbContractConfigMap.name) -}}
+{{- end -}}
+
 {{/*
 Renders a valueFrom block (or env list) through tpl so values can reference
 chart helpers, e.g. name: '{{ include "coprocessor.hostContractConfigMapName" . }}'.
