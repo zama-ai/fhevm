@@ -76,8 +76,12 @@ jobs:
       # 5b. Resolve release metadata (version + dist-tag) from the tag
       #     Tag naming convention (source of truth — the GH "pre-release"
       #     checkbox is ignored):
-      #         vX.Y.Z    → official release   → npm dist-tag "latest"
+      #         vX.Y.Z    → official release   → npm dist-tag "next"
       #         vX.Y.Z-A  → release candidate  → npm dist-tag "alpha"
+      #     Official releases publish under "next" so the "latest" dist-tag is
+      #     never moved automatically — promotion to "latest" is done manually
+      #     with `npm dist-tag add @fhevm/sdk@X.Y.Z latest` once the release
+      #     has been validated.
       #     The version is derived from the tag (strip leading "v"),
       #     sdk/js-sdk/src/package.json is patched in place, and the dist-tag
       #     is exposed as a step output consumed by the publish step below.
@@ -92,7 +96,7 @@ jobs:
           set -euo pipefail
           if [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             version="${BASH_REMATCH[1]}"
-            dist_tag="latest"
+            dist_tag="next"
           elif [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+)$ ]]; then
             version="${BASH_REMATCH[1]}"
             dist_tag="alpha"
