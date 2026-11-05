@@ -55,8 +55,8 @@ spec:
               steps=(
                 "setup: S3 buckets provisioned|job_done minio-provision"
                 "setup: KMS signers discovered|cm kms-signers"
-                "setup: gateway contracts deployed|cm gw-sc-addresses"
-                "setup: host contracts deployed|cm host-sc-addresses"
+                "setup: gateway contracts deployed|job_done gateway-contracts-deploy && cm gw-sc-addresses"
+                "setup: host contracts deployed|job_done host-contracts-deploy && cm host-sc-addresses"
                 "setup: host chain registered on the gateway|job_done gateway-add-host-chains-deploy"
                 "setup: KMS key and CRS activated on-chain|job_done host-trigger-keygen-deploy"
                 "setup: coprocessor holds the activated key|job_done coprocessor-keys-ready"
@@ -67,4 +67,3 @@ spec:
                 assert true "${s%%|*}" "$(jq -cn --arg d "${details}" \
                   '$d | try fromjson catch {} | with_entries(select(.key | test("CA_CERT") | not))')"
               done
-              echo '{"antithesis_setup":{"status":"complete","details":{"message":"coprocessor holds the activated key"}}}' >>"${out}"

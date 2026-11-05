@@ -204,7 +204,7 @@ minio: {endpoint: "${S3}"}
 EOF
 for i in $(seq 1 "${NB_KMS_CORE}"); do
   render "kms-core-${i}" "${kms_chart}" kms "s3" -- \
-    -f "${kms_values}/values-kms-test.yaml" -f "${cache}/kms/ci/values/overrides/dev-minimal.yaml" \
+    -f "${kms_values}/values-kms-test.yaml" -f "${kms_repo}/ci/values/overrides/dev-minimal.yaml" \
     -f "${peers}" -f "${kms_overlay}" \
     --set "kmsPeers.id=${i}" --set "kmsCore.thresholdMode.thresholdValue=1" \
     --set "kmsCore.publicVault.s3.prefix=PUB-p${i}" --set "kmsCore.privateVault.s3.prefix=PRIV-p${i}" \
