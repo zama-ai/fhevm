@@ -411,19 +411,16 @@ fn populate_operand_boundary_masks_with_prior(
     Ok(())
 }
 
-/// Reconstruct executor-minted inputs produced by an earlier delivery batch
-/// of the same transaction. A producer also present in this delivery is left
-/// to the ordered in-memory pass above, which handles both producer-before-
-/// consumer and consumer-before-producer correctly during full replay.
+/// Reconstruct executor-minted inputs produced by an earlier delivery of the
+/// same block and transaction. A repeated mint later in this delivery does not
+/// invalidate an earlier persisted mint, so query all requested operands.
 async fn persisted_prior_minted_outputs(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     chain_id: ChainId,
     logs: &[LogTfhe],
 ) -> Result<HashMap<(TransactionHash, EventHandle), u64>, sqlx::Error> {
-    use std::collections::HashSet;
-
-    let mut outputs_in_delivery = HashSet::new();
-    let mut latest_consumer = HashMap::new();
+    let mut consumers = HashMap::new();
+    let mut first_mint = HashMap::new();
     for log in logs
         .iter()
         .filter(|log| !tfhe_result_handles(&log.event).is_empty())
@@ -436,29 +433,37 @@ async fn persisted_prior_minted_outputs(
             continue;
         };
         if log.is_executor_minted {
-            outputs_in_delivery.extend(
-                tfhe_result_handles(&log.event)
-                    .into_iter()
-                    .map(|handle| (transaction_hash, handle)),
-            );
+            for handle in tfhe_result_handles(&log.event) {
+                first_mint
+                    .entry((transaction_hash, handle))
+                    .and_modify(|first: &mut u64| {
+                        *first = (*first).min(log_index)
+                    })
+                    .or_insert(log_index);
+            }
         }
         for (_, handle) in tfhe_encrypted_operand_positions(&log.event) {
             let key = (transaction_hash, handle);
-            if outputs_in_delivery.contains(&key) {
-                continue;
-            }
-            latest_consumer
+            consumers
                 .entry(key)
-                .and_modify(|last: &mut u64| *last = (*last).max(log_index))
-                .or_insert(log_index);
+                .and_modify(|(first, last): &mut (u64, u64)| {
+                    *first = (*first).min(log_index);
+                    *last = (*last).max(log_index);
+                })
+                .or_insert((log_index, log_index));
         }
     }
 
-    // Outputs in this delivery are reconstructed from its ordered logs. For
-    // remaining encrypted operands, look up only the exact (transaction,
-    // handle) pairs instead of scanning every computation in the transaction.
-    let mut requested = latest_consumer.into_iter().collect::<Vec<_>>();
-    requested.retain(|(key, _)| !outputs_in_delivery.contains(key));
+    // A producer preceding every consumer in this delivery needs no DB lookup.
+    // A later repeated mint still needs persisted prefix evidence for earlier
+    // consumers. Look up only the remaining exact (transaction, handle) pairs.
+    let mut requested = consumers
+        .into_iter()
+        .filter(|(key, (first, _))| {
+            first_mint.get(key).is_none_or(|mint| mint >= first)
+        })
+        .map(|(key, (_, last))| (key, last))
+        .collect::<Vec<_>>();
     if requested.is_empty() {
         return Ok(HashMap::new());
     }
@@ -512,13 +517,15 @@ async fn persisted_prior_minted_outputs(
            ON c.transaction_id = r.transaction_id
           AND c.output_handle = r.output_handle
           AND c.host_chain_id = $4
-          AND c.block_number = $5",
+          AND c.block_number = $5
+          AND c.log_index_block_hash = $6",
     )
     .bind(transaction_ids)
     .bind(output_handles)
     .bind(consumer_indexes)
     .bind(chain_id.as_i64())
     .bind(block_number)
+    .bind(logs[0].block_hash.as_slice())
     .fetch_all(&mut **tx)
     .await?;
 
@@ -644,7 +651,8 @@ async fn persisted_boundary_chains(
                AND c.dependence_chain_id IS NOT NULL
                AND c.transaction_id <> r.transaction_id
                AND (c.block_number < $5
-                    OR (c.block_number = $5 AND c.log_index < r.log_index))
+                    OR (c.block_number = $5 AND c.log_index_block_hash = $6
+                        AND c.log_index < r.log_index))
              ORDER BY c.is_completed, c.schedule_order, c.transaction_id
              LIMIT 1
          ) p",
@@ -654,6 +662,7 @@ async fn persisted_boundary_chains(
     .bind(indexes)
     .bind(chain_id.as_i64())
     .bind(block_number)
+    .bind(logs[0].block_hash.as_slice())
     .fetch_all(&mut **tx)
     .await?;
 
@@ -3109,7 +3118,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ingestion_preserves_legacy_scalar_values_and_rejects_typed_zero() {
+    fn ingestion_preserves_legacy_scalar_values_and_versions_typed_zero() {
         let mut result = [0_u8; 32];
         result[21] = COMPUTED_HANDLE_INDEX_MARKER;
         result[22..30].copy_from_slice(&1_u64.to_be_bytes());
@@ -3154,10 +3163,61 @@ mod tests {
                 result: FixedBytes(result),
             })
         };
-        assert_eq!(
-            validate_tfhe_event(&division_event(U256::from(256)), 1),
-            Err("division/remainder scalar divisor is zero for its FheType")
-        );
+        for version in [None, Some(ExecutorVersion::new(0, 2, 0))] {
+            assert_eq!(
+                validate_tfhe_event_for_version(
+                    &division_event(U256::from(256)),
+                    1,
+                    version
+                ),
+                Ok(())
+            );
+            assert_eq!(
+                validate_tfhe_event_for_version(
+                    &division_event(U256::ZERO),
+                    1,
+                    version
+                ),
+                Err("division/remainder scalar divisor is zero")
+            );
+        }
+        for version in
+            [ExecutorVersion::new(0, 3, 0), ExecutorVersion::new(0, 7, 0)]
+        {
+            assert_eq!(
+                validate_tfhe_event_for_version(
+                    &division_event(U256::from(256)),
+                    1,
+                    Some(version)
+                ),
+                Err(
+                    "division/remainder scalar divisor is zero for its FheType"
+                )
+            );
+        }
+        let TfheContractEvents::FheDiv(div) = division_event(U256::from(256))
+        else {
+            unreachable!()
+        };
+        let rem = TfheContractEvents::FheRem(TfheContract::FheRem {
+            caller: div.caller,
+            lhs: div.lhs,
+            rhs: div.rhs,
+            scalarByte: div.scalarByte,
+            result: div.result,
+        });
+        assert!(validate_tfhe_event_for_version(
+            &rem,
+            1,
+            Some(ExecutorVersion::new(0, 2, 0))
+        )
+        .is_ok());
+        assert!(validate_tfhe_event_for_version(
+            &rem,
+            1,
+            Some(ExecutorVersion::new(0, 3, 0))
+        )
+        .is_err());
         assert_eq!(
             validate_tfhe_event(&division_event(U256::from(257)), 1),
             Ok(())

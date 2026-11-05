@@ -1,8 +1,11 @@
 -- Preserve the executor transaction-local origin needed to derive operand
 -- boundary masks when one transaction's logs arrive in separate batches.
+-- Indexes are scoped to their observed block hash, since a sibling fork can
+-- move the same transaction without changing its computation handles.
 -- NULL pairs identify rows predating this migration; their origin cannot be
 -- reconstructed safely from the legacy computation row alone.
 ALTER TABLE public.computations
+    ADD COLUMN IF NOT EXISTS log_index_block_hash BYTEA,
     ADD COLUMN IF NOT EXISTS log_index BIGINT,
     ADD COLUMN IF NOT EXISTS is_executor_minted BOOLEAN;
 
@@ -20,6 +23,7 @@ ALTER TABLE public.computations
     ) NOT VALID;
 
 ALTER TABLE public.computations_branch
+    ADD COLUMN IF NOT EXISTS log_index_block_hash BYTEA,
     ADD COLUMN IF NOT EXISTS log_index BIGINT,
     ADD COLUMN IF NOT EXISTS is_executor_minted BOOLEAN;
 
@@ -47,7 +51,7 @@ BEGIN
     LOOP
         IF to_regclass(format('%I.computations', green_schema)) IS NOT NULL THEN
             EXECUTE format(
-                'ALTER TABLE %I.computations ADD COLUMN IF NOT EXISTS log_index BIGINT, ADD COLUMN IF NOT EXISTS is_executor_minted BOOLEAN',
+                'ALTER TABLE %I.computations ADD COLUMN IF NOT EXISTS log_index_block_hash BYTEA, ADD COLUMN IF NOT EXISTS log_index BIGINT, ADD COLUMN IF NOT EXISTS is_executor_minted BOOLEAN',
                 green_schema
             );
             EXECUTE format(
@@ -61,7 +65,7 @@ BEGIN
         END IF;
         IF to_regclass(format('%I.computations_branch', green_schema)) IS NOT NULL THEN
             EXECUTE format(
-                'ALTER TABLE %I.computations_branch ADD COLUMN IF NOT EXISTS log_index BIGINT, ADD COLUMN IF NOT EXISTS is_executor_minted BOOLEAN',
+                'ALTER TABLE %I.computations_branch ADD COLUMN IF NOT EXISTS log_index_block_hash BYTEA, ADD COLUMN IF NOT EXISTS log_index BIGINT, ADD COLUMN IF NOT EXISTS is_executor_minted BOOLEAN',
                 green_schema
             );
             EXECUTE format(
