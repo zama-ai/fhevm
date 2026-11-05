@@ -9,6 +9,7 @@ import {
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
   supportsConnectorHttp,
+  supportsPrfService,
   runsCoprocessorProxy,
 } from "../compat/compat";
 import type { StackSpec } from "../stack-spec/stack-spec";
@@ -21,6 +22,7 @@ import {
   objectStoreOperatorUrl,
   POSTGRES_HOST,
   coprocessorDatabaseName,
+  coprocessorPrfServiceEnvName,
   coprocessorProxyEnvName,
   hostChainRuntimes,
   realLzEndpointFor,
@@ -436,11 +438,11 @@ const connectorEndpointPort = (envs: Record<string, Record<string, string>>) =>
 const connectorEndpointAddress = (envs: Record<string, Record<string, string>>, party: number) =>
   `${kmsConnectorPrefix(party)}-endpoint:${connectorEndpointPort(envs)}`;
 
-/** Port the fake prf-service (`test-suite/e2e/scripts/fake-prf-service.ts`) serves HTTP/1.1 on. */
-const PRF_SERVICE_FAKE_PORT = 8080;
+/** Port prf-service serves the PRF route on, over HTTP/1.1 (its `--http-endpoint`). */
+const PRF_SERVICE_PORT = 8090;
 
-/** Port the fake prf-service reports its PRF request count on, over plain HTTP. */
-const PRF_SERVICE_FAKE_COUNT_PORT = 9090;
+/** prf-service's default metrics port. */
+const PRF_SERVICE_METRICS_PORT = 9100;
 
 /** The coprocessor-proxy's default listen port. */
 const COPROCESSOR_PROXY_PORT = 8443;
@@ -453,8 +455,8 @@ const coprocessorSigner = (envs: Record<string, Record<string, string>>, index: 
   envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`];
 
 /**
- * Each proxy's env file: it points coprocessor `index`'s proxy at its own fake prf-service, for
- * requests signed for that coprocessor.
+ * Each proxy's env file: it points coprocessor `index`'s proxy at its own prf-service, for requests
+ * signed for that coprocessor.
  */
 const buildCoprocessorProxyEnvs = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
   const proxyEnvs: Record<string, Record<string, string>> = {};
@@ -464,10 +466,28 @@ const buildCoprocessorProxyEnvs = (envs: Record<string, Record<string, string>>,
   for (let index = 0; index < plan.topology.count; index += 1) {
     proxyEnvs[coprocessorProxyEnvName(index)] = {
       COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS: coprocessorSigner(envs, index),
-      COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS: `${toServiceName("prf-service-fake", index)}:${PRF_SERVICE_FAKE_PORT}`,
+      COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS: `${toServiceName("prf-service", index)}:${PRF_SERVICE_PORT}`,
     };
   }
   return proxyEnvs;
+};
+
+/**
+ * Each prf-service's env file: coprocessor `index`'s database as the prf_service role, which the
+ * database's init script creates and each migration grants its rights on `pads`.
+ */
+const buildPrfServiceEnvs = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
+  const prfServiceEnvs: Record<string, Record<string, string>> = {};
+  if (!plan.coprocessor || !supportsPrfService(plan)) {
+    return prfServiceEnvs;
+  }
+  const credentials = `${envs.database.PRF_SERVICE_DATABASE_USER}:${envs.database.PRF_SERVICE_DATABASE_PASSWORD}`;
+  for (let index = 0; index < plan.topology.count; index += 1) {
+    prfServiceEnvs[coprocessorPrfServiceEnvName(index)] = {
+      DATABASE_URL: `postgresql://${credentials}@${POSTGRES_HOST}/${coprocessorDatabaseName(index)}`,
+    };
+  }
+  return prfServiceEnvs;
 };
 
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */
@@ -548,8 +568,8 @@ const applyCoprocessorProxyTestSuiteEnv = (envs: Record<string, Record<string, s
   envs["test-suite"].COPROCESSOR_SIGNER_ADDRESSES = indices
     .map((index) => coprocessorSigner(envs, index))
     .join(",");
-  envs["test-suite"].PRF_SERVICE_FAKE_COUNT_URLS = indices
-    .map((index) => `http://${toServiceName("prf-service-fake", index)}:${PRF_SERVICE_FAKE_COUNT_PORT}/count`)
+  envs["test-suite"].PRF_SERVICE_METRICS_URLS = indices
+    .map((index) => `http://${toServiceName("prf-service", index)}:${PRF_SERVICE_METRICS_PORT}/metrics`)
     .join(",");
   envs["test-suite"].COPROCESSOR_PROXY_METRICS_URLS = indices
     .map((index) => `http://${toServiceName("proxy", index)}:${COPROCESSOR_PROXY_METRICS_PORT}/metrics`)
@@ -739,7 +759,7 @@ export const renderEnvMaps = async (
   }
 
   // After the loops that copy coprocessor settings into every `coprocessor*` instance env.
-  Object.assign(instanceEnvs, buildCoprocessorProxyEnvs(envs, plan));
+  Object.assign(instanceEnvs, buildCoprocessorProxyEnvs(envs, plan), buildPrfServiceEnvs(envs, plan));
   validateEnvMaps(envs, instanceEnvs);
   const compat = compatPolicyForState(plan);
 

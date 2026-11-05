@@ -118,7 +118,7 @@ describe("env", () => {
     expect(rendered.instanceEnvs["kms-connector.3"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-3-endpoint:8080");
   });
 
-  test("points each coprocessor's proxy at its own fake prf-service, for requests signed for that coprocessor", async () => {
+  test("points each coprocessor's proxy at its own prf-service, which logs in as the prf_service role", async () => {
     const templateEnvs = Object.fromEntries(
       await Promise.all(
         COMPONENTS.map(async (component) => [
@@ -132,11 +132,18 @@ describe("env", () => {
       target: "latest-main",
       lockPath: "/tmp/latest-main.json",
       requiresGitHub: true,
-      versions: { ...bundle, env: { ...bundle.env, COPROCESSOR_PROXY_VERSION: "v0.15.0" } },
+      versions: {
+        ...bundle,
+        env: { ...bundle.env, COPROCESSOR_PROXY_VERSION: "v0.15.0", COPROCESSOR_PRF_SERVICE_VERSION: "v0.15.0" },
+      },
       overrides: [],
       scenario: testDefaultScenario({ topology: { count, threshold: count } }),
       completedSteps: [],
       updatedAt: "2026-03-30T00:00:00.000Z",
+    });
+    // prf-service's env file holds only its database URL, as the prf_service role.
+    const prfServiceEnv = (database: string) => ({
+      DATABASE_URL: `postgresql://prf_service:prf_service@db:5432/${database}`,
     });
     // The proxy's env file holds only its own settings, none of the coprocessor's.
     const expectProxyEnv = (env: Record<string, string>, signer: string, prfService: string) =>
@@ -151,8 +158,9 @@ describe("env", () => {
     expectProxyEnv(
       solo.instanceEnvs["coprocessor-proxy"],
       templateEnvs["host-sc"].COPROCESSOR_SIGNER_ADDRESS_0,
-      "coprocessor-prf-service-fake:8080",
+      "coprocessor-prf-service:8090",
     );
+    expect(solo.instanceEnvs["coprocessor-prf-service"]).toEqual(prfServiceEnv("coprocessor"));
     expectNoProxySetting(solo.componentEnvs.coprocessor);
 
     const pair = await renderEnvMaps({ discovery: undefined }, stackSpecForState(stateFor(2)), templateEnvs, deriveWallet);
@@ -161,13 +169,15 @@ describe("env", () => {
     expectProxyEnv(
       pair.instanceEnvs["coprocessor-proxy"],
       signers.COPROCESSOR_SIGNER_ADDRESS_0,
-      "coprocessor-prf-service-fake:8080",
+      "coprocessor-prf-service:8090",
     );
     expectProxyEnv(
       pair.instanceEnvs["coprocessor-proxy.1"],
       signers.COPROCESSOR_SIGNER_ADDRESS_1,
-      "coprocessor1-prf-service-fake:8080",
+      "coprocessor1-prf-service:8090",
     );
+    expect(pair.instanceEnvs["coprocessor-prf-service"]).toEqual(prfServiceEnv("coprocessor"));
+    expect(pair.instanceEnvs["coprocessor-prf-service.1"]).toEqual(prfServiceEnv("coprocessor_1"));
     expectNoProxySetting(pair.componentEnvs.coprocessor);
     expectNoProxySetting(pair.instanceEnvs["coprocessor.1"]);
   });
@@ -182,11 +192,18 @@ describe("env", () => {
       ),
     ) as Record<string, Record<string, string>>;
     const bundle = presetBundle("latest-main", "abcdef0", "latest-main.json");
-    const stateFor = (count: number, proxyVersion: string): State => ({
+    const stateFor = (count: number, proxyVersion: string, prfServiceVersion = proxyVersion): State => ({
       target: "latest-main",
       lockPath: "/tmp/latest-main.json",
       requiresGitHub: true,
-      versions: { ...bundle, env: { ...bundle.env, COPROCESSOR_PROXY_VERSION: proxyVersion } },
+      versions: {
+        ...bundle,
+        env: {
+          ...bundle.env,
+          COPROCESSOR_PROXY_VERSION: proxyVersion,
+          COPROCESSOR_PRF_SERVICE_VERSION: prfServiceVersion,
+        },
+      },
       overrides: [],
       scenario: testDefaultScenario({ topology: { count, threshold: count } }),
       completedSteps: [],
@@ -202,8 +219,8 @@ describe("env", () => {
         pair.instanceEnvs["coprocessor-proxy.1"].COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS,
       ].join(","),
     );
-    expect(suite.PRF_SERVICE_FAKE_COUNT_URLS).toBe(
-      "http://coprocessor-prf-service-fake:9090/count,http://coprocessor1-prf-service-fake:9090/count",
+    expect(suite.PRF_SERVICE_METRICS_URLS).toBe(
+      "http://coprocessor-prf-service:9100/metrics,http://coprocessor1-prf-service:9100/metrics",
     );
     expect(suite.COPROCESSOR_PROXY_METRICS_URLS).toBe(
       "http://coprocessor-proxy:9100/metrics,http://coprocessor1-proxy:9100/metrics",
@@ -216,7 +233,7 @@ describe("env", () => {
       pair.componentEnvs["host-sc"].KMS_TX_SENDER_ADDRESS_0,
     );
 
-    // Bundles without the proxy image, and blue-green stacks, run no proxy.
+    // Bundles without the proxy or prf-service image, and blue-green stacks, run no proxy.
     const blueGreen: State = {
       ...stateFor(1, "v0.15.0"),
       scenario: resolveBlueGreenScenario(
@@ -224,12 +241,12 @@ describe("env", () => {
         parseBlueGreenScenario("version: 1\nkind: blue-green\ngcs:\n  source: { mode: local }\n"),
       ),
     };
-    for (const state of [stateFor(2, ""), blueGreen]) {
+    for (const state of [stateFor(2, ""), stateFor(2, "v0.15.0", ""), blueGreen]) {
       const gated = await renderEnvMaps({ discovery: undefined }, stackSpecForState(state), templateEnvs, deriveWallet);
       for (const key of [
         "COPROCESSOR_PROXY_URLS",
         "COPROCESSOR_SIGNER_ADDRESSES",
-        "PRF_SERVICE_FAKE_COUNT_URLS",
+        "PRF_SERVICE_METRICS_URLS",
         "COPROCESSOR_PROXY_METRICS_URLS",
         "KMS_CONNECTOR_PRIVATE_KEY",
       ]) {

@@ -309,19 +309,33 @@ services:
       coprocessor-db-migration:
         condition: service_completed_successfully
 
-  # Stand-in for prf-service, the upstream coprocessor-proxy forwards to, until prf-service ships.
-  # The e2e image's Node runs the mounted script, so any test-suite image tag works.
-  coprocessor-prf-service-fake:
-    container_name: coprocessor-prf-service-fake
+  # Writes the PRF output the "Coprocessor proxy" suite requests, signed with this coprocessor's key, as
+  # the pad-worker will once it exists, then stays up: readiness probes the proxy from it. The e2e
+  # image has Node and the script's dependencies, so any test-suite image tag works.
+  coprocessor-prf-pads-seed:
+    container_name: coprocessor-prf-pads-seed
     image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
     platform: linux/amd64
-    entrypoint: ["node", "/opt/fake-prf-service.ts"]
+    init: true
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+    environment:
+      COPROCESSOR_SIGNER_PRIVATE_KEY: ${TX_SENDER_PRIVATE_KEY}
+    working_dir: /app/test-suite/e2e
+    entrypoint:
+      - sh
+      - -c
+      - npx ts-node --transpile-only scripts/seed-prf-pads.ts && touch /tmp/seeded && exec tail -f /dev/null
     volumes:
-      - ../../e2e/scripts/fake-prf-service.ts:/opt/fake-prf-service.ts:ro
+      - ../../e2e/scripts/seed-prf-pads.ts:/app/test-suite/e2e/scripts/seed-prf-pads.ts:ro
+      - ../../e2e/test/coprocessorProxy/prfOutput.ts:/app/test-suite/e2e/test/coprocessorProxy/prfOutput.ts:ro
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/count"]
+      test: ["CMD", "test", "-f", "/tmp/seeded"]
       interval: 1s
-      retries: 30
+      retries: 120
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
 
   coprocessor-proxy:
     container_name: coprocessor-proxy
@@ -343,20 +357,24 @@ services:
       - ../static/config/coprocessor-proxy:/etc/coprocessor-proxy/tls:ro
     # The proxy resolves the prf-service hostname once, at startup.
     depends_on:
-      coprocessor-prf-service-fake:
+      coprocessor-prf-service:
+        condition: service_started
+      coprocessor-prf-pads-seed:
         condition: service_healthy
 
+  # Its own env file, generated only for stacks that run it: DATABASE_URL logs in as the prf_service
+  # role, which can only read and add pads rows, and the coprocessor's keys stay out of it.
   coprocessor-prf-service:
     container_name: coprocessor-prf-service
     image: ghcr.io/zama-ai/fhevm/coprocessor/prf-service:${COPROCESSOR_PRF_SERVICE_VERSION}
     platform: linux/amd64
     restart: "on-failure:10"
     env_file:
-      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+      - path: ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor-prf-service.env
+        required: false
     command:
       - prf-service
       - --http-endpoint=0.0.0.0:8090
-      - --database-url=${DATABASE_URL}
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully

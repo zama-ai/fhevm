@@ -34,6 +34,7 @@ import {
   REPO_ROOT,
   TEMPLATE_COMPOSE_DIR,
   composePath,
+  coprocessorPrfServiceEnvName,
   coprocessorProxyEnvName,
   envPath,
   hostChainNames,
@@ -772,6 +773,14 @@ const pointConsumerAtItsOperator = (
 
 const COPROCESSOR_PROXY_SERVICES = new Set(COPROCESSOR_PROXY_SUFFIXES.map((suffix) => `coprocessor-${suffix}`));
 
+/** The env file of coprocessor `index`'s service `name`: the proxy and prf-service have their own. */
+const serviceEnvFile = (name: string, index: number, coprocessorEnvFile: string) =>
+  name === "coprocessor-proxy"
+    ? envPath(coprocessorProxyEnvName(index))
+    : name === "coprocessor-prf-service"
+      ? envPath(coprocessorPrfServiceEnvName(index))
+      : coprocessorEnvFile;
+
 /** Builds the generated coprocessor compose override across all scenario instances. */
 const buildCoprocessorOverride = async (plan: StackSpec) => {
   const doc = rewriteComposePaths(await loadComposeDoc("coprocessor"));
@@ -832,7 +841,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       const adjusted = applyInstanceAdjustments(
         name,
         service,
-        name === "coprocessor-proxy" ? envPath(coprocessorProxyEnvName(instance.index)) : envFileValue,
+        serviceEnvFile(name, instance.index, envFileValue),
         instanceEnv,
         sourceInstance,
         locallyBuilt ? {} : argPolicy.coprocessorArgs,
@@ -881,9 +890,10 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       if (plan.coprocessor.hostListenerMode === "consumer" && isLegacyHostListener(suffix)) {
         adjusted.profiles = ["legacy-host-listeners"];
       }
-      // The proxy pair keeps the bundle's images unless built locally: a registry instance's tag names
-      // a coprocessor release that may predate the proxy, and the fake runs the test-suite image.
-      if (locallyBuilt || !COPROCESSOR_PROXY_SERVICES.has(name)) {
+      // The proxy, its prf-service and the seeder keep the bundle's images unless built locally: a
+      // registry instance's tag names a coprocessor release that may predate the proxy and prf-service,
+      // and the seeder runs the test-suite image.
+      if (locallyBuilt || !(COPROCESSOR_PROXY_SERVICES.has(name) || name === "coprocessor-prf-service")) {
         applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       }
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
@@ -933,7 +943,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         const adjusted = applyInstanceAdjustments(
           baseName,
           service,
-          gcsEnvFileValue,
+          serviceEnvFile(baseName, bcsInstance.index, gcsEnvFileValue),
           gcsInstanceEnv,
           gcsInstance,
           locallyBuilt ? {} : gcsArgPolicy.coprocessorArgs,

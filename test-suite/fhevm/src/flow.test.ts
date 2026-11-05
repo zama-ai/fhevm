@@ -231,7 +231,7 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(withHttp, [...running, "kms-connector-endpoint", "kms-connector-proxy"])).toBeUndefined();
   });
 
-  test("expects coprocessor-proxy and its fake prf-service only when the bundle pins the proxy", () => {
+  test("expects coprocessor-proxy, its prf-service and the PRF output seeder only when the bundle pins the proxy and prf-service", () => {
     const running = [
       "fhevm-object-store",
       "coprocessor-and-kms-db",
@@ -257,16 +257,26 @@ describe("resumeRepairStep", () => {
       "fhevm-relayer",
       "fhevm-test-suite-e2e-debug",
     ];
-    // completeState() carries no COPROCESSOR_PROXY_VERSION: neither container is expected.
+    // completeState() carries neither COPROCESSOR_PROXY_VERSION nor COPROCESSOR_PRF_SERVICE_VERSION: no
+    // container of the proxy is expected.
     expect(resumeRepairStep(completeState(), running)).toBeUndefined();
     const base = completeState();
-    const withProxy = {
+    const withProxyOnly = {
       ...base,
       versions: { ...base.versions, env: { ...base.versions.env, COPROCESSOR_PROXY_VERSION: "02f6cc0" } },
     };
+    expect(resumeRepairStep(withProxyOnly, running)).toBeUndefined();
+    const withProxy = {
+      ...base,
+      versions: {
+        ...base.versions,
+        env: { ...base.versions.env, COPROCESSOR_PROXY_VERSION: "02f6cc0", COPROCESSOR_PRF_SERVICE_VERSION: "02f6cc0" },
+      },
+    };
+    const proxyServices = ["coprocessor-prf-service", "coprocessor-prf-pads-seed", "coprocessor-proxy"];
     expect(resumeRepairStep(withProxy, running)).toBe("coprocessor");
     expect(resumeRepairStep(withProxy, [...running, "coprocessor-proxy"])).toBe("coprocessor");
-    expect(resumeRepairStep(withProxy, [...running, "coprocessor-prf-service-fake", "coprocessor-proxy"])).toBeUndefined();
+    expect(resumeRepairStep(withProxy, [...running, ...proxyServices])).toBeUndefined();
   });
 
   test("returns nothing when every steady-state service is present", () => {

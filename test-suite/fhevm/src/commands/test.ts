@@ -170,7 +170,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "connector-http":
     "Run the three connector-http-* suites (public decrypt, user decrypt, negative) in one go.",
   "coprocessor-proxy":
-    "Sign as KMS party 1's connector against every coprocessor-proxy and its fake prf-service.",
+    "Sign as KMS party 1's connector against every coprocessor-proxy and the prf-service behind it.",
   random: "Run random generation coverage.",
   "random-subset": "Run a narrower random generation subset.",
   operators: "Run manual operator workflows.",
@@ -2231,7 +2231,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     return state.scenario.kind === "blue-green"
       ? "blue-green stacks run without coprocessor-proxy"
-      : "COPROCESSOR_PROXY_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
+      : "COPROCESSOR_PROXY_VERSION or COPROCESSOR_PRF_SERVICE_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
   };
 
   const dbStateRevertSkipReason = () =>

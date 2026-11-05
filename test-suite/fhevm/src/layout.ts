@@ -279,11 +279,12 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
 export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
 
 /**
- * The coprocessor services `runsCoprocessorProxy` gates as a pair: the proxy and the fake
- * prf-service it forwards to, in start order. The fake runs the test-suite image, so it is not a
- * coprocessor build service.
+ * The coprocessor services `runsCoprocessorProxy` gates as a pair, in start order: the seeder that
+ * writes the PRF output the proxy suite requests, as the pad-worker will, and the proxy. The proxy
+ * forwards to prf-service, which `supportsPrfService` gates. The seeder runs the test-suite image,
+ * so it is not a coprocessor build service.
  */
-export const COPROCESSOR_PROXY_SUFFIXES = ["prf-service-fake", "proxy"];
+export const COPROCESSOR_PROXY_SUFFIXES = ["prf-pads-seed", "proxy"];
 
 /**
  * The env file of coprocessor `index`'s proxy. It holds only the proxy's own settings: the
@@ -291,6 +292,10 @@ export const COPROCESSOR_PROXY_SUFFIXES = ["prf-service-fake", "proxy"];
  */
 export const coprocessorProxyEnvName = (index: number) =>
   index === 0 ? "coprocessor-proxy" : `coprocessor-proxy.${index}`;
+
+/** The env file of coprocessor `index`'s prf-service: its database URL, as the prf_service role. */
+export const coprocessorPrfServiceEnvName = (index: number) =>
+  index === 0 ? "coprocessor-prf-service" : `coprocessor-prf-service.${index}`;
 
 /** `suffixes` without the proxy pair, then the pair in start order when `includeProxy`. */
 export const withCoprocessorProxySuffixes = (suffixes: readonly string[], includeProxy: boolean) => [

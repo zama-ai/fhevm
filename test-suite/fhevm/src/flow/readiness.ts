@@ -167,7 +167,7 @@ export const waitForLog = async (container: string, pattern: RegExp) => {
 /**
  * Waits until a coprocessor's proxy is ready: its `/healthz` answers 200 once the TLS listener
  * answers and the KMS tx-senders have been read. The proxy image has no HTTP client, so the probe
- * runs in the coprocessor's fake prf-service, on the same network.
+ * runs in the coprocessor's PRF output seeder, on the same network.
  */
 const waitForCoprocessorProxy = async (prefix: string) => {
   const proxy = `${prefix}proxy`;
@@ -177,7 +177,7 @@ const waitForCoprocessorProxy = async (prefix: string) => {
     if (inspect && containerFailure(inspect)) {
       throw new ContainerCrashed(proxy, inspect.State.ExitCode || -1, "");
     }
-    const probe = await run(["docker", "exec", `${prefix}prf-service-fake`, "wget", "-qO-", url], {
+    const probe = await run(["docker", "exec", `${prefix}prf-pads-seed`, "wget", "-qO-", url], {
       allowFailure: true,
       timeoutMs: 10_000,
     });
@@ -386,7 +386,7 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
       await waitForContainer(`${prefix}prf-service`, "running");
     }
     if (includeProxy) {
-      await waitForContainer(`${prefix}prf-service-fake`, "healthy");
+      await waitForContainer(`${prefix}prf-pads-seed`, "healthy");
       await waitForCoprocessorProxy(prefix);
     }
     if (state.scenario.kind === "blue-green" && !state.scenario.gcs.deferredStart) {
