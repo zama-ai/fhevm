@@ -44,7 +44,7 @@ pub fn attestation(byte: u8) -> PrfOutputAttestation {
 pub async fn set_output(pool: &PgPool, path: &PrfOutputRef, byte: u8) {
     let attestation = attestation(byte);
     sqlx::query(
-        "UPDATE pads SET ciphertext128 = $4, ciphertext_digest = $5, sns_ciphertext_digest = $6,
+        "UPDATE pads SET ciphertext128 = $4, ciphertext_digest = $5, ciphertext128_digest = $6,
                 signer = $7, signature = $8
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
     )

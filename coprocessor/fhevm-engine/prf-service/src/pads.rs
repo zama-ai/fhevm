@@ -176,7 +176,7 @@ async fn add(
 pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<PadState>> {
     let Some(row) = sqlx::query!(
         "SELECT is_error, OCTET_LENGTH(ciphertext128) AS body_length, ciphertext_digest,
-                sns_ciphertext_digest, signer, signature
+                ciphertext128_digest, signer, signature
            FROM pads
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
         i32::from(path.prf_id),
@@ -196,7 +196,7 @@ pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<P
     let (Some(body_length), Some(digest), Some(sns_digest), Some(signer), Some(signature)) = (
         row.body_length,
         row.ciphertext_digest,
-        row.sns_ciphertext_digest,
+        row.ciphertext128_digest,
         row.signer,
         row.signature,
     ) else {
@@ -206,7 +206,7 @@ pub async fn read(pool: &PgPool, path: &PrfOutputRef) -> anyhow::Result<Option<P
         version: Version::V1,
         ciphertext_digest: B256::try_from(digest.as_slice()).context("ciphertext_digest")?,
         sns_ciphertext_digest: B256::try_from(sns_digest.as_slice())
-            .context("sns_ciphertext_digest")?,
+            .context("ciphertext128_digest")?,
         signer: Address::try_from(signer.as_slice()).context("signer")?,
         signature,
     };
