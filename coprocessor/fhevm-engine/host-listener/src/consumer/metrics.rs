@@ -16,6 +16,49 @@ pub(crate) static BLOCKS_PROCESSED: LazyLock<IntCounterVec> = LazyLock::new(
     },
 );
 
+pub(crate) static CATCHUP_DELIVERIES_REJECTED: LazyLock<IntCounterVec> =
+    LazyLock::new(|| {
+        register_int_counter_vec!(
+            "host_consumer_catchup_deliveries_rejected_total",
+            "Catchup deliveries acknowledged without ingestion, by rejection reason",
+            &["chain_id", "flow", "reason"]
+        )
+        .expect("host_consumer_catchup_deliveries_rejected_total metric must register")
+    });
+
+pub(crate) fn inc_catchup_deliveries_rejected(
+    chain_id: &str,
+    flow: BlockFlow,
+    reason: &str,
+) {
+    CATCHUP_DELIVERIES_REJECTED
+        .with_label_values(&[chain_id, flow_label(flow), reason])
+        .inc();
+}
+
+pub(crate) static CATCHUP_REQUEST_FAILURES: LazyLock<IntCounterVec> =
+    LazyLock::new(|| {
+        register_int_counter_vec!(
+            "host_consumer_catchup_request_failures_total",
+            "Manual catchup requests rejected because their resolved range is invalid",
+            &["chain_id", "flow"]
+        )
+        .expect("host_consumer_catchup_request_failures_total metric must register")
+    });
+
+pub(crate) fn inc_catchup_request_failures(chain_id: &str, finalized: bool) {
+    CATCHUP_REQUEST_FAILURES
+        .with_label_values(&[
+            chain_id,
+            if finalized {
+                "final_catchup"
+            } else {
+                "catchup"
+            },
+        ])
+        .inc();
+}
+
 pub(crate) static DB_ERRORS: LazyLock<IntCounterVec> = LazyLock::new(|| {
     register_int_counter_vec!(
         "host_consumer_db_errors",
