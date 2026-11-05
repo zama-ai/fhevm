@@ -1031,8 +1031,8 @@ impl Database {
         // The block-number and boundary-mask migrations leave legacy rows NULL.
         // That means unknown metadata, not a contradiction. Preserve NULL
         // (and the worker's legacy inference) instead of backfilling metadata
-        // onto retained pre-upgrade work. All other metadata, and every
-        // already-recorded height or mask, remain immutable. Handles
+        // onto retained pre-upgrade work. Execution metadata and every
+        // already-recorded height or mask remain immutable. Handles
         // verified against the old executor preimage also start with NULL on
         // fresh historical replay: their origin was never committed on-chain.
         let conflicting: bool = sqlx::query_scalar(
@@ -1047,9 +1047,7 @@ impl Database {
                     OR ($8::bytea IS NOT NULL AND operand_boundary_mask IS NOT NULL
                         AND operand_boundary_mask IS DISTINCT FROM $8::bytea)
                     OR (is_executor_minted IS NOT NULL
-                        AND is_executor_minted IS DISTINCT FROM $12::boolean)
-                    OR (log_index IS NOT NULL
-                        AND log_index IS DISTINCT FROM $13::bigint)))",
+                        AND is_executor_minted IS DISTINCT FROM $12::boolean)))",
         )
         .bind(output_handle)
         .bind(log.transaction_hash.map(|hash| hash.to_vec()))
@@ -1063,7 +1061,6 @@ impl Database {
         .bind(output_index)
         .bind(output_count)
         .bind(log.is_executor_minted)
-        .bind(log_index)
         .fetch_one(tx.deref_mut()).await?;
         if conflicting {
             error!(
@@ -1072,6 +1069,10 @@ impl Database {
             );
             return Err(SqlxError::Protocol(REPLAY_METADATA_CONFLICT.into()));
         }
+        // Repeated operations may mint the same handle at multiple indexes.
+        // Keep the earliest observation within this fork; a sibling's global
+        // indexes are incomparable. Synthetic fallback indexes are bookkeeping
+        // only and deliberately carry no executor block identity.
         // Reconcile ACL evidence after all computation writes, before taking
         // chain locks, to keep the worker and ingestion lock order consistent.
         let result = sqlx::query(
@@ -1094,17 +1095,24 @@ impl Database {
                 output_index,
                 output_count,
                 log_index,
-                is_executor_minted
+                is_executor_minted,
+                log_index_block_hash
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8::timestamp, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             ON CONFLICT (output_handle, transaction_id) DO UPDATE
-                SET log_index = COALESCE(computations.log_index, EXCLUDED.log_index),
+                SET log_index = CASE
+                        WHEN computations.log_index_block_hash IS NOT DISTINCT FROM EXCLUDED.log_index_block_hash
+                        THEN LEAST(computations.log_index, EXCLUDED.log_index)
+                        ELSE EXCLUDED.log_index END,
+                    log_index_block_hash = EXCLUDED.log_index_block_hash,
                     is_executor_minted = COALESCE(
                         computations.is_executor_minted,
                         EXCLUDED.is_executor_minted
                     )
                 WHERE computations.log_index IS NULL
                    OR computations.is_executor_minted IS NULL
+                   OR computations.log_index_block_hash IS DISTINCT FROM EXCLUDED.log_index_block_hash
+                   OR computations.log_index > EXCLUDED.log_index
             "#,
         )
         .bind(output_handle)
@@ -1127,6 +1135,7 @@ impl Database {
         .bind(output_count)
         .bind(log_index)
         .bind(log.is_executor_minted)
+        .bind(log.is_executor_minted.then_some(log.block_hash.as_slice()))
         .execute(tx.deref_mut()).await?;
         Ok(result.rows_affected() > 0)
     }

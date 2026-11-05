@@ -202,15 +202,33 @@ pub fn validate_scalar_mode(
     }
 }
 
+fn scalar_is_zero_for_type(
+    value: U256,
+    handle_type: &Handle,
+) -> Result<bool, &'static str> {
+    let width = match get_ct_type(handle_type.as_slice()) {
+        Some(2) => 8,
+        Some(3) => 16,
+        Some(4) => 32,
+        Some(5) => 64,
+        Some(6) => 128,
+        _ => {
+            return Err("division/remainder has an unsupported operand FheType")
+        }
+    };
+    let mask = (U256::from(1) << width) - U256::from(1);
+    Ok((value & mask) == U256::ZERO)
+}
+
 /// Validate only scalar-value constraints shared by the executor versions
 /// whose events the listener may replay. This checks event arguments and
 /// handle metadata only; it never reads ciphertexts or calls a TFHE operation.
 /// Binary scalar range checks, trivial-encryption range checks and MulDiv
 /// scalar range checks were added after older executors could emit those
 /// events. Since logs do not carry an executor activation version, enforcing
-/// the newer checks here could reject valid history. Div/Rem typed-zero checks
-/// predate the range checks, MulDiv typed-zero checks have been present since
-/// v0.14 introduced it, and bounded-random constraints have been stable since
+/// the newer checks here could reject valid history. Div/Rem rejected only a
+/// full-word zero before executor v0.3. MulDiv typed-zero checks have been
+/// present since v0.14 introduced it, and bounded-random constraints have been stable since
 /// that operation was introduced. Old shift events can have full-width amounts.
 pub fn validate_scalar_values(
     op: &TfheContractEvents,
@@ -218,43 +236,17 @@ pub fn validate_scalar_values(
     use TfheContract as C;
     use TfheContractEvents as E;
 
-    fn scalar_is_zero_for_type(
-        value: U256,
-        handle_type: &Handle,
-    ) -> Result<bool, &'static str> {
-        let width = match get_ct_type(handle_type.as_slice()) {
-            Some(2) => 8,
-            Some(3) => 16,
-            Some(4) => 32,
-            Some(5) => 64,
-            Some(6) => 128,
-            _ => {
-                return Err(
-                    "division/remainder has an unsupported operand FheType",
-                )
-            }
-        };
-        let mask = (U256::from(1) << width) - U256::from(1);
-        Ok((value & mask) == U256::ZERO)
-    }
-
     match op {
         E::FheDiv(C::FheDiv {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
+            rhs, scalarByte, ..
         })
         | E::FheRem(C::FheRem {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
+            rhs, scalarByte, ..
         }) => {
             if binary_rhs_is_scalar(scalarByte)
-                && scalar_is_zero_for_type(U256::from_be_bytes(rhs.0), lhs)?
+                && U256::from_be_bytes(rhs.0) == U256::ZERO
             {
-                Err("division/remainder scalar divisor is zero for its FheType")
+                Err("division/remainder scalar divisor is zero")
             } else {
                 Ok(())
             }
@@ -319,8 +311,8 @@ pub fn validate_scalar_values_for_current_executor(
 }
 
 /// Apply the constraints that were active in the executor version that emitted
-/// this event. Version thresholds follow the contract history: trivial-encrypt
-/// range checks in v0.5, binary and MulDiv scalar checks in v0.6, and the
+/// this event. Version thresholds follow the contract history: Div/Rem typed-zero
+/// checks in v0.3, trivial-encrypt range checks in v0.5, binary and MulDiv scalar checks in v0.6, and the
 /// uint8 shift cap in v0.7.
 pub fn validate_scalar_values_for_executor_version(
     op: &TfheContractEvents,
@@ -329,6 +321,7 @@ pub fn validate_scalar_values_for_executor_version(
     use TfheContract as C;
     use TfheContractEvents as E;
 
+    const V0_3_0: ExecutorVersion = ExecutorVersion::new(0, 3, 0);
     const V0_5_0: ExecutorVersion = ExecutorVersion::new(0, 5, 0);
     const V0_6_0: ExecutorVersion = ExecutorVersion::new(0, 6, 0);
     const V0_7_0: ExecutorVersion = ExecutorVersion::new(0, 7, 0);
@@ -349,6 +342,33 @@ pub fn validate_scalar_values_for_executor_version(
     }
 
     validate_scalar_values(op)?;
+
+    // 2da166bece introduced typed-zero rejection with executor v0.3.
+    // Earlier contracts emitted nonzero full-word divisors that truncate to
+    // zero, and historical replay must continue to admit those events.
+    if version >= V0_3_0 {
+        if let E::FheDiv(C::FheDiv {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        })
+        | E::FheRem(C::FheRem {
+            lhs,
+            rhs,
+            scalarByte,
+            ..
+        }) = op
+        {
+            if binary_rhs_is_scalar(scalarByte)
+                && scalar_is_zero_for_type(U256::from_be_bytes(rhs.0), lhs)?
+            {
+                return Err(
+                    "division/remainder scalar divisor is zero for its FheType",
+                );
+            }
+        }
+    }
 
     if version >= V0_5_0 {
         if let E::TrivialEncrypt(C::TrivialEncrypt { pt, toType, .. }) = op {

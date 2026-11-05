@@ -204,6 +204,17 @@ async fn cold_cache_checks_provenance_and_parent_readiness(
         if let Some(mutation) = mutation {
             sqlx::query(mutation).execute(&pool).await?;
         }
+        if matches!(
+            state,
+            Producer::EarlierInSameBlock
+                | Producer::LaterInSameBlock
+                | Producer::SameBlockUnknownIndex
+        ) {
+            sqlx::query("UPDATE computations SET log_index_block_hash = $1")
+                .bind(consumer_block.hash.as_slice())
+                .execute(&pool)
+                .await?;
+        }
         if matches!(state, Producer::Materialized) {
             sqlx::query(
                 "INSERT INTO ciphertexts (handle, ciphertext, ciphertext_version, ciphertext_type)
