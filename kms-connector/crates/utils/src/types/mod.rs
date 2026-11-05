@@ -7,7 +7,7 @@ pub mod kms_response;
 pub mod solana_request;
 
 pub use event::{ProtocolEvent, ProtocolEventKind};
-pub use grpc::{KmsGrpcRequest, KmsGrpcResponse, KmsSendResponse};
+pub use grpc::{KmsGrpcRequest, KmsGrpcResponse};
 pub use kms_response::{
     CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponse, KmsResponseKind,
     NewKmsContextResponse, PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse,

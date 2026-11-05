@@ -21,14 +21,17 @@ use connector_utils::{
             erc1271_magic_response, init_host_chains_acl_contracts_mock,
         },
     },
-    types::{DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT, extra_data::ExtraData, u256_to_request_id},
+    types::{DEFAULT_EPOCH_ID, TESTING_KMS_CONTEXT, extra_data::ExtraData},
 };
-use kms_grpc::kms::v1::DestroyMpcContextResponse;
+use kms_grpc::kms::v1::{
+    DestroyMpcContextRequest, DestroyMpcEpochRequest, Eip712DomainMsg, Empty, SigningSchemeType,
+};
 use kms_worker::core::{
     Config,
     event_processor::{ContextManager, DbContextManager, ProcessingErrorKind, RequestCheckError},
 };
-use mocktail::{MockSet, server::MockServer};
+use mocktail::{MockSet, Request, matchers::Matcher, server::MockServer};
+use prost::Message;
 use rstest::rstest;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
@@ -260,10 +263,17 @@ async fn test_decryption_context_invalid(#[case] event_type: TestEventType) -> a
     Ok(())
 }
 
+/// The KMS Core signs its destruction confirmations, so it refuses a destruction request without a
+/// domain. Each destruction reaches the Core with the `ProtocolConfig` domain and ECDSA.
 #[rstest]
+#[case::context(TestEventType::KmsContextDestroyed, Destruction::Context)]
+#[case::epoch(TestEventType::KmsEpochDestroyed, Destruction::Epoch)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_context_destruction_invalidates_returned_epochs() -> anyhow::Result<()> {
+async fn test_destruction_requests_are_signed_under_protocol_config(
+    #[case] event_type: TestEventType,
+    #[case] destruction: Destruction,
+) -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::default()
         .with_db(DbInstance::setup_external().await?)
         .build();
@@ -277,44 +287,46 @@ async fn test_context_destruction_invalidates_returned_epochs() -> anyhow::Resul
         .connect_mocked_client(asserter);
     let acl_contracts_mock = init_host_chains_acl_contracts_mock(rand_handle(), vec![]);
 
-    // Two epochs cached as valid under the testing context, to be reported destroyed by the Core
-    let destroyed_epoch_ids = [U256::from(41), U256::from(42)];
-    for epoch_id in destroyed_epoch_ids {
-        sqlx::query(
-            "INSERT INTO kms_epoch(id, context_id, is_valid, created_at, updated_at)
-            VALUES ($1, $2, TRUE, NOW(), NOW())",
-        )
-        .bind(epoch_id.as_le_slice())
-        .bind(TESTING_KMS_CONTEXT.as_le_slice())
-        .execute(test_instance.db())
-        .await?;
-    }
-
-    // Destruction request targeting `TESTING_KMS_CONTEXT`
     insert_rand_request(
         test_instance.db(),
-        TestEventType::KmsContextDestroyed,
+        event_type,
         InsertRequestOptions::new().with_id(TESTING_KMS_CONTEXT),
     )
     .await?;
 
-    // Mock the KMS Core's response to the destruction request
+    let config = Config {
+        copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
+        ..Default::default()
+    };
+    let protocol_config = &config.protocol_config_contract;
+    let expected = SignedDestruction {
+        destruction,
+        domain: Eip712DomainMsg {
+            name: protocol_config.domain_name.clone(),
+            version: protocol_config.domain_version.clone(),
+            chain_id: U256::from(config.ethereum_chain_id).to_be_bytes_vec(),
+            verifying_contract: protocol_config.address.to_string(),
+            salt: None,
+        }
+        .encode_to_vec(),
+        signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
+    };
     let mut kms_mocks = MockSet::new();
     kms_mocks.mock(|when, then| {
-        when.path("/kms_service.v1.CoreServiceEndpoint/DestroyMpcContext");
-        then.pb(DestroyMpcContextResponse {
-            epoch_ids: destroyed_epoch_ids.map(u256_to_request_id).to_vec(),
-        });
+        when.path(format!(
+            "/kms_service.v1.CoreServiceEndpoint/{}",
+            destruction.endpoint()
+        ))
+        .matcher(expected);
+        then.pb(Empty::default());
     });
     let kms_mock_server =
         MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint").with_mocks(kms_mocks);
     kms_mock_server.start().await?;
-    info!("KMS mock server started!");
 
     let config = Config {
         kms_core_endpoints: vec![kms_mock_server.base_url().unwrap().to_string()],
-        copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
-        ..Default::default()
+        ..config
     };
     let kms_worker = init_kms_worker(
         config,
@@ -325,41 +337,87 @@ async fn test_context_destruction_invalidates_returned_epochs() -> anyhow::Resul
     .await?;
     let cancel_token = CancellationToken::new();
     let kms_worker_task = tokio::spawn(kms_worker.start(cancel_token.clone()));
-    info!("KmsWorker started!");
 
-    // Waiting for the destruction request to reach a terminal status.
-    while let Err(e) =
-        check_no_uncompleted_request_in_db(test_instance.db(), TestEventType::KmsContextDestroyed)
-            .await
-    {
+    // A request the mock does not match is answered `NotFound`, which fails the event.
+    while let Err(e) = check_no_uncompleted_request_in_db(test_instance.db(), event_type).await {
         warn!("Request not yet processed: {e}");
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
-
-    // Both epochs reported by the Core must be invalidated...
-    for epoch_id in destroyed_epoch_ids {
-        let is_valid: bool = sqlx::query_scalar("SELECT is_valid FROM kms_epoch WHERE id = $1")
-            .bind(epoch_id.as_le_slice())
+    let status: String =
+        sqlx::query_scalar(&format!("SELECT status::TEXT FROM {}", destruction.table()))
             .fetch_one(test_instance.db())
             .await?;
-        assert!(
-            !is_valid,
-            "epoch #{epoch_id:#066x} should have been invalidated"
-        );
-    }
-    // ...while the epoch not reported (seeded by `DbInstance::setup`) must remain valid.
-    let sibling_valid: bool = sqlx::query_scalar("SELECT is_valid FROM kms_epoch WHERE id = $1")
-        .bind(DEFAULT_EPOCH_ID.as_le_slice())
-        .fetch_one(test_instance.db())
-        .await?;
-    assert!(
-        sibling_valid,
-        "an epoch not reported by the Core should remain valid"
-    );
+    assert_eq!(status, "completed");
 
     cancel_token.cancel();
     kms_worker_task.await.unwrap();
     Ok(())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+enum Destruction {
+    Context,
+    Epoch,
+}
+
+impl Destruction {
+    fn endpoint(self) -> &'static str {
+        match self {
+            Self::Context => "DestroyMpcContext",
+            Self::Epoch => "DestroyMpcEpoch",
+        }
+    }
+
+    fn table(self) -> &'static str {
+        match self {
+            Self::Context => "kms_context_destroyed",
+            Self::Epoch => "kms_epoch_destroyed",
+        }
+    }
+}
+
+/// The fields a destruction request must carry for the KMS Core to sign its confirmation.
+#[derive(Debug, PartialEq, PartialOrd)]
+struct SignedDestruction {
+    destruction: Destruction,
+    /// The encoded `Eip712DomainMsg`, which has no `PartialOrd`.
+    domain: Vec<u8>,
+    signing_schemes: Vec<i32>,
+}
+
+impl Matcher for SignedDestruction {
+    fn name(&self) -> &str {
+        "signed destruction"
+    }
+
+    fn matches(&self, request: &Request) -> bool {
+        let body: Vec<u8> = request.body.iter().flatten().copied().collect();
+        // A gRPC message follows a five-byte frame header.
+        let Some(body) = body.get(5..) else {
+            return false;
+        };
+        let decoded = match self.destruction {
+            Destruction::Context => DestroyMpcContextRequest::decode(body).map(
+                |DestroyMpcContextRequest {
+                     domain,
+                     signing_schemes,
+                     ..
+                 }| (domain, signing_schemes),
+            ),
+            Destruction::Epoch => DestroyMpcEpochRequest::decode(body).map(
+                |DestroyMpcEpochRequest {
+                     domain,
+                     signing_schemes,
+                     ..
+                 }| (domain, signing_schemes),
+            ),
+        };
+        let Ok((domain, signing_schemes)) = decoded else {
+            return false;
+        };
+        domain.map(|domain| domain.encode_to_vec()) == Some(self.domain.clone())
+            && signing_schemes == self.signing_schemes
+    }
 }
 
 /// Builds a `DbContextManager` whose on-chain fallback is served by the given `Asserter`.

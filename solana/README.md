@@ -163,9 +163,9 @@ test-suite/fhevm/e2e                     The live scenario suite (bun:test) and 
 test-suite/fhevm/demo                    Demo seeding and orchestration.
 ```
 
-KMS-side Solana code (the Solana user address and its link) lives on
-`zama-ai/kms` branch `solana`; the js-sdk vendors its TKMS WASM from it via
-`sdk/js-sdk/scripts/regen-tkms-wasm.sh`.
+KMS-side Solana code (the Solana user address and its link) is on kms `main`
+since https://github.com/zama-ai/kms/pull/934; the js-sdk vendors its TKMS WASM
+from it via `sdk/js-sdk/scripts/regen-tkms-wasm.sh`.
 
 ## Build and test
 

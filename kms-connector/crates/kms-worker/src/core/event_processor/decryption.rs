@@ -546,7 +546,7 @@ fn extract_single_chain_id<'a>(
 }
 
 pub struct UserDecryptionExtraData {
-    /// The KMS request's `client_address`: EIP-55 hex for an EVM user, base58 for a Solana user.
+    /// The KMS request's `client_address`, in the format kms-grpc's `ClientAddress` reads.
     pub user_address: String,
     pub public_key: Bytes,
 }
