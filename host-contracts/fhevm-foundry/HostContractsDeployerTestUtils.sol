@@ -268,7 +268,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address owner,
         uint256 initialContextId,
         uint256 initialEpochId,
-        KmsNodeParams[] memory initialKmsNodeParams,
+        KmsNode[] memory initialNodes,
         KmsThresholds memory initialThresholds
     ) internal returns (ProtocolConfigReplica protocolConfigProxy, address protocolConfigImplementation) {
         _deployEmptyProtocolConfigProxy();
@@ -282,7 +282,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
             protocolConfigImplementation,
             abi.encodeCall(
                 ProtocolConfigReplica.initializeFromCanonical,
-                (initialContextId, initialEpochId, initialKmsNodeParams, initialThresholds)
+                (initialContextId, initialEpochId, initialNodes, initialThresholds)
             )
         );
 
@@ -370,6 +370,10 @@ abstract contract HostContractsDeployerTestUtils is Test {
                 storageUrl: params[i].storageUrl
             });
         }
+    }
+
+    function _makeKmsNodes(uint256 count) internal pure returns (KmsNode[] memory) {
+        return _toKmsNodes(_makeKmsNodeParams(count));
     }
 
     function _mockKeyDigests() internal pure returns (IKMSGeneration.KeyDigest[] memory) {

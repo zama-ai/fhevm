@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {KmsThresholds, KmsNodeParams, PcrValues} from "../shared/Structs.sol";
+import {KmsThresholds, KmsNode} from "../shared/Structs.sol";
 import {IProtocolConfigBase} from "./IProtocolConfigBase.sol";
 
 /**
@@ -17,18 +17,14 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
      * @notice Emitted when a canonical KMS context is mirrored and activated.
      * @param contextId The mirrored canonical context ID.
      * @param epochId The mirrored canonical epoch ID activated for the context.
-     * @param kmsNodeParams The KMS nodes mirrored from the canonical context, including MPC metadata.
+     * @param nodes The KMS nodes mirrored from the canonical context.
      * @param thresholds The thresholds mirrored from the canonical context.
-     * @param softwareVersion The KMS software version of the canonical context.
-     * @param pcrValues Accepted enclave PCR values of the canonical context.
      */
     event MirrorKmsContextAndEpoch(
         uint256 indexed contextId,
         uint256 indexed epochId,
-        KmsNodeParams[] kmsNodeParams,
-        KmsThresholds thresholds,
-        string softwareVersion,
-        PcrValues[] pcrValues
+        KmsNode[] nodes,
+        KmsThresholds thresholds
     );
 
     /**
@@ -64,18 +60,14 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
      *      or never activated are simply never mirrored).
      * @param contextId The canonical context ID to mirror; must exceed the latest known context ID.
      * @param epochId The canonical epoch ID to activate for the mirrored context.
-     * @param kmsNodeParams The KMS nodes from the canonical context, including MPC metadata.
+     * @param nodes The KMS nodes from the canonical context.
      * @param thresholds The thresholds from the canonical context.
-     * @param softwareVersion The KMS software version of the canonical context.
-     * @param pcrValues Accepted enclave PCR values of the canonical context.
      */
     function mirrorKmsContextAndEpoch(
         uint256 contextId,
         uint256 epochId,
-        KmsNodeParams[] calldata kmsNodeParams,
-        KmsThresholds calldata thresholds,
-        string calldata softwareVersion,
-        PcrValues[] calldata pcrValues
+        KmsNode[] calldata nodes,
+        KmsThresholds calldata thresholds
     ) external;
 
     /**

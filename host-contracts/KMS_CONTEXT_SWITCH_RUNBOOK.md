@@ -371,19 +371,13 @@ npx hardhat task:mirrorKmsContextAndEpoch --network <replica-network> \
   --canonical-protocol-config-address <canonical ProtocolConfig>
 ```
 
-There is no committee to re-type: `mirrorKmsContextAndEpoch` needs the full
-`KmsNodeParams` plus the software version and PCR values, which the contract does not store,
-so the task recovers them from canonical's `NewKmsContext` event and checks them against the
-on-chain `contextInfoHash` anchor before using them. A wrong or tampered canonical RPC cannot
-slip a different committee past that check. Thresholds come from the same event, so the
-replica receives the values the switch was defined with.
+There is no committee to re-type. `mirrorKmsContextAndEpoch` takes the four stored `KmsNode`
+fields and the thresholds. The task reads both from canonical storage at one finalized block.
 
-Three errors are worth knowing:
+Two errors are worth knowing:
 
 - `reports version "ProtocolConfigReplica v…"; expected "ProtocolConfig v…"` — the
   `--canonical-protocol-config-address` points at a replica, not at Ethereum's `ProtocolConfig`.
-- `has no context anchor recorded` — the address runs `ProtocolConfig` but holds no anchor for the
-  active context. This is normally a replica proxy that still runs `ProtocolConfig`.
 - `is already at context …` — either canonical's rotation is not finalized yet (§5.2) or this
   replica is already up to date.
 
@@ -427,11 +421,8 @@ cast call $REPL_PC "getMpcThresholdForContext(uint256)(uint256)" <contextId> --r
 ```
 
 The MPC metadata (`partyId`, `mpcIdentity`, `caCert`, `storagePrefix`), software version and
-PCR values are not stored on-chain — read them from the replica's
-`MirrorKmsContextAndEpoch` event, where they match canonical's `NewKmsContext` exactly.
-Worth knowing: the bootstrap path (`initializeFromCanonical`) could not recover them and
-filled placeholders, so the first mirrored switch is where a replica's event history starts
-carrying the real values.
+PCR values are not stored on-chain. The replica's `MirrorKmsContextAndEpoch` event does not
+carry them. Read them from canonical's `NewKmsContext` event.
 
 **Upgrade precondition (ProtocolConfig v0.3.0)**: settle any in-flight lifecycle operation
 first, or destroy it with `destroyKmsContext` or `destroyKmsEpoch`. A pending epoch would keep its v0.3.0

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
-import {KmsContextAnchor, KmsNode, KmsNodeParams, KmsThresholds} from "./shared/Structs.sol";
+import {KmsContextAnchor, KmsNode, KmsThresholds} from "./shared/Structs.sol";
 
 /**
  * @title ProtocolConfigBase
@@ -296,11 +296,11 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     function _storeAndActivateKmsContextAndEpoch(
         uint256 contextId,
         uint256 epochId,
-        KmsNodeParams[] calldata kmsNodeParams,
+        KmsNode[] memory nodes,
         KmsThresholds calldata thresholds
     ) internal virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        _storeKmsContext(contextId, kmsNodeParams, thresholds);
+        _storeKmsContext(contextId, nodes, thresholds);
 
         // Set the context to Active and update the active context and epoch IDs.
         $.contextState[contextId] = ContextState.Active;
@@ -311,21 +311,21 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
 
     function _storeKmsContext(
         uint256 contextId,
-        KmsNodeParams[] calldata kmsNodeParams,
+        KmsNode[] memory nodes,
         KmsThresholds calldata thresholds
     ) internal virtual {
-        if (kmsNodeParams.length == 0) {
+        if (nodes.length == 0) {
             revert EmptyKmsNodes();
         }
-        if (kmsNodeParams.length > MAX_KMS_SIGNERS) {
-            revert KmsSignerSetExceedsProofFormatLimit(kmsNodeParams.length, MAX_KMS_SIGNERS);
+        if (nodes.length > MAX_KMS_SIGNERS) {
+            revert KmsSignerSetExceedsProofFormatLimit(nodes.length, MAX_KMS_SIGNERS);
         }
 
         // Validate that thresholds are non-zero and not exceeding the node count.
-        _checkThreshold("publicDecryption", thresholds.publicDecryption, kmsNodeParams.length);
-        _checkThreshold("userDecryption", thresholds.userDecryption, kmsNodeParams.length);
-        _checkThreshold("kmsGen", thresholds.kmsGen, kmsNodeParams.length);
-        _checkThreshold("mpc", thresholds.mpc, kmsNodeParams.length);
+        _checkThreshold("publicDecryption", thresholds.publicDecryption, nodes.length);
+        _checkThreshold("userDecryption", thresholds.userDecryption, nodes.length);
+        _checkThreshold("kmsGen", thresholds.kmsGen, nodes.length);
+        _checkThreshold("mpc", thresholds.mpc, nodes.length);
 
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         // Single monotonic-uniqueness gate for every context-creation path.
@@ -334,14 +334,8 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         }
         $.currentKmsContextId = contextId;
 
-        for (uint256 i = 0; i < kmsNodeParams.length; i++) {
-            KmsNodeParams calldata params = kmsNodeParams[i];
-            KmsNode memory node = KmsNode({
-                txSenderAddress: params.txSenderAddress,
-                signerAddress: params.signerAddress,
-                ipAddress: params.ipAddress,
-                storageUrl: params.storageUrl
-            });
+        for (uint256 i = 0; i < nodes.length; i++) {
+            KmsNode memory node = nodes[i];
             if (node.txSenderAddress == address(0)) {
                 revert KmsNodeNullTxSender();
             }
