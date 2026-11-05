@@ -860,7 +860,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "60 * rate(listener_catchup_iterations_total{chain_id=\"$chain_id\"}[5m])",
+          "expr": "60 * rate(listener_catchup_iterations_total{chain_id=\"$chain_id\", flow=\"catchup\"}[5m])",
           "legendFormat": "orchestrator/min",
           "refId": "A"
         }
@@ -894,7 +894,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "sum(increase(listener_catchup_skipped_above_head_total{chain_id=\"$chain_id\"}[24h]))",
+          "expr": "sum(increase(listener_catchup_skipped_above_head_total{chain_id=\"$chain_id\", flow=\"catchup\"}[24h]))",
           "legendFormat": "skipped 24h",
           "refId": "A"
         }
@@ -928,7 +928,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "sum(increase(listener_catchup_subranges_total{chain_id=\"$chain_id\"}[24h]))",
+          "expr": "sum(increase(listener_catchup_subranges_total{chain_id=\"$chain_id\", flow=\"catchup\"}[24h]))",
           "legendFormat": "subranges 24h",
           "refId": "A"
         }
@@ -969,7 +969,7 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.95\"}",
+          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.95\", flow=\"catchup\"}",
           "legendFormat": "p95",
           "refId": "A"
         }
@@ -997,21 +997,21 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "rate(listener_catchup_iterations_total{chain_id=\"$chain_id\"}[$__rate_interval])",
+          "expr": "rate(listener_catchup_iterations_total{chain_id=\"$chain_id\", flow=\"catchup\"}[$__rate_interval])",
           "legendFormat": "orchestrator",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "rate(listener_catchup_subranges_total{chain_id=\"$chain_id\"}[$__rate_interval])",
+          "expr": "rate(listener_catchup_subranges_total{chain_id=\"$chain_id\", flow=\"catchup\"}[$__rate_interval])",
           "legendFormat": "subranges",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "rate(listener_catchup_skipped_above_head_total{chain_id=\"$chain_id\"}[$__rate_interval])",
+          "expr": "rate(listener_catchup_skipped_above_head_total{chain_id=\"$chain_id\", flow=\"catchup\"}[$__rate_interval])",
           "legendFormat": "skipped",
           "refId": "C"
         }
@@ -1039,21 +1039,21 @@
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.5\"}",
+          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.5\", flow=\"catchup\"}",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.95\"}",
+          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.95\", flow=\"catchup\"}",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
           "editorMode": "code",
-          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.99\"}",
+          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.99\", flow=\"catchup\"}",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -1562,7 +1562,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "60 * rate(listener_final_catchup_iterations_total{chain_id=\"$chain_id\"}[5m])",
+          "expr": "60 * rate(listener_catchup_iterations_total{chain_id=\"$chain_id\", flow=\"final_catchup\"}[5m])",
           "legendFormat": "orchestrator/min",
           "refId": "A"
         }
@@ -1624,7 +1624,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(listener_final_catchup_skipped_above_head_total{chain_id=\"$chain_id\"}[24h]))",
+          "expr": "sum(increase(listener_catchup_skipped_above_head_total{chain_id=\"$chain_id\", flow=\"final_catchup\"}[24h]))",
           "legendFormat": "skipped 24h",
           "refId": "A"
         }
@@ -1686,7 +1686,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(increase(listener_final_catchup_subranges_total{chain_id=\"$chain_id\"}[24h]))",
+          "expr": "sum(increase(listener_catchup_subranges_total{chain_id=\"$chain_id\", flow=\"final_catchup\"}[24h]))",
           "legendFormat": "subranges 24h",
           "refId": "A"
         }
@@ -1755,7 +1755,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "listener_final_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.95\"}",
+          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.95\", flow=\"final_catchup\"}",
           "legendFormat": "p95",
           "refId": "A"
         }
@@ -1811,7 +1811,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(listener_final_catchup_iterations_total{chain_id=\"$chain_id\"}[$__rate_interval])",
+          "expr": "rate(listener_catchup_iterations_total{chain_id=\"$chain_id\", flow=\"final_catchup\"}[$__rate_interval])",
           "legendFormat": "orchestrator",
           "refId": "A"
         },
@@ -1821,7 +1821,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(listener_final_catchup_subranges_total{chain_id=\"$chain_id\"}[$__rate_interval])",
+          "expr": "rate(listener_catchup_subranges_total{chain_id=\"$chain_id\", flow=\"final_catchup\"}[$__rate_interval])",
           "legendFormat": "subranges",
           "refId": "B"
         },
@@ -1831,7 +1831,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "rate(listener_final_catchup_skipped_above_head_total{chain_id=\"$chain_id\"}[$__rate_interval])",
+          "expr": "rate(listener_catchup_skipped_above_head_total{chain_id=\"$chain_id\", flow=\"final_catchup\"}[$__rate_interval])",
           "legendFormat": "skipped",
           "refId": "C"
         }
@@ -1887,7 +1887,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "listener_final_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.5\"}",
+          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.5\", flow=\"final_catchup\"}",
           "legendFormat": "p50",
           "refId": "A"
         },
@@ -1897,7 +1897,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "listener_final_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.95\"}",
+          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.95\", flow=\"final_catchup\"}",
           "legendFormat": "p95",
           "refId": "B"
         },
@@ -1907,7 +1907,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "listener_final_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.99\"}",
+          "expr": "listener_catchup_range_duration_seconds{chain_id=\"$chain_id\", quantile=\"0.99\", flow=\"final_catchup\"}",
           "legendFormat": "p99",
           "refId": "C"
         }

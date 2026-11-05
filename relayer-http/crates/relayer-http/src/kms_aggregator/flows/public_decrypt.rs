@@ -105,7 +105,7 @@ mod tests {
             decryption_id: PUBLIC_REQUEST_ID,
             decrypted_result: mock::result(variant),
             signature: mock::signature(node),
-            extra_data: Bytes::from_static(&[0]),
+            extra_data: mock::extra_data_v2(),
         }
     }
 
@@ -170,7 +170,7 @@ mod tests {
         let expected = json!({
             "decryptedValue": hex(&mock::result(0)),
             "signatures": [hex(&mock::signature(0)), hex(&mock::signature(2))],
-            "extraData": "0x00",
+            "extraData": mock::EXTRA_DATA_V2,
         });
         assert_eq!(serde_json::to_value(&output).unwrap(), expected);
         assert!(!output.decrypted_value.starts_with("0x"));

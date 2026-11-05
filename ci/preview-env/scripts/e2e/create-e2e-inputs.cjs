@@ -129,6 +129,7 @@ const mappings = [
     'RELAYER_MIGRATE_VERSION',
   ],
   ['relayer-docker-build', 'relayer_build_result', 'relayer-version', 'fhevm/relayer', 'RELAYER_VERSION'],
+  ['relayer-http-docker-build', 'build_result', 'relayer-http-version', 'fhevm/relayer-http', 'RELAYER_HTTP_VERSION'],
   ['test-suite-docker-build', 'build_result', 'test-suite-version', 'fhevm/test-suite/e2e', 'TEST_SUITE_VERSION'],
 ];
 
@@ -182,6 +183,11 @@ function selectImages({ buildResults, headTag, gpuWorkerTag }) {
         name,
         outputs[`connector-${name}-version`],
       ]),
+    ),
+  );
+  outputs['relayer-versions'] = JSON.stringify(
+    Object.fromEntries(
+      ['relayer', 'relayer-migrate', 'relayer-http'].map((name) => [name, outputs[`${name}-version`]]),
     ),
   );
   return { outputs, built, skipped };

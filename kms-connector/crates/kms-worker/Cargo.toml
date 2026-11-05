@@ -23,6 +23,7 @@ futures.workspace = true
 humantime-serde.workspace = true
 kms-grpc.workspace = true
 prometheus.workspace = true
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha3.workspace = true

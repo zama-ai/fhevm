@@ -31,6 +31,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 futures-util.workspace = true
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["io-util", "net", "test-util"] }
+tokio-rustls.workspace = true
 tower.workspace = true
 wiremock.workspace = true

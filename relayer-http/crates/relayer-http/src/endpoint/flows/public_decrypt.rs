@@ -72,10 +72,11 @@ impl From<PublicDecryptRequest> for PublicDecryptionRequest {
 pub(crate) mod tests {
     use super::*;
     use crate::endpoint::validate::tests::handle;
+    use crate::kms_aggregator::mock::EXTRA_DATA_V2;
 
     pub(crate) fn wire() -> String {
         format!(
-            r#"{{ "ciphertextHandles": ["{}", "{}"], "extraData": "0x00" }}"#,
+            r#"{{ "ciphertextHandles": ["{}", "{}"], "extraData": "{EXTRA_DATA_V2}" }}"#,
             handle(137, 0),
             handle(137, 5)
         )
@@ -91,15 +92,15 @@ pub(crate) mod tests {
         assert_eq!(request.ciphertext_handles.len(), 2);
         assert_eq!(validate(&request, &[1, 137]), Ok(()));
         assert!(
-            serde_json::from_str::<PublicDecryptRequest>(
-                r#"{"ciphertextHandles": [], "extraData": "0x00", "x": 1}"#
-            )
+            serde_json::from_str::<PublicDecryptRequest>(&format!(
+                r#"{{"ciphertextHandles": [], "extraData": "{EXTRA_DATA_V2}", "x": 1}}"#
+            ))
             .is_err()
         );
         assert!(
-            serde_json::from_str::<PublicDecryptRequest>(
-                r#"{"ciphertextHandles": ["0x12"], "extraData": "0x00"}"#
-            )
+            serde_json::from_str::<PublicDecryptRequest>(&format!(
+                r#"{{"ciphertextHandles": ["0x12"], "extraData": "{EXTRA_DATA_V2}"}}"#
+            ))
             .is_err()
         );
     }

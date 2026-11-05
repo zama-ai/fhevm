@@ -5,10 +5,6 @@ import { expect, test } from '../fixtures.js';
 // skip only fires after the session is up, and a slow device makes the test
 // time out during fixture setup instead).
 test.skip(
-  ({ browserName }) => browserName !== 'chromium',
-  'Explicit multithreaded coexistence smoke is Chromium-only.',
-);
-test.skip(
   ({ isMobileDevice }) => isMobileDevice,
   'Multithreaded WASM worker-pool stress test is desktop-only; mobile devices are not a target for this scenario.',
 );

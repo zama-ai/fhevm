@@ -15,6 +15,7 @@ import { ingen_trex_cleartext } from '../chains/ingen_trex_cleartext.js';
 import { hoodi_cleartext } from '../chains/hoodi_cleartext.js';
 import { mainnet, sepolia, sepolia as testnet } from '@fhevm/sdk/chains';
 import { localcleartext_legacy } from '../chains/localcleartext_legacy.js';
+import { localcleartext_v1_0 } from '../chains/localcleartext_v1_0.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,7 +30,7 @@ export const FHE_TEST_CHAIN_NAMES = [
   'localcleartext_legacy',
   'localcleartext_v12',
   'localcleartext_v13',
-  'localcleartext_v16',
+  'localcleartext_v1_0',
   'localstack',
   'localstack_v14',
   'polygon_devnet',
@@ -93,7 +94,8 @@ export function protocolEraOf(chainName: FheTestChainName): 12 | 13 | 14 | 16 {
   if (chainName === 'localcleartext_v12') {
     return 12;
   }
-  if (chainName === 'localcleartext_v16') {
+  // v1.0 counts as the newest era the tests know, so every "at or above 16" gate stays on.
+  if (chainName === 'localcleartext_v1_0') {
     return 16;
   }
   if (chainName === 'localstack' || chainName === 'localstack_v14') {
@@ -130,7 +132,7 @@ const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestC
   localcleartext_legacy: 'cleartext',
   localcleartext_v12: 'cleartext',
   localcleartext_v13: 'cleartext',
-  localcleartext_v16: 'cleartext',
+  localcleartext_v1_0: 'cleartext',
   ingen_trex_cleartext: 'cleartext',
 };
 
@@ -533,7 +535,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     localcleartext,
     localcleartext_v12: localcleartext_legacy,
     localcleartext_v13: localcleartext,
-    localcleartext_v16: localcleartext,
+    localcleartext_v1_0,
     polygon_devnet,
     ingen_trex_cleartext,
     hoodi_cleartext,

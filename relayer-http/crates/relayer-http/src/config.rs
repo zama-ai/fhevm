@@ -152,6 +152,7 @@ mod tests {
         assert_eq!(config.kms_aggregator.endpoints.len(), 13);
         assert_eq!(config.kms_aggregator.user_decrypt.threshold, 9);
         assert_eq!(config.kms_aggregator.public_decrypt.threshold, 5);
+        assert!(!config.kms_aggregator.skip_tls_verification);
         assert_eq!(
             config.kms_aggregator.call.timeout,
             Duration::from_millis(5000)
@@ -185,6 +186,26 @@ mod tests {
         .err()
         .unwrap();
         assert!(e.0.contains("timeout"), "{e}");
+    }
+
+    #[test]
+    fn skip_tls_verification_is_off_unless_set() {
+        let example = std::fs::read_to_string(EXAMPLE).unwrap();
+        let without = example.replace("skip_tls_verification: false", "");
+        assert_ne!(without, example);
+        let config: RelayerConfig = Config::builder()
+            .add_source(File::from_str(&without, config::FileFormat::Yaml))
+            .build()
+            .unwrap()
+            .try_deserialize()
+            .unwrap();
+        assert!(!config.kms_aggregator.skip_tls_verification);
+        let config = RelayerConfig::load_with(
+            EXAMPLE,
+            env(&[("APP_KMS_AGGREGATOR__SKIP_TLS_VERIFICATION", "true")]),
+        )
+        .unwrap();
+        assert!(config.kms_aggregator.skip_tls_verification);
     }
 
     #[test]
