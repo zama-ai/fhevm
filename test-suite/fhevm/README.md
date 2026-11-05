@@ -150,7 +150,7 @@ Only `devnet`, `testnet`, and `mainnet` resolve from GitOps today. Non-network t
 
 ## Pinning an Exact Version Bundle
 
-If you need to run a specific set of versions (e.g., `v0.13.0` across the board, as in `profiles/v0.13.0.json`), use `--lock-file`
+If you need to run a specific set of versions (e.g., `v0.13.0` across the board), use `--lock-file`
 to skip all target resolution, avoid GitHub lookups, and supply the full bundle yourself:
 
 ```sh
@@ -300,7 +300,7 @@ The rules have three sections:
 | `legacyShims`       | Old versions needing extra flags/env | sns-worker < 0.14.0 drops the signer flags                                  |
 | `anchors`           | Commit reference points              | simple-ACL cutover commit                                                   |
 
-The oldest supported release is v0.13.0 (`profiles/v0.13.0.json`). Shims and rules that fire only below it are removed.
+The oldest supported release is v0.13.0, the oldest version mainnet runs (`--target mainnet`). Shims and rules that fire only below it are removed.
 
 Merge-queue e2e explicitly keeps `build=false`.
 For non-release PRs it boots `two-of-two-multi-chain` from the frozen base lock plus any successful head-image overrides.

@@ -13,10 +13,10 @@ The compatibility layer lives in [`src/compat/compat.ts`](src/compat/compat.ts).
 
 ## Oldest supported release
 
-- v0.13.0 is the oldest release the CLI supports.
-- `profiles/v0.13.0.json` pins it (v0.13.0-2 images); `profiles/latest-supported.json` tracks the maintained bundle.
-- Shims and checks that fire only below v0.13.0 are removed. Those that fire within v0.13.x (for example the host-chain seed shim below v0.13.1, `--seed-start-block` below v0.13.2) stay as long as `profiles/v0.13.0.json` needs them.
-- Raising this floor means deleting the older profile and the shims that only it needed.
+- v0.13.0 is the oldest release the CLI supports: mainnet runs v0.13.0 to v0.13.6 (`--target mainnet`).
+- Network versions come from GitOps (`--target devnet|testnet|mainnet`); `profiles/latest-supported.json` is the only tracked profile.
+- Shims and checks that fire only below v0.13.0 are removed. Those that fire within v0.13.x (for example the host-chain seed shim below v0.13.1, `--seed-start-block` below v0.13.2) stay while mainnet runs v0.13.x images that need them.
+- Raising this floor means deleting the shims that only older releases need.
 
 ## What "compat" means here
 
