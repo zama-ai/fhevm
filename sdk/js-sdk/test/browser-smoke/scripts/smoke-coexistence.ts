@@ -1,93 +1,95 @@
-import type { TfheVersion } from '../../../src/wasm/tfhe/loadTfheLib.js';
-import type { FhevmChain } from '../../../src/core/types/fhevmChain.js';
+import { createFhevmDecryptClient, createFhevmEncryptClient } from '../../../src/ethers/index.js';
 import {
   DUMMY_RELAYER_BASE_URL,
-  TFHE_VERSION,
-  TKMS_VERSION,
   assertTfheModuleReady,
   assertTkmsModuleReady,
   assertWellFormedProof,
   attempt,
-  buildUint64Proof,
   errorMessage,
-  initAllModules,
-  loadAndCacheKey,
+  generateUint64Proof,
   log,
-  makeDummyChain,
   runSmokePage,
-  setupSmokeRuntime,
+  setSmokeRuntimeConfig,
+  setupDummyChain,
 } from './smokeHarness.js';
 
 /**
- * A chain is defined by a unique relayer URL, the TFHE module version it requires,
- * and the serialized PubKey/CRS format it serves (a key.<keyTfheVersion>.json file).
+ * A chain is defined by a unique relayer URL and the serialized PubKey/CRS format
+ * it serves as its active key (a key.<keyTfheVersion>.json file).
  *
  * The TFHE-rs serialization format is forward-compatible but not backward-compatible,
- * so a chain runs only when its module version can deserialize the key it serves:
+ * so a chain runs only when the TFHE module can deserialize the key it serves:
  *  - a key serialized by an older version loads on any newer module,
  *  - a key serialized by a newer version fails on an older module.
  */
 type ChainDefinition = {
-  /** The TFHE module version that deserializes the key and builds the proof. */
-  readonly tfheVersion: TfheVersion;
   /** The serialized key format served (test/keys/key.<keyTfheVersion>.json). */
   readonly keyTfheVersion: string;
   /** Whether a mini encryption on this chain is expected to succeed. */
   readonly shouldRun: boolean;
-  /** Self-contained dummy chain with a relayer URL unique to (tfheVersion, keyTfheVersion). */
-  readonly chain: FhevmChain;
+  /** Relayer URL unique to the key, so each chain gets its own key cache slot. */
+  readonly relayerUrl: string;
 };
 
-function defineChainDefinition(tfheVersion: TfheVersion, keyTfheVersion: string, shouldRun: boolean): ChainDefinition {
-  // The relayer URL is unique per (module, key) so each chain gets its own cache
-  // slot (the global key cache is keyed by relayer URL, first-write-wins per slot).
-  const chain = makeDummyChain(`${DUMMY_RELAYER_BASE_URL}/${tfheVersion}/${keyTfheVersion}`);
-  return { tfheVersion, keyTfheVersion, shouldRun, chain };
+function defineChainDefinition(keyTfheVersion: string, shouldRun: boolean): ChainDefinition {
+  return { keyTfheVersion, shouldRun, relayerUrl: `${DUMMY_RELAYER_BASE_URL}/${keyTfheVersion}` };
 }
 
 const CHAIN_DEFINITIONS: readonly ChainDefinition[] = [
-  defineChainDefinition(TFHE_VERSION, '1.4.0-alpha.3', true),
-  defineChainDefinition(TFHE_VERSION, '1.5.4', true),
-  defineChainDefinition(TFHE_VERSION, '1.6.1', true),
+  defineChainDefinition('1.4.0-alpha.3', true),
+  defineChainDefinition('1.5.4', true),
+  defineChainDefinition('1.6.1', true),
 ];
 
 void runSmokePage(async () => {
-  const runtime = setupSmokeRuntime();
+  setSmokeRuntimeConfig();
 
-  log('Initializing TFHE and TKMS modules concurrently...');
-  await initAllModules(runtime);
-  log('[PASS] All modules initialized');
-
-  await assertTfheModuleReady(runtime, TFHE_VERSION);
-
-  // Battle-test concurrency: run every chain's prime-then-encrypt in parallel,
-  // exercising concurrent cache population (each chain has a unique slot) and
-  // interleaved deserialize against the shared TFHE worker pool at once.
-  log(`Running ${CHAIN_DEFINITIONS.length} per-chain mini encryptions concurrently...`);
-  const results = await Promise.all(
-    CHAIN_DEFINITIONS.map(async (definition) => {
-      await loadAndCacheKey(runtime, definition.chain, definition.keyTfheVersion);
-      const outcome = await attempt(async () => {
-        const zkProof = await buildUint64Proof(runtime, definition.chain);
-        assertWellFormedProof(zkProof, 1);
-      });
-      return { definition, outcome };
-    }),
+  // One encrypt client per chain, each checking its chain's key for real against the chain's KMSGeneration,
+  // and a decrypt client for the TKMS module. Every client shares the same TFHE and TKMS modules.
+  const chains = await Promise.all(
+    CHAIN_DEFINITIONS.map((definition) => setupDummyChain(definition.relayerUrl, definition.keyTfheVersion)),
   );
+  const encryptClients = chains.map(({ chain, provider, fheEncryptionKey }) =>
+    createFhevmEncryptClient({ chain, provider, options: { fheEncryptionKey } }),
+  );
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const decryptClient = createFhevmDecryptClient({ chain: chains[0]!.chain, provider: chains[0]!.provider });
+  log(`Created ${encryptClients.length} encrypt clients and 1 decrypt client`);
+
+  // Battle-test concurrency: every chain's init (key check + cache population, each chain has a unique slot)
+  // and prime-then-encrypt run in parallel, interleaving deserialize against the shared TFHE worker pool.
+  log(`Running ${CHAIN_DEFINITIONS.length} per-chain mini encryptions concurrently...`);
+  const [results] = await Promise.all([
+    Promise.all(
+      CHAIN_DEFINITIONS.map(async (definition, i) => {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const client = encryptClients[i]!;
+        const outcome = await attempt(async () => {
+          await client.init();
+          assertWellFormedProof(await generateUint64Proof(client), 1);
+        });
+        return { definition, client, outcome };
+      }),
+    ),
+    decryptClient.init(),
+  ]);
 
   // Assert and log in definition order so the output stays deterministic even
   // though the encryptions ran concurrently.
-  for (const { definition, outcome } of results) {
-    const label = `module ${definition.tfheVersion} + key.${definition.keyTfheVersion}`;
+  for (const { definition, client, outcome } of results) {
+    const label = `key.${definition.keyTfheVersion}`;
     if (outcome.ok !== definition.shouldRun) {
       if (definition.shouldRun) {
         throw new Error(`Expected ${label} to run, but it failed: ${errorMessage(outcome.error)}`);
       }
       throw new Error(`Expected ${label} to fail, but the encryption ran successfully.`);
     }
-    log(`[PASS] ${label} ${outcome.ok ? 'ran' : 'failed'} as expected`);
+    log(`[PASS] ${label} ${outcome.ok ? `ran on module ${client.tfheVersion}` : 'failed'} as expected`);
   }
   log('[PASS] Concurrent per-chain mini encryptions verified');
 
-  await assertTkmsModuleReady(runtime, TKMS_VERSION);
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const encryptClient = encryptClients[0]!;
+  await assertTfheModuleReady(encryptClient.runtime, encryptClient.tfheVersion);
+  await assertTkmsModuleReady(decryptClient.runtime, decryptClient.tkmsVersion);
 });

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Smoke Clients - every client type sharing one TFHE and one TKMS module</title>
+    <style>
+      body {
+        font-family: monospace;
+        background: #1a1a1a;
+        color: #e0e0e0;
+        padding: 2rem;
+      }
+      .pass {
+        color: #4caf50;
+      }
+      .fail {
+        color: #f44336;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Smoke Clients - every client type sharing one TFHE and one TKMS module</h2>
+    <pre id="log"></pre>
+    <!-- Module scripts run in document order: the counter is installed before anything else runs. -->
+    <script type="module" src="../scripts/wasmInstanceCounter.ts"></script>
+    <script type="module" src="../scripts/smoke-clients.ts"></script>
+  </body>
+</html>
