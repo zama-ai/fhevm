@@ -2,7 +2,7 @@ use crate::{
     error::{PrfError, NO_STORE},
     in_flight::InFlight,
     instance,
-    metrics::REQUESTS_COUNTER,
+    metrics::{REQUESTS_COUNTER, REQUEST_DURATION},
     pads::{self, Admission, Admissions, PadState},
     waiter::PadWaiter,
 };
@@ -26,7 +26,7 @@ use std::{
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -74,6 +74,7 @@ async fn prf_output(req: HttpRequest, state: web::Data<AppState>) -> HttpRespons
             .insert_header((CACHE_CONTROL, NO_STORE))
             .finish();
     }
+    let started = Instant::now();
     let mut response = serve(&req, &state)
         .await
         .unwrap_or_else(|e| e.error_response());
@@ -82,9 +83,12 @@ async fn prf_output(req: HttpRequest, state: web::Data<AppState>) -> HttpRespons
             .head_mut()
             .set_connection_type(ConnectionType::Close);
     }
-    REQUESTS_COUNTER
-        .with_label_values(&[req.method().as_str(), response.status().as_str()])
-        .inc();
+    let status = response.status();
+    let labels = [req.method().as_str(), status.as_str()];
+    REQUESTS_COUNTER.with_label_values(&labels).inc();
+    REQUEST_DURATION
+        .with_label_values(&labels)
+        .observe(started.elapsed().as_secs_f64());
     response
 }
 
