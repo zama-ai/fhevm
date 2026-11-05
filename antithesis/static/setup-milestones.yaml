@@ -1,0 +1,70 @@
+# Reports setup progress to Antithesis as Reachable properties (fallback SDK JSONL in
+# $ANTITHESIS_OUTPUT_DIR/sdk.jsonl), so a run that stalls shows which step it reached.
+# It only watches the cluster: no SUT image is changed. kapp does not wait for it, so it
+# can sit in the first group and outlive the later ones.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: setup-milestones}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: setup-milestones}
+rules:
+  - {apiGroups: [""], resources: [configmaps], verbs: [get]}
+  - {apiGroups: [batch], resources: [jobs], verbs: [get]}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: setup-milestones}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: setup-milestones}
+subjects: [{kind: ServiceAccount, name: setup-milestones}]
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup-milestones
+  annotations:
+    kapp.k14s.io/disable-wait: ""
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      serviceAccountName: setup-milestones
+      restartPolicy: OnFailure
+      containers:
+        - name: watch
+          image: ghcr.io/zama-ai/fhevm/host-contracts:TAG
+          command: [/bin/bash, -c]
+          args:
+            - |
+              set -uo pipefail
+              out="${ANTITHESIS_OUTPUT_DIR:-/tmp}/sdk.jsonl"
+              # assert <hit> <message> [details-json]
+              assert() {
+                local d="${3:-}"
+                [ -n "${d}" ] || d='{}'
+                jq -cn --argjson hit "$1" --arg m "$2" --argjson d "${d}" '{antithesis_assert: {
+                  hit: $hit, must_hit: true, assert_type: "reachability", display_type: "Reachable",
+                  condition: $hit, id: $m, message: $m, details: $d,
+                  location: {class: "setup", function: "setup-milestones",
+                    file: "antithesis/static/setup-milestones.yaml", begin_line: 0, begin_column: 0}}}' >>"${out}"
+                echo "$( [ "$1" = true ] && echo REACHED || echo declared ): $2"
+              }
+              job_done() { [ "$(kubectl get job "$1" -o jsonpath='{.status.succeeded}' 2>/dev/null)" = 1 ]; }
+              cm() { kubectl get configmap "$1" -o json 2>/dev/null | jq -c '.data // empty'; }
+              steps=(
+                "setup: S3 buckets provisioned|job_done minio-provision"
+                "setup: KMS signers discovered|cm kms-signers"
+                "setup: gateway contracts deployed|cm gw-sc-addresses"
+                "setup: host contracts deployed|cm host-sc-addresses"
+                "setup: host chain registered on the gateway|job_done gateway-add-host-chains-deploy"
+                "setup: KMS key and CRS activated on-chain|job_done host-trigger-keygen-deploy"
+                "setup: coprocessor holds the activated key|job_done coprocessor-keys-ready"
+              )
+              for s in "${steps[@]}"; do assert false "${s%%|*}"; done
+              for s in "${steps[@]}"; do
+                until details=$(eval "${s#*|}") ; do sleep 5; done
+                assert true "${s%%|*}" "$(jq -cn --arg d "${details}" \
+                  '$d | try fromjson catch {} | with_entries(select(.key | test("CA_CERT") | not))')"
+              done
+              echo '{"antithesis_setup":{"status":"complete","details":{"message":"coprocessor holds the activated key"}}}' >>"${out}"

@@ -147,6 +147,9 @@ metadata:
     kapp.k14s.io/change-group: namespace
 EOF
 static "${here}/static/s3.yaml" s3 namespace
+sed "s|host-contracts:TAG|host-contracts:${FHEVM_TAG}|" "${here}/static/setup-milestones.yaml" \
+  >"${work}/setup-milestones.yaml"
+static "${work}/setup-milestones.yaml" s3 namespace
 for db in coprocessor-1:coprocessor-infra/values-postgres-coprocessor-e2e.yaml \
   listener-1:listener/values-postgres-listener-e2e.yaml \
   $(for i in $(seq 1 "${NB_KMS_CORE}"); do echo "connector-${i}:kms-connector/values-postgres-connector-e2e.yaml"; done); do
