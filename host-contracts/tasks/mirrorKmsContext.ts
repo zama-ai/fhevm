@@ -1,11 +1,10 @@
-import type { Interface, ParamType, Provider } from 'ethers';
+import type { Interface } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { ConfigurableTaskDefinition, HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import type { ProtocolConfig, ProtocolConfigReplica } from '../types';
-import type { KmsNodeParamsStruct, PcrValuesStruct } from '../types/contracts/ProtocolConfigReplica';
+import type { ProtocolConfigReplica } from '../types';
 import { broadcast, getProtocolConfigReplicaInterface, requireProtocolConfigAddress } from './kmsContext';
-import { type KmsThresholds, assertCanonicalSnapshotBlockHash, readCanonicalSnapshot } from './protocolConfigMirror';
+import { type CanonicalSnapshot, readCanonicalSnapshot } from './protocolConfigMirror';
 
 // This file defines tasks that mirror the canonical (Ethereum) ProtocolConfig's active KMS context
 // and epoch onto a non-canonical replica (e.g. Polygon) after a rotation has gone active on
@@ -17,128 +16,12 @@ import { type KmsThresholds, assertCanonicalSnapshotBlockHash, readCanonicalSnap
 // mirrorKmsContextAndEpoch: mirrors a context switch (new signer set) plus its first epoch.
 // -----------------------------------------------------------------------------------------
 
-export interface MirrorContextArgs {
-  contextId: bigint;
-  epochId: bigint;
-  kmsNodeParams: KmsNodeParamsStruct[];
-  thresholds: KmsThresholds;
-  softwareVersion: string;
-  pcrValues: PcrValuesStruct[];
-}
-
-// Recomputes the on-chain `contextInfoHash` anchor from candidate event args. The encode types come
-// straight off canonical's `NewKmsContext` event (minus the two indexed ids), so the tuple layout
-// cannot drift from canonical's `abi.encode(...)`.
-function computeContextInfoHash(
-  hre: HardhatRuntimeEnvironment,
-  encodeTypes: readonly ParamType[],
-  args: Pick<MirrorContextArgs, 'kmsNodeParams' | 'thresholds' | 'softwareVersion' | 'pcrValues'>,
-): string {
-  const encoded = hre.ethers.AbiCoder.defaultAbiCoder().encode(encodeTypes, [
-    args.kmsNodeParams,
-    args.thresholds,
-    args.softwareVersion,
-    args.pcrValues,
-  ]);
-  return hre.ethers.keccak256(encoded);
-}
-
-// Reads canonical's active KMS context as `mirrorKmsContextAndEpoch` args. The node/software-version/
-// PCR data only exists in the `NewKmsContext` event, so this reads the event at the block the context
-// anchor records and verifies its hash against the anchor. Thresholds come from the same event: they
-// are fixed at context creation, and the anchor hash check covers them too.
-export async function readCanonicalContextSwitch(
-  hre: HardhatRuntimeEnvironment,
-  options: {
-    canonicalProvider: Provider;
-    canonicalProtocolConfigAddress: string;
-    blockNumber?: number;
-  },
-): Promise<MirrorContextArgs> {
-  const { canonicalProvider, canonicalProtocolConfigAddress, blockNumber } = options;
-  const snapshot = await readCanonicalSnapshot(hre, { canonicalProvider, canonicalProtocolConfigAddress, blockNumber });
-
-  const canonicalProtocolConfig = (
-    await hre.ethers.getContractAt('ProtocolConfig', canonicalProtocolConfigAddress)
-  ).connect(canonicalProvider) as unknown as ProtocolConfig;
-
-  const [emissionBlockNumber, expectedHash] = await canonicalProtocolConfig.getKmsContextAnchor(
-    snapshot.currentKmsContextId,
-    { blockTag: snapshot.blockNumber },
-  );
-  if (emissionBlockNumber === 0n) {
-    throw new Error(
-      `${canonicalProtocolConfigAddress} has no context anchor recorded for context ${snapshot.currentKmsContextId}. `,
-    );
-  }
-
-  const [event] = await canonicalProtocolConfig.queryFilter(
-    canonicalProtocolConfig.filters.NewKmsContext(snapshot.currentKmsContextId),
-    Number(emissionBlockNumber),
-    Number(emissionBlockNumber),
-  );
-  if (!event) {
-    throw new Error(
-      `No NewKmsContext(${snapshot.currentKmsContextId}) event at block ${emissionBlockNumber} on ${canonicalProtocolConfigAddress}. `,
-    );
-  }
-
-  const kmsNodeParams: KmsNodeParamsStruct[] = event.args.kmsNodeParams.map((node) => ({
-    txSenderAddress: node.txSenderAddress,
-    signerAddress: node.signerAddress,
-    ipAddress: node.ipAddress,
-    storageUrl: node.storageUrl,
-    partyId: node.partyId,
-    mpcIdentity: node.mpcIdentity,
-    caCert: node.caCert,
-    storagePrefix: node.storagePrefix,
-  }));
-  const eventThresholds: KmsThresholds = {
-    publicDecryption: event.args.thresholds.publicDecryption,
-    userDecryption: event.args.thresholds.userDecryption,
-    kmsGen: event.args.thresholds.kmsGen,
-    mpc: event.args.thresholds.mpc,
-  };
-  const pcrValues: PcrValuesStruct[] = event.args.pcrValues.map((pcr) => ({
-    pcr0: pcr.pcr0,
-    pcr1: pcr.pcr1,
-    pcr2: pcr.pcr2,
-  }));
-  const softwareVersion = event.args.softwareVersion;
-
-  const encodeTypes = canonicalProtocolConfig.interface.getEvent('NewKmsContext').inputs.slice(2);
-  const hash = computeContextInfoHash(hre, encodeTypes, {
-    kmsNodeParams,
-    thresholds: eventThresholds,
-    softwareVersion,
-    pcrValues,
-  });
-  if (hash !== expectedHash) {
-    throw new Error(
-      `NewKmsContext(${snapshot.currentKmsContextId}) event at block ${emissionBlockNumber} on ${canonicalProtocolConfigAddress} does not match the on-chain contextInfoHash.`,
-    );
-  }
-
-  await assertCanonicalSnapshotBlockHash(canonicalProvider, snapshot);
-
-  return {
-    contextId: snapshot.currentKmsContextId,
-    epochId: snapshot.currentEpochId,
-    kmsNodeParams,
-    thresholds: eventThresholds,
-    softwareVersion,
-    pcrValues,
-  };
-}
-
-export function encodeMirrorKmsContextAndEpoch(iface: Interface, args: MirrorContextArgs): string {
+export function encodeMirrorKmsContextAndEpoch(iface: Interface, snapshot: CanonicalSnapshot): string {
   return iface.encodeFunctionData('mirrorKmsContextAndEpoch', [
-    args.contextId,
-    args.epochId,
-    args.kmsNodeParams,
-    args.thresholds,
-    args.softwareVersion,
-    args.pcrValues,
+    snapshot.currentKmsContextId,
+    snapshot.currentEpochId,
+    snapshot.kmsNodes,
+    snapshot.thresholds,
   ]);
 }
 
@@ -201,19 +84,19 @@ addMirrorTaskParams(
 ): Promise<void> {
   const iface = await getProtocolConfigReplicaInterface(hre);
   const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl, undefined, { cacheTimeout: -1 });
-  const args = await readCanonicalContextSwitch(hre, {
+  const snapshot = await readCanonicalSnapshot(hre, {
     canonicalProvider,
     canonicalProtocolConfigAddress,
     blockNumber,
   });
   const target = requireProtocolConfigAddress(useInternalProxyAddress);
-  await assertReplicaNeedsContextSwitch(hre, target, args.contextId);
-  const calldata = encodeMirrorKmsContextAndEpoch(iface, args);
+  await assertReplicaNeedsContextSwitch(hre, target, snapshot.currentKmsContextId);
+  const calldata = encodeMirrorKmsContextAndEpoch(iface, snapshot);
 
   console.log('ProtocolConfigReplica.mirrorKmsContextAndEpoch');
-  console.log('  contextId:', args.contextId.toString());
-  console.log('  epochId:', args.epochId.toString());
-  console.log('  kmsNodes:', args.kmsNodeParams.length);
+  console.log('  contextId:', snapshot.currentKmsContextId.toString());
+  console.log('  epochId:', snapshot.currentEpochId.toString());
+  console.log('  kmsNodes:', snapshot.kmsNodes.length);
   console.log('  target:', target);
   console.log('  calldata:', calldata);
 });
@@ -230,17 +113,17 @@ addMirrorTaskParams(
 ): Promise<void> {
   const iface = await getProtocolConfigReplicaInterface(hre);
   const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl, undefined, { cacheTimeout: -1 });
-  const args = await readCanonicalContextSwitch(hre, {
+  const snapshot = await readCanonicalSnapshot(hre, {
     canonicalProvider,
     canonicalProtocolConfigAddress,
     blockNumber,
   });
   const target = requireProtocolConfigAddress(useInternalProxyAddress);
-  await assertReplicaNeedsContextSwitch(hre, target, args.contextId);
-  const calldata = encodeMirrorKmsContextAndEpoch(iface, args);
+  await assertReplicaNeedsContextSwitch(hre, target, snapshot.currentKmsContextId);
+  const calldata = encodeMirrorKmsContextAndEpoch(iface, snapshot);
   const hash = await broadcast(hre, target, calldata);
   console.log(
-    `Broadcast mirrorKmsContextAndEpoch(context=${args.contextId}, epoch=${args.epochId}) on ${target} (tx: ${hash}).`,
+    `Broadcast mirrorKmsContextAndEpoch(context=${snapshot.currentKmsContextId}, epoch=${snapshot.currentEpochId}) on ${target} (tx: ${hash}).`,
   );
 });
 
