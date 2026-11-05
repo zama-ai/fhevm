@@ -13,7 +13,10 @@ use rand::Rng;
 use sqlx::types::time::PrimitiveDateTime;
 use sqlx::Postgres;
 use std::ops::DerefMut;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
 use tracing::info;
 
 use alloy::primitives::Log;
@@ -277,25 +280,14 @@ pub async fn generate_trivial_encrypt(
             result: handle,
         },
     ));
-    let operand_boundary_mask =
-        fixture_operand_boundary_mask(tx, transaction_hash, &trivial_event.data).await?;
-    let log = LogTfhe {
-        allowed_outputs: uniform_allowed_outputs(&trivial_event, is_allowed),
-        event: trivial_event,
-        transaction_hash: Some(transaction_hash),
-        block_number: 1,
-        block_hash: Handle::ZERO,
-        block_timestamp: PrimitiveDateTime::MAX,
-        dependence_chain: transaction_hash,
-        tx_depth_size: 0,
-        log_index: None,
-        operand_boundary_mask: Some(operand_boundary_mask),
-        has_legacy_operand_origin: false,
-        is_executor_minted: true,
-        is_fallback_grant: false,
-        is_synthetic: false,
-    };
-    listener_event_to_db.insert_tfhe_event(tx, &log).await?;
+    insert_tfhe_event(
+        tx,
+        listener_event_to_db,
+        transaction_hash,
+        trivial_event,
+        is_allowed,
+    )
+    .await?;
     Ok(handle)
 }
 
@@ -450,6 +442,9 @@ pub async fn insert_tfhe_event(
     is_allowed: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = tokio::time::Instant::now();
+    // Generated events share one fixture block. Preserve their insertion order
+    // just as the native listener receives globally ordered block log indexes.
+    static NEXT_LOG_INDEX: AtomicU64 = AtomicU64::new(0);
 
     let operand_boundary_mask =
         fixture_operand_boundary_mask(tx, transaction_hash, &event.data).await?;
@@ -462,7 +457,7 @@ pub async fn insert_tfhe_event(
         block_timestamp: PrimitiveDateTime::MAX,
         dependence_chain: transaction_hash,
         tx_depth_size: 0,
-        log_index: None,
+        log_index: Some(NEXT_LOG_INDEX.fetch_add(1, Ordering::Relaxed)),
         operand_boundary_mask: Some(operand_boundary_mask),
         has_legacy_operand_origin: false,
         is_executor_minted: true,
@@ -477,4 +472,69 @@ pub async fn insert_tfhe_event(
 
 pub async fn pool(listener_event_to_db: &ListenerDatabase) -> sqlx::Pool<Postgres> {
     listener_event_to_db.pool.clone().read().await.clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::{Address, FixedBytes, U256};
+    use host_listener::contracts::TfheContract;
+    use sqlx::Row;
+    use test_harness::instance::{setup_test_db, ImportMode};
+
+    #[tokio::test]
+    async fn generated_events_preserve_log_order_and_local_operand_origin(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let instance = setup_test_db(ImportMode::None).await?;
+        let db =
+            ListenerDatabase::new(&instance.db_url, ChainId::try_from(HOST_CHAIN_ID)?, 128).await?;
+        let transaction = FixedBytes::repeat_byte(0x91);
+        let address = Address::ZERO.to_string();
+        let mut tx = db.new_transaction().await?.expect("live fixture stack");
+        let input = generate_trivial_encrypt(
+            &mut tx,
+            &address,
+            &address,
+            transaction,
+            &db,
+            Some(FheType::FheUint64),
+            Some(7),
+            true,
+        )
+        .await?;
+        let output = next_random_handle(FheType::FheUint64);
+        insert_tfhe_event(
+            &mut tx,
+            &db,
+            transaction,
+            tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+                caller: Address::ZERO,
+                lhs: input,
+                rhs: U256::from(1).to_be_bytes::<32>().into(),
+                scalarByte: FixedBytes([1]),
+                result: output,
+            })),
+            true,
+        )
+        .await?;
+        let rows = sqlx::query(
+            "SELECT output_handle, log_index, log_index_block_hash,
+                    is_executor_minted, operand_boundary_mask
+             FROM computations WHERE transaction_id = $1 ORDER BY log_index",
+        )
+        .bind(transaction.as_slice())
+        .fetch_all(&mut *tx)
+        .await?;
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].get::<Vec<u8>, _>("output_handle"), input.to_vec());
+        assert_eq!(rows[1].get::<Vec<u8>, _>("output_handle"), output.to_vec());
+        assert!(rows[0].get::<i64, _>("log_index") < rows[1].get::<i64, _>("log_index"));
+        for row in rows {
+            assert!(row.get::<bool, _>("is_executor_minted"));
+            assert_eq!(row.get::<Vec<u8>, _>("log_index_block_hash"), vec![0; 32]);
+            assert_eq!(row.get::<Vec<u8>, _>("operand_boundary_mask"), vec![0; 32]);
+        }
+        tx.rollback().await?;
+        Ok(())
+    }
 }
