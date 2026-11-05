@@ -34,19 +34,19 @@ tree-shakable surface.
 
 ## Directory map
 
-| Path                          | Responsibility                                              |
-| ----------------------------- | ---------------------------------------------------------- |
-| `src/ethers/`, `src/viem/`    | Thin adapters: factories, runtime config, native signing.  |
-| `src/core/clients/`           | Client construction and the decorator groups.              |
-| `src/core/actions/`           | Standalone action functions (base/encrypt/decrypt/chain/host). |
-| `src/core/runtime/`           | The composable runtime and its lazy init.                  |
-| `src/core/modules/`           | Runtime modules: `encrypt`, `encryptTransci`, `decrypt`, `relayer`, `ethereum`. |
-| `src/core/chains/`            | Built-in chain definitions and `defineFhevmChain`.         |
-| `src/core/kms/`               | Transport key pair, permits, KMS share flow.               |
-| `src/core/coprocessor/`       | ZK proof building and RFC-030 pad-based input encryption.   |
-| `src/core/handle/`, `src/core/types/` | Encrypted-value handles and the type system.        |
-| `src/core/host-contracts/`    | Reads against ACL / verifier host contracts.               |
-| `src/wasm/`                   | The TFHE and TKMS WASM libraries and loaders.              |
+| Path                                  | Responsibility                                                                  |
+| ------------------------------------- | ------------------------------------------------------------------------------- |
+| `src/ethers/`, `src/viem/`            | Thin adapters: factories, runtime config, native signing.                       |
+| `src/core/clients/`                   | Client construction and the decorator groups.                                   |
+| `src/core/actions/`                   | Standalone action functions (base/encrypt/decrypt/chain/host).                  |
+| `src/core/runtime/`                   | The composable runtime and its lazy init.                                       |
+| `src/core/modules/`                   | Runtime modules: `encrypt`, `encryptWithPad`, `decrypt`, `relayer`, `ethereum`. |
+| `src/core/chains/`                    | Built-in chain definitions and `defineFhevmChain`.                              |
+| `src/core/kms/`                       | Transport key pair, permits, KMS share flow.                                    |
+| `src/core/coprocessor/`               | ZK proof building and RFC-030 pad-based input encryption.                       |
+| `src/core/handle/`, `src/core/types/` | Encrypted-value handles and the type system.                                    |
+| `src/core/host-contracts/`            | Reads against ACL / verifier host contracts.                                    |
+| `src/wasm/`                           | The TFHE and TKMS WASM libraries and loaders.                                   |
 
 The `ethers` and `viem` adapters are deliberately tiny. Everything real lives in
 `core`; an adapter only knows how to read a contract, sign typed data, and derive
@@ -58,7 +58,7 @@ A `FhevmRuntime` is a composable container of **modules**. A module wraps a unit
 of capability — and, for the cryptographic modules, a specific WASM library:
 
 - **encrypt module** → the TFHE WASM (proof generation, ~4.9 MB).
-- **encryptTransci module** → the TKMS WASM (pad share reconstruction for
+- **encryptWithPad module** → the TKMS WASM (pad share reconstruction for
   RFC-030 pad-based encryption). It shares the TKMS WASM instance with the
   decrypt module.
 - **decrypt module** → the TKMS WASM (share reconstruction, ~600 KB).
@@ -68,8 +68,8 @@ of capability — and, for the cryptographic modules, a specific WASM library:
 Modules are added by extension, which is the mechanism behind the client
 factories. `createFhevmEncryptClient` extends the runtime with only the encrypt
 module, so a bundler never pulls in the decrypt WASM. `createFhevmClient` extends
-with both. `createFhevmEncryptTransciClient` extends with only the
-encryptTransci module, so it never pulls in the TFHE WASM.
+with both. `createFhevmEncryptWithPadClient` extends with only the
+encryptWithPad module, so it never pulls in the TFHE WASM.
 
 ### Initialization is lazy, idempotent, and shared
 
@@ -112,8 +112,8 @@ verification.
 
 ### Pad-based encryption (RFC-030)
 
-`encryptValuesTransci` implements the RFC-030 pad-based input flow, split across
-the relayer and encryptTransci modules:
+`encryptValuesWithPad` implements the RFC-030 pad-based input flow, split across
+the relayer and encryptWithPad modules:
 
 1. **Build a witness** binding the submitter (`userAddress`), the consumer
    (`contractAddress`), the chain, an expiration timestamp, and a fresh nonce.
@@ -121,7 +121,7 @@ the relayer and encryptTransci modules:
 2. **Fetch the one-time pad** (relayer module). A pad decryption request,
    authenticated by the caller's v2 signed permit, returns one signed share per
    KMS node.
-3. **Reconstruct the pad** (encryptTransci module). The SDK verifies the
+3. **Reconstruct the pad** (encryptWithPad module). The SDK verifies the
    signatures against the context's KMS signers and reconstructs the pad from
    consistent shares.
 4. **Mask and package.** The packed values are XOR-ed with the pad and wrapped
@@ -169,5 +169,7 @@ The internals follow a consistent set of rules:
 - [Runtime configuration](runtime-configuration.md) — the lazy-init and WASM-loading surface.
 - [Actions](actions.md) — the standalone functional layer.
 - [Glossary](GLOSSARY.md) — the vocabulary used across these layers.
+
 ```
 
+```

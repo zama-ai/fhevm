@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const serverPath = resolve(__dirname, 'server.ts');
 
+// Local runs drive the installed, auto-updated Google Chrome, sandboxed, rather
+// than Playwright's bundled Chromium, which lags behind Chrome's security fixes.
+// CI installs only the bundled browsers, and BrowserStack provides its own.
+const isLocalRun = !process.env.CI && !process.env.BROWSERSTACK_CONFIG_FILE;
+
 export default defineConfig({
   testDir: './specs',
   timeout: 300_000,
@@ -39,7 +44,13 @@ export default defineConfig({
     ignoreHTTPSErrors: true,
   },
   projects: [
-    { name: 'chromium', use: { browserName: 'chromium' } },
+    {
+      name: 'chromium',
+      use: {
+        browserName: 'chromium',
+        ...(isLocalRun ? { channel: 'chrome', launchOptions: { chromiumSandbox: true } } : {}),
+      },
+    },
     { name: 'firefox', use: { browserName: 'firefox' } },
     { name: 'webkit', use: { browserName: 'webkit' } },
   ],
