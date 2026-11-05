@@ -1,0 +1,93 @@
+# In-cluster S3 replacing the preview-env's Crossplane AWS buckets (coprocessor-infra,
+# KMS tkms-infra). Adapted from the KMS team's Antithesis setup on this tenant.
+#
+# DNS: `minio` is what the KMS chart, the on-chain KMS storage URLs and the coprocessor
+# use. The Service is headless and the pod is `coproc-0` under that subdomain, so a
+# virtual-host request for bucket coproc-0 (`coproc-0.minio`) also resolves; the
+# coprocessor's sns-worker S3 client does not force path-style. MINIO_DOMAIN makes MinIO
+# read the bucket from that Host header.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: minio}
+  template:
+    metadata:
+      labels: {app: minio}
+    spec:
+      hostname: coproc-0
+      subdomain: minio
+      containers:
+        - name: minio
+          image: docker.io/scnd/minio-mirror:RELEASE.2025-09-07T16-13-09Z
+          args: [server, /data]
+          env:
+            - {name: MINIO_ROOT_USER, value: minioadmin}
+            - {name: MINIO_ROOT_PASSWORD, value: minioadmin}
+            - {name: MINIO_DOMAIN, value: minio}
+          ports:
+            - containerPort: 9000
+          readinessProbe:
+            httpGet: {path: /minio/health/ready, port: 9000}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: minio-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+spec:
+  clusterIP: None
+  selector: {app: minio}
+  ports:
+    - {name: s3, port: 9000, targetPort: 9000}
+---
+# Buckets and the access key every component uses. kms-public and coproc-0 are
+# anonymously readable: the cores fetch peers' CA certs, the coprocessor poller fetches
+# keys, and the KMS reads ciphertexts, all without credentials.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-provision
+spec:
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: mc
+          image: docker.io/scnd/mc-mirror:RELEASE.2025-02-04T04-57-50Z
+          env:
+            - {name: HOME, value: /tmp}
+          command: [/bin/sh, -c]
+          args:
+            - |
+              set -e
+              mc alias set local http://minio:9000 minioadmin minioadmin
+              i=0
+              until mc ls local >/dev/null 2>&1; do
+                i=$((i + 1)); [ "$i" -gt 60 ] && { echo "minio never became writable"; exit 1; }
+                sleep 2
+              done
+              for b in kms-public kms-private coproc-0; do mc mb --ignore-existing "local/$b"; done
+              mc admin user add local kms-access-key-id kms-secret-access-key || true
+              mc admin policy attach local readwrite --user kms-access-key-id || echo "policy already attached"
+              mc anonymous set public local/kms-public
+              mc anonymous set public local/coproc-0
+              mc ls local
