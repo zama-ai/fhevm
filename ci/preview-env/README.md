@@ -25,7 +25,9 @@ The relayer HTTP API (`:3000`) is also published on the zws-dev **Tailscale
 MagicDNS** as `https://relayer-<namespace>.diplodocus-boa.ts.net` (IngressClass
 `tailscale`, tag `tag:k8s-zws-dev`) so a laptop on the tailnet can call it
 without `kubectl port-forward`. Metrics `:9898` and the admin endpoint stay
-ClusterIP-only. See [`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
+ClusterIP-only. relayer-http (`:3002`) is published the same way as
+`https://relayer-http-<namespace>.diplodocus-boa.ts.net`. See
+[`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
 
 There is no local Kind/laptop-based variant of this path anymore — a full stack (dedicated
 4-party enclave KMS + coprocessor + kms-connector + relayer + test-suite) doesn't fit in a
@@ -491,9 +493,10 @@ test-suite reads: one endpoint per party (proxy URL + tx-sender `audience`),
 thresholds `t+1` (public) / `n-t` (user, as for the relayer), the host chain ids,
 and the host `ProtocolConfig` address for FhevmSig. It signs with the same fixed
 test key as the e2e suite. The proxies' cert-manager certificates (`ca.crt`) are
-mounted and trusted through `SSL_CERT_FILE`. Nothing calls it yet: it is deployed
-so the next step can point the e2e suites at it, and a failed install does not
-fail the deploy. Pin the image with `relayer_http_version`.
+mounted and trusted through `SSL_CERT_FILE`. The e2e suites do not call it yet,
+so a failed install does not fail the deploy. It is published on the tailnet as
+`relayer-http-<namespace>` (`RELAYER_HTTP_TS_URL` in the PR comment / run
+summary). Pin the image with `relayer_http_version`.
 
 ## coprocessor-proxy
 

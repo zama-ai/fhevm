@@ -1541,6 +1541,8 @@ jobs:
             # or point @fhevm/sdk / a toy dapp at ${{ env.RELAYER_TS_URL }}
             ```
 
+            relayer-http (`POST /v4/user-decrypt`, `/v4/public-decrypt`): ${{ env.RELAYER_HTTP_TS_URL && format('`curl -sS {0}/healthz`', env.RELAYER_HTTP_TS_URL) || 'not available, see the Deploy relayer-http step' }}
+
             > Note: each coprocessor party requests substantial `tfhe`/`sns` worker capacity on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the cluster resources needed. Default stays 1.
 
             This environment is destroyed automatically when the PR is closed
@@ -1576,6 +1578,13 @@ jobs:
               echo '```bash'
               echo "curl -sS ${RELAYER_TS_URL}/v2/keyurl"
               echo "# or point @fhevm/sdk / a toy dapp at ${RELAYER_TS_URL}"
+              echo '```'
+              echo
+            fi
+            if [[ -n "${RELAYER_HTTP_TS_URL:-}" ]]; then
+              echo "relayer-http (\`POST /v4/user-decrypt\`, \`/v4/public-decrypt\`):"
+              echo '```bash'
+              echo "curl -sS ${RELAYER_HTTP_TS_URL}/healthz"
               echo '```'
               echo
             fi
