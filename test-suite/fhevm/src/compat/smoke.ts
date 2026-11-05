@@ -22,7 +22,6 @@ import {
   supportsConnectorHttp,
   supportsConsensusDetector,
   supportsCoprocessorProxy,
-  supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "./compat";
 import { generateComposeOverrides } from "../generate/compose";
@@ -74,7 +73,6 @@ const fakeDiscovery: NonNullable<State["discovery"]> = {
     CIPHERTEXT_COMMITS_ADDRESS: "0x0000000000000000000000000000000000000004",
     GATEWAY_CONFIG_ADDRESS: "0x0000000000000000000000000000000000000005",
     KMS_GENERATION_ADDRESS: "0x0000000000000000000000000000000000000006",
-    MULTICHAIN_ACL_ADDRESS: "0x0000000000000000000000000000000000000008",
     PROTOCOL_PAYMENT_ADDRESS: "0x0000000000000000000000000000000000000009",
   },
   hosts: {
@@ -84,7 +82,7 @@ const fakeDiscovery: NonNullable<State["discovery"]> = {
       FHEVM_EXECUTOR_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000002",
       INPUT_VERIFIER_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000012",
       KMS_VERIFIER_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000013",
-      // Modern (>= v0.13) host artifacts: the connector reads KMSGeneration and ProtocolConfig here.
+      // Host artifacts: the connector reads KMSGeneration and ProtocolConfig here.
       PROTOCOL_CONFIG_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000015",
       KMS_GENERATION_CONTRACT_ADDRESS: "0x0000000000000000000000000000000000000016",
     },
@@ -180,7 +178,6 @@ const main = async () => {
       "coprocessor": GROUP_BUILD_SERVICES.coprocessor.filter(
         (name) =>
           !name.endsWith("db-migration") &&
-          (name !== "coprocessor-host-listener-consumer" || supportsHostListenerConsumer(state)) &&
           (name !== "coprocessor-consensus-detector" || supportsConsensusDetector(state)) &&
           (name !== "coprocessor-upgrade-controller" || supportsUpgradeController(state)) &&
           (name !== "coprocessor-proxy" || supportsCoprocessorProxy(state)),

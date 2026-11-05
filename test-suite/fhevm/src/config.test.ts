@@ -42,7 +42,7 @@ describe("config", () => {
   test("renders legacy keyurl config from discovered material ids", () => {
     const rendered = renderRelayerConfig(
       {
-        versions: { env: { RELAYER_VERSION: "v0.11.0" } } as never,
+        versions: { env: { RELAYER_VERSION: "v0.13.0" } } as never,
         discovery: {
           objectStoreKeyPrefix: "PUB-p1",
           fheKeyId: "f".repeat(64),
@@ -105,7 +105,7 @@ describe("config", () => {
   test("rewrites relayer host chains from the active topology, including the default chain", () => {
     const rendered = renderRelayerConfig(
       {
-        versions: { env: { RELAYER_VERSION: "v0.11.0" } } as never,
+        versions: { env: { RELAYER_VERSION: "v0.13.0" } } as never,
         discovery: {
           hosts: {
             alpha: { ACL_CONTRACT_ADDRESS: "0xalpha" },

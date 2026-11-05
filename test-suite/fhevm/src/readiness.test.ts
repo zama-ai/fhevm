@@ -3,7 +3,6 @@ import { describe, expect, test } from "bun:test";
 import {
   backendSplit,
   containerFailure,
-  waitForCoprocessorKeyMaterial,
   classifyStray,
   ensureOneMaterial,
   keyMaterialReadiness,
@@ -221,10 +220,6 @@ describe("readiness restart evidence", () => {
     expect(containerFailure({RestartCount: 3, State: {Status: "running", ExitCode: 0}}, 2)).toBe(true);
     expect(containerFailure({RestartCount: 3, State: {Status: "running", ExitCode: 0}}, 3)).toBe(false);
     expect(containerFailure({RestartCount: 3, State: {Status: "restarting", ExitCode: 0}}, 3)).toBe(true);
-  });
-  test("support-floor key readiness does not contact a database with no keys table", async () => {
-    // No scenario or Docker access exists in this fixture: touching either fails.
-    await waitForCoprocessorKeyMaterial({versions: {env: {COPROCESSOR_DB_MIGRATION_VERSION: "v0.11.0"}}} as unknown as Parameters<typeof waitForCoprocessorKeyMaterial>[0]);
   });
 });
 

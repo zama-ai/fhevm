@@ -150,7 +150,7 @@ Only `devnet`, `testnet`, and `mainnet` resolve from GitOps today. Non-network t
 
 ## Pinning an Exact Version Bundle
 
-If you need to run a specific set of versions (e.g., `v0.10.7` across the board), use `--lock-file`
+If you need to run a specific set of versions (e.g., `v0.13.0` across the board, as in `profiles/v0.13.0.json`), use `--lock-file`
 to skip all target resolution, avoid GitHub lookups, and supply the full bundle yourself:
 
 ```sh
@@ -267,7 +267,7 @@ TEST_SUITE_VERSION
 
 The relayer (3000) and relayer-http (3002) stay published for direct access.
 
-The proxy does not route `/v1`. Profiles whose test suite predates v0.11 (e.g. `v0.11.0-mainnet`) call the relayer on `/v1`, so their e2e tests fail through the proxy; this is intended, as they are no longer tested.
+The proxy does not route `/v1`. No supported profile calls it: the oldest supported release is v0.13.0, whose test suite calls `/v2`.
 
 Example — test a local coprocessor image without `--override`:
 
@@ -294,11 +294,13 @@ All version compatibility rules live in a single source of truth: `src/compat/co
 
 The rules have three sections:
 
-| Section             | Purpose                              | Example                                  |
-| ------------------- | ------------------------------------ | ---------------------------------------- |
-| `incompatibilities` | Version pairs that break at runtime  | relayer v1 + test-suite v2               |
-| `legacyShims`       | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
-| `anchors`           | Git history reference points         | simple-ACL cutover commit                |
+| Section             | Purpose                              | Example                                                                     |
+| ------------------- | ------------------------------------ | --------------------------------------------------------------------------- |
+| `incompatibilities` | Version pairs that break at runtime  | none today (e.g. a relayer serving only `/v1` + a test suite calling `/v2`) |
+| `legacyShims`       | Old versions needing extra flags/env | sns-worker < 0.14.0 drops the signer flags                                  |
+| `anchors`           | Commit reference points              | simple-ACL cutover commit                                                   |
+
+The oldest supported release is v0.13.0 (`profiles/v0.13.0.json`). Shims and rules that fire only below it are removed.
 
 Merge-queue e2e explicitly keeps `build=false`.
 For non-release PRs it boots `two-of-two-multi-chain` from the frozen base lock plus any successful head-image overrides.
@@ -551,7 +553,7 @@ Use `--scenario <name-or-file>` for consensus and upgrade test runs. Bundled pre
 - optional `localServices` for local instances when only part of one coprocessor instance should be built from the workspace
 - the KMS cluster, through an optional `kms` block
 
-The KMS always runs as a threshold cluster. Without a `kms` block a scenario gets 4 parties (t=1) with fast insecure keygen and Default FHE params (`insecureTestKeygen: true`, `fheParams: Default`). A `kms` block sets `parties`, `threshold`, `committeeSize` (spare cores beyond it) and the keygen: omit `insecureTestKeygen` for a secure MPC keygen, which requires `fheParams: Test` (see `four-party-threshold-kms.yaml`). Insecure keygen with Test params is accepted but yields a key under which `Rand` decrypts the same value on every draw. The `v0.11.0-mainnet` and `v0.12.0-testnet` profiles are kept but untested since threshold-only mode; boot them from their release tag if they fail.
+The KMS always runs as a threshold cluster. Without a `kms` block a scenario gets 4 parties (t=1) with fast insecure keygen and Default FHE params (`insecureTestKeygen: true`, `fheParams: Default`). A `kms` block sets `parties`, `threshold`, `committeeSize` (spare cores beyond it) and the keygen: omit `insecureTestKeygen` for a secure MPC keygen, which requires `fheParams: Test` (see `four-party-threshold-kms.yaml`). Insecure keygen with Test params is accepted but yields a key under which `Rand` decrypts the same value on every draw.
 
 Examples:
 

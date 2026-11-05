@@ -11,6 +11,13 @@ In practice, this usually means `latest-supported`, or another target the projec
 
 The compatibility layer lives in [`src/compat/compat.ts`](src/compat/compat.ts).
 
+## Oldest supported release
+
+- v0.13.0 is the oldest release the CLI supports.
+- `profiles/v0.13.0.json` pins it (v0.13.0-2 images); `profiles/latest-supported.json` tracks the maintained bundle.
+- Shims and checks that fire only below v0.13.0 are removed. Those that fire within v0.13.x (for example the host-chain seed shim below v0.13.1, `--seed-start-block` below v0.13.2) stay as long as `profiles/v0.13.0.json` needs them.
+- Raising this floor means deleting the older profile and the shims that only it needed.
+
 ## What "compat" means here
 
 - **bundle**: the resolved set of image versions the CLI will boot

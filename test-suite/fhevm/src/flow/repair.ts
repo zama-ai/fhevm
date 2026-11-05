@@ -2,7 +2,6 @@ import {
   supportsConnectorHttp,
   supportsConsensusDetector,
   runsCoprocessorProxy,
-  supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
 import { consumerOnlyHostListeners, isLegacyHostListener } from "../host-listener-mode";
@@ -70,8 +69,6 @@ type UpgradeComponentPlan = {
   migrationServices: string[];
   runtimeServices: string[];
 };
-const supportsConsumerForState = (state: { versions?: State["versions"] }) =>
-  !state.versions || supportsHostListenerConsumer({ versions: state.versions });
 const supportsConsensusDetectorForState = (state: { versions?: State["versions"] }) =>
   !state.versions || supportsConsensusDetector({ versions: state.versions });
 const supportsUpgradeControllerForState = (state: { versions?: State["versions"] }) =>
@@ -93,7 +90,6 @@ const coprocessorRuntimeSuffixes = (state: CoprocessorServicesState) =>
       (service) =>
         (!state.scenario || !consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(service)) &&
         service !== "db-migration" &&
-        (service !== "host-listener-consumer" || supportsConsumerForState(state)) &&
         (service !== "consensus-detector" || supportsConsensusDetectorForState(state)) &&
         (service !== "upgrade-controller" || supportsUpgradeControllerForState(state)),
     ),
@@ -105,7 +101,6 @@ const coprocessorServices = (state: CoprocessorServicesState) =>
   GROUP_BUILD_SERVICES.coprocessor.filter(
     (service) =>
       (!state.scenario || !consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(service.replace(/^coprocessor-/, ""))) &&
-      (service !== "coprocessor-host-listener-consumer" || supportsConsumerForState(state)) &&
       (service !== "coprocessor-consensus-detector" || supportsConsensusDetectorForState(state)) &&
       (service !== "coprocessor-upgrade-controller" || supportsUpgradeControllerForState(state)) &&
       (service !== "coprocessor-proxy" || runsCoprocessorProxyForState(state)),
@@ -120,7 +115,7 @@ export const resumeSteadyStateServices = (state: State) => {
   const listenerSuffixes = coprocessorListenerSuffixes(state);
   return {
     "base": ["fhevm-object-store", "coprocessor-and-kms-db", KMS_CORE_CONTAINER, "gateway-node", ...chains.map((chain) => chain.node)],
-    ...(supportsHostListenerConsumer(state) ? { "listener-core": listenerCoreServicesForState(state) } : {}),
+    "listener-core": listenerCoreServicesForState(state),
     "coprocessor": [
       ...Array.from({ length: topology.count }, (_, index) => {
         const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
