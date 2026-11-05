@@ -4,7 +4,6 @@ import type {
   FheEncryptionCrs,
   FheEncryptionCrsBytes,
   FheEncryptionKeyWasm,
-  FheEncryptionKeyBytes,
   FheEncryptionPublicKey,
   FheEncryptionPublicKeyBytes,
 } from '../../types/fheEncryptionKey.js';
@@ -152,58 +151,7 @@ export type BuildWithProofPackedModuleFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// 3. serializeFheEncryptionKey
-////////////////////////////////////////////////////////////////////////////////
-
-export type SerializeFheEncryptionKeyParameters = {
-  readonly fheEncryptionKey: FheEncryptionKeyWasm;
-  readonly tfheVersion: TfheVersion;
-};
-
-export type SerializeFheEncryptionKeyReturnType = FheEncryptionKeyBytes;
-
-export type SerializeFheEncryptionKeyModuleFunction = {
-  serializeFheEncryptionKey(
-    parameters: SerializeFheEncryptionKeyParameters,
-  ): Promise<SerializeFheEncryptionKeyReturnType>;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-// 4. serializeFheEncryptionPublicKey
-////////////////////////////////////////////////////////////////////////////////
-
-export type SerializeFheEncryptionPublicKeyParameters = {
-  readonly publicKey: FheEncryptionPublicKey;
-  readonly tfheVersion: TfheVersion;
-};
-
-export type SerializeFheEncryptionPublicKeyReturnType = FheEncryptionPublicKeyBytes;
-
-export type SerializeFheEncryptionPublicKeyModuleFunction = {
-  serializeFheEncryptionPublicKey(
-    parameters: SerializeFheEncryptionPublicKeyParameters,
-  ): Promise<SerializeFheEncryptionPublicKeyReturnType>;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-// 5. serializeFheEncryptionCrs
-////////////////////////////////////////////////////////////////////////////////
-
-export type SerializeFheEncryptionCrsParameters = {
-  readonly crs: FheEncryptionCrs;
-  readonly tfheVersion: TfheVersion;
-};
-
-export type SerializeFheEncryptionCrsReturnType = FheEncryptionCrsBytes;
-
-export type SerializeFheEncryptionCrsModuleFunction = {
-  serializeFheEncryptionCrs(
-    parameters: SerializeFheEncryptionCrsParameters,
-  ): Promise<SerializeFheEncryptionCrsReturnType>;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-// 6. deserializeFheEncryptionPublicKey
+// 3. deserializeFheEncryptionPublicKey
 ////////////////////////////////////////////////////////////////////////////////
 
 export type DeserializeFheEncryptionPublicKeyParameters = {
@@ -220,7 +168,7 @@ export type DeserializeFheEncryptionPublicKeyModuleFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
-// 6. deserializeFheEncryptionCrs
+// 4. deserializeFheEncryptionCrs
 ////////////////////////////////////////////////////////////////////////////////
 
 export type DeserializeFheEncryptionCrsParameters = {
@@ -249,9 +197,6 @@ export type EncryptModule = Prettify<
     GetTfheModuleInfoFunction &
     ParseTFHEProvenCompactCiphertextListModuleFunction &
     BuildWithProofPackedModuleFunction &
-    SerializeFheEncryptionKeyModuleFunction &
-    SerializeFheEncryptionPublicKeyModuleFunction &
-    SerializeFheEncryptionCrsModuleFunction &
     DeserializeFheEncryptionPublicKeyModuleFunction &
     DeserializeFheEncryptionCrsModuleFunction
 >;

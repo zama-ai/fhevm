@@ -199,12 +199,15 @@ async fn initialize_maps_chain_state_to_response() {
         .await
         .expect("initialize should succeed");
 
-    // dataId carries the real on-chain getActiveKeyId / getActiveCrsId (decimal string).
+    // dataId carries the real on-chain getActiveKeyId / getActiveCrsId, as 0x-prefixed hex.
     assert_eq!(
         response.response.fhe_key_info[0].fhe_public_key.data_id,
-        "3"
+        format!("0x{}", hex::encode(U256::from(3u64).to_be_bytes::<32>()))
     );
-    assert_eq!(response.response.crs["2048"].data_id, "4");
+    assert_eq!(
+        response.response.crs["2048"].data_id,
+        format!("0x{}", hex::encode(U256::from(4u64).to_be_bytes::<32>()))
+    );
     // urls are reconstructed as {storageUrl}/{storagePrefix}/{PublicKey|CRS}/{id_hex} from the
     // NewKmsContext node config and the hex-encoded id.
     assert_eq!(
@@ -251,7 +254,10 @@ async fn run_pushes_updated_value_on_id_change() {
         .initialize()
         .await
         .expect("initialize should succeed");
-    assert_eq!(initial.response.fhe_key_info[0].fhe_public_key.data_id, "3");
+    assert_eq!(
+        initial.response.fhe_key_info[0].fhe_public_key.data_id,
+        format!("0x{}", hex::encode(U256::from(3u64).to_be_bytes::<32>()))
+    );
 
     let (tx, mut rx) = watch::channel(initial);
     let run_handle = tokio::spawn(async move { poller.run(tx).await });
@@ -266,7 +272,7 @@ async fn run_pushes_updated_value_on_id_change() {
 
     assert_eq!(
         rx.borrow().response.fhe_key_info[0].fhe_public_key.data_id,
-        "7"
+        format!("0x{}", hex::encode(U256::from(7u64).to_be_bytes::<32>()))
     );
 
     run_handle.abort();

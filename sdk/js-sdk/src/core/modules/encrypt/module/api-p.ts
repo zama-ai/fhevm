@@ -3,12 +3,6 @@ import type {
   BuildWithProofPackedReturnType,
   ParseTFHEProvenCompactCiphertextListParameters,
   ParseTFHEProvenCompactCiphertextListReturnType,
-  SerializeFheEncryptionCrsParameters as SerializeFheEncryptionCrsParameters,
-  SerializeFheEncryptionCrsReturnType as SerializeFheEncryptionCrsReturnType,
-  SerializeFheEncryptionKeyParameters as SerializeFheEncryptionKeyParameters,
-  SerializeFheEncryptionKeyReturnType as SerializeFheEncryptionKeyReturnType,
-  SerializeFheEncryptionPublicKeyParameters as SerializeFheEncryptionPublicKeyParameters,
-  SerializeFheEncryptionPublicKeyReturnType as SerializeFheEncryptionPublicKeyReturnType,
   DeserializeFheEncryptionCrsParameters as DeserializeFheEncryptionCrsParameters,
   DeserializeFheEncryptionCrsReturnType as DeserializeFheEncryptionCrsReturnType,
   DeserializeFheEncryptionPublicKeyParameters,
@@ -17,11 +11,10 @@ import type {
 import type {
   FheEncryptionCrs,
   FheEncryptionCrsBrand,
-  FheEncryptionKeyBytes,
   FheEncryptionPublicKey,
   FheEncryptionPublicKeyBrand,
 } from '../../../types/fheEncryptionKey.js';
-import type { Bytes, UintNumber } from '../../../types/primitives.js';
+import type { UintNumber } from '../../../types/primitives.js';
 import type { FheTypeId } from '../../../types/fheType.js';
 import type { FhevmRuntime } from '../../../types/coreFhevmRuntime.js';
 import type {
@@ -311,124 +304,6 @@ export async function buildWithProofPacked(
       //
     }
   }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// serializeFheEncryptionKey
-////////////////////////////////////////////////////////////////////////////////
-
-export async function serializeFheEncryptionKey(
-  runtime: FhevmRuntime,
-  parameters: SerializeFheEncryptionKeyParameters,
-): Promise<SerializeFheEncryptionKeyReturnType> {
-  const tfheVersion = parameters.tfheVersion;
-  await initTfheModule(runtime, { tfheVersion });
-
-  const { fheEncryptionKey: publicEncryptionParams } = parameters;
-
-  const tfheCompactPublicKeyImpl = publicEncryptionParams.publicKey;
-  const tfheCompactPkeCrsImpl = publicEncryptionParams.crs;
-
-  if (!(tfheCompactPublicKeyImpl instanceof TfheCompactPublicKeyImpl)) {
-    throw new Error('Invalid tfhePublicKey');
-  }
-  if (!(tfheCompactPkeCrsImpl instanceof TfheCompactPkeCrsImpl)) {
-    throw new Error('Invalid tfheCrs');
-  }
-
-  const tfhePublicKeyBytes: Bytes = TfheCompactPublicKeyImpl[GET_NATIVE_FUNC](
-    tfheCompactPublicKeyImpl,
-    PRIVATE_TFHE_LIB_TOKEN,
-    tfheVersion,
-  ).safe_serialize(SERIALIZED_SIZE_LIMIT_PK);
-  const tfheCrsBytes: Bytes = TfheCompactPkeCrsImpl[GET_NATIVE_FUNC](
-    tfheCompactPkeCrsImpl,
-    PRIVATE_TFHE_LIB_TOKEN,
-    tfheVersion,
-  ).safe_serialize(SERIALIZED_SIZE_LIMIT_CRS);
-
-  const keyBytes: FheEncryptionKeyBytes = Object.freeze({
-    publicKeyBytes: Object.freeze({
-      id: publicEncryptionParams.publicKey.id,
-      bytes: tfhePublicKeyBytes,
-    }),
-    crsBytes: Object.freeze({
-      id: publicEncryptionParams.crs.id,
-      capacity: publicEncryptionParams.crs.capacity,
-      bytes: tfheCrsBytes,
-    }),
-    metadata: Object.freeze({
-      relayerUrl: publicEncryptionParams.metadata.relayerUrl,
-      chainId: publicEncryptionParams.metadata.chainId,
-    }),
-  });
-
-  return keyBytes;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// serializeTfhePublicKey
-////////////////////////////////////////////////////////////////////////////////
-
-export async function serializeFheEncryptionPublicKey(
-  runtime: FhevmRuntime,
-  parameters: SerializeFheEncryptionPublicKeyParameters,
-): Promise<SerializeFheEncryptionPublicKeyReturnType> {
-  const tfheVersion = parameters.tfheVersion;
-  await initTfheModule(runtime, { tfheVersion });
-
-  const { publicKey: tfhePublicKey } = parameters;
-
-  const tfheCompactPublicKeyImpl = tfhePublicKey;
-
-  if (!(tfheCompactPublicKeyImpl instanceof TfheCompactPublicKeyImpl)) {
-    throw new Error('Invalid tfhePublicKey');
-  }
-
-  const tfhePublicKeyBytes: Bytes = TfheCompactPublicKeyImpl[GET_NATIVE_FUNC](
-    tfheCompactPublicKeyImpl,
-    PRIVATE_TFHE_LIB_TOKEN,
-    tfheVersion,
-  ).safe_serialize(SERIALIZED_SIZE_LIMIT_PK);
-
-  return Object.freeze({
-    id: tfhePublicKey.id,
-    bytes: tfhePublicKeyBytes,
-    tfheVersion,
-  });
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// serializeGlobalFheCrs
-////////////////////////////////////////////////////////////////////////////////
-
-export async function serializeFheEncryptionCrs(
-  runtime: FhevmRuntime,
-  parameters: SerializeFheEncryptionCrsParameters,
-): Promise<SerializeFheEncryptionCrsReturnType> {
-  const tfheVersion = parameters.tfheVersion;
-  await initTfheModule(runtime, { tfheVersion });
-
-  const { crs: tfheCrs } = parameters;
-
-  const tfheCompactPkeCrsImpl = tfheCrs;
-
-  if (!(tfheCompactPkeCrsImpl instanceof TfheCompactPkeCrsImpl)) {
-    throw new Error('Invalid tfheCrs');
-  }
-
-  const tfheCrsBytes: Bytes = TfheCompactPkeCrsImpl[GET_NATIVE_FUNC](
-    tfheCompactPkeCrsImpl,
-    PRIVATE_TFHE_LIB_TOKEN,
-    tfheVersion,
-  ).safe_serialize(SERIALIZED_SIZE_LIMIT_CRS);
-
-  return Object.freeze({
-    id: tfheCrs.id,
-    capacity: tfheCrs.capacity,
-    bytes: tfheCrsBytes,
-    tfheVersion,
-  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
