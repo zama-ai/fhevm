@@ -456,8 +456,9 @@ kmsConnectorProxy:
     # `kubernetes.io/tls` secret (tls.crt, tls.key) served by the proxy. Created by cert-manager when
     # `certManager.enabled`, otherwise it must exist before the proxy starts. Required when `enabled` is true.
     secretName: kms-connector-proxy-tls
-    # Self-signed certificate issued by cert-manager (must be installed in the cluster). Leave it
-    # disabled to serve a secret managed outside this chart: cert-manager would overwrite it
+    # Self-signed certificate issued by cert-manager (must be installed in the cluster), only when
+    # `enabled`. Leave it disabled to serve a secret managed outside this chart: cert-manager would
+    # overwrite it
     certManager:
       enabled: false
 
