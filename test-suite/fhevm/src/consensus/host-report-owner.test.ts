@@ -34,6 +34,7 @@ for (const mode of ["success", "unobserved", "mismatch", "parent-exit", "cleanup
         ' *"SELECT block_number"*) echo 160 ;;',
         ' *"SELECT s3_uploaded_at"*) if [[ "$db" == coprocessor_1 && "$CASE_MODE" != diverge && "$CASE_MODE" != false-divergence && "$CASE_MODE" != restore-failed ]]; then echo f; else echo t; fi ;;',
         ' *"SELECT state_hash"*) if [[ "$CASE_MODE" == mismatch && "$db" == coprocessor_2 ]]; then echo different; else printf "%064d\\n" 1; fi ;;',
+        ' *"SELECT encode(proposal_id"*) printf "%064d 10\\n" 1 ;;',
         ' *"row_to_json"*) echo "{}" ;;',
         " esac",
         "}",

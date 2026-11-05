@@ -84,10 +84,18 @@ while true; do
         fi
       done
       if [[ "$complete" == 1 && "$MODE" == diverge ]]; then
+        # State-hash objects are scoped by the upgrade attempt; resolve the
+        # active attempt's identity to address the exact published keys.
+        attempt_identity="$(sql coprocessor_1 "SELECT encode(proposal_id,'hex')||' '||proposal_block FROM public.upgrade_state WHERE stack_role='GCS' AND status='in_progress' AND version='$UPGRADE_FAULT_VERSION' LIMIT 1")"
+        read -r attempt_proposal attempt_block <<< "$attempt_identity"
+        [[ "$attempt_proposal" =~ ^[0-9a-f]+$ && "$attempt_block" =~ ^[0-9]+$ ]] || complete=0
+      fi
+      if [[ "$complete" == 1 && "$MODE" == diverge ]]; then
         # The control acknowledgement precedes upload. Independently fetch the
         # exact public bytes consumed by all detectors before accepting it.
         hc_run docker exec "${TEST_CONTAINER:-fhevm-test-suite-e2e-debug}" node test/consensus/hostReportObservation.cjs \
-          "$UPGRADE_FAULT_CHAIN" "$block" "$candidate" > "$(dirname "$SC_RESTORE_LOG")/divergent-host-report.json" || complete=0
+          "$UPGRADE_FAULT_CHAIN" "$block" "$candidate" "$attempt_proposal" "$attempt_block" \
+          > "$(dirname "$SC_RESTORE_LOG")/divergent-host-report.json" || complete=0
       fi
       if [[ "$complete" == 1 ]]; then
         sql coprocessor_1 'SELECT row_to_json(f) FROM public.consensus_test_host_report_fault f' > "$(dirname "$SC_RESTORE_LOG")/withheld-host-report.json"
