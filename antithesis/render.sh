@@ -96,11 +96,15 @@ normalize() {
     | (select(.kind == "Deployment" or .kind == "StatefulSet" or .kind == "Job" or .kind == "DaemonSet")
         | .spec.template.spec) |= (
         del(.nodeSelector, .tolerations, .affinity, .imagePullSecrets, .topologySpreadConstraints)
+        | .volumes = ((.volumes // []) | map(select(.name != "aws-lc-sysgenid")))
+            + [{"name": "aws-lc-sysgenid", "configMap": {"name": "aws-lc-sysgenid"}}]
         | (.containers[], .initContainers[]) |= (
             .imagePullPolicy = "IfNotPresent"
             | del(.resources.limits.cpu)
             | .resources.requests = {"cpu": "10m", "memory": "64Mi"}
-            | .env = ((.env // []) | map(select(.name != "NO_COLOR"))) + [{"name": "NO_COLOR", "value": "1"}]))
+            | .env = ((.env // []) | map(select(.name != "NO_COLOR"))) + [{"name": "NO_COLOR", "value": "1"}]
+            | .volumeMounts = ((.volumeMounts // []) | map(select(.name != "aws-lc-sysgenid")))
+                + [{"name": "aws-lc-sysgenid", "mountPath": "/dev/sysgenid", "subPath": "sysgenid", "readOnly": true}]))
   ' "${file}"
   # Same name mapping as mirror-images.sh; the source refs are what it must copy.
   local src dst
@@ -145,6 +149,22 @@ metadata:
   name: ${NAMESPACE}
   annotations:
     kapp.k14s.io/change-group: namespace
+---
+# Every Rust image (KMS, coprocessor, connector, listener) links AWS-LC, which seeds its
+# RNG from CPU jitter entropy timed with RDTSC. Antithesis makes RDTSC deterministic, the
+# jitter health test fails and AWS-LC calls abort() (run 1: kms-gen-keys SIGABRT on its
+# first TLS key). AWS-LC skips jitter and seeds from getrandom when /dev/sysgenid exists
+# (aws-lc crypto/fipsmodule/rand/entropy/entropy_sources.c, crypto/ube/vm_ube_detect.c);
+# normalize mounts this 4-byte counter there in every container. It must be mmap-able.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-lc-sysgenid
+  namespace: ${NAMESPACE}
+  annotations:
+    kapp.k14s.io/change-group: namespace
+binaryData:
+  sysgenid: AAAAAA==
 EOF
 static "${here}/static/s3.yaml" s3 namespace
 sed "s|host-contracts:TAG|host-contracts:${FHEVM_TAG}|" "${here}/static/setup-milestones.yaml" \
