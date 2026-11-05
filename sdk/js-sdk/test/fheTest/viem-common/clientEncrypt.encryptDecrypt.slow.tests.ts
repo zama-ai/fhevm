@@ -1,6 +1,7 @@
 import type { EncryptedValue } from '@fhevm/sdk/types';
 import {
   getViemTestConfig,
+  latestBlockTimestamp,
   type CreateViemDecryptClientFn,
   type CreateViemEncryptClientFn,
   type FheTestViemConfig,
@@ -137,7 +138,7 @@ export function defineClientEncryptDecryptSlowTests(parameters: {
           transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
-          startTimestamp: Math.floor(Date.now() / 1000) - 5,
+          startTimestamp: (await latestBlockTimestamp(config)) - 5,
           signerAddress: config.account.address,
           signer: config.account,
         });

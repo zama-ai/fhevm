@@ -14,26 +14,28 @@ export const kmsPadDecryptResponseEip712Types = {
     { name: 'chainId', type: 'uint256' },
     { name: 'verifyingContract', type: 'address' },
   ] as const,
-  PadDecryptResponsePayload: [
-    { name: 'packingFactor', type: 'uint32' },
-    { name: 'extraData', type: 'bytes' },
-    { name: 'degree', type: 'uint32' },
-    { name: 'partyId', type: 'uint32' },
-    { name: 'pad_shares', type: 'PadShare[]' },
-  ] as const,
-  PadShare: [
+  PadShareVerification: [
     { name: 'label', type: 'bytes32' },
+    { name: 'rawShares', type: 'bytes' },
+    { name: 'partyId', type: 'uint32' },
+    { name: 'degree', type: 'uint32' },
+    { name: 'contextId', type: 'bytes32' },
     { name: 'sessionId', type: 'bytes16' },
-    { name: 'share', type: 'bytes' },
+    { name: 'extraData', type: 'bytes' },
+  ] as const,
+  PadDecryptResponseVerification: [
+    { name: 'requestId', type: 'bytes32' },
+    { name: 'encryptedPayload', type: 'bytes' },
   ] as const,
 } as const;
 
-export const kmsPadDecryptResponseEip712PrimaryType = 'PadDecryptResponsePayload' as const;
+export const kmsPadShareEip712PrimaryType = 'PadShareVerification' as const;
+export const kmsPadDecryptResponseEip712PrimaryType = 'PadDecryptResponseVerification' as const;
 
 Object.freeze(kmsPadDecryptResponseEip712Types);
 Object.freeze(kmsPadDecryptResponseEip712Types.EIP712Domain);
-Object.freeze(kmsPadDecryptResponseEip712Types.PadDecryptResponsePayload);
-Object.freeze(kmsPadDecryptResponseEip712Types.PadShare);
+Object.freeze(kmsPadDecryptResponseEip712Types.PadShareVerification);
+Object.freeze(kmsPadDecryptResponseEip712Types.PadDecryptResponseVerification);
 kmsPadDecryptResponseEip712Types.EIP712Domain.forEach(Object.freeze);
-kmsPadDecryptResponseEip712Types.PadDecryptResponsePayload.forEach(Object.freeze);
-kmsPadDecryptResponseEip712Types.PadShare.forEach(Object.freeze);
+kmsPadDecryptResponseEip712Types.PadShareVerification.forEach(Object.freeze);
+kmsPadDecryptResponseEip712Types.PadDecryptResponseVerification.forEach(Object.freeze);
