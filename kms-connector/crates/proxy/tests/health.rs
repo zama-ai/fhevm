@@ -61,7 +61,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     query_healthcheck_endpoint::<HealthStatus>(Some(monitoring_url.clone())).await?;
     let status = fetch_status(&monitoring_url).await?;
     assert!(status.healthy);
-    assert!(status.tls_listener_reachable);
+    assert!(status.listener_reachable);
     let mut expected: Vec<_> = t.endpoints.iter().map(|e| e.addr.to_string()).collect();
     expected.sort();
     let mut healthy_endpoints = status.healthy_endpoints;
@@ -76,7 +76,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     let status = wait_for_unhealthy_endpoints(&monitoring_url, 1).await?;
     query_healthcheck_endpoint::<HealthStatus>(Some(monitoring_url.clone())).await?;
     assert!(status.healthy);
-    assert!(status.tls_listener_reachable);
+    assert!(status.listener_reachable);
     assert_eq!(status.healthy_endpoints, [live.addr.to_string()]);
     assert_eq!(status.unhealthy_endpoints, [stopped.addr.to_string()]);
     assert!(status.details.contains(&stopped.addr.to_string()));
@@ -96,7 +96,7 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
         .await
         .unwrap_err();
     assert!(!status.healthy);
-    assert!(status.tls_listener_reachable);
+    assert!(status.listener_reachable);
     assert!(status.healthy_endpoints.is_empty());
     assert_eq!(status.unhealthy_endpoints.len(), 2);
     assert!(status.details.contains("No healthy endpoint available"));
@@ -116,13 +116,49 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
 #[rstest]
 #[timeout(Duration::from_secs(300))]
 #[tokio::test]
-async fn test_healthcheck_unreachable_tls_listener() -> anyhow::Result<()> {
-    // Build the `Proxy` without starting it: its TLS listener is down. Pingora's server cannot
-    // be stopped once started, so this case cannot be part of the test above.
+async fn test_serves_plain_http_without_tls_config() -> anyhow::Result<()> {
+    let endpoint = StubEndpoint::start().await;
+    let addresses = vec![endpoint.addr.to_string().parse()?];
+    let t = TestProxy::start_with_config(addresses, vec![endpoint], |c| c.tls_config = None).await;
+
+    // Requests are forwarded over plain HTTP, and the endpoint is told so
+    let response = t.post(PUBLIC_DECRYPTION_ROUTE, "{}").await.send().await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let echo: serde_json::Value = response.json().await?;
+    assert_eq!(echo["x-forwarded-proto"], "http");
+
+    // The self-healthcheck reaches the plain HTTP listener
+    let monitoring_endpoint = free_addr();
+    let monitoring_url = Url::from_str(&format!("http://{}/healthz", monitoring_endpoint))?;
+    let cancel_token = CancellationToken::new();
+    let monitoring_server_task =
+        start_monitoring_server(monitoring_endpoint, t.state.clone(), cancel_token.clone())?;
+    wait_for_listener(monitoring_endpoint).await;
+
+    let status = fetch_status(&monitoring_url).await?;
+    assert!(status.healthy, "{}", status.details);
+    assert!(status.listener_reachable);
+
+    cancel_token.cancel();
+    monitoring_server_task.await?;
+    Ok(())
+}
+
+#[rstest]
+#[case::tls(true)]
+#[case::plain_http(false)]
+#[timeout(Duration::from_secs(300))]
+#[tokio::test]
+async fn test_healthcheck_unreachable_listener(#[case] tls_enabled: bool) -> anyhow::Result<()> {
+    // Build the `Proxy` without starting it: its listener is down. Pingora's server cannot be
+    // stopped once started, so this case cannot be part of the tests above.
     let endpoint = StubEndpoint::start().await;
     let addr = free_addr();
     let tls = TestTls::generate(addr);
-    let config = TestProxy::config(addr, &tls, vec![endpoint.addr.to_string().parse()?]);
+    let mut config = TestProxy::config(addr, &tls, vec![endpoint.addr.to_string().parse()?]);
+    if !tls_enabled {
+        config.tls_config = None;
+    }
     let (_proxy, state) = Proxy::from_config(config)?;
 
     let monitoring_endpoint = free_addr();
@@ -137,9 +173,13 @@ async fn test_healthcheck_unreachable_tls_listener() -> anyhow::Result<()> {
         .unwrap_err();
     let status = fetch_status(&monitoring_url).await?;
     assert!(!status.healthy);
-    assert!(!status.tls_listener_reachable);
+    assert!(!status.listener_reachable);
     assert_eq!(status.healthy_endpoints, [endpoint.addr.to_string()]);
-    assert!(status.details.contains("TLS listener"));
+    assert!(
+        status.details.starts_with("Listener connection failed"),
+        "{}",
+        status.details
+    );
 
     cancel_token.cancel();
     monitoring_server_task.await?;
