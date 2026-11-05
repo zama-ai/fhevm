@@ -158,7 +158,7 @@ where
     if unique.len() < handles.len() {
         // TypedCiphertext clones share the large Bytes payload, preserving every wire entry.
         verified.ciphertexts = handles
-            .into_iter()
+            .iter()
             .map(|h| verified.ciphertexts[indices[h]].clone())
             .collect();
     }
