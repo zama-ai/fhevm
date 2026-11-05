@@ -507,20 +507,37 @@ abstract contract HostContractsDeployerTestUtils is Test {
         return keccak256(abi.encode(_toKmsNodes(params), thresholds));
     }
 
-    /// @dev epochMaterialHash of EpochActivationConfirmation. CRS entries encode the raw digest bytes.
+    /// @dev epochMaterialHash of EpochActivationConfirmation. Each entry is the EIP-712 hashStruct of its
+    ///      KeygenVerification or CrsgenVerification, with the confirmation's extraData.
     function _hashEpochMaterial(
         IProtocolConfig.EpochKeyResult[] memory keys,
-        IProtocolConfig.EpochCrsResult[] memory crsList
+        IProtocolConfig.EpochCrsResult[] memory crsList,
+        bytes memory extraData
     ) internal pure returns (bytes32) {
+        bytes32 extraDataHash = keccak256(extraData);
         bytes32[] memory keyHashes = new bytes32[](keys.length);
         for (uint256 i = 0; i < keys.length; i++) {
             keyHashes[i] = keccak256(
-                abi.encode(keys[i].prepKeygenId, keys[i].keyId, _hashKeyDigests(keys[i].keyDigests))
+                abi.encode(
+                    EIP712_KEYGEN_TYPE_HASH,
+                    keys[i].prepKeygenId,
+                    keys[i].keyId,
+                    _hashKeyDigests(keys[i].keyDigests),
+                    extraDataHash
+                )
             );
         }
         bytes32[] memory crsHashes = new bytes32[](crsList.length);
         for (uint256 i = 0; i < crsList.length; i++) {
-            crsHashes[i] = keccak256(abi.encode(crsList[i].crsId, crsList[i].maxBitLength, crsList[i].crsDigest));
+            crsHashes[i] = keccak256(
+                abi.encode(
+                    EIP712_CRSGEN_TYPE_HASH,
+                    crsList[i].crsId,
+                    crsList[i].maxBitLength,
+                    keccak256(crsList[i].crsDigest),
+                    extraDataHash
+                )
+            );
         }
         return keccak256(abi.encode(keyHashes, crsHashes));
     }
@@ -612,7 +629,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         bytes memory extraData
     ) internal view returns (bytes memory) {
         (, uint256 previousEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
-        bytes32 epochMaterialHash = _hashEpochMaterial(keys, crsList);
+        bytes32 epochMaterialHash = _hashEpochMaterial(keys, crsList, extraData);
         bytes32 digest = _hashEpochActivation(contextId, previousEpochId, epochId, epochMaterialHash, extraData);
         return _computeSignature(pk, digest);
     }
