@@ -166,7 +166,7 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
   //  - extraData.version != 0 -> the context is Permanently cached
   const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContextFromPermitExtraData(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig.address as ChecksummedAddress,
     extraData: signedPermitExtraData,
     fhevmContext,
   });

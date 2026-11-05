@@ -45,9 +45,7 @@ export async function isForgeFhevmV1(
 ): Promise<boolean> {
   const currentKmsSignersContext: KmsSignersContext = await readCurrentKmsSignersContext(relayerClient, {
     kmsVerifierAddress: relayerClient.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    protocolConfigAddress: relayerClient.chain.fhevm.contracts.protocolConfig?.address as
-      | ChecksummedAddress
-      | undefined,
+    protocolConfigAddress: relayerClient.chain.fhevm.contracts.protocolConfig.address as ChecksummedAddress,
     fhevmContext,
   });
   return currentKmsSignersContext.signers.length === 1 && isForgeFhevmV1KmsSigner(currentKmsSignersContext.signers[0]);

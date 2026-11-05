@@ -230,7 +230,7 @@ function makeDummyChain(relayerUrl: string, withKmsGeneration: boolean): FhevmCh
         inputVerifier: { address: DUMMY_USER_ADDRESS },
         kmsVerifier: { address: '0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11' },
         kmsGeneration: withKmsGeneration ? { address: '0x3E0fBCcE61af7C01113027449eEFFF5DCd501419' } : undefined,
-        protocolConfig: undefined, // To be filled
+        protocolConfig: { address: '0x52054F36036811ca418be59e41Fc6DD1b9e4F4c8' },
       },
       relayerUrl,
       gateway: {
@@ -250,6 +250,7 @@ const HOST_CONTRACT_VERSIONS = {
   inputVerifier: 'InputVerifier v0.3.0',
   kmsVerifier: 'KMSVerifier v0.5.0',
   kmsGeneration: 'KMSGeneration v0.1.0',
+  protocolConfig: 'ProtocolConfig v0.3.0',
 } as const;
 
 /** The active key and CRS ids of the mocked KMSGeneration: any non-zero id (the test keys carry label ids). */
@@ -277,7 +278,7 @@ const HOST_CONTRACT_ABI = new Interface([
 
 /**
  * The mocked RPC of a dummy chain, as an ethers runner: answers `getVersion()`
- * for its ACL, InputVerifier and KMSVerifier, and, for its KMSGeneration (if
+ * for its ACL, InputVerifier, KMSVerifier and ProtocolConfig, and, for its KMSGeneration (if
  * any), the reads that check a key: version, active ids, and the digests as
  * the active key and CRS materials. Any other call fails the test.
  */
@@ -285,11 +286,12 @@ function createDummyChainRunner(
   chain: FhevmChain,
   kmsGenerationMock: MockedKmsGeneration | undefined,
 ): EthersT.ContractRunner {
-  const { acl, inputVerifier, kmsVerifier, kmsGeneration } = chain.fhevm.contracts;
+  const { acl, inputVerifier, kmsVerifier, protocolConfig, kmsGeneration } = chain.fhevm.contracts;
   const versionsByAddress = new Map<string, string>([
     [acl.address.toLowerCase(), HOST_CONTRACT_VERSIONS.acl],
     [inputVerifier.address.toLowerCase(), HOST_CONTRACT_VERSIONS.inputVerifier],
     [kmsVerifier.address.toLowerCase(), HOST_CONTRACT_VERSIONS.kmsVerifier],
+    [protocolConfig.address.toLowerCase(), HOST_CONTRACT_VERSIONS.protocolConfig],
   ]);
   const kmsGenerationAddress = kmsGeneration?.address.toLowerCase();
 

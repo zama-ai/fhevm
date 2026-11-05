@@ -38,11 +38,9 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
   const kmsVerifierAddress: ChecksummedAddress = addressToChecksummedAddress(
     asAddress(fhevm.chain.fhevm.contracts.kmsVerifier.address),
   );
-  // ProtocolConfig only exists on v0.14+ deployments — absent on older chains.
-  const protocolConfigAddress: ChecksummedAddress | undefined =
-    fhevm.chain.fhevm.contracts.protocolConfig === undefined
-      ? undefined
-      : addressToChecksummedAddress(asAddress(fhevm.chain.fhevm.contracts.protocolConfig.address));
+  const protocolConfigAddress: ChecksummedAddress = addressToChecksummedAddress(
+    asAddress(fhevm.chain.fhevm.contracts.protocolConfig.address),
+  );
 
   // Identity check only: each `getVersion()` result must name the expected contract.
   const [aclVersion, inputVerifierVersion, kmsVerifierVersion, protocolConfigVersion] =
@@ -51,19 +49,15 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
         () => getHostContractVersion(fhevm, { address: aclAddress }),
         () => getHostContractVersion(fhevm, { address: inputVerifierAddress }),
         () => getHostContractVersion(fhevm, { address: kmsVerifierAddress }),
-        ...(protocolConfigAddress === undefined
-          ? []
-          : [() => getHostContractVersion(fhevm, { address: protocolConfigAddress })]),
+        () => getHostContractVersion(fhevm, { address: protocolConfigAddress }),
       ],
       fhevm.options.batchRpcCalls,
-    )) as [HostContractVersion, HostContractVersion, HostContractVersion, HostContractVersion | undefined];
+    )) as [HostContractVersion, HostContractVersion, HostContractVersion, HostContractVersion];
 
   assertIsHostContractVersionOf(aclVersion, 'ACL');
   assertIsHostContractVersionOf(inputVerifierVersion, 'InputVerifier');
   assertIsHostContractVersionOf(kmsVerifierVersion, 'KMSVerifier');
-  if (protocolConfigVersion !== undefined) {
-    assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig', 'ProtocolConfigReplica');
-  }
+  assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig', 'ProtocolConfigReplica');
 
   return createFhevmClientFrozenContext({
     pubKeyCrsVersion: pubKeyCrsVersionForChain(fhevm.chain),
