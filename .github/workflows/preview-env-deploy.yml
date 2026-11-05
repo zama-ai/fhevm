@@ -1387,10 +1387,7 @@ jobs:
         run: bash ci/preview-env/scripts/deploy/deploy-relayer.sh relayer
 
       # Reads the kms-connector-http ConfigMap published by the kms-connector step.
-      # Nothing consumes relayer-http yet, so a failure is reported without
-      # failing the deploy; drop continue-on-error once the e2e suites use it.
       - name: Deploy relayer-http
-        continue-on-error: true
         run: bash ci/preview-env/scripts/deploy/deploy-relayer.sh relayer-http
 
       - name: Deploy test-suite
@@ -1541,7 +1538,10 @@ jobs:
             # or point @fhevm/sdk / a toy dapp at ${{ env.RELAYER_TS_URL }}
             ```
 
-            relayer-http (`POST /v4/user-decrypt`, `/v4/public-decrypt`): ${{ env.RELAYER_HTTP_TS_URL && format('`curl -sS {0}/healthz`', env.RELAYER_HTTP_TS_URL) || 'not available, see the Deploy relayer-http step' }}
+            relayer-http (`POST /v4/user-decrypt`, `/v4/public-decrypt`):
+            ```bash
+            curl -sS ${{ env.RELAYER_HTTP_TS_URL }}/healthz
+            ```
 
             > Note: each coprocessor party requests substantial `tfhe`/`sns` worker capacity on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the cluster resources needed. Default stays 1.
 
