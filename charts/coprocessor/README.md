@@ -59,8 +59,9 @@ prf-service trusts the proxy's `X-Fhevm-Signer` header, so only the proxy may re
 Ports must be numbers on both sides: the chart cannot tell which pod port a named port maps to.
 Isolation requires a CNI that enforces NetworkPolicy and no other policy granting broader access:
 Kubernetes policies are additive. A `podSelector` that matches no prf-service pod, for example
-after a typo or a label change, renders without error and leaves prf-service open. After each deployment, check from a pod that is not the proxy that prf-service's
-port refuses the connection, as `ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh` does.
+after a typo or a label change, renders without error and leaves prf-service open. After each
+deployment, check from a pod that is not the proxy that prf-service's port refuses the
+connection, as `ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh` does.
 
 The proxy reads the signers at the latest finalized block. It checks that block every 5 s
 (`COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL`) after each poll completes, and reads the signers
@@ -143,23 +144,26 @@ can hold of it:
 - A client has `coprocessorProxy.requestHeadTimeoutSeconds` (10 by default) after its TLS handshake
   to send the whole head of its first request, and 20 s after a response to send the whole head
   of the next one. Pingora closes a connection idle for 15 s before that deadline, so the deadline
-  only closes one whose next head, or previous body, is still arriving. A connection that misses its deadline is closed, however slowly bytes still
-  arrive. No deadline runs while prf-service holds a request.
+  only closes one whose next head, or previous body, is still arriving. A connection that misses
+  its deadline is closed, however slowly bytes still arrive. No deadline runs while prf-service
+  holds a request.
 - One client IP can hold `coprocessorProxy.maxConnectionsPerIp` connections, of which
   `coprocessorProxy.maxPendingHandshakesPerIp` in their TLS handshake. The proxy drops a
   connection above either limit before TLS. Both are `0`, disabled, by default, because they need
   each client's own address (below); 512 and 256 are a starting point where the proxy sees it.
 
-Pingora 0.9 gives a TLS handshake up to 60 s and reports no failed handshake, so a connection that
-fails or aborts its handshake, or never starts it, keeps its place until those 60 s pass. A
-TCP-only health check against the TLS port therefore holds one place per probe for 60 s; check
-the health port instead. A connector's handshakes complete in milliseconds, so a pending limit of
-256 refuses it only when more than 256 of its handshakes are in flight at once. On a replica with 2
-threads, a burst of 200 simultaneous connections from one IP completed without a refusal, and a
-burst of 300 reached the limit. A connector whose connect timeout fires under overload and that
-retries its 128 connections twice can also reach it, since the abandoned handshakes keep their
-places. Each request a connector holds open takes one connection, so `maxConnectionsPerIp` must
-exceed a connector's concurrent PRF requests to one replica.
+Pingora 0.9 gives a TLS handshake up to 60 s. It logs each failed handshake at error level but
+tells the proxy nothing, so a connection that fails or aborts its handshake, or never starts it,
+keeps its place for 65 s after it was accepted: Pingora's 60 s, and 5 s for the delay before
+Pingora starts that timer. A TCP-only health check against the TLS port therefore holds one place
+per probe for 65 s; check the health port instead. A connector's handshakes complete in
+milliseconds, so a pending limit of 256 refuses it only when more than 256 of its handshakes are in
+flight at once. On a replica with 2 threads, a burst of 200 simultaneous connections from one IP
+completed without a refusal, and a burst of 300 reached the limit. A connector whose connect
+timeout fires under overload and that retries its 128 connections twice can also reach it, since
+the abandoned handshakes keep their places. Each request a connector holds open takes one
+connection, so `maxConnectionsPerIp` must exceed a connector's concurrent PRF requests to one
+replica.
 
 The per-IP limits need each client's own address, which is why they are off by default. Turn
 them on only with a TLS-passthrough `LoadBalancer` or `NodePort` Service whose

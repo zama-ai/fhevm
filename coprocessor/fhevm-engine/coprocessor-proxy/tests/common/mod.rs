@@ -626,7 +626,7 @@ pub fn free_addr() -> SocketAddr {
 }
 
 /// Waits for the proxy's TLS listener with complete requests: a TCP connection that never starts
-/// TLS would hold one of the client IP's places for Pingora's 60 s handshake timeout.
+/// TLS would hold one of the client IP's places for 65 s, until its pending entry expires.
 async fn wait_for_tls_listener(tls: &TestTls, addr: SocketAddr) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 

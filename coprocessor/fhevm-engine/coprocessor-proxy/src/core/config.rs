@@ -133,9 +133,9 @@ pub struct Config {
     )]
     pub max_connections_per_ip: usize,
     /// How many connections one client IP can hold in their TLS handshake, which Pingora gives
-    /// up to 60 s; more are refused before TLS. A handshake that fails holds its place until
-    /// those 60 s pass. 0, the default, disables the limit: set it only when the proxy sees the
-    /// clients' own addresses, for example 256.
+    /// up to 60 s; more are refused before TLS. A handshake that fails holds its place for 65 s
+    /// after the connection was accepted. 0, the default, disables the limit: set it only when
+    /// the proxy sees the clients' own addresses, for example 256.
     #[arg(
         long,
         env = "COPROCESSOR_PROXY_MAX_PENDING_HANDSHAKES_PER_IP",
