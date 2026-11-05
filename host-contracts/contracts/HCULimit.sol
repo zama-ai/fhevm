@@ -353,15 +353,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 84000;
+                opHCU = (19971 << 64) | 84000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 93000;
+                opHCU = (44321 << 64) | 93000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 95000;
+                opHCU = (59573 << 64) | 95000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 133000;
+                opHCU = (126889 << 64) | 133000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 172000;
+                opHCU = (191609 << 64) | 172000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -369,15 +369,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 88000;
+                opHCU = (23895 << 64) | 88000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 93000;
+                opHCU = (36808 << 64) | 93000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 125000;
+                opHCU = (77398 << 64) | 125000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 162000;
+                opHCU = (162000 << 64) | 162000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 259000;
+                opHCU = (278475 << 64) | 259000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -407,15 +407,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 84000;
+                opHCU = (19971 << 64) | 84000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 93000;
+                opHCU = (44321 << 64) | 93000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 95000;
+                opHCU = (59573 << 64) | 95000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 133000;
+                opHCU = (126889 << 64) | 133000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 172000;
+                opHCU = (191609 << 64) | 172000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -423,15 +423,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 91000;
+                opHCU = (24710 << 64) | 91000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 93000;
+                opHCU = (36808 << 64) | 93000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 125000;
+                opHCU = (77398 << 64) | 125000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 162000;
+                opHCU = (162000 << 64) | 162000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 260000;
+                opHCU = (279550 << 64) | 260000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -461,15 +461,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 122000;
+                opHCU = (25091 << 64) | 122000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 193000;
+                opHCU = (93604 << 64) | 193000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 265000;
+                opHCU = (200078 << 64) | 265000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 365000;
+                opHCU = (482598 << 64) | 365000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 696000;
+                opHCU = (1816296 << 64) | 696000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -477,15 +477,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 150000;
+                opHCU = (41310 << 64) | 150000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 222000;
+                opHCU = (171292 << 64) | 222000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 328000;
+                opHCU = (467276 << 64) | 328000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 596000;
+                opHCU = (2636166 << 64) | 596000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 1686000;
+                opHCU = (9170447 << 64) | 1686000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -514,15 +514,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
         if (resultType == FheType.Uint8) {
-            opHCU = 210000;
+            opHCU = (62489 << 64) | 210000;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 302000;
+            opHCU = (154909 << 64) | 302000;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 438000;
+            opHCU = (377981 << 64) | 438000;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 715000;
+            opHCU = (1150381 << 64) | 715000;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 1225000;
+            opHCU = (3519077 << 64) | 1225000;
         } else {
             revert UnsupportedOperation();
         }
@@ -550,15 +550,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
         if (resultType == FheType.Uint8) {
-            opHCU = 440000;
+            opHCU = (105444 << 64) | 440000;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 580000;
+            opHCU = (261475 << 64) | 580000;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 792000;
+            opHCU = (639204 << 64) | 792000;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 1153000;
+            opHCU = (1774248 << 64) | 1153000;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 1943000;
+            opHCU = (4856537 << 64) | 1943000;
         } else {
             revert UnsupportedOperation();
         }
@@ -587,19 +587,19 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                opHCU = 22000;
+                opHCU = (4688 << 64) | 22000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 31000;
+                opHCU = (6605 << 64) | 31000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 31000;
+                opHCU = (13101 << 64) | 31000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 32000;
+                opHCU = (22396 << 64) | 32000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
+                opHCU = (32391 << 64) | 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 37000;
+                opHCU = (52281 << 64) | 37000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 38000;
+                opHCU = (53694 << 64) | 38000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -607,19 +607,19 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
-                opHCU = 25000;
+                opHCU = (6513 << 64) | 25000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 31000;
+                opHCU = (8076 << 64) | 31000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 31000;
+                opHCU = (14219 << 64) | 31000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 32000;
+                opHCU = (29746 << 64) | 32000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
+                opHCU = (37623 << 64) | 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 37000;
+                opHCU = (67063 << 64) | 37000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 38000;
+                opHCU = (68875 << 64) | 38000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -649,19 +649,19 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                opHCU = 22000;
+                opHCU = (4688 << 64) | 22000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 30000;
+                opHCU = (6392 << 64) | 30000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 30000;
+                opHCU = (12678 << 64) | 30000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 32000;
+                opHCU = (22396 << 64) | 32000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
+                opHCU = (32391 << 64) | 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 37000;
+                opHCU = (52281 << 64) | 37000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 38000;
+                opHCU = (53694 << 64) | 38000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -669,19 +669,19 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
-                opHCU = 24000;
+                opHCU = (6253 << 64) | 24000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 30000;
+                opHCU = (7816 << 64) | 30000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 31000;
+                opHCU = (14219 << 64) | 31000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 32000;
+                opHCU = (29746 << 64) | 32000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
+                opHCU = (37623 << 64) | 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 37000;
+                opHCU = (67063 << 64) | 37000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 38000;
+                opHCU = (68875 << 64) | 38000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -711,19 +711,19 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                opHCU = 22000;
+                opHCU = (4688 << 64) | 22000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 31000;
+                opHCU = (6605 << 64) | 31000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 31000;
+                opHCU = (13101 << 64) | 31000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 32000;
+                opHCU = (22396 << 64) | 32000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
+                opHCU = (32391 << 64) | 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 37000;
+                opHCU = (52281 << 64) | 37000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 39000;
+                opHCU = (55107 << 64) | 39000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -731,19 +731,19 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
-                opHCU = 22000;
+                opHCU = (5732 << 64) | 22000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 31000;
+                opHCU = (8076 << 64) | 31000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 31000;
+                opHCU = (14219 << 64) | 31000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 32000;
+                opHCU = (29746 << 64) | 32000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
+                opHCU = (37623 << 64) | 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 37000;
+                opHCU = (67063 << 64) | 37000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 39000;
+                opHCU = (70688 << 64) | 39000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -773,17 +773,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 32000;
+                opHCU = (9230 << 64) | 32000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 32000;
+                opHCU = (14619 << 64) | 32000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 32000;
+                opHCU = (21357 << 64) | 32000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
+                opHCU = (33353 << 64) | 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 37000;
+                opHCU = (56722 << 64) | 37000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 39000;
+                opHCU = (59788 << 64) | 39000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -791,17 +791,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 92000;
+                opHCU = (48813 << 64) | 92000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 125000;
+                opHCU = (95833 << 64) | 125000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 162000;
+                opHCU = (189357 << 64) | 162000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 208000;
+                opHCU = (267866 << 64) | 208000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 272000;
+                opHCU = (653507 << 64) | 272000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 378000;
+                opHCU = (908183 << 64) | 378000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -831,17 +831,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 32000;
+                opHCU = (9230 << 64) | 32000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 32000;
+                opHCU = (14619 << 64) | 32000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 32000;
+                opHCU = (21357 << 64) | 32000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
+                opHCU = (33353 << 64) | 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 37000;
+                opHCU = (56722 << 64) | 37000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 38000;
+                opHCU = (58255 << 64) | 38000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -849,17 +849,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 91000;
+                opHCU = (48283 << 64) | 91000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 123000;
+                opHCU = (94299 << 64) | 123000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 163000;
+                opHCU = (190526 << 64) | 163000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 209000;
+                opHCU = (269153 << 64) | 209000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 272000;
+                opHCU = (653507 << 64) | 272000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 369000;
+                opHCU = (886560 << 64) | 369000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -889,17 +889,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 31000;
+                opHCU = (7380 << 64) | 31000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 31000;
+                opHCU = (12827 << 64) | 31000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 32000;
+                opHCU = (21765 << 64) | 32000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
+                opHCU = (25892 << 64) | 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 37000;
+                opHCU = (44865 << 64) | 37000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 38000;
+                opHCU = (46077 << 64) | 38000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -907,17 +907,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 91000;
+                opHCU = (39457 << 64) | 91000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 125000;
+                opHCU = (99779 << 64) | 125000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 163000;
+                opHCU = (197154 << 64) | 163000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 209000;
+                opHCU = (334940 << 64) | 209000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 278000;
+                opHCU = (821920 << 64) | 278000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 378000;
+                opHCU = (1117575 << 64) | 378000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -947,17 +947,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 31000;
+                opHCU = (7380 << 64) | 31000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 31000;
+                opHCU = (12827 << 64) | 31000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 32000;
+                opHCU = (21765 << 64) | 32000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
+                opHCU = (25892 << 64) | 34000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 37000;
+                opHCU = (44865 << 64) | 37000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 40000;
+                opHCU = (48502 << 64) | 40000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -965,17 +965,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 93000;
+                opHCU = (40324 << 64) | 93000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 125000;
+                opHCU = (99779 << 64) | 125000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 160000;
+                opHCU = (193526 << 64) | 160000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 209000;
+                opHCU = (334940 << 64) | 209000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 283000;
+                opHCU = (836703 << 64) | 283000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 375000;
+                opHCU = (1108705 << 64) | 375000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1005,21 +1005,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                opHCU = 25000;
+                opHCU = (2249 << 64) | 25000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 55000;
+                opHCU = (4949 << 64) | 55000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 55000;
+                opHCU = (8765 << 64) | 55000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 82000;
+                opHCU = (16555 << 64) | 82000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 83000;
+                opHCU = (28101 << 64) | 83000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 117000;
+                opHCU = (50343 << 64) | 117000;
             } else if (resultType == FheType.Uint160) {
-                opHCU = 117000;
+                opHCU = (50343 << 64) | 117000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 118000;
+                opHCU = (50773 << 64) | 118000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1027,21 +1027,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
-                opHCU = 26000;
+                opHCU = (4997 << 64) | 26000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 55000;
+                opHCU = (10571 << 64) | 55000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 83000;
+                opHCU = (19886 << 64) | 83000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 86000;
+                opHCU = (33741 << 64) | 86000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 120000;
+                opHCU = (70324 << 64) | 120000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 122000;
+                opHCU = (108164 << 64) | 122000;
             } else if (resultType == FheType.Uint160) {
-                opHCU = 137000;
+                opHCU = (121463 << 64) | 137000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 152000;
+                opHCU = (134762 << 64) | 152000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1071,21 +1071,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Bool) {
-                opHCU = 23000;
+                opHCU = (2069 << 64) | 23000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 55000;
+                opHCU = (4949 << 64) | 55000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 55000;
+                opHCU = (8765 << 64) | 55000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 83000;
+                opHCU = (16757 << 64) | 83000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 84000;
+                opHCU = (28439 << 64) | 84000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 117000;
+                opHCU = (50343 << 64) | 117000;
             } else if (resultType == FheType.Uint160) {
-                opHCU = 117000;
+                opHCU = (50343 << 64) | 117000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 117000;
+                opHCU = (50343 << 64) | 117000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1093,21 +1093,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Bool) {
-                opHCU = 23000;
+                opHCU = (4421 << 64) | 23000;
             } else if (resultType == FheType.Uint8) {
-                opHCU = 55000;
+                opHCU = (10571 << 64) | 55000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 83000;
+                opHCU = (19886 << 64) | 83000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 85000;
+                opHCU = (33349 << 64) | 85000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 118000;
+                opHCU = (69152 << 64) | 118000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 122000;
+                opHCU = (108164 << 64) | 122000;
             } else if (resultType == FheType.Uint160) {
-                opHCU = 136000;
+                opHCU = (120577 << 64) | 136000;
             } else if (resultType == FheType.Uint256) {
-                opHCU = 150000;
+                opHCU = (132989 << 64) | 150000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1137,15 +1137,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 52000;
+                opHCU = (4507 << 64) | 52000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 55000;
+                opHCU = (7748 << 64) | 55000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 84000;
+                opHCU = (17452 << 64) | 84000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 116000;
+                opHCU = (34389 << 64) | 116000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 149000;
+                opHCU = (63618 << 64) | 149000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1153,15 +1153,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 63000;
+                opHCU = (10732 << 64) | 63000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 84000;
+                opHCU = (22488 << 64) | 84000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 118000;
+                opHCU = (42690 << 64) | 118000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 152000;
+                opHCU = (79603 << 64) | 152000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 210000;
+                opHCU = (179776 << 64) | 210000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1191,15 +1191,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 52000;
+                opHCU = (4507 << 64) | 52000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 55000;
+                opHCU = (7748 << 64) | 55000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 84000;
+                opHCU = (17452 << 64) | 84000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 117000;
+                opHCU = (34685 << 64) | 117000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 150000;
+                opHCU = (64045 << 64) | 150000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1207,15 +1207,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 59000;
+                opHCU = (10050 << 64) | 59000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 84000;
+                opHCU = (22488 << 64) | 84000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 118000;
+                opHCU = (42690 << 64) | 118000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 152000;
+                opHCU = (79603 << 64) | 152000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 218000;
+                opHCU = (186625 << 64) | 218000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1245,15 +1245,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 58000;
+                opHCU = (5027 << 64) | 58000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 58000;
+                opHCU = (8171 << 64) | 58000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 84000;
+                opHCU = (17452 << 64) | 84000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 119000;
+                opHCU = (35278 << 64) | 119000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 150000;
+                opHCU = (64045 << 64) | 150000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1261,15 +1261,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 58000;
+                opHCU = (9880 << 64) | 58000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 83000;
+                opHCU = (22221 << 64) | 83000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 117000;
+                opHCU = (42328 << 64) | 117000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 149000;
+                opHCU = (78032 << 64) | 149000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 218000;
+                opHCU = (186625 << 64) | 218000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1299,15 +1299,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 52000;
+                opHCU = (4507 << 64) | 52000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 58000;
+                opHCU = (8171 << 64) | 58000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 83000;
+                opHCU = (17244 << 64) | 83000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 118000;
+                opHCU = (34982 << 64) | 118000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 149000;
+                opHCU = (63618 << 64) | 149000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1315,15 +1315,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 59000;
+                opHCU = (10050 << 64) | 59000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 84000;
+                opHCU = (22488 << 64) | 84000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 117000;
+                opHCU = (42328 << 64) | 117000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 146000;
+                opHCU = (76461 << 64) | 146000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 215000;
+                opHCU = (184056 << 64) | 215000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1353,15 +1353,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 84000;
+                opHCU = (12740 << 64) | 84000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 88000;
+                opHCU = (20968 << 64) | 88000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 117000;
+                opHCU = (39521 << 64) | 117000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 150000;
+                opHCU = (70943 << 64) | 150000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 186000;
+                opHCU = (118695 << 64) | 186000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1369,15 +1369,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 119000;
+                opHCU = (33221 << 64) | 119000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 146000;
+                opHCU = (90431 << 64) | 146000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 182000;
+                opHCU = (150872 << 64) | 182000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 219000;
+                opHCU = (200963 << 64) | 219000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 289000;
+                opHCU = (357185 << 64) | 289000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1407,15 +1407,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == 0x01) {
             if (resultType == FheType.Uint8) {
-                opHCU = 89000;
+                opHCU = (13498 << 64) | 89000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 89000;
+                opHCU = (21206 << 64) | 89000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 117000;
+                opHCU = (39521 << 64) | 117000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 149000;
+                opHCU = (70470 << 64) | 149000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 180000;
+                opHCU = (114866 << 64) | 180000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1423,15 +1423,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, lhs, result);
         } else {
             if (resultType == FheType.Uint8) {
-                opHCU = 121000;
+                opHCU = (33779 << 64) | 121000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 145000;
+                opHCU = (89812 << 64) | 145000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 180000;
+                opHCU = (149214 << 64) | 180000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 218000;
+                opHCU = (200045 << 64) | 218000;
             } else if (resultType == FheType.Uint128) {
-                opHCU = 290000;
+                opHCU = (358421 << 64) | 290000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1450,17 +1450,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Uint8) {
-            opHCU = 79000;
+            opHCU = (18383 << 64) | 79000;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 93000;
+            opHCU = (53466 << 64) | 93000;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 95000;
+            opHCU = (85828 << 64) | 95000;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 131000;
+            opHCU = (108460 << 64) | 131000;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 168000;
+            opHCU = (278481 << 64) | 168000;
         } else if (resultType == FheType.Uint256) {
-            opHCU = 269000;
+            opHCU = (445902 << 64) | 269000;
         } else {
             revert UnsupportedOperation();
         }
@@ -1477,19 +1477,19 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
-            opHCU = 2;
+            opHCU = (1 << 64) | 2;
         } else if (resultType == FheType.Uint8) {
-            opHCU = 9;
+            opHCU = (2 << 64) | 9;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 16;
+            opHCU = (7 << 64) | 16;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 32;
+            opHCU = (30 << 64) | 32;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 63;
+            opHCU = (70 << 64) | 63;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 130;
+            opHCU = (236 << 64) | 130;
         } else if (resultType == FheType.Uint256) {
-            opHCU = 130;
+            opHCU = (236 << 64) | 130;
         } else {
             revert UnsupportedOperation();
         }
@@ -1506,19 +1506,19 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint8) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint256) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else {
             revert UnsupportedOperation();
         }
@@ -1535,21 +1535,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint8) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint160) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else if (resultType == FheType.Uint256) {
-            opHCU = 32;
+            opHCU = (32 << 64) | 32;
         } else {
             revert UnsupportedOperation();
         }
@@ -1576,21 +1576,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
-            opHCU = 55000;
+            opHCU = (20921 << 64) | 55000;
         } else if (resultType == FheType.Uint8) {
-            opHCU = 55000;
+            opHCU = (20921 << 64) | 55000;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 55000;
+            opHCU = (34438 << 64) | 55000;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 55000;
+            opHCU = (44521 << 64) | 55000;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 55000;
+            opHCU = (82194 << 64) | 55000;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 57000;
+            opHCU = (152291 << 64) | 57000;
         } else if (resultType == FheType.Uint160) {
-            opHCU = 83000;
+            opHCU = (221757 << 64) | 83000;
         } else if (resultType == FheType.Uint256) {
-            opHCU = 108000;
+            opHCU = (288552 << 64) | 108000;
         } else {
             revert UnsupportedOperation();
         }
@@ -1607,19 +1607,19 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Bool) {
-            opHCU = 19000;
+            opHCU = (19000 << 64) | 19000;
         } else if (resultType == FheType.Uint8) {
-            opHCU = 23000;
+            opHCU = (23000 << 64) | 23000;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 23000;
+            opHCU = (23000 << 64) | 23000;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 24000;
+            opHCU = (24000 << 64) | 24000;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 24000;
+            opHCU = (24000 << 64) | 24000;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 25000;
+            opHCU = (25000 << 64) | 25000;
         } else if (resultType == FheType.Uint256) {
-            opHCU = 30000;
+            opHCU = (30000 << 64) | 30000;
         } else {
             revert UnsupportedOperation();
         }
@@ -1637,17 +1637,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opHCU;
         if (resultType == FheType.Uint8) {
-            opHCU = 23000;
+            opHCU = (23000 << 64) | 23000;
         } else if (resultType == FheType.Uint16) {
-            opHCU = 23000;
+            opHCU = (23000 << 64) | 23000;
         } else if (resultType == FheType.Uint32) {
-            opHCU = 24000;
+            opHCU = (24000 << 64) | 24000;
         } else if (resultType == FheType.Uint64) {
-            opHCU = 24000;
+            opHCU = (24000 << 64) | 24000;
         } else if (resultType == FheType.Uint128) {
-            opHCU = 25000;
+            opHCU = (25000 << 64) | 25000;
         } else if (resultType == FheType.Uint256) {
-            opHCU = 30000;
+            opHCU = (30000 << 64) | 30000;
         } else {
             revert UnsupportedOperation();
         }
@@ -1672,28 +1672,28 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 n = values.length;
         uint256 opHCU;
         if (resultType == FheType.Uint8) {
-            if (n <= 10) opHCU = 90900;
-            else if (n <= 30) opHCU = 127000;
-            else if (n <= 60) opHCU = 148000;
-            else opHCU = 159000;
+            if (n <= 10) opHCU = (24683 << 64) | 90900;
+            else if (n <= 30) opHCU = (34485 << 64) | 127000;
+            else if (n <= 60) opHCU = (40188 << 64) | 148000;
+            else opHCU = (43174 << 64) | 159000;
         } else if (resultType == FheType.Uint16) {
-            if (n <= 10) opHCU = 95000;
-            else if (n <= 30) opHCU = 136000;
-            else if (n <= 60) opHCU = 162000;
-            else opHCU = 184000;
+            if (n <= 10) opHCU = (37599 << 64) | 95000;
+            else if (n <= 30) opHCU = (53826 << 64) | 136000;
+            else if (n <= 60) opHCU = (64116 << 64) | 162000;
+            else opHCU = (72823 << 64) | 184000;
         } else if (resultType == FheType.Uint32) {
-            if (n <= 10) opHCU = 116000;
-            else if (n <= 30) opHCU = 164000;
-            else if (n <= 60) opHCU = 205000;
-            else opHCU = 281000;
+            if (n <= 10) opHCU = (71826 << 64) | 116000;
+            else if (n <= 30) opHCU = (101547 << 64) | 164000;
+            else if (n <= 60) opHCU = (126933 << 64) | 205000;
+            else opHCU = (173991 << 64) | 281000;
         } else if (resultType == FheType.Uint64) {
-            if (n <= 10) opHCU = 139000;
-            else if (n <= 30) opHCU = 216000;
-            else opHCU = 306000;
+            if (n <= 10) opHCU = (139000 << 64) | 139000;
+            else if (n <= 30) opHCU = (216000 << 64) | 216000;
+            else opHCU = (306000 << 64) | 306000;
         } else if (resultType == FheType.Uint128) {
-            if (n <= 10) opHCU = 219000;
-            else if (n <= 30) opHCU = 355000;
-            else opHCU = 552000;
+            if (n <= 10) opHCU = (235467 << 64) | 219000;
+            else if (n <= 30) opHCU = (381693 << 64) | 355000;
+            else opHCU = (593506 << 64) | 552000;
         } else {
             revert UnsupportedOperation();
         }
@@ -1726,36 +1726,36 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 n = values.length;
         uint256 opHCU;
         if (valueType == FheType.Uint8) {
-            if (n <= 10) opHCU = 71300;
-            else if (n <= 30) opHCU = 148000;
-            else if (n <= 60) opHCU = 247000;
-            else opHCU = 374000;
+            if (n <= 10) opHCU = (13704 << 64) | 71300;
+            else if (n <= 30) opHCU = (28446 << 64) | 148000;
+            else if (n <= 60) opHCU = (47474 << 64) | 247000;
+            else opHCU = (71884 << 64) | 374000;
         } else if (valueType == FheType.Uint16) {
-            if (n <= 10) opHCU = 103000;
-            else if (n <= 30) opHCU = 218000;
-            else if (n <= 60) opHCU = 378000;
-            else opHCU = 605000;
+            if (n <= 10) opHCU = (24678 << 64) | 103000;
+            else if (n <= 30) opHCU = (52231 << 64) | 218000;
+            else if (n <= 60) opHCU = (90566 << 64) | 378000;
+            else opHCU = (144954 << 64) | 605000;
         } else if (valueType == FheType.Uint32) {
-            if (n <= 10) opHCU = 137000;
-            else if (n <= 30) opHCU = 300000;
-            else if (n <= 60) opHCU = 531000;
-            else opHCU = 827000;
+            if (n <= 10) opHCU = (53750 << 64) | 137000;
+            else if (n <= 30) opHCU = (117701 << 64) | 300000;
+            else if (n <= 60) opHCU = (208331 << 64) | 531000;
+            else opHCU = (324463 << 64) | 827000;
         } else if (valueType == FheType.Uint64) {
-            if (n <= 10) opHCU = 218000;
-            else if (n <= 30) opHCU = 492000;
-            else opHCU = 879000;
+            if (n <= 10) opHCU = (127756 << 64) | 218000;
+            else if (n <= 30) opHCU = (288330 << 64) | 492000;
+            else opHCU = (515126 << 64) | 879000;
         } else if (valueType == FheType.Uint128) {
-            if (n <= 10) opHCU = 256000;
-            else if (n <= 30) opHCU = 535000;
-            else opHCU = 921000;
+            if (n <= 10) opHCU = (226968 << 64) | 256000;
+            else if (n <= 30) opHCU = (474327 << 64) | 535000;
+            else opHCU = (816552 << 64) | 921000;
         } else if (valueType == FheType.Uint160) {
-            if (n <= 10) opHCU = 286000;
-            else if (n <= 30) opHCU = 584000;
-            else opHCU = 885000;
+            if (n <= 10) opHCU = (253565 << 64) | 286000;
+            else if (n <= 30) opHCU = (517770 << 64) | 584000;
+            else opHCU = (784634 << 64) | 885000;
         } else if (valueType == FheType.Uint256) {
-            if (n <= 10) opHCU = 321000;
-            else if (n <= 30) opHCU = 586000;
-            else opHCU = 943000;
+            if (n <= 10) opHCU = (284596 << 64) | 321000;
+            else if (n <= 30) opHCU = (519543 << 64) | 586000;
+            else opHCU = (836057 << 64) | 943000;
         } else {
             revert UnsupportedOperation();
         }
@@ -1790,13 +1790,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         uint256 opHCU;
         if (scalarByte == FHE_MUL_DIV_FACTOR2_SCALAR) {
             if (resultType == FheType.Uint8) {
-                opHCU = 495000;
+                opHCU = (136324 << 64) | 495000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 703000;
+                opHCU = (542425 << 64) | 703000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 1080000;
+                opHCU = (1538591 << 64) | 1080000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 1921000;
+                opHCU = (8496771 << 64) | 1921000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1804,13 +1804,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, factor1, result);
         } else if (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED) {
             if (resultType == FheType.Uint8) {
-                opHCU = 524000;
+                opHCU = (144311 << 64) | 524000;
             } else if (resultType == FheType.Uint16) {
-                opHCU = 766000;
+                opHCU = (591035 << 64) | 766000;
             } else if (resultType == FheType.Uint32) {
-                opHCU = 1311000;
+                opHCU = (1867679 << 64) | 1311000;
             } else if (resultType == FheType.Uint64) {
-                opHCU = 2911000;
+                opHCU = (12875637 << 64) | 2911000;
             } else {
                 revert UnsupportedOperation();
             }
@@ -1964,9 +1964,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         return uint48(_handleDepths(handle, holder) >> 128);
     }
 
-    /// @dev Records `result`'s depths: `opHCU` added to both depths of its deepest input, checked against both limits.
-    function _setResultDepths(bytes32 result, uint256 opHCU, uint256 inputDepths) private {
-        uint256 depths = (opHCU | (opHCU << 128)) + inputDepths;
+    /// @dev Records `result`'s depths: the operation's latency HCU added to both depths of its deepest input, checked
+    ///      against both limits. `opCost` packs the work HCU above bit 64 and the latency HCU below.
+    function _setResultDepths(bytes32 result, uint256 opCost, uint256 inputDepths) private {
+        uint256 latencyHCU = uint64(opCost);
+        uint256 depths = (latencyHCU | (latencyHCU << 128)) + inputDepths;
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (uint128(depths) > $.maxHCUDepthPerTx) revert HCUTransactionDepthLimitExceeded();
         uint256 maxDepth = $.maxCrossTxDepth;
@@ -2070,10 +2072,12 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Updates and verifies the HCU transaction limit.
-     * @param opHCU The HCU for the operation.
+     * @param opCost The operation's work HCU above bit 64 and latency HCU below.
      * @param caller Contract that runs the operation, charged to its quota.
      */
-    function _updateAndVerifyHCUTransactionLimit(uint256 opHCU, address caller) internal virtual {
+    function _updateAndVerifyHCUTransactionLimit(uint256 opCost, address caller) internal virtual {
+        // The quota, the capacity and the transaction total count machine work, packed above bit 64.
+        uint256 opHCU = opCost >> 64;
         _updateAndVerifyHCUQuota(opHCU, caller);
 
         uint256 transactionHCU = opHCU + _getHCUForTransaction();
