@@ -8,9 +8,10 @@ metadata:
   name: {{ include "kmsConnectorProxyName" . }}
 spec:
   ports:
-    - name: https
-      port: {{ .Values.kmsConnectorProxy.ports.https }}
-      targetPort: https
+    {{- $scheme := include "kmsConnectorProxyScheme" . }}
+    - name: {{ $scheme }}
+      port: {{ include "kmsConnectorProxyPort" . }}
+      targetPort: {{ $scheme }}
     - name: monitoring
       port: {{ .Values.kmsConnectorProxy.ports.monitoring }}
       targetPort: monitoring
