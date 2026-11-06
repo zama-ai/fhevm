@@ -85,6 +85,15 @@ impl Default for RetryConfig {
     }
 }
 
+/// The retry budget a failure consumes (`AttemptError::retry_class`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryClass {
+    /// Every retryable error except a rate limit.
+    Transient,
+    /// `rate_limited`, or a bare 429.
+    RateLimit,
+}
+
 impl RetryConfig {
     /// Delay before retry number `retry` (1-based): `min(delay * 2^(retry-1), backoff_max)`, saturating.
     pub fn delay_for(&self, retry: u32) -> Duration {
