@@ -232,22 +232,29 @@ pub(crate) async fn discover_blocks_for_consensus_epoch(
 ) -> Result<u64, ExecutionError> {
     let frontiers = load_existing_frontiers(pool, consensus_epoch).await?;
     let windows = load_consensus_epoch_windows(pool, consensus_epoch).await?;
-    let latest_valid = load_latest_valid_blocks(pool).await?;
+    let host_chain_ids = load_host_chain_ids(pool).await?;
 
     let mut inserted = 0_u64;
-    for latest in latest_valid {
+    for host_chain_id in host_chain_ids {
+        let frontier = frontiers.get(&host_chain_id);
+        // Only the legacy seed reads finality; skip the lookup everywhere else.
+        let latest_finalized_block =
+            if frontier.is_none() && consensus_epoch == LEGACY_CONSENSUS_EPOCH {
+                load_latest_finalized_block(pool, host_chain_id).await?
+            } else {
+                None
+            };
         let Some(bound) = discovery_bound_for_chain(
             consensus_epoch,
-            latest.host_chain_id,
-            latest.finalized_block_number,
-            frontiers.get(&latest.host_chain_id),
-            windows.get(&latest.host_chain_id).copied(),
+            host_chain_id,
+            latest_finalized_block,
+            frontier,
+            windows.get(&host_chain_id).copied(),
             cadence_overrides,
         ) else {
             tracing::debug!(
                 consensus_epoch,
-                host_chain_id = latest.host_chain_id,
-                host_tip = latest.block_number,
+                host_chain_id,
                 "No discovery start yet: legacy waits for a finalized block, an upgrade for its window"
             );
             continue;
@@ -303,34 +310,47 @@ async fn load_existing_frontiers(
         .collect())
 }
 
+/// Logged once when the publisher starts: the query reads every host block.
+pub(crate) async fn log_host_chain_heads(pool: &PgPool) -> Result<(), ExecutionError> {
+    for head in load_latest_valid_blocks(pool).await? {
+        tracing::info!(
+            host_chain_id = head.host_chain_id,
+            host_tip = head.block_number,
+            host_finalized = ?head.finalized_block_number,
+            "Host chain head at manifest publisher start"
+        );
+    }
+    Ok(())
+}
+
 /// Periodic diagnostics reuse discovery reads without changing publication state.
 pub(crate) async fn log_discovery_frontiers(
     pool: &PgPool,
     consensus_epoch: &str,
 ) -> Result<(), ExecutionError> {
     let frontiers = load_existing_frontiers(pool, consensus_epoch).await?;
-    let tips = load_latest_valid_blocks(pool).await?;
-    if tips.is_empty() {
+    let host_chain_ids = load_host_chain_ids(pool).await?;
+    if host_chain_ids.is_empty() {
         tracing::info!(
             consensus_epoch,
-            "Manifest discovery has no eligible host-chain blocks"
+            "Manifest discovery has no host-chain blocks"
         );
     }
-    for tip in tips {
-        let frontier = frontiers.get(&tip.host_chain_id);
-        tracing::info!(consensus_epoch, host_chain_id = tip.host_chain_id,
-            host_tip = tip.block_number,
-            host_finalized = ?tip.finalized_block_number,
+    for host_chain_id in host_chain_ids {
+        let frontier = frontiers.get(&host_chain_id);
+        tracing::info!(consensus_epoch, host_chain_id,
             first_discovered = ?frontier.map(|f| f.first_block),
             last_discovered = ?frontier.map(|f| f.last_block),
             "Manifest discovery frontier");
         if frontier.is_none()
             && consensus_epoch == LEGACY_CONSENSUS_EPOCH
-            && tip.finalized_block_number.is_none()
+            && load_latest_finalized_block(pool, host_chain_id)
+                .await?
+                .is_none()
         {
             tracing::warn!(
                 consensus_epoch,
-                host_chain_id = tip.host_chain_id,
+                host_chain_id,
                 "Manifest discovery waits for a finalized host block to seed the chain"
             );
         }
@@ -356,6 +376,52 @@ async fn load_consensus_epoch_windows(
         .into_iter()
         .map(|row| (row.host_chain_id, row.start_block))
         .collect())
+}
+
+/// Runs on every discovery poll, so it must not read every block of every chain
+/// (a `GROUP BY` over the table took 1–2.6 s on BSC Testnet): skip through the
+/// per-chain block-number index, one probe per chain.
+async fn load_host_chain_ids(pool: &PgPool) -> Result<Vec<i64>, ExecutionError> {
+    let rows = sqlx::query_scalar!(
+        r#"
+        WITH RECURSIVE chains AS (
+            SELECT MIN(chain_id) AS chain_id FROM host_chain_blocks_valid
+            UNION ALL
+            SELECT (SELECT MIN(next.chain_id)
+                      FROM host_chain_blocks_valid next
+                     WHERE next.chain_id > chains.chain_id)
+              FROM chains
+             WHERE chains.chain_id IS NOT NULL
+        )
+        SELECT chain_id AS "chain_id!" FROM chains WHERE chain_id IS NOT NULL
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+/// Walks the block-number index back from the head through every block above
+/// finality, so it is only read to seed a legacy chain.
+async fn load_latest_finalized_block(
+    pool: &PgPool,
+    host_chain_id: i64,
+) -> Result<Option<i64>, ExecutionError> {
+    let block_number = sqlx::query_scalar!(
+        r#"
+        SELECT block_number
+          FROM host_chain_blocks_valid
+         WHERE chain_id = $1
+           AND block_status = 'finalized'
+           AND OCTET_LENGTH(parent_hash) = 32
+         ORDER BY block_number DESC
+         LIMIT 1
+        "#,
+        host_chain_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(block_number)
 }
 
 async fn load_latest_valid_blocks(pool: &PgPool) -> Result<Vec<LatestValidBlock>, ExecutionError> {
