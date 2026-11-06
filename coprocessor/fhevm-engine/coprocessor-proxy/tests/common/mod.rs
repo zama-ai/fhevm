@@ -464,7 +464,7 @@ impl TestProxy {
             .tls_danger_accept_invalid_certs(true) // self-signed test certificate
             .build()
             .unwrap();
-        wait_for_tls_listener(&tls, addr).await;
+        wait_for_listener(addr).await;
 
         Self {
             client,
@@ -585,14 +585,6 @@ impl TestTls {
         &self,
         addr: SocketAddr,
     ) -> tokio_rustls::client::TlsStream<tokio::net::TcpStream> {
-        self.try_connect(addr).await.unwrap()
-    }
-
-    /// Like [`Self::connect`], for a connection the proxy may refuse.
-    pub async fn try_connect(
-        &self,
-        addr: SocketAddr,
-    ) -> std::io::Result<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
         let mut roots = rustls::RootCertStore::empty();
         roots.add(self.cert_der.clone()).unwrap();
         let config = rustls::ClientConfig::builder_with_provider(Arc::new(
@@ -603,10 +595,11 @@ impl TestTls {
         .with_root_certificates(roots)
         .with_no_client_auth();
         let server_name = rustls::pki_types::ServerName::from(addr.ip());
-        let tcp = tokio::net::TcpStream::connect(addr).await?;
+        let tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
         tokio_rustls::TlsConnector::from(Arc::new(config))
             .connect(server_name, tcp)
             .await
+            .unwrap()
     }
 }
 
@@ -623,25 +616,6 @@ pub fn free_addr() -> SocketAddr {
         .unwrap()
         .local_addr()
         .unwrap()
-}
-
-/// Waits for the proxy's TLS listener with complete requests: a TCP connection that never starts
-/// TLS would hold one of the client IP's places for 65 s, until its pending entry expires.
-async fn wait_for_tls_listener(tls: &TestTls, addr: SocketAddr) {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        if let Ok(mut stream) = tls.try_connect(addr).await {
-            let request = format!("GET / HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n");
-            stream.write_all(request.as_bytes()).await.unwrap();
-            let mut response = Vec::new();
-            stream.read_to_end(&mut response).await.unwrap();
-            return;
-        }
-        assert!(Instant::now() < deadline, "{addr} did not come up");
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
 }
 
 pub async fn wait_for_listener(addr: SocketAddr) {

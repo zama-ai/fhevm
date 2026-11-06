@@ -138,72 +138,35 @@ every node drain.
 
 ### Deployment requirement
 
-The proxy authenticates every request before forwarding it, and bounds what one client address
-can hold of it:
+The proxy authenticates every request before forwarding it. It does not bound the connections
+clients open: Pingora 0.9 accepts any number, waits up to 60 s for each TLS handshake, and accepts
+request heads of up to 1 MiB. Each slow connection holds about 48 KB, so about 10,000 fill the
+512Mi memory limit and the replica is OOM-killed, at any thread count. The proxy must therefore
+not be reachable directly from the internet. Put it behind an HTTP-aware front layer that
+terminates the client's TLS connection, receives each request in full before forwarding it,
+limits connections per client IP, and connects to the proxy over TLS, such as Cloudflare or an
+AWS Application Load Balancer.
 
-- A client has `coprocessorProxy.requestHeadTimeoutSeconds` (10 by default) after its TLS handshake
-  to send the whole head of its first request, and 20 s after a response to send the whole head
-  of the next one. Pingora closes a connection idle for 15 s before that deadline, so the deadline
-  only closes one whose next head, or previous body, is still arriving. A connection that misses
-  its deadline is closed, however slowly bytes still arrive. No deadline runs while prf-service
-  holds a request.
-- One client IP can hold `coprocessorProxy.maxConnectionsPerIp` connections, of which
-  `coprocessorProxy.maxPendingHandshakesPerIp` in their TLS handshake. The proxy drops a
-  connection above either limit before TLS. Both are `0`, disabled, by default, because they need
-  each client's own address (below); 512 and 256 are a starting point where the proxy sees it.
+As defence in depth, the proxy also bounds the time a client takes to send a request head. A
+client has `coprocessorProxy.requestHeadTimeoutSeconds` (10 by default) after its TLS handshake to
+send the whole head of its first request, and 20 s after a response to send the whole head of the
+next one. Pingora closes a connection idle for 15 s before that deadline, so the deadline only
+closes one whose next head, or previous body, is still arriving. No deadline runs while
+prf-service holds a request.
 
-Pingora 0.9 gives a TLS handshake up to 60 s. It logs each failed handshake at error level but
-tells the proxy nothing, so a connection that fails or aborts its handshake, or never starts it,
-keeps its place for 65 s after it was accepted: Pingora's 60 s, and 5 s for the delay before
-Pingora starts that timer. A TCP-only health check against the TLS port therefore holds one place
-per probe for 65 s; check the health port instead. A connector's handshakes complete in
-milliseconds, so a pending limit of 256 refuses it only when more than 256 of its handshakes are in
-flight at once. On a replica with 2 threads, a burst of 200 simultaneous connections from one IP
-completed without a refusal, and a burst of 300 reached the limit. A connector whose connect
-timeout fires under overload and that retries its 128 connections twice can also reach it, since
-the abandoned handshakes keep their places. Each request a connector holds open takes one
-connection, so `maxConnectionsPerIp` must exceed a connector's concurrent PRF requests to one
-replica.
-
-The per-IP limits need each client's own address, which is why they are off by default. Turn
-them on only with a TLS-passthrough `LoadBalancer` or `NodePort` Service whose
-`externalTrafficPolicy` is `Local`. With `Cluster`, kube-proxy replaces the client's address with a
-node's, so the limits apply per node, and at peak they refuse honest connectors that share a node.
-Behind an HTTP-aware front layer every client appears with the front layer's addresses, so leave
-them at `0` there. The proxy does not read the PROXY protocol or forwarding headers.
-
-These limits bound one address, not a flood from many: over IPv6, one host can use every address
-of its /64. Each slow connection holds about 48 KB
-(measured with slow request heads), so the 512Mi memory limit fills at about 10,000 connections and
-the replica is OOM-killed, at any thread count. With a limit of 512, one address holds up to 512
-connections, about 24 MB, so about 21 addresses can still fill a replica.
-A bound across all clients is tracked in
-[fhevm-internal issue 2271](https://github.com/zama-ai/fhevm-internal/issues/2271). The proxy must
-therefore not be reachable directly from the internet. Put it behind one of:
-
-- an HTTP-aware layer that terminates the client's TLS connection, receives each request in full
-  before forwarding it, limits connections per client IP, and connects to the proxy over TLS, such
-  as Cloudflare or an HTTP(S) load balancer configured this way;
-- a network allowlist that admits only the callers' addresses (the KMS connectors'), for example a
-  firewall rule in front of a TLS-passthrough exposure.
-
-A front layer's per-client connection limit must also allow the connector's concurrent PRF
-requests, and its limits across all clients must stay well below the connections that fill a
+The proxy speaks HTTP/1.1 to its clients, so each request a connector holds open takes one
+connection: the front layer's per-client connection limit must allow the connector's concurrent
+PRF requests, and its limits across all clients must stay well below the connections that fill a
 replica's memory.
 
 A connector's pool must close its idle connections to the proxy sooner than the proxy does, for
 example after 10 s. Otherwise a request sent as the proxy closes the connection fails with a
 connection error, which the connector then has to retry.
 
-A TCP (layer 4) load balancer without an allowlist is not enough: the per-IP limits still let
-many addresses together fill a replica. Every timeout of the front layer must sit between the
-connector's `PRF_RETRIEVAL_DEADLINE` and `prfServiceResponseTimeoutSeconds`, as described above.
+Every timeout of the front layer must sit between the connector's `PRF_RETRIEVAL_DEADLINE` and
+`prfServiceResponseTimeoutSeconds`, as described above.
 
-`coprocessor_proxy_connections_refused_counter` counts the connections dropped before TLS, by the
-limit they hit (`reason="open_connections"` or `reason="pending_handshakes"`), and
-`coprocessor_proxy_request_head_timeouts_counter` the connections closed at a request head
-deadline, including one still receiving the previous request's body.
-`coprocessor_proxy_client_connections` is the number of connections open past their TLS handshake.
-A rise in refusals with no attack under way means a connector shares its address with others, or
-the limits see node addresses. [docs/metrics/metrics.md](../../docs/metrics/metrics.md) gives
-their alarms.
+`coprocessor_proxy_request_head_timeouts_counter` counts the connections closed at a request head
+deadline, including one still receiving the previous request's body, and
+`coprocessor_proxy_client_connections` the connections open past their TLS handshake.
+[docs/metrics/metrics.md](../../docs/metrics/metrics.md) gives their alarms.

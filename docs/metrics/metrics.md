@@ -237,14 +237,6 @@ tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest fina
  - **Alarm**: Sustained head timeouts. Starting threshold: more than 5 in every 5 minutes for 15 minutes; tune to traffic.
     - **Recommendation**: `min_over_time(sum(increase(coprocessor_proxy_request_head_timeouts_counter[5m]))[15m:5m]) > 5`.
 
-#### Metric Name: `coprocessor_proxy_connections_refused_counter`
- - **Type**: Counter
- - **Labels**:
-   - `reason`: the per-IP limit the connection hit, `open_connections` (`COPROCESSOR_PROXY_MAX_CONNECTIONS_PER_IP`) or `pending_handshakes` (`COPROCESSOR_PROXY_MAX_PENDING_HANDSHAKES_PER_IP`).
- - **Description**: Client connections refused before TLS because their IP is at a per-IP limit. It stays at 0 while the limits are off, the default. With limits sized for the connectors, an honest connector does not reach them, so refusals mean a flood from one address, a connector that shares its address with other clients, or limits that see node addresses instead of the clients' own.
- - **Alarm**: If refusals keep rising.
-    - **Recommendation**: refusals in each of the last three 5-minute windows, i.e. `min_over_time(sum by (reason) (increase(coprocessor_proxy_connections_refused_counter[5m]))[15m:5m]) > 0`.
-
 ## kms-connector
 
 ### HTTP decryption: proxy and endpoint

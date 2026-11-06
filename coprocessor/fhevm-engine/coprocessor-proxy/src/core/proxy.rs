@@ -126,21 +126,11 @@ impl Proxy {
         let domain =
             fhevm_sig_auth::domain(config.ethereum_chain_id, config.protocol_config_address);
         let verifier = FhevmSigVerifier::new(domain, config.coprocessor_signer_address, signers);
-        let limit = |max: usize| match max {
-            0 => "off".to_string(),
-            max => max.to_string(),
-        };
         info!(
             request_head_timeout = ?config.request_head_timeout,
-            max_connections_per_ip = %limit(config.max_connections_per_ip),
-            max_pending_handshakes_per_ip = %limit(config.max_pending_handshakes_per_ip),
             "Client limits"
         );
-        let client_limits = Arc::new(ClientLimits::new(
-            config.request_head_timeout,
-            config.max_connections_per_ip,
-            config.max_pending_handshakes_per_ip,
-        ));
+        let client_limits = Arc::new(ClientLimits::new(config.request_head_timeout));
         let proxy = Self {
             verifier,
             config,
@@ -204,11 +194,7 @@ impl Proxy {
         let service_name = self.config.service_name.clone();
         let client_limits = Arc::clone(&self.client_limits);
         let proxy = http_proxy(&server.configuration, self);
-        let mut proxy_service = Service::new(
-            service_name,
-            LimitedApp::new(proxy, Arc::clone(&client_limits)),
-        );
-        proxy_service.set_connection_filter(client_limits);
+        let mut proxy_service = Service::new(service_name, LimitedApp::new(proxy, client_limits));
         proxy_service.add_tls_with_settings(&listen_addr, None, tls);
         server.add_service(proxy_service);
         info!("Proxy will listen at: https://{listen_addr}");
