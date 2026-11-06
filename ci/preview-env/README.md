@@ -25,7 +25,12 @@ The relayer HTTP API (`:3000`) is also published on the zws-dev **Tailscale
 MagicDNS** as `https://relayer-<namespace>.diplodocus-boa.ts.net` (IngressClass
 `tailscale`, tag `tag:k8s-zws-dev`) so a laptop on the tailnet can call it
 without `kubectl port-forward`. Metrics `:9898` and the admin endpoint stay
-ClusterIP-only. See [`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
+ClusterIP-only. relayer-http (`:3002`) is published the same way as
+`https://relayer-http-<namespace>.diplodocus-boa.ts.net`. Both are also served on
+one **unified URL**,
+`https://kong-proxy-preview-zws-dev.diplodocus-boa.ts.net/<namespace>` (`/v2`,
+`/v3` to the relayer, `/v4` to relayer-http), the base URL to give the SDK. See
+[`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
 
 There is no local Kind/laptop-based variant of this path anymore — a full stack (dedicated
 4-party enclave KMS + coprocessor + kms-connector + relayer + test-suite) doesn't fit in a
@@ -82,6 +87,7 @@ ci/preview-env/
 ├── relayer/
 │   ├── values-relayer-e2e.yaml          # `common` chart overlay, relayer server
 │   ├── values-relayer-migrate-e2e.yaml  # `common` chart overlay, relayer DB migration Job
+│   ├── values-relayer-http-e2e.yaml     # `common` chart overlay, relayer-http (KMS connector aggregator)
 │   └── values-postgres-relayer-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to relayer + relayer-migrate
 ├── test-suite/
 │   ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
@@ -477,6 +483,50 @@ The proxy's TLS certificate comes from the chart, and its auth inputs are set by
   The `@zama-fhe/relayer-sdk` workflow is left untouched on purpose: those suites
   use their own client (`test/sdk/connector/connectorHttp.ts`), not the relayer
   SDK, so re-running them there would only duplicate the same code path.
+
+## relayer-http
+
+`deploy-relayer.sh relayer-http` installs `relayer-http` (port `3002`, as in the
+compose stack) with the generic `common` chart once the kms-connectors are up.
+Its config is the compose stack's template
+(`test-suite/fhevm/templates/config/relayer-http.yaml`) with the preview-only
+fields of `relayer/values-relayer-http-e2e.yaml` merged over it; the script fills
+in the per-deploy fields from the same **`kms-connector-http`** ConfigMap the
+test-suite reads: one endpoint per party (proxy URL + tx-sender `audience`),
+thresholds `t+1` (public) / `n-t` (user, as for the relayer), the host chain ids,
+and the host `ProtocolConfig` address for FhevmSig. It signs with the same fixed
+test key as the e2e suite. It does not verify the proxies' self-signed
+certificates (`skip_tls_verification: true`). Like the relayer, it is part of
+every preview env (a failed install fails the deploy) and is published on the
+tailnet as `relayer-http-<namespace>` (`RELAYER_HTTP_TS_URL` in the PR comment /
+run summary). Pin the image with `relayer_http_version`.
+
+### Unified relayer URL
+
+After relayer-http, `scripts/deploy/expose-relayer-kong.sh` serves both relayers
+on one URL, as the local stack's `relayer-proxy` does
+(`test-suite/fhevm/static/config/relayer-proxy/nginx.conf`):
+
+```
+https://kong-proxy-preview-zws-dev.diplodocus-boa.ts.net/<namespace>
+  /<namespace>/v2/*, /v3/*  -> relayer:3000
+  /<namespace>/v4/*         -> relayer-http:3002
+```
+
+The proxy is a second Kong shared by all preview envs (IngressClass
+`kong-preview`, zws-gitops app `environments/zws-dev-system/kong/kong-preview.yaml`).
+Unlike the dev Kong, it has no load balancer: it is reachable only on the tailnet.
+The script adds, in the preview namespace, two `kong-preview` Ingresses with
+`strip-path` (`relayer-kong` on `/<namespace>`, `relayer-http-kong` on
+`/<namespace>/v4`) and a Service `relayer-http-v4` that puts `/v4` back on the
+upstream path (120s read timeout, as `/v4` decrypts are synchronous). All three
+carry `app.kubernetes.io/component=kong-preview-route` and go away with the
+namespace. It writes `RELAYER_UNIFIED_URL` to the PR comment / run summary and
+probes `GET /v2/keyurl` (200) and `GET /v4/user-decrypt` (405) from the runner;
+a failed probe is only a warning. If kong-preview is not installed (no
+`zws-system/kong-preview-zws-dev-system-kong-proxy` Service), the step is
+skipped with a warning. The in-cluster test-suite still calls
+`http://relayer:3000/v2` directly.
 
 ## coprocessor-proxy
 

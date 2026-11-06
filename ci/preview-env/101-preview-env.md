@@ -270,9 +270,32 @@ curl -sS https://relayer-<namespace>.diplodocus-boa.ts.net/v2/keyurl
 # or point @fhevm/sdk / a toy dapp at that base URL
 ```
 
-Deleting the namespace (PR close / `preview-env destroy`) removes the Ingress and
-the operator drops the MagicDNS name. Access is Tailscale-ACL only (tag
-`tag:k8s-zws-dev`), not the public internet.
+relayer-http (`:3002`, `POST /v4/user-decrypt` and `/v4/public-decrypt`) is
+published the same way as `relayer-http-<namespace>`, written as
+`RELAYER_HTTP_TS_URL`:
+
+```bash
+curl -sS https://relayer-http-<namespace>.diplodocus-boa.ts.net/healthz
+```
+
+Both are also served on one **unified URL**, written as `RELAYER_UNIFIED_URL`:
+`/<namespace>/v2/*` and `/v3/*` go to the relayer, `/<namespace>/v4/*` to
+relayer-http. Point the SDK `relayerUrl` at it:
+
+```bash
+U=https://kong-proxy-preview-zws-dev.diplodocus-boa.ts.net/<namespace>
+curl -sS $U/v2/keyurl
+curl -sS -o /dev/null -w '%{http_code}\n' $U/v4/user-decrypt   # 405: relayer-http answers (POST only)
+```
+
+It goes through a Kong shared by all preview envs (IngressClass `kong-preview`,
+installed from zws-gitops) that is reachable only on the tailnet. If that Kong
+is not installed, the deploy skips this step with a warning and no
+`RELAYER_UNIFIED_URL` is printed.
+
+Deleting the namespace (PR close / `preview-env destroy`) removes the Ingresses
+(and the unified URL's routes) and the operator drops the MagicDNS names. Access
+is Tailscale-ACL only (tag `tag:k8s-zws-dev`), not the public internet.
 
 ## Observe your environment
 
