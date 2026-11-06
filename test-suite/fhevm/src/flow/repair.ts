@@ -3,6 +3,7 @@ import {
   supportsConsensusDetector,
   runsCoprocessorProxy,
   supportsHostListenerConsumer,
+  supportsRelayerHttp,
   supportsUpgradeController,
 } from "../compat/compat";
 import { consumerOnlyHostListeners, isLegacyHostListener } from "../host-listener-mode";
@@ -142,7 +143,7 @@ export const resumeSteadyStateServices = (state: State) => {
     ],
     "kms-connector": kmsConnectorServices(state).filter((service) => !service.endsWith("-db-migration")),
     "relayer": ["fhevm-relayer-db", "fhevm-relayer"],
-    ...(state.versions.env.RELAYER_HTTP_VERSION ? { "relayer-http": ["fhevm-relayer-http"] } : {}),
+    ...(supportsRelayerHttp(state) ? { "relayer-http": ["fhevm-relayer-http"] } : {}),
     "relayer-proxy": ["fhevm-relayer-proxy"],
     "test-suite": [TEST_SUITE_CONTAINER],
   } satisfies Partial<Record<StepName, string[]>>;

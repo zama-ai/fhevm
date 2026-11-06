@@ -331,6 +331,41 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(state, [...running, "fhevm-relayer-proxy"])).toBeUndefined();
   });
 
+  test("repairs relayer-http that a relayer override builds without a resolved RELAYER_HTTP_VERSION", () => {
+    const running = [
+      "fhevm-object-store",
+      "coprocessor-and-kms-db",
+      "kms-core",
+      "host-node",
+      "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
+      "coprocessor-gw-listener",
+      "coprocessor-tfhe-worker",
+      "coprocessor-zkproof-worker",
+      "coprocessor-sns-worker",
+      "coprocessor-transaction-sender",
+      "coprocessor-consensus-detector",
+      "coprocessor-upgrade-controller",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+      "fhevm-relayer-db",
+      "fhevm-relayer",
+      "fhevm-relayer-proxy",
+      "fhevm-test-suite-e2e-debug",
+    ];
+    const state = completeState();
+    state.completedSteps = [...state.completedSteps, "relayer-http", "relayer-proxy"];
+    expect(state.versions.env.RELAYER_HTTP_VERSION).toBeUndefined();
+    expect(resumeRepairStep(state, running)).toBeUndefined();
+    state.overrides = [{ group: "relayer" }];
+    expect(resumeRepairStep(state, running)).toBe("relayer-http");
+  });
+
   test("repairs from listener-core when the publisher is missing", () => {
     const running = [
       "fhevm-object-store",

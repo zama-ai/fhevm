@@ -24,6 +24,7 @@ import {
   supportsCanonicalProtocolConfigSeeding,
   supportsConnectorHttp,
   supportsHostListenerConsumer,
+  supportsRelayerHttp,
   validateBundleCompatibility,
 } from "../compat/compat";
 import { blueGreenServiceNames, serviceNameList } from "../generate/compose";
@@ -1234,8 +1235,8 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForRelayer();
       break;
     case "relayer-http":
-      // Optional image: bundles that predate relayer-http do not resolve RELAYER_HTTP_VERSION.
-      if (!state.versions.env.RELAYER_HTTP_VERSION) {
+      // Optional image: bundles that predate relayer-http neither resolve RELAYER_HTTP_VERSION nor build it.
+      if (!supportsRelayerHttp(state)) {
         break;
       }
       await stepComposeUp("relayer-http", state);
@@ -1247,7 +1248,7 @@ export const runStep = async (state: State, step: StepName) => {
       await stepComposeUp("relayer-proxy", state);
       await waitForContainer("fhevm-relayer-proxy", "running");
       console.log(`[relayer-proxy] /v2 -> relayer: HTTP ${await waitForRelayerProxyRoute("/v2/keyurl", 200)}`);
-      if (state.versions.env.RELAYER_HTTP_VERSION) {
+      if (supportsRelayerHttp(state)) {
         // GET on a POST route: relayer-http answers 405, which proves the route.
         console.log(`[relayer-proxy] /v4 -> relayer-http: HTTP ${await waitForRelayerProxyRoute("/v4/user-decrypt")}`);
       }
