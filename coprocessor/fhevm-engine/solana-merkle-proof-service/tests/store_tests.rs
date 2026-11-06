@@ -11,7 +11,7 @@ use std::{
 };
 
 use alloy::signers::local::PrivateKeySigner;
-use request_authorization::KeyRegistry;
+use solana_merkle_proof_service::kms_tx_senders::KeyRegistry;
 
 use serial_test::serial;
 use solana_host_follower::host::EncryptedStoreWrite;
@@ -91,16 +91,17 @@ impl ProofClient {
             .expect("clock")
             .as_secs()
             + 30;
-        let authorization = request_authorization::authorize(
+        let authorization = fhevm_sig_auth::sign(
             &self.connector,
-            &REGISTRY,
-            MERKLE_PROOFS_PATH,
+            &REGISTRY.eip712_domain(),
+            AUDIENCE,
+            &fhevm_sig_auth::PathAndQuery::from_static(MERKLE_PROOFS_PATH),
             &body,
             expires,
-            AUDIENCE,
         )
         .await
-        .expect("sign");
+        .expect("sign")
+        .to_string();
         (body, authorization)
     }
 

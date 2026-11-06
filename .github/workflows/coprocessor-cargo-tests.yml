@@ -49,7 +49,6 @@ jobs:
               - shared/ciphertext-attestation/**
               - shared/fhevm-sig-auth/**
               # The Merkle proof server depends on it by path.
-              - shared/request-authorization/**
               - shared/kms-context/**
   cargo-tests:
     name: coprocessor-cargo-test/${{ matrix.service }}
