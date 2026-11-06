@@ -421,6 +421,51 @@ impl DbKmsResponsePublisher {
         log_error_publication_result(query_result, error_code);
         Ok(())
     }
+
+    /// Stores the rejection of a pad decryption request (always HTTP-sourced).
+    ///
+    /// A retry may override a previous error row, but never a successful response.
+    pub async fn publish_pad_decryption_error(
+        &self,
+        decryption_id: U256,
+        error_code: ErrorCode,
+        error_details: &str,
+        extra_data: &[u8],
+        otlp_ctx: &PropagationContext,
+    ) -> anyhow::Result<()> {
+        // Same shape as `publish_public_decryption_error`, so always committed asynchronously.
+        let query_result = sqlx::query!(
+            "WITH written_response AS (
+                INSERT INTO pad_decryption_responses AS existing (
+                    decryption_id, error_code, error_details, extra_data, created_at,
+                    otlp_context, status
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, 'completed')
+                ON CONFLICT (decryption_id) DO UPDATE SET
+                    error_code = EXCLUDED.error_code,
+                    error_details = EXCLUDED.error_details,
+                    extra_data = EXCLUDED.extra_data,
+                    created_at = EXCLUDED.created_at,
+                    otlp_context = EXCLUDED.otlp_context,
+                    status = EXCLUDED.status
+                WHERE existing.encrypted_payload IS NULL
+                RETURNING decryption_id, set_config('synchronous_commit', 'off', true)
+            )
+            UPDATE pad_decryption_requests AS request SET status = 'failed'
+            FROM written_response
+            WHERE request.decryption_id = written_response.decryption_id",
+            decryption_id.as_le_slice(),
+            error_code.as_str(),
+            error_details,
+            extra_data,
+            Utc::now(),
+            bc2wrap::serialize(otlp_ctx)?,
+        )
+        .execute(&self.db_pool)
+        .await?;
+        log_error_publication_result(query_result, error_code);
+        Ok(())
+    }
 }
 
 fn decryption_insert_status(source: RequestSource) -> OperationStatus {

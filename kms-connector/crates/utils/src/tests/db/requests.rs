@@ -34,6 +34,7 @@ use fhevm_host_bindings::{
         NewKmsEpoch, PcrValues,
     },
 };
+use kms_connector_api::PadDecryptionRequest;
 use sqlx::{Pool, Postgres, types::chrono::Utc};
 use std::fmt::Display;
 use tracing::info;
@@ -589,6 +590,46 @@ pub async fn insert_rand_kms_epoch_destroyed(
     Ok(KmsEpochDestroyed { epochId: epoch_id })
 }
 
+pub async fn insert_pad_decryption_request(
+    db: &Pool<Postgres>,
+    request: &PadDecryptionRequest,
+    status: OperationStatus,
+) -> anyhow::Result<U256> {
+    let decryption_id = U256::from_be_bytes(request.id().0);
+    let payload = &request.payload;
+    let allowed_contracts: Vec<Vec<u8>> = payload
+        .allowedContracts
+        .iter()
+        .map(|a| a.to_vec())
+        .collect();
+    sqlx::query!(
+        "INSERT INTO pad_decryption_requests(
+            decryption_id, witness_version, prf_id, chain_id, pads, user_address, public_key,
+            allowed_contracts, start_timestamp, duration_seconds, extra_data, signature,
+            created_at, otlp_context, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
+        decryption_id.as_le_slice(),
+        i16::from(payload.witnessVersion),
+        i32::from(payload.prfId),
+        i64::try_from(payload.chainId)?,
+        payload.pads.abi_encode(),
+        payload.userAddress.as_slice(),
+        payload.publicKey.as_ref(),
+        &allowed_contracts,
+        i64::try_from(payload.requestValidity.startTimestamp)?,
+        i64::try_from(payload.requestValidity.durationSeconds)?,
+        payload.extraData.as_ref(),
+        request.signature.as_ref(),
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        status as OperationStatus,
+    )
+    .execute(db)
+    .await?;
+    Ok(decryption_id)
+}
+
 pub async fn check_no_uncompleted_request_in_db(
     db: &Pool<Postgres>,
     kind: TestEventType,
@@ -601,6 +642,10 @@ pub async fn check_no_uncompleted_request_in_db(
         }
         EventType::UserDecryptionRequest => {
             "SELECT COUNT(decryption_id) FROM user_decryption_requests
+            WHERE status NOT IN ('completed', 'failed')"
+        }
+        EventType::PadDecryptionRequest => {
+            "SELECT COUNT(decryption_id) FROM pad_decryption_requests
             WHERE status NOT IN ('completed', 'failed')"
         }
         EventType::PrepKeygenRequest => {
@@ -659,6 +704,9 @@ pub async fn check_request_failed_in_db(
         }
         EventType::UserDecryptionRequest => {
             "SELECT COUNT(decryption_id) FROM user_decryption_requests WHERE status = 'failed'"
+        }
+        EventType::PadDecryptionRequest => {
+            "SELECT COUNT(decryption_id) FROM pad_decryption_requests WHERE status = 'failed'"
         }
         EventType::PrepKeygenRequest => {
             "SELECT COUNT(prep_keygen_id) FROM prep_keygen_requests WHERE status = 'failed'"

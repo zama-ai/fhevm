@@ -10,6 +10,7 @@ use crate::{
 };
 use alloy::{primitives::U256, sol_types::SolValue};
 use fhevm_host_bindings::protocol_config::IProtocolConfig::{EpochCrsResult, EpochKeyResult};
+use kms_connector_api::PadDecryptionResponse;
 use sqlx::{Pool, Postgres, types::chrono::Utc};
 use std::fmt::Display;
 
@@ -351,4 +352,66 @@ pub async fn insert_test_user_decrypt_error_response(
     .execute(db)
     .await?;
     Ok(decryption_id)
+}
+
+/// Plays the kms-worker: stores (or overrides) a pad decryption error response.
+pub async fn insert_test_pad_decrypt_error_response(
+    db: &Pool<Postgres>,
+    id: Option<U256>,
+    error_code: &str,
+    error_details: &str,
+) -> anyhow::Result<U256> {
+    let decryption_id = id.unwrap_or_else(rand_u256);
+    sqlx::query!(
+        "INSERT INTO pad_decryption_responses(
+            decryption_id, error_code, error_details, extra_data, created_at, otlp_context, status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, 'completed')
+        ON CONFLICT (decryption_id) DO UPDATE SET
+            error_code = EXCLUDED.error_code, error_details = EXCLUDED.error_details,
+            created_at = EXCLUDED.created_at",
+        decryption_id.as_le_slice(),
+        error_code,
+        error_details,
+        Vec::<u8>::new(),
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+    )
+    .execute(db)
+    .await?;
+    Ok(decryption_id)
+}
+
+pub async fn insert_rand_pad_decrypt_response(
+    db: &Pool<Postgres>,
+    id: Option<U256>,
+    status: Option<OperationStatus>,
+) -> anyhow::Result<PadDecryptionResponse> {
+    let decryption_id = id.unwrap_or_else(rand_u256);
+    let encrypted_payload = rand_signature();
+    let signature = rand_signature();
+    let status = status.unwrap_or(OperationStatus::Pending);
+
+    sqlx::query!(
+        "INSERT INTO pad_decryption_responses(
+            decryption_id, encrypted_payload, signature, extra_data, created_at, otlp_context,
+            status
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT DO NOTHING",
+        decryption_id.as_le_slice(),
+        encrypted_payload,
+        signature,
+        Vec::<u8>::new(),
+        Utc::now(),
+        bc2wrap::serialize(&PropagationContext::empty())?,
+        status as OperationStatus,
+    )
+    .execute(db)
+    .await?;
+
+    Ok(kms_connector_api::PadDecryptionResponse {
+        decryption_id: decryption_id.to_be_bytes().into(),
+        encrypted_payload: encrypted_payload.into(),
+        signature: signature.into(),
+    })
 }

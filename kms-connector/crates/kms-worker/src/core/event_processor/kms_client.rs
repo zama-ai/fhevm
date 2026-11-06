@@ -88,6 +88,9 @@ impl From<&ProtocolEventKind> for KmsPollTarget {
             ProtocolEventKind::UserDecryptionV2(e) => {
                 Self::UserDecryption(u256_to_request_id(e.decryptionId))
             }
+            ProtocolEventKind::PadDecryption(_) => {
+                unreachable!("pad decryptions are rejected by `check_request`")
+            }
             ProtocolEventKind::PrepKeygen(e) => {
                 Self::PrepKeygen(u256_to_request_id(e.prepKeygenId))
             }
