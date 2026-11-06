@@ -2,6 +2,7 @@ import {
   supportsConnectorHttp,
   supportsConsensusDetector,
   runsCoprocessorProxy,
+  runsRelayerHttp,
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
@@ -26,9 +27,9 @@ import {
 import type { LocalOverride, OverrideGroup, ResolvedCoprocessorScenarioInstance, State, StepName } from "../types";
 import { extraHostChains, hostChainsForState } from "./topology";
 
-const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "kms-core", "kms", "listener-core", "relayer", "test-suite"] as const;
+const UPGRADEABLE_GROUPS = ["coprocessor", "kms-connector", "kms-core", "kms", "listener-core", "relayer", "relayer-http", "test-suite"] as const;
 export type UpgradeGroup = (typeof UPGRADEABLE_GROUPS)[number];
-const CLI_UPGRADEABLE_GROUPS: readonly UpgradeGroup[] = ["coprocessor", "listener-core", "relayer", "test-suite"];
+const CLI_UPGRADEABLE_GROUPS: readonly UpgradeGroup[] = ["coprocessor", "listener-core", "relayer", "relayer-http", "test-suite"];
 const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   "coprocessor": [
     "COPROCESSOR_DB_MIGRATION_VERSION",
@@ -62,6 +63,7 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
   ],
   "listener-core": ["LISTENER_CORE_VERSION"],
   "relayer": ["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"],
+  "relayer-http": ["RELAYER_HTTP_VERSION"],
   "test-suite": ["TEST_SUITE_VERSION"],
 };
 type UpgradeComponentPlan = {
@@ -135,7 +137,7 @@ export const resumeSteadyStateServices = (state: State) => {
     ],
     "kms-connector": kmsConnectorServices(state).filter((service) => !service.endsWith("-db-migration")),
     "relayer": ["fhevm-relayer-db", "fhevm-relayer"],
-    ...(state.versions.env.RELAYER_HTTP_VERSION ? { "relayer-http": ["fhevm-relayer-http"] } : {}),
+    ...(runsRelayerHttp(state) ? { "relayer-http": ["fhevm-relayer-http"] } : {}),
     "relayer-proxy": ["fhevm-relayer-proxy"],
     "test-suite": [TEST_SUITE_CONTAINER],
   } satisfies Partial<Record<StepName, string[]>>;

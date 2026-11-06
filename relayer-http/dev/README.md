@@ -24,6 +24,17 @@ e2e container: hardhat script --> host-node:8545 (deploy a fixture)
 
 - Logs: `docker logs -f fhevm-relayer-http`.
 
+### From the working tree
+
+By default the stack pulls the relayer-http image resolved for the target (`RELAYER_HTTP_VERSION`, main for `latest-main`), so a branch that changes the configuration schema fails at startup: the config is rendered from the working tree's template, the image is not. The `relayer-http` override group builds the image from the working tree instead (`relayer-http/Dockerfile`, host platform, tag `fhevm-local`) and runs it even when the bundle has no `RELAYER_HTTP_VERSION`:
+
+```sh
+./fhevm-cli up --target latest-main --override relayer-http   # from test-suite/fhevm; --build includes it
+./fhevm-cli upgrade relayer-http                              # after an edit: rebuild and restart fhevm-relayer-http in place
+```
+
+Use it when the change must be seen through the stack as deployed: the config template (`test-suite/fhevm/templates/config/relayer-http.yaml`), the TLS path to the proxies, the relayer proxy route. For code iteration with logs in the terminal, `make run` below is faster (no image build).
+
 ### Through the relayer proxy
 
 The stack also serves relayer-http through the relayer proxy, on `localhost:3003` (`/v2`, `/v3` → relayer, `/v4` → relayer-http). To run the flows through it, set `RELAYER_HTTP_URL` to the proxy's port on the host:
