@@ -9,6 +9,7 @@ import { getCoprocessorContextSignersAndThreshold } from './getCoprocessorContex
 
 type Context = {
   readonly runtime: FhevmRuntime;
+  readonly chain?: { readonly id: number } | undefined;
   readonly client: NonNullable<object>;
   readonly options: { readonly batchRpcCalls: boolean };
 };

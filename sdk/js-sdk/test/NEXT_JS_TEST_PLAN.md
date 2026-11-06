@@ -181,7 +181,7 @@ deps-free core (`test/shared/`) that reproduces the coexistence shape:
 - **Internals via the managed private path (constraint #2).** The coexistence
   model needs SDK internals not in the public API — `getEthersRuntime`,
   `encryptModule`/`decryptModule`, `createZkProofBuilder` (`-p`),
-  `globalFheEncryptionKeyCache` (`-p`). **Gating decision for this chunk:** how
+  `fheEncryptionKeyCacheForTests` (`ensureFheEncryptionKeyDownload.ts`). **Gating decision for this chunk:** how
   does the core reach these _from the packed tarball_ in `browser-next`?
   Order of preference: (a) re-express via existing public actions/clients if
   possible; (b) if not, a single managed private import path from the SDK package

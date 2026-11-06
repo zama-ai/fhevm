@@ -7,6 +7,7 @@ import type { InputHandle } from '../types/encryptedTypes-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { fetchVerifiedInputProof } from './fetchVerifiedInputProof.js';
 import { createZkProof } from './ZkProofBuilder-p.js';
+import { runWithRefreshOnInvalidity } from '../caching/refreshOnInvalidity-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -33,20 +34,27 @@ type ReturnType = {
 export async function encrypt(context: Context, parameters: Parameters): Promise<ReturnType> {
   const hardCodedExtraData = '0x00' as BytesHex;
 
-  const zkProof = await createZkProof(context, {
-    ...parameters,
-    extraData: hardCodedExtraData,
-    fhevmContext: parameters.fhevmContext,
-  });
+  // A rotated key (input proof rejected) or a changed coprocessor signer set
+  // is refreshed and the whole request runs once more: a new key needs a new
+  // proof.
+  return runWithRefreshOnInvalidity(context, parameters.fhevmContext, async (cacheUsage) => {
+    const zkProof = await createZkProof(context, {
+      ...parameters,
+      extraData: hardCodedExtraData,
+      fhevmContext: parameters.fhevmContext,
+      cacheUsage,
+    });
 
-  const inputProof = await fetchVerifiedInputProof(context, {
-    zkProof,
-    options: parameters.options,
-    fhevmContext: parameters.fhevmContext,
-  });
+    const inputProof = await fetchVerifiedInputProof(context, {
+      zkProof,
+      options: parameters.options,
+      fhevmContext: parameters.fhevmContext,
+      cacheUsage,
+    });
 
-  return {
-    inputHandles: inputProof.inputHandles,
-    inputProof: inputProof.bytesHex,
-  };
+    return {
+      inputHandles: inputProof.inputHandles,
+      inputProof: inputProof.bytesHex,
+    };
+  });
 }

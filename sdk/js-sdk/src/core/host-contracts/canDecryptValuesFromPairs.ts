@@ -13,6 +13,7 @@ import {
 import { assertPermitV1IncludesContractAddresses } from '../kms/fetchKmsSigncryptedSharesV1-p.js';
 import { assertPermitMatchesKeyPair } from '../utils-p/decrypt/assertPermitMatchesKeyPair.js';
 import { isUserDecryptable } from '../host-contracts/isUserDecryptable.js';
+import { readKmsSignersContextFromPermitExtraData } from './readKmsSignersContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -63,10 +64,11 @@ export async function canDecryptValuesFromPairs(context: Context, parameters: Pa
   } else {
     const { signedPermit } = parameters;
 
-    // Order: brand → version → extraData → expiry (same as the decrypt share fetchers).
+    // Order: brand → version → extraData → expiry, then the input checks and the KMS context
+    // (same as fetchKmsSigncryptedSharesV1 / V2).
     // The version is checked by assertSignedDecryptionPermitExtraDataSupported.
     assertIsSignedDecryptionPermit(signedPermit, { subject: 'signedPermit' });
-    assertSignedDecryptionPermitExtraDataSupported(signedPermit);
+    const signedPermitExtraData = assertSignedDecryptionPermitExtraDataSupported(signedPermit);
 
     signedPermit.assertNotExpired();
 
@@ -77,6 +79,14 @@ export async function canDecryptValuesFromPairs(context: Context, parameters: Pa
     if (parameters.transportKeyPair !== undefined) {
       assertPermitMatchesKeyPair(signedPermit, parameters.transportKeyPair);
     }
+
+    // Only a permit for the current KMS context can decrypt. After the input
+    // checks above: it may read the chain.
+    await readKmsSignersContextFromPermitExtraData(context, {
+      kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+      protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+      extraData: signedPermitExtraData,
+    });
 
     userAddress = signedPermit.encryptedDataOwnerAddress;
   }

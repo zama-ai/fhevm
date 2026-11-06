@@ -63,6 +63,9 @@ const PARAMS: Record<string, unknown> = {
   detail: 'test detail',
   type: 'kms',
   numberOfHandles: 257,
+  // cache
+  item: 'keyMaterial',
+  invalidVersion: 'test cache version',
   // base errors
   subject: 'test subject',
   property: 'test property',

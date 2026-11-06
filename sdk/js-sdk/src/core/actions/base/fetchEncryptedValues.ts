@@ -7,6 +7,7 @@ import type { EncryptedValue } from '../../types/encryptedTypes.js';
 import { fetchVerifiedInputProof as fetchVerifiedInputProof_ } from '../../coprocessor/fetchVerifiedInputProof.js';
 import { assertIsZkProof } from '../../coprocessor/ZkProof-p.js';
 import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
+import { runWithRefreshOnInvalidity } from '../../caching/refreshOnInvalidity-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -34,7 +35,11 @@ export async function fetchEncryptedValues(
   });
 
   const fhevmContext = await initPublicAction(fhevm);
-  const result = await fetchVerifiedInputProof_(fhevm, { zkProof, ...rest, fhevmContext });
+  // A changed coprocessor signer set is refreshed and the request sent once
+  // more: the proof stays valid.
+  const result = await runWithRefreshOnInvalidity(fhevm, fhevmContext, (cacheUsage) =>
+    fetchVerifiedInputProof_(fhevm, { zkProof, ...rest, fhevmContext, cacheUsage }),
+  );
   return {
     encryptedValues: result.inputHandles.map(
       (encryptedValue) => encryptedValue.bytes32Hex as unknown as EncryptedValue,
