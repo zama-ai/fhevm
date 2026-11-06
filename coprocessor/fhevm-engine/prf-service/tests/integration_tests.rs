@@ -375,3 +375,21 @@ async fn draining_closes_each_connection_after_its_response() {
 
     service.stop().await;
 }
+
+#[tokio::test]
+async fn stop_serves_a_row_completed_during_the_drain() {
+    let service = TestService::start().await;
+    let request = service.spawn_get(&prf_path("0", LABEL, "64"));
+    service.wait_for_row(LABEL).await;
+
+    // The server drains held requests for up to 5 s after the stop.
+    service.cancel_token.cancel();
+    service.complete(LABEL, 64, 1).await;
+    let response = timeout(Duration::from_secs(2), request)
+        .await
+        .expect("the waiter wakes the request during the drain")
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    service.task.await.unwrap().unwrap();
+}
