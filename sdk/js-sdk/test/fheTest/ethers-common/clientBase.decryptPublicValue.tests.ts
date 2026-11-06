@@ -14,7 +14,7 @@ import { asEncryptedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientBase.decryptPublicValue.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientBase.decryptPublicValue.test.ts
 // CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.decryptPublicValue.test.ts
 // CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.decryptPublicValue.test.ts
 // CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts ethers/clientBase.decryptPublicValue.test.ts

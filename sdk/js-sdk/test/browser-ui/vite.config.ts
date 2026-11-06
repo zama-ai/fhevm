@@ -122,14 +122,7 @@ function loadBrowserUiConfig(): BrowserUiConfig {
     targets: {
       testnet: resolveBrowserUiTarget(testDir, 'sepolia', defaults, sharedMnemonic),
       localstack: resolveBrowserUiTarget(testDir, 'localstack', defaults, sharedMnemonic),
-      // The cleartext target is the v1.0 stack; every localcleartext* chain shares test/.env.localcleartext.
-      localcleartext: resolveBrowserUiTarget(
-        testDir,
-        'localcleartext_v1_0',
-        defaults,
-        sharedMnemonic,
-        'localcleartext',
-      ),
+      localcleartext: resolveBrowserUiTarget(testDir, 'localcleartext', defaults, sharedMnemonic),
     },
   };
 }

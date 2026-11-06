@@ -170,7 +170,7 @@ The canonical deployer is account index **5** of the mnemonic
 (`m/44'/60'/0'/0/5` → `0x8B8f5091f8b9817EF69cFC1E8B2f721BafF60DF4`), at start nonce **0**. This is the
 same deployer and mnemonic as `scripts/fhevm-deploy.sh` (`deployer_mnemonic_index=5`). ACL, FHEVMExecutor and
 KMSVerifier therefore land on the three addresses `library-solidity/config/ZamaConfig.sol` `_getLocalConfig()` returns
-for chain 31337, and InputVerifier and ProtocolConfig land where `test/chains/localcleartext_v1_0.ts` expects them.
+for chain 31337, and InputVerifier and ProtocolConfig land where `test/chains/localcleartext.ts` expects them.
 
 The committed `config/addresses.sol` holds exactly this canonical set. **Regenerate it whenever the deployer or the
 start nonce differs.** The test infra (`test/infra/config.ts`) therefore deploys its single v1.0 slot with the
@@ -240,7 +240,7 @@ The selector is the same.
 
 | value                                                                                                                        | fhevm-mocks default                                                                                                                                                                    | js-sdk siblings today (`scripts/fhevm-deploy.sh`)                                                          |
 | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| gateway chain id (`GATEWAY_CHAIN_ID`)                                                                                        | `100733346448153` (`uint48(keccak256("fhevm.cheat.chainId cleartext gateway"))`)                                                                                                       | **`654321`** (unused by v1.0); the js-sdk tests use `100733346448153` (`test/chains/localcleartext_v1_0.ts`, `test/infra/config.ts`) |
+| gateway chain id (`GATEWAY_CHAIN_ID`)                                                                                        | `100733346448153` (`uint48(keccak256("fhevm.cheat.chainId cleartext gateway"))`)                                                                                                       | **`654321`** (unused by v1.0); the js-sdk tests use `100733346448153` (`test/chains/localcleartext.ts`, `test/infra/config.ts`) |
 | `DECRYPTION_ADDRESS` (KMSVerifier EIP-712 verifyingContract, domain name `"Decryption"`)                                     | `0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721`                                                                                                                                           | same                                                                                                       |
 | `INPUT_VERIFICATION_ADDRESS` (InputVerifier EIP-712 verifyingContract, domain name `"InputVerification"`)                    | `0x6189F6c0c3E40B4a3c72ec86262295D78d845297`                                                                                                                                           | same                                                                                                       |
 | coprocessor signers (`m/44'/60'/0'/2/i` of `test test test test test test test future home engine virtual motion`, i = 0..3) | `0x6727b56B5D1E990C75fE5dCd572D084fc5DC35cb`, `0xF1CDC3ebe04A063EAbfaf5c3129494F6049Ee229`, `0x46A03377bcBE895407ee4842b63f3249bc8327BD`, `0xFd0ea258B3D2b153DD76CAC0E2270574Da8f18E8` | same pool (4 signers)                                                                                      |
@@ -299,7 +299,7 @@ Use the v0.13.0 path as the template: `scripts/fhevm-deploy.sh` → `scripts/v0.
    - `fhevm_host_addresses_file v1.0.0`: return `…/src/v1.0.0/config/addresses.sol`, the file to regenerate.
 4. `contracts/scripts/fhevm-deploy.sh`: map `v1.0 → host_contracts_version="v1.0.0"`, and consider `LATEST_PROFILE_ALIAS`.
 5. `test/scripts/localcleartext-run-tests.sh`: accept `v1.0` in both `case "$PROFILE"` checks.
-6. `test/chains/`: a `localcleartext_v1_0` entry in `chain-defaults.json` and a chain definition if one is needed. The
+6. `test/chains/`: a `localcleartext` entry in `chain-defaults.json` and a chain definition if one is needed. The
    addresses match `localcleartext.ts` for the canonical deployer; v1.0 adds `paddedInputter` at `0xded0…2327`.
 7. `test/infra/config.ts` and `test/infra/anvil/anvils.ts`: update the slot and `profileVersionDir` if v1.0 becomes a slot.
    anvils.ts restores the regenerated address file after deploy, which here is `src/v1.0.0/config/addresses.sol`.

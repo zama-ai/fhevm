@@ -5,7 +5,7 @@ import { defineClientBaseDecryptPublicValueTests } from '../viem-common/clientBa
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientBase.decryptPublicValue.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientBase.decryptPublicValue.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

@@ -1,12 +1,12 @@
 /**
  * Single source of truth for the test topology: which slots exist, the foundry
- * profile / anvil port / chain id behind each, and the key file each one serves.
+ * anvil port / chain id behind each, and the key file each one serves.
  *
  * Everything downstream derives from this — anvil specs (orchestration), gateway
  * config (relayer + rpc proxy), and (later) the per-slot viem chain defs — so the
  * matrix stays consistent and adding a slot is a one-line change.
  *
- * There is a single slot today: foundry profile v1.0 -> protocol 1.0. It deploys
+ * There is a single slot today: the current cleartext stack (protocol 1.0). It deploys
  * from the default deployer mnemonic (the only one the v1.0 deploy accepts), and
  * its addresses are derived here and served at `/<slot>/config` so the browser
  * never hardcodes them.
@@ -23,7 +23,6 @@ import {
   GATEWAY_CHEAT_ADDRESSES,
   GATEWAY_MOUNT_PREFIX,
   SLOT_INFO,
-  type FoundryProfile,
   type SlotId,
 } from './config.js';
 
@@ -59,7 +58,6 @@ function wasmAssetDir(): string {
 
 export type SlotTopology = {
   readonly slot: string;
-  readonly foundryProfile: FoundryProfile;
   readonly port: number;
   readonly chainId: number;
   readonly tfheVersion: string;
@@ -72,7 +70,6 @@ export const TOPOLOGY: readonly SlotTopology[] = (Object.keys(SLOT_INFO) as Slot
   const info = SLOT_INFO[slot];
   return {
     slot,
-    foundryProfile: info.foundryProfile,
     port: info.port,
     chainId: info.chainId,
     tfheVersion: info.tfheVersion,
@@ -86,7 +83,6 @@ export function anvilSpecs(): AnvilSpec[] {
   return TOPOLOGY.map((t) => ({
     slot: t.slot,
     port: t.port,
-    foundryProfile: t.foundryProfile,
     chainId: t.chainId,
     aclAddress: deriveFhevmHostAddresses(DEFAULT_DEPLOYER_MNEMONIC).acl,
   }));

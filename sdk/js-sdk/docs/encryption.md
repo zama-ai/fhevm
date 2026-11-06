@@ -204,7 +204,7 @@ coprocessor signature is involved, so the client loads the TKMS WASM instead of
 the TFHE one.
 
 {% hint style="warning" %}
-Pad-based encryption is experimental. The SDK only decodes the cleartext pad-share encoding for now, so it works against the v1.0.0 cleartext host contracts only (`createFhevmCleartextEncryptWithPadClient`, local stack started with `npm run start:localcleartext:v1.0`).
+Pad-based encryption is experimental. The SDK only decodes the cleartext pad-share encoding for now, so it works against the v1.0.0 cleartext host contracts only (`createFhevmCleartextEncryptWithPadClient`, local stack started with `npm run start:localcleartext`).
 {% endhint %}
 
 ### The client and its methods

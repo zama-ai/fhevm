@@ -8,7 +8,7 @@
  *
  * ─── VERSION ROLL ───────────────────────────────────────────────────────────
  * The protocol rolls forward roughly every release. When that happens, edit ONLY
- * this file — rename CURRENT_SLOT and bump its SLOT_INFO entry (profile, port,
+ * this file — rename CURRENT_SLOT and bump its SLOT_INFO entry (port,
  * chain id, tfhe version, key file) and GATEWAY_CHAIN_ID. Every downstream
  * consumer (gateway URLs, anvil specs, app pages, specs) derives from these, so
  * nothing else needs touching.
@@ -41,19 +41,16 @@ export const DEFAULT_DEPLOYER_INDEX = 5;
 
 // ─── Slots ──────────────────────────────────────────────────────────────────
 // The protocol slot exercised by the matrix. Its id is also the gateway URL
-// segment (`/gw/<slot>/...`) and the Foundry profile name.
+// segment (`/gw/<slot>/...`).
 export const CURRENT_SLOT = 'v1.0';
 
 export type SlotId = typeof CURRENT_SLOT;
-/** Foundry profile name — currently identical to the slot id. */
-export type FoundryProfile = SlotId;
 
 // Per-slot constants. The slot deploys with the deploy's built-in default
 // mnemonic: the v1.0 deploy checks the committed src/v1.0.0/config/addresses.sol,
 // so it only succeeds at that canonical address set.
 export const SLOT_INFO = {
   [CURRENT_SLOT]: {
-    foundryProfile: 'v1.0',
     port: 8546,
     chainId: 31338,
     tfheVersion: '1.6.2',

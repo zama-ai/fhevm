@@ -5,10 +5,10 @@ set -euo pipefail
 #
 # Run cleartext FHEVM tests against an Anvil node.
 #
-# Usage: run-localcleartext.sh [--ethlib ethers|viem|ethers,viem|none] --foundry-profile <name> [--verbose] [--help]
+# Usage: localcleartext-run-tests.sh [--ethlib ethers|viem|ethers,viem|none] [--verbose] [--help]
 #
 # Flow:
-#   1. Parse --ethlib (default: ethers,viem) and the required --foundry-profile.
+#   1. Parse --ethlib (default: ethers,viem).
 #   2. If Anvil is already running on RPC_URL, reuse it; otherwise start one.
 #   3. Deploy the cleartext FHEVM stack (skipped when reusing).
 #   4. Run the requested test suites sequentially against the same node.
@@ -27,7 +27,6 @@ Options:
   --ethlib viem            Run only the viem test suite.
   --ethlib ethers,viem     Run both suites (default).
   --ethlib none            Start Anvil + deploy only; wait for Anvil to exit (no tests run).
-  --foundry-profile <name> Required Foundry profile to use. Expected: v1.0.
   --use-pack               Use vitest-manual-pack.config.ts instead of vitest.config.ts.
   --skip-fhetest           Deploy only the FHEVM stack, not TFHETest.sol (FHETest).
   --verbose                Print Anvil logs to the console instead of redirecting to a file.
@@ -46,7 +45,6 @@ EOF
 # ------------------------------------------------------------------------------
 
 LIB="ethers,viem"
-PROFILE=""
 VERBOSE=0
 USE_PACK=0
 SKIP_FHETEST=0
@@ -64,19 +62,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --ethlib=*)
             LIB="${1#--ethlib=}"
-            shift
-            ;;
-        --foundry-profile)
-            shift
-            if [[ $# -eq 0 ]]; then
-                echo "Error: --foundry-profile requires an argument." >&2
-                exit 1
-            fi
-            PROFILE="$1"
-            shift
-            ;;
-        --foundry-profile=*)
-            PROFILE="${1#--foundry-profile=}"
             shift
             ;;
         --use-pack)
@@ -117,18 +102,6 @@ case "$LIB" in
         ;;
 esac
 
-case "$PROFILE" in
-    v1.0) ;;
-    "")
-        echo "Error: --foundry-profile is required. Expected: v1.0." >&2
-        exit 1
-        ;;
-    *)
-        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v1.0." >&2
-        exit 1
-        ;;
-esac
-
 # ------------------------------------------------------------------------------
 # Anvil helpers
 # ------------------------------------------------------------------------------
@@ -147,9 +120,8 @@ anvil_setup_vars() {
     RPC_URL="${RPC_URL:-http://127.0.0.1:${PORT}}"
     CHAIN_ID="${CHAIN_ID:-31337}"
     READY_TIMEOUT="${READY_TIMEOUT:-30}"
-    export FOUNDRY_PROFILE="$PROFILE"
-    # Chain names use underscores, not dots: profile v1.0 -> chain localcleartext_v1_0.
-    CLEAR_TEXT_CHAIN="localcleartext_${PROFILE//./_}"
+    # There is a single local cleartext stack: the current host contracts.
+    CLEAR_TEXT_CHAIN="localcleartext"
 }
 
 anvil_check_deps() {
@@ -266,11 +238,6 @@ else
         anvil_deploy_cleartext
     fi
 fi
-
-echo
-echo "================================================================================"
-echo "🎯  Foundry profile: ${FOUNDRY_PROFILE}"
-echo "================================================================================"
 
 # ------------------------------------------------------------------------------
 # Server mode: just wait for Anvil to exit

@@ -16,7 +16,6 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { FoundryProfile } from '../config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FHEVM_ANVIL_SH = resolve(__dirname, '../../scripts/fhevm-anvil.sh');
@@ -30,15 +29,11 @@ const PORT_DOWN_TIMEOUT_MS = 10_000;
 // never responds) would otherwise hang `fetch` forever and stall startAnvils.
 const PROBE_TIMEOUT_MS = 3_000;
 
-export type { FoundryProfile };
-
 export type AnvilSpec = {
   /** Gateway slot id this anvil backs (e.g. 'v1.0'). */
   readonly slot: string;
   /** TCP port for the anvil RPC. */
   readonly port: number;
-  /** Foundry profile of the cleartext stack to deploy (e.g. 'v1.0'). */
-  readonly foundryProfile: FoundryProfile;
   /** anvil chain id (default 31337). */
   readonly chainId?: number | undefined;
   /**
@@ -110,7 +105,7 @@ async function _startAnvil(spec: AnvilSpec, options?: StartAnvilsOptions): Promi
 
   const deployEnv: NodeJS.ProcessEnv = { ...process.env, PORT: String(spec.port), CHAIN_ID: String(chainId) };
 
-  const proc = spawn('bash', [FHEVM_ANVIL_SH, `--foundry-profile=${spec.foundryProfile}`, '--skip-fhetest'], {
+  const proc = spawn('bash', [FHEVM_ANVIL_SH, '--skip-fhetest'], {
     env: deployEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

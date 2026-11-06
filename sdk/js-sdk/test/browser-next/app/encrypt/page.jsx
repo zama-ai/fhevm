@@ -26,7 +26,7 @@ const CONTRACT_ADDRESS = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const USER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 
 // v1.0 slot: chain id 31338; cleartext-deploy addresses are deterministic
-// (chain-id independent), matching test/chains/localcleartext_v1_0.ts.
+// (chain-id independent), matching test/chains/localcleartext.ts.
 function currentChain(origin) {
   return defineFhevmChain({
     id: 31338,

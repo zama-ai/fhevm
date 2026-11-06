@@ -46,14 +46,14 @@
     "bstack:verify-input": "BROWSERSTACK_CONFIG_FILE=${BROWSERSTACK_CONFIG_FILE:-test/browserstack/browserstack-mobile.yml} test/browserstack/node_modules/.bin/browserstack-node-sdk playwright test --config test/browserstack/playwright.config.ts test/browserstack/specs/verify-input.spec.ts",
     "test:examples:testnet": "tsx ./examples/node-ethers/test-run.ts && tsx ./examples/node-viem/test-run.ts",
     "test:localstack": "./test/scripts/localstack-run-tests.sh",
-    "test:localcleartext:v1.0": "./test/scripts/localcleartext-run-tests.sh --foundry-profile=v1.0",
-    "test:localcleartext:pack:v1.0": "./test/scripts/rebuild_sdk_and_pack.sh && ./test/scripts/localcleartext-run-tests.sh --use-pack --foundry-profile=v1.0",
+    "test:localcleartext": "./test/scripts/localcleartext-run-tests.sh",
+    "test:localcleartext:pack": "./test/scripts/rebuild_sdk_and_pack.sh && ./test/scripts/localcleartext-run-tests.sh --use-pack",
     "test:memleaks": "node test/memleaks/run.mjs",
-    "test": "npm run test:unit && npm run test:localcleartext:pack:v1.0 && npm run test:browser-smoke",
+    "test": "npm run test:unit && npm run test:localcleartext:pack && npm run test:browser-smoke",
     "dod": "node test/scripts/dod.mjs",
     "dod:full": "node test/scripts/dod.mjs --full",
     "version": "node ./scripts/generate-version.cjs",
-    "start:localcleartext:v1.0": "./test/scripts/fhevm-anvil.sh --ethlib none --foundry-profile=v1.0",
+    "start:localcleartext": "./test/scripts/fhevm-anvil.sh",
     "pack": "./test/scripts/rebuild_sdk_and_pack.sh"
   },
   "devDependencies": {
