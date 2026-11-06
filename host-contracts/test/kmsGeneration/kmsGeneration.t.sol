@@ -504,6 +504,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         uint256 crsId = _runFullCrsCycle();
         assertEq(kmsGeneration.getActiveCrsId(), crsId);
         assertEq(uint256(kmsGeneration.getCrsParamsType(crsId)), uint256(IKMSGeneration.ParamsType.Default));
+        assertEq(kmsGeneration.getCrsMaxBitLength(crsId), 4096);
     }
 
     function test_emitKeygenLifecycleEvents() public {
@@ -1236,6 +1237,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         assertEq(kmsGeneration.getActiveCrsId(), crsId);
         assertEq(uint256(kmsGeneration.getCrsParamsType(crsId)), uint256(IKMSGeneration.ParamsType.Test));
+        assertEq(kmsGeneration.getCrsMaxBitLength(crsId), 8192);
     }
 
     function test_revertGetAbortedCrsViews() public {
@@ -1248,6 +1250,9 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsAborted.selector, crsId));
         kmsGeneration.getCrsParamsType(crsId);
+
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsAborted.selector, crsId));
+        kmsGeneration.getCrsMaxBitLength(crsId);
 
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsAborted.selector, crsId));
         kmsGeneration.getCrsMaterials(crsId);
@@ -1270,6 +1275,11 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
     function testFuzz_revertGetCrsParamsTypeNonexistent(uint256 crsId) public {
         vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, crsId));
         kmsGeneration.getCrsParamsType(crsId);
+    }
+
+    function testFuzz_revertGetCrsMaxBitLengthNonexistent(uint256 crsId) public {
+        vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, crsId));
+        kmsGeneration.getCrsMaxBitLength(crsId);
     }
 
     function testFuzz_revertGetCrsMaterialsNonexistent(uint256 crsId) public {
@@ -1879,6 +1889,8 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
 
             vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, foreignIds[i]));
             kmsGeneration.getCrsParamsType(foreignIds[i]);
+            vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, foreignIds[i]));
+            kmsGeneration.getCrsMaxBitLength(foreignIds[i]);
             vm.expectRevert(abi.encodeWithSelector(IKMSGeneration.CrsNotGenerated.selector, foreignIds[i]));
             kmsGeneration.getCrsMaterials(foreignIds[i]);
         }
