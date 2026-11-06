@@ -44,7 +44,7 @@ const KMS_CONNECTOR_KMS_GENERATION_READY =
 /** Number of KMS connector instances: one per party. */
 const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
 
-/** The coprocessor-proxy's default `/healthz` port. */
+/** The default `/healthz` port of coprocessor-proxy and prf-service. */
 const COPROCESSOR_PROXY_HEALTHCHECK_PORT = 8080;
 
 /** gw-listener / kms-worker / tx-sender (+ endpoint and proxy when the bundle ships them) health containers across every KMS party. */
@@ -165,19 +165,18 @@ export const waitForLog = async (container: string, pattern: RegExp) => {
 };
 
 /**
- * Waits until a coprocessor's proxy is ready: its `/healthz` answers 200 once the TLS listener
- * answers and the KMS tx-senders have been read. The proxy image has no HTTP client, so the probe
- * runs in the coprocessor's fake prf-service, on the same network.
+ * Waits until the `service` of a coprocessor answers 200 on `/healthz`. The images have no HTTP
+ * client, so the probe runs in the PRF output seeder of the coprocessor.
  */
-const waitForCoprocessorProxy = async (prefix: string) => {
-  const proxy = `${prefix}proxy`;
-  const url = `http://${proxy}:${COPROCESSOR_PROXY_HEALTHCHECK_PORT}/healthz`;
+const waitForHealthz = async (prefix: string, service: "prf-service" | "proxy") => {
+  const container = `${prefix}${service}`;
+  const url = `http://${container}:${COPROCESSOR_PROXY_HEALTHCHECK_PORT}/healthz`;
   for (let attempt = 0; attempt <= 90; attempt += 1) {
-    const [inspect] = await dockerInspect(proxy);
+    const [inspect] = await dockerInspect(container);
     if (inspect && containerFailure(inspect)) {
-      throw new ContainerCrashed(proxy, inspect.State.ExitCode || -1, "");
+      throw new ContainerCrashed(container, inspect.State.ExitCode || -1, "");
     }
-    const probe = await run(["docker", "exec", `${prefix}prf-service-fake`, "wget", "-qO-", url], {
+    const probe = await run(["docker", "exec", `${prefix}prf-output-seed`, "wget", "-qO-", url], {
       allowFailure: true,
       timeoutMs: 10_000,
     });
@@ -185,7 +184,7 @@ const waitForCoprocessorProxy = async (prefix: string) => {
       return;
     }
     if (attempt === 90) {
-      throw new ProbeTimeout(proxy, 180);
+      throw new ProbeTimeout(container, 180);
     }
     await Bun.sleep(2_000);
   }
@@ -386,8 +385,9 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
       await waitForContainer(`${prefix}prf-service`, "running");
     }
     if (includeProxy) {
-      await waitForContainer(`${prefix}prf-service-fake`, "healthy");
-      await waitForCoprocessorProxy(prefix);
+      await waitForContainer(`${prefix}prf-output-seed`, "healthy");
+      await waitForHealthz(prefix, "prf-service");
+      await waitForHealthz(prefix, "proxy");
     }
     if (state.scenario.kind === "blue-green" && !state.scenario.gcs.deferredStart) {
       await waitCoreFleet(`${prefix}gcs-`, false);

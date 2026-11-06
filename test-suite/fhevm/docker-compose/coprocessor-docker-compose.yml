@@ -309,19 +309,26 @@ services:
       coprocessor-db-migration:
         condition: service_completed_successfully
 
-  # Stand-in for prf-service, the upstream coprocessor-proxy forwards to, until prf-service ships.
-  # The e2e image's Node runs the mounted script, so any test-suite image tag works.
-  coprocessor-prf-service-fake:
-    container_name: coprocessor-prf-service-fake
+  # Writes the suite's PRF output in place of the pad-worker, then stays up for the readiness probes,
+  # because prf-service and the proxy have no HTTP client. The script is mounted: any image tag works.
+  coprocessor-prf-output-seed:
+    container_name: coprocessor-prf-output-seed
     image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
     platform: linux/amd64
-    entrypoint: ["node", "/opt/fake-prf-service.ts"]
+    init: true
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/coprocessor.env
+    working_dir: /app/test-suite/e2e
+    entrypoint: ["sh", "-c", "node scripts/seed-prf-output.ts && touch /tmp/seeded && exec tail -f /dev/null"]
     volumes:
-      - ../../e2e/scripts/fake-prf-service.ts:/opt/fake-prf-service.ts:ro
+      - ../../e2e/scripts/seed-prf-output.ts:/app/test-suite/e2e/scripts/seed-prf-output.ts:ro
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/count"]
+      test: ["CMD", "test", "-f", "/tmp/seeded"]
       interval: 1s
-      retries: 30
+      retries: 120
+    depends_on:
+      coprocessor-db-migration:
+        condition: service_completed_successfully
 
   coprocessor-proxy:
     container_name: coprocessor-proxy
@@ -343,7 +350,9 @@ services:
       - ../static/config/coprocessor-proxy:/etc/coprocessor-proxy/tls:ro
     # The proxy resolves the prf-service hostname once, at startup.
     depends_on:
-      coprocessor-prf-service-fake:
+      coprocessor-prf-service:
+        condition: service_started
+      coprocessor-prf-output-seed:
         condition: service_healthy
 
   coprocessor-prf-service:
