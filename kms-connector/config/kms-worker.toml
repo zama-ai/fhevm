@@ -114,6 +114,12 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE
 # s3_max_ciphertext_size = 131072
 
+# Number of ciphertext buffers allocated at startup, each `s3_max_ciphertext_size` bytes
+# (optional, defaults to 2048, i.e. 256MiB). Requests wait when no buffer is free.
+# Must be at least `max_handles_per_decryption`. Size it to the container's memory limit.
+# ENV: KMS_CONNECTOR_CIPHERTEXT_POOL_SLOTS
+# ciphertext_pool_slots = 2048
+
 # Refresh interval of the Coprocessor registry read from the GatewayConfig contract (optional, defaults to 60s)
 # ENV: KMS_CONNECTOR_COPRO_REGISTRY_REFRESH (format: https://docs.rs/humantime/latest/humantime/)
 # copro_registry_refresh = "60s"
