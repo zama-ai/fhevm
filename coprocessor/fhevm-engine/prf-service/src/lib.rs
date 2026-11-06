@@ -81,13 +81,10 @@ impl PrfService {
 
     /// Serves until `cancel_token`. Returns an error if the server stops.
     pub async fn start(self) -> anyhow::Result<()> {
-        let server = self.server;
-        tokio::pin!(server);
         tokio::select! {
-            res = &mut server => res.context("HTTP server error")?,
-            () = self.waiter.run(self.cancel_token.clone()) => {
-                server.await.context("HTTP server error")?;
-            }
+            res = self.server => res.context("HTTP server error")?,
+            // Stops with the server, so the requests held during the drain still wake.
+            () = self.waiter.run(CancellationToken::new()) => {}
         }
         if !self.cancel_token.is_cancelled() {
             bail!("HTTP server exited unexpectedly");
