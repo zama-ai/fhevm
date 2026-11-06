@@ -149,19 +149,21 @@ AWS Application Load Balancer.
 
 As defence in depth, the proxy also bounds the time a client takes to send a request head. A
 client has `coprocessorProxy.requestHeadTimeoutSeconds` (10 by default) after its TLS handshake to
-send the whole head of its first request, and 20 s after a response to send the whole head of the
-next one. Pingora closes a connection idle for 15 s before that deadline, so the deadline only
-closes one whose next head, or previous body, is still arriving. No deadline runs while
-prf-service holds a request.
+send the whole head of its first request, and `coprocessorProxy.clientIdleTimeoutSeconds` plus 5 s
+after a response to send the whole head of the next one. The proxy closes a connection idle for
+`clientIdleTimeoutSeconds` before that deadline, so the deadline only closes one whose next head,
+or previous body, is still arriving. No deadline runs while prf-service holds a request.
 
 The proxy speaks HTTP/1.1 to its clients, so each request a connector holds open takes one
 connection: the front layer's per-client connection limit must allow the connector's concurrent
 PRF requests, and its limits across all clients must stay well below the connections that fill a
 replica's memory.
 
-A connector's pool must close its idle connections to the proxy sooner than the proxy does, for
-example after 10 s. Otherwise a request sent as the proxy closes the connection fails with a
-connection error, which the connector then has to retry.
+The front layer's idle timeout towards the proxy must be shorter than
+`coprocessorProxy.clientIdleTimeoutSeconds` (65 s by default). Otherwise the front layer can send a
+request on a connection the proxy is closing, and answers the client `502`. AWS ALB's default idle
+timeout is 60 s. The proxy also closes a connection after 1000 requests, so that a front layer's
+long-lived connections spread again over the replicas, new ones included.
 
 Every timeout of the front layer must sit between the connector's `PRF_RETRIEVAL_DEADLINE` and
 `prfServiceResponseTimeoutSeconds`, as described above.

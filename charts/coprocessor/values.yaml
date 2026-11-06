@@ -1915,9 +1915,13 @@ coprocessorProxy:
   # request, so a signer's limit is up to about `replicas` times this: adding replicas raises it.
   maxRequestsPerSigner: 200
   # Time a client has, once its TLS handshake completes, to send its first request head; the
-  # connection is closed after. At least 1. A later head on the connection is due within 20 s of
-  # the previous response.
+  # connection is closed after. At least 1. A later head on the connection is due
+  # clientIdleTimeoutSeconds + 5 s after the previous response.
   requestHeadTimeoutSeconds: 10
+  # Time a client connection can stay idle between two requests before the proxy closes it. At
+  # least 1. The front layer's idle timeout towards the proxy must be shorter (AWS ALB: 60 s by
+  # default), or a request it sends as the proxy closes the connection fails with a 502.
+  clientIdleTimeoutSeconds: 65
 
   # Ingress allowed from this release's proxy pods to prf-service.
   prfServiceNetworkPolicy:

@@ -14,7 +14,7 @@ use common::{
     stub_attestation, stub_output,
 };
 use coprocessor_proxy::core::{
-    CLIENT_IDLE_TIMEOUT, NEXT_HEAD_TIMEOUT, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT,
+    KEEPALIVE_REQUEST_LIMIT, NEXT_HEAD_MARGIN, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT,
 };
 use coprocessor_proxy::kms_tx_senders::WOKEN_POLL_SPACING;
 use serde_json::{Value, json};
@@ -672,7 +672,11 @@ async fn test_limits_each_signers_request_rate() {
 async fn test_closes_client_connections_idle_between_requests() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let t = TestProxy::start(StubPrfService::start().await).await;
+    let idle_timeout = Duration::from_secs(2);
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.client_idle_timeout = idle_timeout;
+    })
+    .await;
     let path = prf_path(1);
     let addr = t.addr;
     let auth = auth_header(&sender(), &path, b"").await;
@@ -696,15 +700,38 @@ async fn test_closes_client_connections_idle_between_requests() {
 
     let idle = Instant::now();
     let mut byte = [0u8; 1];
-    let read = tokio::time::timeout(Duration::from_secs(20), stream.read(&mut byte)).await;
+    let read = tokio::time::timeout(Duration::from_secs(10), stream.read(&mut byte)).await;
     // The server closes, without a TLS `close_notify` or with one.
     assert!(matches!(read, Ok(Ok(0) | Err(_))), "{read:?}");
     let closed_after = idle.elapsed();
     assert!(
-        closed_after >= CLIENT_IDLE_TIMEOUT - Duration::from_millis(500)
-            && closed_after < CLIENT_IDLE_TIMEOUT + Duration::from_secs(2),
+        closed_after >= idle_timeout - Duration::from_millis(500)
+            && closed_after < idle_timeout + Duration::from_secs(2),
         "{closed_after:?}"
     );
+}
+
+#[tokio::test]
+async fn test_closes_a_client_connection_after_its_request_limit() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let t = TestProxy::start(StubPrfService::start().await).await;
+    let mut stream = t.tls.connect(t.addr).await;
+    let request = format!("GET / HTTP/1.1\r\nHost: {}\r\n\r\n", t.addr);
+    for served in 1..=KEEPALIVE_REQUEST_LIMIT {
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let response = read_one_response(&mut stream).await;
+        assert!(response.starts_with("HTTP/1.1 404"), "{served}: {response}");
+        let closing = response.to_ascii_lowercase().contains("connection: close");
+        assert_eq!(
+            closing,
+            served == KEEPALIVE_REQUEST_LIMIT,
+            "{served}: {response}"
+        );
+    }
+    let mut byte = [0u8; 1];
+    let read = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut byte)).await;
+    assert!(matches!(read, Ok(Ok(0) | Err(_))), "{read:?}");
 }
 
 #[tokio::test]
@@ -745,8 +772,10 @@ async fn test_refuses_a_request_body_and_closes_a_connection_that_drips_it() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let head_timeout = Duration::from_secs(1);
+    let idle_timeout = Duration::from_secs(2);
     let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
         config.request_head_timeout = head_timeout;
+        config.client_idle_timeout = idle_timeout;
     })
     .await;
     let stream = t.tls.connect(t.addr).await;
@@ -769,7 +798,7 @@ async fn test_refuses_a_request_body_and_closes_a_connection_that_drips_it() {
     });
 
     let mut response = Vec::new();
-    let bound = head_timeout + NEXT_HEAD_TIMEOUT + Duration::from_secs(5);
+    let bound = head_timeout + idle_timeout + NEXT_HEAD_MARGIN + Duration::from_secs(5);
     let read = tokio::time::timeout(bound, reader.read_to_end(&mut response)).await;
     dripping.abort();
     let response = String::from_utf8_lossy(&response);
@@ -799,13 +828,15 @@ async fn test_serves_a_slow_request_head_completed_within_the_deadline() {
 async fn test_serves_a_request_held_longer_than_the_head_deadline_and_idle_timeout() {
     use tokio::io::AsyncWriteExt;
 
+    let idle_timeout = Duration::from_secs(2);
     let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
         config.request_head_timeout = Duration::from_secs(1);
+        config.client_idle_timeout = idle_timeout;
     })
     .await;
     let path = prf_path(1);
     let auth = auth_header(&sender(), &path, b"").await;
-    let held = Duration::from_secs(1) + CLIENT_IDLE_TIMEOUT + Duration::from_secs(1);
+    let held = Duration::from_secs(1) + idle_timeout + NEXT_HEAD_MARGIN + Duration::from_secs(1);
     let mut stream = t.tls.connect(t.addr).await;
     let request = format!(
         "GET {path} HTTP/1.1\r\nHost: {}\r\nAuthorization: {auth}\r\nX-Stub-Delay-Ms: {}\r\n\r\n",

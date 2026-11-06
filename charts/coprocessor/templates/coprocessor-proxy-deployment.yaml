@@ -21,6 +21,9 @@
 {{- if lt (int $proxy.requestHeadTimeoutSeconds) 1 }}
 {{- fail "coprocessorProxy.requestHeadTimeoutSeconds must be a whole number of seconds, at least 1: the head deadline cannot be disabled" }}
 {{- end }}
+{{- if lt (int $proxy.clientIdleTimeoutSeconds) 1 }}
+{{- fail "coprocessorProxy.clientIdleTimeoutSeconds must be a whole number of seconds, at least 1" }}
+{{- end }}
 {{- if not (or $protocolConfigChain.httpUrl $protocolConfigChain.httpUrlValueFrom) }}
 {{- fail (printf "coprocessorProxy needs the chains entry with chainId %s (commonConfig.canonicalProtocolConfigChainId), with httpUrl or httpUrlValueFrom" $canonicalChainId) }}
 {{- end }}
@@ -157,6 +160,8 @@ spec:
               value: {{ int $proxy.maxRequestsPerSigner | quote }}
             - name: COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT
               value: "{{ int $proxy.requestHeadTimeoutSeconds }}s"
+            - name: COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT
+              value: "{{ int $proxy.clientIdleTimeoutSeconds }}s"
             - name: COPROCESSOR_PROXY_THREADS
               value: {{ int $proxy.threads | quote }}
           {{- if $tracingEnabled }}

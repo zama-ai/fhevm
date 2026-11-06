@@ -7,7 +7,6 @@
 //!   ([`ClientLimits::head_received`]) and set the next one once the response is sent
 //!   ([`ClientLimits::response_sent`]).
 
-use crate::core::CLIENT_IDLE_TIMEOUT;
 use async_trait::async_trait;
 use pingora::{
     apps::ServerApp,
@@ -23,11 +22,10 @@ use std::{
 use tokio::{sync::watch, time::Instant};
 use tracing::warn;
 
-/// The time a client has, after a response, to send the next request head on the connection.
-/// Later than Pingora's keep-alive ([`CLIENT_IDLE_TIMEOUT`]), which starts once the response is
-/// finished: Pingora closes an idle connection itself, and this deadline only closes one whose
-/// next head, or previous body, is still arriving.
-pub const NEXT_HEAD_TIMEOUT: Duration = Duration::from_secs(CLIENT_IDLE_TIMEOUT.as_secs() + 5);
+/// How long after the client idle timeout the next request head on a connection is due, both
+/// counted from the previous response. Pingora closes an idle connection itself at the idle
+/// timeout, so this deadline only closes one whose next head, or previous body, is still arriving.
+pub const NEXT_HEAD_MARGIN: Duration = Duration::from_secs(5);
 
 /// The shortest time between two warnings about connections closed at a head deadline: a flood
 /// closes thousands a minute.
@@ -101,10 +99,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl ClientLimits {
-    pub fn new(head_timeout: Duration) -> Self {
+    pub fn new(head_timeout: Duration, client_idle_timeout: Duration) -> Self {
         Self {
             head_timeout,
-            next_head_timeout: NEXT_HEAD_TIMEOUT,
+            next_head_timeout: client_idle_timeout + NEXT_HEAD_MARGIN,
             deadlines: Mutex::default(),
             unlogged_head_timeouts: Mutex::default(),
         }
@@ -115,8 +113,8 @@ impl ClientLimits {
         self.set_deadline(connection, None);
     }
 
-    /// The connection's response is sent: the next request head is due within
-    /// [`NEXT_HEAD_TIMEOUT`].
+    /// The connection's response is sent: the next request head is due within the client idle
+    /// timeout and [`NEXT_HEAD_MARGIN`].
     pub fn response_sent(&self, connection: ConnectionId) {
         self.set_deadline(connection, Some(Instant::now() + self.next_head_timeout));
     }
@@ -230,6 +228,7 @@ mod tests {
     use super::*;
 
     const ID: ConnectionId = 1;
+    const IDLE: Duration = Duration::from_secs(65);
 
     async fn overdue(tracked: &mut Tracked<'_>, within: Duration) -> bool {
         tokio::time::timeout(within, tracked.head_overdue())
@@ -239,28 +238,34 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn the_first_head_is_due_within_the_head_timeout() {
-        let limits = ClientLimits::new(Duration::from_secs(10));
+        let limits = ClientLimits::new(Duration::from_secs(10), IDLE);
         let mut tracked = limits.track(ID);
         assert!(!overdue(&mut tracked, Duration::from_millis(9_900)).await);
         assert!(overdue(&mut tracked, Duration::from_millis(200)).await);
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_request_being_answered_has_no_deadline_and_the_next_head_is_due_after_pingoras_keep_alive()
+    async fn a_request_being_answered_has_no_deadline_and_the_next_head_is_due_after_the_idle_timeout()
      {
-        let limits = ClientLimits::new(Duration::from_secs(1));
+        let limits = ClientLimits::new(Duration::from_secs(1), IDLE);
         let mut tracked = limits.track(ID);
         limits.head_received(ID);
         // prf-service can hold a request for minutes.
         assert!(!overdue(&mut tracked, Duration::from_secs(300)).await);
         limits.response_sent(ID);
-        assert!(!overdue(&mut tracked, NEXT_HEAD_TIMEOUT - Duration::from_millis(100)).await);
+        assert!(
+            !overdue(
+                &mut tracked,
+                limits.next_head_timeout - Duration::from_millis(100)
+            )
+            .await
+        );
         assert!(overdue(&mut tracked, Duration::from_millis(200)).await);
     }
 
     #[tokio::test(start_paused = true)]
     async fn two_connections_keep_their_own_deadlines() {
-        let limits = ClientLimits::new(Duration::from_secs(1));
+        let limits = ClientLimits::new(Duration::from_secs(1), IDLE);
         let mut first = limits.track(1);
         let mut second = limits.track(2);
         limits.head_received(1);
@@ -270,13 +275,19 @@ mod tests {
         drop(second);
         // The second connection's end leaves the first's deadline in place.
         limits.response_sent(1);
-        assert!(!overdue(&mut first, NEXT_HEAD_TIMEOUT - Duration::from_millis(100)).await);
+        assert!(
+            !overdue(
+                &mut first,
+                limits.next_head_timeout - Duration::from_millis(100)
+            )
+            .await
+        );
         assert!(overdue(&mut first, Duration::from_millis(200)).await);
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_connection_whose_deadline_is_gone_is_overdue() {
-        let limits = ClientLimits::new(Duration::from_secs(10));
+        let limits = ClientLimits::new(Duration::from_secs(10), IDLE);
         let mut tracked = limits.track(ID);
         limits.head_received(ID);
         limits.deadlines.lock().unwrap().clear();
@@ -285,7 +296,7 @@ mod tests {
 
     #[test]
     fn closed_connections_leave_no_deadline_behind() {
-        let limits = ClientLimits::new(Duration::from_secs(10));
+        let limits = ClientLimits::new(Duration::from_secs(10), IDLE);
         for connection in 0..1000 {
             drop(limits.track(connection));
         }

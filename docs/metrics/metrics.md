@@ -233,7 +233,7 @@ tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest fina
 
 #### Metric Name: `coprocessor_proxy_request_head_timeouts_counter`
  - **Type**: Counter
- - **Description**: Client connections closed at a request head deadline: no complete head within `COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT` of the TLS handshake, or within 20 s of the previous response, or the previous request's body still arriving. A connector sends each head at once, and Pingora closes idle connections itself, so honest traffic rarely counts here. A sustained rate means clients that send slowly: a slow-head flood, or a client on a very slow link.
+ - **Description**: Client connections closed at a request head deadline: no complete head within `COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT` of the TLS handshake, or within `COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT` plus 5 s of the previous response, or the previous request's body still arriving. A connector sends each head at once, and Pingora closes idle connections itself, so honest traffic rarely counts here. A sustained rate means clients that send slowly: a slow-head flood, or a client on a very slow link.
  - **Alarm**: Sustained head timeouts. Starting threshold: more than 5 in every 5 minutes for 15 minutes; tune to traffic.
     - **Recommendation**: `min_over_time(sum(increase(coprocessor_proxy_request_head_timeouts_counter[5m]))[15m:5m]) > 5`.
 
