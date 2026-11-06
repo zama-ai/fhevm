@@ -48,6 +48,7 @@ function buildChain(origin, cfg, relayerSlot) {
         inputVerifier: { address: cfg.contracts.inputVerifier },
         kmsVerifier: { address: cfg.contracts.kmsVerifier },
         protocolConfig: { address: cfg.contracts.protocolConfig },
+        kmsGeneration: { address: cfg.contracts.kmsGeneration },
       },
       relayerUrl: `${origin}/gw/${relayerSlot}/relayer`,
       gateway: {

@@ -98,6 +98,7 @@ function slotChainConfig(chainId: number): SlotChainConfig {
       inputVerifier: h.inputVerifier,
       kmsVerifier: h.kmsVerifier,
       protocolConfig: h.protocolConfig,
+      kmsGeneration: h.kmsGeneration,
     },
     gateway: {
       id: GATEWAY_CHAIN_ID,
@@ -115,10 +116,17 @@ export function gatewayConfig(): GatewayConfig {
   const dir = keysDir();
   const slots: Record<string, GatewaySlot> = {};
   for (const t of TOPOLOGY) {
+    const chainConfig = slotChainConfig(t.chainId);
     slots[t.slot] = {
       keyFilePath: resolve(dir, t.keyFile),
       rpcUrl: `http://127.0.0.1:${String(t.port)}`,
-      chainConfig: slotChainConfig(t.chainId),
+      chainConfig,
+      // The deployed KMSGeneration has no active key: the gateway serves the slot key's
+      // digests (key.<ver>.digests.json) as its active key and CRS materials.
+      kmsGeneration: {
+        address: chainConfig.contracts.kmsGeneration,
+        digestsFilePath: resolve(dir, t.keyFile.replace(/\.json$/, '.digests.json')),
+      },
     };
   }
 

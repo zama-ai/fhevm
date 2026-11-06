@@ -24,11 +24,11 @@ type SerializedKeyFile = {
   readonly crsBytes: { readonly id: string; readonly capacity: number; readonly bytes: string };
 };
 
-const _cache = new Map<string, LoadedKey>();
+const keyCache = new Map<string, LoadedKey>();
 
 /** Loads and decodes a `test/keys/key.<ver>.json` file (memoized by path). */
 export function loadKeyFile(path: string): LoadedKey {
-  const cached = _cache.get(path);
+  const cached = keyCache.get(path);
   if (cached !== undefined) {
     return cached;
   }
@@ -47,7 +47,7 @@ export function loadKeyFile(path: string): LoadedKey {
     throw new Error(`Mini-relayer expects CRS capacity 2048, got ${String(loaded.crs.capacity)} for ${path}`);
   }
 
-  _cache.set(path, loaded);
+  keyCache.set(path, loaded);
   return loaded;
 }
 

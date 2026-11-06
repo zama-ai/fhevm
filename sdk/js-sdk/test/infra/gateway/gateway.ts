@@ -11,7 +11,8 @@
  * route) bridge it to each platform, so every environment mounts the same core.
  *
  * URL layout (mountPrefix defaults to `/__gw`):
- *   {origin}/__gw/<slot>/rpc                   -> anvil JSON-RPC (proxied)
+ *   {origin}/__gw/<slot>/rpc                   -> anvil JSON-RPC (proxied; KMSGeneration
+ *                                                 key reads answered locally)
  *   {origin}/__gw/<slot>/relayer/v2/keyurl     -> keyurl JSON (byte URLs same-origin)
  *   {origin}/__gw/<slot>/relayer/key/pub       -> raw public-key bytes
  *   {origin}/__gw/<slot>/relayer/key/crs       -> raw CRS bytes
@@ -21,6 +22,7 @@
 
 import { buildKeyUrlResponse, loadKeyFile } from './keyRelayer.js';
 import { readWasmAsset } from './assets.js';
+import { answerKmsGenerationCall, type KmsGenerationMockConfig } from './kmsGenerationMock.js';
 
 /**
  * The per-slot chain config served at `/<slot>/config` so the browser can build a
@@ -35,6 +37,7 @@ export type SlotChainConfig = {
     readonly inputVerifier: string;
     readonly kmsVerifier: string;
     readonly protocolConfig: string;
+    readonly kmsGeneration: string;
   };
   readonly gateway: {
     readonly id: number;
@@ -52,6 +55,11 @@ export type GatewaySlot = {
   readonly rpcUrl?: string | undefined;
   /** Chain config served at `/<slot>/config` (omit for relayer-only slots). */
   readonly chainConfig?: SlotChainConfig | undefined;
+  /**
+   * KMSGeneration key reads the `/<slot>/rpc` proxy answers itself, with the
+   * slot key's digests (see kmsGenerationMock.ts). Omit to proxy every call.
+   */
+  readonly kmsGeneration?: KmsGenerationMockConfig | undefined;
 };
 
 export type GatewayConfig = {
@@ -174,6 +182,11 @@ async function _proxyRpc(slot: GatewaySlot, req: GatewayRequest): Promise<Gatewa
     return _text(502, `Gateway slot has no rpcUrl.`);
   }
 
+  const answered = await _answerKmsGenerationCalls(slot, req);
+  if (answered !== undefined) {
+    return answered;
+  }
+
   const init: RequestInit = {
     method: req.method,
     headers: { 'content-type': 'application/json' },
@@ -193,6 +206,53 @@ async function _proxyRpc(slot: GatewaySlot, req: GatewayRequest): Promise<Gatewa
     status: upstream.status,
     headers: { 'content-type': upstream.headers.get('content-type') ?? 'application/json', ...NO_STORE },
     body,
+  };
+}
+
+/**
+ * Answers the slot's KMSGeneration key reads (single or batched JSON-RPC); in a
+ * batch, the other calls go to anvil and the answers are merged back in request
+ * order. `undefined` when the request has no such read: proxy it as is.
+ */
+async function _answerKmsGenerationCalls(slot: GatewaySlot, req: GatewayRequest): Promise<GatewayResponse | undefined> {
+  const mock = slot.kmsGeneration;
+  if (mock === undefined || req.method !== 'POST' || req.body === undefined) {
+    return undefined;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(new TextDecoder().decode(req.body));
+  } catch {
+    return undefined;
+  }
+
+  const isBatch = Array.isArray(parsed);
+  const calls: readonly unknown[] = Array.isArray(parsed) ? parsed : [parsed];
+  const local = calls.map((c) => answerKmsGenerationCall(mock, c));
+  if (local.every((r) => r === undefined)) {
+    return undefined;
+  }
+
+  const rest = calls.filter((_, i) => local[i] === undefined);
+  const upstreamById = new Map<unknown, unknown>();
+  if (rest.length > 0) {
+    const upstream = await fetch(slot.rpcUrl!, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(rest),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const answers = (await upstream.json()) as Array<{ readonly id?: unknown }>;
+    for (const a of answers) {
+      upstreamById.set(a.id, a);
+    }
+  }
+
+  const responses = calls.map((c, i) => local[i] ?? upstreamById.get((c as { readonly id?: unknown }).id));
+  return {
+    status: 200,
+    headers: { 'content-type': 'application/json', ...NO_STORE },
+    body: JSON.stringify(isBatch ? responses : responses[0]),
   };
 }
 
