@@ -1,5 +1,8 @@
 use crate::{
-    core::{Config, SIGNER_RATE_INTERVAL},
+    core::{
+        Config, REQUEST_RATE_INTERVAL,
+        client_limits::{ClientLimits, LimitedApp},
+    },
     kms_tx_senders::Follower,
     monitoring::health,
 };
@@ -8,14 +11,18 @@ use anyhow::{Context, anyhow};
 use async_trait::async_trait;
 use fhevm_sig_auth::{FhevmSigVerifier, RefreshableSigners};
 use pingora::{
+    apps::HttpServerOptions,
     listeners::tls::TlsSettings,
     prelude::Server,
-    proxy::http_proxy_service_with_name,
+    proxy::http_proxy,
     server::{
         RunArgs, ShutdownSignal, ShutdownSignalWatch, ShutdownWatch, UnixShutdownSignalWatch,
         configuration::ServerConf,
     },
-    services::background::{BackgroundService, GenBackgroundService},
+    services::{
+        background::{BackgroundService, GenBackgroundService},
+        listening::Service,
+    },
 };
 use pingora_limits::rate::Rate;
 use prometheus::{IntGauge, register_int_gauge};
@@ -45,10 +52,13 @@ pub struct Proxy {
     /// [`Config::prf_service_address`], resolved.
     pub(super) prf_service: SocketAddr,
     pub(super) kms_tx_senders: Arc<Follower<DynProvider>>,
-    /// The authenticated requests of each signer, per [`SIGNER_RATE_INTERVAL`].
+    /// The authenticated requests of each signer, per [`REQUEST_RATE_INTERVAL`].
     pub(super) signer_requests: Rate,
+    /// The requests of each client IP, per [`REQUEST_RATE_INTERVAL`].
+    pub(super) ip_requests: Rate,
     /// Set during the shutdown delay: each client connection closes after its next response.
     pub(super) draining: Arc<AtomicBool>,
+    pub(super) client_limits: Arc<ClientLimits>,
 }
 
 /// Watches the Unix signals like [`UnixShutdownSignalWatch`], but holds `SIGTERM` back for
@@ -91,6 +101,11 @@ impl<P: Provider> BackgroundService for Follower<P> {
 /// (coprocessor-proxy-deployment.yaml) includes it.
 const GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS: u64 = 5;
 
+/// The requests a client connection serves before the proxy closes it. A front layer keeps its
+/// connections open, so closing them now and then spreads them again over the replicas, new ones
+/// included, and frees their memory.
+pub const KEEPALIVE_REQUEST_LIMIT: u32 = 1000;
+
 impl Proxy {
     /// Creates the `Proxy` from its configuration, and the `health::State` used to monitor it.
     pub fn from_config(config: Config) -> anyhow::Result<(Self, health::State)> {
@@ -119,13 +134,27 @@ impl Proxy {
         let domain =
             fhevm_sig_auth::domain(config.ethereum_chain_id, config.protocol_config_address);
         let verifier = FhevmSigVerifier::new(domain, config.coprocessor_signer_address, signers);
+        info!(
+            request_head_timeout = ?config.request_head_timeout,
+            client_idle_timeout = ?config.client_idle_timeout,
+            keepalive_request_limit = KEEPALIVE_REQUEST_LIMIT,
+            forwarded_hops = config.forwarded_hops,
+            max_requests_per_ip = config.max_requests_per_ip,
+            "Client limits"
+        );
+        let client_limits = Arc::new(ClientLimits::new(
+            config.request_head_timeout,
+            config.client_idle_timeout,
+        ));
         let proxy = Self {
             verifier,
             config,
             prf_service,
             kms_tx_senders: Arc::new(follower),
-            signer_requests: Rate::new(SIGNER_RATE_INTERVAL),
+            signer_requests: Rate::new(REQUEST_RATE_INTERVAL),
+            ip_requests: Rate::new(REQUEST_RATE_INTERVAL),
             draining: Arc::default(),
+            client_limits,
         };
         Ok((proxy, state))
     }
@@ -179,8 +208,13 @@ impl Proxy {
         ));
 
         let service_name = self.config.service_name.clone();
-        let mut proxy_service =
-            http_proxy_service_with_name(&server.configuration, self, &service_name);
+        let client_limits = Arc::clone(&self.client_limits);
+        let mut proxy = http_proxy(&server.configuration, self);
+        let mut options = HttpServerOptions::default();
+        // Pingora counts the requests after a connection's first.
+        options.keepalive_request_limit = Some(KEEPALIVE_REQUEST_LIMIT - 1);
+        proxy.server_options = Some(options);
+        let mut proxy_service = Service::new(service_name, LimitedApp::new(proxy, client_limits));
         proxy_service.add_tls_with_settings(&listen_addr, None, tls);
         server.add_service(proxy_service);
         info!("Proxy will listen at: https://{listen_addr}");

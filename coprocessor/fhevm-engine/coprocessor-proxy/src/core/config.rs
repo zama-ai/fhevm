@@ -70,6 +70,21 @@ pub struct Config {
         default_value = "200"
     )]
     pub max_requests_per_signer: NonZeroU32,
+    /// How many requests one client IP can send to this proxy replica per second; more are
+    /// answered `429` before their signature is checked.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_MAX_REQUESTS_PER_IP",
+        default_value = "200"
+    )]
+    pub max_requests_per_ip: NonZeroU32,
+    /// How many front layers forward each request to the proxy, each appending the address it
+    /// received the request from to `X-Forwarded-For`. The client's IP is the entry this many
+    /// from the right, the one the outermost front layer appended; a request without it is
+    /// answered `400`. 0: clients connect directly, and the client's IP is the connection's peer
+    /// address.
+    #[arg(long, env = "COPROCESSOR_PROXY_FORWARDED_HOPS", default_value_t = 1)]
+    pub forwarded_hops: usize,
 
     /// The `host:port` address of prf-service, resolved once at startup: its Kubernetes Service,
     /// which routes to the ready pods.
@@ -113,6 +128,27 @@ pub struct Config {
         value_parser = humantime::parse_duration
     )]
     pub shutdown_delay: Duration,
+    /// How long a client has, once its TLS handshake completes, to send the head of its first
+    /// request; the connection is closed after. A later request head on the connection is due 5 s
+    /// after the client idle timeout, counted from the previous response.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT",
+        default_value = "10s",
+        value_parser = parse_non_zero_duration
+    )]
+    pub request_head_timeout: Duration,
+    /// How long a client connection can stay idle between two requests before the proxy closes
+    /// it. A front layer must close its idle connections to the proxy sooner: otherwise a request
+    /// it sends as the proxy closes the connection fails. AWS ALB's default is 60 s; Cloudflare's
+    /// is 900 s.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT",
+        default_value = "65s",
+        value_parser = parse_whole_seconds
+    )]
+    pub client_idle_timeout: Duration,
     /// The worker threads of the proxy service. TLS handshakes, signature checks and forwarding
     /// all run on them, as does the readiness self-check's request.
     #[arg(long, env = "COPROCESSOR_PROXY_THREADS", default_value = "2")]
@@ -151,6 +187,15 @@ fn parse_non_zero_duration(value: &str) -> Result<Duration, String> {
     let duration = humantime::parse_duration(value).map_err(|e| e.to_string())?;
     if duration.is_zero() {
         return Err("duration must be greater than 0".to_string());
+    }
+    Ok(duration)
+}
+
+/// Parses a duration in whole seconds, the unit of Pingora's keep-alive timeout.
+fn parse_whole_seconds(value: &str) -> Result<Duration, String> {
+    let duration = parse_non_zero_duration(value)?;
+    if duration.subsec_nanos() != 0 {
+        return Err("duration must be a whole number of seconds".to_string());
     }
     Ok(duration)
 }
@@ -219,8 +264,12 @@ mod tests {
         );
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(10));
         assert_eq!(config.shutdown_delay, Duration::ZERO);
+        assert_eq!(config.request_head_timeout, Duration::from_secs(10));
+        assert_eq!(config.client_idle_timeout, Duration::from_secs(65));
         assert_eq!(config.threads.get(), 2);
         assert_eq!(config.max_requests_per_signer.get(), 200);
+        assert_eq!(config.max_requests_per_ip.get(), 200);
+        assert_eq!(config.forwarded_hops, 1);
         assert_eq!(config.bind_address, "0.0.0.0:8443".parse().unwrap());
     }
 
@@ -246,6 +295,8 @@ mod tests {
                 "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
             ),
             ("COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER", "50"),
+            ("COPROCESSOR_PROXY_MAX_REQUESTS_PER_IP", "60"),
+            ("COPROCESSOR_PROXY_FORWARDED_HOPS", "2"),
             (
                 "COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS",
                 "prf-service-1:8090",
@@ -254,6 +305,8 @@ mod tests {
             ("COPROCESSOR_PROXY_PRF_SERVICE_RESPONSE_TIMEOUT", "45s"),
             ("COPROCESSOR_PROXY_PRF_SERVICE_IDLE_TIMEOUT", "7s"),
             ("COPROCESSOR_PROXY_SHUTDOWN_DELAY", "9s"),
+            ("COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT", "3s"),
+            ("COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT", "30s"),
             ("COPROCESSOR_PROXY_THREADS", "4"),
             ("OTEL_SERVICE_NAME", "coprocessor-proxy-test"),
             ("COPROCESSOR_PROXY_LOG_LEVEL", "debug"),
@@ -288,11 +341,15 @@ mod tests {
             Address::repeat_byte(0xa1)
         );
         assert_eq!(config.max_requests_per_signer.get(), 50);
+        assert_eq!(config.max_requests_per_ip.get(), 60);
+        assert_eq!(config.forwarded_hops, 2);
         assert_eq!(config.prf_service_address, "prf-service-1:8090");
         assert_eq!(config.prf_service_connect_timeout, Duration::from_secs(1));
         assert_eq!(config.prf_service_response_timeout, Duration::from_secs(45));
         assert_eq!(config.prf_service_idle_timeout, Duration::from_secs(7));
         assert_eq!(config.shutdown_delay, Duration::from_secs(9));
+        assert_eq!(config.request_head_timeout, Duration::from_secs(3));
+        assert_eq!(config.client_idle_timeout, Duration::from_secs(30));
         assert_eq!(config.threads.get(), 4);
         assert_eq!(config.service_name, "coprocessor-proxy-test");
         assert_eq!(config.log_level, Level::DEBUG);
@@ -341,5 +398,17 @@ mod tests {
             panic!("a zero request limit must be refused");
         };
         assert_eq!(err.kind(), ErrorKind::ValueValidation);
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn test_client_idle_timeout_below_or_between_seconds_is_refused() {
+        // Pingora counts its keep-alive in seconds, and 0 would keep idle connections forever.
+        for value in ["0s", "500ms", "1500ms"] {
+            let Err(err) = parse(&[&format!("--client-idle-timeout={value}")]) else {
+                panic!("a client idle timeout of {value} must be refused");
+            };
+            assert_eq!(err.kind(), ErrorKind::ValueValidation, "{value}");
+        }
     }
 }

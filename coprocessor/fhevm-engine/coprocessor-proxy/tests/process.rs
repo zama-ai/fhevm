@@ -55,6 +55,8 @@ impl ProxyProcess {
                 "COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS",
                 prf_service.addr.to_string(),
             )
+            // The tests connect directly, without a front layer.
+            .env("COPROCESSOR_PROXY_FORWARDED_HOPS", "0")
             .envs(env.iter().copied())
             .env(
                 "COPROCESSOR_PROXY_HEALTHCHECK_PORT",

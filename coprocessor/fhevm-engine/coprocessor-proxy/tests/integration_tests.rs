@@ -13,7 +13,9 @@ use common::{
     auth_header_expiring, auth_header_for, now, prf_path, rate_limited_path, sender,
     stub_attestation, stub_output,
 };
-use coprocessor_proxy::core::{CLIENT_IDLE_TIMEOUT, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT};
+use coprocessor_proxy::core::{
+    KEEPALIVE_REQUEST_LIMIT, NEXT_HEAD_MARGIN, REQUEST_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT,
+};
 use coprocessor_proxy::kms_tx_senders::WOKEN_POLL_SPACING;
 use serde_json::{Value, json};
 use std::{
@@ -637,7 +639,7 @@ async fn test_limits_each_signers_request_rate() {
         }
         forwarded += 1;
     };
-    assert!(started.elapsed() < SIGNER_RATE_INTERVAL);
+    assert!(started.elapsed() < REQUEST_RATE_INTERVAL);
     assert!(forwarded >= 2, "{forwarded}");
     assert_eq!(refused.headers()["retry-after"], "1");
     assert!(!refused.headers().contains_key("www-authenticate"));
@@ -667,10 +669,98 @@ async fn test_limits_each_signers_request_rate() {
 }
 
 #[tokio::test]
+async fn test_forwards_the_client_ip_the_outermost_front_layer_appended() {
+    // The client sent 6.6.6.6 itself; the front layers appended the rest.
+    for (hops, forwarded_for) in [
+        (1, "6.6.6.6, 203.0.113.7"),
+        (2, "6.6.6.6, 203.0.113.7, 10.0.0.1"),
+    ] {
+        let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+            config.forwarded_hops = hops;
+        })
+        .await;
+        let response = t
+            .get(&prf_path(1))
+            .await
+            .header("x-forwarded-for", forwarded_for)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{hops}");
+        let seen = t.prf_service.last_request();
+        let forwarded: Vec<_> = seen.headers.get_all("x-forwarded-for").iter().collect();
+        assert_eq!(forwarded, ["203.0.113.7"], "{hops}");
+    }
+}
+
+#[tokio::test]
+async fn test_refuses_a_request_without_the_client_ip_of_each_front_layer() {
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.forwarded_hops = 2;
+    })
+    .await;
+    for forwarded_for in [None, Some("203.0.113.7"), Some("203.0.113.7:443, 10.0.0.1")] {
+        let mut request = t.get(&prf_path(1)).await;
+        if let Some(forwarded_for) = forwarded_for {
+            request = request.header("x-forwarded-for", forwarded_for);
+        }
+        let response = request.send().await.unwrap();
+        assert_proxy_error(response, StatusCode::BAD_REQUEST, "malformed", false).await;
+    }
+    assert_eq!(t.prf_service.hits(), 0);
+}
+
+#[tokio::test]
+async fn test_limits_each_client_ips_request_rate_before_the_signature_check() {
+    let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
+    let t = TestProxy::launch(rpc, StubPrfService::start().await, |config| {
+        config.forwarded_hops = 1;
+        config.max_requests_per_ip = NonZeroU32::new(2).unwrap();
+    })
+    .await;
+    let path = prf_path(1);
+    let unsigned_from = |ip: &str| {
+        t.client
+            .get(t.url(&path))
+            .header("x-forwarded-for", format!("6.6.6.6, {ip}"))
+            .send()
+    };
+
+    // Unsigned requests: a refusal before the signature check is the only one that is not `401`.
+    // Five requests sent within one window span at most two windows, so one of them gets a third.
+    let started = Instant::now();
+    let mut checked = 0;
+    let refused = loop {
+        assert!(checked < 5, "no request was refused");
+        let response = unsigned_from("203.0.113.7").await.unwrap();
+        if response.status() == StatusCode::UNAUTHORIZED {
+            checked += 1;
+            continue;
+        }
+        break response;
+    };
+    assert!(started.elapsed() < REQUEST_RATE_INTERVAL);
+    assert!(checked >= 2, "{checked}");
+    assert_eq!(refused.headers()["retry-after"], "1");
+    let error: Value = refused.json().await.unwrap();
+    assert_eq!(error["code"], "concurrency_limited", "{error}");
+    assert_eq!(error["message"], "client IP rate limit", "{error}");
+
+    // The limit is per client IP, not per front-layer address nor per spoofed entry.
+    let response = unsigned_from("203.0.113.8").await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(t.prf_service.hits(), 0);
+}
+
+#[tokio::test]
 async fn test_closes_client_connections_idle_between_requests() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    let t = TestProxy::start(StubPrfService::start().await).await;
+    let idle_timeout = Duration::from_secs(2);
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.client_idle_timeout = idle_timeout;
+    })
+    .await;
     let path = prf_path(1);
     let addr = t.addr;
     let auth = auth_header(&sender(), &path, b"").await;
@@ -694,15 +784,178 @@ async fn test_closes_client_connections_idle_between_requests() {
 
     let idle = Instant::now();
     let mut byte = [0u8; 1];
-    let read = tokio::time::timeout(Duration::from_secs(20), stream.read(&mut byte)).await;
+    let read = tokio::time::timeout(Duration::from_secs(10), stream.read(&mut byte)).await;
     // The server closes, without a TLS `close_notify` or with one.
     assert!(matches!(read, Ok(Ok(0) | Err(_))), "{read:?}");
     let closed_after = idle.elapsed();
     assert!(
-        closed_after >= CLIENT_IDLE_TIMEOUT - Duration::from_millis(500)
-            && closed_after < CLIENT_IDLE_TIMEOUT + Duration::from_secs(2),
+        closed_after >= idle_timeout - Duration::from_millis(500)
+            && closed_after < idle_timeout + Duration::from_secs(2),
         "{closed_after:?}"
     );
+}
+
+#[tokio::test]
+async fn test_closes_a_client_connection_after_its_request_limit() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let t = TestProxy::start(StubPrfService::start().await).await;
+    let mut stream = t.tls.connect(t.addr).await;
+    let request = format!("GET / HTTP/1.1\r\nHost: {}\r\n\r\n", t.addr);
+    for served in 1..=KEEPALIVE_REQUEST_LIMIT {
+        stream.write_all(request.as_bytes()).await.unwrap();
+        let response = read_one_response(&mut stream).await;
+        assert!(response.starts_with("HTTP/1.1 404"), "{served}: {response}");
+        let closing = response.to_ascii_lowercase().contains("connection: close");
+        assert_eq!(
+            closing,
+            served == KEEPALIVE_REQUEST_LIMIT,
+            "{served}: {response}"
+        );
+    }
+    let mut byte = [0u8; 1];
+    let read = tokio::time::timeout(Duration::from_secs(5), stream.read(&mut byte)).await;
+    assert!(matches!(read, Ok(Ok(0) | Err(_))), "{read:?}");
+}
+
+#[tokio::test]
+async fn test_closes_a_connection_whose_request_head_misses_the_deadline() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.request_head_timeout = Duration::from_secs(1);
+    })
+    .await;
+    let stream = t.tls.connect(t.addr).await;
+    let (mut reader, mut writer) = tokio::io::split(stream);
+    let started = Instant::now();
+    // One byte every 200 ms: Pingora alone waits up to 60 s for each read.
+    let head = format!("GET / HTTP/1.1\r\nHost: {}\r\n\r\n", t.addr);
+    let dripping = tokio::spawn(async move {
+        for byte in head.as_bytes() {
+            if writer.write_all(&[*byte]).await.is_err() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    });
+
+    let mut byte = [0u8; 1];
+    let read = tokio::time::timeout(Duration::from_secs(5), reader.read(&mut byte)).await;
+    assert!(matches!(read, Ok(Ok(0) | Err(_))), "{read:?}");
+    let closed_after = started.elapsed();
+    assert!(
+        closed_after >= Duration::from_millis(900) && closed_after < Duration::from_secs(3),
+        "{closed_after:?}"
+    );
+    dripping.abort();
+}
+
+#[tokio::test]
+async fn test_refuses_a_request_body_and_closes_a_connection_that_drips_it() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let head_timeout = Duration::from_secs(1);
+    let idle_timeout = Duration::from_secs(2);
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.request_head_timeout = head_timeout;
+        config.client_idle_timeout = idle_timeout;
+    })
+    .await;
+    let stream = t.tls.connect(t.addr).await;
+    let (mut reader, mut writer) = tokio::io::split(stream);
+    let started = Instant::now();
+    let head = format!(
+        "GET {} HTTP/1.1\r\nHost: {}\r\nContent-Length: 100000\r\n\r\n",
+        prf_path(1),
+        t.addr
+    );
+    writer.write_all(head.as_bytes()).await.unwrap();
+    // One body byte every 200 ms: Pingora alone waits up to 60 s for each read.
+    let dripping = tokio::spawn(async move {
+        loop {
+            if writer.write_all(b"x").await.is_err() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+        }
+    });
+
+    let mut response = Vec::new();
+    let bound = head_timeout + idle_timeout + NEXT_HEAD_MARGIN + Duration::from_secs(5);
+    let read = tokio::time::timeout(bound, reader.read_to_end(&mut response)).await;
+    dripping.abort();
+    let response = String::from_utf8_lossy(&response);
+    assert!(response.starts_with("HTTP/1.1 401"), "{response}");
+    assert!(read.is_ok(), "still open after {:?}", started.elapsed());
+}
+
+#[tokio::test]
+async fn test_serves_a_slow_request_head_completed_within_the_deadline() {
+    use tokio::io::AsyncWriteExt;
+
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.request_head_timeout = Duration::from_secs(3);
+    })
+    .await;
+    let mut stream = t.tls.connect(t.addr).await;
+    let head = format!("GET / HTTP/1.1\r\nHost: {}\r\n\r\n", t.addr);
+    for chunk in head.as_bytes().chunks(4) {
+        stream.write_all(chunk).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    }
+    let response = read_one_response(&mut stream).await;
+    assert!(response.starts_with("HTTP/1.1 404"), "{response}");
+}
+
+#[tokio::test]
+async fn test_serves_a_request_held_longer_than_the_head_deadline_and_idle_timeout() {
+    use tokio::io::AsyncWriteExt;
+
+    let idle_timeout = Duration::from_secs(2);
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.request_head_timeout = Duration::from_secs(1);
+        config.client_idle_timeout = idle_timeout;
+    })
+    .await;
+    let path = prf_path(1);
+    let auth = auth_header(&sender(), &path, b"").await;
+    let held = Duration::from_secs(1) + idle_timeout + NEXT_HEAD_MARGIN + Duration::from_secs(1);
+    let mut stream = t.tls.connect(t.addr).await;
+    let request = format!(
+        "GET {path} HTTP/1.1\r\nHost: {}\r\nAuthorization: {auth}\r\nX-Stub-Delay-Ms: {}\r\n\r\n",
+        t.addr,
+        held.as_millis()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let response = tokio::time::timeout(
+        held + Duration::from_secs(10),
+        read_one_response(&mut stream),
+    )
+    .await
+    .unwrap();
+    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+}
+
+#[tokio::test]
+async fn test_serves_a_second_request_head_sent_after_the_head_timeout_within_the_idle_timeout() {
+    use tokio::io::AsyncWriteExt;
+
+    let head_timeout = Duration::from_secs(1);
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.request_head_timeout = head_timeout;
+    })
+    .await;
+    let mut stream = t.tls.connect(t.addr).await;
+    let head = format!("GET / HTTP/1.1\r\nHost: {}\r\n\r\n", t.addr);
+    stream.write_all(head.as_bytes()).await.unwrap();
+    let response = read_one_response(&mut stream).await;
+    assert!(response.starts_with("HTTP/1.1 404"), "{response}");
+
+    tokio::time::sleep(head_timeout * 3).await;
+    stream.write_all(head.as_bytes()).await.unwrap();
+    let response = read_one_response(&mut stream).await;
+    assert!(response.starts_with("HTTP/1.1 404"), "{response}");
 }
 
 #[tokio::test]

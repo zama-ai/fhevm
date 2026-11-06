@@ -221,9 +221,21 @@ tx-senders of the Active KMS contexts in ProtocolConfig, read at the latest fina
    - `route`: `prf` for the PRF route, `none` for any other path.
    - `status`: HTTP response status; `0` means no response status.
    - `signer`: the authenticated signer, EIP-55 checksummed; empty when the request was not authenticated.
- - **Description**: One count per request the proxy answered. `502` means prf-service could not be reached or failed, `504` that it timed out, `429` that the signer exceeded its request rate (`COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER`).
+ - **Description**: One count per request the proxy answered. `502` means prf-service could not be reached or failed, `504` that it timed out. `429` with a `signer` means that signer exceeded its request rate (`COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER`); `429` without one, that a client IP exceeded its request rate (`COPROCESSOR_PROXY_MAX_REQUESTS_PER_IP`), checked before the signature. `400` on the `prf` route without a `signer` includes requests whose `X-Forwarded-For` lacks the client IP: if they are most of the traffic, `COPROCESSOR_PROXY_FORWARDED_HOPS` does not match the front layers.
  - **Alarm**: Sustained prf-service failures. Starting threshold: more than 5 in 5 minutes; tune to traffic volume.
     - **Recommendation**: `sum(increase(coprocessor_proxy_requests_counter{status=~"502|504"}[5m])) > 5`.
+
+#### Metric Name: `coprocessor_proxy_client_connections`
+ - **Type**: Gauge
+ - **Description**: Client connections open past their TLS handshake on this replica. Connections still in their handshake are not counted, though they hold memory too. Each slow connection holds about 48 KB, so about 10,000 connections fill a replica's 512Mi memory limit and the replica is OOM-killed.
+ - **Alarm**: If one replica holds about half the connections that fill its memory. Alert per pod, not on the sum: the memory bound is per replica. 5000 leaves room for the uncounted handshakes and for the flood to keep growing while someone responds; scale it with the memory limit.
+    - **Recommendation**: more than 5000 on one replica over 2 minutes, i.e. `min_over_time(coprocessor_proxy_client_connections[2m]) > 5000`.
+
+#### Metric Name: `coprocessor_proxy_request_head_timeouts_counter`
+ - **Type**: Counter
+ - **Description**: Client connections closed at a request head deadline: no complete head within `COPROCESSOR_PROXY_REQUEST_HEAD_TIMEOUT` of the TLS handshake, or within `COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT` plus 5 s of the previous response, or the previous request's body still arriving. A connector sends each head at once, and Pingora closes idle connections itself, so honest traffic rarely counts here. A sustained rate means clients that send slowly: a slow-head flood, or a client on a very slow link.
+ - **Alarm**: Sustained head timeouts. Starting threshold: more than 5 in every 5 minutes for 15 minutes; tune to traffic.
+    - **Recommendation**: `min_over_time(sum(increase(coprocessor_proxy_request_head_timeouts_counter[5m]))[15m:5m]) > 5`.
 
 ## kms-connector
 

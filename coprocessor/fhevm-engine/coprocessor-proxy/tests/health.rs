@@ -46,7 +46,11 @@ async fn fetch_status(base_url: &str) -> anyhow::Result<(StatusCode, HealthRespo
 #[timeout(Duration::from_secs(300))]
 #[tokio::test]
 async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
-    let t = TestProxy::start(StubPrfService::start().await).await;
+    // The self-check carries no `X-Forwarded-For`, and must pass behind a front layer too.
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.forwarded_hops = 1;
+    })
+    .await;
     let cancel_token = CancellationToken::new();
     let base_url = serve_health(t.state.clone(), &cancel_token).await;
 
@@ -71,7 +75,12 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     t.prf_service.stop().await;
     let (status_code, status) = fetch_status(&base_url).await?;
     assert_eq!(status_code, StatusCode::OK, "{status:?}");
-    let response = t.get(&prf_path(1)).await.send().await?;
+    let response = t
+        .get(&prf_path(1))
+        .await
+        .header("x-forwarded-for", "127.0.0.1")
+        .send()
+        .await?;
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
     let error: Value = response.json().await?;
     assert_eq!(error["code"], "upstream_transient");
