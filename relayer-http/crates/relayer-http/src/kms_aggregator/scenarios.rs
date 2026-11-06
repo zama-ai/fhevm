@@ -12,7 +12,7 @@ use serde::Deserialize;
 use tokio::time::Instant;
 
 use super::aggregator::{AggregationError, Aggregator, Tally};
-use super::config::UserChecks;
+use super::config::{CallConfig, RateLimitConfig, RetryConfig, UserChecks};
 use super::flows::Flow;
 use super::flows::public_decrypt::PublicDecrypt;
 use super::flows::user_decrypt::UserDecrypt;
@@ -26,11 +26,15 @@ struct Scenario {
     threshold: usize,
     #[serde(with = "humantime_serde")]
     timeout: Duration,
-    #[serde(default)]
-    max_retries: u32,
-    /// Time each attempt takes on every node.
-    #[serde(with = "humantime_serde", default = "default_delay")]
-    delay: Duration,
+    /// The transient retry budget (`kms_aggregator.call.retries`); a single attempt unless given.
+    #[serde(default = "no_transient_retries")]
+    retries: RetryConfig,
+    /// The rate-limit retry budget (`kms_aggregator.call.rate_limit`); a single attempt unless given.
+    #[serde(default = "no_rate_limit_retries")]
+    rate_limit: RateLimitConfig,
+    /// How long the scripted node takes to answer each attempt (test only).
+    #[serde(with = "humantime_serde", default = "default_attempt_latency")]
+    attempt_latency: Duration,
     /// Node groups in node order; the total is the number of nodes.
     nodes: Vec<Group>,
     /// Optional user-decrypt checks (`decryption_id_match`, `decryption_id_majority`).
@@ -38,7 +42,21 @@ struct Scenario {
     expect: Expect,
 }
 
-fn default_delay() -> Duration {
+fn no_transient_retries() -> RetryConfig {
+    RetryConfig {
+        max_retries: 0,
+        ..RetryConfig::default()
+    }
+}
+
+fn no_rate_limit_retries() -> RateLimitConfig {
+    RateLimitConfig {
+        max_retries: 0,
+        ..RateLimitConfig::default()
+    }
+}
+
+fn default_attempt_latency() -> Duration {
     Duration::from_millis(10)
 }
 
@@ -129,8 +147,12 @@ async fn run<F: Flow>(
         .iter()
         .flat_map(|g| std::iter::repeat_n(g.replies.clone(), g.count))
         .collect();
-    let mock = MockClient::new(scripts.clone(), scenario.delay);
-    let caller = mock.clone().caller(scenario.timeout, scenario.max_retries);
+    let mock = MockClient::new(scripts.clone(), scenario.attempt_latency);
+    let caller = mock.clone().caller_with_call(CallConfig {
+        timeout: scenario.timeout,
+        retries: scenario.retries.clone(),
+        rate_limit: scenario.rate_limit.clone(),
+    });
     let metrics = caller.metrics().clone();
     let aggregator = Aggregator::<F>::new(caller, scenario.threshold, checks);
     let started = Instant::now();

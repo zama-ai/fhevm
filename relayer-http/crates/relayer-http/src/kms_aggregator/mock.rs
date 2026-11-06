@@ -19,8 +19,8 @@ use super::call::Caller;
 use super::client::{AttemptError, ConnectorClient, Endpoint, HttpReply};
 use super::config::tests::{audience, valid};
 use super::config::{
-    CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RetryConfig, UserChecks,
-    UserDecryptConfig,
+    CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RateLimitConfig,
+    RetryConfig, UserChecks, UserDecryptConfig,
 };
 use super::signer::RequestSigner;
 use super::signer::tests::test_signer;
@@ -110,21 +110,25 @@ impl MockClient {
         self.authorizations.lock().unwrap()[node].clone()
     }
 
+    /// `max_retries` transient retries of 200 ms and one rate-limit retry after 1 s, under `timeout`.
+    pub fn call_config(timeout: Duration, max_retries: u32) -> CallConfig {
+        CallConfig {
+            timeout,
+            retries: RetryConfig {
+                max_retries,
+                ..RetryConfig::default()
+            },
+            rate_limit: RateLimitConfig::default(),
+        }
+    }
+
     /// A validated config for `n` mock nodes (loopback urls, audiences `audience(i)`, thresholds 1).
-    pub fn config(n: usize, timeout: Duration, max_retries: u32) -> KmsAggregatorConfig {
+    pub fn config(n: usize, call: CallConfig) -> KmsAggregatorConfig {
         KmsAggregatorConfig {
             allow_insecure_http: false,
             skip_tls_verification: false,
             max_concurrent_calls: n.max(1),
-            call: CallConfig {
-                timeout,
-                // Delays capped by the deadline: keeps the config valid for the short deadlines some tests use.
-                retries: RetryConfig {
-                    max_retries,
-                    delay: RetryConfig::default().delay.min(timeout),
-                    backoff_max: RetryConfig::default().backoff_max.min(timeout),
-                },
-            },
+            call,
             user_decrypt: UserDecryptConfig {
                 threshold: 1,
                 checks: UserChecks::default(),
@@ -141,19 +145,23 @@ impl MockClient {
         }
     }
 
-    /// A `Caller` over this mock, one endpoint per script, signing with `test_signer()`.
+    /// A `Caller` over this mock, one endpoint per script, `call_config(timeout, max_retries)`, `test_signer()`.
     pub fn caller(self: Arc<Self>, timeout: Duration, max_retries: u32) -> Arc<Caller> {
-        self.caller_with(timeout, max_retries, test_signer())
+        self.caller_with(Self::call_config(timeout, max_retries), test_signer())
     }
 
-    /// A `Caller` over this mock signing with `signer`.
+    /// A `Caller` over this mock with the given call config, signing with `test_signer()`.
+    pub fn caller_with_call(self: Arc<Self>, call: CallConfig) -> Arc<Caller> {
+        self.caller_with(call, test_signer())
+    }
+
+    /// A `Caller` over this mock with the given call config, signing with `signer`.
     pub fn caller_with(
         self: Arc<Self>,
-        timeout: Duration,
-        max_retries: u32,
+        call: CallConfig,
         signer: Arc<RequestSigner>,
     ) -> Arc<Caller> {
-        let cfg = Self::config(self.scripts.len(), timeout, max_retries);
+        let cfg = Self::config(self.scripts.len(), call);
         let metrics = Arc::new(Metrics::new().unwrap());
         Arc::new(Caller::new(&cfg, self, signer, metrics).unwrap())
     }
