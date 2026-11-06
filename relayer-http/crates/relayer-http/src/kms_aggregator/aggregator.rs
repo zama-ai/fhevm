@@ -10,7 +10,8 @@ use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, debug, error, info, instrument, warn};
 
-use super::call::{CallError, Caller};
+use super::call::{CallError, Caller, Retries};
+use super::config::CallConfig;
 use super::flows::Flow;
 
 /// Why the threshold was not met. `dominant` = most frequent connector error among the failed calls.
@@ -105,12 +106,7 @@ impl<F: Flow> Aggregator<F> {
         let body = serde_json::to_vec(&request)
             .map(Bytes::from)
             .map_err(|e| AggregationError::Internal(format!("serialise request: {e}")))?;
-        info!(
-            nodes,
-            threshold,
-            timeout_ms = timeout.as_millis() as u64,
-            "aggregation started"
-        );
+        aggregation_started(nodes, threshold, self.caller.call_config());
 
         // One task per node; all of them share the body bytes, the deadline and the cancellation token.
         let mut pending = JoinSet::new();
@@ -194,7 +190,7 @@ impl<F: Flow> Aggregator<F> {
                 Err(e) => {
                     failed.push(call.node.clone());
                     codes.extend(e.code());
-                    warn!(node = %call.node, attempts = call.attempts, elapsed_ms, error = %e, "call failed");
+                    call_failed(&call.node, call.attempts, call.retries, elapsed_ms, &e);
                 }
             }
             // Fail fast: even if every pending node answered we could not reach the threshold.
@@ -269,6 +265,35 @@ fn dominant(codes: &[ErrorCode]) -> Option<ErrorCode> {
         .iter()
         .copied()
         .max_by_key(|code| codes.iter().filter(|c| *c == code).count())
+}
+
+/// The first line of one aggregation: the fan-out, the threshold and the retry policy, so one request's log is
+/// self-describing.
+fn aggregation_started(nodes: usize, threshold: usize, call: &CallConfig) {
+    let ms = |d: std::time::Duration| d.as_millis() as u64;
+    info!(
+        nodes,
+        threshold,
+        timeout_ms = ms(call.timeout),
+        retries_max = call.retries.max_retries,
+        retries_delay_ms = ms(call.retries.delay),
+        rate_limit_max = call.rate_limit.max_retries,
+        rate_limit_initial_delay_ms = ms(call.rate_limit.initial_delay),
+        "aggregation started"
+    );
+}
+
+/// A node's outcome after its last attempt, with how much of each retry budget the call used.
+fn call_failed(node: &str, attempts: u32, retries: Retries, elapsed_ms: u64, error: &CallError) {
+    warn!(
+        node,
+        attempts,
+        transient_retries = retries.transient,
+        rate_limit_retries = retries.rate_limit,
+        elapsed_ms,
+        error = %error,
+        "call failed"
+    );
 }
 
 #[cfg(test)]
@@ -365,6 +390,55 @@ mod tests {
         assert_eq!(span["flow"], "user_decrypt");
         assert_eq!(span["decryption_id"], decryption_id);
         assert_eq!(lines[0]["fields"]["code"], "acl_denied");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn started_and_call_failed_lines_carry_the_retry_policy_and_counters() {
+        let call = CallConfig::default();
+        let (_guard, sink) = crate::logging::capture::capture("", 2, || {
+            aggregation_started(13, 9, &call);
+            call_failed("probe", 1, Retries::default(), 0, &CallError::Cancelled);
+        })
+        .await;
+        // One node keeps answering 429: one rate-limit retry (the fixture has no transient budget), then it fails.
+        user(&[(1, Reply::Error(ErrorCode::RateLimited)), (12, OK)], 9)
+            .run("req-policy", user_request())
+            .await
+            .unwrap();
+        let started = sink.lines("aggregation started");
+        assert_eq!(started.len(), 1, "{started:?}");
+        let fields = &started[0]["fields"];
+        assert_eq!(
+            (fields["nodes"].as_u64(), fields["threshold"].as_u64()),
+            (Some(13), Some(9))
+        );
+        assert_eq!(fields["timeout_ms"], 5000);
+        assert_eq!(
+            (
+                fields["retries_max"].as_u64(),
+                fields["retries_delay_ms"].as_u64()
+            ),
+            (Some(0), Some(200))
+        );
+        assert_eq!(
+            (
+                fields["rate_limit_max"].as_u64(),
+                fields["rate_limit_initial_delay_ms"].as_u64()
+            ),
+            (Some(1), Some(1000))
+        );
+        let failed = sink.lines("call failed");
+        assert_eq!(failed.len(), 1, "{failed:?}");
+        let fields = &failed[0]["fields"];
+        assert_eq!(fields["node"], "node-0");
+        assert_eq!(
+            (
+                fields["attempts"].as_u64(),
+                fields["transient_retries"].as_u64()
+            ),
+            (Some(2), Some(0))
+        );
+        assert_eq!(fields["rate_limit_retries"], 1);
     }
 
     #[tokio::test(start_paused = true)]

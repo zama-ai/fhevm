@@ -10,7 +10,6 @@ use serde::de::DeserializeOwned;
 use tokio::sync::Semaphore;
 use tokio::time::{Duration, Instant, sleep};
 use tokio_util::sync::CancellationToken;
-use tracing::warn;
 
 use super::client::{AttemptError, ConnectorClient, Endpoint, decode};
 use super::config::{CallConfig, ConfigError, KmsAggregatorConfig, RetryClass};
@@ -84,6 +83,15 @@ impl GiveUp {
             None
         }
     }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Auth => "auth",
+            Self::NonRetryable => "non_retryable",
+            Self::BudgetExhausted => "budget_exhausted",
+            Self::Deadline => "deadline",
+        }
+    }
 }
 
 /// What one node call produced, and what it cost.
@@ -131,6 +139,11 @@ impl Caller {
     /// The deadline of one aggregation and of every call in it.
     pub fn timeout(&self) -> Duration {
         self.cfg.timeout
+    }
+
+    /// The deadline and the retry budgets every call follows.
+    pub fn call_config(&self) -> &CallConfig {
+        &self.cfg
     }
 
     /// Calls one node until success, a terminal error, retries exhausted, or cancellation.
@@ -224,7 +237,12 @@ impl Caller {
                 *attempts,
                 attempt_started.elapsed(),
                 &failure,
-                give_up.is_none().then_some(delay),
+                Decision {
+                    class,
+                    delay,
+                    retry_after,
+                    give_up,
+                },
             );
             if give_up.is_some() {
                 return Err(CallError::Failed(failure));
@@ -255,24 +273,47 @@ impl Caller {
     }
 }
 
-/// One failed attempt, visible at the default level; the node task runs in the `aggregation` span, so the line
-/// also carries the request's identifiers. `delay` is `None` when the call gives up.
+/// What the policy decided after one failed attempt, for the log line.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Decision {
+    class: RetryClass,
+    /// The wait before the next attempt (meaningful when the call retries).
+    delay: Duration,
+    retry_after: Option<Duration>,
+    give_up: Option<GiveUp>,
+}
+
+/// One failed attempt: `info` when a retry follows (expected behaviour), `warn` when the call gives up (the event
+/// an operator looks for). The node task runs in the `aggregation` span, so the line also carries the request's
+/// identifiers.
 pub(super) fn attempt_failed(
     node: &str,
     attempt: u32,
     elapsed: Duration,
     failure: &AttemptError,
-    delay: Option<Duration>,
+    decision: Decision,
 ) {
-    warn!(
-        node,
-        attempt,
-        elapsed_ms = elapsed.as_millis() as u64,
-        error = %failure,
-        code = failure.code().as_str(),
-        retry_in_ms = delay.map(|d| d.as_millis() as u64),
-        "attempt failed"
-    );
+    let ms = |d: Duration| d.as_millis() as u64;
+    macro_rules! line {
+        ($level:ident) => {
+            tracing::$level!(
+                node,
+                attempt,
+                elapsed_ms = ms(elapsed),
+                error = %failure,
+                code = failure.code().as_str(),
+                class = decision.class.as_str(),
+                retry_in_ms = decision.give_up.is_none().then(|| ms(decision.delay)),
+                retry_after_ms = decision.retry_after.map(ms),
+                give_up_reason = decision.give_up.map(GiveUp::as_str),
+                "attempt failed"
+            )
+        };
+    }
+    match decision.give_up {
+        None => line!(info),
+        Some(_) => line!(warn),
+    }
 }
 
 #[cfg(test)]
@@ -348,31 +389,78 @@ pub(crate) mod tests {
         call
     }
 
-    /// Captures the `attempt failed` lines of this thread.
+    /// Captures the `attempt failed` lines of this thread (both levels: a retry and a give-up).
     pub(crate) async fn capture_attempts() -> (tracing::subscriber::DefaultGuard, Sink) {
-        capture("attempt failed", 1, || {
-            attempt_failed("probe", 1, Duration::ZERO, &AttemptError::Status(500), None);
+        capture("attempt failed", 2, || {
+            let decision = Decision {
+                class: RetryClass::Transient,
+                delay: Duration::ZERO,
+                retry_after: None,
+                give_up: None,
+            };
+            let failure = AttemptError::Status(500);
+            attempt_failed("probe", 1, Duration::ZERO, &failure, decision);
+            attempt_failed(
+                "probe",
+                2,
+                Duration::ZERO,
+                &failure,
+                Decision {
+                    give_up: Some(GiveUp::Deadline),
+                    ..decision
+                },
+            );
         })
         .await
     }
 
     #[tokio::test(start_paused = true)]
-    async fn every_failed_attempt_is_a_warn_with_its_decision() {
+    async fn attempt_lines_are_info_on_retry_and_warn_on_give_up() {
         let (_guard, sink) = capture_attempts().await;
-        let (_, r) = run(vec![RATE, MALFORMED], 2).await;
-        assert_eq!(r.attempts, 2);
+        let (_, r) = run(vec![rate_limited_after(2), ACL, MALFORMED], 2).await;
+        assert_eq!(r.attempts, 3);
         let lines = sink.lines("attempt failed");
-        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert_eq!(lines.len(), 3, "{lines:?}");
         for (line, attempt) in lines.iter().zip(1..) {
-            assert_eq!(line["level"], "WARN");
             assert_eq!(line["fields"]["node"], "node-0");
             assert_eq!(line["fields"]["attempt"], attempt);
             assert_eq!(line["fields"]["elapsed_ms"], 10);
         }
-        assert_eq!(lines[0]["fields"]["code"], "rate_limited");
-        assert!(lines[0]["fields"]["retry_in_ms"].as_u64().is_some());
-        assert_eq!(lines[1]["fields"]["code"], "malformed");
-        assert!(lines[1]["fields"]["retry_in_ms"].is_null(), "{}", lines[1]);
+        let fields = |i: usize, name: &str| lines[i]["fields"][name].clone();
+        // A rate limit retried after its header: info, the class, the wait, the header.
+        assert_eq!(lines[0]["level"], "INFO");
+        assert_eq!(fields(0, "code"), "rate_limited");
+        assert_eq!(fields(0, "class"), "rate_limit");
+        assert_eq!(fields(0, "retry_in_ms"), 2000);
+        assert_eq!(fields(0, "retry_after_ms"), 2000);
+        assert!(fields(0, "give_up_reason").is_null(), "{}", lines[0]);
+        // A transient error retried: info, no header.
+        assert_eq!(lines[1]["level"], "INFO");
+        assert_eq!(fields(1, "class"), "transient");
+        assert_eq!(fields(1, "retry_in_ms"), 200);
+        assert!(fields(1, "retry_after_ms").is_null(), "{}", lines[1]);
+        // The give-up: warn, no wait, the reason.
+        assert_eq!(lines[2]["level"], "WARN");
+        assert_eq!(fields(2, "code"), "malformed");
+        assert!(fields(2, "retry_in_ms").is_null(), "{}", lines[2]);
+        assert_eq!(fields(2, "give_up_reason"), "non_retryable");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn give_up_reasons() {
+        let (_guard, sink) = capture_attempts().await;
+        let last_reason = || {
+            let lines = sink.lines("attempt failed");
+            let reason = lines.last().unwrap()["fields"]["give_up_reason"].clone();
+            sink.clear();
+            reason
+        };
+        run(vec![AUTH], 2).await;
+        assert_eq!(last_reason(), "auth");
+        run(vec![ACL], 1).await;
+        assert_eq!(last_reason(), "budget_exhausted");
+        run(vec![rate_limited_after(10)], 1).await;
+        assert_eq!(last_reason(), "deadline");
     }
 
     #[tokio::test(start_paused = true)]
