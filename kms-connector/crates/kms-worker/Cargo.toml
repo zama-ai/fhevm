@@ -18,6 +18,7 @@ user-decryption-signature.workspace = true
 actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
+bytes.workspace = true
 dashmap.workspace = true
 futures.workspace = true
 humantime-serde.workspace = true

@@ -63,6 +63,11 @@ pub async fn init_kms_worker<P>(
 where
     P: Provider + Clone + 'static,
 {
+    // Enough buffers for one request, instead of the much larger default.
+    let config = Config {
+        ciphertext_pool_slots: config.max_handles_per_decryption,
+        ..config
+    };
     let ciphertext_manager =
         CiphertextManager::connect(provider.clone(), &config, CancellationToken::new()).await?;
 
