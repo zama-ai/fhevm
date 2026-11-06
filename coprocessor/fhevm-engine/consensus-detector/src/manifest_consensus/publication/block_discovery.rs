@@ -808,6 +808,11 @@ pub(crate) async fn discover_children(pool: &PgPool) -> Result<u64, ExecutionErr
 // Finality of the parent alone does not prove its successor has arrived locally.
 // Close only after a finalized successor is durably discovered. The CTE snapshot
 // sees children inserted by an earlier poll, so closure may take one extra poll.
+//
+// Only sealed parents are expanded: sealing discovers the children of the block
+// it seals, so this poll only catches children and forks that arrive later.
+// Expanding unsealed parents let discovery run one generation ahead per poll and
+// grew the unsealed backlog that work selection walks on every seal.
 pub(crate) async fn discover_children_for_consensus_epoch(
     pool: &PgPool,
     consensus_epoch: &str,
@@ -838,6 +843,7 @@ pub(crate) async fn discover_children_for_consensus_epoch(
                AND child.parent_hash = parent.block_hash
              WHERE NOT parent.child_block_discovery_closed
                AND parent.consensus_epoch = $1
+               AND parent.block_content_digest IS NOT NULL
                AND parent_host.block_status <> 'orphaned'
                AND child.block_status <> 'orphaned'
                AND OCTET_LENGTH(child.parent_hash) = 32
