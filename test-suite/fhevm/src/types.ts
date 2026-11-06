@@ -15,6 +15,8 @@ export const STEP_NAMES = [
   "kms-connector",
   "bootstrap",
   "relayer",
+  "relayer-http",
+  "relayer-proxy",
   "host-process",
   "test-suite",
 ] as const;

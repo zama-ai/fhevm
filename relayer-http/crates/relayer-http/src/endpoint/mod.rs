@@ -56,7 +56,7 @@ mod tests {
     use crate::endpoint::flows::public_decrypt::tests::public_body;
     use crate::endpoint::flows::user_decrypt::tests::user_body;
     use crate::endpoint::validate::tests::{SOLANA, handle};
-    use crate::kms_aggregator::mock::{Fixed, MockClient, Reply};
+    use crate::kms_aggregator::mock::{EXTRA_DATA_V2, Fixed, MockClient, Reply};
     use crate::kms_aggregator::{Aggregator, UserChecks};
     use crate::logging::Log;
     use crate::logging::capture::{Sink, capture};
@@ -364,7 +364,7 @@ mod tests {
         assert_eq!(body["requestId"], request_id);
         assert_eq!(body["result"]["signatures"].as_array().unwrap().len(), 13);
         assert!(body["result"]["decryptedValue"].is_string());
-        assert_eq!(body["result"]["extraData"], "0x00");
+        assert_eq!(body["result"]["extraData"], EXTRA_DATA_V2);
     }
 
     #[tokio::test]
@@ -376,28 +376,31 @@ mod tests {
         assert_eq!(body["result"]["result"].as_array().unwrap().len(), 13);
         let share = &body["result"]["result"][0];
         assert!(share["payload"].is_string() && share["signature"].is_string());
-        assert_eq!(share["extraData"], "0x00");
+        assert_eq!(share["extraData"], EXTRA_DATA_V2);
     }
 
     #[tokio::test]
     async fn bad_bodies_are_400_malformed_with_the_field() {
         let cases = [
-            ("{ not json", "Failed to parse the request body as JSON"),
             (
-                r#"{"ciphertextHandles": [], "extraData": "0x00"}"#,
+                "{ not json".to_owned(),
+                "Failed to parse the request body as JSON",
+            ),
+            (
+                format!(r#"{{"ciphertextHandles": [], "extraData": "{EXTRA_DATA_V2}"}}"#),
                 "ciphertextHandles: must not be empty",
             ),
             (
-                r#"{"ciphertextHandles": ["0x12"], "extraData": "0x00"}"#,
+                format!(r#"{{"ciphertextHandles": ["0x12"], "extraData": "{EXTRA_DATA_V2}"}}"#),
                 "ciphertextHandles",
             ),
             (
-                r#"{"ciphertextHandles": [], "extraData": "0x00", "x": 1}"#,
+                format!(r#"{{"ciphertextHandles": [], "extraData": "{EXTRA_DATA_V2}", "x": 1}}"#),
                 "unknown field",
             ),
         ];
         for (payload, expected) in cases {
-            let (status, id, body) = call(healthy(), "POST", "/v4/public-decrypt", payload).await;
+            let (status, id, body) = call(healthy(), "POST", "/v4/public-decrypt", &payload).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{payload}");
             assert_eq!(body["code"], "malformed");
             assert!(
@@ -405,6 +408,33 @@ mod tests {
                 "{body}"
             );
             assert_eq!(body["requestId"], id);
+        }
+    }
+
+    #[tokio::test]
+    async fn extra_data_v0_and_v1_are_400_malformed() {
+        let v1 = format!("0x01{}", "07".repeat(32));
+        let routes = [
+            (
+                "/v4/public-decrypt",
+                flows::public_decrypt::tests::wire(),
+                "extraData",
+            ),
+            ("/v4/user-decrypt", user_wire(), "payload.extraData"),
+        ];
+        for (uri, valid, field) in routes {
+            for extra_data in ["0x", "0x00", v1.as_str()] {
+                let payload = valid.replace(EXTRA_DATA_V2, extra_data);
+                let (status, id, body) = call(healthy(), "POST", uri, &payload).await;
+                assert_eq!(status, StatusCode::BAD_REQUEST, "{uri} {extra_data}");
+                assert_eq!(body["code"], "malformed");
+                assert_eq!(
+                    body["message"],
+                    format!("{field}: must be 0x02 + context id + epoch id"),
+                    "{uri} {extra_data}"
+                );
+                assert_eq!(body["requestId"], id);
+            }
         }
     }
 

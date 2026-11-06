@@ -1,0 +1,60 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH available AS (\n           SELECT id FROM host_consumer_catchups\n           WHERE chain_id = $1 AND consumer_id = $2\n             AND (status = 'ONGOING' OR cancel_pending)\n             AND (owner_id IS NULL OR lease_until <= clock_timestamp())\n           ORDER BY cancel_pending DESC, created_at, id\n           FOR UPDATE SKIP LOCKED\n         )\n         UPDATE host_consumer_catchups AS r\n         SET owner_id = $3, lease_until = clock_timestamp() + interval '60 seconds',\n             request_pending = (r.status = 'ONGOING')\n         FROM available WHERE r.id = available.id\n         RETURNING r.id, r.owner_id AS \"owner_id!\", r.block_start,\n                   r.block_end, r.finalized, r.request_pending, r.cancel_pending",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "owner_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_start",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "block_end",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "finalized",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "request_pending",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "cancel_pending",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "db6f5dae53aee1ebc24c01101ee59edd0a68ced7f4e03aafacd3c185fb1dcce0"
+}

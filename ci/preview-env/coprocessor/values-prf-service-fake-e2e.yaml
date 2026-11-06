@@ -1,0 +1,63 @@
+# common chart overlay for coprocessor-<i>-prf-service-fake: the stand-in for prf-service behind
+# party i's coprocessor-proxy (values-coprocessor-proxy-e2e.yaml), until prf-service deploys here.
+# It runs test-suite/e2e/scripts/fake-prf-service.ts from the test-suite image: HTTP/1.1 on 8080, its PRF
+# request count over plain HTTP on 9090. scripts/deploy/deploy-coprocessor.sh sets `fake.image` and
+# `fake.party`; `party` labels the pods the proxy's NetworkPolicy selects.
+#
+# Deployed as:
+#   helm upgrade --install coprocessor-<i>-prf-service-fake \
+#     oci://hub.zama.org/ghcr/zama-zws/helm-charts/common -n <namespace> -f this-file
+fake:
+  image: ""
+  party: ""
+
+# Raw objects, rendered through `tpl`.
+additionalResources:
+  - enabled: true
+    object:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: "{{ .Release.Name }}"
+      spec:
+        replicas: 1
+        selector:
+          matchLabels:
+            app: prf-service-fake
+            fhevm.zama.ai/party: "{{ .Values.fake.party }}"
+        template:
+          metadata:
+            labels:
+              app: prf-service-fake
+              fhevm.zama.ai/party: "{{ .Values.fake.party }}"
+          spec:
+            imagePullSecrets:
+              - name: registry-credentials
+            containers:
+              - name: prf-service-fake
+                image: "{{ .Values.fake.image }}"
+                command: ["node", "/app/test-suite/e2e/scripts/fake-prf-service.ts"]
+                ports:
+                  - {name: http, containerPort: 8080}
+                  - {name: count, containerPort: 9090}
+                # From inside the pod: a kubelet probe could be subject to the proxy's NetworkPolicy.
+                readinessProbe:
+                  exec:
+                    command:
+                      - node
+                      - -e
+                      - "fetch('http://127.0.0.1:9090/count').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+                  periodSeconds: 5
+  - enabled: true
+    object:
+      apiVersion: v1
+      kind: Service
+      metadata:
+        name: "{{ .Release.Name }}"
+      spec:
+        selector:
+          app: prf-service-fake
+          fhevm.zama.ai/party: "{{ .Values.fake.party }}"
+        ports:
+          - {name: http, port: 8080}
+          - {name: count, port: 9090}

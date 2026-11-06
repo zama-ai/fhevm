@@ -78,6 +78,7 @@ zama-host = { path = "../../../solana/programs/zama-host", default-features = fa
 anchor-lang = "1.2.0"
 # Follows the zama-host program over Yellowstone gRPC.
 solana-host-follower = { path = "../solana-host-follower" }
+uuid = { version = "1", features = ["v4", "v7"] }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }

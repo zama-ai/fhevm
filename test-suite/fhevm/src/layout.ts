@@ -115,8 +115,7 @@ const TEMPLATE_CONFIG_DIR = path.join(TEMPLATE_DIR, "config");
 export const TEMPLATE_COMPOSE_DIR = path.join(CLI_DIR, "docker-compose");
 const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
 export const TEMPLATE_RELAYER_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer.yaml");
-/** relayer-http's own example config; the harness overrides only what depends on the stack. */
-export const RELAYER_HTTP_CONFIG_BASE = path.join(REPO_ROOT, "relayer-http", "config", "config.yaml");
+export const TEMPLATE_RELAYER_HTTP_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer-http.yaml");
 export const TEMPLATE_KMS_CORE_CONFIG_THRESHOLD = path.join(
   TEMPLATE_CONFIG_DIR,
   "kms-core-threshold.toml",
@@ -136,8 +135,6 @@ if (
 }
 export const PROJECT = configuredComposeProject ?? "fhevm";
 export const RELAYER_PORT = 3000;
-/** relayer-http's port, inside its container and on the host (its own default, 8080, is SOLANA_MERKLE_PROOF_PORT). */
-export const RELAYER_HTTP_PORT = 3002;
 /** The SDK's relayer auth: `ZAMA_FHEVM_API_KEY`, or the placeholder key a local relayer accepts. */
 export const relayerAuth = () => ({ type: "ApiKeyHeader", value: process.env.ZAMA_FHEVM_API_KEY ?? "local" }) as const;
 export const DEFAULT_HOST_RPC_PORT = 8545;
@@ -190,17 +187,11 @@ export const SOLANA_CLEARTEXT_FAUCET_PORT = 29900;
 export const SOLANA_CLEARTEXT_GOSSIP_PORT = 29901;
 export const DEMO_OPERATOR_PORT = 8091;
 export const DEMO_DAPP_PORT = 5173;
-export const PORTS = [
-  RELAYER_PORT,
-  3001,
-  POSTGRES_PORT,
-  5433,
-  DEFAULT_HOST_RPC_PORT,
-  DEFAULT_GATEWAY_RPC_PORT,
-  DEFAULT_EXTRA_HOST_RPC_PORT,
-  OBJECT_STORE_PORT,
-  9001,
-];
+/** Host port of relayer-http (in-stack `fhevm-relayer-http`). */
+export const RELAYER_HTTP_PORT = 3002;
+/** Host port of the relayer proxy (in-stack `fhevm-relayer-proxy`): /v2, /v3 → relayer, /v4 → relayer-http. */
+export const RELAYER_PROXY_PORT = 3003;
+export const PORTS = [RELAYER_PORT, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, OBJECT_STORE_PORT, 9001, RELAYER_HTTP_PORT, RELAYER_PROXY_PORT];
 export const OBJECT_STORE_INTERNAL_URL = `http://object-store:${OBJECT_STORE_PORT}`;
 /**
  * Per-operator alias for the one object store. Every alias reaches the same
@@ -265,8 +256,15 @@ export const COMPONENTS = [
   "coprocessor",
   "kms-connector",
   "relayer",
+  "relayer-http",
   "test-suite",
 ] as const;
+
+/**
+ * Compose components with no env template or generated config (static config only). They have a
+ * compose file and a step, but no entry in COMPONENTS, which drives env generation.
+ */
+export const STATIC_COMPONENTS = ["relayer-proxy"] as const;
 
 export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "preflight": [],
@@ -285,6 +283,8 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "kms-connector": ["kms-connector"],
   "bootstrap": ["gateway-sc", "host-sc"],
   "relayer": ["relayer"],
+  "relayer-http": ["relayer-http"],
+  "relayer-proxy": ["relayer-proxy"],
   // Its nodes run outside compose. The one compose service it starts, the Merkle record's
   // database, is recreated by every Solana provision, so no step owns it.
   "host-process": [],
@@ -303,17 +303,15 @@ export const GROUP_BUILD_COMPONENTS: Record<OverrideGroup, string[]> = {
   "coprocessor": ["coprocessor"],
   "kms-connector": ["kms-connector"],
   "listener-core": ["listener-core"],
-  "relayer": ["relayer"],
+  // relayer-http has its own component and step, and builds with the relayer group.
+  "relayer": ["relayer", "relayer-http"],
   "gateway-contracts": ["gateway-mocked-payment", "gateway-sc"],
   "host-contracts": ["host-sc"],
   "test-suite": ["test-suite"],
 };
 
-/** relayer-http serves Solana's decryption, so only stacks with a Solana host run (or build) it. */
 export const RELAYER_HTTP_SERVICE = "relayer-http";
 export const RELAYER_HTTP_CONTAINER = "fhevm-relayer-http";
-export const runsRelayerHttp = (hostChains: readonly Pick<HostChainScenario, "type">[]) =>
-  hostChains.some((chain) => !isEvmHost(chain));
 
 export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
   "coprocessor": [
@@ -328,6 +326,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "coprocessor-transaction-sender",
     "coprocessor-consensus-detector",
     "coprocessor-upgrade-controller",
+    "coprocessor-proxy",
   ],
   "kms-connector": [
     "kms-connector-db-migration",
@@ -387,9 +386,25 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
 /** The kms-connector services `supportsConnectorHttp` gates as a pair: HTTP endpoint + proxy. */
 export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
 
-/** A group's services for a stack: the relayer group has relayer-http only when it runs. */
-export const groupBuildServices = (group: OverrideGroup, hostChains: readonly Pick<HostChainScenario, "type">[]) =>
-  GROUP_BUILD_SERVICES[group].filter((service) => service !== RELAYER_HTTP_SERVICE || runsRelayerHttp(hostChains));
+/**
+ * The coprocessor services `runsCoprocessorProxy` gates as a pair: the proxy and the fake
+ * prf-service it forwards to, in start order. The fake runs the test-suite image, so it is not a
+ * coprocessor build service.
+ */
+export const COPROCESSOR_PROXY_SUFFIXES = ["prf-service-fake", "proxy"];
+
+/**
+ * The env file of coprocessor `index`'s proxy. It holds only the proxy's own settings: the
+ * coprocessor's env carries database and signing secrets the internet-facing proxy must not get.
+ */
+export const coprocessorProxyEnvName = (index: number) =>
+  index === 0 ? "coprocessor-proxy" : `coprocessor-proxy.${index}`;
+
+/** `suffixes` without the proxy pair, then the pair in start order when `includeProxy`. */
+export const withCoprocessorProxySuffixes = (suffixes: readonly string[], includeProxy: boolean) => [
+  ...suffixes.filter((suffix) => !COPROCESSOR_PROXY_SUFFIXES.includes(suffix)),
+  ...(includeProxy ? COPROCESSOR_PROXY_SUFFIXES : []),
+];
 
 /** Services that run the same image and therefore must be built together by an override. */
 const IMAGE_SIBLINGS: Record<string, string[]> = {
@@ -442,6 +457,7 @@ export const TEST_GREP: Record<string, string> = {
   "connector-http-negative": "Connector HTTP negative",
   // All three connector HTTP suites in one mocha run; this is the profile included in the standard test set.
   "connector-http": "Connector HTTP",
+  "coprocessor-proxy": "Coprocessor proxy",
   "random": "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt",
   "random-subset":
     "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt",
@@ -491,6 +507,7 @@ export const STANDARD_TEST_PROFILES = [
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
   "connector-http",
+  "coprocessor-proxy",
   "negative-acl",
   "random-subset",
   "multi-chain-isolation",
@@ -529,6 +546,7 @@ export const STANDARD_SHARD_DECRYPTION_TEST_PROFILES = [
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
   "connector-http",
+  "coprocessor-proxy",
 ] as const;
 
 export const STANDARD_SHARD_COMPUTE_TEST_PROFILES = [

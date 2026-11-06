@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { renderRelayerConfig, renderRelayerHttpConfig } from "./generate/config";
-import { RELAYER_HTTP_CONFIG_BASE, RELAYER_HTTP_PORT } from "./layout";
+import { RELAYER_HTTP_PORT, TEMPLATE_RELAYER_HTTP_CONFIG } from "./layout";
 import { predictedCrsId, predictedKeyId } from "./utils/fs";
 
 describe("config", () => {
@@ -173,7 +173,7 @@ describe("config", () => {
 
   test("renders relayer-http with every host chain and every party's proxy, spare included", () => {
     const rendered = renderRelayerHttpConfig(
-      readFileSync(RELAYER_HTTP_CONFIG_BASE, "utf8"),
+      readFileSync(TEMPLATE_RELAYER_HTTP_CONFIG, "utf8"),
       {
         hostChains: [
           { key: "host", chainId: "12345", rpcPort: 8545 },
@@ -199,7 +199,7 @@ describe("config", () => {
     expect(parsed.log.format).toBe("json");
     expect(parsed.http.endpoint).toBe(`0.0.0.0:${RELAYER_HTTP_PORT}`);
     expect(parsed.http.supported_chain_ids).toEqual(["12345", "130140237723663404"]);
-    expect(parsed.kms_aggregator.public_decrypt.threshold).toBe(3);
+    expect(parsed.kms_aggregator.public_decrypt.threshold).toBe(2);
     expect(parsed.kms_aggregator.user_decrypt.threshold).toBe(3);
     expect(parsed.kms_aggregator.auth).toMatchObject({
       chain_id: 12345,

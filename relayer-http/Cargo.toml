@@ -38,6 +38,7 @@ axum = { version = "=0.8.9", default-features = false, features = ["http1", "jso
 uuid = { version = "=1.26.0", default-features = false, features = ["std", "v7"] }
 # tests
 futures-util = { version = "=0.3.34", default-features = false }
+tokio-rustls = { version = "=0.26.5", default-features = false, features = ["aws_lc_rs"] }
 tower = { version = "=0.5.3", default-features = false, features = ["util"] }
 wiremock = "=0.6.5"
 

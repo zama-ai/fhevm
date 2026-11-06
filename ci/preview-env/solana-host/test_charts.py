@@ -415,7 +415,7 @@ class SolanaCharts(unittest.TestCase):
                     "GITHUB_OUTPUT": output.name}, capture_output=True, text=True)
                 self.assertEqual(result.returncode == 0, valid, result.stderr)
                 if value == {}:
-                    self.assertIn("relayer_sdk_version=0.4.4", pathlib.Path(output.name).read_text())
+                    self.assertIn("\nrelayer_sdk_version=\n", pathlib.Path(output.name).read_text())
 
 
 

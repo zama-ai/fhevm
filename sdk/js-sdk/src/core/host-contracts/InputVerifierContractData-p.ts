@@ -1,7 +1,6 @@
 import type { ChecksummedAddress, Uint64BigInt, Uint8Number } from '../types/primitives.js';
 import type { CoprocessorEip712Domain, InputVerifierContractData } from '../types/coprocessor.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import type { HostContractVersion } from '../types/hostContract.js';
 import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -15,7 +14,6 @@ const VERIFY_FUNC = Symbol('InputVerifierContractData.verify');
 
 class InputVerifierContractDataImpl implements InputVerifierContractData {
   readonly #owner: WeakRef<FhevmRuntime>;
-  readonly #version: HostContractVersion<'InputVerifier'>;
   readonly #address: ChecksummedAddress;
   readonly #eip712Domain: CoprocessorEip712Domain;
   readonly #coprocessorSigners: ChecksummedAddress[];
@@ -26,7 +24,6 @@ class InputVerifierContractDataImpl implements InputVerifierContractData {
     privateToken: symbol,
     owner: WeakRef<FhevmRuntime>,
     parameters: {
-      readonly version: HostContractVersion<'InputVerifier'>;
       readonly address: ChecksummedAddress;
       readonly eip712Domain: CoprocessorEip712Domain;
       readonly coprocessorSigners: readonly ChecksummedAddress[];
@@ -37,7 +34,6 @@ class InputVerifierContractDataImpl implements InputVerifierContractData {
       throw new Error('Unauthorized');
     }
     this.#owner = owner;
-    this.#version = Object.freeze({ ...parameters.version });
     this.#address = parameters.address;
     this.#eip712Domain = { ...parameters.eip712Domain };
     this.#coprocessorSigners = [...parameters.coprocessorSigners];
@@ -47,10 +43,6 @@ class InputVerifierContractDataImpl implements InputVerifierContractData {
     Object.freeze(this.#eip712Domain);
     Object.freeze(this.#coprocessorSigners);
     Object.freeze(this);
-  }
-
-  public get version(): HostContractVersion<'InputVerifier'> {
-    return this.#version;
   }
 
   public get address(): ChecksummedAddress {
@@ -94,7 +86,6 @@ class InputVerifierContractDataImpl implements InputVerifierContractData {
 
   public toJSON(): Record<string, unknown> {
     return {
-      version: this.#version,
       address: this.#address,
       eip712Domain: this.#eip712Domain,
       coprocessorSigners: this.#coprocessorSigners,
@@ -112,7 +103,6 @@ Object.freeze(InputVerifierContractDataImpl);
 export function createInputVerifierContractData(
   owner: WeakRef<FhevmRuntime>,
   parameters: {
-    readonly version: HostContractVersion<'InputVerifier'>;
     readonly address: ChecksummedAddress;
     readonly eip712Domain: CoprocessorEip712Domain;
     readonly coprocessorSigners: readonly ChecksummedAddress[];

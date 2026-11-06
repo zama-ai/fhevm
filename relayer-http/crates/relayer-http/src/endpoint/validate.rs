@@ -120,22 +120,17 @@ pub fn request_window(field: &str, start: u64, duration: u64, now: u64) -> Resul
     Ok(())
 }
 
-/// Empty or `0x00` (v0), `0x01` + 32-byte context id (v1), `0x02` + context id + 32-byte epoch id (v2).
+/// `0x02` + 32-byte context id + 32-byte epoch id (v2) only; v0 (empty or `0x00`) and v1 are rejected.
 /// Trailing bytes are allowed, as the connector allows them.
 pub fn extra_data(field: &str, bytes: &[u8]) -> Result<(), Invalid> {
     let ok = match bytes.first() {
-        None | Some(0) => true,
-        Some(1) => bytes.len() >= 33,
         Some(2) => bytes.len() >= 65,
-        Some(_) => false,
+        _ => false,
     };
     if ok {
         Ok(())
     } else {
-        Err(Invalid::new(
-            field,
-            "must be 0x00, 0x01 + context id, or 0x02 + context id + epoch id",
-        ))
+        Err(Invalid::new(field, "must be 0x02 + context id + epoch id"))
     }
 }
 
@@ -209,9 +204,10 @@ pub(crate) mod tests {
 
     #[test]
     fn extra_data_rules() {
-        assert_eq!(extra_data("x", &[]), Ok(()));
-        assert_eq!(extra_data("x", &[0]), Ok(()));
-        assert_eq!(extra_data("x", &[1; 33]), Ok(()));
+        let rejected = Err(Invalid::new("x", "must be 0x02 + context id + epoch id"));
+        assert_eq!(extra_data("x", &[]), rejected);
+        assert_eq!(extra_data("x", &[0]), rejected);
+        assert_eq!(extra_data("x", &[1; 33]), rejected);
         assert_eq!(extra_data("x", &[2; 65]), Ok(()));
         assert_eq!(extra_data("x", &[2; 70]), Ok(()));
         for bad in [vec![1; 32], vec![2; 64], vec![3; 33], vec![0xff]] {

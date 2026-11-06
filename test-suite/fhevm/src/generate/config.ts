@@ -142,7 +142,7 @@ export const renderRelayerConfig = (
 };
 
 /**
- * Renders relayer-http's config from its checked-in example: every host chain in
+ * Renders relayer-http's config from the stack template: every host chain in
  * supported_chain_ids, as strings since a Solana chain id exceeds Number.MAX_SAFE_INTEGER, and one
  * endpoint per kms-connector proxy, named after its party, whose `audience` is that party's KMS
  * tx-sender. The FhevmSig domain is the one the proxies verify: the connectors' Ethereum chain id
@@ -152,11 +152,11 @@ export const renderRelayerConfig = (
  * current nodes and updates the list on a node change.
  */
 export const renderRelayerHttpConfig = (
-  baseText: string,
+  templateText: string,
   plan: Pick<StackSpec, "hostChains" | "kms">,
   envs: Record<string, Record<string, string>>,
 ) => {
-  const config = YAML.parse(baseText) as {
+  const config = YAML.parse(templateText) as {
     log: Record<string, unknown>;
     http: Record<string, unknown>;
     kms_aggregator: {
@@ -170,10 +170,13 @@ export const renderRelayerHttpConfig = (
   config.log.format = "json";
   config.http.endpoint = `0.0.0.0:${RELAYER_HTTP_PORT}`;
   config.http.supported_chain_ids = plan.hostChains.map((chain) => chain.chainId);
-  config.kms_aggregator.public_decrypt.threshold = Number(envs["gateway-sc"].PUBLIC_DECRYPTION_THRESHOLD);
-  config.kms_aggregator.user_decrypt.threshold = Number(envs["gateway-sc"].USER_DECRYPTION_THRESHOLD);
+  // Identical answers t+1, shares 2t+1, as relayer-http's example config documents.
+  config.kms_aggregator.public_decrypt.threshold = plan.kms.threshold + 1;
+  config.kms_aggregator.user_decrypt.threshold = 2 * plan.kms.threshold + 1;
   config.kms_aggregator.auth.chain_id = Number(envs["kms-connector"].KMS_CONNECTOR_ETHEREUM_CHAIN_ID);
-  config.kms_aggregator.auth.protocol_config = envs["kms-connector"].KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS;
+  // Before discovery the template's placeholder stays: relayer-http only starts after it.
+  config.kms_aggregator.auth.protocol_config =
+    envs["kms-connector"].KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS || config.kms_aggregator.auth.protocol_config;
   // The proxies' one allowed sender; relayer-http refuses to start unless its signing key has it.
   config.kms_aggregator.auth.address = envs["kms-connector"].KMS_CONNECTOR_ALLOWED_SENDERS;
   config.kms_aggregator.endpoints = kmsPartyIds(plan.kms.parties).map((party) => ({

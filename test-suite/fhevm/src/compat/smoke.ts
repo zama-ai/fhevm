@@ -21,6 +21,7 @@ import {
 import {
   supportsConnectorHttp,
   supportsConsensusDetector,
+  supportsCoprocessorProxy,
   supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "./compat";
@@ -181,7 +182,8 @@ const main = async () => {
           !name.endsWith("db-migration") &&
           (name !== "coprocessor-host-listener-consumer" || supportsHostListenerConsumer(state)) &&
           (name !== "coprocessor-consensus-detector" || supportsConsensusDetector(state)) &&
-          (name !== "coprocessor-upgrade-controller" || supportsUpgradeController(state)),
+          (name !== "coprocessor-upgrade-controller" || supportsUpgradeController(state)) &&
+          (name !== "coprocessor-proxy" || supportsCoprocessorProxy(state)),
       ),
       "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter(
         (name) =>

@@ -57,12 +57,13 @@ impl ProcessingError {
     pub fn from_grpc_status(status: tonic::Status) -> Self {
         match status.code() {
             Code::Aborted => Self::aborted(),
-            Code::DeadlineExceeded | Code::Unavailable | Code::ResourceExhausted => {
-                Self::recoverable(
-                    ErrorCode::UpstreamTransient,
-                    anyhow!("KMS GRPC error: {status}"),
-                )
-            }
+            Code::DeadlineExceeded
+            | Code::Unavailable
+            | Code::ResourceExhausted
+            | Code::Cancelled => Self::recoverable(
+                ErrorCode::UpstreamTransient,
+                anyhow!("KMS GRPC error: {status}"),
+            ),
             _ => Self::irrecoverable(
                 ErrorCode::Unprocessable,
                 anyhow!("KMS GRPC error: {status}"),

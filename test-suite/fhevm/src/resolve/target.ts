@@ -68,6 +68,7 @@ const REPO_PACKAGES = {
   COPROCESSOR_SNS_WORKER_VERSION: "fhevm%2Fcoprocessor%2Fsns-worker",
   COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "fhevm%2Fcoprocessor%2Fconsensus-detector",
   COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "fhevm%2Fcoprocessor%2Fupgrade-controller",
+  COPROCESSOR_PROXY_VERSION: "fhevm%2Fcoprocessor%2Fcoprocessor-proxy",
   LISTENER_CORE_VERSION: "fhevm%2Flistener%2Flistener-core",
   CONNECTOR_DB_MIGRATION_VERSION: "fhevm%2Fkms-connector%2Fdb-migration",
   CONNECTOR_GW_LISTENER_VERSION: "fhevm%2Fkms-connector%2Fgw-listener",
@@ -87,6 +88,7 @@ export const REPO_KEYS = new Set(Object.keys(REPO_PACKAGES));
 export const OPTIONAL_REPO_KEYS = new Set([
   "COPROCESSOR_CONSENSUS_DETECTOR_VERSION",
   "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
+  "COPROCESSOR_PROXY_VERSION",
   "CONNECTOR_ENDPOINT_VERSION",
   "CONNECTOR_PROXY_VERSION",
   "RELAYER_HTTP_VERSION",
@@ -104,6 +106,7 @@ export const PACKAGE_TO_REPOSITORY = {
   COPROCESSOR_SNS_WORKER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/sns-worker",
   COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/consensus-detector",
   COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/upgrade-controller",
+  COPROCESSOR_PROXY_VERSION: "ghcr.io/zama-ai/fhevm/coprocessor/coprocessor-proxy",
   LISTENER_CORE_VERSION: "ghcr.io/zama-ai/fhevm/listener/listener-core",
   CONNECTOR_DB_MIGRATION_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/db-migration",
   CONNECTOR_GW_LISTENER_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/gw-listener",
@@ -374,6 +377,8 @@ const bundleFromFiles = async (
         // them to the host-listener tag (same release cadence).
         COPROCESSOR_CONSENSUS_DETECTOR_VERSION: coprocessorHostListenerVersion,
         COPROCESSOR_UPGRADE_CONTROLLER_VERSION: coprocessorHostListenerVersion,
+        // GitOps YAMLs don't deploy coprocessor-proxy yet; leave COPROCESSOR_PROXY_VERSION unset so
+        // the compat layer gates it out (optional repo key).
         LISTENER_CORE_VERSION: coprocessorHostListenerVersion,
         CONNECTOR_DB_MIGRATION_VERSION: findImageTag(parsed, "connector", "CONNECTOR_DB_MIGRATION_VERSION"),
         CONNECTOR_GW_LISTENER_VERSION: findImageTag(parsed, "connector", "CONNECTOR_GW_LISTENER_VERSION"),
@@ -381,7 +386,8 @@ const bundleFromFiles = async (
         CONNECTOR_TX_SENDER_VERSION: findImageTag(parsed, "connector", "CONNECTOR_TX_SENDER_VERSION"),
         // GitOps YAMLs don't deploy the connector HTTP endpoint and proxy yet; leave
         // CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION unset so the compat layer gates the
-        // services out (optional repo keys).
+        // services out (optional repo keys). relayer-http isn't deployed either: RELAYER_HTTP_VERSION
+        // stays unset, so `up` skips it.
         CORE_VERSION: findImageTag(parsed, "kmsCore", "CORE_VERSION"),
         RELAYER_VERSION: findImageTag(parsed, "relayer", "RELAYER_VERSION"),
         RELAYER_MIGRATE_VERSION: findImageTag(parsed, "relayer", "RELAYER_MIGRATE_VERSION"),

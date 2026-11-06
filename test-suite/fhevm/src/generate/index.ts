@@ -38,16 +38,15 @@ import {
   TEMPLATE_KMS_CORE_CONFIG_THRESHOLD,
   TEMPLATE_ENV_DIR,
   TEMPLATE_RELAYER_CONFIG,
+  TEMPLATE_RELAYER_HTTP_CONFIG,
   envPath,
   gatewayAddressesPath,
   gatewayAddressesSolidityPath,
   hostChainAddressesPath,
   hostChainAddressesSolidityPath,
   paymentBridgingAddressesSolidityPath,
-  RELAYER_HTTP_CONFIG_BASE,
   relayerConfigPath,
   relayerHttpConfigPath,
-  runsRelayerHttp,
   versionsEnvPath,
 } from "../layout";
 import { CommandError } from "../errors";
@@ -126,12 +125,10 @@ export const generateRuntime = async (state: State, plan: StackSpec) => {
     relayerConfigPath,
     renderRelayerConfig(state, await fs.readFile(TEMPLATE_RELAYER_CONFIG, "utf8"), plan),
   );
-  if (runsRelayerHttp(plan.hostChains)) {
-    await fs.writeFile(
-      relayerHttpConfigPath,
-      renderRelayerHttpConfig(await fs.readFile(RELAYER_HTTP_CONFIG_BASE, "utf8"), plan, rendered.componentEnvs),
-    );
-  }
+  await fs.writeFile(
+    relayerHttpConfigPath,
+    renderRelayerHttpConfig(await fs.readFile(TEMPLATE_RELAYER_HTTP_CONFIG, "utf8"), plan, rendered.componentEnvs),
+  );
   // Emit the single cluster-shared core config (checked-in template with the peer roster
   // injected). Per-party values come from KMS_CORE__* env, so one file is mounted into every
   // kms-core-{i}.
