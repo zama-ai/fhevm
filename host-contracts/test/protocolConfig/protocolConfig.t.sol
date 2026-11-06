@@ -19,6 +19,8 @@ import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddres
 
 contract ProtocolConfigTest is HostContractsDeployerTestUtils {
     address internal constant owner = address(456);
+    uint256 internal constant SPLIT_CONTEXT_ID = KMS_CONTEXT_COUNTER_BASE + 1;
+    uint256 internal constant SPLIT_EPOCH_ID = EPOCH_COUNTER_BASE + 2;
     uint256 internal immutable kmsPk0 = _defaultSignerPk(0);
     uint256 internal immutable kmsPk1 = _defaultSignerPk(1);
     uint256 internal immutable kmsPk2 = _defaultSignerPk(2);
@@ -183,22 +185,39 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         }
     }
 
-    /// @dev Under a new same-set epoch, signer0 confirms the first payload and signer1 the second payload
-    ///      with `extraData1`. The active epoch stays unchanged.
+    /// @dev Under the new same-set epoch SPLIT_EPOCH_ID, signer0 confirms the first payload with
+    ///      `materialExtraData0` and empty extraData. signer1 confirms the second payload with
+    ///      `materialExtraData1` and `extraData1`. The active epoch stays unchanged.
     function _confirmSplitEpochActivationDoesNotActivate(
         IProtocolConfig.EpochKeyResult[] memory keys0,
         IProtocolConfig.EpochCrsResult[] memory crsList0,
+        bytes memory materialExtraData0,
         IProtocolConfig.EpochKeyResult[] memory keys1,
         IProtocolConfig.EpochCrsResult[] memory crsList1,
+        bytes memory materialExtraData1,
         bytes memory extraData1
     ) internal {
-        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        uint256 epochId = EPOCH_COUNTER_BASE + 2;
         vm.prank(owner);
         protocolConfig.defineNewEpochForCurrentKmsContext();
 
-        _confirmEpochActivation(contextId, epochId, kmsPk0, keys0, crsList0, EMPTY_EXTRA_DATA);
-        _confirmEpochActivation(contextId, epochId, kmsPk1, keys1, crsList1, extraData1);
+        _confirmEpochActivation(
+            SPLIT_CONTEXT_ID,
+            SPLIT_EPOCH_ID,
+            kmsPk0,
+            keys0,
+            crsList0,
+            materialExtraData0,
+            EMPTY_EXTRA_DATA
+        );
+        _confirmEpochActivation(
+            SPLIT_CONTEXT_ID,
+            SPLIT_EPOCH_ID,
+            kmsPk1,
+            keys1,
+            crsList1,
+            materialExtraData1,
+            extraData1
+        );
 
         (, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeEpochId, EPOCH_COUNTER_BASE + 1);
@@ -752,18 +771,17 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochKeyResult[] memory keys1,
             IProtocolConfig.EpochCrsResult[] memory crsList1
         ) = _buildEpochResults(KEY_COUNTER_BASE + 2, CRS_COUNTER_BASE + 1);
-        _confirmEpochActivation(contextId, pendingEpochId, kmsPk0, keys0, crsList0, EMPTY_EXTRA_DATA);
-        _confirmEpochActivation(contextId, pendingEpochId, kmsPk1, keys1, crsList1, EMPTY_EXTRA_DATA);
+        _confirmEpochActivationWithDefaultExtraData(contextId, pendingEpochId, kmsPk0, keys0, crsList0);
+        _confirmEpochActivationWithDefaultExtraData(contextId, pendingEpochId, kmsPk1, keys1, crsList1);
 
         // Each signer can confirm only once, so the split confirmations never reach quorum. Resubmitting the other
         // signer's result reverts with EpochActivationAlreadyConfirmed.
-        bytes memory signature = _signEpochActivation(
+        bytes memory signature = _signEpochActivationWithDefaultExtraData(
             contextId,
             pendingEpochId,
             kmsPk0,
             keys1,
-            crsList1,
-            EMPTY_EXTRA_DATA
+            crsList1
         );
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -772,7 +790,14 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
                 pendingEpochId
             )
         );
-        protocolConfig.confirmEpochActivation(pendingEpochId, keys1, crsList1, signature, EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(
+            pendingEpochId,
+            keys1,
+            crsList1,
+            _materialExtraData(contextId, pendingEpochId),
+            signature,
+            EMPTY_EXTRA_DATA
+        );
         (, uint256 epochBefore) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(epochBefore, EPOCH_COUNTER_BASE + 1);
 
@@ -803,8 +828,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochKeyResult[] memory keys3,
             IProtocolConfig.EpochCrsResult[] memory crsList3
         ) = _buildEpochResults(KEY_COUNTER_BASE + 2, CRS_COUNTER_BASE + 1);
-        _confirmEpochActivation(contextId, pendingEpochId, kmsPk2, keys2, crsList2, EMPTY_EXTRA_DATA);
-        _confirmEpochActivation(contextId, pendingEpochId, kmsPk3, keys3, crsList3, EMPTY_EXTRA_DATA);
+        _confirmEpochActivationWithDefaultExtraData(contextId, pendingEpochId, kmsPk2, keys2, crsList2);
+        _confirmEpochActivationWithDefaultExtraData(contextId, pendingEpochId, kmsPk3, keys3, crsList3);
 
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsEpoch.selector, pendingEpochId));
@@ -958,7 +983,14 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsEpoch.selector, newEpochId));
         IProtocolConfig.EpochKeyResult[] memory keys = new IProtocolConfig.EpochKeyResult[](0);
         IProtocolConfig.EpochCrsResult[] memory crsList = new IProtocolConfig.EpochCrsResult[](0);
-        protocolConfig.confirmEpochActivation(newEpochId, keys, crsList, "", EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(
+            newEpochId,
+            keys,
+            crsList,
+            _materialExtraData(KMS_CONTEXT_COUNTER_BASE + 2, newEpochId),
+            "",
+            EMPTY_EXTRA_DATA
+        );
     }
 
     function test_destroyCreatedContext() public {
@@ -978,6 +1010,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             EPOCH_COUNTER_BASE + 2,
             new IProtocolConfig.EpochKeyResult[](0),
             new IProtocolConfig.EpochCrsResult[](0),
+            _materialExtraData(createdContextId, EPOCH_COUNTER_BASE + 2),
             "",
             EMPTY_EXTRA_DATA
         );
@@ -1189,7 +1222,16 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         ) = _dummyEpochResults();
         otherKeys[0].keyDigests[0].digest = hex"01020304";
 
-        _confirmSplitEpochActivationDoesNotActivate(keys, crsList, otherKeys, otherCrsList, EMPTY_EXTRA_DATA);
+        bytes memory materialExtraData = _materialExtraData(SPLIT_CONTEXT_ID, SPLIT_EPOCH_ID);
+        _confirmSplitEpochActivationDoesNotActivate(
+            keys,
+            crsList,
+            materialExtraData,
+            otherKeys,
+            otherCrsList,
+            materialExtraData,
+            EMPTY_EXTRA_DATA
+        );
     }
 
     function test_revertConfirmEpochActivationUnauthorizedAndReplay() public {
@@ -1204,22 +1246,57 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _dummyEpochResults();
-        bytes memory signature = _signEpochActivation(contextId, epochId, 0x999, keys, crsList, EMPTY_EXTRA_DATA);
+        bytes memory materialExtraData = _materialExtraData(contextId, epochId);
+        bytes memory signature = _signEpochActivationWithDefaultExtraData(contextId, epochId, 0x999, keys, crsList);
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfig.EpochActivationUnauthorized.selector, vm.addr(0x999), epochId)
         );
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList, materialExtraData, signature, EMPTY_EXTRA_DATA);
 
         _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk0);
 
         // Replay with the same material the first confirm used. The signer check passes, so the call reaches
         // the already-confirmed check. An empty array would revert earlier with EmptyEpochActivationResults.
         (keys, crsList) = _dummyEpochResults();
-        signature = _signEpochActivation(contextId, epochId, kmsPk0, keys, crsList, EMPTY_EXTRA_DATA);
+        signature = _signEpochActivationWithDefaultExtraData(contextId, epochId, kmsPk0, keys, crsList);
         vm.expectRevert(
             abi.encodeWithSelector(IProtocolConfig.EpochActivationAlreadyConfirmed.selector, vm.addr(kmsPk0), epochId)
         );
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList, materialExtraData, signature, EMPTY_EXTRA_DATA);
+    }
+
+    /// @dev A signature over one materialExtraData does not authorize a submission with another.
+    function test_revertConfirmEpochActivationTamperedMaterialExtraData() public {
+        _setupTwoNodeContext();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
+        (
+            IProtocolConfig.EpochKeyResult[] memory keys,
+            IProtocolConfig.EpochCrsResult[] memory crsList
+        ) = _dummyEpochResults();
+        bytes memory signature = _signEpochActivationWithDefaultExtraData(contextId, epochId, kmsPk0, keys, crsList);
+        bytes memory tamperedMaterialExtraData = _materialExtraData(contextId, epochId + 1);
+        vm.expectPartialRevert(IProtocolConfig.EpochActivationUnauthorized.selector);
+        protocolConfig.confirmEpochActivation(
+            epochId,
+            keys,
+            crsList,
+            tamperedMaterialExtraData,
+            signature,
+            EMPTY_EXTRA_DATA
+        );
+
+        protocolConfig.confirmEpochActivation(
+            epochId,
+            keys,
+            crsList,
+            _materialExtraData(contextId, epochId),
+            signature,
+            EMPTY_EXTRA_DATA
+        );
     }
 
     function test_revertConfirmEpochActivationEmptyPayload() public {
@@ -1233,17 +1310,18 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _dummyEpochResults();
+        bytes memory materialExtraData = _materialExtraData(KMS_CONTEXT_COUNTER_BASE + 1, epochId);
         IProtocolConfig.EpochKeyResult[] memory noKeys = new IProtocolConfig.EpochKeyResult[](0);
         IProtocolConfig.EpochCrsResult[] memory noCrs = new IProtocolConfig.EpochCrsResult[](0);
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationResults.selector, epochId));
-        protocolConfig.confirmEpochActivation(epochId, noKeys, noCrs, "", EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(epochId, noKeys, noCrs, materialExtraData, "", EMPTY_EXTRA_DATA);
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationResults.selector, epochId));
-        protocolConfig.confirmEpochActivation(epochId, keys, noCrs, "", EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(epochId, keys, noCrs, materialExtraData, "", EMPTY_EXTRA_DATA);
 
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.EmptyEpochActivationResults.selector, epochId));
-        protocolConfig.confirmEpochActivation(epochId, noKeys, crsList, "", EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(epochId, noKeys, crsList, materialExtraData, "", EMPTY_EXTRA_DATA);
     }
 
     function test_activateEpochEventCarriesMaterialIds() public {
@@ -1307,21 +1385,19 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _buildEpochResults(KEY_COUNTER_BASE + 2, CRS_COUNTER_BASE + 2);
-        _confirmEpochActivation(
+        _confirmEpochActivationWithDefaultExtraData(
             KMS_CONTEXT_COUNTER_BASE + 2,
             EPOCH_COUNTER_BASE + 3,
             kmsPk0,
             keys,
-            crsList,
-            EMPTY_EXTRA_DATA
+            crsList
         );
-        _confirmEpochActivation(
+        _confirmEpochActivationWithDefaultExtraData(
             KMS_CONTEXT_COUNTER_BASE + 2,
             EPOCH_COUNTER_BASE + 3,
             kmsPk1,
             keys,
-            crsList,
-            EMPTY_EXTRA_DATA
+            crsList
         );
         (, uint256 finalActiveEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(finalActiveEpochId, EPOCH_COUNTER_BASE + 3);
@@ -1653,7 +1729,7 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _dummyEpochResults();
         keys[0].keyDigests[0].digest = hex"99887766";
-        _confirmEpochActivation(contextId, epochId, kmsPk2, keys, crsList, EMPTY_EXTRA_DATA);
+        _confirmEpochActivationWithDefaultExtraData(contextId, epochId, kmsPk2, keys, crsList);
 
         // No digest group reached the full quorum of 3 — epoch unchanged.
         (uint256 activeContextAfter, uint256 activeEpochAfter) = protocolConfig.getCurrentKmsContextAndEpoch();
@@ -1689,17 +1765,26 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _dummyEpochResults();
+        bytes memory materialExtraData = hex"02";
         bytes memory extraData = hex"01ab";
-        bytes memory signature = _signEpochActivation(contextId, epochId, kmsPk0, keys, crsList, extraData);
+        bytes memory signature = _signEpochActivation(
+            contextId,
+            epochId,
+            kmsPk0,
+            keys,
+            crsList,
+            materialExtraData,
+            extraData
+        );
         vm.expectEmit(true, true, false, true, address(protocolConfig));
         emit IProtocolConfig.EpochActivationConfirmation(
             epochId,
             vm.addr(kmsPk0),
-            _hashEpochMaterial(keys, crsList, extraData),
+            _hashEpochMaterial(keys, crsList, materialExtraData),
             signature,
             extraData
         );
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, extraData);
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList, materialExtraData, signature, extraData);
     }
 
     /// @dev epochMaterialHash matches a vector computed with the ethers EIP-712 encoder over the inputs of KMS's
@@ -1727,16 +1812,22 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             maxBitLength: 256,
             crsDigest: hex"1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e"
         });
-        bytes memory extraData = hex"07";
+        bytes memory materialExtraData = hex"07";
         bytes32 expected = 0xedea329c3327a3365c73121b33c78f3278029dbbd25899989a2fac9912416613;
 
         bytes memory signature = _computeSignature(
             kmsPk0,
-            _hashEpochActivation(contextId, EPOCH_COUNTER_BASE + 1, epochId, expected, extraData)
+            _hashEpochActivation(contextId, EPOCH_COUNTER_BASE + 1, epochId, expected, EMPTY_EXTRA_DATA)
         );
         vm.expectEmit(true, true, false, true, address(protocolConfig));
-        emit IProtocolConfig.EpochActivationConfirmation(epochId, vm.addr(kmsPk0), expected, signature, extraData);
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, extraData);
+        emit IProtocolConfig.EpochActivationConfirmation(
+            epochId,
+            vm.addr(kmsPk0),
+            expected,
+            signature,
+            EMPTY_EXTRA_DATA
+        );
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList, materialExtraData, signature, EMPTY_EXTRA_DATA);
     }
 
     /// @dev OZ ECDSA rejects non-canonical encodings of a valid signature: the high-s twin and the 64-byte compact form.
@@ -1750,20 +1841,35 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _dummyEpochResults();
 
+        bytes memory materialExtraData = _materialExtraData(KMS_CONTEXT_COUNTER_BASE + 1, epochId);
         bytes32 digest = _hashEpochActivation(
             KMS_CONTEXT_COUNTER_BASE + 1,
             EPOCH_COUNTER_BASE + 1,
             epochId,
-            _hashEpochMaterial(keys, crsList, EMPTY_EXTRA_DATA),
+            _hashEpochMaterial(keys, crsList, materialExtraData),
             EMPTY_EXTRA_DATA
         );
         (bytes memory highSSignature, bytes32 highS) = _highSSignature(kmsPk0, digest);
         vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureS.selector, highS));
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, highSSignature, EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(
+            epochId,
+            keys,
+            crsList,
+            materialExtraData,
+            highSSignature,
+            EMPTY_EXTRA_DATA
+        );
 
         (, bytes32 r, bytes32 s) = vm.sign(kmsPk0, digest);
         vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureLength.selector, 64));
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, abi.encodePacked(r, s), EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(
+            epochId,
+            keys,
+            crsList,
+            materialExtraData,
+            abi.encodePacked(r, s),
+            EMPTY_EXTRA_DATA
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1983,7 +2089,36 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _dummyEpochResults();
 
-        _confirmSplitEpochActivationDoesNotActivate(keys, crsList, keys, crsList, hex"01");
+        bytes memory materialExtraData = _materialExtraData(SPLIT_CONTEXT_ID, SPLIT_EPOCH_ID);
+        _confirmSplitEpochActivationDoesNotActivate(
+            keys,
+            crsList,
+            materialExtraData,
+            keys,
+            crsList,
+            materialExtraData,
+            hex"01"
+        );
+    }
+
+    /// @dev materialExtraData is part of epochMaterialHash, so the same material with different
+    ///      materialExtraData splits the confirmations.
+    function test_confirmEpochActivationDivergentMaterialExtraDataDoesNotActivate() public {
+        _setupTwoNodeContext();
+        (
+            IProtocolConfig.EpochKeyResult[] memory keys,
+            IProtocolConfig.EpochCrsResult[] memory crsList
+        ) = _dummyEpochResults();
+
+        _confirmSplitEpochActivationDoesNotActivate(
+            keys,
+            crsList,
+            _materialExtraData(SPLIT_CONTEXT_ID, SPLIT_EPOCH_ID),
+            keys,
+            crsList,
+            hex"01",
+            EMPTY_EXTRA_DATA
+        );
     }
 
     /// @dev previousEpochId is the latest active epoch, not `epochId - 1`, because a destroyed Pending epoch
@@ -2003,7 +2138,8 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _dummyEpochResults();
-        bytes32 epochMaterialHash = _hashEpochMaterial(keys, crsList, EMPTY_EXTRA_DATA);
+        bytes memory materialExtraData = _materialExtraData(contextId, epochId);
+        bytes32 epochMaterialHash = _hashEpochMaterial(keys, crsList, materialExtraData);
 
         // Over `epochId - 1`, the EpochActivationConfirmation signature recovers an address outside the committee.
         bytes memory signature = _computeSignature(
@@ -2011,13 +2147,13 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             _hashEpochActivation(contextId, EPOCH_COUNTER_BASE + 2, epochId, epochMaterialHash, EMPTY_EXTRA_DATA)
         );
         vm.expectPartialRevert(IProtocolConfig.EpochActivationUnauthorized.selector);
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList, materialExtraData, signature, EMPTY_EXTRA_DATA);
 
         signature = _computeSignature(
             kmsPk0,
             _hashEpochActivation(contextId, EPOCH_COUNTER_BASE + 1, epochId, epochMaterialHash, EMPTY_EXTRA_DATA)
         );
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList, materialExtraData, signature, EMPTY_EXTRA_DATA);
         _confirmEpochActivationWithDummyMaterial(contextId, epochId, kmsPk1);
 
         (, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
@@ -2034,12 +2170,20 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _dummyEpochResults();
-        bytes memory signature = _signEpochActivation(contextId, epochId, kmsPk0, keys, crsList, EMPTY_EXTRA_DATA);
+        bytes memory signature = _signEpochActivationWithDefaultExtraData(contextId, epochId, kmsPk0, keys, crsList);
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsEpoch.selector, epochId));
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, EMPTY_EXTRA_DATA);
+        protocolConfig.confirmEpochActivation(
+            epochId,
+            keys,
+            crsList,
+            _materialExtraData(contextId, epochId),
+            signature,
+            EMPTY_EXTRA_DATA
+        );
     }
 
-    /// @dev Both signers submit two key and two CRS results in the same order, so the epoch activates.
+    /// @dev Both signers submit two key and two CRS results in the same order with the same KMS
+    ///      materialExtraData, so the epoch activates.
     function test_confirmEpochActivationTwoResultsSameOrderActivates() public {
         _setupTwoNodeContext();
         uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 1;
@@ -2051,36 +2195,44 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _buildTwoEpochResults();
-        _confirmEpochActivation(contextId, epochId, kmsPk0, keys, crsList, EMPTY_EXTRA_DATA);
-        _confirmEpochActivation(contextId, epochId, kmsPk1, keys, crsList, EMPTY_EXTRA_DATA);
+        _confirmEpochActivationWithDefaultExtraData(contextId, epochId, kmsPk0, keys, crsList);
+        _confirmEpochActivationWithDefaultExtraData(contextId, epochId, kmsPk1, keys, crsList);
         (, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         assertEq(activeEpochId, epochId);
     }
 
-    /// @dev The key order is part of epochMaterialHash, so swapped keys split the confirmations.
-    function test_confirmEpochActivationSwappedKeysDoNotActivate() public {
+    /// @dev Swapped or duplicated keys or CRS results are not strictly ascending by id, so the call reverts.
+    function test_revertConfirmEpochActivationUnsortedResults() public {
         _setupTwoNodeContext();
+        uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+
         (
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _buildTwoEpochResults();
-        (IProtocolConfig.EpochKeyResult[] memory swappedKeys, ) = _buildTwoEpochResults();
-        (swappedKeys[0], swappedKeys[1]) = (swappedKeys[1], swappedKeys[0]);
+        bytes memory materialExtraData = _materialExtraData(KMS_CONTEXT_COUNTER_BASE + 1, epochId);
+        IProtocolConfig.EpochKeyResult[] memory swappedKeys = new IProtocolConfig.EpochKeyResult[](2);
+        (swappedKeys[0], swappedKeys[1]) = (keys[1], keys[0]);
+        IProtocolConfig.EpochCrsResult[] memory swappedCrs = new IProtocolConfig.EpochCrsResult[](2);
+        (swappedCrs[0], swappedCrs[1]) = (crsList[1], crsList[0]);
+        IProtocolConfig.EpochKeyResult[] memory duplicateKeys = new IProtocolConfig.EpochKeyResult[](2);
+        (duplicateKeys[0], duplicateKeys[1]) = (keys[0], keys[0]);
+        IProtocolConfig.EpochCrsResult[] memory duplicateCrs = new IProtocolConfig.EpochCrsResult[](2);
+        (duplicateCrs[0], duplicateCrs[1]) = (crsList[0], crsList[0]);
 
-        _confirmSplitEpochActivationDoesNotActivate(keys, crsList, swappedKeys, crsList, EMPTY_EXTRA_DATA);
-    }
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.UnsortedEpochActivationResults.selector, epochId));
+        protocolConfig.confirmEpochActivation(epochId, swappedKeys, crsList, materialExtraData, "", EMPTY_EXTRA_DATA);
 
-    /// @dev The CRS order is part of epochMaterialHash, so swapped CRS results split the confirmations.
-    function test_confirmEpochActivationSwappedCrsDoNotActivate() public {
-        _setupTwoNodeContext();
-        (
-            IProtocolConfig.EpochKeyResult[] memory keys,
-            IProtocolConfig.EpochCrsResult[] memory crsList
-        ) = _buildTwoEpochResults();
-        (, IProtocolConfig.EpochCrsResult[] memory swappedCrsList) = _buildTwoEpochResults();
-        (swappedCrsList[0], swappedCrsList[1]) = (swappedCrsList[1], swappedCrsList[0]);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.UnsortedEpochActivationResults.selector, epochId));
+        protocolConfig.confirmEpochActivation(epochId, keys, swappedCrs, materialExtraData, "", EMPTY_EXTRA_DATA);
 
-        _confirmSplitEpochActivationDoesNotActivate(keys, crsList, keys, swappedCrsList, EMPTY_EXTRA_DATA);
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.UnsortedEpochActivationResults.selector, epochId));
+        protocolConfig.confirmEpochActivation(epochId, duplicateKeys, crsList, materialExtraData, "", EMPTY_EXTRA_DATA);
+
+        vm.expectRevert(abi.encodeWithSelector(IProtocolConfig.UnsortedEpochActivationResults.selector, epochId));
+        protocolConfig.confirmEpochActivation(epochId, keys, duplicateCrs, materialExtraData, "", EMPTY_EXTRA_DATA);
     }
 
     // -----------------------------------------------------------------------

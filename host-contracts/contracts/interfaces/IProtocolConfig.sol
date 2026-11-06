@@ -239,6 +239,10 @@ interface IProtocolConfig is IProtocolConfigBase {
     /// @param epochId The epoch ID.
     error EmptyEpochActivationResults(uint256 epochId);
 
+    /// @notice The epoch activation keys are not strictly ascending by keyId, or the CRS results by crsId.
+    /// @param epochId The epoch ID.
+    error UnsortedEpochActivationResults(uint256 epochId);
+
     /// @notice The recovered signer is not in the active committee.
     /// @param signer The recovered signer.
     /// @param destroyedId The destroyed context or epoch ID.
@@ -331,15 +335,21 @@ interface IProtocolConfig is IProtocolConfigBase {
      * @dev Anyone may call. The EpochActivationConfirmation signature binds the key and CRS
      *      results through `epochMaterialHash` and must recover to a signer of the epoch's committee.
      * @param epochId The pending epoch ID.
-     * @param keys The key results to associate with the epoch.
-     * @param crsList The CRS results to associate with the epoch.
+     * @param keys The key results to associate with the epoch. Must be strictly ascending by keyId,
+     *        or the call reverts with UnsortedEpochActivationResults.
+     * @param crsList The CRS results to associate with the epoch. Must be strictly ascending by crsId,
+     *        or the call reverts with UnsortedEpochActivationResults.
+     * @param materialExtraData The extraData of every KeygenVerification and CrsgenVerification hashed into
+     *        `epochMaterialHash`.
      * @param signature The signer's EIP-712 EpochActivationConfirmation signature.
-     * @param extraData The extra data bound into the signature.
+     * @param extraData The EpochActivationConfirmation extraData bound into the signature. The contract
+     *        does not hash it into `epochMaterialHash`.
      */
     function confirmEpochActivation(
         uint256 epochId,
         EpochKeyResult[] calldata keys,
         EpochCrsResult[] calldata crsList,
+        bytes calldata materialExtraData,
         bytes calldata signature,
         bytes calldata extraData
     ) external;

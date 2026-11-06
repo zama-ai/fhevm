@@ -18,7 +18,7 @@ import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
-import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE, EXTRA_DATA_V2} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /**
@@ -508,13 +508,13 @@ abstract contract HostContractsDeployerTestUtils is Test {
     }
 
     /// @dev epochMaterialHash of EpochActivationConfirmation. Each entry is the EIP-712 hashStruct of its
-    ///      KeygenVerification or CrsgenVerification, with the confirmation's extraData.
+    ///      KeygenVerification or CrsgenVerification, with `materialExtraData` as the entry's extraData.
     function _hashEpochMaterial(
         IProtocolConfig.EpochKeyResult[] memory keys,
         IProtocolConfig.EpochCrsResult[] memory crsList,
-        bytes memory extraData
+        bytes memory materialExtraData
     ) internal pure returns (bytes32) {
-        bytes32 extraDataHash = keccak256(extraData);
+        bytes32 extraDataHash = keccak256(materialExtraData);
         bytes32[] memory keyHashes = new bytes32[](keys.length);
         for (uint256 i = 0; i < keys.length; i++) {
             keyHashes[i] = keccak256(
@@ -626,12 +626,38 @@ abstract contract HostContractsDeployerTestUtils is Test {
         uint256 pk,
         IProtocolConfig.EpochKeyResult[] memory keys,
         IProtocolConfig.EpochCrsResult[] memory crsList,
+        bytes memory materialExtraData,
         bytes memory extraData
     ) internal view returns (bytes memory) {
         (, uint256 previousEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
-        bytes32 epochMaterialHash = _hashEpochMaterial(keys, crsList, extraData);
+        bytes32 epochMaterialHash = _hashEpochMaterial(keys, crsList, materialExtraData);
         bytes32 digest = _hashEpochActivation(contextId, previousEpochId, epochId, epochMaterialHash, extraData);
         return _computeSignature(pk, digest);
+    }
+
+    /// @dev Signs with materialExtraData `_materialExtraData(contextId, epochId)` and extraData `EMPTY_EXTRA_DATA`.
+    function _signEpochActivationWithDefaultExtraData(
+        uint256 contextId,
+        uint256 epochId,
+        uint256 pk,
+        IProtocolConfig.EpochKeyResult[] memory keys,
+        IProtocolConfig.EpochCrsResult[] memory crsList
+    ) internal view returns (bytes memory) {
+        return
+            _signEpochActivation(
+                contextId,
+                epochId,
+                pk,
+                keys,
+                crsList,
+                _materialExtraData(contextId, epochId),
+                EMPTY_EXTRA_DATA
+            );
+    }
+
+    /// @dev KMS Core material extraData layout (v2): version byte, contextId, epochId.
+    function _materialExtraData(uint256 contextId, uint256 epochId) internal pure returns (bytes memory) {
+        return abi.encodePacked(EXTRA_DATA_V2, contextId, epochId);
     }
 
     /// @dev Setup helper that drives a pending epoch to Active for suites that need a usable KMS context.
@@ -641,7 +667,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
             IProtocolConfig.EpochKeyResult[] memory keys,
             IProtocolConfig.EpochCrsResult[] memory crsList
         ) = _dummyEpochResults();
-        _confirmEpochActivation(contextId, epochId, pk, keys, crsList, EMPTY_EXTRA_DATA);
+        _confirmEpochActivationWithDefaultExtraData(contextId, epochId, pk, keys, crsList);
     }
 
     /// @dev Confirms the creation, then the activation, of a pending context whose `count` signers use the
@@ -660,17 +686,45 @@ abstract contract HostContractsDeployerTestUtils is Test {
         }
     }
 
-    /// @dev Signs `keys`, `crsList` and `extraData` for `pk` and submits them.
+    /// @dev Signs `keys`, `crsList`, `materialExtraData` and `extraData` for `pk` and submits them.
     function _confirmEpochActivation(
         uint256 contextId,
         uint256 epochId,
         uint256 pk,
         IProtocolConfig.EpochKeyResult[] memory keys,
         IProtocolConfig.EpochCrsResult[] memory crsList,
+        bytes memory materialExtraData,
         bytes memory extraData
     ) internal {
-        bytes memory signature = _signEpochActivation(contextId, epochId, pk, keys, crsList, extraData);
-        protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, extraData);
+        bytes memory signature = _signEpochActivation(
+            contextId,
+            epochId,
+            pk,
+            keys,
+            crsList,
+            materialExtraData,
+            extraData
+        );
+        protocolConfig.confirmEpochActivation(epochId, keys, crsList, materialExtraData, signature, extraData);
+    }
+
+    /// @dev Confirms with materialExtraData `_materialExtraData(contextId, epochId)` and extraData `EMPTY_EXTRA_DATA`.
+    function _confirmEpochActivationWithDefaultExtraData(
+        uint256 contextId,
+        uint256 epochId,
+        uint256 pk,
+        IProtocolConfig.EpochKeyResult[] memory keys,
+        IProtocolConfig.EpochCrsResult[] memory crsList
+    ) internal {
+        _confirmEpochActivation(
+            contextId,
+            epochId,
+            pk,
+            keys,
+            crsList,
+            _materialExtraData(contextId, epochId),
+            EMPTY_EXTRA_DATA
+        );
     }
 
     function _signContextDestruction(

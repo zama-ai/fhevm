@@ -1,6 +1,6 @@
 // ProtocolConfig EIP-712 types, digest-input hashes and confirmation loops. The
 // host-contracts tests use them to sign and submit lifecycle confirmations. library-solidity keeps a reduced copy.
-import { AbiCoder, Signer, TypedDataDomain, TypedDataEncoder, TypedDataField, keccak256 } from 'ethers';
+import { AbiCoder, Signer, TypedDataDomain, TypedDataEncoder, TypedDataField, keccak256, solidityPacked } from 'ethers';
 
 import type { ProtocolConfig } from '../../types';
 import type {
@@ -70,6 +70,7 @@ async function protocolConfigDomain(pc: ProtocolConfig): Promise<TypedDataDomain
 }
 
 const abi = AbiCoder.defaultAbiCoder();
+const EXTRA_DATA_V2 = 2;
 
 // keccak256(abi.encode(KmsNode[] nodes, KmsThresholds thresholds)). The encode types come from the
 // ProtocolConfig ABI, so the tuple layout cannot drift from the contract. KmsNode is the projection of
@@ -85,17 +86,17 @@ function hashNodeConfig(
 }
 
 // keccak256(abi.encode(keyHashes, crsHashes)), where each entry is the EIP-712 hashStruct of its
-// KeygenVerification or CrsgenVerification, with the confirmation's extraData.
+// KeygenVerification or CrsgenVerification, with `materialExtraData` as the entry's extraData.
 function hashEpochMaterial(
   keys: IProtocolConfig.EpochKeyResultStruct[],
   crsList: IProtocolConfig.EpochCrsResultStruct[],
-  extraData: string,
+  materialExtraData: string,
 ): string {
   const keyHashes = keys.map((key) =>
-    TypedDataEncoder.hashStruct('KeygenVerification', KEYGEN_TYPES, { ...key, extraData }),
+    TypedDataEncoder.hashStruct('KeygenVerification', KEYGEN_TYPES, { ...key, extraData: materialExtraData }),
   );
   const crsHashes = crsList.map((crs) =>
-    TypedDataEncoder.hashStruct('CrsgenVerification', CRSGEN_TYPES, { ...crs, extraData }),
+    TypedDataEncoder.hashStruct('CrsgenVerification', CRSGEN_TYPES, { ...crs, extraData: materialExtraData }),
   );
   return keccak256(abi.encode(['bytes32[]', 'bytes32[]'], [keyHashes, crsHashes]));
 }
@@ -148,7 +149,8 @@ export async function confirmEpochActivation(
 ): Promise<void> {
   const domain = await protocolConfigDomain(pc);
   const [, previousEpochId] = await pc.getCurrentKmsContextAndEpoch();
-  const materialHash = hashEpochMaterial(keys, crsList, extraData);
+  const materialExtraData = solidityPacked(['uint8', 'uint256', 'uint256'], [EXTRA_DATA_V2, contextId, epochId]);
+  const materialHash = hashEpochMaterial(keys, crsList, materialExtraData);
   for (const signer of signers) {
     const signature = await signer.signTypedData(domain, CONFIRMATION_TYPES.EpochActivationConfirmation, {
       contextId,
@@ -157,7 +159,9 @@ export async function confirmEpochActivation(
       epochMaterialHash: materialHash,
       extraData,
     });
-    await (await pc.connect(signer).confirmEpochActivation(epochId, keys, crsList, signature, extraData)).wait();
+    await (
+      await pc.connect(signer).confirmEpochActivation(epochId, keys, crsList, materialExtraData, signature, extraData)
+    ).wait();
   }
 }
 
