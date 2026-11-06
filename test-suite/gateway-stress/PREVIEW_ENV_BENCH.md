@@ -19,211 +19,224 @@ to the cluster.
 
 1. Connect to the cluster and set your namespace:
 
-   ```bash
-   tailscale configure kubeconfig tailscale-operator-zws-dev.diplodocus-boa.ts.net
+```bash
+tailscale configure kubeconfig tailscale-operator-zws-dev.diplodocus-boa.ts.net
 export NS="fhevm-ci-<actor>-<suffix-or-run-id>"
-   kubectl get pods -n $NS   # sanity check
-   ```
+kubectl get pods -n $NS   # sanity check
+```
 
 2. Generate decryptable ciphertext handles with [`gen_handles.ts`](../e2e/scripts/gen_handles.ts),
-   run inside the idle test-suite pod (it already has all the required env). The key must match
-   `private_key` in the config below:
+run inside the idle test-suite pod (it already has all the required env). The key must match
+`private_key` in the config below:
 
-   ```bash
-   kubectl exec -n $NS -it job/test-suite -- bash -c \
-     'PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
-      npx hardhat run scripts/gen_handles.ts --network staging'
-   ```
+```bash
+kubectl exec -n $NS -it job/test-suite -- bash -c \
+  'PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+   npx hardhat run scripts/gen_handles.ts --network staging'
+```
 
-   Note the printed `allowed_contract`, `[[public_ct]]` and `[[user_ct]]` handles.
+Note the printed `allowed_contract`, `[[public_ct]]` and `[[user_ct]]` handles.
 
 3. Build the config with in-cluster URLs (one Postgres per KMS party, default 4):
 
-   ```bash
-   export DECRYPTION_ADDRESS=$(kubectl get cm gw-sc-addresses -n $NS -o jsonpath='{.data.decryption\.address}')
-   export ALLOWED_CONTRACT=0x...   # from step 2
-   export PUBLIC_HANDLE=0x...      # from step 2
-   export USER_HANDLE=0x...        # from step 2
+```bash
+export DECRYPTION_ADDRESS=$(kubectl get cm gw-sc-addresses -n $NS -o jsonpath='{.data.decryption\.address}')
+export PROTOCOL_CONFIG_ADDRESS=$(kubectl get cm host-sc-addresses -n $NS -o jsonpath='{.data.protocol_config\.address}')
+export ALLOWED_CONTRACT=0x...   # from step 2
+export PUBLIC_HANDLE=0x...      # from step 2
+export USER_HANDLE=0x...        # from step 2
 
-   cat > /tmp/gateway-stress-config.toml <<EOF
-   allowed_contract = "${ALLOWED_CONTRACT}"
-   tests_duration = "500ms"
-   tests_interval = "1s"
-   parallel_requests = 1
+# Sanity check: every value must be non-empty, in the shell running the heredoc below.
+echo "decryption=${DECRYPTION_ADDRESS} protocol_config=${PROTOCOL_CONFIG_ADDRESS}"
 
-   [[public_ct]]
-   handle = "${PUBLIC_HANDLE}"
+cat > /tmp/gateway-stress-config.toml <<EOF
+allowed_contract = "${ALLOWED_CONTRACT}"
+tests_duration = "500ms"
+tests_interval = "1s"
+parallel_requests = 1
 
-   [[user_ct]]
-   handle = "${USER_HANDLE}"
+[[public_ct]]
+handle = "${PUBLIC_HANDLE}"
 
-   [blockchain]
-   gateway_url = "http://anvil-gateway-anvil-node:8546"
-   host_chain_id = 12345
-   gateway_chain_id = 54321
-   decryption_address = "${DECRYPTION_ADDRESS}"
-   private_key = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+[[user_ct]]
+handle = "${USER_HANDLE}"
 
-   [database]
-   urls = [
-       "postgresql://zama:zama@postgres-connector-1:5432/connector",
-       "postgresql://zama:zama@postgres-connector-2:5432/connector",
-       "postgresql://zama:zama@postgres-connector-3:5432/connector",
-       "postgresql://zama:zama@postgres-connector-4:5432/connector",
-   ]
-   pool_size = 10
-   connection_timeout = "30s"
-   insertion_chunk_size = 10
+[blockchain]
+gateway_url = "http://anvil-gateway-anvil-node:8546"
+host_chain_id = 12345
+gateway_chain_id = 54321
+decryption_address = "${DECRYPTION_ADDRESS}"
+private_key = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
-   [http]
-   urls = [
-      "https://kms-connector-1-kms-connector-proxy:8443",
-      "https://kms-connector-2-kms-connector-proxy:8443",
-      "https://kms-connector-3-kms-connector-proxy:8443",
-      "https://kms-connector-4-kms-connector-proxy:8443",
-   ]
-   api_key = "fhevm-e2e-kms-connector-api-key"
-   danger_accept_invalid_certs = true
-   request_timeout = "120s"
-   EOF
-   ```
+[database]
+urls = [
+    "postgresql://zama:zama@postgres-connector-1:5432/connector",
+    "postgresql://zama:zama@postgres-connector-2:5432/connector",
+    "postgresql://zama:zama@postgres-connector-3:5432/connector",
+    "postgresql://zama:zama@postgres-connector-4:5432/connector",
+]
+pool_size = 10
+connection_timeout = "30s"
+insertion_chunk_size = 10
 
-   Check the proxy service names and the API key of your preview env (the sha256 of the key is the
-   proxies' `KMS_CONNECTOR_API_KEY_DIGEST`); `danger_accept_invalid_certs` trusts the proxies'
-   self-signed test certificate.
+[http]
+# urls and tx_sender_addresses come from the pod's env (step 5).
+urls = []
+tx_sender_addresses = []
+ethereum_chain_id = 12345
+protocol_config_address = "${PROTOCOL_CONFIG_ADDRESS}"
+sender_private_key = "0xdcd7f0c4990a3df000d45f6eb2728a8cf93f0d16b1f6bdffbe07f5a250250e6c"
+danger_accept_invalid_certs = true
+request_timeout = "120s"
+EOF
+```
+
+The `[http]` requests are authenticated with `FhevmSig` headers: `sender_private_key` is the e2e
+test key, whose address is `kmsConnectorProxy.allowedSenders` in
+[`values-kms-connector-e2e.yaml`](../../ci/preview-env/kms-connector/values-kms-connector-e2e.yaml).
+The per-party URLs and tx-sender addresses (the `audience` of each proxy) are read from the
+`kms-connector-http` ConfigMap by the pod of step 5.
+`danger_accept_invalid_certs` trusts the proxies' self-signed test certificate.
 
 4. Ship the config and the bench input CSVs to the cluster as a ConfigMap:
 
-   ```bash
-   kubectl create configmap gateway-stress-config -n $NS \
-     --from-file=config.toml=/tmp/gateway-stress-config.toml \
-     --from-file=db_bench.csv=templates/db_bench.csv \
-     --from-file=http_bench.csv=templates/http_bench.csv \
-     --from-file=gw_bench.csv=templates/gw_bench.csv
-   ```
+```bash
+kubectl create configmap gateway-stress-config -n $NS \
+  --from-file=config.toml=/tmp/gateway-stress-config.toml \
+  --from-file=db_bench.csv=templates/db_bench.csv \
+  --from-file=http_bench.csv=templates/http_bench.csv \
+  --from-file=gw_bench.csv=templates/gw_bench.csv
+```
 
-   (To update it later: add `--dry-run=client -o yaml | kubectl apply -f -`,
-   then recreate the pod.)
+(To update it later: add `--dry-run=client -o yaml | kubectl apply -f -`, then recreate the pod
+with `kubectl delete pod gateway-stress -n $NS` and step 5. An empty address in the config fails
+with `invalid string length for key ...`.)
 
 5. Deploy the gateway-stress pod (pick a tag published by the manual
-   `gateway-stress-tool-docker-build` workflow):
+`gateway-stress-tool-docker-build` workflow):
 
-   ```bash
-   cat <<EOF | kubectl apply -n "$NS" -f -
-   apiVersion: v1
-   kind: Pod
-   metadata:
-     name: gateway-stress
-   spec:
-     restartPolicy: Never
-     imagePullSecrets:
-       - name: registry-credentials
-     containers:
-       - name: gateway-stress
-         image: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/gateway-stress-tool:<tag>
-         command: ["sleep"]
-         args: ["86400000"]
-         volumeMounts:
-           - name: cfg
-             mountPath: /config
-     volumes:
-       - name: cfg
-         configMap:
-           name: gateway-stress-config
-   EOF
-   ```
+```bash
+cat <<EOF | kubectl apply -n "$NS" -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gateway-stress
+spec:
+  restartPolicy: Never
+  imagePullSecrets:
+    - name: registry-credentials
+  containers:
+    - name: gateway-stress
+      image: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/gateway-stress-tool:<tag>
+      command: ["sleep"]
+      args: ["86400000"]
+      # Override the config's [http] section with the env's actual values.
+      env:
+        - name: GATEWAY_STRESS__HTTP__URLS
+          valueFrom: {configMapKeyRef: {name: kms-connector-http, key: endpoint-urls}}
+        - name: GATEWAY_STRESS__HTTP__TX_SENDER_ADDRESSES
+          valueFrom: {configMapKeyRef: {name: kms-connector-http, key: tx-sender-addresses}}
+      volumeMounts:
+        - name: cfg
+          mountPath: /config
+  volumes:
+    - name: cfg
+      configMap:
+        name: gateway-stress-config
+EOF
+```
 
 6. Set the tx-senders' state according to the bench path:
 
-   **For `bench-db`: stop every party's tx-sender.**
+**For `bench-db`: stop every party's tx-sender.**
 
-   ```bash
-   kubectl scale deployment -n $NS -l app=kms-connector-tx-sender --replicas=0
-   ```
+```bash
+kubectl scale deployment -n $NS -l app=kms-connector-tx-sender --replicas=0
+```
 
-   Why: the `db`/`bench-db` path inserts decryption requests **directly into
-   the connectors' DBs**, so those requests never existed on the gateway
-   chain. If the tx-senders were left running, they would pick up the
-   kms-workers' responses and submit them on-chain, where they revert (no
-   matching on-chain request) — wasted gas, log spam, and tx-sender retry
-   noise polluting the measurement. Stopping them isolates the
-   kms-worker + kms-core pipeline, which is what `bench-db` measures.
+Why: the `db`/`bench-db` path inserts decryption requests **directly into
+the connectors' DBs**, so those requests never existed on the gateway
+chain. If the tx-senders were left running, they would pick up the
+kms-workers' responses and submit them on-chain, where they revert (no
+matching on-chain request) — wasted gas, log spam, and tx-sender retry
+noise polluting the measurement. Stopping them isolates the
+kms-worker + kms-core pipeline, which is what `bench-db` measures.
 
-   **For `bench-http`: the tx-senders can stay as they are.** HTTP-sourced
-   requests and responses are tagged `source = 'http'` in the connectors' DBs
-   and are never submitted on-chain, so the tx-senders neither help nor hurt.
+**For `bench-http`: the tx-senders can stay as they are.** HTTP-sourced
+requests and responses are tagged `source = 'http'` in the connectors' DBs
+and are never submitted on-chain, so the tx-senders neither help nor hurt.
 
-   **For `bench-gw`: the tx-senders are required — make sure they run.**
+**For `bench-gw`: the tx-senders are required — make sure they run.**
 
-   The tool waits for the decryption responses on the gateway chain, and only
-   the tx-senders put them there. If a previous `bench-db` run scaled them
-   down, bring them back first:
+The tool waits for the decryption responses on the gateway chain, and only
+the tx-senders put them there. If a previous `bench-db` run scaled them
+down, bring them back first:
 
-   ```bash
-   kubectl scale deployment -n $NS -l app=kms-connector-tx-sender --replicas=1
-   ```
+```bash
+kubectl scale deployment -n $NS -l app=kms-connector-tx-sender --replicas=1
+```
 
 7. Run the benchmark inside the pod, then pull the results.
 
-   DB path:
+DB path:
 
-   ```bash
-   kubectl exec -n $NS -it gateway-stress -- /bin/gateway-stress \
-     -c /config/config.toml bench-db \
-     -i /config/db_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
-   ```
+```bash
+kubectl exec -n $NS -it gateway-stress -- /bin/gateway-stress \
+  -c /config/config.toml bench-db \
+  -i /config/db_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
+```
 
-   HTTP path (check the proxies' service names with `kubectl get svc -n $NS | grep proxy`
-   and adjust `[http].urls` if needed):
+HTTP path (the proxies' URLs and audiences come from the `kms-connector-http` ConfigMap, see
+step 5):
 
-   ```bash
-   kubectl exec -n $NS -it gateway-stress -- /bin/gateway-stress \
-     -c /config/config.toml bench-http \
-     -i /config/http_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
-   ```
+```bash
+kubectl exec -n $NS -it gateway-stress -- /bin/gateway-stress \
+  -c /config/config.toml bench-http \
+  -i /config/http_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
+```
 
-   Gateway path:
+Gateway path:
 
-   ```bash
-   kubectl exec -n $NS -it gateway-stress -- /bin/gateway-stress \
-     -c /config/config.toml bench-gw \
-     -i /config/gw_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
-   ```
+```bash
+kubectl exec -n $NS -it gateway-stress -- /bin/gateway-stress \
+  -c /config/config.toml bench-gw \
+  -i /config/gw_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
+```
 
-   Then:
+Then:
 
-   ```bash
-   kubectl cp $NS/gateway-stress:/tmp/bench.csv ./bench.csv
-   kubectl cp $NS/gateway-stress:/tmp/full.csv ./full.csv
-   ```
+```bash
+kubectl cp $NS/gateway-stress:/tmp/bench.csv ./bench.csv
+kubectl cp $NS/gateway-stress:/tmp/full.csv ./full.csv
+```
 
-   Reminder: the DB and HTTP paths support `public` and `user_v2` bursts only
-   (legacy `user` needs an on-chain tx_hash for the ACL check over the DB, and
-   has no HTTP route); the gateway path supports all three.
+Reminder: the DB and HTTP paths support `public` and `user_v2` bursts only
+(legacy `user` needs an on-chain tx_hash for the ACL check over the DB, and
+has no HTTP route); the gateway path supports all three.
 
-   > **Re-running `bench-db` or `bench-http`:** the kms-cores remember (in RAM) the request IDs
-   > they have already processed, and reject any decryption reusing one — so a
-   > second run with the same IDs is silently rejected. Either bump
-   > `--id-counter-start` on the next run to use a fresh ID range or restart
-   > all the kms-cores to wipe that in-memory state so a fresh core accepts
-   > the same IDs again:
-   >
-   > ```bash
-   > kubectl rollout restart statefulset -n $NS $(kubectl get sts -n $NS -o name | grep kms-core | cut -d/ -f2)
-   > ```
+> **Re-running `bench-db` or `bench-http`:** the kms-cores remember (in RAM) the request IDs
+> they have already processed, and reject any decryption reusing one — so a
+> second run with the same IDs is silently rejected. Either bump
+> `--id-counter-start` on the next run to use a fresh ID range or restart
+> all the kms-cores to wipe that in-memory state so a fresh core accepts
+> the same IDs again:
+>
+> ```bash
+> kubectl rollout restart statefulset -n $NS $(kubectl get sts -n $NS -o name | grep kms-core | cut -d/ -f2)
+> ```
 
 8. Watch the run in Grafana (requires the env to have been deployed with
-   `observability=true`):
+`observability=true`):
 
-   ```bash
-   kubectl port-forward -n $NS svc/grafana 3000:3000     # http://localhost:3000
-   kubectl port-forward -n $NS svc/jaeger 16686:16686    # traces (optional)
-   ```
+```bash
+kubectl port-forward -n $NS svc/grafana 3000:3000     # http://localhost:3000
+kubectl port-forward -n $NS svc/jaeger 16686:16686    # traces (optional)
+```
 
 9. Restore / clean up:
 
-   ```bash
-   kubectl scale deployment -n $NS -l app=kms-connector-tx-sender --replicas=1
-   kubectl delete pod gateway-stress -n $NS
-   kubectl delete configmap gateway-stress-config -n $NS
-   ```
+```bash
+kubectl scale deployment -n $NS -l app=kms-connector-tx-sender --replicas=1
+kubectl delete pod gateway-stress -n $NS
+kubectl delete configmap gateway-stress-config -n $NS
+```

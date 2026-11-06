@@ -39,6 +39,10 @@ Some of the configuration fields can be overridden via the CLI:
 - `sequential`
 - `id_counter_start` (via `--id-counter-start`, DB and HTTP paths only)
 
+Any configuration field can also be overridden by a `GATEWAY_STRESS__<SECTION>__<FIELD>` environment
+variable (ex: `GATEWAY_STRESS__HTTP__PROTOCOL_CONFIG_ADDRESS`). `GATEWAY_STRESS__HTTP__URLS` and
+`GATEWAY_STRESS__HTTP__TX_SENDER_ADDRESSES` take comma-separated lists.
+
 ## Run
 
 ### Stress testing
@@ -88,6 +92,10 @@ Once the `gateway-stress` binary has been built, you can run the following comma
 
 The `http`/`bench-http` path posts decryption to every party's connector proxy and measures the
 time until every party answered `200`.
+Each request (including the startup `GET /version` health check) is authenticated with an
+`Authorization: FhevmSig ...` header (see [`shared/fhevm-sig-auth`](../../shared/fhevm-sig-auth)),
+signed by `[http].sender_private_key` for the EIP-712 domain of `[http].ethereum_chain_id` and
+`[http].protocol_config_address`, with the party's `tx_sender_addresses` entry as `audience`.
 The connector derives the `decryption_id` from the request body and serves an already known id
 from its response table. So, to avoid the benchmark to measure a DB lookup instead of a
 decryption, the tool uses the same handle for each request, but suffixes the usual v2 `extraData`

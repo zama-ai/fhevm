@@ -3,7 +3,7 @@ use crate::{
     db::request_builder::COMMON_PUBLIC_KEY,
     decryption::{
         types::DecryptionType,
-        user::{DURATION_SECONDS, EXTRA_DATA},
+        user::{DURATION_SECONDS, EXTRA_DATA, start_timestamp},
     },
     eip712::user_decrypt_v2_eip712_signature,
     http::types::HttpDecryptionRequest,
@@ -17,7 +17,7 @@ use kms_connector_api::{
     AttestationType, HandleEntry, PublicDecryptionRequest, RequestValidity, UserDecryptionPayload,
     UserDecryptionRequest,
 };
-use std::{str::FromStr, time::SystemTime};
+use std::str::FromStr;
 
 /// Builds RFC 033 request bodies whose content-derived decryption ids are all distinct.
 ///
@@ -97,9 +97,7 @@ impl HttpRequestBuilder {
             .map_err(|e| anyhow!("Invalid private key: {e}"))?;
         let user_address = signer.address();
 
-        let start_timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_secs();
+        let start_timestamp = start_timestamp()?;
         let allowed_contracts = vec![self.allowed_contract];
         let extra_data = self.unique_extra_data();
 

@@ -2,7 +2,7 @@ use crate::{
     config::{BlockchainConfig, CiphertextConfig},
     decryption::{
         types::{DecryptionRequest, DecryptionType},
-        user::{DURATION_SECONDS, EXTRA_DATA},
+        user::{DURATION_SECONDS, EXTRA_DATA, start_timestamp},
     },
     eip712::user_decrypt_v2_eip712_signature,
 };
@@ -20,7 +20,7 @@ use fhevm_gateway_bindings::decryption::{
     IDecryption::{RequestValiditySeconds, UserDecryptionRequestPayload},
 };
 use rand::RngExt;
-use std::{str::FromStr, time::SystemTime};
+use std::str::FromStr;
 
 pub struct RequestBuilder {
     id_counter: U256,
@@ -109,9 +109,7 @@ impl RequestBuilder {
         let user_address = signer.address();
 
         let decryption_id = self.generate_unique_id();
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_secs();
+        let timestamp = start_timestamp()?;
         let allowed_contracts = vec![self.allowed_contract];
 
         let signature = user_decrypt_v2_eip712_signature(
