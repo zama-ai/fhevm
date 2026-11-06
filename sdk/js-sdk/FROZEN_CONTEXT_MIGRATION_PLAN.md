@@ -104,7 +104,7 @@ Both must return only the definitions themselves (about to be deleted).
   `resolveFhevmProtocolVersion`, `_resolveFhevmProtocolContext`,
   `resolveFhevmTfheVersion`, `resolveFhevmTkmsVersion` (remove the file if nothing
   else remains). Keep the pure derivations they used (they live in
-  `ProtocolVersionResolver-p.ts`).
+  `pubKeyCrsVersionForChain-p.ts`).
 
 ### Step 4 — remove the symbol machinery
 

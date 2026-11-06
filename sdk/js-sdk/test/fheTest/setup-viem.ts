@@ -34,7 +34,6 @@ export type FheTestViemConfig = {
   };
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
-  readonly protocolVersion: FheTestBaseEnv['protocolVersion'];
   readonly fheEncryptionKeyTfheVersion: string;
 };
 
@@ -111,7 +110,6 @@ function _buildConfig(env: FheTestBaseEnv): FheTestViemConfig {
     },
     zamaApiKey: env.zamaApiKey,
     fheTestAddress: env.fheTestAddress,
-    protocolVersion: env.protocolVersion,
     fheEncryptionKeyTfheVersion: env.fheEncryptionKeyTfheVersion,
   };
 }

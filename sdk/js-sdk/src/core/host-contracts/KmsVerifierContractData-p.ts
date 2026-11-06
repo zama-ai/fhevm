@@ -1,7 +1,6 @@
 import type { ChecksummedAddress, Uint64BigInt, Uint8Number } from '../types/primitives.js';
 import type { KmsEip712Domain, KmsVerifierContractData } from '../types/kms.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import type { HostContractVersion } from '../types/hostContract.js';
 import { assertOwnedBy } from '../runtime/CoreFhevmRuntime-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -15,7 +14,6 @@ const VERIFY_FUNC = Symbol('KmsVerifierContractData.verify');
 
 class KmsVerifierContractDataImpl implements KmsVerifierContractData {
   readonly #owner: WeakRef<FhevmRuntime>;
-  readonly #version: HostContractVersion<'KMSVerifier'>;
   readonly #address: ChecksummedAddress;
   readonly #eip712Domain: KmsEip712Domain;
 
@@ -23,7 +21,6 @@ class KmsVerifierContractDataImpl implements KmsVerifierContractData {
     privateToken: symbol,
     owner: WeakRef<FhevmRuntime>,
     parameters: {
-      readonly version: HostContractVersion<'KMSVerifier'>;
       readonly address: ChecksummedAddress;
       readonly eip712Domain: KmsEip712Domain;
     },
@@ -32,16 +29,11 @@ class KmsVerifierContractDataImpl implements KmsVerifierContractData {
       throw new Error('Unauthorized');
     }
     this.#owner = owner;
-    this.#version = Object.freeze({ ...parameters.version });
     this.#address = parameters.address;
     this.#eip712Domain = { ...parameters.eip712Domain };
 
     Object.freeze(this.#eip712Domain);
     Object.freeze(this);
-  }
-
-  public get version(): HostContractVersion<'KMSVerifier'> {
-    return this.#version;
   }
 
   public get address(): ChecksummedAddress {
@@ -73,7 +65,6 @@ class KmsVerifierContractDataImpl implements KmsVerifierContractData {
 
   public toJSON(): Record<string, unknown> {
     return {
-      version: this.#version,
       address: this.#address,
       eip712Domain: this.#eip712Domain,
     };
@@ -89,7 +80,6 @@ Object.freeze(KmsVerifierContractDataImpl);
 export function createKmsVerifierContractData(
   owner: WeakRef<FhevmRuntime>,
   parameters: {
-    readonly version: HostContractVersion<'KMSVerifier'>;
     readonly address: ChecksummedAddress;
     readonly eip712Domain: KmsEip712Domain;
     readonly kmsSigners: readonly ChecksummedAddress[];
