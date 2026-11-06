@@ -50,7 +50,6 @@ jobs:
               - shared/ciphertext-attestation/**
               - shared/fhevm-sig-auth/**
               # The Merkle proof server depends on it by path.
-              - shared/request-authorization/**
               - shared/kms-context/**
   cargo-clippy:
     name: coprocessor-cargo-clippy/cargo-clippy

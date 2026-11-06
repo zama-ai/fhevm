@@ -33,7 +33,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use alloy::primitives::Address;
+use alloy::primitives::{keccak256, Address, B256};
 use axum::{
     body::{Body, Bytes},
     extract::State,
@@ -42,12 +42,15 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use fhevm_sig_auth::{
+    AuthError, FhevmSigHeader, FhevmSigVerifier, PathAndQuery,
+    DEFAULT_CLOCK_SKEW, DEFAULT_MAX_AUTH_VALIDITY,
+};
 use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
 use prometheus::{
     register_histogram, register_int_counter_vec, register_int_gauge,
     Histogram, IntCounterVec, IntGauge,
 };
-use request_authorization::{Authorization, AuthorizationError};
 use serde::{de::DeserializeOwned, Serialize};
 use sqlx::PgPool;
 use tokio::{net::TcpListener, sync::Semaphore};
@@ -464,9 +467,12 @@ async fn answer_merkle_proofs(
                 "body unreadable or over {MAX_REQUEST_BYTES} bytes: {err}"
             ))
         })?;
-    authorization.check_body(&body).map_err(|err| {
-        HttpError::new(ErrorCode::AuthBodyMismatch, err.to_string())
-    })?;
+    if keccak256(&body) != authorization.body_digest {
+        return Err(HttpError::new(
+            ErrorCode::AuthBodyMismatch,
+            "the body's keccak-256 is not the signed digest",
+        ));
+    }
     // Parsing costs neither the rate nor a read, so a malformed request is
     // refused each time and never remembered.
     let queries = parse_request(&body)?;
@@ -483,7 +489,7 @@ async fn answer_merkle_proofs(
     };
     let admission = state.answers.admit(
         authorization.signing_hash,
-        authorization.accepted_until(),
+        authorization.accepted_until,
         signer,
         now,
         charge,
@@ -605,6 +611,22 @@ fn cbor_response(body: Bytes) -> Response {
 /// waits 10 s for an answer by default (`host_rpc_call_timeout`).
 const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
 
+/// The signed request target: the route's path, without a query string.
+fn signed_path() -> PathAndQuery {
+    PathAndQuery::from_static(MERKLE_PROOFS_PATH)
+}
+
+/// An `Authorization` header within its validity, and who signed it.
+struct Authorization {
+    signer: Address,
+    /// What the signer signed: one hash per registry, path, body, expiry and audience.
+    signing_hash: B256,
+    /// The keccak-256 of the body the signer signed.
+    body_digest: B256,
+    /// The last Unix second the server accepts it, clock skew included.
+    accepted_until: u64,
+}
+
 /// Returns what the KMS tx-sender that signed this request for this route and
 /// `audience` signed, from the `Authorization` header alone.
 async fn authenticate(
@@ -625,31 +647,44 @@ async fn authenticate(
             "no Authorization header",
         ));
     };
-    let authorization = header
-        .to_str()
-        .map_err(|_| AuthorizationError::Malformed)
-        .and_then(|header| {
-            request_authorization::recover_authorization(
-                &set.registry,
-                header,
-                MERKLE_PROOFS_PATH,
-                audience,
-                now,
-            )
-        })
-        .map_err(|err| {
-            let code = match err {
-                AuthorizationError::Expired { .. } => ErrorCode::AuthExpired,
-                AuthorizationError::BadSignature => {
-                    ErrorCode::AuthUnknownSigner
-                }
-                AuthorizationError::Malformed
-                | AuthorizationError::TooLongLived { .. } => {
-                    ErrorCode::AuthMalformed
-                }
-            };
-            HttpError::new(code, err.to_string())
-        })?;
+    let refused = |err: AuthError| {
+        let code = match err {
+            AuthError::Expired => ErrorCode::AuthExpired,
+            // A signature that recovers no address, or the high-s twin of one.
+            AuthError::InvalidSignature(_) => ErrorCode::AuthUnknownSigner,
+            AuthError::Missing
+            | AuthError::Malformed(_)
+            | AuthError::TooLongLived
+            | AuthError::QueryString
+            | AuthError::UnknownSigner(_)
+            | AuthError::BodyMismatch => ErrorCode::AuthMalformed,
+        };
+        HttpError::new(code, err.to_string())
+    };
+    let expires = FhevmSigHeader::parse(header.as_bytes())
+        .map_err(refused)?
+        .expires;
+    let domain = set.registry.eip712_domain();
+    // The set is checked below, after a woken read for an unknown signer.
+    let (signer, body_digest) = FhevmSigVerifier::new(
+        domain.clone(),
+        audience,
+        std::collections::HashSet::new(),
+    )
+    .recover(Some(header.as_bytes()), &signed_path(), now)
+    .map_err(refused)?;
+    let authorization = Authorization {
+        signer,
+        signing_hash: fhevm_sig_auth::signing_hash(
+            &domain,
+            audience,
+            &signed_path(),
+            body_digest,
+            expires,
+        ),
+        body_digest,
+        accepted_until: expires.saturating_add(DEFAULT_CLOCK_SKEW.as_secs()),
+    };
     if !set.senders.contains(&authorization.signer) {
         senders.refresh_after_miss(UNKNOWN_SIGNER_WAIT).await;
         let known = senders
@@ -830,11 +865,10 @@ impl Modify for FhevmSigScheme {
                          in an Active KMS context of the canonical ProtocolConfig. The signer is \
                          authenticated from the header before the body is read, then the body \
                          must match `digest`. Accepted up to {} s after expiry and at most {} s \
-                         ahead. The `shared/request-authorization` crate defines the typed data.",
-                        request_authorization::SCHEME,
-                        request_authorization::CLOCK_SKEW_SECS,
-                        request_authorization::MAX_AUTH_VALIDITY_SECS
-                            + request_authorization::CLOCK_SKEW_SECS,
+                         ahead. The `shared/fhevm-sig-auth` crate defines the typed data.",
+                        fhevm_sig_auth::SCHEME,
+                        DEFAULT_CLOCK_SKEW.as_secs(),
+                        DEFAULT_MAX_AUTH_VALIDITY.as_secs() + DEFAULT_CLOCK_SKEW.as_secs(),
                     ),
                 ))),
             );
@@ -866,12 +900,12 @@ pub struct ApiDoc;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::kms_tx_senders::KeyRegistry;
     use crate::{
         answer_cache::ENTRY_OVERHEAD_BYTES,
         kms_tx_senders::{stub, KmsTxSenderSet},
     };
     use alloy::signers::local::PrivateKeySigner;
-    use request_authorization::KeyRegistry;
     use sqlx::postgres::PgPoolOptions;
     use std::collections::HashSet;
 
@@ -997,16 +1031,17 @@ mod tests {
         expires: u64,
         audience: Address,
     ) -> String {
-        request_authorization::authorize(
+        fhevm_sig_auth::sign(
             signer,
-            &REGISTRY,
-            MERKLE_PROOFS_PATH,
+            &REGISTRY.eip712_domain(),
+            audience,
+            &signed_path(),
             body,
             expires,
-            audience,
         )
         .await
         .expect("sign")
+        .to_string()
     }
 
     async fn signed(
@@ -1138,8 +1173,8 @@ mod tests {
             &connector,
             &body,
             unix_now_secs()
-                + request_authorization::MAX_AUTH_VALIDITY_SECS
-                + request_authorization::CLOCK_SKEW_SECS
+                + DEFAULT_MAX_AUTH_VALIDITY.as_secs()
+                + DEFAULT_CLOCK_SKEW.as_secs()
                 + 60,
         )
         .await;
@@ -1185,7 +1220,7 @@ mod tests {
         let expired = signed(
             &connector,
             &body,
-            unix_now_secs() - request_authorization::CLOCK_SKEW_SECS - 60,
+            unix_now_secs() - DEFAULT_CLOCK_SKEW.as_secs() - 60,
         )
         .await;
         let response = post(Some(expired), body.clone()).await.expect("send");
@@ -1329,7 +1364,7 @@ mod tests {
         let expired = signed(
             &connector,
             &body,
-            unix_now_secs() - request_authorization::CLOCK_SKEW_SECS - 60,
+            unix_now_secs() - DEFAULT_CLOCK_SKEW.as_secs() - 60,
         )
         .await;
         assert_eq!(

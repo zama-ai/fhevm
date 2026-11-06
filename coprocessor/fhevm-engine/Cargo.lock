@@ -8275,16 +8275,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
-name = "request-authorization"
-version = "0.15.0"
-dependencies = [
- "alloy-primitives",
- "alloy-signer",
- "alloy-sol-types",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "reqwest"
 version = "0.12.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10119,13 +10109,13 @@ dependencies = [
  "ciborium",
  "clap",
  "fhevm-engine-common",
+ "fhevm-sig-auth",
  "fhevm_host_bindings",
  "governor",
  "hex",
  "humantime",
  "kms-context",
  "prometheus",
- "request-authorization",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

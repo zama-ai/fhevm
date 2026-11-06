@@ -20,13 +20,13 @@ use alloy::{
     eips::{BlockId, BlockNumberOrTag},
     primitives::{Address, U256},
     providers::Provider,
+    sol_types::Eip712Domain,
     transports::http::reqwest,
 };
 use anyhow::{anyhow, Context};
 use fhevm_host_bindings::protocol_config::ProtocolConfig::ProtocolConfigInstance;
 use kms_context::KMS_CONTEXT_COUNTER_BASE;
 use prometheus::{register_int_gauge, IntGauge};
-use request_authorization::KeyRegistry;
 use solana_host_follower::url_origin;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
@@ -38,6 +38,20 @@ use crate::{gauge_value, unix_now_secs};
 const WOKEN_POLL_SPACING: Duration = Duration::from_secs(1);
 /// The RPC client has no request timeout, so a hung call would stall every later poll.
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// The canonical `ProtocolConfig` and its chain: the `FhevmSig` EIP-712 domain the accepted
+/// signatures name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KeyRegistry {
+    pub chain_id: u64,
+    pub contract: Address,
+}
+
+impl KeyRegistry {
+    pub fn eip712_domain(&self) -> Eip712Domain {
+        fhevm_sig_auth::domain(self.chain_id, self.contract)
+    }
+}
 
 /// The accepted callers and the registry their signatures name, once read.
 #[derive(Clone, Debug, PartialEq, Eq)]

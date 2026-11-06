@@ -158,7 +158,7 @@ jobs:
           - solana/crates/zama-solana-request/**
           - gateway-contracts/rust_bindings/**
           - host-contracts/rust_bindings/**
-          - shared/request-authorization/**
+          - shared/fhevm-sig-auth/**
           - shared/kms-context/**
           - shared/ciphertext-attestation/**
           - shared/user-decryption-signature/**
