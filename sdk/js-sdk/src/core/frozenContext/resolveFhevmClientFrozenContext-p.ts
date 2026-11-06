@@ -7,6 +7,7 @@ import { addressToChecksummedAddress, asAddress } from '../base/address.js';
 import { executeWithBatching } from '../base/promise.js';
 import { assertIsHostContractVersionOf, getHostContractVersion } from '../host-contracts/HostContractVersion-p.js';
 import { pubKeyCrsVersionForChain } from '../runtime/pubKeyCrsVersionForChain-p.js';
+import { assertFhevmChainContracts } from '../chains/utils.js';
 import { createFhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -22,13 +23,16 @@ import { createFhevmClientFrozenContext } from './fhevmClientFrozenContext-p.js'
  * to resolve or store here.
  *
  * It also reads `getVersion()` on the configured host contracts (ACL,
- * InputVerifier, KMSVerifier and, if configured, ProtocolConfig), in one batched
+ * InputVerifier, KMSVerifier and ProtocolConfig), in one batched
  * call, to check that each address points at the expected contract. The
  * versions themselves are not stored: the SDK does not branch on them.
  *
  * @internal
  */
 export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChain>): Promise<FhevmClientFrozenContext> {
+  // Chains built from JS/JSON may bypass `defineFhevmChain`: validate here too.
+  assertFhevmChainContracts(fhevm.chain);
+
   const aclAddress: ChecksummedAddress = addressToChecksummedAddress(
     asAddress(fhevm.chain.fhevm.contracts.acl.address),
   );
