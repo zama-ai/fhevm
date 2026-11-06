@@ -11,6 +11,7 @@ set -euo pipefail
 GCS_VERSION="${GCS_VERSION:-v0.15.0}"
 schema="gcs-${GCS_VERSION#v}"
 
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=../lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 

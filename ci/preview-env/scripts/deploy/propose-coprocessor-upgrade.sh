@@ -224,6 +224,7 @@ if [[ "${PROPOSE_DRY_RUN}" == "true" ]]; then
 fi
 fi
 
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=../lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib.sh"
 
