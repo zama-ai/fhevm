@@ -1,7 +1,7 @@
 //! Component regressions for hash uploads racing real ingestion containment.
 use super::*;
 use crate::ingestion_recovery_tests::{
-    object_store_with_response, partial_block, repair_is_contained,
+    object_store_with_response, partial_block, repair_is_contained, seed_attempt,
 };
 use fhevm_engine_common::chain_recovery::{lock_history_tx, ListenerSource};
 use fhevm_engine_common::versioning::CUTOVER_LOCK_ID;
@@ -51,6 +51,7 @@ async fn uploaded(track: Track, pool: &Pool<Postgres>) -> anyhow::Result<bool> {
 
 async fn containment_during_upload(track: Track, completion: Completion) -> anyhow::Result<()> {
     let (mut db, pool, _instance) = partial_block().await?;
+    seed_attempt(&pool).await?;
     let mut tx = pool.begin().await?;
     compute_and_insert_gcs(&mut tx, 42, 100, 100, 10, "public").await?;
     tx.commit().await?;

@@ -76,6 +76,11 @@ export function assertIsNonEmptyString(s: unknown): asserts s is string {
   }
 }
 
+// Stricter than isNonEmptyString: a whitespace-only string is blank. The value itself is not trimmed.
+export function isNonBlankString(s: unknown): s is string {
+  return typeof s === 'string' && s.trim().length > 0;
+}
+
 /**
  * Type guard that checks if a property exists on an object and is a string.
  *

@@ -2,7 +2,12 @@ import type { ethers } from 'ethers';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { parseTransportKeyPair, serializeTransportKeyPair } from '@fhevm/sdk/actions/chain';
-import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import {
+  getEthersTestConfig,
+  latestBlockTimestamp,
+  type CreateEthersDecryptClientFn,
+  type FheTestEthersConfig,
+} from '../setup-ethers.js';
 import { decryptTestCases, fheTypeIdFromName, createLogger } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 
@@ -50,7 +55,7 @@ export function defineClientDecryptPermitCacheTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
       });

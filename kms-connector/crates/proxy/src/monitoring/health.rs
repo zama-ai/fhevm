@@ -18,27 +18,26 @@ pub struct State {
     proxy_version_url: Url,
     endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
     healthcheck_timeout: Duration,
-    /// The client used to reach the proxy's own TLS listener through the loopback interface.
+    /// The client used to reach the proxy's own listener through the loopback interface.
     loopback_client: reqwest::Client,
 }
 
 impl State {
     pub fn new(
-        bind_address: SocketAddr,
+        config: &Config,
         endpoint_balancer: Arc<LoadBalancer<RoundRobin>>,
-        healthcheck_timeout: Duration,
     ) -> anyhow::Result<Self> {
         // The proxy's certificate is issued for its public hostname, not for the loopback
         // address used here, so its verification is disabled for this client only.
         let loopback_client = reqwest::Client::builder()
-            .tls_danger_accept_invalid_certs(true)
+            .tls_danger_accept_invalid_certs(config.tls_config.is_some())
             .build()
             .context("Failed to build the healthcheck HTTP client")?;
 
         Ok(Self {
-            proxy_version_url: version_url(bind_address),
+            proxy_version_url: version_url(config.bind_address, config.scheme()),
             endpoint_balancer,
-            healthcheck_timeout,
+            healthcheck_timeout: config.healthcheck_timeout,
             loopback_client,
         })
     }
@@ -54,33 +53,33 @@ impl State {
         (addresses(healthy), addresses(unhealthy))
     }
 
-    /// Performs the healthcheck of the proxy's TLS listener by querying the `/version` route
+    /// Performs the healthcheck of the proxy's listener by querying the `/version` route
     /// through the loopback interface.
     ///
     /// No credentials are sent, so the proxy is expected to answer `401`: what is checked here is
-    /// that the listener accepts TLS connections and answers HTTP requests, not the routing.
-    async fn tls_listener_healthcheck(&self) -> Result<(), String> {
+    /// that the listener accepts connections and answers HTTP requests, not the routing.
+    async fn listener_healthcheck(&self) -> Result<(), String> {
         let url = &self.proxy_version_url;
         let request = self.loopback_client.get(url.clone()).send();
         match tokio::time::timeout(self.healthcheck_timeout, request).await {
             Ok(Ok(response)) if response.status() == reqwest::StatusCode::UNAUTHORIZED => Ok(()),
             Ok(Ok(response)) => Err(format!(
-                "TLS listener answered {} to unauthenticated {url}",
+                "Listener answered {} to unauthenticated {url}",
                 response.status()
             )),
-            Ok(Err(e)) => Err(format!("TLS listener connection failed: {e}")),
-            Err(e) => Err(format!("TLS listener connection timed out: {e}")),
+            Ok(Err(e)) => Err(format!("Listener connection failed: {e}")),
+            Err(e) => Err(format!("Listener connection timed out: {e}")),
         }
     }
 }
 
 impl Healthcheck for State {
     async fn healthcheck(&self) -> actix_web::HttpResponse {
-        let tls_listener_result = self.tls_listener_healthcheck().await;
+        let listener_result = self.listener_healthcheck().await;
         let (healthy_endpoints, unhealthy_endpoints) = self.endpoints_health();
 
         let mut errors = vec![];
-        let tls_listener_reachable = tls_listener_result.map_err(|e| errors.push(e)).is_ok();
+        let listener_reachable = listener_result.map_err(|e| errors.push(e)).is_ok();
         if !unhealthy_endpoints.is_empty() {
             errors.push(format!(
                 "Unhealthy endpoints: {}",
@@ -91,7 +90,7 @@ impl Healthcheck for State {
             errors.push("No healthy endpoint available".to_string());
         }
 
-        let healthy = tls_listener_reachable && !healthy_endpoints.is_empty();
+        let healthy = listener_reachable && !healthy_endpoints.is_empty();
         let status_code = if healthy {
             StatusCode::OK
         } else {
@@ -100,7 +99,7 @@ impl Healthcheck for State {
 
         let status = HealthStatus {
             healthy,
-            tls_listener_reachable,
+            listener_reachable,
             healthy_endpoints,
             unhealthy_endpoints,
             details: errors.join("; "),
@@ -117,11 +116,10 @@ impl Healthcheck for State {
 /// Serializable representation of `Proxy`'s health status.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HealthStatus {
-    /// Overall health of the service: the TLS listener answers and at least one endpoint is
-    /// healthy.
+    /// Overall health of the service: the listener answers and at least one endpoint is healthy.
     pub healthy: bool,
-    /// Whether the public TLS listener accepts connections and answers requests.
-    pub tls_listener_reachable: bool,
+    /// Whether the public listener accepts connections and answers requests.
+    pub listener_reachable: bool,
     /// The endpoints currently receiving requests.
     pub healthy_endpoints: Vec<String>,
     /// The endpoints that failed their healthcheck. Non-empty is degraded, but not unhealthy.
@@ -150,15 +148,15 @@ pub fn endpoint_health_check(config: &Config) -> anyhow::Result<HttpHealthCheck>
     Ok(health_check)
 }
 
-/// Builds the loopback URL of the `/version` route from the bind address of the TLS listener.
-fn version_url(bind_address: SocketAddr) -> Url {
+/// Builds the loopback URL of the `/version` route from the bind address of the listener.
+fn version_url(bind_address: SocketAddr, scheme: &str) -> Url {
     let ip = match bind_address.ip() {
         IpAddr::V4(ip) if ip.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST),
         IpAddr::V6(ip) if ip.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST),
         ip => ip,
     };
     let loopback = SocketAddr::new(ip, bind_address.port());
-    Url::parse(&format!("https://{loopback}{VERSION_ROUTE}"))
+    Url::parse(&format!("{scheme}://{loopback}{VERSION_ROUTE}"))
         .expect("loopback socket address is a valid URL")
 }
 
@@ -169,16 +167,16 @@ mod tests {
     #[test]
     fn test_version_url_uses_loopback_for_unspecified_ip() {
         assert_eq!(
-            version_url("0.0.0.0:8443".parse().unwrap()).as_str(),
+            version_url("0.0.0.0:8443".parse().unwrap(), "https").as_str(),
             format!("https://127.0.0.1:8443{VERSION_ROUTE}")
         );
         assert_eq!(
-            version_url("[::]:8443".parse().unwrap()).as_str(),
+            version_url("[::]:8443".parse().unwrap(), "https").as_str(),
             format!("https://[::1]:8443{VERSION_ROUTE}")
         );
         assert_eq!(
-            version_url("10.0.0.3:9443".parse().unwrap()).as_str(),
-            format!("https://10.0.0.3:9443{VERSION_ROUTE}")
+            version_url("10.0.0.3:9443".parse().unwrap(), "http").as_str(),
+            format!("http://10.0.0.3:9443{VERSION_ROUTE}")
         );
     }
 }

@@ -10,12 +10,15 @@ instances:
   - index: 0
     args:
       tfhe-worker: [--work-items-batch-size=4, --dependence-chains-per-batch=4]
+      host-listener-consumer: [--catchup-from-block=-1024, --catchup-unfinalized, --no-override-catchup]
       host-listener-poller: [--batch-size=4, --poll-interval-ms=250]
   - index: 1
     args:
       tfhe-worker: [--work-items-batch-size=4, --dependence-chains-per-batch=4]
+      host-listener-consumer: [--catchup-from-block=-1024, --catchup-unfinalized, --no-override-catchup]
       host-listener-poller: [--batch-size=4, --poll-interval-ms=250]
   - index: 2
     args:
       tfhe-worker: [--work-items-batch-size=4, --dependence-chains-per-batch=4]
+      host-listener-consumer: [--catchup-from-block=-1024, --catchup-unfinalized, --no-override-catchup]
       host-listener-poller: [--batch-size=4, --poll-interval-ms=250]

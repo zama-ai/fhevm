@@ -1,10 +1,8 @@
 import type { Bytes32Hex, BytesHex, Uint256BigInt, Uint8Number } from '../types/primitives.js';
 import type { ErrorMetadataParams } from '../base/errors/ErrorBase.js';
-import type { HostContractVersion } from '../types/hostContract.js';
 import type { KmsExtraData } from '../types/kms-p.js';
 import { asUint256BigInt, asUint8Number } from '../base/uint.js';
 import { asBytes32Hex, asBytesHex, assertIsBytesHex } from '../base/bytes.js';
-import { isVersionEqual, isVersionStrictlyBefore } from '../host-contracts/HostContractVersion-p.js';
 import { InvalidTypeError } from '../base/errors/InvalidTypeError.js';
 
 export const EXTRA_DATA_V0: Uint8Number = 0x00 as Uint8Number; // 0x00
@@ -314,27 +312,6 @@ export function equalsKmsExtraData(a: KmsExtraData, b: KmsExtraData): boolean {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-/**
- * Module-only helper. Narrows an unknown value to the concrete
- * {@link KmsExtraDataImpl} class by verifying it via {@link assertIsKmsExtraData}
- * and returning it typed as the implementation class, so other functions in this
- * module can reach class-only members. Prefer this over a bare cast.
- *
- * Must never be exported: `Impl` classes are internal to the SDK and never leave
- * the module, so a function that hands one back must stay module-private too.
- * The public surface exposes only the {@link KmsExtraData} interface.
- *
- * @param value - The value to narrow.
- * @returns The same value typed as {@link KmsExtraDataImpl}.
- * @throws {InvalidTypeError} If `value` is not a {@link KmsExtraDataImpl} instance.
- */
-function _asKmsExtraDataImpl(value: unknown): KmsExtraDataImpl {
-  assertIsKmsExtraData(value, {});
-  return value as KmsExtraDataImpl;
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
 export function isKmsExtraData(value: unknown): value is KmsExtraData {
   return value instanceof KmsExtraDataImpl;
 }
@@ -371,50 +348,4 @@ export function assertIsKmsExtraDataBytesHex(
 
   // Will valid extraData length too
   createKmsExtraDataFromBytesHex(value);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-/**
- * Returns `true` if `kmsExtraData`'s version is accepted by the given
- * KMSVerifier contract version.
- *
- * | KMSVerifier version | protocol        | max extraData version |
- * | ------------------- | --------------- | --------------------- |
- * | < 0.2.0             | v0.11.0         | v0                    |
- * | 0.2.0 – 0.3.x       | v0.12.0/v0.13.0 | v1                    |
- * | 0.4.0               | v0.14.0         | v2                    |
- * | > 0.4.0             | v0.14.1+        | not checked (`true`)  |
- */
-export function isKmsExtraDataCompatibleWithKmsVerifier(
-  kmsExtraData: KmsExtraData,
-  kmsVerifierVersion: HostContractVersion,
-): boolean {
-  const ed = _asKmsExtraDataImpl(kmsExtraData);
-
-  // Protocol v0.11.0
-  if (isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 2 })) {
-    return ed.version !== undefined && ed.version <= EXTRA_DATA_V0;
-  }
-
-  // Protocol v0.12.0/v0.13.0
-  if (isVersionStrictlyBefore(kmsVerifierVersion, { major: 0, minor: 4 })) {
-    return ed.version !== undefined && ed.version <= EXTRA_DATA_V1;
-  }
-
-  // Protocol v0.14.0
-  if (isVersionEqual(kmsVerifierVersion, { major: 0, minor: 4, patch: 0 })) {
-    return ed.version !== undefined && ed.version <= EXTRA_DATA_V2;
-  }
-
-  // Protocol v0.14.1+ (beyond the versions this SDK release knows about).
-  //
-  // We deliberately return `true` (compatible) instead of guessing an upper
-  // bound on `extraData.version`. On v0.14.0 the KMSVerifier reverts for
-  // `extraData.version > 2`, but we cannot know the accepted range of future
-  // contract versions. Pre-validating here would risk rejecting extraData that
-  // a newer contract actually supports. If the on-chain contract does reject it,
-  // the call reverts — and surfacing that revert is the source of truth, not a
-  // speculative client-side check.
-  return true;
 }

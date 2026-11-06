@@ -135,6 +135,9 @@ not stored.
   audience is wrong. `auth_expired` is retried like any retryable error, with a fresh header.
 - The reqwest client has `timeout(call.timeout)` and a 3 s connect timeout as safety nets for a socket that stops
   answering. The aggregator's deadline is the decision.
+- The reqwest client verifies every connector's TLS certificate with the platform verifier (system roots).
+  `skip_tls_verification` turns that off (no CA, expiry or hostname check), for local or devnet stacks only; startup
+  then logs a `warn`.
 
 | connector answer | `AttemptError` | retried? |
 |---|---|---|
@@ -183,9 +186,9 @@ Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 
 ```jsonc
 // user decrypt: every accepted share, acceptance order
-{ "result": [ { "payload": "a1b2…", "signature": "1a2b…", "extraData": "0x00" }, … ] }
+{ "result": [ { "payload": "a1b2…", "signature": "1a2b…", "extraData": "0x02…" }, … ] }
 // public decrypt: the largest agreeing group
-{ "decryptedValue": "0000…2a", "signatures": ["1a2b…", …], "extraData": "0x00" }
+{ "decryptedValue": "0000…2a", "signatures": ["1a2b…", …], "extraData": "0x02…" }
 ```
 
 ## 8. Configuration → behaviour
@@ -193,6 +196,7 @@ Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 ```yaml
 kms_aggregator:
   allow_insecure_http: false   # local only: plain http to non-loopback hosts
+  skip_tls_verification: false # local/devnet only: no TLS certificate verification, section 5
   max_concurrent_calls: 4096   # semaphore size, >= number of endpoints; one aggregation takes up to n permits
   call:
     timeout: 5000ms            # the deadline (<= 60s)
