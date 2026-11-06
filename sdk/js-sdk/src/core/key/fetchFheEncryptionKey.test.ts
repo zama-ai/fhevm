@@ -9,14 +9,15 @@ import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
 import { createCoreFhevm } from '../runtime/CoreFhevm-p.js';
 import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 import { encryptModule } from '../modules/encrypt/mock.js';
-import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
+import { fheEncryptionKeyCacheForTests } from './ensureFheEncryptionKeyDownload.js';
 import { fetchFheEncryptionKeyWasm } from './fetchFheEncryptionKey.js';
 
 // The key check is not under test here (see verifyFheEncryptionKeyBytes-p.test.ts).
 vi.mock('./verifyFheEncryptionKeyBytes-p.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./verifyFheEncryptionKeyBytes-p.js')>()),
   resolveKmsGeneration: () => ({ chainId: 1, address: '0x0000000000000000000000000000000000000001' }),
-  verifyFheEncryptionKeyBytes: async (_context: unknown, bytes: FheEncryptionKeyBytes) => bytes,
+  verifyFheEncryptionKeyBytes: async () => Promise.resolve({ keyId: 1n, crsId: 2n }),
+  readActiveFheEncryptionKeyIds: async () => Promise.resolve({ keyId: 1n, crsId: 2n }),
 }));
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -38,7 +39,7 @@ const runtime = createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
 const client = createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain, runtime });
 
 beforeEach(() => {
-  globalFheEncryptionKeyCache.clear();
+  fheEncryptionKeyCacheForTests.clear();
   fetchFheEncryptionKeyBytes.mockReset();
   fetchFheEncryptionKeyBytes.mockImplementation(stopAfterDownload);
 });

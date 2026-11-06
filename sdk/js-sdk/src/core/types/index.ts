@@ -4,4 +4,5 @@ export type { EncryptedValue, EncryptedValueLike } from './encryptedTypes.js';
 export type { Eip712Like } from './kms.js';
 export type { FhevmEncryptClient, FhevmEncryptWithPadClient, FhevmDecryptClient } from './fhevmClient.js';
 export type { FhevmKeyVerification } from './coreFhevmClient.js';
+export type { FhevmCacheItem, FhevmCacheItemOptions, FhevmCacheOptions } from './cache.js';
 export { asEncryptedValue, isEncryptedValue } from '../handle/EncryptedValue.js';

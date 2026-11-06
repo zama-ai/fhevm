@@ -1,5 +1,5 @@
 import { createFhevmEncryptClient, hasFhevmRuntimeConfig, setFhevmRuntimeConfig } from '../../../src/ethers/index.js';
-import { globalFheEncryptionKeyCache } from '../../../src/core/key/FheEncryptionKeyCache-p.js';
+import { fheEncryptionKeyCacheForTests } from '../../../src/core/key/ensureFheEncryptionKeyDownload.js';
 import { createLogger, encryptTestCases } from '../../fheTest/setupCommon.js';
 import { createTfheMemoryReader } from '../support/wasmMemory.js';
 import type { Scenario } from './scenario.js';
@@ -29,13 +29,11 @@ import type { Scenario } from './scenario.js';
 //
 // A more basic pitfall this scenario deliberately avoids: naively creating
 // "N fresh clients" against the same chain would NOT exercise this path more
-// than once. `globalFheEncryptionKeyCache`
-// (src/core/key/FheEncryptionKeyCache-p.ts) is a process-wide singleton keyed
-// by slot (relayer URL and KMSGeneration, or `unverified`) with "first write wins" semantics —
-// the key is deserialized once per slot for the life of the process, and every later client
-// just awaits the same cached entry. Its own doc comment says as much: "To
-// force a re-fetch, `remove(key)` the entry first." — so
-// this scenario clears the cache before every iteration, which is also what
+// than once. The key cache (src/core/key/ensureFheEncryptionKeyDownload.ts)
+// is a process-wide singleton keyed by slot (relayer URL and KMSGeneration,
+// or `unverified`), kept for the client's `keyMaterial` TTL (24 h by
+// default): the key is deserialized once per key, and every later client
+// reuses it. So this scenario clears the cache before every iteration, which is also what
 // makes the old entry's wasm objects unreachable (and thus GC/finalizer
 // eligible) in the first place.
 
@@ -67,7 +65,7 @@ export const clientChurnScenario: Scenario = {
     }
 
     const iterate = async (): Promise<void> => {
-      globalFheEncryptionKeyCache.clear();
+      fheEncryptionKeyCacheForTests.clear();
 
       const client = createFhevmEncryptClient({
         chain: config.fhevmChain,

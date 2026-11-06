@@ -1,5 +1,6 @@
 import type {
   Bytes32,
+  Bytes32Hex,
   Bytes8,
   BytesHex,
   BytesHexNo0x,
@@ -220,6 +221,11 @@ export function uintToBytesHex(uint: Uint): BytesHex {
 export function uintToBytesHexNo0x(uint: Uint): BytesHexNo0x {
   const hex = uint.toString(16);
   return (hex.length % 2 !== 0 ? `0${hex}` : hex) as BytesHexNo0x;
+}
+
+/** A uint256 as 32-byte, lowercase hex (`0x` + 64 digits). */
+export function uint256ToBytes32Hex(value: bigint): Bytes32Hex {
+  return `0x${value.toString(16).padStart(64, '0')}` as Bytes32Hex;
 }
 
 export function uint256ToBytes32(value: unknown): Bytes32 {
