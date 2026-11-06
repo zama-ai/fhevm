@@ -11,7 +11,9 @@ pub enum Fault {
 /// On a JSON state-hash record the flip targets the first byte of the `fhe`
 /// value, so the divergent object stays a well-formed record and exercises
 /// divergence attribution ("fhe (ct64 compute)"); any other payload has its
-/// first byte flipped. XOR 1 keeps a hex digit a printable JSON string byte.
+/// first byte flipped. A hex digit is replaced by the NEXT hex digit
+/// (wrapping), so the mutated value is still a valid hex digest and peers
+/// classify it as Diverged, never Invalid; a non-hex byte falls back to XOR 1.
 pub fn divergent_hash(bytes: &mut [u8]) {
     const FHE_VALUE: &[u8] = b"\"fhe\":\"";
     let target = bytes
@@ -21,7 +23,11 @@ pub fn divergent_hash(bytes: &mut [u8]) {
         .filter(|&pos| pos < bytes.len())
         .unwrap_or(0);
     if let Some(byte) = bytes.get_mut(target) {
-        *byte ^= 1;
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        *byte = match HEX.iter().position(|h| *h == byte.to_ascii_lowercase()) {
+            Some(i) => HEX[(i + 1) % 16],
+            None => *byte ^ 1,
+        };
     }
 }
 
@@ -97,14 +103,23 @@ mod tests {
 
     #[test]
     fn divergent_report_targets_the_fhe_component_of_a_record() {
-        let record = br#"{"v":1,"fhe":"aabb","pbs":"ccdd"}"#.to_vec();
-        let mut report = record.clone();
-        super::divergent_hash(&mut report);
-        assert_eq!(report.len(), record.len());
-        assert_ne!(report, record);
-        // Still well-formed and attributable: only the fhe value changed.
-        let parsed: crate::state_hash::StateHashRecord = serde_json::from_slice(&report).unwrap();
-        assert_ne!(parsed.fhe, "aabb");
-        assert_eq!(parsed.pbs, "ccdd");
+        // Every possible leading digit: the mutation must keep the record a
+        // VALID vote (hex), not just parseable - 'a' and 'f' broke XOR 1.
+        for d in b"0123456789abcdef" {
+            let fhe = format!("{}{}", *d as char, "0".repeat(63));
+            let pbs = "c".repeat(64);
+            let record = format!(r#"{{"v":1,"fhe":"{fhe}","pbs":"{pbs}"}}"#).into_bytes();
+            let mut report = record.clone();
+            super::divergent_hash(&mut report);
+            assert_eq!(report.len(), record.len());
+            assert_ne!(report, record);
+            let parsed: crate::state_hash::StateHashRecord =
+                serde_json::from_slice(&report).unwrap();
+            parsed
+                .validate()
+                .expect("faulted record must stay a valid vote");
+            assert_ne!(parsed.fhe, fhe);
+            assert_eq!(parsed.pbs, pbs);
+        }
     }
 }
