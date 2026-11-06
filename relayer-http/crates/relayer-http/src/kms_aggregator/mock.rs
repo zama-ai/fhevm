@@ -44,12 +44,17 @@ pub fn extra_data_v2() -> AlloyBytes {
     EXTRA_DATA_V2.parse().expect("mock: EXTRA_DATA_V2 is hex")
 }
 
-/// A YAML string is either one of our fixed replies or a connector error code (`acl_denied`, `rate_limited`, …).
+/// A YAML string is either one of our fixed replies or a connector error code (`acl_denied`, `rate_limited`, …);
+/// `{ rate_limited_after: 2s }` is a `rate_limited` answer carrying `Retry-After: 2`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub enum Reply {
     Fixed(Fixed),
     Error(ErrorCode),
+    RateLimitedAfter {
+        #[serde(with = "humantime_serde")]
+        rate_limited_after: Duration,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -190,8 +195,13 @@ impl ConnectorClient for MockClient {
             Reply::Fixed(Fixed::BareRateLimited) => Ok(HttpReply {
                 status: 429,
                 body: Bytes::from_static(b"Too Many Requests"),
+                retry_after: None,
             }),
             Reply::Error(code) => Ok(error_reply(route, &body, code)),
+            Reply::RateLimitedAfter { rate_limited_after } => Ok(HttpReply {
+                retry_after: Some(rate_limited_after),
+                ..error_reply(route, &body, ErrorCode::RateLimited)
+            }),
             Reply::Fixed(fixed) => Ok(ok_reply(route, &body, node, fixed)),
         }
     }
@@ -263,6 +273,7 @@ pub fn ok_reply(route: &str, body: &[u8], node: usize, fixed: Fixed) -> HttpRepl
     HttpReply {
         status: 200,
         body: Bytes::from(body.expect("mock: response serialisation")),
+        retry_after: None,
     }
 }
 
@@ -278,6 +289,7 @@ pub fn error_reply(route: &str, body: &[u8], code: ErrorCode) -> HttpReply {
     HttpReply {
         status: code.http_status(),
         body: Bytes::from(serde_json::to_vec(&error).expect("mock: error serialisation")),
+        retry_after: None,
     }
 }
 
@@ -351,9 +363,11 @@ mod tests {
     }
 
     #[test]
-    fn replies_deserialize_from_bare_strings() {
-        let replies: Vec<Reply> =
-            serde_json::from_str(r#"["ok","hang","acl_denied","rate_limited"]"#).unwrap();
+    fn replies_deserialize_from_bare_strings_or_a_retry_after_map() {
+        let replies: Vec<Reply> = serde_json::from_str(
+            r#"["ok","hang","acl_denied","rate_limited",{"rate_limited_after":"2s"}]"#,
+        )
+        .unwrap();
         assert_eq!(
             replies,
             vec![
@@ -361,8 +375,41 @@ mod tests {
                 Reply::Fixed(Fixed::Hang),
                 Reply::Error(ErrorCode::AclDenied),
                 Reply::Error(ErrorCode::RateLimited),
+                Reply::RateLimitedAfter {
+                    rate_limited_after: Duration::from_secs(2)
+                },
             ]
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn rate_limited_after_carries_the_header() {
+        let mock = MockClient::new(
+            vec![vec![Reply::RateLimitedAfter {
+                rate_limited_after: Duration::from_secs(2),
+            }]],
+            Duration::ZERO,
+        );
+        let endpoint = Endpoint {
+            name: "node-0".into(),
+            url: Url::parse("http://localhost:3000/0").unwrap(),
+            audience: audience(0),
+        };
+        let reply = mock
+            .post(
+                &endpoint,
+                USER_DECRYPTION_ROUTE,
+                Bytes::from_static(USER_REQUEST_JSON.as_bytes()),
+                &HeaderValue::from_static("FhevmSig expires=1, sig=0x00"),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            (reply.status, reply.retry_after),
+            (429, Some(Duration::from_secs(2)))
+        );
+        let error: ErrorResponse = serde_json::from_slice(&reply.body).unwrap();
+        assert_eq!(error.code, ErrorCode::RateLimited);
     }
 
     #[tokio::test(start_paused = true)]
