@@ -523,8 +523,9 @@ upstream path (120s read timeout, as `/v4` decrypts are synchronous). All three
 carry `app.kubernetes.io/component=kong-preview-route` and go away with the
 namespace. It writes `RELAYER_UNIFIED_URL` to the PR comment / run summary and
 probes `GET /v2/keyurl` (200) and `GET /v4/user-decrypt` (405) from the runner;
-a failed probe is only a warning. If the `kong-preview` IngressClass does not
-exist, the step is skipped with a warning. The in-cluster test-suite still calls
+a failed probe is only a warning. If kong-preview is not installed (no
+`zws-system/kong-preview-zws-dev-system-kong-proxy` Service), the step is
+skipped with a warning. The in-cluster test-suite still calls
 `http://relayer:3000/v2` directly.
 
 ## coprocessor-proxy
