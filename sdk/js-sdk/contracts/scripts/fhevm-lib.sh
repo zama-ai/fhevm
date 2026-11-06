@@ -229,7 +229,7 @@ fhevm_assert_foundry_profile() {
 #
 # Usage: fhevm_host_addresses_file <profile>
 #   <profile>: v1.0 (resolve `latest` first)
-#   (v1.0: src/v1.0.0/config/addresses.sol, read-only; its deploy checks it and never writes it)
+#   (v1.0: src/localcleartext/config/addresses.sol, read-only; its deploy checks it and never writes it)
 #
 #   addresses_file="$(fhevm_host_addresses_file v1.0)"
 fhevm_host_addresses_file() {
@@ -239,7 +239,7 @@ fhevm_host_addresses_file() {
 
     case "$profile" in
         v1.0)
-            printf '%s/src/v1.0.0/config/addresses.sol\n' "$contracts_dir"
+            printf '%s/src/localcleartext/config/addresses.sol\n' "$contracts_dir"
             ;;
         *)
             echo "fhevm_host_addresses_file: unsupported profile '$profile' (expected: v1.0)" >&2

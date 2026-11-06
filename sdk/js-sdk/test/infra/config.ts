@@ -47,7 +47,7 @@ export const CURRENT_SLOT = 'v1.0';
 export type SlotId = typeof CURRENT_SLOT;
 
 // Per-slot constants. The slot deploys with the deploy's built-in default
-// mnemonic: the v1.0 deploy checks the committed src/v1.0.0/config/addresses.sol,
+// mnemonic: the v1.0 deploy checks the committed src/localcleartext/config/addresses.sol,
 // so it only succeeds at that canonical address set.
 export const SLOT_INFO = {
   [CURRENT_SLOT]: {
