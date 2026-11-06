@@ -236,15 +236,37 @@ async function _answerKmsGenerationCalls(slot: GatewaySlot, req: GatewayRequest)
   const rest = calls.filter((_, i) => local[i] === undefined);
   const upstreamById = new Map<unknown, unknown>();
   if (rest.length > 0) {
-    const upstream = await fetch(slot.rpcUrl!, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(rest),
-      signal: AbortSignal.timeout(30_000),
-    });
-    const answers = (await upstream.json()) as Array<{ readonly id?: unknown }>;
-    for (const a of answers) {
-      upstreamById.set(a.id, a);
+    let upstream: Response;
+    try {
+      upstream = await fetch(slot.rpcUrl!, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(rest),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (e) {
+      return _text(502, `Gateway RPC upstream request failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    // Anything but a 2xx JSON array (an HTTP error, an error page, a top-level
+    // JSON-RPC error object) is passed through as is, like the plain proxy path.
+    const bytes = new Uint8Array(await upstream.arrayBuffer());
+    let answers: unknown;
+    try {
+      answers = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      answers = undefined;
+    }
+    if (!upstream.ok || !Array.isArray(answers)) {
+      return {
+        status: upstream.ok ? 502 : upstream.status,
+        headers: { 'content-type': upstream.headers.get('content-type') ?? 'application/json', ...NO_STORE },
+        body: bytes,
+      };
+    }
+    for (const a of answers as ReadonlyArray<{ readonly id?: unknown } | null>) {
+      if (a !== null && typeof a === 'object') {
+        upstreamById.set(a.id, a);
+      }
     }
   }
 
