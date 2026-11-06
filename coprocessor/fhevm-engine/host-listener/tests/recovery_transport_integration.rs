@@ -601,7 +601,7 @@ async fn broker_final_catchup_queue_repairs_a_blocked_final_delivery(
     let released = release.clone();
     let response_task = tokio::spawn(request_consumer.run(
         AsyncHandlerPayloadClassified::new(move |request: CatchupPayload| {
-            let reply = reply.clone();
+            let mut reply = reply.clone();
             let publisher = reply_publisher.clone();
             let expected = expected_consumer.clone();
             let requested = requested.clone();
@@ -609,6 +609,9 @@ async fn broker_final_catchup_queue_repairs_a_blocked_final_delivery(
             async move {
                 assert_eq!(request.consumer_id, expected);
                 assert_eq!((request.block_start, request.block_end), (2, 2));
+                assert!(request.catchup_id.is_some());
+                reply.catchup_id = request.catchup_id;
+                reply.last_in_catchup = true;
                 requested.fetch_add(1, Ordering::SeqCst);
                 let permit = released.acquire().await.unwrap();
                 permit.forget();
@@ -665,6 +668,15 @@ async fn broker_final_catchup_queue_repairs_a_blocked_final_delivery(
     })
     .await?;
     until(|| f.delivered()).await?;
+    until(|| async {
+        Ok(sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS(SELECT 1 FROM host_consumer_catchups WHERE chain_id=42 AND consumer_id=$1 AND block_start=2 AND block_end=2 AND status='DONE')",
+        )
+        .bind(&consumer_id)
+        .fetch_one(&f.pool)
+        .await?)
+    })
+    .await?;
     let heights: Vec<i64> = sqlx::query_scalar("SELECT block_number FROM host_chain_blocks_valid WHERE chain_id=42 AND block_status='finalized' ORDER BY block_number").fetch_all(&f.pool).await?;
     assert_eq!(heights, [1, 2, 3]);
     assert!(child.try_wait()?.is_none());

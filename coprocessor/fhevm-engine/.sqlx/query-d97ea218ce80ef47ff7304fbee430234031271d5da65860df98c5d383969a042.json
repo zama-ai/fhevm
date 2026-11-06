@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO host_consumer_catchups\n                     (id, chain_id, consumer_id, requested_from, requested_to,\n                      block_start, block_end, finalized, status, failure_reason, request_pending)\n                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'FAILED', $9, FALSE)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d97ea218ce80ef47ff7304fbee430234031271d5da65860df98c5d383969a042"
+}
