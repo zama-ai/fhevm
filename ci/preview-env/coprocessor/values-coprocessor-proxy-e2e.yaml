@@ -13,6 +13,8 @@ coprocessorProxy:
   # Created by scripts/deploy/deploy-coprocessor.sh.
   tls:
     secretName: coprocessor-proxy-tls
+  # The e2e suite reaches the proxy directly, without a front layer.
+  forwardedHops: 0
   prfServiceNetworkPolicy:
     # The fake serves the PRF route on 8080.
     ports:

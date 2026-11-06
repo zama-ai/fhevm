@@ -1914,6 +1914,14 @@ coprocessorProxy:
   # The Service balances connections, not requests, and a connector opens one per in-flight
   # request, so a signer's limit is up to about `replicas` times this: adding replicas raises it.
   maxRequestsPerSigner: 200
+  # Requests per second each client IP can send to one replica; more get `429` before their
+  # signature is checked.
+  maxRequestsPerIp: 200
+  # Number of HTTP-aware front layers in front of the proxy, each appending to X-Forwarded-For:
+  # 1 for an AWS ALB or Cloudflare alone, 2 for Cloudflare in front of an ALB. The client IP is
+  # the entry this many from the right; a request without it gets `400`. 0 only when clients
+  # connect directly, as in tests: the client IP is then the connection's peer address.
+  forwardedHops: 1
   # Time a client has, once its TLS handshake completes, to send its first request head; the
   # connection is closed after. At least 1. A later head on the connection is due
   # clientIdleTimeoutSeconds + 5 s after the previous response.

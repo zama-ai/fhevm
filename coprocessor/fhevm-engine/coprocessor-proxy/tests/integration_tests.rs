@@ -14,7 +14,7 @@ use common::{
     stub_attestation, stub_output,
 };
 use coprocessor_proxy::core::{
-    KEEPALIVE_REQUEST_LIMIT, NEXT_HEAD_MARGIN, SIGNER_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT,
+    KEEPALIVE_REQUEST_LIMIT, NEXT_HEAD_MARGIN, REQUEST_RATE_INTERVAL, UNKNOWN_SIGNER_WAIT,
 };
 use coprocessor_proxy::kms_tx_senders::WOKEN_POLL_SPACING;
 use serde_json::{Value, json};
@@ -639,7 +639,7 @@ async fn test_limits_each_signers_request_rate() {
         }
         forwarded += 1;
     };
-    assert!(started.elapsed() < SIGNER_RATE_INTERVAL);
+    assert!(started.elapsed() < REQUEST_RATE_INTERVAL);
     assert!(forwarded >= 2, "{forwarded}");
     assert_eq!(refused.headers()["retry-after"], "1");
     assert!(!refused.headers().contains_key("www-authenticate"));
@@ -666,6 +666,90 @@ async fn test_limits_each_signers_request_rate() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(t.prf_service.hits(), forwarded + 1);
+}
+
+#[tokio::test]
+async fn test_forwards_the_client_ip_the_outermost_front_layer_appended() {
+    // The client sent 6.6.6.6 itself; the front layers appended the rest.
+    for (hops, forwarded_for) in [
+        (1, "6.6.6.6, 203.0.113.7"),
+        (2, "6.6.6.6, 203.0.113.7, 10.0.0.1"),
+    ] {
+        let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+            config.forwarded_hops = hops;
+        })
+        .await;
+        let response = t
+            .get(&prf_path(1))
+            .await
+            .header("x-forwarded-for", forwarded_for)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{hops}");
+        let seen = t.prf_service.last_request();
+        let forwarded: Vec<_> = seen.headers.get_all("x-forwarded-for").iter().collect();
+        assert_eq!(forwarded, ["203.0.113.7"], "{hops}");
+    }
+}
+
+#[tokio::test]
+async fn test_refuses_a_request_without_the_client_ip_of_each_front_layer() {
+    let t = TestProxy::start_with_config(StubPrfService::start().await, |config| {
+        config.forwarded_hops = 2;
+    })
+    .await;
+    for forwarded_for in [None, Some("203.0.113.7"), Some("203.0.113.7:443, 10.0.0.1")] {
+        let mut request = t.get(&prf_path(1)).await;
+        if let Some(forwarded_for) = forwarded_for {
+            request = request.header("x-forwarded-for", forwarded_for);
+        }
+        let response = request.send().await.unwrap();
+        assert_proxy_error(response, StatusCode::BAD_REQUEST, "malformed", false).await;
+    }
+    assert_eq!(t.prf_service.hits(), 0);
+}
+
+#[tokio::test]
+async fn test_limits_each_client_ips_request_rate_before_the_signature_check() {
+    let rpc = FakeRpc::start(vec![KmsContext::active(&[sender().address()])]).await;
+    let t = TestProxy::launch(rpc, StubPrfService::start().await, |config| {
+        config.forwarded_hops = 1;
+        config.max_requests_per_ip = NonZeroU32::new(2).unwrap();
+    })
+    .await;
+    let path = prf_path(1);
+    let unsigned_from = |ip: &str| {
+        t.client
+            .get(t.url(&path))
+            .header("x-forwarded-for", format!("6.6.6.6, {ip}"))
+            .send()
+    };
+
+    // Unsigned requests: a refusal before the signature check is the only one that is not `401`.
+    // Five requests sent within one window span at most two windows, so one of them gets a third.
+    let started = Instant::now();
+    let mut checked = 0;
+    let refused = loop {
+        assert!(checked < 5, "no request was refused");
+        let response = unsigned_from("203.0.113.7").await.unwrap();
+        if response.status() == StatusCode::UNAUTHORIZED {
+            checked += 1;
+            continue;
+        }
+        break response;
+    };
+    assert!(started.elapsed() < REQUEST_RATE_INTERVAL);
+    assert!(checked >= 2, "{checked}");
+    assert_eq!(refused.headers()["retry-after"], "1");
+    let error: Value = refused.json().await.unwrap();
+    assert_eq!(error["code"], "concurrency_limited", "{error}");
+    assert_eq!(error["message"], "client IP rate limit", "{error}");
+
+    // The limit is per client IP, not per front-layer address nor per spoofed entry.
+    let response = unsigned_from("203.0.113.8").await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(t.prf_service.hits(), 0);
 }
 
 #[tokio::test]

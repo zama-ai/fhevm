@@ -70,6 +70,21 @@ pub struct Config {
         default_value = "200"
     )]
     pub max_requests_per_signer: NonZeroU32,
+    /// How many requests one client IP can send to this proxy replica per second; more are
+    /// answered `429` before their signature is checked.
+    #[arg(
+        long,
+        env = "COPROCESSOR_PROXY_MAX_REQUESTS_PER_IP",
+        default_value = "200"
+    )]
+    pub max_requests_per_ip: NonZeroU32,
+    /// How many front layers forward each request to the proxy, each appending the address it
+    /// received the request from to `X-Forwarded-For`. The client's IP is the entry this many
+    /// from the right, the one the outermost front layer appended; a request without it is
+    /// answered `400`. 0: clients connect directly, and the client's IP is the connection's peer
+    /// address.
+    #[arg(long, env = "COPROCESSOR_PROXY_FORWARDED_HOPS", default_value_t = 1)]
+    pub forwarded_hops: usize,
 
     /// The `host:port` address of prf-service, resolved once at startup: its Kubernetes Service,
     /// which routes to the ready pods.
@@ -252,6 +267,8 @@ mod tests {
         assert_eq!(config.client_idle_timeout, Duration::from_secs(65));
         assert_eq!(config.threads.get(), 2);
         assert_eq!(config.max_requests_per_signer.get(), 200);
+        assert_eq!(config.max_requests_per_ip.get(), 200);
+        assert_eq!(config.forwarded_hops, 1);
         assert_eq!(config.bind_address, "0.0.0.0:8443".parse().unwrap());
     }
 
@@ -277,6 +294,8 @@ mod tests {
                 "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
             ),
             ("COPROCESSOR_PROXY_MAX_REQUESTS_PER_SIGNER", "50"),
+            ("COPROCESSOR_PROXY_MAX_REQUESTS_PER_IP", "60"),
+            ("COPROCESSOR_PROXY_FORWARDED_HOPS", "2"),
             (
                 "COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS",
                 "prf-service-1:8090",
@@ -321,6 +340,8 @@ mod tests {
             Address::repeat_byte(0xa1)
         );
         assert_eq!(config.max_requests_per_signer.get(), 50);
+        assert_eq!(config.max_requests_per_ip.get(), 60);
+        assert_eq!(config.forwarded_hops, 2);
         assert_eq!(config.prf_service_address, "prf-service-1:8090");
         assert_eq!(config.prf_service_connect_timeout, Duration::from_secs(1));
         assert_eq!(config.prf_service_response_timeout, Duration::from_secs(45));

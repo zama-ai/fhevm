@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use fhevm_sig_auth::AuthError;
 use http::{
-    HeaderValue, StatusCode,
+    HeaderMap, HeaderValue, StatusCode,
     header::{
         ALLOW, AUTHORIZATION, CACHE_CONTROL, CONNECTION, CONTENT_LENGTH, CONTENT_TYPE, FORWARDED,
         HeaderName, PROXY_AUTHENTICATE, PROXY_AUTHORIZATION, RETRY_AFTER, TE, TRAILER, UPGRADE,
@@ -26,6 +26,7 @@ use pingora::{
 };
 use prometheus::{IntCounterVec, register_int_counter_vec};
 use std::{
+    net::IpAddr,
     sync::{LazyLock, atomic::Ordering},
     time::{Duration, Instant},
 };
@@ -47,7 +48,8 @@ static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
 /// The signer the proxy authenticated, EIP-55 checksummed: prf-service's caller. Any inbound value
 /// is dropped first.
 pub const X_FHEVM_SIGNER: HeaderName = HeaderName::from_static("x-fhevm-signer");
-// The `X-Forwarded-*` headers set by the proxy (any inbound value is dropped first).
+// The `X-Forwarded-*` headers set by the proxy. Any inbound value is dropped first, once the client
+// IP is read from the inbound `X-Forwarded-For`.
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto");
 // Client-supplied forwarding header the proxy never sets but must not forward either.
@@ -64,11 +66,13 @@ const NO_STORE: &str = "no-store";
 /// started after it, before it is checked again.
 pub const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
 
-/// The window [`Config::max_requests_per_signer`](crate::core::Config) counts requests in. A
-/// refused request is told to retry after it.
-pub const SIGNER_RATE_INTERVAL: Duration = Duration::from_secs(1);
+/// The window [`Config::max_requests_per_signer`](crate::core::Config) and
+/// [`Config::max_requests_per_ip`](crate::core::Config) count requests in. A refused request is told
+/// to retry after it.
+pub const REQUEST_RATE_INTERVAL: Duration = Duration::from_secs(1);
 
 const NOT_ORIGIN_FORM: &str = "request target must be an origin-form UTF-8 path";
+const NO_CLIENT_IP: &str = "X-Forwarded-For lacks the client IP appended by the front layer";
 
 /// Per-request context.
 pub struct RequestContext {
@@ -76,6 +80,8 @@ pub struct RequestContext {
     route: Option<Route>,
     /// The sender authenticated by the `FhevmSig` header.
     sender: Option<Address>,
+    /// See [`client_ip`].
+    client_ip: Option<IpAddr>,
 }
 
 impl Proxy {
@@ -123,6 +129,7 @@ impl ProxyHttp for Proxy {
             started_at: Instant::now(),
             route: None,
             sender: None,
+            client_ip: None,
         }
     }
 
@@ -150,6 +157,7 @@ impl ProxyHttp for Proxy {
         ctx: &mut Self::CTX,
     ) -> pingora::Result<bool> {
         let body_empty = session.is_body_empty();
+        ctx.client_ip = client_ip(session, self.config.forwarded_hops);
         let req = session.req_header();
 
         // Pingora forwards the raw target, but its URI renders an absolute-form or non-UTF-8 target
@@ -186,6 +194,23 @@ impl ProxyHttp for Proxy {
             return Ok(true);
         }
 
+        // Before the signature, so a flood from one client IP costs no signature check, nor a read
+        // of the KMS tx-senders. After the routing, so the readiness self-check, sent without
+        // `X-Forwarded-For` to a path no route matches, gets its `404`.
+        let Some(client_ip) = ctx.client_ip else {
+            let error = ErrorResponse::new(ErrorCode::Malformed, NO_CLIENT_IP);
+            self.respond_with_error(session, error, None).await?;
+            return Ok(true);
+        };
+        let requests = self.ip_requests.observe(&client_ip, 1);
+        if requests > self.config.max_requests_per_ip.get() as isize {
+            let error = ErrorResponse::new(ErrorCode::ConcurrencyLimited, "client IP rate limit");
+            let retry_after = REQUEST_RATE_INTERVAL.as_secs().to_string();
+            self.respond_with_error(session, error, Some((RETRY_AFTER, &retry_after)))
+                .await?;
+            return Ok(true);
+        }
+
         let authorization = req.headers.get(AUTHORIZATION).map(HeaderValue::as_bytes);
         let verified = match self.verifier.verify(authorization, target, b"") {
             // The signer can be a node of a KMS context whose activation is finalized but not read
@@ -216,7 +241,7 @@ impl ProxyHttp for Proxy {
         let requests = self.signer_requests.observe(&sender, 1);
         if requests > self.config.max_requests_per_signer.get() as isize {
             let error = ErrorResponse::new(ErrorCode::ConcurrencyLimited, "signer rate limit");
-            let retry_after = SIGNER_RATE_INTERVAL.as_secs().to_string();
+            let retry_after = REQUEST_RATE_INTERVAL.as_secs().to_string();
             self.respond_with_error(session, error, Some((RETRY_AFTER, &retry_after)))
                 .await?;
             return Ok(true);
@@ -244,7 +269,7 @@ impl ProxyHttp for Proxy {
     // the forwarding and hop-by-hop headers. The body is never touched.
     async fn upstream_request_filter(
         &self,
-        session: &mut Session,
+        _session: &mut Session,
         upstream_request: &mut RequestHeader,
         ctx: &mut Self::CTX,
     ) -> pingora::Result<()> {
@@ -252,8 +277,8 @@ impl ProxyHttp for Proxy {
         if let Some(sender) = ctx.sender {
             upstream_request.insert_header(X_FHEVM_SIGNER, sender.to_checksum(None))?;
         }
-        if let Some(addr) = session.client_addr().and_then(|a| a.as_inet()) {
-            upstream_request.insert_header(X_FORWARDED_FOR, addr.ip().to_string())?;
+        if let Some(client_ip) = ctx.client_ip {
+            upstream_request.insert_header(X_FORWARDED_FOR, client_ip.to_string())?;
         }
         upstream_request.insert_header(X_FORWARDED_PROTO, "https")?;
         Ok(())
@@ -320,10 +345,7 @@ impl ProxyHttp for Proxy {
             .map(|resp| resp.status.as_u16())
             .unwrap_or(0);
         let req = session.req_header();
-        let client = session
-            .client_addr()
-            .map(ToString::to_string)
-            .unwrap_or_default();
+        let client = ctx.client_ip.map(|ip| ip.to_string()).unwrap_or_default();
 
         let route = ctx.route.map_or("none", Route::as_str);
         let sender = ctx.sender.map(|s| s.to_checksum(None)).unwrap_or_default();
@@ -341,6 +363,31 @@ impl ProxyHttp for Proxy {
             "Proxied request"
         );
     }
+}
+
+/// The client's IP, or `None` when the request does not carry it. Behind `forwarded_hops` front
+/// layers, each appending the address it received the request from to `X-Forwarded-For`, it is the
+/// entry `forwarded_hops` from the right: the entries further left are whatever the client sent.
+/// With no front layer, it is the connection's peer address.
+fn client_ip(session: &Session, forwarded_hops: usize) -> Option<IpAddr> {
+    let ip = if forwarded_hops == 0 {
+        session.client_addr()?.as_inet()?.ip()
+    } else {
+        forwarded_ip(&session.req_header().headers, forwarded_hops)?
+    };
+    // A client reaching a dual-stack listener over IPv4 appears as an IPv4-mapped IPv6 address.
+    Some(ip.to_canonical())
+}
+
+/// The `X-Forwarded-For` entry `hops` from the right, over all the header's lines.
+fn forwarded_ip(headers: &HeaderMap, hops: usize) -> Option<IpAddr> {
+    let entry = headers
+        .get_all(X_FORWARDED_FOR)
+        .iter()
+        .rev()
+        .flat_map(|value| value.as_bytes().rsplit(|&byte| byte == b','))
+        .nth(hops.checked_sub(1)?)?;
+    std::str::from_utf8(entry).ok()?.trim().parse().ok()
 }
 
 /// Converts an `AuthError` into an `ErrorResponse` with its `auth_*` code. Only an expired header is
@@ -426,6 +473,46 @@ mod tests {
         let missing = auth_error_response(&AuthError::Missing);
         assert_eq!(missing.code.as_str(), "auth_missing");
         assert!(!missing.retryable);
+    }
+
+    fn forwarded(lines: &[&str]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        for line in lines {
+            headers.append(X_FORWARDED_FOR, HeaderValue::from_str(line).unwrap());
+        }
+        headers
+    }
+
+    fn ip(value: &str) -> Option<IpAddr> {
+        Some(value.parse().unwrap())
+    }
+
+    #[test]
+    fn the_client_ip_is_the_entry_appended_by_the_outermost_front_layer() {
+        // The client sent 6.6.6.6; the outer front layer appended 203.0.113.7, the inner 10.0.0.1.
+        let headers = forwarded(&["6.6.6.6, 203.0.113.7,10.0.0.1"]);
+        assert_eq!(forwarded_ip(&headers, 1), ip("10.0.0.1"));
+        assert_eq!(forwarded_ip(&headers, 2), ip("203.0.113.7"));
+        assert_eq!(forwarded_ip(&headers, 3), ip("6.6.6.6"));
+        // A front layer can append its entry on a header line of its own.
+        let headers = forwarded(&["6.6.6.6", "203.0.113.7", " 2001:db8::1 "]);
+        assert_eq!(forwarded_ip(&headers, 1), ip("2001:db8::1"));
+        assert_eq!(forwarded_ip(&headers, 2), ip("203.0.113.7"));
+    }
+
+    #[test]
+    fn a_request_without_the_client_ip_has_none() {
+        assert_eq!(forwarded_ip(&HeaderMap::new(), 1), None);
+        assert_eq!(forwarded_ip(&forwarded(&["203.0.113.7"]), 2), None);
+        assert_eq!(forwarded_ip(&forwarded(&["203.0.113.7"]), 0), None);
+        assert_eq!(forwarded_ip(&forwarded(&["203.0.113.7, unknown"]), 1), None);
+        assert_eq!(forwarded_ip(&forwarded(&["203.0.113.7:443"]), 1), None);
+        assert_eq!(forwarded_ip(&forwarded(&["203.0.113.7,"]), 1), None);
+        // Only the selected entry must parse.
+        assert_eq!(
+            forwarded_ip(&forwarded(&["garbage, 203.0.113.7"]), 1),
+            ip("203.0.113.7")
+        );
     }
 
     #[test]

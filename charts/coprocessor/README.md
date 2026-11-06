@@ -114,6 +114,11 @@ the replicas, so a signer's limit is up to about `replicas` × `maxRequestsPerSi
 replicas raises it. The `signer` label of `coprocessor_proxy_requests_counter` names the
 authenticated signer, so its `status="429"` series show which connector was limited.
 
+Before checking the signature, each replica also limits how many requests per second one client IP
+can send: `coprocessorProxy.maxRequestsPerIp` (200 by default). Requests above it get the same
+`429`, with the message `client IP rate limit`, and count with an empty `signer` label. The client
+IP comes from `X-Forwarded-For` (see the deployment requirement below).
+
 Kubernetes sends `SIGTERM` when it starts removing the pod from the Service, and each node keeps
 routing new connections to the pod until that removal reaches it. So on `SIGTERM` the proxy keeps
 serving for `coprocessorProxy.shutdownDelaySeconds` (10 by default): it accepts new connections and
@@ -138,26 +143,37 @@ every node drain.
 
 ### Deployment requirement
 
-The proxy authenticates every request before forwarding it. It does not bound the connections
-clients open: Pingora 0.9 accepts any number, waits up to 60 s for each TLS handshake, and accepts
-request heads of up to 1 MiB. Each slow connection holds about 48 KB, so about 10,000 fill the
-512Mi memory limit and the replica is OOM-killed, at any thread count. The proxy must therefore
-not be reachable directly from the internet. Put it behind an HTTP-aware front layer that
-terminates the client's TLS connection, receives each request in full before forwarding it,
-limits connections per client IP, and connects to the proxy over TLS, such as Cloudflare or an
-AWS Application Load Balancer.
+The proxy must sit behind an HTTP-aware front layer, such as Cloudflare or an AWS Application Load
+Balancer, and must not be reachable directly from the internet. The front layer terminates the
+client's TLS connection, receives each request in full before forwarding it, limits connections
+and slow clients, and connects to the proxy over TLS. The proxy does not bound the connections
+clients open: Pingora 0.9 accepts any number and waits up to 60 s for each TLS handshake. Each
+slow connection holds about 48 KB, so about 10,000 fill the 512Mi memory limit and the replica is
+OOM-killed, at any thread count.
 
-As defence in depth, the proxy also bounds the time a client takes to send a request head. A
-client has `coprocessorProxy.requestHeadTimeoutSeconds` (10 by default) after its TLS handshake to
-send the whole head of its first request, and `coprocessorProxy.clientIdleTimeoutSeconds` plus 5 s
-after a response to send the whole head of the next one. The proxy closes a connection idle for
+Each front layer appends the address it received the request from to `X-Forwarded-For`. Set
+`coprocessorProxy.forwardedHops` to the number of front layers: the proxy takes the client IP from
+the entry that many from the right, the one the outermost front layer appended. Entries further
+left come from the client and are ignored. A request without that entry gets `400`. The proxy
+forwards the client IP to prf-service in its own `X-Forwarded-For` and logs it.
+
+| Front layers | `forwardedHops` |
+| --- | --- |
+| AWS ALB alone | 1 |
+| Cloudflare alone | 1 |
+| Cloudflare, then an AWS ALB | 2 |
+
+The ALB must keep its default `X-Forwarded-For` processing mode, `append`. A `forwardedHops` lower
+than the number of front layers takes a front layer's address as the client's, so all clients
+behind it share one per-IP limit. A higher one takes an address the client chose.
+
+As defence in depth alongside the front layer, the proxy limits each client IP's request rate (see
+above) and bounds the time a client takes to send a request head. A client has
+`coprocessorProxy.requestHeadTimeoutSeconds` (10 by default) after its TLS handshake to send the
+whole head of its first request, and `coprocessorProxy.clientIdleTimeoutSeconds` plus 5 s after a
+response to send the whole head of the next one. The proxy closes a connection idle for
 `clientIdleTimeoutSeconds` before that deadline, so the deadline only closes one whose next head,
 or previous body, is still arriving. No deadline runs while prf-service holds a request.
-
-The proxy speaks HTTP/1.1 to its clients, so each request a connector holds open takes one
-connection: the front layer's per-client connection limit must allow the connector's concurrent
-PRF requests, and its limits across all clients must stay well below the connections that fill a
-replica's memory.
 
 The front layer's idle timeout towards the proxy must be shorter than
 `coprocessorProxy.clientIdleTimeoutSeconds` (65 s by default). Otherwise the front layer can send a
@@ -165,6 +181,9 @@ request on a connection the proxy is closing, and answers the client `502`. AWS 
 timeout is 60 s. The proxy also closes a connection after 1000 requests, so that a front layer's
 long-lived connections spread again over the replicas, new ones included.
 
+The proxy speaks HTTP/1.1, so each request a connector holds open takes one connection: the front
+layer's per-client connection limit must allow the connector's concurrent PRF requests, and its
+limits across all clients must stay well below the connections that fill a replica's memory.
 Every timeout of the front layer must sit between the connector's `PRF_RETRIEVAL_DEADLINE` and
 `prfServiceResponseTimeoutSeconds`, as described above.
 

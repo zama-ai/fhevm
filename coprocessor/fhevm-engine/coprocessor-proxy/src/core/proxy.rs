@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        Config, SIGNER_RATE_INTERVAL,
+        Config, REQUEST_RATE_INTERVAL,
         client_limits::{ClientLimits, LimitedApp},
     },
     kms_tx_senders::Follower,
@@ -52,8 +52,10 @@ pub struct Proxy {
     /// [`Config::prf_service_address`], resolved.
     pub(super) prf_service: SocketAddr,
     pub(super) kms_tx_senders: Arc<Follower<DynProvider>>,
-    /// The authenticated requests of each signer, per [`SIGNER_RATE_INTERVAL`].
+    /// The authenticated requests of each signer, per [`REQUEST_RATE_INTERVAL`].
     pub(super) signer_requests: Rate,
+    /// The requests of each client IP, per [`REQUEST_RATE_INTERVAL`].
+    pub(super) ip_requests: Rate,
     /// Set during the shutdown delay: each client connection closes after its next response.
     pub(super) draining: Arc<AtomicBool>,
     pub(super) client_limits: Arc<ClientLimits>,
@@ -136,6 +138,8 @@ impl Proxy {
             request_head_timeout = ?config.request_head_timeout,
             client_idle_timeout = ?config.client_idle_timeout,
             keepalive_request_limit = KEEPALIVE_REQUEST_LIMIT,
+            forwarded_hops = config.forwarded_hops,
+            max_requests_per_ip = config.max_requests_per_ip,
             "Client limits"
         );
         let client_limits = Arc::new(ClientLimits::new(
@@ -147,7 +151,8 @@ impl Proxy {
             config,
             prf_service,
             kms_tx_senders: Arc::new(follower),
-            signer_requests: Rate::new(SIGNER_RATE_INTERVAL),
+            signer_requests: Rate::new(REQUEST_RATE_INTERVAL),
+            ip_requests: Rate::new(REQUEST_RATE_INTERVAL),
             draining: Arc::default(),
             client_limits,
         };
