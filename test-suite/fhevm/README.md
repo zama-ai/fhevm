@@ -199,6 +199,8 @@ An upgrade test is a test profile that changes the stack between its checks. It 
 ./fhevm-cli test key-migration-from-v0.14
 ```
 
+`test-suite-e2e-key-migration-nightly` runs this test on `main` every weekday night.
+
 The profile drives the stack through a `Stack` handle (`src/commands/stack.ts`):
 
 - `stack.upgrade(...steps)` runs the next bootstrap upgrade steps. They must continue the order `contracts`, `relayer`, `kms-operator:<n>` for each KMS operator, `listener-core`, then `green`, which starts the deferred Green fleet; a list that does not fails before anything changes. A test can upgrade a few steps, run checks, then upgrade the rest. Without `upgrade: deferred`, `up` runs the same order itself, except `relayer`, which then boots at the bundle.
