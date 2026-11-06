@@ -232,22 +232,29 @@ pub(crate) async fn discover_blocks_for_consensus_epoch(
 ) -> Result<u64, ExecutionError> {
     let frontiers = load_existing_frontiers(pool, consensus_epoch).await?;
     let windows = load_consensus_epoch_windows(pool, consensus_epoch).await?;
-    let latest_valid = load_latest_valid_blocks(pool).await?;
+    let host_chain_ids = load_host_chain_ids(pool).await?;
 
     let mut inserted = 0_u64;
-    for latest in latest_valid {
+    for host_chain_id in host_chain_ids {
+        let frontier = frontiers.get(&host_chain_id);
+        // Only the legacy seed reads finality; skip the lookup everywhere else.
+        let latest_finalized_block =
+            if frontier.is_none() && consensus_epoch == LEGACY_CONSENSUS_EPOCH {
+                load_latest_finalized_block(pool, host_chain_id).await?
+            } else {
+                None
+            };
         let Some(bound) = discovery_bound_for_chain(
             consensus_epoch,
-            latest.host_chain_id,
-            latest.finalized_block_number,
-            frontiers.get(&latest.host_chain_id),
-            windows.get(&latest.host_chain_id).copied(),
+            host_chain_id,
+            latest_finalized_block,
+            frontier,
+            windows.get(&host_chain_id).copied(),
             cadence_overrides,
         ) else {
             tracing::debug!(
                 consensus_epoch,
-                host_chain_id = latest.host_chain_id,
-                host_tip = latest.block_number,
+                host_chain_id,
                 "No discovery start yet: legacy waits for a finalized block, an upgrade for its window"
             );
             continue;
@@ -264,12 +271,6 @@ pub(crate) async fn discover_blocks_for_consensus_epoch(
         };
     }
     Ok(inserted)
-}
-
-struct LatestValidBlock {
-    host_chain_id: i64,
-    block_number: i64,
-    finalized_block_number: Option<i64>,
 }
 
 async fn load_existing_frontiers(
@@ -323,29 +324,50 @@ async fn load_consensus_epoch_windows(
         .collect())
 }
 
-async fn load_latest_valid_blocks(pool: &PgPool) -> Result<Vec<LatestValidBlock>, ExecutionError> {
-    let rows = sqlx::query!(
+/// Runs on every discovery poll, so it must not read every block of every chain
+/// (a `GROUP BY` over the table took 1–2.6 s on BSC Testnet): skip through the
+/// per-chain block-number index, one probe per chain.
+async fn load_host_chain_ids(pool: &PgPool) -> Result<Vec<i64>, ExecutionError> {
+    let rows = sqlx::query_scalar!(
         r#"
-        SELECT chain_id AS host_chain_id,
-               MAX(block_number) AS "block_number!",
-               MAX(block_number) FILTER (WHERE block_status = 'finalized')
-                   AS finalized_block_number
-          FROM host_chain_blocks_valid
-         WHERE block_status <> 'orphaned'
-           AND OCTET_LENGTH(parent_hash) = 32
-         GROUP BY chain_id
+        WITH RECURSIVE chains AS (
+            SELECT MIN(chain_id) AS chain_id FROM host_chain_blocks_valid
+            UNION ALL
+            SELECT (SELECT MIN(next.chain_id)
+                      FROM host_chain_blocks_valid next
+                     WHERE next.chain_id > chains.chain_id)
+              FROM chains
+             WHERE chains.chain_id IS NOT NULL
+        )
+        SELECT chain_id AS "chain_id!" FROM chains WHERE chain_id IS NOT NULL
         "#,
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows
-        .into_iter()
-        .map(|row| LatestValidBlock {
-            host_chain_id: row.host_chain_id,
-            block_number: row.block_number,
-            finalized_block_number: row.finalized_block_number,
-        })
-        .collect())
+    Ok(rows)
+}
+
+/// Walks the block-number index back from the head through every block above
+/// finality, so it is only read to seed a legacy chain.
+async fn load_latest_finalized_block(
+    pool: &PgPool,
+    host_chain_id: i64,
+) -> Result<Option<i64>, ExecutionError> {
+    let block_number = sqlx::query_scalar!(
+        r#"
+        SELECT block_number
+          FROM host_chain_blocks_valid
+         WHERE chain_id = $1
+           AND block_status = 'finalized'
+           AND OCTET_LENGTH(parent_hash) = 32
+         ORDER BY block_number DESC
+         LIMIT 1
+        "#,
+        host_chain_id,
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(block_number)
 }
 
 async fn insert_bootstrap_blocks(
