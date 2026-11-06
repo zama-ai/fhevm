@@ -881,9 +881,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       if (plan.coprocessor.hostListenerMode === "consumer" && isLegacyHostListener(suffix)) {
         adjusted.profiles = ["legacy-host-listeners"];
       }
-      // The proxy pair keeps the bundle's images unless built locally: a registry instance's tag names
-      // a coprocessor release that may predate the proxy, and the fake runs the test-suite image.
-      if (locallyBuilt || !COPROCESSOR_PROXY_SERVICES.has(name)) {
+      // The proxy pair and prf-service keep the bundle's images unless built locally: an older
+      // registry tag may not have them, and the seeder runs the test-suite image.
+      if (locallyBuilt || !(COPROCESSOR_PROXY_SERVICES.has(name) || name === "coprocessor-prf-service")) {
         applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       }
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {

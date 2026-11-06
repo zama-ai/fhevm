@@ -279,11 +279,10 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
 export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
 
 /**
- * The coprocessor services `runsCoprocessorProxy` gates as a pair: the proxy and the fake
- * prf-service it forwards to, in start order. The fake runs the test-suite image, so it is not a
- * coprocessor build service.
+ * The services that `runsCoprocessorProxy` gates, in start order: the PRF output seeder and the proxy.
+ * The seeder runs the test-suite image, so it is not a coprocessor build service.
  */
-export const COPROCESSOR_PROXY_SUFFIXES = ["prf-service-fake", "proxy"];
+export const COPROCESSOR_PROXY_SUFFIXES = ["prf-output-seed", "proxy"];
 
 /**
  * The env file of coprocessor `index`'s proxy. It holds only the proxy's own settings: the

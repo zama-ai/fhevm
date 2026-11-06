@@ -118,7 +118,7 @@ describe("env", () => {
     expect(rendered.instanceEnvs["kms-connector.3"].KMS_CONNECTOR_ENDPOINT_ADDRESSES).toBe("kms-connector-3-endpoint:8080");
   });
 
-  test("points each coprocessor's proxy at its own fake prf-service, for requests signed for that coprocessor", async () => {
+  test("points each coprocessor's proxy at its own prf-service, for requests signed for that coprocessor", async () => {
     const templateEnvs = Object.fromEntries(
       await Promise.all(
         COMPONENTS.map(async (component) => [
@@ -132,7 +132,10 @@ describe("env", () => {
       target: "latest-main",
       lockPath: "/tmp/latest-main.json",
       requiresGitHub: true,
-      versions: { ...bundle, env: { ...bundle.env, COPROCESSOR_PROXY_VERSION: "v0.15.0" } },
+      versions: {
+        ...bundle,
+        env: { ...bundle.env, COPROCESSOR_PROXY_VERSION: "v0.15.0", COPROCESSOR_PRF_SERVICE_VERSION: "v0.15.0" },
+      },
       overrides: [],
       scenario: testDefaultScenario({ topology: { count, threshold: count } }),
       completedSteps: [],
@@ -151,7 +154,7 @@ describe("env", () => {
     expectProxyEnv(
       solo.instanceEnvs["coprocessor-proxy"],
       templateEnvs["host-sc"].COPROCESSOR_SIGNER_ADDRESS_0,
-      "coprocessor-prf-service-fake:8080",
+      "coprocessor-prf-service:8090",
     );
     expectNoProxySetting(solo.componentEnvs.coprocessor);
 
@@ -161,12 +164,12 @@ describe("env", () => {
     expectProxyEnv(
       pair.instanceEnvs["coprocessor-proxy"],
       signers.COPROCESSOR_SIGNER_ADDRESS_0,
-      "coprocessor-prf-service-fake:8080",
+      "coprocessor-prf-service:8090",
     );
     expectProxyEnv(
       pair.instanceEnvs["coprocessor-proxy.1"],
       signers.COPROCESSOR_SIGNER_ADDRESS_1,
-      "coprocessor1-prf-service-fake:8080",
+      "coprocessor1-prf-service:8090",
     );
     expectNoProxySetting(pair.componentEnvs.coprocessor);
     expectNoProxySetting(pair.instanceEnvs["coprocessor.1"]);
@@ -186,7 +189,10 @@ describe("env", () => {
       target: "latest-main",
       lockPath: "/tmp/latest-main.json",
       requiresGitHub: true,
-      versions: { ...bundle, env: { ...bundle.env, COPROCESSOR_PROXY_VERSION: proxyVersion } },
+      versions: {
+        ...bundle,
+        env: { ...bundle.env, COPROCESSOR_PROXY_VERSION: proxyVersion, COPROCESSOR_PRF_SERVICE_VERSION: proxyVersion },
+      },
       overrides: [],
       scenario: testDefaultScenario({ topology: { count, threshold: count } }),
       completedSteps: [],
@@ -202,8 +208,8 @@ describe("env", () => {
         pair.instanceEnvs["coprocessor-proxy.1"].COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS,
       ].join(","),
     );
-    expect(suite.PRF_SERVICE_FAKE_COUNT_URLS).toBe(
-      "http://coprocessor-prf-service-fake:9090/count,http://coprocessor1-prf-service-fake:9090/count",
+    expect(suite.PRF_SERVICE_METRICS_URLS).toBe(
+      "http://coprocessor-prf-service:9100/metrics,http://coprocessor1-prf-service:9100/metrics",
     );
     expect(suite.COPROCESSOR_PROXY_METRICS_URLS).toBe(
       "http://coprocessor-proxy:9100/metrics,http://coprocessor1-proxy:9100/metrics",
@@ -229,7 +235,7 @@ describe("env", () => {
       for (const key of [
         "COPROCESSOR_PROXY_URLS",
         "COPROCESSOR_SIGNER_ADDRESSES",
-        "PRF_SERVICE_FAKE_COUNT_URLS",
+        "PRF_SERVICE_METRICS_URLS",
         "COPROCESSOR_PROXY_METRICS_URLS",
         "KMS_CONNECTOR_PRIVATE_KEY",
       ]) {
