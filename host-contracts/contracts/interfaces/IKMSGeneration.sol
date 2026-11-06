@@ -364,6 +364,13 @@ interface IKMSGeneration {
     function getCrsParamsType(uint256 crsId) external view returns (ParamsType);
 
     /**
+     * @notice Get the max bit length used for the CRS generation.
+     * @param crsId The ID of the CRS.
+     * @return The max bit length used for the CRS generation.
+     */
+    function getCrsMaxBitLength(uint256 crsId) external view returns (uint256);
+
+    /**
      * @notice Get the ID of the current active key.
      * @return The current ID of the active key.
      */
