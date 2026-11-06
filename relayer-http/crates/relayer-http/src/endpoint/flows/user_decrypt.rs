@@ -13,8 +13,9 @@ use serde::{Deserialize, Deserializer};
 use super::{Reply, read_json};
 use crate::App;
 use crate::endpoint::ApiError;
+use crate::endpoint::summary::{Guard, Summary};
 use crate::endpoint::validate::{self, Invalid};
-use crate::logging::Log;
+use crate::metrics::FlowName;
 
 pub const ATTESTATION_TYPE: &str = "eip712-unified-user-decrypt-v1";
 /// The connector's cap.
@@ -120,38 +121,51 @@ pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Re
     validate::extra_data("payload.extraData", &payload.extra_data)
 }
 
-/// One request, logged step by step under its own `Log`.
+/// One request, summarized in its own `Summary`.
 pub async fn handle(app: State<App>, request: Request) -> Response {
-    let mut log = Log::new("user_decrypt");
-    process(&app, request, &mut log)
-        .await
-        .unwrap_or_else(IntoResponse::into_response)
+    let mut guard = Guard::new(FlowName::UserDecrypt, app.metrics.clone());
+    let result = process(&app, request, &mut guard.summary).await;
+    guard.disarm();
+    result.unwrap_or_else(IntoResponse::into_response)
 }
 
 /// Read and parse the body (bounded by `http.body_read_timeout`), validate, convert to the connector DTO,
 /// aggregate, answer.
-async fn process(app: &App, request: Request, log: &mut Log) -> Result<Response, ApiError> {
-    let request: UserDecryptRequest = read_json(app, request, log).await?;
-    log.received(
+async fn process(app: &App, request: Request, summary: &mut Summary) -> Result<Response, ApiError> {
+    let request: UserDecryptRequest = read_json(app, request, summary).await?;
+    summary.received(
         request
             .payload
             .handles
             .iter()
             .map(|h| h.ct_handle)
             .collect(),
+        handle_contracts(&request.payload),
+        request.payload.allowed_contracts.clone(),
+        Some(request.payload.user_address),
     );
-    validate(&request, &app.http.supported_chain_ids, super::now()).map_err(|e| {
-        log.validation_failed(&e.field, &e.issue);
-        ApiError::malformed(log, e.to_string())
-    })?;
+    validate(&request, &app.http.supported_chain_ids, super::now())
+        .map_err(|e| ApiError::malformed(summary, e.to_string()))?;
     let request = UserDecryptionRequest::from(request);
-    log.forwarded(request.id());
-    let output = app
+    summary.forwarded(request.id());
+    let result = app
         .user_decrypt
-        .run(&log.request_id, request)
-        .await
-        .map_err(|e| ApiError::aggregation(log, e))?;
-    Ok(Reply::succeeded(log.clone(), output).into_response())
+        .run(&summary.request_id, request, &mut summary.tally)
+        .await;
+    result
+        .map(|output| Reply::succeeded(summary.clone(), output).into_response())
+        .map_err(|e| ApiError::aggregation(summary, e))
+}
+
+/// The contracts of the handles, once each.
+fn handle_contracts(payload: &UserDecryptPayload) -> Vec<Address> {
+    let mut addresses: Vec<Address> = Vec::new();
+    for address in payload.handles.iter().map(|h| h.contract_address) {
+        if !addresses.contains(&address) {
+            addresses.push(address);
+        }
+    }
+    addresses
 }
 
 /// The body the connector receives (RFC-033), field by field.
@@ -250,6 +264,23 @@ pub(crate) mod tests {
         assert!(serde_json::from_str::<UserDecryptRequest>(&short_handle).is_err());
         let bad_timestamp = wire("\"soon\"", "2");
         assert!(serde_json::from_str::<UserDecryptRequest>(&bad_timestamp).is_err());
+    }
+
+    #[test]
+    fn handle_contracts_lists_each_contract_once_in_order() {
+        let (a, b) = (Address::repeat_byte(0xaa), Address::repeat_byte(0xbb));
+        let mut payload = valid().payload;
+        let entry = payload.handles[0].clone();
+        payload.handles = [a, b, a, b, a]
+            .into_iter()
+            .map(|contract_address| HandleEntry {
+                contract_address,
+                ..entry.clone()
+            })
+            .collect();
+        assert_eq!(handle_contracts(&payload), [a, b]);
+        payload.handles.clear();
+        assert!(handle_contracts(&payload).is_empty());
     }
 
     #[test]

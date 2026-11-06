@@ -19,7 +19,25 @@ pub struct RelayerConfig {
     #[serde(default)]
     pub log: LogConfig,
     pub http: HttpConfig,
+    #[serde(default)]
+    pub metrics: MetricsConfig,
     pub kms_aggregator: KmsAggregatorConfig,
+}
+
+/// The Prometheus listener, on its own port as in the relayer. Optional: defaults to `0.0.0.0:9898`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MetricsConfig {
+    /// Bind address of `GET /metrics`.
+    pub endpoint: SocketAddr,
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: SocketAddr::from(([0, 0, 0, 0], 9898)),
+        }
+    }
 }
 
 /// The HTTP server: the API and the Kubernetes probes share one port.
@@ -80,7 +98,7 @@ impl HttpConfig {
 
 /// The current relayer's log configuration, same keys and meaning. Optional: without a `log:` block the process
 /// logs JSON lines (production). Overrides: `APP_LOG__FORMAT`, `APP_LOG__SHOW_FILE_LINE`, ...; the level filter is
-/// `RUST_LOG` (default `warn,relayer_http=info`).
+/// `RUST_LOG` (default `warn,relayer_http=debug`).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LogConfig {
@@ -147,7 +165,7 @@ mod tests {
     fn example_config_loads_and_validates() {
         let config = RelayerConfig::load(EXAMPLE).unwrap();
         assert_eq!(config.name, "zama-relayer-http");
-        assert_eq!(config.log.format, "pretty");
+        assert_eq!(config.log.format, "json");
         assert!(config.log.show_timestamp && config.log.show_target);
         assert_eq!(config.kms_aggregator.endpoints.len(), 13);
         assert_eq!(config.kms_aggregator.user_decrypt.threshold, 9);

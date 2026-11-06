@@ -11,7 +11,7 @@ pub(crate) mod mock;
 mod scenarios;
 mod signer;
 
-pub use aggregator::{AggregationError, Aggregator};
+pub use aggregator::{AggregationError, Aggregator, Tally};
 pub use call::{CallError, CallResult, Caller};
 pub use client::{
     AttemptError, ConnectorClient, Endpoint, HttpClient, HttpReply, MAX_RESPONSE_BYTES,

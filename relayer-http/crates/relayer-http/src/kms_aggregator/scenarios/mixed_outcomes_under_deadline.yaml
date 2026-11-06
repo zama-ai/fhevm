@@ -16,3 +16,6 @@ expect:
   responses: 8
   elapsed: 5s
   attempts: 18
+  metrics:                     # a bad signature is a successful call; the 2 refused attempts have no answer to time
+    answered: 16
+    errors: { rate_limited: 2, acl_denied: 4, upstream_transient: 2, cancelled: 1 }

@@ -11,3 +11,6 @@ expect:
   responses: 13
   elapsed: 520ms
   attempts: 26
+  metrics:                     # every node needed 2 attempts: the retry is visible per node
+    answered: 26
+    errors: { ciphertext_not_found: 13 }

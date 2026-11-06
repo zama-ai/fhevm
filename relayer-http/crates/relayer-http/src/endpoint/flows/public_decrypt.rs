@@ -10,8 +10,9 @@ use serde::Deserialize;
 use super::{Reply, read_json};
 use crate::App;
 use crate::endpoint::ApiError;
+use crate::endpoint::summary::{Guard, Summary};
 use crate::endpoint::validate::{self, Invalid};
-use crate::logging::Log;
+use crate::metrics::FlowName;
 
 /// Request body. Hex fields are typed: length and format are checked by deserialisation.
 #[derive(Debug, Clone, Deserialize)]
@@ -31,31 +32,35 @@ pub fn validate(request: &PublicDecryptRequest, chain_ids: &[u64]) -> Result<(),
     validate::extra_data("extraData", &request.extra_data)
 }
 
-/// One request, logged step by step under its own `Log`.
+/// One request, summarized in its own `Summary`.
 pub async fn handle(app: State<App>, request: Request) -> Response {
-    let mut log = Log::new("public_decrypt");
-    process(&app, request, &mut log)
-        .await
-        .unwrap_or_else(IntoResponse::into_response)
+    let mut guard = Guard::new(FlowName::PublicDecrypt, app.metrics.clone());
+    let result = process(&app, request, &mut guard.summary).await;
+    guard.disarm();
+    result.unwrap_or_else(IntoResponse::into_response)
 }
 
 /// Read and parse the body (bounded by `http.body_read_timeout`), validate, convert to the connector DTO,
 /// aggregate, answer.
-async fn process(app: &App, request: Request, log: &mut Log) -> Result<Response, ApiError> {
-    let request: PublicDecryptRequest = read_json(app, request, log).await?;
-    log.received(request.ciphertext_handles.clone());
-    validate(&request, &app.http.supported_chain_ids).map_err(|e| {
-        log.validation_failed(&e.field, &e.issue);
-        ApiError::malformed(log, e.to_string())
-    })?;
+async fn process(app: &App, request: Request, summary: &mut Summary) -> Result<Response, ApiError> {
+    let request: PublicDecryptRequest = read_json(app, request, summary).await?;
+    summary.received(
+        request.ciphertext_handles.clone(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    );
+    validate(&request, &app.http.supported_chain_ids)
+        .map_err(|e| ApiError::malformed(summary, e.to_string()))?;
     let request = PublicDecryptionRequest::from(request);
-    log.forwarded(request.id());
-    let output = app
+    summary.forwarded(request.id());
+    let result = app
         .public_decrypt
-        .run(&log.request_id, request)
-        .await
-        .map_err(|e| ApiError::aggregation(log, e))?;
-    Ok(Reply::succeeded(log.clone(), output).into_response())
+        .run(&summary.request_id, request, &mut summary.tally)
+        .await;
+    result
+        .map(|output| Reply::succeeded(summary.clone(), output).into_response())
+        .map_err(|e| ApiError::aggregation(summary, e))
 }
 
 /// The body the connector receives (RFC-033).
