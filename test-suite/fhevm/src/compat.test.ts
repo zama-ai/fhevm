@@ -28,6 +28,7 @@ import {
   supportsCoprocessorProxy,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
+  supportsPrfService,
   supportsUpgradeController,
   validateBundleCompatibility,
 } from "./compat/compat";
@@ -467,6 +468,19 @@ describe("compat", () => {
     expect(supportsCoprocessorProxy(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-proxy"] }]))).toBe(true);
     expect(supportsCoprocessorProxy(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-tfhe-worker"] }]))).toBe(false);
     expect(supportsCoprocessorProxy(stateFor({}, [{ group: "kms-connector" }]))).toBe(false);
+  });
+
+  test("enables the prf-service only when its image is pinned or locally built", () => {
+    const stateFor = (env: Record<string, string>, overrides: LocalOverride[] = []) => ({
+      versions: { target: "latest-main" as const, lockName: "latest-main.json", env, sources: [] },
+      overrides,
+    });
+    expect(supportsPrfService(stateFor({}))).toBe(false);
+    expect(supportsPrfService(stateFor({ COPROCESSOR_PRF_SERVICE_VERSION: "02f6cc0" }))).toBe(true);
+    expect(supportsPrfService(stateFor({}, [{ group: "coprocessor" }]))).toBe(true);
+    expect(supportsPrfService(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-prf-service"] }]))).toBe(true);
+    expect(supportsPrfService(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-tfhe-worker"] }]))).toBe(false);
+    expect(supportsPrfService(stateFor({}, [{ group: "kms-connector" }]))).toBe(false);
   });
 
   test("enables the kms-connector HTTP path only when both the endpoint and proxy images are pinned or locally built", () => {
