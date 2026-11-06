@@ -140,7 +140,7 @@ export async function fetchCoprocessorSignatures(
   const cleartextEthereumModule = relayerClient.runtime.ethereum as CleartextEthereumModule;
   const { payload, fhevmContext } = parameters;
 
-  const offChain = await isForgeFhevmV1(relayerClient, fhevmContext);
+  const offChain = await isForgeFhevmV1(relayerClient);
 
   let res;
   if (offChain) {

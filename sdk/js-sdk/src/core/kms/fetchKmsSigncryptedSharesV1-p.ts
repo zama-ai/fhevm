@@ -170,7 +170,6 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
     extraData: signedPermitExtraData,
-    fhevmContext,
   });
 
   // 10. Fetch `KmsSigncryptedShares` from the relayer

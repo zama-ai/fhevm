@@ -156,7 +156,6 @@ export async function fetchKmsSigncryptedSharesV2NoGateway(
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
     extraData: signedPermitExtraData,
-    fhevmContext,
   });
 
   // 8. Fetch `KmsSigncryptedShares` from relayer-http (POST v4/user-decrypt, no gateway)

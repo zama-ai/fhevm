@@ -154,8 +154,7 @@ export async function createUnsignedDecryptionPermitEip712V1(
   context: KmsSignDecryptionPermitContext,
   parameters: Omit<KmsSignDecryptionPermitParameters, 'signer' | 'signerAddress'>,
 ): Promise<KmsDelegatedUserDecryptEip712V1 | KmsUserDecryptEip712V1> {
-  const { contractAddresses, startTimestamp, durationSeconds, transportKeyPair, delegatorAddress, fhevmContext } =
-    parameters;
+  const { contractAddresses, startTimestamp, durationSeconds, transportKeyPair, delegatorAddress } = parameters;
 
   const durationDays = secondsToDays(durationSeconds, { subject: 'durationSeconds' });
 
@@ -168,7 +167,6 @@ export async function createUnsignedDecryptionPermitEip712V1(
   const kmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-    fhevmContext,
   });
 
   const extraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);

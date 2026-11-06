@@ -269,7 +269,6 @@ export async function createUnsignedDecryptionPermitEip712V2(
     signerAddress: signerAddressArg,
     transportKeyPair,
     delegatorAddress: delegatorAddressArg,
-    fhevmContext,
   } = parameters;
 
   assertIsUintNumber(durationSecondsParam, { subject: 'durationSeconds' });
@@ -308,7 +307,6 @@ export async function createUnsignedDecryptionPermitEip712V2(
   const kmsSignersContext = await readCurrentKmsSignersContext(context, {
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-    fhevmContext,
   });
 
   const kmsContextExtraData: KmsExtraData = kmsSignersContextToExtraData(kmsSignersContext);

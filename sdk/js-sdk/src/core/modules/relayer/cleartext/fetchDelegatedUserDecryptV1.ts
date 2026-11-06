@@ -5,7 +5,6 @@ import type {
   RelayerClientWithRuntime,
 } from '../types.js';
 import type { KmsSignersContext } from '../../../types/kmsSignersContext.js';
-import type { FhevmClientFrozenContext } from '../../../types/fhevmClientFrozenContext-p.js';
 import { asUint32BigInt, tryParseUintBigIntString } from '../../../base/uint.js';
 import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
 import { signKmsSigncryptedShares } from './signers.js';
@@ -19,7 +18,6 @@ import { readCurrentKmsSignersContext } from '../../../host-contracts/readKmsSig
 async function runDelegatedUserDecryptOffChain(
   relayerClient: RelayerClientWithRuntime,
   payload: FetchDelegatedUserDecryptParameters['payload'],
-  fhevmContext: FhevmClientFrozenContext,
 ): Promise<{
   readonly commonKmsSigncryptedSharePayload: BytesHex;
   readonly signersAddress: readonly ChecksummedAddress[];
@@ -41,7 +39,6 @@ async function runDelegatedUserDecryptOffChain(
     protocolConfigAddress: relayerClient.chain.fhevm.contracts.protocolConfig?.address as
       | ChecksummedAddress
       | undefined,
-    fhevmContext,
   });
   const signersAddress = currentKmsSignersContext.signers;
   const threshold = currentKmsSignersContext.threshold;
@@ -186,7 +183,7 @@ export async function fetchDelegatedUserDecrypt(
   relayerClient: RelayerClientWithRuntime,
   parameters: FetchDelegatedUserDecryptParameters,
 ): Promise<FetchUserDecryptReturnType> {
-  const { payload, fhevmContext } = parameters;
+  const { payload } = parameters;
   const pairs = payload.handleContractPairs;
   const contractAddresses = payload.kmsDecryptEip712Message.contractAddresses;
 
@@ -204,11 +201,11 @@ export async function fetchDelegatedUserDecrypt(
     }
   }
 
-  const offChain = await isForgeFhevmV1(relayerClient, fhevmContext);
+  const offChain = await isForgeFhevmV1(relayerClient);
 
   let res;
   if (offChain) {
-    res = await runDelegatedUserDecryptOffChain(relayerClient, payload, fhevmContext);
+    res = await runDelegatedUserDecryptOffChain(relayerClient, payload);
   } else {
     res = await runDelegatedUserDecryptOnChain(relayerClient, payload);
   }

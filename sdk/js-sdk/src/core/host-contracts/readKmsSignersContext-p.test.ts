@@ -9,7 +9,6 @@ import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
 import { invalidateVersionCache } from './HostContractVersion-p.js';
 import { readKmsSignersContextFromPermitExtraData } from './readKmsSignersContext-p.js';
 import { createKmsExtraDataV0, createKmsExtraDataV1, createKmsExtraDataV2 } from '../kms/kmsExtraData-p.js';
-import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/host-contracts/readKmsSignersContext-p.test.ts
@@ -23,12 +22,6 @@ const word = (value: bigint): string => value.toString(16).padStart(64, '0');
 const v0Bytes = '0x00' as BytesHex;
 const v1Bytes = (contextId: bigint): BytesHex => `0x01${word(contextId)}` as BytesHex;
 const v2Bytes = (contextId: bigint, epochId: bigint): BytesHex => `0x02${word(contextId)}${word(epochId)}` as BytesHex;
-
-// The reader does not branch on host contract versions, so an empty version
-// basis is enough. No test needs a `getVersion` handler — reaching one would
-// throw "No mocked handler". Only the actual context reads
-// (getContextSignersAndThresholdFromExtraData) are mocked per-test.
-const fhevmContext = createFhevmClientFrozenContext({});
 
 // Names of every on-chain function `readContract` was asked for, in call order.
 const calledFunctionNames = (readContract: { readonly mock: { readonly calls: readonly unknown[][] } }): string[] =>
@@ -104,7 +97,6 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
       kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
       protocolConfigAddress: undefined,
       extraData: createKmsExtraDataV0(),
-      fhevmContext,
     });
 
     // Indexed on the extraData AS GIVEN (v0 → id 0), NOT re-derived to a concrete id.
@@ -129,7 +121,6 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
       kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
       protocolConfigAddress: undefined,
       extraData: createKmsExtraDataV1({ kmsContextId: 5n as Uint256BigInt }),
-      fhevmContext,
     });
 
     expect(context.id).toBe(5n);
@@ -153,7 +144,6 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
       kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
       protocolConfigAddress: undefined,
       extraData: createKmsExtraDataV2({ kmsContextId: 9n as Uint256BigInt, kmsEpochId: 3n as Uint256BigInt }),
-      fhevmContext,
     });
 
     expect(context.id).toBe(9n);
@@ -172,7 +162,6 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
         kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
         protocolConfigAddress: undefined,
         extraData: {} as unknown as ReturnType<typeof createKmsExtraDataV0>,
-        fhevmContext,
       }),
     ).rejects.toThrow();
     expect(readContract).not.toHaveBeenCalled();
