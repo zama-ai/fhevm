@@ -11,38 +11,57 @@ export type NodeGatewayMiddleware = (req: IncomingMessage, res: ServerResponse, 
 
 export function createNodeGateway(config: GatewayConfig): NodeGatewayMiddleware {
   return async (req, res, next) => {
-    const url = new URL(req.url ?? '/', 'http://localhost');
-    if (!url.pathname.startsWith(`${config.mountPrefix}/`)) {
-      next();
-      return;
+    // Callers fire-and-forget this middleware (`void middleware(...)`): never let
+    // a handler error escape as an unhandled rejection, answer 500 instead.
+    try {
+      await _handle(config, req, res, next);
+    } catch (e) {
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader('content-type', 'text/plain');
+      }
+      res.end(`Gateway error: ${e instanceof Error ? e.message : String(e)}`);
     }
-
-    const method = req.method ?? 'GET';
-    const body = method === 'GET' || method === 'HEAD' ? undefined : await _readBody(req);
-    // Behind a same-origin proxy (e.g. Next rewrites), the page origin arrives in
-    // x-forwarded-* — Host is the proxy target. Emit byte URLs at the page origin
-    // so the browser fetches them same-origin (not the gateway's real port).
-    const publicOrigin = _publicOrigin(req);
-
-    const result = await handleGateway(config, {
-      method,
-      pathname: url.pathname,
-      search: url.search,
-      body,
-      publicOrigin,
-    });
-
-    if (result === undefined) {
-      next();
-      return;
-    }
-
-    res.statusCode = result.status;
-    for (const [name, value] of Object.entries(result.headers)) {
-      res.setHeader(name, value);
-    }
-    res.end(typeof result.body === 'string' ? result.body : Buffer.from(result.body));
   };
+}
+
+async function _handle(
+  config: GatewayConfig,
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: () => void,
+): Promise<void> {
+  const url = new URL(req.url ?? '/', 'http://localhost');
+  if (!url.pathname.startsWith(`${config.mountPrefix}/`)) {
+    next();
+    return;
+  }
+
+  const method = req.method ?? 'GET';
+  const body = method === 'GET' || method === 'HEAD' ? undefined : await _readBody(req);
+  // Behind a same-origin proxy (e.g. Next rewrites), the page origin arrives in
+  // x-forwarded-* — Host is the proxy target. Emit byte URLs at the page origin
+  // so the browser fetches them same-origin (not the gateway's real port).
+  const publicOrigin = _publicOrigin(req);
+
+  const result = await handleGateway(config, {
+    method,
+    pathname: url.pathname,
+    search: url.search,
+    body,
+    publicOrigin,
+  });
+
+  if (result === undefined) {
+    next();
+    return;
+  }
+
+  res.statusCode = result.status;
+  for (const [name, value] of Object.entries(result.headers)) {
+    res.setHeader(name, value);
+  }
+  res.end(typeof result.body === 'string' ? result.body : Buffer.from(result.body));
 }
 
 function _firstHeader(value: string | string[] | undefined): string | undefined {
