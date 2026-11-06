@@ -23,7 +23,8 @@ import { recordCacheUsage } from './cacheUsage-p.js';
 import { RelayerAbortError } from '../errors/RelayerAbortError.js';
 import { bytes32ToHandle, FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION } from '../handle/FhevmHandle.js';
 import { asBytes32 } from '../base/bytes.js';
-import { publicDecryptWithGateway as publicDecrypt } from '../kms/publicDecryptWithGateway.js';
+import { publicDecryptWithGateway } from '../kms/publicDecryptWithGateway.js';
+import { publicDecryptNoGateway } from '../kms/publicDecryptNoGateway.js';
 import { createKmsExtraDataV2 } from '../kms/kmsExtraData-p.js';
 import { forceRefreshCachedValue, runWithRefreshOnInvalidity } from './refreshOnInvalidity-p.js';
 
@@ -360,7 +361,10 @@ describe('KMS context', () => {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-describe('KMS context check through publicDecrypt', () => {
+describe.each([
+  { name: 'publicDecryptWithGateway', publicDecrypt: publicDecryptWithGateway, relayerFn: 'fetchPublicDecrypt' },
+  { name: 'publicDecryptNoGateway', publicDecrypt: publicDecryptNoGateway, relayerFn: 'fetchPublicDecryptNoGateway' },
+])('KMS context check through $name', ({ publicDecrypt, relayerFn }) => {
   // A computed euint8 handle on sepolia.
   function sepoliaHandle() {
     const bytes = new Uint8Array(32);
@@ -381,7 +385,7 @@ describe('KMS context check through publicDecrypt', () => {
         return Promise.reject(relayerApiError({ label: 'response_timed_out', message: 'timed out' }));
       },
     );
-    const world = makeWorld(undefined, { fetchPublicDecrypt } as unknown as RelayerModule);
+    const world = makeWorld(undefined, { [relayerFn]: fetchPublicDecrypt } as unknown as RelayerModule);
     const decrypt = (handles = [sepoliaHandle()]) =>
       publicDecrypt(world.client as never, { originToken: Symbol('test'), handles, fhevmContext });
     return { world, sent, decrypt };

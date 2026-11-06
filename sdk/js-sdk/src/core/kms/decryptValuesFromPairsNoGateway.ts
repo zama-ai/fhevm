@@ -7,17 +7,16 @@ import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } fr
 import type { SignedDecryptionPermit } from '../types/signedDecryptionPermit.js';
 import type { TransportKeyPair } from './TransportKeyPair-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { FhevmBase } from '../types/coreFhevmClient.js';
+import { runWithRefreshOnInvalidity } from '../caching/refreshOnInvalidity-p.js';
+import { permitRequestStaleContextError } from '../host-contracts/readKmsSignersContext-p.js';
+import { createKmsExtraDataFromBytesHex } from './kmsExtraData-p.js';
 import { decryptKmsSigncryptedShares } from './decryptKmsSigncryptedShares-p.js';
 import { fetchKmsSigncryptedSharesV2NoGateway } from './fetchKmsSigncryptedSharesV2NoGateway-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Context = {
-  readonly chain: FhevmChain;
-  readonly runtime: WithDecrypt;
-  readonly client: NonNullable<object>;
-  readonly options: { readonly batchRpcCalls: boolean };
-};
+type Context = FhevmBase<FhevmChain, WithDecrypt>;
 
 type Parameters = {
   readonly pairs: ReadonlyArray<{
@@ -49,10 +48,27 @@ export async function decryptValuesFromPairsNoGateway(fhevm: Context, parameters
   // not carry. So, unlike the WithGateway path, there is no v1 route here: a
   // V1 permit cannot be forwarded to relayer-http at all.
   if (parameters.signedPermit.version >= 2) {
-    kmsSigncryptedShares = await fetchKmsSigncryptedSharesV2NoGateway(fhevm, {
-      ...parameters,
-      options: parameters.options as RelayerUserDecryptOptions | undefined,
-    });
+    // A failure once the request is sent checks the KMS context and caches a
+    // switched one, for the next permit. Not run again: the permit names the
+    // old context.
+    kmsSigncryptedShares = await runWithRefreshOnInvalidity(
+      fhevm,
+      fhevmContext,
+      (cacheUsage) =>
+        fetchKmsSigncryptedSharesV2NoGateway(fhevm, {
+          ...parameters,
+          cacheUsage,
+          options: parameters.options as RelayerUserDecryptOptions | undefined,
+        }),
+      {
+        onStale: (_stale, error) =>
+          permitRequestStaleContextError(
+            fhevm,
+            createKmsExtraDataFromBytesHex(parameters.signedPermit.eip712.message.extraData),
+            error,
+          ),
+      },
+    );
   } else {
     throw new Error(
       `Unsupported permit version for no-gateway decryption: ${parameters.signedPermit.version}. ` +
