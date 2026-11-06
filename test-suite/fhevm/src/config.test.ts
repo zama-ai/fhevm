@@ -190,6 +190,16 @@ describe("relayer-http config", () => {
     ]);
   });
 
+  test("passes the call section through with the two retry budgets of relayer-http's config", () => {
+    // relayer-http rejects unknown keys: the template must carry its current schema (no backoff_max).
+    const config = YAML.parse(renderRelayerHttpConfig({ discovery: undefined }, template, plan, envs));
+    expect(config.kms_aggregator.call).toEqual({
+      timeout: "5s",
+      retries: { max_retries: 3, delay: "200ms" },
+      rate_limit: { max_retries: 1, initial_delay: "1s" },
+    });
+  });
+
   test("keeps the placeholder ProtocolConfig before discovery", () => {
     const config = YAML.parse(renderRelayerHttpConfig({ discovery: undefined }, template, plan, envs));
     expect(config.kms_aggregator.auth.protocol_config).toBe("0x0000000000000000000000000000000000000000");
