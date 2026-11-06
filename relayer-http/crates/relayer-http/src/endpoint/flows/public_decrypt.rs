@@ -9,9 +9,11 @@ use serde::Deserialize;
 
 use super::{Reply, read_json};
 use crate::App;
+use crate::config::HttpConfig;
 use crate::endpoint::ApiError;
+use crate::endpoint::summary::{Guard, Summary};
 use crate::endpoint::validate::{self, Invalid};
-use crate::logging::Log;
+use crate::metrics::FlowName;
 
 /// Request body. Hex fields are typed: length and format are checked by deserialisation.
 #[derive(Debug, Clone, Deserialize)]
@@ -22,40 +24,41 @@ pub struct PublicDecryptRequest {
 }
 
 /// The connector's cheap handle rules and the `extraData` format.
-pub fn validate(request: &PublicDecryptRequest, chain_ids: &[u64]) -> Result<(), Invalid> {
-    validate::handles(
-        "ciphertextHandles",
-        request.ciphertext_handles.iter(),
-        chain_ids,
-    )?;
+pub fn validate(request: &PublicDecryptRequest, http: &HttpConfig) -> Result<(), Invalid> {
+    validate::handles("ciphertextHandles", request.ciphertext_handles.iter(), http)?;
     validate::extra_data("extraData", &request.extra_data)
 }
 
-/// One request, logged step by step under its own `Log`.
+/// One request, summarized in its own `Summary`.
 pub async fn handle(app: State<App>, request: Request) -> Response {
-    let mut log = Log::new("public_decrypt");
-    process(&app, request, &mut log)
-        .await
-        .unwrap_or_else(IntoResponse::into_response)
+    let mut guard = Guard::new(FlowName::PublicDecrypt, app.metrics.clone());
+    let result = process(&app, request, &mut guard.summary).await;
+    guard.disarm();
+    result.unwrap_or_else(IntoResponse::into_response)
 }
 
 /// Read and parse the body (bounded by `http.body_read_timeout`), validate, convert to the connector DTO,
 /// aggregate, answer.
-async fn process(app: &App, request: Request, log: &mut Log) -> Result<Response, ApiError> {
-    let request: PublicDecryptRequest = read_json(app, request, log).await?;
-    log.received(request.ciphertext_handles.clone());
-    validate(&request, &app.http.supported_chain_ids).map_err(|e| {
-        log.validation_failed(&e.field, &e.issue);
-        ApiError::malformed(log, e.to_string())
-    })?;
+async fn process(app: &App, request: Request, summary: &mut Summary) -> Result<Response, ApiError> {
+    let request: PublicDecryptRequest = read_json(app, request, summary).await?;
+    summary.received(
+        &app.http,
+        request.ciphertext_handles.clone(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    );
+    validate(&request, &app.http).map_err(|e| super::invalid(summary, e))?;
     let request = PublicDecryptionRequest::from(request);
-    log.forwarded(request.id());
-    let output = app
+    summary.forwarded(request.id());
+    let result = app
         .public_decrypt
-        .run(&log.request_id, request)
-        .await
-        .map_err(|e| ApiError::aggregation(log, e))?;
-    Ok(Reply::succeeded(log.clone(), output).into_response())
+        .run(&summary.request_id, request, &mut summary.tally)
+        .await;
+    match result {
+        Ok(output) => Ok(Reply::succeeded(summary.take(), output).into_response()),
+        Err(e) => Err(ApiError::aggregation(summary, e)),
+    }
 }
 
 /// The body the connector receives (RFC-033).
@@ -90,7 +93,10 @@ pub(crate) mod tests {
     fn wire_example_deserialises_and_validates() {
         let request = valid();
         assert_eq!(request.ciphertext_handles.len(), 2);
-        assert_eq!(validate(&request, &[1, 137]), Ok(()));
+        assert_eq!(
+            validate(&request, &HttpConfig::for_tests(&[1, 137])),
+            Ok(())
+        );
         assert!(
             serde_json::from_str::<PublicDecryptRequest>(&format!(
                 r#"{{"ciphertextHandles": [], "extraData": "{EXTRA_DATA_V2}", "x": 1}}"#
@@ -110,16 +116,25 @@ pub(crate) mod tests {
         let mut empty = valid();
         empty.ciphertext_handles.clear();
         assert_eq!(
-            validate(&empty, &[137]).unwrap_err().field,
+            validate(&empty, &HttpConfig::for_tests(&[137]))
+                .unwrap_err()
+                .field,
             "ciphertextHandles"
         );
         assert_eq!(
-            validate(&valid(), &[1]).unwrap_err().field,
+            validate(&valid(), &HttpConfig::for_tests(&[1]))
+                .unwrap_err()
+                .field,
             "ciphertextHandles[0]"
         );
         let mut bad_extra = valid();
         bad_extra.extra_data = Bytes::from_static(&[7]);
-        assert_eq!(validate(&bad_extra, &[137]).unwrap_err().field, "extraData");
+        assert_eq!(
+            validate(&bad_extra, &HttpConfig::for_tests(&[137]))
+                .unwrap_err()
+                .field,
+            "extraData"
+        );
     }
 
     #[test]

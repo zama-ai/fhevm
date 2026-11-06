@@ -19,7 +19,25 @@ pub struct RelayerConfig {
     #[serde(default)]
     pub log: LogConfig,
     pub http: HttpConfig,
+    #[serde(default)]
+    pub metrics: MetricsConfig,
     pub kms_aggregator: KmsAggregatorConfig,
+}
+
+/// The Prometheus listener, on its own port as in the relayer. Optional: defaults to `0.0.0.0:9898`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct MetricsConfig {
+    /// Bind address of `GET /metrics`.
+    pub endpoint: SocketAddr,
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            endpoint: SocketAddr::from(([0, 0, 0, 0], 9898)),
+        }
+    }
 }
 
 /// The HTTP server: the API and the Kubernetes probes share one port.
@@ -38,10 +56,27 @@ pub struct HttpConfig {
     pub body_read_timeout: Duration,
     /// Host chain ids a ciphertext handle may carry (bytes 22..30 of the handle).
     pub supported_chain_ids: Vec<u64>,
+    /// Most handles in one decryption request; the connectors' `max_handles_per_decryption`, so set it to theirs
+    /// when they change it. At least 1.
+    #[serde(default = "default_max_handles_per_decryption")]
+    pub max_handles_per_decryption: usize,
+    /// Most `allowedContracts` in one user decryption request; the connectors' `max_allowed_contracts`, so set it to
+    /// theirs when they change it.
+    #[serde(default = "default_max_allowed_contracts")]
+    pub max_allowed_contracts: usize,
 }
 
-/// 1 MiB, the connector endpoint's and proxy's limit: a bigger body could never be forwarded. The largest valid
-/// request (1024 handles, the 2048-bit budget) is about 215 KiB.
+/// 50, the connector's default `max_handles_per_decryption`.
+fn default_max_handles_per_decryption() -> usize {
+    50
+}
+
+/// 10, the connector's default `max_allowed_contracts`.
+fn default_max_allowed_contracts() -> usize {
+    10
+}
+
+/// 1 MiB, the connector endpoint's and proxy's limit: a bigger body could never be forwarded.
 fn default_max_body_bytes() -> usize {
     1024 * 1024
 }
@@ -52,6 +87,19 @@ fn default_body_read_timeout() -> Duration {
 }
 
 impl HttpConfig {
+    /// Test only: `chain_ids`, a 4 KiB body limit, a 2 s body read timeout, the default request limits.
+    #[cfg(test)]
+    pub fn for_tests(chain_ids: &[u64]) -> Self {
+        Self {
+            endpoint: "127.0.0.1:0".parse().unwrap(),
+            max_body_bytes: 4096,
+            body_read_timeout: Duration::from_secs(2),
+            supported_chain_ids: chain_ids.to_vec(),
+            max_handles_per_decryption: default_max_handles_per_decryption(),
+            max_allowed_contracts: default_max_allowed_contracts(),
+        }
+    }
+
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.max_body_bytes < 1024 {
             return Err(ConfigError(
@@ -68,6 +116,11 @@ impl HttpConfig {
                 "http.supported_chain_ids must not be empty".to_owned(),
             ));
         }
+        if self.max_handles_per_decryption == 0 {
+            return Err(ConfigError(
+                "http.max_handles_per_decryption must be >= 1".to_owned(),
+            ));
+        }
         let mut seen = std::collections::HashSet::new();
         if let Some(dup) = self.supported_chain_ids.iter().find(|id| !seen.insert(*id)) {
             return Err(ConfigError(format!(
@@ -80,7 +133,7 @@ impl HttpConfig {
 
 /// The current relayer's log configuration, same keys and meaning. Optional: without a `log:` block the process
 /// logs JSON lines (production). Overrides: `APP_LOG__FORMAT`, `APP_LOG__SHOW_FILE_LINE`, ...; the level filter is
-/// `RUST_LOG` (default `warn,relayer_http=info`).
+/// `RUST_LOG` (default `warn,relayer_http=debug`).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct LogConfig {
@@ -147,7 +200,7 @@ mod tests {
     fn example_config_loads_and_validates() {
         let config = RelayerConfig::load(EXAMPLE).unwrap();
         assert_eq!(config.name, "zama-relayer-http");
-        assert_eq!(config.log.format, "pretty");
+        assert_eq!(config.log.format, "json");
         assert!(config.log.show_timestamp && config.log.show_target);
         assert_eq!(config.kms_aggregator.endpoints.len(), 13);
         assert_eq!(config.kms_aggregator.user_decrypt.threshold, 9);
@@ -255,6 +308,35 @@ mod tests {
     }
 
     #[test]
+    fn request_limits_default_to_the_connectors_and_can_be_overridden() {
+        let without: HttpConfig =
+            serde_json::from_str(r#"{"endpoint": "127.0.0.1:1", "supported_chain_ids": [1]}"#)
+                .unwrap();
+        assert_eq!(
+            (
+                without.max_handles_per_decryption,
+                without.max_allowed_contracts
+            ),
+            (50, 10)
+        );
+        let config = RelayerConfig::load_with(
+            EXAMPLE,
+            env(&[
+                ("APP_HTTP__MAX_HANDLES_PER_DECRYPTION", "100"),
+                ("APP_HTTP__MAX_ALLOWED_CONTRACTS", "20"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                config.http.max_handles_per_decryption,
+                config.http.max_allowed_contracts
+            ),
+            (100, 20)
+        );
+    }
+
+    #[test]
     fn body_read_timeout_defaults_overrides_and_bounds() {
         let without: HttpConfig =
             serde_json::from_str(r#"{"endpoint": "127.0.0.1:1", "supported_chain_ids": [1]}"#)
@@ -282,13 +364,16 @@ mod tests {
 
     #[test]
     fn http_config_rules() {
-        let mut http = HttpConfig {
-            endpoint: "127.0.0.1:8080".parse().unwrap(),
-            max_body_bytes: 4096,
-            body_read_timeout: Duration::from_secs(10),
-            supported_chain_ids: vec![1, 137],
-        };
+        let mut http = HttpConfig::for_tests(&[1, 137]);
         http.validate().unwrap();
+        http.max_handles_per_decryption = 0;
+        assert!(
+            http.validate()
+                .unwrap_err()
+                .0
+                .contains("max_handles_per_decryption")
+        );
+        http.max_handles_per_decryption = 1;
         http.supported_chain_ids = vec![1, 1];
         assert!(http.validate().unwrap_err().0.contains("twice"));
         http.supported_chain_ids = vec![];

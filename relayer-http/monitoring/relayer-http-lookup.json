@@ -1,0 +1,202 @@
+{
+  "title": "relayer-http lookup",
+  "uid": "relayer-http-lookup",
+  "description": "One request, from the logs: search a handle, a decryption_id, a request_id, a user or a contract address; click a request to see its summary and every line of it (OBSERVABILITY.md, Lookup; monitoring/design.md, Dashboards).",
+  "tags": ["relayer-http"],
+  "links": [],
+  "templating": {
+    "list": [
+      {"name": "loki", "label": "Loki", "type": "datasource", "query": "loki", "current": {}, "hide": 0},
+      {"name": "app", "label": "Loki app", "type": "textbox", "query": "relayer-http", "current": {"text": "relayer-http", "value": "relayer-http"}, "hide": 0},
+      {
+        "name": "instance", "label": "Instance", "type": "query",
+        "datasource": {"type": "loki", "uid": "${loki}"},
+        "query": {"label": "instance", "stream": "{app=\"$app\"}", "type": 1, "refId": "LokiVariableQueryEditor-VariableQuery"},
+        "definition": "label_values({app=\"$app\"},instance)",
+        "includeAll": true, "multi": true, "allValue": ".*", "current": {"text": "All", "value": "$__all"}, "refresh": 2, "sort": 1
+      },
+      {"name": "search", "label": "Search: handle, decryption_id, request_id, user or contract address", "type": "textbox", "query": "", "current": {"text": "", "value": ""}, "hide": 0},
+      {"name": "request_id", "label": "request_id (click a request)", "type": "textbox", "query": "", "current": {"text": "", "value": ""}, "hide": 0},
+      {
+        "name": "level", "label": "Lines of the selected request", "type": "custom",
+        "description": "info: INFO, WARN and ERROR lines only; debug: every line, the per-node DEBUG steps of a healthy request included.",
+        "query": "info : INFO|WARN|ERROR,debug : .+",
+        "options": [{"text": "info", "value": "INFO|WARN|ERROR", "selected": false}, {"text": "debug", "value": ".+", "selected": true}],
+        "current": {"text": "debug", "value": ".+"},
+        "includeAll": false, "multi": false, "hide": 0
+      }
+    ]
+  },
+  "time": {"from": "now-6h", "to": "now"},
+  "refresh": "",
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "type": "text", "id": 1, "title": "", "transparent": true,
+      "gridPos": {"h": 2, "w": 24, "x": 0, "y": 0},
+      "options": {
+        "mode": "html",
+        "content": "<div style=\"display:flex;gap:8px;align-items:center\"><a href=\"/d/relayer-http?${__url_time_range}&${app:queryparam}&${instance:queryparam}\" style=\"padding:4px 16px;border-radius:4px;border:1px solid #6e7681;text-decoration:none\">Operator</a><a href=\"/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}\" style=\"padding:4px 16px;border-radius:4px;background-color:#3d71d9;color:#ffffff;font-weight:600;text-decoration:none\">Lookup</a><a href=\"/d/relayer-http-usage?${__url_time_range}&${app:queryparam}&${instance:queryparam}\" style=\"padding:4px 16px;border-radius:4px;border:1px solid #6e7681;text-decoration:none\">Client stats</a></div>"
+      }
+    },
+    {"type": "row", "id": 100, "title": "Matching requests", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 2}},
+    {
+      "type": "stat", "id": 101, "title": "Requests",
+      "description": "Requests whose summary line contains the search text, in the range; every request when the search is empty.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 4, "w": 3, "x": 0, "y": 3},
+      "targets": [{"expr": "sum(count_over_time({app=\"$app\", instance=~\"$instance\"} |= `$search` | json | fields_message = \"request completed\" [$__range]))", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "fieldConfig": {"defaults": {"decimals": 0, "noValue": "0"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 102, "title": "By flow",
+      "description": "The matching requests by flow; `none` is a request answered before its flow was known.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 4, "w": 5, "x": 3, "y": 3},
+      "targets": [{"expr": "sum by (fields_flow) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= `$search` | json | fields_message = \"request completed\" [$__range]))", "legendFormat": "{{fields_flow}}", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true}}}, {"id": "rowsToFields", "options": {"mappings": [{"fieldName": "fields_flow", "handlerKey": "field.name"}, {"fieldName": "Value #A", "handlerKey": "field.value"}]}}],
+      "fieldConfig": {"defaults": {"decimals": 0, "noValue": "0", "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none", "textMode": "value_and_name", "orientation": "horizontal", "text": {"titleSize": 13, "valueSize": 18}}
+    },
+    {
+      "type": "stat", "id": 103, "title": "By outcome",
+      "description": "The matching requests by outcome: succeeded 2xx, rejected 4xx, failed 5xx, cancelled (the client closed the connection first).",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 4, "w": 8, "x": 8, "y": 3},
+      "targets": [{"expr": "sum by (fields_outcome) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= `$search` | json | fields_message = \"request completed\" [$__range]))", "legendFormat": "{{fields_outcome}}", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true}}}, {"id": "rowsToFields", "options": {"mappings": [{"fieldName": "fields_outcome", "handlerKey": "field.name"}, {"fieldName": "Value #A", "handlerKey": "field.value"}]}}],
+      "fieldConfig": {
+        "defaults": {"decimals": 0, "noValue": "0", "color": {"mode": "fixed", "fixedColor": "text"}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "succeeded"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "green"}}]},
+          {"matcher": {"id": "byName", "options": "rejected"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]},
+          {"matcher": {"id": "byName", "options": "failed"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]},
+          {"matcher": {"id": "byName", "options": "cancelled"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "purple"}}]}
+        ]
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none", "textMode": "value_and_name"}
+    },
+    {
+      "type": "stat", "id": 104, "title": "Distinct decryption_ids",
+      "description": "Distinct request contents among the matching requests: fewer than the requests means some were sent more than once.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 4, "w": 4, "x": 16, "y": 3},
+      "targets": [{"expr": "count(sum by (fields_decryption_id) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= `$search` | json | fields_message = \"request completed\" | fields_decryption_id != \"none\" [$__range])))", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "fieldConfig": {"defaults": {"decimals": 0, "noValue": "0"}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none"}
+    },
+    {
+      "type": "stat", "id": 105, "title": "Latency p95 by flow",
+      "description": "elapsed_ms of the matching requests, every outcome, per flow: the flows are never mixed.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 4, "w": 4, "x": 20, "y": 3},
+      "targets": [{"expr": "quantile_over_time(0.95, {app=\"$app\", instance=~\"$instance\"} |= `$search` | json | fields_message = \"request completed\" | unwrap fields_elapsed_ms [$__range]) by (fields_flow)", "legendFormat": "{{fields_flow}}", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true}}}, {"id": "rowsToFields", "options": {"mappings": [{"fieldName": "fields_flow", "handlerKey": "field.name"}, {"fieldName": "Value #A", "handlerKey": "field.value"}]}}],
+      "fieldConfig": {"defaults": {"unit": "ms", "color": {"mode": "fixed", "fixedColor": "text"}}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "none", "graphMode": "none", "textMode": "value_and_name", "orientation": "horizontal", "text": {"titleSize": 13, "valueSize": 18}}
+    },
+    {
+      "type": "table", "id": 106, "title": "Requests matching the search",
+      "description": "One summary line per request whose line contains the search text, newest first; an empty search lists every request. A handle finds every request on it, a decryption_id every repeat of one request, an address every request of that user or contract. Click a row to show that request below. threshold_reached_ms: from receipt to the threshold; elapsed_ms minus it is the wait for the slower KMS nodes.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 12, "w": 24, "x": 0, "y": 7},
+      "targets": [{"expr": "{app=\"$app\", instance=~\"$instance\"} |= `$search` | json | fields_message = \"request completed\" | label_format request_id=fields_request_id, flow=fields_flow, outcome=fields_outcome, code=fields_code, elapsed_ms=fields_elapsed_ms, threshold_reached_ms=fields_threshold_reached_ms, reason=fields_reason | keep request_id, flow, outcome, code, elapsed_ms, threshold_reached_ms, reason", "queryType": "range", "maxLines": 1000, "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [
+        {"id": "extractFields", "options": {"source": "labels", "format": "json", "keepTime": true, "replace": true}},
+        {"id": "organize", "options": {"indexByName": {"Time": 0, "request_id": 1, "flow": 2, "outcome": 3, "code": 4, "elapsed_ms": 5, "threshold_reached_ms": 6, "reason": 7}}},
+        {"id": "sortBy", "options": {"sort": [{"field": "Time", "desc": true}]}}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "links": [{"title": "Show this request", "url": "/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}&${search:queryparam}&${level:queryparam}&var-request_id=${__data.fields.request_id}"}]
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Time"}, "properties": [{"id": "custom.width", "value": 170}]},
+          {"matcher": {"id": "byName", "options": "request_id"}, "properties": [{"id": "custom.width", "value": 300}]},
+          {"matcher": {"id": "byName", "options": "flow"}, "properties": [{"id": "custom.width", "value": 120}]},
+          {"matcher": {"id": "byName", "options": "code"}, "properties": [{"id": "custom.width", "value": 170}]},
+          {"matcher": {"id": "byName", "options": "elapsed_ms"}, "properties": [{"id": "custom.width", "value": 100}]},
+          {"matcher": {"id": "byName", "options": "threshold_reached_ms"}, "properties": [{"id": "custom.width", "value": 160}]},
+          {"matcher": {"id": "byName", "options": "outcome"}, "properties": [{"id": "custom.width", "value": 100}, {"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "mappings", "value": [{"type": "value", "options": {"succeeded": {"color": "green", "index": 0}, "rejected": {"color": "orange", "index": 1}, "failed": {"color": "red", "index": 2}, "cancelled": {"color": "purple", "index": 3}}}]}]}
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm"}
+    },
+    {"type": "row", "id": 200, "title": "Selected request", "collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 19}},
+    {
+      "type": "stat", "id": 201, "title": "Selected request: lines by level",
+      "description": "Every line of the selected request, by level, whatever the Lines box says.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 3, "w": 8, "x": 0, "y": 20},
+      "targets": [{"expr": "sum by (level) (count_over_time({app=\"$app\", instance=~\"$instance\"} |= `\"request_id\":\"$request_id\"` | json [$__range]))", "legendFormat": "{{level}}", "queryType": "instant", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [{"id": "organize", "options": {"excludeByName": {"Time": true}}}, {"id": "rowsToFields", "options": {"mappings": [{"fieldName": "level", "handlerKey": "field.name"}, {"fieldName": "Value #A", "handlerKey": "field.value"}]}}],
+      "fieldConfig": {
+        "defaults": {"decimals": 0, "noValue": "Click a request above", "color": {"mode": "fixed", "fixedColor": "text"}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "WARN"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "orange"}}]},
+          {"matcher": {"id": "byName", "options": "ERROR"}, "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": "red"}}]}
+        ]
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "colorMode": "value", "graphMode": "none", "textMode": "value_and_name"}
+    },
+    {
+      "type": "table", "id": 202, "title": "Selected request: summary",
+      "description": "Every field of the selected request's summary line. Click a value to search it: its handle, decryption_id, user or contract finds the related requests.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 17, "w": 8, "x": 0, "y": 23},
+      "targets": [{"expr": "{app=\"$app\", instance=~\"$instance\"} |= `\"request_id\":\"$request_id\"` | json | fields_message = \"request completed\" | label_format request_id=fields_request_id, flow=fields_flow, outcome=fields_outcome, status=fields_status, code=fields_code, elapsed_ms=fields_elapsed_ms, threshold_reached_ms=fields_threshold_reached_ms, handles=fields_handles, contract_addresses=fields_contract_addresses, allowed_contracts=fields_allowed_contracts, user_address=fields_user_address, chain_id=fields_chain_id, body_len=fields_body_len, decryption_id=fields_decryption_id, counted=fields_counted, threshold=fields_threshold, failed_kms_nodes=fields_failed_kms_nodes, rejected_kms_nodes=fields_rejected_kms_nodes, cancelled_kms_nodes=fields_cancelled_kms_nodes, reason=fields_reason | keep request_id, flow, outcome, status, code, elapsed_ms, threshold_reached_ms, handles, contract_addresses, allowed_contracts, user_address, chain_id, body_len, decryption_id, counted, threshold, failed_kms_nodes, rejected_kms_nodes, cancelled_kms_nodes, reason", "queryType": "range", "maxLines": 10, "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [
+        {"id": "extractFields", "options": {"source": "labels", "format": "json", "keepTime": true, "replace": true}},
+        {"id": "organize", "options": {"indexByName": {"Time": 0, "request_id": 1, "flow": 2, "outcome": 3, "status": 4, "code": 5, "elapsed_ms": 6, "threshold_reached_ms": 7, "reason": 8, "decryption_id": 9, "handles": 10, "contract_addresses": 11, "allowed_contracts": 12, "user_address": 13, "chain_id": 14, "body_len": 15, "counted": 16, "threshold": 17, "failed_kms_nodes": 18, "rejected_kms_nodes": 19, "cancelled_kms_nodes": 20}}},
+        {"id": "transpose", "options": {"firstFieldName": "Field", "restFieldsName": "Value"}}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Click a request above",
+          "links": [{"title": "Search this value", "url": "/d/relayer-http-lookup?${__url_time_range}&${app:queryparam}&${instance:queryparam}&${level:queryparam}&var-search=${__value.raw}"}]
+        },
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Field"}, "properties": [{"id": "custom.width", "value": 170}, {"id": "links", "value": []}]},
+          {"matcher": {"id": "byRegexp", "options": "^[0-9]+$"}, "properties": [{"id": "displayName", "value": "Value"}]}
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm"}
+    },
+    {
+      "type": "table", "id": 203, "title": "Selected request: KMS node lines",
+      "description": "The lines of the selected request about one KMS node, by node then time: DEBUG `response accepted`, WARN `attempt failed`, `call failed`, `call cut`, `response rejected`. The Lines box chooses info or debug.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 8, "w": 16, "x": 8, "y": 20},
+      "targets": [{"expr": "{app=\"$app\", instance=~\"$instance\"} |= `\"request_id\":\"$request_id\"` | json | level=~\"$level\" | fields_kms_node != \"\" | label_format kms_node=fields_kms_node, message=fields_message, attempt=fields_attempt, attempts=fields_attempts, code=fields_code, elapsed_ms=fields_elapsed_ms, cause=fields_cause, error=fields_error | keep level, kms_node, message, attempt, attempts, code, elapsed_ms, cause, error", "queryType": "range", "direction": "forward", "maxLines": 1000, "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "transformations": [
+        {"id": "extractFields", "options": {"source": "labels", "format": "json", "keepTime": true, "replace": true}},
+        {"id": "organize", "options": {"indexByName": {"Time": 0, "level": 1, "kms_node": 2, "message": 3, "attempt": 4, "attempts": 5, "code": 6, "elapsed_ms": 7, "cause": 8, "error": 9}}},
+        {"id": "sortBy", "options": {"sort": [{"field": "kms_node"}]}}
+      ],
+      "fieldConfig": {
+        "defaults": {"noValue": "Click a request above"},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Time"}, "properties": [{"id": "custom.width", "value": 170}]},
+          {"matcher": {"id": "byName", "options": "level"}, "properties": [{"id": "custom.width", "value": 70}, {"id": "custom.cellOptions", "value": {"type": "color-text"}}, {"id": "mappings", "value": [{"type": "value", "options": {"WARN": {"color": "orange", "index": 0}, "ERROR": {"color": "red", "index": 1}}}]}]},
+          {"matcher": {"id": "byName", "options": "kms_node"}, "properties": [{"id": "custom.width", "value": 90}]},
+          {"matcher": {"id": "byName", "options": "message"}, "properties": [{"id": "custom.width", "value": 150}]},
+          {"matcher": {"id": "byName", "options": "attempt"}, "properties": [{"id": "custom.width", "value": 70}]},
+          {"matcher": {"id": "byName", "options": "attempts"}, "properties": [{"id": "custom.width", "value": 75}]},
+          {"matcher": {"id": "byName", "options": "code"}, "properties": [{"id": "custom.width", "value": 150}]},
+          {"matcher": {"id": "byName", "options": "elapsed_ms"}, "properties": [{"id": "custom.width", "value": 90}]},
+          {"matcher": {"id": "byName", "options": "cause"}, "properties": [{"id": "custom.width", "value": 90}]}
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm"}
+    },
+    {
+      "type": "logs", "id": 204, "title": "Every line of request $request_id",
+      "description": "Every line of the selected request, in order: the aggregation's steps, the KMS node lines and the summary line. The Lines box chooses info or debug.",
+      "datasource": {"type": "loki", "uid": "${loki}"},
+      "gridPos": {"h": 12, "w": 16, "x": 8, "y": 28},
+      "targets": [{"expr": "{app=\"$app\", instance=~\"$instance\"} |= `\"request_id\":\"$request_id\"` |~ `\"level\":\"($level)\"`", "queryType": "range", "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "options": {"showTime": true, "wrapLogMessage": false, "prettifyLogMessage": false, "sortOrder": "Ascending", "enableLogDetails": true}
+    }
+  ]
+}
