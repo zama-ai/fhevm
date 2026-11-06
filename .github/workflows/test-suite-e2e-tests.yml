@@ -461,6 +461,8 @@ jobs:
             snapshot_logs "${label} - Consensus Detector" "${prefix}-consensus-detector" "" all
             snapshot_logs "${label} - Upgrade Controller" "${prefix}-upgrade-controller" "" all
             snapshot_logs "${label} - Proxy" "${prefix}-proxy"
+            snapshot_logs "${label} - PRF Service" "${prefix}-prf-service"
+            snapshot_logs "${label} - PRF Output Seed" "${prefix}-prf-output-seed"
           done
           # Party 1 of the KMS cluster is the bare `kms-core` / `kms-connector-*` already
           # captured above; parties 2..N use the `-{i}-` suffix. Use `docker ps -a` so a crashed
