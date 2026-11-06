@@ -569,6 +569,15 @@ contract KMSGeneration is IKMSGeneration, EIP712Upgradeable, UUPSUpgradeableEmpt
     }
 
     /**
+     * @notice See {IKMSGeneration-getCrsMaxBitLength}.
+     */
+    function getCrsMaxBitLength(uint256 crsId) external view virtual returns (uint256) {
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
+        _checkGeneratedCrsId(crsId);
+        return $.crsMaxBitLength[crsId];
+    }
+
+    /**
      * @notice See {IKMSGeneration-getActiveKeyId}.
      */
     function getActiveKeyId() external view virtual returns (uint256) {
