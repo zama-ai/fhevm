@@ -26,7 +26,10 @@ MagicDNS** as `https://relayer-<namespace>.diplodocus-boa.ts.net` (IngressClass
 `tailscale`, tag `tag:k8s-zws-dev`) so a laptop on the tailnet can call it
 without `kubectl port-forward`. Metrics `:9898` and the admin endpoint stay
 ClusterIP-only. relayer-http (`:3002`) is published the same way as
-`https://relayer-http-<namespace>.diplodocus-boa.ts.net`. See
+`https://relayer-http-<namespace>.diplodocus-boa.ts.net`. Both are also served on
+one **unified URL**,
+`https://kong-proxy-preview-zws-dev.diplodocus-boa.ts.net/<namespace>` (`/v2`,
+`/v3` to the relayer, `/v4` to relayer-http), the base URL to give the SDK. See
 [`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
 
 There is no local Kind/laptop-based variant of this path anymore — a full stack (dedicated
@@ -497,6 +500,32 @@ certificates (`skip_tls_verification: true`). Like the relayer, it is part of
 every preview env (a failed install fails the deploy) and is published on the
 tailnet as `relayer-http-<namespace>` (`RELAYER_HTTP_TS_URL` in the PR comment /
 run summary). Pin the image with `relayer_http_version`.
+
+### Unified relayer URL
+
+After relayer-http, `scripts/deploy/expose-relayer-kong.sh` serves both relayers
+on one URL, as the local stack's `relayer-proxy` does
+(`test-suite/fhevm/static/config/relayer-proxy/nginx.conf`):
+
+```
+https://kong-proxy-preview-zws-dev.diplodocus-boa.ts.net/<namespace>
+  /<namespace>/v2/*, /v3/*  -> relayer:3000
+  /<namespace>/v4/*         -> relayer-http:3002
+```
+
+The proxy is a second Kong shared by all preview envs (IngressClass
+`kong-preview`, zws-gitops app `environments/zws-dev-system/kong/kong-preview.yaml`).
+Unlike the dev Kong, it has no load balancer: it is reachable only on the tailnet.
+The script adds, in the preview namespace, two `kong-preview` Ingresses with
+`strip-path` (`relayer-kong` on `/<namespace>`, `relayer-http-kong` on
+`/<namespace>/v4`) and a Service `relayer-http-v4` that puts `/v4` back on the
+upstream path (120s read timeout, as `/v4` decrypts are synchronous). All three
+carry `app.kubernetes.io/component=kong-preview-route` and go away with the
+namespace. It writes `RELAYER_UNIFIED_URL` to the PR comment / run summary and
+probes `GET /v2/keyurl` (200) and `GET /v4/user-decrypt` (405) from the runner;
+a failed probe is only a warning. If the `kong-preview` IngressClass does not
+exist, the step is skipped with a warning. The in-cluster test-suite still calls
+`http://relayer:3000/v2` directly.
 
 ## coprocessor-proxy
 
