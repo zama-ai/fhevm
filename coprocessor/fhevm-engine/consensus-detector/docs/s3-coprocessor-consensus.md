@@ -197,7 +197,9 @@ Sealed cadence query errors are classified:
 Discovery and work-selection query errors are retried on the next interval
 without consuming a candidate's budget. None of these cancel the process. A
 dead database pool still fails the publisher task so the process can restart.
-After bootstrap, new heights arrive via parent→child discovery; established
+After bootstrap, new heights arrive via parent→child discovery: sealing a block
+discovers its children, and each poll only re-checks sealed parents for children
+or forks that arrived later, so discovery never runs ahead of sealing. Established
 discovery only looks back 5 blocks for late producer rows. A longer interval
 delays those steps by up to one period. Host-chain block rows are kept at least
 10,000 finalized blocks and one week after ingestion. If discovery stops for
