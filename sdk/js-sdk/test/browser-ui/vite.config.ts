@@ -132,16 +132,15 @@ function resolveBrowserUiTarget(
   chainKey: string,
   defaults: Record<string, ChainDefaults>,
   sharedMnemonic: string | undefined,
-  envKey: string = chainKey,
 ): { readonly rpcUrl: string; readonly mnemonic: string; readonly fheTestAddress: string } {
   const entry = defaults[chainKey];
   if (entry === undefined) {
     throw new Error(`Missing "${chainKey}" entry in ${chainDefaultsPath}`);
   }
-  const chainEnv = parseEnvFile(resolve(testDir, `.env.${envKey}`));
+  const chainEnv = parseEnvFile(resolve(testDir, `.env.${chainKey}`));
   const rpcUrl = chainEnv.RPC_URL ?? process.env.RPC_URL ?? entry.rpcUrl;
   if (rpcUrl === undefined || rpcUrl === '') {
-    throw new Error(`Missing rpcUrl for "${chainKey}" in ${chainDefaultsPath} or test/.env.${envKey}.`);
+    throw new Error(`Missing rpcUrl for "${chainKey}" in ${chainDefaultsPath} or test/.env.${chainKey}.`);
   }
   const mnemonic = sharedMnemonic ?? entry.mnemonic;
   if (mnemonic === undefined || mnemonic === '') {
