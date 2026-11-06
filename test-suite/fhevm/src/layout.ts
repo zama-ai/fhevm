@@ -200,6 +200,7 @@ export const GROUP_BUILD_COMPONENTS: Record<OverrideGroup, string[]> = {
   "kms-connector": ["kms-connector"],
   "listener-core": ["listener-core"],
   "relayer": ["relayer"],
+  "relayer-http": ["relayer-http"],
   "gateway-contracts": ["gateway-mocked-payment", "gateway-sc"],
   "host-contracts": ["host-sc"],
   "test-suite": ["test-suite"],
@@ -233,6 +234,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "relayer-db-migration",
     "relayer",
   ],
+  "relayer-http": ["relayer-http"],
   "gateway-contracts": [
     "gateway-deploy-mocked-zama-oft",
     "gateway-set-relayer-mocked-payment",
@@ -262,6 +264,7 @@ const GROUP_PREFIX: Record<OverrideGroup, string> = {
   "kms-connector": "kms-connector-",
   "listener-core": "listener-",
   "relayer": "relayer-",
+  "relayer-http": "relayer-http-",
   "gateway-contracts": "gateway-",
   "host-contracts": "host-",
   "test-suite": "test-suite-",
