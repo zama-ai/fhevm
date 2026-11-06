@@ -376,9 +376,9 @@ async fn compute_and_insert_gcs(
 /// The block's [`StateHashRecord`] as compact JSON (`fhe` = SHA-256 over the
 /// block's GCS `ciphertexts`, `pbs` = SHA-256 over the ct128 digests of the
 /// block's PBS (squash) work); `None` until every non-errored computation
-/// completes AND every PBS computation scheduled for the block's output
-/// handles is squashed with its `ciphertext_digest.ciphertext128` recorded.
-/// Errored computations are excluded so operators agree.
+/// completes AND every PBS computation the block itself scheduled for its own
+/// output handles is squashed with its `ciphertext_digest.ciphertext128`
+/// recorded. Errored computations are excluded so operators agree.
 ///
 /// The PBS anchor (fhevm-internal#1960): the plain ct64 hash is blind to the
 /// sns-worker, so a divergent squash stack (e.g. a CPU worker in a GPU fleet)
@@ -389,13 +389,25 @@ async fn compute_and_insert_gcs(
 /// two components are separate hashes, not one combined digest, so a
 /// divergence names the pipeline that produced it (see [`StateHashRecord`]).
 ///
-/// Determinism of the PBS set: the ACL `Allowed` ingest inserts the
-/// `pbs_computations` row in the same transaction as the allow, and a
-/// computation only completes after its transaction is allowed, so by the time
-/// the completion gate opens the joined set is exactly the block's allowed
-/// output handles at every operator. The sns-worker commits `is_completed` and
-/// the `ciphertext_digest.ciphertext128` digest in one transaction, so the
-/// gate never admits a half-written squash. Blocks with no PBS rows carry the
+/// Determinism of the PBS set: a row joins only when BOTH its handle is one
+/// of the block's own non-errored output handles AND the row was inserted by
+/// this block's own events (`pbs_computations.host_chain_id`/`block_number`,
+/// stamped by the inserting ingest). Both conditions are frozen the moment
+/// the block's ingestion commits - and a block is only hashed after that - so
+/// every operator selects the same set. Without the stamp, a row inserted by
+/// a LATER block's event for a handle computed here (a
+/// `ConfidentialBridge.send` squashing its source, a late ACL allow) would
+/// join or not depending on how far ingestion ran before this pass, and the
+/// first inserted record freezes: two correct operators would permanently
+/// commit different `pbs` aggregates. Such foreign-scheduled squashes are
+/// instead excluded on EVERY operator - they are simply never anchored, which
+/// is fine: consensus needs the squash pipeline exercised and compared at
+/// least once per attempt, not every squash covered. The sns-worker commits
+/// `is_completed` and the `ciphertext_digest.ciphertext128` digest in one
+/// transaction, so the gate never admits a half-written squash; a handle
+/// whose computation errored can never be squashed, and the `bc` join's
+/// `is_error = false` filter keeps it from holding the hash forever. Blocks
+/// with no PBS rows carry the
 /// empty-aggregate hash in `pbs` (the digest aggregate degrades to `''`), a
 /// recognizable constant that reads as "no PBS work scheduled" - such records
 /// exist locally for completeness but are barred from upload, candidacy and
@@ -426,6 +438,7 @@ async fn compute_gcs_hash(
               FROM {schema}.pbs_computations p
               JOIN bc ON bc.output_handle = p.handle
               LEFT JOIN {schema}.ciphertext_digest cd ON cd.handle = p.handle
+             WHERE p.host_chain_id = $1 AND p.block_number = $2
         )
         SELECT
             (SELECT bool_and(is_completed) FROM bc) AS fhe_done,
@@ -1586,6 +1599,86 @@ mod tests {
         assert!(
             binds_ct128,
             "record commits fhe=sha256(ct64 bytes) and pbs=sha256(ct128 digest) once PBS is done"
+        );
+        Ok(())
+    }
+
+    /// The PBS set is the squash work the block itself scheduled for its own
+    /// output handles. A row a LATER block inserted for a handle computed
+    /// here (e.g. a bridge send squashing its source) must not hold or bind
+    /// this block's hash - whether that insert is visible depends on
+    /// ingestion timing, so a stamp-blind set would commit differently per
+    /// operator; it is excluded on every operator instead. A row for a handle
+    /// whose computation errored can never be squashed and must not hold the
+    /// hash either (the `bc` join's `is_error` filter drops it).
+    #[tokio::test]
+    async fn pbs_set_is_the_blocks_own_scheduling_not_its_output_handles() -> anyhow::Result<()> {
+        use test_harness::instance::{setup_test_db, ImportMode};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect(instance.db_url())
+            .await?;
+        sqlx::query(
+            "INSERT INTO host_chain_blocks_valid
+            (chain_id, block_hash, block_number, block_status, fhe_event_count)
+            VALUES (42, '\\x10', 100, 'finalized', 2)",
+        )
+        .execute(&pool)
+        .await?;
+        // Two completed computations with ciphertexts; one errored one without.
+        for (handle, completed, error) in [
+            ("\\x01", true, false),
+            ("\\x03", true, false),
+            ("\\x05", false, true),
+        ] {
+            sqlx::query(&format!(
+                "INSERT INTO computations
+                (output_handle, dependencies, fhe_operation, is_scalar, transaction_id,
+                 host_chain_id, block_number, is_allowed, is_completed, is_error)
+                VALUES ('{handle}', '{{}}', 0, FALSE, '\\x01', 42, 100, TRUE, {completed}, {error})"
+            ))
+            .execute(&pool)
+            .await?;
+        }
+        for (handle, ct) in [("\\x01", "\\xaa"), ("\\x03", "\\xbb")] {
+            sqlx::query(&format!(
+                "INSERT INTO ciphertexts
+                (tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
+                VALUES (0, '{handle}', '{ct}', 0, 5)"
+            ))
+            .execute(&pool)
+            .await?;
+        }
+        sqlx::query(
+            "INSERT INTO pbs_computations (handle, host_chain_id, block_number, is_completed)
+             VALUES ('\\x01', 42, 100, TRUE),  -- this block's work, squashed
+                    ('\\x03', 42, 101, FALSE), -- a LATER block scheduled this handle
+                    ('\\x05', 42, 100, FALSE)  -- this block's work, handle errored",
+        )
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO ciphertext_digest (handle, ciphertext128) VALUES ('\\x01', '\\xdd')",
+        )
+        .execute(&pool)
+        .await?;
+
+        let mut tx = pool.begin().await?;
+        compute_and_insert_gcs(&mut tx, 42, 100, 100, 10, "public").await?;
+        tx.commit().await?;
+        let frozen: bool = sqlx::query_scalar(
+            r#"SELECT state_hash = '{"v":1,"fhe":"' || encode(sha256('\xaabb'::bytea), 'hex')
+                   || '","pbs":"' || encode(sha256('\xdd'::bytea), 'hex') || '"}'
+            FROM state_hash WHERE chain_id = 42 AND block_number = 100"#,
+        )
+        .fetch_one(&pool)
+        .await?;
+        assert!(
+            frozen,
+            "hash must commit immediately, binding only the block's own squash"
         );
         Ok(())
     }
