@@ -273,18 +273,38 @@ pub(crate) async fn discover_blocks_for_consensus_epoch(
     Ok(inserted)
 }
 
+/// Runs on every discovery poll. A `GROUP BY` read every row of the epoch
+/// (0.57 s for 870k rows on BSC Testnet); per chain, `MIN` and `MAX` are one
+/// probe each of `idx_block_manifest_state_discovery_frontier`.
 async fn load_existing_frontiers(
     pool: &PgPool,
     consensus_epoch: &str,
 ) -> Result<HashMap<i64, ExistingFrontier>, ExecutionError> {
     let rows = sqlx::query!(
         r#"
-        SELECT host_chain_id,
-               MIN(block_number) AS "first_block!",
-               MAX(block_number) AS "last_block!"
-          FROM block_manifest_state
-         WHERE consensus_epoch = $1
-         GROUP BY host_chain_id
+        WITH RECURSIVE chains AS (
+            SELECT MIN(host_chain_id) AS host_chain_id
+              FROM block_manifest_state
+             WHERE consensus_epoch = $1
+            UNION ALL
+            SELECT (SELECT MIN(next.host_chain_id)
+                      FROM block_manifest_state next
+                     WHERE next.consensus_epoch = $1
+                       AND next.host_chain_id > chains.host_chain_id)
+              FROM chains
+             WHERE chains.host_chain_id IS NOT NULL
+        )
+        SELECT chains.host_chain_id AS "host_chain_id!",
+               (SELECT MIN(block.block_number)
+                  FROM block_manifest_state block
+                 WHERE block.consensus_epoch = $1
+                   AND block.host_chain_id = chains.host_chain_id) AS "first_block!",
+               (SELECT MAX(block.block_number)
+                  FROM block_manifest_state block
+                 WHERE block.consensus_epoch = $1
+                   AND block.host_chain_id = chains.host_chain_id) AS "last_block!"
+          FROM chains
+         WHERE chains.host_chain_id IS NOT NULL
         "#,
         consensus_epoch,
     )
