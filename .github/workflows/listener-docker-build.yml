@@ -75,11 +75,12 @@ jobs:
 
   build:
     needs: [is-latest-commit, check-changes]
+    # Reusable calls inherit the caller's event; only direct dispatches bypass change detection.
     if: |
       always()
       && (
         github.event_name == 'release'
-        || github.event_name == 'workflow_dispatch'
+        || (github.event_name == 'workflow_dispatch' && !inputs.is_workflow_call)
         || (github.event_name == 'push' && needs.is-latest-commit.outputs.is_latest == 'true' && needs.check-changes.outputs.changes == 'true')
         || (inputs.is_workflow_call && needs.check-changes.outputs.changes == 'true')
       )
