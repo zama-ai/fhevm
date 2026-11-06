@@ -153,7 +153,8 @@ pub(crate) mod tests {
     use crate::metrics::tests::{histogram_sum, total, value};
     use crate::metrics::{FlowName, Metrics};
 
-    /// An app over `mock`: thresholds 9 (user) and 5 (public), a 2 s deadline, `max_retries` retries.
+    /// An app over `mock`: thresholds 9 (user) and 5 (public), a 2 s deadline, `max_retries` transient retries
+    /// (and the default one rate-limit retry).
     fn app_with(mock: Arc<MockClient>, max_retries: u32, shutdown: CancellationToken) -> App {
         let caller = mock.caller(Duration::from_secs(2), max_retries);
         let metrics = caller.metrics().clone();
@@ -401,7 +402,7 @@ pub(crate) mod tests {
         );
     }
 
-    /// 13 mock nodes running `scripts` (one per node) with `max_retries` retries.
+    /// 13 mock nodes running `scripts` (one per node) with `max_retries` transient retries.
     pub(crate) fn scripted(scripts: Vec<Vec<Reply>>, max_retries: u32) -> (App, Arc<MockClient>) {
         let mock = MockClient::new(scripts, Duration::from_millis(1));
         let app = app_with(mock.clone(), max_retries, CancellationToken::new());
