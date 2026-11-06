@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
-import {KmsContextAnchor, KmsNode, KmsNodeParams, KmsThresholds} from "./shared/Structs.sol";
+import {KmsContextAnchor, KmsNode, KmsThresholds} from "./shared/Structs.sol";
 
 /**
  * @title ProtocolConfigBase
@@ -10,20 +10,23 @@ import {KmsContextAnchor, KmsNode, KmsNodeParams, KmsThresholds} from "./shared/
  */
 abstract contract ProtocolConfigBase is IProtocolConfigBase {
     /// @notice Lifecycle state of a KMS context: created Pending, promoted to Created once the
-    ///         creation quorum confirms, then Active when its first epoch activates.
+    ///         creation quorum confirms, then Active when its first epoch activates. A destruction
+    ///         sets it to Destroyed.
     enum ContextState {
         None,
         Pending,
         Created,
-        Active
+        Active,
+        Destroyed
     }
 
     /// @notice Lifecycle state of an epoch: opened Pending for resharing, then Active once the
-    ///         activation quorum confirms.
+    ///         activation quorum confirms. A destruction sets it to Destroyed.
     enum EpochState {
         None,
         Pending,
-        Active
+        Active,
+        Destroyed
     }
 
     /// @notice Upper bound on the KMS committee size and on every per-context threshold.
@@ -34,14 +37,47 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     ///      to reject the misconfiguration loudly rather than silently bricking the context.
     uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
 
+    /// @dev EIP-712 domain name of the canonical ProtocolConfig. The KMS signers sign under it, and
+    ///      the replica verifies under it.
+    string internal constant EIP712_NAME = "ProtocolConfig";
+
+    /// @dev EIP-712 domain version of the canonical ProtocolConfig.
+    string internal constant EIP712_VERSION = "1";
+
+    // -----------------------------------------------------------------------------------------
+    // EIP-712 type hashes
+    //
+    // The four KMS lifecycle confirmations. The canonical recovers one signer per call. A replica
+    // verifies a quorum of them under the canonical's domain.
+    // -----------------------------------------------------------------------------------------
+
+    /// @dev Hash of the ContextCreationConfirmation type.
+    bytes32 internal constant EIP712_CONTEXT_CREATION_TYPE_HASH =
+        keccak256(
+            "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)"
+        );
+
+    /// @dev Hash of the EpochActivationConfirmation type.
+    bytes32 internal constant EIP712_EPOCH_ACTIVATION_TYPE_HASH =
+        keccak256(
+            "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)"
+        );
+
+    /// @dev Hash of the ContextDestructionConfirmation type.
+    bytes32 internal constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
+        keccak256("ContextDestructionConfirmation(uint256 destroyedContextId,bytes extraData)");
+
+    /// @dev Hash of the EpochDestructionConfirmation type.
+    bytes32 internal constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
+        keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
+
     // -----------------------------------------------------------------------------------------
     // ERC-7201 namespaced storage
     // -----------------------------------------------------------------------------------------
 
     /// @custom:storage-location erc7201:fhevm.storage.ProtocolConfig
     struct ProtocolConfigStorage {
-        /// @notice Monotonic allocation counter for KMS context IDs: the latest issued ID.
-        ///         Always `>= latestActiveKmsContextId`. Differs while a context is Pending/Created.
+        /// @notice Monotonic allocation counter for KMS context IDs on the canonical. Unused on a replica.
         uint256 currentKmsContextId;
         /// @notice KMS nodes per context.
         mapping(uint256 contextId => KmsNode[]) kmsNodesForContext;
@@ -67,9 +103,9 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         /// @notice The most recently activated KMS context ID, the one reads resolve against.
         ///         Several contexts may remain in the `Active` state at once (prior contexts are not
         ///         demoted on rotation, so in-flight requests stay valid). This points at the newest.
-        ///         Updated only on activation, unlike the `currentKmsContextId` allocation counter.
+        ///         Updated only on activation, unlike the canonical `currentKmsContextId` allocation counter.
         uint256 latestActiveKmsContextId;
-        /// @notice Epoch ID counter.
+        /// @notice Epoch ID counter on the canonical. Unused on a replica.
         uint256 epochCounter;
         /// @notice The most recently activated epoch ID. Multiple epochs may remain `Active`. This
         ///         points at the newest, which new reads resolve against.
@@ -120,12 +156,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     function getCurrentKmsContextId() external view virtual returns (uint256) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         return $.latestActiveKmsContextId;
-    }
-
-    /// @inheritdoc IProtocolConfigBase
-    function getCurrentKmsContextIdCounter() external view virtual returns (uint256) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        return $.currentKmsContextId;
     }
 
     /// @inheritdoc IProtocolConfigBase
@@ -198,9 +228,9 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         uint256 kmsContextId,
         address txSender
     ) external view virtual returns (KmsNode memory) {
-        // Existence-based, not liveness: a context's nodes stay readable for its whole lifecycle —
-        // Pending/Created during resharing, and even once it is destroyed — so key/CRS material
-        // generated under it can still resolve its storage nodes. Only a never-created context reverts.
+        // Existence-based, not liveness. A context's nodes stay readable for its whole lifecycle:
+        // Pending/Created during resharing, and also after destruction. Key/CRS material generated
+        // under it can then still resolve its storage nodes. Only a never-created context reverts.
         if (!_kmsContextExists(kmsContextId)) {
             revert InvalidKmsContext(kmsContextId);
         }
@@ -258,12 +288,13 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Returns true if the context is Pending, Created or Active. Destruction resets a context
-     * to None. The v0.14 upgrade gave a state only to the context that was active at that upgrade,
-     * so older contexts also read as None and are not live.
+     * @dev Returns true if the context is Pending, Created or Active. The v0.14 upgrade gave a state
+     * only to the context that was active at that upgrade, so older contexts read as None and are not
+     * live.
      */
     function _isLiveKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
-        return _getProtocolConfigStorage().contextState[kmsContextId] != ContextState.None;
+        ContextState state = _getProtocolConfigStorage().contextState[kmsContextId];
+        return state != ContextState.None && state != ContextState.Destroyed;
     }
 
     /**
@@ -288,78 +319,18 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Stores a KMS context under the caller-provided `contextId`, validates nodes and
-     *      thresholds, and activates it under `epochId`. Use this on the bootstrap/mirror paths
-     *      where the context ID is externally determined. Callers are responsible for emitting
-     *      context lifecycle events and recording the matching `KmsContextAnchor` when appropriate.
+     * @dev Validates `nodes` and `thresholds` and writes them under `contextId`.
      */
-    function _storeAndActivateKmsContextAndEpoch(
+    function _storeKmsCommittee(
         uint256 contextId,
-        uint256 epochId,
-        KmsNodeParams[] calldata kmsNodeParams,
+        KmsNode[] memory nodes,
         KmsThresholds calldata thresholds
     ) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        _storeKmsContext(contextId, kmsNodeParams, thresholds);
-
-        // Set the context to Active and update the active context and epoch IDs.
-        $.contextState[contextId] = ContextState.Active;
-        $.latestActiveKmsContextId = contextId;
-        $.epochCounter = epochId;
-        _activateEpoch(epochId, contextId);
-    }
-
-    function _storeKmsContext(
-        uint256 contextId,
-        KmsNodeParams[] calldata kmsNodeParams,
-        KmsThresholds calldata thresholds
-    ) internal virtual {
-        if (kmsNodeParams.length == 0) {
-            revert EmptyKmsNodes();
-        }
-        if (kmsNodeParams.length > MAX_KMS_SIGNERS) {
-            revert KmsSignerSetExceedsProofFormatLimit(kmsNodeParams.length, MAX_KMS_SIGNERS);
-        }
-
-        // Validate that thresholds are non-zero and not exceeding the node count.
-        _checkThreshold("publicDecryption", thresholds.publicDecryption, kmsNodeParams.length);
-        _checkThreshold("userDecryption", thresholds.userDecryption, kmsNodeParams.length);
-        _checkThreshold("kmsGen", thresholds.kmsGen, kmsNodeParams.length);
-        _checkThreshold("mpc", thresholds.mpc, kmsNodeParams.length);
+        _checkKmsThresholds(nodes.length, thresholds);
 
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        // Single monotonic-uniqueness gate for every context-creation path.
-        if (contextId <= $.currentKmsContextId) {
-            revert NonIncreasingKmsContextId(contextId, $.currentKmsContextId);
-        }
-        $.currentKmsContextId = contextId;
-
-        for (uint256 i = 0; i < kmsNodeParams.length; i++) {
-            KmsNodeParams calldata params = kmsNodeParams[i];
-            KmsNode memory node = KmsNode({
-                txSenderAddress: params.txSenderAddress,
-                signerAddress: params.signerAddress,
-                ipAddress: params.ipAddress,
-                storageUrl: params.storageUrl
-            });
-            if (node.txSenderAddress == address(0)) {
-                revert KmsNodeNullTxSender();
-            }
-            if (node.signerAddress == address(0)) {
-                revert KmsNodeNullSigner();
-            }
-            if ($.isKmsTxSenderForContext[contextId][node.txSenderAddress]) {
-                revert KmsTxSenderAlreadyRegistered(node.txSenderAddress);
-            }
-            if ($.isKmsSignerForContext[contextId][node.signerAddress]) {
-                revert KmsSignerAlreadyRegistered(node.signerAddress);
-            }
-
-            $.kmsNodesForContext[contextId].push(node);
-            $.isKmsTxSenderForContext[contextId][node.txSenderAddress] = true;
-            $.isKmsSignerForContext[contextId][node.signerAddress] = true;
-            $.kmsNodeByTxSenderForContext[contextId][node.txSenderAddress] = node;
-            $.kmsSignerAddressesForContext[contextId].push(node.signerAddress);
+        for (uint256 i = 0; i < nodes.length; i++) {
+            _storeKmsNode(contextId, nodes[i]);
         }
 
         // Store thresholds
@@ -367,6 +338,49 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         $.userDecryptionThresholdForContext[contextId] = thresholds.userDecryption;
         $.kmsGenThresholdForContext[contextId] = thresholds.kmsGen;
         $.mpcThresholdForContext[contextId] = thresholds.mpc;
+    }
+
+    /**
+     * @dev Validates the node count, and `thresholds` against it.
+     */
+    function _checkKmsThresholds(uint256 nodeCount, KmsThresholds calldata thresholds) internal pure {
+        if (nodeCount == 0) {
+            revert EmptyKmsNodes();
+        }
+        if (nodeCount > MAX_KMS_SIGNERS) {
+            revert KmsSignerSetExceedsProofFormatLimit(nodeCount, MAX_KMS_SIGNERS);
+        }
+
+        // Validate that thresholds are non-zero and not exceeding the node count.
+        _checkThreshold("publicDecryption", thresholds.publicDecryption, nodeCount);
+        _checkThreshold("userDecryption", thresholds.userDecryption, nodeCount);
+        _checkThreshold("kmsGen", thresholds.kmsGen, nodeCount);
+        _checkThreshold("mpc", thresholds.mpc, nodeCount);
+    }
+
+    /**
+     * @dev Validates `node` and appends it to the committee of `contextId`.
+     */
+    function _storeKmsNode(uint256 contextId, KmsNode memory node) internal virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if (node.txSenderAddress == address(0)) {
+            revert KmsNodeNullTxSender();
+        }
+        if (node.signerAddress == address(0)) {
+            revert KmsNodeNullSigner();
+        }
+        if ($.isKmsTxSenderForContext[contextId][node.txSenderAddress]) {
+            revert KmsTxSenderAlreadyRegistered(node.txSenderAddress);
+        }
+        if ($.isKmsSignerForContext[contextId][node.signerAddress]) {
+            revert KmsSignerAlreadyRegistered(node.signerAddress);
+        }
+
+        $.kmsNodesForContext[contextId].push(node);
+        $.isKmsTxSenderForContext[contextId][node.txSenderAddress] = true;
+        $.isKmsSignerForContext[contextId][node.signerAddress] = true;
+        $.kmsNodeByTxSenderForContext[contextId][node.txSenderAddress] = node;
+        $.kmsSignerAddressesForContext[contextId].push(node.signerAddress);
     }
 
     /**
@@ -378,13 +392,117 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Promotes `epochId` to Active under `contextId` and makes it the active epoch.
-     *      Callers own the matching context-state writes and any event emission.
+     * @dev Sets `contextId` Active and activates `epochId` under it, as the latest active pair.
+     *      The caller emits any events.
      */
-    function _activateEpoch(uint256 epochId, uint256 contextId) internal virtual {
+    function _activateKmsContextAndEpoch(uint256 contextId, uint256 epochId) internal virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        $.contextState[contextId] = ContextState.Active;
+        $.latestActiveKmsContextId = contextId;
         $.epochState[epochId] = EpochState.Active;
         $.contextForEpoch[epochId] = contextId;
         $.latestActiveEpochId = epochId;
+    }
+
+    /**
+     * @dev Returns the `n - t` quorum of the committee of `contextId`, floored at 1.
+     *      The committee has `n` nodes. At most `t` of them (its MPC threshold) can be faulty, which
+     *      means crashed, offline, or malicious. The quorum must be:
+     *        - more than `t`, so faulty nodes can never approve a step on their own.
+     *        - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
+     *          arrive. Anything higher lets a dead node block the step forever.
+     *      `n - t` satisfies `n - t >= t + 1` under the `n >= 3t + 1` topology the KMS core
+     *      requires. The contract itself does not enforce the topology.
+     *      The quorum is floored at 1, so the degenerate `t = n` config cannot make it zero.
+     */
+    function _faultTolerantQuorum(uint256 contextId) internal view returns (uint256) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        uint256 quorum = _kmsCommitteeSize(contextId) - $.mpcThresholdForContext[contextId];
+        return quorum > 0 ? quorum : 1;
+    }
+
+    /**
+     * @dev Returns the epoch activation quorum of `contextId`, which is every signer of its committee.
+     */
+    function _epochActivationQuorum(uint256 contextId) internal view returns (uint256) {
+        return _kmsCommitteeSize(contextId);
+    }
+
+    /**
+     * @dev Returns the number of nodes in the committee of `contextId`.
+     */
+    function _kmsCommitteeSize(uint256 contextId) internal view returns (uint256) {
+        return _getProtocolConfigStorage().kmsNodesForContext[contextId].length;
+    }
+
+    /**
+     * @dev Hash of a context's node set and thresholds, signed in ContextCreationConfirmation.
+     */
+    function _nodeConfigHash(KmsNode[] memory nodes, KmsThresholds memory thresholds) internal pure returns (bytes32) {
+        return keccak256(abi.encode(nodes, thresholds));
+    }
+
+    /**
+     * @dev Struct hash of a ContextCreationConfirmation.
+     */
+    function _contextCreationStructHash(
+        uint256 previousContextId,
+        uint256 newContextId,
+        bytes32 nodeConfigHash,
+        bytes calldata extraData
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    EIP712_CONTEXT_CREATION_TYPE_HASH,
+                    previousContextId,
+                    newContextId,
+                    nodeConfigHash,
+                    keccak256(extraData)
+                )
+            );
+    }
+
+    /**
+     * @dev Struct hash of an EpochActivationConfirmation.
+     */
+    function _epochActivationStructHash(
+        uint256 contextId,
+        uint256 previousEpochId,
+        uint256 epochId,
+        bytes32 epochMaterialHash,
+        bytes calldata extraData
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    EIP712_EPOCH_ACTIVATION_TYPE_HASH,
+                    contextId,
+                    previousEpochId,
+                    epochId,
+                    epochMaterialHash,
+                    keccak256(extraData)
+                )
+            );
+    }
+
+    /**
+     * @dev Struct hash of a ContextDestructionConfirmation.
+     */
+    function _contextDestructionStructHash(
+        uint256 destroyedContextId,
+        bytes calldata extraData
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encode(EIP712_CONTEXT_DESTRUCTION_TYPE_HASH, destroyedContextId, keccak256(extraData)));
+    }
+
+    /**
+     * @dev Struct hash of an EpochDestructionConfirmation.
+     */
+    function _epochDestructionStructHash(
+        uint256 destroyedEpochId,
+        bytes calldata extraData
+    ) internal pure returns (bytes32) {
+        return keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData)));
     }
 }

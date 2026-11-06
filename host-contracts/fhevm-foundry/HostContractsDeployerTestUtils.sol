@@ -61,13 +61,6 @@ abstract contract HostContractsDeployerTestUtils is Test {
         keccak256(
             "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)"
         );
-    bytes32 internal constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
-        keccak256("ContextDestructionConfirmation(uint256 destroyedContextId,bytes extraData)");
-    bytes32 internal constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
-        keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
-    /// @dev OZ Initializable storage slot, where the initialized version lives.
-    bytes32 internal constant INITIALIZABLE_STORAGE =
-        0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
     bytes internal constant EMPTY_EXTRA_DATA = "";
 
     /// @dev Shared ProtocolConfig handle bound by each suite's setUp; used by the hoisted EIP-712 helpers below.
@@ -268,8 +261,10 @@ abstract contract HostContractsDeployerTestUtils is Test {
         address owner,
         uint256 initialContextId,
         uint256 initialEpochId,
-        KmsNodeParams[] memory initialKmsNodeParams,
-        KmsThresholds memory initialThresholds
+        KmsNode[] memory initialNodes,
+        KmsThresholds memory initialThresholds,
+        uint64 canonicalChainId,
+        address canonicalProtocolConfig
     ) internal returns (ProtocolConfigReplica protocolConfigProxy, address protocolConfigImplementation) {
         _deployEmptyProtocolConfigProxy();
         vm.label(protocolConfigAdd, "ProtocolConfigReplica Proxy");
@@ -282,7 +277,14 @@ abstract contract HostContractsDeployerTestUtils is Test {
             protocolConfigImplementation,
             abi.encodeCall(
                 ProtocolConfigReplica.initializeFromCanonical,
-                (initialContextId, initialEpochId, initialKmsNodeParams, initialThresholds)
+                (
+                    initialContextId,
+                    initialEpochId,
+                    initialNodes,
+                    initialThresholds,
+                    canonicalChainId,
+                    canonicalProtocolConfig
+                )
             )
         );
 
@@ -427,27 +429,37 @@ abstract contract HostContractsDeployerTestUtils is Test {
         return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
     }
 
-    function _hashProtocolConfigTypedData(bytes32 structHash) internal view returns (bytes32) {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                EIP712_DOMAIN_TYPE_HASH,
-                keccak256(bytes("ProtocolConfig")),
-                keccak256(bytes("1")),
-                block.chainid,
-                address(protocolConfig)
-            )
-        );
-        return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
+    function _computeProtocolConfigDomainSeparator(
+        uint256 chainId,
+        address verifyingContract
+    ) internal pure returns (bytes32) {
+        return
+            keccak256(
+                abi.encode(
+                    EIP712_DOMAIN_TYPE_HASH,
+                    keccak256(bytes("ProtocolConfig")),
+                    keccak256(bytes("1")),
+                    chainId,
+                    verifyingContract
+                )
+            );
     }
 
-    function _hashContextCreation(
+    /// @dev Domain of the local `protocolConfig`, which the `_sign*` and `_confirm*` helpers sign under.
+    function _localDomainSeparator() internal view returns (bytes32) {
+        return _computeProtocolConfigDomainSeparator(block.chainid, protocolConfigAdd);
+    }
+
+    function _hashContextCreationWithDomain(
+        bytes32 domainSeparator,
         uint256 previousContextId,
         uint256 newContextId,
         bytes32 nodeConfigHash,
         bytes memory extraData
-    ) internal view returns (bytes32) {
+    ) internal pure returns (bytes32) {
         return
-            _hashProtocolConfigTypedData(
+            MessageHashUtils.toTypedDataHash(
+                domainSeparator,
                 keccak256(
                     abi.encode(
                         EIP712_CONTEXT_CREATION_TYPE_HASH,
@@ -460,15 +472,17 @@ abstract contract HostContractsDeployerTestUtils is Test {
             );
     }
 
-    function _hashEpochActivation(
+    function _hashEpochActivationWithDomain(
+        bytes32 domainSeparator,
         uint256 contextId,
         uint256 previousEpochId,
         uint256 epochId,
         bytes32 epochMaterialHash,
         bytes memory extraData
-    ) internal view returns (bytes32) {
+    ) internal pure returns (bytes32) {
         return
-            _hashProtocolConfigTypedData(
+            MessageHashUtils.toTypedDataHash(
+                domainSeparator,
                 keccak256(
                     abi.encode(
                         EIP712_EPOCH_ACTIVATION_TYPE_HASH,
@@ -479,23 +493,6 @@ abstract contract HostContractsDeployerTestUtils is Test {
                         keccak256(extraData)
                     )
                 )
-            );
-    }
-
-    function _hashContextDestruction(
-        uint256 destroyedContextId,
-        bytes memory extraData
-    ) internal view returns (bytes32) {
-        return
-            _hashProtocolConfigTypedData(
-                keccak256(abi.encode(EIP712_CONTEXT_DESTRUCTION_TYPE_HASH, destroyedContextId, keccak256(extraData)))
-            );
-    }
-
-    function _hashEpochDestruction(uint256 destroyedEpochId, bytes memory extraData) internal view returns (bytes32) {
-        return
-            _hashProtocolConfigTypedData(
-                keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData)))
             );
     }
 
@@ -558,7 +555,8 @@ abstract contract HostContractsDeployerTestUtils is Test {
         uint256 pk,
         bytes memory extraData
     ) internal view returns (bytes memory) {
-        bytes32 digest = _hashContextCreation(
+        bytes32 digest = _hashContextCreationWithDomain(
+            _localDomainSeparator(),
             protocolConfig.getCurrentKmsContextId(),
             contextId,
             nodeConfigHash,
@@ -577,34 +575,31 @@ abstract contract HostContractsDeployerTestUtils is Test {
         protocolConfig.confirmKmsContextCreation(contextId, signature, extraData);
     }
 
-    function _confirmContextDestruction(uint256 destroyedContextId, uint256 pk, bytes memory extraData) internal {
-        bytes memory signature = _signContextDestruction(destroyedContextId, pk, extraData);
-        protocolConfig.confirmKmsContextDestruction(destroyedContextId, signature, extraData);
-    }
-
-    function _confirmEpochDestruction(uint256 destroyedEpochId, uint256 pk, bytes memory extraData) internal {
-        bytes memory signature = _signEpochDestruction(destroyedEpochId, pk, extraData);
-        protocolConfig.confirmKmsEpochDestruction(destroyedEpochId, signature, extraData);
-    }
-
-    /// @dev One key result `keyId` and one CRS result `crsId`.
+    /// @dev `count` key and CRS results. Entry i has key id KEY_COUNTER_BASE + 1 + offset + i and CRS id
+    ///      CRS_COUNTER_BASE + 1 + offset + i.
     function _buildEpochResults(
-        uint256 keyId,
-        uint256 crsId
+        uint256 offset,
+        uint256 count
     )
         internal
         pure
         returns (IProtocolConfig.EpochKeyResult[] memory keys, IProtocolConfig.EpochCrsResult[] memory crsList)
     {
-        keys = new IProtocolConfig.EpochKeyResult[](1);
-        keys[0] = IProtocolConfig.EpochKeyResult({
-            prepKeygenId: _prepKeygenIdForKeyId(keyId),
-            keyId: keyId,
-            keyDigests: _mockKeyDigests()
-        });
-
-        crsList = new IProtocolConfig.EpochCrsResult[](1);
-        crsList[0] = IProtocolConfig.EpochCrsResult({crsId: crsId, maxBitLength: 4096, crsDigest: hex"deadbeef"});
+        keys = new IProtocolConfig.EpochKeyResult[](count);
+        crsList = new IProtocolConfig.EpochCrsResult[](count);
+        for (uint256 i = 0; i < count; i++) {
+            uint256 keyId = KEY_COUNTER_BASE + 1 + offset + i;
+            keys[i] = IProtocolConfig.EpochKeyResult({
+                prepKeygenId: _prepKeygenIdForKeyId(keyId),
+                keyId: keyId,
+                keyDigests: _mockKeyDigests()
+            });
+            crsList[i] = IProtocolConfig.EpochCrsResult({
+                crsId: CRS_COUNTER_BASE + 1 + offset + i,
+                maxBitLength: 4096,
+                crsDigest: hex"deadbeef"
+            });
+        }
     }
 
     /// @dev Constant epoch material for setups that need only an active epoch, not a specific payload.
@@ -616,7 +611,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         // An empty `keys` or `crsList` reverts with EmptyEpochActivationResults, so supply one deterministic
         // result of each kind with constant ids. Every signer produces the same epochMaterialHash.
         // The ids need not exist in KMSGeneration because confirmEpochActivation checks only signer recovery.
-        return _buildEpochResults(KEY_COUNTER_BASE + 1, CRS_COUNTER_BASE + 1);
+        return _buildEpochResults(0, 1);
     }
 
     /// @dev Signs EpochActivationConfirmation with the latest active epoch as previousEpochId.
@@ -630,7 +625,14 @@ abstract contract HostContractsDeployerTestUtils is Test {
     ) internal view returns (bytes memory) {
         (, uint256 previousEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
         bytes32 epochMaterialHash = _hashEpochMaterial(keys, crsList, extraData);
-        bytes32 digest = _hashEpochActivation(contextId, previousEpochId, epochId, epochMaterialHash, extraData);
+        bytes32 digest = _hashEpochActivationWithDomain(
+            _localDomainSeparator(),
+            contextId,
+            previousEpochId,
+            epochId,
+            epochMaterialHash,
+            extraData
+        );
         return _computeSignature(pk, digest);
     }
 
@@ -671,23 +673,5 @@ abstract contract HostContractsDeployerTestUtils is Test {
     ) internal {
         bytes memory signature = _signEpochActivation(contextId, epochId, pk, keys, crsList, extraData);
         protocolConfig.confirmEpochActivation(epochId, keys, crsList, signature, extraData);
-    }
-
-    function _signContextDestruction(
-        uint256 destroyedContextId,
-        uint256 pk,
-        bytes memory extraData
-    ) internal view returns (bytes memory) {
-        bytes32 digest = _hashContextDestruction(destroyedContextId, extraData);
-        return _computeSignature(pk, digest);
-    }
-
-    function _signEpochDestruction(
-        uint256 destroyedEpochId,
-        uint256 pk,
-        bytes memory extraData
-    ) internal view returns (bytes memory) {
-        bytes32 digest = _hashEpochDestruction(destroyedEpochId, extraData);
-        return _computeSignature(pk, digest);
     }
 }

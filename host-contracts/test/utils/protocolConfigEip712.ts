@@ -72,7 +72,7 @@ async function protocolConfigDomain(pc: ProtocolConfig): Promise<TypedDataDomain
 const abi = AbiCoder.defaultAbiCoder();
 
 // keccak256(abi.encode(KmsNode[] nodes, KmsThresholds thresholds)). The encode types come from the
-// ProtocolConfig ABI, so the tuple layout cannot drift from the contract. KmsNode is the projection of
+// ProtocolConfig ABI, so the tuple layout always matches the contract. KmsNode is the projection of
 // KmsNodeParams that ProtocolConfig stores, and the encoder drops the fields KmsNode does not have.
 function hashNodeConfig(
   iface: ProtocolConfigInterface,
@@ -109,12 +109,35 @@ export interface DefinedKmsContext {
 
 // Signs each signer's ContextCreationConfirmation for the pending context `context` and submits it from
 // the signer account. The previous context is the active one.
-// Returns the epoch ID of the NewKmsEpoch emitted once the creation quorum is reached.
 export async function confirmContextCreation(
   pc: ProtocolConfig,
   signers: Signer[],
-  { contextId, nodes, thresholds }: DefinedKmsContext,
+  context: DefinedKmsContext,
   extraData = '0x',
+): Promise<void> {
+  await submitContextCreation(pc, signers, context, extraData);
+}
+
+// Same as confirmContextCreation, but `signers` must reach the creation quorum. Returns the epoch ID of
+// the NewKmsEpoch emitted once the quorum is reached.
+export async function confirmContextCreationQuorum(
+  pc: ProtocolConfig,
+  signers: Signer[],
+  context: DefinedKmsContext,
+  extraData = '0x',
+): Promise<bigint> {
+  const epochId = await submitContextCreation(pc, signers, context, extraData);
+  if (epochId === undefined) {
+    throw new Error('Context creation quorum did not emit NewKmsEpoch');
+  }
+  return epochId;
+}
+
+async function submitContextCreation(
+  pc: ProtocolConfig,
+  signers: Signer[],
+  { contextId, nodes, thresholds }: DefinedKmsContext,
+  extraData: string,
 ): Promise<bigint | undefined> {
   const domain = await protocolConfigDomain(pc);
   const previousContextId = await pc.getCurrentKmsContextId();
@@ -190,10 +213,7 @@ export async function activateDefinedKmsContext(
   signers: Signer[],
   context: DefinedKmsContext,
 ): Promise<void> {
-  const epochId = await confirmContextCreation(pc, signers, context);
-  if (epochId === undefined) {
-    throw new Error('Context creation quorum did not emit NewKmsEpoch');
-  }
+  const epochId = await confirmContextCreationQuorum(pc, signers, context);
   await confirmEpochActivation(pc, signers, context.contextId, epochId);
 }
 

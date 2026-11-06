@@ -8,6 +8,7 @@ import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {KmsContextAnchor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -23,7 +24,13 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  *      The signatures let other chains verify lifecycle steps.
  */
 /// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
-contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableEmptyProxy, ACLOwnable {
+contract ProtocolConfig is
+    IProtocolConfig,
+    ProtocolConfigBase,
+    UUPSUpgradeableEmptyProxy,
+    EIP712UpgradeableCrossChain,
+    ACLOwnable
+{
     // -----------------------------------------------------------------------------------------
     // Contract information
     // -----------------------------------------------------------------------------------------
@@ -35,17 +42,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
     /// @dev Shared between `initializeFromEmptyProxy` and `reinitializeV3`.
     uint64 private constant REINITIALIZER_VERSION = 4;
-
-    // -----------------------------------------------------------------------------------------
-    // EIP-712 type hashes
-    //
-    // Used to recover the KMS signer from the four KMS lifecycle confirmations, and to compute
-    // `epochMaterialHash`.
-    // -----------------------------------------------------------------------------------------
-
-    /// @dev Hash of the EIP-712 domain separator type.
-    bytes32 private constant EIP712_DOMAIN_TYPE_HASH =
-        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
     /// @dev Hash of the KeyDigest type, used to hash the key digests into `epochMaterialHash`.
     bytes32 private constant EIP712_KEY_DIGEST_TYPE_HASH = keccak256("KeyDigest(uint8 keyType,bytes digest)");
@@ -60,26 +56,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /// @dev Hash of the CrsgenVerification type.
     bytes32 private constant EIP712_CRSGEN_TYPE_HASH =
         keccak256("CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest,bytes extraData)");
-
-    /// @dev Hash of the ContextCreationConfirmation type.
-    bytes32 private constant EIP712_CONTEXT_CREATION_TYPE_HASH =
-        keccak256(
-            "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)"
-        );
-
-    /// @dev Hash of the EpochActivationConfirmation type.
-    bytes32 private constant EIP712_EPOCH_ACTIVATION_TYPE_HASH =
-        keccak256(
-            "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)"
-        );
-
-    /// @dev Hash of the ContextDestructionConfirmation type.
-    bytes32 private constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
-        keccak256("ContextDestructionConfirmation(uint256 destroyedContextId,bytes extraData)");
-
-    /// @dev Hash of the EpochDestructionConfirmation type.
-    bytes32 private constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
-        keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
 
     // -----------------------------------------------------------------------------------------
     // ERC-7201 namespaced storage
@@ -144,12 +120,12 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
 
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        _storeAndActivateKmsContextAndEpoch(
-            newContextId,
-            EPOCH_COUNTER_BASE + 1,
-            initialKmsNodeParams,
-            initialThresholds
-        );
+        uint256 newEpochId = EPOCH_COUNTER_BASE + 1;
+        _storeKmsCommittee(newContextId, _toKmsNodes(initialKmsNodeParams), initialThresholds);
+        $.currentKmsContextId = newContextId;
+        $.epochCounter = newEpochId;
+        _activateKmsContextAndEpoch(newContextId, newEpochId);
+        __EIP712_init(EIP712_NAME, EIP712_VERSION, address(this), uint64(block.chainid));
 
         $.contextAnchors[newContextId] = KmsContextAnchor({
             emissionBlockNumber: block.number,
@@ -166,11 +142,14 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes a proxy upgraded from v0.14, which initialized at version 3.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {
+        _checkNoKmsLifecycleOperationInFlight();
+        __EIP712_init(EIP712_NAME, EIP712_VERSION, address(this), uint64(block.chainid));
+    }
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
@@ -195,13 +174,13 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         // Store the new signer set as Pending. Its first epoch is created once the creation quorum
         // is reached, so the (context, epoch) pair announced to connectors is correct by construction.
         uint256 previousContextId = $.latestActiveKmsContextId;
-        uint256 contextId = $.currentKmsContextId + 1;
-        _storeKmsContext(contextId, kmsNodeParams, thresholds);
+        uint256 contextId = ++$.currentKmsContextId;
+        KmsNode[] memory nodes = _toKmsNodes(kmsNodeParams);
+        _storeKmsCommittee(contextId, nodes, thresholds);
         $.contextState[contextId] = ContextState.Pending;
 
         // Commit to the stored node set and thresholds. Both committees sign it in ContextCreationConfirmation.
-        KmsNode[] memory nodes = $.kmsNodesForContext[contextId];
-        canonical$.nodeConfigHashForContext[contextId] = keccak256(abi.encode(nodes, thresholds));
+        canonical$.nodeConfigHashForContext[contextId] = _nodeConfigHash(nodes, thresholds);
 
         // Store context anchor and emit NewKmsContext event.
         $.contextAnchors[contextId] = KmsContextAnchor({
@@ -250,15 +229,12 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
         // The signer must belong to the outgoing or incoming committee and confirm only once.
         uint256 previousContextId = $.latestActiveKmsContextId;
-        bytes32 digest = _hashTypedData(
-            keccak256(
-                abi.encode(
-                    EIP712_CONTEXT_CREATION_TYPE_HASH,
-                    previousContextId,
-                    kmsContextId,
-                    canonical$.nodeConfigHashForContext[kmsContextId],
-                    keccak256(extraData)
-                )
+        bytes32 digest = _hashTypedDataV4(
+            _contextCreationStructHash(
+                previousContextId,
+                kmsContextId,
+                canonical$.nodeConfigHashForContext[kmsContextId],
+                extraData
             )
         );
         address signer = ECDSA.recover(digest, signature);
@@ -283,17 +259,17 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
         emit KmsContextCreationConfirmation(kmsContextId, signer, signature, extraData);
 
-        // Context creation quorum: all new nodes and (n - t) previous nodes confirmed the same digest.
+        // The context creation quorum needs the same digest from all new nodes and (n - t) previous nodes.
         bool quorumReached = canonical$.contextCreationNewConfirmationCountForDigest[kmsContextId][digest] ==
-            $.kmsNodesForContext[kmsContextId].length &&
+            _kmsCommitteeSize(kmsContextId) &&
             canonical$.contextCreationPreviousConfirmationCountForDigest[kmsContextId][digest] >=
-            _committeeQuorumSize(previousContextId);
+            _faultTolerantQuorum(previousContextId);
         if (!quorumReached) {
             return;
         }
 
         $.contextState[kmsContextId] = ContextState.Created;
-        // Create the confirmed context's first epoch here, pairing it with the context by construction.
+        // Create the first epoch of the confirmed context here, so this epoch always pairs with this context.
         uint256 epochId = _createPendingEpoch(kmsContextId);
         // Connectors must read previous key/CRS material from the last block before this epoch request.
         emit NewKmsEpoch(kmsContextId, epochId, previousContextId, $.latestActiveEpochId, block.number - 1);
@@ -330,10 +306,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             }
         }
 
-        // All signers agreed on `epochId`, so promote `contextId` and `epochId` to Active.
-        $.contextState[contextId] = ContextState.Active;
-        $.latestActiveKmsContextId = contextId;
-        _activateEpoch(epochId, contextId);
+        // All signers agreed, promote context and epoch to Active.
+        _activateKmsContextAndEpoch(contextId, epochId);
 
         KmsNode[] storage nodes = $.kmsNodesForContext[contextId];
         string[] memory urls = new string[](nodes.length);
@@ -354,19 +328,14 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             revert InvalidKmsContext(kmsContextId);
         }
 
-        // Mark the context destroyed and clear its epoch (if any).
-        $.contextState[kmsContextId] = ContextState.None;
-        // A confirmed switch created this context's epoch as the latest-issued one: clear it when it
-        // belongs to this context. It can only be Pending here, since an Active epoch makes its
-        // context the latest active one, which the guard above refuses. Earlier epochs of a retired
-        // context keep their stored state, but nothing can use them: every epoch check also
-        // requires the context. A switch destroyed before its creation quorum has no epoch yet, so
-        // there is nothing to clear and the ownership check below is false.
+        // Clear the paired Pending epoch, which reopens the in-flight gate and stops its activation
+        // from setting this destroyed context back to Active.
         uint256 latestEpochId = $.epochCounter;
         if ($.contextForEpoch[latestEpochId] == kmsContextId) {
-            _clearEpoch(latestEpochId);
+            delete $.epochState[latestEpochId];
         }
 
+        $.contextState[kmsContextId] = ContextState.Destroyed;
         emit KmsContextDestroyed(kmsContextId);
     }
 
@@ -382,7 +351,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         // - Active: retire a superseded epoch so its old shares stop being served.
         // - Pending under an Active context: abort a stuck same-set rotation. Activation
         //   confirmations are one-shot per signer, so a divergent confirmation can never reach unanimity
-        //   and the epoch would otherwise stay Pending forever — with its context still current,
+        //   and the epoch would otherwise stay Pending forever. Its context stays current, so
         //   neither destroyKmsContext() (reverts for the latest-active context) nor completion
         //   could ever settle it. The pending epoch of an in-flight context switch (context
         //   Pending/Created) is settled by destroyKmsContext() instead, which clears its paired
@@ -395,7 +364,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             revert InvalidKmsEpoch(epochId);
         }
 
-        _clearEpoch(epochId);
+        $.epochState[epochId] = EpochState.Destroyed;
         emit KmsEpochDestroyed(epochId);
     }
 
@@ -412,7 +381,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         (address signer, bool quorumReached) = _confirmDestruction(
             _getProtocolConfigCanonicalStorage().contextDestructionConfirmedBySigner[destroyedContextId],
             destroyedContextId,
-            keccak256(abi.encode(EIP712_CONTEXT_DESTRUCTION_TYPE_HASH, destroyedContextId, keccak256(extraData))),
+            _contextDestructionStructHash(destroyedContextId, extraData),
             signature
         );
 
@@ -435,7 +404,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         (address signer, bool quorumReached) = _confirmDestruction(
             _getProtocolConfigCanonicalStorage().epochDestructionConfirmedBySigner[destroyedEpochId],
             destroyedEpochId,
-            keccak256(abi.encode(EIP712_EPOCH_DESTRUCTION_TYPE_HASH, destroyedEpochId, keccak256(extraData))),
+            _epochDestructionStructHash(destroyedEpochId, extraData),
             signature
         );
 
@@ -499,6 +468,12 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             );
     }
 
+    /// @inheritdoc IProtocolConfigBase
+    function getCurrentKmsContextIdCounter() external view virtual returns (uint256) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        return $.currentKmsContextId;
+    }
+
     /// @inheritdoc IProtocolConfig
     function getKmsContextAnchor(
         uint256 contextId
@@ -515,10 +490,8 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     // -----------------------------------------------------------------------------------------
 
     /**
-     * @dev Verifies one signer's activation submission for `epochId` under `contextId` and returns
-     *      its signer, `epochMaterialHash`, and EpochActivationConfirmation digest. The
-     *      EpochActivationConfirmation signature binds the key and CRS results through
-     *      `epochMaterialHash` and must recover to a signer of the context's committee.
+     * @dev Verifies one signer's EpochActivationConfirmation for `epochId` and returns the signer,
+     *      `epochMaterialHash` and digest. The signer must be in the committee of `contextId`.
      */
     function _verifyEpochActivation(
         uint256 contextId,
@@ -532,16 +505,13 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
             revert EmptyEpochActivationResults(epochId);
         }
         epochMaterialHash = _hashEpochMaterial(keys, crsList, extraData);
-        digest = _hashTypedData(
-            keccak256(
-                abi.encode(
-                    EIP712_EPOCH_ACTIVATION_TYPE_HASH,
-                    contextId,
-                    _getProtocolConfigStorage().latestActiveEpochId,
-                    epochId,
-                    epochMaterialHash,
-                    keccak256(extraData)
-                )
+        digest = _hashTypedDataV4(
+            _epochActivationStructHash(
+                contextId,
+                _getProtocolConfigStorage().latestActiveEpochId,
+                epochId,
+                epochMaterialHash,
+                extraData
             )
         );
         signer = ECDSA.recover(digest, signature);
@@ -615,7 +585,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
         $.epochActivationConfirmedBySigner[epochId][signer] = true;
         uint256 digestCount = ++$.epochActivationConfirmationCountForDigest[epochId][digest];
-        allSignersAgreed = digestCount == $.kmsSignerAddressesForContext[contextId].length;
+        allSignersAgreed = digestCount == _epochActivationQuorum(contextId);
     }
 
     /**
@@ -631,7 +601,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     ) internal virtual returns (address signer, bool quorumReached) {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         uint256 kmsContextId = $.latestActiveKmsContextId;
-        bytes32 digest = _hashTypedData(structHash);
+        bytes32 digest = _hashTypedDataV4(structHash);
         signer = ECDSA.recover(digest, signature);
         if (!$.isKmsSignerForContext[kmsContextId][signer]) {
             revert KmsDestructionUnauthorized(signer, destroyedId);
@@ -642,43 +612,13 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         confirmedBySigner[signer] = true;
         quorumReached =
             ++_getProtocolConfigCanonicalStorage().destructionConfirmationCountForDigest[destroyedId][digest] ==
-            _committeeQuorumSize(kmsContextId);
-    }
-
-    /**
-     * @dev Returns the `n - t` quorum of the committee of `contextId`. The committee has `n` nodes.
-     *      At most `t` of them (its MPC threshold) can be faulty, which means crashed, offline, or
-     *      malicious. The quorum must be:
-     *        - more than `t`, so faulty nodes can never reach it on their own.
-     *        - at most `n - t`, because if `t` nodes stay silent only `n - t` confirmations ever
-     *          arrive. Anything higher lets a dead node block the quorum forever.
-     *      `n - t` satisfies `n - t >= t + 1` under the `n >= 3t + 1` topology the KMS core
-     *      requires. The contract itself does not enforce the topology.
-     *      The quorum is floored at 1, so the degenerate `t = n` config cannot make it zero.
-     */
-    function _committeeQuorumSize(uint256 contextId) internal view virtual returns (uint256) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        uint256 quorum = $.kmsNodesForContext[contextId].length - $.mpcThresholdForContext[contextId];
-        return quorum > 0 ? quorum : 1;
-    }
-
-    function _hashTypedData(bytes32 structHash) internal view virtual returns (bytes32) {
-        bytes32 domainSeparator = keccak256(
-            abi.encode(
-                EIP712_DOMAIN_TYPE_HASH,
-                keccak256(bytes(CONTRACT_NAME)),
-                keccak256(bytes("1")),
-                block.chainid,
-                address(this)
-            )
-        );
-        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
+            _faultTolerantQuorum(kmsContextId);
     }
 
     /**
      * @dev Reverts when a context switch or epoch rotation is still settling. In flight means the
      *      latest-issued context is Pending/Created or the latest-issued epoch is Pending. Destroyed
-     *      entries are None and do not count, so the destroy paths reopen the gate.
+     *      and cleared entries do not count, so the destroy paths reopen the gate.
      */
     function _checkNoKmsLifecycleOperationInFlight() internal view virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
@@ -691,6 +631,22 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /**
+     * @dev Projects `kmsNodeParams` onto the stored KmsNode shape.
+     */
+    function _toKmsNodes(KmsNodeParams[] calldata kmsNodeParams) private pure returns (KmsNode[] memory nodes) {
+        nodes = new KmsNode[](kmsNodeParams.length);
+        for (uint256 i = 0; i < kmsNodeParams.length; i++) {
+            KmsNodeParams calldata params = kmsNodeParams[i];
+            nodes[i] = KmsNode({
+                txSenderAddress: params.txSenderAddress,
+                signerAddress: params.signerAddress,
+                ipAddress: params.ipAddress,
+                storageUrl: params.storageUrl
+            });
+        }
+    }
+
+    /**
      * @dev Creates the next epoch in Pending state under `contextId` and returns its ID.
      *      Callers own any `NewKmsEpoch` event emission.
      */
@@ -699,16 +655,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         epochId = ++$.epochCounter;
         $.epochState[epochId] = EpochState.Pending;
         $.contextForEpoch[epochId] = contextId;
-    }
-
-    /**
-     * @dev Clears `epochId` back to None and drops its context link. Callers own the preconditions
-     *      and any event emission.
-     */
-    function _clearEpoch(uint256 epochId) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        $.epochState[epochId] = EpochState.None;
-        delete $.contextForEpoch[epochId];
     }
 
     /**
