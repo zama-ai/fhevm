@@ -235,8 +235,8 @@ async fn fetch_state_commitments(
                 Ok(r) => {
                     let status = r.status();
                     if status.is_success() {
-                        match r.bytes().await {
-                            Ok(b) => Some(b.to_vec()),
+                        match read_body_capped(r).await {
+                            Ok(b) => Some(b),
                             Err(e) => {
                                 warn!(operator = %url, error = %e, "operator body read failed");
                                 None
@@ -265,6 +265,43 @@ async fn fetch_state_commitments(
     for (idx, bytes) in results {
         if bytes.is_some() {
             slots[idx] = bytes;
+        }
+    }
+}
+
+/// Hard cap on a state-hash object body. Real bodies are tiny (a ~150-byte
+/// JSON record, or a raw 32-byte hash on the Gateway track); the cap exists so
+/// a misbehaving operator cannot serve an unbounded body and exhaust this
+/// process's memory. The body is read in chunks and abandoned the moment the
+/// cap is crossed, so even a response that lies about (or omits) its
+/// Content-Length never buffers more than the cap. An oversized body is
+/// dropped like any other unreadable payload: the slot stays empty, which can
+/// only delay an anchor, never force one.
+const MAX_STATE_HASH_BODY_BYTES: usize = 64 * 1024;
+
+/// Reads a response body up to [`MAX_STATE_HASH_BODY_BYTES`], erroring out
+/// instead of buffering past the cap.
+async fn read_body_capped(mut resp: reqwest::Response) -> Result<Vec<u8>, String> {
+    if let Some(len) = resp.content_length() {
+        if len > MAX_STATE_HASH_BODY_BYTES as u64 {
+            return Err(format!(
+                "declared body of {len} bytes exceeds the {MAX_STATE_HASH_BODY_BYTES}-byte cap"
+            ));
+        }
+    }
+    let mut body = Vec::new();
+    loop {
+        match resp.chunk().await {
+            Ok(Some(chunk)) => {
+                if body.len() + chunk.len() > MAX_STATE_HASH_BODY_BYTES {
+                    return Err(format!(
+                        "body exceeds the {MAX_STATE_HASH_BODY_BYTES}-byte cap"
+                    ));
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Ok(None) => return Ok(body),
+            Err(e) => return Err(e.to_string()),
         }
     }
 }
@@ -361,23 +398,35 @@ where
 /// anchor each pass (so a controller that missed the NOTIFY still latches).
 /// `partial` caches per-operator bytes per candidate block, so each poll only
 /// re-requests operators we haven't heard from — a slow operator fills in later.
+/// How a track's votes are compared. Host tracks upload [`state_hash::StateHashRecord`]
+/// JSON and are compared on the PARSED `fhe`/`pbs` hashes ([`state_hash::evaluate_host_slots`]);
+/// the Gateway track uploads flat 32-byte hashes (no PBS component exists there)
+/// and keeps raw-byte equality.
+#[derive(Clone, Copy, PartialEq)]
+enum TrackKind {
+    Host,
+    Gateway,
+}
+
 struct ConsensusTrack {
     chain_id: i64,
+    kind: TrackKind,
     /// The anchored block once unanimity is reached; `None` until then.
     anchored: Option<i64>,
     /// Whether the anchor block carried a non-trivial FHE op.
     anchored_nontrivial: bool,
     partial: HashMap<i64, Vec<Option<Vec<u8>>>>,
-    /// Blocks we've already logged a divergence warning for. State hashes are
-    /// deterministic per block, so a divergence is permanent — warn once per
-    /// block instead of re-warning on every poll tick.
+    /// Blocks we've already logged a divergence (or invalid-record) error for.
+    /// State hashes are deterministic per block, so a divergence is permanent —
+    /// log once per block instead of re-logging on every poll tick.
     divergence_warned: HashSet<i64>,
 }
 
 impl ConsensusTrack {
-    fn new(chain_id: i64) -> Self {
+    fn new(chain_id: i64, kind: TrackKind) -> Self {
         Self {
             chain_id,
+            kind,
             anchored: None,
             anchored_nontrivial: false,
             partial: HashMap::new(),
@@ -419,7 +468,79 @@ async fn poll_track(
             *slots = vec![None; urls.len()];
         }
         fetch_state_commitments(http, urls, attempt, track.chain_id, block, slots).await;
-        if all_some_and_identical(slots) {
+        // Votes are counted per track kind: Host parses the records and compares
+        // the fhe/pbs hashes themselves; Gateway compares raw bytes. Either way
+        // agreement needs EVERY operator — a single diverging component anywhere
+        // means no anchor on this block.
+        let anchored = match track.kind {
+            TrackKind::Gateway => {
+                if all_some_and_identical(slots) {
+                    Some(false)
+                } else {
+                    // Every operator responded but the hashes disagree — the exact
+                    // determinism divergence the dry run exists to catch. Without
+                    // this the block stays a non-anchor forever and a stuck upgrade
+                    // is indistinguishable from one still waiting on a slow
+                    // operator. Log once per block (divergence is permanent) and
+                    // keep polling other candidates.
+                    if all_slots_filled(slots) && track.divergence_warned.insert(block) {
+                        error!(
+                            chain_id = track.chain_id,
+                            block,
+                            operator_count = urls.len(),
+                            "state-hash divergence — all operators responded but hashes \
+                             disagree; this block cannot anchor consensus"
+                        );
+                    }
+                    None
+                }
+            }
+            TrackKind::Host => match state_hash::evaluate_host_slots(slots) {
+                None => None,
+                Some(state_hash::HostSlotsVerdict::Anchor { encoding_skew }) => Some(encoding_skew),
+                Some(state_hash::HostSlotsVerdict::Invalid { why }) => {
+                    if track.divergence_warned.insert(block) {
+                        error!(
+                            chain_id = track.chain_id,
+                            block,
+                            operator_count = urls.len(),
+                            why = %why,
+                            records = %state_hash::divergence_summary(slots),
+                            "invalid state-hash record — this block cannot anchor consensus"
+                        );
+                    }
+                    None
+                }
+                Some(state_hash::HostSlotsVerdict::Diverged { fhe, pbs }) => {
+                    if track.divergence_warned.insert(block) {
+                        let diverged = match (fhe, pbs) {
+                            (true, false) => "fhe diverged, pbs agrees (ct64 compute divergence)",
+                            (false, true) => "pbs diverged, fhe agrees (ct128 squash divergence)",
+                            _ => "fhe+pbs both diverged",
+                        };
+                        error!(
+                            chain_id = track.chain_id,
+                            block,
+                            operator_count = urls.len(),
+                            diverged,
+                            records = %state_hash::divergence_summary(slots),
+                            "state-hash divergence — all operators responded but state \
+                             hashes disagree; this block cannot anchor consensus"
+                        );
+                    }
+                    None
+                }
+            },
+        };
+        if let Some(encoding_skew) = anchored {
+            if encoding_skew {
+                warn!(
+                    chain_id = track.chain_id,
+                    block,
+                    "state-hash components agree but record encodings differ across \
+                     operators (detector version skew?) — anchoring on the parsed hashes"
+                );
+            }
             info!(
                 chain_id = track.chain_id,
                 block,
@@ -431,20 +552,6 @@ async fn poll_track(
             track.anchored_nontrivial = nontrivial;
             track.partial.clear();
             return Ok(());
-        }
-        // Every operator responded but their state hashes disagree — the exact
-        // determinism divergence the dry run exists to catch. Without this the
-        // block stays a non-anchor forever and a stuck upgrade is
-        // indistinguishable from one still waiting on a slow operator. Warn once
-        // per block (divergence is permanent) and keep polling other candidates.
-        if all_slots_filled(slots) && track.divergence_warned.insert(block) {
-            warn!(
-                chain_id = track.chain_id,
-                block,
-                operator_count = urls.len(),
-                "state-hash divergence — all operators responded but hashes disagree; \
-                 this block cannot anchor consensus"
-            );
         }
     }
     Ok(())
@@ -477,9 +584,14 @@ async fn host_consensus_candidates(
            FROM {GCS_SCHEMA_QUOTED}.state_hash sh
           WHERE sh.chain_id = $1
             AND sh.block_number >= $2 AND sh.block_number <= $3
+            -- A record whose pbs is the empty-aggregate hash is never uploaded
+            -- (and never counts as a vote), so it must not occupy one of the
+            -- {MAX_ANCHOR_CANDIDATES} candidate slots either.
+            AND sh.state_hash NOT LIKE '%\"pbs\":\"{empty}\"%'
             {nontrivial}
           ORDER BY sh.block_number
-          LIMIT {MAX_ANCHOR_CANDIDATES}"
+          LIMIT {MAX_ANCHOR_CANDIDATES}",
+        empty = state_hash::EMPTY_BLOCK_STATE_HASH,
     );
     let rows: Vec<(i64,)> = sqlx::query_as(&sql)
         .bind(host_chain_id)
@@ -697,7 +809,7 @@ where
     for &(chain_id, start, end) in &windows {
         let track = host_tracks
             .entry(chain_id)
-            .or_insert_with(|| ConsensusTrack::new(chain_id));
+            .or_insert_with(|| ConsensusTrack::new(chain_id, TrackKind::Host));
         if track.anchored.is_none() {
             let candidates = host_consensus_candidates(pool, chain_id, start, end, true).await?;
             poll_track(http, &urls, &attempt, track, &candidates, true).await?;
@@ -1123,7 +1235,7 @@ where
     // One host track per chain, discovered from upgrade_state each pass;
     // the Gateway track is keyed by the provider-resolved gw_chain_id.
     let mut host_tracks: HashMap<i64, ConsensusTrack> = HashMap::new();
-    let mut gateway_track = ConsensusTrack::new(gw_chain_id);
+    let mut gateway_track = ConsensusTrack::new(gw_chain_id, TrackKind::Gateway);
     // Tracked window + its timeout state.
     let mut window_state = WindowState {
         tracked_window: None,
@@ -1253,7 +1365,7 @@ mod tests {
     const GW: i64 = 54321;
 
     fn track(chain_id: i64, anchored: Option<i64>, nontrivial: bool) -> ConsensusTrack {
-        let mut t = ConsensusTrack::new(chain_id);
+        let mut t = ConsensusTrack::new(chain_id, TrackKind::Host);
         t.anchored = anchored;
         t.anchored_nontrivial = nontrivial;
         t
