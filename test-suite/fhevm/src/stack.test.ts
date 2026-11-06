@@ -108,7 +108,7 @@ describe("stack", () => {
     const plan = resolveUpgradePlan({ overrides: [], scenario: defaultScenario }, "relayer", { lockFile: true });
     expect(plan.versionKeys).toEqual(["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION", "RELAYER_HTTP_VERSION"]);
     expect(plan.migrationServices).toEqual(["relayer-db-migration"]);
-    expect(plan.runtimeServices).toEqual(["relayer", "relayer-http"]);
+    expect(plan.runtimeServices).toEqual(["relayer"]);
   });
 
   test("coprocessor version-lock upgrade plans leave the proxy out of blue-green stacks", () => {

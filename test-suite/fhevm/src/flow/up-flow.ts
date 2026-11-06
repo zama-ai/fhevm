@@ -2030,10 +2030,6 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
   }
   if (group === "relayer") {
     await waitForRelayer();
-    if (state.versions.env.RELAYER_HTTP_VERSION) {
-      await waitForContainer("fhevm-relayer-http", "running");
-      await waitForLog("fhevm-relayer-http", /relayer-http started/);
-    }
     return;
   }
   await waitForTestSuite();

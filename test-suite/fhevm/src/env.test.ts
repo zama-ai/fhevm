@@ -1,15 +1,19 @@
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 
+import YAML from "yaml";
+
+import { renderRelayerHttpConfig } from "./generate/config";
 import { renderEnvMaps } from "./generate/env";
 import { solanaMerkleProofUrl } from "./generate/solana";
-import { COMPONENTS, TEMPLATE_ENV_DIR } from "./layout";
+import { COMPONENTS, TEMPLATE_ENV_DIR, TEMPLATE_RELAYER_HTTP_CONFIG } from "./layout";
 import { presetBundle } from "./resolve/target";
 import { parseBlueGreenScenario, resolveBlueGreenScenario } from "./scenario/resolve";
 import { stackSpecForState } from "./stack-spec/stack-spec";
 import { testDefaultScenario } from "./test-fixtures";
 import type { State } from "./types";
 import { readEnvFile } from "./utils/fs";
+import { readFileSync } from "node:fs";
 
 const deriveWallet = async (_mnemonic: string, index: number) => ({
   address: `0x${String(index + 1).padStart(40, "1")}`,
@@ -48,6 +52,42 @@ describe("env", () => {
     expect(rendered.componentEnvs["gateway-sc"].HOST_CHAIN_WEBSITE_0).toBe("https://host-chain-0.com");
     expect(rendered.componentEnvs["gateway-sc"].HOST_CHAIN_NAME_1).toBe("Host chain 1");
     expect(rendered.componentEnvs["gateway-sc"].HOST_CHAIN_WEBSITE_1).toBe("https://host-chain-1.com");
+  });
+
+  test("renders a startable relayer-http config for an EVM stack before discovery", async () => {
+    const templateEnvs = Object.fromEntries(
+      await Promise.all(
+        COMPONENTS.map(async (component) => [
+          component,
+          await readEnvFile(path.join(TEMPLATE_ENV_DIR, `.env.${component}`)),
+        ]),
+      ),
+    ) as Record<string, Record<string, string>>;
+    const state: State = {
+      target: "latest-main",
+      lockPath: "/tmp/latest-main.json",
+      requiresGitHub: true,
+      versions: presetBundle("latest-main", "abcdef0", "latest-main.json"),
+      overrides: [],
+      scenario: testDefaultScenario(),
+      completedSteps: [],
+      updatedAt: "2026-03-30T00:00:00.000Z",
+    };
+    const plan = stackSpecForState(state);
+    const rendered = await renderEnvMaps({ discovery: undefined }, plan, templateEnvs, deriveWallet);
+    const config = YAML.parse(
+      renderRelayerHttpConfig(readFileSync(TEMPLATE_RELAYER_HTTP_CONFIG, "utf8"), plan, rendered.componentEnvs),
+    );
+    const t = plan.kms.threshold;
+    expect(config.kms_aggregator.public_decrypt.threshold).toBe(t + 1);
+    expect(config.kms_aggregator.user_decrypt.threshold).toBe(2 * t + 1);
+    expect(config.kms_aggregator.auth.chain_id).toBeGreaterThan(0);
+    expect(config.kms_aggregator.auth.protocol_config).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    expect(config.kms_aggregator.auth.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    expect(config.kms_aggregator.endpoints).toHaveLength(plan.kms.parties);
+    for (const endpoint of config.kms_aggregator.endpoints) {
+      expect(endpoint.audience).toMatch(/^0x[0-9a-fA-F]{40}$/);
+    }
   });
 
   test("points the e2e suite at one connector TLS proxy per committee party, only when the bundle ships the HTTP path", async () => {

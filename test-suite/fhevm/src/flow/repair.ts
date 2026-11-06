@@ -14,6 +14,7 @@ import {
   COPROCESSOR_PROXY_SUFFIXES,
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
+  RELAYER_HTTP_SERVICE,
   GROUP_SERVICE_SUFFIXES,
   KMS_CONNECTOR_HTTP_SERVICES,
   KMS_CORE_CONTAINER,
@@ -228,7 +229,8 @@ export const resolveUpgradePlan = (
     throw new Error(`No runtime component registered for ${group}`);
   }
   const selectedServices = groupOverrides.flatMap((item) => item.services ?? []);
-  const groupServices = GROUP_BUILD_SERVICES[group];
+  // An upgrade recreates the group's first component only; relayer-http has its own (main's model).
+  const groupServices = GROUP_BUILD_SERVICES[group].filter((service) => service !== RELAYER_HTTP_SERVICE);
   const fullGroupServices = groupOverrides.length && !selectedServices.length
     ? group === "coprocessor"
       ? coprocessorServices(state)

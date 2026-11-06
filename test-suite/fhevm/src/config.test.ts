@@ -199,7 +199,7 @@ describe("config", () => {
     expect(parsed.log.format).toBe("json");
     expect(parsed.http.endpoint).toBe(`0.0.0.0:${RELAYER_HTTP_PORT}`);
     expect(parsed.http.supported_chain_ids).toEqual(["12345", "130140237723663404"]);
-    expect(parsed.kms_aggregator.public_decrypt.threshold).toBe(3);
+    expect(parsed.kms_aggregator.public_decrypt.threshold).toBe(2);
     expect(parsed.kms_aggregator.user_decrypt.threshold).toBe(3);
     expect(parsed.kms_aggregator.auth).toMatchObject({
       chain_id: 12345,
