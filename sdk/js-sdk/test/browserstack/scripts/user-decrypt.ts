@@ -5,7 +5,7 @@ import { createLogger, createPageHarness, fetchFheTestAddress } from './common.j
 
 const { log, done, elapsed } = createPageHarness();
 
-// FheType.Bool, per contracts/src/v1.0.0/host-contracts/contracts/shared/FheType.sol
+// FheType.Bool, per contracts/src/localcleartext/host-contracts/contracts/shared/FheType.sol
 const FHE_TYPE_BOOL = 0;
 const EXPECTED_TYPE = 'bool';
 // FHETest.initFheTest() always sets the caller's ebool handle to `true`.

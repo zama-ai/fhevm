@@ -1,6 +1,6 @@
 import { defineFhevmChain } from '@fhevm/sdk/chains';
 
-// The cleartext v1.0.0 stack (contracts/src/v1.0.0): its canonical addresses and gateway values, DEPLOY.md §4-5.
+// The cleartext v1.0.0 stack (contracts/src/localcleartext): its canonical addresses and gateway values, DEPLOY.md §4-5.
 export const localcleartext = /*#__PURE__*/ defineFhevmChain({
   id: 31_337,
   fhevm: {

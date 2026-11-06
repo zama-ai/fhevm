@@ -54,8 +54,8 @@ remappings = [
     "@openzeppelin/contracts/=dependencies/@openzeppelin-contracts-5.1.0/",
     "@openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.1.0/",
     "@fhevm/solidity/=../../../library-solidity/",
-    "@fhevm/host-contracts/=./src/v1.0.0/host-contracts/",
-    "@fhevm/cleartext/=./src/v1.0.0/cleartext/",
-    "@fhevm/host-contracts-1.0.0/=./src/v1.0.0/host-contracts/",
-    "@fhevm/cleartext-1.0.0/=./src/v1.0.0/cleartext/",
+    "@fhevm/host-contracts/=./src/localcleartext/host-contracts/",
+    "@fhevm/cleartext/=./src/localcleartext/cleartext/",
+    "@fhevm/host-contracts-1.0.0/=./src/localcleartext/host-contracts/",
+    "@fhevm/cleartext-1.0.0/=./src/localcleartext/cleartext/",
 ]
