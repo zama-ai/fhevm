@@ -124,6 +124,66 @@ coverage.
 
 ## Preparing and running a campaign
 
+### Sender RPC regression before and after the fixes
+
+The `sender-rpc` CPU leg uses the real three-operator stack on
+`three-of-three-backlog`. Only operator 1's transaction sender is routed through
+a local Node proxy. Twelve normal host transactions are identified by receipt
+and handle; all operators must compute and publish their material before the
+victim sender resumes. The scenario reads only the legacy `ciphertext_digest`
+columns, so the test suite can run before the shared nonce manager, retry-budget,
+or durable sender-state changes. This first scenario covers ciphertext material
+submission; it does not claim E2E coverage of the proof-response queue.
+
+From `test-suite/fhevm`, keep this checkout's test-suite image and select the
+runtime baseline independently. For example, `12f45ae` is a main revision before
+the sender fixes:
+
+```sh
+./fhevm-cli up --target sha --sha 12f45ae \
+  --scenario three-of-three-backlog --override test-suite
+./scripts/run-sender-rpc-recovery.sh nonce-low
+./scripts/run-sender-rpc-recovery.sh accepted-timeout
+```
+
+Use a dedicated stack. Registry credentials must permit every selected image,
+including the Chainguard object store. The runner requires its test suite to
+match this checkout and records the victim's immutable image ID and available
+source-revision label separately from the test-suite revision.
+
+Both binaries use the same explicit policy: three finite retries, four-second
+send timeout, twenty-row batches, and one-second polling. The nonce case returns
+exactly three `nonce too low` responses for each original handle and then
+forwards normally. The old sender spends the finite budget, leaving the original
+rows unsent and ineligible even after the route is healthy. The test must exit
+nonzero with `original sender backlog did not drain` and the original rows'
+retry counts; a provisioning error or an unobserved fault is not this regression.
+The fixed sender must complete every original row with the finite count still
+zero, reach three-sender quorum, and process fresh work without a test-initiated
+restart or database repair.
+
+The timeout case forwards each original signed submission to the real Gateway
+node, records its successful receipt, and withholds the response until the
+sender cancels its request. Verification reads those receipts directly from the
+node and requires completion, unique storage, quorum, and decryption of all
+original targets plus fresh work. This is a recovery acceptance case; it is not
+asserted that every old sender version fails it.
+
+For the after run, start a fresh stack with the fixed runtime and its matching
+migrations, rebuild this same test suite, and run the identical commands. In CI,
+manually dispatch `test-suite-consensus` with selection `sender-rpc`: `build=false`
+uses published main runtimes with a checkout-built test suite; `build=true`
+builds the runtime and test suite from the selected ref. Keep the two runs'
+image identities and evidence rather than inferring runtime changes from the
+test checkout SHA.
+
+The runner retains workload receipts, per-handle RPC events, the original queue
+snapshot after fault injection, phase logs, and sender image identity under
+`.fhevm/runtime/sender-rpc-evidence/`. It restores the original sender command,
+image and environment, and stops its owned proxy on both success and failure.
+
+### Other campaigns
+
 Use a dedicated local stack and retain its resolved version lock. From
 `test-suite/fhevm`, inspect scope before provisioning:
 
