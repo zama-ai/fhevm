@@ -17,9 +17,9 @@ use connector_utils::{
 use kms_connector_api::ErrorCode;
 use kms_grpc::{
     kms::v1::{
-        CrsGenRequest, DestroyMpcContextRequest, DestroyMpcContextResponse, DestroyMpcEpochRequest,
-        KeyGenPreprocRequest, KeyGenRequest, NewMpcContextRequest, NewMpcEpochRequest,
-        PublicDecryptionRequest, RequestId, UserDecryptionRequest,
+        CrsGenRequest, DestroyMpcContextRequest, DestroyMpcEpochRequest, KeyGenPreprocRequest,
+        KeyGenRequest, NewMpcContextRequest, NewMpcEpochRequest, PublicDecryptionRequest,
+        RequestId, UserDecryptionRequest,
     },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
@@ -66,13 +66,9 @@ pub enum KmsPollTarget {
         preproc_id: RequestId,
     },
     Crsgen(RequestId),
-    NewKmsContext {
-        context_id: U256,
-    },
-    NewKmsEpoch {
-        context_id: U256,
-        epoch_id: U256,
-    },
+    NewKmsEpoch(U256),
+    /// The KMS Core returns the result synchronously, in the response of the sent request.
+    ResultOnSend,
     NoResponseExpected,
 }
 
@@ -99,24 +95,17 @@ impl From<&ProtocolEventKind> for KmsPollTarget {
                 preproc_id: u256_to_request_id(e.prepKeygenId),
             },
             ProtocolEventKind::Crsgen(e) => Self::Crsgen(u256_to_request_id(e.crsId)),
-            ProtocolEventKind::NewKmsContext(e) => Self::NewKmsContext {
-                context_id: e.contextId,
-            },
-            ProtocolEventKind::NewKmsEpoch(e) => Self::NewKmsEpoch {
-                context_id: e.kmsContextId,
-                epoch_id: e.epochId,
-            },
+            ProtocolEventKind::NewKmsEpoch(e) => Self::NewKmsEpoch(e.epochId),
             // Abort has no result-polling endpoint on the Core: the send-side ack is the only
             // signal. The original keygen/crsgen request is separately retired when its own result
             // poll returns `Code::Aborted`.
             ProtocolEventKind::AbortKeygen(_) | ProtocolEventKind::AbortCrsgen(_) => {
                 Self::NoResponseExpected
             }
-            // Like aborts, destructions have no result-polling endpoint on the Core: the
-            // send-side ack is the only signal.
-            ProtocolEventKind::KmsContextDestroyed(_) | ProtocolEventKind::KmsEpochDestroyed(_) => {
-                Self::NoResponseExpected
-            }
+            // Context creation and destructions return their signed confirmation on send.
+            ProtocolEventKind::NewKmsContext(_)
+            | ProtocolEventKind::KmsContextDestroyed(_)
+            | ProtocolEventKind::KmsEpochDestroyed(_) => Self::ResultOnSend,
         }
     }
 }
@@ -195,9 +184,10 @@ impl KmsClient {
             KmsGrpcRequest::AbortKeygen(req) => self.request_abort_keygen(req).await,
             KmsGrpcRequest::AbortCrsgen(req) => self.request_abort_crsgen(req).await,
             KmsGrpcRequest::NewMpcContext { old, new } => {
-                // Create the old context in case it doesn't exist, then the new context.
+                // Create the old context in case it doesn't exist, then the new context. Only the
+                // new context's signed confirmation is submitted on-chain.
                 match self.request_new_mpc_context(old).await {
-                    // Both the `AlreadyExists` and `Ok(Empty)` cases are caught here.
+                    // Both the `AlreadyExists` and `Ok(_)` cases are caught here.
                     (_, Ok(_)) => self.request_new_mpc_context(new).await,
                     error => error,
                 }
@@ -229,16 +219,16 @@ impl KmsClient {
                 preproc_id,
             } => self.poll_keygen_result(request_id, preproc_id).await,
             KmsPollTarget::Crsgen(request_id) => self.poll_crsgen_result(request_id).await,
-            // `NewMpcContext` has no result-polling endpoint: the Core's send-side ack is the
-            // only signal we get. The caller has already observed a successful send; we emit a
-            // synthetic response so the publisher can write the row.
-            KmsPollTarget::NewKmsContext { context_id } => {
-                (0, Ok(KmsGrpcResponse::NewKmsContext { context_id }))
-            }
-            KmsPollTarget::NewKmsEpoch {
-                context_id,
-                epoch_id,
-            } => self.poll_epoch_result_response(context_id, epoch_id).await,
+            // Reached when the KMS Core acknowledged the request without returning its result,
+            // i.e. `AlreadyExists`, which these idempotent endpoints only return on a conflict.
+            KmsPollTarget::ResultOnSend => (
+                0,
+                Err(ProcessingError::irrecoverable(
+                    ErrorCode::Unprocessable,
+                    anyhow!("KMS Core returned no signed result for this request"),
+                )),
+            ),
+            KmsPollTarget::NewKmsEpoch(epoch_id) => self.poll_epoch_result_response(epoch_id).await,
             KmsPollTarget::NoResponseExpected => (0, Ok(KmsGrpcResponse::NoResponseExpected)),
         }
     }
@@ -260,7 +250,7 @@ impl KmsClient {
                 async move { client.public_decrypt(request).await }
             },
             EventType::PublicDecryptionRequest,
-            |_| Ok(KmsSendResponse::Empty),
+            |_| Ok(KmsSendResponse::Ack),
         )
         .await
     }
@@ -281,7 +271,7 @@ impl KmsClient {
                 async move { client.user_decrypt(request).await }
             },
             EventType::UserDecryptionRequest,
-            |_| Ok(KmsSendResponse::Empty),
+            |_| Ok(KmsSendResponse::Ack),
         )
         .await
     }
@@ -303,7 +293,7 @@ impl KmsClient {
                 async move { client.key_gen_preproc(request).await }
             },
             EventType::PrepKeygenRequest,
-            |_| Ok(KmsSendResponse::Empty),
+            |_| Ok(KmsSendResponse::Ack),
         )
         .await
     }
@@ -327,7 +317,7 @@ impl KmsClient {
                 async move { client.key_gen(request).await }
             },
             EventType::KeygenRequest,
-            |_| Ok(KmsSendResponse::Empty),
+            |_| Ok(KmsSendResponse::Ack),
         )
         .await
     }
@@ -349,7 +339,7 @@ impl KmsClient {
                 async move { client.crs_gen(request).await }
             },
             EventType::CrsgenRequest,
-            |_| Ok(KmsSendResponse::Empty),
+            |_| Ok(KmsSendResponse::Ack),
         )
         .await
     }
@@ -368,7 +358,7 @@ impl KmsClient {
                 async move { client.abort_key_gen(request_id).await }
             },
             EventType::AbortKeygenRequest,
-            |_| Ok(KmsSendResponse::Empty),
+            |_| Ok(KmsSendResponse::Ack),
         )
         .await
     }
@@ -387,7 +377,7 @@ impl KmsClient {
                 async move { client.abort_crs_gen(request_id).await }
             },
             EventType::AbortCrsgenRequest,
-            |_| Ok(KmsSendResponse::Empty),
+            |_| Ok(KmsSendResponse::Ack),
         )
         .await
     }
@@ -549,7 +539,7 @@ impl KmsClient {
                 async move { client.new_mpc_context(request).await }
             },
             EventType::NewKmsContext,
-            |_| Ok(KmsSendResponse::Empty),
+            |r| Ok(KmsGrpcResponse::NewKmsContext(r).into()),
         )
         .await
     }
@@ -571,7 +561,7 @@ impl KmsClient {
                 async move { client.destroy_mpc_context(request).await }
             },
             EventType::KmsContextDestroyed,
-            map_destroyed_epochs,
+            |r| Ok(KmsGrpcResponse::ContextDestruction(r).into()),
         )
         .await
     }
@@ -593,7 +583,7 @@ impl KmsClient {
                 async move { client.destroy_mpc_epoch(request).await }
             },
             EventType::KmsEpochDestroyed,
-            |_| Ok(KmsSendResponse::Empty),
+            |r| Ok(KmsGrpcResponse::EpochDestruction(r).into()),
         )
         .await
     }
@@ -615,16 +605,13 @@ impl KmsClient {
                 async move { client.new_mpc_epoch(request).await }
             },
             EventType::NewKmsEpoch,
-            |_| Ok(KmsSendResponse::Empty),
+            |_| Ok(KmsSendResponse::Ack),
         )
         .await
     }
 
-    /// Polls `GetEpochResult` and wraps the reply in a `KmsGrpcResponse::EpochResult`. The Core
-    /// keys epochs by `epoch_id`, so every `NewKmsEpoch` event flows through here.
     async fn poll_epoch_result_response(
         &self,
-        context_id: U256,
         epoch_id: U256,
     ) -> (i16, Result<KmsGrpcResponse, ProcessingError>) {
         let epoch_id_proto = u256_to_request_id(epoch_id);
@@ -642,14 +629,14 @@ impl KmsClient {
 
         match grpc_result.map_err(ProcessingError::from_grpc_status) {
             Err(e) => (error_count, Err(e)),
-            Ok(grpc_response) => (
-                error_count,
-                Ok(KmsGrpcResponse::EpochResult {
-                    context_id,
-                    epoch_id,
-                    grpc_response: grpc_response.into_inner(),
-                }),
-            ),
+            Ok(grpc_response) => {
+                let grpc_response = grpc_response.into_inner();
+                if grpc_response.payload.is_none() {
+                    info!("No epoch activation to confirm for epoch #{epoch_id:#066x}");
+                    return (error_count, Ok(KmsGrpcResponse::NoResponseExpected));
+                }
+                (error_count, Ok(KmsGrpcResponse::EpochResult(grpc_response)))
+            }
         }
     }
 
@@ -675,24 +662,6 @@ fn irrecoverable_error<T>(err: anyhow::Error) -> (i16, Result<T, ProcessingError
             err,
         )),
     )
-}
-
-/// Converts a `DestroyMpcContextResponse` into the list of destroyed epoch IDs to invalidate.
-fn map_destroyed_epochs(
-    response: DestroyMpcContextResponse,
-) -> Result<KmsSendResponse, ProcessingError> {
-    response
-        .epoch_ids
-        .into_iter()
-        .map(request_id_to_u256)
-        .collect::<Result<Vec<_>, _>>()
-        .map(KmsSendResponse::DestroyedEpochs)
-        .map_err(|e| {
-            ProcessingError::irrecoverable(
-                ErrorCode::Unprocessable,
-                anyhow!("Invalid epoch_id in DestroyMpcContextResponse: {e}"),
-            )
-        })
 }
 
 const RETRYABLE_GRPC_CODE: [Code; 5] = [
@@ -730,7 +699,7 @@ where
             }
             Err(e) if e.code() == Code::AlreadyExists => {
                 info!("GRPC already sent to the KMS!");
-                return (i - 1, Ok(KmsSendResponse::Empty));
+                return (i - 1, Ok(KmsSendResponse::Ack));
             }
             Err(e) => e,
         };
