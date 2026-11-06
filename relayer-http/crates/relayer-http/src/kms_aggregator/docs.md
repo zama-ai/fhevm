@@ -276,7 +276,7 @@ Events:
 | `call failed` | warn | kms_node, attempts, elapsed_ms, error: the node's outcome after its last attempt |
 | `call cut` | warn | kms_node, attempts, elapsed_ms, cause: `deadline` (too slow or hung), or `fail_fast`; a client hangup is reported by the endpoint's `Guard` (cause `client_closed`) |
 | `response rejected` | warn | kms_node, elapsed_ms, error: a check refused a 200 response |
-| `node task panicked` | error | kms_node: a panic inside a node task (no panic text); the node is counted as failed, and the fail-fast check still runs |
+| `node task panicked` | error | kms_node, location: a panic inside a node task (no panic text), the panic's only ERROR line; the node is counted as failed, and the fail-fast check still runs |
 | `aggregation started`, `response accepted`, `deadline reached`, `threshold unreachable` | debug | nodes, threshold, timeout_ms / kms_node, attempts, elapsed_ms, counted / pending |
 
 `error` is a digest: for a KMS node's error response, its code and message truncated to `MAX_LOGGED_NODE_MESSAGE`

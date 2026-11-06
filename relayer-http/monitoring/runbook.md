@@ -38,7 +38,7 @@ Attempts wait for an outbound call slot (`kms_aggregator.max_concurrent_calls`):
 At least one internal error in the last 5 minutes: a request ended with the code `internal` (an internal error of the aggregation, or a panic of a request handler), or a KMS node call panicked. It is the relayer's own defect: the KMS nodes and the client are not at fault.
 
 1. Operator dashboard, "Internal errors" (Service row): click it to list the requests in the lookup. Logs: an ERROR line `internal error` carries the `request_id`, the `reason` (`handler panicked` for a panic, else the internal error's text) and, for a panic, its `location`; the client got `500` `internal`; the request's summary line (`request completed`, INFO, `code` `internal`) has the rest. Every line of the request carries its `request_id`.
-2. A panic inside one KMS node call is an ERROR line `node task panicked` with the `kms_node`, next to an ERROR line `panicked` with its `location`, and `panic` in "<flow>: failed attempts by KMS node and code". The request may still succeed.
+2. A panic inside one KMS node call is one ERROR line `node task panicked` with the `kms_node` and the `location`, and `panic` in "<flow>: failed attempts by KMS node and code". The request may still succeed.
 3. Escalate with the `request_id` and the log lines: a defect needs a fix, not a restart.
 
 ## RelayerHttpSignerFailing

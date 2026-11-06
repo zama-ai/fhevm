@@ -61,7 +61,7 @@ A failed request is INFO: its summary line's outcome says so. WARN comes only fr
 
 **Libraries** that log through the `log` crate (reqwest, rustls-platform-verifier) reach the same subscriber and filter. Their DEBUG output may carry URLs and connection details: never enable a global `debug`; incidents use `RUST_LOG=warn,relayer_http=debug`, the default.
 
-**Panics** are one ERROR line, with their location and never their payload (it may hold request data): a request's `internal error` line, or `panicked` outside a request. A failure logs a digest instead: the error with its field path, the body size, and the summary line's public fields. A KMS node's error response is logged as its code and message, truncated.
+**Panics** are one ERROR line, with their location and never their payload (it may hold request data): a request's `internal error` line, a KMS node task's `node task panicked` line, or `panicked` elsewhere. A failure logs a digest instead: the error with its field path, the body size, and the summary line's public fields. A KMS node's error response is logged as its code and message, truncated.
 
 **Never logged:** bodies, user signatures, shares, keys, header values (the outgoing FhevmSig header is a credential), URLs.
 

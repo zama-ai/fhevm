@@ -89,8 +89,17 @@ async fn main() -> ExitCode {
         }
     }
     metrics_stop.cancel();
-    if let Ok(Err(e)) = metrics_server.await {
-        error!(error = %e, "metrics server failed");
+    // Stopped by `metrics_stop`, it returns `Ok(())`; anything else is a failure of the process.
+    match metrics_server.await {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => {
+            error!(error = %e, "metrics server failed");
+            return ExitCode::FAILURE;
+        }
+        Err(e) => {
+            error!(server = "metrics server", error = %e, "server task failed");
+            return ExitCode::FAILURE;
+        }
     }
     info!("relayer-http stopped");
     ExitCode::SUCCESS

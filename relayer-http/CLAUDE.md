@@ -52,7 +52,7 @@ configuration → behaviour). The implementation plans live outside the reposito
 ## Configuration
 
 One YAML file (`config/config.yaml` is the example), five sections: `name`, `log` (optional, defaults to JSON
-lines), `http` (bind address, body limit, body read timeout, supported chain ids), `metrics` (optional: `endpoint`, default `0.0.0.0:9898`, the Prometheus listener on its own port) and `kms_aggregator` (deadline,
+lines), `http` (bind address, body limit, body read timeout, supported chain ids, optional request limits defaulting to the connector's), `metrics` (optional: `endpoint`, default `0.0.0.0:9898`, the Prometheus listener on its own port) and `kms_aggregator` (deadline,
 retries, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
 unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). Every connector call carries an `FhevmSig` header (RFC-038)
 signed for that endpoint's `audience`; the signing key is never in the file: `kms_aggregator.auth.signer` names the env

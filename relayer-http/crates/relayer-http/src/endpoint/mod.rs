@@ -160,12 +160,7 @@ pub(crate) mod tests {
         App {
             user_decrypt: Arc::new(Aggregator::new(caller.clone(), 9, UserChecks::default())),
             public_decrypt: Arc::new(Aggregator::new(caller, 5, ())),
-            http: Arc::new(HttpConfig {
-                endpoint: "127.0.0.1:0".parse().unwrap(),
-                max_body_bytes: 4096,
-                body_read_timeout: Duration::from_secs(2),
-                supported_chain_ids: vec![1, 137],
-            }),
+            http: Arc::new(HttpConfig::for_tests(&[1, 137])),
             metrics,
             shutdown,
         }
@@ -522,6 +517,32 @@ pub(crate) mod tests {
         assert_eq!(f["chain_id"], "137");
         assert_eq!(f["threshold"], 5);
         assert_eq!(f["handles"].as_str().unwrap().split(',').count(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn summary_line_of_an_invalid_request_bounds_its_lists_and_the_value_goes_to_debug() {
+        // One handle over the default limit of 50: only the limit's worth is listed.
+        let handles: Vec<String> = (0..=50)
+            .map(|_| format!("\"{}\"", validate::tests::handle(137, 0)))
+            .collect();
+        let body = format!(
+            r#"{{ "ciphertextHandles": [{}], "extraData": "{EXTRA_DATA_V2}" }}"#,
+            handles.join(",")
+        );
+        let (status, lines) =
+            logged(healthy, "/v4/public-decrypt", &body, &["request invalid"]).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        let f = &the_summary(&lines)["fields"];
+        let listed: Vec<&str> = f["handles"].as_str().unwrap().split(',').collect();
+        assert_eq!(listed.len(), 51);
+        assert_eq!(listed.last(), Some(&"+1 more"));
+        let debug = lines
+            .iter()
+            .find(|l| l["fields"]["message"] == "request invalid")
+            .unwrap();
+        assert_eq!(debug["level"], "DEBUG");
+        assert_eq!(debug["fields"]["field"], "ciphertextHandles");
+        assert_eq!(debug["fields"]["value"], "51 handles");
     }
 
     #[tokio::test(start_paused = true)]

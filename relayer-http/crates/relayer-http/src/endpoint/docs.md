@@ -79,10 +79,10 @@ these requests anyway; failing here saves n calls). Every failure is `400 malfor
 | field | rule |
 |---|---|
 | `attestationType` | `eip712-unified-user-decrypt-v1` |
-| `payload.handles`, `ciphertextHandles` | non-empty; each handle's FHE type byte (index 30) is decryptable (`ebool`, `euint8..256`, `eaddress`); all handles carry one chain id (bytes 22..30, big-endian) that is in `supported_chain_ids`; total plaintext size at most 2048 bits |
-| `payload.allowedContracts` | at most 10 |
+| `payload.handles`, `ciphertextHandles` | non-empty; at most `http.max_handles_per_decryption` (default 50, the connector's `max_handles_per_decryption`); each handle's FHE type byte (index 30) is decryptable (`ebool`, `euint8..256`, `eaddress`); all handles carry one chain id (bytes 22..30, big-endian) that is in `supported_chain_ids`; total plaintext size at most 2048 bits |
+| `payload.allowedContracts` | at most `http.max_allowed_contracts` (default 10, the connector's `max_allowed_contracts`) |
 | `payload.publicKey` | non-empty |
-| `payload.requestValidity` | `startTimestamp <= now` and `startTimestamp + durationSeconds > now` |
+| `payload.requestValidity` | `durationSeconds` at most one year (the connector's limit); `startTimestamp <= now` and `startTimestamp + durationSeconds > now` |
 | `extraData`, `payload.extraData` | version `0x02` (v2), at least 65 bytes; see 3.2 |
 
 ### 3.2 extraData
@@ -229,6 +229,10 @@ The rules are in `OBSERVABILITY.md`; the generated references are `monitoring/su
   more ERROR line, `internal error`, carries the `request_id` and the `reason`.
 - `status` is text (`"200"`, or `none`) so that the field has one type; `contract_addresses` is the handles' contracts,
   `allowed_contracts` the request's `allowedContracts`.
+- **Invalid request**: the list fields show at most validation's limits (`http.max_handles_per_decryption` handles
+  and contracts, `http.max_allowed_contracts` `allowedContracts`), then `+N more`: a valid request is listed whole, and a request that failed validation, bounded
+  only by the body limit, is cut. A DEBUG line `request invalid` carries the `field`, the `issue` and the offending
+  `value` (the handle, or a count), never sent to the client.
 
 JSON output is the default (`log.format`); `RUST_LOG` sets the level, default `warn,relayer_http=debug`. One successful
 user decrypt, fields abridged:

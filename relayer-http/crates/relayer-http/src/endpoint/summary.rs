@@ -9,6 +9,7 @@ use tokio::time::Instant;
 use tracing::{error, info, warn};
 
 use super::validate::decode_handle;
+use crate::config::HttpConfig;
 use crate::kms_aggregator::Tally;
 use crate::metrics::{FlowName, INTERNAL_CODE, Metrics, Outcome};
 
@@ -47,15 +48,15 @@ pub const FIELDS: &[Field] = &[
     },
     Field {
         name: "handles",
-        meaning: "ciphertext handles, comma-separated, never truncated; `none` if the body was unreadable",
+        meaning: "ciphertext handles, comma-separated; at most `http.max_handles_per_decryption` (the validation limit), then `+N more`, so only a request that failed validation is cut; `none` if the body was unreadable",
     },
     Field {
         name: "contract_addresses",
-        meaning: "contract addresses of the handles, comma-separated, each once; `none` if the body was unreadable or the flow has none (public decrypt)",
+        meaning: "contract addresses of the handles, comma-separated, each once, cut like `handles`; `none` if the body was unreadable or the flow has none (public decrypt)",
     },
     Field {
         name: "allowed_contracts",
-        meaning: "the `allowedContracts` of the request (user decrypt), comma-separated; `none` otherwise",
+        meaning: "the `allowedContracts` of the request (user decrypt), comma-separated, at most `http.max_allowed_contracts` (the validation limit), then `+N more`; `none` otherwise",
     },
     Field {
         name: "user_address",
@@ -142,13 +143,21 @@ pub struct Summary {
     reason: Option<String>,
     /// Where the handler panicked (`file:line:column`), for the `internal error` line; never the panic's payload.
     pub(super) panic_location: Option<String>,
+    /// Most entries listed: validation's limits (`http.max_handles_per_decryption`, `http.max_allowed_contracts`).
+    max_handles: usize,
+    max_allowed_contracts: usize,
 }
 
 impl Summary {
     /// A new random request id, nothing else known yet.
     pub fn new(flow: FlowName) -> Self {
+        Self::with_id(flow, uuid::Uuid::new_v4().to_string())
+    }
+
+    /// The request `request_id`, nothing else known yet.
+    fn with_id(flow: FlowName, request_id: String) -> Self {
         Self {
-            request_id: uuid::Uuid::new_v4().to_string(),
+            request_id,
             flow,
             handles: Vec::new(),
             contract_addresses: Vec::new(),
@@ -161,17 +170,28 @@ impl Summary {
             code: "ok",
             reason: None,
             panic_location: None,
+            max_handles: usize::MAX,
+            max_allowed_contracts: usize::MAX,
         }
     }
 
-    /// The body is parsed: the public fields of the request become known.
+    /// Moves the summary out, leaving its request id and flow: what a panic after this point still logs.
+    pub fn take(&mut self) -> Self {
+        let rest = Self::with_id(self.flow, self.request_id.clone());
+        std::mem::replace(self, rest)
+    }
+
+    /// The body is parsed: the public fields of the request become known, listed up to `http`'s request limits.
     pub fn received(
         &mut self,
+        http: &HttpConfig,
         handles: Vec<B256>,
         contract_addresses: Vec<Address>,
         allowed_contracts: Vec<Address>,
         user_address: Option<Address>,
     ) {
+        self.max_handles = http.max_handles_per_decryption;
+        self.max_allowed_contracts = http.max_allowed_contracts;
         self.chain_id = handles
             .first()
             .and_then(|handle| decode_handle(handle).ok())
@@ -213,9 +233,9 @@ impl Summary {
             status = %or_none(status),
             code = self.code,
             elapsed_ms = elapsed.as_millis() as u64,
-            handles = %list(&self.handles),
-            contract_addresses = %list(&self.contract_addresses),
-            allowed_contracts = %list(&self.allowed_contracts),
+            handles = %list_at_most(&self.handles, self.max_handles),
+            contract_addresses = %list_at_most(&self.contract_addresses, self.max_handles),
+            allowed_contracts = %list_at_most(&self.allowed_contracts, self.max_allowed_contracts),
             user_address = %or_none(self.user_address),
             chain_id = %or_none(self.chain_id),
             body_len = self.body_len,
@@ -296,11 +316,21 @@ impl Drop for Guard {
 
 /// `a,b,c`, or `none` when empty.
 fn list(items: &[impl Display]) -> String {
+    list_at_most(items, usize::MAX)
+}
+
+/// [`list`], cut after `limit` entries: `a,b,+3 more`. The limits are validation's, so only a request that failed
+/// validation is cut: nothing else bounds its lists but the body limit.
+fn list_at_most(items: &[impl Display], limit: usize) -> String {
     if items.is_empty() {
         return "none".to_owned();
     }
-    let items: Vec<String> = items.iter().map(ToString::to_string).collect();
-    items.join(",")
+    let shown = limit.min(items.len());
+    let mut parts: Vec<String> = items.iter().take(shown).map(ToString::to_string).collect();
+    if shown < items.len() {
+        parts.push(format!("+{} more", items.len() - shown));
+    }
+    parts.join(",")
 }
 
 fn or_none(value: Option<impl Display>) -> String {
@@ -332,16 +362,48 @@ mod tests {
     }
 
     #[test]
+    fn a_bounded_list_names_how_many_entries_it_left_out() {
+        let items = [1, 2, 3, 4];
+        assert_eq!(list_at_most(&items, 2), "1,2,+2 more");
+        assert_eq!(list_at_most(&items, 4), "1,2,3,4");
+        assert_eq!(list_at_most(&Vec::<u8>::new(), 2), "none");
+    }
+
+    #[test]
+    fn a_taken_summary_leaves_its_request_id_and_flow() {
+        let mut summary = Summary::new(FlowName::PublicDecrypt);
+        summary.received(
+            &HttpConfig::for_tests(&[1]),
+            vec![B256::repeat_byte(0x11)],
+            vec![],
+            vec![],
+            None,
+        );
+        let taken = summary.take();
+        assert_eq!(taken.handles.len(), 1);
+        assert_eq!(summary.request_id, taken.request_id);
+        assert_eq!(summary.flow, FlowName::PublicDecrypt);
+        assert!(summary.handles.is_empty());
+    }
+
+    #[test]
     fn the_chain_id_comes_from_the_first_handle() {
         let mut summary = Summary::new(FlowName::PublicDecrypt);
         summary.received(
+            &HttpConfig::for_tests(&[1]),
             vec![crate::endpoint::validate::tests::handle(137, 5)],
             vec![],
             vec![],
             None,
         );
         assert_eq!(summary.chain_id, Some(137));
-        summary.received(vec![B256::repeat_byte(0xff)], vec![], vec![], None);
+        summary.received(
+            &HttpConfig::for_tests(&[1]),
+            vec![B256::repeat_byte(0xff)],
+            vec![],
+            vec![],
+            None,
+        );
         assert_eq!(summary.chain_id, None);
     }
 

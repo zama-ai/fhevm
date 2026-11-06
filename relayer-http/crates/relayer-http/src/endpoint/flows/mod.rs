@@ -19,10 +19,12 @@ use serde::de::DeserializeOwned;
 use serde_json::error::Category;
 use serde_path_to_error::Segment;
 use tokio::time::timeout;
+use tracing::debug;
 
 use super::ApiError;
 use super::error::tag;
 use super::summary::Summary;
+use super::validate::Invalid;
 use crate::App;
 
 /// Reads and parses the JSON body within `http.body_read_timeout`: a total bound (not per chunk) started when the
@@ -55,6 +57,19 @@ pub async fn read_json<T: DeserializeOwned>(
         Err(_) => format!("request body not received within {limit:?}"),
     };
     Err(ApiError::malformed(summary, reason))
+}
+
+/// The request failed validation: `400 malformed` naming the field; the offending value goes to a DEBUG line, never
+/// to the answer.
+pub fn invalid(summary: &Summary, invalid: Invalid) -> ApiError {
+    debug!(
+        request_id = %summary.request_id,
+        field = %invalid.field,
+        issue = %invalid.issue,
+        value = invalid.value.as_deref().unwrap_or("none"),
+        "request invalid"
+    );
+    ApiError::malformed(summary, invalid.to_string())
 }
 
 /// `application/json` or `application/*+json`, as the `Json` extractor requires.

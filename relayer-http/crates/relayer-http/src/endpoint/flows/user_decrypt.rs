@@ -1,6 +1,8 @@
 //! `POST /v4/user-decrypt`: the connector's v1 envelope topology (`attestationType`, `payload`, `signature`)
 //! with the relayer's own field names inside, validated, converted to the connector DTO and aggregated.
 
+use std::collections::HashSet;
+
 use alloy::primitives::{Address, B256, Bytes};
 use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
@@ -12,14 +14,15 @@ use serde::{Deserialize, Deserializer};
 
 use super::{Reply, read_json};
 use crate::App;
+use crate::config::HttpConfig;
 use crate::endpoint::ApiError;
 use crate::endpoint::summary::{Guard, Summary};
 use crate::endpoint::validate::{self, Invalid};
 use crate::metrics::FlowName;
 
 pub const ATTESTATION_TYPE: &str = "eip712-unified-user-decrypt-v1";
-/// The connector's cap.
-const MAX_ALLOWED_CONTRACTS: usize = 10;
+/// The connector's longest `requestValidity.durationSeconds`: one year.
+const MAX_DURATION_SECONDS: u64 = 365 * 24 * 60 * 60;
 
 /// Request body. Hex fields are typed: length and format are checked by deserialisation.
 ///
@@ -80,7 +83,7 @@ fn u64_from_string_or_number<'de, D: Deserializer<'de>>(deserializer: D) -> Resu
 }
 
 /// The current relayer's rules plus the connector's cheap handle rules. `now` in seconds since the epoch.
-pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Result<(), Invalid> {
+pub fn validate(request: &UserDecryptRequest, http: &HttpConfig, now: u64) -> Result<(), Invalid> {
     validate::expect(
         "attestationType",
         &request.attestation_type,
@@ -90,18 +93,30 @@ pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Re
     validate::handles(
         "payload.handles",
         payload.handles.iter().map(|h| &h.ct_handle),
-        chain_ids,
+        http,
     )?;
-    if payload.allowed_contracts.len() > MAX_ALLOWED_CONTRACTS {
+    let max_contracts = http.max_allowed_contracts;
+    if payload.allowed_contracts.len() > max_contracts {
         return Err(Invalid::new(
             "payload.allowedContracts",
-            format!("at most {MAX_ALLOWED_CONTRACTS} contracts"),
-        ));
+            format!("at most {max_contracts} contracts"),
+        )
+        .with_value(format_args!(
+            "{} contracts",
+            payload.allowed_contracts.len()
+        )));
     }
     if payload.public_key.is_empty() {
         return Err(Invalid::new("payload.publicKey", "must not be empty"));
     }
     let validity = &payload.request_validity;
+    if validity.duration_seconds > MAX_DURATION_SECONDS {
+        return Err(Invalid::new(
+            "payload.requestValidity.durationSeconds",
+            format!("at most {MAX_DURATION_SECONDS} seconds"),
+        )
+        .with_value(validity.duration_seconds));
+    }
     if validity.start_timestamp > now {
         return Err(Invalid::new(
             "payload.requestValidity.startTimestamp",
@@ -134,6 +149,7 @@ pub async fn handle(app: State<App>, request: Request) -> Response {
 async fn process(app: &App, request: Request, summary: &mut Summary) -> Result<Response, ApiError> {
     let request: UserDecryptRequest = read_json(app, request, summary).await?;
     summary.received(
+        &app.http,
         request
             .payload
             .handles
@@ -144,28 +160,28 @@ async fn process(app: &App, request: Request, summary: &mut Summary) -> Result<R
         request.payload.allowed_contracts.clone(),
         Some(request.payload.user_address),
     );
-    validate(&request, &app.http.supported_chain_ids, super::now())
-        .map_err(|e| ApiError::malformed(summary, e.to_string()))?;
+    validate(&request, &app.http, super::now()).map_err(|e| super::invalid(summary, e))?;
     let request = UserDecryptionRequest::from(request);
     summary.forwarded(request.id());
     let result = app
         .user_decrypt
         .run(&summary.request_id, request, &mut summary.tally)
         .await;
-    result
-        .map(|output| Reply::succeeded(summary.clone(), output).into_response())
-        .map_err(|e| ApiError::aggregation(summary, e))
+    match result {
+        Ok(output) => Ok(Reply::succeeded(summary.take(), output).into_response()),
+        Err(e) => Err(ApiError::aggregation(summary, e)),
+    }
 }
 
-/// The contracts of the handles, once each.
+/// The contracts of the handles, once each, in order. Linear: the handles are not validated yet.
 fn handle_contracts(payload: &UserDecryptPayload) -> Vec<Address> {
-    let mut addresses: Vec<Address> = Vec::new();
-    for address in payload.handles.iter().map(|h| h.contract_address) {
-        if !addresses.contains(&address) {
-            addresses.push(address);
-        }
-    }
-    addresses
+    let mut seen = HashSet::new();
+    payload
+        .handles
+        .iter()
+        .map(|h| h.contract_address)
+        .filter(|address| seen.insert(*address))
+        .collect()
 }
 
 /// The body the connector receives (RFC-033), field by field.
@@ -285,7 +301,10 @@ pub(crate) mod tests {
 
     #[test]
     fn valid_request_passes() {
-        assert_eq!(validate(&valid(), &[1, 137], NOW), Ok(()));
+        assert_eq!(
+            validate(&valid(), &HttpConfig::for_tests(&[1, 137]), NOW),
+            Ok(())
+        );
     }
 
     #[test]
@@ -313,6 +332,12 @@ pub(crate) mod tests {
                 "payload.publicKey",
             ),
             (
+                Box::new(|r| {
+                    r.payload.request_validity.duration_seconds = MAX_DURATION_SECONDS + 1
+                }),
+                "payload.requestValidity.durationSeconds",
+            ),
+            (
                 Box::new(|r| r.payload.request_validity.start_timestamp = NOW + 1),
                 "payload.requestValidity.startTimestamp",
             ),
@@ -328,9 +353,22 @@ pub(crate) mod tests {
         for (mutate, field) in cases {
             let mut request = valid();
             mutate(&mut request);
-            let error = validate(&request, &[1, 137], NOW).unwrap_err();
+            let error = validate(&request, &HttpConfig::for_tests(&[1, 137]), NOW).unwrap_err();
             assert_eq!(error.field, field, "{error}");
         }
+    }
+
+    #[test]
+    fn a_limit_error_names_the_offending_value() {
+        let mut request = valid();
+        request.payload.allowed_contracts =
+            vec![address!("0x3333333333333333333333333333333333333333"); 11];
+        let error = validate(&request, &HttpConfig::for_tests(&[1, 137]), NOW).unwrap_err();
+        assert_eq!(error.value.as_deref(), Some("11 contracts"));
+        let mut request = valid();
+        request.payload.request_validity.duration_seconds = MAX_DURATION_SECONDS + 1;
+        let error = validate(&request, &HttpConfig::for_tests(&[1, 137]), NOW).unwrap_err();
+        assert_eq!(error.value, Some((MAX_DURATION_SECONDS + 1).to_string()));
     }
 
     #[test]

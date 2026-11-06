@@ -49,12 +49,15 @@ pub fn init(cfg: &LogConfig) {
 }
 
 /// Replaces the default panic hook, whose plain-text stderr line would break the JSON stream. A panic inside a
-/// request is left to that request's `internal error` line, which carries its location; any other is one ERROR line
-/// `panicked` with the `location`. Never the payload: it may hold request data.
+/// request is left to that request's `internal error` line, and one in a KMS node task to its `node task panicked`
+/// line, both carrying its location; any other is one ERROR line `panicked` with the `location`. Never the payload:
+/// it may hold request data.
 pub fn init_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         let location = info.location().map(ToString::to_string);
-        if !crate::endpoint::note_panic(location.clone()) {
+        if !crate::endpoint::note_panic(location.clone())
+            && !crate::kms_aggregator::note_node_panic(location.clone())
+        {
             error!(
                 location = location.as_deref().unwrap_or("unknown"),
                 "panicked"

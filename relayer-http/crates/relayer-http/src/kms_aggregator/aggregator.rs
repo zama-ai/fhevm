@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
 use kms_connector_api::ErrorCode;
@@ -14,6 +14,26 @@ use tracing::{Instrument, debug, error, instrument, warn};
 use super::call::{CallError, Caller};
 use super::flows::Flow;
 use crate::metrics::PANIC_CODE;
+
+/// Where a node task panicked (`file:line:column`), filled by the panic hook and read from the task's `JoinError`.
+type PanicSlot = Arc<Mutex<Option<String>>>;
+
+tokio::task_local! {
+    /// The panic slot of the node task being polled: one per task, set when the aggregation spawns it.
+    static NODE_PANIC: PanicSlot;
+}
+
+/// The panic hook's part: keeps `location` for the `node task panicked` line, so a node task's panic is one ERROR
+/// line. False outside a node task: the hook logs the panic itself.
+pub fn note_node_panic(location: Option<String>) -> bool {
+    NODE_PANIC
+        .try_with(|slot| {
+            if let Ok(mut noted) = slot.lock() {
+                *noted = location;
+            }
+        })
+        .is_ok()
+}
 
 /// Why the threshold was not met. `dominant` = most frequent connector error among the failed calls.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -125,22 +145,33 @@ impl<F: Flow> Aggregator<F> {
         // One task per node; all of them share the body bytes, the deadline and the cancellation token.
         let mut pending = JoinSet::new();
         // A task that panics returns no result: its id says which node it was.
-        let mut task_nodes: HashMap<tokio::task::Id, String> = HashMap::new();
+        let mut task_nodes: HashMap<tokio::task::Id, (String, PanicSlot)> = HashMap::new();
         for endpoint in self.caller.endpoints() {
             // The task must own its endpoint: it outlives this borrow.
             let endpoint = endpoint.clone();
             let name = endpoint.name.clone();
             let (caller, body, cancel) = (self.caller.clone(), body.clone(), cancel.clone());
             // The task carries the `aggregation` span: its lines have the request's id.
+            let slot = PanicSlot::default();
             let task = pending.spawn(
-                async move {
-                    caller
-                        .call::<F::Response>(F::NAME, &endpoint, F::ROUTE, body, deadline, cancel)
-                        .await
-                }
-                .in_current_span(),
+                NODE_PANIC.scope(
+                    slot.clone(),
+                    async move {
+                        caller
+                            .call::<F::Response>(
+                                F::NAME,
+                                &endpoint,
+                                F::ROUTE,
+                                body,
+                                deadline,
+                                cancel,
+                            )
+                            .await
+                    }
+                    .in_current_span(),
+                ),
             );
-            task_nodes.insert(task.id(), name);
+            task_nodes.insert(task.id(), (name, slot));
         }
 
         let mut accepted: Vec<F::Response> = Vec::with_capacity(nodes);
@@ -163,16 +194,18 @@ impl<F: Flow> Aggregator<F> {
                 joined = pending.join_next() => match joined {
                     None => break,
                     Some(Ok(call)) => Some(call),
-                    // A panic inside a node task: the node is counted as failed, never propagated. The panic
-                    // message is not logged: it is the relayer's own text, but nothing proves it quotes no input.
+                    // A panic inside a node task: the node is counted as failed, never propagated. One ERROR line
+                    // with the location the hook noted; the panic message is not logged: it is the relayer's own
+                    // text, but nothing proves it quotes no input.
                     Some(Err(e)) => {
-                        let node = task_nodes.remove(&e.id());
+                        let (node, slot) = task_nodes.remove(&e.id()).unzip();
                         if let Some(node) = &node {
                             tally.pending.retain(|name| name != node);
                             tally.failed.push(node.clone());
                             self.caller.metrics().attempt_error(node, F::NAME, PANIC_CODE);
                         }
-                        error!(kms_node = node.as_deref(), "node task panicked");
+                        let location = slot.and_then(|slot| slot.lock().ok().and_then(|mut noted| noted.take()));
+                        error!(kms_node = node.as_deref(), location = location.as_deref(), "node task panicked");
                         None
                     }
                 },
@@ -493,6 +526,34 @@ mod tests {
             ("code", "panic"),
         ];
         assert!(value(&metrics, "relayer_http_kms_attempt_errors_total", &panic) >= Some(1));
+    }
+
+    #[tokio::test]
+    async fn a_node_panic_is_noted_only_inside_a_node_task() {
+        assert!(!note_node_panic(Some("a.rs:1:1".to_owned())));
+        let slot = PanicSlot::default();
+        let noted = NODE_PANIC
+            .scope(slot.clone(), async {
+                note_node_panic(Some("a.rs:1:1".to_owned()))
+            })
+            .await;
+        assert!(noted);
+        assert_eq!(slot.lock().unwrap().as_deref(), Some("a.rs:1:1"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_panicked_node_task_with_the_hook_is_one_error_line_with_its_location() {
+        crate::logging::init_panic_hook();
+        let (_, lines, _) = run_logged(&[(12, OK), (1, PANIC)], 9, &["node task panicked"]).await;
+        let _ = std::panic::take_hook();
+        let errors: Vec<_> = lines.iter().filter(|l| l["level"] == "ERROR").collect();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(errors[0]["fields"]["message"], "node task panicked");
+        assert!(
+            errors[0]["fields"]["location"].as_str().is_some(),
+            "{}",
+            errors[0]
+        );
     }
 
     #[tokio::test(start_paused = true)]

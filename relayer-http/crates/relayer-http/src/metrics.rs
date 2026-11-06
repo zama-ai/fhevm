@@ -348,7 +348,12 @@ impl Metrics {
             registry,
         };
         // A counter that only exists after its first increment hides that increment from `increase()`: the alerts
-        // on failures that are never routine start from 0.
+        // on failures that are never routine start from 0. `none` too: a panic outside a guarded handler.
+        metrics.requests.with_label_values(&[
+            FlowName::None.as_str(),
+            Outcome::Failed.as_str(),
+            INTERNAL_CODE,
+        ]);
         for flow in FlowName::DECRYPTS {
             metrics.requests.with_label_values(&[
                 flow.as_str(),
@@ -547,9 +552,11 @@ pub(crate) mod tests {
     #[test]
     fn the_defects_are_counted_from_zero_and_the_nodes_once_announced() {
         let m = Metrics::new().unwrap();
-        for flow in ["user_decrypt", "public_decrypt"] {
+        for flow in ["user_decrypt", "public_decrypt", "none"] {
             let internal = [("flow", flow), ("outcome", "failed"), ("code", "internal")];
             assert_eq!(value(&m, "relayer_http_requests_total", &internal), Some(0));
+        }
+        for flow in ["user_decrypt", "public_decrypt"] {
             let wait = [("flow", flow)];
             assert_eq!(
                 value(&m, "relayer_http_kms_wait_after_threshold_seconds", &wait),
