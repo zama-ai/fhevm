@@ -134,7 +134,8 @@ failure.
 a known event is a method on `Log`, any other line is `log!(level, log, fields…, "message")`. Aggregator lines carry
 the same identifiers through the `aggregation` span; a task spawned for a request inherits it (`in_current_span`).
 Every failed node attempt is one line: `info` when a retry follows, `warn` when the call gives up (with the reason).
-Never log request or response bodies, shares, signatures, header values or URLs. The subscriber is installed by `main`, never by a module; `log:` is optional and defaults to JSON lines
+Never log request or response bodies, shares, signatures, header values (the parsed `Retry-After` wait is a
+number, not a header value) or URLs. The subscriber is installed by `main`, never by a module; `log:` is optional and defaults to JSON lines
 (`log.format`: `json` | `pretty` | `compact`, plus the relayer's `show_*` switches); the level filter is `RUST_LOG`,
 default `warn,relayer_http=info`.
 
