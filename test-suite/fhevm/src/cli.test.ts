@@ -10,6 +10,7 @@ import {
   dbRevertTargetBlock,
   keyBootstrapLogArgs,
   recentCoprocessorSenders,
+  testRunEnvArgs,
   validateNamedProfileGrep,
   waitForKeyBootstrap,
 } from "./commands/test";
@@ -282,6 +283,12 @@ describe("cli", () => {
     expect(resolveLogsFollow({})).toBe(true);
     expect(resolveLogsFollow({ follow: true })).toBe(true);
     expect(resolveLogsFollow({ follow: false })).toBe(false);
+  });
+
+  test("maps --relayer-http to USE_RELAYER_HTTP=true in the test container", () => {
+    expect(testRunEnvArgs({ relayerHttp: true })).toEqual(["-e", "USE_RELAYER_HTTP=true"]);
+    expect(testRunEnvArgs({ relayerHttp: false })).toEqual([]);
+    expect(testRunEnvArgs({})).toEqual([]);
   });
 
   test("places extra docker exec flags before the test container", () => {
