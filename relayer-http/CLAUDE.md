@@ -53,10 +53,19 @@ configuration → behaviour). The implementation plans live outside the reposito
 
 One YAML file (`config/config.yaml` is the example), five sections: `name`, `log` (optional, defaults to JSON
 lines), `http` (bind address, body limit, body read timeout, supported chain ids, optional request limits defaulting to the connector's), `metrics` (optional: `endpoint`, default `0.0.0.0:9898`, the Prometheus listener on its own port) and `kms_aggregator` (deadline,
-retries, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
+two retry budgets: `call.retries` for transient errors and `call.rate_limit` for rate limits, thresholds, optional
+checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
 unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). Every connector call carries an `FhevmSig` header (RFC-038)
 signed for that endpoint's `audience`; the signing key is never in the file: `kms_aggregator.auth.signer` names the env
 var holding it, or an AWS KMS key, and startup fails unless that key has the address `kms_aggregator.auth.address` and signs a test message. Local variants go to `config/*.local.yaml`, ignored by git.
+
+The configuration does not live in this directory only. A change to it (key added, renamed, removed, default
+changed) lands in the same change in every carrier: `config/config.yaml`, the local stack's template
+`test-suite/fhevm/templates/config/relayer-http.yaml` (rendered by `test-suite/fhevm/src/generate/config.ts`, which
+passes the untouched sections through verbatim, so a stale template fails the in-stack relayer at startup) and its
+test, the preview-env values and the chart values once relayer-http is deployed there. Before merging and after
+every rebase, grep the repository for the old keys; an in-flight integration branch (preview-env, e2e) is rebased
+onto the new keys, never left on the old ones.
 
 ## Commands
 
@@ -114,8 +123,8 @@ being the reference.
 
 **No unexpected panic.** A panicking handler still answers `500 internal` (`CatchPanicLayer`). Both crate roots deny `clippy::unwrap_used`, `expect_used`, `indexing_slicing` and `panic`
 (allowed in tests). Every failure is a typed error returned to the caller. Configuration validation bounds every value
-the runtime arithmetic relies on (`call.timeout <= 60s`, `backoff_max <= call.timeout`, semaphore size capped) so that no
-arithmetic can overflow later. A panic inside a spawned task is counted as a failure, never propagated.
+the runtime arithmetic relies on (`call.timeout <= 60s`, every retry wait starts before `call.timeout`, semaphore size
+capped) so that no arithmetic can overflow later. A panic inside a spawned task is counted as a failure, never propagated.
 
 **Fail fast.** Never wait for something that cannot change the outcome: when `counted + pending < threshold` the
 remaining calls are cancelled at once. One deadline per request, no queue, no ETA; the client retries.

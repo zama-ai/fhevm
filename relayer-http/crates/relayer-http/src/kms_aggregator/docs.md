@@ -22,8 +22,8 @@ flowchart TB
   subgraph CALL[one node call]
     P[semaphore permit] --> Q[POST /v1/user-decrypt or /v1/public-decrypt] --> D[decode]
     D -->|200| OK[response]
-    D -->|error| R{retryable, under max_retries,<br/>delay fits before the deadline?}
-    R -->|yes: backoff| P
+    D -->|error| R{retryable, budget of its class left,<br/>wait fits before the deadline?}
+    R -->|yes: wait| P
     R -->|no| F[failed + connector code]
   end
   S --> CALL
@@ -130,9 +130,16 @@ as `threshold_reached_ms` (from the request's receipt), and `run` observes the t
 
 - The semaphore (`max_concurrent_calls`) bounds HTTP calls in flight across all aggregations of the process. A permit
   is held for one attempt only, never while sleeping between attempts.
-- Retries happen only for retryable errors, at most `max_retries` times, with delay `min(delay * 2^(k-1), backoff_max)`
-  before retry `k`. The deadline is the real bound: a retry whose delay does not fit in the remaining time is skipped
-  (the call gives up), so `max_retries` has no ceiling and no call outlives `call.timeout`.
+- Retries happen only for retryable errors, in two budgets chosen by the class of the failure
+  (`AttemptError::retry_class`), each consumed once per call and never restarted: a rate limit (`rate_limited`, a
+  bare 429) waits `max(rate_limit.initial_delay, Retry-After) * 2^(k-1)` before retry `k`, up to
+  `rate_limit.max_retries` (default one retry after 1 s, the connector proxy's window: retrying inside the window
+  that rejected the call is a guaranteed second 429); every other retryable error waits `k * retries.delay`, up to
+  `retries.max_retries` (default three retries of 200 ms: an ACL propagation or a ciphertext commit recovers in a
+  short, roughly constant time, doubling the wait only delays the share). `Retry-After` is read as delta-seconds,
+  at most 60 s; any other form is ignored. The deadline is the real bound: a retry whose wait does not fit in the
+  remaining time is skipped (the call gives up), so no call outlives `call.timeout`; startup refuses a budget whose
+  waits alone cannot all start before the deadline (section 8).
 - An authentication rejection (`sender_authentication_failed`, a bare 401) is never retried: our key or that node's
   audience is wrong. `auth_expired` is retried like any retryable error, with a fresh header.
 - The reqwest client has `timeout(call.timeout)` and a 3 s connect timeout as safety nets for a socket that stops
@@ -146,14 +153,15 @@ as `threshold_reached_ms` (from the request's receipt), and `run` observes the t
 | 2xx with a valid DTO | — | — |
 | 2xx with an unreadable body | `Body` | no |
 | any body above 4 MiB (declared `content-length`, or bytes received when the stream is cut) | `TooLarge(bytes)` | no |
-| non-2xx with the connector error body | `Api { status, error }` | by `error.code`: `malformed`, `unsupported_attestation_type` (400), `sender_authentication_failed` (401), `user_decryption_expired` (403), `kms_context_destroyed` (410), `unprocessable` (422) are final; `auth_expired` (401, re-signed), `acl_denied`, `user_signature_rejected` (403), `ciphertext_not_found` (404), `kms_context_invalid` (412), `rate_limited` (429), `copro_consensus_failed`, `upstream_transient` (502), `overloaded` (503), `timeout` (504) retry with backoff; `unknown` follows the body's `retryable` flag |
-| non-2xx without a JSON body (empty 404, HTML 502, a 3xx: never followed) | `Status` | 408, 429 and 5xx only |
+| non-2xx with the connector error body | `Api { status, error }` | by `error.code`: `malformed`, `unsupported_attestation_type` (400), `sender_authentication_failed` (401), `user_decryption_expired` (403), `kms_context_destroyed` (410), `unprocessable` (422) are final; `auth_expired` (401, re-signed), `acl_denied`, `user_signature_rejected` (403), `ciphertext_not_found` (404), `kms_context_invalid` (412), `copro_consensus_failed`, `upstream_transient` (502), `overloaded` (503), `timeout` (504) retry in the transient budget; `rate_limited` (429) in the rate-limit budget; `unknown` follows the body's `retryable` flag |
+| non-2xx without a JSON body (empty 404, HTML 502, a 3xx: never followed) | `Status` | 408 and 5xx (transient budget), 429 (rate-limit budget) only |
 | connection refused or reset, TLS failure, client-side timeout | `Transport` | yes |
 | the header could not be signed (AWS KMS unreachable); nothing was sent | `Signer` | yes |
 
 For the dominant error, a bare 401 counts as `sender_authentication_failed`, a bare 429 as `rate_limited`, a transport
-failure or a bare 5xx as `upstream_transient`, a bad 2xx body or a signing failure as `unknown`. No rate limiter sits in front of the
-connector today (the proxy never answers 429); the bare 429 covers a future proxy (pingora) limit or an ingress.
+failure or a bare 5xx as `upstream_transient`, a bad 2xx body or a signing failure as `unknown`. The connector proxy
+limits each sender to `rate_limit_per_second` requests over a fixed 1 s window and answers `429 rate_limited` with
+`Retry-After: 1`; the bare 429 covers an ingress limit in front of it.
 
 ## 6. Response checks (`flows/`)
 
@@ -201,8 +209,9 @@ kms_aggregator:
   skip_tls_verification: false # local/devnet only: no TLS certificate verification, section 5
   max_concurrent_calls: 4096   # semaphore size, >= number of endpoints; one aggregation takes up to n permits
   call:
-    timeout: 5000ms            # the deadline (<= 60s)
-    retries: { max_retries: 0, delay: 500ms, backoff_max: 4s }   # 0 < delay <= backoff_max <= timeout
+    timeout: 5000ms            # the deadline (<= 60s); the whole section is optional, these are the defaults
+    retries: { max_retries: 3, delay: 200ms }          # transient errors: retry k waits k * delay
+    rate_limit: { max_retries: 1, initial_delay: 1s }  # rate_limited: retry k waits max(initial_delay, Retry-After) * 2^(k-1)
   public_decrypt: { threshold: 5 }
   user_decrypt:
     threshold: 9
@@ -235,9 +244,10 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
 - Validation (`KmsAggregatorConfig::validate`, also run by `Caller::new`): endpoints non-empty, at most 13 (the bound of
   the `kms_node` label, `metrics::MAX_KMS_NODES`), with unique names and URLs; `http(s)` with a host, no credentials, query or fragment; plain `http` only towards loopback unless
   `allow_insecure_http`; non-zero, unique audiences; `max_concurrent_calls >= n`; `timeout` within `1ms..=60s`;
-  `call.timeout < auth.validity <= 5m`; non-zero `auth.address`; non-empty signer fields;
-  `0 < delay <= backoff_max <= timeout` when retries are on (`max_retries` itself has no ceiling); each `threshold`
-  within `1..=n`. Every message names the field with its dotted path.
+  `call.timeout < auth.validity <= 5m`; non-zero `auth.address`; non-empty signer fields; for each retry budget
+  with `max_retries > 0`, a non-zero delay whose waits (`k * delay`, or `initial_delay * 2^(k-1)`) all start before
+  `timeout` (the message names the first retry that could never run); each `threshold` within `1..=n`. Every message
+  names the field with its dotted path.
 - The signing key is loaded at startup, from the env var named by `auth.signer.value_env` (hex private key) or from
   AWS KMS (`key_id`; region, credentials and any custom endpoint, `AWS_ENDPOINT_URL`, from the ambient AWS
   configuration, IRSA in a deployment); it is never in the config, the logs or any error message. Startup then fails, so the pod never becomes ready, unless the key passes
@@ -271,13 +281,13 @@ Events:
 
 | event | level | fields |
 |---|---|---|
-| `attempt failed` | warn | kms_node, attempt, elapsed_ms (this attempt), error, code, retry_in_ms (`null` when the call gives up): one line per failed attempt, retried or final, so also the skipped retries |
-| `signing failed` | warn | kms_node, attempt, elapsed_ms, error, retry_in_ms: signing the call failed, nothing reached the node (the relayer's key, not the node, is at fault) |
-| `call failed` | warn | kms_node, attempts, elapsed_ms, error: the node's outcome after its last attempt |
+| `attempt failed` | warn | kms_node, attempt, elapsed_ms (this attempt), error, code, retry_class (`transient` or `rate_limit`), retry_in_ms (`null` when the call gives up), retry_after_ms (the node's parsed `Retry-After`, when sent), give_up_reason (`auth`, `non_retryable`, `budget_exhausted`, `deadline`, else `null`): one line per failed attempt, retried or final, so also the skipped retries |
+| `signing failed` | warn | kms_node, attempt, elapsed_ms, error, retry_class, retry_in_ms, give_up_reason: signing the call failed, nothing reached the node (the relayer's key, not the node, is at fault); the retry is in the transient budget |
+| `call failed` | warn | kms_node, attempts, transient_retries, rate_limit_retries, elapsed_ms, error: the node's outcome after its last attempt and how much of each retry budget it used |
 | `call cut` | warn | kms_node, attempts, elapsed_ms, cause: `deadline` (too slow or hung), or `fail_fast`; a client hangup is reported by the endpoint's `Guard` (cause `client_closed`) |
 | `response rejected` | warn | kms_node, elapsed_ms, error: a check refused a 200 response |
 | `node task panicked` | error | kms_node, location: a panic inside a node task (no panic text), the panic's only ERROR line; the node is counted as failed, and the fail-fast check still runs |
-| `aggregation started`, `response accepted`, `deadline reached`, `threshold unreachable` | debug | nodes, threshold, timeout_ms / kms_node, attempts, elapsed_ms, counted / pending |
+| `aggregation started`, `response accepted`, `deadline reached`, `threshold unreachable` | debug | nodes, threshold, timeout_ms, retries_max, retries_delay_ms, rate_limit_max, rate_limit_initial_delay_ms (the fan-out and the retry policy, so one request's log is self-describing) / kms_node, attempts, elapsed_ms, counted / pending |
 
 `error` is a digest: for a KMS node's error response, its code and message truncated to `MAX_LOGGED_NODE_MESSAGE`
 characters; for a 2xx body that does not parse, `bad body: <kind>, <n> bytes` (`AttemptError::Body` keeps the kind
@@ -308,10 +318,11 @@ attempt: it counts in `relayer_http_signer_errors_total{flow}`, and a call that 
 flow: user_decrypt            # user_decrypt | public_decrypt
 threshold: 9
 timeout: 5s
-max_retries: 0                # optional
-delay: 10ms                   # optional, per attempt
+retries: { max_retries: 2, delay: 200ms }          # optional, as in the config; a single attempt when absent
+rate_limit: { max_retries: 1, initial_delay: 1s }  # optional, as in the config; a single attempt when absent
+attempt_latency: 10ms         # optional: how long the scripted node takes per attempt
 nodes:                        # groups in node order
-  - { count: 9, replies: [ok] }                    # ok | divergent | bad_signature | duplicate | hang | refused | <connector error code>
+  - { count: 9, replies: [ok] }                    # ok | divergent | bad_signature | duplicate | hang | refused | bare_rate_limited | <connector error code> | { rate_limited_after: 2s }
   - { count: 2, replies: [rate_limited, ok] }      # one reply per attempt, the last one repeats
 expect:                       # every field except outcome is optional
   outcome: ok                 # ok | timeout | threshold_not_reached

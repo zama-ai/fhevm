@@ -1,0 +1,18 @@
+# Transient errors (here acl_denied while the ACL propagates) are retried with linear waits: 200, 400, 600 ms.
+# Four nodes need three retries each; the last share lands at 1.24 s where the old exponential curve took 1.43 s.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+retries: { max_retries: 3, delay: 200ms }
+nodes:
+  - { count: 9, replies: [ok] }
+  - { count: 4, replies: [acl_denied, acl_denied, acl_denied, ok] }
+expect:
+  outcome: ok
+  counted: 13
+  responses: 13
+  elapsed: 1240ms
+  attempts: 25
+  metrics:
+    answered: 25
+    errors: { acl_denied: 12 }
