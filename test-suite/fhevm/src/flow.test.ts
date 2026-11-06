@@ -232,6 +232,44 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(withHttp, [...running, "kms-connector-endpoint", "kms-connector-proxy"])).toBeUndefined();
   });
 
+  test("expects coprocessor-proxy and its fake prf-service only when the bundle pins the proxy", () => {
+    const running = [
+      "fhevm-object-store",
+      "coprocessor-and-kms-db",
+      "kms-core",
+      "host-node",
+      "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
+      "coprocessor-gw-listener",
+      "coprocessor-tfhe-worker",
+      "coprocessor-zkproof-worker",
+      "coprocessor-sns-worker",
+      "coprocessor-transaction-sender",
+      "coprocessor-consensus-detector",
+      "coprocessor-upgrade-controller",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+      "fhevm-relayer-db",
+      "fhevm-relayer",
+      "fhevm-test-suite-e2e-debug",
+    ];
+    // completeState() carries no COPROCESSOR_PROXY_VERSION: neither container is expected.
+    expect(resumeRepairStep(completeState(), running)).toBeUndefined();
+    const base = completeState();
+    const withProxy = {
+      ...base,
+      versions: { ...base.versions, env: { ...base.versions.env, COPROCESSOR_PROXY_VERSION: "02f6cc0" } },
+    };
+    expect(resumeRepairStep(withProxy, running)).toBe("coprocessor");
+    expect(resumeRepairStep(withProxy, [...running, "coprocessor-proxy"])).toBe("coprocessor");
+    expect(resumeRepairStep(withProxy, [...running, "coprocessor-prf-service-fake", "coprocessor-proxy"])).toBeUndefined();
+  });
+
   test("returns nothing when every steady-state service is present", () => {
     const running = [
       "fhevm-object-store",
@@ -259,6 +297,38 @@ describe("resumeRepairStep", () => {
       "fhevm-test-suite-e2e-debug",
     ];
     expect(resumeRepairStep(completeState(), running)).toBeUndefined();
+  });
+
+  test("repairs from relayer-proxy once that step completed and fhevm-relayer-proxy is missing", () => {
+    const running = [
+      "fhevm-object-store",
+      "coprocessor-and-kms-db",
+      "kms-core",
+      "host-node",
+      "gateway-node",
+      "listener-redis",
+      "listener-publisher-for-anvil",
+      "coprocessor-host-listener",
+      "coprocessor-host-listener-poller",
+      "coprocessor-host-listener-consumer",
+      "coprocessor-gw-listener",
+      "coprocessor-tfhe-worker",
+      "coprocessor-zkproof-worker",
+      "coprocessor-sns-worker",
+      "coprocessor-transaction-sender",
+      "coprocessor-consensus-detector",
+      "coprocessor-upgrade-controller",
+      "kms-connector-gw-listener",
+      "kms-connector-kms-worker",
+      "kms-connector-tx-sender",
+      "fhevm-relayer-db",
+      "fhevm-relayer",
+      "fhevm-test-suite-e2e-debug",
+    ];
+    const state = completeState();
+    state.completedSteps = [...state.completedSteps, "relayer-proxy"];
+    expect(resumeRepairStep(state, running)).toBe("relayer-proxy");
+    expect(resumeRepairStep(state, [...running, "fhevm-relayer-proxy"])).toBeUndefined();
   });
 
   test("repairs from listener-core when the publisher is missing", () => {
@@ -441,8 +511,6 @@ describe("resumeRepairStep", () => {
       "fhevm-test-suite-e2e-debug",
     ];
     expect(resumeRepairStep(state, running)).toBeUndefined();
-    // A Solana host decrypts through relayer-http, so a stopped relayer-http reruns the relayer step.
-    expect(resumeRepairStep(state, running.filter((name) => name !== "fhevm-relayer-http"))).toBe("relayer");
   });
 
   test("repairs from coprocessor when a required runtime container is unhealthy", () => {
@@ -502,14 +570,12 @@ describe("runtime helpers", () => {
     expect(preflightPorts(state)).toContain(9666);
   });
 
-  test("preflight checks the Merkle record's and relayer-http's ports only for a Solana host, and never the validator's", async () => {
-    const { RELAYER_HTTP_PORT, SOLANA_MERKLE_POSTGRES_PORT } = await import("./layout");
+  test("preflight checks the Merkle record's port only for a Solana host, and never the validator's", async () => {
+    const { SOLANA_MERKLE_POSTGRES_PORT } = await import("./layout");
     const state = completeState();
     expect(preflightPorts(state)).not.toContain(SOLANA_MERKLE_POSTGRES_PORT);
-    expect(preflightPorts(state)).not.toContain(RELAYER_HTTP_PORT);
     state.scenario.hostChains.push({ key: "solana", type: "solana", chainId: "72057594037940281", rpcPort: 8899 });
     expect(preflightPorts(state)).toContain(SOLANA_MERKLE_POSTGRES_PORT);
-    expect(preflightPorts(state)).toContain(RELAYER_HTTP_PORT);
     expect(preflightPorts(state)).not.toContain(8899);
   });
 

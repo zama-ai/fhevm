@@ -20,7 +20,7 @@ thiserror.workspace = true
 tokio       = { workspace = true, features = ["rt-multi-thread", "sync", "time", "macros"] }
 tokio-util.workspace = true
 tracing.workspace = true
-uuid = { version = "1", features = ["v7"] }
+uuid.workspace = true
 
 arc-swap = "1"
 

@@ -142,7 +142,7 @@ export const renderRelayerConfig = (
 };
 
 /**
- * Renders relayer-http's config from its checked-in example: every host chain in
+ * Renders relayer-http's config from the stack template: every host chain in
  * supported_chain_ids, as strings since a Solana chain id exceeds Number.MAX_SAFE_INTEGER, and one
  * endpoint per kms-connector proxy, named after its party, whose `audience` is that party's KMS
  * tx-sender. The FhevmSig domain is the one the proxies verify: the connectors' Ethereum chain id
@@ -152,11 +152,11 @@ export const renderRelayerConfig = (
  * current nodes and updates the list on a node change.
  */
 export const renderRelayerHttpConfig = (
-  baseText: string,
+  templateText: string,
   plan: Pick<StackSpec, "hostChains" | "kms">,
   envs: Record<string, Record<string, string>>,
 ) => {
-  const config = YAML.parse(baseText) as {
+  const config = YAML.parse(templateText) as {
     log: Record<string, unknown>;
     http: Record<string, unknown>;
     kms_aggregator: {

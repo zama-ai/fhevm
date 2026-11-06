@@ -15,9 +15,9 @@
   percent-encoded, to the URL of job requests (submission and polling) and the key-URL
   lookup. `headers` remains the preferred option; use `query` only when a proxy in front of
   the relayer strips custom headers before they reach it.
-- **Experimental: RFC-030 pad-based input encryption ("transciphering").** A new client,
-  `createFhevmEncryptTransciClient` (and `createFhevmCleartextEncryptTransciClient` in the
-  cleartext entry points), exposes `encryptValueTransci` / `encryptValuesTransci`: values are
+- **Experimental: RFC-030 pad-based input encryption.** A new client,
+  `createFhevmEncryptWithPadClient` (and `createFhevmCleartextEncryptWithPadClient` in the
+  cleartext entry points), exposes `encryptValueWithPad` / `encryptValuesWithPad`: values are
   masked with a one-time pad fetched from the KMS instead of being proven with a ZK proof. They
   require a `signedPermit` (a v2 permit from `signUnifiedDecryptionPermit`, signed by
   `userAddress`), take `RelayerCommonOptions`, and return an `inputPackage` to pass as the `bytes`
@@ -25,10 +25,10 @@
   exposes `generateTransportKeyPair`, so no decrypt client is needed to build the permit (the
   `generateTransportKeyPair` action accepts it too). Also added:
   the matching standalone actions in `@fhevm/sdk/actions/encrypt`,
-  `initFhevmEncryptTransciRuntime`, and the `FhevmEncryptTransciClient` type. Only the cleartext
-  pad-share encoding is supported for now, so this works against the v0.16 cleartext host
-  contracts only. The input-proof flow (`encryptValue` / `encryptValues`, `inputProof`) is
-  unchanged.
+  `initFhevmEncryptWithPadRuntime`, and the `FhevmEncryptWithPadClient` type. Only the cleartext
+  pad-share encoding is supported for now, so this works against the v1.0.0 cleartext host
+  contracts only (`npm run start:localcleartext:v1.0`). The input-proof flow
+  (`encryptValue` / `encryptValues`, `inputProof`) is unchanged.
 
 #### Changed
 
@@ -57,6 +57,9 @@
   their wording), for an expired permit, a permit whose `startTimestamp` is in the future, and a
   legacy (v1) permit that doesn't list the requested contract. A unified (v2) permit is now checked
   for expiry before the relayer-features request.
+- `canDecryptValue`/`canDecryptValues` throw `InvalidSignedPermitError` instead of a plain `Error` when
+  the permit's publicKey doesn't match the given `transportKeyPair`. The message keeps its wording, minus
+  a typo (`TransportKeyPairKeyPair` → `TransportKeyPair`).
 
 #### Fixed
 

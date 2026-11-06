@@ -81,7 +81,7 @@ pub mod s3;
 pub mod state_hash;
 
 use crate::s3::S3Service;
-use crate::state_hash::state_hash_key;
+use crate::state_hash::{state_hash_key, UpgradeAttempt};
 
 /// pg_notify channels this service listens on.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
@@ -203,21 +203,22 @@ pub enum Error {
     Gateway(String),
 }
 
-/// HTTP-GETs `state_hash` for `(chain_id, block_height)` from each opera
-/// whose slot is `None`, concurrently. Slots already populated by a prior
-/// attempt are left untouched, so retries only re-request the missing
-/// operators. Failure modes (404 / 5xx / transport) are logged distinctly
-/// so "peer hasn't uploaded yet" is visually separable from "peer's S3 is
-/// flaky".
+/// HTTP-GETs the attempt-scoped `state_hash` for `(chain_id, block_height)`
+/// from each operator whose slot is `None`, concurrently. Slots already
+/// populated by a prior attempt are left untouched, so retries only re-request
+/// the missing operators. Failure modes (404 / 5xx / transport) are logged
+/// distinctly so "peer hasn't uploaded yet" is visually separable from "peer's
+/// S3 is flaky".
 async fn fetch_state_commitments(
     http: &reqwest::Client,
     s3_urls: &[String],
+    attempt: &UpgradeAttempt,
     chain_id: i64,
     block_height: i64,
     slots: &mut [Option<Vec<u8>>],
 ) {
     debug_assert_eq!(s3_urls.len(), slots.len());
-    let key = state_hash_key(chain_id, block_height);
+    let key = state_hash_key(attempt, chain_id, block_height);
     let missing: Vec<usize> = slots
         .iter()
         .enumerate()
@@ -399,6 +400,7 @@ impl ConsensusTrack {
 async fn poll_track(
     http: &reqwest::Client,
     urls: &[String],
+    attempt: &UpgradeAttempt,
     track: &mut ConsensusTrack,
     candidates: &[i64],
     nontrivial: bool,
@@ -416,7 +418,7 @@ async fn poll_track(
         if slots.len() != urls.len() {
             *slots = vec![None; urls.len()];
         }
-        fetch_state_commitments(http, urls, track.chain_id, block, slots).await;
+        fetch_state_commitments(http, urls, attempt, track.chain_id, block, slots).await;
         if all_some_and_identical(slots) {
             info!(
                 chain_id = track.chain_id,
@@ -684,6 +686,13 @@ where
     let members = window_state.members.clone();
     let urls: Vec<String> = members.iter().map(|m| m.url.clone()).collect();
 
+    // The attempt identity scopes every state-hash S3 key (one key family per
+    // retry - see state_hash_key). The target stack version is deliberately
+    // not part of it: it lives in the signed decision payload, not in keys.
+    let attempt = UpgradeAttempt {
+        proposal_id: proposal_id.clone(),
+        proposal_block,
+    };
     // Host tracks: one per chain window, each anchoring independently.
     for &(chain_id, start, end) in &windows {
         let track = host_tracks
@@ -691,7 +700,7 @@ where
             .or_insert_with(|| ConsensusTrack::new(chain_id));
         if track.anchored.is_none() {
             let candidates = host_consensus_candidates(pool, chain_id, start, end, true).await?;
-            poll_track(http, &urls, track, &candidates, true).await?;
+            poll_track(http, &urls, &attempt, track, &candidates, true).await?;
             // No FHE op in the whole window: let this chain anchor on any block so it
             // doesn't block the upgrade. Require every window block hashed (no gap), so a
             // finalized-but-unfinished non-trivial block can't be mistaken for quiet.
@@ -701,7 +710,7 @@ where
             {
                 let readiness =
                     host_consensus_candidates(pool, chain_id, start, end, false).await?;
-                poll_track(http, &urls, track, &readiness, false).await?;
+                poll_track(http, &urls, &attempt, track, &readiness, false).await?;
             }
         }
     }
@@ -714,7 +723,7 @@ where
         ) {
             let candidates =
                 pending_gw_consensus_blocks(pool, gateway.chain_id, gw_start, gw_tip).await?;
-            poll_track(http, &urls, gateway, &candidates, true).await?;
+            poll_track(http, &urls, &attempt, gateway, &candidates, true).await?;
         }
     }
 
@@ -829,9 +838,9 @@ where
         .await
         {
             Ok(record) => {
-                if let Err(e) = decision::put(client, bucket, &proposal_id, &record).await {
-                    warn!(error = %e, "failed to write the decision record; retrying next pass");
-                }
+                // put() logs every outcome (written / kept / failed) with the
+                // key and the serialized record; a failure retries next pass.
+                let _ = decision::put(client, bucket, &proposal_id, &record).await;
             }
             Err(e) => warn!(error = %e, "failed to sign the decision record"),
         }

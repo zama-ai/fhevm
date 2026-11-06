@@ -15,7 +15,7 @@ use crate::monitoring::metrics;
 use actix_web::HttpResponse;
 use alloy::primitives::B256;
 use anyhow::anyhow;
-use connector_utils::monitoring::otlp::PropagationContext;
+use connector_utils::{conn::begin_async_commit_tx, monitoring::otlp::PropagationContext};
 use kms_connector_api::{ErrorCode, ErrorResponse};
 use sqlx::{
     PgExecutor, Postgres, Transaction,
@@ -135,7 +135,7 @@ async fn find_response_or_store_request<R: DecryptionRoute>(
     id: B256,
     request: &R::Request,
 ) -> anyhow::Result<LookupOutcome<R::ResponseRow>> {
-    let mut tx: Transaction<'_, Postgres> = state.db_pool.begin().await?;
+    let mut tx: Transaction<'_, Postgres> = begin_async_commit_tx(&state.db_pool).await?;
 
     let mut old_response_created_at = None;
     if let Some(row) = R::read_response(&mut *tx, id).await? {

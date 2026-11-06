@@ -85,8 +85,8 @@ import {
   SCHEMA_COUPLED_GROUPS,
   SOLANA_MERKLE_DB_COMPONENT,
   SOLANA_MERKLE_POSTGRES_PORT,
-  RELAYER_HTTP_PORT,
   STATE_DIR,
+  STATIC_COMPONENTS,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
   composePath,
@@ -96,7 +96,6 @@ import {
   hostChainAddressesPath,
   isEvmHost,
   realLzEndpointFor,
-  runsRelayerHttp,
 } from "../layout";
 import type {
   BuiltImage,
@@ -152,8 +151,8 @@ import {
   waitForKmsConnector,
   waitForKmsConnectorParty,
   waitForLog,
+  waitForRelayerProxyRoute,
   waitForRpc,
-  waitForRelayerHttp,
   waitForStableChainListeners,
   waitForTestSuite,
 } from "./readiness";
@@ -348,7 +347,6 @@ export const preflightPorts = (state: Pick<State, "scenario">) =>
       ...(scenarioUsesForkAnvil(state.scenario) ? [DEFAULT_FORK_RPC_PORT] : []),
       ...state.scenario.hostChains.filter((c) => isEvmHost(c)).map((c) => c.rpcPort),
       ...(state.scenario.hostChains.some((c) => !isEvmHost(c)) ? [SOLANA_MERKLE_POSTGRES_PORT] : []),
-      ...(runsRelayerHttp(state.scenario.hostChains) ? [RELAYER_HTTP_PORT] : []),
     ]),
   ];
 
@@ -1232,8 +1230,27 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "relayer":
-      await stepComposeUp("relayer", state, serviceNameList(state, "relayer"));
-      await waitForRelayer(state);
+      await stepComposeUp("relayer", state);
+      await waitForRelayer();
+      break;
+    case "relayer-http":
+      // Optional image: bundles that predate relayer-http do not resolve RELAYER_HTTP_VERSION.
+      if (!state.versions.env.RELAYER_HTTP_VERSION) {
+        break;
+      }
+      await stepComposeUp("relayer-http", state);
+      await waitForContainer("fhevm-relayer-http", "running");
+      await waitForLog("fhevm-relayer-http", /relayer-http started/);
+      break;
+    case "relayer-proxy":
+      // Always started: without relayer-http, /v4 answers 502 and /v2, /v3 still reach the relayer.
+      await stepComposeUp("relayer-proxy", state);
+      await waitForContainer("fhevm-relayer-proxy", "running");
+      console.log(`[relayer-proxy] /v2 -> relayer: HTTP ${await waitForRelayerProxyRoute("/v2/keyurl", 200)}`);
+      if (state.versions.env.RELAYER_HTTP_VERSION) {
+        // GET on a POST route: relayer-http answers 405, which proves the route.
+        console.log(`[relayer-proxy] /v4 -> relayer-http: HTTP ${await waitForRelayerProxyRoute("/v4/user-decrypt")}`);
+      }
       break;
     case "host-process": {
       // The Solana nodes fhevm-cli spawns itself, beside the Merkle record's database container.
@@ -1600,7 +1617,7 @@ export const down = async () => {
       if (!ok) failed.push(name);
     }
   }
-  for (const component of [SOLANA_MERKLE_DB_COMPONENT, ...[...COMPONENTS].reverse()]) {
+  for (const component of [SOLANA_MERKLE_DB_COMPONENT, ...[...COMPONENTS, ...STATIC_COMPONENTS].reverse()]) {
     console.log(`[down] ${component}`);
     const ok = await composeDown(component);
     if (!ok) {
@@ -1976,13 +1993,10 @@ const applyRuntimeUpgradeLock = (
     removeRuntimeUpgradeOverrides(state.overrides, group),
   );
 
-const waitForRelayer = async (state: Pick<State, "scenario">) => {
+const waitForRelayer = async () => {
   await waitForContainer("fhevm-relayer-db", "healthy");
   await waitForContainer("fhevm-relayer", "running");
   await waitForLog("fhevm-relayer", /All servers are ready and responding/);
-  if (runsRelayerHttp(state.scenario.hostChains)) {
-    await waitForRelayerHttp();
-  }
 };
 
 const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices: string[]) => {
@@ -2015,7 +2029,11 @@ const waitForUpgrade = async (state: State, group: UpgradeGroup, runtimeServices
     return;
   }
   if (group === "relayer") {
-    await waitForRelayer(state);
+    await waitForRelayer();
+    if (state.versions.env.RELAYER_HTTP_VERSION) {
+      await waitForContainer("fhevm-relayer-http", "running");
+      await waitForLog("fhevm-relayer-http", /relayer-http started/);
+    }
     return;
   }
   await waitForTestSuite();

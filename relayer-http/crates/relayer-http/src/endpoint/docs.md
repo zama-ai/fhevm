@@ -52,7 +52,7 @@ field. The body must be `application/json`.
     "allowedContracts": ["0x3333333333333333333333333333333333333333"],
     "requestValidity": { "startTimestamp": "1799999900", "durationSeconds": "600" },
     "publicKey": "0x20002000",
-    "extraData": "0x00"
+    "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000010800000000000000000000000000000000000000000000000000000000000001"
   },
   "signature": "0x6666…66"
 }
@@ -71,7 +71,7 @@ can be added later without touching the connector DTO.
 ### `POST /v4/public-decrypt`
 
 ```json
-{ "ciphertextHandles": ["0x0000000000000000000000000000000000000000000000000000000000010401"], "extraData": "0x00" }
+{ "ciphertextHandles": ["0x0000000000000000000000000000000000000000000000000000000000010401"], "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000010800000000000000000000000000000000000000000000000000000000000001" }
 ```
 
 Conversion: `ciphertextHandles` → `ctHandles`, `extraData` as it is.
@@ -114,6 +114,8 @@ the EVM ones, so one setting serves both chains.
 Stateless, before any fan-out. The current relayer's rules, plus the connector's cheap handle rules (it would reject
 these requests anyway; failing here saves n calls). Every failure is `400 malformed` with `"<field>: <issue>"`.
 
+### 3.1 Rules
+
 | field | rule |
 |---|---|
 | `attestationType` | `eip712-unified-user-decrypt-v1` (the Solana value selects the Solana body, below) |
@@ -121,17 +123,33 @@ these requests anyway; failing here saves n calls). Every failure is `400 malfor
 | `payload.allowedContracts` | at most 10 |
 | `payload.publicKey` | non-empty |
 | `payload.requestValidity` | `startTimestamp <= now` and `startTimestamp + durationSeconds > now` |
-| `extraData` | empty or `0x00` (v0), `0x01` + 32-byte context id (v1), `0x02` + context id + 32-byte epoch id (v2); trailing bytes allowed |
-
-Deliberately not checked here: the user's signature (ERC-1271, or a Solana permit's Ed25519 signature and zama-host
-program, connector worker), the signature length, the ACL and
-the ciphertext readiness (connector worker; they surface as the dominant error, section 5).
+| `extraData`, `payload.extraData` | version `0x02` (v2), at least 65 bytes; see 3.2 |
 
 A Solana body gets the same `handles`, `requestValidity` (user decrypt) and `extraData` rules, then its form, checked
 by the code the connector endpoint runs (`kms-connector-api` `assemble()` for user decrypt,
 `zama_solana_request::public_request_chain_id` for public decrypt): one store per handle (public), one entry per
 handle and a strictly decoded permit (user), at most the handle cap, every handle on one Solana chain. A failure is
 `400 malformed`, field `payload` (user), `ctHandles` or `encryptedStores` (public).
+
+### 3.2 extraData
+
+The relayer treats `extraData` as opaque and checks only its envelope:
+
+- **Version**: the first byte must be `0x02` (v2). v0 (empty or `0x00`) and v1 (`0x01` + context id) are no longer
+  accepted, nor is any other version.
+- **Length**: at least 65 bytes (version + 32-byte context id + 32-byte epoch id). Trailing bytes are allowed, as the
+  connector allows them.
+- **Content**: never read. The context id and epoch id are not decoded or checked (no type tag, no lookup): parsing
+  and validating them is the role of the protocol (KMS connector, host contracts), not of the relayer.
+
+A failure is `400 malformed` with `"extraData: must be 0x02 + context id + epoch id"` (`payload.extraData` for user
+decrypt). A valid `extraData` is forwarded to the connectors as it is.
+
+### 3.3 Not checked
+
+Deliberately not checked here: the user's signature (ERC-1271, or a Solana permit's Ed25519 signature and zama-host
+program, connector worker), the signature length, the ACL, the ciphertext readiness and the content of `extraData`
+(connector worker; they surface as the dominant error, section 5).
 
 No chain is read: the delegation, the encrypted stores and the allow proofs are the connector's (they surface as the
 dominant error).
@@ -147,13 +165,13 @@ Success is the current relayer's envelope, `200`:
 `result` for user decrypt, every accepted share in acceptance order (hex without `0x`, `extraData` with `0x`):
 
 ```json
-{ "result": [ { "payload": "a1b2…", "signature": "1a2b…", "extraData": "0x00" } ] }
+{ "result": [ { "payload": "a1b2…", "signature": "1a2b…", "extraData": "0x02…" } ] }
 ```
 
 `result` for public decrypt, the agreeing group's plaintexts and signatures:
 
 ```json
-{ "decryptedValue": "0000…002a", "signatures": ["1a2b…", "…"], "extraData": "0x00" }
+{ "decryptedValue": "0000…002a", "signatures": ["1a2b…", "…"], "extraData": "0x02…" }
 ```
 
 Every response, success or error, carries `x-request-id: <requestId>`.
@@ -289,8 +307,9 @@ Manual smoke, with the API key env vars set:
 
 ```sh
 cargo run -p relayer-http -- config/config.yaml
+# 400 malformed, "ciphertextHandles: must not be empty"
 curl -s -i localhost:8080/v4/public-decrypt -H 'content-type: application/json' \
-  -d '{"ciphertextHandles":[],"extraData":"0x00"}'     # 400 malformed, "ciphertextHandles: must not be empty"
+  -d '{"ciphertextHandles":[],"extraData":"0x0207000000000000000000000000000000000000000000000000000000000000010800000000000000000000000000000000000000000000000000000000000001"}'
 curl -s localhost:8080/healthz                         # {"status":"ready"}
 ```
 

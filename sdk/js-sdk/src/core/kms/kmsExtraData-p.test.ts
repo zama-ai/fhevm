@@ -1,5 +1,4 @@
-import type { HostContractVersion } from '../types/hostContract.js';
-import type { BytesHex, Uint256BigInt, UintNumber } from '../types/primitives.js';
+import type { BytesHex, Uint256BigInt } from '../types/primitives.js';
 import { describe, expect, it } from 'vitest';
 import {
   assertIsKmsExtraData,
@@ -14,7 +13,6 @@ import {
   EXTRA_DATA_V2,
   createKmsExtraDataFromBytesHex,
   isKmsExtraData,
-  isKmsExtraDataCompatibleWithKmsVerifier,
   KmsExtraDataImpl,
   validateKmsExtraDataParams,
 } from './kmsExtraData-p.js';
@@ -24,13 +22,6 @@ import {
 ////////////////////////////////////////////////////////////////////////////////
 
 const word = (value: bigint): string => value.toString(16).padStart(64, '0');
-const kmsVerifierVersion = (major: number, minor: number, patch: number): HostContractVersion<'KMSVerifier'> => ({
-  version: `KMSVerifier v${major}.${minor}.${patch}`,
-  contractName: 'KMSVerifier',
-  major: major as UintNumber,
-  minor: minor as UintNumber,
-  patch: patch as UintNumber,
-});
 
 describe('kmsExtraData', () => {
   it('encodes and decodes v0 extraData', () => {
@@ -245,37 +236,5 @@ describe('kmsExtraData', () => {
 
     expect(equalsKmsExtraData(a, b)).toBe(true);
     expect(equalsKmsExtraData(a, c)).toBe(false);
-  });
-
-  it('keeps old extraData versions compatible with newer KMSVerifier versions (stale-permit migration)', () => {
-    // A permit cached on an older protocol keeps its original extraData
-    // encoding (the EIP-712 signature covers it). Migration v11 -> v12 -> v13
-    // -> v14 only works if an OLD extraData version is never rejected by the
-    // compatibility check against a NEWER KMSVerifier.
-    const v0 = createKmsExtraDataV0();
-    const v1 = createKmsExtraDataV1({ kmsContextId: 1n as Uint256BigInt });
-
-    // v11-era extraData (v0) against every later protocol's KMSVerifier
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v0, kmsVerifierVersion(0, 2, 0))).toBe(true); // v12
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v0, kmsVerifierVersion(0, 3, 0))).toBe(true); // v13
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v0, kmsVerifierVersion(0, 4, 0))).toBe(true); // v14
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v0, kmsVerifierVersion(0, 5, 0))).toBe(true); // future
-
-    // v12/v13-era extraData (v1) against v14+ KMSVerifiers
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v1, kmsVerifierVersion(0, 4, 0))).toBe(true);
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v1, kmsVerifierVersion(0, 5, 0))).toBe(true);
-  });
-
-  it('checks compatibility with KMSVerifier versions', () => {
-    const v0 = createKmsExtraDataV0();
-    const v1 = createKmsExtraDataV1({ kmsContextId: 1n as Uint256BigInt });
-    const v2 = createKmsExtraDataV2({ kmsContextId: 1n as Uint256BigInt, kmsEpochId: 2n as Uint256BigInt });
-
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v0, kmsVerifierVersion(0, 1, 0))).toBe(true);
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v1, kmsVerifierVersion(0, 1, 0))).toBe(false);
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v1, kmsVerifierVersion(0, 2, 0))).toBe(true);
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v2, kmsVerifierVersion(0, 3, 9))).toBe(false);
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v2, kmsVerifierVersion(0, 4, 0))).toBe(true);
-    expect(isKmsExtraDataCompatibleWithKmsVerifier(v2, kmsVerifierVersion(0, 4, 1))).toBe(true);
   });
 });

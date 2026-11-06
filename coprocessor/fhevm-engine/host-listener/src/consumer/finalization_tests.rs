@@ -47,6 +47,10 @@ impl AwsS3Interface for MaterialStore {
 
 fn config() -> ConsumerConfig {
     ConsumerConfig {
+        catchup_from_block: None,
+        catchup_up_to_block: None,
+        catchup_unfinalized: false,
+        no_override_catchup: false,
         url: String::new(),
         acl_address: Address::ZERO,
         tfhe_address: Address::repeat_byte(1),
@@ -104,6 +108,8 @@ fn activation(number: u64, flow: BlockFlow, crs: bool) -> BlockPayload {
         .encode_log_data()
     };
     BlockPayload {
+        catchup_id: None,
+        last_in_catchup: false,
         chain_id: CHAIN_ID,
         flow,
         block_number: number,

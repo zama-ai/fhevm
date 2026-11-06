@@ -1,0 +1,31 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE catchup_requests\n               SET covered = covered + int8multirange(int8range($3, $4)),\n                   status = CASE\n                              WHEN covered + int8multirange(int8range($3, $4))\n                                   @> int8range(block_start, fanned_end + 1)\n                              THEN 'COMPLETED'::catchup_status\n                              ELSE status\n                            END,\n                   terminal_at = CASE\n                                   WHEN covered + int8multirange(int8range($3, $4))\n                                        @> int8range(block_start, fanned_end + 1)\n                                   THEN NOW()\n                                   ELSE terminal_at\n                                 END\n             WHERE chain_id = $1 AND catchup_id = $2 AND status = 'ACTIVE'\n            RETURNING (status = 'COMPLETED') AS \"just_completed!\",\n                      COALESCE(\n                          fanned_end = block_start\n                          OR covered @> int8range(block_start, fanned_end),\n                          FALSE\n                      ) AS \"body_done!\"\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "just_completed!",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "body_done!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Uuid",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "f570590ee9d5d90426f5fa5519d4606edaba9a07e60dbf4b149faf34c89afe09"
+}

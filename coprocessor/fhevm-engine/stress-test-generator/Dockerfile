@@ -19,6 +19,7 @@ COPY shared/ciphertext-attestation ./shared/ciphertext-attestation
 COPY shared/block-manifest ./shared/block-manifest
 COPY shared/request-authorization ./shared/request-authorization
 COPY shared/kms-context ./shared/kms-context
+COPY shared/fhevm-sig-auth ./shared/fhevm-sig-auth
 # Solana path-dependencies of the fhevm-engine workspace (host-listener and
 # tfhe-worker manifests reference them; `cargo build -p <crate>` loads every
 # member manifest). Same copy set as the other fhevm-engine Dockerfiles.

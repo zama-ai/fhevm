@@ -19,6 +19,7 @@ scrape_configs:
           - "coprocessor-tfhe-worker:9100"
           - "coprocessor-sns-worker:9100"
           - "coprocessor-zkproof-worker:9100"
+          - "coprocessor-proxy:9100"
 
   - job_name: "relayer"
     static_configs:

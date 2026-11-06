@@ -1,7 +1,6 @@
 import type { EthereumModule } from '../modules/ethereum/types.js';
 import type { RelayerModule } from '../modules/relayer/types.js';
-import type { BytesHex, ChecksummedAddress, Uint256BigInt, UintNumber } from '../types/primitives.js';
-import type { HostContractVersion } from '../types/hostContract.js';
+import type { BytesHex, ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
 import { sepolia } from '../chains/definitions/sepolia.js';
@@ -25,32 +24,11 @@ const v0Bytes = '0x00' as BytesHex;
 const v1Bytes = (contextId: bigint): BytesHex => `0x01${word(contextId)}` as BytesHex;
 const v2Bytes = (contextId: bigint, epochId: bigint): BytesHex => `0x02${word(contextId)}${word(epochId)}` as BytesHex;
 
-const kmsVerifierVersion = (major: number, minor: number, patch: number): HostContractVersion<'KMSVerifier'> => ({
-  version: `KMSVerifier v${major}.${minor}.${patch}`,
-  contractName: 'KMSVerifier',
-  major: major as UintNumber,
-  minor: minor as UintNumber,
-  patch: patch as UintNumber,
-});
-
-// The version basis each test resolves against. The KMSVerifier version is read
-// from the frozen context (NOT the on-chain `getVersion`), which is why none of the
-// tests below need a `getVersion` handler — reaching one would throw "No mocked
-// handler". Only the actual context reads (getContextSignersAndThresholdFromExtraData)
-// are mocked per-test.
-//
-//   v11 → KMSVerifier < 0.2.0 (no context concept; too old, no longer supported)
-//   v13 → KMSVerifier 0.2.0–0.3.x (extraData up to v1)
-//   v14 → KMSVerifier >= 0.4.0 (extraData up to v2, contextId + epochId)
-const fhevmContextV11 = createFhevmClientFrozenContext({
-  hostContractVersions: { KMSVerifier: kmsVerifierVersion(0, 1, 0) },
-});
-const fhevmContextV13 = createFhevmClientFrozenContext({
-  hostContractVersions: { KMSVerifier: kmsVerifierVersion(0, 3, 0) },
-});
-const fhevmContextV14 = createFhevmClientFrozenContext({
-  hostContractVersions: { KMSVerifier: kmsVerifierVersion(0, 4, 0) },
-});
+// The reader does not branch on host contract versions, so an empty version
+// basis is enough. No test needs a `getVersion` handler — reaching one would
+// throw "No mocked handler". Only the actual context reads
+// (getContextSignersAndThresholdFromExtraData) are mocked per-test.
+const fhevmContext = createFhevmClientFrozenContext({});
 
 // Names of every on-chain function `readContract` was asked for, in call order.
 const calledFunctionNames = (readContract: { readonly mock: { readonly calls: readonly unknown[][] } }): string[] =>
@@ -126,7 +104,7 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
       kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
       protocolConfigAddress: undefined,
       extraData: createKmsExtraDataV0(),
-      fhevmContext: fhevmContextV13,
+      fhevmContext,
     });
 
     // Indexed on the extraData AS GIVEN (v0 → id 0), NOT re-derived to a concrete id.
@@ -151,7 +129,7 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
       kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
       protocolConfigAddress: undefined,
       extraData: createKmsExtraDataV1({ kmsContextId: 5n as Uint256BigInt }),
-      fhevmContext: fhevmContextV13,
+      fhevmContext,
     });
 
     expect(context.id).toBe(5n);
@@ -163,7 +141,7 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
   });
 
   // --- v2: contextId AND epochId both preserved ---
-  it('preserves both contextId and epochId for a v2 extraData on a v14 chain', async () => {
+  it('preserves both contextId and epochId for a v2 extraData', async () => {
     const { client } = makeClient({
       getContextSignersAndThresholdFromExtraData: (parameters) => {
         expect(parameters.args[0]).toBe(v2Bytes(9n, 3n));
@@ -175,7 +153,7 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
       kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
       protocolConfigAddress: undefined,
       extraData: createKmsExtraDataV2({ kmsContextId: 9n as Uint256BigInt, kmsEpochId: 3n as Uint256BigInt }),
-      fhevmContext: fhevmContextV14,
+      fhevmContext,
     });
 
     expect(context.id).toBe(9n);
@@ -183,73 +161,6 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
     expect(context.threshold).toBe(2);
     expect(context.has(SIGNER_A)).toBe(true);
     expect(context.has(SIGNER_B)).toBe(true);
-  });
-
-  // --- backward compat: a v13-capped SDK reads a v14 chain through the same reader ---
-  it('reads a v1 permit on a v14 chain via the shared reader (backward compat)', async () => {
-    const { client, readContract } = makeClient({
-      getContextSignersAndThresholdFromExtraData: (parameters) => {
-        expect(parameters.args[0]).toBe(v1Bytes(5n));
-        return [[SIGNER_A], 1n];
-      },
-    });
-
-    const context = await readKmsSignersContextFromPermitExtraData(client, {
-      kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-      protocolConfigAddress: undefined,
-      extraData: createKmsExtraDataV1({ kmsContextId: 5n as Uint256BigInt }),
-      fhevmContext: fhevmContextV14,
-    });
-
-    expect(context.id).toBe(5n);
-    expect(context.epochId).toBe(0n);
-    expect(calledFunctionNames(readContract)).toEqual(['getContextSignersAndThresholdFromExtraData']);
-  });
-
-  // --- v11 chain: too old, no longer supported ---
-  it('rejects a v0 extraData on a KMSVerifier < 0.2.0: protocol version no longer supported', async () => {
-    const { client, readContract } = makeClient({});
-
-    await expect(
-      readKmsSignersContextFromPermitExtraData(client, {
-        kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-        protocolConfigAddress: undefined,
-        extraData: createKmsExtraDataV0(),
-        fhevmContext: fhevmContextV11,
-      }),
-    ).rejects.toThrow('Protocol version is no longer supported by this SDK release.');
-    // Rejected before any on-chain read.
-    expect(readContract).not.toHaveBeenCalled();
-  });
-
-  // --- compat rejections: incompatible extraData never reaches the chain ---
-  it('rejects extraData newer than the KMSVerifier supports (v2 on a v13 chain)', async () => {
-    const { client, readContract } = makeClient({});
-
-    await expect(
-      readKmsSignersContextFromPermitExtraData(client, {
-        kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-        protocolConfigAddress: undefined,
-        extraData: createKmsExtraDataV2({ kmsContextId: 5n as Uint256BigInt, kmsEpochId: 2n as Uint256BigInt }),
-        fhevmContext: fhevmContextV13,
-      }),
-    ).rejects.toThrow('not compatible');
-    // Rejected before any on-chain read.
-    expect(readContract).not.toHaveBeenCalled();
-  });
-
-  it('rejects a concrete v1 extraData on a context-less KMSVerifier < 0.2.0', async () => {
-    const { client, readContract } = makeClient({});
-
-    await expect(
-      readKmsSignersContextFromPermitExtraData(client, {
-        kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
-        protocolConfigAddress: undefined,
-        extraData: createKmsExtraDataV1({ kmsContextId: 5n as Uint256BigInt }),
-        fhevmContext: fhevmContextV11,
-      }),
-    ).rejects.toThrow('not compatible');
-    expect(readContract).not.toHaveBeenCalled();
   });
 
   // --- input validation: garbage is rejected before touching the chain ---
@@ -261,7 +172,7 @@ describe('readKmsSignersContextFromPermitExtraData', () => {
         kmsVerifierAddress: KMS_VERIFIER_ADDRESS,
         protocolConfigAddress: undefined,
         extraData: {} as unknown as ReturnType<typeof createKmsExtraDataV0>,
-        fhevmContext: fhevmContextV13,
+        fhevmContext,
       }),
     ).rejects.toThrow();
     expect(readContract).not.toHaveBeenCalled();

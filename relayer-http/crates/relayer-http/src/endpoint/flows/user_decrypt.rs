@@ -236,6 +236,7 @@ pub(crate) mod tests {
 
     use super::*;
     use crate::endpoint::validate::tests::{SOLANA, handle};
+    use crate::kms_aggregator::mock::EXTRA_DATA_V2;
 
     pub(crate) const NOW: u64 = 1_800_000_000;
 
@@ -325,7 +326,7 @@ pub(crate) mod tests {
                 "allowedContracts": ["0x3333333333333333333333333333333333333333"],
                 "requestValidity": {{ "startTimestamp": {start}, "durationSeconds": {duration} }},
                 "publicKey": "0x20002000",
-                "extraData": "0x00"
+                "extraData": "{EXTRA_DATA_V2}"
               }},
               "signature": "0x{}"
             }}"#,

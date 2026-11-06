@@ -51,11 +51,14 @@ describe('errors/utils', () => {
     expect(err.cause).toBe('plain string');
   });
 
-  // NOTE: ensureError reads `e.message`/`e.name`/`e.cause` without a null-check, so it
-  // throws a TypeError instead of returning a wrapped Error for null/undefined input.
-  it('ensureError throws when given null or undefined', () => {
-    expect(() => ensureError(null)).toThrow(TypeError);
-    expect(() => ensureError(undefined)).toThrow(TypeError);
+  // null and undefined are wrapped like any other primitive, never a TypeError.
+  it.each([null, undefined])('ensureError wraps %s, keeping it as cause', (value) => {
+    const err = ensureError(value);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toBe('Non-Error value caught in exception handler');
+    expect(err.name).toBe('ErrorWrapper');
+    expect(err.cause).toBe(value);
   });
 
   //////////////////////////////////////////////////////////////////////////////

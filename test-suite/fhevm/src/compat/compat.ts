@@ -1,7 +1,7 @@
 /**
  * Encodes legacy runtime shims and incompatibility rules across supported fhevm component version combinations.
  */
-import { runsRelayerHttp } from "../layout";
+import { isEvmHost } from "../layout";
 import { effectiveOverrides } from "../scenario/resolve";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { CoprocessorInstanceSource, ResolvedCoprocessorScenario, State } from "../types";
@@ -470,6 +470,23 @@ export const supportsConnectorHttp = (state: Pick<CompatState, "versions" | "ove
 export const supportsRelayerHttp = (state: Pick<CompatState, "versions" | "overrides">) =>
   serviceAvailable(state, "relayer", "relayer-http", "RELAYER_HTTP_VERSION");
 
+/** Detects when the resolved coprocessor bundle includes coprocessor-proxy. */
+export const supportsCoprocessorProxy = (state: Pick<CompatState, "versions" | "overrides">) =>
+  Boolean(state.versions.env.COPROCESSOR_PROXY_VERSION) ||
+  state.overrides.some(
+    (override) =>
+      override.group === "coprocessor" && (!override.services?.length || override.services.includes("coprocessor-proxy")),
+  );
+
+/**
+ * Whether a stack runs coprocessor-proxy: its bundle includes the proxy, and the stack is not
+ * blue-green, where one proxy per fleet is a follow-up. Takes a state (`scenario`) or a stack spec
+ * (`blueGreen`).
+ */
+export const runsCoprocessorProxy = (
+  state: Pick<CompatState, "versions" | "overrides"> & { scenario?: { kind: string }; blueGreen?: unknown },
+) => state.scenario?.kind !== "blue-green" && !state.blueGreen && supportsCoprocessorProxy(state);
+
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>
   versionBeforeReleaseFamily(state.versions.env.GATEWAY_VERSION ?? "", [0, 13, 0], { unparsed: "modern" });
@@ -659,7 +676,7 @@ export const assertSupportedBundleScenario = (state: CompatState) => {
     assertSingleCoprocessorRevision(state, scenario);
   }
   const hostChains = scenario.hostChains;
-  if (runsRelayerHttp(hostChains) && !(supportsConnectorHttp(state) && supportsRelayerHttp(state))) {
+  if (hostChains.some((chain) => !isEvmHost(chain)) && !(supportsConnectorHttp(state) && supportsRelayerHttp(state))) {
     throw new Error(
       "Solana host scenarios decrypt only over HTTP: the bundle needs CONNECTOR_ENDPOINT_VERSION, " +
         "CONNECTOR_PROXY_VERSION and RELAYER_HTTP_VERSION, or local overrides that build those services.",

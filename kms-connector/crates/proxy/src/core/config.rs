@@ -25,8 +25,8 @@ pub struct Config {
     /// The public bind address of the proxy.
     #[serde(alias = "proxy_bind_address", default = "default_bind_address")]
     pub bind_address: SocketAddr,
-    /// The TLS configuration of the proxy.
-    pub tls_config: TlsConfig,
+    /// The TLS configuration of the proxy. Without it, the proxy serves plain HTTP.
+    pub tls_config: Option<TlsConfig>,
 
     /// The Ethereum chain id, part of the `FhevmSig` (RFC-038) EIP-712 domain.
     pub ethereum_chain_id: u64,
@@ -141,6 +141,17 @@ where
 
 impl DeserializeConfig for Config {}
 
+impl Config {
+    /// The URL scheme served by the proxy's listener.
+    pub fn scheme(&self) -> &'static str {
+        if self.tls_config.is_some() {
+            "https"
+        } else {
+            "http"
+        }
+    }
+}
+
 fn default_service_name() -> String {
     "kms-connector-proxy".to_string()
 }
@@ -192,10 +203,10 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             bind_address: default_bind_address(),
-            tls_config: TlsConfig {
+            tls_config: Some(TlsConfig {
                 cert_path: PathBuf::from("/etc/kms-connector/proxy/tls.crt"),
                 key_path: PathBuf::from("/etc/kms-connector/proxy/tls.key"),
-            },
+            }),
             ethereum_chain_id: 11155111,
             protocol_config_contract: default_protocol_config_contract_config(),
             allowed_senders: HashSet::from([Address::ZERO]),
@@ -305,10 +316,10 @@ mod tests {
         assert_eq!(config.bind_address, "127.0.0.1:9443".parse().unwrap());
         assert_eq!(
             config.tls_config,
-            TlsConfig {
+            Some(TlsConfig {
                 cert_path: PathBuf::from("/etc/proxy/tls.crt"),
                 key_path: PathBuf::from("/etc/proxy/tls.key"),
-            }
+            })
         );
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(

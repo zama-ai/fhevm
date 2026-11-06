@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH locked AS (SELECT pg_advisory_xact_lock(hashtextextended($1, $2)))\n         SELECT 1 AS \"locked!\" FROM locked",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "locked!",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1ec2bf95cb4c51a83e32429cbf24b5f2c7f3741d559ea51a76407461cde67e6a"
+}

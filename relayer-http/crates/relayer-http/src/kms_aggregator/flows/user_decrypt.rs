@@ -141,7 +141,7 @@ mod tests {
             decryption_id: USER_REQUEST_ID,
             user_decrypted_shares: mock::share(node),
             signature: mock::signature(node),
-            extra_data: Bytes::from_static(&[0]),
+            extra_data: mock::extra_data_v2(),
         }
     }
 
@@ -249,8 +249,8 @@ mod tests {
         let output = UserDecrypt::output(&OFF, vec![response(0), response(1)]).unwrap();
         let expected = json!({
             "result": [
-                { "payload": hex(&mock::share(0)), "signature": hex(&mock::signature(0)), "extraData": "0x00" },
-                { "payload": hex(&mock::share(1)), "signature": hex(&mock::signature(1)), "extraData": "0x00" },
+                { "payload": hex(&mock::share(0)), "signature": hex(&mock::signature(0)), "extraData": mock::EXTRA_DATA_V2 },
+                { "payload": hex(&mock::share(1)), "signature": hex(&mock::signature(1)), "extraData": mock::EXTRA_DATA_V2 },
             ]
         });
         assert_eq!(serde_json::to_value(&output).unwrap(), expected);

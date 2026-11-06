@@ -13,6 +13,7 @@ import {
   gatewayAddressesSolidityPath,
   paymentBridgingAddressesSolidityPath,
   relayerConfigPath,
+  relayerHttpConfigPath,
   versionsEnvPath,
   envPath,
   composePath,
@@ -82,6 +83,7 @@ export const runtimeArtifactPaths = (state: State) => {
   return [
     versionsEnvPath,
     relayerConfigPath,
+    relayerHttpConfigPath,
     ...thresholdConfigPaths,
     ...COMPONENTS.map(envPath),
     ...[...generatedComposeComponents(plan)].map(composePath),

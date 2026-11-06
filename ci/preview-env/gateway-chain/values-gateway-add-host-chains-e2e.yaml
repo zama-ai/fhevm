@@ -51,3 +51,13 @@ persistence:
     create: false
 scUpgrade:
   enabled: false
+
+# Pins onto the zws-pool Karpenter node pool - see
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"
