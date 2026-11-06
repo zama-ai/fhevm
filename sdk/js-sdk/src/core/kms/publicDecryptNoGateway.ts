@@ -2,7 +2,8 @@ import type { RelayerPublicDecryptOptions } from '../types/relayer.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { ChecksummedAddress, Uint64BigInt } from '../types/primitives.js';
 import type { PublicDecryptionProof } from '../types/publicDecryptionProof-p.js';
-import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { FhevmBase } from '../types/coreFhevmClient.js';
+import type { CacheUsage } from '../caching/cacheUsage-p.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
 import type { KmsExtraData } from '../types/kms-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
@@ -12,15 +13,13 @@ import { readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersCo
 import { kmsSignersContextToExtraData } from '../host-contracts/KmsSignersContext-p.js';
 import { createPublicDecryptionProof } from '../kms/PublicDecryptionProof-p.js';
 import { checkAllowedForDecryption } from '../host-contracts/checkAllowedForDecryption.js';
+import { kmsContextVersion } from '../host-contracts/readKmsSignersContext-p.js';
+import { recordCacheUsage } from '../caching/cacheUsage-p.js';
+import { runWithRefreshOnInvalidity } from '../caching/refreshOnInvalidity-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Context = {
-  readonly chain: FhevmChain;
-  readonly runtime: FhevmRuntime;
-  readonly client: NonNullable<object>;
-  readonly options: { readonly batchRpcCalls: boolean };
-};
+type Context = FhevmBase<FhevmChain>;
 
 type Parameters = {
   readonly originToken: symbol;
@@ -34,6 +33,18 @@ type ReturnType = PublicDecryptionProof;
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function publicDecryptNoGateway(context: Context, parameters: Parameters): Promise<ReturnType> {
+  // A failure after the request was sent (error, timeout, abort) checks the KMS
+  // context: if it changed, the request runs once more (unless aborted).
+  return runWithRefreshOnInvalidity(context, parameters.fhevmContext, (cacheUsage) =>
+    _publicDecryptNoGateway(context, parameters, cacheUsage),
+  );
+}
+
+async function _publicDecryptNoGateway(
+  context: Context,
+  parameters: Parameters,
+  cacheUsage: CacheUsage,
+): Promise<ReturnType> {
   const { handles, options, originToken, fhevmContext } = parameters;
 
   // Request side: build dynamic extraData from current context ID
@@ -72,7 +83,13 @@ export async function publicDecryptNoGateway(context: Context, parameters: Param
     handles: orderedHandles,
   });
 
-  // 5. Call relayer
+  // 5. Call relayer. From here on, a failure may come from a KMS context
+  // switch: record the context used.
+  recordCacheUsage(
+    cacheUsage,
+    'kmsContext',
+    kmsContextVersion(requestedKmsSignersContext.id, requestedKmsSignersContext.epochId),
+  );
   const {
     orderedAbiEncodedClearValues,
     kmsPublicDecryptEip712Signatures,
