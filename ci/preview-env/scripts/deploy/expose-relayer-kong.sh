@@ -18,8 +18,10 @@ tailnet="${tailnet#*.}"
 tailnet="${tailnet:-diplodocus-boa.ts.net}"
 url="https://kong-proxy-preview-zws-dev.${tailnet}/${NAMESPACE}"
 
-if ! kubectl get ingressclass kong-preview >/dev/null 2>&1; then
-  echo "::warning::IngressClass kong-preview not found (zws-gitops kong-preview app not installed): no unified relayer URL"
+# Checks the proxy Service, not the IngressClass: the CI identity (ClusterRole
+# admin) can read namespaced objects anywhere but not IngressClasses.
+if ! kubectl get service kong-preview-zws-dev-system-kong-proxy -n zws-system >/dev/null 2>&1; then
+  echo "::warning::kong-preview not installed (zws-gitops environments/zws-dev-system/kong/kong-preview.yaml): no unified relayer URL"
   exit 0
 fi
 
