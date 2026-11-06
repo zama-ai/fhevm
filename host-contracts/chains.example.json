@@ -1,0 +1,34 @@
+[
+  {
+    "chainId": 11155111,
+    "label": "sepolia",
+    "minWindowSeconds": 1800,
+    "fallbackBlockTimeSeconds": 12,
+    "rpcUrlEnv": "SEPOLIA_RPC_URL",
+    "defaultRpcUrl": "https://ethereum-sepolia-rpc.publicnode.com"
+  },
+  {
+    "chainId": 80002,
+    "label": "amoy",
+    "minWindowSeconds": 600,
+    "fallbackBlockTimeSeconds": 1.5,
+    "rpcUrlEnv": "POLYGON_AMOY_RPC_URL",
+    "defaultRpcUrl": "https://rpc-amoy.polygon.technology"
+  },
+  {
+    "chainId": 97,
+    "label": "bnb-testnet",
+    "minWindowSeconds": 300,
+    "fallbackBlockTimeSeconds": 0.45,
+    "rpcUrlEnv": "BNB_TESTNET_RPC_URL",
+    "defaultRpcUrl": "https://bsc-testnet-rpc.publicnode.com"
+  },
+  {
+    "chainId": 560048,
+    "label": "hoodi",
+    "minWindowSeconds": 1800,
+    "fallbackBlockTimeSeconds": 12,
+    "rpcUrlEnv": "HOODI_RPC_URL",
+    "defaultRpcUrl": "https://ethereum-hoodi-rpc.publicnode.com"
+  }
+]
