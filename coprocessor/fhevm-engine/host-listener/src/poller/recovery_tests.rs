@@ -1,9 +1,9 @@
 use super::*;
 use alloy::primitives::B256;
 use fhevm_engine_common::chain_recovery::{
-    begin_replay, complete_replay, is_halted, prepare_host_replay,
-    readiness_blocked, record_halt, reset_green_replay_tx, HistoryMismatch,
-    HostReplayStartup, ListenerSource,
+    begin_replay, complete_replay, is_halted, pending_replay,
+    prepare_host_replay, readiness_blocked, record_halt, reset_green_replay_tx,
+    HistoryMismatch, HostReplayStartup, ListenerSource,
 };
 use fhevm_engine_common::versioning::{
     begin_write_guarded, GcsRollbackPolicy, WriteGuard, CUTOVER_LOCK_ID,
@@ -1459,8 +1459,10 @@ async fn host_startup_adopts_missing_cursor_and_fences_reset_generations(
         .map_err(|err| anyhow!("{err}"))?;
     let pool = sqlx::PgPool::connect(db.db_url()).await?;
     let green = green_host_pool(&pool, db.db_url()).await?;
+    // Ownership follows the cursor schema, not the mode hint. Seed the
+    // obligation through the same Green pool the replacement will use.
     let old =
-        begin_replay(&pool, ListenerSource::Host, true, 42, 3, 10).await?;
+        begin_replay(&green, ListenerSource::Host, true, 42, 3, 10).await?;
     assert!(matches!(
         prepare_host_replay(&green, true, 42, 64, None).await?,
         HostReplayStartup::NeedsSeed
@@ -1855,5 +1857,67 @@ async fn retired_poller_header_check_does_not_record_a_halt() -> Result<()> {
     validate_committed_header(&pool, ChainId::try_from(42_u64)?, &header)
         .await?;
     assert!(!is_halted(&pool).await?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn green_completion_cannot_complete_blue_generation_after_promotion(
+) -> anyhow::Result<()> {
+    use fhevm_engine_common::database::GCS_SCHEMA_QUOTED;
+    let instance = setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow!("{err}"))?;
+    let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+    let previous_blue =
+        begin_replay(&pool, ListenerSource::Host, false, 42, 10, 20).await?;
+    complete_replay(
+        &pool,
+        ListenerSource::Host,
+        false,
+        42,
+        10,
+        20,
+        previous_blue.generation,
+    )
+    .await?;
+    let green = green_host_pool(&pool, instance.db_url()).await?;
+    // A Green restart/adopter increments its independent generation counter.
+    begin_replay(&green, ListenerSource::Host, true, 42, 10, 20).await?;
+    let old =
+        begin_replay(&green, ListenerSource::Host, true, 42, 10, 20).await?;
+    // Another Green replica completes the shared generation, allowing cutover.
+    complete_replay(
+        &green,
+        ListenerSource::Host,
+        true,
+        42,
+        10,
+        20,
+        old.generation,
+    )
+    .await?;
+    sqlx::query(&format!("DROP SCHEMA {GCS_SCHEMA_QUOTED} CASCADE"))
+        .execute(&pool)
+        .await?;
+    let blue =
+        begin_replay(&pool, ListenerSource::Host, false, 42, 10, 20).await?;
+    assert_eq!(old.generation, blue.generation);
+    // An older completion was delayed until after Green's pool routes to public.
+    complete_replay(
+        &green,
+        ListenerSource::Host,
+        true,
+        42,
+        10,
+        20,
+        old.generation,
+    )
+    .await?;
+    assert!(
+        pending_replay(&pool, ListenerSource::Host, false, 42)
+            .await?
+            .is_some(),
+        "an old Green token cleared the new Blue obligation"
+    );
     Ok(())
 }

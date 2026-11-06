@@ -118,6 +118,7 @@ async fn diagnostics_skip_locked_parents_during_warm_ingestion_replay() -> Resul
     let parent_b = FixedBytes::<32>::repeat_byte(32);
     let parent_c = FixedBytes::<32>::repeat_byte(48);
     let result_handle = handle(10);
+    let verdict_handle = handle(11);
     let op = add(result_handle);
     let acl = Allowed {
         caller: Address::ZERO,
@@ -125,8 +126,26 @@ async fn diagnostics_skip_locked_parents_during_warm_ingestion_replay() -> Resul
         handle: result_handle,
     }
     .encode_log_data();
-    // A cold first delivery stores this join under its own transaction hash.
-    ingest(&mut db, vec![op.clone(), acl]).await?;
+    // A cold first delivery stores both computations under the same chain.
+    // Replay locks its computation row even when ON CONFLICT's update predicate
+    // is false. Write the worker verdict on the other output, so this regression
+    // exercises chain diagnostics rather than waiting on that expected row lock.
+    let verdict_acl = Allowed {
+        caller: Address::ZERO,
+        account: Address::ZERO,
+        handle: verdict_handle,
+    }
+    .encode_log_data();
+    ingest(
+        &mut db,
+        vec![op.clone(), add(verdict_handle), acl, verdict_acl],
+    )
+    .await?;
+    let stored_chains: Vec<Vec<u8>> =
+        sqlx::query_scalar("SELECT dependence_chain_id FROM computations ORDER BY output_handle")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(stored_chains, vec![child.to_vec(), child.to_vec()]);
     for parent in [parent_b, parent_c] {
         sqlx::query("INSERT INTO dependence_chain(dependence_chain_id,status,dependency_count,dependents,error_message) VALUES ($1,'updated',0,'{}',$2)")
             .bind(parent.as_slice())
@@ -178,7 +197,7 @@ async fn diagnostics_skip_locked_parents_during_warm_ingestion_replay() -> Resul
     let flushed = timeout(Duration::from_secs(5), async {
         let mut tx = pool.begin().await?;
         sqlx::query("UPDATE computations SET is_error=TRUE, error_message='failed child' WHERE output_handle=$1")
-            .bind(result_handle.as_slice()).execute(tx.as_mut()).await?;
+            .bind(verdict_handle.as_slice()).execute(tx.as_mut()).await?;
         worker.flush_processing_errors(&mut tx).await?;
         tx.commit().await?;
         worker.clear_processing_errors();
@@ -206,7 +225,7 @@ async fn diagnostics_skip_locked_parents_during_warm_ingestion_replay() -> Resul
     );
     let verdict: (bool, Option<String>) =
         sqlx::query_as("SELECT is_error, error_message FROM computations WHERE output_handle=$1")
-            .bind(result_handle.as_slice())
+            .bind(verdict_handle.as_slice())
             .fetch_one(&pool)
             .await?;
     assert_eq!(verdict, (true, Some("failed child".into())));

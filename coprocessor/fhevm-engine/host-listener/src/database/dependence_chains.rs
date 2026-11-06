@@ -12,6 +12,14 @@ use crate::database::tfhe_event_propagate::{
     SealedChainGuard, TransactionHash,
 };
 
+/// Provenance read in the ingestion transaction, before assigning chains.
+#[derive(Default)]
+pub struct PersistedDependencies {
+    pub minted: HashMap<(TransactionHash, Handle), u64>,
+    /// Per-consumer lookup of eligible producers absent from the bounded LRU.
+    pub boundary_chains: HashMap<(TransactionHash, Handle), ChainHash>,
+}
+
 #[derive(Clone, Debug)]
 struct Transaction {
     tx_hash: TransactionHash,
@@ -66,6 +74,7 @@ fn ensure_logs_order(logs: &mut [LogTfhe]) {
 const AVG_LOGS_PER_TX: usize = 8;
 fn scan_transactions(
     logs: &[LogTfhe],
+    prior_minted: &HashMap<(TransactionHash, Handle), u64>,
 ) -> (Vec<TransactionHash>, HashMap<TransactionHash, Transaction>) {
     // TODO: OPT no need for hashmap if contiguous tx
     let mut txs = HashMap::new();
@@ -85,8 +94,23 @@ fn scan_transactions(
         tx.size += outputs.len().max(1) as u64;
         let log_inputs = tfhe_inputs_handle(&log.event);
         for input in log_inputs {
-            if tx.output_handle.contains(&input) {
-                // self dependency, ignore, assuming logs are ordered in tx
+            let is_prior_same_transaction_output = log
+                .transaction_hash
+                .zip(log.log_index)
+                .and_then(|(transaction_hash, consumer_log_index)| {
+                    prior_minted.get(&(transaction_hash, input)).map(
+                        |producer_log_index| {
+                            *producer_log_index < consumer_log_index
+                        },
+                    )
+                })
+                .unwrap_or(false);
+            if tx.output_handle.contains(&input)
+                || is_prior_same_transaction_output
+            {
+                // The executor has already established the in-transaction
+                // ordering, whether the producer is in this delivery or a
+                // prior contiguous batch from this block.
                 continue;
             }
             tx.input_handle.push(input);
@@ -111,6 +135,7 @@ async fn fill_tx_dependence_maps(
     used_txs_chains: &mut HashMap<TransactionHash, HashSet<TransactionHash>>,
     past_chains: &ChainCache,
     consumed_boundaries: &ConsumedBoundaryGuard,
+    boundary_chains: &HashMap<(TransactionHash, Handle), ChainHash>,
 ) {
     let mut allowed_handle_tx: HashMap<Handle, TransactionHash> =
         HashMap::new();
@@ -145,9 +170,22 @@ async fn fill_tx_dependence_maps(
                     });
                 // memorize as producer
                 producer_tx.push(*dep_tx);
-            } else if let Some(dep_tx_hash) =
-                past_chains.write().await.get(input_handle)
-            {
+            } else {
+                let cached =
+                    past_chains.write().await.get(input_handle).copied();
+                let Some(dep_tx_hash) = cached.or_else(|| {
+                    boundary_chains.get(&(*tx_hash, *input_handle)).copied()
+                }) else {
+                    continue;
+                };
+                // After eviction or restart, the bounded consumption/seal
+                // guards cannot prove that extending this chain is safe.
+                // Keep the recovered dependency as a separate gated chain.
+                // Do not repopulate the LRU: a wide join must retain every
+                // recovered parent, even when it exceeds cache capacity.
+                if cached.is_none() {
+                    tx.forked_cross_block = true;
+                }
                 // extra block, this is directly a chain hash
                 // A boundary handle feeds exactly one linear continuation:
                 // its first cross-batch consumer may extend the producer
@@ -162,10 +200,10 @@ async fn fill_tx_dependence_maps(
                         tx.forked_cross_block = true;
                     }
                 }
-                tx.input_tx.insert(*dep_tx_hash);
-                tx.outer_boundary.push((*dep_tx_hash, *input_handle));
+                tx.input_tx.insert(dep_tx_hash);
+                tx.outer_boundary.push((dep_tx_hash, *input_handle));
                 used_txs_chains
-                    .entry(*dep_tx_hash)
+                    .entry(dep_tx_hash)
                     .and_modify(|v| {
                         v.insert(tx.tx_hash);
                     })
@@ -505,8 +543,35 @@ pub async fn dependence_chains(
     connex: bool,
     across_blocks: bool,
 ) -> OrderedChains {
+    dependence_chains_with_prior(
+        logs,
+        past_chains,
+        consumed_boundaries,
+        sealed_chains,
+        connex,
+        across_blocks,
+        &PersistedDependencies::default(),
+    )
+    .await
+}
+
+/// Group computation logs while recognizing same-transaction outputs that
+/// were persisted by an earlier contiguous batch of the same block. Their
+/// cache entry is not an external chain dependency: the executor already
+/// established the ordering inside the transaction.
+/// Eligible persisted boundary producers recover dependencies lost to cache
+/// eviction without relying on that bounded cache for correctness.
+pub async fn dependence_chains_with_prior(
+    logs: &mut [LogTfhe],
+    past_chains: &ChainCache,
+    consumed_boundaries: &ConsumedBoundaryGuard,
+    sealed_chains: &SealedChainGuard,
+    connex: bool,
+    across_blocks: bool,
+    prior: &PersistedDependencies,
+) -> OrderedChains {
     ensure_logs_order(logs);
-    let (ordered_hash, mut txs) = scan_transactions(logs);
+    let (ordered_hash, mut txs) = scan_transactions(logs, &prior.minted);
     let mut used_txs_chains: HashMap<
         TransactionHash,
         HashSet<TransactionHash>,
@@ -517,6 +582,7 @@ pub async fn dependence_chains(
         &mut used_txs_chains,
         past_chains,
         consumed_boundaries,
+        &prior.boundary_chains,
     )
     .await;
     debug!("Transactions: {:?}", txs.values());
@@ -913,6 +979,45 @@ mod tests {
         assert_eq!(chains.len(), 1);
         assert!(logs.iter().all(|log| log.dependence_chain == tx1));
         assert_eq!(cache.read().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn split_same_transaction_output_does_not_create_outer_self_gate() {
+        use super::{dependence_chains_with_prior, PersistedDependencies};
+        use std::collections::HashMap;
+
+        let cache = new_cache();
+        let guard = new_guard();
+        let sealed = new_sealed();
+        let tx = TransactionHash::with_last_byte(77);
+        let prior_output = new_handle();
+        cache.write().await.put(prior_output, tx);
+
+        let mut logs = vec![];
+        let _output = op1(prior_output, &mut logs, tx);
+        logs[0].log_index = Some(2);
+        let prior_minted = HashMap::from([((tx, prior_output), 0)]);
+
+        let chains = dependence_chains_with_prior(
+            &mut logs,
+            &cache,
+            &guard,
+            &sealed,
+            false,
+            true,
+            &PersistedDependencies {
+                minted: prior_minted,
+                ..Default::default()
+            },
+        )
+        .await;
+
+        assert_eq!(chains.len(), 1);
+        assert_eq!(chains[0].hash, tx);
+        assert!(chains[0].dependencies.is_empty());
+        assert!(chains[0].split_dependencies.is_empty());
+        assert!(chains[0].outer_boundary_handles.is_empty());
+        assert!(chains[0].dependents.is_empty());
     }
 
     #[tokio::test]

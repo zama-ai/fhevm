@@ -391,6 +391,14 @@ async fn gcs_rewind_on_activated_window_ingests_window_start() -> anyhow::Result
     .execute(&env.db_pool)
     .await?;
 
+    // Use the same namespace routing as the production Green pool.
+    env.db_pool = PgPoolOptions::new()
+        .max_connections(16)
+        .connect_with(fhevm_engine_common::database::apply_gcs_mode_search_path(
+            true,
+        )(env.conf.database_url.as_str().parse()?))
+        .await?;
+
     // Make this binary "green": the live consensus version is one behind the
     // compiled one, as it is for a real GCS stack before cutover. Without this
     // the stack-version listener would reconcile the listener out of GCS mode.
@@ -480,10 +488,12 @@ async fn gcs_rewind_on_activated_window_ingests_window_start() -> anyhow::Result
     ))
     .fetch_one(&env.db_pool)
     .await?;
-    assert_eq!(
-        gcs_watermark,
-        Some(i64::try_from(gw_start_block)? - 1),
-        "the rewind must persist gw_start_block - 1 into the gcs schema's watermark"
+    // The checked listener persists every processed range, so after observing
+    // the request the Green cursor can already have advanced past its anchor.
+    let anchor = i64::try_from(gw_start_block)? - 1;
+    assert!(
+        gcs_watermark.is_some_and(|cursor| cursor >= anchor),
+        "Green cursor must retain or advance its rewind anchor: {gcs_watermark:?}"
     );
 
     env.cancel_token.cancel();

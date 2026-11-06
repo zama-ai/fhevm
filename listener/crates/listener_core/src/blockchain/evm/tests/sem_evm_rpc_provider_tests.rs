@@ -1,5 +1,10 @@
 #[cfg(test)]
 mod sem_evm_rpc_provider_tests {
+    use std::sync::{Arc, Mutex};
+
+    use alloy::primitives::{Address, B256};
+    use axum::{Json, Router, routing::post};
+    use serde_json::{Value, json};
     use tracing::{Level, info};
     use tracing_subscriber::FmtSubscriber;
 
@@ -268,6 +273,69 @@ mod sem_evm_rpc_provider_tests {
     fn hex_to_u64_rejects_invalid_hex() {
         assert!(hex_to_u64("0xzz").is_err());
         assert!(hex_to_u64("").is_err());
+    }
+
+    #[tokio::test]
+    async fn executor_version_call_is_bound_to_canonical_block_hash() {
+        const VERSION: &str = "FHEVMExecutor v0.7.0";
+        let encoded_version = encode_abi_string(VERSION);
+        let captured_request = Arc::new(Mutex::new(None::<Value>));
+        let request_slot = captured_request.clone();
+        let app = Router::new().route(
+            "/",
+            post(move |Json(request): Json<Value>| {
+                let request_slot = request_slot.clone();
+                let encoded_version = encoded_version.clone();
+                async move {
+                    *request_slot.lock().unwrap() = Some(request.clone());
+                    Json(json!({
+                        "jsonrpc": "2.0",
+                        "id": request["id"].clone(),
+                        "result": encoded_version,
+                    }))
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let provider = SemEvmRpcProvider::new(format!("http://{address}"), 1, false, 1).unwrap();
+        let proxy: Address = "0x0000000000000000000000000000000000000042"
+            .parse()
+            .unwrap();
+        let block_hash: B256 = "0x1111111111111111111111111111111111111111111111111111111111111111"
+            .parse()
+            .unwrap();
+
+        let actual = provider
+            .get_executor_version_at_hash(proxy, block_hash)
+            .await
+            .unwrap();
+        assert_eq!(actual, VERSION);
+
+        let request = captured_request.lock().unwrap().take().unwrap();
+        assert_eq!(request["method"], "eth_call");
+        assert_eq!(request["params"][0]["to"], proxy.to_string());
+        assert_eq!(request["params"][0]["data"].as_str().unwrap().len(), 10);
+        assert_eq!(
+            request["params"][1],
+            json!({"blockHash": block_hash, "requireCanonical": true})
+        );
+
+        server.abort();
+    }
+
+    fn encode_abi_string(value: &str) -> String {
+        let mut encoded = format!("{:064x}{:064x}", 32, value.len());
+        for byte in value.as_bytes() {
+            encoded.push_str(&format!("{byte:02x}"));
+        }
+        let padding = (32 - value.len() % 32) % 32;
+        encoded.push_str(&"00".repeat(padding));
+        format!("0x{encoded}")
     }
 
     #[tokio::test]

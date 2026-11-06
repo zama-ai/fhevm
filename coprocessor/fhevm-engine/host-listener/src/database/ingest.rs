@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 
 use alloy::primitives::Address;
 use alloy::rpc::types::Log;
-use alloy::sol_types::SolEventInterface;
+use alloy::sol_types::{SolEvent, SolEventInterface};
 use fhevm_engine_common::bridge::chain_id_from_handle;
 use fhevm_engine_common::chain_id::ChainId;
 use fhevm_engine_common::handle_metadata::{
@@ -20,17 +20,22 @@ use sqlx::types::time::{OffsetDateTime, PrimitiveDateTime};
 use tracing::{debug, error, info, warn};
 
 use crate::cmd::block_history::{BlockHash, BlockSummary};
-use crate::cmd::InfiniteLogIter;
+use crate::cmd::{ExecutorVersionRequest, InfiniteLogIter};
 use crate::contracts::{
     AclContract, BridgeContract, KMSGeneration, ProtocolConfig, TfheContract,
 };
-use crate::database::dependence_chains::dependence_chains;
+use crate::database::dependence_chains::{
+    dependence_chains, dependence_chains_with_prior, PersistedDependencies,
+};
 use crate::database::derived_history::{
     CommittedInventory, COMMITTED_INVENTORY_CHANGED,
 };
 use crate::database::event_envelope::{classify, DecodedEvent};
 use crate::database::event_operands::{
-    validate_collection_shape, validate_scalar_mode,
+    tfhe_encrypted_operand_positions, validate_collection_shape,
+    validate_scalar_mode, validate_scalar_values,
+    validate_scalar_values_for_executor_version, validate_type_metadata,
+    ExecutorVersion, ExecutorVersionSchedule,
 };
 use crate::database::synthetic_ops::{
     synthetic_logs, synthetic_transaction_hash, SyntheticContext,
@@ -38,8 +43,8 @@ use crate::database::synthetic_ops::{
 };
 use crate::database::tfhe_event_propagate::{
     acl_result_handles, operand_boundary_mask_from_minted, tfhe_result_handles,
-    uniform_allowed_outputs, Chain, ChainHash, Database, Handle as EventHandle,
-    LogTfhe, TransactionHash, REPLAY_METADATA_CONFLICT,
+    uniform_allowed_outputs, Chain, ChainCache, ChainHash, Database,
+    Handle as EventHandle, LogTfhe, TransactionHash, REPLAY_METADATA_CONFLICT,
 };
 use crate::kms_generation::insert_kms_generation_events_tx;
 use crate::kms_generation::metrics::KMS_EVENT_DECODE_FAIL_COUNTER;
@@ -96,25 +101,100 @@ pub async fn ingest_with_history_recovery<GetBlock, BlockFuture>(
     protocol: &Option<Address>,
     bridge: &Option<Address>,
     options: IngestOptions,
-    mut get_block: GetBlock,
+    get_block: GetBlock,
 ) -> anyhow::Result<IngestResult>
 where
     GetBlock: FnMut(u64) -> BlockFuture,
     BlockFuture: Future<Output = anyhow::Result<BlockLogs<Log>>>,
 {
+    ingest_with_history_recovery_and_executor_versions(
+        chain_id,
+        db,
+        block,
+        acl,
+        tfhe,
+        kms,
+        protocol,
+        bridge,
+        options,
+        get_block,
+        |_| std::future::ready(ExecutorVersionSchedule::default()),
+    )
+    .await
+}
+
+async fn persisted_executor_version_for_parent(
+    db: &Database,
+    chain_id: ChainId,
+    request: &ExecutorVersionRequest,
+) -> anyhow::Result<Option<Option<ExecutorVersion>>> {
+    let (Some(proxy), Some(parent_number)) =
+        (request.tfhe_proxy, request.block_number.checked_sub(1))
+    else {
+        return Ok(None);
+    };
+    let pool = db.pool().await;
+    let version: Option<(Option<String>,)> = sqlx::query_as(
+        "SELECT tfhe_executor_version FROM host_chain_blocks_valid \
+         WHERE chain_id = $1 AND block_number = $2 AND block_hash = $3 \
+           AND tfhe_executor_address = $4",
+    )
+    .bind(chain_id.as_i64())
+    .bind(parent_number as i64)
+    .bind(request.parent_hash.as_slice())
+    .bind(proxy.as_slice())
+    .fetch_optional(&pool)
+    .await?;
+    Ok(version
+        .map(|(value,)| value.and_then(|value| ExecutorVersion::parse(&value))))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn ingest_with_history_recovery_and_executor_versions<
+    GetBlock,
+    BlockFuture,
+    GetExecutorSchedule,
+    ScheduleFuture,
+>(
+    chain_id: ChainId,
+    db: &mut Database,
+    block: &BlockLogs<Log>,
+    acl: &Option<Address>,
+    tfhe: &Option<Address>,
+    kms: &Option<Address>,
+    protocol: &Option<Address>,
+    bridge: &Option<Address>,
+    options: IngestOptions,
+    mut get_block: GetBlock,
+    mut get_executor_schedule: GetExecutorSchedule,
+) -> anyhow::Result<IngestResult>
+where
+    GetBlock: FnMut(u64) -> BlockFuture,
+    BlockFuture: Future<Output = anyhow::Result<BlockLogs<Log>>>,
+    GetExecutorSchedule: FnMut(ExecutorVersionRequest) -> ScheduleFuture,
+    ScheduleFuture: Future<Output = ExecutorVersionSchedule>,
+{
     let mut repair = None;
     let mut fetched = 0;
     loop {
-        let result = ingest_block_logs(
+        let block_to_ingest = repair.as_ref().unwrap_or(block);
+        let mut request =
+            ExecutorVersionRequest::from_block(block_to_ingest, *tfhe);
+        request.persisted_parent_version =
+            persisted_executor_version_for_parent(db, chain_id, &request)
+                .await?;
+        let schedule = get_executor_schedule(request).await;
+        let result = ingest_block_logs_with_executor_schedule(
             chain_id,
             db,
-            repair.as_ref().unwrap_or(block),
+            block_to_ingest,
             acl,
             tfhe,
             kms,
             protocol,
             bridge,
             options.clone(),
+            schedule,
         )
         .await?;
         match result {
@@ -158,11 +238,27 @@ pub fn validate_block_logs(block: &BlockLogs<Log>) -> Result<(), sqlx::Error> {
 }
 
 /// Validate decoded executor metadata before admitting the event to ingestion.
+#[cfg(test)]
 fn validate_tfhe_event(
     event: &TfheContract::TfheContractEvents,
     chain_id: u64,
 ) -> Result<(), &'static str> {
+    validate_tfhe_event_for_version(event, chain_id, None)
+}
+
+fn validate_tfhe_event_for_version(
+    event: &TfheContract::TfheContractEvents,
+    chain_id: u64,
+    executor_version: Option<ExecutorVersion>,
+) -> Result<(), &'static str> {
     validate_scalar_mode(event)?;
+    validate_type_metadata(event)?;
+    match executor_version {
+        Some(version) => {
+            validate_scalar_values_for_executor_version(event, version)?
+        }
+        None => validate_scalar_values(event)?,
+    }
     validate_collection_shape(event)?;
     for handle in tfhe_result_handles(event) {
         validate_computed_handle_metadata(&handle.0, chain_id)?;
@@ -219,15 +315,16 @@ fn block_date_time_utc(timestamp: u64) -> PrimitiveDateTime {
 /// Counts fail-closed rejections of operand-origin mask derivation. The
 /// rejected block is retried (and rejected again) on every pass, so a
 /// sustained nonzero rate on this counter means ingestion is STALLED on a
-/// block whose logs the RPC provider serves malformed (missing/duplicate
-/// log metadata) — page on it; the stall does not self-announce otherwise
-/// and never resolves without a healthy refetch or an operator fix.
+/// block whose logs are malformed (missing/duplicate metadata) or whose
+/// earlier computation lacks durable origin metadata — page on it; the stall
+/// does not self-announce otherwise and resolves only after a complete
+/// healthy refetch or operator recovery.
 static OPERAND_MASK_DERIVATION_REJECTS_COUNTER: std::sync::LazyLock<
     prometheus::IntCounter,
 > = std::sync::LazyLock::new(|| {
     prometheus::register_int_counter!(
         "coprocessor_host_listener_operand_mask_derivation_rejects_counter",
-        "Fail-closed rejections of operand-origin mask derivation (block ingest stalled on malformed provider logs)"
+        "Fail-closed rejections of operand-origin mask derivation (block ingest stalled on malformed or incomplete provenance)"
     )
     .unwrap()
 });
@@ -238,8 +335,16 @@ fn refuse_mask_derivation(reason: &'static str) -> sqlx::Error {
     sqlx::Error::Protocol(reason.into())
 }
 
+#[cfg(test)]
 pub(crate) fn populate_operand_boundary_masks(
     logs: &mut [LogTfhe],
+) -> Result<(), sqlx::Error> {
+    populate_operand_boundary_masks_with_prior(logs, &HashMap::new())
+}
+
+fn populate_operand_boundary_masks_with_prior(
+    logs: &mut [LogTfhe],
+    prior_minted: &HashMap<(TransactionHash, EventHandle), u64>,
 ) -> Result<(), sqlx::Error> {
     let mask_bearing =
         |log: &LogTfhe| !tfhe_result_handles(&log.event).is_empty();
@@ -281,9 +386,14 @@ pub(crate) fn populate_operand_boundary_masks(
         let transaction_hash = log
             .transaction_hash
             .expect("validated mask-bearing transaction hash");
+        let log_index =
+            log.log_index.expect("validated mask-bearing log index");
         let minted = minted_by_transaction.entry(transaction_hash).or_default();
         let mask = operand_boundary_mask_from_minted(&log.event, |handle| {
             minted.contains(handle)
+                || prior_minted
+                    .get(&(transaction_hash, *handle))
+                    .is_some_and(|producer_log_index| *producer_log_index < log_index)
         })
         .map_err(|reason| {
             OPERAND_MASK_DERIVATION_REJECTS_COUNTER.inc();
@@ -299,6 +409,280 @@ pub(crate) fn populate_operand_boundary_masks(
         }
     }
     Ok(())
+}
+
+/// Reconstruct executor-minted inputs produced by an earlier delivery of the
+/// same block and transaction. A repeated mint later in this delivery does not
+/// invalidate an earlier persisted mint, so query all requested operands.
+async fn persisted_prior_minted_outputs(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    logs: &[LogTfhe],
+) -> Result<HashMap<(TransactionHash, EventHandle), u64>, sqlx::Error> {
+    let mut consumers = HashMap::new();
+    let mut first_mint = HashMap::new();
+    for log in logs
+        .iter()
+        .filter(|log| !tfhe_result_handles(&log.event).is_empty())
+    {
+        let (Some(transaction_hash), Some(log_index)) =
+            (log.transaction_hash, log.log_index)
+        else {
+            // The ordered derivation below reports the canonical malformed
+            // metadata error and increments its rejection metric.
+            continue;
+        };
+        if log.is_executor_minted {
+            for handle in tfhe_result_handles(&log.event) {
+                first_mint
+                    .entry((transaction_hash, handle))
+                    .and_modify(|first: &mut u64| {
+                        *first = (*first).min(log_index)
+                    })
+                    .or_insert(log_index);
+            }
+        }
+        for (_, handle) in tfhe_encrypted_operand_positions(&log.event) {
+            let key = (transaction_hash, handle);
+            consumers
+                .entry(key)
+                .and_modify(|(first, last): &mut (u64, u64)| {
+                    *first = (*first).min(log_index);
+                    *last = (*last).max(log_index);
+                })
+                .or_insert((log_index, log_index));
+        }
+    }
+
+    // A producer preceding every consumer in this delivery needs no DB lookup.
+    // A later repeated mint still needs persisted prefix evidence for earlier
+    // consumers. Look up only the remaining exact (transaction, handle) pairs.
+    let mut requested = consumers
+        .into_iter()
+        .filter(|(key, (first, _))| {
+            first_mint.get(key).is_none_or(|mint| mint >= first)
+        })
+        .map(|(key, (_, last))| (key, last))
+        .collect::<Vec<_>>();
+    if requested.is_empty() {
+        return Ok(HashMap::new());
+    }
+    requested.sort_by_key(|((transaction_hash, handle), _)| {
+        (transaction_hash.to_vec(), handle.to_vec())
+    });
+    let block_number = logs
+        .iter()
+        .find(|log| !tfhe_result_handles(&log.event).is_empty())
+        .map(|log| log.block_number)
+        .expect("requested operand origins require a computation log");
+    let block_number = i64::try_from(block_number).map_err(|_| {
+        refuse_mask_derivation(
+            "refusing operand-origin derivation with block number outside PostgreSQL range",
+        )
+    })?;
+    let transaction_ids = requested
+        .iter()
+        .map(|((transaction_hash, _), _)| transaction_hash.to_vec())
+        .collect::<Vec<_>>();
+    let output_handles = requested
+        .iter()
+        .map(|((_, handle), _)| handle.to_vec())
+        .collect::<Vec<_>>();
+    let consumer_indexes = requested
+        .iter()
+        .map(|(_, log_index)| i64::try_from(*log_index))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| {
+            refuse_mask_derivation(
+                "refusing operand-origin derivation with log index outside PostgreSQL range",
+            )
+        })?;
+
+    let rows = sqlx::query_as::<
+        _,
+        (Vec<u8>, Vec<u8>, Option<i64>, Option<bool>, i64),
+    >(
+        "WITH requested AS (
+             SELECT transaction_id, output_handle, consumer_log_index
+             FROM unnest($1::bytea[], $2::bytea[], $3::bigint[])
+                  AS r(transaction_id, output_handle, consumer_log_index)
+         )
+         SELECT c.transaction_id,
+                c.output_handle,
+                c.log_index,
+                c.is_executor_minted,
+                r.consumer_log_index
+         FROM requested r
+         JOIN computations c
+           ON c.transaction_id = r.transaction_id
+          AND c.output_handle = r.output_handle
+          AND c.host_chain_id = $4
+          AND c.block_number = $5
+          AND c.log_index_block_hash = $6",
+    )
+    .bind(transaction_ids)
+    .bind(output_handles)
+    .bind(consumer_indexes)
+    .bind(chain_id.as_i64())
+    .bind(block_number)
+    .bind(logs[0].block_hash.as_slice())
+    .fetch_all(&mut **tx)
+    .await?;
+
+    let mut prior_minted = HashMap::new();
+    for (
+        transaction_id,
+        output_handle,
+        producer_log_index,
+        is_executor_minted,
+        consumer_log_index,
+    ) in rows
+    {
+        if is_executor_minted == Some(false) {
+            continue;
+        }
+        let Some(producer_log_index) = producer_log_index else {
+            return Err(refuse_mask_derivation(
+                "refusing operand-origin derivation: persisted same-transaction producer has no log index; replay the complete block",
+            ));
+        };
+        if producer_log_index >= consumer_log_index {
+            continue;
+        }
+        if is_executor_minted != Some(true) {
+            return Err(refuse_mask_derivation(
+                "refusing operand-origin derivation: persisted same-transaction producer provenance is unknown; replay the complete block",
+            ));
+        }
+        let transaction_hash = <[u8; 32]>::try_from(transaction_id.as_slice())
+            .map(TransactionHash::from)
+            .map_err(|_| {
+                refuse_mask_derivation(
+                    "refusing operand-origin derivation: persisted transaction hash is malformed",
+                )
+            })?;
+        let handle = <[u8; 32]>::try_from(output_handle.as_slice())
+            .map(EventHandle::from)
+            .map_err(|_| {
+                refuse_mask_derivation(
+                    "refusing operand-origin derivation: persisted output handle is malformed",
+                )
+            })?;
+        let producer_log_index = u64::try_from(producer_log_index)
+            .map_err(|_| {
+                refuse_mask_derivation(
+                    "refusing operand-origin derivation: persisted producer log index is negative",
+                )
+            })?;
+        prior_minted.insert((transaction_hash, handle), producer_log_index);
+    }
+    Ok(prior_minted)
+}
+
+/// Resolve cache misses from committed producer provenance in one bounded
+/// batch. A cache eviction (or restart) must not turn a pending producer into
+/// an unknown input. The result is per delivery, not put back into the LRU,
+/// so a join wider than the cache can still retain all of its parents.
+async fn persisted_boundary_chains(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    chain_id: ChainId,
+    logs: &[LogTfhe],
+    cache: &ChainCache,
+    prior_minted: &HashMap<(TransactionHash, EventHandle), u64>,
+) -> Result<HashMap<(TransactionHash, EventHandle), ChainHash>, sqlx::Error> {
+    let mut requested = HashMap::new();
+    {
+        let cache = cache.read().await;
+        for log in logs {
+            let (Some(transaction), Some(index)) =
+                (log.transaction_hash, log.log_index)
+            else {
+                // Computation metadata was already validated by mask derivation.
+                continue;
+            };
+            for (_, handle) in tfhe_encrypted_operand_positions(&log.event) {
+                if cache.contains(&handle)
+                    || prior_minted
+                        .get(&(transaction, handle))
+                        .is_some_and(|producer| *producer < index)
+                {
+                    continue;
+                }
+                requested
+                    .entry((transaction, handle))
+                    .and_modify(|first: &mut u64| *first = (*first).min(index))
+                    .or_insert(index);
+            }
+        }
+    }
+    if requested.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let pg_index = |value| {
+        i64::try_from(value).map_err(|_| {
+            sqlx::Error::Protocol(
+                "dependency provenance index outside PostgreSQL range".into(),
+            )
+        })
+    };
+    let block_number = pg_index(logs[0].block_number)?;
+    let mut transactions = Vec::with_capacity(requested.len());
+    let mut handles = Vec::with_capacity(requested.len());
+    let mut indexes = Vec::with_capacity(requested.len());
+    for ((transaction, handle), index) in requested {
+        transactions.push(transaction.to_vec());
+        handles.push(handle.to_vec());
+        indexes.push(pg_index(index)?);
+    }
+    // Match the cache's eligible-producer preference, but require the producer
+    // to precede this consumer. In particular, historical replay must not
+    // discover a later transaction/block merely because it is already stored.
+    // This read takes no row locks. Gate registration retains its existing
+    // SKIP LOCKED/processed/materialized checks against concurrent workers.
+    let rows: Vec<(Vec<u8>, Vec<u8>, Vec<u8>)> = sqlx::query_as(
+        "SELECT r.transaction_id, r.handle, p.dependence_chain_id
+         FROM unnest($1::bytea[], $2::bytea[], $3::bigint[])
+              AS r(transaction_id, handle, log_index)
+         CROSS JOIN LATERAL (
+             SELECT c.dependence_chain_id
+             FROM computations c
+             WHERE c.output_handle = r.handle AND c.host_chain_id = $4
+               AND c.is_allowed AND NOT c.is_error
+               AND c.dependence_chain_id IS NOT NULL
+               AND c.transaction_id <> r.transaction_id
+               AND (c.block_number < $5
+                    OR (c.block_number = $5 AND c.log_index_block_hash = $6
+                        AND c.log_index < r.log_index))
+             ORDER BY c.is_completed, c.schedule_order, c.transaction_id
+             LIMIT 1
+         ) p",
+    )
+    .bind(transactions)
+    .bind(handles)
+    .bind(indexes)
+    .bind(chain_id.as_i64())
+    .bind(block_number)
+    .bind(logs[0].block_hash.as_slice())
+    .fetch_all(&mut **tx)
+    .await?;
+
+    let fixed_hash = |bytes: Vec<u8>| {
+        <[u8; 32]>::try_from(bytes.as_slice())
+            .map(ChainHash::from)
+            .map_err(|_| {
+                sqlx::Error::Protocol(
+                    "malformed persisted dependency identity".into(),
+                )
+            })
+    };
+    rows.into_iter()
+        .map(|(transaction, handle, chain)| {
+            Ok((
+                (fixed_hash(transaction)?, fixed_hash(handle)?),
+                fixed_hash(chain)?,
+            ))
+        })
+        .collect()
 }
 
 fn propagate_slow_lane_to_dependents(
@@ -455,6 +839,34 @@ pub async fn ingest_block_logs(
     confidential_bridge_address: &Option<Address>,
     options: IngestOptions,
 ) -> Result<IngestResult, sqlx::Error> {
+    ingest_block_logs_with_executor_schedule(
+        chain_id,
+        db,
+        block_logs,
+        acl_contract_address,
+        tfhe_contract_address,
+        kms_generation_contract_address,
+        protocol_config_contract_address,
+        confidential_bridge_address,
+        options,
+        ExecutorVersionSchedule::default(),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn ingest_block_logs_with_executor_schedule(
+    chain_id: ChainId,
+    db: &mut Database,
+    block_logs: &BlockLogs<Log>,
+    acl_contract_address: &Option<Address>,
+    tfhe_contract_address: &Option<Address>,
+    kms_generation_contract_address: &Option<Address>,
+    protocol_config_contract_address: &Option<Address>,
+    confidential_bridge_address: &Option<Address>,
+    options: IngestOptions,
+    executor_version_schedule: ExecutorVersionSchedule,
+) -> Result<IngestResult, sqlx::Error> {
     let Some(mut tx) = db.new_transaction().await? else {
         info!("cutover completed — host-listener skipping block ingest (retired stack)");
         return Ok(IngestResult::Complete);
@@ -467,8 +879,11 @@ pub async fn ingest_block_logs(
     for log in &block_logs.logs {
         let address = Some(log.inner.address);
         if acl_contract_address.is_none() || &address == acl_contract_address {
-            if let Ok(event) =
-                AclContract::AclContractEvents::decode_log(&log.inner)
+            if let DecodedEvent::Decoded(event) =
+                classify::<AclContract::AclContractEvents>(
+                    &log.inner,
+                    AclContract::AclContractEvents::SELECTORS,
+                )
             {
                 touched_handles.extend(
                     acl_result_handles(&event).into_iter().map(|h| h.to_vec()),
@@ -477,8 +892,11 @@ pub async fn ingest_block_logs(
         }
         if tfhe_contract_address.is_none() || &address == tfhe_contract_address
         {
-            if let Ok(event) =
-                TfheContract::TfheContractEvents::decode_log(&log.inner)
+            if let DecodedEvent::Decoded(event) =
+                classify::<TfheContract::TfheContractEvents>(
+                    &log.inner,
+                    TfheContract::TfheContractEvents::SELECTORS,
+                )
             {
                 touched_handles.extend(
                     tfhe_result_handles(&event).into_iter().map(|h| h.to_vec()),
@@ -723,10 +1141,19 @@ pub async fn ingest_block_logs(
                 TfheContract::TfheContractEvents::SELECTORS,
             ) {
                 DecodedEvent::Decoded(event) => {
-                    validate_tfhe_event(&event.data, chain_id.as_u64())
-                        .map_err(|reason| {
-                            sqlx::Error::Protocol(reason.into())
-                        })?;
+                    let executor_version = log.log_index.map_or_else(
+                        || executor_version_schedule.ending_version(),
+                        |log_index| {
+                            executor_version_schedule
+                                .version_for_log_index(log_index)
+                        },
+                    );
+                    validate_tfhe_event_for_version(
+                        &event.data,
+                        chain_id.as_u64(),
+                        executor_version,
+                    )
+                    .map_err(|reason| sqlx::Error::Protocol(reason.into()))?;
                     // Old handles did not commit operand origin. Recognize
                     // their exact preimage, not a guessed activation height.
                     // Wildcard development configurations without an ACL
@@ -773,13 +1200,35 @@ pub async fn ingest_block_logs(
         let is_kms_gen_address =
             &current_address == kms_generation_contract_address;
         if is_kms_gen_address {
-            if let Ok(event) =
-                KMSGeneration::KMSGenerationEvents::decode_log(&log.inner)
-            {
-                kms_gen_events.push((event.data, log.clone()));
-                continue;
-            } else {
-                KMS_EVENT_DECODE_FAIL_COUNTER.inc()
+            match classify::<KMSGeneration::KMSGenerationEvents>(
+                &log.inner,
+                KMSGeneration::KMSGenerationEvents::SELECTORS,
+            ) {
+                DecodedEvent::Decoded(event) => {
+                    kms_gen_events.push((event.data, log.clone()));
+                    continue;
+                }
+                DecodedEvent::MalformedKnown => {
+                    KMS_EVENT_DECODE_FAIL_COUNTER.inc();
+                    let is_activation = log
+                        .inner
+                        .data
+                        .topics()
+                        .first()
+                        .is_some_and(|topic| {
+                            topic.0
+                                == KMSGeneration::ActivateKey::SIGNATURE_HASH.0
+                                || topic.0
+                                    == KMSGeneration::ActivateCrs::SIGNATURE_HASH.0
+                        });
+                    if is_activation {
+                        return Err(sqlx::Error::Protocol(
+                            "malformed known KMS activation event envelope"
+                                .into(),
+                        ));
+                    }
+                }
+                DecodedEvent::Unknown => KMS_EVENT_DECODE_FAIL_COUNTER.inc(),
             }
         }
 
@@ -1014,19 +1463,42 @@ pub async fn ingest_block_logs(
     // boundary mask is consensus-critical execution metadata, so ordering or
     // provenance gaps are fatal for this block instead of falling back to
     // database-local inference.
-    populate_operand_boundary_masks(&mut tfhe_event_log)?;
+    let prior_minted =
+        persisted_prior_minted_outputs(&mut tx, chain_id, &tfhe_event_log)
+            .await?;
+    populate_operand_boundary_masks_with_prior(
+        &mut tfhe_event_log,
+        &prior_minted,
+    )?;
 
     // Publish only committed producer identities. Rolled-back grouping must
     // not assign later consumers to chains that were never stored.
     let private_cache =
         Arc::new(RwLock::new(db.dependence_chain.read().await.clone()));
-    let chains = dependence_chains(
+    let boundary_chains = if options.dependence_cross_block {
+        persisted_boundary_chains(
+            &mut tx,
+            chain_id,
+            &tfhe_event_log,
+            &private_cache,
+            &prior_minted,
+        )
+        .await?
+    } else {
+        HashMap::new()
+    };
+    let prior = PersistedDependencies {
+        minted: prior_minted,
+        boundary_chains,
+    };
+    let chains = dependence_chains_with_prior(
         &mut tfhe_event_log,
         &private_cache,
         &db.consumed_boundaries,
         &db.sealed_chains,
         options.dependence_by_connexity,
         options.dependence_cross_block,
+        &prior,
     )
     .await;
 
@@ -1041,8 +1513,9 @@ pub async fn ingest_block_logs(
     let slow_lane_enabled = options.dependent_ops_max_per_chain > 0;
     let mut dependent_ops_by_chain: HashMap<ChainHash, u64> = HashMap::new();
     let mut counted_outputs = HashSet::new();
-    for tfhe_log in tfhe_event_log {
-        let inserted = match db.insert_tfhe_event(&mut tx, &tfhe_log).await {
+    let mut replayed_computation = false;
+    for tfhe_log in &tfhe_event_log {
+        let inserted = match db.insert_tfhe_event(&mut tx, tfhe_log).await {
             Err(sqlx::Error::Protocol(reason))
                 if reason == REPLAY_METADATA_CONFLICT =>
             {
@@ -1065,6 +1538,8 @@ pub async fn ingest_block_logs(
             result => result?,
         };
         at_least_one_insertion |= inserted;
+        replayed_computation |=
+            !inserted && !tfhe_result_handles(&tfhe_log.event).is_empty();
         // Count all newly inserted ops per chain to avoid underestimating
         // pressure from producer paths that are required by downstream work.
         if slow_lane_enabled && inserted {
@@ -1130,6 +1605,11 @@ pub async fn ingest_block_logs(
         .filter_map(|(_, chain)| chain.clone())
         .collect::<Vec<_>>();
     at_least_one_insertion |= !upgraded.is_empty();
+    // ACL-only replay can reactivate previously persisted outputs even when
+    // this delivery did not observe a duplicate computation insertion. It is
+    // still a replay for dependency reconstruction: the child may have been
+    // stored with its ACL absent and therefore incomplete gate accounting.
+    let replay_repair = replayed_computation || !upgraded.is_empty();
     if slow_lane_enabled {
         for (handle, stored_chain) in &upgraded {
             // Recording a missing producer inventory entry can already have
@@ -1229,13 +1709,45 @@ pub async fn ingest_block_logs(
         allow_event_count,
     )
     .await?;
+    if executor_version_schedule.is_resolved() {
+        if let Some(tfhe_address) = tfhe_contract_address {
+            let version =
+                executor_version_schedule.ending_version().map(|version| {
+                    format!(
+                        "FHEVMExecutor v{}.{}.{}",
+                        version.major, version.minor, version.patch
+                    )
+                });
+            sqlx::query(
+                "UPDATE host_chain_blocks_valid \
+                 SET tfhe_executor_address = $1, tfhe_executor_version = $2 \
+                 WHERE chain_id = $3 AND block_number = $4 AND block_hash = $5",
+            )
+            .bind(tfhe_address.as_slice())
+            .bind(version)
+            .bind(chain_id.as_i64())
+            .bind(block_number as i64)
+            .bind(block_hash.as_slice())
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
     // A replay's inferred grouping can differ from the persisted computation's
     // chain. Order the union before taking any chain row locks: two separately
     // sorted passes can still deadlock (inferred B -> stored A vs A -> B).
     // Write missing rows in this order too; SELECT FOR UPDATE alone misses them.
     let mut chain_updates = BTreeMap::new();
     if at_least_one_insertion {
-        for chain in chains {
+        for mut chain in chains {
+            if replay_repair {
+                // Stored computation IDs survive replay even when a repaired
+                // ACL grant changes the inferred grouping. Reconstruct gates
+                // below from those IDs; inferred edges could otherwise adopt
+                // a different child or add an uncounted release decrement.
+                // Keep outer-boundary gating on its existing cache/retry path.
+                chain.dependencies.clear();
+                chain.dependents.clear();
+            }
             chain_updates.insert(chain.hash.to_vec(), (Some(chain), None));
         }
     }
@@ -1281,6 +1793,17 @@ pub async fn ingest_block_logs(
             count = repaired,
             "Pending computation dependence chains re-armed"
         );
+    }
+    if replay_repair {
+        let gates = db
+            .repair_replayed_dependency_gates(&mut tx, &tfhe_event_log)
+            .await?;
+        if gates > 0 {
+            warn!(
+                count = gates,
+                "Persisted computation dependency gates repaired"
+            );
+        }
     }
     let cache_updates = if options.dependence_cross_block {
         db.computation_chain_cache_entries(&mut tx, &touched_handles)
@@ -1618,48 +2141,74 @@ async fn handle_protocol_config_log(
     chain_id: ChainId,
     log: &Log,
 ) -> Result<(), sqlx::Error> {
-    match ProtocolConfig::ProtocolConfigEvents::decode_log(&log.inner) {
-        Ok(event) => match &event.data {
-            ProtocolConfig::ProtocolConfigEvents::CoprocessorUpgradeProposed(proposed) => {
-                let Some(proposal_block) =
-                    log.block_number.and_then(|b| i64::try_from(b).ok())
-                else {
-                    warn!(
-                        proposal_id = %proposed.proposalId,
-                        "Ignoring CoprocessorUpgradeProposed without a valid block number"
-                    );
-                    return Ok(());
-                };
-                if log.log_index.is_none() {
-                    warn!(
-                        proposal_id = %proposed.proposalId,
-                        proposal_block,
-                        "Ignoring CoprocessorUpgradeProposed without a log index"
-                    );
-                    return Ok(());
-                }
-                notify_coprocessor_upgrade_proposed(
-                    tx,
-                    chain_id,
-                    proposed,
-                    proposal_block,
-                )
-                .await?;
+    let event = match classify::<ProtocolConfig::ProtocolConfigEvents>(
+        &log.inner,
+        ProtocolConfig::ProtocolConfigEvents::SELECTORS,
+    ) {
+        DecodedEvent::Decoded(event) => event,
+        DecodedEvent::MalformedKnown => {
+            PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+            let is_upgrade_proposal = log
+                .inner
+                .data
+                .topics()
+                .first()
+                .is_some_and(|topic| {
+                    topic.0
+                        == ProtocolConfig::CoprocessorUpgradeProposed::SIGNATURE_HASH.0
+                });
+            if is_upgrade_proposal {
+                return Err(sqlx::Error::Protocol(
+                    "malformed known ProtocolConfig upgrade proposal envelope"
+                        .into(),
+                ));
             }
-            _ => {
-                // ProtocolConfigEvents has no Debug impl; topic0 identifies
-                // the unhandled variant.
+            return Ok(());
+        }
+        DecodedEvent::Unknown => {
+            PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+            return Ok(());
+        }
+    };
+    match &event.data {
+        ProtocolConfig::ProtocolConfigEvents::CoprocessorUpgradeProposed(
+            proposed,
+        ) => {
+            let Some(proposal_block) =
+                log.block_number.and_then(|b| i64::try_from(b).ok())
+            else {
                 warn!(
-                    topic0 = ?log.topic0(),
-                    block_number = ?log.block_number,
-                    tx_hash = ?log.transaction_hash,
-                    log_index = ?log.log_index,
-                    "ProtocolConfig event decoded but no handler matched — likely a new variant added without updating host-listener",
+                    proposal_id = %proposed.proposalId,
+                    "Ignoring CoprocessorUpgradeProposed without a valid block number"
                 );
-                PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
+                return Ok(());
+            };
+            if log.log_index.is_none() {
+                warn!(
+                    proposal_id = %proposed.proposalId,
+                    proposal_block,
+                    "Ignoring CoprocessorUpgradeProposed without a log index"
+                );
+                return Ok(());
             }
-        },
-        Err(_) => {
+            notify_coprocessor_upgrade_proposed(
+                tx,
+                chain_id,
+                proposed,
+                proposal_block,
+            )
+            .await?;
+        }
+        _ => {
+            // ProtocolConfigEvents has no Debug impl; topic0 identifies
+            // the unhandled variant.
+            warn!(
+                topic0 = ?log.topic0(),
+                block_number = ?log.block_number,
+                tx_hash = ?log.transaction_hash,
+                log_index = ?log.log_index,
+                "ProtocolConfig event decoded but no handler matched — likely a new variant added without updating host-listener",
+            );
             PROTOCOL_CONFIG_EVENT_DECODE_FAIL_COUNTER.inc();
         }
     }
@@ -2564,9 +3113,135 @@ mod tests {
     use crate::contracts::TfheContract;
     use crate::contracts::TfheContract::TfheContractEvents;
     use crate::database::tfhe_event_propagate::ClearConst;
-    use alloy::primitives::{Address, FixedBytes};
+    use alloy::primitives::{Address, FixedBytes, U256};
 
     use super::*;
+
+    #[test]
+    fn ingestion_preserves_legacy_scalar_values_and_versions_typed_zero() {
+        let mut result = [0_u8; 32];
+        result[21] = COMPUTED_HANDLE_INDEX_MARKER;
+        result[22..30].copy_from_slice(&1_u64.to_be_bytes());
+        result[30] = 2;
+        result[31] = HANDLE_VERSION;
+        let make_event = |result, pt| {
+            TfheContractEvents::TrivialEncrypt(TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt,
+                toType: 2,
+                result: FixedBytes(result),
+            })
+        };
+        assert_eq!(
+            validate_tfhe_event(&make_event(result, U256::from(255)), 1),
+            Ok(())
+        );
+
+        assert_eq!(
+            validate_tfhe_event(&make_event(result, U256::from(256)), 1),
+            Ok(()),
+            "legacy trivial-encryption values outside the current type range remain replayable"
+        );
+
+        result[30] = 3;
+        let event = make_event(result, U256::ZERO);
+        assert_eq!(
+            validate_tfhe_event(&event, 1),
+            Err("event result type disagrees with operation metadata")
+        );
+
+        result[30] = 2;
+        let mut lhs = [0_u8; 32];
+        lhs[30] = 2;
+        lhs[31] = HANDLE_VERSION;
+        let division_event = |rhs: U256| {
+            TfheContractEvents::FheDiv(TfheContract::FheDiv {
+                caller: Address::ZERO,
+                lhs: FixedBytes(lhs),
+                rhs: FixedBytes(rhs.to_be_bytes::<32>()),
+                scalarByte: FixedBytes([1]),
+                result: FixedBytes(result),
+            })
+        };
+        for version in [None, Some(ExecutorVersion::new(0, 2, 0))] {
+            assert_eq!(
+                validate_tfhe_event_for_version(
+                    &division_event(U256::from(256)),
+                    1,
+                    version
+                ),
+                Ok(())
+            );
+            assert_eq!(
+                validate_tfhe_event_for_version(
+                    &division_event(U256::ZERO),
+                    1,
+                    version
+                ),
+                Err("division/remainder scalar divisor is zero")
+            );
+        }
+        for version in
+            [ExecutorVersion::new(0, 3, 0), ExecutorVersion::new(0, 7, 0)]
+        {
+            assert_eq!(
+                validate_tfhe_event_for_version(
+                    &division_event(U256::from(256)),
+                    1,
+                    Some(version)
+                ),
+                Err(
+                    "division/remainder scalar divisor is zero for its FheType"
+                )
+            );
+        }
+        let TfheContractEvents::FheDiv(div) = division_event(U256::from(256))
+        else {
+            unreachable!()
+        };
+        let rem = TfheContractEvents::FheRem(TfheContract::FheRem {
+            caller: div.caller,
+            lhs: div.lhs,
+            rhs: div.rhs,
+            scalarByte: div.scalarByte,
+            result: div.result,
+        });
+        assert!(validate_tfhe_event_for_version(
+            &rem,
+            1,
+            Some(ExecutorVersion::new(0, 2, 0))
+        )
+        .is_ok());
+        assert!(validate_tfhe_event_for_version(
+            &rem,
+            1,
+            Some(ExecutorVersion::new(0, 3, 0))
+        )
+        .is_err());
+        assert_eq!(
+            validate_tfhe_event(&division_event(U256::from(257)), 1),
+            Ok(())
+        );
+
+        let mul_div_event = |divisor: U256| {
+            TfheContractEvents::FheMulDiv(TfheContract::FheMulDiv {
+                caller: Address::ZERO,
+                factor1: FixedBytes(lhs),
+                factor2: FixedBytes(U256::from(256).to_be_bytes::<32>()),
+                divisor: FixedBytes(divisor.to_be_bytes::<32>()),
+                scalarByte: FixedBytes([3]),
+                result: FixedBytes(result),
+            })
+        };
+        assert_eq!(
+            validate_tfhe_event(&mul_div_event(U256::from(256)), 1),
+            Err("MulDiv divisor is zero for its FheType")
+        );
+        assert_eq!(
+            validate_tfhe_event(&mul_div_event(U256::from(257)), 1),
+            Ok(())
+        );
+    }
 
     fn fixture_chain(hash: u8, dependencies: &[u8]) -> Chain {
         Chain {
@@ -3595,5 +4270,149 @@ mod tests {
             assert!(logs_contain(message));
             assert!(logs_contain("host_chain_id=2"));
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn executor_upgrade_boundary_controls_scalar_admission_atomically() {
+        use test_harness::instance::{setup_test_db, ImportMode};
+
+        let instance = setup_test_db(ImportMode::None).await.expect("test db");
+        let chain_id = ChainId::try_from(42_u64).expect("chain id");
+        let proxy = Address::with_last_byte(0x42);
+        let summary = BlockSummary {
+            number: 100,
+            hash: FixedBytes::with_last_byte(0x64),
+            parent_hash: FixedBytes::with_last_byte(0x63),
+            timestamp: 1_790_000_000,
+        };
+        let block_hash = summary.hash;
+        let make_log = |result_id: u8, pt: u64, log_index: u64| {
+            let mut handle = [0_u8; 32];
+            handle[0] = result_id;
+            handle[21] = COMPUTED_HANDLE_INDEX_MARKER;
+            handle[22..30].copy_from_slice(&42_u64.to_be_bytes());
+            handle[30] = 2;
+            handle[31] = HANDLE_VERSION;
+            let event = TfheContract::TrivialEncrypt {
+                caller: Address::ZERO,
+                pt: U256::from(pt),
+                toType: 2,
+                result: FixedBytes(handle),
+            };
+            Log {
+                inner: alloy::primitives::Log {
+                    address: proxy,
+                    data: event.encode_log_data(),
+                },
+                block_number: Some(summary.number),
+                block_hash: Some(block_hash),
+                block_timestamp: Some(summary.timestamp),
+                transaction_hash: Some(FixedBytes::with_last_byte(0x90)),
+                transaction_index: Some(0),
+                log_index: Some(log_index),
+                removed: false,
+            }
+        };
+        let make_schedule = || {
+            let mut schedule = ExecutorVersionSchedule::new(Some(
+                ExecutorVersion::new(0, 4, 0),
+            ));
+            schedule.add_transition(1, Some(ExecutorVersion::new(0, 5, 0)));
+            schedule
+        };
+        let options = IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 0,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        };
+        let acl = None;
+        let kms = None;
+        let protocol = None;
+        let bridge = None;
+        let mut db = Database::new(&instance.db_url, chain_id, 16)
+            .await
+            .expect("database client");
+
+        let invalid_logs = vec![
+            // The upgrade is effective strictly after log index 1. This
+            // event remains v0.4 and is therefore valid despite the v0.5
+            // uint8 range check.
+            make_log(1, 256, 1),
+            // This event is after the upgrade and must fail the v0.5 bound.
+            make_log(2, 256, 2),
+        ];
+        let error = ingest_block_logs_with_executor_schedule(
+            chain_id,
+            &mut db,
+            &BlockLogs {
+                logs: invalid_logs,
+                summary,
+                catchup: false,
+                finalized: true,
+            },
+            &acl,
+            &Some(proxy),
+            &kms,
+            &protocol,
+            &bridge,
+            options.clone(),
+            make_schedule(),
+        )
+        .await
+        .expect_err("post-upgrade out-of-range value must be rejected");
+        assert!(error.to_string().contains("trivial-encryption value"));
+
+        let pool = db.pool().await;
+        let rolled_back_rows: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM host_chain_blocks_valid \
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(block_hash.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("query rollback state");
+        assert_eq!(
+            rolled_back_rows, 0,
+            "rejected block must roll back atomically"
+        );
+
+        let valid_logs = vec![make_log(1, 256, 1), make_log(2, 255, 2)];
+        ingest_block_logs_with_executor_schedule(
+            chain_id,
+            &mut db,
+            &BlockLogs {
+                logs: valid_logs,
+                summary,
+                catchup: false,
+                finalized: true,
+            },
+            &acl,
+            &Some(proxy),
+            &kms,
+            &protocol,
+            &bridge,
+            options,
+            make_schedule(),
+        )
+        .await
+        .expect("valid retry")
+        .require_complete()
+        .expect("valid retry must complete");
+
+        let counts: (i32, Option<String>) = sqlx::query_as(
+            "SELECT fhe_event_count, tfhe_executor_version \
+             FROM host_chain_blocks_valid \
+             WHERE chain_id = $1 AND block_hash = $2",
+        )
+        .bind(chain_id.as_i64())
+        .bind(block_hash.as_slice())
+        .fetch_one(&pool)
+        .await
+        .expect("persisted accepted block");
+        assert_eq!(counts.0, 2);
+        assert_eq!(counts.1.as_deref(), Some("FHEVMExecutor v0.5.0"));
     }
 }

@@ -10,10 +10,11 @@
 # Topology per party i (all wired at deploy time in preview-env-deploy.yml):
 #   listener-<i>  --(publishes)-->  coprocessor-redis-<i>  --(consumed by)-->  coprocessor-<i> host-listener-consumer
 #
-# The listener is a GENERIC EVM indexer: it takes NO FHEVM contract addresses
-# (chain_id + RPC + broker + its own cursor DB only). Event decoding/filtering
-# by ACL/executor/kms-generation address happens downstream in the consumer,
-# which already has those addresses via its chain config.
+# The listener remains a generic EVM indexer and does not filter transaction
+# events by FHEVM address. Its publisher does need the host FHEVMExecutor proxy
+# to attach block-scoped executor-version metadata; the host consumer validates
+# that metadata against its configured proxy. Event filtering by ACL,
+# executor, and KMS-generation address remains downstream in the consumer.
 #
 # Deployed as (per party i):
 #   helm upgrade --install listener-<i> \
@@ -70,6 +71,12 @@ env:
 # broker/DB differ per party (set via env above).
 listeners:
   - name: host
+    env:
+      - name: APP_BLOCKCHAIN__STRATEGY__PUBLISH__TFHE_EXECUTOR_PROXY_ADDRESS
+        valueFrom:
+          configMapKeyRef:
+            name: host-sc-addresses
+            key: fhevm_executor.address
     config:
       broker:
         # Publish indexed events to the broker (this is the producer half of the

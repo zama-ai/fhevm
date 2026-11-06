@@ -101,6 +101,15 @@ blockchain:
     compute_block: false
 ```
 
+For strict version-aware scalar admission in a broker-fed host listener, also
+set `blockchain.strategy.publish.tfhe_executor_proxy_address` to that chain's
+deployed FHEVMExecutor proxy. It can be provided through
+`APP_BLOCKCHAIN__STRATEGY__PUBLISH__TFHE_EXECUTOR_PROXY_ADDRESS`. The publisher
+then attaches version metadata bound to the canonical block and parent hashes;
+the host listener uses it only when it matches its configured executor proxy.
+Leave it unset to omit the optional field and retain legacy-compatible checks.
+Older publishers and unknown executor versions remain compatible.
+
 ## Docker Build
 
 Multi-stage distroless image. Database migrations are bundled.

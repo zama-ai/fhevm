@@ -1457,6 +1457,7 @@ mod tests {
             transactions: vec![],
             catchup_id: None,
             last_in_catchup: false,
+            executor_version: None,
         };
         for _ in 1..=2 {
             publisher
@@ -1514,6 +1515,7 @@ mod tests {
             transactions: vec![],
             catchup_id: None,
             last_in_catchup: false,
+            executor_version: None,
         };
         for _ in 1..=2 {
             publisher

@@ -5,22 +5,34 @@ use alloy::consensus::Transaction as _;
 use alloy::network::AnyTransactionReceipt;
 use alloy::primitives::Address;
 use alloy::rpc::types::BlockTransactions;
+use alloy::sol;
+use alloy::sol_types::SolEvent;
 use broker::{Broker, Publisher, Topic};
 use thiserror::Error;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
-use primitives::event::{BlockFlow, BlockPayload, IndexedLog, TransactionPayload};
+use primitives::event::{
+    BlockFlow, BlockPayload, ExecutorVersionMetadata, ExecutorVersionTransitionMetadata,
+    IndexedLog, TransactionPayload,
+};
 use primitives::routing::{
     consumer_catchup_event_routing, consumer_final_catchup_event_routing,
     consumer_final_event_routing, consumer_new_event_routing,
 };
 
 use crate::blockchain::evm::evm_block_fetcher::FetchedBlock;
+use crate::blockchain::evm::sem_evm_rpc_provider::SemEvmRpcProvider;
 use crate::config::PublishConfig;
 use crate::store::models::Filter;
 use crate::store::repositories::Repositories;
+
+sol! {
+    interface FhevmExecutorUpgradeAbi {
+        event Upgraded(address indexed implementation);
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum PublisherError {
@@ -283,6 +295,28 @@ impl FilterIndex {
         catchup_id: Option<Uuid>,
         last_in_catchup: bool,
     ) -> Result<Vec<(String, BlockPayload)>, PublisherError> {
+        self.build_block_payloads_with_executor_version(
+            fetched_block,
+            chain_id,
+            flow,
+            catchup_id,
+            last_in_catchup,
+            None,
+        )
+    }
+
+    /// Build block payloads carrying the same block-global executor version
+    /// schedule for every consumer, including consumers whose transaction
+    /// filters omit the proxy's `Upgraded` event.
+    pub fn build_block_payloads_with_executor_version(
+        &self,
+        fetched_block: &FetchedBlock,
+        chain_id: u64,
+        flow: BlockFlow,
+        catchup_id: Option<Uuid>,
+        last_in_catchup: bool,
+        executor_version: Option<ExecutorVersionMetadata>,
+    ) -> Result<Vec<(String, BlockPayload)>, PublisherError> {
         let block = &fetched_block.block;
         let block_number = block.header.number;
         let block_hash = block.header.hash;
@@ -362,11 +396,112 @@ impl FilterIndex {
                         transactions,
                         catchup_id,
                         last_in_catchup,
+                        executor_version: executor_version.clone(),
                     },
                 )
             })
             .collect())
     }
+}
+
+/// Resolve a block-scoped executor schedule for broker payloads. RPC failures
+/// leave the affected version unknown and do not block otherwise valid block
+/// delivery; the host listener then uses its history-compatible checks for
+/// those events.
+async fn resolve_executor_version_metadata(
+    provider: &SemEvmRpcProvider,
+    fetched_block: &FetchedBlock,
+    proxy: Option<Address>,
+) -> Option<ExecutorVersionMetadata> {
+    let proxy = proxy?;
+    let block_hash = fetched_block.block.header.hash;
+    let parent_hash = fetched_block.block.header.parent_hash;
+    let initial_version = match provider
+        .get_executor_version_at_hash(proxy, parent_hash)
+        .await
+    {
+        Ok(version) => Some(version),
+        Err(error) => {
+            warn!(
+                block_number = fetched_block.block.header.number,
+                %proxy,
+                %parent_hash,
+                %error,
+                "Could not resolve executor version at canonical parent; preserving permissive admission"
+            );
+            None
+        }
+    };
+
+    let mut upgrades = Vec::new();
+    let mut malformed_upgrade = false;
+    for log in fetched_block
+        .receipts_ordered()
+        .into_iter()
+        .flat_map(|receipt| receipt.inner.logs())
+    {
+        if log.address() != proxy
+            || log.topics().first() != Some(&FhevmExecutorUpgradeAbi::Upgraded::SIGNATURE_HASH)
+        {
+            continue;
+        }
+        let Some(log_index) = log.log_index else {
+            malformed_upgrade = true;
+            continue;
+        };
+        match FhevmExecutorUpgradeAbi::Upgraded::decode_log(&log.inner) {
+            Ok(event) => upgrades.push((log_index, event.data.implementation)),
+            Err(_) => malformed_upgrade = true,
+        }
+    }
+    if malformed_upgrade {
+        warn!(
+            block_number = fetched_block.block.header.number,
+            %proxy,
+            "Malformed FHEVMExecutor Upgraded log; leaving this block's executor version unknown"
+        );
+        return Some(ExecutorVersionMetadata {
+            proxy_address: proxy,
+            block_hash,
+            parent_hash,
+            initial_version: None,
+            transitions: Vec::new(),
+        });
+    }
+    upgrades.sort_by_key(|(log_index, _)| *log_index);
+
+    let mut transitions = Vec::with_capacity(upgrades.len());
+    for (after_log_index, implementation) in upgrades {
+        let version = match provider
+            .get_executor_version_at_hash(implementation, block_hash)
+            .await
+        {
+            Ok(version) => Some(version),
+            Err(error) => {
+                warn!(
+                    block_number = fetched_block.block.header.number,
+                    after_log_index,
+                    %implementation,
+                    %block_hash,
+                    %error,
+                    "Could not resolve upgraded executor version; preserving permissive admission after transition"
+                );
+                None
+            }
+        };
+        transitions.push(ExecutorVersionTransitionMetadata {
+            after_log_index,
+            version,
+        });
+    }
+
+    Some(ExecutorVersionMetadata {
+        proxy_address: proxy,
+        block_hash,
+        parent_hash,
+        initial_version,
+        transitions,
+    })
 }
 
 /// Build IndexedLog entries from a transaction receipt.
@@ -411,12 +546,13 @@ pub struct CatchupTarget<'a> {
 pub async fn publish_block_events(
     repositories: &Repositories,
     fetched_block: &FetchedBlock,
-    chain_id: u64,
+    provider: &SemEvmRpcProvider,
     flow: BlockFlow,
     broker: &Broker,
     event_publisher: &Publisher,
     publish_config: &PublishConfig,
 ) -> Result<(), PublisherError> {
+    let chain_id = repositories.chain_id() as u64;
     // 1. Fetch filters — propagate DB errors to caller for handler-level retry.
     let filters = repositories
         .filters
@@ -459,7 +595,20 @@ pub async fn publish_block_events(
 
     // 3. Match transactions and build per-consumer payloads.
     //    PayloadBuildError propagated to caller — data may be stale, re-fetch can self-heal.
-    let payloads = filter_index.build_block_payloads(fetched_block, chain_id, flow, None, false)?;
+    let executor_version = resolve_executor_version_metadata(
+        provider,
+        fetched_block,
+        publish_config.tfhe_executor_proxy_address,
+    )
+    .await;
+    let payloads = filter_index.build_block_payloads_with_executor_version(
+        fetched_block,
+        chain_id,
+        flow,
+        None,
+        false,
+        executor_version,
+    )?;
 
     // 4. For each consumer: verify queue exists, then publish.
     //    Per-consumer retry/stale semantics live in `publish_payload_to_consumer`.
@@ -495,11 +644,12 @@ pub async fn publish_block_events(
 pub async fn publish_final_block_events(
     repositories: &Repositories,
     fetched_block: &FetchedBlock,
-    chain_id: u64,
+    provider: &SemEvmRpcProvider,
     broker: &Broker,
     event_publisher: &Publisher,
     publish_config: &PublishConfig,
 ) -> Result<(), PublisherError> {
+    let chain_id = repositories.chain_id() as u64;
     // 1. Fetch FINAL filters — propagate DB errors to caller for handler-level retry.
     let filters = repositories
         .filters
@@ -521,12 +671,19 @@ pub async fn publish_final_block_events(
 
     // 3. Match transactions and build per-consumer payloads.
     //    PayloadBuildError propagated to caller — data may be stale, re-fetch can self-heal.
-    let payloads = filter_index.build_block_payloads(
+    let executor_version = resolve_executor_version_metadata(
+        provider,
+        fetched_block,
+        publish_config.tfhe_executor_proxy_address,
+    )
+    .await;
+    let payloads = filter_index.build_block_payloads_with_executor_version(
         fetched_block,
         chain_id,
         BlockFlow::Final,
         None,
         false,
+        executor_version,
     )?;
 
     // 4. For each consumer: verify queue exists, then publish.
@@ -560,12 +717,13 @@ pub async fn publish_final_block_events(
 pub async fn publish_catchup_block_events(
     repositories: &Repositories,
     fetched_block: &FetchedBlock,
-    chain_id: u64,
+    provider: &SemEvmRpcProvider,
     target: CatchupTarget<'_>,
     broker: &Broker,
     event_publisher: &Publisher,
     publish_config: &PublishConfig,
 ) -> Result<(), PublisherError> {
+    let chain_id = repositories.chain_id() as u64;
     let CatchupTarget {
         consumer_id,
         catchup_id,
@@ -590,12 +748,19 @@ pub async fn publish_catchup_block_events(
 
     // 2. Build a narrowly-scoped index + payload (same helpers as the live path).
     let filter_index = FilterIndex::from_filters(filters);
-    let payloads = filter_index.build_block_payloads(
+    let executor_version = resolve_executor_version_metadata(
+        provider,
+        fetched_block,
+        publish_config.tfhe_executor_proxy_address,
+    )
+    .await;
+    let payloads = filter_index.build_block_payloads_with_executor_version(
         fetched_block,
         chain_id,
         BlockFlow::Catchup,
         catchup_id,
         last_in_catchup,
+        executor_version,
     )?;
 
     // 3. Publish the target consumer's payload (if any) to catchup-event.
@@ -646,12 +811,13 @@ pub async fn publish_catchup_block_events(
 pub async fn publish_final_catchup_block_events(
     repositories: &Repositories,
     fetched_block: &FetchedBlock,
-    chain_id: u64,
+    provider: &SemEvmRpcProvider,
     target: CatchupTarget<'_>,
     broker: &Broker,
     event_publisher: &Publisher,
     publish_config: &PublishConfig,
 ) -> Result<(), PublisherError> {
+    let chain_id = repositories.chain_id() as u64;
     let CatchupTarget {
         consumer_id,
         catchup_id,
@@ -676,12 +842,19 @@ pub async fn publish_final_catchup_block_events(
 
     // 2. Build a narrowly-scoped index + payload (same helpers as the live path).
     let filter_index = FilterIndex::from_filters(filters);
-    let payloads = filter_index.build_block_payloads(
+    let executor_version = resolve_executor_version_metadata(
+        provider,
+        fetched_block,
+        publish_config.tfhe_executor_proxy_address,
+    )
+    .await;
+    let payloads = filter_index.build_block_payloads_with_executor_version(
         fetched_block,
         chain_id,
         BlockFlow::FinalCatchup,
         catchup_id,
         last_in_catchup,
+        executor_version,
     )?;
 
     // 3. Publish the target consumer's payload (if any) to final-catchup-event.
@@ -1346,6 +1519,43 @@ mod tests {
 
             assert!(payload.last_in_catchup, "flow {flow:?} must carry the flag");
             assert_eq!(payload.catchup_id, Some(catchup_id));
+        }
+    }
+
+    #[test]
+    fn versioned_catchup_preserves_request_identity_and_completion() {
+        let index = FilterIndex::from_filters(vec![make_filter("consumer_a", None, None, None)]);
+        let fetched = empty_fetched_block();
+        let catchup_id = Uuid::new_v4();
+        let version = ExecutorVersionMetadata {
+            proxy_address: ADDR_1.parse().unwrap(),
+            block_hash: fetched.block.header.hash,
+            parent_hash: fetched.block.header.parent_hash,
+            initial_version: Some("FHEVMExecutor v0.5.0".into()),
+            transitions: vec![ExecutorVersionTransitionMetadata {
+                after_log_index: 5,
+                version: Some("FHEVMExecutor v0.6.0".into()),
+            }],
+        };
+        for flow in [BlockFlow::Catchup, BlockFlow::FinalCatchup] {
+            let payload = only_payload(
+                index
+                    .build_block_payloads_with_executor_version(
+                        &fetched,
+                        1,
+                        flow,
+                        Some(catchup_id),
+                        true,
+                        Some(version.clone()),
+                    )
+                    .expect("versioned catchup payload builds"),
+            );
+            let decoded: BlockPayload =
+                serde_json::from_value(serde_json::to_value(&payload).unwrap()).unwrap();
+            assert_eq!(decoded.flow, flow);
+            assert_eq!(decoded.catchup_id, Some(catchup_id));
+            assert!(decoded.last_in_catchup);
+            assert_eq!(decoded.executor_version, Some(version.clone()));
         }
     }
 
