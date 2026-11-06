@@ -1,4 +1,48 @@
 /** Required fault evidence must never turn absent observations into defaults. */
+export function offlineCatchupRange(watermark: number | null, head: number, blocks: number[]): { start: number; end: number } {
+  const start = requiredEvidenceCount(watermark ?? 0, 'offline ingestion watermark') + 1;
+  const end = requiredEvidenceCount(head, 'current RPC head', 1);
+  if (blocks.length !== 12 || start > end || blocks.some(block => block < start || block > end)) {
+    throw new Error(`offline catchup [${start}, ${end}] must cover all twelve receipt blocks [${blocks.join(', ')}]`);
+  }
+  return { start, end };
+}
+
+export function requireCompletedConsumerCatchup(
+  row: { id?: unknown; status?: unknown; finalized?: unknown; blockStart?: unknown; blockEnd?: unknown },
+  previousId: unknown,
+  blocks: unknown,
+): number[] {
+  if (typeof previousId !== 'string' || !previousId || typeof row.id !== 'string' || !row.id || row.id === previousId) {
+    throw new Error('offline recovery requires a new catchup identity');
+  }
+  if (row.finalized !== false || row.status !== 'DONE') {
+    throw new Error('offline recovery requires a completed non-finalized catchup');
+  }
+  if (!Array.isArray(blocks) || blocks.length !== 12) throw new Error('offline recovery requires twelve receipt blocks');
+  const start = requiredEvidenceCount(row.blockStart, 'catchup start');
+  const end = requiredEvidenceCount(row.blockEnd, 'catchup end');
+  const receipts = blocks.map(block => requiredEvidenceCount(block, 'receipt block', 1));
+  const covered = receipts.filter(block => block >= start && block <= end);
+  if (covered.length === 0) throw new Error(`catchup ${row.id} [${start}, ${end}] covers none of the offline receipt blocks [${receipts.join(', ')}]`);
+  return covered;
+}
+
+export function missingIngestedReceiptBlocks(
+  blocks: number[],
+  blockHashes: unknown,
+  ingested: { blockNumber: number; blockHash: string; blockStatus: string }[],
+): number[] {
+  if (!Array.isArray(blockHashes) || blockHashes.length !== blocks.length ||
+      blockHashes.some(hash => typeof hash !== 'string' || !/^0x[0-9a-f]{64}$/.test(hash))) {
+    throw new Error('offline recovery requires the exact hash of every receipt block');
+  }
+  const stored = new Set(ingested
+    .filter(block => block.blockStatus === 'pending' || block.blockStatus === 'finalized')
+    .map(block => `${block.blockNumber}:${block.blockHash}`));
+  return blocks.filter((block, index) => !stored.has(`${block}:${blockHashes[index]}`));
+}
+
 export function requiredEvidenceCount(value: unknown, label: string, minimum = 0): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum) {
     throw new Error(`${label} must be a recorded integer >= ${minimum}`);
@@ -31,4 +75,40 @@ export function requireBacklogTargets(handles: string[], transactions: string[],
   if (blocks !== undefined && (!Array.isArray(blocks) || blocks.length !== 12 ||
       blocks.some((height, index) => !Number.isSafeInteger(height) || height < 1 || (index > 0 && height <= blocks[index - 1])) ||
       blocks[11] - blocks[0] < 8)) throw new Error('backlog must span at least nine host blocks so catch-up needs several pages');
+}
+
+/** Identify the CLI replay without requiring it to cover the retained LIVE tail. */
+export function requireRelativeConsumerCatchup(
+  row: { id?: unknown; finalized?: unknown; requestedFrom?: unknown; requestedTo?: unknown; blockStart?: unknown; blockEnd?: unknown },
+  previousId: unknown,
+): void {
+  if (typeof previousId !== 'string' || !previousId || typeof row.id !== 'string' || !row.id || row.id === previousId ||
+      row.finalized !== false || row.requestedFrom !== -1024 || row.requestedTo !== -1) {
+    throw new Error('relative recovery requires the new CLI-created non-finalized request (-1024, -1)');
+  }
+  const start = requiredEvidenceCount(row.blockStart, 'relative catchup start');
+  const end = requiredEvidenceCount(row.blockEnd, 'relative catchup end');
+  if (start > end) throw new Error(`relative catchup ${row.id} has an inverted range [${start}, ${end}]`);
+}
+
+/** Successful handler receipts prove replay of the original transactions. */
+export function requireCatchupIngestionReceipts(
+  catchupId: unknown,
+  blocks: number[],
+  blockHashes: string[],
+  transactionHashes: string[],
+  receipts: { flow?: string; catchup_id?: string; block_number?: number; block_hash?: string; transactions?: { hash?: string }[] }[],
+): void {
+  if (typeof catchupId !== 'string' || !catchupId || blocks.length !== 12 || blockHashes.length !== 12 || transactionHashes.length !== 12) {
+    throw new Error('catchup attribution requires the exact request and twelve original receipt identities');
+  }
+  if (blocks.some((block, i) => !Number.isSafeInteger(block) || block < 1 || (i > 0 && block <= blocks[i - 1])) ||
+      new Set(blockHashes).size !== 12 || new Set(transactionHashes).size !== 12 ||
+      [...blockHashes, ...transactionHashes].some(hash => typeof hash !== 'string' || !/^0x[0-9a-f]{64}$/.test(hash))) {
+    throw new Error('catchup attribution requires twelve distinct valid receipt identities');
+  }
+  const missing = blocks.filter((block, index) => !receipts.some(receipt =>
+    receipt.flow === 'CATCHUP' && receipt.catchup_id === catchupId && receipt.block_number === block &&
+    receipt.block_hash === blockHashes[index] && receipt.transactions?.some(tx => tx.hash === transactionHashes[index])));
+  if (missing.length) throw new Error(`catchup ${catchupId} has no successful ingestion receipt for original transactions in blocks [${missing.join(', ')}]`);
 }
