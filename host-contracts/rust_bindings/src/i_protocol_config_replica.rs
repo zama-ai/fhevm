@@ -37,6 +37,7 @@ interface IProtocolConfigReplica {
         bytes pcr2;
     }
 
+    error CoprocessorEmptyStorageUrl();
     error CoprocessorNullSigner();
     error CoprocessorNullTxSender();
     error CoprocessorSetExceedsProofFormatLimit(uint256 coprocessorCount, uint256 maxAllowed);
@@ -1073,6 +1074,11 @@ interface IProtocolConfigReplica {
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "CoprocessorEmptyStorageUrl",
+    "inputs": []
   },
   {
     "type": "error",
@@ -2739,6 +2745,82 @@ struct PcrValues { bytes pcr0; bytes pcr1; bytes pcr2; }
                 alloy_sol_types::abi::token::WordToken(
                     alloy_sol_types::private::keccak256(out),
                 )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CoprocessorEmptyStorageUrl()` and selector `0x9826e223`.
+```solidity
+error CoprocessorEmptyStorageUrl();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CoprocessorEmptyStorageUrl;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CoprocessorEmptyStorageUrl>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorEmptyStorageUrl) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CoprocessorEmptyStorageUrl {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CoprocessorEmptyStorageUrl {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CoprocessorEmptyStorageUrl()";
+            const SELECTOR: [u8; 4] = [152u8, 38u8, 226u8, 35u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -11822,6 +11904,8 @@ function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IProtocolConfigReplicaErrors {
         #[allow(missing_docs)]
+        CoprocessorEmptyStorageUrl(CoprocessorEmptyStorageUrl),
+        #[allow(missing_docs)]
         CoprocessorNullSigner(CoprocessorNullSigner),
         #[allow(missing_docs)]
         CoprocessorNullTxSender(CoprocessorNullTxSender),
@@ -11891,6 +11975,7 @@ function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
             [132u8, 102u8, 128u8, 74u8],
             [138u8, 240u8, 130u8, 239u8],
             [151u8, 151u8, 195u8, 255u8],
+            [152u8, 38u8, 226u8, 35u8],
             [180u8, 132u8, 131u8, 162u8],
             [189u8, 124u8, 184u8, 129u8],
             [202u8, 168u8, 20u8, 163u8],
@@ -11916,6 +12001,7 @@ function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
             ::core::stringify!(KmsNodeNullTxSender),
             ::core::stringify!(EmptyCoprocessors),
             ::core::stringify!(InvalidCoprocessorContext),
+            ::core::stringify!(CoprocessorEmptyStorageUrl),
             ::core::stringify!(NonIncreasingCoprocessorContextId),
             ::core::stringify!(CoprocessorTxSenderAlreadyRegistered),
             ::core::stringify!(InvalidHighThreshold),
@@ -11941,6 +12027,7 @@ function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
             <KmsNodeNullTxSender as alloy_sol_types::SolError>::SIGNATURE,
             <EmptyCoprocessors as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidCoprocessorContext as alloy_sol_types::SolError>::SIGNATURE,
+            <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::SIGNATURE,
             <NonIncreasingCoprocessorContextId as alloy_sol_types::SolError>::SIGNATURE,
             <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidHighThreshold as alloy_sol_types::SolError>::SIGNATURE,
@@ -11974,10 +12061,13 @@ function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
     impl alloy_sol_types::SolInterface for IProtocolConfigReplicaErrors {
         const NAME: &'static str = "IProtocolConfigReplicaErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 22usize;
+        const COUNT: usize = 23usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
+                Self::CoprocessorEmptyStorageUrl(_) => {
+                    <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::CoprocessorNullSigner(_) => {
                     <CoprocessorNullSigner as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -12237,6 +12327,19 @@ function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
                             .map(IProtocolConfigReplicaErrors::InvalidCoprocessorContext)
                     }
                     InvalidCoprocessorContext
+                },
+                {
+                    fn CoprocessorEmptyStorageUrl(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaErrors> {
+                        <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigReplicaErrors::CoprocessorEmptyStorageUrl,
+                            )
+                    }
+                    CoprocessorEmptyStorageUrl
                 },
                 {
                     fn NonIncreasingCoprocessorContextId(
@@ -12519,6 +12622,19 @@ function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
                     InvalidCoprocessorContext
                 },
                 {
+                    fn CoprocessorEmptyStorageUrl(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigReplicaErrors> {
+                        <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IProtocolConfigReplicaErrors::CoprocessorEmptyStorageUrl,
+                            )
+                    }
+                    CoprocessorEmptyStorageUrl
+                },
+                {
                     fn NonIncreasingCoprocessorContextId(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigReplicaErrors> {
@@ -12617,6 +12733,11 @@ function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
+                Self::CoprocessorEmptyStorageUrl(inner) => {
+                    <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::CoprocessorNullSigner(inner) => {
                     <CoprocessorNullSigner as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -12730,6 +12851,12 @@ function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
+                Self::CoprocessorEmptyStorageUrl(inner) => {
+                    <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::CoprocessorNullSigner(inner) => {
                     <CoprocessorNullSigner as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,

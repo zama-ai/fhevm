@@ -1,9 +1,16 @@
 import { expect } from 'chai';
 import { ethers, upgrades } from 'hardhat';
 
+import { COPROCESSOR_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { ACL, ACLUpgradedExample } from '../../types';
 import { getSigners, initSigners } from '../signers';
-import { buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from '../tasks/taskHelpers';
+import {
+  PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+  buildProtocolConfigCoprocessors,
+  buildProtocolConfigNodes,
+  buildProtocolConfigThresholds,
+  readHostAddress,
+} from '../tasks/taskHelpers';
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 
 const KEY_COUNTER_BASE = BigInt(4) << BigInt(248);
@@ -48,7 +55,14 @@ describe('Upgrades', function () {
     const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
       call: {
         fn: 'initializeFromEmptyProxy',
-        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+        args: [
+          buildProtocolConfigNodes(),
+          buildProtocolConfigThresholds(),
+          '',
+          [],
+          buildProtocolConfigCoprocessors(),
+          PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+        ],
       },
     });
     await pc.waitForDeployment();
@@ -67,13 +81,21 @@ describe('Upgrades', function () {
   });
 
   it('upgrades a ProtocolConfig proxy in place to ProtocolConfigReplica', async function () {
-    const factory = await ethers.getContractFactory('ProtocolConfig', this.signers.fred);
+    // Existing replica proxies run the v0.14 ProtocolConfig, which holds no coprocessor context.
+    const factory = await ethers.getContractFactory('ProtocolConfigV014Example', this.signers.fred);
     const replicaFactory = await ethers.getContractFactory('ProtocolConfigReplica', this.signers.fred);
     const emptyUUPS = await deployEmptyProxy(this.emptyUUPSFactory);
     const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
       call: {
         fn: 'initializeFromEmptyProxy',
-        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+        args: [
+          buildProtocolConfigNodes(),
+          buildProtocolConfigThresholds(),
+          '',
+          [],
+          buildProtocolConfigCoprocessors(),
+          PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+        ],
       },
     });
     await pc.waitForDeployment();
@@ -85,10 +107,25 @@ describe('Upgrades', function () {
       ethers.toBeHex(3, 32),
     ]);
 
-    const replica = await upgrades.upgradeProxy(pc, replicaFactory, { call: { fn: 'reinitializeV3' } });
+    expect(await pc.getCurrentCoprocessorContextId()).to.equal(0n);
+
+    const replica = await upgrades.upgradeProxy(pc, replicaFactory, {
+      call: {
+        fn: 'reinitializeV3',
+        args: [
+          COPROCESSOR_CONTEXT_COUNTER_BASE + 1n,
+          buildProtocolConfigCoprocessors(),
+          PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+        ],
+      },
+    });
     await replica.waitForDeployment();
     expect(await replica.getVersion()).to.equal('ProtocolConfigReplica v0.3.0');
     expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId]);
+    expect(await replica.getCurrentCoprocessorContextId()).to.equal(COPROCESSOR_CONTEXT_COUNTER_BASE + 1n);
+    expect(await replica.getCoprocessorMajorityThresholdForContext(COPROCESSOR_CONTEXT_COUNTER_BASE + 1n)).to.equal(
+      BigInt(PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD),
+    );
 
     await (await replica.mirrorKmsEpoch(contextId, epochId + 1n)).wait();
     expect(await replica.getCurrentKmsContextAndEpoch()).to.deep.equal([contextId, epochId + 1n]);

@@ -9,7 +9,7 @@ import {FHE} from "../../lib/FHE.sol";
 import {FHEEvents} from "../../contracts/FHEEvents.sol";
 import {CoprocessorConfig} from "../../lib/Impl.sol";
 import {aclAdd, fhevmExecutorAdd, kmsVerifierAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
-import {KmsNodeParams} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {Coprocessor, KmsNodeParams} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 
 contract TestIntegrationACL is HostContractsDeployerTestUtils {
     ACL internal acl;
@@ -24,6 +24,9 @@ contract TestIntegrationACL is HostContractsDeployerTestUtils {
         KmsNodeParams[] memory initialKmsNodeParams = _makeKmsNodeParams(1);
         inputSigners = new address[](1);
         inputSigners[0] = address(0x8888);
+        uint256 inputThreshold = 1;
+        Coprocessor[] memory initialCoprocessors = _makeCoprocessors(1);
+        uint256 initialCoprocessorMajorityThreshold = 1;
 
         _deployFullHostStack(
             OWNER,
@@ -32,9 +35,11 @@ contract TestIntegrationACL is HostContractsDeployerTestUtils {
             address(0x5678),
             31337,
             initialKmsNodeParams,
-            _defaultThresholds(),
+            _defaultKmsThresholds(),
+            initialCoprocessors,
+            initialCoprocessorMajorityThreshold,
             inputSigners,
-            1
+            inputThreshold
         );
 
         acl = ACL(aclAdd);

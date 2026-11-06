@@ -1,19 +1,25 @@
 import { expect } from 'chai';
 import hre, { ethers } from 'hardhat';
 
-import { getProtocolConfigReplicaInterface } from '../../tasks/kmsContext';
 import {
-  assertReplicaNeedsContextSwitch,
-  assertReplicaNeedsEpochMirror,
+  assertReplicaNeedsKmsContextSwitch,
+  assertReplicaNeedsKmsEpochMirror,
   encodeMirrorKmsContextAndEpoch,
   encodeMirrorKmsEpoch,
   readCanonicalContextSwitch,
 } from '../../tasks/mirrorKmsContext';
-import { EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
+import {
+  COPROCESSOR_CONTEXT_COUNTER_BASE,
+  EPOCH_COUNTER_BASE,
+  KMS_CONTEXT_COUNTER_BASE,
+} from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
+import { getProtocolConfigReplicaInterface } from '../../tasks/utils/protocolConfigTasks';
 import type { ProtocolConfig, ProtocolConfigReplica } from '../../types';
 import {
+  PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
   buildControllableKmsCommittee,
+  buildProtocolConfigCoprocessors,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   buildSingleKeyAndCrsActivationPayload,
@@ -31,7 +37,13 @@ describe('KMS mirror tasks', function () {
   describe('readCanonicalContextSwitch', function () {
     it('recovers the rotated context from the NewKmsContext event and matches live ids', async function () {
       const committee = await buildControllableKmsCommittee();
-      const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
+      const canonicalAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        committee.nodes,
+        committee.thresholds,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+      );
       const contextId = await rotateToNewKmsContext(canonicalAddress, deployer, committee);
 
       const canonical = (await ethers.getContractAt('ProtocolConfig', canonicalAddress)) as unknown as ProtocolConfig;
@@ -64,6 +76,9 @@ describe('KMS mirror tasks', function () {
         EPOCH_COUNTER_BASE + 1n,
         buildProtocolConfigNodes(),
         buildProtocolConfigThresholds(),
+        COPROCESSOR_CONTEXT_COUNTER_BASE + 1n,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
       );
       const read = () =>
         readCanonicalContextSwitch(hre, {
@@ -85,7 +100,13 @@ describe('KMS mirror tasks', function () {
   describe('encodeMirrorKmsContextAndEpoch', function () {
     it('builds calldata that decodes back to the recovered args', async function () {
       const committee = await buildControllableKmsCommittee();
-      const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
+      const canonicalAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        committee.nodes,
+        committee.thresholds,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+      );
       await rotateToNewKmsContext(canonicalAddress, deployer, committee);
 
       const iface = await getProtocolConfigReplicaInterface(hre);
@@ -103,41 +124,59 @@ describe('KMS mirror tasks', function () {
   });
 
   describe('replica readiness guards', function () {
-    it('assertReplicaNeedsContextSwitch throws once the replica is already at the target context', async function () {
+    it('assertReplicaNeedsKmsContextSwitch throws once the replica is already at the target context', async function () {
       const nodes = (await buildControllableKmsCommittee()).nodes;
       const thresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
-      const replicaAddress = await deployFreshProtocolConfigProxy(deployer, nodes, thresholds);
+      const replicaAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        nodes,
+        thresholds,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+      );
       const replica = (await ethers.getContractAt('ProtocolConfig', replicaAddress)) as unknown as ProtocolConfig;
       const [replicaContextId] = await replica.getCurrentKmsContextAndEpoch();
 
-      await expect(assertReplicaNeedsContextSwitch(hre, replicaAddress, replicaContextId)).to.be.rejectedWith(
+      await expect(assertReplicaNeedsKmsContextSwitch(hre, replicaAddress, replicaContextId)).to.be.rejectedWith(
         /is already at context/,
       );
-      await expect(assertReplicaNeedsContextSwitch(hre, replicaAddress, replicaContextId + 1n)).to.not.be.rejected;
+      await expect(assertReplicaNeedsKmsContextSwitch(hre, replicaAddress, replicaContextId + 1n)).to.not.be.rejected;
     });
 
-    it('assertReplicaNeedsEpochMirror throws on a context mismatch and on a non-increasing epoch', async function () {
+    it('assertReplicaNeedsKmsEpochMirror throws on a context mismatch and on a non-increasing epoch', async function () {
       const nodes = (await buildControllableKmsCommittee()).nodes;
       const thresholds = { publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1 };
-      const replicaAddress = await deployFreshProtocolConfigProxy(deployer, nodes, thresholds);
+      const replicaAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        nodes,
+        thresholds,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+      );
       const replica = (await ethers.getContractAt('ProtocolConfig', replicaAddress)) as unknown as ProtocolConfig;
       const [replicaContextId, replicaEpochId] = await replica.getCurrentKmsContextAndEpoch();
 
       await expect(
-        assertReplicaNeedsEpochMirror(hre, replicaAddress, replicaContextId + 1n, replicaEpochId + 1n),
+        assertReplicaNeedsKmsEpochMirror(hre, replicaAddress, replicaContextId + 1n, replicaEpochId + 1n),
       ).to.be.rejectedWith(/but canonical's active context is/);
       await expect(
-        assertReplicaNeedsEpochMirror(hre, replicaAddress, replicaContextId, replicaEpochId),
+        assertReplicaNeedsKmsEpochMirror(hre, replicaAddress, replicaContextId, replicaEpochId),
       ).to.be.rejectedWith(/Nothing to mirror/);
-      await expect(assertReplicaNeedsEpochMirror(hre, replicaAddress, replicaContextId, replicaEpochId + 1n)).to.not.be
-        .rejected;
+      await expect(assertReplicaNeedsKmsEpochMirror(hre, replicaAddress, replicaContextId, replicaEpochId + 1n)).to.not
+        .be.rejected;
     });
   });
 
   describe('end-to-end mirror onto a replica', function () {
     it('mirrors a context switch, then a same-set epoch rotation, onto an independent replica', async function () {
       const committee = await buildControllableKmsCommittee();
-      const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
+      const canonicalAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        committee.nodes,
+        committee.thresholds,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+      );
       const canonical = (await ethers.getContractAt('ProtocolConfig', canonicalAddress)) as unknown as ProtocolConfig;
       const [genesisContextId, genesisEpochId] = await canonical.getCurrentKmsContextAndEpoch();
       await rotateToNewKmsContext(canonicalAddress, deployer, committee);
@@ -150,6 +189,9 @@ describe('KMS mirror tasks', function () {
         genesisEpochId,
         committee.nodes,
         committee.thresholds,
+        COPROCESSOR_CONTEXT_COUNTER_BASE + 1n,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
       );
 
       const iface = await getProtocolConfigReplicaInterface(hre);
@@ -157,7 +199,7 @@ describe('KMS mirror tasks', function () {
         canonicalProvider: ethers.provider,
         canonicalProtocolConfigAddress: canonicalAddress,
       });
-      await assertReplicaNeedsContextSwitch(hre, replicaAddress, switchArgs.contextId);
+      await assertReplicaNeedsKmsContextSwitch(hre, replicaAddress, switchArgs.contextId);
       const contextCalldata = encodeMirrorKmsContextAndEpoch(iface, switchArgs);
 
       await (await deployer.sendTransaction({ to: replicaAddress, data: contextCalldata })).wait();
@@ -198,10 +240,10 @@ describe('KMS mirror tasks', function () {
         await (await asTxSender.confirmEpochActivation(newEpochId, keys, crsList)).wait();
       }
 
-      const [, canonicalEpochIdAfterRotation] = await asCanonicalOwner.getCurrentKmsContextAndEpoch();
-      expect(canonicalEpochIdAfterRotation).to.equal(newEpochId);
+      const [, canonicalKmsEpochIdAfterRotation] = await asCanonicalOwner.getCurrentKmsContextAndEpoch();
+      expect(canonicalKmsEpochIdAfterRotation).to.equal(newEpochId);
 
-      await assertReplicaNeedsEpochMirror(hre, replicaAddress, switchArgs.contextId, newEpochId);
+      await assertReplicaNeedsKmsEpochMirror(hre, replicaAddress, switchArgs.contextId, newEpochId);
       const epochCalldata = encodeMirrorKmsEpoch(iface, switchArgs.contextId, newEpochId);
       await (await deployer.sendTransaction({ to: replicaAddress, data: epochCalldata })).wait();
 

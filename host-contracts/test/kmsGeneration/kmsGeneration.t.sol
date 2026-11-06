@@ -120,7 +120,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         _deployACL(owner);
 
         // Deploy ProtocolConfig with our test KMS nodes
-        _deployProtocolConfig(owner, _makeKmsNodeParams(2), _defaultThresholds());
+        _deployProtocolConfig(owner, _makeKmsNodeParams(2), _defaultKmsThresholds(), _makeCoprocessors(1), 1);
         protocolConfig = ProtocolConfig(protocolConfigAdd);
 
         // Deploy KMSGeneration
@@ -609,7 +609,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         KmsNodeParams[] memory rotatedNodes = _makeKmsNodeParamsFromSigners(rotatedSigners);
 
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
+        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultKmsThresholds());
         _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk1, kmsPk2);
 
         _doPrepKeygenResponse(prepKeygenId, oldExtraData, kmsPk0, kmsTxSender0);
@@ -636,7 +636,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         rotatedNodes[1].signerAddress = kmsSigner3;
 
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
+        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultKmsThresholds());
         _activatePendingDisjointTwoNodeContext(
             KMS_CONTEXT_COUNTER_BASE + 2,
             EPOCH_COUNTER_BASE + 2,
@@ -682,7 +682,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         KmsNodeParams[] memory rotatedNodes = _makeKmsNodeParamsFromSigners(rotatedSigners);
 
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
+        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultKmsThresholds());
 
         vm.prank(owner);
         kmsGeneration.keygen(IKMSGeneration.ParamsType.Default, 0);
@@ -704,7 +704,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         KmsNodeParams[] memory rotatedNodes = _makeKmsNodeParamsFromSigners(rotatedSigners);
 
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
+        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultKmsThresholds());
         _confirmContextCreation(KMS_CONTEXT_COUNTER_BASE + 2, kmsTxSender0);
         _confirmContextCreation(KMS_CONTEXT_COUNTER_BASE + 2, kmsTxSender1);
 
@@ -732,7 +732,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         KmsNodeParams[] memory rotatedNodes = _makeKmsNodeParamsFromSigners(rotatedSigners);
 
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
+        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultKmsThresholds());
         _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk1, kmsPk2);
 
         _doCrsgenResponse(crsId, 4096, hex"deadbeef", oldExtraData, kmsPk0, kmsTxSender0);
@@ -750,7 +750,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
 
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultKmsThresholds());
         _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk0, kmsPk1);
 
         vm.prank(owner);
@@ -774,7 +774,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.abortKeygen(PREP_KEYGEN_COUNTER_BASE + 1);
 
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultKmsThresholds());
         _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk0, kmsPk1);
 
         vm.prank(owner);
@@ -802,7 +802,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         kmsGeneration.abortCrsgen(CRS_COUNTER_BASE + 1);
 
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(2), _defaultKmsThresholds());
         _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk0, kmsPk1);
 
         vm.prank(owner);
@@ -1091,7 +1091,7 @@ contract KMSGenerationTest is HostContractsDeployerTestUtils {
         KmsNodeParams[] memory rotatedNodes = _makeKmsNodeParamsFromSigners(rotatedSigners);
 
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultThresholds());
+        _defineNewKmsContextAndEpoch(rotatedNodes, _defaultKmsThresholds());
         _activatePendingTwoNodeContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, kmsPk1, kmsPk2);
 
         vm.expectEmit(true, true, true, true, address(kmsGeneration));

@@ -1,9 +1,9 @@
 import { type Provider, getAddress } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import type { ProtocolConfig } from '../types';
 import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import { formatError } from './utils/formatError';
+import { getProtocolConfig } from './utils/protocolConfigTasks';
 import { type UpgradeProposal, buildUpgradeProposal } from './utils/upgradeProposal';
 
 export type KmsNode = {
@@ -11,6 +11,13 @@ export type KmsNode = {
   signerAddress: string;
   ipAddress: string;
   storageUrl: string;
+};
+
+export type Coprocessor = {
+  txSenderAddress: string;
+  signerAddress: string;
+  storageUrl: string;
+  prfEndpointUrl: string;
 };
 
 export type KmsThresholds = {
@@ -26,6 +33,9 @@ export type CanonicalSnapshot = {
   currentEpochId: bigint;
   kmsNodes: KmsNode[];
   thresholds: KmsThresholds;
+  currentCoprocessorContextId: bigint;
+  coprocessors: Coprocessor[];
+  coprocessorMajorityThreshold: bigint;
   canonicalChainId: bigint;
   blockNumber: number;
   blockHash: string;
@@ -50,7 +60,6 @@ export async function readCanonicalSnapshot(
   hre: HardhatRuntimeEnvironment,
   options: { canonicalProvider: Provider; canonicalProtocolConfigAddress: string; blockNumber?: number },
 ): Promise<CanonicalSnapshot> {
-  const { ethers } = hre;
   const { canonicalProvider, canonicalProtocolConfigAddress } = options;
   if (options.blockNumber !== undefined && (!Number.isSafeInteger(options.blockNumber) || options.blockNumber < 0)) {
     throw new Error('Canonical block number must be a nonnegative safe integer.');
@@ -92,8 +101,7 @@ export async function readCanonicalSnapshot(
   // network so the identity check runs against the remote ProtocolConfig.
   await assertContractMatchesVersionPrefix(hre, canonicalProtocolConfigAddress, 'ProtocolConfig', canonicalProvider);
 
-  const canonicalProtocolConfigBase = await ethers.getContractAt('ProtocolConfig', canonicalProtocolConfigAddress);
-  const canonicalProtocolConfig = canonicalProtocolConfigBase.connect(canonicalProvider) as ProtocolConfig;
+  const canonicalProtocolConfig = await getProtocolConfig(hre, canonicalProtocolConfigAddress, canonicalProvider);
 
   const currentState = await canonicalProtocolConfig.getCurrentKmsContextAndEpoch(at);
   const currentKmsContextId = currentState[0];
@@ -130,6 +138,19 @@ export async function readCanonicalSnapshot(
   }));
   const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
 
+  // The current coprocessor context is always valid: only past contexts can be destroyed.
+  const currentCoprocessorContextId = await canonicalProtocolConfig.getCurrentCoprocessorContextId(at);
+  const [rawCoprocessors, coprocessorMajorityThreshold] = await Promise.all([
+    canonicalProtocolConfig.getCoprocessorsForContext(currentCoprocessorContextId, at),
+    canonicalProtocolConfig.getCoprocessorMajorityThresholdForContext(currentCoprocessorContextId, at),
+  ]);
+  const coprocessors: Coprocessor[] = rawCoprocessors.map((coprocessor) => ({
+    txSenderAddress: coprocessor.txSenderAddress,
+    signerAddress: coprocessor.signerAddress,
+    storageUrl: coprocessor.storageUrl,
+    prfEndpointUrl: coprocessor.prfEndpointUrl,
+  }));
+
   await assertCanonicalSnapshotBlockHash(canonicalProvider, { blockNumber, blockHash });
 
   return {
@@ -138,6 +159,9 @@ export async function readCanonicalSnapshot(
     currentEpochId,
     kmsNodes,
     thresholds,
+    currentCoprocessorContextId,
+    coprocessors,
+    coprocessorMajorityThreshold,
     canonicalChainId,
     blockNumber,
     blockHash,
@@ -148,14 +172,14 @@ export async function readCanonicalSnapshot(
 // implementation and returns the upgradeToAndCall(initializeFromCanonical(... args ...)) payload.
 // The DAO path prints it for signers. The direct (devnet) path executes the very same payload with
 // the deployer key (executeUpgradeProposal). Mirror initialization lands the replica on canonical's
-// active context and epoch rather than starting a fresh local lifecycle.
+// active context and epoch, and on its current coprocessor context, rather than starting a fresh local lifecycle.
 export async function buildCanonicalUpgradeProposal(
   hre: HardhatRuntimeEnvironment,
   options: { snapshot: CanonicalSnapshot; proxyAddress: string },
 ): Promise<UpgradeProposal> {
   const { snapshot, proxyAddress } = options;
   console.log(
-    `Mirroring ProtocolConfig ${snapshot.protocolConfigAddress} from canonical chain ${snapshot.canonicalChainId} at block ${snapshot.blockNumber} (${snapshot.blockHash}): contextId=${snapshot.currentKmsContextId}, epochId=${snapshot.currentEpochId}, kmsNodes=${snapshot.kmsNodes.length}.`,
+    `Mirroring ProtocolConfig ${snapshot.protocolConfigAddress} from canonical chain ${snapshot.canonicalChainId} at block ${snapshot.blockNumber} (${snapshot.blockHash}): contextId=${snapshot.currentKmsContextId}, epochId=${snapshot.currentEpochId}, kmsNodes=${snapshot.kmsNodes.length}, coprocessorContextId=${snapshot.currentCoprocessorContextId}, coprocessors=${snapshot.coprocessors.length}.`,
   );
 
   // initializeFromCanonical takes KmsNodeParams (txSender/signer/ip/storageUrl plus MPC metadata:
@@ -177,6 +201,14 @@ export async function buildCanonicalUpgradeProposal(
     proxyAddress,
     contractName: 'contracts/ProtocolConfigReplica.sol:ProtocolConfigReplica',
     innerFunctionName: 'initializeFromCanonical',
-    decodedArgs: [snapshot.currentKmsContextId, snapshot.currentEpochId, kmsNodeParams, snapshot.thresholds],
+    decodedArgs: [
+      snapshot.currentKmsContextId,
+      snapshot.currentEpochId,
+      kmsNodeParams,
+      snapshot.thresholds,
+      snapshot.currentCoprocessorContextId,
+      snapshot.coprocessors,
+      snapshot.coprocessorMajorityThreshold,
+    ],
   });
 }

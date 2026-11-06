@@ -15,8 +15,8 @@ import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol
 import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfigReplica} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
-import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
-import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {Coprocessor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, COPROCESSOR_CONTEXT_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {Vm} from "forge-std/Test.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
@@ -54,7 +54,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         // KMSVerifier inherits ACLOwnable as well, ensuring the ACL proxy is in place avoids upgrade reverts.
         _deployACL(OWNER);
         KmsNodeParams[] memory initialKmsNodeParams = _makeKmsNodeParams(2);
-        _deployProtocolConfig(OWNER, initialKmsNodeParams, _defaultThresholds());
+        _deployProtocolConfig(OWNER, initialKmsNodeParams, _defaultKmsThresholds(), _makeCoprocessors(1), 1);
 
         (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) = _deployKMSVerifier(
             OWNER,
@@ -65,7 +65,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertEq(address(kmsVerifierProxy), kmsVerifierAdd, "KMSVerifier proxy address mismatch");
         assertNotEq(kmsVerifierImplementation, address(0), "Implementation not deployed");
         assertEq(kmsVerifierProxy.getVersion(), "KMSVerifier v0.5.0", "Version mismatch");
-        assertEq(kmsVerifierProxy.getThreshold(), _defaultThresholds().publicDecryption, "Threshold mismatch");
+        assertEq(kmsVerifierProxy.getThreshold(), _defaultKmsThresholds().publicDecryption, "Threshold mismatch");
         address[] memory storedSigners = kmsVerifierProxy.getKmsSigners();
         assertEq(storedSigners.length, initialKmsNodeParams.length, "Signers length mismatch");
         assertEq(storedSigners[0], initialKmsNodeParams[0].signerAddress, "Signer[0] mismatch");
@@ -136,6 +136,9 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         address[] memory inputSigners = new address[](1);
         inputSigners[0] = address(0x8888);
         address pauser = address(0xbeef);
+        uint256 inputThreshold = 1;
+        Coprocessor[] memory initialCoprocessors = _makeCoprocessors(1);
+        uint256 initialCoprocessorMajorityThreshold = 1;
 
         _deployFullHostStack(
             OWNER,
@@ -144,9 +147,11 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
             GATEWAY_SOURCE_CONTRACT,
             GATEWAY_CHAIN_ID,
             initialKmsNodeParams,
-            _defaultThresholds(),
+            _defaultKmsThresholds(),
+            initialCoprocessors,
+            initialCoprocessorMajorityThreshold,
             inputSigners,
-            1
+            inputThreshold
         );
 
         ACL aclProxy = ACL(aclAdd);
@@ -157,10 +162,17 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         assertEq(fheExecutor.getHCULimitAddress(), hcuLimitAdd, "Executor HCULimit wiring mismatch");
         assertEq(
             KMSVerifier(kmsVerifierAdd).getThreshold(),
-            _defaultThresholds().publicDecryption,
+            _defaultKmsThresholds().publicDecryption,
             "KMSVerifier threshold mismatch"
         );
-        assertEq(InputVerifier(inputVerifierAdd).getThreshold(), 1, "InputVerifier threshold mismatch");
+        assertEq(InputVerifier(inputVerifierAdd).getThreshold(), inputThreshold, "InputVerifier threshold mismatch");
+        uint256 coprocessorContextId = ProtocolConfig(protocolConfigAdd).getCurrentCoprocessorContextId();
+        assertEq(coprocessorContextId, COPROCESSOR_CONTEXT_COUNTER_BASE + 1, "Coprocessor context mismatch");
+        assertEq(
+            ProtocolConfig(protocolConfigAdd).getCoprocessorMajorityThresholdForContext(coprocessorContextId),
+            initialCoprocessorMajorityThreshold,
+            "Coprocessor threshold mismatch"
+        );
         assertTrue(PauserSet(pauserSetAdd).isPauser(pauser), "Pauser not registered");
         assertFalse(aclProxy.isAllowed(bytes32(uint256(1)), address(this)), "Unexpected ACL allow");
 
@@ -186,7 +198,9 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         (ProtocolConfig pcProxy, address pcImplementation) = _deployProtocolConfig(
             OWNER,
             nodeParams,
-            _defaultThresholds()
+            _defaultKmsThresholds(),
+            _makeCoprocessors(1),
+            1
         );
 
         assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfig proxy address mismatch");
@@ -203,34 +217,40 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
         _deployACL(OWNER);
 
         KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(2);
-        uint256 canonicalContextId = KMS_CONTEXT_COUNTER_BASE + 7;
-        uint256 canonicalEpochId = EPOCH_COUNTER_BASE + 7;
+        uint256 canonicalKmsContextId = KMS_CONTEXT_COUNTER_BASE + 7;
+        uint256 canonicalKmsEpochId = EPOCH_COUNTER_BASE + 7;
         KmsThresholds memory thresholds = KmsThresholds({publicDecryption: 1, userDecryption: 2, kmsGen: 2, mpc: 1});
 
         (ProtocolConfigReplica pcProxy, address pcImplementation) = _deployProtocolConfigReplica(
             OWNER,
-            canonicalContextId,
-            canonicalEpochId,
+            canonicalKmsContextId,
+            canonicalKmsEpochId,
             nodeParams,
-            thresholds
+            thresholds,
+            COPROCESSOR_CONTEXT_COUNTER_BASE + 1,
+            _makeCoprocessors(1),
+            1
         );
 
         assertEq(address(pcProxy), protocolConfigAdd, "ProtocolConfigReplica proxy address mismatch");
         assertNotEq(pcImplementation, address(0), "Implementation not deployed");
         assertEq(pcProxy.getVersion(), "ProtocolConfigReplica v0.3.0", "Version mismatch");
-        assertEq(pcProxy.getCurrentKmsContextId(), canonicalContextId, "Context ID mismatch");
+        assertEq(pcProxy.getCurrentKmsContextId(), canonicalKmsContextId, "Context ID mismatch");
         assertEq(pcProxy.getUserDecryptionThreshold(), 2, "User decryption threshold mismatch");
         (uint256 activeContextId, uint256 activeEpochId) = pcProxy.getCurrentKmsContextAndEpoch();
-        assertEq(activeContextId, canonicalContextId, "Active context mismatch");
-        assertEq(activeEpochId, canonicalEpochId, "Active epoch mismatch");
-        assertTrue(pcProxy.isValidEpochForContext(canonicalContextId, canonicalEpochId), "Epoch not valid for context");
+        assertEq(activeContextId, canonicalKmsContextId, "Active context mismatch");
+        assertEq(activeEpochId, canonicalKmsEpochId, "Active epoch mismatch");
+        assertTrue(
+            pcProxy.isValidEpochForContext(canonicalKmsContextId, canonicalKmsEpochId),
+            "Epoch not valid for context"
+        );
         assertEq(
-            pcProxy.getKmsSignersForContext(canonicalContextId).length,
+            pcProxy.getKmsSignersForContext(canonicalKmsContextId).length,
             nodeParams.length,
             "Signer count mismatch"
         );
         assertEq(
-            pcProxy.getPublicDecryptionThresholdForContext(canonicalContextId),
+            pcProxy.getPublicDecryptionThresholdForContext(canonicalKmsContextId),
             thresholds.publicDecryption,
             "Public decryption threshold mismatch"
         );
@@ -249,11 +269,14 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
             KMS_CONTEXT_COUNTER_BASE + 1,
             EPOCH_COUNTER_BASE + 1,
             bootstrap,
-            _defaultThresholds()
+            _defaultKmsThresholds(),
+            COPROCESSOR_CONTEXT_COUNTER_BASE + 1,
+            _makeCoprocessors(1),
+            1
         );
 
         KmsNodeParams[] memory nodes = _makeKmsNodeParams(2);
-        KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultKmsThresholds();
         uint256 mirroredContextId = KMS_CONTEXT_COUNTER_BASE + 4;
         uint256 mirroredEpochId = EPOCH_COUNTER_BASE + 4;
 
@@ -309,7 +332,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
 
         // KMSGeneration reads from ProtocolConfig so we need it deployed
         KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(1);
-        _deployProtocolConfig(OWNER, nodeParams, _defaultThresholds());
+        _deployProtocolConfig(OWNER, nodeParams, _defaultKmsThresholds(), _makeCoprocessors(1), 1);
 
         (KMSGeneration kgProxy, address kgImplementation) = _deployKMSGeneration(OWNER);
 

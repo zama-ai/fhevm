@@ -43,7 +43,13 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         signer3 = vm.addr(privateKeySigner3);
 
         _deployACL(owner);
-        (protocolConfig, ) = _deployProtocolConfig(owner, _makeKmsNodeParams(3), _defaultThresholds());
+        (protocolConfig, ) = _deployProtocolConfig(
+            owner,
+            _makeKmsNodeParams(3),
+            _defaultKmsThresholds(),
+            _makeCoprocessors(1),
+            1
+        );
         (kmsGeneration, ) = _deployKMSGeneration(owner);
 
         (kmsVerifier, ) = _deployKMSVerifier(owner, verifyingContractSource, uint64(block.chainid));
@@ -137,13 +143,13 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         address[] memory newSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(newSigners), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(newSigners), _defaultKmsThresholds());
         _activatePendingSingleSignerContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, privateKeySigner3);
         currentCtx = protocolConfig.getCurrentKmsContextId();
     }
 
     function _rotateToThresholdTwoContext() internal {
-        KmsThresholds memory thresholds = _defaultThresholds();
+        KmsThresholds memory thresholds = _defaultKmsThresholds();
         thresholds.publicDecryption = 2;
 
         vm.prank(owner);
@@ -195,7 +201,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         address[] memory nextSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(nextSigners), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(nextSigners), _defaultKmsThresholds());
         _activatePendingSingleSignerContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, privateKeySigner3);
 
         uint256 nextCtx = protocolConfig.getCurrentKmsContextId();
@@ -255,7 +261,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         address[] memory nextSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(nextSigners), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(nextSigners), _defaultKmsThresholds());
 
         address[] memory historicalSigners = kmsVerifier.getSignersForKmsContext(historicalCtx);
         assertEq(historicalSigners.length, 3);
@@ -289,7 +295,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
     function test_VerifyDecryptionEIP712KMSSignaturesFailAsExpectedIfNoSignerAdded() public {
         // Rotate to a single-signer context (only signer0)
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(1), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParams(1), _defaultKmsThresholds());
         _activatePendingSingleSignerContext(KMS_CONTEXT_COUNTER_BASE + 2, EPOCH_COUNTER_BASE + 2, privateKeySigner0);
 
         bytes32[] memory handlesList = _generateMockHandlesList(3);
@@ -398,7 +404,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
     function test_VerificationUsesPerContextThresholdForHistoricalContext() public {
         // Rotate to a new context with 3 signers and threshold=2
-        KmsThresholds memory t2 = _defaultThresholds();
+        KmsThresholds memory t2 = _defaultKmsThresholds();
         t2.publicDecryption = 2;
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(_makeKmsNodeParams(3), t2);
@@ -410,7 +416,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         _defineNewKmsContextAndEpoch(
             _makeKmsNodeParamsFromSigners(_makeSingleSignerList(signer3)),
-            _defaultThresholds()
+            _defaultKmsThresholds()
         );
         _activatePendingSingleSignerContext(KMS_CONTEXT_COUNTER_BASE + 3, EPOCH_COUNTER_BASE + 3, privateKeySigner3);
         assertEq(protocolConfig.getPublicDecryptionThreshold(), 1);
@@ -615,7 +621,7 @@ contract KMSVerifierTest is HostContractsDeployerTestUtils {
 
         address[] memory nextSigners = _makeSingleSignerList(signer3);
         vm.prank(owner);
-        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(nextSigners), _defaultThresholds());
+        _defineNewKmsContextAndEpoch(_makeKmsNodeParamsFromSigners(nextSigners), _defaultKmsThresholds());
         uint256 pendingCtx = ctx1 + 1;
         bytes memory pendingV1ExtraData = abi.encodePacked(uint8(0x01), pendingCtx);
         vm.expectRevert(abi.encodeWithSelector(IProtocolConfigBase.InvalidKmsContext.selector, pendingCtx));

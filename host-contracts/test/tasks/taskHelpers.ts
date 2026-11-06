@@ -11,6 +11,10 @@ export const HOST_ENV_FILE = path.join(__dirname, '../../addresses/.env.host');
 
 export const HOST_ADDRESSES_SOL_FILE = path.join(__dirname, '../../addresses/FHEVMHostAddresses.sol');
 
+// Smallest majority of the coprocessors in buildProtocolConfigCoprocessors.
+export const PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD =
+  Math.floor(buildProtocolConfigCoprocessors().length / 2) + 1;
+
 export function readHostAddress(key: string): string {
   const value = dotenv.parse(fs.readFileSync(HOST_ENV_FILE))[key];
   if (!value) {
@@ -73,6 +77,34 @@ export function buildProtocolConfigNodes(): Array<{
   ];
 }
 
+export function buildProtocolConfigCoprocessors(): Array<{
+  txSenderAddress: string;
+  signerAddress: string;
+  storageUrl: string;
+  prfEndpointUrl: string;
+}> {
+  return [
+    {
+      txSenderAddress: '0x000000000000000000000000000000000000c111',
+      signerAddress: '0x000000000000000000000000000000000000c222',
+      storageUrl: 'https://coprocessor0.example.com',
+      prfEndpointUrl: 'https://prf0.example.com',
+    },
+    {
+      txSenderAddress: '0x000000000000000000000000000000000000c333',
+      signerAddress: '0x000000000000000000000000000000000000c444',
+      storageUrl: 'https://coprocessor1.example.com',
+      prfEndpointUrl: '',
+    },
+    {
+      txSenderAddress: '0x000000000000000000000000000000000000c555',
+      signerAddress: '0x000000000000000000000000000000000000c666',
+      storageUrl: 'https://coprocessor2.example.com',
+      prfEndpointUrl: '',
+    },
+  ];
+}
+
 export function buildProtocolConfigThresholds() {
   return {
     publicDecryption: 1,
@@ -116,17 +148,20 @@ export async function deployFreshUninitializedProtocolConfigProxy(deployer: Wall
 }
 
 // Upgrades an existing EmptyUUPSProxy at `proxyAddress` to the ProtocolConfig implementation and runs
-// `initializeFromEmptyProxy` with the given KMS committee, returning the initialized contract instance.
+// `initializeFromEmptyProxy` with the given KMS committee and coprocessor set, returning the initialized
+// contract instance.
 export async function initializeProtocolConfigProxy(
   proxyAddress: string,
   deployer: Wallet,
   kmsNodes: Array<{ txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }>,
-  thresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
+  kmsThresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
+  coprocessors: Array<{ txSenderAddress: string; signerAddress: string; storageUrl: string; prfEndpointUrl: string }>,
+  coprocessorMajorityThreshold: number,
 ): Promise<Contract> {
   const upgraded = await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfig', {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [kmsNodes, thresholds, '', []],
+      args: [kmsNodes, kmsThresholds, '', [], coprocessors, coprocessorMajorityThreshold],
     },
   });
   return upgraded as unknown as Contract;
@@ -135,23 +170,46 @@ export async function initializeProtocolConfigProxy(
 export async function deployFreshProtocolConfigProxy(
   deployer: Wallet,
   kmsNodes: Array<{ txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }>,
-  thresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
+  kmsThresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
+  coprocessors: Array<{ txSenderAddress: string; signerAddress: string; storageUrl: string; prfEndpointUrl: string }>,
+  coprocessorMajorityThreshold: number,
 ): Promise<string> {
   const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
-  await initializeProtocolConfigProxy(proxyAddress, deployer, kmsNodes, thresholds);
+  await initializeProtocolConfigProxy(
+    proxyAddress,
+    deployer,
+    kmsNodes,
+    kmsThresholds,
+    coprocessors,
+    coprocessorMajorityThreshold,
+  );
   return proxyAddress;
 }
 
 export async function deployFreshProtocolConfigReplicaProxy(
   deployer: Wallet,
-  contextId: bigint,
-  epochId: bigint,
+  kmsContextId: bigint,
+  kmsEpochId: bigint,
   kmsNodes: Array<{ txSenderAddress: string; signerAddress: string; ipAddress: string; storageUrl: string }>,
-  thresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
+  kmsThresholds: { publicDecryption: number; userDecryption: number; kmsGen: number; mpc: number },
+  coprocessorContextId: bigint,
+  coprocessors: Array<{ txSenderAddress: string; signerAddress: string; storageUrl: string; prfEndpointUrl: string }>,
+  coprocessorMajorityThreshold: number,
 ): Promise<string> {
   const proxyAddress = await deployFreshEmptyUUPSProxy(deployer);
   await upgradeEmptyProxy(proxyAddress, deployer, 'ProtocolConfigReplica', {
-    call: { fn: 'initializeFromCanonical', args: [contextId, epochId, kmsNodes, thresholds] },
+    call: {
+      fn: 'initializeFromCanonical',
+      args: [
+        kmsContextId,
+        kmsEpochId,
+        kmsNodes,
+        kmsThresholds,
+        coprocessorContextId,
+        coprocessors,
+        coprocessorMajorityThreshold,
+      ],
+    },
   });
   return proxyAddress;
 }

@@ -77,6 +77,9 @@ interface IProtocolConfigBase {
     /// @notice A coprocessor has a null signer address.
     error CoprocessorNullSigner();
 
+    /// @notice A coprocessor has an empty storage URL.
+    error CoprocessorEmptyStorageUrl();
+
     /// @notice A coprocessor tx sender address is already registered in this context.
     /// @param txSender The duplicate tx sender address.
     error CoprocessorTxSenderAlreadyRegistered(address txSender);

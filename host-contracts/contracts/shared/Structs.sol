@@ -24,7 +24,7 @@ struct Coprocessor {
     address txSenderAddress;
     /// @notice Key that signs input proofs, ciphertext attestations and PRF output attestations
     address signerAddress;
-    /// @notice Public base URL of the coprocessor's storage for ciphertexts and attestations
+    /// @notice Public base URL of the coprocessor's storage for ciphertexts and attestations, never empty
     string storageUrl;
     /// @notice Base URL of the coprocessor's PRF endpoint, empty when the coprocessor does not serve it
     string prfEndpointUrl;

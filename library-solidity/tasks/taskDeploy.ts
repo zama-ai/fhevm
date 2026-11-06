@@ -205,6 +205,26 @@ function buildKmsNodeParams(): {
   return nodes;
 }
 
+// The first coprocessor context of ProtocolConfig. The tx sender is the coprocessor's Ethereum wallet.
+function buildCoprocessors(): {
+  txSenderAddress: string;
+  signerAddress: string;
+  storageUrl: string;
+  prfEndpointUrl: string;
+}[] {
+  const numCoprocessors = getRequiredCountEnvVar('NUM_COPROCESSORS');
+  const coprocessors = [];
+  for (let idx = 0; idx < numCoprocessors; idx++) {
+    coprocessors.push({
+      txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
+      signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
+      storageUrl: getRequiredEnvVar(`COPROCESSOR_STORAGE_URL_${idx}`),
+      prfEndpointUrl: process.env[`COPROCESSOR_PRF_ENDPOINT_URL_${idx}`]?.trim() ?? '',
+    });
+  }
+  return coprocessors;
+}
+
 export function buildKmsThresholds() {
   return {
     publicDecryption: +getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD'),
@@ -254,7 +274,14 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [buildKmsNodeParams(), buildKmsThresholds(), softwareVersion, pcrValues],
+      args: [
+        buildKmsNodeParams(),
+        buildKmsThresholds(),
+        softwareVersion,
+        pcrValues,
+        buildCoprocessors(),
+        getRequiredCountEnvVar('COPROCESSOR_THRESHOLD'),
+      ],
     },
   });
   console.info('ProtocolConfig code set successfully at address:', proxyAddress);

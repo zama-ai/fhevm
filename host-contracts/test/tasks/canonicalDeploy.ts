@@ -5,7 +5,11 @@ import hre, { ethers, run, upgrades } from 'hardhat';
 
 import { readCanonicalSnapshot } from '../../tasks/protocolConfigMirror';
 import { makeEnvHelpers } from '../../tasks/utils/envSnapshot';
-import { EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
+import {
+  COPROCESSOR_CONTEXT_COUNTER_BASE,
+  EPOCH_COUNTER_BASE,
+  KMS_CONTEXT_COUNTER_BASE,
+} from '../../tasks/utils/kmsGenerationConstants';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
 import {
   applyProtocolConfigCanonicalEnv,
@@ -17,6 +21,8 @@ import { UPGRADE_TO_AND_CALL_INTERFACE } from '../../tasks/utils/upgradeProposal
 import { deployEmptyProxy } from '../utils/deploymentHelpers';
 import {
   HOST_ENV_FILE,
+  PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+  buildProtocolConfigCoprocessors,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   deployFreshProtocolConfigProxy,
@@ -89,6 +95,8 @@ describe('Canonical prepare tasks', function () {
         deployer,
         buildProtocolConfigNodes(),
         buildProtocolConfigThresholds(),
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
       );
       const snapshot = await readCanonicalSnapshot(hre, {
         canonicalProvider: ethers.provider,
@@ -103,7 +111,7 @@ describe('Canonical prepare tasks', function () {
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
       const { canonicalAddress } = await applyCanonicalSnapshotEnv();
       const canonical = await ethers.getContractAt('ProtocolConfig', canonicalAddress, deployer);
-      const [canonicalContextId, canonicalEpochId] = await canonical.getCurrentKmsContextAndEpoch();
+      const [canonicalKmsContextId, canonicalKmsEpochId] = await canonical.getCurrentKmsContextAndEpoch();
 
       const implementationSlotBefore = await readImplementationSlot(proxyAddress);
       const preparedUpgrade = await run('task:prepareDeployProtocolConfigFromCanonical', {
@@ -115,8 +123,8 @@ describe('Canonical prepare tasks', function () {
       expect(preparedUpgrade.proxyAddress).to.equal(proxyAddress);
       const iface = new ethers.Interface([`function ${innerFunctionSignature}`]);
       const decoded = iface.decodeFunctionData('initializeFromCanonical', innerCalldata);
-      expect(decoded[0]).to.equal(canonicalContextId);
-      expect(decoded[1]).to.equal(canonicalEpochId);
+      expect(decoded[0]).to.equal(canonicalKmsContextId);
+      expect(decoded[1]).to.equal(canonicalKmsEpochId);
       // Round-trip every KmsNodeParams field (4 stored + 4 MPC-metadata) so a dropped or transposed
       // field is caught instead of silently passing on txSenderAddress alone. The canonical mirror
       // path preserves the four stored fields and fills the MPC metadata with deterministic
@@ -136,6 +144,17 @@ describe('Canonical prepare tasks', function () {
         expect(storagePrefix).to.equal('');
       });
       expect(decoded[3][0]).to.equal(BigInt(buildProtocolConfigThresholds().publicDecryption));
+      expect(decoded[4]).to.equal(await canonical.getCurrentCoprocessorContextId());
+      const expectedCoprocessors = buildProtocolConfigCoprocessors();
+      expect(decoded[5].map((coprocessor: unknown[]) => [...coprocessor])).to.deep.equal(
+        expectedCoprocessors.map((coprocessor) => [
+          ethers.getAddress(coprocessor.txSenderAddress),
+          ethers.getAddress(coprocessor.signerAddress),
+          coprocessor.storageUrl,
+          coprocessor.prfEndpointUrl,
+        ]),
+      );
+      expect(decoded[6]).to.equal(BigInt(PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD));
       expect(outerCalldata).to.equal(
         UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [newImplementationAddress, innerCalldata]),
       );
@@ -146,19 +165,19 @@ describe('Canonical prepare tasks', function () {
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', proxyAddress);
       const { canonicalAddress } = await applyCanonicalSnapshotEnv();
       const canonical = await ethers.getContractAt('ProtocolConfig', canonicalAddress, deployer);
-      const [canonicalContextId, canonicalEpochId] = await canonical.getCurrentKmsContextAndEpoch();
+      const [canonicalKmsContextId, canonicalKmsEpochId] = await canonical.getCurrentKmsContextAndEpoch();
 
       await run('task:deployProtocolConfigFromCanonical');
 
       const secondary = await ethers.getContractAt('ProtocolConfigReplica', proxyAddress, deployer);
-      expect(await secondary.getCurrentKmsContextId()).to.equal(canonicalContextId);
+      expect(await secondary.getCurrentKmsContextId()).to.equal(canonicalKmsContextId);
       const secondaryState = await secondary.getCurrentKmsContextAndEpoch();
-      expect(secondaryState[0]).to.equal(canonicalContextId);
-      expect(secondaryState[1]).to.equal(canonicalEpochId);
-      expect((await secondary.getKmsNodesForContext(canonicalContextId)).length).to.equal(
+      expect(secondaryState[0]).to.equal(canonicalKmsContextId);
+      expect(secondaryState[1]).to.equal(canonicalKmsEpochId);
+      expect((await secondary.getKmsNodesForContext(canonicalKmsContextId)).length).to.equal(
         buildProtocolConfigNodes().length,
       );
-      expect(await secondary.getPublicDecryptionThresholdForContext(canonicalContextId)).to.equal(
+      expect(await secondary.getPublicDecryptionThresholdForContext(canonicalKmsContextId)).to.equal(
         BigInt(buildProtocolConfigThresholds().publicDecryption),
       );
     });
@@ -191,6 +210,8 @@ describe('Canonical prepare tasks', function () {
         deployer,
         buildProtocolConfigNodes(),
         buildProtocolConfigThresholds(),
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
       );
 
       await run('task:assertProtocolConfigReady');
@@ -203,6 +224,9 @@ describe('Canonical prepare tasks', function () {
         EPOCH_COUNTER_BASE + 1n,
         buildProtocolConfigNodes(),
         buildProtocolConfigThresholds(),
+        COPROCESSOR_CONTEXT_COUNTER_BASE + 1n,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
       );
 
       patchHostEnv('PROTOCOL_CONFIG_CONTRACT_ADDRESS', replicaAddress);

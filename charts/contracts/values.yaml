@@ -122,7 +122,7 @@ scDeploy:
       value: ""
 
     # -------------------------------------------------------------------------
-    # InputVerifier (coprocessor signer set)
+    # Coprocessors: InputVerifier signer set and ProtocolConfig's first coprocessor context
     # -------------------------------------------------------------------------
     - name: NUM_COPROCESSORS
       value: 5
@@ -130,8 +130,20 @@ scDeploy:
     - name: COPROCESSOR_THRESHOLD
       value: 3
 
-    # Coprocessor signer addresses, indexed from 0 up to NUM_COPROCESSORS - 1
+    # Coprocessor Ethereum tx senders, indexed from 0 up to NUM_COPROCESSORS - 1
+    - name: COPROCESSOR_TX_SENDER_ADDRESS_x
+      value: ""
+
+    # Coprocessor signer addresses, indexed like the tx senders
     - name: COPROCESSOR_SIGNER_ADDRESS_x
+      value: ""
+
+    # Coprocessor storage URLs (the Gateway's COPROCESSOR_S3_BUCKET_URL_x), indexed like the tx senders
+    - name: COPROCESSOR_STORAGE_URL_x
+      value: ""
+
+    # Optional coprocessor PRF endpoint URLs, empty when not served
+    - name: COPROCESSOR_PRF_ENDPOINT_URL_x
       value: ""
 
   resources:

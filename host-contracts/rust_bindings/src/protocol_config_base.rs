@@ -16,6 +16,7 @@ interface ProtocolConfigBase {
         string storageUrl;
     }
 
+    error CoprocessorEmptyStorageUrl();
     error CoprocessorNullSigner();
     error CoprocessorNullTxSender();
     error CoprocessorSetExceedsProofFormatLimit(uint256 coprocessorCount, uint256 maxAllowed);
@@ -39,8 +40,8 @@ interface ProtocolConfigBase {
 
     event CoprocessorContextDestroyed(uint256 indexed contextId);
 
-    function getCoprocessorMajorityThresholdForContext(uint256) external view returns (uint256);
-    function getCoprocessorsForContext(uint256) external view returns (Coprocessor[] memory);
+    function getCoprocessorMajorityThresholdForContext(uint256 coprocessorContextId) external view returns (uint256);
+    function getCoprocessorsForContext(uint256 coprocessorContextId) external view returns (Coprocessor[] memory coprocessors);
     function getCurrentCoprocessorContextId() external view returns (uint256);
     function getCurrentKmsContextAndEpoch() external view returns (uint256 contextId, uint256 epochId);
     function getCurrentKmsContextId() external view returns (uint256);
@@ -58,13 +59,13 @@ interface ProtocolConfigBase {
     function getUserDecryptionThreshold() external view returns (uint256);
     function getUserDecryptionThresholdForContext(uint256 kmsContextId) external view returns (uint256);
     function getVersion() external pure returns (string memory);
-    function isCoprocessorSignerForContext(uint256, address) external view returns (bool);
-    function isCoprocessorTxSenderForContext(uint256, address) external view returns (bool);
+    function isCoprocessorSignerForContext(uint256 coprocessorContextId, address signer) external view returns (bool);
+    function isCoprocessorTxSenderForContext(uint256 coprocessorContextId, address txSender) external view returns (bool);
     function isKmsSigner(address signer) external view returns (bool);
     function isKmsSignerForContext(uint256 kmsContextId, address signer) external view returns (bool);
     function isKmsTxSenderForContext(uint256 kmsContextId, address txSender) external view returns (bool);
     function isLiveKmsContext(uint256 kmsContextId) external view returns (bool);
-    function isValidCoprocessorContext(uint256) external view returns (bool);
+    function isValidCoprocessorContext(uint256 coprocessorContextId) external view returns (bool);
     function isValidEpochForContext(uint256 kmsContextId, uint256 epochId) external view returns (bool);
     function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
 }
@@ -78,7 +79,7 @@ interface ProtocolConfigBase {
     "name": "getCoprocessorMajorityThresholdForContext",
     "inputs": [
       {
-        "name": "",
+        "name": "coprocessorContextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -97,14 +98,14 @@ interface ProtocolConfigBase {
     "name": "getCoprocessorsForContext",
     "inputs": [
       {
-        "name": "",
+        "name": "coprocessorContextId",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
     "outputs": [
       {
-        "name": "",
+        "name": "coprocessors",
         "type": "tuple[]",
         "internalType": "struct Coprocessor[]",
         "components": [
@@ -455,12 +456,12 @@ interface ProtocolConfigBase {
     "name": "isCoprocessorSignerForContext",
     "inputs": [
       {
-        "name": "",
+        "name": "coprocessorContextId",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "",
+        "name": "signer",
         "type": "address",
         "internalType": "address"
       }
@@ -479,12 +480,12 @@ interface ProtocolConfigBase {
     "name": "isCoprocessorTxSenderForContext",
     "inputs": [
       {
-        "name": "",
+        "name": "coprocessorContextId",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "",
+        "name": "txSender",
         "type": "address",
         "internalType": "address"
       }
@@ -589,7 +590,7 @@ interface ProtocolConfigBase {
     "name": "isValidCoprocessorContext",
     "inputs": [
       {
-        "name": "",
+        "name": "coprocessorContextId",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -658,6 +659,11 @@ interface ProtocolConfigBase {
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "CoprocessorEmptyStorageUrl",
+    "inputs": []
   },
   {
     "type": "error",
@@ -1430,6 +1436,82 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                 alloy_sol_types::abi::token::WordToken(
                     alloy_sol_types::private::keccak256(out),
                 )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CoprocessorEmptyStorageUrl()` and selector `0x9826e223`.
+```solidity
+error CoprocessorEmptyStorageUrl();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CoprocessorEmptyStorageUrl;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CoprocessorEmptyStorageUrl>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorEmptyStorageUrl) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CoprocessorEmptyStorageUrl {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CoprocessorEmptyStorageUrl {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CoprocessorEmptyStorageUrl()";
+            const SELECTOR: [u8; 4] = [152u8, 38u8, 226u8, 35u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -3236,13 +3318,14 @@ event CoprocessorContextDestroyed(uint256 indexed contextId);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCoprocessorMajorityThresholdForContext(uint256)` and selector `0xf67de37c`.
 ```solidity
-function getCoprocessorMajorityThresholdForContext(uint256) external view returns (uint256);
+function getCoprocessorMajorityThresholdForContext(uint256 coprocessorContextId) external view returns (uint256);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getCoprocessorMajorityThresholdForContextCall(
-        pub alloy::sol_types::private::primitives::aliases::U256,
-    );
+    pub struct getCoprocessorMajorityThresholdForContextCall {
+        #[allow(missing_docs)]
+        pub coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getCoprocessorMajorityThresholdForContext(uint256)`](getCoprocessorMajorityThresholdForContextCall) function.
@@ -3284,7 +3367,7 @@ function getCoprocessorMajorityThresholdForContext(uint256) external view return
             impl ::core::convert::From<getCoprocessorMajorityThresholdForContextCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: getCoprocessorMajorityThresholdForContextCall) -> Self {
-                    (value.0,)
+                    (value.coprocessorContextId,)
                 }
             }
             #[automatically_derived]
@@ -3292,7 +3375,9 @@ function getCoprocessorMajorityThresholdForContext(uint256) external view return
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for getCoprocessorMajorityThresholdForContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self(tuple.0)
+                    Self {
+                        coprocessorContextId: tuple.0,
+                    }
                 }
             }
         }
@@ -3356,7 +3441,7 @@ function getCoprocessorMajorityThresholdForContext(uint256) external view return
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.0),
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorContextId),
                 )
             }
             #[inline]
@@ -3397,13 +3482,14 @@ function getCoprocessorMajorityThresholdForContext(uint256) external view return
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCoprocessorsForContext(uint256)` and selector `0x30c66a80`.
 ```solidity
-function getCoprocessorsForContext(uint256) external view returns (Coprocessor[] memory);
+function getCoprocessorsForContext(uint256 coprocessorContextId) external view returns (Coprocessor[] memory coprocessors);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getCoprocessorsForContextCall(
-        pub alloy::sol_types::private::primitives::aliases::U256,
-    );
+    pub struct getCoprocessorsForContextCall {
+        #[allow(missing_docs)]
+        pub coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getCoprocessorsForContext(uint256)`](getCoprocessorsForContextCall) function.
@@ -3411,7 +3497,7 @@ function getCoprocessorsForContext(uint256) external view returns (Coprocessor[]
     #[derive(Clone)]
     pub struct getCoprocessorsForContextReturn {
         #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::Vec<
+        pub coprocessors: alloy::sol_types::private::Vec<
             <Coprocessor as alloy::sol_types::SolType>::RustType,
         >,
     }
@@ -3447,7 +3533,7 @@ function getCoprocessorsForContext(uint256) external view returns (Coprocessor[]
             impl ::core::convert::From<getCoprocessorsForContextCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: getCoprocessorsForContextCall) -> Self {
-                    (value.0,)
+                    (value.coprocessorContextId,)
                 }
             }
             #[automatically_derived]
@@ -3455,7 +3541,9 @@ function getCoprocessorsForContext(uint256) external view returns (Coprocessor[]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for getCoprocessorsForContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self(tuple.0)
+                    Self {
+                        coprocessorContextId: tuple.0,
+                    }
                 }
             }
         }
@@ -3487,7 +3575,7 @@ function getCoprocessorsForContext(uint256) external view returns (Coprocessor[]
             impl ::core::convert::From<getCoprocessorsForContextReturn>
             for UnderlyingRustTuple<'_> {
                 fn from(value: getCoprocessorsForContextReturn) -> Self {
-                    (value._0,)
+                    (value.coprocessors,)
                 }
             }
             #[automatically_derived]
@@ -3495,7 +3583,7 @@ function getCoprocessorsForContext(uint256) external view returns (Coprocessor[]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for getCoprocessorsForContextReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
+                    Self { coprocessors: tuple.0 }
                 }
             }
         }
@@ -3525,7 +3613,7 @@ function getCoprocessorsForContext(uint256) external view returns (Coprocessor[]
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.0),
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorContextId),
                 )
             }
             #[inline]
@@ -3543,7 +3631,7 @@ function getCoprocessorsForContext(uint256) external view returns (Coprocessor[]
                 > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(|r| {
                         let r: getCoprocessorsForContextReturn = r.into();
-                        r._0
+                        r.coprocessors
                     })
             }
             #[inline]
@@ -3555,7 +3643,7 @@ function getCoprocessorsForContext(uint256) external view returns (Coprocessor[]
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
                         let r: getCoprocessorsForContextReturn = r.into();
-                        r._0
+                        r.coprocessors
                     })
             }
         }
@@ -6229,15 +6317,15 @@ function getVersion() external pure returns (string memory);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isCoprocessorSignerForContext(uint256,address)` and selector `0x609adb72`.
 ```solidity
-function isCoprocessorSignerForContext(uint256, address) external view returns (bool);
+function isCoprocessorSignerForContext(uint256 coprocessorContextId, address signer) external view returns (bool);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isCoprocessorSignerForContextCall {
         #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+        pub coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub _1: alloy::sol_types::private::Address,
+        pub signer: alloy::sol_types::private::Address,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
@@ -6284,7 +6372,7 @@ function isCoprocessorSignerForContext(uint256, address) external view returns (
             impl ::core::convert::From<isCoprocessorSignerForContextCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: isCoprocessorSignerForContextCall) -> Self {
-                    (value._0, value._1)
+                    (value.coprocessorContextId, value.signer)
                 }
             }
             #[automatically_derived]
@@ -6292,7 +6380,10 @@ function isCoprocessorSignerForContext(uint256, address) external view returns (
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for isCoprocessorSignerForContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0, _1: tuple.1 }
+                    Self {
+                        coprocessorContextId: tuple.0,
+                        signer: tuple.1,
+                    }
                 }
             }
         }
@@ -6357,9 +6448,9 @@ function isCoprocessorSignerForContext(uint256, address) external view returns (
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self._0),
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorContextId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self._1,
+                        &self.signer,
                     ),
                 )
             }
@@ -6399,15 +6490,15 @@ function isCoprocessorSignerForContext(uint256, address) external view returns (
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isCoprocessorTxSenderForContext(uint256,address)` and selector `0xeb0f7764`.
 ```solidity
-function isCoprocessorTxSenderForContext(uint256, address) external view returns (bool);
+function isCoprocessorTxSenderForContext(uint256 coprocessorContextId, address txSender) external view returns (bool);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct isCoprocessorTxSenderForContextCall {
         #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+        pub coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub _1: alloy::sol_types::private::Address,
+        pub txSender: alloy::sol_types::private::Address,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
@@ -6454,7 +6545,7 @@ function isCoprocessorTxSenderForContext(uint256, address) external view returns
             impl ::core::convert::From<isCoprocessorTxSenderForContextCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: isCoprocessorTxSenderForContextCall) -> Self {
-                    (value._0, value._1)
+                    (value.coprocessorContextId, value.txSender)
                 }
             }
             #[automatically_derived]
@@ -6462,7 +6553,10 @@ function isCoprocessorTxSenderForContext(uint256, address) external view returns
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for isCoprocessorTxSenderForContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0, _1: tuple.1 }
+                    Self {
+                        coprocessorContextId: tuple.0,
+                        txSender: tuple.1,
+                    }
                 }
             }
         }
@@ -6527,9 +6621,9 @@ function isCoprocessorTxSenderForContext(uint256, address) external view returns
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self._0),
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorContextId),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self._1,
+                        &self.txSender,
                     ),
                 )
             }
@@ -7225,13 +7319,14 @@ function isLiveKmsContext(uint256 kmsContextId) external view returns (bool);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `isValidCoprocessorContext(uint256)` and selector `0x0e1887c9`.
 ```solidity
-function isValidCoprocessorContext(uint256) external view returns (bool);
+function isValidCoprocessorContext(uint256 coprocessorContextId) external view returns (bool);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct isValidCoprocessorContextCall(
-        pub alloy::sol_types::private::primitives::aliases::U256,
-    );
+    pub struct isValidCoprocessorContextCall {
+        #[allow(missing_docs)]
+        pub coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
+    }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`isValidCoprocessorContext(uint256)`](isValidCoprocessorContextCall) function.
@@ -7273,7 +7368,7 @@ function isValidCoprocessorContext(uint256) external view returns (bool);
             impl ::core::convert::From<isValidCoprocessorContextCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: isValidCoprocessorContextCall) -> Self {
-                    (value.0,)
+                    (value.coprocessorContextId,)
                 }
             }
             #[automatically_derived]
@@ -7281,7 +7376,9 @@ function isValidCoprocessorContext(uint256) external view returns (bool);
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for isValidCoprocessorContextCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self(tuple.0)
+                    Self {
+                        coprocessorContextId: tuple.0,
+                    }
                 }
             }
         }
@@ -7343,7 +7440,7 @@ function isValidCoprocessorContext(uint256) external view returns (bool);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.0),
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorContextId),
                 )
             }
             #[inline]
@@ -8992,6 +9089,8 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ProtocolConfigBaseErrors {
         #[allow(missing_docs)]
+        CoprocessorEmptyStorageUrl(CoprocessorEmptyStorageUrl),
+        #[allow(missing_docs)]
         CoprocessorNullSigner(CoprocessorNullSigner),
         #[allow(missing_docs)]
         CoprocessorNullTxSender(CoprocessorNullTxSender),
@@ -9057,6 +9156,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
             [132u8, 102u8, 128u8, 74u8],
             [138u8, 240u8, 130u8, 239u8],
             [151u8, 151u8, 195u8, 255u8],
+            [152u8, 38u8, 226u8, 35u8],
             [189u8, 124u8, 184u8, 129u8],
             [202u8, 168u8, 20u8, 163u8],
             [209u8, 140u8, 79u8, 240u8],
@@ -9080,6 +9180,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
             ::core::stringify!(KmsNodeNullTxSender),
             ::core::stringify!(EmptyCoprocessors),
             ::core::stringify!(InvalidCoprocessorContext),
+            ::core::stringify!(CoprocessorEmptyStorageUrl),
             ::core::stringify!(CoprocessorTxSenderAlreadyRegistered),
             ::core::stringify!(InvalidHighThreshold),
             ::core::stringify!(KmsTxSenderAlreadyRegistered),
@@ -9103,6 +9204,7 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
             <KmsNodeNullTxSender as alloy_sol_types::SolError>::SIGNATURE,
             <EmptyCoprocessors as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidCoprocessorContext as alloy_sol_types::SolError>::SIGNATURE,
+            <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::SIGNATURE,
             <CoprocessorTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidHighThreshold as alloy_sol_types::SolError>::SIGNATURE,
             <KmsTxSenderAlreadyRegistered as alloy_sol_types::SolError>::SIGNATURE,
@@ -9134,10 +9236,13 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
     impl alloy_sol_types::SolInterface for ProtocolConfigBaseErrors {
         const NAME: &'static str = "ProtocolConfigBaseErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 20usize;
+        const COUNT: usize = 21usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
+                Self::CoprocessorEmptyStorageUrl(_) => {
+                    <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::CoprocessorNullSigner(_) => {
                     <CoprocessorNullSigner as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -9393,6 +9498,17 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                     InvalidCoprocessorContext
                 },
                 {
+                    fn CoprocessorEmptyStorageUrl(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ProtocolConfigBaseErrors> {
+                        <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(ProtocolConfigBaseErrors::CoprocessorEmptyStorageUrl)
+                    }
+                    CoprocessorEmptyStorageUrl
+                },
+                {
                     fn CoprocessorTxSenderAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ProtocolConfigBaseErrors> {
@@ -9645,6 +9761,17 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
                     InvalidCoprocessorContext
                 },
                 {
+                    fn CoprocessorEmptyStorageUrl(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ProtocolConfigBaseErrors> {
+                        <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(ProtocolConfigBaseErrors::CoprocessorEmptyStorageUrl)
+                    }
+                    CoprocessorEmptyStorageUrl
+                },
+                {
                     fn CoprocessorTxSenderAlreadyRegistered(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ProtocolConfigBaseErrors> {
@@ -9715,6 +9842,11 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
+                Self::CoprocessorEmptyStorageUrl(inner) => {
+                    <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::CoprocessorNullSigner(inner) => {
                     <CoprocessorNullSigner as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -9818,6 +9950,12 @@ function isValidKmsContext(uint256 kmsContextId) external view returns (bool);
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
+                Self::CoprocessorEmptyStorageUrl(inner) => {
+                    <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::CoprocessorNullSigner(inner) => {
                     <CoprocessorNullSigner as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -10201,20 +10339,28 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`getCoprocessorMajorityThresholdForContext`] function.
         pub fn getCoprocessorMajorityThresholdForContext(
             &self,
-            _0: alloy::sol_types::private::primitives::aliases::U256,
+            coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<
             &P,
             getCoprocessorMajorityThresholdForContextCall,
             N,
         > {
-            self.call_builder(&getCoprocessorMajorityThresholdForContextCall(_0))
+            self.call_builder(
+                &getCoprocessorMajorityThresholdForContextCall {
+                    coprocessorContextId,
+                },
+            )
         }
         ///Creates a new call builder for the [`getCoprocessorsForContext`] function.
         pub fn getCoprocessorsForContext(
             &self,
-            _0: alloy::sol_types::private::primitives::aliases::U256,
+            coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, getCoprocessorsForContextCall, N> {
-            self.call_builder(&getCoprocessorsForContextCall(_0))
+            self.call_builder(
+                &getCoprocessorsForContextCall {
+                    coprocessorContextId,
+                },
+            )
         }
         ///Creates a new call builder for the [`getCurrentCoprocessorContextId`] function.
         pub fn getCurrentCoprocessorContextId(
@@ -10366,26 +10512,26 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`isCoprocessorSignerForContext`] function.
         pub fn isCoprocessorSignerForContext(
             &self,
-            _0: alloy::sol_types::private::primitives::aliases::U256,
-            _1: alloy::sol_types::private::Address,
+            coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
+            signer: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, isCoprocessorSignerForContextCall, N> {
             self.call_builder(
                 &isCoprocessorSignerForContextCall {
-                    _0,
-                    _1,
+                    coprocessorContextId,
+                    signer,
                 },
             )
         }
         ///Creates a new call builder for the [`isCoprocessorTxSenderForContext`] function.
         pub fn isCoprocessorTxSenderForContext(
             &self,
-            _0: alloy::sol_types::private::primitives::aliases::U256,
-            _1: alloy::sol_types::private::Address,
+            coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
+            txSender: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<&P, isCoprocessorTxSenderForContextCall, N> {
             self.call_builder(
                 &isCoprocessorTxSenderForContextCall {
-                    _0,
-                    _1,
+                    coprocessorContextId,
+                    txSender,
                 },
             )
         }
@@ -10436,9 +10582,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`isValidCoprocessorContext`] function.
         pub fn isValidCoprocessorContext(
             &self,
-            _0: alloy::sol_types::private::primitives::aliases::U256,
+            coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, isValidCoprocessorContextCall, N> {
-            self.call_builder(&isValidCoprocessorContextCall(_0))
+            self.call_builder(
+                &isValidCoprocessorContextCall {
+                    coprocessorContextId,
+                },
+            )
         }
         ///Creates a new call builder for the [`isValidEpochForContext`] function.
         pub fn isValidEpochForContext(

@@ -112,7 +112,7 @@ have no `KMSGeneration`, and their only write path is the mirror methods below.
 
 ### Mirror methods (non-canonical write path)
 
-`mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` are how a replica tracks Ethereum. They are `onlyACLOwner`
+The mirror methods are how a replica tracks Ethereum. They are `onlyACLOwner`
 and bypass the confirmation quorum — a replica can't re-run the MPC attestations, so it trusts the
 operator to import state Ethereum has already finalized, landing it as immediately `Active`:
 
@@ -120,6 +120,13 @@ operator to import state Ethereum has already finalized, landing it as immediate
   imports a context and its epoch as active; emits `MirrorKmsContextAndEpoch`.
 - `mirrorKmsEpoch(contextId, epochId)` — advances the active epoch of the mirrored context; emits
   `MirrorKmsEpoch`.
+- `mirrorCoprocessorContext(contextId, coprocessors, majorityThreshold)` — imports a coprocessor
+  context as the current one; emits `MirrorCoprocessorContext`.
+- `mirrorCoprocessorContextDestruction(coprocessorContextId)` — destroys a past coprocessor context;
+  emits `CoprocessorContextDestroyed`.
+
+Each method has a `task:build…Calldata` task (DAO path, never broadcasts) and a broadcasting task
+(deployer key), in `tasks/mirrorKmsContext.ts` and `tasks/mirrorCoprocessorContext.ts`.
 
 IDs must be **strictly increasing** — the only on-chain guard, preventing rollback. Gaps are fine
 (contexts/epochs aborted or never activated on Ethereum are just never mirrored). Nothing stops a
@@ -132,8 +139,9 @@ The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **ne
 seed their replica from it.
 
 An existing replica proxy that still runs `ProtocolConfig` does not need this flow. It migrates in
-place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV3())`. Both contracts use the
-same storage, so the KMS context, epoch and nodes stay as they are.
+place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV3(coprocessorContextId, coprocessors, majorityThreshold))`,
+which mirrors Ethereum's current coprocessor context. Both contracts use the same storage, so the KMS
+context, epoch and nodes stay as they are.
 
 The flow is artifact-centric — the same three steps in every environment:
 
@@ -158,7 +166,7 @@ export with `--block-number <N>` from the artifact and diffing the output.
 **3. Apply** the reviewed artifact to the local `ProtocolConfigReplica` proxy. Both environments run the
 same prepare step — deploy the implementation and build the
 `upgradeToAndCall(initializeFromCanonical(contextId, epochId, …))` payload, landing the
-replica on canonical's active context and epoch instead of fresh local counters. They differ only in
+replica on canonical's active KMS context and epoch, and on its current coprocessor context, instead of fresh local counters. They differ only in
 who executes that payload: the devnet task sends it immediately with the deployer key, so **what runs
 on devnet is byte-identical to what the DAO signs**.
 
@@ -168,18 +176,21 @@ for the canonical state. A deployment platform injects the values into the deplo
 The table lists the `export` keys from step 1. The tasks reject a bad value before they deploy anything, so a
 misconfigured environment leaves the proxy untouched.
 
-| Variable                            | Type           | Meaning                                                |
-| ----------------------------------- | -------------- | ------------------------------------------------------ |
-| `CANONICAL_CHAIN_ID`                | decimal string | Chain id of the canonical host chain.                  |
-| `CANONICAL_PROTOCOL_CONFIG_ADDRESS` | address        | Canonical `ProtocolConfig` the snapshot was read from. |
-| `CANONICAL_BLOCK_NUMBER`            | decimal string | Block the snapshot was pinned to.                      |
-| `CANONICAL_BLOCK_HASH`              | 32-byte hex    | Hash of that block.                                    |
-| `CANONICAL_KMS_CONTEXT_ID`          | decimal string | Active KMS context id to mirror.                       |
-| `CANONICAL_EPOCH_ID`                | decimal string | Active KMS epoch id to mirror.                         |
-| `CANONICAL_KMS_NODES`               | JSON array     | The KMS node set, one JSON object per node.            |
-| `CANONICAL_KMS_THRESHOLDS`          | JSON object    | The four thresholds, each a decimal string.            |
+| Variable                                   | Type           | Meaning                                                |
+| ------------------------------------------ | -------------- | ------------------------------------------------------ |
+| `CANONICAL_CHAIN_ID`                       | decimal string | Chain id of the canonical host chain.                  |
+| `CANONICAL_PROTOCOL_CONFIG_ADDRESS`        | address        | Canonical `ProtocolConfig` the snapshot was read from. |
+| `CANONICAL_BLOCK_NUMBER`                   | decimal string | Block the snapshot was pinned to.                      |
+| `CANONICAL_BLOCK_HASH`                     | 32-byte hex    | Hash of that block.                                    |
+| `CANONICAL_KMS_CONTEXT_ID`                 | decimal string | Active KMS context id to mirror.                       |
+| `CANONICAL_EPOCH_ID`                       | decimal string | Active KMS epoch id to mirror.                         |
+| `CANONICAL_KMS_NODES`                      | JSON array     | The KMS node set, one JSON object per node.            |
+| `CANONICAL_KMS_THRESHOLDS`                 | JSON object    | The four thresholds, each a decimal string.            |
+| `CANONICAL_COPROCESSOR_CONTEXT_ID`         | decimal string | Current coprocessor context id to mirror.              |
+| `CANONICAL_COPROCESSORS`                   | JSON array     | The coprocessor set, one JSON object per coprocessor.  |
+| `CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD` | decimal string | Majority threshold of the coprocessor context.         |
 
-The context id, epoch id, node set and thresholds become the `initializeFromCanonical` calldata, so
+The context ids, epoch id, node and coprocessor sets and thresholds become the `initializeFromCanonical` calldata, so
 the tasks check them in full. The chain id and block number are provenance, and the tasks parse them
 as decimal strings. The block hash and the address are provenance that the tasks only check for
 presence, then print.

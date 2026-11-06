@@ -555,6 +555,7 @@ interface IProtocolConfig {
         bytes pcr2;
     }
 
+    error CoprocessorEmptyStorageUrl();
     error CoprocessorNullSigner();
     error CoprocessorNullTxSender();
     error CoprocessorSetExceedsProofFormatLimit(uint256 coprocessorCount, uint256 maxAllowed);
@@ -2046,6 +2047,11 @@ interface IProtocolConfig {
       }
     ],
     "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "CoprocessorEmptyStorageUrl",
+    "inputs": []
   },
   {
     "type": "error",
@@ -4668,6 +4674,82 @@ struct PcrValues { bytes pcr0; bytes pcr1; bytes pcr2; }
                 alloy_sol_types::abi::token::WordToken(
                     alloy_sol_types::private::keccak256(out),
                 )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CoprocessorEmptyStorageUrl()` and selector `0x9826e223`.
+```solidity
+error CoprocessorEmptyStorageUrl();
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CoprocessorEmptyStorageUrl;
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        #[allow(dead_code)]
+        type UnderlyingSolTuple<'a> = ();
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = ();
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CoprocessorEmptyStorageUrl>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorEmptyStorageUrl) -> Self {
+                ()
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CoprocessorEmptyStorageUrl {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CoprocessorEmptyStorageUrl {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CoprocessorEmptyStorageUrl()";
+            const SELECTOR: [u8; 4] = [152u8, 38u8, 226u8, 35u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -17207,6 +17289,8 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IProtocolConfigErrors {
         #[allow(missing_docs)]
+        CoprocessorEmptyStorageUrl(CoprocessorEmptyStorageUrl),
+        #[allow(missing_docs)]
         CoprocessorNullSigner(CoprocessorNullSigner),
         #[allow(missing_docs)]
         CoprocessorNullTxSender(CoprocessorNullTxSender),
@@ -17316,6 +17400,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             [132u8, 102u8, 128u8, 74u8],
             [138u8, 240u8, 130u8, 239u8],
             [151u8, 151u8, 195u8, 255u8],
+            [152u8, 38u8, 226u8, 35u8],
             [163u8, 244u8, 175u8, 235u8],
             [181u8, 72u8, 145u8, 71u8],
             [184u8, 29u8, 248u8, 232u8],
@@ -17356,6 +17441,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             ::core::stringify!(KmsNodeNullTxSender),
             ::core::stringify!(EmptyCoprocessors),
             ::core::stringify!(InvalidCoprocessorContext),
+            ::core::stringify!(CoprocessorEmptyStorageUrl),
             ::core::stringify!(EpochActivationUnauthorized),
             ::core::stringify!(EmptySoftwareVersion),
             ::core::stringify!(KmsContextCreationUnauthorized),
@@ -17396,6 +17482,7 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
             <KmsNodeNullTxSender as alloy_sol_types::SolError>::SIGNATURE,
             <EmptyCoprocessors as alloy_sol_types::SolError>::SIGNATURE,
             <InvalidCoprocessorContext as alloy_sol_types::SolError>::SIGNATURE,
+            <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::SIGNATURE,
             <EpochActivationUnauthorized as alloy_sol_types::SolError>::SIGNATURE,
             <EmptySoftwareVersion as alloy_sol_types::SolError>::SIGNATURE,
             <KmsContextCreationUnauthorized as alloy_sol_types::SolError>::SIGNATURE,
@@ -17436,10 +17523,13 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
     impl alloy_sol_types::SolInterface for IProtocolConfigErrors {
         const NAME: &'static str = "IProtocolConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 37usize;
+        const COUNT: usize = 38usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
+                Self::CoprocessorEmptyStorageUrl(_) => {
+                    <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::SELECTOR
+                }
                 Self::CoprocessorNullSigner(_) => {
                     <CoprocessorNullSigner as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -17836,6 +17926,17 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                             .map(IProtocolConfigErrors::InvalidCoprocessorContext)
                     }
                     InvalidCoprocessorContext
+                },
+                {
+                    fn CoprocessorEmptyStorageUrl(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::CoprocessorEmptyStorageUrl)
+                    }
+                    CoprocessorEmptyStorageUrl
                 },
                 {
                     fn EpochActivationUnauthorized(
@@ -18283,6 +18384,17 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
                     InvalidCoprocessorContext
                 },
                 {
+                    fn CoprocessorEmptyStorageUrl(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
+                        <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IProtocolConfigErrors::CoprocessorEmptyStorageUrl)
+                    }
+                    CoprocessorEmptyStorageUrl
+                },
+                {
                     fn EpochActivationUnauthorized(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IProtocolConfigErrors> {
@@ -18456,6 +18568,11 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
+                Self::CoprocessorEmptyStorageUrl(inner) => {
+                    <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::CoprocessorNullSigner(inner) => {
                     <CoprocessorNullSigner as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -18642,6 +18759,12 @@ function proposeCoprocessorUpgrade(uint256 proposalId, string memory softwareVer
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
+                Self::CoprocessorEmptyStorageUrl(inner) => {
+                    <CoprocessorEmptyStorageUrl as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::CoprocessorNullSigner(inner) => {
                     <CoprocessorNullSigner as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,

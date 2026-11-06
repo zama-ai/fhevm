@@ -5,7 +5,7 @@ import {ProtocolConfigBase} from "./ProtocolConfigBase.sol";
 import {IProtocolConfigReplica} from "./interfaces/IProtocolConfigReplica.sol";
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
 import {Coprocessor, KmsThresholds, KmsNodeParams, PcrValues} from "./shared/Structs.sol";
-import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
+import {COPROCESSOR_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
@@ -44,43 +44,70 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
 
     /**
      * @notice Canonical mirror initializer: seeds a non-canonical host from Ethereum's active state.
-     * @dev Preserves both the canonical context ID and canonical epoch ID. This is the bootstrap path.
-     *      Later canonical updates use `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch`.
-     * @param canonicalContextId The active Ethereum KMS context ID to preserve.
-     * @param canonicalEpochId The active Ethereum epoch ID to preserve.
+     * @dev Preserves the canonical KMS context ID, KMS epoch ID and coprocessor context ID. This is the
+     *      bootstrap path. Later canonical updates use `mirrorKmsContextAndEpoch` and `mirrorKmsEpoch` for
+     *      the KMS, and `mirrorCoprocessorContext` and `mirrorCoprocessorContextDestruction` for coprocessors.
+     * @param canonicalKmsContextId The active Ethereum KMS context ID to preserve.
+     * @param canonicalKmsEpochId The active Ethereum KMS epoch ID to preserve.
      * @param canonicalKmsNodeParams The active Ethereum KMS node set, including MPC metadata.
-     * @param canonicalThresholds The active Ethereum thresholds.
+     * @param canonicalKmsThresholds The active Ethereum KMS thresholds.
+     * @param canonicalCoprocessorContextId The current Ethereum coprocessor context ID to preserve.
+     * @param canonicalCoprocessors The coprocessors of that context.
+     * @param canonicalCoprocessorMajorityThreshold The majority threshold of that context.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromCanonical(
-        uint256 canonicalContextId,
-        uint256 canonicalEpochId,
+        uint256 canonicalKmsContextId,
+        uint256 canonicalKmsEpochId,
         KmsNodeParams[] calldata canonicalKmsNodeParams,
-        KmsThresholds calldata canonicalThresholds
+        KmsThresholds calldata canonicalKmsThresholds,
+        uint256 canonicalCoprocessorContextId,
+        Coprocessor[] calldata canonicalCoprocessors,
+        uint256 canonicalCoprocessorMajorityThreshold
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        if (canonicalContextId < KMS_CONTEXT_COUNTER_BASE + 1) {
-            revert InvalidKmsContext(canonicalContextId);
+        _mirrorCoprocessorContext(
+            canonicalCoprocessorContextId,
+            canonicalCoprocessors,
+            canonicalCoprocessorMajorityThreshold
+        );
+
+        if (canonicalKmsContextId < KMS_CONTEXT_COUNTER_BASE + 1) {
+            revert InvalidKmsContext(canonicalKmsContextId);
         }
-        if (canonicalEpochId < EPOCH_COUNTER_BASE + 1) {
-            revert InvalidKmsEpoch(canonicalEpochId);
+        if (canonicalKmsEpochId < EPOCH_COUNTER_BASE + 1) {
+            revert InvalidKmsEpoch(canonicalKmsEpochId);
         }
 
         _storeAndActivateKmsContextAndEpoch(
-            canonicalContextId,
-            canonicalEpochId,
+            canonicalKmsContextId,
+            canonicalKmsEpochId,
             canonicalKmsNodeParams,
-            canonicalThresholds
+            canonicalKmsThresholds
         );
     }
 
     /**
-     * @notice Re-initializes a replica proxy upgraded from `ProtocolConfig`.
+     * @notice Re-initializes a replica proxy upgraded from `ProtocolConfig` and mirrors the
+     *         current canonical coprocessor context.
      * @dev See `REINITIALIZER_VERSION`.
+     * @param canonicalCoprocessorContextId The current Ethereum coprocessor context ID to preserve.
+     * @param canonicalCoprocessors The coprocessors of that context.
+     * @param canonicalCoprocessorMajorityThreshold The majority threshold of that context.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3(
+        uint256 canonicalCoprocessorContextId,
+        Coprocessor[] calldata canonicalCoprocessors,
+        uint256 canonicalCoprocessorMajorityThreshold
+    ) public virtual onlyACLOwner reinitializer(REINITIALIZER_VERSION) {
+        _mirrorCoprocessorContext(
+            canonicalCoprocessorContextId,
+            canonicalCoprocessors,
+            canonicalCoprocessorMajorityThreshold
+        );
+    }
 
     // -----------------------------------------------------------------------------------------
     // Mirror functions
@@ -126,13 +153,17 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
     }
 
     /// @inheritdoc IProtocolConfigReplica
-    function mirrorCoprocessorContext(uint256, Coprocessor[] calldata, uint256) external virtual onlyACLOwner {
-        revert("Not implemented");
+    function mirrorCoprocessorContext(
+        uint256 contextId,
+        Coprocessor[] calldata coprocessors,
+        uint256 majorityThreshold
+    ) external virtual onlyACLOwner {
+        _mirrorCoprocessorContext(contextId, coprocessors, majorityThreshold);
     }
 
     /// @inheritdoc IProtocolConfigReplica
-    function mirrorCoprocessorContextDestruction(uint256) external virtual onlyACLOwner {
-        revert("Not implemented");
+    function mirrorCoprocessorContextDestruction(uint256 coprocessorContextId) external virtual onlyACLOwner {
+        _destroyCoprocessorContext(coprocessorContextId);
     }
 
     /// @inheritdoc IProtocolConfigBase
@@ -154,6 +185,26 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
     // -----------------------------------------------------------------------------------------
     // Internal
     // -----------------------------------------------------------------------------------------
+
+    /**
+     * @dev Mirrors a canonical coprocessor context and makes it current. The ID must carry the
+     *      coprocessor context type and be greater than the current one on this replica.
+     */
+    function _mirrorCoprocessorContext(
+        uint256 contextId,
+        Coprocessor[] calldata coprocessors,
+        uint256 majorityThreshold
+    ) internal virtual {
+        if (contextId <= COPROCESSOR_CONTEXT_COUNTER_BASE) {
+            revert InvalidCoprocessorContext(contextId);
+        }
+        uint256 currentContextId = _getProtocolConfigStorage().currentCoprocessorContextId;
+        if (contextId <= currentContextId) {
+            revert NonIncreasingCoprocessorContextId(contextId, currentContextId);
+        }
+        _storeCoprocessorContext(contextId, coprocessors, majorityThreshold);
+        emit MirrorCoprocessorContext(contextId, coprocessors, majorityThreshold);
+    }
 
     /**
      * @dev Authorization for UUPS upgrades.

@@ -1,10 +1,18 @@
-import { Interface, type Result } from 'ethers';
+import type { Interface, Result } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig } from '../types';
 import { buildProtocolConfigContextArgs } from './taskDeploy';
-import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
+import {
+  type EncodedCall,
+  PROTOCOL_CONFIG_ADDRESS_ENV_VAR,
+  broadcast,
+  getProtocolConfig,
+  getProtocolConfigInterface,
+  requireProtocolConfigAddress,
+  resolveProtocolConfigAddress,
+} from './utils/protocolConfigTasks';
 import { toJsonString } from './utils/upgradeProposal';
 
 // This file defines tasks to drive a KMS context switch / epoch rotation on the canonical (Ethereum)
@@ -14,44 +22,6 @@ import { toJsonString } from './utils/upgradeProposal';
 // that tracks an in-flight switch from events. Context/epoch definition inputs come from the `KMS_*`
 // env vars (reusing `buildProtocolConfigContextArgs`); the destroy tasks take the target id directly.
 
-const PROTOCOL_CONFIG_ADDRESS_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
-
-// Builds a calldata-only ABI for `contractName` without a deployer key, so the `build*` tasks never
-// need a signer.
-async function getContractInterface(hre: HardhatRuntimeEnvironment, contractName: string): Promise<Interface> {
-  await hre.run('compile:specific', { contract: 'contracts' });
-  const artifact = await hre.artifacts.readArtifact(contractName);
-  return new hre.ethers.Interface(artifact.abi);
-}
-
-export async function getProtocolConfigInterface(hre: HardhatRuntimeEnvironment): Promise<Interface> {
-  return getContractInterface(hre, 'ProtocolConfig');
-}
-
-export async function getProtocolConfigReplicaInterface(hre: HardhatRuntimeEnvironment): Promise<Interface> {
-  return getContractInterface(hre, 'ProtocolConfigReplica');
-}
-
-// Resolves the ProtocolConfig proxy address from env (or the addresses directory when
-// `useInternalProxyAddress` is set), returning undefined when none is configured.
-export function resolveProtocolConfigAddress(useInternalProxyAddress: boolean): string | undefined {
-  if (useInternalProxyAddress) {
-    loadHostAddresses();
-  }
-  const address = process.env[PROTOCOL_CONFIG_ADDRESS_ENV_VAR];
-  return address && address.trim() !== '' ? address : undefined;
-}
-
-export function requireProtocolConfigAddress(useInternalProxyAddress: boolean): string {
-  const address = resolveProtocolConfigAddress(useInternalProxyAddress);
-  if (!address) {
-    throw new Error(
-      `No ProtocolConfig address configured. Set ${PROTOCOL_CONFIG_ADDRESS_ENV_VAR} or pass --use-internal-proxy-address.`,
-    );
-  }
-  return address;
-}
-
 // Reads the canonical ProtocolConfig and returns the context id the next switch will create
 // (allocation counter + 1). This is the value the operator sets as the Gateway proposal's
 // KMS_CONTEXT_ID so the host and Gateway proposals stay aligned.
@@ -59,17 +29,8 @@ export async function predictNewKmsContextId(
   hre: HardhatRuntimeEnvironment,
   protocolConfigAddress: string,
 ): Promise<bigint> {
-  const protocolConfig = (await hre.ethers.getContractAt(
-    'ProtocolConfig',
-    protocolConfigAddress,
-  )) as unknown as ProtocolConfig;
+  const protocolConfig = await getProtocolConfig(hre, protocolConfigAddress);
   return (await protocolConfig.getCurrentKmsContextIdCounter()) + 1n;
-}
-
-interface EncodedCall {
-  functionSignature: string;
-  calldata: string;
-  decodedArgs: unknown[];
 }
 
 export function encodeDefineNewKmsContextAndEpoch(iface: Interface): EncodedCall {
@@ -106,15 +67,6 @@ export function encodeDestroyKmsEpoch(iface: Interface, epochId: bigint): Encode
   const functionSignature = iface.getFunction('destroyKmsEpoch')!.format('sighash');
   const calldata = iface.encodeFunctionData('destroyKmsEpoch', [epochId]);
   return { functionSignature, calldata, decodedArgs: [epochId] };
-}
-
-// Broadcasts the byte-identical payload the DAO would sign, using the deployer key. On devnet / the
-// test-suite the deployer is the ACL owner, so the call is authorized; this is the no-DAO path.
-export async function broadcast(hre: HardhatRuntimeEnvironment, target: string, calldata: string): Promise<string> {
-  const deployer = new hre.ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(hre.ethers.provider);
-  const tx = await deployer.sendTransaction({ to: target, data: calldata });
-  await tx.wait();
-  return tx.hash;
 }
 
 task(
@@ -321,7 +273,7 @@ export async function inspectKmsContextSwitch(
   fromBlock: number,
 ): Promise<KmsContextSwitchStatus> {
   const { ethers } = hre;
-  const pc = (await ethers.getContractAt('ProtocolConfig', protocolConfigAddress)) as unknown as ProtocolConfig;
+  const pc = await getProtocolConfig(hre, protocolConfigAddress);
   const toBlock = await ethers.provider.getBlockNumber();
 
   const [activeContextId, activeEpochId] = await pc.getCurrentKmsContextAndEpoch();

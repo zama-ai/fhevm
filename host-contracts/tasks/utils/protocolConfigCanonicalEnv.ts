@@ -1,11 +1,11 @@
 import { isAddress } from 'ethers';
 
-import { type CanonicalSnapshot, type KmsNode } from '../protocolConfigMirror';
+import { type CanonicalSnapshot, type Coprocessor, type KmsNode } from '../protocolConfigMirror';
 import { makeEnvHelpers } from './envSnapshot';
 import { formatError } from './formatError';
 import { getRequiredEnvVar } from './loadVariables';
 
-// The context id, epoch id, node set and thresholds become initializeFromCanonical calldata, so the task
+// The context ids, epoch id, node and coprocessor sets and thresholds become initializeFromCanonical calldata, so the task
 // checks them in full. The chain id and block number are provenance, and the task parses them as decimal
 // strings. The block hash and the address are provenance that the task only checks for presence, then prints.
 const CANONICAL_SNAPSHOT_ENV_KEYS = [
@@ -17,6 +17,9 @@ const CANONICAL_SNAPSHOT_ENV_KEYS = [
   'CANONICAL_EPOCH_ID',
   'CANONICAL_KMS_NODES',
   'CANONICAL_KMS_THRESHOLDS',
+  'CANONICAL_COPROCESSOR_CONTEXT_ID',
+  'CANONICAL_COPROCESSORS',
+  'CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD',
 ] as const;
 
 type CanonicalSnapshotEnvKey = (typeof CANONICAL_SNAPSHOT_ENV_KEYS)[number];
@@ -65,6 +68,28 @@ function requireKmsNodes(): KmsNode[] {
   return nodes as KmsNode[];
 }
 
+function requireCoprocessors(): Coprocessor[] {
+  const coprocessors = parseJson('CANONICAL_COPROCESSORS');
+  if (!Array.isArray(coprocessors) || coprocessors.length === 0) {
+    throw new Error('"CANONICAL_COPROCESSORS" env variable must hold a non-empty JSON array.');
+  }
+  for (const [index, coprocessor] of coprocessors.entries()) {
+    for (const field of ['txSenderAddress', 'signerAddress'] as const) {
+      if (!isAddress(coprocessor?.[field])) {
+        throw new Error(
+          `"CANONICAL_COPROCESSORS" env variable entry ${index} field "${field}" must be a valid address, got ${JSON.stringify(coprocessor?.[field])}.`,
+        );
+      }
+    }
+    for (const field of ['storageUrl', 'prfEndpointUrl'] as const) {
+      if (typeof coprocessor?.[field] !== 'string') {
+        throw new Error(`"CANONICAL_COPROCESSORS" env variable entry ${index} field "${field}" is missing.`);
+      }
+    }
+  }
+  return coprocessors as Coprocessor[];
+}
+
 function requireThresholds(): CanonicalSnapshot['thresholds'] {
   const parsed = parseJson('CANONICAL_KMS_THRESHOLDS');
   if (typeof parsed !== 'object' || parsed === null) {
@@ -101,6 +126,9 @@ export function readCanonicalSnapshotFromEnv(): CanonicalSnapshot {
     currentEpochId: requireDecimal('CANONICAL_EPOCH_ID'),
     kmsNodes: requireKmsNodes(),
     thresholds: requireThresholds(),
+    currentCoprocessorContextId: requireDecimal('CANONICAL_COPROCESSOR_CONTEXT_ID'),
+    coprocessors: requireCoprocessors(),
+    coprocessorMajorityThreshold: requireDecimal('CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD'),
   };
 }
 
@@ -122,6 +150,9 @@ export function buildCanonicalSnapshotEnv(snapshot: CanonicalSnapshot): Canonica
       kmsGen: snapshot.thresholds.kmsGen.toString(),
       mpc: snapshot.thresholds.mpc.toString(),
     }),
+    CANONICAL_COPROCESSOR_CONTEXT_ID: snapshot.currentCoprocessorContextId.toString(),
+    CANONICAL_COPROCESSORS: JSON.stringify(snapshot.coprocessors),
+    CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD: snapshot.coprocessorMajorityThreshold.toString(),
   };
 }
 

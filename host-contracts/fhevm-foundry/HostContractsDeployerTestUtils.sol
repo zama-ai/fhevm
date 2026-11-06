@@ -17,8 +17,8 @@ import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolCon
 import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
-import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
-import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {Coprocessor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE, COPROCESSOR_CONTEXT_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /**
@@ -187,14 +187,22 @@ abstract contract HostContractsDeployerTestUtils is Test {
         uint64 chainIDSource,
         KmsNodeParams[] memory initialKmsNodeParams,
         KmsThresholds memory initialThresholds,
+        Coprocessor[] memory initialCoprocessors,
+        uint256 initialCoprocessorMajorityThreshold,
         address[] memory inputSigners,
         uint256 inputThreshold
     ) internal {
-        (ACL aclProxy, ) = _deployACL(owner);
+        _deployACL(owner);
         PauserSet pauserSet = _deployPauserSet();
-        (FHEVMExecutor fheExecutor, ) = _deployFHEVMExecutor(owner);
+        _deployFHEVMExecutor(owner);
         _deployHCULimit(owner);
-        (ProtocolConfig protocolConfigProxy, ) = _deployProtocolConfig(owner, initialKmsNodeParams, initialThresholds);
+        _deployProtocolConfig(
+            owner,
+            initialKmsNodeParams,
+            initialThresholds,
+            initialCoprocessors,
+            initialCoprocessorMajorityThreshold
+        );
         _deployKMSGeneration(owner);
         _deployKMSVerifier(owner, kmsVerifyingSource, chainIDSource);
         _deployInputVerifier(owner, inputVerifyingSource, chainIDSource, inputSigners, inputThreshold);
@@ -202,9 +210,15 @@ abstract contract HostContractsDeployerTestUtils is Test {
         vm.prank(owner);
         pauserSet.addPauser(pauser);
 
+        _checkFullHostStackWiring(initialThresholds, inputThreshold);
+    }
+
+    function _checkFullHostStackWiring(KmsThresholds memory initialThresholds, uint256 inputThreshold) internal view {
+        FHEVMExecutor fheExecutor = FHEVMExecutor(fhevmExecutorAdd);
+        ProtocolConfig protocolConfigProxy = ProtocolConfig(protocolConfigAdd);
         require(fheExecutor.getACLAddress() == aclAdd, "executor ACL wiring");
         require(fheExecutor.getHCULimitAddress() == hcuLimitAdd, "executor HCU wiring");
-        require(aclProxy.getPauserSetAddress() == pauserSetAdd, "ACL PauserSet wiring");
+        require(ACL(aclAdd).getPauserSetAddress() == pauserSetAdd, "ACL PauserSet wiring");
         (uint256 activeProtocolContextId, ) = protocolConfigProxy.getCurrentKmsContextAndEpoch();
         require(activeProtocolContextId != 0, "ProtocolConfig wiring");
         require(
@@ -228,7 +242,9 @@ abstract contract HostContractsDeployerTestUtils is Test {
     function _deployProtocolConfig(
         address owner,
         KmsNodeParams[] memory initialKmsNodeParams,
-        KmsThresholds memory initialThresholds
+        KmsThresholds memory initialThresholds,
+        Coprocessor[] memory initialCoprocessors,
+        uint256 initialCoprocessorMajorityThreshold
     ) internal returns (ProtocolConfig protocolConfigProxy, address protocolConfigImplementation) {
         _deployEmptyProtocolConfigProxy();
 
@@ -241,7 +257,14 @@ abstract contract HostContractsDeployerTestUtils is Test {
             protocolConfigImplementation,
             abi.encodeCall(
                 ProtocolConfig.initializeFromEmptyProxy,
-                (initialKmsNodeParams, initialThresholds, "", pcrValues)
+                (
+                    initialKmsNodeParams,
+                    initialThresholds,
+                    "",
+                    pcrValues,
+                    initialCoprocessors,
+                    initialCoprocessorMajorityThreshold
+                )
             )
         );
 
@@ -253,7 +276,10 @@ abstract contract HostContractsDeployerTestUtils is Test {
         uint256 initialContextId,
         uint256 initialEpochId,
         KmsNodeParams[] memory initialKmsNodeParams,
-        KmsThresholds memory initialThresholds
+        KmsThresholds memory initialThresholds,
+        uint256 initialCoprocessorContextId,
+        Coprocessor[] memory initialCoprocessors,
+        uint256 initialCoprocessorMajorityThreshold
     ) internal returns (ProtocolConfigReplica protocolConfigProxy, address protocolConfigImplementation) {
         _deployEmptyProtocolConfigProxy();
         vm.label(protocolConfigAdd, "ProtocolConfigReplica Proxy");
@@ -266,7 +292,15 @@ abstract contract HostContractsDeployerTestUtils is Test {
             protocolConfigImplementation,
             abi.encodeCall(
                 ProtocolConfigReplica.initializeFromCanonical,
-                (initialContextId, initialEpochId, initialKmsNodeParams, initialThresholds)
+                (
+                    initialContextId,
+                    initialEpochId,
+                    initialKmsNodeParams,
+                    initialThresholds,
+                    initialCoprocessorContextId,
+                    initialCoprocessors,
+                    initialCoprocessorMajorityThreshold
+                )
             )
         );
 
@@ -303,7 +337,7 @@ abstract contract HostContractsDeployerTestUtils is Test {
         pauserSet = PauserSet(pauserSetAdd);
     }
 
-    function _defaultThresholds() internal pure returns (KmsThresholds memory) {
+    function _defaultKmsThresholds() internal pure returns (KmsThresholds memory) {
         return KmsThresholds({publicDecryption: 1, userDecryption: 1, kmsGen: 1, mpc: 1});
     }
 
@@ -348,6 +382,19 @@ abstract contract HostContractsDeployerTestUtils is Test {
                 signerAddress: params[i].signerAddress,
                 ipAddress: params[i].ipAddress,
                 storageUrl: params[i].storageUrl
+            });
+        }
+    }
+
+    /// @dev `count` coprocessors with distinct tx senders, signers and storage URLs, and no PRF endpoint URL.
+    function _makeCoprocessors(uint256 count) internal pure returns (Coprocessor[] memory coprocessors) {
+        coprocessors = new Coprocessor[](count);
+        for (uint256 i = 0; i < count; i++) {
+            coprocessors[i] = Coprocessor({
+                txSenderAddress: address(uint160(0xC1 + i)),
+                signerAddress: vm.addr((i + 1) * 0x200),
+                storageUrl: string.concat("https://coprocessor", vm.toString(i), ".example.com"),
+                prfEndpointUrl: string.concat("https://prf", vm.toString(i), ".example.com")
             });
         }
     }

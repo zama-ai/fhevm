@@ -589,6 +589,33 @@ export function buildProtocolConfigContextArgs(): [ReturnType, ReturnType, strin
   return [buildKmsNodeParams(), buildKmsThresholds(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
 }
 
+export type CoprocessorArgs = {
+  txSenderAddress: string;
+  signerAddress: string;
+  storageUrl: string;
+  prfEndpointUrl: string;
+};
+
+// The coprocessor set of the first coprocessor context. The tx sender is the coprocessor's Ethereum
+// wallet, not its Gateway one. An unset or empty PRF endpoint URL means the coprocessor does not serve it.
+export function buildCoprocessors(): CoprocessorArgs[] {
+  const numCoprocessors = getRequiredCountEnvVar('NUM_COPROCESSORS');
+  const coprocessors: CoprocessorArgs[] = [];
+  for (let idx = 0; idx < numCoprocessors; idx++) {
+    coprocessors.push({
+      txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
+      signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
+      storageUrl: getRequiredEnvVar(`COPROCESSOR_STORAGE_URL_${idx}`),
+      prfEndpointUrl: process.env[`COPROCESSOR_PRF_ENDPOINT_URL_${idx}`]?.trim() ?? '',
+    });
+  }
+  return coprocessors;
+}
+
+export function buildCoprocessorContextArgs(): [CoprocessorArgs[], number] {
+  return [buildCoprocessors(), getRequiredCountEnvVar('COPROCESSOR_THRESHOLD')];
+}
+
 task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const parsedEnv = readHostEnv();
   const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
@@ -728,7 +755,7 @@ task('task:deployProtocolConfig').setAction(async function (_, hre) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const initArgs = buildProtocolConfigContextArgs();
+  const initArgs = [...buildProtocolConfigContextArgs(), ...buildCoprocessorContextArgs()];
   const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
@@ -807,7 +834,7 @@ task(
 // canonical before accepting secondary-host ownership.
 task(
   'task:exportCanonicalProtocolConfig',
-  'Exports the canonical ProtocolConfig KMS context to a JSON snapshot for DAO review.',
+  'Exports the canonical ProtocolConfig KMS context and coprocessor context to a JSON snapshot for DAO review.',
 )
   .addParam(
     'canonicalRpcUrl',
@@ -851,7 +878,7 @@ task(
     const output = { export: buildCanonicalSnapshotEnv(snapshot) };
     fs.writeFileSync(out, JSON.stringify(output, null, 2));
     console.log(
-      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, epoch ${snapshot.currentEpochId}, ${snapshot.kmsNodes.length} KMS nodes.`,
+      `Canonical ProtocolConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, context ${snapshot.currentKmsContextId}, epoch ${snapshot.currentEpochId}, ${snapshot.kmsNodes.length} KMS nodes, coprocessor context ${snapshot.currentCoprocessorContextId}, ${snapshot.coprocessors.length} coprocessors.`,
     );
     return output;
   });

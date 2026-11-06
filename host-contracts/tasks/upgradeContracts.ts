@@ -2,7 +2,7 @@ import { Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
-import { assertBridgeEndpointImmutable } from './taskDeploy';
+import { assertBridgeEndpointImmutable, buildCoprocessorContextArgs } from './taskDeploy';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 import { buildUpgradeProposal, printUpgradeProposal, verifyProposalImplementation } from './utils/upgradeProposal';
 
@@ -503,7 +503,14 @@ task('task:upgradeProtocolConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await upgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
+    // reinitializeV3 defines the first coprocessor context from the COPROCESSOR_* env variables.
+    await upgradeContract(
+      'ProtocolConfig',
+      'PROTOCOL_CONFIG_CONTRACT_ADDRESS',
+      taskArgs,
+      hre,
+      buildCoprocessorContextArgs(),
+    );
   });
 
 task('task:prepareUpgradeProtocolConfig')
@@ -528,7 +535,14 @@ task('task:prepareUpgradeProtocolConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await prepareUpgradeContract('ProtocolConfig', 'PROTOCOL_CONFIG_CONTRACT_ADDRESS', taskArgs, hre);
+    // reinitializeV3 defines the first coprocessor context from the COPROCESSOR_* env variables.
+    await prepareUpgradeContract(
+      'ProtocolConfig',
+      'PROTOCOL_CONFIG_CONTRACT_ADDRESS',
+      taskArgs,
+      hre,
+      buildCoprocessorContextArgs(),
+    );
   });
 
 task('task:upgradeKMSGeneration')

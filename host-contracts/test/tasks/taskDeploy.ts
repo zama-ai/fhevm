@@ -26,7 +26,9 @@ import type { KMSGeneration, ProtocolConfig, ProtocolConfigReplica } from '../..
 import {
   HOST_ADDRESSES_SOL_FILE,
   HOST_ENV_FILE,
+  PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
   buildControllableKmsCommittee,
+  buildProtocolConfigCoprocessors,
   buildProtocolConfigNodes,
   buildProtocolConfigThresholds,
   deployFreshEmptyUUPSProxy,
@@ -203,8 +205,14 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
 
   it('mirrors the canonical ProtocolConfig snapshot onto a fresh secondary proxy', async function () {
     const canonicalNodes = buildProtocolConfigNodes();
-    const canonicalThresholds = buildProtocolConfigThresholds();
-    const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, canonicalNodes, canonicalThresholds);
+    const canonicalKmsThresholds = buildProtocolConfigThresholds();
+    const canonicalAddress = await deployFreshProtocolConfigProxy(
+      deployer,
+      canonicalNodes,
+      canonicalKmsThresholds,
+      buildProtocolConfigCoprocessors(),
+      PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+    );
     const canonical = (await ethers.getContractAt(
       'ProtocolConfig',
       canonicalAddress,
@@ -227,10 +235,10 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
 
     expect(await secondary.getVersion()).to.match(/^ProtocolConfigReplica v/);
 
-    const canonicalContextId = await canonical.getCurrentKmsContextId();
+    const canonicalKmsContextId = await canonical.getCurrentKmsContextId();
     const secondaryContextId = await secondary.getCurrentKmsContextId();
-    expect(snapshot.currentKmsContextId).to.equal(canonicalContextId);
-    expect(secondaryContextId).to.equal(canonicalContextId);
+    expect(snapshot.currentKmsContextId).to.equal(canonicalKmsContextId);
+    expect(secondaryContextId).to.equal(canonicalKmsContextId);
     const secondaryState = await secondary.getCurrentKmsContextAndEpoch();
     expect(secondaryState[0]).to.equal(snapshot.currentKmsContextId);
     expect(secondaryState[1]).to.equal(snapshot.currentEpochId);
@@ -239,7 +247,7 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
     expect(snapshot.blockNumber).to.be.gte(blockBeforeMirror);
     expect(snapshot.blockNumber).to.be.lte(blockAfterMirror);
 
-    const canonicalNodesOnChain = await canonical.getKmsNodesForContext(canonicalContextId);
+    const canonicalNodesOnChain = await canonical.getKmsNodesForContext(canonicalKmsContextId);
     const secondaryNodesOnChain = await secondary.getKmsNodesForContext(secondaryContextId);
     expect(secondaryNodesOnChain.length).to.equal(canonicalNodesOnChain.length);
     expect(secondaryNodesOnChain.length).to.equal(canonicalNodes.length);
@@ -251,16 +259,16 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
     }
 
     expect(await secondary.getPublicDecryptionThresholdForContext(secondaryContextId)).to.equal(
-      await canonical.getPublicDecryptionThresholdForContext(canonicalContextId),
+      await canonical.getPublicDecryptionThresholdForContext(canonicalKmsContextId),
     );
     expect(await secondary.getUserDecryptionThresholdForContext(secondaryContextId)).to.equal(
-      await canonical.getUserDecryptionThresholdForContext(canonicalContextId),
+      await canonical.getUserDecryptionThresholdForContext(canonicalKmsContextId),
     );
     expect(await secondary.getKmsGenThresholdForContext(secondaryContextId)).to.equal(
-      await canonical.getKmsGenThresholdForContext(canonicalContextId),
+      await canonical.getKmsGenThresholdForContext(canonicalKmsContextId),
     );
     expect(await secondary.getMpcThresholdForContext(secondaryContextId)).to.equal(
-      await canonical.getMpcThresholdForContext(canonicalContextId),
+      await canonical.getMpcThresholdForContext(canonicalKmsContextId),
     );
 
     expect(await secondary.isValidKmsContext(secondaryContextId)).to.equal(true);
@@ -269,7 +277,13 @@ describe('canonical snapshot apply (canonical → secondary deploy flow)', funct
   it('pins canonical reads to a historical block under a rotation', async function () {
     // A controllable committee lets us drive the epoch lifecycle so the active context actually advances.
     const committee = await buildControllableKmsCommittee();
-    const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
+    const canonicalAddress = await deployFreshProtocolConfigProxy(
+      deployer,
+      committee.nodes,
+      committee.thresholds,
+      buildProtocolConfigCoprocessors(),
+      PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+    );
     const canonical = (await ethers.getContractAt(
       'ProtocolConfig',
       canonicalAddress,
@@ -303,6 +317,8 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
       deployer,
       canonicalNodes,
       buildProtocolConfigThresholds(),
+      buildProtocolConfigCoprocessors(),
+      PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
     );
 
     const snapshot = await readCanonicalSnapshot(hre, {
@@ -358,7 +374,13 @@ describe('canonical snapshot export (readCanonicalSnapshot)', function () {
 
   it('reproduces a pinned snapshot after a rotation, while a latest re-read drifts', async function () {
     const committee = await buildControllableKmsCommittee();
-    const canonicalAddress = await deployFreshProtocolConfigProxy(deployer, committee.nodes, committee.thresholds);
+    const canonicalAddress = await deployFreshProtocolConfigProxy(
+      deployer,
+      committee.nodes,
+      committee.thresholds,
+      buildProtocolConfigCoprocessors(),
+      PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+    );
 
     const exported = await readCanonicalSnapshot(hre, {
       canonicalProvider: ethers.provider,
@@ -405,6 +427,8 @@ describe('canonical snapshot env (buildCanonicalSnapshotEnv / readCanonicalSnaps
       deployer,
       buildProtocolConfigNodes(),
       buildProtocolConfigThresholds(),
+      buildProtocolConfigCoprocessors(),
+      PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
     );
     const snapshot = await readCanonicalSnapshot(hre, {
       canonicalProvider: ethers.provider,
@@ -419,6 +443,28 @@ describe('canonical snapshot env (buildCanonicalSnapshotEnv / readCanonicalSnaps
 
     expect(process.env.CANONICAL_BLOCK_HASH).to.equal(snapshot.blockHash);
     expect(readCanonicalSnapshotFromEnv()).to.deep.equal(snapshot);
+  });
+
+  it('rejects a malformed coprocessor entry, naming the variable', async function () {
+    await exportToEnv();
+    const coprocessors = JSON.parse(process.env.CANONICAL_COPROCESSORS!);
+    coprocessors[0].txSenderAddress = 'not-an-address';
+    process.env.CANONICAL_COPROCESSORS = JSON.stringify(coprocessors);
+    expect(() => readCanonicalSnapshotFromEnv()).to.throw(
+      /"CANONICAL_COPROCESSORS" env variable entry 0 field "txSenderAddress" must be a valid address/,
+    );
+
+    delete coprocessors[0].prfEndpointUrl;
+    coprocessors[0].txSenderAddress = coprocessors[0].signerAddress;
+    process.env.CANONICAL_COPROCESSORS = JSON.stringify(coprocessors);
+    expect(() => readCanonicalSnapshotFromEnv()).to.throw(
+      /"CANONICAL_COPROCESSORS" env variable entry 0 field "prfEndpointUrl" is missing/,
+    );
+
+    process.env.CANONICAL_COPROCESSORS = '[]';
+    expect(() => readCanonicalSnapshotFromEnv()).to.throw(
+      /"CANONICAL_COPROCESSORS" env variable must hold a non-empty JSON array/,
+    );
   });
 
   it('names an empty env variable', async function () {

@@ -34,6 +34,13 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     ///      to reject the misconfiguration loudly rather than silently bricking the context.
     uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
 
+    /// @notice Upper bound on the coprocessor set size.
+    /// @dev Driven by the input proof format consumed in `InputVerifier.verifyInput`, which encodes
+    ///      the signature count in a single byte (`uint8(inputProof[1])`). A set registered above
+    ///      this bound could never be verified in full, so the limit is enforced at registration
+    ///      time to reject the misconfiguration loudly.
+    uint256 private constant MAX_COPROCESSORS = type(uint8).max;
+
     // -----------------------------------------------------------------------------------------
     // ERC-7201 namespaced storage
     // -----------------------------------------------------------------------------------------
@@ -94,6 +101,21 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         mapping(uint256 contextId => uint256 confirmations) contextCreationPreviousTxSenderConfirmationCount;
         /// @notice Context anchor recorded when NewKmsContext was emitted.
         mapping(uint256 contextId => KmsContextAnchor) contextAnchors;
+        /// @notice The current coprocessor context ID, the latest defined or mirrored one.
+        uint256 currentCoprocessorContextId;
+        /// @notice Number of coprocessors per context. Zero means the context was never defined.
+        mapping(uint256 contextId => uint256) coprocessorCountForContext;
+        /// @notice Coprocessors per context, by position in definition order.
+        /// @dev A mapping rather than an array, so that `Coprocessor` can gain fields in place.
+        mapping(uint256 contextId => mapping(uint256 index => Coprocessor)) coprocessorsForContext;
+        /// @notice Majority threshold per coprocessor context.
+        mapping(uint256 contextId => uint256) coprocessorMajorityThresholdForContext;
+        /// @notice Coprocessor signer lookup per context.
+        mapping(uint256 contextId => mapping(address signer => bool isRegistered)) isCoprocessorSignerForContext;
+        /// @notice Coprocessor tx sender lookup per context.
+        mapping(uint256 contextId => mapping(address txSender => bool isRegistered)) isCoprocessorTxSenderForContext;
+        /// @notice Whether a coprocessor context has been destroyed.
+        mapping(uint256 contextId => bool) destroyedCoprocessorContexts;
     }
 
     /// @dev keccak256(abi.encode(uint256(keccak256("fhevm.storage.ProtocolConfig")) - 1)) & ~bytes32(uint256(0xff))
@@ -253,32 +275,54 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
 
     /// @inheritdoc IProtocolConfigBase
     function getCurrentCoprocessorContextId() external view virtual returns (uint256) {
-        revert("Not implemented");
+        return _getProtocolConfigStorage().currentCoprocessorContextId;
     }
 
     /// @inheritdoc IProtocolConfigBase
-    function isValidCoprocessorContext(uint256) external view virtual returns (bool) {
-        revert("Not implemented");
+    function isValidCoprocessorContext(uint256 coprocessorContextId) external view virtual returns (bool) {
+        return _isValidCoprocessorContext(coprocessorContextId);
     }
 
     /// @inheritdoc IProtocolConfigBase
-    function getCoprocessorsForContext(uint256) external view virtual returns (Coprocessor[] memory) {
-        revert("Not implemented");
+    function getCoprocessorsForContext(
+        uint256 coprocessorContextId
+    ) external view virtual returns (Coprocessor[] memory coprocessors) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        uint256 coprocessorCount = $.coprocessorCountForContext[coprocessorContextId];
+        if (coprocessorCount == 0) {
+            revert InvalidCoprocessorContext(coprocessorContextId);
+        }
+        coprocessors = new Coprocessor[](coprocessorCount);
+        for (uint256 i = 0; i < coprocessorCount; i++) {
+            coprocessors[i] = $.coprocessorsForContext[coprocessorContextId][i];
+        }
     }
 
     /// @inheritdoc IProtocolConfigBase
-    function getCoprocessorMajorityThresholdForContext(uint256) external view virtual returns (uint256) {
-        revert("Not implemented");
+    function getCoprocessorMajorityThresholdForContext(
+        uint256 coprocessorContextId
+    ) external view virtual returns (uint256) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if ($.coprocessorCountForContext[coprocessorContextId] == 0) {
+            revert InvalidCoprocessorContext(coprocessorContextId);
+        }
+        return $.coprocessorMajorityThresholdForContext[coprocessorContextId];
     }
 
     /// @inheritdoc IProtocolConfigBase
-    function isCoprocessorSignerForContext(uint256, address) external view virtual returns (bool) {
-        revert("Not implemented");
+    function isCoprocessorSignerForContext(
+        uint256 coprocessorContextId,
+        address signer
+    ) external view virtual returns (bool) {
+        return _getProtocolConfigStorage().isCoprocessorSignerForContext[coprocessorContextId][signer];
     }
 
     /// @inheritdoc IProtocolConfigBase
-    function isCoprocessorTxSenderForContext(uint256, address) external view virtual returns (bool) {
-        revert("Not implemented");
+    function isCoprocessorTxSenderForContext(
+        uint256 coprocessorContextId,
+        address txSender
+    ) external view virtual returns (bool) {
+        return _getProtocolConfigStorage().isCoprocessorTxSenderForContext[coprocessorContextId][txSender];
     }
 
     /**
@@ -410,5 +454,75 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         $.epochState[epochId] = EpochState.Active;
         $.contextForEpoch[epochId] = contextId;
         $.latestActiveEpochId = epochId;
+    }
+
+    function _isValidCoprocessorContext(uint256 coprocessorContextId) internal view virtual returns (bool) {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        return
+            $.coprocessorCountForContext[coprocessorContextId] != 0 &&
+            !$.destroyedCoprocessorContexts[coprocessorContextId];
+    }
+
+    /**
+     * @dev Checks the set and threshold, stores them under `contextId` and makes it the current
+     *      context. Callers pick the ID and emit the event.
+     */
+    function _storeCoprocessorContext(
+        uint256 contextId,
+        Coprocessor[] calldata coprocessors,
+        uint256 majorityThreshold
+    ) internal virtual {
+        uint256 coprocessorCount = coprocessors.length;
+        if (coprocessorCount == 0) {
+            revert EmptyCoprocessors();
+        }
+        if (coprocessorCount > MAX_COPROCESSORS) {
+            revert CoprocessorSetExceedsProofFormatLimit(coprocessorCount, MAX_COPROCESSORS);
+        }
+        // More than half, so that two conflicting outputs cannot both reach the threshold.
+        if (majorityThreshold <= coprocessorCount / 2 || majorityThreshold > coprocessorCount) {
+            revert InvalidCoprocessorMajorityThreshold(majorityThreshold, coprocessorCount);
+        }
+
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        for (uint256 i = 0; i < coprocessorCount; i++) {
+            Coprocessor calldata coprocessor = coprocessors[i];
+            if (coprocessor.txSenderAddress == address(0)) {
+                revert CoprocessorNullTxSender();
+            }
+            if (coprocessor.signerAddress == address(0)) {
+                revert CoprocessorNullSigner();
+            }
+            if (bytes(coprocessor.storageUrl).length == 0) {
+                revert CoprocessorEmptyStorageUrl();
+            }
+            if ($.isCoprocessorTxSenderForContext[contextId][coprocessor.txSenderAddress]) {
+                revert CoprocessorTxSenderAlreadyRegistered(coprocessor.txSenderAddress);
+            }
+            if ($.isCoprocessorSignerForContext[contextId][coprocessor.signerAddress]) {
+                revert CoprocessorSignerAlreadyRegistered(coprocessor.signerAddress);
+            }
+            $.isCoprocessorTxSenderForContext[contextId][coprocessor.txSenderAddress] = true;
+            $.isCoprocessorSignerForContext[contextId][coprocessor.signerAddress] = true;
+            $.coprocessorsForContext[contextId][i] = coprocessor;
+        }
+        $.coprocessorCountForContext[contextId] = coprocessorCount;
+        $.coprocessorMajorityThresholdForContext[contextId] = majorityThreshold;
+        $.currentCoprocessorContextId = contextId;
+    }
+
+    /**
+     * @dev Destroys a past coprocessor context. Its set and threshold stay readable.
+     */
+    function _destroyCoprocessorContext(uint256 coprocessorContextId) internal virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        if (coprocessorContextId == $.currentCoprocessorContextId) {
+            revert CurrentCoprocessorContextCannotBeDestroyed(coprocessorContextId);
+        }
+        if (!_isValidCoprocessorContext(coprocessorContextId)) {
+            revert InvalidCoprocessorContext(coprocessorContextId);
+        }
+        $.destroyedCoprocessorContexts[coprocessorContextId] = true;
+        emit CoprocessorContextDestroyed(coprocessorContextId);
     }
 }

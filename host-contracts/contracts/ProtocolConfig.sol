@@ -6,7 +6,7 @@ import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
 import {Coprocessor, KmsContextAnchor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
-import {EPOCH_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
+import {COPROCESSOR_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -73,50 +73,42 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     // -----------------------------------------------------------------------------------------
 
     /**
-     * @notice Fresh deploy initializer: creates the first KMS context.
+     * @notice Fresh deploy initializer: creates the first KMS context and the first coprocessor context.
      * @dev When deploying a fresh ProtocolConfig on Ethereum (canonical host), this function is called.
      * @param initialKmsNodeParams The initial KMS node set, including MPC metadata.
      * @param initialThresholds The initial thresholds.
      * @param softwareVersion The KMS software version expected for the context.
      * @param pcrValues Accepted enclave PCR values for the context.
+     * @param initialCoprocessors The initial coprocessor set.
+     * @param initialCoprocessorMajorityThreshold The majority threshold of the initial coprocessor set.
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
         KmsNodeParams[] calldata initialKmsNodeParams,
         KmsThresholds calldata initialThresholds,
         string calldata softwareVersion,
-        PcrValues[] calldata pcrValues
+        PcrValues[] calldata pcrValues,
+        Coprocessor[] calldata initialCoprocessors,
+        uint256 initialCoprocessorMajorityThreshold
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-
-        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        _storeAndActivateKmsContextAndEpoch(
-            newContextId,
-            EPOCH_COUNTER_BASE + 1,
-            initialKmsNodeParams,
-            initialThresholds
-        );
-
-        $.contextAnchors[newContextId] = KmsContextAnchor({
-            emissionBlockNumber: block.number,
-            contextInfoHash: keccak256(abi.encode(initialKmsNodeParams, initialThresholds, softwareVersion, pcrValues))
-        });
-        emit NewKmsContext(
-            newContextId,
-            KMS_CONTEXT_COUNTER_BASE,
-            initialKmsNodeParams,
-            initialThresholds,
-            softwareVersion,
-            pcrValues
-        );
+        _initializeKmsContext(initialKmsNodeParams, initialThresholds, softwareVersion, pcrValues);
+        _initializeCoprocessorContext(initialCoprocessors, initialCoprocessorMajorityThreshold);
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract from V2 and defines the first coprocessor context.
+     * @param initialCoprocessors The coprocessor set registered in `GatewayConfig`, with each
+     *        coprocessor's Ethereum tx sender.
+     * @param initialCoprocessorMajorityThreshold The coprocessor majority threshold registered in `GatewayConfig`.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3(
+        Coprocessor[] calldata initialCoprocessors,
+        uint256 initialCoprocessorMajorityThreshold
+    ) public virtual onlyACLOwner reinitializer(REINITIALIZER_VERSION) {
+        _initializeCoprocessorContext(initialCoprocessors, initialCoprocessorMajorityThreshold);
+    }
 
     // -----------------------------------------------------------------------------------------
     // State-changing functions
@@ -378,13 +370,17 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     }
 
     /// @inheritdoc IProtocolConfig
-    function defineNewCoprocessorContext(Coprocessor[] calldata, uint256) external virtual onlyACLOwner {
-        revert("Not implemented");
+    function defineNewCoprocessorContext(
+        Coprocessor[] calldata coprocessors,
+        uint256 majorityThreshold
+    ) external virtual onlyACLOwner {
+        uint256 currentContextId = _getProtocolConfigStorage().currentCoprocessorContextId;
+        _defineCoprocessorContext(currentContextId + 1, currentContextId, coprocessors, majorityThreshold);
     }
 
     /// @inheritdoc IProtocolConfig
-    function destroyCoprocessorContext(uint256) external virtual onlyACLOwner {
-        revert("Not implemented");
+    function destroyCoprocessorContext(uint256 coprocessorContextId) external virtual onlyACLOwner {
+        _destroyCoprocessorContext(coprocessorContextId);
     }
 
     /// @inheritdoc IProtocolConfig
@@ -563,6 +559,56 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         $.epochState[epochId] = EpochState.None;
         delete $.contextForEpoch[epochId];
+    }
+
+    /**
+     * @dev Stores and activates the first KMS context and epoch, and records the context anchor.
+     */
+    function _initializeKmsContext(
+        KmsNodeParams[] calldata initialKmsNodeParams,
+        KmsThresholds calldata initialThresholds,
+        string calldata softwareVersion,
+        PcrValues[] calldata pcrValues
+    ) internal virtual {
+        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+
+        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 1;
+        _storeAndActivateKmsContextAndEpoch(
+            newContextId,
+            EPOCH_COUNTER_BASE + 1,
+            initialKmsNodeParams,
+            initialThresholds
+        );
+
+        $.contextAnchors[newContextId] = KmsContextAnchor({
+            emissionBlockNumber: block.number,
+            contextInfoHash: keccak256(abi.encode(initialKmsNodeParams, initialThresholds, softwareVersion, pcrValues))
+        });
+        emit NewKmsContext(
+            newContextId,
+            KMS_CONTEXT_COUNTER_BASE,
+            initialKmsNodeParams,
+            initialThresholds,
+            softwareVersion,
+            pcrValues
+        );
+    }
+
+    function _initializeCoprocessorContext(
+        Coprocessor[] calldata coprocessors,
+        uint256 majorityThreshold
+    ) internal virtual {
+        _defineCoprocessorContext(COPROCESSOR_CONTEXT_COUNTER_BASE + 1, 0, coprocessors, majorityThreshold);
+    }
+
+    function _defineCoprocessorContext(
+        uint256 contextId,
+        uint256 previousContextId,
+        Coprocessor[] calldata coprocessors,
+        uint256 majorityThreshold
+    ) internal virtual {
+        _storeCoprocessorContext(contextId, coprocessors, majorityThreshold);
+        emit NewCoprocessorContext(contextId, previousContextId, coprocessors, majorityThreshold);
     }
 
     /**

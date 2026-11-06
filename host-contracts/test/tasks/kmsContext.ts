@@ -7,13 +7,18 @@ import {
   encodeDefineNewKmsContextAndEpoch,
   encodeDestroyKmsContext,
   encodeDestroyKmsEpoch,
-  getProtocolConfigInterface,
   inspectKmsContextSwitch,
   predictNewKmsContextId,
 } from '../../tasks/kmsContext';
 import { getRequiredEnvVar } from '../../tasks/utils/loadVariables';
+import { getProtocolConfigInterface } from '../../tasks/utils/protocolConfigTasks';
 import type { ProtocolConfig } from '../../types';
-import { buildSingleKeyAndCrsActivationPayload, deployFreshProtocolConfigProxy } from './taskHelpers';
+import {
+  PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+  buildProtocolConfigCoprocessors,
+  buildSingleKeyAndCrsActivationPayload,
+  deployFreshProtocolConfigProxy,
+} from './taskHelpers';
 
 const PROTOCOL_CONFIG_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
 
@@ -148,7 +153,13 @@ describe('KMS context tasks', function () {
     });
 
     it('derives the new context id as the allocation counter + 1 from a live ProtocolConfig', async function () {
-      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
+      const proxyAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        defaultNodes(),
+        DEFAULT_THRESHOLDS,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+      );
       const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
       const allocationCounter = await protocolConfig.getCurrentKmsContextIdCounter();
 
@@ -156,7 +167,13 @@ describe('KMS context tasks', function () {
     });
 
     it('predicts from the allocation counter, staying ahead of the activation pointer during an in-flight switch', async function () {
-      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
+      const proxyAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        defaultNodes(),
+        DEFAULT_THRESHOLDS,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+      );
       const protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
 
       // Define a new context so the allocation counter advances while the activation pointer stays put.
@@ -182,7 +199,13 @@ describe('KMS context tasks', function () {
 
     it('broadcasts the switch with the deployer key (no-DAO path) leaving a PENDING context', async function () {
       const initialNodes = defaultNodes();
-      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, initialNodes, DEFAULT_THRESHOLDS);
+      const proxyAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        initialNodes,
+        DEFAULT_THRESHOLDS,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+      );
 
       // A distinct new committee for the switch.
       const newNodes = [
@@ -214,7 +237,13 @@ describe('KMS context tasks', function () {
     });
 
     it('broadcasts the rotation with the deployer key (no-DAO path) leaving a PENDING epoch', async function () {
-      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
+      const proxyAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        defaultNodes(),
+        DEFAULT_THRESHOLDS,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+      );
       process.env[PROTOCOL_CONFIG_ENV_VAR] = proxyAddress;
 
       await run('task:defineNewEpochForCurrentKmsContext', {});
@@ -239,7 +268,13 @@ describe('KMS context tasks', function () {
     });
 
     it('broadcasts the destruction of a non-current PENDING context (no-DAO path)', async function () {
-      const proxyAddress = await deployFreshProtocolConfigProxy(deployer, defaultNodes(), DEFAULT_THRESHOLDS);
+      const proxyAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        defaultNodes(),
+        DEFAULT_THRESHOLDS,
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+      );
       process.env[PROTOCOL_CONFIG_ENV_VAR] = proxyAddress;
 
       // Open a context switch so a non-current, live (PENDING) context exists to destroy.
@@ -374,12 +409,18 @@ describe('KMS context tasks', function () {
         newSigners.map(async (s, i) => makeNode(await newTxSenders[i].getAddress(), await s.getAddress(), i)),
       );
 
-      proxyAddress = await deployFreshProtocolConfigProxy(deployer, oldNodes, {
-        publicDecryption: 1,
-        userDecryption: 1,
-        kmsGen: 1,
-        mpc: 2, // -> previousTxSenderThreshold = 3 - 2 = 1
-      });
+      proxyAddress = await deployFreshProtocolConfigProxy(
+        deployer,
+        oldNodes,
+        {
+          publicDecryption: 1,
+          userDecryption: 1,
+          kmsGen: 1,
+          mpc: 2, // -> previousTxSenderThreshold = 3 - 2 = 1
+        },
+        buildProtocolConfigCoprocessors(),
+        PROTOCOL_CONFIG_COPROCESSOR_MAJORITY_THRESHOLD,
+      );
       protocolConfig = (await ethers.getContractAt('ProtocolConfig', proxyAddress)) as unknown as ProtocolConfig;
     });
 

@@ -1,6 +1,5 @@
 import { task, types } from 'hardhat/config';
 
-import { requireProtocolConfigAddress } from './kmsContext';
 import {
   bufferViolations,
   buildCoprocessorUpgradeProposal,
@@ -8,6 +7,7 @@ import {
   parseCoprocessorUpgradeInputs,
   printCoprocessorUpgradeProposal,
 } from './utils/coprocessorUpgradeProposal';
+import { requireProtocolConfigAddress } from './utils/protocolConfigTasks';
 
 // Coprocessor-upgrade tasks on the host ProtocolConfig, mirroring kmsContext.ts:
 // `task:buildProposeCoprocessorUpgradeCalldata` prints the Aragon calldata (DAO path),
