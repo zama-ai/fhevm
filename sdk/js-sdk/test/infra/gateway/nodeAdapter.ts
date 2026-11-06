@@ -61,7 +61,9 @@ function _readBody(req: IncomingMessage): Promise<Uint8Array> {
     req.on('data', (chunk: Buffer | string) => {
       chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
     });
-    req.on('end', () => resolve(Uint8Array.from(Buffer.concat(chunks))));
+    req.on('end', () => {
+      resolve(Uint8Array.from(Buffer.concat(chunks)));
+    });
     req.on('error', reject);
   });
 }
