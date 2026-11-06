@@ -1543,6 +1543,8 @@ jobs:
             curl -sS ${{ env.RELAYER_HTTP_TS_URL }}/healthz
             ```
 
+            ${{ env.RELAYER_UNIFIED_URL && format('Unified relayer URL (tailnet only; `/v2`, `/v3` to the relayer, `/v4` to relayer-http): point @fhevm/sdk `relayerUrl` at {0}, e.g. `curl -sS {0}/v2/keyurl`', env.RELAYER_UNIFIED_URL) || '' }}
+
             > Note: each coprocessor party requests substantial `tfhe`/`sns` worker capacity on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the cluster resources needed. Default stays 1.
 
             This environment is destroyed automatically when the PR is closed
@@ -1585,6 +1587,14 @@ jobs:
               echo "relayer-http (\`POST /v4/user-decrypt\`, \`/v4/public-decrypt\`):"
               echo '```bash'
               echo "curl -sS ${RELAYER_HTTP_TS_URL}/healthz"
+              echo '```'
+              echo
+            fi
+            if [[ -n "${RELAYER_UNIFIED_URL:-}" ]]; then
+              echo "Unified relayer URL (tailnet only; \`/v2\`, \`/v3\` to the relayer, \`/v4\` to relayer-http):"
+              echo '```bash'
+              echo "curl -sS ${RELAYER_UNIFIED_URL}/v2/keyurl"
+              echo "# point @fhevm/sdk relayerUrl at ${RELAYER_UNIFIED_URL}"
               echo '```'
               echo
             fi

@@ -117,6 +117,9 @@ case "${kind}" in
     # Publish :3002 on the tailnet next to the relayer, as relayer-http-<ns>.
     # Sets RELAYER_HTTP_TS_URL for the deploy summary / PR comment.
     bash "${script_dir}/expose-relayer-tailscale.sh" relayer-http 3002 RELAYER_HTTP_TS_URL
+    # Both relayers on one URL via the shared preview Kong. Sets
+    # RELAYER_UNIFIED_URL; no-op with a warning if kong-preview is not installed.
+    bash "${script_dir}/expose-relayer-kong.sh"
     ;;
   test-suite)
     helm upgrade --install test-suite "${COMMON_CHART}" --version "${COMMON_CHART_VERSION}" \
