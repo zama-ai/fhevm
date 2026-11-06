@@ -3,7 +3,7 @@ import { getEthersTestConfig, type FheTestEthersConfig } from '../setup-ethers.j
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/connectivity.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/connectivity.test.ts
 // CHAIN=localstack     npx vitest run --config test/fheTest/vitest.config.ts ethers/connectivity.test.ts
 // CHAIN=testnet        npx vitest run --config test/fheTest/vitest.config.ts ethers/connectivity.test.ts
 // CHAIN=devnet         npx vitest run --config test/fheTest/vitest.config.ts ethers/connectivity.test.ts

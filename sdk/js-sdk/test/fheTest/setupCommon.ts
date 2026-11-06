@@ -12,7 +12,7 @@ import { polygon_devnet } from '../chains/polygon_devnet.js';
 import { ingen_trex_cleartext } from '../chains/ingen_trex_cleartext.js';
 import { hoodi_cleartext } from '../chains/hoodi_cleartext.js';
 import { mainnet, sepolia, sepolia as testnet } from '@fhevm/sdk/chains';
-import { localcleartext_v1_0 } from '../chains/localcleartext_v1_0.js';
+import { localcleartext } from '../chains/localcleartext.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -23,7 +23,7 @@ export const FHE_TEST_CHAIN_NAMES = [
   'testnet',
   'mainnet',
   'devnet',
-  'localcleartext_v1_0',
+  'localcleartext',
   'localstack',
   'localstack_v14',
   'polygon_devnet',
@@ -51,7 +51,7 @@ export type FheTestBaseEnv = {
 // ---------------------------------------------------------------------------
 
 export function isCleartext(chainName: FheTestChainName) {
-  return chainName.startsWith('localcleartext_') || chainName.endsWith('_cleartext');
+  return chainName === 'localcleartext' || chainName.endsWith('_cleartext');
 }
 
 /**
@@ -97,7 +97,7 @@ export function getTfheVersion(chainName: FheTestChainName): TfheVersion | undef
 const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestChainName, string>>> = {
   sepolia: '1.4.0-alpha.3',
   testnet: '1.4.0-alpha.3',
-  localcleartext_v1_0: 'cleartext',
+  localcleartext: 'cleartext',
   ingen_trex_cleartext: 'cleartext',
 };
 
@@ -253,9 +253,9 @@ function foundryCastEnv(): NodeJS.ProcessEnv {
   return env;
 }
 
-/** The local anvil cleartext stacks this repo deploys (`localcleartext_*`). */
+/** The local anvil cleartext stack this repo deploys (`localcleartext`). */
 export function isLocalCleartextChain(chainName: FheTestChainName): boolean {
-  return chainName.startsWith('localcleartext_');
+  return chainName === 'localcleartext';
 }
 
 function isLocalAnvilChain(chainName: FheTestChainName): boolean {
@@ -459,11 +459,7 @@ export function prepareChains(): FheTestBaseEnv[] {
 function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
   const testDir = resolve(import.meta.dirname, '..');
   const isLocalstack = isLocalstackChain(chainName);
-  const envFilename = isLocalCleartextChain(chainName)
-    ? '.env.localcleartext'
-    : isLocalstack
-      ? '.env.localstack'
-      : `.env.${chainName}`;
+  const envFilename = isLocalstack ? '.env.localstack' : `.env.${chainName}`;
 
   // Load shared secrets
   const sharedEnv = parseEnvFile(resolve(testDir, '.env'));
@@ -497,7 +493,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
   const chainMap: Record<FheTestChainName, FhevmChain> = {
     localstack,
     localstack_v14,
-    localcleartext_v1_0,
+    localcleartext,
     polygon_devnet,
     ingen_trex_cleartext,
     hoodi_cleartext,

@@ -5,7 +5,7 @@ import { defineClientDecryptDelegateDecryptTests } from '../ethers-common/client
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientDecrypt.delegateDecrypt.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientDecrypt.delegateDecrypt.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

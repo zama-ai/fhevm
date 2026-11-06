@@ -5,7 +5,7 @@ import { defineClientEncryptWithPadEncryptTests } from '../viem-common/clientEnc
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientEncryptWithPad.encrypt.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientEncryptWithPad.encrypt.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

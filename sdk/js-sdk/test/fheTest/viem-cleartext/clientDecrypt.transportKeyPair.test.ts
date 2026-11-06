@@ -5,7 +5,7 @@ import { defineClientDecryptTransportKeyPairTests } from '../viem-common/clientD
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientDecrypt.transportKeyPair.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientDecrypt.transportKeyPair.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 

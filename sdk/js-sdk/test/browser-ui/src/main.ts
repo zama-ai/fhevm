@@ -460,7 +460,7 @@ function resolveChain(target: ChainTarget): FhevmChain {
           },
           relayerUrl: 'http://localhost:8545',
           gateway: {
-            // The v1.0 cleartext stack's GATEWAY_CHAIN_ID (see test/chains/localcleartext_v1_0.ts).
+            // The v1.0 cleartext stack's GATEWAY_CHAIN_ID (see test/chains/localcleartext.ts).
             id: 100_733_346_448_153,
             contracts: {
               decryption: { address: '0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721' },

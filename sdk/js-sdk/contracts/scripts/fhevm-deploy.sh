@@ -34,10 +34,10 @@ LATEST_PROFILE_ALIAS="v1.0"
 # Usage:
 #   ./fhevm-deploy.sh --profile v1.0
 #   ./fhevm-deploy.sh --profile v1.0 --dry-run
-#   ./fhevm-deploy.sh --profile v1.0 --chain localcleartext_v1_0
+#   ./fhevm-deploy.sh --profile v1.0 --chain localcleartext
 # ==============================================================================
 
-chain_default="localcleartext_v1_0"
+chain_default="localcleartext"
 chain_cli=""
 profile_default="${FOUNDRY_PROFILE:-latest}"
 profile_cli=""
@@ -61,7 +61,7 @@ while [[ $# -gt 0 ]]; do
 Usage: fhevm-deploy.sh [options]
 
 Options:
-  --chain <name>        FHEVM chain (localcleartext_v1_0 | localstack) [default: $chain_default].
+  --chain <name>        FHEVM chain (localcleartext | localstack) [default: $chain_default].
                         Precedence: --chain flag > \$CHAIN env > $chain_default
   --profile <name>      Foundry profile (v1.0 | latest) [default: $profile_default].
   --dry-run             Print precomputed FHEVM host addresses and exit. No anvil, no broadcast,
@@ -92,11 +92,11 @@ fi
 chain="${chain_cli:-${CHAIN:-$chain_default}}"
 fhevm_assert_chain "$chain"
 
-# only chain="localcleartext_*|localstack" for the moment
+# only chain="localcleartext|localstack" for the moment
 case "$chain" in
-    localcleartext_*|localstack) ;;
+    localcleartext|localstack) ;;
     *)
-        echo "❌ fhevm-deploy.sh only supports chains 'localcleartext_*|localstack'; got '$chain'" >&2
+        echo "❌ fhevm-deploy.sh only supports chains 'localcleartext|localstack'; got '$chain'" >&2
         exit 1
         ;;
 esac
