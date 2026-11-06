@@ -17,7 +17,6 @@ import {
   supportsConnectorHttp,
   supportsConsensusDetector,
   runsCoprocessorProxy,
-  supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
 import {
@@ -250,8 +249,6 @@ const COMPONENT_BUILD_SPECS: Record<string, Record<string, Record<string, unknow
     "gateway-sc-deploy": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-sc-add-network": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-sc-add-pausers": buildSpec("../../../gateway-contracts", "Dockerfile"),
-    "gateway-sc-trigger-keygen": buildSpec("../../../gateway-contracts", "Dockerfile"),
-    "gateway-sc-trigger-crsgen": buildSpec("../../../gateway-contracts", "Dockerfile"),
     "gateway-sc-context-switch": buildSpec("../../../gateway-contracts", "Dockerfile"),
   },
   "host-sc": {
@@ -556,7 +553,6 @@ export const blueGreenServiceNames = (
   state: Pick<State, "scenario" | "versions">,
   options: { includeMigration: boolean; includeDeferredGreen?: boolean },
 ): string[] => {
-  const includeConsumer = supportsHostListenerConsumer(state);
   const greenDeferred = state.scenario.kind === "blue-green" && state.scenario.gcs.deferredStart;
   const suffixes = withCoprocessorProxySuffixes(GROUP_SERVICE_SUFFIXES.coprocessor, false);
   const names: string[] = [];
@@ -565,13 +561,11 @@ export const blueGreenServiceNames = (
     for (const suffix of suffixes) {
       if (GCS_ONLY_SUFFIXES.has(suffix)) continue;
       if (!options.includeMigration && suffix.includes("migration")) continue;
-      if (suffix === "host-listener-consumer" && !includeConsumer) continue;
       names.push(`${prefix}${suffix}`);
     }
     if (!greenDeferred || options.includeDeferredGreen) {
       for (const suffix of suffixes) {
         if (suffix.includes("migration")) continue;
-        if (suffix === "host-listener-consumer" && !includeConsumer) continue;
         names.push(`${prefix}gcs-${suffix}`);
       }
     }
@@ -617,14 +611,12 @@ export const serviceNameList = (
   if (state.scenario.kind === "blue-green") {
     return blueGreenServiceNames(state, { includeMigration: true });
   }
-  const includeConsumer = supportsHostListenerConsumer(state);
   const includeConsensusDetector = supportsConsensusDetector(state);
   const includeUpgradeController = supportsUpgradeController(state);
   const suffixes = withCoprocessorProxySuffixes(
     GROUP_SERVICE_SUFFIXES.coprocessor.filter(
       (suffix) =>
         (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
-        (includeConsumer || suffix !== "host-listener-consumer") &&
         (includeConsensusDetector || suffix !== "consensus-detector") &&
         (includeUpgradeController || suffix !== "upgrade-controller"),
     ),
@@ -776,18 +768,13 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
   if (!plan.coprocessor) {
     return next;
   }
-  if (plan.coprocessor?.hostListenerMode === "consumer" && !supportsHostListenerConsumer(plan)) {
-    throw new Error("consumer-only scenarios require a host-consumer capable version bundle");
-  }
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);
   const excludedServices = new Set([
-    ...(supportsHostListenerConsumer(plan) ? [] : ["coprocessor-host-listener-consumer"]),
     ...(supportsConsensusDetector(plan) ? [] : ["coprocessor-consensus-detector"]),
     ...(supportsUpgradeController(plan) ? [] : ["coprocessor-upgrade-controller"]),
     ...(runsCoprocessorProxy(plan) ? [] : COPROCESSOR_PROXY_SERVICES),
   ]);
-  const includeConsumer = supportsHostListenerConsumer(plan);
   const isBlueGreen = Boolean(plan.blueGreen);
   for (const instance of plan.coprocessor.instances) {
     const localServices =
@@ -908,9 +895,6 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       };
       const gcsArgPolicy = argPolicyForInstance(compat, gcsInstance);
       for (const [baseName, service] of Object.entries(doc.services)) {
-        if (!includeConsumer && baseName === "coprocessor-host-listener-consumer") {
-          continue;
-        }
         if (baseName === "coprocessor-db-migration" || COPROCESSOR_PROXY_SERVICES.has(baseName)) {
           continue;
         }
@@ -1308,9 +1292,6 @@ const buildExtraCoprocessorListenerOverride = async (
   if (!plan.coprocessor) {
     // Multi-chain overrides don't apply to blue-green (single chain).
     return { ...doc, services };
-  }
-  if (plan.coprocessor?.hostListenerMode === "consumer" && !supportsHostListenerConsumer(plan)) {
-    throw new Error("consumer-only scenarios require a host-consumer capable version bundle");
   }
   const compat = compatPolicyForState(plan);
   const inheritedBuildServices = coprocessorBuildServices(plan);

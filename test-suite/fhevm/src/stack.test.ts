@@ -80,30 +80,6 @@ describe("stack", () => {
     );
   });
 
-  test("rejects multi-chain scenarios on legacy coprocessor bundles during preview", () => {
-    const bundle = {
-      ...presetBundle("latest-main", "abcdef0", "latest-supported.json"),
-      target: "latest-supported" as const,
-      env: {
-        ...presetBundle("latest-main", "abcdef0", "latest-supported.json").env,
-        HOST_VERSION: "v0.11.0",
-        GATEWAY_VERSION: "v0.11.0",
-        COPROCESSOR_HOST_LISTENER_VERSION: "v0.11.0",
-        COPROCESSOR_HOST_LISTENER_POLLER_VERSION: "v0.11.0",
-      },
-    };
-    const multiChainScenario: State["scenario"] = {
-      ...defaultScenario,
-      hostChains: [
-        defaultScenario.hostChains[0],
-        { key: "chain-b", chainId: "67890", rpcPort: DEFAULT_EXTRA_HOST_RPC_PORT },
-      ],
-    };
-    expect(() => previewStateFromBundle({ overrides: [], lockFile: "/tmp/latest-supported-lock.json" }, bundle, multiChainScenario)).toThrow(
-      "Multi-chain scenarios require coprocessor runtime >= v0.12.0",
-    );
-  });
-
   test("upgrade plan supports relayer version locks without a local override", () => {
     const plan = resolveUpgradePlan({ overrides: [], scenario: defaultScenario }, "relayer", { lockFile: true });
     expect(plan.versionKeys).toEqual(["RELAYER_VERSION", "RELAYER_MIGRATE_VERSION"]);
