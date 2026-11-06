@@ -35,6 +35,7 @@ jobs:
               # The off-chain readiness verdict (retriable vs terminal) lives in this crate, so
               # a change confined to it still has to run the relayer's own suites.
               - shared/ciphertext-attestation/**
+              - shared/nonce-manager/**
 
   unit-test:
     name: relayer-test/unit-test (bpr)

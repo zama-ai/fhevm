@@ -37,6 +37,7 @@ jobs:
               - shared/block-manifest/**
               - shared/ciphertext-attestation/**
               - shared/fhevm-sig-auth/**
+              - shared/nonce-manager/**
   cargo-tests:
     name: coprocessor-cargo-test/${{ matrix.service }}
     needs: check-changes

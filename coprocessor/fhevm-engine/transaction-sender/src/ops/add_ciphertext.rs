@@ -487,8 +487,18 @@ where
             });
         }
 
+        // Let every submission settle its nonce before returning an error.
+        // Dropping the JoinSet here could leave other nonce reservations locked.
+        let mut first_error = None;
         while let Some(res) = join_set.join_next().await {
-            res??;
+            if let Err(error) = res.map_err(anyhow::Error::from).and_then(|result| result) {
+                if first_error.is_none() || crate::is_backend_gone(&error) {
+                    first_error = Some(error);
+                }
+            }
+        }
+        if let Some(error) = first_error {
+            return Err(error);
         }
 
         Ok(maybe_has_more_work)
