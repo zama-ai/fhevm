@@ -2,7 +2,6 @@ import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { ChecksummedAddress } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { KmsExtraData } from '../types/kms-p.js';
-import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { createKmsSignersContext } from './KmsSignersContext-p.js';
 import { getCurrentKmsContextAndEpoch } from './getCurrentKmsContextAndEpoch-p.js';
 import { assertIsKmsExtraData, createKmsExtraDataV2 } from '../kms/kmsExtraData-p.js';
@@ -19,7 +18,6 @@ type Context = {
 type Parameters = {
   readonly kmsVerifierAddress: ChecksummedAddress;
   readonly protocolConfigAddress: ChecksummedAddress | undefined;
-  readonly fhevmContext: FhevmClientFrozenContext;
   readonly forceRefresh?: boolean | undefined;
 };
 

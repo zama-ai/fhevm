@@ -146,7 +146,6 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
     readKmsSignersContextFromPermitExtraData(context, {
       kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
       protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-      fhevmContext,
       extraData: createKmsExtraDataFromBytesHex(extraData),
     }),
   ]);

@@ -2,7 +2,6 @@ import type { Bytes32Hex, Bytes65Hex, BytesHex, ChecksummedAddress } from '../..
 import type { CleartextEthereumModule } from '../../ethereum/types-ct.js';
 import type { FetchPublicDecryptParameters, FetchPublicDecryptReturnType, RelayerClientWithRuntime } from '../types.js';
 import type { KmsSignersContext } from '../../../types/kmsSignersContext.js';
-import type { FhevmClientFrozenContext } from '../../../types/fhevmClientFrozenContext-p.js';
 import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
 import { getKmsSignersPrivateKeyMap, pickRespondingKmsSigners } from './signers.js';
 import { encodeTypedCleartexts, isForgeFhevmV1, readPlaintexts } from './forgeFhevmV1.js';
@@ -40,7 +39,6 @@ const publicDecryptAbi = [
 async function runPublicDecryptOffChain(
   relayerClient: RelayerClientWithRuntime,
   payload: FetchPublicDecryptParameters['payload'],
-  fhevmContext: FhevmClientFrozenContext,
 ): Promise<{
   readonly orderedAbiEncodedClearValues: BytesHex;
   readonly digest: Bytes32Hex;
@@ -82,7 +80,6 @@ async function runPublicDecryptOffChain(
     protocolConfigAddress: relayerClient.chain.fhevm.contracts.protocolConfig?.address as
       | ChecksummedAddress
       | undefined,
-    fhevmContext,
   });
 
   const digest: Bytes32Hex = cleartextEthereumModule.hashTypedData({
@@ -151,11 +148,11 @@ export async function fetchPublicDecrypt(
 ): Promise<FetchPublicDecryptReturnType> {
   const cleartextEthereumModule = relayerClient.runtime.ethereum as CleartextEthereumModule;
 
-  const offChain = await isForgeFhevmV1(relayerClient, parameters.fhevmContext);
+  const offChain = await isForgeFhevmV1(relayerClient);
 
   let res;
   if (offChain) {
-    res = await runPublicDecryptOffChain(relayerClient, parameters.payload, parameters.fhevmContext);
+    res = await runPublicDecryptOffChain(relayerClient, parameters.payload);
   } else {
     res = await runPublicDecryptOnChain(relayerClient, parameters.payload);
   }
