@@ -13,10 +13,15 @@ import {
   parseIsoTimestampToEpochSeconds,
   readChainTip,
 } from './blockWindow';
+import { type ChainSetOverride, digest, loadChainSetOverride } from './chainsFile';
 import { assertContractMatchesVersionPrefix } from './contractVersion';
 import { ENVIRONMENTS, SUPPORTED_ENVIRONMENTS } from './environments';
 import { formatError } from './formatError';
 import { getRequiredEnvVar } from './loadVariables';
+
+// The environment table goes through review. A caller-supplied set does not.
+export const EXPERIMENTAL_CHAIN_SET_WARNING =
+  'EXPERIMENTAL      : --chains-file is experimental. Use the environment default for a production upgrade.';
 
 // Pinned inline so the util needs no typechain compile and encodes from tests without hre. Keep in sync with IProtocolConfig.sol.
 export const PROPOSE_UPGRADE_ABI = [
@@ -40,6 +45,10 @@ export interface CoprocessorUpgradeInputs {
   gateway: GatewayConfig;
   // Host chain holding the canonical ProtocolConfig.
   canonicalChainId: number;
+  // What supplied the chain set. The report prints it, so a reviewer knows the origin.
+  chainSetSource: string;
+  // True when --chains-file replaced the environment default.
+  chainSetFromFile: boolean;
   proposalId: bigint;
   softwareVersion: string;
 }
@@ -75,6 +84,8 @@ export interface RawCoprocessorUpgradeParams {
   buffer: string;
   proposalId: string;
   softwareVersion: string;
+  // A path, or `env:NAME`. Absent keeps the environment default.
+  chainsFile?: string;
 }
 
 function resolveEnvRpc(envName: string, label: string, defaultRpcUrl?: string): string {
@@ -90,10 +101,15 @@ type LocalHostChainJson = Omit<ChainConfig, 'label' | 'minWindowSeconds'> & {
   minWindowSeconds?: number;
 };
 
-export function resolveEnvironment(name: string): {
+export function resolveEnvironment(
+  name: string,
+  override?: ChainSetOverride,
+): {
   canonicalChainId: number;
   chains: ChainConfig[];
   gateway: GatewayConfig;
+  chainSetSource: string;
+  chainSetFromFile: boolean;
 } {
   const def = ENVIRONMENTS[name];
   if (!def) {
@@ -101,30 +117,45 @@ export function resolveEnvironment(name: string): {
   }
   // Local e2e chains are scenario-defined (1..N), so the test passes them as JSON, ProtocolConfig chain first.
   // They have no label or finality floor unless the harness sets one.
-  const scenarioChains = name === 'local' ? process.env.LOCAL_HOST_CHAINS : undefined;
-  const chains: ChainConfig[] = scenarioChains
-    ? (JSON.parse(scenarioChains) as LocalHostChainJson[]).map((c) => ({
-        ...c,
-        label: c.label ?? `chain-${c.chainId}`,
-        minWindowSeconds: c.minWindowSeconds ?? 0,
-      }))
-    : def.chains.map((c) => ({
-        chainId: c.chainId,
-        label: c.label,
-        rpcUrl: resolveEnvRpc(c.rpcUrlEnv, c.label, c.defaultRpcUrl),
-        fallbackBlockTimeSeconds: c.fallbackBlockTimeSeconds,
-        minWindowSeconds: c.minWindowSeconds,
-      }));
-  if (chains.length === 0) {
-    throw new Error('LOCAL_HOST_CHAINS is empty');
+  const scenarioChains = !override && name === 'local' ? process.env.LOCAL_HOST_CHAINS : undefined;
+
+  let chainSetSource: string;
+  let chains: ChainConfig[];
+  let canonicalChainId: number;
+  if (scenarioChains) {
+    chainSetSource = `LOCAL_HOST_CHAINS (sha256:${digest(scenarioChains)})`;
+    chains = (JSON.parse(scenarioChains) as LocalHostChainJson[]).map((c) => ({
+      ...c,
+      label: c.label ?? `chain-${c.chainId}`,
+      minWindowSeconds: c.minWindowSeconds ?? 0,
+    }));
+    if (chains.length === 0) {
+      throw new Error('LOCAL_HOST_CHAINS is empty');
+    }
+    canonicalChainId = chains[0].chainId;
+  } else {
+    chainSetSource = override?.source ?? `${name} default (tasks/utils/environments.ts)`;
+    chains = (override?.chains ?? def.chains).map((c) => ({
+      chainId: c.chainId,
+      label: c.label,
+      rpcUrl: resolveEnvRpc(c.rpcUrlEnv, c.label, c.defaultRpcUrl),
+      fallbackBlockTimeSeconds: c.fallbackBlockTimeSeconds,
+      minWindowSeconds: c.minWindowSeconds,
+    }));
+    canonicalChainId = override?.canonicalChainId ?? def.canonicalChainId;
+    // ingest.rs rejects a proposal without the canonical listener chain, so the dry run never starts.
+    if (!chains.some((c) => c.chainId === canonicalChainId)) {
+      throw new Error(
+        `the ${name} chain set must include the canonical chain ${canonicalChainId}. Mark one entry with "canonical": true, or add chain ${canonicalChainId} to the set`,
+      );
+    }
   }
-  const canonicalChainId = scenarioChains ? chains[0].chainId : def.canonicalChainId;
   const gateway: GatewayConfig = {
     label: def.gateway.label,
     rpcUrl: resolveEnvRpc(def.gateway.rpcUrlEnv, def.gateway.label, def.gateway.defaultRpcUrl),
     chainId: def.gateway.chainId,
   };
-  return { canonicalChainId, chains, gateway };
+  return { canonicalChainId, chains, gateway, chainSetSource, chainSetFromFile: override !== undefined };
 }
 
 // Release tags the coprocessor's version parser reads as intended: vMAJOR.MINOR.PATCH, optional pre-release suffix.
@@ -137,7 +168,13 @@ export function isReleaseTag(version: string): boolean {
 
 // Validate + parse raw params into typed inputs, resolving env RPC URLs. Throws on bad/missing input.
 export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams): CoprocessorUpgradeInputs {
-  const { canonicalChainId, chains: hostChains, gateway } = resolveEnvironment(raw.environment);
+  const {
+    canonicalChainId,
+    chains: hostChains,
+    gateway,
+    chainSetSource,
+    chainSetFromFile,
+  } = resolveEnvironment(raw.environment, loadChainSetOverride(raw.chainsFile, raw.environment));
 
   const startEpochSeconds = parseIsoTimestampToEpochSeconds(raw.startTime);
   const durationSeconds = parseDurationToSeconds(raw.duration);
@@ -169,6 +206,8 @@ export function parseCoprocessorUpgradeInputs(raw: RawCoprocessorUpgradeParams):
     hostChains,
     gateway,
     canonicalChainId,
+    chainSetSource,
+    chainSetFromFile,
     proposalId,
     softwareVersion,
   };
@@ -364,6 +403,15 @@ function bufferShortageHint(leadSeconds: number, bufferSeconds: number): string 
 export function printCoprocessorUpgradeProposal(proposal: CoprocessorUpgradeProposal, target: string): void {
   const { inputs } = proposal;
   console.log('# proposeCoprocessorUpgrade — computed block windows');
+  console.log('');
+  // Nothing here can validate the set. ingest.rs compares it with each coprocessor's host_chains,
+  // which this repo cannot read. Print it, so the reviewer checks it against the deployment.
+  console.log('## Chain set');
+  console.log(`  chains           : ${inputs.hostChains.map((c) => c.chainId).join(', ')}`);
+  console.log(`  source           : ${inputs.chainSetSource}`);
+  if (inputs.chainSetFromFile) {
+    console.log(`  ${EXPERIMENTAL_CHAIN_SET_WARNING}`);
+  }
   console.log('');
   console.log(`Environment        : ${inputs.environment}`);
   console.log(`Proposal id        : ${inputs.proposalId}`);
