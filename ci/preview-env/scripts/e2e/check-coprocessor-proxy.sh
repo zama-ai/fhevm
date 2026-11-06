@@ -17,6 +17,10 @@ deployments=()
 for i in $(seq 1 "${NB_COPROCESSOR}"); do
   deployments+=("coprocessor-${i}-coprocessor-proxy")
 done
+# prf-service is not in the restart below, so only wait for it.
+for i in $(seq 1 "${NB_COPROCESSOR}"); do
+  kubectl rollout status "deploy/coprocessor-${i}-prf-service" -n "${NAMESPACE}" --timeout=300s
+done
 
 for deploy in "${deployments[@]}"; do
   kubectl rollout status "deploy/${deploy}" -n "${NAMESPACE}" --timeout=300s
