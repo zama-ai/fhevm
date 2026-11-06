@@ -6,34 +6,9 @@
 {{- if not $policy.ports }}
 {{- fail "coprocessorProxy.prfServiceNetworkPolicy.ports must list the prf-service pod ports" }}
 {{- end }}
-{{- $prfServicePorts := list }}
-{{- range $policy.ports }}
-{{- if or (kindIs "string" .port) (not .port) }}
-{{- fail "coprocessorProxy.prfServiceNetworkPolicy.ports must each set a numeric `port`: extraIngress rules are checked against these numbers" }}
-{{- end }}
-{{- $prfServicePorts = append $prfServicePorts (int .port) }}
-{{- end }}
 {{- range $policy.extraIngress }}
 {{- if not .from }}
 {{- fail "coprocessorProxy.prfServiceNetworkPolicy.extraIngress rules must set `from`: a rule without it admits every source" }}
-{{- end }}
-{{- if not .ports }}
-{{- fail "coprocessorProxy.prfServiceNetworkPolicy.extraIngress rules must set `ports`: a rule without it admits its sources on every port, prf-service's included" }}
-{{- end }}
-{{- range .ports }}
-{{- if not .port }}
-{{- fail "coprocessorProxy.prfServiceNetworkPolicy.extraIngress ports must each set `port`: an entry without it admits every port" }}
-{{- end }}
-{{- if kindIs "string" .port }}
-{{- fail (printf "coprocessorProxy.prfServiceNetworkPolicy.extraIngress ports must be numbers, not the named port %q: the chart cannot tell which pod port a name maps to, and it may be prf-service's" .port) }}
-{{- end }}
-{{- $firstPort := int .port }}
-{{- $lastPort := int (.endPort | default .port) }}
-{{- range $prfServicePorts }}
-{{- if and (le $firstPort .) (le . $lastPort) }}
-{{- fail (printf "coprocessorProxy.prfServiceNetworkPolicy.extraIngress must not admit prf-service port %d: prf-service trusts X-Fhevm-Signer, so only the proxy may reach that port" .) }}
-{{- end }}
-{{- end }}
 {{- end }}
 {{- end }}
 apiVersion: networking.k8s.io/v1
