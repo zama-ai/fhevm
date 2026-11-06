@@ -160,7 +160,11 @@ forwards the client IP to prf-service in its own `X-Forwarded-For` and logs it.
 
 The ALB must keep its default `X-Forwarded-For` processing mode, `append`. A `forwardedHops` lower
 than the number of front layers takes a front layer's address as the client's, so all clients
-behind it share one per-IP limit. A higher one takes an address the client chose.
+behind it share one per-IP limit. A higher one takes an address the client chose. Each inner front
+layer, and the proxy itself, must accept connections only from the layer outside it, for example
+an ALB whose security group admits only Cloudflare's ranges: a client that reaches an inner layer
+directly can write the entry the outer layer would have appended, and pick a new client IP on
+every request.
 
 As defence in depth alongside the front layer, the proxy limits each client IP's request rate (see
 above) and bounds the time a client takes to send a request head. A client has
@@ -172,9 +176,13 @@ or previous body, is still arriving. No deadline runs while prf-service holds a 
 
 The front layer's idle timeout towards the proxy must be shorter than
 `coprocessorProxy.clientIdleTimeoutSeconds` (65 s by default). Otherwise the front layer can send a
-request on a connection the proxy is closing, and answers the client `502`. AWS ALB's default idle
-timeout is 60 s. The proxy also closes a connection after 1000 requests, so that a front layer's
-long-lived connections spread again over the replicas, new ones included.
+request on a connection the proxy is closing, and answers the client with an error (`502` from an
+ALB, `520` from Cloudflare). AWS ALB's default idle timeout is 60 s; raising it, for example so
+prf-service can hold requests longer, means raising `clientIdleTimeoutSeconds` above it too.
+Cloudflare keeps idle connections to the origin for 900 s, and this cannot be changed, so with
+Cloudflare alone set `clientIdleTimeoutSeconds` above 900. The proxy also closes a connection after
+1000 requests, so that a front layer's long-lived connections spread again over the replicas, new
+ones included.
 
 The proxy speaks HTTP/1.1, so each request a connector holds open takes one connection: the front
 layer's per-client connection limit must allow the connector's concurrent PRF requests, and its

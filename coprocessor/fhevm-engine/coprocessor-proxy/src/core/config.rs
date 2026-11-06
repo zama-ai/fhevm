@@ -140,7 +140,8 @@ pub struct Config {
     pub request_head_timeout: Duration,
     /// How long a client connection can stay idle between two requests before the proxy closes
     /// it. A front layer must close its idle connections to the proxy sooner: otherwise a request
-    /// it sends as the proxy closes the connection fails. AWS ALB's default is 60 s.
+    /// it sends as the proxy closes the connection fails. AWS ALB's default is 60 s; Cloudflare's
+    /// is 900 s.
     #[arg(
         long,
         env = "COPROCESSOR_PROXY_CLIENT_IDLE_TIMEOUT",

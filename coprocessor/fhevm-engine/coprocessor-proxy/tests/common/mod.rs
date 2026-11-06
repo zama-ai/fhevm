@@ -425,7 +425,8 @@ pub struct TestProxy {
     pub rpc: FakeRpc,
     /// The healthcheck state of the proxy, to serve with `healthz_server::HttpServer`.
     pub state: health::State,
-    /// An `X-Forwarded-For` value holding a client IP for each of the proxy's front layers.
+    /// An `X-Forwarded-For` value holding a client IP for each of the proxy's front layers, or one
+    /// the proxy ignores without a front layer.
     forwarded_for: String,
 }
 
@@ -458,7 +459,7 @@ impl TestProxy {
         let address = prf_service.addr.to_string().parse().unwrap();
         let mut config = Self::config(addr, &tls, &rpc, address);
         customize(&mut config);
-        let forwarded_for = vec!["127.0.0.1"; config.forwarded_hops].join(", ");
+        let forwarded_for = vec!["127.0.0.1"; config.forwarded_hops.max(1)].join(", ");
         let (proxy, state) = Proxy::from_config(config).unwrap();
         std::thread::spawn(move || proxy.run());
 
