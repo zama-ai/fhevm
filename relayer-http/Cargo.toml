@@ -21,22 +21,31 @@ async-trait = "=0.1.89"
 bytes = "=1.11.1"
 config = { version = "=0.15.19", default-features = false, features = ["yaml"] }
 humantime-serde = "=1.1.1"
+# The relayer's and the kms-connector's metrics crate and version; text format only.
+prometheus = { version = "=0.14.0", default-features = false }
 reqwest = { version = "=0.13.4", default-features = false, features = ["json", "rustls"] }
 serde = { version = "=1.0.228", default-features = false, features = ["derive", "std"] }
+serde_path_to_error = { version = "=0.1.20", default-features = false }
 serde_json = { version = "=1.0.145", default-features = false, features = ["std"] }
 thiserror = { version = "=2.0.18", default-features = false }
 tokio = { version = "=1.47.1", default-features = false, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-util = { version = "=0.7.18", default-features = false }
 tracing = "=0.1.44"
-tracing-subscriber = { version = "=0.3.20", default-features = false, features = ["env-filter", "fmt", "json", "std", "ansi"] }
+tracing-subscriber = { version = "=0.3.20", default-features = false, features = ["env-filter", "fmt", "json", "std", "ansi", "tracing-log"] }
 url = { version = "=2.5.8", default-features = false, features = ["serde", "std"] }
+# A panicking handler answers 500 `internal` instead of resetting the connection.
+tower-http = { version = "=0.6.11", default-features = false, features = ["catch-panic"] }
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
-uuid = { version = "=1.26.0", default-features = false, features = ["std", "v7"] }
+uuid = { version = "=1.26.0", default-features = false, features = ["std", "v4"] }
 # tests
 futures-util = { version = "=0.3.34", default-features = false }
 tokio-rustls = { version = "=0.26.5", default-features = false, features = ["aws_lc_rs"] }
+# Emits `log` records, as reqwest does, to test the bridge into tracing.
+log = { version = "=0.4.34", default-features = false }
 tower = { version = "=0.5.3", default-features = false, features = ["util"] }
 wiremock = "=0.6.5"
+# The dashboard and alert checks of `monitoring.rs`; explicit character classes, so no Unicode tables.
+regex = { version = "=1.13.1", default-features = false, features = ["std"] }
 
 [profile.release]
 opt-level = 3

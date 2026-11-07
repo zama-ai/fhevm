@@ -4,8 +4,9 @@
 pub mod public_decrypt;
 pub mod user_decrypt;
 
-use alloy::primitives::B256;
 use serde::{Serialize, de::DeserializeOwned};
+
+use crate::metrics::FlowName;
 
 /// Why a `200` response does not count.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -28,12 +29,8 @@ pub trait Flow: Send + Sync + 'static {
     type Output: Serialize + Send + 'static;
     /// The flow's optional checks, built once from the configuration and shared by every run.
     type Checks: Send + Sync + 'static;
-    const NAME: &'static str;
+    const NAME: FlowName;
     const ROUTE: &'static str;
-    /// The connector's content-derived `decryptionId` (the same on every node).
-    fn decryption_id(request: &Self::Request) -> B256;
-    /// Ciphertext handles, for logs.
-    fn handles(request: &Self::Request) -> Vec<B256>;
     /// Whether this response can be accepted next to the already accepted ones.
     fn check(
         checks: &Self::Checks,

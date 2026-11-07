@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs relayer-http on the host with cargo, on RELAYER_HTTP_RUN_PORT (set by the Makefile), against the running stack
-# (./fhevm-cli up). Logs in this terminal; Ctrl-C stops the relayer. The forwarders stay up for the next run
+# (./fhevm-cli up). Logs in this terminal and in target/relayer-run.log; Ctrl-C stops the relayer. The forwarders stay up for the next run
 # (reused when they still match) until `make down` removes them.
 #
 # Config: the stack's own relayer-http config (rendered by fhevm-cli), with each KMS proxy URL replaced by a local
@@ -48,4 +48,13 @@ set -a
 # shellcheck disable=SC1090 # the stack's generated env file
 . "$STACK_ENV"
 set +a
-cd "$ROOT" && cargo run -p relayer-http -- "$CONFIG"
+# The environment wins over the file; set here so the `endpoint:` rewrite above never touches it.
+export APP_METRICS__ENDPOINT="0.0.0.0:${RELAYER_HTTP_METRICS_PORT:-4092}"
+echo "metrics on :${RELAYER_HTTP_METRICS_PORT:-4092}/metrics"
+# Built first, so that the log file holds the relayer's lines only: `make start-monitoring` ships it to Loki as
+# instance `host`. Truncated at each run.
+LOG="$ROOT/target/relayer-run.log"
+cd "$ROOT" && cargo build -p relayer-http
+echo "logs also in $LOG"
+# tee -i: Ctrl-C reaches the relayer, which drains; tee keeps writing until the relayer's last line.
+"$ROOT/target/debug/relayer-http" "$CONFIG" | tee -i "$LOG"
