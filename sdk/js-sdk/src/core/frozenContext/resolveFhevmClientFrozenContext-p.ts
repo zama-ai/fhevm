@@ -61,6 +61,10 @@ export async function resolveFhevmClientFrozenContext(fhevm: FhevmBase<FhevmChai
   assertIsHostContractVersionOf(aclVersion, 'ACL');
   assertIsHostContractVersionOf(inputVerifierVersion, 'InputVerifier');
   assertIsHostContractVersionOf(kmsVerifierVersion, 'KMSVerifier');
+  // TODO: this check is deliberately loose and must become stricter. It accepts
+  // either contract on any chain and ignores the version numbers. It should
+  // instead require `ProtocolConfig` on the canonical host (Ethereum) and
+  // `ProtocolConfigReplica` elsewhere, and enforce the supported versions.
   assertIsHostContractVersionOf(protocolConfigVersion, 'ProtocolConfig', 'ProtocolConfigReplica');
 
   return createFhevmClientFrozenContext({
