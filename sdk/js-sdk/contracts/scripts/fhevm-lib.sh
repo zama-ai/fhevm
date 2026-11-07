@@ -203,21 +203,21 @@ verify_balance() {
 # fhevm contracts workspace. On invalid input, prints an error and EXITS the
 # calling process with status 1 (fail-fast; intended for script entry).
 #
-# Supported: v1.0 | latest
+# Supported: localcleartext | latest
 #
 # Usage: fhevm_assert_foundry_profile <profile>
 fhevm_assert_foundry_profile() {
     local profile="$1"
     case "$profile" in
-        v1.0|latest)
+        localcleartext|latest)
             return 0
             ;;
         "")
-            echo "❌ Foundry profile is required (expected: v1.0 | latest)" >&2
+            echo "❌ Foundry profile is required (expected: localcleartext | latest)" >&2
             exit 1
             ;;
         *)
-            echo "❌ unsupported Foundry profile '$profile' (expected: v1.0 | latest)" >&2
+            echo "❌ unsupported Foundry profile '$profile' (expected: localcleartext | latest)" >&2
             exit 1
             ;;
     esac
@@ -228,21 +228,21 @@ fhevm_assert_foundry_profile() {
 # sdk/js-sdk/contracts/scripts/).
 #
 # Usage: fhevm_host_addresses_file <profile>
-#   <profile>: v1.0 (resolve `latest` first)
-#   (v1.0: src/localcleartext/config/addresses.sol, read-only; its deploy checks it and never writes it)
+#   <profile>: localcleartext (resolve `latest` first)
+#   (localcleartext: src/localcleartext/config/addresses.sol, read-only; its deploy checks it and never writes it)
 #
-#   addresses_file="$(fhevm_host_addresses_file v1.0)"
+#   addresses_file="$(fhevm_host_addresses_file localcleartext)"
 fhevm_host_addresses_file() {
     local profile="$1"
     local contracts_dir
     contracts_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
     case "$profile" in
-        v1.0)
+        localcleartext)
             printf '%s/src/localcleartext/config/addresses.sol\n' "$contracts_dir"
             ;;
         *)
-            echo "fhevm_host_addresses_file: unsupported profile '$profile' (expected: v1.0)" >&2
+            echo "fhevm_host_addresses_file: unsupported profile '$profile' (expected: localcleartext)" >&2
             return 1
             ;;
     esac
