@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import { describe, expect, it } from 'vitest';
 import { defineFhevmChain } from './utils.js';
 
 const A = '0x0000000000000000000000000000000000000001';
