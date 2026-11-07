@@ -8,7 +8,7 @@ import { mnemonicToAccount } from 'viem/accounts';
 import { localstack } from '../chains/localstack.js';
 import { localstack_v14 } from '../chains/localstack_v14.js';
 import { devnet } from '../chains/devnet.js';
-import { polygon_devnet } from '../chains/polygon_devnet.js';
+import { POLYGON_DEVNET_UNSUPPORTED_REASON } from '../chains/polygon_devnet.js';
 import { ingen_trex_cleartext } from '../chains/ingen_trex_cleartext.js';
 import { hoodi_cleartext } from '../chains/hoodi_cleartext.js';
 import { mainnet, sepolia, sepolia as testnet } from '@fhevm/sdk/chains';
@@ -457,6 +457,10 @@ export function prepareChains(): FheTestBaseEnv[] {
 }
 
 function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
+  if (chainName === 'polygon_devnet') {
+    throw new Error(POLYGON_DEVNET_UNSUPPORTED_REASON);
+  }
+
   const testDir = resolve(import.meta.dirname, '..');
   const isLocalstack = isLocalstackChain(chainName);
   const envFilename = isLocalstack ? '.env.localstack' : `.env.${chainName}`;
@@ -490,11 +494,11 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
   const fheTestAddress = resolveFHETestAddress(chainName);
   const fheTestVersion = resolveFHETestVersion(chainName);
 
-  const chainMap: Record<FheTestChainName, FhevmChain> = {
+  // polygon_devnet is unsupported (rejected above): it has no FhevmChain.
+  const chainMap: Record<Exclude<FheTestChainName, 'polygon_devnet'>, FhevmChain> = {
     localstack,
     localstack_v14,
     localcleartext,
-    polygon_devnet,
     ingen_trex_cleartext,
     hoodi_cleartext,
     sepolia,
