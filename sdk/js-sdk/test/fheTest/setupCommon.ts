@@ -6,7 +6,6 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { mnemonicToAccount } from 'viem/accounts';
 import { localstack } from '../chains/localstack.js';
-import { localstack_v14 } from '../chains/localstack_v14.js';
 import { devnet } from '../chains/devnet.js';
 import { POLYGON_DEVNET_UNSUPPORTED_REASON } from '../chains/polygon_devnet.js';
 import { ingen_trex_cleartext } from '../chains/ingen_trex_cleartext.js';
@@ -25,7 +24,6 @@ export const FHE_TEST_CHAIN_NAMES = [
   'devnet',
   'localcleartext',
   'localstack',
-  'localstack_v14',
   'polygon_devnet',
   'ingen_trex_cleartext',
   'hoodi_cleartext',
@@ -76,8 +74,8 @@ export function isRealDeployedChain(chainName: FheTestChainName): boolean {
 }
 
 /**
- * Local docker-compose stacks (`localstack`, `localstack_v14`). Both run protocol v0.14+, which
- * this repo controls, so suites gated on this need no runtime capability probe.
+ * Local docker-compose stack (`localstack`). It runs protocol v0.14+, which this repo controls,
+ * so suites gated on this need no runtime capability probe.
  */
 export function isLocalstackChain(chainName: FheTestChainName): boolean {
   return chainName.startsWith('localstack');
@@ -497,7 +495,6 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
   // polygon_devnet is unsupported (rejected above): it has no FhevmChain.
   const chainMap: Record<Exclude<FheTestChainName, 'polygon_devnet'>, FhevmChain> = {
     localstack,
-    localstack_v14,
     localcleartext,
     ingen_trex_cleartext,
     hoodi_cleartext,
