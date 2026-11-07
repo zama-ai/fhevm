@@ -24,6 +24,7 @@ import {
   requiresLegacyRelayerUrl,
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
+  runsRelayerHttp,
   supportsConnectorHttp,
   supportsCoprocessorProxy,
   supportsConsensusDetector,
@@ -467,6 +468,18 @@ describe("compat", () => {
     expect(supportsCoprocessorProxy(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-proxy"] }]))).toBe(true);
     expect(supportsCoprocessorProxy(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-tfhe-worker"] }]))).toBe(false);
     expect(supportsCoprocessorProxy(stateFor({}, [{ group: "kms-connector" }]))).toBe(false);
+  });
+
+  test("runs relayer-http when its image is pinned or locally built", () => {
+    const stateFor = (env: Record<string, string>, overrides: LocalOverride[] = []) => ({
+      versions: { target: "latest-main" as const, lockName: "latest-main.json", env, sources: [] },
+      overrides,
+    });
+    // GitOps targets and shas that predate relayer-http omit the (optional) key.
+    expect(runsRelayerHttp(stateFor({}))).toBe(false);
+    expect(runsRelayerHttp(stateFor({ RELAYER_HTTP_VERSION: "09c56c3" }))).toBe(true);
+    expect(runsRelayerHttp(stateFor({}, [{ group: "relayer-http" }]))).toBe(true);
+    expect(runsRelayerHttp(stateFor({}, [{ group: "relayer" }]))).toBe(false);
   });
 
   test("enables the kms-connector HTTP path only when both the endpoint and proxy images are pinned or locally built", () => {
