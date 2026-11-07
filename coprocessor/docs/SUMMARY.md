@@ -61,6 +61,6 @@
 
 - [Contributing](developer/contribute.md)
 - [Development roadmap](developer/roadmap.md)
-- [Release note](https://github.com/zama-ai/fhevm-backend/releases)
-- [Feature request](https://github.com/zama-ai/fhevm-backend/issues/new)
-- [Bug report](https://github.com/zama-ai/fhevm-backend/issues/new)
+- [Release note](https://github.com/zama-ai/fhevm/releases)
+- [Feature request](https://github.com/zama-ai/fhevm/issues/new/choose)
+- [Bug report](https://github.com/zama-ai/fhevm/issues/new/choose)
