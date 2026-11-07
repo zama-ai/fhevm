@@ -37,6 +37,10 @@ function currentChain(origin) {
         kmsVerifier: { address: '0x901F8942346f7AB3a01F6D7613119Bca447Bb030' },
         protocolConfig: { address: '0x44aA028fd264C76BF4A8f8B4d8A5272f6AE25CAc' },
         // Its key reads are answered by the test gateway (test/infra/gateway/kmsGenerationMock.ts).
+        // TODO: the SDK treats the presence of `kmsGeneration` as "this is the
+        // canonical host chain (Ethereum)". This local chain is not Ethereum but
+        // needs it to check its key, so it is wrongly marked canonical. Revisit
+        // once the canonical chain definition is made explicit.
         kmsGeneration: { address: '0x216be43148dB537BeddBC268163deb1a802b5553' },
       },
       relayerUrl: `${origin}/gw/${CURRENT_SLOT}/relayer`,
