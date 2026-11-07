@@ -26,15 +26,15 @@ source "$SCRIPT_DIR/fhevm-lib.sh"
 # ==============================================================================
 # `latest` is a friendly alias for whichever profile we currently consider the
 # tip of the supported set. Bump this when promoting a new version.
-LATEST_PROFILE_ALIAS="v1.0"
+LATEST_PROFILE_ALIAS="localcleartext"
 
 # ==============================================================================
 # CLI options
 # 
 # Usage:
-#   ./fhevm-deploy.sh --profile v1.0
-#   ./fhevm-deploy.sh --profile v1.0 --dry-run
-#   ./fhevm-deploy.sh --profile v1.0 --chain localcleartext
+#   ./fhevm-deploy.sh --profile localcleartext
+#   ./fhevm-deploy.sh --profile localcleartext --dry-run
+#   ./fhevm-deploy.sh --profile localcleartext --chain localcleartext
 # ==============================================================================
 
 chain_default="localcleartext"
@@ -63,7 +63,7 @@ Usage: fhevm-deploy.sh [options]
 Options:
   --chain <name>        FHEVM chain (localcleartext | localstack) [default: $chain_default].
                         Precedence: --chain flag > \$CHAIN env > $chain_default
-  --profile <name>      Foundry profile (v1.0 | latest) [default: $profile_default].
+  --profile <name>      Foundry profile (localcleartext | latest) [default: $profile_default].
   --dry-run             Print precomputed FHEVM host addresses and exit. No anvil, no broadcast,
                         no addresses file written.
   -h, --help            Show this help.
@@ -81,7 +81,7 @@ profile="${profile_cli:-$profile_default}"
 fhevm_assert_foundry_profile "$profile"
 
 # Resolve `latest` to its concrete alias so the rest of the script works on a
-# canonical profile name (v1.0). The CLI surface still accepts `latest`.
+# canonical profile name (localcleartext). The CLI surface still accepts `latest`.
 if [[ "$profile" == "latest" ]]; then
     echo "ℹ️  profile=latest → resolving as ${LATEST_PROFILE_ALIAS}"
     profile="$LATEST_PROFILE_ALIAS"
@@ -128,8 +128,8 @@ foundry_profile="$profile"
 fhevm_host_addresses_file="$(fhevm_host_addresses_file "$profile")"
 
 case "$profile" in
-    # v1.0 reads only the deployer from the env below; every other value is its LocalHostBootstrap's.
-    v1.0) host_contracts_dir="localcleartext" ;;
+    # localcleartext reads only the deployer from the env below; every other value is its LocalHostBootstrap's.
+    localcleartext) host_contracts_dir="localcleartext" ;;
     *)
         echo "❌ Error: cannot resolve host_contracts_dir for profile '$profile'" >&2
         exit 1
@@ -141,7 +141,7 @@ esac
 fhevm_mnemonic="test test test test test test test future home engine virtual motion"
 fhevm_host_contracts_mnemonic="adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
 
-# DEPLOYER_MNEMONIC may be overridden from the environment. The v1.0 deploy checks
+# DEPLOYER_MNEMONIC may be overridden from the environment. The localcleartext deploy checks
 # the committed src/localcleartext/config/addresses.sol, so only the default below (which
 # reproduces those addresses) deploys successfully without regenerating that file.
 deployer_mnemonic=${DEPLOYER_MNEMONIC:-${fhevm_host_contracts_mnemonic}}
