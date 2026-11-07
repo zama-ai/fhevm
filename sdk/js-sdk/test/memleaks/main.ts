@@ -56,7 +56,6 @@ async function main(): Promise<void> {
   await ensureLocalstackReady({
     restart: options.restartLocalstack,
     rpcUrl,
-    chainName: CHAIN_NAME,
     fhevmCliProfile: options.fhevmCliProfile,
   });
 
