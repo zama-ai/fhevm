@@ -41,6 +41,9 @@ async function fetchChain(origin, slot) {
         inputVerifier: { address: cfg.contracts.inputVerifier },
         kmsVerifier: { address: cfg.contracts.kmsVerifier },
         protocolConfig: { address: cfg.contracts.protocolConfig },
+        // TODO: `kmsGeneration` marks a chain as the canonical host (Ethereum) in the
+        // SDK; this local chain needs it to check its key but is not Ethereum. Revisit
+        // once the canonical chain definition is made explicit (see encrypt/page.jsx).
         kmsGeneration: { address: cfg.contracts.kmsGeneration },
       },
       relayerUrl: `${origin}/gw/${slot}/relayer`,
