@@ -1,17 +1,17 @@
 import { createFhevmCleartextEncryptWithPadClient, createFhevmCleartextDecryptClient } from '@fhevm/sdk/viem/cleartext';
 import { getViemTestConfig } from '../setup-viem.js';
-import { isCleartext, protocolEraOf } from '../setupCommon.js';
+import { isLocalCleartextChain } from '../setupCommon.js';
 import { defineClientEncryptWithPadDecryptSlowTests } from '../viem-common/clientEncryptWithPad.encryptDecrypt.slow.tests.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientEncryptWithPad.encryptDecrypt.slow.test.ts
+// CHAIN=localcleartext npx vitest run --config test/fheTest/vitest.config.ts viem-cleartext/clientEncryptWithPad.encryptDecrypt.slow.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
 defineClientEncryptWithPadDecryptSlowTests({
   // RFC-030 pad-based encryption needs the v1.0 cleartext stack (PaddedInputter).
-  runIf: isCleartext(getViemTestConfig().chainName) && protocolEraOf(getViemTestConfig().chainName) >= 16,
+  runIf: isLocalCleartextChain(getViemTestConfig().chainName),
   createFhevmEncryptWithPadClient: (params) => createFhevmCleartextEncryptWithPadClient(params),
   createFhevmDecryptClient: (params) => createFhevmCleartextDecryptClient(params),
 });

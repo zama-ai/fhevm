@@ -1,5 +1,5 @@
 /**
- * Launch the full test infra (2 cleartext anvils + the same-origin gateway) and
+ * Launch the full test infra (the cleartext anvil + the same-origin gateway) and
  * keep it running until Ctrl-C. While it's up, run any number of tests against
  * it — Playwright globalSetup reuses the live anvils and gateway instead of
  * starting its own (and teardown leaves them running).
@@ -9,15 +9,18 @@
 
 import { startAnvils, stopAnvils } from './anvil/anvils.js';
 import { closeGatewayServer, createGatewayServer, listenGatewayServer } from './gateway/server.js';
-import { GATEWAY_MOUNT_PREFIX, GATEWAY_PORT } from './config.js';
+import { CURRENT_SLOT, GATEWAY_MOUNT_PREFIX, GATEWAY_PORT } from './config.js';
 import { anvilSpecs, gatewayConfig } from './topology.js';
 
 async function gatewayAlreadyUp(): Promise<boolean> {
   try {
-    const res = await fetch(`http://127.0.0.1:${String(GATEWAY_PORT)}${GATEWAY_MOUNT_PREFIX}/v12/relayer/v2/keyurl`, {
-      // Bounded: never block on a wedged/half-open listener.
-      signal: AbortSignal.timeout(3_000),
-    });
+    const res = await fetch(
+      `http://127.0.0.1:${String(GATEWAY_PORT)}${GATEWAY_MOUNT_PREFIX}/${CURRENT_SLOT}/relayer/v2/keyurl`,
+      {
+        // Bounded: never block on a wedged/half-open listener.
+        signal: AbortSignal.timeout(3_000),
+      },
+    );
     return res.ok;
   } catch {
     return false;

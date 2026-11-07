@@ -42,7 +42,6 @@ type CliOptions = {
   readonly sampleIntervalMs: number;
   readonly warmupIterations: number | undefined;
   readonly restartLocalstack: boolean;
-  readonly fhevmCliProfile: string | undefined;
   readonly outDir: string;
 };
 
@@ -56,8 +55,6 @@ async function main(): Promise<void> {
   await ensureLocalstackReady({
     restart: options.restartLocalstack,
     rpcUrl,
-    chainName: CHAIN_NAME,
-    fhevmCliProfile: options.fhevmCliProfile,
   });
 
   const config = getEthersTestConfig();
@@ -211,7 +208,6 @@ function parseArgs(argv: string[]): CliOptions {
     sampleIntervalMs: number;
     warmupIterations: number | undefined;
     restartLocalstack: boolean;
-    fhevmCliProfile: string | undefined;
     outDir: string;
   } = {
     scenarioNames: Object.keys(SCENARIOS),
@@ -220,7 +216,6 @@ function parseArgs(argv: string[]): CliOptions {
     sampleIntervalMs: 2_000,
     warmupIterations: undefined,
     restartLocalstack: false,
-    fhevmCliProfile: undefined,
     outDir: resolve(import.meta.dirname, 'reports'),
   };
 
@@ -251,10 +246,6 @@ function parseArgs(argv: string[]): CliOptions {
         break;
       case '--restart-localstack':
         options.restartLocalstack = true;
-        break;
-      case '--fhevm-cli-profile':
-        options.fhevmCliProfile = requireValue(argv, i);
-        i++;
         break;
       case '--out':
         options.outDir = resolve(requireValue(argv, i));
@@ -304,7 +295,6 @@ Options:
   --warmup <n>                Iterations excluded from trend detection as warmup
                               (default: 10% of the iteration bound, capped at 50).
   --restart-localstack        Restart the localstack Docker stack before running.
-  --fhevm-cli-profile <name>  Profile filename forwarded to localstack-restart.sh.
   --out <dir>                 Directory for JSONL sample output (default: test/memleaks/reports).
   -h, --help                  Show this help.
 

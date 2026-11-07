@@ -25,9 +25,9 @@ const MT_THREAD_COUNT = 2;
 const CONTRACT_ADDRESS = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
 const USER_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 
-// v13 slot: chain id 31338; cleartext-deploy addresses are deterministic
+// v1.0 slot: chain id 31338; cleartext-deploy addresses are deterministic
 // (chain-id independent), matching test/chains/localcleartext.ts.
-function v13Chain(origin) {
+function currentChain(origin) {
   return defineFhevmChain({
     id: 31338,
     fhevm: {
@@ -36,10 +36,20 @@ function v13Chain(origin) {
         inputVerifier: { address: '0x36772142b74871f255CbD7A3e89B401d3e45825f' },
         kmsVerifier: { address: '0x901F8942346f7AB3a01F6D7613119Bca447Bb030' },
         protocolConfig: { address: '0x44aA028fd264C76BF4A8f8B4d8A5272f6AE25CAc' },
+        // Its key reads are answered by the test gateway (test/infra/gateway/kmsGenerationMock.ts).
+        // TODO: the SDK treats the presence of `kmsGeneration` as "this is the
+        // canonical host chain (Ethereum)". This local chain is not Ethereum but
+        // needs it to check its key, so it is wrongly marked canonical. Revisit
+        // once the canonical chain definition is made explicit.
+        kmsGeneration: { address: '0x216be43148dB537BeddBC268163deb1a802b5553' },
       },
       relayerUrl: `${origin}/gw/${CURRENT_SLOT}/relayer`,
       gateway: {
-        id: 654_321,
+        // The cleartext gateway chain id, hashed from a name so it cannot collide with a
+        // real network: uint48(uint256(keccak256("fhevm.cheat.chainId cleartext gateway"))).
+        // Defined as CLEARTEXT_GATEWAY_CHAIN_ID in
+        // contracts/src/localcleartext/cleartext/shared/LibFhevmCleartextConfig.sol.
+        id: 100_733_346_448_153,
         contracts: {
           decryption: { address: '0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721' },
           inputVerification: { address: '0x6189F6c0c3E40B4a3c72ec86262295D78d845297' },
@@ -91,7 +101,7 @@ export default function Page() {
         const origin = window.location.origin;
         log(`lib=${LIB} threads=${THREADS}`);
 
-        const chain = v13Chain(origin);
+        const chain = currentChain(origin);
         log('createFhevmClient...');
         const client = await createClient(chain, `${origin}/gw/${CURRENT_SLOT}/rpc`, logger);
 
@@ -151,7 +161,7 @@ export default function Page() {
 
   return (
     <DiagnosticsView
-      title={`SDK encrypt (v13 · lib=${LIB} · threads=${THREADS})`}
+      title={`SDK encrypt (${CURRENT_SLOT} · lib=${LIB} · threads=${THREADS})`}
       status={diagnostics.status}
       logs={diagnostics.logs}
     />
