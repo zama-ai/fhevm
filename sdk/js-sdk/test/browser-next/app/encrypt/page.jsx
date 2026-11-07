@@ -45,7 +45,10 @@ function currentChain(origin) {
       },
       relayerUrl: `${origin}/gw/${CURRENT_SLOT}/relayer`,
       gateway: {
-        // The v1.0 cleartext stack's GATEWAY_CHAIN_ID (test/infra/config.ts).
+        // The cleartext gateway chain id, hashed from a name so it cannot collide with a
+        // real network: uint48(uint256(keccak256("fhevm.cheat.chainId cleartext gateway"))).
+        // Defined as CLEARTEXT_GATEWAY_CHAIN_ID in
+        // contracts/src/localcleartext/cleartext/shared/LibFhevmCleartextConfig.sol.
         id: 100_733_346_448_153,
         contracts: {
           decryption: { address: '0xEaaA2FC6BC259dF015Aa7Dc8e59e0B67df622721' },
