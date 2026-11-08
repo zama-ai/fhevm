@@ -318,8 +318,8 @@ attempt: it counts in `relayer_http_signer_errors_total{flow}`, and a call that 
 flow: user_decrypt            # user_decrypt | public_decrypt
 threshold: 9
 timeout: 5s
-retries: { max_retries: 2, delay: 200ms }          # optional, as in the config; a single attempt when absent
-rate_limit: { max_retries: 1, initial_delay: 1s }  # optional, as in the config; a single attempt when absent
+retries: { max_retries: 2, delay: 200ms }          # optional, as in the config; absent: a single attempt; present: the
+rate_limit: { max_retries: 1, initial_delay: 1s }  #   config's defaults for the keys left out (`retries: {}` is three retries)
 attempt_latency: 10ms         # optional: how long the scripted node takes per attempt
 nodes:                        # groups in node order
   - { count: 9, replies: [ok] }                    # ok | divergent | bad_signature | duplicate | hang | refused | bare_rate_limited | <connector error code> | { rate_limited_after: 2s }
