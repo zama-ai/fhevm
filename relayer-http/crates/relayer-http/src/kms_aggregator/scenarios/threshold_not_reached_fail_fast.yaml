@@ -11,3 +11,6 @@ expect:
   dominant: acl_denied
   elapsed: 10ms
   attempts: 13
+  metrics:                     # fail fast cuts the hung attempts at once, and they are recorded
+    answered: 13
+    errors: { acl_denied: 5, cancelled: 8 }
