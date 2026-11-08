@@ -114,6 +114,16 @@ pub enum RetryClass {
     RateLimit,
 }
 
+impl RetryClass {
+    /// The configuration section's name, as logged.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Transient => "transient",
+            Self::RateLimit => "rate_limit",
+        }
+    }
+}
+
 impl CallConfig {
     /// The retry budget of `class`.
     pub fn max_retries(&self, class: RetryClass) -> u32 {

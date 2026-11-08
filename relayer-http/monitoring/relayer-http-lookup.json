@@ -168,10 +168,10 @@
       "description": "The lines of the selected request about one KMS node, by node then time: DEBUG `response accepted`, WARN `attempt failed`, `call failed`, `call cut`, `response rejected`. The Lines box chooses info or debug.",
       "datasource": {"type": "loki", "uid": "${loki}"},
       "gridPos": {"h": 8, "w": 16, "x": 8, "y": 20},
-      "targets": [{"expr": "{app=\"$app\", instance=~\"$instance\"} |= `\"request_id\":\"$request_id\"` | json | level=~\"$level\" | fields_kms_node != \"\" | label_format kms_node=fields_kms_node, message=fields_message, attempt=fields_attempt, attempts=fields_attempts, code=fields_code, elapsed_ms=fields_elapsed_ms, cause=fields_cause, error=fields_error | keep level, kms_node, message, attempt, attempts, code, elapsed_ms, cause, error", "queryType": "range", "direction": "forward", "maxLines": 1000, "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
+      "targets": [{"expr": "{app=\"$app\", instance=~\"$instance\"} |= `\"request_id\":\"$request_id\"` | json | level=~\"$level\" | fields_kms_node != \"\" | label_format kms_node=fields_kms_node, message=fields_message, attempt=fields_attempt, attempts=fields_attempts, code=fields_code, retry_class=fields_retry_class, give_up_reason=fields_give_up_reason, retry_after_ms=fields_retry_after_ms, elapsed_ms=fields_elapsed_ms, cause=fields_cause, error=fields_error | keep level, kms_node, message, attempt, attempts, code, retry_class, give_up_reason, retry_after_ms, elapsed_ms, cause, error", "queryType": "range", "direction": "forward", "maxLines": 1000, "refId": "A", "datasource": {"type": "loki", "uid": "${loki}"}}],
       "transformations": [
         {"id": "extractFields", "options": {"source": "labels", "format": "json", "keepTime": true, "replace": true}},
-        {"id": "organize", "options": {"indexByName": {"Time": 0, "level": 1, "kms_node": 2, "message": 3, "attempt": 4, "attempts": 5, "code": 6, "elapsed_ms": 7, "cause": 8, "error": 9}}},
+        {"id": "organize", "options": {"indexByName": {"Time": 0, "level": 1, "kms_node": 2, "message": 3, "attempt": 4, "attempts": 5, "code": 6, "retry_class": 7, "give_up_reason": 8, "retry_after_ms": 9, "elapsed_ms": 10, "cause": 11, "error": 12}}},
         {"id": "sortBy", "options": {"sort": [{"field": "kms_node"}]}}
       ],
       "fieldConfig": {
@@ -184,6 +184,9 @@
           {"matcher": {"id": "byName", "options": "attempt"}, "properties": [{"id": "custom.width", "value": 70}]},
           {"matcher": {"id": "byName", "options": "attempts"}, "properties": [{"id": "custom.width", "value": 75}]},
           {"matcher": {"id": "byName", "options": "code"}, "properties": [{"id": "custom.width", "value": 150}]},
+          {"matcher": {"id": "byName", "options": "retry_class"}, "properties": [{"id": "custom.width", "value": 90}]},
+          {"matcher": {"id": "byName", "options": "give_up_reason"}, "properties": [{"id": "custom.width", "value": 130}]},
+          {"matcher": {"id": "byName", "options": "retry_after_ms"}, "properties": [{"id": "custom.width", "value": 110}]},
           {"matcher": {"id": "byName", "options": "elapsed_ms"}, "properties": [{"id": "custom.width", "value": 90}]},
           {"matcher": {"id": "byName", "options": "cause"}, "properties": [{"id": "custom.width", "value": 90}]}
         ]
