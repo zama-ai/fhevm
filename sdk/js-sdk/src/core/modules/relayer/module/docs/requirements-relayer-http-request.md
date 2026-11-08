@@ -244,9 +244,9 @@ relayer-http's error body (`crates/relayer-http/src/endpoint/error.rs`, `ErrorBo
 Below the KMS threshold, relayer-http returns the dominant kms-connector code with that code's
 status (`kms-connector/crates/api/src/error.rs`, `ErrorCode::http_status`), or `upstream_transient`
 / 502 when none dominates. relayer-http already retries its KMS calls (`kms_aggregator/call.rs`,
-`config.rs`): retryable errors only, in two budgets: linear waits `k·delay` for transient errors
-(default 3 retries of 200 ms) and `max(initial_delay, Retry-After)·2^(k-1)` for a rate limit (default
-one retry after 1 s), never past the aggregation deadline.
+`config.rs`): retryable errors only, in two budgets: an explicit list of waits `retries.waits` for
+transient errors (default 200, 300, 500, 800, 1000 ms) and `max(initial_delay, Retry-After)·2^(k-1)` for
+a rate limit (default one retry after 1 s), never past the aggregation deadline.
 
 ### 5.7 Tests touching the retried branch (at the time)
 

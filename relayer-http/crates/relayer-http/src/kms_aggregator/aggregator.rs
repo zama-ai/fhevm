@@ -137,12 +137,17 @@ impl<F: Flow> Aggregator<F> {
             .collect();
         // The fan-out, the threshold and the retry policy, so one request's log is self-describing.
         let call = self.caller.call_config();
+        let retries_waits_ms: Vec<u64> = call
+            .retries
+            .waits
+            .iter()
+            .map(|wait| wait.as_millis() as u64)
+            .collect();
         debug!(
             nodes,
             threshold,
             timeout_ms = timeout.as_millis() as u64,
-            retries_max = call.retries.max_retries,
-            retries_delay_ms = call.retries.delay.as_millis() as u64,
+            retries_waits_ms = ?retries_waits_ms,
             rate_limit_max = call.rate_limit.max_retries,
             rate_limit_initial_delay_ms = call.rate_limit.initial_delay.as_millis() as u64,
             "aggregation started"
@@ -491,13 +496,8 @@ mod tests {
             (Some(13), Some(9))
         );
         assert_eq!(fields["timeout_ms"], 5000);
-        assert_eq!(
-            (
-                fields["retries_max"].as_u64(),
-                fields["retries_delay_ms"].as_u64()
-            ),
-            (Some(0), Some(200))
-        );
+        // The fixture has no transient budget; the list is rendered as text by the JSON layer.
+        assert_eq!(fields["retries_waits_ms"], "[]");
         assert_eq!(
             (
                 fields["rate_limit_max"].as_u64(),

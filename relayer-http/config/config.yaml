@@ -21,8 +21,9 @@ kms_aggregator:
   call:
     timeout: 5000ms            # the deadline: one aggregation, and every call in it, ends by then
     retries:                   # retryable connector errors other than a rate limit; a retry never starts past the deadline
-      max_retries: 3           # retries after the first attempt; 0 = single attempt; the waits must fit before call.timeout
-      delay: 200ms             # retry k waits k * delay: 200, 400, 600 ms
+      waits: [200ms, 300ms, 500ms, 800ms, 1s]   # the wait before each retry, in order; [] = single attempt; short first for a
+                               # jitter, long after to reach the deadline; every retry is one more request to the node, see
+                               # kms_aggregator/docs.md section 6; the waits must all start before call.timeout
     rate_limit:                # rate_limited (429) only: the proxy counts requests per sender over a 1 s window
       max_retries: 1           # one window, then give up (the client retries); the waits must fit before call.timeout
       initial_delay: 1s        # retry k waits max(initial_delay, Retry-After) * 2^(k-1)

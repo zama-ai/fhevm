@@ -2,7 +2,7 @@
 flow: user_decrypt
 threshold: 9
 timeout: 5s
-retries: { max_retries: 2 }
+retries: { waits: [200ms, 400ms] }
 nodes:
   - { count: 8, replies: [ok] }
   - { count: 5, replies: [sender_authentication_failed] }

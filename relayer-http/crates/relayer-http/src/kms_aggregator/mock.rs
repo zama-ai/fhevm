@@ -110,13 +110,15 @@ impl MockClient {
         self.authorizations.lock().unwrap()[node].clone()
     }
 
-    /// `max_retries` transient retries of 200 ms and one rate-limit retry after 1 s, under `timeout`.
+    /// `max_retries` transient retries on a linear 200 ms curve (200, 400, 600 ms …) and one rate-limit retry after
+    /// 1 s, under `timeout`.
     pub fn call_config(timeout: Duration, max_retries: u32) -> CallConfig {
         CallConfig {
             timeout,
             retries: RetryConfig {
-                max_retries,
-                ..RetryConfig::default()
+                waits: (1..=max_retries)
+                    .map(|k| Duration::from_millis(200) * k)
+                    .collect(),
             },
             rate_limit: RateLimitConfig::default(),
         }

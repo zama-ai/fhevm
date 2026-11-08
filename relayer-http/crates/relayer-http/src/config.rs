@@ -160,16 +160,24 @@ impl Default for LogConfig {
 }
 
 impl RelayerConfig {
-    /// Reads `path`, applies `APP_*` environment overrides, validates. Durations need a unit (`5s`, `500ms`).
+    /// Reads `path`, applies `APP_*` environment overrides, validates. Durations need a unit (`5s`, `500ms`); the
+    /// retry waits are one comma-separated value (`APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS=200ms,500ms,1s`).
     pub fn load(path: &str) -> Result<Self, ConfigError> {
         Self::load_with(path, Environment::with_prefix("APP"))
     }
 
     /// `load` with the `APP_*` overrides read from `env` (tests pass them as a map).
     pub(crate) fn load_with(path: &str, env: Environment) -> Result<Self, ConfigError> {
+        let env = env
+            .prefix_separator("_")
+            .separator("__")
+            // The only list in the configuration; `try_parsing` is what lets a value become one.
+            .try_parsing(true)
+            .list_separator(",")
+            .with_list_parse_key("kms_aggregator.call.retries.waits");
         let config: Self = Config::builder()
             .add_source(File::with_name(path))
-            .add_source(env.prefix_separator("_").separator("__"))
+            .add_source(env)
             .build()
             .and_then(Config::try_deserialize)
             .map_err(|e| ConfigError(format!("{path}: {e}")))?;
@@ -218,6 +226,7 @@ mod tests {
             EXAMPLE,
             env(&[
                 ("APP_KMS_AGGREGATOR__CALL__TIMEOUT", "7s"),
+                ("APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS", "200ms,500ms,1s"),
                 ("APP_KMS_AGGREGATOR__MAX_CONCURRENT_CALLS", "128"),
                 ("APP_LOG__FORMAT", "compact"),
                 ("APP_LOG__SHOW_FILE_LINE", "true"),
@@ -225,9 +234,26 @@ mod tests {
         )
         .unwrap();
         assert_eq!(config.kms_aggregator.call.timeout, Duration::from_secs(7));
+        assert_eq!(
+            config.kms_aggregator.call.retries.waits,
+            [200, 500, 1000].map(Duration::from_millis)
+        );
         assert_eq!(config.kms_aggregator.max_concurrent_calls, 128);
         assert_eq!(config.log.format, "compact");
         assert!(config.log.show_file_line);
+    }
+
+    #[test]
+    fn environment_overrides_the_retry_waits_with_one_entry() {
+        let config = RelayerConfig::load_with(
+            EXAMPLE,
+            env(&[("APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS", "1s")]),
+        )
+        .unwrap();
+        assert_eq!(
+            config.kms_aggregator.call.retries.waits,
+            [Duration::from_secs(1)]
+        );
     }
 
     #[test]
