@@ -137,17 +137,11 @@ impl<F: Flow> Aggregator<F> {
             .collect();
         // The fan-out, the threshold and the retry policy, so one request's log is self-describing.
         let call = self.caller.call_config();
-        let retries_waits_ms: Vec<u64> = call
-            .retries
-            .waits
-            .iter()
-            .map(|wait| wait.as_millis() as u64)
-            .collect();
         debug!(
             nodes,
             threshold,
             timeout_ms = timeout.as_millis() as u64,
-            retries_waits_ms = ?retries_waits_ms,
+            retries_waits_ms = self.caller.retries_waits_ms(),
             rate_limit_max = call.rate_limit.max_retries,
             rate_limit_initial_delay_ms = call.rate_limit.initial_delay.as_millis() as u64,
             "aggregation started"

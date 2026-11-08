@@ -172,6 +172,8 @@ pub struct Caller {
     metrics: Arc<Metrics>,
     endpoints: Vec<Endpoint>,
     cfg: CallConfig,
+    /// The transient waits in milliseconds, rendered once for the `aggregation started` line (`[200, 300]`).
+    retries_waits_ms: String,
     permits: Semaphore,
 }
 
@@ -192,14 +194,27 @@ impl Caller {
                 .iter()
                 .map(|endpoint: &Endpoint| endpoint.name.as_str()),
         );
+        let waits_ms: Vec<u64> = cfg
+            .call
+            .retries
+            .waits
+            .iter()
+            .map(|wait| wait.as_millis() as u64)
+            .collect();
         Ok(Self {
             client,
             signer,
             metrics,
             endpoints,
             cfg: cfg.call.clone(),
+            retries_waits_ms: format!("{waits_ms:?}"),
             permits,
         })
+    }
+
+    /// The transient waits as logged by `aggregation started`, in milliseconds.
+    pub fn retries_waits_ms(&self) -> &str {
+        &self.retries_waits_ms
     }
 
     pub fn metrics(&self) -> &Arc<Metrics> {
@@ -588,9 +603,8 @@ pub(crate) mod tests {
 
     /// The `attempt failed` lines of one `run(script, max_retries)`.
     async fn attempt_lines(script: Vec<Reply>, max_retries: u32) -> Vec<serde_json::Value> {
-        let script = std::cell::RefCell::new(Some(script));
         let lines = capture_runs(&["attempt failed"], || {
-            let script = script.borrow().clone().unwrap();
+            let script = script.clone();
             async move {
                 run(script, max_retries).await;
             }
@@ -721,7 +735,7 @@ pub(crate) mod tests {
         assert!(r.result.is_ok());
         // Waits 1 s then 2 s.
         assert_eq!((r.attempts, r.elapsed), (3, ms(3030)));
-        // A third 429 would wait 4 s: past the 5 s deadline, so the budget is also bounded there.
+        // A third 429 exhausts the two-retry budget: the call gives up after the second wait (`budget_exhausted`).
         let (_, r) = run_with(vec![RATE], budgets(0, 2)).await;
         assert_eq!(r.result.unwrap_err().code(), Some(ErrorCode::RateLimited));
         assert_eq!((r.attempts, r.elapsed), (3, ms(3030)));
@@ -1067,7 +1081,10 @@ pub(crate) mod tests {
         assert_eq!(caller.timeout(), secs(3));
         assert_eq!(caller.call_config().timeout, secs(3));
         assert!(caller.call_config().retries.waits.is_empty());
+        assert_eq!(caller.retries_waits_ms(), "[]");
         assert_eq!(caller.call_config().rate_limit.max_retries, 1);
+        let two_retries = MockClient::new(vec![vec![OK]], ms(1)).caller(secs(3), 2);
+        assert_eq!(two_retries.retries_waits_ms(), "[200, 400]");
     }
 
     #[test]

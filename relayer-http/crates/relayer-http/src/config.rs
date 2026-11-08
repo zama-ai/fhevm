@@ -55,6 +55,7 @@ pub struct HttpConfig {
     #[serde(with = "humantime_serde", default = "default_body_read_timeout")]
     pub body_read_timeout: Duration,
     /// Host chain ids a ciphertext handle may carry (bytes 22..30 of the handle).
+    #[serde(deserialize_with = "chain_ids")]
     pub supported_chain_ids: Vec<u64>,
     /// Most handles in one decryption request; the connectors' `max_handles_per_decryption`, so set it to theirs
     /// when they change it. At least 1.
@@ -64,6 +65,34 @@ pub struct HttpConfig {
     /// theirs when they change it.
     #[serde(default = "default_max_allowed_contracts")]
     pub max_allowed_contracts: usize,
+}
+
+/// One entry of a chain id list: a number in YAML, text from an environment override.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ChainIdEntry {
+    Number(u64),
+    Text(String),
+}
+
+/// A list of chain ids. Text entries are trimmed and empty ones dropped, so the one value an environment override
+/// can carry (`1, 11155111`, or `1,` for one id) parses like the YAML list.
+fn chain_ids<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<u64>, D::Error> {
+    use serde::de::Error;
+    let entries: Vec<ChainIdEntry> = Deserialize::deserialize(deserializer)?;
+    entries
+        .into_iter()
+        .filter_map(|entry| match entry {
+            ChainIdEntry::Number(id) => Some(Ok(id)),
+            ChainIdEntry::Text(text) => {
+                let text = text.trim();
+                (!text.is_empty()).then(|| {
+                    text.parse::<u64>()
+                        .map_err(|e| D::Error::custom(format!("{text:?}: {e}")))
+                })
+            }
+        })
+        .collect()
 }
 
 /// 50, the connector's default `max_handles_per_decryption`.
@@ -160,8 +189,11 @@ impl Default for LogConfig {
 }
 
 impl RelayerConfig {
-    /// Reads `path`, applies `APP_*` environment overrides, validates. Durations need a unit (`5s`, `500ms`); the
-    /// retry waits are one comma-separated value (`APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS=200ms,500ms,1s`).
+    /// Reads `path`, applies `APP_*` environment overrides, validates. Durations need a unit (`5s`, `500ms`). The
+    /// two lists are one comma-separated value each (`APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS=200ms, 500ms, 1s`,
+    /// `APP_HTTP__SUPPORTED_CHAIN_IDS=1, 11155111`): entries are trimmed, empty ones ignored, so a single entry
+    /// is written with a trailing comma (`1,`; a bare number is read as a number, not a list) and an empty value
+    /// is the empty list (no transient retry).
     pub fn load(path: &str) -> Result<Self, ConfigError> {
         Self::load_with(path, Environment::with_prefix("APP"))
     }
@@ -171,10 +203,11 @@ impl RelayerConfig {
         let env = env
             .prefix_separator("_")
             .separator("__")
-            // The only list in the configuration; `try_parsing` is what lets a value become one.
+            // The two lists of the configuration; `try_parsing` is what lets a value become one.
             .try_parsing(true)
             .list_separator(",")
-            .with_list_parse_key("kms_aggregator.call.retries.waits");
+            .with_list_parse_key("kms_aggregator.call.retries.waits")
+            .with_list_parse_key("http.supported_chain_ids");
         let config: Self = Config::builder()
             .add_source(File::with_name(path))
             .add_source(env)
@@ -226,7 +259,11 @@ mod tests {
             EXAMPLE,
             env(&[
                 ("APP_KMS_AGGREGATOR__CALL__TIMEOUT", "7s"),
-                ("APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS", "200ms,500ms,1s"),
+                (
+                    "APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS",
+                    "200ms, 500ms, 1s",
+                ),
+                ("APP_HTTP__SUPPORTED_CHAIN_IDS", "1, 11155111"),
                 ("APP_KMS_AGGREGATOR__MAX_CONCURRENT_CALLS", "128"),
                 ("APP_LOG__FORMAT", "compact"),
                 ("APP_LOG__SHOW_FILE_LINE", "true"),
@@ -238,22 +275,34 @@ mod tests {
             config.kms_aggregator.call.retries.waits,
             [200, 500, 1000].map(Duration::from_millis)
         );
+        assert_eq!(config.http.supported_chain_ids, [1, 11_155_111]);
         assert_eq!(config.kms_aggregator.max_concurrent_calls, 128);
         assert_eq!(config.log.format, "compact");
         assert!(config.log.show_file_line);
     }
 
     #[test]
-    fn environment_overrides_the_retry_waits_with_one_entry() {
-        let config = RelayerConfig::load_with(
-            EXAMPLE,
-            env(&[("APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS", "1s")]),
-        )
-        .unwrap();
-        assert_eq!(
-            config.kms_aggregator.call.retries.waits,
-            [Duration::from_secs(1)]
-        );
+    fn environment_list_overrides_accept_one_entry_and_none() {
+        let waits = |value: &str| {
+            RelayerConfig::load_with(
+                EXAMPLE,
+                env(&[("APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS", value)]),
+            )
+            .unwrap()
+            .kms_aggregator
+            .call
+            .retries
+            .waits
+        };
+        assert_eq!(waits("1s"), [Duration::from_secs(1)]);
+        assert_eq!(waits("200ms,"), [Duration::from_millis(200)]);
+        assert!(waits("").is_empty());
+        let chain_ids =
+            RelayerConfig::load_with(EXAMPLE, env(&[("APP_HTTP__SUPPORTED_CHAIN_IDS", "137,")]))
+                .unwrap()
+                .http
+                .supported_chain_ids;
+        assert_eq!(chain_ids, [137]);
     }
 
     #[test]

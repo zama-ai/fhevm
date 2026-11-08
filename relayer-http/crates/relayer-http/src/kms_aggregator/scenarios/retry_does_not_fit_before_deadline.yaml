@@ -1,10 +1,10 @@
-# Slow attempts (550 ms) under a 700 ms deadline: the 200 ms retry would end after the deadline, so the failing
-# nodes give up at once instead of sleeping.
+# Slow attempts (850 ms) under a 1 s deadline: the 200 ms retry would end after the deadline, so the failing nodes
+# give up at once instead of sleeping.
 flow: user_decrypt
 threshold: 9
-timeout: 700ms
+timeout: 1s
 retries: { waits: [200ms, 400ms] }
-attempt_latency: 550ms
+attempt_latency: 850ms
 nodes:
   - { count: 9, replies: [ok] }
   - { count: 4, replies: [acl_denied] }
@@ -12,5 +12,5 @@ expect:
   outcome: ok
   counted: 9
   responses: 9
-  elapsed: 550ms
+  elapsed: 850ms
   attempts: 13
