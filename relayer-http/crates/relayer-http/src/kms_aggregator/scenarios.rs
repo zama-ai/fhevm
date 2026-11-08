@@ -26,10 +26,12 @@ struct Scenario {
     threshold: usize,
     #[serde(with = "humantime_serde")]
     timeout: Duration,
-    /// The transient retry budget (`kms_aggregator.call.retries`); a single attempt unless given.
+    /// The transient retry budget (`kms_aggregator.call.retries`). Absent: a single attempt; present: the config's
+    /// defaults for the keys left out (`retries: {}` is three retries).
     #[serde(default = "no_transient_retries")]
     retries: RetryConfig,
-    /// The rate-limit retry budget (`kms_aggregator.call.rate_limit`); a single attempt unless given.
+    /// The rate-limit retry budget (`kms_aggregator.call.rate_limit`). Absent: a single attempt; present: the
+    /// config's defaults for the keys left out (`rate_limit: {}` is one retry).
     #[serde(default = "no_rate_limit_retries")]
     rate_limit: RateLimitConfig,
     /// How long the scripted node takes to answer each attempt (test only).

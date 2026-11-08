@@ -281,7 +281,8 @@ impl ConnectorClient for HttpClient {
 }
 
 /// `Retry-After` as delta-seconds (the form the connector proxy sends), at most `MAX_TIMEOUT`. Any other value
-/// (an HTTP date, garbage, a huge number) is ignored: the configured floor applies. The value is never logged.
+/// (an HTTP date, garbage, a huge number) is ignored: the configured floor applies. The raw header is never logged;
+/// the parsed wait is what the call reports as `retry_after_ms`.
 fn retry_after(headers: &HeaderMap) -> Option<Duration> {
     let value = headers.get(RETRY_AFTER)?;
     let seconds = value
