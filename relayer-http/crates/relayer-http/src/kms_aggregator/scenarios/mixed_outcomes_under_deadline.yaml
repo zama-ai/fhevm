@@ -2,7 +2,7 @@
 flow: user_decrypt
 threshold: 8
 timeout: 5s
-retries: { max_retries: 1 }
+retries: { waits: [200ms] }
 rate_limit: { max_retries: 1 }
 nodes:
   - { count: 6, replies: [ok] }

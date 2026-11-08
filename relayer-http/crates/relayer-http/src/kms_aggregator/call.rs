@@ -1066,7 +1066,7 @@ pub(crate) mod tests {
         assert_eq!(caller.endpoints()[1].name, "node-1");
         assert_eq!(caller.timeout(), secs(3));
         assert_eq!(caller.call_config().timeout, secs(3));
-        assert_eq!(caller.call_config().retries.max_retries, 0);
+        assert!(caller.call_config().retries.waits.is_empty());
         assert_eq!(caller.call_config().rate_limit.max_retries, 1);
     }
 

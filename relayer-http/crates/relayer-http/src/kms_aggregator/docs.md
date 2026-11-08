@@ -131,15 +131,9 @@ as `threshold_reached_ms` (from the request's receipt), and `run` observes the t
 - The semaphore (`max_concurrent_calls`) bounds HTTP calls in flight across all aggregations of the process. A permit
   is held for one attempt only, never while sleeping between attempts.
 - Retries happen only for retryable errors, in two budgets chosen by the class of the failure
-  (`AttemptError::retry_class`), each consumed once per call and never restarted: a rate limit (`rate_limited`, a
-  bare 429) waits `max(rate_limit.initial_delay, Retry-After) * 2^(k-1)` before retry `k`, up to
-  `rate_limit.max_retries` (default one retry after 1 s, the connector proxy's window: retrying inside the window
-  that rejected the call is a guaranteed second 429); every other retryable error waits `k * retries.delay`, up to
-  `retries.max_retries` (default three retries of 200 ms: an ACL propagation or a ciphertext commit recovers in a
-  short, roughly constant time, doubling the wait only delays the share). `Retry-After` is read as delta-seconds,
-  at most 60 s; any other form is ignored. The deadline is the real bound: a retry whose wait does not fit in the
-  remaining time is skipped (the call gives up), so no call outlives `call.timeout`; startup refuses a budget whose
-  waits alone cannot all start before the deadline (section 8).
+  (`AttemptError::retry_class`), each consumed once per call and never restarted; the waits, the classes and their
+  rationale are section 6. The deadline is the real bound: a retry whose wait does not fit in the remaining time is
+  skipped (the call gives up), so no call outlives `call.timeout`.
 - An authentication rejection (`sender_authentication_failed`, a bare 401) is never retried: our key or that node's
   audience is wrong. `auth_expired` is retried like any retryable error, with a fresh header.
 - The reqwest client has `timeout(call.timeout)` and a 3 s connect timeout as safety nets for a socket that stops
@@ -163,7 +157,52 @@ failure or a bare 5xx as `upstream_transient`, a bad 2xx body or a signing failu
 limits each sender to `rate_limit_per_second` requests over a fixed 1 s window and answers `429 rate_limited` with
 `Retry-After: 1`; the bare 429 covers an ingress limit in front of it.
 
-## 6. Response checks (`flows/`)
+## 6. Retry policy
+
+A failed attempt is retried only if the connector marks its code retryable (`kms-connector-api`, never redefined
+here), and then by one of two budgets, chosen by the class of the failure. Each budget is consumed once per call
+and never restarts, whatever the other class does in between.
+
+| class | failures | wait before retry `k` | budget |
+|---|---|---|---|
+| transient | every retryable failure except a rate limit: `acl_denied`, `ciphertext_not_found`, `copro_consensus_failed`, `auth_expired`, `kms_context_invalid`, `overloaded`, `timeout`, `upstream_transient`, bare 408/5xx, transport, signing | `retries.waits[k-1]` | the length of `retries.waits` |
+| rate limit | `rate_limited`, a bare 429 | `max(rate_limit.initial_delay, Retry-After) * 2^(k-1)` | `rate_limit.max_retries` |
+
+**Transient: the list is the policy.** `retries.waits` names the wait before each retry, in order; `[]` is a single
+attempt. There is no curve formula: the operator shapes the list. What the stack shows about these failures decides
+the shape. They clear when something slow happens elsewhere: the coprocessors' attestations reach the connector's
+consensus threshold on S3, the ACL update lands on the host chain. That takes seconds, not a fixed delay, and the
+SDK does not retry these codes today (its relayer-http retry loop is in place with a "never retry" decision), so
+the relayer's retries are the only ones a dapp gets. Two short waits first catch a jitter cheaply; longer waits
+after reach the deadline instead of giving up with half of it unused. The default `[200ms, 300ms, 500ms, 800ms, 1s]`
+is 2.8 s of waits under the 5 s deadline, up to 6 attempts per node.
+
+**Rate limit: one window, then back off.** The connector proxy counts requests per sender over a fixed 1 s window
+(`rate_limit_per_second`, 100 by default) and answers `429 rate_limited` with `Retry-After: 1`. Retrying inside the
+window that rejected the call is a guaranteed second 429 and one more unit of the budget spent, so the first retry
+waits a whole window (`initial_delay`, 1 s), and the header raises that floor when the proxy asks for more
+(delta-seconds only, at most 60 s; any other form is ignored). One retry by default: the limit is per sender per
+node, so an over-budget relayer is rejected by every node in the same window and the client's own retry is the
+right place for the second try. More retries double the wait each time, so a sustained 429 backs off instead of
+hammering.
+
+**The deadline bounds both.** A wait that would end after `call.timeout` is skipped and the call gives up
+(`give_up_reason: deadline`), so no call outlives the aggregation. Startup refuses a list, or a rate-limit budget,
+whose waits alone cannot all start before the deadline, and names the first retry that could never run (section 9).
+
+**Cost.** Every retry is one more request to that node, counted by its proxy against the sender's 100 per second.
+With the default list a decryption that keeps failing costs up to 6 requests per node (13 nodes: 78), spread over
+2.8 s, so a burst of about 40 such decryptions in one second saturates a node's window; the SDK's later retry policy
+and the ciphertext-commit pre-check (DX027) are the levers that bring this down. A longer list buys coverage of the
+deadline at that price; `relayer_http_kms_attempts` shows what calls actually use.
+
+**Observing it.** Each failed attempt is one WARN line with its decision: `retry_class`, `retry_in_ms` (null when
+the call gives up), `retry_after_ms`, `give_up_reason`; `call failed` carries `transient_retries` and
+`rate_limit_retries`, and `aggregation started` (debug) the policy itself (section 11). The scenarios
+`transient_waits_are_the_list`, `rate_limit_waits_one_window`, `rate_limit_honours_retry_after`,
+`rate_limit_backoff_then_success` and `mixed_classes_on_one_call` pin the timings under virtual time (section 12).
+
+## 7. Response checks (`flows/`)
 
 Always on:
 
@@ -187,10 +226,10 @@ version.
 
 **Trust boundary.** Version 1 verifies no signature: the KMS core signs each response and the SDK verifies the
 signatures against the KMS signer set client-side. A byzantine node can therefore place a garbage 65-byte signature
-next to the honest public result, or a bogus user share among the counted ones; the SDK detects both. See section 12
+next to the honest public result, or a bogus user share among the counted ones; the SDK detects both. See section 13
 for the optional verification that could be added later.
 
-## 7. Outputs
+## 8. Outputs
 
 Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 
@@ -201,7 +240,7 @@ Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 { "decryptedValue": "0000…2a", "signatures": ["1a2b…", …], "extraData": "0x02…" }
 ```
 
-## 8. Configuration → behaviour
+## 9. Configuration → behaviour
 
 ```yaml
 kms_aggregator:
@@ -210,12 +249,12 @@ kms_aggregator:
   max_concurrent_calls: 4096   # semaphore size, >= number of endpoints; one aggregation takes up to n permits
   call:
     timeout: 5000ms            # the deadline (<= 60s); the whole section is optional, these are the defaults
-    retries: { max_retries: 3, delay: 200ms }          # transient errors: retry k waits k * delay
+    retries: { waits: [200ms, 300ms, 500ms, 800ms, 1s] }   # transient errors: the wait before each retry, section 6
     rate_limit: { max_retries: 1, initial_delay: 1s }  # rate_limited: retry k waits max(initial_delay, Retry-After) * 2^(k-1)
   public_decrypt: { threshold: 5 }
   user_decrypt:
     threshold: 9
-    checks: { decryption_id_match: false, decryption_id_majority: false }   # optional, section 6
+    checks: { decryption_id_match: false, decryption_id_majority: false }   # optional, section 7
   auth:                        # FhevmSig signing, section 5
     chain_id: 1                # EIP-712 domain: Ethereum chain id ...
     protocol_config: "0x…"     # ... and ProtocolConfig address
@@ -244,10 +283,11 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
 - Validation (`KmsAggregatorConfig::validate`, also run by `Caller::new`): endpoints non-empty, at most 13 (the bound of
   the `kms_node` label, `metrics::MAX_KMS_NODES`), with unique names and URLs; `http(s)` with a host, no credentials, query or fragment; plain `http` only towards loopback unless
   `allow_insecure_http`; non-zero, unique audiences; `max_concurrent_calls >= n`; `timeout` within `1ms..=60s`;
-  `call.timeout < auth.validity <= 5m`; non-zero `auth.address`; non-empty signer fields; for each retry budget
-  with `max_retries > 0`, a non-zero delay whose waits (`k * delay`, or `initial_delay * 2^(k-1)`) all start before
-  `timeout` (the message names the first retry that could never run); each `threshold` within `1..=n`. Every message
-  names the field with its dotted path.
+  `call.timeout < auth.validity <= 5m`; non-zero `auth.address`; non-empty signer fields; every `retries.waits`
+  entry non-zero (the message names its index) and the prefix sums of the list all below `timeout`; with
+  `rate_limit.max_retries > 0`, a non-zero `initial_delay` whose waits (`initial_delay * 2^(k-1)`) all start before
+  `timeout` (both messages name the first retry that could never run); each `threshold` within `1..=n`. Every
+  message names the field with its dotted path.
 - The signing key is loaded at startup, from the env var named by `auth.signer.value_env` (hex private key) or from
   AWS KMS (`key_id`; region, credentials and any custom endpoint, `AWS_ENDPOINT_URL`, from the ambient AWS
   configuration, IRSA in a deployment); it is never in the config, the logs or any error message. Startup then fails, so the pod never becomes ready, unless the key passes
@@ -257,10 +297,11 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
   EIP-712 encoding is `fhevm_sig_auth`'s), so a hash is all the check needs; it is no EIP-712 digest, so its signature
   authorizes nothing. That address is logged at startup: every
   connector proxy must allow it (`allowed_senders`, `kmsConnectorProxy.allowedSenders` in its chart).
-- `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s` overrides a field; durations need a unit.
+- `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s` overrides a field; durations need a unit; the one list,
+  `APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS=200ms,500ms,1s`, is comma-separated.
 - TLS uses the platform trust store: the container image needs CA certificates.
 
-## 9. Cancellation and shutdown
+## 10. Cancellation and shutdown
 
 - **Deadline or fail fast**: the aggregation cancels its token; every pending call returns `Cancelled` immediately with
   its attempt count and elapsed time, so the final log line accounts for every node.
@@ -271,7 +312,7 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
   stops the server accepting and turns `/healthz` to 503; a running aggregation ends by its own threshold, fail fast or
   deadline (`call.timeout`).
 
-## 10. Logging and metrics
+## 11. Logging and metrics
 
 The rules are in `OBSERVABILITY.md`. The aggregator logs nothing at INFO: the request's one INFO line is the summary
 line of the endpoint, which reports the aggregation through the `Tally` that `run` fills (`counted`, `threshold`, and
@@ -287,7 +328,7 @@ Events:
 | `call cut` | warn | kms_node, attempts, elapsed_ms, cause: `deadline` (too slow or hung), or `fail_fast`; a client hangup is reported by the endpoint's `Guard` (cause `client_closed`) |
 | `response rejected` | warn | kms_node, elapsed_ms, error: a check refused a 200 response |
 | `node task panicked` | error | kms_node, location: a panic inside a node task (no panic text), the panic's only ERROR line; the node is counted as failed, and the fail-fast check still runs |
-| `aggregation started`, `response accepted`, `deadline reached`, `threshold unreachable` | debug | nodes, threshold, timeout_ms, retries_max, retries_delay_ms, rate_limit_max, rate_limit_initial_delay_ms (the fan-out and the retry policy, so one request's log is self-describing) / kms_node, attempts, elapsed_ms, counted / pending |
+| `aggregation started`, `response accepted`, `deadline reached`, `threshold unreachable` | debug | nodes, threshold, timeout_ms, retries_waits_ms (the list, as text), rate_limit_max, rate_limit_initial_delay_ms (the fan-out and the retry policy, so one request's log is self-describing) / kms_node, attempts, elapsed_ms, counted / pending |
 
 `error` is a digest: for a KMS node's error response, its code and message truncated to `MAX_LOGGED_NODE_MESSAGE`
 characters; for a 2xx body that does not parse, `bad body: <kind>, <n> bytes` (`AttemptError::Body` keeps the kind
@@ -299,7 +340,7 @@ records none: the aggregator counts it as `code="panic"`). The slot wait starts 
 attempt: it counts in `relayer_http_signer_errors_total{flow}`, and a call that made no attempt is not observed in
 `relayer_http_kms_attempts`; the node stays in `failed_kms_nodes`, which names the nodes that gave no response.
 
-## 11. Testing
+## 12. Testing
 
 - Unit tests next to every function (`cargo nextest run -p relayer-http`).
 - Wire tests of the HTTP client against a `wiremock` server (headers, body, statuses, redirects, body cap).
@@ -318,8 +359,8 @@ attempt: it counts in `relayer_http_signer_errors_total{flow}`, and a call that 
 flow: user_decrypt            # user_decrypt | public_decrypt
 threshold: 9
 timeout: 5s
-retries: { max_retries: 2, delay: 200ms }          # optional, as in the config; absent: a single attempt; present: the
-rate_limit: { max_retries: 1, initial_delay: 1s }  #   config's defaults for the keys left out (`retries: {}` is three retries)
+retries: { waits: [200ms, 400ms] }                 # optional, as in the config; absent: a single attempt; present: the
+rate_limit: { max_retries: 1, initial_delay: 1s }  #   config's defaults for the keys left out (`retries: {}` is the default list)
 attempt_latency: 10ms         # optional: how long the scripted node takes per attempt
 nodes:                        # groups in node order
   - { count: 9, replies: [ok] }                    # ok | divergent | bad_signature | duplicate | hang | refused | bare_rate_limited | <connector error code> | { rate_limited_after: 2s }
@@ -348,7 +389,7 @@ cargo nextest run --workspace
 make -C dev test-aws      # when the AWS signer or the AWS dependencies change
 ```
 
-## 12. Version 1 scope, and later
+## 13. Version 1 scope, and later
 
 Version 1 is the fan-out and the aggregation only.
 

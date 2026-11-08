@@ -27,7 +27,7 @@ struct Scenario {
     #[serde(with = "humantime_serde")]
     timeout: Duration,
     /// The transient retry budget (`kms_aggregator.call.retries`). Absent: a single attempt; present: the config's
-    /// defaults for the keys left out (`retries: {}` is three retries).
+    /// defaults for the keys left out (`retries: {}` is the default list of waits).
     #[serde(default = "no_transient_retries")]
     retries: RetryConfig,
     /// The rate-limit retry budget (`kms_aggregator.call.rate_limit`). Absent: a single attempt; present: the
@@ -45,10 +45,7 @@ struct Scenario {
 }
 
 fn no_transient_retries() -> RetryConfig {
-    RetryConfig {
-        max_retries: 0,
-        ..RetryConfig::default()
-    }
+    RetryConfig { waits: Vec::new() }
 }
 
 fn no_rate_limit_retries() -> RateLimitConfig {

@@ -2,7 +2,7 @@
 flow: user_decrypt
 threshold: 9
 timeout: 5s
-retries: { max_retries: 2 }
+retries: { waits: [200ms, 400ms] }
 nodes:
   - { count: 13, replies: [ciphertext_not_found, ok] }
 expect:

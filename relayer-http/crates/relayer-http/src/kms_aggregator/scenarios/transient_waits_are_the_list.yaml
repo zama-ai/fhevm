@@ -1,0 +1,18 @@
+# Transient errors (here acl_denied while the ACL propagates) wait exactly the configured list before each retry:
+# 200, 300, 500 ms. Four nodes need three retries each; the last share lands at 1.04 s, the 25th attempt.
+flow: user_decrypt
+threshold: 9
+timeout: 5s
+retries: { waits: [200ms, 300ms, 500ms] }
+nodes:
+  - { count: 9, replies: [ok] }
+  - { count: 4, replies: [acl_denied, acl_denied, acl_denied, ok] }
+expect:
+  outcome: ok
+  counted: 13
+  responses: 13
+  elapsed: 1040ms
+  attempts: 25
+  metrics:
+    answered: 25
+    errors: { acl_denied: 12 }

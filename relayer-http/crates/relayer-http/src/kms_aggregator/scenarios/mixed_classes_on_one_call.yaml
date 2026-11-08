@@ -1,9 +1,9 @@
-# One call meets both classes: a 429 (one window) then an acl_denied (one linear wait); each budget is used once,
+# One call meets both classes: a 429 (one window) then an acl_denied (the one configured wait); each budget is used once,
 # so the share lands at 1.23 s with three attempts.
 flow: user_decrypt
 threshold: 9
 timeout: 5s
-retries: { max_retries: 1, delay: 200ms }
+retries: { waits: [200ms] }
 rate_limit: { max_retries: 1, initial_delay: 1s }
 nodes:
   - { count: 9, replies: [ok] }
