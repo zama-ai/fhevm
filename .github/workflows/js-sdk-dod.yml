@@ -25,6 +25,8 @@ on:
       - main
     paths:
       - "sdk/js-sdk/**"
+      # Documentation alone does not need the stack.
+      - "!sdk/js-sdk/**/*.md"
       - ".github/workflows/js-sdk-dod.yml"
   workflow_dispatch:
     inputs:
@@ -159,6 +161,7 @@ jobs:
     permissions:
       contents: "read" # checkout the repository
       packages: "read" # pull stack images from ghcr.io
+      pull-requests: "read" # list the pull request's changed files (paths-filter)
       id-token: "write" # OIDC for registry / stack auth
     env:
       GH_TOKEN: ${{ github.token }}
@@ -220,9 +223,21 @@ jobs:
         run: |
           echo 'MNEMONIC="test test test test test test test test test test test junk"' > test/.env
           echo 'ZAMA_FHEVM_API_KEY="zmr_mainnet_blahblah"' >> test/.env
+      # The stack renders relayer-http's configuration from this checkout's template but runs the image of the
+      # resolved bundle (main). A PR that changes relayer-http, or its template, must run the image built from the
+      # same tree, which `--override relayer-http` does (the Chainguard login above covers its base image).
+      - name: Detect relayer-http changes
+        id: relayer-http-changes
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          filters: |
+            relayer-http:
+              - 'relayer-http/**'
+              - 'test-suite/fhevm/templates/config/relayer-http.yaml'
       - name: Run localstack suite (${{ matrix.name }})
         env:
           LOCALSTACK_SCRIPT: ${{ matrix.script }}
+          FHEVM_CLI_UP_ARGS: ${{ steps.relayer-http-changes.outputs.relayer-http == 'true' && '--override relayer-http' || '' }}
         run: |
           ulimit -n 65536
           npm run "${LOCALSTACK_SCRIPT}"

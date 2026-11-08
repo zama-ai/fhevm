@@ -200,7 +200,7 @@ deadline at that price; `relayer_http_kms_attempts` shows what calls actually us
 **Observing it.** Each failed attempt is one WARN line with its decision: `retry_class`, `retry_in_ms` (null when
 the call gives up), `retry_after_ms`, `give_up_reason`; `call failed` carries `transient_retries` and
 `rate_limit_retries`, and `aggregation started` (debug) the policy itself (section 11). The scenarios
-`transient_waits_are_the_list`, `rate_limit_waits_one_window`, `rate_limit_honours_retry_after`,
+`transient_waits_are_the_list`, `rate_limit_waits_one_window`, `rate_limit_honors_retry_after`,
 `rate_limit_backoff_then_success` and `mixed_classes_on_one_call` pin the timings under virtual time (section 12).
 
 ## 7. Response checks (`flows/`)
