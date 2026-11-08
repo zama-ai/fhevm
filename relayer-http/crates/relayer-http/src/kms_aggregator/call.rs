@@ -85,6 +85,15 @@ impl GiveUp {
             None
         }
     }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Auth => "auth",
+            Self::NonRetryable => "non_retryable",
+            Self::BudgetExhausted => "budget_exhausted",
+            Self::Deadline => "deadline",
+        }
+    }
 }
 
 /// The `code` of an attempt cut in flight.
@@ -204,6 +213,11 @@ impl Caller {
     /// The deadline of one aggregation and of every call in it.
     pub fn timeout(&self) -> Duration {
         self.cfg.timeout
+    }
+
+    /// The deadline and the retry budgets every call follows.
+    pub fn call_config(&self) -> &CallConfig {
+        &self.cfg
     }
 
     /// Calls one node until success, a terminal error, retries exhausted, or cancellation. `flow` labels the
@@ -330,7 +344,12 @@ impl Caller {
                 tries,
                 attempt_started.elapsed(),
                 &failure,
-                give_up.is_none().then_some(delay),
+                Decision {
+                    class,
+                    delay,
+                    retry_after,
+                    give_up,
+                },
             );
             if give_up.is_some() {
                 return Err(CallError::Failed(failure));
@@ -361,25 +380,42 @@ impl Caller {
     }
 }
 
-/// One failed attempt, visible at the default level; the node task runs in the `aggregation` span, so the line
-/// also carries the request's id. `delay` is `None` when the call gives up. A signing failure is the relayer's own
-/// and is reported as such: nothing reached the node.
+/// What the policy decided after one failed attempt, for the log line.
+#[derive(Debug, Clone, Copy)]
+struct Decision {
+    class: RetryClass,
+    /// The wait before the next attempt (meaningful when the call retries).
+    delay: Duration,
+    retry_after: Option<Duration>,
+    give_up: Option<GiveUp>,
+}
+
+/// One failed attempt: one WARN per retry or skipped retry (`OBSERVABILITY.md`), with the decision the policy
+/// took: the retry class, the wait before the next attempt (`retry_in_ms`, `null` when the call gives up), the
+/// node's parsed `Retry-After` when it sent one, and the give-up reason. The node task runs in the `aggregation`
+/// span, so the line also carries the request's id. A signing failure is the relayer's own and is reported as
+/// such: nothing reached the node, so there is no code and no header.
 fn attempt_failed(
     kms_node: &str,
     attempt: u32,
     elapsed: Duration,
     failure: &AttemptError,
-    delay: Option<Duration>,
+    decision: Decision,
 ) {
-    let elapsed_ms = elapsed.as_millis() as u64;
-    let retry_in_ms = delay.map(|d| d.as_millis() as u64);
+    let ms = |d: Duration| d.as_millis() as u64;
+    let elapsed_ms = ms(elapsed);
+    let retry_class = decision.class.as_str();
+    let retry_in_ms = decision.give_up.is_none().then(|| ms(decision.delay));
+    let give_up_reason = decision.give_up.map(GiveUp::as_str);
     if let AttemptError::Signer(_) = failure {
         warn!(
             kms_node,
             attempt,
             elapsed_ms,
             error = %failure.digest(),
+            retry_class,
             retry_in_ms,
+            give_up_reason,
             "signing failed"
         );
     } else {
@@ -389,7 +425,10 @@ fn attempt_failed(
             elapsed_ms,
             error = %failure.digest(),
             code = failure.code().as_str(),
+            retry_class,
             retry_in_ms,
+            retry_after_ms = decision.retry_after.map(ms),
+            give_up_reason,
             "attempt failed"
         );
     }
@@ -547,16 +586,25 @@ pub(crate) mod tests {
         call
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn every_failed_attempt_is_a_warn_with_its_decision() {
-        let lines = capture_runs(&["attempt failed"], || async {
-            run(vec![RATE, MALFORMED], 2).await;
+    /// The `attempt failed` lines of one `run(script, max_retries)`.
+    async fn attempt_lines(script: Vec<Reply>, max_retries: u32) -> Vec<serde_json::Value> {
+        let script = std::cell::RefCell::new(Some(script));
+        let lines = capture_runs(&["attempt failed"], || {
+            let script = script.borrow().clone().unwrap();
+            async move {
+                run(script, max_retries).await;
+            }
         })
         .await;
-        let lines: Vec<_> = lines
-            .iter()
+        lines
+            .into_iter()
             .filter(|l| l["fields"]["message"] == "attempt failed")
-            .collect();
+            .collect()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn every_failed_attempt_is_a_warn_with_its_decision() {
+        let lines = attempt_lines(vec![RATE, MALFORMED], 2).await;
         assert_eq!(lines.len(), 2, "{lines:?}");
         for (line, attempt) in lines.iter().zip(1..) {
             assert_eq!(line["level"], "WARN");
@@ -564,10 +612,59 @@ pub(crate) mod tests {
             assert_eq!(line["fields"]["attempt"], attempt);
             assert_eq!(line["fields"]["elapsed_ms"], 10);
         }
+        // A rate limit, retried after one window: the class, the wait, no header, no give-up.
         assert_eq!(lines[0]["fields"]["code"], "rate_limited");
-        assert!(lines[0]["fields"]["retry_in_ms"].as_u64().is_some());
+        assert_eq!(lines[0]["fields"]["retry_class"], "rate_limit");
+        assert_eq!(lines[0]["fields"]["retry_in_ms"], 1000);
+        assert!(
+            lines[0]["fields"]["retry_after_ms"].is_null(),
+            "{}",
+            lines[0]
+        );
+        assert!(
+            lines[0]["fields"]["give_up_reason"].is_null(),
+            "{}",
+            lines[0]
+        );
+        // The give-up: no wait, the reason.
         assert_eq!(lines[1]["fields"]["code"], "malformed");
+        assert_eq!(lines[1]["fields"]["retry_class"], "transient");
         assert!(lines[1]["fields"]["retry_in_ms"].is_null(), "{}", lines[1]);
+        assert_eq!(lines[1]["fields"]["give_up_reason"], "non_retryable");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_after_is_reported_as_a_number() {
+        let lines = attempt_lines(vec![rate_limited_after(2), ACL, OK], 2).await;
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        // The header raised the wait: both are the parsed number of milliseconds, never the header value.
+        assert_eq!(lines[0]["fields"]["retry_class"], "rate_limit");
+        assert_eq!(lines[0]["fields"]["retry_in_ms"], 2000);
+        assert_eq!(lines[0]["fields"]["retry_after_ms"], 2000);
+        // A transient retry: no header.
+        assert_eq!(lines[1]["fields"]["retry_class"], "transient");
+        assert_eq!(lines[1]["fields"]["retry_in_ms"], 200);
+        assert!(
+            lines[1]["fields"]["retry_after_ms"].is_null(),
+            "{}",
+            lines[1]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn give_up_reasons() {
+        for (script, max_retries, reason) in [
+            (vec![AUTH], 2, "auth"),
+            (vec![MALFORMED], 2, "non_retryable"),
+            (vec![ACL], 1, "budget_exhausted"),
+            (vec![rate_limited_after(10)], 1, "deadline"),
+        ] {
+            let lines = attempt_lines(script, max_retries).await;
+            let last = lines.last().unwrap();
+            assert_eq!(last["level"], "WARN", "{reason}");
+            assert_eq!(last["fields"]["give_up_reason"], reason, "{last}");
+            assert!(last["fields"]["retry_in_ms"].is_null(), "{last}");
+        }
     }
 
     #[tokio::test(start_paused = true)]
@@ -952,8 +1049,13 @@ pub(crate) mod tests {
                     .unwrap()
                     .starts_with("signer: ")
             );
+            // A signing failure consumes the transient budget and carries no header.
+            assert_eq!(line["fields"]["retry_class"], "transient");
+            assert!(line["fields"]["retry_after_ms"].is_null(), "{line}");
         }
+        assert_eq!(signing[0]["fields"]["retry_in_ms"], 200);
         assert!(signing[2]["fields"]["retry_in_ms"].is_null());
+        assert_eq!(signing[2]["fields"]["give_up_reason"], "budget_exhausted");
     }
 
     #[test]
@@ -963,6 +1065,9 @@ pub(crate) mod tests {
         assert_eq!(caller.endpoints().len(), 2);
         assert_eq!(caller.endpoints()[1].name, "node-1");
         assert_eq!(caller.timeout(), secs(3));
+        assert_eq!(caller.call_config().timeout, secs(3));
+        assert_eq!(caller.call_config().retries.max_retries, 0);
+        assert_eq!(caller.call_config().rate_limit.max_retries, 1);
     }
 
     #[test]
