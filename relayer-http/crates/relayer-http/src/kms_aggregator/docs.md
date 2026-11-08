@@ -187,8 +187,9 @@ right place for the second try. More retries double the wait each time, so a sus
 hammering.
 
 **The deadline bounds both.** A wait that would end after `call.timeout` is skipped and the call gives up
-(`give_up_reason: deadline`), so no call outlives the aggregation. Startup refuses a list, or a rate-limit budget,
-whose waits alone cannot all start before the deadline, and names the first retry that could never run (section 9).
+(`give_up_reason: deadline`), so no call outlives the aggregation. The deadline itself is at least 1 s. Startup
+refuses a list, or a rate-limit budget, whose waits alone cannot all start before the deadline, and names the first
+retry that could never run (section 9).
 
 **Cost.** Every retry is one more request to that node, counted by its proxy against the sender's 100 per second.
 With the default list a decryption that keeps failing costs up to 6 requests per node (13 nodes: 78), spread over
@@ -248,7 +249,7 @@ kms_aggregator:
   skip_tls_verification: false # local/devnet only: no TLS certificate verification, section 5
   max_concurrent_calls: 4096   # semaphore size, >= number of endpoints; one aggregation takes up to n permits
   call:
-    timeout: 5000ms            # the deadline (<= 60s); the whole section is optional, these are the defaults
+    timeout: 5000ms            # the deadline (1s..=60s); the whole section is optional, these are the defaults
     retries: { waits: [200ms, 300ms, 500ms, 800ms, 1s] }   # transient errors: the wait before each retry, section 6
     rate_limit: { max_retries: 1, initial_delay: 1s }  # rate_limited: retry k waits max(initial_delay, Retry-After) * 2^(k-1)
   public_decrypt: { threshold: 5 }
@@ -282,7 +283,7 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
 
 - Validation (`KmsAggregatorConfig::validate`, also run by `Caller::new`): endpoints non-empty, at most 13 (the bound of
   the `kms_node` label, `metrics::MAX_KMS_NODES`), with unique names and URLs; `http(s)` with a host, no credentials, query or fragment; plain `http` only towards loopback unless
-  `allow_insecure_http`; non-zero, unique audiences; `max_concurrent_calls >= n`; `timeout` within `1ms..=60s`;
+  `allow_insecure_http`; non-zero, unique audiences; `max_concurrent_calls >= n`; `timeout` within `1s..=60s`;
   `call.timeout < auth.validity <= 5m`; non-zero `auth.address`; non-empty signer fields; every `retries.waits`
   entry non-zero (the message names its index) and the prefix sums of the list all below `timeout`; with
   `rate_limit.max_retries > 0`, a non-zero `initial_delay` whose waits (`initial_delay * 2^(k-1)`) all start before
@@ -297,8 +298,9 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
   EIP-712 encoding is `fhevm_sig_auth`'s), so a hash is all the check needs; it is no EIP-712 digest, so its signature
   authorizes nothing. That address is logged at startup: every
   connector proxy must allow it (`allowed_senders`, `kmsConnectorProxy.allowedSenders` in its chart).
-- `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s` overrides a field; durations need a unit; the one list,
-  `APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS=200ms,500ms,1s`, is comma-separated.
+- `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s` overrides a field; durations need a unit. A list is one comma-separated
+  value, entries trimmed and empty ones ignored: `APP_KMS_AGGREGATOR__CALL__RETRIES__WAITS=200ms, 500ms, 1s`, `1s,`
+  for one wait, an empty value for a single attempt.
 - TLS uses the platform trust store: the container image needs CA certificates.
 
 ## 10. Cancellation and shutdown

@@ -12,6 +12,9 @@ use crate::metrics::MAX_KMS_NODES;
 /// Upper bound of every configured duration: keeps deadline arithmetic trivially safe.
 pub const MAX_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// Lower bound of the deadline: below one second no retry list is useful and the deadline becomes noise.
+pub const MIN_TIMEOUT: Duration = Duration::from_secs(1);
+
 /// Invalid configuration; the message names the offending field with its dotted path.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
@@ -88,13 +91,21 @@ impl Default for RetryConfig {
     }
 }
 
-/// A list of durations with units (`[200ms, 1s]`): the `humantime_serde` adapter covers one duration only.
+/// A list of durations with units (`[200ms, 1s]`; the `humantime_serde` adapter covers one duration only).
+/// Entries are trimmed and empty ones dropped, so the one value an environment override can carry
+/// (`200ms, 500ms`, `200ms,`, or nothing at all for a single attempt) parses like the YAML list.
 fn durations<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<Duration>, D::Error> {
-    let waits: Vec<humantime_serde::Serde<Duration>> = Deserialize::deserialize(deserializer)?;
-    Ok(waits
-        .into_iter()
-        .map(humantime_serde::Serde::into_inner)
-        .collect())
+    use serde::de::{Error, IntoDeserializer};
+    let entries: Vec<String> = Deserialize::deserialize(deserializer)?;
+    entries
+        .iter()
+        .map(|entry| entry.trim())
+        .filter(|entry| !entry.is_empty())
+        .map(|entry| {
+            humantime_serde::deserialize::<Duration, _>(entry.into_deserializer())
+                .map_err(|e: serde::de::value::Error| D::Error::custom(format!("{entry:?}: {e}")))
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -305,9 +316,9 @@ impl KmsAggregatorConfig {
             ));
         }
         let call = &self.call;
-        if call.timeout.is_zero() || call.timeout > MAX_TIMEOUT {
+        if call.timeout < MIN_TIMEOUT || call.timeout > MAX_TIMEOUT {
             return fail(format!(
-                "kms_aggregator.call.timeout must be within 1ms..={MAX_TIMEOUT:?}"
+                "kms_aggregator.call.timeout must be within {MIN_TIMEOUT:?}..={MAX_TIMEOUT:?}"
             ));
         }
         // The waits of each class must all fit before the deadline, otherwise the last retries can never run.
@@ -552,11 +563,36 @@ pub(crate) mod tests {
     fn call_timeout_bounds() {
         let mut cfg = valid(1);
         cfg.call.timeout = Duration::ZERO;
-        assert!(message(&cfg).contains("call.timeout must be within"));
+        assert!(message(&cfg).contains("call.timeout must be within 1s..=60s"));
+        cfg.call.timeout = Duration::from_millis(999);
+        assert!(message(&cfg).contains("call.timeout must be within 1s..=60s"));
         cfg.call.timeout = MAX_TIMEOUT + Duration::from_millis(1);
-        assert!(message(&cfg).contains("call.timeout must be within"));
+        assert!(message(&cfg).contains("call.timeout must be within 1s..=60s"));
         cfg.call.timeout = MAX_TIMEOUT;
         cfg.validate().unwrap();
+        // The bound alone: the default retry lists need about 3 s, which their own rule says.
+        cfg.call.timeout = MIN_TIMEOUT;
+        cfg.call.retries = waits(&[]);
+        cfg.call.rate_limit.max_retries = 0;
+        cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn waits_are_trimmed_and_empty_entries_dropped() {
+        let parsed = |json: &str| serde_json::from_str::<CallConfig>(json).map(|c| c.retries.waits);
+        assert_eq!(
+            parsed(r#"{"retries": {"waits": ["200ms", " 1s ", ""]}}"#).unwrap(),
+            waits(&[200, 1000]).waits
+        );
+        assert!(
+            parsed(r#"{"retries": {"waits": [""]}}"#)
+                .unwrap()
+                .is_empty()
+        );
+        let err = parsed(r#"{"retries": {"waits": ["200ms", "nope"]}}"#)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("\"nope\""), "{err}");
     }
 
     /// A transient budget of `ms` waits.

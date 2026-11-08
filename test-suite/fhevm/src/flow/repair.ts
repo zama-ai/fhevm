@@ -218,6 +218,13 @@ export const resolveUpgradePlan = (
       return upgradePlan(group, [splitServices("listener-core", listenerCoreServicesForState(state))], ["listener-core"]);
     }
   }
+  // RELAYER_HTTP_VERSION is optional in a bundle: a lock without it (GitOps targets) cannot run relayer-http once
+  // the local override is dropped, and compose would be asked for an image with an empty tag.
+  if (group === "relayer-http" && lockFileMode && state.versions && !runsRelayerHttp({ versions: state.versions, overrides: state.overrides })) {
+    throw new Error(
+      "upgrade relayer-http --lock-file: the lock has no RELAYER_HTTP_VERSION, so relayer-http cannot run from it; keep the local override, or lock a bundle that resolves the image",
+    );
+  }
   const groupOverrides = state.overrides.filter((item) => item.group === group);
   if (!lockFileMode && group === "coprocessor" && !hasLocalCoprocessorInstance(state) && !groupOverrides.length) {
     throw new Error("upgrade requires an active local coprocessor instance");

@@ -144,6 +144,19 @@ describe("stack", () => {
     expect(locked.runtimeServices).toEqual(["relayer-http"]);
   });
 
+  test("relayer-http version locks must resolve the image once the override is dropped", () => {
+    const lock = (env: Record<string, string>) => ({ env } as never);
+    expect(() =>
+      resolveUpgradePlan({ overrides: [], scenario: defaultScenario, versions: lock({}) }, "relayer-http", { lockFile: true }),
+    ).toThrow(/the lock has no RELAYER_HTTP_VERSION/);
+    const plan = resolveUpgradePlan(
+      { overrides: [], scenario: defaultScenario, versions: lock({ RELAYER_HTTP_VERSION: "v1" }) },
+      "relayer-http",
+      { lockFile: true },
+    );
+    expect(plan.runtimeServices).toEqual(["relayer-http"]);
+  });
+
   test("runtime upgrade locks drop only overrides owned by the upgraded group", () => {
     expect(
       removeRuntimeUpgradeOverrides(

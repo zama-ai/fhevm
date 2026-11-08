@@ -55,7 +55,7 @@ One YAML file (`config/config.yaml` is the example), five sections: `name`, `log
 lines), `http` (bind address, body limit, body read timeout, supported chain ids, optional request limits defaulting to the connector's), `metrics` (optional: `endpoint`, default `0.0.0.0:9898`, the Prometheus listener on its own port) and `kms_aggregator` (deadline,
 two retry budgets: `call.retries.waits`, the explicit list of waits for transient errors, and `call.rate_limit` for
 rate limits, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
-unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). Every connector call carries an `FhevmSig` header (RFC-038)
+unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`; a list is one comma-separated value). Every connector call carries an `FhevmSig` header (RFC-038)
 signed for that endpoint's `audience`; the signing key is never in the file: `kms_aggregator.auth.signer` names the env
 var holding it, or an AWS KMS key, and startup fails unless that key has the address `kms_aggregator.auth.address` and signs a test message. Local variants go to `config/*.local.yaml`, ignored by git.
 
@@ -123,7 +123,7 @@ being the reference.
 
 **No unexpected panic.** A panicking handler still answers `500 internal` (`CatchPanicLayer`). Both crate roots deny `clippy::unwrap_used`, `expect_used`, `indexing_slicing` and `panic`
 (allowed in tests). Every failure is a typed error returned to the caller. Configuration validation bounds every value
-the runtime arithmetic relies on (`call.timeout <= 60s`, every retry wait starts before `call.timeout`, semaphore size
+the runtime arithmetic relies on (`1s <= call.timeout <= 60s`, every retry wait starts before `call.timeout`, semaphore size
 capped) so that no arithmetic can overflow later. A panic inside a spawned task is counted as a failure, never propagated.
 
 **Fail fast.** Never wait for something that cannot change the outcome: when `counted + pending < threshold` the

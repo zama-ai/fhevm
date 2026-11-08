@@ -19,7 +19,7 @@ kms_aggregator:
   skip_tls_verification: false # local/devnet only: accepts any connector TLS certificate (no CA, expiry or hostname check)
   max_concurrent_calls: 4096   # HTTP calls in flight at once, all aggregations together (>= number of endpoints); ~200 decryptions/s with 13 nodes, see kms_aggregator/docs.md
   call:
-    timeout: 5000ms            # the deadline: one aggregation, and every call in it, ends by then
+    timeout: 5000ms            # the deadline (1s..=60s): one aggregation, and every call in it, ends by then
     retries:                   # retryable connector errors other than a rate limit; a retry never starts past the deadline
       waits: [200ms, 300ms, 500ms, 800ms, 1s]   # the wait before each retry, in order; [] = single attempt; short first for a
                                # jitter, long after to reach the deadline; every retry is one more request to the node, see
