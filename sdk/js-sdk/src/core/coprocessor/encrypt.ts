@@ -34,8 +34,9 @@ type ReturnType = {
 export async function encrypt(context: Context, parameters: Parameters): Promise<ReturnType> {
   const hardCodedExtraData = '0x00' as BytesHex;
 
-  // A rotated key (input proof rejected) is refreshed and the whole request
-  // runs once more: a new key needs a new proof.
+  // A rotated key (input proof rejected) or a changed coprocessor signer set
+  // is refreshed and the whole request runs once more: a new key needs a new
+  // proof.
   return retryOnStaleCache(context, parameters.fhevmContext, async (usedVersions) => {
     const zkProof = await createZkProof(context, {
       ...parameters,
@@ -48,6 +49,7 @@ export async function encrypt(context: Context, parameters: Parameters): Promise
       zkProof,
       options: parameters.options,
       fhevmContext: parameters.fhevmContext,
+      usedVersions,
     });
 
     return {

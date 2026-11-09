@@ -1,16 +1,21 @@
 import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
+import type { FhevmChain } from '../types/fhevmChain.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
 import { asUint8Number, isUint8 } from '../base/uint.js';
 import { executeWithBatching } from '../base/promise.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
 import { getCoprocessorSignersAbi, getThresholdAbi } from './abi-fragments/fragments.js';
-import { CACHE_TTL_15MIN, createCachedFetch } from '../base/cachedFetch.js';
+import { keccak_256 } from '@noble/hashes/sha3.js';
+import { VersionedValueCache } from '../caching/versionedValueCache.js';
+import { bytesToHex } from '../base/bytes.js';
+import { getCacheTtl } from '../caching/cacheOptions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 type Context = {
   readonly runtime: FhevmRuntime;
+  readonly chain?: { readonly id: number } | undefined;
   readonly client: NonNullable<object>;
   readonly options: { readonly batchRpcCalls: boolean };
 };
@@ -26,27 +31,79 @@ type ReturnType = {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const cachedGetCoprocessorContextSignersAndThreshold = createCachedFetch<Context, Parameters, ReturnType>({
-  executeFn: _getCoprocessorContextSignersAndThreshold,
-  cacheKeyFn: (context, params) => `${context.runtime.uid.toLowerCase()}:${params.address.toLowerCase()}`,
-  // Signers are not Use long TTL
-  ttlMs: CACHE_TTL_15MIN,
-});
+// The current set only: the on-chain check expects it (until coprocessor
+// contexts exist).
+class CoprocessorSignersCache extends VersionedValueCache<Context, Parameters, ReturnType> {
+  // One slot per chain and contract: two chains can deploy at the same address.
+  // A client with no chain reads by address only.
+  protected override getSlotKey(context: Context, params: Parameters): string {
+    return `${context.runtime.uid.toLowerCase()}:${context.chain?.id ?? ''}:${params.address.toLowerCase()}`;
+  }
+
+  protected override async fetch(
+    context: Context,
+    params: Parameters,
+  ): Promise<{ readonly version: string; readonly value: ReturnType }> {
+    const value = await _getCoprocessorContextSignersAndThreshold(context, params);
+    return { version: coprocessorSignersVersion(value), value };
+  }
+}
+
+const coprocessorSignersCache = new CoprocessorSignersCache();
 
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Reads the global Coprocessor signers and threshold.
+ * The version of a coprocessor signer set: a hash of the set (in any order)
+ * and the threshold, so a changed set never has the version of the old one.
+ */
+export function coprocessorSignersVersion(value: {
+  readonly threshold: number;
+  readonly signers: readonly string[];
+}): string {
+  const signers = value.signers.map((signer) => signer.toLowerCase()).sort();
+  return bytesToHex(keccak_256(new TextEncoder().encode(`${value.threshold}:${signers.join(',')}`)));
+}
+
+/**
+ * Reads the global Coprocessor signers and threshold, from the coprocessor
+ * signers cache (the client's `coprocessorSigners` TTL).
  *
  * @param parameters.address - The checksummed address of the InputVerifier contract.
- * @param parameters.forceRefresh - If `true`, invalidates the cached entry and
- *   makes a fresh RPC call. The new result is stored back in the cache.
  */
-export function getCoprocessorContextSignersAndThreshold(
+export async function getCoprocessorContextSignersAndThreshold(
   context: Context,
-  parameters: Parameters & { readonly forceRefresh?: boolean },
+  parameters: Parameters,
 ): Promise<ReturnType> {
-  return cachedGetCoprocessorContextSignersAndThreshold.execute(context, parameters);
+  const entry = await coprocessorSignersCache.get(context, parameters, getCacheTtl(context, 'coprocessorSigners'));
+  return entry.value;
+}
+
+/** Reads the version of the current coprocessor signer set, without caching it. */
+export async function readCoprocessorSignersVersion(
+  context: Context & { readonly chain: FhevmChain },
+): Promise<string> {
+  const value = await _getCoprocessorContextSignersAndThreshold(context, {
+    address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
+  });
+  return coprocessorSignersVersion(value);
+}
+
+/**
+ * Reads the coprocessor signers again (see `VersionedValueCache.refresh`).
+ *
+ * @returns the cache version of the current set.
+ */
+export async function refreshCoprocessorContextSignersAndThreshold(
+  context: Context & { readonly chain: FhevmChain },
+  invalidVersion: string | undefined,
+): Promise<string> {
+  const { version } = await coprocessorSignersCache.refresh(
+    context,
+    { address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress },
+    invalidVersion,
+  );
+  return version;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

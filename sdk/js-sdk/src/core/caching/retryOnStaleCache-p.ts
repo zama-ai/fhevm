@@ -6,6 +6,11 @@ import type { UsedCacheVersions } from './usedCacheVersions-p.js';
 import { CachedValueInvalidError } from '../errors/CachedValueInvalidError.js';
 import { RelayerResponseInputProofRejectedError } from '../errors/RelayerResponseInputProofRejectedError.js';
 import { RelayerAbortError } from '../errors/RelayerAbortError.js';
+import { DuplicateSignerError, ThresholdSignerError, UnknownSignerError } from '../errors/SignersError.js';
+import {
+  readCoprocessorSignersVersion,
+  refreshCoprocessorContextSignersAndThreshold,
+} from '../host-contracts/getCoprocessorContextSignersAndThreshold-p.js';
 import { readFheEncryptionKeyVersion, refreshFheEncryptionKey } from '../key/ensureFheEncryptionKeyDownload.js';
 import { requiresKeyVerification } from '../key/verifyFheEncryptionKeyBytes-p.js';
 import { getCacheOptions } from './cacheOptions-p.js';
@@ -42,6 +47,16 @@ const ITEMS: Readonly<
     refresh: (context, fhevmContext, invalidVersion) =>
       refreshFheEncryptionKey(context, { fhevmContext, invalidVersion }),
     readVersion: (context) => readFheEncryptionKeyVersion(context),
+  },
+  // A coprocessor signature check failure: the signer set may have changed.
+  coprocessorSigners: {
+    mayBeStale: (_context, error) =>
+      error instanceof UnknownSignerError ||
+      error instanceof ThresholdSignerError ||
+      error instanceof DuplicateSignerError,
+    refresh: (context, _fhevmContext, invalidVersion) =>
+      refreshCoprocessorContextSignersAndThreshold(context, invalidVersion),
+    readVersion: (context) => readCoprocessorSignersVersion(context),
   },
 };
 

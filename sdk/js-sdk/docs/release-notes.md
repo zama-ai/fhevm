@@ -30,18 +30,19 @@
   contracts only (`npm run start:localcleartext:v1.0`). The input-proof flow
   (`encryptValue` / `encryptValues`, `inputProof`) is unchanged.
 
-- **Unified caching.** The key material is cached with a TTL per client
-  (`options.cache.keyMaterial.ttl`), automatic refresh and one retry on a stale value
+- **Unified caching.** The key material and coprocessor signers share one cache: a TTL per item
+  and client (`options.cache.<item>.ttl`), automatic refresh and one retry on a stale value
   (`options.cache.autoRefreshOnInvalidity`), `client.forceRefresh(item, { invalidVersion })` and
-  `CachedValueInvalidError`. A long-running process now survives a key rotation without a restart.
-  See [Caching](clients.md#caching).
+  `CachedValueInvalidError`. A long-running process now survives a key rotation and a coprocessor
+  signer change without a restart. See [Caching](clients.md#caching).
 
 #### Changed
 
-- **Breaking: cache TTLs and stale-value errors.** The key material is cached for 24 h (was the
-  life of the process). A request still failing on a stale value after the retry (or at once, with
-  `autoRefreshOnInvalidity: false`) throws `CachedValueInvalidError` (underlying error as `cause`)
-  instead of the underlying error. See [Caching](clients.md#caching).
+- **Breaking: cache TTLs and stale-value errors.** The coprocessor signers are cached for 24 h (was
+  15 min), the key material for 24 h (was the life of the process). A request still failing on a
+  stale value after the retry (or at once, with `autoRefreshOnInvalidity: false`) throws
+  `CachedValueInvalidError` (underlying error as `cause`) instead of the underlying error. See
+  [Caching](clients.md#caching).
 - **Breaking: `ignoreCache` removed** from `fetchFheEncryptionKeyBytes`. It had no effect; use
   `client.forceRefresh('keyMaterial')`.
 - **Smaller npm package.** The `tkms` WASM version directories are now excluded from the

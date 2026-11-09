@@ -115,7 +115,7 @@ const client = createFhevmClient({
 | `batchRpcCalls`    | `boolean`                                    | all clients           | Coalesce the client's contract reads into batched RPC calls.                                                                                                                                                                                                                                                                          |
 | `fheEncryptionKey` | `FheEncryptionKeyBytes`                      | base / encrypt / full | Preloads the public key and CRS so the client skips the download. Checked once, before the client is ready (see [Key verification](#key-verification)).                                                                                                                                                                               |
 | `keyVerification`  | `FhevmKeyVerification` (`{ chain, client }`) | all clients           | Required when the host chain is not Ethereum: an Ethereum chain definition and a client for it, used to verify the FHE public key and CRS. On Ethereum it is optional; when set, its chain must have the host chain's own KMSGeneration contract, else creating an encrypt client fails (other clients fail when they fetch the key). |
-| `cache`            | `FhevmCacheOptions`                          | all clients           | How long the key material is cached, and whether a stale one is refreshed automatically (see [Caching](#caching)). |
+| `cache`            | `FhevmCacheOptions`                          | all clients           | How long the key material and coprocessor signers are cached, and whether a stale one is refreshed automatically (see [Caching](#caching)). |
 
 ### Key verification
 
@@ -194,13 +194,15 @@ and is not repeated for that client while the key is cached.
 
 ### Caching
 
-The SDK caches the key material, shared across clients. It goes stale on a key
-rotation. By default, a request that fails on a stale value refreshes it and
-runs once more: usually you have nothing to do.
+The SDK caches two values, shared across clients. A value goes stale on a key
+rotation or a coprocessor signer change. By default, a
+request that fails on a stale value refreshes it and runs once more: usually
+you have nothing to do.
 
 | Item                   | What                                   | Shared by clients with the same          | Version (in errors)         |
 | ---------------------- | -------------------------------------- | ---------------------------------------- | --------------------------- |
 | `'keyMaterial'`        | FHE public key and CRS                 | relayer URL and KMSGeneration            | `keyId:crsId` (active ids)  |
+| `'coprocessorSigners'` | coprocessor signers and threshold      | runtime, chain id and contract address   | hash of signers + threshold |
 
 ```ts
 const client = createFhevmClient({
@@ -209,6 +211,7 @@ const client = createFhevmClient({
   options: {
     cache: {
       keyMaterial: { ttl: 60 * 60 * 1000 }, // 1 h, in milliseconds
+      coprocessorSigners: { ttl: 0 }, // no cache for this client
       autoRefreshOnInvalidity: true, // the default
     },
   },
@@ -226,6 +229,7 @@ const client = createFhevmClient({
 | Encryption fails on a stale value                                             | Refreshes it, logs a warning, retries once | The result                                                                              |
 | The retry fails on a stale value again                                        | Stops                                      | `CachedValueInvalidError`                                                               |
 | The value cannot be read again (e.g. RPC error)                               | Logs a warning                             | The request's own error                                                                 |
+| Bad signature, signer set unchanged                                           | No refresh, no retry                       | `UnknownSignerError`, `ThresholdSignerError` or `DuplicateSignerError`                  |
 | `autoRefreshOnInvalidity: false`                                              | Reads only the version, cache untouched    | `CachedValueInvalidError`                                                               |
 
 - Concurrent requests failing on the same stale value share one refresh.

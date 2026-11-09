@@ -1,8 +1,9 @@
 /**
  * A value the SDK reads from the chain or the relayer and caches:
- * - `'keyMaterial'`: the FHE public key and CRS.
+ * - `'keyMaterial'`: the FHE public key and CRS;
+ * - `'coprocessorSigners'`: the coprocessor signers and threshold.
  */
-export type FhevmCacheItem = 'keyMaterial';
+export type FhevmCacheItem = 'keyMaterial' | 'coprocessorSigners';
 
 export type FhevmCacheItemOptions = {
   /**
@@ -14,6 +15,7 @@ export type FhevmCacheItemOptions = {
 
 export type FhevmCacheOptions = {
   readonly keyMaterial?: FhevmCacheItemOptions | undefined;
+  readonly coprocessorSigners?: FhevmCacheItemOptions | undefined;
   /**
    * When a request fails because a cached value went stale, the SDK refreshes
    * it and retries the request once (default `true`). With `false`, the SDK throws
