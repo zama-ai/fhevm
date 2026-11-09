@@ -54,11 +54,6 @@ kmsConnectorKmsWorker:
     karpenter.sh/nodepool: zws-pool
   tolerations: &zwsPoolTolerations
     - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}
-  # The ciphertext pool is committed at startup and defaults to 2GiB.
-  # 512 buffers of 128KiB = 64MiB.
-  env:
-    - name: KMS_CONNECTOR_CIPHERTEXT_POOL_SLOTS
-      value: "512"
   config:
     # Overridden per-release to this party's own kms-core-<i>-core-<i> - see
     # header note. Party 1's endpoint is the standalone-template-safe default.
