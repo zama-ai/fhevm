@@ -169,6 +169,10 @@ impl PadWitness {
     ///
     /// Computes the [`PAD_WITNESS_VERSION`] layout: checking `witness_version` and that the
     /// decryptor count is at most [`MAX_PAD_DECRYPTORS`] is up to the caller.
+    ///
+    /// # Panics
+    ///
+    /// If there are more than 255 decryptors.
     pub fn label(&self, witness_version: u8, prf_id: u16, chain_id: u64) -> B256 {
         let mut hasher = Keccak256::new();
         hasher.update(PAD_LABEL_DOMAIN_TAG);
@@ -178,7 +182,8 @@ impl PadWitness {
         hasher.update(self.submitter);
         hasher.update(self.consumer);
         hasher.update(self.expirationTimestamp.to_be_bytes());
-        hasher.update([self.decryptors.len() as u8]); // Fits as `MAX_PAD_DECRYPTORS` is a `u8`.
+        hasher.update([u8::try_from(self.decryptors.len())
+            .expect("checked against MAX_PAD_DECRYPTORS by the caller")]);
         for decryptor in &self.decryptors {
             hasher.update(decryptor);
         }
