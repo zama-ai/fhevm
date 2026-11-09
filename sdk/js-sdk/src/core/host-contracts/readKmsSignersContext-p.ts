@@ -3,7 +3,6 @@ import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { KmsExtraData } from '../types/kms-p.js';
-import type { UsedCacheVersions } from '../caching/usedCacheVersions-p.js';
 import { createKmsSignersContext } from './KmsSignersContext-p.js';
 import { InvalidSignedPermitError } from '../errors/InvalidSignedPermitError.js';
 import { FhevmConfigError } from '../errors/FhevmConfigError.js';
@@ -13,7 +12,6 @@ import { getKmsContextSignersAndThresholdFromExtraData } from './getKmsContextSi
 import { VersionedValueCache, type CachedValue } from '../caching/versionedValueCache.js';
 import { uint256ToBytes32Hex } from '../base/uint.js';
 import { getCacheTtl } from '../caching/cacheOptions-p.js';
-import { recordUsedCacheVersion } from '../caching/usedCacheVersions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -149,8 +147,22 @@ export async function readCurrentKmsSignersContext(context: Context, parameters:
  */
 export async function readKmsSignersContextFromPermitExtraData(
   context: Context,
-  parameters: ParametersWithExtraData & { readonly usedVersions?: UsedCacheVersions | undefined },
+  parameters: ParametersWithExtraData,
 ): Promise<ReturnType> {
+  const { kmsSignersContext } = await readVersionedKmsSignersContextFromPermitExtraData(context, parameters);
+  return kmsSignersContext;
+}
+
+/**
+ * {@link readKmsSignersContextFromPermitExtraData}, with the cache version of
+ * the current KMS context (`contextId:epochId`), for a request that records it
+ * (see retryOnStaleCache). Not derived from the result: a v1 permit
+ * names no epoch.
+ */
+export async function readVersionedKmsSignersContextFromPermitExtraData(
+  context: Context,
+  parameters: ParametersWithExtraData,
+): Promise<{ readonly kmsSignersContext: ReturnType; readonly version: string }> {
   assertIsKmsExtraData(parameters.extraData, {});
 
   // Only the current context: the KMS may refuse any other at any time. The
@@ -167,9 +179,7 @@ export async function readKmsSignersContextFromPermitExtraData(
       });
     }
   }
-  // For the check after a failure (see retryOnStaleCache).
-  recordUsedCacheVersion(parameters.usedVersions, 'kmsContext', current.version);
-  return createKmsSignersContext(new WeakRef(context.runtime), {
+  const kmsSignersContext = createKmsSignersContext(new WeakRef(context.runtime), {
     ...parameters,
     kmsContextId: parameters.extraData.kmsContextId,
     kmsEpochId: parameters.extraData.kmsEpochId,
@@ -177,6 +187,7 @@ export async function readKmsSignersContextFromPermitExtraData(
     kmsSignerThreshold: current.value.threshold,
     kmsMpcThreshold: undefined,
   });
+  return { kmsSignersContext, version: current.version };
 }
 
 /**

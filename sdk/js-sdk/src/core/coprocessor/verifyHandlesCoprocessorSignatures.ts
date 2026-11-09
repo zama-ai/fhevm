@@ -4,15 +4,10 @@ import type { CoprocessorSignersContext } from '../types/coprocessorSignersConte
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { Bytes65Hex, BytesHex, ChecksummedAddress, Uint64BigInt } from '../types/primitives.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
-import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
-import type { UsedCacheVersions } from '../caching/usedCacheVersions-p.js';
 import { recoverSigners } from '../utils-p/runtime/recoverSigners.js';
 import { coprocessorEip712PrimaryType, coprocessorEip712Types } from './coprocessorEip712Types.js';
 import { createCoprocessorEip712Domain } from './createCoprocessorEip712Domain.js';
 import { assertCoprocessorSignerThreshold } from '../host-contracts/CoprocessorSignersContext-p.js';
-import { readCoprocessorSignersContext } from '../host-contracts/readCoprocessorSignersContext-p.js';
-import { coprocessorSignersVersion } from '../host-contracts/getCoprocessorContextSignersAndThreshold-p.js';
-import { recordUsedCacheVersion } from '../caching/usedCacheVersions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -30,8 +25,8 @@ type Parameters = {
   readonly contractAddress: ChecksummedAddress;
   readonly chainId: Uint64BigInt;
   readonly extraData: BytesHex;
-  readonly fhevmContext: FhevmClientFrozenContext;
-  readonly usedVersions?: UsedCacheVersions | undefined;
+  /** The signer set to check against, read by the caller. */
+  readonly coprocessorSigners: CoprocessorSignersContext;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -63,16 +58,6 @@ export async function verifyHandlesCoprocessorSignatures(context: Context, param
     message,
   });
 
-  const coprocessorSignersContext: CoprocessorSignersContext = await readCoprocessorSignersContext(context, {
-    address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
-    fhevmContext: parameters.fhevmContext,
-  });
-  recordUsedCacheVersion(
-    parameters.usedVersions,
-    'coprocessorSigners',
-    coprocessorSignersVersion(coprocessorSignersContext),
-  );
-
   // 2. Verify signature threshold is reached
-  assertCoprocessorSignerThreshold(coprocessorSignersContext, recoveredAddresses);
+  assertCoprocessorSignerThreshold(parameters.coprocessorSigners, recoveredAddresses);
 }
