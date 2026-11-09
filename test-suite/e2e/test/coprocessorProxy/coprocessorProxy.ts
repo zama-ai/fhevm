@@ -1,4 +1,4 @@
-// Temporary KMS-connector client against every proxy and its fake PRF backend. Replace with the
+// Temporary KMS-connector client against every proxy and the prf-service behind it. Replace with the
 // real pad-connector e2e when it lands. kms-context-switch and preview rollout checks invoke this
 // suite and must switch to that client too, removing the proxy-only env and party-1 key mapping.
 import { expect } from 'chai';
@@ -10,6 +10,7 @@ import https from 'node:https';
 import { fhevmSigHeader } from '../sdk/connector/connectorHttp';
 
 // prf-service accepts only canonical parameters: decimal numbers and a 64-lowercase-hex label.
+// scripts/seed-prf-output.ts writes this output into each coprocessor's database.
 const PRF_PATH = `/v1/prf/0/labels/${'01'.repeat(32)}/1`;
 // Order of the secp256k1 group: `s` and `n - s` both sign the same message.
 const SECP256K1_N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
@@ -24,7 +25,7 @@ interface Sent {
   status: number;
   headers: IncomingHttpHeaders;
   body: Buffer;
-  /** PRF requests that reached the fake prf-service while this one was answered. */
+  /** The PRF requests that prf-service answered during this request. */
   forwarded: number;
   where: string;
 }
@@ -50,9 +51,13 @@ function request(
   });
 }
 
-async function prfRequests(countUrl: string): Promise<number> {
-  const resp = await fetch(countUrl, { signal: AbortSignal.timeout(10_000) });
-  return ((await resp.json()) as { prfRequests: number }).prfRequests;
+/** The sum of the `coprocessor_prf_service_requests_total` series of prf-service. */
+async function prfRequests(metricsUrl: string): Promise<number> {
+  const resp = await fetch(metricsUrl, { signal: AbortSignal.timeout(10_000) });
+  return (await resp.text())
+    .split('\n')
+    .filter((line) => line.startsWith('coprocessor_prf_service_requests_total{'))
+    .reduce((sum, line) => sum + Number(line.split(' ').pop()), 0);
 }
 
 /** Timestamp of the finalized block applied to the proxy's signer set. */
@@ -101,7 +106,7 @@ describe('Coprocessor proxy', function () {
   this.timeout(60_000);
   const urls = envList('COPROCESSOR_PROXY_URLS');
   const signers = envList('COPROCESSOR_SIGNER_ADDRESSES');
-  const countUrls = envList('PRF_SERVICE_FAKE_COUNT_URLS');
+  const prfMetricsUrls = envList('PRF_SERVICE_METRICS_URLS');
   const metricsUrls = envList('COPROCESSOR_PROXY_METRICS_URLS');
 
   before(function () {
@@ -110,7 +115,7 @@ describe('Coprocessor proxy', function () {
       this.skip();
     }
     expect(signers).to.have.lengthOf(urls.length);
-    expect(countUrls).to.have.lengthOf(urls.length);
+    expect(prfMetricsUrls).to.have.lengthOf(urls.length);
     expect(metricsUrls).to.have.lengthOf(urls.length);
   });
 
@@ -119,9 +124,9 @@ describe('Coprocessor proxy', function () {
     fhevmSigHeader(path, '', signers[i], { signer: new Wallet(process.env.KMS_CONNECTOR_PRIVATE_KEY!), ...opts });
 
   async function send(i: number, path: string, authorization: string, method: 'GET' | 'HEAD' = 'GET'): Promise<Sent> {
-    const before = await prfRequests(countUrls[i]);
+    const before = await prfRequests(prfMetricsUrls[i]);
     const reply = await request(method, `${urls[i]}${path}`, authorization);
-    const forwarded = (await prfRequests(countUrls[i])) - before;
+    const forwarded = (await prfRequests(prfMetricsUrls[i])) - before;
     return { ...reply, forwarded, where: `${method} ${urls[i]}${path} -> ${reply.status} ${reply.body}` };
   }
 
@@ -218,7 +223,7 @@ describe('Coprocessor proxy', function () {
 
     it('answers every signed request while its pods are replaced', async function () {
       this.timeout((loadSeconds + 120) * 1000);
-      const countsBefore = await Promise.all(countUrls.map(prfRequests));
+      const countsBefore = await Promise.all(prfMetricsUrls.map(prfRequests));
       const failures: string[] = [];
       let sent = 0;
       console.log('[coprocessor-proxy] load started');
@@ -232,7 +237,7 @@ describe('Coprocessor proxy', function () {
           fail(`${err}`);
         }
       }
-      const countsAfter = await Promise.all(countUrls.map(prfRequests));
+      const countsAfter = await Promise.all(prfMetricsUrls.map(prfRequests));
       const forwarded = countsAfter.reduce((sum, count, i) => sum + count - countsBefore[i], 0);
       console.log(`[coprocessor-proxy] load ended: ${sent} requests, ${failures.length} failed`);
       expect(failures, failures.slice(0, 10).join('\n')).to.deep.equal([]);

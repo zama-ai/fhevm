@@ -26,6 +26,7 @@ function successfulBuilds() {
       'consensus_detector',
       'upgrade_controller',
       'coprocessor_proxy',
+      'prf_service',
     ],
     'kms-connector-docker-build': ['db_migration', 'gw_listener', 'kms_worker', 'tx_sender', 'endpoint', 'proxy'],
     'relayer-docker-build': ['relayer_migrate', 'relayer'],
@@ -88,33 +89,33 @@ for (const gpuWorkerTag of [undefined, 'abcdef0-cuda12.8-sm90']) {
     });
   }
 
-  test(`coprocessor-proxy tag and registry check are selected (GPU=${!!gpuWorkerTag})`, () => {
-    const selected = selectImages({ buildResults: successfulBuilds(), headTag: 'abcdef0', gpuWorkerTag });
-    expect(selected.outputs['coprocessor-proxy-version']).toBe('abcdef0');
-    expect(selected.built).toContainEqual({ repo: 'fhevm/coprocessor/coprocessor-proxy', tag: 'abcdef0' });
-  });
+  for (const [service, resultKey, output, repo, envKey] of [
+    ['coprocessor-proxy', 'coprocessor_proxy_build_result', 'coprocessor-proxy-version', 'fhevm/coprocessor/coprocessor-proxy', 'COPROCESSOR_PROXY_VERSION'],
+    ['prf-service', 'prf_service_build_result', 'coprocessor-prf-service-version', 'fhevm/coprocessor/prf-service', 'COPROCESSOR_PRF_SERVICE_VERSION'],
+  ]) {
+    test(`${service} tag and registry check are selected (GPU=${!!gpuWorkerTag})`, () => {
+      const selected = selectImages({ buildResults: successfulBuilds(), headTag: 'abcdef0', gpuWorkerTag });
+      expect(selected.outputs[output]).toBe('abcdef0');
+      expect(selected.built).toContainEqual({ repo, tag: 'abcdef0' });
+    });
 
-  for (const result of ['failure', 'cancelled', 'missing']) {
-    test(`coprocessor-proxy ${result} rejects selection (GPU=${!!gpuWorkerTag})`, () => {
+    for (const result of ['failure', 'cancelled', 'missing']) {
+      test(`${service} ${result} rejects selection (GPU=${!!gpuWorkerTag})`, () => {
+        const builds = successfulBuilds();
+        if (result === 'missing') delete builds['coprocessor-docker-build'].outputs[resultKey];
+        else builds['coprocessor-docker-build'].outputs[resultKey] = result;
+        expect(() => selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag })).toThrow(resultKey);
+      });
+    }
+
+    test(`skipped ${service} is left to the verified baseline (GPU=${!!gpuWorkerTag})`, () => {
       const builds = successfulBuilds();
-      if (result === 'missing') delete builds['coprocessor-docker-build'].outputs.coprocessor_proxy_build_result;
-      else builds['coprocessor-docker-build'].outputs.coprocessor_proxy_build_result = result;
-      expect(() => selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag })).toThrow(
-        'coprocessor_proxy_build_result',
-      );
+      builds['coprocessor-docker-build'].outputs[resultKey] = 'skipped';
+      const selected = selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag });
+      expect(selected.outputs[output]).toBe('');
+      expect(selected.skipped).toContainEqual({ repo, envKey });
     });
   }
-
-  test(`skipped coprocessor-proxy is left to the verified baseline (GPU=${!!gpuWorkerTag})`, () => {
-    const builds = successfulBuilds();
-    builds['coprocessor-docker-build'].outputs.coprocessor_proxy_build_result = 'skipped';
-    const selected = selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag });
-    expect(selected.outputs['coprocessor-proxy-version']).toBe('');
-    expect(selected.skipped).toContainEqual({
-      repo: 'fhevm/coprocessor/coprocessor-proxy',
-      envKey: 'COPROCESSOR_PROXY_VERSION',
-    });
-  });
 
   test(`relayer-http tag and registry check are selected (GPU=${!!gpuWorkerTag})`, () => {
     const selected = selectImages({ buildResults: successfulBuilds(), headTag: 'abcdef0', gpuWorkerTag });
