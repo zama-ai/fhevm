@@ -124,7 +124,11 @@ mod tests {
     use crate::core::event_processor::ProcessingErrorKind;
     use alloy::primitives::U256;
     use ciphertext_attestation::keccak_b256;
-    use tokio::{io::AsyncWriteExt, net::TcpListener, task::JoinHandle};
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        task::JoinHandle,
+    };
 
     fn material() -> ConsensusMaterial {
         ConsensusMaterial {
@@ -181,6 +185,8 @@ mod tests {
         let url = format!("http://{}", listener.local_addr().unwrap());
         let accept_loop = tokio::spawn(async move {
             while let Ok((mut stream, _)) = listener.accept().await {
+                // Read the request first: closing with unread data resets the connection.
+                let _ = stream.read(&mut [0u8; 4096]).await;
                 let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
                 let _ = stream.write_all(head.as_bytes()).await;
                 let _ = stream.write_all(&body).await;
