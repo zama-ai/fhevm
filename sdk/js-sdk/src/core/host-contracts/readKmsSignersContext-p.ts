@@ -75,9 +75,34 @@ class KmsContextCache extends VersionedValueCache<Context, Parameters, KmsContex
     });
     return { version, value: Object.freeze({ extraData, signers, threshold }) };
   }
+
+  // Context and epoch ids only increase: an older context read (e.g. from a
+  // lagging RPC node) does not replace a newer cached one.
+  protected override isOlderVersion(version: string, than: string): boolean {
+    return _compareKmsContextVersions(version, than) < 0;
+  }
 }
 
 const kmsContextCache = new KmsContextCache();
+
+/** Compares two {@link kmsContextVersion}s: context id, then epoch id. */
+function _compareKmsContextVersions(a: string, b: string): number {
+  const [aContextId, aEpochId] = _parseKmsContextVersion(a);
+  const [bContextId, bEpochId] = _parseKmsContextVersion(b);
+  if (aContextId !== bContextId) {
+    return aContextId < bContextId ? -1 : 1;
+  }
+  return aEpochId === bEpochId ? 0 : aEpochId < bEpochId ? -1 : 1;
+}
+
+/** The ids of a {@link kmsContextVersion} (`0x<contextId>:0x<epochId>`). */
+function _parseKmsContextVersion(version: string): readonly [bigint, bigint] {
+  const [contextId, epochId] = version.split(':');
+  if (contextId === undefined || epochId === undefined) {
+    throw new Error(`Invalid KMS context version: ${version}`);
+  }
+  return [BigInt(contextId), BigInt(epochId)];
+}
 
 /** The cache version of a KMS context: `contextId:epochId`, as 32-byte hex. */
 export function kmsContextVersion(kmsContextId: bigint, kmsEpochId: bigint): string {
@@ -165,12 +190,16 @@ export async function readVersionedKmsSignersContextFromPermitExtraData(
 ): Promise<{ readonly kmsSignersContext: ReturnType; readonly version: string }> {
   assertIsKmsExtraData(parameters.extraData, {});
 
-  // Only the current context: the KMS may refuse any other at any time. The
-  // cache may be behind (or ahead of) the chain, e.g. after a reorg or on a
-  // lagging RPC node, so a mismatch reads the chain again once.
+  // Only the current context: the KMS may refuse any other at any time. A
+  // permit for a newer context than the cached one reads the chain again once
+  // (the cache may be behind). Not one for an older context: a read could only
+  // return an older context (e.g. from a lagging RPC node), and the cache never
+  // goes back (until a request using it fails).
   let current = await kmsContextCache.get(context, parameters, getCacheTtl(context, 'kmsContext'));
   if (!_namesKmsContext(parameters.extraData, current.value.extraData)) {
-    current = await kmsContextCache.refresh(context, parameters, current.version);
+    if (_namesNewerKmsContext(parameters.extraData, current.value.extraData)) {
+      current = await kmsContextCache.get(context, parameters, 0);
+    }
     if (!_namesKmsContext(parameters.extraData, current.value.extraData)) {
       throw new InvalidSignedPermitError({
         message:
@@ -220,6 +249,17 @@ export function permitRequestStaleContextError(
  */
 function _namesKmsContext(permit: KmsExtraData, current: KmsExtraData): boolean {
   return permit.kmsContextId === current.kmsContextId && (permit.lt(2) || permit.kmsEpochId === current.kmsEpochId);
+}
+
+/**
+ * Whether a permit's `extraData` names a newer context than the current one:
+ * a newer context id, or, for a v2 one, a newer epoch of the same context.
+ */
+function _namesNewerKmsContext(permit: KmsExtraData, current: KmsExtraData): boolean {
+  if (permit.kmsContextId !== current.kmsContextId) {
+    return permit.kmsContextId > current.kmsContextId;
+  }
+  return !permit.lt(2) && permit.kmsEpochId > current.kmsEpochId;
 }
 
 function _formatKmsContext(extraData: KmsExtraData): string {

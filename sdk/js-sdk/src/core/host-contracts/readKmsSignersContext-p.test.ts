@@ -1,6 +1,7 @@
 import type { EthereumModule } from '../modules/ethereum/types.js';
 import type { RelayerModule } from '../modules/relayer/types.js';
 import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
+import type { FhevmCacheOptions } from '../types/cache.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
 import { sepolia } from '../chains/definitions/sepolia.js';
@@ -39,7 +40,7 @@ type ReadContractHandlers = Record<string, (parameters: { readonly args: readonl
  * A missing handler throws, so every test also asserts which on-chain calls
  * are (not) made.
  */
-function makeClient(handlers: ReadContractHandlers) {
+function makeClient(handlers: ReadContractHandlers, cache?: FhevmCacheOptions) {
   const readContract = vi.fn(
     async (
       _trustedClient: unknown,
@@ -67,6 +68,7 @@ function makeClient(handlers: ReadContractHandlers) {
     chain: sepolia,
     client: {},
     runtime,
+    options: { cache },
   });
 
   return { client, readContract };
@@ -156,13 +158,16 @@ describe('KMS context cache', () => {
   const v14 = addresses;
 
   /** A host whose current KMS context (and epoch) can switch; context 5 is signed by A, others by B. */
-  function makeSwitchingClient() {
+  function makeSwitchingClient(cache?: FhevmCacheOptions) {
     const current = { contextId: 5n, epochId: 1n };
-    const made = makeClient({
-      getCurrentKmsContextAndEpoch: () => [current.contextId, current.epochId],
-      getContextSignersAndThresholdFromExtraData: (parameters) =>
-        BigInt(`0x${(parameters.args[0] as string).slice(4, 68)}`) === 5n ? [[SIGNER_A], 1n] : [[SIGNER_B], 1n],
-    });
+    const made = makeClient(
+      {
+        getCurrentKmsContextAndEpoch: () => [current.contextId, current.epochId],
+        getContextSignersAndThresholdFromExtraData: (parameters) =>
+          BigInt(`0x${(parameters.args[0] as string).slice(4, 68)}`) === 5n ? [[SIGNER_A], 1n] : [[SIGNER_B], 1n],
+      },
+      cache,
+    );
     return { ...made, current };
   }
 
@@ -218,13 +223,48 @@ describe('KMS context cache', () => {
     current.contextId = 6n;
     expect((await permitFor(6n)).has(SIGNER_B)).toBe(true);
 
-    // The previous context: read again once (the cache may be ahead of the
-    // chain, e.g. after a reorg), then rejected, with the ids in the message.
+    // The previous context: rejected without reading the chain (a read could
+    // only return an older context, e.g. from a lagging RPC node), with the
+    // ids in the message.
     readContract.mockClear();
     const error = await permitFor(5n).catch((e: unknown) => e);
-    expect(calledFunctionNames(readContract)).toEqual(['getCurrentKmsContextAndEpoch']);
+    expect(readContract).not.toHaveBeenCalled();
     expect(error).toBeInstanceOf(InvalidSignedPermitError);
     expect((error as Error).message).toContain('signed for KMS context 5, but the current KMS context is 6 (epoch 1)');
+  });
+
+  it('a lagging RPC node: an old permit is rejected, and the cache keeps the newer context', async () => {
+    const { client, current } = makeSwitchingClient();
+    current.contextId = 6n;
+    await readCurrentKmsSignersContext(client, v14);
+    current.contextId = 5n; // the node serving the next reads lags behind
+
+    await expect(
+      readKmsSignersContextFromPermitExtraData(client, {
+        ...v14,
+        extraData: createKmsExtraDataV1({ kmsContextId: 5n as Uint256BigInt }),
+      }),
+    ).rejects.toBeInstanceOf(InvalidSignedPermitError);
+    expect((await readCurrentKmsSignersContext(client, v14)).id).toBe(6n);
+  });
+
+  it('a lagging RPC node on a read after the TTL: the cache keeps the newer context', async () => {
+    const { client, current } = makeSwitchingClient({ kmsContext: { ttl: 0 } });
+    current.contextId = 6n;
+    expect((await readCurrentKmsSignersContext(client, v14)).id).toBe(6n);
+    current.contextId = 5n;
+
+    expect((await readCurrentKmsSignersContext(client, v14)).id).toBe(6n);
+  });
+
+  it('a context that failed is replaced by the older one read (e.g. a dev chain restarted from scratch)', async () => {
+    const { client, current } = makeSwitchingClient();
+    current.contextId = 6n;
+    await readCurrentKmsSignersContext(client, v14);
+    current.contextId = 1n;
+
+    await expect(refreshCurrentKmsContext(client, kmsContextVersion(6n, 1n))).resolves.toBe(kmsContextVersion(1n, 1n));
+    expect((await readCurrentKmsSignersContext(client, v14)).id).toBe(1n);
   });
 
   it('a failed request after an epoch-only switch: a v1 permit keeps its error, a v2 one gets InvalidSignedPermitError', async () => {

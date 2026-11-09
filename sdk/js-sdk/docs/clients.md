@@ -268,7 +268,8 @@ try {
 - After a public decryption fails, times out or is aborted, the SDK reads the current context ids. Unchanged: the request's own error.
 - A refused context gets no answer: recovery waits for the Relayer timeout or your abort.
 - Errors before the request reaches the Relayer (bad input, ACL denial) never trigger this.
-- A permit for a non-current context: the context is read again once, then `InvalidSignedPermitError` before sending.
+- A permit for a newer context than the cached one: the context is read again once. For any other non-current context: `InvalidSignedPermitError` before sending.
+- The cache never goes back to an older context read (e.g. from a lagging RPC node), unless a request using the newer one fails (e.g. a dev chain restarted from scratch).
 - A v1 permit names no epoch: after an epoch-only switch, a failed request throws its own error.
 
 ## Loading and lifecycle

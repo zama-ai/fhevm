@@ -40,8 +40,15 @@ class TestCache extends VersionedValueCache<TestContext, object, TestValue> {
   }
 }
 
+/** A {@link TestCache} whose versions only increase: `v1` < `v2` < `v3`. */
+class OrderedTestCache extends TestCache {
+  protected override isOlderVersion(version: string, than: string): boolean {
+    return Number(version.slice(1)) < Number(than.slice(1));
+  }
+}
+
 /** A cache over an on-chain value `onChain`, whose reads can be held back with `hold()`. */
-function makeCache() {
+function makeCache(options: { readonly ordered?: boolean } = {}) {
   let now = 1_000;
   let onChain = 'v1';
   let gate: Promise<void> | undefined;
@@ -59,7 +66,7 @@ function makeCache() {
       return { version, value: { data: version } };
     },
   );
-  const cache = new TestCache(fetchFn, () => now);
+  const cache = options.ordered === true ? new OrderedTestCache(fetchFn, () => now) : new TestCache(fetchFn, () => now);
   return {
     cache,
     fetchFn,
@@ -216,5 +223,76 @@ describe('VersionedValueCache', () => {
     const next = cache.get({}, {}, 1_000);
     await expect(next).resolves.toMatchObject({ version: 'v1' });
     expect(cache.peek(SLOT)).toBeDefined();
+  });
+});
+
+// Values whose versions only increase (e.g. the KMS context). A source may lag
+// (e.g. a load-balanced RPC node): an older value read must not replace a newer
+// one, unless the newer one failed.
+describe('VersionedValueCache with ordered versions', () => {
+  it('a read returning an older version keeps the newer value, and returns it', async () => {
+    const { cache, change } = makeCache({ ordered: true });
+    change('v2');
+    await cache.get({}, {}, 1_000);
+    change('v1'); // a lagging source
+
+    await expect(cache.get({}, {}, 0)).resolves.toMatchObject({ version: 'v2' });
+    expect(cache.peek(SLOT)?.version).toBe('v2');
+  });
+
+  it('versions that are not ordered: the last read wins', async () => {
+    const { cache, change } = makeCache();
+    change('v2');
+    await cache.get({}, {}, 1_000);
+    change('v1');
+
+    await expect(cache.get({}, {}, 0)).resolves.toMatchObject({ version: 'v1' });
+    expect(cache.peek(SLOT)?.version).toBe('v1');
+  });
+
+  it('refresh(invalidVersion) with the cached version: the newer value failed, the older one read replaces it', async () => {
+    const { cache, change } = makeCache({ ordered: true });
+    change('v2');
+    await cache.get({}, {}, 1_000);
+    change('v1'); // e.g. a dev chain restarted from scratch
+
+    await expect(cache.refresh({}, {}, 'v2')).resolves.toMatchObject({ version: 'v1' });
+    expect(cache.peek(SLOT)?.version).toBe('v1');
+  });
+
+  it('refresh() with no invalidVersion (forced): the older value read replaces the newer one', async () => {
+    const { cache, change } = makeCache({ ordered: true });
+    change('v2');
+    await cache.get({}, {}, 1_000);
+    change('v1');
+
+    await expect(cache.refresh({}, {})).resolves.toMatchObject({ version: 'v1' });
+  });
+
+  it('refresh(invalidVersion) when the cache holds an older version than the one that failed: reads again', async () => {
+    const { cache, change, fetchFn } = makeCache({ ordered: true });
+    change('v2');
+    await cache.get({}, {}, 1_000);
+    cache.set(SLOT, 'v1', { data: 'v1' }); // older than what the request used
+    change('v3');
+    fetchFn.mockClear();
+
+    await expect(cache.refresh({}, {}, 'v2')).resolves.toMatchObject({ version: 'v3' });
+    expect(fetchFn).toHaveBeenCalledOnce();
+  });
+
+  it('a refresh joining a read that kept the newer value reads once more, and takes the older one', async () => {
+    const { cache, change, hold } = makeCache({ ordered: true });
+    change('v2');
+    await cache.get({}, {}, 1_000);
+    change('v1');
+    const release = hold();
+    const reading = cache.get({}, {}, 0); // keeps v2: an older read does not replace it
+    const refreshing = cache.refresh({}, {}, 'v2'); // v2 failed: takes v1
+    release();
+
+    await expect(reading).resolves.toMatchObject({ version: 'v2' });
+    await expect(refreshing).resolves.toMatchObject({ version: 'v1' });
+    expect(cache.peek(SLOT)?.version).toBe('v1');
   });
 });

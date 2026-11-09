@@ -36,6 +36,9 @@ const MAX_SLOTS = 100;
  *   (an unchanged one only renews the read time). On error nothing is stored.
  * - A request keeps the value it read. When it fails because that value went
  *   stale, it passes the value's version to {@link refresh}.
+ * - When versions only increase ({@link isOlderVersion}), an older value read
+ *   (e.g. from a lagging RPC node) never replaces a newer cached one, unless
+ *   a {@link refresh} reads it: the newer value failed, or the read is forced.
  */
 export abstract class VersionedValueCache<TContext, TParams, TValue> {
   #slots = new Map<string, Slot<TValue>>();
@@ -62,6 +65,15 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
     return Date.now();
   }
 
+  /**
+   * Whether `version` is older than `than`. Defaults to `false`: versions are
+   * not ordered, and the last value read wins. Override it when versions only
+   * increase.
+   */
+  protected isOlderVersion(_version: string, _than: string): boolean {
+    return false;
+  }
+
   //////////////////////////////////////////////////////////////////////////////
   // Public API
   //////////////////////////////////////////////////////////////////////////////
@@ -73,24 +85,35 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
     if (current !== undefined && ttlMs > 0 && this.now() - current.timestamp <= ttlMs) {
       return Promise.resolve(current);
     }
-    return this.#readOrRetry(slot, context, parameters);
+    return this.#readOrRetry(slot, context, parameters, false);
   }
 
   /**
    * Reads the value again (or joins the read in flight). With
    * `invalidVersion`: returns the cached value unread when it has another
-   * version, and reads once more when a joined read (started earlier) returns
-   * `invalidVersion`. The result may still have `invalidVersion`: the caller
-   * decides what that means.
+   * version (not an older one), and reads once more when a joined read
+   * (started earlier) returns `invalidVersion`. The result may still have
+   * `invalidVersion`: the caller decides what that means.
+   *
+   * The value read replaces the cached one even when older: the cached one
+   * failed (`invalidVersion`), or the read is forced (no `invalidVersion`).
    */
   public async refresh(context: TContext, parameters: TParams, invalidVersion?: string): Promise<CachedValue<TValue>> {
     const slot = this.#getSlot(this.getSlotKey(context, parameters));
-    if (invalidVersion !== undefined && slot.current !== undefined && slot.current.version !== invalidVersion) {
-      return slot.current;
+    const current = slot.current;
+    if (
+      invalidVersion !== undefined &&
+      current !== undefined &&
+      current.version !== invalidVersion &&
+      !this.isOlderVersion(current.version, invalidVersion)
+    ) {
+      return current;
     }
+    // A joined read keeps the rule of the caller that started it: a `get` keeps
+    // a newer cached value, so the value read may still be `invalidVersion`.
     const joined = slot.pendingRead !== undefined;
-    const cached = await this.#readOrRetry(slot, context, parameters);
-    return joined && cached.version === invalidVersion ? this.#readOrRetry(slot, context, parameters) : cached;
+    const cached = await this.#readOrRetry(slot, context, parameters, true);
+    return joined && cached.version === invalidVersion ? this.#readOrRetry(slot, context, parameters, true) : cached;
   }
 
   /** The value cached in slot `slotKey`, whatever its age. Never reads. */
@@ -138,7 +161,22 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
     return slot;
   }
 
-  #read(slot: Slot<TValue>, context: TContext, parameters: TParams): Promise<CachedValue<TValue>> {
+  /** Whether a value read with `version` must not replace the cached `current`. */
+  #keepsNewer(current: CachedValue<TValue> | undefined, version: string, acceptOlder: boolean): boolean {
+    return !acceptOlder && current !== undefined && this.isOlderVersion(version, current.version);
+  }
+
+  /**
+   * Starts a read, or joins the read in flight. With `acceptOlder` false, an
+   * older value read does not replace a newer cached one, which is returned
+   * instead.
+   */
+  #read(
+    slot: Slot<TValue>,
+    context: TContext,
+    parameters: TParams,
+    acceptOlder: boolean,
+  ): Promise<CachedValue<TValue>> {
     if (slot.pendingRead !== undefined) {
       return slot.pendingRead;
     }
@@ -150,6 +188,10 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
         // value at the start, unchanged, which `evict` removed meanwhile.
         if (slot.pendingRead === pendingRead) {
           slot.pendingRead = undefined;
+          const current = slot.current;
+          if (current !== undefined && this.#keepsNewer(current, version, acceptOlder)) {
+            return current;
+          }
           if (value !== cachedAtStart?.value || slot.current?.value === value) {
             slot.current = cached;
           }
@@ -171,9 +213,14 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
   // its RPC client): if it fails on that caller's configuration, the caller
   // reads once more with its own, never joining another read, so one
   // misconfigured client does not fail the others.
-  #readOrRetry(slot: Slot<TValue>, context: TContext, parameters: TParams): Promise<CachedValue<TValue>> {
+  #readOrRetry(
+    slot: Slot<TValue>,
+    context: TContext,
+    parameters: TParams,
+    acceptOlder: boolean,
+  ): Promise<CachedValue<TValue>> {
     const joined = slot.pendingRead !== undefined;
-    const pendingRead = this.#read(slot, context, parameters);
+    const pendingRead = this.#read(slot, context, parameters, acceptOlder);
     return joined
       ? pendingRead.catch(async (e: unknown) => {
           if (!(e instanceof FhevmConfigError)) {
@@ -181,6 +228,9 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
           }
           const currentAtRetry = slot.current;
           const { version, value } = await this.fetch(context, parameters, currentAtRetry);
+          if (currentAtRetry !== undefined && this.#keepsNewer(currentAtRetry, version, acceptOlder)) {
+            return currentAtRetry;
+          }
           const cached = this.#stamp(version, value);
           // Not stored if `set` or `evict` changed the slot meanwhile.
           if (slot.pendingRead === undefined && slot.current === currentAtRetry) {
