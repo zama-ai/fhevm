@@ -33,7 +33,7 @@ ciphertext-attestation = { path = "../shared/ciphertext-attestation", features =
 #####################################################################
 #                       External dependencies                       #
 #####################################################################
-actix-web = "=4.19.0"
+actix-web = { version = "=4.19.0", default-features = false }
 alloy = { version = "=2.2.0", default-features = false, features = [
     "essentials",
     "provider-debug-api",
@@ -64,7 +64,7 @@ git-version = { version = "=0.3.9", default-features = false }
 http = { version = "=1.4.0", default-features = false }
 humantime-serde = "=1.1.1"
 opentelemetry = "=0.30.0"
-opentelemetry-otlp = { version = "=0.30.0", features = ["grpc-tonic"] }
+opentelemetry-otlp = { version = "=0.30.0", default-features = false, features = ["grpc-tonic", "trace"] }
 opentelemetry_sdk = "=0.30.0"
 pingora = { version = "=0.9.1", default-features = false, features = [
     "openssl",
