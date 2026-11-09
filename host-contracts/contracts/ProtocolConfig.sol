@@ -144,12 +144,11 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
 
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        _storeAndActivateKmsContextAndEpoch(
-            newContextId,
-            EPOCH_COUNTER_BASE + 1,
-            _toKmsNodes(initialKmsNodeParams),
-            initialThresholds
-        );
+        uint256 newEpochId = EPOCH_COUNTER_BASE + 1;
+        _storeKmsCommittee(newContextId, _toKmsNodes(initialKmsNodeParams), initialThresholds);
+        $.currentKmsContextId = newContextId;
+        $.epochCounter = newEpochId;
+        _activateKmsContextAndEpoch(newContextId, newEpochId);
 
         $.contextAnchors[newContextId] = KmsContextAnchor({
             emissionBlockNumber: block.number,
@@ -195,9 +194,9 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         // Store the new signer set as Pending. Its first epoch is created once the creation quorum
         // is reached, so the (context, epoch) pair announced to connectors is correct by construction.
         uint256 previousContextId = $.latestActiveKmsContextId;
-        uint256 contextId = $.currentKmsContextId + 1;
+        uint256 contextId = ++$.currentKmsContextId;
         KmsNode[] memory nodes = _toKmsNodes(kmsNodeParams);
-        _storeKmsContext(contextId, nodes, thresholds);
+        _storeKmsCommittee(contextId, nodes, thresholds);
         $.contextState[contextId] = ContextState.Pending;
 
         // Commit to the stored node set and thresholds. Both committees sign it in ContextCreationConfirmation.
@@ -323,9 +322,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
 
         // All signers agreed on `epochId`, so promote `contextId` and `epochId` to Active.
-        $.contextState[contextId] = ContextState.Active;
-        $.latestActiveKmsContextId = contextId;
-        _activateEpoch(epochId, contextId);
+        _activateKmsContextAndEpoch(contextId, epochId);
 
         string[] memory urls;
         {
