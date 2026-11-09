@@ -2,12 +2,7 @@
  * Renders runtime env maps from resolved versions, scenario topology, discovery outputs, and compat policy.
  */
 import {
-  coprocessorUsesHostKmsGeneration,
   compatPolicyForState,
-  kmsConnectorUsesHostKmsGeneration,
-  requiresLegacyRelayerUrl,
-  requiresMultichainAclAddress,
-  requiresModernHostAddressArtifacts,
   supportsConnectorHttp,
   runsCoprocessorProxy,
 } from "../compat/compat";
@@ -105,8 +100,7 @@ const applyHostScKmsEnv = (envs: Record<string, Record<string, string>>) => {
   }
 };
 
-const hostDeployKmsGenerationArgs = (plan: StackSpec, enabled: boolean) =>
-  requiresModernHostAddressArtifacts(plan) ? `--with-kms-generation ${enabled}` : "";
+const hostDeployKmsGenerationArgs = (enabled: boolean) => `--with-kms-generation ${enabled}`;
 
 /** Applies base runtime defaults before compat or discovery-specific rewrites. */
 const applyBaseRuntimeEnv = (
@@ -146,11 +140,9 @@ const applyCompatEnv = (
       envs["kms-connector"][key] = envs["kms-connector"][source];
     }
   }
-  if (!requiresLegacyRelayerUrl(plan)) {
-    const base = envs["test-suite"].RELAYER_URL ?? "";
-    if (base && !base.endsWith("/v2")) {
-      envs["test-suite"].RELAYER_URL = `${base}/v2`;
-    }
+  const base = envs["test-suite"].RELAYER_URL ?? "";
+  if (base && !base.endsWith("/v2")) {
+    envs["test-suite"].RELAYER_URL = `${base}/v2`;
   }
 };
 
@@ -180,17 +172,7 @@ const applyDiscoveryEnv = (
     return;
   }
   const primaryHost = state.discovery.hosts[defaultChain.key] ?? {};
-  const gatewayKmsGenerationAddress = state.discovery.gateway.KMS_GENERATION_ADDRESS;
   const hostKmsGenerationAddress = primaryHost.KMS_GENERATION_CONTRACT_ADDRESS;
-  const coprocessorKmsGenerationAddress = coprocessorUsesHostKmsGeneration(plan)
-    ? hostKmsGenerationAddress
-    : gatewayKmsGenerationAddress;
-  const connectorKmsGenerationAddress = kmsConnectorUsesHostKmsGeneration(plan)
-    ? hostKmsGenerationAddress
-    : gatewayKmsGenerationAddress;
-  const protocolConfigAddress = requiresModernHostAddressArtifacts(plan)
-    ? primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS
-    : "";
 
   updateContracts(envs["gateway-sc"], state.discovery.gateway);
   updateContracts(envs["gateway-mocked-payment"], {
@@ -209,9 +191,8 @@ const applyDiscoveryEnv = (
     INPUT_VERIFIER_ADDRESS: primaryHost.INPUT_VERIFIER_CONTRACT_ADDRESS,
     INPUT_VERIFICATION_ADDRESS: state.discovery.gateway.INPUT_VERIFICATION_ADDRESS,
     CIPHERTEXT_COMMITS_ADDRESS: state.discovery.gateway.CIPHERTEXT_COMMITS_ADDRESS,
-    ...(requiresMultichainAclAddress(plan) ? { MULTICHAIN_ACL_ADDRESS: state.discovery.gateway.MULTICHAIN_ACL_ADDRESS } : {}),
-    KMS_GENERATION_ADDRESS: coprocessorKmsGenerationAddress ?? "",
-    PROTOCOL_CONFIG_ADDRESS: protocolConfigAddress,
+    KMS_GENERATION_ADDRESS: hostKmsGenerationAddress ?? "",
+    PROTOCOL_CONFIG_ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
     CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS: primaryHost.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS ?? "",
   });
 
@@ -227,7 +208,7 @@ const applyDiscoveryEnv = (
   updateContracts(envs["kms-connector"], {
     KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS: state.discovery.gateway.DECRYPTION_ADDRESS,
     KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS: state.discovery.gateway.GATEWAY_CONFIG_ADDRESS,
-    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: connectorKmsGenerationAddress ?? "",
+    KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS: hostKmsGenerationAddress ?? "",
     KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS: primaryHost.PROTOCOL_CONFIG_CONTRACT_ADDRESS,
     KMS_CONNECTOR_HOST_CHAINS: JSON.stringify(kmsHostChains),
     KMS_CONNECTOR_SUPPORTED_CHAIN_IDS: chains.map((chain) => String(chain.chainId)).join(","),
@@ -606,7 +587,7 @@ export const renderEnvMaps = async (
   envs["host-node"].HOST_NODE_CHAIN_ID = defaultChain.chainId;
   envs["host-sc"].RPC_URL = `http://${defaultChain.node}:${defaultChain.rpcPort}`;
   envs["host-sc"].HOST_ADDRESS_DIR = defaultChain.key;
-  envs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, true);
+  envs["host-sc"].HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(true);
   // Canonical host seeds ProtocolConfig fresh; non-canonical chains get this patched at deploy time
   // by the up flow (see `canonicalProtocolConfigSeeding`) once the canonical address exists.
   envs["host-sc"].HOST_SC_DEPLOY_PROTOCOL_CONFIG_ARGS = "";
@@ -699,7 +680,7 @@ export const renderEnvMaps = async (
     hostSc.RPC_URL = hostHttp;
     hostSc.CHAIN_ID = chain.chainId;
     hostSc.HOST_ADDRESS_DIR = chain.key;
-    hostSc.HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(plan, false);
+    hostSc.HOST_SC_DEPLOY_KMS_GENERATION_ARGS = hostDeployKmsGenerationArgs(false);
     hostSc.HOST_SC_DEPLOY_CONTAINER_NAME = `${chain.sc}-deploy`;
     hostSc.HOST_SC_PAUSERS_CONTAINER_NAME = `${chain.sc}-add-pausers`;
     hostSc.NUM_COPROCESSORS = String(plan.topology.count);

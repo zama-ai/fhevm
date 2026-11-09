@@ -5,8 +5,6 @@ import YAML from "yaml";
 
 import {
   COMPAT_MATRIX,
-  LEGACY_RELAYER_IMAGE_REPOSITORY,
-  LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   MODERN_RELAYER_IMAGE_REPOSITORY,
   MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
 } from "../compat/compat";
@@ -115,16 +113,11 @@ export const PACKAGE_TO_REPOSITORY = {
   CONNECTOR_ENDPOINT_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/endpoint",
   CONNECTOR_PROXY_VERSION: "ghcr.io/zama-ai/fhevm/kms-connector/proxy",
   CORE_VERSION: "ghcr.io/zama-ai/kms/core-service-enclave",
-  RELAYER_VERSION: "ghcr.io/zama-ai/console/relayer",
-  RELAYER_MIGRATE_VERSION: "ghcr.io/zama-ai/console/relayer-migrate",
+  RELAYER_VERSION: MODERN_RELAYER_IMAGE_REPOSITORY,
+  RELAYER_MIGRATE_VERSION: MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY,
   RELAYER_HTTP_VERSION: "ghcr.io/zama-ai/fhevm/relayer-http",
   TEST_SUITE_VERSION: "ghcr.io/zama-ai/fhevm/test-suite/e2e",
 } as const;
-
-const PACKAGE_REPOSITORY_CANDIDATES: Partial<Record<keyof typeof PACKAGE_TO_REPOSITORY, string[]>> = {
-  RELAYER_VERSION: [MODERN_RELAYER_IMAGE_REPOSITORY, LEGACY_RELAYER_IMAGE_REPOSITORY],
-  RELAYER_MIGRATE_VERSION: [MODERN_RELAYER_MIGRATE_IMAGE_REPOSITORY, LEGACY_RELAYER_MIGRATE_IMAGE_REPOSITORY],
-};
 
 const SHA_FALLBACK_COMMIT_WINDOW = 500;
 // A missing tag from a flaked re-tag, an in-flight push pipeline, or an is-latest-commit skip
@@ -186,14 +179,12 @@ const findImageTag = (
   docName: string,
   key: keyof typeof PACKAGE_TO_REPOSITORY,
 ) => {
-  const repositories = PACKAGE_REPOSITORY_CANDIDATES[key] ?? [PACKAGE_TO_REPOSITORY[key]];
-  for (const repository of repositories) {
-    const hit = parsed[docName].find((img) => img.repository === repository);
-    if (hit) {
-      return hit.tag;
-    }
+  const repository = PACKAGE_TO_REPOSITORY[key];
+  const hit = parsed[docName].find((img) => img.repository === repository);
+  if (hit) {
+    return hit.tag;
   }
-  throw new Error(`Missing ${repositories.join(" or ")} in GitOps file`);
+  throw new Error(`Missing ${repository} in GitOps file`);
 };
 
 /** Normalizes a full SHA into the short tag form used by repo-owned images. */

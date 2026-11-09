@@ -2,13 +2,9 @@ import { assertOneWorkerPerQueue } from "./queue-ownership";
 export { assertOneWorkerPerQueue, classifyStray, parseWorkerDatabase, strayWorkerPids } from "./queue-ownership";
 import { consumerOnlyHostListeners, isLegacyHostListener } from "../host-listener-mode";
 import {
-  bootstrapUsesHostKmsGeneration,
-  kmsConnectorUsesHostKmsGeneration,
   supportsConnectorHttp,
   supportsConsensusDetector,
-  supportsCoprocessorDbStateRevert,
   runsCoprocessorProxy,
-  supportsHostListenerConsumer,
   supportsUpgradeController,
 } from "../compat/compat";
 import { BootstrapTimeout, ContainerCrashed, ObjectStoreError, PreflightError, ProbeTimeout, RpcError } from "../errors";
@@ -280,7 +276,6 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
       (suffix) =>
         (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
         !suffix.includes("migration") &&
-        (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
         (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
         (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
     ),
@@ -365,9 +360,7 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
       await waitForContainer(`${prefix}host-listener`, "running");
       await waitForContainer(`${prefix}host-listener-poller`, "running");
     }
-    if (supportsHostListenerConsumer(state)) {
-      await waitForContainer(`${prefix}host-listener-consumer`, "running");
-    }
+    await waitForContainer(`${prefix}host-listener-consumer`, "running");
     await waitForContainer(`${prefix}gw-listener`, "running");
     await waitForContainer(`${prefix}tfhe-worker`, "running");
     await waitForContainer(`${prefix}zkproof-worker`, "running");
@@ -583,28 +576,23 @@ export const castCall = async (rpcUrl: string, to: string, signature: string, ..
 };
 
 /**
- * Resolves the chain the KMSGeneration contract is deployed on (host on v0.13+, else gateway) and the
- * contract addresses on it. Throws PreflightError when a required endpoint/address is missing;
- * `configAddress` (ProtocolConfig / GatewayConfig) is optional on pre-v0.13 bundles.
+ * Resolves the canonical host chain the KMSGeneration contract is deployed on and the contract
+ * addresses on it. Throws PreflightError when a required endpoint/address is missing;
+ * `configAddress` (ProtocolConfig) is returned when discovered.
  */
 export const resolveKmsGenerationTarget = (state: State) => {
   const discovery = state.discovery!;
-  const useHostKms = bootstrapUsesHostKmsGeneration(state);
   const defaultHostKey = defaultHostChainKey(state.scenario.hostChains);
-  const where = useHostKms ? `host chain "${defaultHostKey}"` : "gateway";
-  const rawRpcUrl = useHostKms ? discovery.endpoints.hosts[defaultHostKey]?.http : discovery.endpoints.gateway.http;
+  const where = `host chain "${defaultHostKey}"`;
+  const rawRpcUrl = discovery.endpoints.hosts[defaultHostKey]?.http;
   if (!rawRpcUrl) {
     throw new PreflightError(`Missing ${where} RPC endpoint for the KMSGeneration probe`);
   }
-  const kmsGenerationAddress = useHostKms
-    ? discovery.hosts[defaultHostKey]?.KMS_GENERATION_CONTRACT_ADDRESS
-    : discovery.gateway.KMS_GENERATION_ADDRESS;
+  const kmsGenerationAddress = discovery.hosts[defaultHostKey]?.KMS_GENERATION_CONTRACT_ADDRESS;
   if (!kmsGenerationAddress) {
     throw new PreflightError(`Missing ${where} KMSGeneration contract address for the KMSGeneration probe`);
   }
-  const configAddress = useHostKms
-    ? discovery.hosts[defaultHostKey]?.PROTOCOL_CONFIG_CONTRACT_ADDRESS
-    : discovery.gateway.GATEWAY_CONFIG_ADDRESS;
+  const configAddress = discovery.hosts[defaultHostKey]?.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
   return {
     rpcUrl: hostReachableRpcUrl(rawRpcUrl),
     kmsGenerationAddress: withHexPrefix(kmsGenerationAddress),
@@ -693,7 +681,6 @@ export const waitForKmsConnectorParty = async (
   party: number,
   readiness: "running" | "healthy" = "running",
 ) => {
-  const usesHostKmsGeneration = kmsConnectorUsesHostKmsGeneration(state);
   const prefix = kmsConnectorPrefix(party);
   await waitForContainer(`${prefix}-db-migration`, "complete");
   await waitForContainer(`${prefix}-gw-listener`, readiness);
@@ -703,10 +690,8 @@ export const waitForKmsConnectorParty = async (
     await waitForContainer(`${prefix}-endpoint`, readiness);
     await waitForContainer(`${prefix}-proxy`, readiness);
   }
-  if (usesHostKmsGeneration) {
-    await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_DECRYPTION_READY);
-    await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_KMS_GENERATION_READY);
-  }
+  await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_DECRYPTION_READY);
+  await waitForLog(`${prefix}-gw-listener`, KMS_CONNECTOR_KMS_GENERATION_READY);
 };
 
 /**
@@ -813,11 +798,6 @@ export const keyMaterialReadiness = (
  * required.
  */
 export const waitForCoprocessorKeyMaterial = async (state: State, attempts = 150, options: { requireCompressed?: boolean } = {}) => {
-  // v0.11 still stores material in tenants; the keys table arrives in v0.12.
-  if (!supportsCoprocessorDbStateRevert(state)) {
-    if (options.requireCompressed) throw new PreflightError("GPU workers require a release with compressed key material in the keys table");
-    return;
-  }
   const count = topologyForState(state).count;
   // Narrowed the same way `scenarioUsesForkAnvil` does: only a consensus
   // scenario has instances, and the fork is identified by the hostname an

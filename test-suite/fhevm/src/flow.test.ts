@@ -54,8 +54,8 @@ const completeState = (): State & { scenario: ResolvedCoprocessorScenario } => (
       CONNECTOR_KMS_WORKER_VERSION: "02f6cc0",
       CONNECTOR_TX_SENDER_VERSION: "02f6cc0",
       CORE_VERSION: "c57f52f",
-      RELAYER_VERSION: "v0.11.0-rc.2",
-      RELAYER_MIGRATE_VERSION: "v0.11.0-rc.1",
+      RELAYER_VERSION: "v0.13.0-2",
+      RELAYER_MIGRATE_VERSION: "v0.13.0-2",
       TEST_SUITE_VERSION: "02f6cc0",
     },
   },
@@ -354,41 +354,6 @@ describe("resumeRepairStep", () => {
       "fhevm-test-suite-e2e-debug",
     ];
     expect(resumeRepairStep(completeState(), running)).toBe("listener-core");
-  });
-
-  test("does not expect host-listener consumer on legacy supported bundles", () => {
-    const state = completeState();
-    state.target = "latest-supported";
-    state.versions = {
-      ...state.versions,
-      target: "latest-supported",
-      lockName: "latest-supported.json",
-      env: {
-        ...state.versions.env,
-        COPROCESSOR_HOST_LISTENER_VERSION: "v0.11.0",
-      },
-    };
-    const running = [
-      "fhevm-object-store",
-      "coprocessor-and-kms-db",
-      "kms-core",
-      "host-node",
-      "gateway-node",
-      "coprocessor-host-listener",
-      "coprocessor-host-listener-poller",
-      "coprocessor-gw-listener",
-      "coprocessor-tfhe-worker",
-      "coprocessor-zkproof-worker",
-      "coprocessor-sns-worker",
-      "coprocessor-transaction-sender",
-      "kms-connector-gw-listener",
-      "kms-connector-kms-worker",
-      "kms-connector-tx-sender",
-      "fhevm-relayer-db",
-      "fhevm-relayer",
-      "fhevm-test-suite-e2e-debug",
-    ];
-    expect(resumeRepairStep(state, running)).toBeUndefined();
   });
 
   test("repairs multi-instance stacks when a secondary coprocessor service is missing", () => {

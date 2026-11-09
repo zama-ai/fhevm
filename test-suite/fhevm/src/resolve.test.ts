@@ -2,7 +2,6 @@ import path from "node:path";
 import { writeFile } from "node:fs/promises";
 import { describe, expect, test } from "bun:test";
 
-import { validateBundleCompatibility } from "./compat/compat";
 import {
   explainGitHubCliError,
   isRateLimitGitHubCliError,
@@ -343,16 +342,6 @@ describe("resolve", () => {
         ),
       ).rejects.toThrow("missing required version keys");
     });
-  });
-
-  test("rejects incompatible env-overridden bundles during preview", () => {
-    const issues = validateBundleCompatibility({
-      versions: applyVersionEnvOverrides(presetBundle("latest-main", "abcdef0", "latest-main.json"), {
-        RELAYER_VERSION: "v0.9.0",
-        TEST_SUITE_VERSION: "v0.11.0",
-      }),
-    });
-    expect(issues.map((issue) => issue.message).join("\n")).toContain("Relayer only serves /v1 API");
   });
 
   test("accepts explicit sha-like repo overrides without main-floor validation", () => {

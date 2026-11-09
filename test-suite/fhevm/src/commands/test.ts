@@ -15,7 +15,6 @@ import { syntheticTrackReadinessSql, syntheticEvidenceAuditSql, SYNTHETIC_EVIDEN
 import {
   compatPolicyForState,
   supportsConnectorHttp,
-  supportsCoprocessorDbStateRevert,
   runsCoprocessorProxy,
 } from "../compat/compat";
 import { consumerOnlyHostListeners } from "../host-listener-mode";
@@ -2234,11 +2233,6 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       : "COPROCESSOR_PROXY_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
   };
 
-  const dbStateRevertSkipReason = () =>
-    supportsCoprocessorDbStateRevert(state)
-      ? undefined
-      : `COPROCESSOR_DB_MIGRATION_VERSION=${state.versions.env.COPROCESSOR_DB_MIGRATION_VERSION || "unknown"} is older than v0.12.0`;
-
   // Runs the user-decryption grep and reports pass/fail instead of throwing, so the
   // kms-generation quorum probes can assert both success and (below quorum) non-success.
   // Both branches run the canonical user-decryption invocation (namedE2eArgs); only the
@@ -2692,13 +2686,6 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           const skipReason = multiChainIsolationSkipReason();
           if (skipReason) {
             console.log(`[test] skipping ${profile}: ${skipReason}`);
-            continue;
-          }
-        }
-        if (profile === "coprocessor-db-state-revert") {
-          const skipReason = dbStateRevertSkipReason();
-          if (skipReason) {
-            console.log(`[test] skipping coprocessor-db-state-revert: ${skipReason}`);
             continue;
           }
         }

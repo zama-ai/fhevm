@@ -1,9 +1,4 @@
 import { isIP } from "node:net";
-import {
-  requiresGatewayKmsGenerationAddress,
-  requiresMultichainAclAddress,
-  requiresModernHostAddressArtifacts,
-} from "../compat/compat";
 import { PreflightError } from "../errors";
 import {
   DEFAULT_GATEWAY_RPC_PORT,
@@ -127,11 +122,9 @@ export const validateDiscovery = (
   }
   const requiredGateway = [
     "GATEWAY_CONFIG_ADDRESS",
-    ...(requiresGatewayKmsGenerationAddress(state) ? ["KMS_GENERATION_ADDRESS"] : []),
     "DECRYPTION_ADDRESS",
     "INPUT_VERIFICATION_ADDRESS",
     "CIPHERTEXT_COMMITS_ADDRESS",
-    ...(requiresMultichainAclAddress(state) ? ["MULTICHAIN_ACL_ADDRESS"] : []),
   ];
   const requiredHost = [
     "ACL_CONTRACT_ADDRESS",
@@ -139,7 +132,7 @@ export const validateDiscovery = (
     "KMS_VERIFIER_CONTRACT_ADDRESS",
     "INPUT_VERIFIER_CONTRACT_ADDRESS",
     "PAUSER_SET_CONTRACT_ADDRESS",
-    ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS"] : []),
+    "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
   ];
   for (const key of requiredGateway) {
     if (!discovery.gateway[key]) {
@@ -153,7 +146,7 @@ export const validateDiscovery = (
     }
     const requiredHostForChain = [
       ...requiredHost,
-      ...(chain.isDefault && requiresModernHostAddressArtifacts(state) ? ["KMS_GENERATION_CONTRACT_ADDRESS"] : []),
+      ...(chain.isDefault ? ["KMS_GENERATION_CONTRACT_ADDRESS"] : []),
     ];
     for (const key of requiredHostForChain) {
       if (!host[key]) {

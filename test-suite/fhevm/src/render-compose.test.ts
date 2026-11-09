@@ -95,12 +95,6 @@ const listenerCoreOverrideState: State = {
   scenario: testDefaultScenario(),
 };
 
-const gatewayContractsOverrideState: State = {
-  ...state,
-  overrides: [{ group: "gateway-contracts" }],
-  scenario: testDefaultScenario(),
-};
-
 const testSuiteOverrideState: State = {
   ...state,
   overrides: [{ group: "test-suite" }],
@@ -402,23 +396,6 @@ describe("render-compose", () => {
     });
   });
 
-  test("does not request host-listener consumer services for legacy coprocessor bundles", () => {
-    const legacyState: State = {
-      ...state,
-      versions: {
-        ...state.versions,
-        env: {
-          ...state.versions.env,
-          COPROCESSOR_HOST_LISTENER_VERSION: "v0.12.2",
-        },
-      },
-    };
-
-    const services = serviceNameList(legacyState, "coprocessor");
-    expect(services).not.toContain("coprocessor-host-listener-consumer");
-    expect(services).not.toContain("coprocessor1-host-listener-consumer");
-  });
-
   test("does not request consensus-detector or upgrade-controller services for legacy coprocessor bundles", () => {
     const legacyState: State = {
       ...state,
@@ -426,8 +403,8 @@ describe("render-compose", () => {
         ...state.versions,
         env: {
           ...state.versions.env,
-          COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.12.2",
-          COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "v0.12.2",
+          COPROCESSOR_CONSENSUS_DETECTOR_VERSION: "v0.13.0",
+          COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "v0.13.0",
         },
       },
     };
@@ -691,23 +668,6 @@ instances:
       expect(doc.services["host-sc-chain-b-add-pausers"]?.build).toBeTruthy();
       expect(doc.services["host-sc-chain-b-trigger-keygen"]).toBeUndefined();
       expect(doc.services["host-sc-chain-b-trigger-crsgen"]).toBeUndefined();
-    });
-  });
-
-  test("keeps legacy gateway trigger services in local gateway overrides", async () => {
-    await withTempStateDir(async () => {
-      await mkdir(path.dirname(envPath("coprocessor")), { recursive: true });
-      await writeFile(envPath("coprocessor"), "\n");
-      await generateComposeOverrides(gatewayContractsOverrideState, stackSpecForState(gatewayContractsOverrideState));
-      const doc = YAML.parse(await readFile(composePath("gateway-sc"), "utf8")) as {
-        services: Record<string, { image?: string; build?: unknown; command?: string[] }>;
-      };
-      expect(doc.services["gateway-sc-trigger-keygen"]?.image).toContain(":fhevm-local");
-      expect(doc.services["gateway-sc-trigger-keygen"]?.build).toBeTruthy();
-      expect(doc.services["gateway-sc-trigger-keygen"]?.command?.[0]).toContain("${KEYGEN_PARAMS_TYPE:-0}");
-      expect(doc.services["gateway-sc-trigger-crsgen"]?.image).toContain(":fhevm-local");
-      expect(doc.services["gateway-sc-trigger-crsgen"]?.build).toBeTruthy();
-      expect(doc.services["gateway-sc-trigger-crsgen"]?.command?.[0]).toContain("${KEYGEN_PARAMS_TYPE:-0}");
     });
   });
 

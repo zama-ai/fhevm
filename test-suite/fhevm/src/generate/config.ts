@@ -3,45 +3,11 @@
  */
 import YAML from "yaml";
 
-import {
-  requiresLegacyRelayerKeyUrlConfig,
-  requiresLegacyRelayerReadinessConfig,
-} from "../compat/compat";
+import { requiresLegacyRelayerKeyUrlConfig } from "../compat/compat";
 import { hostChainRuntimes, OBJECT_STORE_INTERNAL_URL, RELAYER_HTTP_PORT } from "../layout";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import type { HostChainScenario, State } from "../types";
 import { hostReachableMaterialUrl, predictedCrsId, predictedKeyId } from "../utils/fs";
-
-/** Rewrites relayer readiness config into the legacy shape when required. */
-const rewriteRelayerConfig = (
-  config: Record<string, unknown>,
-  state: Pick<State, "versions"> & Partial<Pick<State, "overrides">>,
-) => {
-  if (!requiresLegacyRelayerReadinessConfig(state)) {
-    return config;
-  }
-  const gateway = config.gateway;
-  if (!gateway || typeof gateway !== "object") {
-    return config;
-  }
-  const readiness = (gateway as Record<string, unknown>).readiness_checker;
-  if (!readiness || typeof readiness !== "object") {
-    return config;
-  }
-  const current = readiness as Record<string, unknown>;
-  (gateway as Record<string, unknown>).readiness_checker = Object.fromEntries(
-    Object.entries({
-      retry:
-        current.retry ??
-        (current.gw_ciphertext_check as Record<string, unknown> | undefined)?.retry ??
-        (current.host_acl_check as Record<string, unknown> | undefined)?.retry,
-      public_decrypt: current.public_decrypt,
-      user_decrypt: current.user_decrypt,
-      delegated_user_decrypt: current.delegated_user_decrypt,
-    }).filter(([, value]) => value !== undefined),
-  );
-  return config;
-};
 
 /** Rewrites keyurl config into the static schema expected by released relayers. */
 const rewriteRelayerKeyUrlConfig = (
@@ -117,7 +83,7 @@ export const renderRelayerConfig = (
   templateText: string,
   plan?: Pick<StackSpec, "hostChains">,
 ) => {
-  let config = rewriteRelayerConfig(YAML.parse(templateText) as Record<string, unknown>, state);
+  let config = YAML.parse(templateText) as Record<string, unknown>;
   config = rewriteRelayerKeyUrlConfig(config, state);
   const chains = plan?.hostChains ?? [];
   if (chains.length) {

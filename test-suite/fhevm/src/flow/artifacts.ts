@@ -1,6 +1,5 @@
 import { ensureLockSnapshot } from "../resolve/bundle-store";
 import { generateRuntime } from "../generate";
-import { requiresMultichainAclAddress } from "../compat/compat";
 import path from "node:path";
 
 import { stackSpecForState, topologyForState } from "../stack-spec/stack-spec";

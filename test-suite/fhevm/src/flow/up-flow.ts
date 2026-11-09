@@ -12,18 +12,13 @@ import { ensureLockSnapshot, previewBundle, resolveBundle } from "../resolve/bun
 import {
   assertBlueGreenKmsCompatibility,
   assertSupportedBundleScenario,
-  bootstrapUsesHostKmsGeneration,
   canonicalProtocolConfigSeedingUsesEnv,
   kmsCoreUpgradeCrossesMaterialBreak,
-  requiresGatewayKmsGenerationAddress,
   requiresLegacyHostChainSeedShim,
   requiresLegacyKmsBootstrapBudget,
-  requiresMultichainAclAddress,
-  requiresModernHostAddressArtifacts,
   replaceRegistrySourceTag,
   supportsCanonicalProtocolConfigSeeding,
   supportsConnectorHttp,
-  supportsHostListenerConsumer,
   validateBundleCompatibility,
 } from "../compat/compat";
 import { blueGreenServiceNames, serviceNameList } from "../generate/compose";
@@ -688,7 +683,7 @@ const upsertHostChainInCoprocessorDbs = async (state: State, chain: { key: strin
   }
 };
 
-/** Legacy runtime shim: v0.12.x coprocessor images do not reliably seed host_chains before zkproof caches it. */
+/** Legacy runtime shim: v0.13.0-N coprocessor images do not reliably seed host_chains before zkproof caches it. */
 const applyLegacyHostChainSeedShim = async (state: State) => {
   const defaultChain = defaultHostChain(state);
   if (!defaultChain) {
@@ -870,7 +865,6 @@ export const runStep = async (state: State, step: StepName) => {
         "INPUT_VERIFICATION_ADDRESS",
         "CIPHERTEXT_COMMITS_ADDRESS",
         "DECRYPTION_ADDRESS",
-        ...(requiresGatewayKmsGenerationAddress(state) ? ["KMS_GENERATION_ADDRESS"] : []),
       ]);
       (await ensureDiscovery(state)).gateway = await readEnvFile(gatewayAddressesPath);
       await generateRuntime(state, stackSpecForState(state));
@@ -898,7 +892,8 @@ export const runStep = async (state: State, step: StepName) => {
         "KMS_VERIFIER_CONTRACT_ADDRESS",
         "INPUT_VERIFIER_CONTRACT_ADDRESS",
         "HCU_LIMIT_CONTRACT_ADDRESS",
-        ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS", "KMS_GENERATION_CONTRACT_ADDRESS"] : []),
+        "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
+        "KMS_GENERATION_CONTRACT_ADDRESS",
       ]);
       // Production topology: non-canonical chains seed ProtocolConfig from the canonical chain
       // (export → mirror), not "fresh" from env. The canonical address only exists after the
@@ -928,7 +923,7 @@ export const runStep = async (state: State, step: StepName) => {
             "KMS_VERIFIER_CONTRACT_ADDRESS",
             "INPUT_VERIFIER_CONTRACT_ADDRESS",
             "HCU_LIMIT_CONTRACT_ADDRESS",
-            ...(requiresModernHostAddressArtifacts(state) ? ["PROTOCOL_CONFIG_CONTRACT_ADDRESS"] : []),
+            "PROTOCOL_CONFIG_CONTRACT_ADDRESS",
           ]);
           await assertGeneratedAddressFileLacks(hostChainAddressesPath(chain.key), `${scKey}-deploy`, [
             "KMS_GENERATION_CONTRACT_ADDRESS",
@@ -1031,9 +1026,6 @@ export const runStep = async (state: State, step: StepName) => {
       break;
     }
     case "listener-core":
-      if (!supportsHostListenerConsumer(state)) {
-        break;
-      }
       // One database per operator, shared by that operator's chains: every
       // listener table is keyed by chain_id. See src/generate/listener-core.ts.
       for (const operator of listenerOperatorsForState(state)) {
@@ -1174,25 +1166,14 @@ export const runStep = async (state: State, step: StepName) => {
         );
         await waitForContainer("gateway-sc-add-pausers", "complete");
       }
-      if (bootstrapUsesHostKmsGeneration(state)) {
-        await timed("[bootstrap] trigger-keygen", () =>
-          stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
-        );
-        await waitForContainer("host-sc-trigger-keygen", "complete");
-        await timed("[bootstrap] trigger-crsgen", () =>
-          stepComposeTask("host-sc", state, ["host-sc-trigger-crsgen"], { noDeps: true }),
-        );
-        await waitForContainer("host-sc-trigger-crsgen", "complete");
-      } else {
-        await timed("[bootstrap] trigger-keygen", () =>
-          stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-keygen"], { noDeps: true }),
-        );
-        await waitForContainer("gateway-sc-trigger-keygen", "complete");
-        await timed("[bootstrap] trigger-crsgen", () =>
-          stepComposeTask("gateway-sc", state, ["gateway-sc-trigger-crsgen"], { noDeps: true }),
-        );
-        await waitForContainer("gateway-sc-trigger-crsgen", "complete");
-      }
+      await timed("[bootstrap] trigger-keygen", () =>
+        stepComposeTask("host-sc", state, ["host-sc-trigger-keygen"], { noDeps: true }),
+      );
+      await waitForContainer("host-sc-trigger-keygen", "complete");
+      await timed("[bootstrap] trigger-crsgen", () =>
+        stepComposeTask("host-sc", state, ["host-sc-trigger-crsgen"], { noDeps: true }),
+      );
+      await waitForContainer("host-sc-trigger-crsgen", "complete");
       // wait-for-materials polls every two seconds; a secure keygen runs a real multi-party DKG.
       // Legacy cores can take more than 20 minutes to finish two preprocessing sessions, so only
       // they get the larger budget — a global raise would make every CI job wait that long before

@@ -137,20 +137,21 @@ Runtime resolution is intentionally fixed:
 
 ## Targets
 
-- `latest-supported`: tracked maintained bundle profile (`profiles/latest-supported.json`)
-- `latest-main`: newest complete repo-owned main SHA bundle at or after the simple-ACL floor (`803f104`)
-- `sha`: exact repo-owned SHA bundle plus `latest-supported` companions
-- `devnet`
-- `testnet`
-- `mainnet`
+All targets except `latest-supported` resolve versions when you run them.
 
-Only `devnet`, `testnet`, and `mainnet` resolve from GitOps today. Non-network targets do not.
-`latest-main` is intentionally modern-only; if the resolver cannot find a complete image set after the floor, it fails instead of walking into older protocol behavior.
-`sha` requires `--sha <git-sha>` and resolves every repo-owned image to that 7-character SHA tag. The CLI does not query GitHub or prove branch ancestry for this target; Docker pull or boot-time validation reports missing images or incompatible stacks.
+| Target                           | Versions come from                                                                                                   | Needs                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `latest-main` (default)          | Newest `main` commit with a complete published image set, at or after the simple-ACL floor (`803f104`)               | `gh` with `read:packages`                    |
+| `sha` (with `--sha <git-sha>`)   | Images tagged with that commit; an image missing there falls back to the nearest ancestor that published it           | `gh` with `read:packages`                    |
+| `devnet` / `testnet` / `mainnet` | The deployed versions in GitOps (`zama-zws/gitops`, branch `main`)                                                   | `gh` with read access to `zama-zws/gitops`   |
+| `latest-supported`               | `profiles/latest-supported.json`, the only tracked profile                                                           | nothing (works offline)                      |
+
+- KMS core is not built from this repository: `latest-main` and `sha` take `CORE_VERSION` from a hand-maintained pin in `src/resolve/presets.ts`.
+- `latest-main` is intentionally modern-only; if the resolver cannot find a complete image set after the floor, it fails instead of walking into older protocol behavior.
 
 ## Pinning an Exact Version Bundle
 
-If you need to run a specific set of versions (e.g., `v0.10.7` across the board), use `--lock-file`
+If you need to run a specific set of versions (e.g., `v0.13.0` across the board), use `--lock-file`
 to skip all target resolution, avoid GitHub lookups, and supply the full bundle yourself:
 
 ```sh
@@ -267,7 +268,7 @@ TEST_SUITE_VERSION
 
 The relayer (3000) and relayer-http (3002) stay published for direct access.
 
-The proxy does not route `/v1`. Profiles whose test suite predates v0.11 (e.g. `v0.11.0-mainnet`) call the relayer on `/v1`, so their e2e tests fail through the proxy; this is intended, as they are no longer tested.
+The proxy does not route `/v1`. No supported profile calls it: the oldest supported release is v0.13.0, whose test suite calls `/v2`.
 
 Example — test a local coprocessor image without `--override`:
 
@@ -294,11 +295,13 @@ All version compatibility rules live in a single source of truth: `src/compat/co
 
 The rules have three sections:
 
-| Section             | Purpose                              | Example                                  |
-| ------------------- | ------------------------------------ | ---------------------------------------- |
-| `incompatibilities` | Version pairs that break at runtime  | relayer v1 + test-suite v2               |
-| `legacyShims`       | Old versions needing extra flags/env | coprocessor < 0.12.0 needs API key flags |
-| `anchors`           | Git history reference points         | simple-ACL cutover commit                |
+| Section             | Purpose                              | Example                                                                     |
+| ------------------- | ------------------------------------ | --------------------------------------------------------------------------- |
+| `incompatibilities` | Version pairs that break at runtime  | none today (e.g. a relayer serving only `/v1` + a test suite calling `/v2`) |
+| `legacyShims`       | Old versions needing extra flags/env | sns-worker < 0.14.0 drops the signer flags                                  |
+| `anchors`           | Commit reference points              | simple-ACL cutover commit                                                   |
+
+The oldest supported release is v0.13.0, the oldest version mainnet runs (`--target mainnet`). Shims and rules that fire only below it are removed.
 
 Merge-queue e2e explicitly keeps `build=false`.
 For non-release PRs it boots `two-of-two-multi-chain` from the frozen base lock plus any successful head-image overrides.
@@ -551,7 +554,7 @@ Use `--scenario <name-or-file>` for consensus and upgrade test runs. Bundled pre
 - optional `localServices` for local instances when only part of one coprocessor instance should be built from the workspace
 - the KMS cluster, through an optional `kms` block
 
-The KMS always runs as a threshold cluster. Without a `kms` block a scenario gets 4 parties (t=1) with fast insecure keygen and Default FHE params (`insecureTestKeygen: true`, `fheParams: Default`). A `kms` block sets `parties`, `threshold`, `committeeSize` (spare cores beyond it) and the keygen: omit `insecureTestKeygen` for a secure MPC keygen, which requires `fheParams: Test` (see `four-party-threshold-kms.yaml`). Insecure keygen with Test params is accepted but yields a key under which `Rand` decrypts the same value on every draw. The `v0.11.0-mainnet` and `v0.12.0-testnet` profiles are kept but untested since threshold-only mode; boot them from their release tag if they fail.
+The KMS always runs as a threshold cluster. Without a `kms` block a scenario gets 4 parties (t=1) with fast insecure keygen and Default FHE params (`insecureTestKeygen: true`, `fheParams: Default`). A `kms` block sets `parties`, `threshold`, `committeeSize` (spare cores beyond it) and the keygen: omit `insecureTestKeygen` for a secure MPC keygen, which requires `fheParams: Test` (see `four-party-threshold-kms.yaml`). Insecure keygen with Test params is accepted but yields a key under which `Rand` decrypts the same value on every draw.
 
 Examples:
 
