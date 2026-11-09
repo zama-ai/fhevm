@@ -547,7 +547,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Checks the HCU depth for an operation with no ciphertext operands.
      */
-    function _adjustAndCheckFheTransactionLimitZeroOps(uint256 opHCU, address caller, bytes32 result) internal virtual {
+    function _adjustAndCheckFheTransactionLimitZeroOp(uint256 opHCU, address caller, bytes32 result) internal virtual {
         _updateAndVerifyHCUTransactionLimit(opHCU, caller);
 
         if (opHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
@@ -952,7 +952,7 @@ function generateCheckTransactionLimit(
   if (!isScalar) {
     switch (numberInputs) {
       case 0:
-        return `_adjustAndCheckFheTransactionLimitZeroOps(opHCU, caller, result);`;
+        return `_adjustAndCheckFheTransactionLimitZeroOp(opHCU, caller, result);`;
       case 1:
         return `_adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, ct, result);`;
       case 2:
@@ -967,7 +967,7 @@ function generateCheckTransactionLimit(
       case 0:
         throw new Error('Number of inputs must be greater than 0 if scalar');
       case 1:
-        return `_adjustAndCheckFheTransactionLimitZeroOps(opHCU, caller, result);`;
+        return `_adjustAndCheckFheTransactionLimitZeroOp(opHCU, caller, result);`;
       case 2:
         return `_adjustAndCheckFheTransactionLimitOneOp(opHCU, caller, ${lhsName}, result);`;
       default:

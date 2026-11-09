@@ -486,34 +486,50 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.assertLe(totalTransactionHCU, 30000);
     }
 
-    function test_SourceOperationsRevertAboveDepthLimit(uint8 sourceKind, uint8 typeIndex, bool whitelisted) public {
-        (bytes memory callData, uint256 opHCU) = _sourceOperation(sourceKind, typeIndex);
-        _configureSourceDepthLimit(uint48(opHCU - 1), whitelisted);
-        _assertSourceDepthRevert(callData);
+    function test_ZeroOperandOperationsRevertAboveDepthLimit(
+        uint8 operationKind,
+        uint8 typeIndex,
+        bool whitelisted
+    ) public {
+        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, typeIndex);
+        _configureZeroOperandDepthLimit(uint48(opHCU - 1), whitelisted);
+        _assertZeroOperandDepthRevert(callData);
     }
 
-    function test_SourceOperationsRevertAtZeroDepthLimit(uint8 sourceKind, uint8 typeIndex, bool whitelisted) public {
-        (bytes memory callData, ) = _sourceOperation(sourceKind, typeIndex);
-        _configureSourceDepthLimit(0, whitelisted);
-        _assertSourceDepthRevert(callData);
+    function test_ZeroOperandOperationsRevertAtZeroDepthLimit(
+        uint8 operationKind,
+        uint8 typeIndex,
+        bool whitelisted
+    ) public {
+        (bytes memory callData, ) = _zeroOperandOperation(operationKind, typeIndex);
+        _configureZeroOperandDepthLimit(0, whitelisted);
+        _assertZeroOperandDepthRevert(callData);
     }
 
-    function test_SourceOperationsAcceptAtDepthLimit(uint8 sourceKind, uint8 typeIndex, bool whitelisted) public {
-        (bytes memory callData, uint256 opHCU) = _sourceOperation(sourceKind, typeIndex);
-        _configureSourceDepthLimit(uint48(opHCU), whitelisted);
-        _assertSourceSuccess(callData, opHCU, whitelisted);
+    function test_ZeroOperandOperationsAcceptAtDepthLimit(
+        uint8 operationKind,
+        uint8 typeIndex,
+        bool whitelisted
+    ) public {
+        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, typeIndex);
+        _configureZeroOperandDepthLimit(uint48(opHCU), whitelisted);
+        _assertZeroOperandSuccess(callData, opHCU, whitelisted);
     }
 
-    function test_SourceOperationsAcceptBelowDepthLimit(uint8 sourceKind, uint8 typeIndex, bool whitelisted) public {
-        (bytes memory callData, uint256 opHCU) = _sourceOperation(sourceKind, typeIndex);
-        _configureSourceDepthLimit(uint48(opHCU + 1), whitelisted);
-        _assertSourceSuccess(callData, opHCU, whitelisted);
+    function test_ZeroOperandOperationsAcceptBelowDepthLimit(
+        uint8 operationKind,
+        uint8 typeIndex,
+        bool whitelisted
+    ) public {
+        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, typeIndex);
+        _configureZeroOperandDepthLimit(uint48(opHCU + 1), whitelisted);
+        _assertZeroOperandSuccess(callData, opHCU, whitelisted);
     }
 
-    function test_SourceOperationsIncludeDepthInDependentCast(uint8 sourceKind, bool whitelisted) public {
-        (bytes memory callData, uint256 opHCU) = _sourceOperation(sourceKind, 0);
-        _configureSourceDepthLimit(uint48(opHCU + 31), whitelisted);
-        _assertSourceSuccess(callData, opHCU, whitelisted);
+    function test_ZeroOperandOperationsIncludeDepthInDependentCast(uint8 operationKind, bool whitelisted) public {
+        (bytes memory callData, uint256 opHCU) = _zeroOperandOperation(operationKind, 0);
+        _configureZeroOperandDepthLimit(uint48(opHCU + 31), whitelisted);
+        _assertZeroOperandSuccess(callData, opHCU, whitelisted);
 
         vm.prank(fhevmExecutor);
         vm.expectRevert(HCULimit.HCUTransactionDepthLimitExceeded.selector);
@@ -534,9 +550,9 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(usedHCU, whitelisted ? 0 : opHCU + 32);
     }
 
-    function _sourceOperation(uint8 sourceKind, uint8 typeIndex) internal view returns (bytes memory, uint256) {
-        sourceKind %= 3;
-        if (sourceKind == 0) {
+    function _zeroOperandOperation(uint8 operationKind, uint8 typeIndex) internal view returns (bytes memory, uint256) {
+        operationKind %= 3;
+        if (operationKind == 0) {
             FheType[8] memory types = [
                 FheType.Bool,
                 FheType.Uint8,
@@ -566,14 +582,16 @@ contract HCULimitTest is Test, SupportedTypesConstants {
             FheType.Uint256
         ];
         uint256[7] memory prices = [uint256(19000), 23000, 23000, 24000, 24000, 25000, 30000];
-        uint256 index = sourceKind == 1 ? typeIndex % randomTypes.length : 1 + (typeIndex % (randomTypes.length - 1));
-        bytes memory callData = sourceKind == 1
-            ? abi.encodeCall(HCULimit.checkHCUForFheRand, (randomTypes[index], mockResult, address(0xBEEF)))
-            : abi.encodeCall(HCULimit.checkHCUForFheRandBounded, (randomTypes[index], mockResult, address(0xBEEF)));
+        uint256 index =
+            operationKind == 1 ? typeIndex % randomTypes.length : 1 + (typeIndex % (randomTypes.length - 1));
+        bytes memory callData =
+            operationKind == 1
+                ? abi.encodeCall(HCULimit.checkHCUForFheRand, (randomTypes[index], mockResult, address(0xBEEF)))
+                : abi.encodeCall(HCULimit.checkHCUForFheRandBounded, (randomTypes[index], mockResult, address(0xBEEF)));
         return (callData, prices[index]);
     }
 
-    function _configureSourceDepthLimit(uint48 depthLimit, bool whitelisted) internal {
+    function _configureZeroOperandDepthLimit(uint48 depthLimit, bool whitelisted) internal {
         address[] memory callers = new address[](1);
         callers[0] = address(0xBEEF);
         vm.startPrank(owner);
@@ -584,7 +602,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.stopPrank();
     }
 
-    function _assertSourceDepthRevert(bytes memory callData) internal {
+    function _assertZeroOperandDepthRevert(bytes memory callData) internal {
         vm.prank(fhevmExecutor);
         (bool success, bytes memory reason) = address(hcuLimit).call(callData);
         assertFalse(success);
@@ -595,7 +613,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         assertEq(usedHCU, 0);
     }
 
-    function _assertSourceSuccess(bytes memory callData, uint256 opHCU, bool whitelisted) internal {
+    function _assertZeroOperandSuccess(bytes memory callData, uint256 opHCU, bool whitelisted) internal {
         vm.prank(fhevmExecutor);
         (bool success, ) = address(hcuLimit).call(callData);
         assertTrue(success);
