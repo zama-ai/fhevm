@@ -1380,6 +1380,42 @@ describe('fetchFheEncryptionKeyBytes with several clients', () => {
     await expect(cachedBytes(KMSGEN_SLOT)).resolves.toEqual(NEW);
   });
 
+  it('a provided key checked during a rotation does not replace the new key another client cached meanwhile', async () => {
+    const OLD = keyBytes();
+    const NEW = keyBytes({ publicKey: new Uint8Array([0xb0]) as Bytes, crs: new Uint8Array([0xb1]) as Bytes });
+    const gate = deferred();
+    // Client A provides OLD, still active when it checks it (its check is held
+    // back). Meanwhile the key rotates: client B downloads NEW and caches it.
+    const a = makeClient({
+      chain: ethereumChain,
+      handlers: precomputedHandlers({
+        getCrsMaterials: async () => {
+          await gate.promise;
+          return [[], CRS_DIGEST];
+        },
+      }),
+      fheEncryptionKey: OLD,
+    });
+    const b = makeClient({
+      chain: ethereumChain,
+      handlers: kmsGenerationHandlers({
+        getKeyMaterials: () => [[], [{ keyType: 1, digest: digest('PDAT_KEY', NEW.publicKeyBytes.bytes) }]],
+        getCrsMaterials: () => [[], digest('PDAT_CRS', NEW.crsBytes.bytes)],
+      }),
+      relayer: { fetchFheEncryptionKeyBytes: vi.fn(async () => NEW) },
+    });
+
+    const bytesA = fetchFheEncryptionKeyBytes(a.client, { fhevmContext });
+    await vi.waitFor(() => expect(countReads(a.readContract, 'getCrsMaterials')).toBe(1));
+    await expect(fetchFheEncryptionKeyBytes(b.client, { fhevmContext })).resolves.toEqual(NEW);
+
+    gate.resolve();
+    // A gets the key it checked, for this call…
+    await expect(bytesA).resolves.toEqual(OLD);
+    // …but the slot keeps B's newer key.
+    await expect(cachedBytes(KMSGEN_SLOT)).resolves.toEqual(NEW);
+  });
+
   it("uses a provided key without waiting for another client's download in flight", async () => {
     const gate = deferred();
     const download = vi.fn(async () => {

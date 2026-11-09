@@ -361,6 +361,7 @@ function _useProvidedFheEncryptionKey(
         if (cached !== undefined) {
           checked = await _checkCachedFheEncryptionKey(context, slot, cached);
         } else {
+          const cachedBefore = keyMaterialCache.peek(slot);
           const activeIds = await _verifyFheEncryptionKeyBytesForClient(context, provided);
           // Another client may have cached the same key during the check: use it.
           const cachedNow = _cachedSameKey(slot, provided);
@@ -368,7 +369,13 @@ function _useProvidedFheEncryptionKey(
             checked = await _checkCachedFheEncryptionKey(context, slot, cachedNow);
           } else {
             const version = activeIds === undefined ? _bytesVersion(provided) : fheEncryptionKeyVersion(activeIds);
-            keyMaterialCache.set(slot, version, provided);
+            // Another client may have cached another key during the check (e.g.
+            // after a rotation, the new one): it stays. This call uses the key
+            // it checked; the next ones use the cache.
+            const current = keyMaterialCache.peek(slot);
+            if (current === undefined || current === cachedBefore) {
+              keyMaterialCache.set(slot, version, provided);
+            }
             checked = { bytes: provided, version };
           }
         }
