@@ -149,6 +149,7 @@ pub fn validate_user_decryption(
 pub fn validate_pad_decryption(
     request: &PadDecryptionRequest,
     config: &Config,
+    now: u64,
 ) -> Result<(), ValidationError> {
     let payload = &request.payload;
     validate_permit(
@@ -203,6 +204,12 @@ pub fn validate_pad_decryption(
             return Err(invalid(format!(
                 "padLength is out of range: {}, expected 1..={MAX_PAD_LENGTH}",
                 pad.padLength
+            )));
+        }
+        if witness.expirationTimestamp <= now {
+            return Err(invalid(format!(
+                "expired at {}, now is {now}",
+                witness.expirationTimestamp
             )));
         }
 
@@ -625,7 +632,7 @@ pub(crate) mod tests {
     ) -> Result<(), ValidationError> {
         let mut request = valid_pad_request();
         mutate(&mut request);
-        validate_pad_decryption(&request, &config())
+        validate_pad_decryption(&request, &config(), NOW)
     }
 
     /// Re-derives the label of every pad, so a witness mutation only trips the targeted check.
@@ -708,10 +715,10 @@ pub(crate) mod tests {
         let mut cfg = config();
         cfg.max_pads = NonZeroUsize::new(2).unwrap();
         let request = pad_request((1..=2).map(|n| pad_entry(1, n)).collect(), extra_data_v2());
-        assert_eq!(validate_pad_decryption(&request, &cfg), Ok(()));
+        assert_eq!(validate_pad_decryption(&request, &cfg, NOW), Ok(()));
         let request = pad_request((1..=3).map(|n| pad_entry(1, n)).collect(), extra_data_v2());
         assert_eq!(
-            validate_pad_decryption(&request, &cfg),
+            validate_pad_decryption(&request, &cfg, NOW),
             Err(ValidationError::TooManyPads(3, 2))
         );
     }
@@ -760,6 +767,13 @@ pub(crate) mod tests {
             }),
             "too many decryptors",
         );
+        is_invalid_pad(
+            validate_pad_with(|r| {
+                r.payload.pads[1].witness.expirationTimestamp = NOW;
+                relabel(r);
+            }),
+            "expired",
+        );
     }
 
     #[test]
@@ -769,7 +783,7 @@ pub(crate) mod tests {
         request.payload.pads[1].witness.consumer = Address::repeat_byte(0x34);
         let label = request.payload.pads[1].label;
         assert_eq!(
-            validate_pad_decryption(&request, &config()),
+            validate_pad_decryption(&request, &config(), NOW),
             Err(ValidationError::LabelMismatch { label })
         );
         // A shared field changed after the labels were derived.
@@ -777,7 +791,7 @@ pub(crate) mod tests {
         request.payload.prfId = 1;
         let label = request.payload.pads[0].label;
         assert_eq!(
-            validate_pad_decryption(&request, &config()),
+            validate_pad_decryption(&request, &config(), NOW),
             Err(ValidationError::LabelMismatch { label })
         );
     }

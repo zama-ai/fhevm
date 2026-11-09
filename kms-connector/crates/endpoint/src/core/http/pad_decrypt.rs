@@ -28,7 +28,8 @@ pub async fn pad_decrypt(
     body: Json<PadDecryptionRequest>,
 ) -> Result<HttpResponse, ErrorResponse> {
     let request = body.into_inner();
-    validate_pad_decryption(&request, &state.config)
+    let now = Utc::now().timestamp() as u64;
+    validate_pad_decryption(&request, &state.config, now)
         .map_err(|e| ErrorResponse::new(e.code(), e.to_string(), None))?;
     let id = request.id();
     tracing::Span::current().record("decryption_id", id.to_string());
