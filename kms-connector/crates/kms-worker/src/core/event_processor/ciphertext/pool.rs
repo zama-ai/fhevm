@@ -22,13 +22,6 @@ pub struct CiphertextPool {
     permits: Arc<Semaphore>,
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error("request needs {needed} ciphertext buffers, but the pool only has {capacity}")]
-pub struct PoolTooSmall {
-    needed: usize,
-    capacity: usize,
-}
-
 impl CiphertextPool {
     /// Builds the pool described by `config`, rejecting one too small for the largest request.
     pub fn from_config(config: &Config) -> anyhow::Result<Arc<Self>> {
@@ -83,17 +76,19 @@ impl CiphertextPool {
     }
 
     /// Takes `needed` buffers at once, waiting until they are all free. Waiters are served in
-    /// order, so large requests aren't starved by small ones.
-    pub async fn reserve(self: &Arc<Self>, needed: usize) -> Result<Vec<Slot>, PoolTooSmall> {
-        let too_small = PoolTooSmall {
-            needed,
-            capacity: self.capacity,
+    /// order (tokio's `Semaphore` is fair), so large requests aren't starved by small ones.
+    pub async fn reserve(self: &Arc<Self>, needed: usize) -> anyhow::Result<Vec<Slot>> {
+        let too_small = || {
+            anyhow!(
+                "request needs {needed} ciphertext buffers, but the pool only has {}",
+                self.capacity
+            )
         };
         if needed > self.capacity {
-            return Err(too_small);
+            return Err(too_small());
         }
         let mut permits = Arc::clone(&self.permits)
-            .acquire_many_owned(u32::try_from(needed).map_err(|_| too_small)?)
+            .acquire_many_owned(u32::try_from(needed).map_err(|_| too_small())?)
             .await
             .expect("pool semaphore is never closed");
 
@@ -114,7 +109,7 @@ impl CiphertextPool {
 /// A buffer taken from the pool. It goes back to the pool when the slot is dropped.
 ///
 /// Slots are filled during download, then turned into an immutable, ref counted `Bytes`. When the last clone of the
-/// is droped, the slot's `drop` impl runs and returns the memory to the pool. The rest of the pipeline only ever
+/// `Bytes` is dropped, the slot's `drop` impl runs and returns the memory to the pool. The rest of the pipeline only ever
 /// sees a `Bytes` and doesn't need to know about the pool.
 pub struct Slot {
     buffer: &'static mut [u8],
