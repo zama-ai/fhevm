@@ -13,6 +13,7 @@ import { resolve } from 'path';
 import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';
+import './tasks/allowlist';
 import './tasks/blockExplorerVerify';
 import './tasks/examples/cOFT';
 import './tasks/examples/handlesList';
