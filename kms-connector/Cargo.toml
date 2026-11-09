@@ -33,7 +33,7 @@ ciphertext-attestation = { path = "../shared/ciphertext-attestation", features =
 #####################################################################
 #                       External dependencies                       #
 #####################################################################
-actix-web = "=4.15.0"
+actix-web = "=4.19.0"
 alloy = { version = "=2.2.0", default-features = false, features = [
     "essentials",
     "provider-debug-api",
