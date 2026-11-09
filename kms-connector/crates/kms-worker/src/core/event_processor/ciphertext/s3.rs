@@ -32,7 +32,6 @@ pub fn s3_client_from_config(config: &Config) -> anyhow::Result<BoundedClient> {
         config.s3_head_timeout,
         COPROCESSOR_CONTEXT_ID_V1,
         config.s3_max_concurrent_gets,
-        config.s3_max_ciphertext_size,
         config.s3_get_timeout,
     ))
 }

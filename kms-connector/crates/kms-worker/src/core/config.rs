@@ -303,8 +303,8 @@ fn default_s3_max_concurrent_gets() -> NonZeroUsize {
 }
 
 fn default_ciphertext_pool_slots() -> NonZeroUsize {
-    // 256MiB with the default ciphertext size.
-    NonZeroUsize::new(2048).unwrap()
+    // 2GiB with the default ciphertext size.
+    NonZeroUsize::new(16384).unwrap()
 }
 
 fn default_s3_max_ciphertext_size() -> NonZeroUsize {
