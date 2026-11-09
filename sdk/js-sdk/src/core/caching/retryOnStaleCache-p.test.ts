@@ -2,6 +2,7 @@ import type { EthereumModule } from '../modules/ethereum/types.js';
 import type { RelayerModule } from '../modules/relayer/types.js';
 import type { FhevmCacheOptions } from '../types/cache.js';
 import type { ChecksummedAddress } from '../types/primitives.js';
+import type { RelayerApiError } from '../types/relayer-p.js';
 import type { UsedCacheVersions } from './usedCacheVersions-p.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
@@ -11,12 +12,19 @@ import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
 import { createFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 import { invalidateVersionCache } from '../host-contracts/HostContractVersion-p.js';
 import { ThresholdSignerError } from '../errors/SignersError.js';
+import { RelayerResponseApiError } from '../errors/RelayerResponseApiError.js';
 import { CachedValueInvalidError } from '../errors/CachedValueInvalidError.js';
 import {
   coprocessorSignersVersion,
   getCoprocessorContextSignersAndThreshold,
 } from '../host-contracts/getCoprocessorContextSignersAndThreshold-p.js';
+import { kmsContextVersion, readCurrentKmsSignersContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { recordUsedCacheVersion } from './usedCacheVersions-p.js';
+import { RelayerAbortError } from '../errors/RelayerAbortError.js';
+import { bytes32ToHandle, FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION } from '../handle/FhevmHandle.js';
+import { asBytes32 } from '../base/bytes.js';
+import { publicDecryptWithGateway as publicDecrypt } from '../kms/publicDecryptWithGateway.js';
+import { createKmsExtraDataV2 } from '../kms/kmsExtraData-p.js';
 import { forceRefreshCachedValue, retryOnStaleCache } from './retryOnStaleCache-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -25,7 +33,7 @@ import { forceRefreshCachedValue, retryOnStaleCache } from './retryOnStaleCache-
 // Refresh on failure: a request failing on a stale cached value refreshes it
 // and runs once more (or throws CachedValueInvalidError when automatic
 // refresh is off). The "request" here is a stand-in that reads the cached
-// value as encrypt does, and fails the way the relayer or the
+// value as encrypt / publicDecrypt do, and fails the way the relayer or the
 // signature check fails when that value is stale.
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -35,10 +43,11 @@ const SIGNER_B = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as ChecksummedAddr
 const fhevmContext = createFhevmClientFrozenContext({});
 
 const INPUT_VERIFIER = sepolia.fhevm.contracts.inputVerifier.address as ChecksummedAddress;
+const KMS_VERIFIER = sepolia.fhevm.contracts.kmsVerifier.address as ChecksummedAddress;
 
-/** The on-chain state: coprocessor signer; and a logger. */
-function makeWorld(cache?: FhevmCacheOptions) {
-  const chainState = { coprocessorSigner: SIGNER_A, rpcDown: false };
+/** The on-chain state: coprocessor signer, KMS context; and a logger. */
+function makeWorld(cache?: FhevmCacheOptions, relayer: RelayerModule = {} as RelayerModule) {
+  const chainState = { coprocessorSigner: SIGNER_A, kmsContextId: 5n, rpcDown: false };
   const readContract = vi.fn(async (_client: unknown, p: { readonly functionName: string }) => {
     await Promise.resolve();
     if (chainState.rpcDown) {
@@ -49,6 +58,12 @@ function makeWorld(cache?: FhevmCacheOptions) {
         return 1n;
       case 'getCoprocessorSigners':
         return [chainState.coprocessorSigner];
+      case 'getCurrentKmsContextAndEpoch':
+        return [chainState.kmsContextId, 1n];
+      case 'getContextSignersAndThresholdFromExtraData':
+        return [[SIGNER_A], 1n];
+      case 'isAllowedForDecryption':
+        return true;
       default:
         throw new Error(`No mocked handler for ${p.functionName}`);
     }
@@ -56,7 +71,7 @@ function makeWorld(cache?: FhevmCacheOptions) {
   const warn = vi.fn();
   const runtime = createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
     ethereum: { readContract } as unknown as EthereumModule,
-    relayer: {} as RelayerModule,
+    relayer,
     config: { logger: { debug: undefined, warn, error: undefined } },
   });
   const client = createCoreFhevm(PRIVATE_ETHERS_TOKEN, { chain: sepolia, client: {}, runtime, options: { cache } });
@@ -81,6 +96,70 @@ function inputProofRequest(world: World, options: { readonly badSignature?: bool
       throw new ThresholdSignerError({ type: 'coprocessor' });
     }
     return signedBy;
+  });
+  const send = () => retryOnStaleCache(world.client, fhevmContext, run);
+  return { run, send };
+}
+
+function relayerApiError(relayerApiError: RelayerApiError): RelayerResponseApiError {
+  return new RelayerResponseApiError({
+    url: 'https://relayer.test',
+    fetchMethod: 'GET',
+    operation: 'PUBLIC_DECRYPT',
+    retryCount: 0,
+    elapsed: 0,
+    status: 400,
+    state: {
+      aborted: false,
+      canceled: false,
+      failed: true,
+      fetching: false,
+      running: false,
+      succeeded: false,
+      terminated: true,
+      timeout: false,
+    },
+    relayerApiError,
+  } as unknown as ConstructorParameters<typeof RelayerResponseApiError>[0]);
+}
+
+function relayerAbortError(): RelayerAbortError {
+  return new RelayerAbortError({ url: 'https://relayer.test', operation: 'PUBLIC_DECRYPT' });
+}
+
+type KmsFailure = 'apiError' | 'timeout' | 'abort';
+
+/**
+ * A public decryption request, as publicDecrypt runs it: reads the cached KMS
+ * context, records it once the request is sent, and fails the way the relayer
+ * reports a refused context (`failure`) when the context is not the current
+ * one. With `failLocally`, it fails before sending (an ACL denial).
+ */
+function publicDecryptRequest(
+  world: World,
+  options: { readonly failure?: KmsFailure; readonly failLocally?: boolean } = {},
+) {
+  const run = vi.fn(async (usedVersions: UsedCacheVersions) => {
+    const context = await readCurrentKmsSignersContext(world.client, {
+      kmsVerifierAddress: KMS_VERIFIER,
+      // As publicDecrypt does: the chain's addresses name the cache slot.
+      protocolConfigAddress: sepolia.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    });
+    if (options.failLocally === true) {
+      throw new Error('ACL denied');
+    }
+    recordUsedCacheVersion(usedVersions, 'kmsContext', kmsContextVersion(context.id, context.epochId));
+    if (context.id !== world.chainState.kmsContextId) {
+      switch (options.failure ?? 'timeout') {
+        case 'apiError':
+          throw relayerApiError({ label: 'internal_server_error', message: 'Processing Failed' });
+        case 'timeout':
+          throw relayerApiError({ label: 'response_timed_out', message: 'timed out' });
+        case 'abort':
+          throw relayerAbortError();
+      }
+    }
+    return context.id;
   });
   const send = () => retryOnStaleCache(world.client, fhevmContext, run);
   return { run, send };
@@ -209,5 +288,130 @@ describe('refresh and retry', () => {
     expect(request.run).toHaveBeenCalledTimes(2);
     expect(world.warn).toHaveBeenCalledTimes(1);
     await expect(request.send()).resolves.toBe(SIGNER_B);
+  });
+});
+
+////////////////////////////////////////////////////////////////////////////////
+
+// The KMS context check end to end is tested through publicDecrypt below.
+describe('KMS context', () => {
+  it('a fetch AbortError (not RelayerAbortError) on an old context: not retried, the abort error', async () => {
+    const world = makeWorld();
+    const request = publicDecryptRequest(world, { failure: 'abort' });
+    await request.send();
+    world.chainState.kmsContextId = 6n;
+    const fetchAbort = Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+    request.run.mockImplementationOnce(async (usedVersions: UsedCacheVersions) => {
+      recordUsedCacheVersion(usedVersions, 'kmsContext', kmsContextVersion(5n, 1n));
+      return Promise.reject(fetchAbort);
+    });
+
+    await expect(request.send()).rejects.toBe(fetchAbort);
+    expect(request.run).toHaveBeenCalledTimes(2);
+  });
+
+  it('an aborted request on an old context: refreshed, not retried, the abort error', async () => {
+    const world = makeWorld();
+    const request = publicDecryptRequest(world, { failure: 'abort' });
+    await request.send();
+    world.chainState.kmsContextId = 6n;
+
+    await expect(request.send()).rejects.toBeInstanceOf(RelayerAbortError);
+    expect(request.run).toHaveBeenCalledTimes(2);
+    // The next request uses the new context without reading it again.
+    const signerReads = world.reads('getContextSignersAndThresholdFromExtraData');
+    await expect(request.send()).resolves.toBe(6n);
+    expect(world.reads('getContextSignersAndThresholdFromExtraData') - signerReads).toBe(0);
+  });
+
+  it('an aborted request on an old context (autoRefreshOnInvalidity: false): not refreshed, the abort error', async () => {
+    const world = makeWorld({ autoRefreshOnInvalidity: false });
+    const request = publicDecryptRequest(world, { failure: 'abort' });
+    await request.send();
+    world.chainState.kmsContextId = 6n;
+
+    const signerReads = world.reads('getContextSignersAndThresholdFromExtraData');
+    await expect(request.send()).rejects.toBeInstanceOf(RelayerAbortError);
+    expect(request.run).toHaveBeenCalledTimes(2);
+    // Only the ids were read: the new context's signers were not loaded.
+    expect(world.reads('getContextSignersAndThresholdFromExtraData')).toBe(signerReads);
+    await forceRefreshCachedValue(world.client, {
+      item: 'kmsContext',
+      invalidVersion: kmsContextVersion(5n, 1n),
+      fhevmContext,
+    });
+    await expect(request.send()).resolves.toBe(6n);
+  });
+
+  it('a request bound to its permit (autoRefreshOnInvalidity: false): CachedValueInvalidError, not createStaleError', async () => {
+    const world = makeWorld({ autoRefreshOnInvalidity: false });
+    const request = publicDecryptRequest(world, { failure: 'apiError' });
+    await request.send();
+    world.chainState.kmsContextId = 6n;
+    const createStaleError = vi.fn(() => new Error('createStaleError'));
+
+    const error = await retryOnStaleCache(world.client, fhevmContext, request.run, { createStaleError }).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toMatchObject({ name: 'CachedValueInvalidError', item: 'kmsContext' });
+    expect(createStaleError).not.toHaveBeenCalled();
+  });
+});
+
+////////////////////////////////////////////////////////////////////////////////
+
+describe('KMS context check through publicDecrypt', () => {
+  // A computed euint8 handle on sepolia.
+  function sepoliaHandle() {
+    const bytes = new Uint8Array(32);
+    bytes.fill(7, 0, 21);
+    bytes[21] = 0xff;
+    new DataView(bytes.buffer).setBigUint64(22, BigInt(sepolia.id));
+    bytes[30] = 2;
+    bytes[31] = FHEVM_HANDLE_CURRENT_CIPHERTEXT_VERSION;
+    return bytes32ToHandle(asBytes32(bytes));
+  }
+
+  /** A relayer that never answers: every request times out. */
+  function timingOutWorld() {
+    const sent: string[] = [];
+    const fetchPublicDecrypt = vi.fn(
+      async (_context: unknown, p: { readonly payload: { readonly extraData: string } }) => {
+        sent.push(p.payload.extraData);
+        return Promise.reject(relayerApiError({ label: 'response_timed_out', message: 'timed out' }));
+      },
+    );
+    const world = makeWorld(undefined, { fetchPublicDecrypt } as unknown as RelayerModule);
+    const decrypt = (handles = [sepoliaHandle()]) =>
+      publicDecrypt(world.client as never, { originToken: Symbol('test'), handles, fhevmContext });
+    return { world, sent, decrypt };
+  }
+
+  it('a local error before sending never reads the context', async () => {
+    const { world, decrypt } = timingOutWorld();
+    await expect(decrypt([])).rejects.toThrow('handles must not be empty');
+    // Only the read that built the request.
+    expect(world.reads('getCurrentKmsContextAndEpoch')).toBe(1);
+  });
+
+  it('a timeout on the current context: one check, no retry, the timeout', async () => {
+    const { world, sent, decrypt } = timingOutWorld();
+    await expect(decrypt()).rejects.toBeInstanceOf(RelayerResponseApiError);
+    expect(sent).toEqual([createKmsExtraDataV2({ kmsContextId: 5n as never, kmsEpochId: 1n as never }).bytesHex]);
+    expect(world.reads('getCurrentKmsContextAndEpoch')).toBe(2);
+  });
+
+  it('a switch: the request runs once more with the new context', async () => {
+    const { world, sent, decrypt } = timingOutWorld();
+    await decrypt().catch(() => undefined);
+    world.chainState.kmsContextId = 6n;
+    sent.length = 0;
+
+    await expect(decrypt()).rejects.toBeInstanceOf(RelayerResponseApiError);
+    expect(sent).toEqual([
+      createKmsExtraDataV2({ kmsContextId: 5n as never, kmsEpochId: 1n as never }).bytesHex,
+      createKmsExtraDataV2({ kmsContextId: 6n as never, kmsEpochId: 1n as never }).bytesHex,
+    ]);
+    expect(world.warn).toHaveBeenCalledTimes(1);
   });
 });

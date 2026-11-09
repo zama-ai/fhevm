@@ -22,8 +22,8 @@ export type FhevmBaseOptions<client extends NativeClient = NativeClient> = {
    */
   readonly keyVerification?: FhevmKeyVerification<client> | undefined;
   /**
-   * How long the key material and the coprocessor signers are cached, and
-   * whether a stale one is refreshed automatically.
+   * How long the key material, the KMS context and the coprocessor signers
+   * are cached, and whether a stale one is refreshed automatically.
    */
   readonly cache?: FhevmCacheOptions | undefined;
 };

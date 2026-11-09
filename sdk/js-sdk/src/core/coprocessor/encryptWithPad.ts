@@ -1,4 +1,6 @@
+import type { UsedCacheVersions } from '../caching/usedCacheVersions-p.js';
 import type { WithEncryptWithPad } from '../types/coreFhevmRuntime.js';
+import type { FhevmBase } from '../types/coreFhevmClient.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type {
   Bytes32Hex,
@@ -18,9 +20,17 @@ import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytes32ToHex, bytesToHex, concatBytes, hexToBytes } from '../base/bytes.js';
 import { encryptionBitsFromFheType, fheTypeIdFromName, fheTypeNameFromTypeName } from '../handle/FheType.js';
 import { buildExternalHandle } from '../handle/FhevmHandle.js';
-import { assertIsSignedDecryptionPermit } from '../kms/SignedDecryptionPermit-p.js';
-import { createKmsExtraDataFromBytesHex } from '../kms/kmsExtraData-p.js';
-import { readKmsSignersContextFromPermitExtraData } from '../host-contracts/readKmsSignersContext-p.js';
+import {
+  assertIsSignedDecryptionPermit,
+  assertSignedDecryptionPermitExtraDataSupported,
+} from '../kms/SignedDecryptionPermit-p.js';
+import { retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
+import { recordUsedCacheVersion } from '../caching/usedCacheVersions-p.js';
+import { InvalidSignedPermitError } from '../errors/InvalidSignedPermitError.js';
+import {
+  permitRequestStaleContextError,
+  readKmsSignersContextFromPermitExtraData,
+} from '../host-contracts/readKmsSignersContext-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -58,12 +68,7 @@ const PAD_PACKAGE_TYPE = 0x00;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Context = {
-  readonly chain: FhevmChain;
-  readonly runtime: WithEncryptWithPad;
-  readonly client: NonNullable<object>;
-  readonly options: { readonly batchRpcCalls: boolean };
-};
+type Context = FhevmBase<FhevmChain, WithEncryptWithPad>;
 
 type Parameters = {
   /** The witness `consumer`: the app contract that will call `fromExternal`. */
@@ -92,11 +97,15 @@ type ReturnType = {
 export async function encryptWithPad(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { contractAddress, userAddress, values, fhevmContext, options } = parameters;
 
+  // Checked in the same order as the decrypt paths: brand, version, extraData, expiry.
   const signedPermit = parameters.signedPermit as SignedDecryptionPermitV2;
   assertIsSignedDecryptionPermit(signedPermit, {});
   if ((signedPermit.version as number) !== 2) {
-    throw new Error(`encryptWithPad requires a v2 permit, got v${signedPermit.version}`);
+    throw new InvalidSignedPermitError({
+      message: `encryptWithPad requires a v2 permit, got v${signedPermit.version}`,
+    });
   }
+  const signedPermitExtraData = assertSignedDecryptionPermitExtraDataSupported(signedPermit);
   signedPermit.assertNotExpired();
 
   // 1. Pad length: every part is padded to whole bytes.
@@ -127,42 +136,54 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
 
   const witness: PadWitness = Object.freeze({ ...witnessFields, label, padLength });
 
-  // 4. Fetch the pad shares (one response per KMS node) and, concurrently, the
-  //    signers of the context named by the permit's extraData.
+  // 4. The signers of the permit's KMS context (the current one only, so an
+  //    outdated permit is never sent), then the pad shares (one response per
+  //    KMS node). As for a user decryption, a failure checks the KMS context
+  //    but the request is not run again: the permit names its context.
   const extraData = signedPermit.eip712.message.extraData;
-  const [padDecryptResponses, kmsSignersContext] = await Promise.all([
-    context.runtime.relayer.fetchPadShares(context, {
-      payload: {
-        kmsDecryptEip712Message: signedPermit.eip712.message,
-        kmsDecryptEip712Signature: signedPermit.signature,
-        witnessVersion: PAD_WITNESS_VERSION,
-        prfId: PAD_PRF_INSTANCE,
-        chainId,
+  const pads = await retryOnStaleCache(
+    context,
+    fhevmContext,
+    async (usedVersions) => {
+      const permitVersions: UsedCacheVersions = {};
+      const kmsSignersContext = await readKmsSignersContextFromPermitExtraData(context, {
+        kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+        protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+        extraData: signedPermitExtraData,
+        usedVersions: permitVersions,
+      });
+      // Recorded only once the request goes to the relayer (see retryOnStaleCache-p).
+      recordUsedCacheVersion(usedVersions, 'kmsContext', permitVersions.kmsContext);
+      const padDecryptResponses = await context.runtime.relayer.fetchPadShares(context, {
+        payload: {
+          kmsDecryptEip712Message: signedPermit.eip712.message,
+          kmsDecryptEip712Signature: signedPermit.signature,
+          witnessVersion: PAD_WITNESS_VERSION,
+          prfId: PAD_PRF_INSTANCE,
+          chainId,
+          witnesses: [witness],
+        },
+        fhevmContext,
+        options,
+      });
+      // 5. Verify the responses against the context signers and reconstruct
+      //    the pad (a failure here also checks the KMS context).
+      return context.runtime.encryptWithPad.reconstructPads({
+        responses: padDecryptResponses,
         witnesses: [witness],
-      },
-      fhevmContext,
-      options,
-    }),
-    readKmsSignersContextFromPermitExtraData(context, {
-      kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-      protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-      extraData: createKmsExtraDataFromBytesHex(extraData),
-    }),
-  ]);
-
-  // 5. Verify the responses against the context signers and reconstruct the pad.
-  const pads = await context.runtime.encryptWithPad.reconstructPads({
-    responses: padDecryptResponses,
-    witnesses: [witness],
-    extraData,
-    transportPublicKey: signedPermit.eip712.message.publicKey,
-    kmsSigners: kmsSignersContext.signers,
-    // The sharing degree t, not `kmsSignersContext.threshold` (the public decryption
-    // threshold). Per the KMS team, n = 3t+1 when the context does not expose it.
-    mpcThreshold: kmsSignersContext.mpcThreshold ?? Math.floor((kmsSignersContext.signers.length - 1) / 3),
-    gatewayChainId: context.chain.fhevm.gateway.id,
-    verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address as ChecksummedAddress,
-  });
+        extraData,
+        transportPublicKey: signedPermit.eip712.message.publicKey,
+        kmsSigners: kmsSignersContext.signers,
+        // The sharing degree t, not `kmsSignersContext.threshold` (the public decryption
+        // threshold). Per the KMS team, n = 3t+1 when the context does not expose it.
+        mpcThreshold: kmsSignersContext.mpcThreshold ?? Math.floor((kmsSignersContext.signers.length - 1) / 3),
+        gatewayChainId: context.chain.fhevm.gateway.id,
+        verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption
+          .address as ChecksummedAddress,
+      });
+    },
+    { createStaleError: (_stale, error) => permitRequestStaleContextError(context, signedPermitExtraData, error) },
+  );
   const pad = pads.get(label);
   if (pad === undefined) {
     throw new Error(`No pad reconstructed for label ${label}.`);

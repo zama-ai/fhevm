@@ -239,8 +239,8 @@ export type BaseActions = {
     parameters?: FetchFheEncryptionKeyBytesParameters,
   ) => Promise<FetchFheEncryptionKeyBytesReturnType>;
   /**
-   * Fetches a cached value again: `'keyMaterial'` (FHE public key and CRS)
-   * or `'coprocessorSigners'`. Pass the `item` and
+   * Fetches a cached value again: `'keyMaterial'` (FHE public key and CRS),
+   * `'kmsContext'` or `'coprocessorSigners'`. Pass the `item` and
    * `invalidVersion` of a `CachedValueInvalidError`, then retry the request
    * that failed. The cache is shared by every client; concurrent calls share
    * one fetch.

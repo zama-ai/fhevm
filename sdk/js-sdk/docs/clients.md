@@ -115,7 +115,7 @@ const client = createFhevmClient({
 | `batchRpcCalls`    | `boolean`                                    | all clients           | Coalesce the client's contract reads into batched RPC calls.                                                                                                                                                                                                                                                                          |
 | `fheEncryptionKey` | `FheEncryptionKeyBytes`                      | base / encrypt / full | Preloads the public key and CRS so the client skips the download. Checked once, before the client is ready (see [Key verification](#key-verification)).                                                                                                                                                                               |
 | `keyVerification`  | `FhevmKeyVerification` (`{ chain, client }`) | all clients           | Required when the host chain is not Ethereum: an Ethereum chain definition and a client for it, used to verify the FHE public key and CRS. On Ethereum it is optional; when set, its chain must have the host chain's own KMSGeneration contract, else creating an encrypt client fails (other clients fail when they fetch the key). |
-| `cache`            | `FhevmCacheOptions`                          | all clients           | How long the key material and coprocessor signers are cached, and whether a stale one is refreshed automatically (see [Caching](#caching)). |
+| `cache`            | `FhevmCacheOptions`                          | all clients           | How long the key material, KMS context and coprocessor signers are cached, and whether a stale one is refreshed automatically (see [Caching](#caching)). |
 
 ### Key verification
 
@@ -194,14 +194,15 @@ and is not repeated for that client while the key is cached.
 
 ### Caching
 
-The SDK caches two values, shared across clients. A value goes stale on a key
-rotation or a coprocessor signer change. By default, a
+The SDK caches three values, shared across clients. A value goes stale on a key
+rotation, a KMS context switch or a coprocessor signer change. By default, a
 request that fails on a stale value refreshes it and runs once more: usually
 you have nothing to do.
 
 | Item                   | What                                   | Shared by clients with the same          | Version (in errors)         |
 | ---------------------- | -------------------------------------- | ---------------------------------------- | --------------------------- |
 | `'keyMaterial'`        | FHE public key and CRS                 | relayer URL and KMSGeneration            | `keyId:crsId` (active ids)  |
+| `'kmsContext'`         | KMS context, its signers and threshold | runtime, chain id and contract addresses | `contextId:epochId`         |
 | `'coprocessorSigners'` | coprocessor signers and threshold      | runtime, chain id and contract address   | hash of signers + threshold |
 
 ```ts
@@ -210,7 +211,7 @@ const client = createFhevmClient({
   provider,
   options: {
     cache: {
-      keyMaterial: { ttl: 60 * 60 * 1000 }, // 1 h, in milliseconds
+      kmsContext: { ttl: 60 * 60 * 1000 }, // 1 h, in milliseconds
       coprocessorSigners: { ttl: 0 }, // no cache for this client
       autoRefreshOnInvalidity: true, // the default
     },
@@ -226,11 +227,12 @@ const client = createFhevmClient({
 
 | Situation                                                                     | The SDK                                    | You get                                                                                 |
 | ----------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------- |
-| Encryption fails on a stale value                                             | Refreshes it, logs a warning, retries once | The result                                                                              |
+| Encryption or public decryption fails on a stale value                        | Refreshes it, logs a warning, retries once | The result                                                                              |
 | The retry fails on a stale value again                                        | Stops                                      | `CachedValueInvalidError`                                                               |
 | The value cannot be read again (e.g. RPC error)                               | Logs a warning                             | The request's own error                                                                 |
 | Bad signature, signer set unchanged                                           | No refresh, no retry                       | `UnknownSignerError`, `ThresholdSignerError` or `DuplicateSignerError`                  |
-| `autoRefreshOnInvalidity: false`                                              | Reads only the version, cache untouched    | `CachedValueInvalidError`                                                               |
+| User or delegated decryption, or `encryptValuesWithPad`; KMS context switched | Loads the new context, no retry            | `InvalidSignedPermitError` (`cause`: the request's error): sign a new permit            |
+| `autoRefreshOnInvalidity: false`                                              | Reads only the version, cache untouched    | `CachedValueInvalidError`; for a user decryption, `forceRefresh` then sign a new permit |
 
 - Concurrent requests failing on the same stale value share one refresh.
 - An aborted request is never run again: it throws its abort error.
@@ -259,6 +261,15 @@ try {
 - A refresh reads the active ids first. Unchanged: the cached key is kept.
 - Relayer ids differ from the active ones (rotation in progress): no download. The cached key serves until its TTL ends, then `FheEncryptionKeyVerificationError`: retry later.
 - Relayer serving label ids: the key is downloaded and checked before caching. The cached key stays until the Relayer serves the active one.
+
+#### KMS context switch
+
+- A switch of the context or of its epoch. Only the current one is cached; the KMS may refuse the old one at any time.
+- After a public decryption fails, times out or is aborted, the SDK reads the current context ids. Unchanged: the request's own error.
+- A refused context gets no answer: recovery waits for the Relayer timeout or your abort.
+- Errors before the request reaches the Relayer (bad input, ACL denial) never trigger this.
+- A permit for a non-current context: the context is read again once, then `InvalidSignedPermitError` before sending.
+- A v1 permit names no epoch: after an epoch-only switch, a failed request throws its own error.
 
 ## Loading and lifecycle
 

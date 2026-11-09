@@ -15,7 +15,7 @@ import { getCacheOptions, getCacheTtl, MAX_CACHE_TTL, resolveCacheOptions } from
 describe('resolveCacheOptions', () => {
   it('defaults every TTL to 24 h and turns automatic refresh on', () => {
     expect(resolveCacheOptions(undefined)).toEqual({
-      ttl: { keyMaterial: MAX_CACHE_TTL, coprocessorSigners: MAX_CACHE_TTL },
+      ttl: { keyMaterial: MAX_CACHE_TTL, kmsContext: MAX_CACHE_TTL, coprocessorSigners: MAX_CACHE_TTL },
       autoRefreshOnInvalidity: true,
     });
     expect(MAX_CACHE_TTL).toBe(24 * 60 * 60 * 1000);
@@ -23,11 +23,11 @@ describe('resolveCacheOptions', () => {
 
   it('takes a shorter TTL per item, and 0', () => {
     const resolved = resolveCacheOptions({
-      keyMaterial: { ttl: 60_000 },
+      kmsContext: { ttl: 60_000 },
       coprocessorSigners: { ttl: 0 },
       autoRefreshOnInvalidity: false,
     });
-    expect(resolved.ttl).toEqual({ keyMaterial: 60_000, coprocessorSigners: 0 });
+    expect(resolved.ttl).toEqual({ keyMaterial: MAX_CACHE_TTL, kmsContext: 60_000, coprocessorSigners: 0 });
     expect(resolved.autoRefreshOnInvalidity).toBe(false);
   });
 
@@ -76,9 +76,9 @@ describe('client cache options', () => {
         chain: sepolia,
         client: {},
         runtime: runtime(),
-        options: { cache: { coprocessorSigners: { ttl: MAX_CACHE_TTL * 2 } } },
+        options: { cache: { kmsContext: { ttl: MAX_CACHE_TTL * 2 } } },
       }),
-    ).toThrow("'options.cache.coprocessorSigners.ttl'");
+    ).toThrow("'options.cache.kmsContext.ttl'");
   });
 
   it('default for an internal context that is not a client', () => {
@@ -86,17 +86,17 @@ describe('client cache options', () => {
   });
 
   it('rejects an item entry that is not an object, and an unknown key, with FhevmConfigError', () => {
-    expect(() => resolveCacheOptions({ coprocessorSigners: 3_600_000 } as unknown as FhevmCacheOptions)).toThrow(
-      "'options.cache.coprocessorSigners' must be an object",
+    expect(() => resolveCacheOptions({ kmsContext: 3_600_000 } as unknown as FhevmCacheOptions)).toThrow(
+      "'options.cache.kmsContext' must be an object",
     );
-    expect(() => resolveCacheOptions({ coprocessorSigner: { ttl: 0 } } as unknown as FhevmCacheOptions)).toThrow(
-      "Unknown 'options.cache.coprocessorSigner'",
+    expect(() => resolveCacheOptions({ kmsContexts: { ttl: 0 } } as unknown as FhevmCacheOptions)).toThrow(
+      "Unknown 'options.cache.kmsContexts'",
     );
-    expect(() => resolveCacheOptions({ coprocessorSigners: { TTL: 0 } } as unknown as FhevmCacheOptions)).toThrow(
-      "Unknown 'options.cache.coprocessorSigners.TTL'",
+    expect(() => resolveCacheOptions({ kmsContext: { TTL: 0 } } as unknown as FhevmCacheOptions)).toThrow(
+      "Unknown 'options.cache.kmsContext.TTL'",
     );
-    expect(() => resolveCacheOptions({ coprocessorSigners: [] } as unknown as FhevmCacheOptions)).toThrow(
-      "'options.cache.coprocessorSigners' must be an object",
+    expect(() => resolveCacheOptions({ kmsContext: [] } as unknown as FhevmCacheOptions)).toThrow(
+      "'options.cache.kmsContext' must be an object",
     );
   });
 });

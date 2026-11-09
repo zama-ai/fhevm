@@ -30,21 +30,28 @@
   contracts only (`npm run start:localcleartext:v1.0`). The input-proof flow
   (`encryptValue` / `encryptValues`, `inputProof`) is unchanged.
 
-- **Unified caching.** The key material and coprocessor signers share one cache: a TTL per item
-  and client (`options.cache.<item>.ttl`), automatic refresh and one retry on a stale value
-  (`options.cache.autoRefreshOnInvalidity`), `client.forceRefresh(item, { invalidVersion })` and
-  `CachedValueInvalidError`. A long-running process now survives a key rotation and a coprocessor
-  signer change without a restart. See [Caching](clients.md#caching).
+- **Unified caching.** The key material, KMS context and coprocessor signers share one cache: a
+  TTL per item and client (`options.cache.<item>.ttl`), automatic refresh and one retry on a stale
+  value (`options.cache.autoRefreshOnInvalidity`), `client.forceRefresh(item, { invalidVersion })`
+  and `CachedValueInvalidError`. A long-running process now survives a key rotation, a KMS context
+  switch and a coprocessor signer change without a restart. See [Caching](clients.md#caching).
 
 #### Changed
 
-- **Breaking: cache TTLs and stale-value errors.** The coprocessor signers are cached for 24 h (was
-  15 min), the key material for 24 h (was the life of the process). A request still failing on a
-  stale value after the retry (or at once, with `autoRefreshOnInvalidity: false`) throws
-  `CachedValueInvalidError` (underlying error as `cause`) instead of the underlying error. See
-  [Caching](clients.md#caching).
+- **Breaking: cache TTLs and stale-value errors.** The KMS context and coprocessor signers are
+  cached for 24 h (was 15 min), the key material for 24 h (was the life of the process). A request
+  still failing on a stale value after the retry (or at once, with `autoRefreshOnInvalidity: false`)
+  throws `CachedValueInvalidError` (underlying error as `cause`) instead of the underlying error. A
+  user decryption failing after a KMS context switch throws `InvalidSignedPermitError`: sign a new
+  permit. See [Caching](clients.md#caching).
 - **Breaking: `ignoreCache` removed** from `fetchFheEncryptionKeyBytes`. It had no effect; use
   `client.forceRefresh('keyMaterial')`.
+- **Breaking: permits for a previous KMS context are refused.** A user or delegated decryption (and
+  `encryptValuesWithPad`) accepts only a permit for the current KMS context and epoch; any other
+  throws `InvalidSignedPermitError` before the request is sent, instead of failing or timing out at
+  the KMS. Sign a new permit. `canDecryptValue` / `canDecryptValues` run the same check, after the
+  other permit checks, before the ACL reads. `encryptValuesWithPad` now also refuses a permit that is
+  not v2 or has `extraData` older than v2, with `InvalidSignedPermitError`, as the decrypt paths do.
 - **Smaller npm package.** The `tkms` WASM version directories are now excluded from the
   published tarball the same way the `tfhe` ones already were (`files` in `src/package.json`),
   on top of the base64 WASM-payload deduplication shipped in `v0.14.1-0`.

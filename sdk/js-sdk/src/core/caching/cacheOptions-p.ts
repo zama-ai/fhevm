@@ -4,7 +4,11 @@ import { FhevmConfigError } from '../errors/FhevmConfigError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export const FHEVM_CACHE_ITEMS: readonly FhevmCacheItem[] = Object.freeze(['keyMaterial', 'coprocessorSigners']);
+export const FHEVM_CACHE_ITEMS: readonly FhevmCacheItem[] = Object.freeze([
+  'keyMaterial',
+  'kmsContext',
+  'coprocessorSigners',
+]);
 
 /**
  * The default and maximum TTL of every item. A stale value is detected when a

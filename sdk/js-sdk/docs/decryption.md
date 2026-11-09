@@ -184,7 +184,8 @@ const decrypted = await client.decryptValue({
 
 A decrypt call fails if the Access Control List (ACL) doesn't allow it. To check first — for example to
 grey out a "reveal" button — use the `canDecrypt*` **actions**. They return a boolean
-plus a breakdown, and never throw on a permission miss. These are standalone
+plus a breakdown, and never throw on a permission miss (an unusable `signedPermit`,
+e.g. for an old KMS context, throws `InvalidSignedPermitError`). These are standalone
 actions rather than client methods, so import them and pass the client as the first
 argument:
 
@@ -270,6 +271,12 @@ checkSignaturesArgs.decryptionProof; // KMS quorum signatures
 
 Pass `checkSignaturesArgs` to your contract's verification function so it can
 confirm the KMS quorum attested to these clear values.
+
+If the KMS context the proof was signed for is destroyed before your transaction,
+it reverts with `InvalidKmsContext(uint256 contextId)`. Call
+`decryptPublicValuesWithSignatures` again: the SDK picks up the new context
+(see [Caching](clients.md#caching)). To skip waiting for the first request to
+fail, call `client.forceRefresh('kmsContext')` first.
 
 ## Persisting a session
 

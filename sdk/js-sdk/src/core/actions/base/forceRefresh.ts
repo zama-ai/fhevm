@@ -21,8 +21,8 @@ export type ForceRefreshParameters = {
 
 /**
  * Fetches a cached value again: the FHE public key and CRS
- * (`'keyMaterial'`) or the coprocessor signers (`'coprocessorSigners'`). The
- * cache is shared: the new value serves
+ * (`'keyMaterial'`), the KMS context (`'kmsContext'`) or the coprocessor
+ * signers (`'coprocessorSigners'`). The cache is shared: the new value serves
  * every client. Concurrent calls share one fetch.
  *
  * Resolves once the cache holds a value other than `invalidVersion`; then

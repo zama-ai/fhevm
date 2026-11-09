@@ -45,9 +45,9 @@ async function runDelegatedUserDecryptOffChain(
 
   const maskedCleartexts = xorMaskWithPublicKey(kmsDecryptEip712Message.publicKey, rawCleartexts);
 
-  // extraData: the permit's message.extraData is already asserted equal to the
-  // current KmsSignersContext extraData by the caller (fetchKmsSigncryptedSharesV1
-  // step 9), so reusing it keeps the shares consistent with that context.
+  // extraData: the caller checked that the permit's extraData names the current
+  // KMS context (fetchKmsSigncryptedSharesV1 step 6b), so reusing it keeps the
+  // shares consistent with that context.
   const extraData = kmsDecryptEip712Message.extraData;
 
   const commonKmsSigncryptedSharePayload = relayerClient.runtime.ethereum.encode({

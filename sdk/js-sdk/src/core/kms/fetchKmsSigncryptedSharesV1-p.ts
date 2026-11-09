@@ -8,9 +8,11 @@ import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } fr
 import type { SignedDecryptionPermit, SignedDecryptionPermitV1 } from '../types/signedDecryptionPermit.js';
 import type { Handle } from '../types/encryptedTypes-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { UsedCacheVersions } from '../caching/usedCacheVersions-p.js';
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
 import { createKmsSigncryptedShares } from './KmsSigncryptedShares-p.js';
 import { readKmsSignersContextFromPermitExtraData } from '../host-contracts/readKmsSignersContext-p.js';
+import { recordUsedCacheVersion } from '../caching/usedCacheVersions-p.js';
 import {
   assertSignedDecryptionPermitExtraDataSupported,
   isSignedDecryptionPermit,
@@ -38,6 +40,7 @@ type Parameters = {
   }>;
   readonly signedPermit: SignedDecryptionPermit;
   readonly fhevmContext: FhevmClientFrozenContext;
+  readonly usedVersions?: UsedCacheVersions | undefined;
   readonly options?: RelayerUserDecryptOptions | RelayerDelegatedUserDecryptOptions | undefined;
 };
 
@@ -90,7 +93,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
 
   const signedPermitV1: SignedDecryptionPermitV1 = parameters.signedPermit;
 
-  // Order: brand → version → extraData → expiry (same as canDecryptValuesFromPairs).
+  // Order: brand → version → extraData → expiry, then the input checks and the KMS context (same as canDecryptValuesFromPairs).
 
   // An unsupported extraData (v0, protocol v0.11) is refused by the KMS connector: fail here rather
   // than wait for a response that never comes.
@@ -145,6 +148,18 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
 
   // 6. Check: Expiration date — done up front, with the other permit checks
 
+  // 6b. Check: the permit names the current KMS context (else
+  //    InvalidSignedPermitError). After the input checks (it may read the
+  //    chain), before the ACL reads. Recorded only once the request goes to
+  //    the relayer.
+  const permitVersions: UsedCacheVersions = {};
+  const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContextFromPermitExtraData(context, {
+    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+    extraData: signedPermitExtraData,
+    usedVersions: permitVersions,
+  });
+
   // 7. Check: ACL permissions (user is signer or delegatorAddress)
   if (signedPermitV1.eip712.primaryType === 'DelegatedUserDecryptRequestVerification') {
     await checkDelegation(context, {
@@ -164,14 +179,7 @@ export async function fetchKmsSigncryptedSharesV1(context: Context, parameters: 
   // 8. Verify the Eip712 signature
   // Not required because a signedPermit is guaranteed to be verified.
 
-  // 9. Fetch `KmsSignersContext` on-chain (cached)
-  // It is critical to fetch the exact kms signers associated with the extra data
-  const requestedKmsSignersContext: KmsSignersContext = await readKmsSignersContextFromPermitExtraData(context, {
-    kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-    protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
-    extraData: signedPermitExtraData,
-  });
-
+  recordUsedCacheVersion(parameters.usedVersions, 'kmsContext', permitVersions.kmsContext);
   // 10. Fetch `KmsSigncryptedShares` from the relayer
   let shares: readonly KmsSigncryptedShare[];
 

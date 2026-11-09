@@ -11,6 +11,7 @@ import {
   readCoprocessorSignersVersion,
   refreshCoprocessorContextSignersAndThreshold,
 } from '../host-contracts/getCoprocessorContextSignersAndThreshold-p.js';
+import { readCurrentKmsContextVersion, refreshCurrentKmsContext } from '../host-contracts/readKmsSignersContext-p.js';
 import { readFheEncryptionKeyVersion, refreshFheEncryptionKey } from '../key/ensureFheEncryptionKeyDownload.js';
 import { requiresKeyVerification } from '../key/verifyFheEncryptionKeyBytes-p.js';
 import { getCacheOptions } from './cacheOptions-p.js';
@@ -57,6 +58,15 @@ const ITEMS: Readonly<
     refresh: (context, _fhevmContext, invalidVersion) =>
       refreshCoprocessorContextSignersAndThreshold(context, invalidVersion),
     readVersion: (context) => readCoprocessorSignersVersion(context),
+  },
+  // Any failure of a KMS request handed to the relayer (an error, a timeout,
+  // an abort): the KMS reports a refused context no other way. The request
+  // records the context only then, so earlier errors (bad input, an ACL
+  // denial) never get here.
+  kmsContext: {
+    mayBeStale: () => true,
+    refresh: (context, _fhevmContext, invalidVersion) => refreshCurrentKmsContext(context, invalidVersion),
+    readVersion: (context) => readCurrentKmsContextVersion(context),
   },
 };
 

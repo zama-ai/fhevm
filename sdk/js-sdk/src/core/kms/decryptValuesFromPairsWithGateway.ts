@@ -6,19 +6,19 @@ import type { ChecksummedAddress, TypedValue } from '../types/primitives.js';
 import type { RelayerDelegatedUserDecryptOptions, RelayerUserDecryptOptions } from '../types/relayer.js';
 import type { SignedDecryptionPermit } from '../types/signedDecryptionPermit.js';
 import type { TransportKeyPair } from './TransportKeyPair-p.js';
+import type { UsedCacheVersions } from '../caching/usedCacheVersions-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { FhevmBase } from '../types/coreFhevmClient.js';
+import { retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
+import { permitRequestStaleContextError } from '../host-contracts/readKmsSignersContext-p.js';
+import { createKmsExtraDataFromBytesHex } from './kmsExtraData-p.js';
 import { decryptKmsSigncryptedShares } from './decryptKmsSigncryptedShares-p.js';
 import { fetchKmsSigncryptedSharesV1 } from './fetchKmsSigncryptedSharesV1-p.js';
 import { fetchKmsSigncryptedSharesV2 } from './fetchKmsSigncryptedSharesV2-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Context = {
-  readonly chain: FhevmChain;
-  readonly runtime: WithDecrypt;
-  readonly client: NonNullable<object>;
-  readonly options: { readonly batchRpcCalls: boolean };
-};
+type Context = FhevmBase<FhevmChain, WithDecrypt>;
 
 type Parameters = {
   readonly pairs: ReadonlyArray<{
@@ -42,8 +42,35 @@ export type ReturnType = readonly TypedValue[];
 export async function decryptValuesFromPairsWithGateway(fhevm: Context, parameters: Parameters): Promise<ReturnType> {
   const { transportKeyPair: transportKeyPair, fhevmContext } = parameters;
 
-  let kmsSigncryptedShares: KmsSigncryptedShares;
+  // A failure once the request is sent checks the KMS context and caches a
+  // switched one, for the next permit. Not run again: the permit names the old
+  // context.
+  const kmsSigncryptedShares: KmsSigncryptedShares = await retryOnStaleCache(
+    fhevm,
+    fhevmContext,
+    (usedVersions) => _fetchKmsSigncryptedShares(fhevm, { ...parameters, usedVersions }),
+    {
+      createStaleError: (_stale, error) =>
+        permitRequestStaleContextError(
+          fhevm,
+          createKmsExtraDataFromBytesHex(parameters.signedPermit.eip712.message.extraData),
+          error,
+        ),
+    },
+  );
 
+  // Using the `KmsSigncryptedShares` decrypt and reconstruct clear values
+  return decryptKmsSigncryptedShares(fhevm, {
+    kmsSigncryptedShares,
+    transportKeyPair,
+    fhevmContext,
+  });
+}
+
+function _fetchKmsSigncryptedShares(
+  fhevm: Context,
+  parameters: Parameters & { readonly usedVersions: UsedCacheVersions },
+): Promise<KmsSigncryptedShares> {
   // Route on the permit's OWN version, never the resolved protocol version. A signed
   // permit is a self-describing artifact: its version fixes the EIP-712 message shape,
   // so only the matching route can read it and reach the matching relayer endpoint.
@@ -54,18 +81,10 @@ export async function decryptValuesFromPairsWithGateway(fhevm: Context, paramete
   //   v1: message.contractAddresses              -> fetchKmsSigncryptedSharesV1 -> POST v2/user-decrypt
   //   v2: message.userAddress + allowedContracts -> fetchKmsSigncryptedSharesV2 -> POST v3/user-decrypt
   if (parameters.signedPermit.version === 1) {
-    kmsSigncryptedShares = await fetchKmsSigncryptedSharesV1(fhevm, parameters);
-  } else {
-    kmsSigncryptedShares = await fetchKmsSigncryptedSharesV2(fhevm, {
-      ...parameters,
-      options: parameters.options as RelayerUserDecryptOptions | undefined,
-    });
+    return fetchKmsSigncryptedSharesV1(fhevm, parameters);
   }
-
-  // Using the `KmsSigncryptedShares` decrypt and reconstruct clear values
-  return decryptKmsSigncryptedShares(fhevm, {
-    kmsSigncryptedShares,
-    transportKeyPair,
-    fhevmContext,
+  return fetchKmsSigncryptedSharesV2(fhevm, {
+    ...parameters,
+    options: parameters.options as RelayerUserDecryptOptions | undefined,
   });
 }
