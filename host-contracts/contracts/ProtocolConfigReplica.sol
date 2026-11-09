@@ -297,7 +297,7 @@ contract ProtocolConfigReplica is
             ),
             epoch.signatures,
             contextId,
-            _epochActivationQuorum(contextId)
+            _kmsCommitteeSize(contextId)
         );
         _activateKmsContextAndEpoch(contextId, epoch.epochId);
     }
