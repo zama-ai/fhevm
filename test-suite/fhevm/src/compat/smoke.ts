@@ -23,6 +23,7 @@ import {
   supportsConsensusDetector,
   supportsCoprocessorProxy,
   supportsHostListenerConsumer,
+  supportsPrfService,
   supportsUpgradeController,
 } from "./compat";
 import { generateComposeOverrides } from "../generate/compose";
@@ -183,7 +184,8 @@ const main = async () => {
           (name !== "coprocessor-host-listener-consumer" || supportsHostListenerConsumer(state)) &&
           (name !== "coprocessor-consensus-detector" || supportsConsensusDetector(state)) &&
           (name !== "coprocessor-upgrade-controller" || supportsUpgradeController(state)) &&
-          (name !== "coprocessor-proxy" || supportsCoprocessorProxy(state)),
+          (name !== "coprocessor-proxy" || supportsCoprocessorProxy(state)) &&
+          (name !== "coprocessor-prf-service" || supportsPrfService(state)),
       ),
       "kms-connector": GROUP_BUILD_SERVICES["kms-connector"].filter(
         (name) =>
