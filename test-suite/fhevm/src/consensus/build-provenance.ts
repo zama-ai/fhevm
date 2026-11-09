@@ -47,7 +47,7 @@ export function imageBindings(receipt: BuildReceipt, identities: Record<string, 
       if (built.id !== match[1]) throw new Error(`running image differs from checkout build: ${name}`);
       seen.add(built.group); refs.add(built.ref);
     } else if (name === "image_fhevm-test-suite-e2e-debug" ||
-      (receipt.mode === "checkout" && /^image_coprocessor\d*-(tfhe-worker|sns-worker|zkproof-worker|host-listener(?:-poller|-consumer)?(?:-chain-[a-z0-9-]+)?|gw-listener|transaction-sender|consensus-detector|upgrade-controller)$/.test(name))) {
+      (receipt.mode === "checkout" && /^image_coprocessor\d*-(tfhe-worker|sns-worker|zkproof-worker|host-listener(?:-poller|-consumer)?(?:-chain-[a-z0-9-]+)?|gw-listener|transaction-sender|consensus-detector|upgrade-controller|prf-service)$/.test(name))) {
       throw new Error(`running repository image absent from checkout build: ${name}`);
     }
   }
