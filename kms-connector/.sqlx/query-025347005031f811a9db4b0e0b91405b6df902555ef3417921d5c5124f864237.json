@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH written_response AS (\n                INSERT INTO pad_decryption_responses AS existing (\n                    decryption_id, error_code, error_details, extra_data, created_at,\n                    otlp_context, status\n                )\n                VALUES ($1, $2, $3, $4, $5, $6, 'completed')\n                ON CONFLICT (decryption_id) DO UPDATE SET\n                    error_code = EXCLUDED.error_code,\n                    error_details = EXCLUDED.error_details,\n                    extra_data = EXCLUDED.extra_data,\n                    created_at = EXCLUDED.created_at,\n                    otlp_context = EXCLUDED.otlp_context,\n                    status = EXCLUDED.status\n                WHERE existing.encrypted_payload IS NULL\n                RETURNING decryption_id, set_config('synchronous_commit', 'off', true)\n            )\n            UPDATE pad_decryption_requests AS request SET status = 'failed'\n            FROM written_response\n            WHERE request.decryption_id = written_response.decryption_id",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Text",
+        "Bytea",
+        "Timestamptz",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "025347005031f811a9db4b0e0b91405b6df902555ef3417921d5c5124f864237"
+}

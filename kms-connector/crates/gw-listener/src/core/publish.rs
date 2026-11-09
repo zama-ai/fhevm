@@ -112,6 +112,13 @@ async fn publish_event_inner<'e>(
         ProtocolEventKind::UserDecryptionV2(e) => {
             publish_user_decryption_v2(executor, e, tx_hash, created_at, otlp_ctx).await
         }
+        // Only stored by the Connector endpoint: there is no on-chain pad decryption event.
+        ProtocolEventKind::PadDecryption(e) => {
+            return Err(anyhow!(
+                "Unexpected on-chain {}",
+                ProtocolEventKind::from(e)
+            ));
+        }
         ProtocolEventKind::PrepKeygen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
             publish_prep_keygen_request(executor, e, params_type, tx_hash, created_at, otlp_ctx)
