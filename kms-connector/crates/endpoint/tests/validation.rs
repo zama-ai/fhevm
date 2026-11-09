@@ -35,7 +35,11 @@ async fn test_invalid_requests_answer_400_without_db_access() -> anyhow::Result<
             ("unknown field", unknown_field.to_string()),
             (
                 "oversized body",
-                format!(r#"{{"padding":"{}"}}"#, "a".repeat(MAX_BODY_BYTES)),
+                format!(
+                    "{}{}",
+                    route.request().to_json(),
+                    " ".repeat(MAX_BODY_BYTES)
+                ),
             ),
         ];
         for (case, body) in malformed_bodies {

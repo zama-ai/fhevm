@@ -338,8 +338,6 @@ pub fn rand_public_request() -> PublicDecryptionRequest {
 
 /// Its public key and signature are placeholders.
 pub fn rand_user_request() -> UserDecryptionRequest {
-    // The user decrypts its own handle.
-    let user = rand_address();
     let contract = rand_address();
     UserDecryptionRequest {
         attestationType: AttestationType::Eip712UnifiedUserDecryptV1.to_string(),
@@ -347,9 +345,9 @@ pub fn rand_user_request() -> UserDecryptionRequest {
             handles: vec![HandleEntry {
                 handle: rand_handle(CHAIN_ID),
                 contractAddress: contract,
-                ownerAddress: user,
+                ownerAddress: rand_address(),
             }],
-            userAddress: user,
+            userAddress: rand_address(),
             publicKey: Bytes::from(vec![0x20; 32]),
             allowedContracts: vec![contract],
             requestValidity: RequestValidity {

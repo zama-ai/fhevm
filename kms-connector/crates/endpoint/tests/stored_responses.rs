@@ -131,13 +131,16 @@ async fn test_non_retryable_error_row_is_served(
     endpoint.stop().await
 }
 
-/// Irrecoverable errors past the serve window use the retry path, so a later success can replace
-/// the old error.
+/// Irrecoverable errors past the serve window use the retry path, so a fresh error or a successful
+/// payload can replace the old error.
 #[rstest]
+#[case::fresh_error(false)]
+#[case::success(true)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_expired_irrecoverable_error_is_reprocessed(
     #[values(Route::Public, Route::User, Route::Pad)] route: Route,
+    #[case] success: bool,
 ) -> anyhow::Result<()> {
     let endpoint = setup().await?;
 
@@ -159,15 +162,30 @@ async fn test_expired_irrecoverable_error_is_reprocessed(
 
     let pending = endpoint.spawn_post(request.clone());
     wait_for_request_status(&endpoint.db, route.requests_table(), id, "pending").await;
-    replace_error_with_success(
-        &endpoint.db,
-        route.responses_table(),
-        route.payload_column(),
-        id,
-    )
-    .await?;
-    assert_eq!(route.decryption_id(pending.await?).await, id);
-    assert_eq!(route.decryption_id(endpoint.post(request).await).await, id);
+    if success {
+        replace_error_with_success(
+            &endpoint.db,
+            route.responses_table(),
+            route.payload_column(),
+            id,
+        )
+        .await?;
+        assert_eq!(route.decryption_id(pending.await?).await, id);
+        assert_eq!(route.decryption_id(endpoint.post(request).await).await, id);
+    } else {
+        route
+            .fail(&endpoint.db, id, "kms_context_destroyed", "after")
+            .await?;
+        assert_eq!(error_body(pending.await?).await.message, "after");
+        // The fresh error is within its serve window: served as is.
+        assert_error(
+            endpoint.post(request).await,
+            StatusCode::GONE,
+            ErrorCode::KmsContextDestroyed,
+            id,
+        )
+        .await;
+    }
     assert_eq!(count_rows(&endpoint.db, route.requests_table()).await, 1);
     assert_eq!(count_rows(&endpoint.db, route.responses_table()).await, 1);
 
