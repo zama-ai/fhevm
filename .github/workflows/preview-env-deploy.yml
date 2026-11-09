@@ -143,7 +143,7 @@ on:
           - "4"
           - "13"
       overrides:
-        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. relayer_sdk_version (e.g. 0.4.4) also runs the @zama-fhe/relayer-sdk e2e suite; empty by default."
+        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_http_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. relayer_sdk_version (e.g. 0.4.4) also runs the @zama-fhe/relayer-sdk e2e suite; empty by default."
         required: false
         default: ""
       deploy_polygon:
@@ -621,6 +621,14 @@ jobs:
     permissions: *docker_permissions
     secrets: *docker_secrets
 
+  build-relayer-http:
+    name: build/relayer-http
+    needs: check-labels
+    if: *should_build_images
+    uses: ./.github/workflows/relayer-http-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+
   build-test-suite:
     name: build/test-suite
     needs: check-labels
@@ -651,6 +659,7 @@ jobs:
       - build-coprocessor
       - build-listener
       - build-relayer
+      - build-relayer-http
       - build-test-suite
     if: >-
       !cancelled() &&
@@ -1379,6 +1388,10 @@ jobs:
       - name: Deploy relayer
         run: bash ci/preview-env/scripts/deploy/deploy-relayer.sh relayer
 
+      # Reads the kms-connector-http ConfigMap published by the kms-connector step.
+      - name: Deploy relayer-http
+        run: bash ci/preview-env/scripts/deploy/deploy-relayer.sh relayer-http
+
       - name: Deploy test-suite
         run: bash ci/preview-env/scripts/deploy/deploy-relayer.sh test-suite
 
@@ -1527,6 +1540,13 @@ jobs:
             # or point @fhevm/sdk / a toy dapp at ${{ env.RELAYER_TS_URL }}
             ```
 
+            relayer-http (`POST /v4/user-decrypt`, `/v4/public-decrypt`):
+            ```bash
+            curl -sS ${{ env.RELAYER_HTTP_TS_URL }}/healthz
+            ```
+
+            ${{ env.RELAYER_UNIFIED_URL && format('Unified relayer URL (tailnet only; `/v2`, `/v3` to the relayer, `/v4` to relayer-http): point @fhevm/sdk `relayerUrl` at {0}, e.g. `curl -sS {0}/v2/keyurl`', env.RELAYER_UNIFIED_URL) || '' }}
+
             > Note: each coprocessor party requests substantial `tfhe`/`sns` worker capacity on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the cluster resources needed. Default stays 1.
 
             This environment is destroyed automatically when the PR is closed
@@ -1562,6 +1582,21 @@ jobs:
               echo '```bash'
               echo "curl -sS ${RELAYER_TS_URL}/v2/keyurl"
               echo "# or point @fhevm/sdk / a toy dapp at ${RELAYER_TS_URL}"
+              echo '```'
+              echo
+            fi
+            if [[ -n "${RELAYER_HTTP_TS_URL:-}" ]]; then
+              echo "relayer-http (\`POST /v4/user-decrypt\`, \`/v4/public-decrypt\`):"
+              echo '```bash'
+              echo "curl -sS ${RELAYER_HTTP_TS_URL}/healthz"
+              echo '```'
+              echo
+            fi
+            if [[ -n "${RELAYER_UNIFIED_URL:-}" ]]; then
+              echo "Unified relayer URL (tailnet only; \`/v2\`, \`/v3\` to the relayer, \`/v4\` to relayer-http):"
+              echo '```bash'
+              echo "curl -sS ${RELAYER_UNIFIED_URL}/v2/keyurl"
+              echo "# point @fhevm/sdk relayerUrl at ${RELAYER_UNIFIED_URL}"
               echo '```'
               echo
             fi

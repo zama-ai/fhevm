@@ -43,6 +43,7 @@ const IMAGES = [
   { key: 'listener', repo: 'fhevm/listener/listener-core', job: 'build-listener', output: 'build_result', component: 'listener', label: 'listener/listener-core' },
   { key: 'relayer_migrate', repo: 'fhevm/relayer-migrate', job: 'build-relayer', output: 'relayer_migrate_build_result', component: 'relayer', label: 'relayer/migrate' },
   { key: 'relayer', repo: 'fhevm/relayer', job: 'build-relayer', output: 'relayer_build_result', component: 'relayer', label: 'relayer' },
+  { key: 'relayer_http', repo: 'fhevm/relayer-http', job: 'build-relayer-http', output: 'build_result', component: 'relayer_http', label: 'relayer-http' },
   { key: 'test_suite', repo: 'fhevm/test-suite/e2e', job: 'build-test-suite', output: 'build_result', component: 'test_suite', label: 'test-suite' },
 ];
 
