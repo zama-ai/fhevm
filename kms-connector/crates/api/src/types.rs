@@ -454,24 +454,24 @@ mod vector_tests {
     }
 
     #[test]
-    fn requests_round_trip_through_serde() {
+    fn requests_serialize_to_vectors() {
         // The id vectors only exercise deserialization; this pins the serialize direction
-        // (field casing, hex encodings) by re-parsing what we emit.
+        // (field casing, hex encodings) against the raw JSON of the vectors.
+        fn check<R: Serialize>(vectors: Vec<DecryptionVector<R>>, raw: &serde_json::Value) {
+            for (v, raw) in vectors.iter().zip(raw.as_array().unwrap()) {
+                assert_eq!(
+                    serde_json::to_value(&v.request).unwrap(),
+                    raw["request"],
+                    "{}",
+                    v.name
+                );
+            }
+        }
+        let raw: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/vectors.json")).unwrap();
         let vs = vectors();
-        for v in vs.public_decryption {
-            let json = serde_json::to_string(&v.request).unwrap();
-            let back: PublicDecryptionRequest = serde_json::from_str(&json).unwrap();
-            assert_eq!(back, v.request, "{}", v.name);
-        }
-        for v in vs.user_decryption {
-            let json = serde_json::to_string(&v.request).unwrap();
-            let back: UserDecryptionRequest = serde_json::from_str(&json).unwrap();
-            assert_eq!(back, v.request, "{}", v.name);
-        }
-        for v in vs.pad_decryption {
-            let json = serde_json::to_string(&v.request).unwrap();
-            let back: PadDecryptionRequest = serde_json::from_str(&json).unwrap();
-            assert_eq!(back, v.request, "{}", v.name);
-        }
+        check(vs.public_decryption, &raw["publicDecryption"]);
+        check(vs.user_decryption, &raw["userDecryption"]);
+        check(vs.pad_decryption, &raw["padDecryption"]);
     }
 }
