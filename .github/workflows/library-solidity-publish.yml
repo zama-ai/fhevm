@@ -1,18 +1,11 @@
 name: library-solidity-publish
 
 on:
-  workflow_dispatch:
-    inputs:
-      release:
-        description: "Set to true for release tagging"
-        required: false
-        default: false
-      dry-run:
-        description: "Run every publish step in dry-run mode (nothing is published)"
-        type: boolean
-        required: false
-        default: true
+  release:
+    types:
+      - published
 
+# No permissions at the workflow level — each job declares only what it needs.
 permissions: {}
 
 jobs:
@@ -24,8 +17,10 @@ jobs:
         working-directory: ./library-solidity
     permissions:
       contents: "read" # Required to checkout repository code
-      id-token: "write" # Required for OIDC authentication
-      packages: "write" # Required to publish Docker images
+      id-token: "write" # Required for OIDC / npm provenance attestation
+    outputs:
+      version: ${{ steps.release_meta.outputs.version }}
+      dist_tag: ${{ steps.release_meta.outputs.dist_tag }}
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -48,40 +43,59 @@ jobs:
       - name: Update npm # required by trusted publishing
         run: npm install -g npm@11.7.0
 
+      # -----------------------------------------------------------------------
+      # Resolve release metadata (version + dist-tag) from the tag
+      #   vX.Y.Z    → official release   → npm dist-tag "next"
+      #   vX.Y.Z-A  → release candidate  → npm dist-tag "alpha"
+      # Official releases publish under "next" so the "latest" dist-tag is
+      # never moved automatically — promotion to "latest" is done manually
+      # with `npm dist-tag add @fhevm/solidity@X.Y.Z latest` once the release
+      # has been validated.
+      # The version is derived from the tag (strip leading "v") and
+      # library-solidity/package.json is patched in place so both the npm
+      # publish and the Soldeer push below ship the same version.
+      # -----------------------------------------------------------------------
+      - name: Resolve release metadata
+        id: release_meta
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            dist_tag="next"
+          elif [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            dist_tag="alpha"
+          else
+            echo "::error::Tag '${RELEASE_TAG}' does not match vX.Y.Z (official) or vX.Y.Z-A (RC)."
+            exit 1
+          fi
+          echo "Release tag ${RELEASE_TAG} -> version=${version}, dist-tag=${dist_tag}"
+          npm pkg set version="${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=${dist_tag}" >> "$GITHUB_OUTPUT"
+
       - name: Prepare environment file
-        working-directory: library-solidity
         run: cp .env.example .env
 
       - name: Install dependencies
-        working-directory: library-solidity
         run: npm ci --include=optional
 
       - name: Compile library
-        working-directory: library-solidity
         run: npm run compile
 
-      - name: Publish prerelease to npm
-        if: ${{ inputs.release != 'true' }}
+      - name: Publish to npm
         uses: JS-DevTools/npm-publish@7f8fe47b3bea1be0c3aec2b717c5ec1f3e03410b # v4.1.1
         with:
           package: ./library-solidity/package.json
-          tag: prerelease
+          tag: ${{ steps.release_meta.outputs.dist_tag }}
           provenance: true
           access: public
-          dry-run: ${{ inputs.dry-run }}
-
-      - name: Publish release to npm
-        if: ${{ inputs.release == 'true' }}
-        uses: JS-DevTools/npm-publish@7f8fe47b3bea1be0c3aec2b717c5ec1f3e03410b # v4.1.1
-        with:
-          package: ./library-solidity/package.json
-          provenance: true
-          access: public
-          dry-run: ${{ inputs.dry-run }}
 
   publish-soldeer:
     name: library-solidity-publish/publish-soldeer
-    if: ${{ inputs.release == 'true' }}
+    needs: publish
     runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
     defaults:
       run:
@@ -102,18 +116,8 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
-      - name: Read version from package.json
-        id: version
-        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
-
       - name: Publish to Soldeer
         env:
           SOLDEER_API_TOKEN: ${{ secrets.SOLDEER_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-          DRY_RUN: ${{ inputs.dry-run }}
-        run: |
-          if [ "${DRY_RUN}" = "true" ]; then
-            forge soldeer push "@fhevm-solidity~${VERSION}" . --skip-warnings --dry-run
-          else
-            forge soldeer push "@fhevm-solidity~${VERSION}" . --skip-warnings
-          fi
+          VERSION: ${{ needs.publish.outputs.version }}
+        run: forge soldeer push "@fhevm-solidity~${VERSION}" . --skip-warnings
