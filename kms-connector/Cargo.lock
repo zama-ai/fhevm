@@ -4493,6 +4493,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "bc2wrap",
+ "bytes",
  "ciphertext-attestation",
  "connector-utils",
  "dashmap 6.1.0",
