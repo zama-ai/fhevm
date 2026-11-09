@@ -82,7 +82,7 @@ impl DecryptionRoute for PadRoute {
                     signature: signature.into(),
                 }))
             }
-            // Should be unreachable thanks to the `payload_or_error` CHECK constraint.
+            // The database's `payload_or_error` CHECK constraint forbids this state.
             _ => Err(ErrorResponse::new(
                 ErrorCode::Unknown,
                 "inconsistent response row",
