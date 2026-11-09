@@ -1,0 +1,54 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT ciphertext128, attestation_version, ciphertext_digest, ciphertext128_digest,\n                signer, signature\n           FROM pads\n          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "attestation_version",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext128_digest",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "signer",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "signature",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "b5b844470ac5c9f1ed30e8d4acbd2b7f296acec15195e614935840abc388aadf"
+}

@@ -211,6 +211,7 @@ jobs:
       coprocessor-consensus-detector-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       coprocessor-proxy-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ steps.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ steps.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ steps.create-e2e-tests-input.outputs.gateway-version }}
@@ -276,6 +277,7 @@ jobs:
       coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
@@ -307,6 +309,7 @@ jobs:
       coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
@@ -337,6 +340,7 @@ jobs:
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
       coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
@@ -407,6 +411,7 @@ jobs:
       coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
@@ -475,6 +480,7 @@ jobs:
       coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
       coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
@@ -512,6 +518,7 @@ jobs:
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
       coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}

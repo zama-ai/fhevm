@@ -71,6 +71,13 @@ const mappings = [
     'COPROCESSOR_PROXY_VERSION',
   ],
   [
+    'coprocessor-docker-build',
+    'prf_service_build_result',
+    'coprocessor-prf-service-version',
+    'fhevm/coprocessor/prf-service',
+    'COPROCESSOR_PRF_SERVICE_VERSION',
+  ],
+  [
     'listener-docker-build',
     'build_result',
     'listener-core-version',
