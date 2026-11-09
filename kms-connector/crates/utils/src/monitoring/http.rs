@@ -1,6 +1,8 @@
 //! HTTP request tracing and metrics shared by the proxy and endpoint.
 
-use kms_connector_api::{PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE};
+use kms_connector_api::{
+    PAD_DECRYPTION_ROUTE, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
+};
 use opentelemetry::{
     Context,
     propagation::{Extractor, Injector, TextMapPropagator},
@@ -31,6 +33,7 @@ pub fn route_label(path: &str) -> &'static str {
     match path {
         PUBLIC_DECRYPTION_ROUTE => PUBLIC_DECRYPTION_ROUTE,
         USER_DECRYPTION_ROUTE => USER_DECRYPTION_ROUTE,
+        PAD_DECRYPTION_ROUTE => PAD_DECRYPTION_ROUTE,
         VERSION_ROUTE => VERSION_ROUTE,
         _ => UNMATCHED_ROUTE,
     }
@@ -136,6 +139,7 @@ impl HttpMetrics {
         for route in [
             PUBLIC_DECRYPTION_ROUTE,
             USER_DECRYPTION_ROUTE,
+            PAD_DECRYPTION_ROUTE,
             VERSION_ROUTE,
             UNMATCHED_ROUTE,
         ] {

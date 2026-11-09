@@ -13,11 +13,12 @@ pub mod version;
 pub use attestation::AttestationType;
 pub use error::{ErrorCode, ErrorResponse};
 pub use types::{
-    HandleEntry, MAX_USER_DECRYPTION_DURATION_SECONDS, PublicDecryptionRequest,
-    PublicDecryptionResponse, RequestValidity, UserDecryptionPayload, UserDecryptionRequest,
-    UserDecryptionResponse,
+    HandleEntry, MAX_PAD_DECRYPTORS, MAX_PAD_LENGTH, MAX_USER_DECRYPTION_DURATION_SECONDS,
+    PAD_WITNESS_VERSION, PadDecryptionPayload, PadDecryptionRequest, PadDecryptionResponse,
+    PadEntry, PadWitness, PublicDecryptionRequest, PublicDecryptionResponse, RequestValidity,
+    UserDecryptionPayload, UserDecryptionRequest, UserDecryptionResponse,
 };
 pub use version::{
-    INTERFACE_VERSION, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
-    VersionResponse,
+    INTERFACE_VERSION, PAD_DECRYPTION_ROUTE, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE,
+    VERSION_ROUTE, VersionResponse,
 };
