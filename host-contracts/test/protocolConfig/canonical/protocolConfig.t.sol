@@ -2632,4 +2632,24 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         emit IProtocolConfig.KmsContextDestructionQuorumReached(contextId, EMPTY_EXTRA_DATA);
         _confirmContextDestruction(contextId, kmsPk2, EMPTY_EXTRA_DATA);
     }
+
+    /// @dev OZ ECDSA rejects the high-s twin of a valid destruction signature.
+    function test_revertConfirmKmsDestructionMalleableSignature() public {
+        _setupTwoNodeContext();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 2;
+        (bytes memory signature, bytes32 highS) = _highSSignature(
+            kmsPk0,
+            _hashContextDestructionWithDomain(_localDomainSeparator(), contextId, EMPTY_EXTRA_DATA)
+        );
+        vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureS.selector, highS));
+        protocolConfig.confirmKmsContextDestruction(contextId, signature, EMPTY_EXTRA_DATA);
+
+        uint256 epochId = EPOCH_COUNTER_BASE + 2;
+        (signature, highS) = _highSSignature(
+            kmsPk0,
+            _hashEpochDestructionWithDomain(_localDomainSeparator(), epochId, EMPTY_EXTRA_DATA)
+        );
+        vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureS.selector, highS));
+        protocolConfig.confirmKmsEpochDestruction(epochId, signature, EMPTY_EXTRA_DATA);
+    }
 }
