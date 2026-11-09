@@ -123,16 +123,14 @@ contract ProtocolConfigReplica is
             revert DestroyedKmsContextCannotBeActivated(context.contextId);
         }
 
-        _verifyQuorum(
+        _verifyActiveCommitteeQuorum(
             _contextCreationStructHash(
                 previousContextId,
                 context.contextId,
                 _nodeConfigHash(context.nodes, context.thresholds),
                 context.extraData
             ),
-            context.signatures,
-            previousContextId,
-            _faultTolerantQuorum(previousContextId)
+            context.signatures
         );
         _replaceKmsContext(context.contextId, context.nodes, context.thresholds);
         _applyKmsEpoch(context.contextId, epoch);
@@ -161,7 +159,7 @@ contract ProtocolConfigReplica is
         if (destroyedContextId > _getProtocolConfigStorage().latestActiveKmsContextId) {
             revert KmsContextDestructionAheadOfReplica(destroyedContextId);
         }
-        _verifyDestructionQuorum(_contextDestructionStructHash(destroyedContextId, extraData), signatures);
+        _verifyActiveCommitteeQuorum(_contextDestructionStructHash(destroyedContextId, extraData), signatures);
         _destroyKmsContext(destroyedContextId);
     }
 
@@ -175,7 +173,7 @@ contract ProtocolConfigReplica is
         if (destroyedEpochId > _getProtocolConfigStorage().latestActiveEpochId) {
             revert KmsEpochDestructionAheadOfReplica(destroyedEpochId);
         }
-        _verifyDestructionQuorum(_epochDestructionStructHash(destroyedEpochId, extraData), signatures);
+        _verifyActiveCommitteeQuorum(_epochDestructionStructHash(destroyedEpochId, extraData), signatures);
         _destroyKmsEpoch(destroyedEpochId);
     }
 
@@ -262,14 +260,7 @@ contract ProtocolConfigReplica is
         KmsNode[] calldata nodes,
         KmsThresholds calldata thresholds
     ) private {
-        _clearKmsCommittee(contextId);
-        _storeKmsCommittee(contextId, nodes, thresholds);
-    }
-
-    /**
-     * @dev Removes every node of the committee of `contextId`, so none of its signers stays a member.
-     */
-    function _clearKmsCommittee(uint256 contextId) private {
+        // Clear the stored committee first, so none of its signers stays a member.
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         KmsNode[] storage storedNodes = $.kmsNodesForContext[contextId];
         for (uint256 i = 0; i < storedNodes.length; i++) {
@@ -280,6 +271,8 @@ contract ProtocolConfigReplica is
         }
         delete $.kmsNodesForContext[contextId];
         delete $.kmsSignerAddressesForContext[contextId];
+
+        _storeKmsCommittee(contextId, nodes, thresholds);
     }
 
     /**
@@ -374,9 +367,9 @@ contract ProtocolConfigReplica is
     }
 
     /**
-     * @dev Requires the `n - t` quorum of the active committee over the destruction `structHash`.
+     * @dev Requires the `n - t` quorum of the active committee over `structHash`.
      */
-    function _verifyDestructionQuorum(bytes32 structHash, bytes[] calldata signatures) private view {
+    function _verifyActiveCommitteeQuorum(bytes32 structHash, bytes[] calldata signatures) private view {
         uint256 activeContextId = _getProtocolConfigStorage().latestActiveKmsContextId;
         _verifyQuorum(structHash, signatures, activeContextId, _faultTolerantQuorum(activeContextId));
     }
