@@ -526,14 +526,26 @@ contract HCULimitAllowlistTest is Test {
         }
     }
 
-    function test_absentAndExpiredRolesCannotRenounce(bool expired, bool pastDeadline) public {
-        if (expired) _grant(ALLOWLISTER);
-        uint256 deadline = hcuLimit.allowlisterDeadline(ALLOWLISTER);
-        if (expired) vm.warp(deadline + (pastDeadline ? 1 : 0));
+    function test_absentRoleCannotRenounce() public {
         vm.expectRevert(abi.encodeWithSelector(HCULimit.NotAllowlister.selector, ALLOWLISTER));
         vm.prank(ALLOWLISTER);
         hcuLimit.renounceAllowlister();
-        assertEq(hcuLimit.allowlisterDeadline(ALLOWLISTER), deadline);
+        assertEq(hcuLimit.allowlisterDeadline(ALLOWLISTER), 0);
+    }
+
+    function test_expiredRoleCanRenounce(bool pastDeadline) public {
+        _grant(ALLOWLISTER);
+        uint256 deadline = hcuLimit.allowlisterDeadline(ALLOWLISTER);
+        vm.warp(deadline + (pastDeadline ? 1 : 0));
+        assertFalse(hcuLimit.isAllowlister(ALLOWLISTER));
+        vm.expectEmit(true, false, false, true, address(hcuLimit));
+        emit HCULimit.AllowlisterRemoved(ALLOWLISTER);
+        vm.prank(ALLOWLISTER);
+        hcuLimit.renounceAllowlister();
+        assertEq(hcuLimit.allowlisterDeadline(ALLOWLISTER), 0);
+        vm.expectRevert(abi.encodeWithSelector(HCULimit.NotAllowlister.selector, ALLOWLISTER));
+        vm.prank(ALLOWLISTER);
+        hcuLimit.renounceAllowlister();
     }
 
     function test_ownerRevocationClearsInactiveGrants(bool expired, bool pastDeadline, bool activated) public {
