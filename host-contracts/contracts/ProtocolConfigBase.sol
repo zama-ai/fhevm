@@ -37,13 +37,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     ///      to reject the misconfiguration loudly rather than silently bricking the context.
     uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
 
-    /// @dev EIP-712 domain name of the canonical ProtocolConfig. The KMS signers sign under it, and
-    ///      the replica verifies under it.
-    string internal constant EIP712_NAME = "ProtocolConfig";
-
-    /// @dev EIP-712 domain version of the canonical ProtocolConfig.
-    string internal constant EIP712_VERSION = "1";
-
     // -----------------------------------------------------------------------------------------
     // EIP-712 type hashes
     //

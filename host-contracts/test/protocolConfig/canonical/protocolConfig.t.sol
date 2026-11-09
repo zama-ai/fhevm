@@ -1639,15 +1639,6 @@ contract ProtocolConfigTest is ProtocolConfigTestBase {
         ProtocolConfig(protocolConfigAdd).reinitializeV3();
         assertEq(uint256(vm.load(protocolConfigAdd, INITIALIZABLE_STORAGE)), 4);
 
-        // The KMS signers sign under this domain, so the upgrade path must set it.
-        (, string memory name, string memory version, uint256 chainId, address verifyingContract, , ) = ProtocolConfig(
-            protocolConfigAdd
-        ).eip712Domain();
-        assertEq(name, "ProtocolConfig");
-        assertEq(version, "1");
-        assertEq(chainId, block.chainid);
-        assertEq(verifyingContract, protocolConfigAdd);
-
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         ProtocolConfig(protocolConfigAdd).reinitializeV3();
     }

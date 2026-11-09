@@ -40,6 +40,10 @@ contract ProtocolConfigReplica is
     /// @dev Shared between `initializeFromCanonical` and `reinitializeV3`.
     uint64 private constant REINITIALIZER_VERSION = 4;
 
+    /// @dev EIP-712 domain name and version of the canonical ProtocolConfig, which the KMS signers sign under.
+    string private constant EIP712_NAME = "ProtocolConfig";
+    string private constant EIP712_VERSION = "1";
+
     // -----------------------------------------------------------------------------------------
     // Constructor
     // -----------------------------------------------------------------------------------------
