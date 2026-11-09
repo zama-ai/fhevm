@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pad_decryption_requests(\n            decryption_id, witness_version, prf_id, chain_id, pads, user_address, public_key,\n            allowed_contracts, start_timestamp, duration_seconds, extra_data, signature,\n            created_at, otlp_context, status\n        )\n        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Int2",
+        "Int4",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "ByteaArray",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Timestamptz",
+        "Bytea",
+        {
+          "Custom": {
+            "name": "operation_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "under_process",
+                "completed",
+                "failed",
+                "aborted"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1d0222f2efcf4e13785f9d12e6eb5cf28ac0a3a369d6c1b848f0250f0bd15493"
+}

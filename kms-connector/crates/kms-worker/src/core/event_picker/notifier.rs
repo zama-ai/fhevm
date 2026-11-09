@@ -4,8 +4,9 @@ use connector_utils::types::db::{
     ABORT_CRSGEN_REQUEST_NOTIFICATION, ABORT_KEYGEN_REQUEST_NOTIFICATION,
     CRSGEN_REQUEST_NOTIFICATION, EventType, KEYGEN_REQUEST_NOTIFICATION,
     KMS_CONTEXT_DESTROYED_NOTIFICATION, KMS_EPOCH_DESTROYED_NOTIFICATION,
-    NEW_KMS_CONTEXT_NOTIFICATION, NEW_KMS_EPOCH_NOTIFICATION, PREP_KEYGEN_REQUEST_NOTIFICATION,
-    PUBLIC_DECRYPT_REQUEST_NOTIFICATION, USER_DECRYPT_REQUEST_NOTIFICATION,
+    NEW_KMS_CONTEXT_NOTIFICATION, NEW_KMS_EPOCH_NOTIFICATION, PAD_DECRYPT_REQUEST_NOTIFICATION,
+    PREP_KEYGEN_REQUEST_NOTIFICATION, PUBLIC_DECRYPT_REQUEST_NOTIFICATION,
+    USER_DECRYPT_REQUEST_NOTIFICATION,
 };
 use futures::future::select_all;
 use sqlx::{Pool, Postgres, postgres::PgListener};
@@ -74,6 +75,9 @@ impl DbEventNotifier {
             .listen(USER_DECRYPT_REQUEST_NOTIFICATION)
             .await?;
         self.db_listener
+            .listen(PAD_DECRYPT_REQUEST_NOTIFICATION)
+            .await?;
+        self.db_listener
             .listen(PREP_KEYGEN_REQUEST_NOTIFICATION)
             .await?;
         self.db_listener.listen(KEYGEN_REQUEST_NOTIFICATION).await?;
@@ -101,6 +105,7 @@ impl DbEventNotifier {
         let polling = match kind {
             EventType::PublicDecryptionRequest => self.db_fast_event_polling,
             EventType::UserDecryptionRequest => self.db_fast_event_polling,
+            EventType::PadDecryptionRequest => self.db_fast_event_polling,
             EventType::PrepKeygenRequest => self.db_long_event_polling,
             EventType::KeygenRequest => self.db_long_event_polling,
             EventType::CrsgenRequest => self.db_long_event_polling,
@@ -118,6 +123,7 @@ impl DbEventNotifier {
         let mut tickers = [
             self.ticker(EventType::PublicDecryptionRequest),
             self.ticker(EventType::UserDecryptionRequest),
+            self.ticker(EventType::PadDecryptionRequest),
             self.ticker(EventType::PrepKeygenRequest),
             self.ticker(EventType::KeygenRequest),
             self.ticker(EventType::CrsgenRequest),
