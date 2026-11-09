@@ -330,54 +330,54 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     }
 
     // Cost table, generated from operatorsPrices.
-    uint256 private constant COSTS_0 = 0x780ac0050085002805f001c05d001005400000000000000;
-    uint256 private constant COSTS_1 = 0xac10300640a2003007d001805d001005800000000000000;
-    uint256 private constant COSTS_2 = 0xac10400640a2003007d001805d001005b00000000000000;
-    uint256 private constant COSTS_3 = 0x4582b8012816d007c109003c0c1001007a00000000000000;
-    uint256 private constant COSTS_4 = 0x15dc696064c2540120148006c0de001c09600000000000000;
-    uint256 private constant COSTS_5 = 0x8644c902c02cb00e81b6006012e00280d200000000000000;
-    uint256 private constant COSTS_6 = 0xb94797043c481018831800a024400441b800000000000000;
-    uint256 private constant COSTS_7 = 0x240260000000002402500180220010020000c01f000801f00000000004016;
-    uint256 private constant COSTS_8 = 0x2c0260000000002c02500180220014020000c01f000801f00000000008019;
-    uint256 private constant COSTS_9 = 0x240260000000002402500180220010020000801e000801e00000000004016;
-    uint256 private constant COSTS_10 = 0x2c0260000000002c02500180220014020000c01f000801e00000000008018;
-    uint256 private constant COSTS_11 = 0x240270000000002402500180220010020000c01f000801f00000000004016;
-    uint256 private constant COSTS_12 = 0x2c0270000000002c02500180220014020000c01f000801f00000000004016;
-    uint256 private constant COSTS_13 = 0x280270000000002402500180220010020000c020000802000000000000000;
-    uint256 private constant COSTS_14 = 0x22c17a0000000019011000a40d000740a2003c07d002005c00000000000000;
-    uint256 private constant COSTS_15 = 0x240260000000002402500180220010020000c020000802000000000000000;
-    uint256 private constant COSTS_16 = 0x2201710000000019011000a80d100780a3003c07b002005b00000000000000;
-    uint256 private constant COSTS_17 = 0x200260000000001c02500100220010020000801f000801f00000000000000;
-    uint256 private constant COSTS_18 = 0x2ac17a000000001f811600d00d1007c0a3004007d001c05b00000000000000;
-    uint256 private constant COSTS_19 = 0x200280000000001c02500100220010020000801f000801f00000000000000;
-    uint256 private constant COSTS_20 = 0x2a81770000000020011b00d00d100780a0004007d001c05d00000000000000;
-    uint256 private constant COSTS_21 = 0x20076002007500200750014053000c0520008037000403700000000004019;
-    uint256 private constant COSTS_22 = 0x54098004c089004407a002c0780018056001005300080370000000000401a;
-    uint256 private constant COSTS_23 = 0x20075002007500200750014054000c0530008037000403700000000004017;
-    uint256 private constant COSTS_24 = 0x54096004c088004407a002c07600180550010053000803700000000004017;
-    uint256 private constant COSTS_25 = 0x280950018074000c0540008037000403400000000000000;
-    uint256 private constant COSTS_26 = 0x700d20034098001c0760010054000803f00000000000000;
-    uint256 private constant COSTS_27 = 0x280960018075000c0540008037000403400000000000000;
-    uint256 private constant COSTS_28 = 0x740da0034098001c0760010054000803b00000000000000;
-    uint256 private constant COSTS_29 = 0x280960018077000c054000803a000403a00000000000000;
-    uint256 private constant COSTS_30 = 0x740da0034095001c0750010053000803a00000000000000;
-    uint256 private constant COSTS_31 = 0x280950018076000c053000803a000403400000000000000;
-    uint256 private constant COSTS_32 = 0x740d70030092001c0750010054000803b00000000000000;
-    uint256 private constant COSTS_33 = 0x4c0ba002c096001c0750010058000805400000000000000;
-    uint256 private constant COSTS_34 = 0xdc121007c0db00600b60038092001807700000000000000;
-    uint256 private constant COSTS_35 = 0x480b4002c095001c0750010059000c05900000000000000;
-    uint256 private constant COSTS_36 = 0xdc122007c0da005c0b40038091001807900000000000000;
-    uint256 private constant COSTS_37 = 0x11010d000000000ac0a80044083003805f002405d000c04f00000000000000;
-    uint256 private constant COSTS_38 = 0xb406c008805300600390034037001c0370018037001003700000000010037;
-    uint256 private constant COSTS_39 = 0x1401e0000000001001900100180010018001001700100170000000000c013;
-    uint256 private constant COSTS_40 = 0x1401e00000000010019001001800100180010017001001700000000000000;
-    uint256 private constant COSTS_41 = 0x144078103ac438014c2bf00541ef00000000000000;
-    uint256 private constant COSTS_42 = 0x1eb0b5f047451f016c2fe005c20c00000000000000;
+    uint256 internal constant COSTS_ADD_SUB_SCALAR = 0x780ac0050085002805f001c05d001005400000000000000;
+    uint256 internal constant COSTS_ADD = 0xac10300640a2003007d001805d001005800000000000000;
+    uint256 internal constant COSTS_SUB = 0xac10400640a2003007d001805d001005b00000000000000;
+    uint256 internal constant COSTS_MUL_SCALAR = 0x4582b8012816d007c109003c0c1001007a00000000000000;
+    uint256 internal constant COSTS_MUL = 0x15dc696064c2540120148006c0de001c09600000000000000;
+    uint256 internal constant COSTS_DIV_SCALAR = 0x8644c902c02cb00e81b6006012e00280d200000000000000;
+    uint256 internal constant COSTS_REM_SCALAR = 0xb94797043c481018831800a024400441b800000000000000;
+    uint256 internal constant COSTS_BIT_AND_SCALAR = 0x240260000000002402500180220010020000c01f000801f00000000004016;
+    uint256 internal constant COSTS_BIT_AND = 0x2c0260000000002c02500180220014020000c01f000801f00000000008019;
+    uint256 internal constant COSTS_BIT_OR_SCALAR = 0x240260000000002402500180220010020000801e000801e00000000004016;
+    uint256 internal constant COSTS_BIT_OR = 0x2c0260000000002c02500180220014020000c01f000801e00000000008018;
+    uint256 internal constant COSTS_BIT_XOR_SCALAR = 0x240270000000002402500180220010020000c01f000801f00000000004016;
+    uint256 internal constant COSTS_BIT_XOR = 0x2c0270000000002c02500180220014020000c01f000801f00000000004016;
+    uint256 internal constant COSTS_SHL_SCALAR = 0x280270000000002402500180220010020000c020000802000000000000000;
+    uint256 internal constant COSTS_SHL = 0x22c17a0000000019011000a40d000740a2003c07d002005c00000000000000;
+    uint256 internal constant COSTS_SHR_SCALAR = 0x240260000000002402500180220010020000c020000802000000000000000;
+    uint256 internal constant COSTS_SHR = 0x2201710000000019011000a80d100780a3003c07b002005b00000000000000;
+    uint256 internal constant COSTS_ROTL_SCALAR = 0x200260000000001c02500100220010020000801f000801f00000000000000;
+    uint256 internal constant COSTS_ROTL = 0x2ac17a000000001f811600d00d1007c0a3004007d001c05b00000000000000;
+    uint256 internal constant COSTS_ROTR_SCALAR = 0x200280000000001c02500100220010020000801f000801f00000000000000;
+    uint256 internal constant COSTS_ROTR = 0x2a81770000000020011b00d00d100780a0004007d001c05d00000000000000;
+    uint256 internal constant COSTS_EQ_SCALAR = 0x20076002007500200750014053000c0520008037000403700000000004019;
+    uint256 internal constant COSTS_EQ = 0x54098004c089004407a002c0780018056001005300080370000000000401a;
+    uint256 internal constant COSTS_NE_SCALAR = 0x20075002007500200750014054000c0530008037000403700000000004017;
+    uint256 internal constant COSTS_NE = 0x54096004c088004407a002c07600180550010053000803700000000004017;
+    uint256 internal constant COSTS_GE_SCALAR = 0x280950018074000c0540008037000403400000000000000;
+    uint256 internal constant COSTS_GE = 0x700d20034098001c0760010054000803f00000000000000;
+    uint256 internal constant COSTS_GT_SCALAR = 0x280960018075000c0540008037000403400000000000000;
+    uint256 internal constant COSTS_GT = 0x740da0034098001c0760010054000803b00000000000000;
+    uint256 internal constant COSTS_LE_SCALAR = 0x280960018077000c054000803a000403a00000000000000;
+    uint256 internal constant COSTS_LE = 0x740da0034095001c0750010053000803a00000000000000;
+    uint256 internal constant COSTS_LT_SCALAR = 0x280950018076000c053000803a000403400000000000000;
+    uint256 internal constant COSTS_LT = 0x740d70030092001c0750010054000803b00000000000000;
+    uint256 internal constant COSTS_MIN_SCALAR = 0x4c0ba002c096001c0750010058000805400000000000000;
+    uint256 internal constant COSTS_MIN = 0xdc121007c0db00600b60038092001807700000000000000;
+    uint256 internal constant COSTS_MAX_SCALAR = 0x480b4002c095001c0750010059000c05900000000000000;
+    uint256 internal constant COSTS_MAX = 0xdc122007c0da005c0b40038091001807900000000000000;
+    uint256 internal constant COSTS_NEG = 0x11010d000000000ac0a80044083003805f002405d000c04f00000000000000;
+    uint256 internal constant COSTS_IF_THEN_ELSE = 0xb406c008805300600390034037001c0370018037001003700000000010037;
+    uint256 internal constant COSTS_RAND = 0x1401e0000000001001900100180010018001001700100170000000000c013;
+    uint256 internal constant COSTS_RAND_BOUNDED = 0x1401e00000000010019001001800100180010017001001700000000000000;
+    uint256 internal constant COSTS_MUL_DIV_SCALAR = 0x144078103ac438014c2bf00541ef00000000000000;
+    uint256 internal constant COSTS_MUL_DIV = 0x1eb0b5f047451f016c2fe005c20c00000000000000;
 
     /// @dev Unpacks one type's cost from a row of the cost table: 28 bits per FheType value, work in thousands above
     ///      bit 14 and latency in thousands below, 0 for an unsupported type. Returns work (thousands) above bit 32
     ///      and latency below, the layout the metering functions read.
-    function _cost(uint256 row, FheType fheType) private pure returns (uint256) {
+    function _cost(uint256 row, FheType fheType) internal pure returns (uint256) {
         uint256 slot = (row >> (uint256(uint8(fheType)) * 28)) & 0xFFFFFFF;
         if (slot == 0) revert UnsupportedOperation();
         return ((slot >> 14) << 32) | ((slot & 0x3FFF) * 1000);
@@ -403,11 +403,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_0, resultType);
+            opCost = _cost(COSTS_ADD_SUB_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_1, resultType);
+            opCost = _cost(COSTS_ADD, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -433,11 +433,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_0, resultType);
+            opCost = _cost(COSTS_ADD_SUB_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_2, resultType);
+            opCost = _cost(COSTS_SUB, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -463,11 +463,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_3, resultType);
+            opCost = _cost(COSTS_MUL_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_4, resultType);
+            opCost = _cost(COSTS_MUL, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -492,7 +492,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
-        opCost = _cost(COSTS_5, resultType);
+        opCost = _cost(COSTS_DIV_SCALAR, resultType);
 
         _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
     }
@@ -516,7 +516,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
-        opCost = _cost(COSTS_6, resultType);
+        opCost = _cost(COSTS_REM_SCALAR, resultType);
 
         _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
     }
@@ -541,11 +541,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_7, resultType);
+            opCost = _cost(COSTS_BIT_AND_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_8, resultType);
+            opCost = _cost(COSTS_BIT_AND, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -571,11 +571,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_9, resultType);
+            opCost = _cost(COSTS_BIT_OR_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_10, resultType);
+            opCost = _cost(COSTS_BIT_OR, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -601,11 +601,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_11, resultType);
+            opCost = _cost(COSTS_BIT_XOR_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_12, resultType);
+            opCost = _cost(COSTS_BIT_XOR, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -631,11 +631,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_13, resultType);
+            opCost = _cost(COSTS_SHL_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_14, resultType);
+            opCost = _cost(COSTS_SHL, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -661,11 +661,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_15, resultType);
+            opCost = _cost(COSTS_SHR_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_16, resultType);
+            opCost = _cost(COSTS_SHR, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -691,11 +691,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_17, resultType);
+            opCost = _cost(COSTS_ROTL_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_18, resultType);
+            opCost = _cost(COSTS_ROTL, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -721,11 +721,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_19, resultType);
+            opCost = _cost(COSTS_ROTR_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_20, resultType);
+            opCost = _cost(COSTS_ROTR, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -751,11 +751,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_21, resultType);
+            opCost = _cost(COSTS_EQ_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_22, resultType);
+            opCost = _cost(COSTS_EQ, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -781,11 +781,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_23, resultType);
+            opCost = _cost(COSTS_NE_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_24, resultType);
+            opCost = _cost(COSTS_NE, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -811,11 +811,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_25, resultType);
+            opCost = _cost(COSTS_GE_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_26, resultType);
+            opCost = _cost(COSTS_GE, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -841,11 +841,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_27, resultType);
+            opCost = _cost(COSTS_GT_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_28, resultType);
+            opCost = _cost(COSTS_GT, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -871,11 +871,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_29, resultType);
+            opCost = _cost(COSTS_LE_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_30, resultType);
+            opCost = _cost(COSTS_LE, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -901,11 +901,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_31, resultType);
+            opCost = _cost(COSTS_LT_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_32, resultType);
+            opCost = _cost(COSTS_LT, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -931,11 +931,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_33, resultType);
+            opCost = _cost(COSTS_MIN_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_34, resultType);
+            opCost = _cost(COSTS_MIN, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -961,11 +961,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == 0x01) {
-            opCost = _cost(COSTS_35, resultType);
+            opCost = _cost(COSTS_MAX_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, lhs, result);
         } else {
-            opCost = _cost(COSTS_36, resultType);
+            opCost = _cost(COSTS_MAX, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, lhs, rhs, result);
         }
@@ -980,7 +980,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result, address caller) external virtual {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
-        opCost = _cost(COSTS_37, resultType);
+        opCost = _cost(COSTS_NEG, resultType);
         _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, ct, result);
     }
 
@@ -1092,7 +1092,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ) external virtual {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
-        opCost = _cost(COSTS_38, resultType);
+        opCost = _cost(COSTS_IF_THEN_ELSE, resultType);
         _adjustAndCheckFheTransactionLimitThreeOps(opCost, caller, lhs, middle, rhs, result);
     }
 
@@ -1105,7 +1105,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     function checkHCUForFheRand(FheType resultType, bytes32 result, address caller) external virtual {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
-        opCost = _cost(COSTS_39, resultType);
+        opCost = _cost(COSTS_RAND, resultType);
         _updateAndVerifyHCUTransactionLimit(opCost, caller);
         _setResultDepths(result, opCost, 0);
     }
@@ -1119,7 +1119,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     function checkHCUForFheRandBounded(FheType resultType, bytes32 result, address caller) external virtual {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
-        opCost = _cost(COSTS_40, resultType);
+        opCost = _cost(COSTS_RAND_BOUNDED, resultType);
         _updateAndVerifyHCUTransactionLimit(opCost, caller);
         _setResultDepths(result, opCost, 0);
     }
@@ -1258,11 +1258,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if (msg.sender != FHEVM_EXECUTOR_ADDRESS) revert CallerMustBeFHEVMExecutorContract();
         uint256 opCost;
         if (scalarByte == FHE_MUL_DIV_FACTOR2_SCALAR) {
-            opCost = _cost(COSTS_41, resultType);
+            opCost = _cost(COSTS_MUL_DIV_SCALAR, resultType);
 
             _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, factor1, result);
         } else if (scalarByte == FHE_MUL_DIV_FACTOR2_ENCRYPTED) {
-            opCost = _cost(COSTS_42, resultType);
+            opCost = _cost(COSTS_MUL_DIV, resultType);
 
             _adjustAndCheckFheTransactionLimitTwoOps(opCost, caller, factor1, factor2, result);
         } else {

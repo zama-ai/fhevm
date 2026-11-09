@@ -6,13 +6,14 @@ import {StdInvariant} from "forge-std/StdInvariant.sol";
 import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 
 import {HCULimit} from "../../contracts/HCULimit.sol";
+import {MockHCULimit} from "./HCULimit.t.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {FheType} from "../../contracts/shared/FheType.sol";
 import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract HCULimitInvariantHandler is Test {
-    HCULimit internal immutable hcuLimit;
+    MockHCULimit internal immutable hcuLimit;
     address internal immutable owner;
     address internal immutable fhevmExecutor;
 
@@ -26,7 +27,8 @@ contract HCULimitInvariantHandler is Test {
     bytes32 internal constant INPUT_HANDLE = bytes32(uint256(0xA11CE));
     uint48 internal constant NO_CAP = type(uint48).max;
     uint256 internal constant MAX_BPS = 10_000;
-    uint256 internal constant CAST_HCU = 32;
+    /// @dev What each burst operation, a scalar 8-bit add, charges to quotas and the capacity: its work.
+    uint256 internal immutable opWork;
 
     uint256 internal resultNonce = 1;
     bool public uncappedViolation;
@@ -37,8 +39,10 @@ contract HCULimitInvariantHandler is Test {
     bool public tierViolation;
     bool public capacityViolation;
 
-    constructor(HCULimit _hcuLimit, address _owner) {
+    constructor(MockHCULimit _hcuLimit, address _owner) {
         hcuLimit = _hcuLimit;
+        (, uint256 work) = _hcuLimit.cost(_hcuLimit.ROW_ADD_SUB_SCALAR(), FheType.Uint8);
+        opWork = work;
         owner = _owner;
         fhevmExecutor = _hcuLimit.getFHEVMExecutorAddress();
 
@@ -131,7 +135,7 @@ contract HCULimitInvariantHandler is Test {
 
     /**
      * @dev Accounting-focused burst:
-     *      - uses `checkHCUForCast` (fixed 32 HCU/op) for deterministic delta checks;
+     *      - uses a scalar 8-bit add, its work read from the cost table, for deterministic delta checks;
      *      - keeps bursts small on purpose (not a cap-exhaustion stress test).
      */
     function _runBurst(address caller, uint256 ops) internal {
@@ -142,12 +146,12 @@ contract HCULimitInvariantHandler is Test {
         (uint48 capacityMax, , uint48 loadBefore) = hcuLimit.getCapacity();
         // With the capacity metered, the chain's load can refuse an uncapped quota too.
         bool neverRefused = quotaId == UNCAPPED_QUOTA && !paused && capacityMax == NO_CAP;
-        uint256 successes = _castBurst(caller, ops, neverRefused, _tierThreshold(quotaId, capacityMax));
+        uint256 successes = _addBurst(caller, ops, neverRefused, _tierThreshold(quotaId, capacityMax));
 
         // Every admitted operation charges the capacity, whatever its quota, and a refused one charges nothing.
         (, , uint48 loadAfter) = hcuLimit.getCapacity();
         // While the capacity is unmetered nothing is charged, and getCapacity keeps showing the last stored load.
-        uint256 expectedLoad = capacityMax == NO_CAP ? loadBefore : loadBefore + successes * CAST_HCU;
+        uint256 expectedLoad = capacityMax == NO_CAP ? loadBefore : loadBefore + successes * opWork;
         if (loadAfter != expectedLoad) {
             capacityViolation = true;
         }
@@ -171,7 +175,7 @@ contract HCULimitInvariantHandler is Test {
         if (inDefault && successes != 0 && afterUsedHCU > defaultMax) {
             accountingViolation = true;
         }
-        uint256 expectedDelta = (!inDefault || defaultMax == NO_CAP) ? 0 : successes * CAST_HCU;
+        uint256 expectedDelta = (!inDefault || defaultMax == NO_CAP) ? 0 : successes * opWork;
         if (uint256(afterUsedHCU - beforeUsedHCU) != expectedDelta) {
             accountingViolation = true;
         }
@@ -183,8 +187,8 @@ contract HCULimitInvariantHandler is Test {
         return (uint256(capacityMax) * hcuLimit.getTier(hcuLimit.getQuotaTier(quotaId))) / MAX_BPS;
     }
 
-    /// @dev Runs `ops` casts by `caller` and returns how many succeeded.
-    function _castBurst(
+    /// @dev Runs `ops` scalar adds by `caller` and returns how many succeeded.
+    function _addBurst(
         address caller,
         uint256 ops,
         bool neverRefused,
@@ -192,7 +196,7 @@ contract HCULimitInvariantHandler is Test {
     ) internal returns (uint256 successes) {
         vm.startPrank(fhevmExecutor);
         for (uint256 i; i < ops; ++i) {
-            try hcuLimit.checkHCUForCast(FheType.Uint8, INPUT_HANDLE, _nextResultHandle(), caller) {} catch {
+            try hcuLimit.checkHCUForFheAdd(FheType.Uint8, 0x01, INPUT_HANDLE, INPUT_HANDLE, _nextResultHandle(), caller) {} catch {
                 if (neverRefused) uncappedViolation = true;
                 continue;
             }
@@ -220,7 +224,7 @@ contract HCULimitInvariantHandler is Test {
 }
 
 contract HCULimitInvariantTest is StdInvariant, Test {
-    HCULimit internal hcuLimit;
+    MockHCULimit internal hcuLimit;
     HCULimitInvariantHandler internal handler;
 
     address internal constant owner = address(456);
@@ -228,7 +232,7 @@ contract HCULimitInvariantTest is StdInvariant, Test {
     function setUp() public {
         // Invariants targeted by this harness:
         // 1) callers in an uncapped quota are never refused or metered.
-        // 2) capped accounting is consistent with successful casts and stays within the cap.
+        // 2) capped accounting is consistent with successful operations and stays within the cap.
         // 3) usage decays by decayPerBlock for each mined block, floored at 0.
         // 4) no operation from a paused quota succeeds, metered or not.
         // 5) a quota admin only moves contracts between the default quota and its quota, never while it is paused.
@@ -242,7 +246,7 @@ contract HCULimitInvariantTest is StdInvariant, Test {
             abi.encodeCall(EmptyUUPSProxy.initialize, ())
         );
 
-        address implementation = address(new HCULimit());
+        address implementation = address(new MockHCULimit());
         vm.startPrank(owner);
         UnsafeUpgrades.upgradeProxy(
             proxy,
@@ -251,7 +255,7 @@ contract HCULimitInvariantTest is StdInvariant, Test {
         );
         vm.stopPrank();
 
-        hcuLimit = HCULimit(proxy);
+        hcuLimit = MockHCULimit(proxy);
         handler = new HCULimitInvariantHandler(hcuLimit, owner);
 
         targetContract(address(handler));
