@@ -105,7 +105,7 @@ if database_iam_auth_enabled; then
   export PGPASSWORD="$_token"
 
   # TLS is configured purely through PG* env vars, which both psql (libpq) and
-  # sqlx-cli honor (sqlx 0.7.x reads PGSSLMODE/PGSSLROOTCERT in PgConnectOptions).
+  # sqlx-cli honor (sqlx reads PGSSLMODE/PGSSLROOTCERT in PgConnectOptions).
   # RDS IAM auth requires SSL; verify-full needs the RDS CA bundle on disk.
   export PGSSLMODE=verify-full
   if [[ -n "${DATABASE_SSL_ROOT_CERT_PATH:-}" ]]; then
