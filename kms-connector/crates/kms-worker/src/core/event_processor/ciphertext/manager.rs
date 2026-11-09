@@ -159,29 +159,29 @@ where
     F: Fn(B256, Slot) -> Fut,
     Fut: Future<Output = Result<ResolvedHandle, ProcessingError>>,
 {
-    let mut unique = Vec::with_capacity(handles.len());
+    let mut distinct = Vec::with_capacity(handles.len());
     let mut indices = HashMap::with_capacity(handles.len());
     for handle in handles {
         indices.entry(handle).or_insert_with(|| {
-            let index = unique.len();
-            unique.push(handle);
+            let index = distinct.len();
+            distinct.push(handle);
             index
         });
     }
     // Blocks until there are enough free buffers to fit all ciphertexts.
     let slots = pool
-        .reserve(unique.len())
+        .reserve(distinct.len())
         .await
-        .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, anyhow!(e)))?;
+        .map_err(|e| ProcessingError::irrecoverable(ErrorCode::Unprocessable, e))?;
     let resolved = try_join_all(
-        unique
+        distinct
             .iter()
             .zip(slots)
             .map(|(&handle, slot)| resolve(*handle, slot)),
     )
     .await?;
     let mut verified = aggregate_resolved_handles(resolved)?;
-    if unique.len() < handles.len() {
+    if distinct.len() < handles.len() {
         // TypedCiphertext clones share the large Bytes payload, preserving every wire entry.
         verified.ciphertexts = handles
             .iter()
