@@ -86,8 +86,10 @@ service:
   ports:
     - {name: tcp-postgresql, port: 5432}
 
+# -d: without it pg_isready targets a database named after the user ("zama"),
+# which does not exist, so every probe logs a misleading FATAL.
 readinessProbe:
-  exec: {command: ["pg_isready", "-U", "zama"]}
+  exec: {command: ["pg_isready", "-U", "zama", "-d", "fhevm_e2e"]}
   initialDelaySeconds: 5
   periodSeconds: 5
   timeoutSeconds: 5
@@ -98,7 +100,7 @@ readinessProbe:
 # like a spurious "went down and restarted" with no crash in the logs. Wider
 # timeout + more failures before restart tolerate those transient stalls.
 livenessProbe:
-  exec: {command: ["pg_isready", "-U", "zama"]}
+  exec: {command: ["pg_isready", "-U", "zama", "-d", "fhevm_e2e"]}
   initialDelaySeconds: 10
   periodSeconds: 10
   timeoutSeconds: 5
@@ -112,10 +114,14 @@ livenessProbe:
 # liveness). 8Gi was the working limit on the GPU preview env, but the
 # default-insecure keyset (~506 MB compressed_xof_keyset) OOM-killed it when
 # several workers read the key row at once, about 1 GB of backend memory each.
+# The request must cover that peak too, not just the limit: Karpenter places
+# and consolidates on requests, and at 1Gi it moved this pod onto an 8 GB node
+# where the key reads exhausted node memory and the kernel OOM-killed Postgres
+# on every restart (idle usage alone is ~2 GiB).
 resources:
   requests:
     cpu: "500m"
-    memory: "1Gi"
+    memory: "8Gi"
   limits:
     cpu: "2"
     memory: "16Gi"
