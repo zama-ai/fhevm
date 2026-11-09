@@ -74,7 +74,8 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       // AddHostChain now indexes the chain ID so listeners can filter on it, which changes the
       // event signature. Nothing off-chain subscribes to it.
       "event AddHostChain((uint256,address,address,string,string))",
-      "event InitializeGatewayConfig((string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])",
+      // InitializeGatewayConfig also carries the first coprocessor context ID. It is only emitted at deployment.
+      "event InitializeGatewayConfig(uint256 indexed,(string,string),(uint256,uint256,uint256,uint256,uint256),(address,address,string,string)[],(address,address,string)[],(address,address,bytes)[])",
       "event UpdateKmsNodes((address,address,string,string)[],uint256,uint256,uint256,uint256)",
       "function getPublicDecryptionThreshold() returns (uint256)",
       "function getUserDecryptionThreshold() returns (uint256)",
@@ -95,6 +96,14 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       "event UpdatePublicDecryptionThresholdForContext(uint256 indexed,uint256)",
       "event UpdateUserDecryptionThresholdForContext(uint256 indexed,uint256)",
       "event UpdateKmsGenThresholdForContext(uint256 indexed,uint256)",
+      // Coprocessor sets are stored per context. UpdateCoprocessors now carries the indexed context ID,
+      // and a threshold change is a new context, so UpdateCoprocessorThreshold is gone.
+      "event UpdateCoprocessors((address,address,string)[],uint256)",
+      "event UpdateCoprocessorThreshold(uint256)",
+      // The coprocessor threshold must be a strict majority, as in ProtocolConfig. One error replaces the
+      // null and too-high threshold errors.
+      "error InvalidNullCoprocessorThreshold()",
+      "error InvalidHighCoprocessorThreshold(uint256,uint256)",
     ],
     // KMSGeneration was frozen to a view-only implementation after the move of key generation to
     // Ethereum. State-changing entrypoints and the errors/events they emitted were removed from

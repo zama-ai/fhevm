@@ -58,6 +58,57 @@ describe('InputVerification', function () {
   const INPUT_VERIFICATION_STORAGE_LOCATION = BigInt(
     '0x4544165ce1653264fdcb09b029891e3d4c8d8583486821172f882e19a149a800',
   );
+  const INPUT_VERIFICATION_CONTEXT_ID_SLOT = INPUT_VERIFICATION_STORAGE_LOCATION + 11n;
+
+  const initialCoprocessorContextId = (9n << 248n) | 1n;
+  const nextCoprocessorContextId = (9n << 248n) | 2n;
+
+  // Creates a new input verification request and returns its ID, read from the request counter, which is
+  // the first field of the storage struct.
+  async function requestProof(
+    inputVerification: InputVerification,
+    txSender: Wallet,
+    contractChainId: number,
+  ): Promise<number> {
+    await inputVerification
+      .connect(txSender)
+      .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0);
+    const counter = await hre.network.provider.send('eth_getStorageAt', [
+      await inputVerification.getAddress(),
+      hre.ethers.toBeHex(INPUT_VERIFICATION_STORAGE_LOCATION),
+      'latest',
+    ]);
+    return Number(BigInt(counter));
+  }
+
+  // Overwrites the coprocessor context ID a request recorded.
+  async function setRequestContextId(
+    inputVerification: InputVerification,
+    proofId: number,
+    contextId: bigint,
+  ): Promise<void> {
+    await hre.network.provider.send('hardhat_setStorageAt', [
+      await inputVerification.getAddress(),
+      hre.ethers.keccak256(
+        hre.ethers.AbiCoder.defaultAbiCoder().encode(
+          ['uint256', 'uint256'],
+          [proofId, INPUT_VERIFICATION_CONTEXT_ID_SLOT],
+        ),
+      ),
+      hre.ethers.toBeHex(contextId, 32),
+    ]);
+  }
+
+  // Moves GatewayConfig to a new current context with the last coprocessor only, threshold 1.
+  async function switchToLastCoprocessorOnly(
+    gatewayConfig: GatewayConfig,
+    owner: Wallet,
+    coprocessors: CoprocessorStruct[],
+  ): Promise<void> {
+    await gatewayConfig
+      .connect(owner)
+      .updateCoprocessors(nextCoprocessorContextId, [coprocessors[coprocessors.length - 1]], 1);
+  }
   const PRIORITY_VERIFY_CONSENSUS_SLOT = INPUT_VERIFICATION_STORAGE_LOCATION + 12n;
   const PRIORITY_REJECT_CONSENSUS_SLOT = INPUT_VERIFICATION_STORAGE_LOCATION + 13n;
 
@@ -588,8 +639,149 @@ describe('InputVerification', function () {
       await expect(
         inputVerification.connect(fakeTxSender).verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0),
       )
-        .revertedWithCustomError(inputVerification, 'NotCoprocessorTxSender')
-        .withArgs(fakeTxSender.address);
+        .revertedWithCustomError(inputVerification, 'CoprocessorSignerDoesNotMatchTxSender')
+        .withArgs(coprocessorSigners[0].address, fakeTxSender.address);
+    });
+
+    it('Should revert because the coprocessor is not in the request context', async function () {
+      const lastIdx = coprocessors.length - 1;
+      await switchToLastCoprocessorOnly(gatewayConfig, owner, coprocessors);
+      const proofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(proofId, ctHandles, signatures[0], extraDataV0),
+      )
+        .revertedWithCustomError(inputVerification, 'NotCoprocessorSigner')
+        .withArgs(coprocessorSigners[0].address);
+    });
+
+    it('Should revert because the signer is not in the request context', async function () {
+      const lastIdx = coprocessors.length - 1;
+      await switchToLastCoprocessorOnly(gatewayConfig, owner, coprocessors);
+      const proofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+
+      // The transaction sender is in the request context, but the signer only belongs to the previous one.
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[lastIdx])
+          .verifyProofResponse(proofId, ctHandles, signatures[0], extraDataV0),
+      )
+        .revertedWithCustomError(inputVerification, 'NotCoprocessorSigner')
+        .withArgs(coprocessorSigners[0].address);
+    });
+
+    it('Should verify a proof under the context recorded at request time after a context change', async function () {
+      const proofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+      await switchToLastCoprocessorOnly(gatewayConfig, owner, coprocessors);
+
+      // The first two coprocessors left the current context but belong to the request context.
+      await inputVerification
+        .connect(coprocessorTxSenders[0])
+        .verifyProofResponse(proofId, ctHandles, signatures[0], extraDataV0);
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[1])
+          .verifyProofResponse(proofId, ctHandles, signatures[1], extraDataV0),
+      ).to.emit(inputVerification, 'VerifyProofResponse');
+    });
+
+    it('Should verify a proof under the threshold of the current context', async function () {
+      const lastIdx = coprocessors.length - 1;
+      await switchToLastCoprocessorOnly(gatewayConfig, owner, coprocessors);
+      const proofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+
+      // A single response reaches the new context threshold of 1.
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[lastIdx])
+          .verifyProofResponse(proofId, ctHandles, signatures[lastIdx], extraDataV0),
+      ).to.emit(inputVerification, 'VerifyProofResponse');
+    });
+
+    it('Should revert because the request context was destroyed', async function () {
+      const proofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+      await switchToLastCoprocessorOnly(gatewayConfig, owner, coprocessors);
+      await gatewayConfig.connect(owner).destroyCoprocessorContext(initialCoprocessorContextId);
+
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(proofId, ctHandles, signatures[0], extraDataV0),
+      )
+        .revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorContext')
+        .withArgs(initialCoprocessorContextId);
+    });
+
+    it('Should verify a request created before the upgrade under the first coprocessor context', async function () {
+      // Any other recorded value is read as is: this proves the slot written below is the right one.
+      const otherProofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+      await setRequestContextId(inputVerification, otherProofId, 2n);
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(otherProofId, ctHandles, signatures[0], extraDataV0),
+      )
+        .revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorContext')
+        .withArgs(2n);
+
+      // Requests created before the upgrade hold the placeholder 1, read as the current context: the
+      // first coprocessor context.
+      expect(await gatewayConfig.getCurrentCoprocessorContextId()).to.equal(initialCoprocessorContextId);
+      const proofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+      await setRequestContextId(inputVerification, proofId, 1n);
+
+      await inputVerification
+        .connect(coprocessorTxSenders[0])
+        .verifyProofResponse(proofId, ctHandles, signatures[0], extraDataV0);
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[1])
+          .verifyProofResponse(proofId, ctHandles, signatures[1], extraDataV0),
+      ).to.emit(inputVerification, 'VerifyProofResponse');
+    });
+
+    it('Should verify a request created before the upgrade under the newer context after a context change', async function () {
+      const proofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+      await setRequestContextId(inputVerification, proofId, 1n);
+      await switchToLastCoprocessorOnly(gatewayConfig, owner, coprocessors);
+
+      // The first coprocessor left the current context, which the placeholder now resolves to.
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(proofId, ctHandles, signatures[0], extraDataV0),
+      )
+        .revertedWithCustomError(inputVerification, 'NotCoprocessorSigner')
+        .withArgs(coprocessorSigners[0].address);
+
+      const lastIdx = coprocessors.length - 1;
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[lastIdx])
+          .verifyProofResponse(proofId, ctHandles, signatures[lastIdx], extraDataV0),
+      ).to.emit(inputVerification, 'VerifyProofResponse');
+    });
+
+    it('Should not verify a request created before the upgrade and already rejected under the previous context', async function () {
+      const proofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+      await setRequestContextId(inputVerification, proofId, 1n);
+
+      // Two of the three coprocessors reject the proof under the first context.
+      await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(proofId, extraDataV0);
+      await inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(proofId, extraDataV0);
+      expect(await inputVerification.isProofRejected(proofId)).to.be.true;
+
+      // The placeholder now resolves to a context whose threshold of 1 a single response reaches.
+      await switchToLastCoprocessorOnly(gatewayConfig, owner, coprocessors);
+      const lastIdx = coprocessors.length - 1;
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[lastIdx])
+          .verifyProofResponse(proofId, ctHandles, signatures[lastIdx], extraDataV0),
+      ).to.not.emit(inputVerification, 'VerifyProofResponse');
+      expect(await inputVerification.isProofVerified(proofId)).to.be.false;
     });
 
     it('Should check that a proof has been verified', async function () {
@@ -622,32 +814,6 @@ describe('InputVerification', function () {
       )
         .revertedWithCustomError(inputVerification, 'CoprocessorSignerDoesNotMatchTxSender')
         .withArgs(firstCoprocessorSigner.address, secondCoprocessorTxSender.address);
-    });
-
-    it('Should not reach verify consensus if it has already been rejected with low coprocessor threshold', async function () {
-      // Update the coprocessor threshold to 1 in order to try to reach a consensus twice with the
-      // current total of 3 coprocessors. updateCoprocessorThreshold requires InputVerification
-      // to be paused first.
-      await inputVerification.connect(pauser).pause();
-      await gatewayConfig.connect(owner).updateCoprocessorThreshold(1);
-      await inputVerification.connect(owner).unpause();
-
-      // Trigger a proof rejection response with the first coprocessor transaction sender
-      await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0);
-
-      // Check that the proof has been rejected
-      expect(await inputVerification.isProofRejected(zkProofId)).to.be.true;
-
-      // Check that the proof has not been verified
-      expect(await inputVerification.isProofVerified(zkProofId)).to.be.false;
-
-      // Trigger a proof verification response with the second coprocessor transaction sender
-      await inputVerification
-        .connect(coprocessorTxSenders[1])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[1], extraDataV0);
-
-      // Check that the proof has not been verified
-      expect(await inputVerification.isProofVerified(zkProofId)).to.be.false;
     });
   });
 
@@ -915,6 +1081,58 @@ describe('InputVerification', function () {
         .withArgs(fakeTxSender.address);
     });
 
+    it('Should revert because the coprocessor is not in the request context', async function () {
+      const lastIdx = coprocessors.length - 1;
+      await switchToLastCoprocessorOnly(gatewayConfig, owner, coprocessors);
+      const proofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+
+      await expect(inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(proofId, extraDataV0))
+        .revertedWithCustomError(inputVerification, 'NotCoprocessorTxSender')
+        .withArgs(coprocessorTxSenders[0].address);
+    });
+
+    it('Should revert because the request context was destroyed', async function () {
+      const proofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+      await switchToLastCoprocessorOnly(gatewayConfig, owner, coprocessors);
+      await gatewayConfig.connect(owner).destroyCoprocessorContext(initialCoprocessorContextId);
+
+      await expect(inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(proofId, extraDataV0))
+        .revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorContext')
+        .withArgs(initialCoprocessorContextId);
+    });
+
+    it('Should not reject a request created before the upgrade and already verified under the previous context', async function () {
+      const proofId = await requestProof(inputVerification, tokenFundedTxSender, contractChainId);
+      await setRequestContextId(inputVerification, proofId, 1n);
+
+      // Two of the three coprocessors verify the proof under the first context.
+      const eip712Message = createEIP712ResponseZKPoK(
+        hre.network.config.chainId!,
+        inputVerificationAddress,
+        ctHandles,
+        userAddress,
+        contractAddress,
+        contractChainId,
+        extraDataV0,
+      );
+      const signatures = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
+      await inputVerification
+        .connect(coprocessorTxSenders[0])
+        .verifyProofResponse(proofId, ctHandles, signatures[0], extraDataV0);
+      await inputVerification
+        .connect(coprocessorTxSenders[1])
+        .verifyProofResponse(proofId, ctHandles, signatures[1], extraDataV0);
+      expect(await inputVerification.isProofVerified(proofId)).to.be.true;
+
+      // The placeholder now resolves to a context whose threshold of 1 a single response reaches.
+      await switchToLastCoprocessorOnly(gatewayConfig, owner, coprocessors);
+      const lastIdx = coprocessors.length - 1;
+      await expect(
+        inputVerification.connect(coprocessorTxSenders[lastIdx]).rejectProofResponse(proofId, extraDataV0),
+      ).to.not.emit(inputVerification, 'RejectProofResponse');
+      expect(await inputVerification.isProofRejected(proofId)).to.be.false;
+    });
+
     it('Should check that a proof has been rejected', async function () {
       // Trigger two valid proof verification responses
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
@@ -926,46 +1144,6 @@ describe('InputVerification', function () {
 
     it('Should check that a proof has not been rejected', async function () {
       expect(await inputVerification.isProofRejected(fakeZkProofId)).to.be.false;
-    });
-
-    it('Should not reach verify consensus if it has already been rejected with low coprocessor threshold', async function () {
-      // Update the coprocessor threshold to 1 in order to try to reach a consensus twice with the
-      // current total of 3 coprocessors. updateCoprocessorThreshold requires InputVerification
-      // to be paused first.
-      await inputVerification.connect(pauser).pause();
-      await gatewayConfig.connect(owner).updateCoprocessorThreshold(1);
-      await inputVerification.connect(owner).unpause();
-
-      // Create the EIP712 message
-      const eip712Message = createEIP712ResponseZKPoK(
-        hre.network.config.chainId!,
-        inputVerificationAddress,
-        ctHandles,
-        userAddress,
-        contractAddress,
-        contractChainId,
-        extraDataV0,
-      );
-
-      // Get the EIP712 signatures
-      const [signature1] = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
-
-      // Trigger a proof verification response with the first coprocessor transaction sender
-      await inputVerification
-        .connect(coprocessorTxSenders[0])
-        .verifyProofResponse(zkProofId, ctHandles, signature1, extraDataV0);
-
-      // Check that the proof has been verified
-      expect(await inputVerification.isProofVerified(zkProofId)).to.be.true;
-
-      // Check that the proof has not been rejected
-      expect(await inputVerification.isProofRejected(zkProofId)).to.be.false;
-
-      // Trigger a proof rejection response with the second coprocessor transaction sender
-      await inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(zkProofId, extraDataV0);
-
-      // Check that the proof has not been rejected
-      expect(await inputVerification.isProofRejected(zkProofId)).to.be.false;
     });
   });
 

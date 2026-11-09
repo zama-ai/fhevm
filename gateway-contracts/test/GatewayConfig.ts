@@ -30,6 +30,9 @@ describe('GatewayConfig', function () {
   // KMS context ID format: [0x07 | counter_1..31]
   const initialKmsContextId = (7n << 248n) | 1n;
   const nextKmsContextId = (7n << 248n) | 2n;
+  // Coprocessor context ID format: [0x09 | counter_1..31]
+  const initialCoprocessorContextId = (9n << 248n) | 1n;
+  const nextCoprocessorContextId = (9n << 248n) | 2n;
   const protocolMetadata = { name: 'Protocol', website: 'https://protocol.com' };
   const mpcThreshold = 1;
   const publicDecryptionThreshold = 3;
@@ -195,7 +198,15 @@ describe('GatewayConfig', function () {
       const upgradeTx = await hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
         call: {
           fn: 'initializeFromEmptyProxy',
-          args: [initialKmsContextId, protocolMetadata, thresholds, kmsNodes, coprocessors, custodians],
+          args: [
+            initialKmsContextId,
+            initialCoprocessorContextId,
+            protocolMetadata,
+            thresholds,
+            kmsNodes,
+            coprocessors,
+            custodians,
+          ],
         },
       });
 
@@ -211,12 +222,21 @@ describe('GatewayConfig', function () {
       expect(initializeGatewayConfigEvents.length).to.equal(1);
       expect(stringifiedEventArgs).to.deep.equal([
         initialKmsContextId.toString(),
+        initialCoprocessorContextId.toString(),
         toValues(protocolMetadata).toString(),
         toValues(thresholds).toString(),
         toValues(kmsNodes).toString(),
         toValues(coprocessors).toString(),
         toValues(custodians).toString(),
       ]);
+    });
+
+    it('Should define the first coprocessor context at deployment', async function () {
+      expect(await gatewayConfig.getCurrentCoprocessorContextId()).to.equal(initialCoprocessorContextId);
+      expect(await gatewayConfig.isValidCoprocessorContext(initialCoprocessorContextId)).to.be.true;
+      expect(await gatewayConfig.getCoprocessorMajorityThresholdForContext(initialCoprocessorContextId)).to.equal(
+        await gatewayConfig.getCoprocessorMajorityThreshold(),
+      );
     });
 
     it('Should expose the GatewayConfig version', async function () {
@@ -238,7 +258,7 @@ describe('GatewayConfig', function () {
       expect(await readDeprecatedPrioritySlot(proxyAddress)).to.equal(coprocessors[0].txSenderAddress);
 
       await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
-        call: { fn: 'reinitializeV9' },
+        call: { fn: 'reinitializeV9', args: [initialCoprocessorContextId] },
       });
 
       // The upgrade disables priority mode on its own, without relying on a prior ops call.
@@ -248,15 +268,66 @@ describe('GatewayConfig', function () {
     it('Should revert when reinitializing a second time (reinitializer guard)', async function () {
       const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
       const upgradedGatewayConfig = await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
-        call: { fn: 'reinitializeV9' },
+        call: { fn: 'reinitializeV9', args: [initialCoprocessorContextId] },
       });
 
       // reinitializeV9 is not owner-gated: the atomic upgradeToAndCall is authorized by
       // _authorizeUpgrade, and the reinitializer guard prevents any later re-invocation.
-      await expect(upgradedGatewayConfig.connect(owner).reinitializeV9()).to.be.revertedWithCustomError(
-        gatewayConfig,
-        'InvalidInitialization',
+      await expect(
+        upgradedGatewayConfig.connect(owner).reinitializeV9(initialCoprocessorContextId),
+      ).to.be.revertedWithCustomError(gatewayConfig, 'InvalidInitialization');
+    });
+
+    it('Should store the registered coprocessor set as the coprocessor context given to the upgrade', async function () {
+      // The ID is the one Ethereum gives the same set, not necessarily its first one.
+      const upgradeCoprocessorContextId = (9n << 248n) | 5n;
+      const proxy = await hre.upgrades.deployProxy(
+        await hre.ethers.getContractFactory('EmptyUUPSProxyGatewayConfig', owner),
+        [owner.address],
+        { initializer: 'initialize', kind: 'uups' },
       );
+      await proxy.waitForDeployment();
+      const gatewayConfigPhase1 = await hre.upgrades.upgradeProxy(proxy, oldGatewayConfigFactory, {
+        call: { fn: 'initializeV7ForTest', args: [owner.address, coprocessors, coprocessorThreshold] },
+      });
+
+      const upgraded = (await hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+        call: { fn: 'reinitializeV9', args: [upgradeCoprocessorContextId] },
+      })) as unknown as GatewayConfig;
+
+      expect(await upgraded.getCurrentCoprocessorContextId()).to.equal(upgradeCoprocessorContextId);
+      expect(await upgraded.isValidCoprocessorContext(upgradeCoprocessorContextId)).to.be.true;
+      expect(await upgraded.getCoprocessorMajorityThreshold()).to.equal(coprocessorThreshold);
+      expect(await upgraded.getCoprocessorTxSenders()).to.deep.equal(coprocessors.map((c) => c.txSenderAddress));
+      expect(await upgraded.getCoprocessorSigners()).to.deep.equal(coprocessors.map((c) => c.signerAddress));
+      for (const coprocessor of coprocessors) {
+        expect(await upgraded.getCoprocessor(coprocessor.txSenderAddress)).to.deep.equal(toValues(coprocessor));
+        expect(
+          await upgraded.getCoprocessorForContext(upgradeCoprocessorContextId, coprocessor.txSenderAddress),
+        ).to.deep.equal(toValues(coprocessor));
+        expect(await upgraded.isCoprocessorTxSender(coprocessor.txSenderAddress)).to.be.true;
+        expect(await upgraded.isCoprocessorSigner(coprocessor.signerAddress)).to.be.true;
+      }
+    });
+
+    it('Should revert the upgrade because the coprocessor context ID is zero', async function () {
+      const gatewayConfigPhase1 = await deployGatewayConfigPhase1Proxy();
+      await expect(
+        hre.upgrades.upgradeProxy(gatewayConfigPhase1, newGatewayConfigFactory, {
+          call: { fn: 'reinitializeV9', args: [0] },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, 'InvalidNullCoprocessorContextId');
+    });
+
+    it('Should revert because the coprocessor context ID is zero', async function () {
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: 'initializeFromEmptyProxy',
+            args: [initialKmsContextId, 0, protocolMetadata, thresholds, kmsNodes, coprocessors, custodians],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, 'InvalidNullCoprocessorContextId');
     });
 
     it('Should revert because the KMS nodes list is empty', async function () {
@@ -264,7 +335,15 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, thresholds, emptyKmsNodes, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              thresholds,
+              emptyKmsNodes,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, 'EmptyKmsNodes');
@@ -281,6 +360,7 @@ describe('GatewayConfig', function () {
             fn: 'initializeFromEmptyProxy',
             args: [
               initialKmsContextId,
+              initialCoprocessorContextId,
               protocolMetadata,
               thresholds,
               duplicatedTxSenderKmsNode,
@@ -305,6 +385,7 @@ describe('GatewayConfig', function () {
             fn: 'initializeFromEmptyProxy',
             args: [
               initialKmsContextId,
+              initialCoprocessorContextId,
               protocolMetadata,
               thresholds,
               duplicatedSignerKmsNode,
@@ -323,7 +404,15 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, thresholds, kmsNodes, emptyCoprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              thresholds,
+              kmsNodes,
+              emptyCoprocessors,
+              custodians,
+            ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, 'EmptyCoprocessors');
@@ -340,6 +429,7 @@ describe('GatewayConfig', function () {
             fn: 'initializeFromEmptyProxy',
             args: [
               initialKmsContextId,
+              initialCoprocessorContextId,
               protocolMetadata,
               thresholds,
               kmsNodes,
@@ -364,6 +454,7 @@ describe('GatewayConfig', function () {
             fn: 'initializeFromEmptyProxy',
             args: [
               initialKmsContextId,
+              initialCoprocessorContextId,
               protocolMetadata,
               thresholds,
               kmsNodes,
@@ -382,7 +473,15 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, thresholds, kmsNodes, coprocessors, emptyCustodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              thresholds,
+              kmsNodes,
+              coprocessors,
+              emptyCustodians,
+            ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, 'EmptyCustodians');
@@ -399,6 +498,7 @@ describe('GatewayConfig', function () {
             fn: 'initializeFromEmptyProxy',
             args: [
               initialKmsContextId,
+              initialCoprocessorContextId,
               protocolMetadata,
               thresholds,
               kmsNodes,
@@ -423,6 +523,7 @@ describe('GatewayConfig', function () {
             fn: 'initializeFromEmptyProxy',
             args: [
               initialKmsContextId,
+              initialCoprocessorContextId,
               protocolMetadata,
               thresholds,
               kmsNodes,
@@ -449,7 +550,15 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              badThresholds,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       )
@@ -469,7 +578,15 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              badThresholds,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, 'InvalidNullPublicDecryptionThreshold');
@@ -489,7 +606,15 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              badThresholds,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       )
@@ -509,7 +634,15 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              badThresholds,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, 'InvalidNullUserDecryptionThreshold');
@@ -529,7 +662,15 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              badThresholds,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       )
@@ -549,7 +690,15 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              badThresholds,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, 'InvalidNullKmsGenThreshold');
@@ -569,7 +718,15 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              badThresholds,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       )
@@ -589,10 +746,51 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              badThresholds,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
-      ).to.be.revertedWithCustomError(gatewayConfig, 'InvalidNullCoprocessorThreshold');
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorMajorityThreshold')
+        .withArgs(nullCoprocessorThreshold, nCoprocessors);
+    });
+
+    it('Should revert because the coprocessor threshold is not a majority', async function () {
+      // Half the coprocessors, rounded down, is not a majority.
+      const minorityCoprocessorThreshold = Math.floor(nCoprocessors / 2);
+      const badThresholds = {
+        mpcThreshold,
+        publicDecryptionThreshold,
+        userDecryptionThreshold,
+        kmsGenThreshold,
+        coprocessorThreshold: minorityCoprocessorThreshold,
+      };
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: 'initializeFromEmptyProxy',
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              badThresholds,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorMajorityThreshold')
+        .withArgs(minorityCoprocessorThreshold, nCoprocessors);
     });
 
     it('Should revert because the coprocessor threshold is too high', async function () {
@@ -604,16 +802,24 @@ describe('GatewayConfig', function () {
         coprocessorThreshold: highCoprocessorThreshold,
       };
 
-      // The coprocessor threshold must be less or equal to the number of coprocessors
+      // The coprocessor threshold must be at most the number of coprocessors
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, badThresholds, kmsNodes, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              badThresholds,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       )
-        .to.be.revertedWithCustomError(gatewayConfig, 'InvalidHighCoprocessorThreshold')
+        .to.be.revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorMajorityThreshold')
         .withArgs(highCoprocessorThreshold, nCoprocessors);
     });
 
@@ -622,7 +828,15 @@ describe('GatewayConfig', function () {
         hre.upgrades.upgradeProxy(gatewayConfig, newGatewayConfigFactory, {
           call: {
             fn: 'initializeFromEmptyProxy',
-            args: [initialKmsContextId, protocolMetadata, thresholds, kmsNodes, coprocessors, custodians],
+            args: [
+              initialKmsContextId,
+              initialCoprocessorContextId,
+              protocolMetadata,
+              thresholds,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
           },
         }),
       ).to.be.revertedWithCustomError(gatewayConfig, 'NotInitializingFromEmptyProxy');
@@ -1114,84 +1328,217 @@ describe('GatewayConfig', function () {
         });
       });
 
-      describe('Coprocessors updates', function () {
-        beforeEach(async function () {
-          // updateCoprocessors / updateCoprocessorThreshold now require InputVerification to be paused.
-          await inputVerification.connect(pauser).pause();
-        });
+      describe('Coprocessor contexts', function () {
+        let newCoprocessor: CoprocessorStruct;
 
-        it('Should update the coprocessors', async function () {
-          const newCoprocessor: CoprocessorStruct = {
+        beforeEach(async function () {
+          newCoprocessor = {
             txSenderAddress: newTxSenderAddress,
             signerAddress: newSignerAddress,
             s3BucketUrl: 's3://coprocessor-bucket-1000',
           };
-          const newCoprocessors: CoprocessorStruct[] = [newCoprocessor];
-          const newCoprocessorThreshold = 1;
+        });
 
-          const tx = await gatewayConfig.connect(owner).updateCoprocessors(newCoprocessors, newCoprocessorThreshold);
+        it('Should store a new coprocessor context and make it current', async function () {
+          const tx = await gatewayConfig
+            .connect(owner)
+            .updateCoprocessors(nextCoprocessorContextId, [newCoprocessor], 1);
 
           await expect(tx)
             .to.emit(gatewayConfig, 'UpdateCoprocessors')
-            .withArgs(toValues(newCoprocessors), newCoprocessorThreshold);
+            .withArgs(nextCoprocessorContextId, toValues([newCoprocessor]), 1);
 
-          // Check that the KMS nodes have been updated
+          // The getters without a context ID read the new current context.
+          expect(await gatewayConfig.getCurrentCoprocessorContextId()).to.equal(nextCoprocessorContextId);
           expect(await gatewayConfig.isCoprocessorTxSender(newTxSenderAddress)).to.be.true;
           expect(await gatewayConfig.isCoprocessorSigner(newSignerAddress)).to.be.true;
           expect(await gatewayConfig.getCoprocessor(newTxSenderAddress)).to.deep.equal(toValues(newCoprocessor));
           expect(await gatewayConfig.getCoprocessorTxSenders()).to.deep.equal([newTxSenderAddress]);
           expect(await gatewayConfig.getCoprocessorSigners()).to.deep.equal([newSignerAddress]);
-
-          // Check that the threshold have been updated
-          expect(await gatewayConfig.getCoprocessorMajorityThreshold()).to.equal(newCoprocessorThreshold);
-
-          // Define the null coprocessor
-          const nullCoprocessor: CoprocessorStruct = {
-            txSenderAddress: ZeroAddress,
-            signerAddress: ZeroAddress,
-            s3BucketUrl: '',
-          };
-
-          // Check that old coprocessors have been removed
-          for (const coprocessorSigner of coprocessorSigners) {
-            expect(await gatewayConfig.isCoprocessorSigner(coprocessorSigner)).to.be.false;
+          expect(await gatewayConfig.getCoprocessorMajorityThreshold()).to.equal(1);
+          for (const coprocessor of coprocessors) {
+            expect(await gatewayConfig.isCoprocessorTxSender(coprocessor.txSenderAddress)).to.be.false;
+            expect(await gatewayConfig.isCoprocessorSigner(coprocessor.signerAddress)).to.be.false;
           }
-          for (const coprocessorTxSender of coprocessorTxSenders) {
-            expect(await gatewayConfig.isCoprocessorTxSender(coprocessorTxSender)).to.be.false;
-            expect(await gatewayConfig.getCoprocessor(coprocessorTxSender)).to.deep.equal(toValues(nullCoprocessor));
+
+          // The previous context stays valid and readable.
+          expect(await gatewayConfig.isValidCoprocessorContext(initialCoprocessorContextId)).to.be.true;
+          expect(await gatewayConfig.getCoprocessorMajorityThresholdForContext(initialCoprocessorContextId)).to.equal(
+            coprocessorThreshold,
+          );
+          for (const coprocessor of coprocessors) {
+            expect(
+              await gatewayConfig.isCoprocessorTxSenderForContext(
+                initialCoprocessorContextId,
+                coprocessor.txSenderAddress,
+              ),
+            ).to.be.true;
+            expect(
+              await gatewayConfig.isCoprocessorSignerForContext(initialCoprocessorContextId, coprocessor.signerAddress),
+            ).to.be.true;
+            expect(
+              await gatewayConfig.getCoprocessorForContext(initialCoprocessorContextId, coprocessor.txSenderAddress),
+            ).to.deep.equal(toValues(coprocessor));
           }
         });
 
+        it('Should accept the addresses of the previous context in a new context', async function () {
+          await gatewayConfig
+            .connect(owner)
+            .updateCoprocessors(nextCoprocessorContextId, coprocessors, coprocessorThreshold);
+          expect(await gatewayConfig.getCoprocessorMajorityThreshold()).to.equal(coprocessorThreshold);
+          expect(await gatewayConfig.getCoprocessorTxSenders()).to.deep.equal(
+            coprocessors.map((c) => c.txSenderAddress),
+          );
+        });
+
+        it('Should accept a context ID gap', async function () {
+          const contextId = nextCoprocessorContextId + 5n;
+          await gatewayConfig.connect(owner).updateCoprocessors(contextId, coprocessors, coprocessorThreshold);
+          expect(await gatewayConfig.getCurrentCoprocessorContextId()).to.equal(contextId);
+        });
+
         it('Should revert because the sender is not the owner', async function () {
-          await expect(gatewayConfig.connect(fakeOwner).updateCoprocessors(emptyCoprocessors, nullCoprocessorThreshold))
+          await expect(
+            gatewayConfig
+              .connect(fakeOwner)
+              .updateCoprocessors(nextCoprocessorContextId, coprocessors, coprocessorThreshold),
+          )
             .to.be.revertedWithCustomError(gatewayConfig, 'OwnableUnauthorizedAccount')
             .withArgs(fakeOwner.address);
         });
 
+        it('Should revert because the context ID is zero', async function () {
+          await expect(
+            gatewayConfig.connect(owner).updateCoprocessors(0, coprocessors, coprocessorThreshold),
+          ).to.be.revertedWithCustomError(gatewayConfig, 'InvalidNullCoprocessorContextId');
+        });
+
+        it('Should revert because the context ID is not greater than the current one', async function () {
+          await expect(
+            gatewayConfig
+              .connect(owner)
+              .updateCoprocessors(initialCoprocessorContextId, coprocessors, coprocessorThreshold),
+          )
+            .to.be.revertedWithCustomError(gatewayConfig, 'CoprocessorContextAlreadyRegistered')
+            .withArgs(initialCoprocessorContextId, initialCoprocessorContextId);
+        });
+
         it('Should revert because the coprocessors are empty', async function () {
           await expect(
-            gatewayConfig.connect(owner).updateCoprocessors(emptyCoprocessors, nullCoprocessorThreshold),
+            gatewayConfig.connect(owner).updateCoprocessors(nextCoprocessorContextId, emptyCoprocessors, 1),
           ).to.be.revertedWithCustomError(gatewayConfig, 'EmptyCoprocessors');
+        });
+
+        it('Should revert because a coprocessor transaction sender is duplicated', async function () {
+          const duplicated = [
+            coprocessors[0],
+            { ...coprocessors[1], txSenderAddress: coprocessors[0].txSenderAddress },
+          ];
+          await expect(gatewayConfig.connect(owner).updateCoprocessors(nextCoprocessorContextId, duplicated, 2))
+            .to.be.revertedWithCustomError(gatewayConfig, 'CoprocessorTxSenderAlreadyRegistered')
+            .withArgs(coprocessors[0].txSenderAddress);
+        });
+
+        it('Should revert because a coprocessor signer is duplicated', async function () {
+          const duplicated = [coprocessors[0], { ...coprocessors[1], signerAddress: coprocessors[0].signerAddress }];
+          await expect(gatewayConfig.connect(owner).updateCoprocessors(nextCoprocessorContextId, duplicated, 2))
+            .to.be.revertedWithCustomError(gatewayConfig, 'CoprocessorSignerAlreadyRegistered')
+            .withArgs(coprocessors[0].signerAddress);
         });
 
         it('Should revert because the coprocessor threshold is null', async function () {
           await expect(
-            gatewayConfig.connect(owner).updateCoprocessors(coprocessors, nullCoprocessorThreshold),
-          ).to.be.revertedWithCustomError(gatewayConfig, 'InvalidNullCoprocessorThreshold');
+            gatewayConfig
+              .connect(owner)
+              .updateCoprocessors(nextCoprocessorContextId, coprocessors, nullCoprocessorThreshold),
+          )
+            .to.be.revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorMajorityThreshold')
+            .withArgs(nullCoprocessorThreshold, nCoprocessors);
+        });
+
+        it('Should revert because the coprocessor threshold is not a majority', async function () {
+          // Half the coprocessors, rounded down, is not a majority.
+          const minorityCoprocessorThreshold = Math.floor(nCoprocessors / 2);
+          await expect(
+            gatewayConfig
+              .connect(owner)
+              .updateCoprocessors(nextCoprocessorContextId, coprocessors, minorityCoprocessorThreshold),
+          )
+            .to.be.revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorMajorityThreshold')
+            .withArgs(minorityCoprocessorThreshold, nCoprocessors);
         });
 
         it('Should revert because the coprocessor threshold is too high', async function () {
-          // The coprocessor threshold must be less or equal to the number of coprocessors
-          await expect(gatewayConfig.connect(owner).updateCoprocessors(coprocessors, highCoprocessorThreshold))
-            .to.be.revertedWithCustomError(gatewayConfig, 'InvalidHighCoprocessorThreshold')
+          await expect(
+            gatewayConfig
+              .connect(owner)
+              .updateCoprocessors(nextCoprocessorContextId, coprocessors, highCoprocessorThreshold),
+          )
+            .to.be.revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorMajorityThreshold')
             .withArgs(highCoprocessorThreshold, nCoprocessors);
         });
 
-        it('Should update coprocessors while InputVerification is not paused', async function () {
-          // Coprocessor consensus state can be rewritten without first pausing InputVerification.
-          await inputVerification.connect(owner).unpause();
-          await gatewayConfig.connect(owner).updateCoprocessors(coprocessors, 1);
-          expect(await gatewayConfig.getCoprocessorMajorityThreshold()).to.equal(1);
+        it('Should revert because the coprocessor set exceeds the proof format limit', async function () {
+          const tooManyCoprocessors: CoprocessorStruct[] = [];
+          for (let i = 0; i < 256; i++) {
+            tooManyCoprocessors.push({
+              txSenderAddress: createRandomAddress(),
+              signerAddress: createRandomAddress(),
+              s3BucketUrl: `s3://coprocessor-${i}`,
+            });
+          }
+          await expect(
+            gatewayConfig
+              .connect(owner)
+              .updateCoprocessors(nextCoprocessorContextId, tooManyCoprocessors, coprocessorThreshold),
+          )
+            .to.be.revertedWithCustomError(gatewayConfig, 'CoprocessorSetExceedsProofFormatLimit')
+            .withArgs(256, 255);
+        });
+
+        it('Should destroy a past coprocessor context', async function () {
+          await gatewayConfig.connect(owner).updateCoprocessors(nextCoprocessorContextId, [newCoprocessor], 1);
+
+          await expect(gatewayConfig.connect(owner).destroyCoprocessorContext(initialCoprocessorContextId))
+            .to.emit(gatewayConfig, 'DestroyCoprocessorContext')
+            .withArgs(initialCoprocessorContextId);
+
+          expect(await gatewayConfig.isValidCoprocessorContext(initialCoprocessorContextId)).to.be.false;
+          await expect(gatewayConfig.getCoprocessorMajorityThresholdForContext(initialCoprocessorContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorContext')
+            .withArgs(initialCoprocessorContextId);
+          await expect(
+            gatewayConfig.isCoprocessorTxSenderForContext(initialCoprocessorContextId, coprocessors[0].txSenderAddress),
+          )
+            .to.be.revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorContext')
+            .withArgs(initialCoprocessorContextId);
+        });
+
+        it('Should revert when destroying the current coprocessor context', async function () {
+          await expect(gatewayConfig.connect(owner).destroyCoprocessorContext(initialCoprocessorContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, 'CurrentCoprocessorContextCannotBeDestroyed')
+            .withArgs(initialCoprocessorContextId);
+        });
+
+        it('Should revert when destroying an unknown coprocessor context', async function () {
+          await expect(gatewayConfig.connect(owner).destroyCoprocessorContext(nextCoprocessorContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorContext')
+            .withArgs(nextCoprocessorContextId);
+        });
+
+        it('Should revert when destroying a coprocessor context twice', async function () {
+          await gatewayConfig.connect(owner).updateCoprocessors(nextCoprocessorContextId, [newCoprocessor], 1);
+          await gatewayConfig.connect(owner).destroyCoprocessorContext(initialCoprocessorContextId);
+          await expect(gatewayConfig.connect(owner).destroyCoprocessorContext(initialCoprocessorContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, 'InvalidCoprocessorContext')
+            .withArgs(initialCoprocessorContextId);
+        });
+
+        it('Should revert when destroying a coprocessor context as a non-owner', async function () {
+          await expect(gatewayConfig.connect(fakeOwner).destroyCoprocessorContext(initialCoprocessorContextId))
+            .to.be.revertedWithCustomError(gatewayConfig, 'OwnableUnauthorizedAccount')
+            .withArgs(fakeOwner.address);
         });
       });
 
@@ -1420,56 +1767,6 @@ describe('GatewayConfig', function () {
           const hostChain = await gatewayConfig.getHostChain(i);
           expect(hostChain).to.deep.equal(hostChains[i]);
         }
-      });
-    });
-
-    describe('Update coprocessor threshold', function () {
-      beforeEach(async function () {
-        // updateCoprocessorThreshold now requires InputVerification to be paused.
-        await inputVerification.connect(pauser).pause();
-      });
-
-      it('Should revert because the sender is not the owner', async function () {
-        await expect(gatewayConfig.connect(fakeOwner).updateCoprocessorThreshold(1))
-          .to.be.revertedWithCustomError(gatewayConfig, 'OwnableUnauthorizedAccount')
-          .withArgs(fakeOwner.address);
-      });
-
-      it('Should update the coprocessor threshold', async function () {
-        // The coprocessor threshold must be greater than 0
-        const newCoprocessorThreshold = 1;
-
-        const tx = await gatewayConfig.connect(owner).updateCoprocessorThreshold(newCoprocessorThreshold);
-
-        await expect(tx).to.emit(gatewayConfig, 'UpdateCoprocessorThreshold').withArgs(newCoprocessorThreshold);
-
-        // Check that the coprocessor threshold has been updated
-        expect(await gatewayConfig.getCoprocessorMajorityThreshold()).to.equal(newCoprocessorThreshold);
-      });
-
-      it('Should revert because the coprocessor threshold is null', async function () {
-        // The coprocessor threshold must be greater than 0
-        const nullCoprocessorThreshold = 0;
-
-        await expect(
-          gatewayConfig.connect(owner).updateCoprocessorThreshold(nullCoprocessorThreshold),
-        ).to.be.revertedWithCustomError(gatewayConfig, 'InvalidNullCoprocessorThreshold');
-      });
-
-      it('Should revert because the coprocessor threshold is too high', async function () {
-        // The coprocessor threshold must be less or equal to the number of coprocessors
-        const highCoprocessorThreshold = nCoprocessors + 1;
-
-        await expect(gatewayConfig.connect(owner).updateCoprocessorThreshold(highCoprocessorThreshold))
-          .to.be.revertedWithCustomError(gatewayConfig, 'InvalidHighCoprocessorThreshold')
-          .withArgs(highCoprocessorThreshold, nCoprocessors);
-      });
-
-      it('Should update the coprocessor threshold while InputVerification is not paused', async function () {
-        // Coprocessor consensus state can be rewritten without first pausing InputVerification.
-        await inputVerification.connect(owner).unpause();
-        await gatewayConfig.connect(owner).updateCoprocessorThreshold(1);
-        expect(await gatewayConfig.getCoprocessorMajorityThreshold()).to.equal(1);
       });
     });
 

@@ -121,16 +121,6 @@ abstract contract GatewayConfigChecks {
     }
 
     /**
-     * @notice Checks if the address is a coprocessor signer.
-     * @param signerAddress The address to check.
-     */
-    function _checkIsCoprocessorSigner(address signerAddress) internal view {
-        if (!GATEWAY_CONFIG.isCoprocessorSigner(signerAddress)) {
-            revert NotCoprocessorSigner(signerAddress);
-        }
-    }
-
-    /**
      * @notice Checks if the signer is a KMS signer for a given context, and that it corresponds
      * to the transaction sender of the same KMS node within that context.
      * @param contextId The context ID to check against.
@@ -151,15 +141,34 @@ abstract contract GatewayConfigChecks {
     }
 
     /**
-     * @notice Checks if the signer is a coprocessor signer, and that it corresponds to the
-     * transaction sender of the same coprocessor.
+     * @notice Checks if the address is a coprocessor transaction sender in a coprocessor context.
+     * @dev Reverts with `InvalidCoprocessorContext` if the context is unknown or destroyed.
+     * @param contextId The coprocessor context ID to check against.
+     * @param txSenderAddress The address to check.
+     */
+    function _checkCoprocessorContextTxSender(uint256 contextId, address txSenderAddress) internal view {
+        if (!GATEWAY_CONFIG.isCoprocessorTxSenderForContext(contextId, txSenderAddress)) {
+            revert NotCoprocessorTxSender(txSenderAddress);
+        }
+    }
+
+    /**
+     * @notice Checks if the signer is a coprocessor signer in a coprocessor context, and that it
+     * corresponds to the transaction sender of the same coprocessor within that context.
+     * @dev Reverts with `InvalidCoprocessorContext` if the context is unknown or destroyed.
+     * @param contextId The coprocessor context ID to check against.
      * @param signerAddress The signer address to check.
      * @param txSenderAddress The address of the coprocessor transaction sender.
      */
-    function _checkCoprocessorSignerMatchesTxSender(address signerAddress, address txSenderAddress) internal view {
-        _checkIsCoprocessorSigner(signerAddress);
-
-        if (GATEWAY_CONFIG.getCoprocessor(txSenderAddress).signerAddress != signerAddress) {
+    function _checkCoprocessorContextSignerMatchesTxSender(
+        uint256 contextId,
+        address signerAddress,
+        address txSenderAddress
+    ) internal view {
+        if (!GATEWAY_CONFIG.isCoprocessorSignerForContext(contextId, signerAddress)) {
+            revert NotCoprocessorSigner(signerAddress);
+        }
+        if (GATEWAY_CONFIG.getCoprocessorForContext(contextId, txSenderAddress).signerAddress != signerAddress) {
             revert CoprocessorSignerDoesNotMatchTxSender(signerAddress, txSenderAddress);
         }
     }

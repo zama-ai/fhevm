@@ -378,7 +378,9 @@ task('task:upgradeGatewayConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await upgradeContract('GatewayConfig', 'GATEWAY_CONFIG_ADDRESS', taskArgs, hre);
+    await upgradeContract('GatewayConfig', 'GATEWAY_CONFIG_ADDRESS', taskArgs, hre, [
+      getRequiredEnvVar('COPROCESSOR_CONTEXT_ID'),
+    ]);
   });
 
 task('task:prepareUpgradeGatewayConfig')
@@ -403,7 +405,9 @@ task('task:prepareUpgradeGatewayConfig')
     types.boolean,
   )
   .setAction(async function (taskArgs: TaskArguments, hre) {
-    await prepareUpgradeContract('GatewayConfig', 'GATEWAY_CONFIG_ADDRESS', taskArgs, hre);
+    await prepareUpgradeContract('GatewayConfig', 'GATEWAY_CONFIG_ADDRESS', taskArgs, hre, [
+      getRequiredEnvVar('COPROCESSOR_CONTEXT_ID'),
+    ]);
   });
 
 task('task:upgradeKMSGeneration')

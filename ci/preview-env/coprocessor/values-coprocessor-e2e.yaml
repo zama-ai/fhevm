@@ -283,7 +283,7 @@ txSender:
   # COPROCESSOR_TX_SENDER_ADDRESS_0 / COPROCESSOR_SIGNER_ADDRESS_0. The tx-sender
   # both signs the InputVerification EIP-712 response and sends the tx with this
   # one key; if it differs, verifyProofResponse reverts with
-  # NotCoprocessorTxSender(<addr>) (non-retryable) and input proofs never verify,
+  # NotCoprocessorSigner(<addr>) (non-retryable) and input proofs never verify,
   # so the relayer polls forever and the e2e input test times out.
   wallet: {secret: {value: "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"}}
   config:

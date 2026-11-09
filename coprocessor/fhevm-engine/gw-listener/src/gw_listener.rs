@@ -1119,7 +1119,6 @@ fn apply_gateway_config_event(
             drift_detector.set_current_expected_senders(expected_senders);
             true
         }
-        GatewayConfig::GatewayConfigEvents::UpdateCoprocessorThreshold(_) => true,
         _ => false,
     };
     if !registry_changed {
@@ -1294,6 +1293,7 @@ mod tests {
         let block_hash = B256::repeat_byte(0x42);
         let mut detector = drift_detector();
         let update = GatewayConfig::UpdateCoprocessors {
+            contextId: U256::from(2),
             newCoprocessors: vec![GatewayConfig::Coprocessor {
                 txSenderAddress: Address::repeat_byte(0x20),
                 signerAddress: Address::repeat_byte(0x21),
@@ -1313,27 +1313,15 @@ mod tests {
     }
 
     #[test]
-    fn threshold_updates_request_registry_refresh_at_event_block() {
-        let block_hash = B256::repeat_byte(0x43);
-        let mut detector = drift_detector();
-        let update = GatewayConfig::UpdateCoprocessorThreshold {
-            newCoprocessorThreshold: U256::from(2),
-        };
-        let log = gateway_config_log(&update, 43, block_hash);
-
-        assert_eq!(
-            apply_gateway_config_event(&mut detector, &log).unwrap(),
-            Some(RegistryRefreshBlock {
-                number: 43,
-                hash: block_hash,
-            })
-        );
-    }
-
-    #[test]
     fn registry_update_without_block_identity_is_rejected() {
         let mut detector = drift_detector();
-        let update = GatewayConfig::UpdateCoprocessorThreshold {
+        let update = GatewayConfig::UpdateCoprocessors {
+            contextId: U256::from(2),
+            newCoprocessors: vec![GatewayConfig::Coprocessor {
+                txSenderAddress: Address::repeat_byte(0x20),
+                signerAddress: Address::repeat_byte(0x21),
+                s3BucketUrl: "https://operator.example".to_owned(),
+            }],
             newCoprocessorThreshold: U256::from(2),
         };
         let mut log = gateway_config_log(&update, 43, B256::repeat_byte(0x43));

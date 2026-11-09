@@ -32,6 +32,13 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     uint256 private constant MAX_KMS_SIGNERS = type(uint8).max;
 
+    /**
+     * @notice Upper bound on the coprocessor set size.
+     * @dev Mirrors `ProtocolConfig.MAX_COPROCESSORS`. The input proof encodes the signature count in
+     *      a single byte.
+     */
+    uint256 private constant MAX_COPROCESSORS = type(uint8).max;
+
     // ----------------------------------------------------------------------------------------------
     // Contract information:
     // ----------------------------------------------------------------------------------------------
@@ -91,18 +98,15 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 publicDecryptionThreshold;
         /// @dev Deprecated. Use `userDecryptionThresholdForContext` instead.
         uint256 userDecryptionThreshold;
-        // ----------------------------------------------------------------------------------------------
-        // Coprocessors state variables:
-        // ----------------------------------------------------------------------------------------------
-        /// @notice The coprocessors' transaction sender addresses
+        /// @dev Deprecated. Use `isCoprocessorTxSenderForContext` instead.
         mapping(address coprocessorTxSenderAddress => bool isTxSender) isCoprocessorTxSender;
-        /// @notice The coprocessors' signer addresses
+        /// @dev Deprecated. Use `isCoprocessorSignerForContext` instead.
         mapping(address coprocessorSignerAddress => bool isSigner) isCoprocessorSigner;
-        /// @notice The coprocessors' metadata
+        /// @dev Deprecated. Use `coprocessorsForContext` instead.
         mapping(address coprocessorTxSenderAddress => Coprocessor coprocessor) coprocessors;
-        /// @notice The coprocessors' transaction sender address list
+        /// @dev Deprecated. Use `coprocessorTxSenderAddressesForContext` instead.
         address[] coprocessorTxSenderAddresses;
-        /// @notice The coprocessors' signer address list
+        /// @dev Deprecated. Use `coprocessorSignerAddressesForContext` instead.
         address[] coprocessorSignerAddresses;
         // ----------------------------------------------------------------------------------------------
         // Host chain state variables:
@@ -126,10 +130,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address custodianSignerAddress => bool isSigner) isCustodianSigner;
         /// @dev Deprecated. Use `kmsGenThresholdForContext` instead.
         uint256 kmsGenThreshold;
-        // ----------------------------------------------------------------------------------------------
-        // Coprocessor threshold state variables:
-        // ----------------------------------------------------------------------------------------------
-        /// @notice The threshold to consider for coprocessor consensus
+        /// @dev Deprecated. Use `coprocessorThresholdForContext` instead.
         uint256 coprocessorThreshold;
         // ----------------------------------------------------------------------------------------------
         // KMS context state variables:
@@ -164,6 +165,25 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         ///      always threshold-based. Kept to preserve the storage layout, and zeroed by
         ///      `reinitializeV9`.
         address priorityCoprocessorTxSender;
+        // ----------------------------------------------------------------------------------------------
+        // Coprocessor context state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The current coprocessor context ID
+        uint256 currentCoprocessorContextId;
+        /// @notice The coprocessors' transaction sender addresses per context
+        mapping(uint256 contextId => mapping(address coprocessorTxSenderAddress => bool isTxSender)) isCoprocessorTxSenderForContext;
+        /// @notice The coprocessors' signer addresses per context
+        mapping(uint256 contextId => mapping(address coprocessorSignerAddress => bool isSigner)) isCoprocessorSignerForContext;
+        /// @notice The coprocessors' metadata per context
+        mapping(uint256 contextId => mapping(address coprocessorTxSenderAddress => Coprocessor coprocessor)) coprocessorsForContext;
+        /// @notice The coprocessors' transaction sender address list per context
+        mapping(uint256 contextId => address[]) coprocessorTxSenderAddressesForContext;
+        /// @notice The coprocessors' signer address list per context
+        mapping(uint256 contextId => address[]) coprocessorSignerAddressesForContext;
+        /// @notice The coprocessor majority threshold per context
+        mapping(uint256 contextId => uint256) coprocessorThresholdForContext;
+        /// @notice Whether a coprocessor context has been destroyed.
+        mapping(uint256 contextId => bool isDestroyed) destroyedCoprocessorContexts;
     }
 
     /**
@@ -189,6 +209,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /**
      * @notice Initializes the contract
      * @dev This function needs to be public in order to be called by the UUPS proxy.
+     * @param initialKmsContextId ID of the first KMS context
+     * @param initialCoprocessorContextId ID of the first coprocessor context
      * @param initialMetadata Metadata of the protocol
      * @param initialThresholds The operator thresholds
      * @param initialKmsNodes List of KMS nodes
@@ -198,6 +220,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
         uint256 initialKmsContextId,
+        uint256 initialCoprocessorContextId,
         ProtocolMetadata calldata initialMetadata,
         Thresholds calldata initialThresholds,
         KmsNode[] calldata initialKmsNodes,
@@ -208,12 +231,16 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         if (initialKmsContextId == 0) {
             revert InvalidNullKmsContextId();
         }
+        if (initialCoprocessorContextId == 0) {
+            revert InvalidNullCoprocessorContextId();
+        }
 
         // Using scoped block to avoid stack depth error
         {
             GatewayConfigStorage storage $ = _getGatewayConfigStorage();
             $.protocolMetadata = initialMetadata;
             $.currentKmsContextId = initialKmsContextId;
+            $.currentCoprocessorContextId = initialCoprocessorContextId;
         }
 
         // Initialize the KMS context with the KMS nodes and all thresholds
@@ -226,14 +253,19 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             initialThresholds.kmsGenThreshold
         );
 
-        // Set the coprocessors and their threshold
-        _setCoprocessors(initialCoprocessors, initialThresholds.coprocessorThreshold);
+        // Initialize the coprocessor context with the coprocessors and their threshold
+        _setCoprocessorContext(
+            initialCoprocessorContextId,
+            initialCoprocessors,
+            initialThresholds.coprocessorThreshold
+        );
 
         // Set the custodians
         _setCustodians(initialCustodians);
 
         emit InitializeGatewayConfig(
             initialKmsContextId,
+            initialCoprocessorContextId,
             initialMetadata,
             initialThresholds,
             initialKmsNodes,
@@ -246,21 +278,42 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @notice Re-initializes the contract from V8.
      * @dev Clears the deprecated priority coprocessor slot, so the upgrade itself makes coprocessor
      *      consensus threshold-based without depending on a prior ops call.
-     * @dev UPGRADE ORDER: this implementation drops `getPriorityCoprocessorTxSender()`, which the
-     *      currently deployed `CiphertextCommits` and `InputVerification` call on every response.
-     *      Upgrade `GatewayConfig` last, or batch all the `upgradeToAndCall` calls in one proposal;
-     *      upgrading it first makes those responses revert on the missing selector.
+     * @dev UPGRADE ORDER: batch the `upgradeToAndCall` calls of `GatewayConfig`, `CiphertextCommits` and
+     *      `InputVerification` in one proposal. This implementation drops `getPriorityCoprocessorTxSender()`,
+     *      which the deployed `CiphertextCommits` and `InputVerification` call on every response, and the new
+     *      `InputVerification` reads coprocessor contexts, which only this implementation serves.
      * @dev Every host-chain `InputVerifier` must already accept the full gateway coprocessor signer set
      *      at the gateway threshold. Under priority mode the gateway emitted a single signature, so a
      *      host still pinned to one signer would reject the bundles this upgrade makes unconditional.
      * @dev Requests the former priority sender already responded to, without reaching consensus, become
      *      finalizable again: their count resumes against the coprocessor threshold.
+     * @dev Stores the registered coprocessor set and threshold as the first coprocessor context.
+     * @param initialCoprocessorContextId ID of the coprocessor context that `ProtocolConfig` defines with this
+     *        same set.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV9() public virtual reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV9(uint256 initialCoprocessorContextId) public virtual reinitializer(REINITIALIZER_VERSION) {
+        if (initialCoprocessorContextId == 0) {
+            revert InvalidNullCoprocessorContextId();
+        }
+
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         delete $.priorityCoprocessorTxSender;
+
+        uint256 contextId = initialCoprocessorContextId;
+        address[] storage txSenderAddresses = $.coprocessorTxSenderAddresses;
+        uint256 coprocessorCount = txSenderAddresses.length;
+        for (uint256 i = 0; i < coprocessorCount; i++) {
+            Coprocessor storage coprocessor = $.coprocessors[txSenderAddresses[i]];
+            $.isCoprocessorTxSenderForContext[contextId][coprocessor.txSenderAddress] = true;
+            $.isCoprocessorSignerForContext[contextId][coprocessor.signerAddress] = true;
+            $.coprocessorsForContext[contextId][coprocessor.txSenderAddress] = coprocessor;
+            $.coprocessorTxSenderAddressesForContext[contextId].push(coprocessor.txSenderAddress);
+            $.coprocessorSignerAddressesForContext[contextId].push(coprocessor.signerAddress);
+        }
+        $.coprocessorThresholdForContext[contextId] = $.coprocessorThreshold;
+        $.currentCoprocessorContextId = contextId;
     }
 
     /**
@@ -331,7 +384,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             revert CurrentKmsContextCannotBeDestroyed(kmsContextId);
         }
         // Context must exist and not be already destroyed.
-        _requireValidContext(kmsContextId);
+        _requireValidKmsContext(kmsContextId);
 
         $.destroyedKmsContexts[kmsContextId] = true;
         emit DestroyKmsContext(kmsContextId);
@@ -339,30 +392,48 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @notice See {IGatewayConfig-updateCoprocessors}.
-     * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
-     *      because InputVerification is not paused here.
+     * @dev Applies live: new input verification requests use the new context, and requests in progress
+     *      complete under the context they recorded.
      */
     function updateCoprocessors(
+        uint256 newContextId,
         Coprocessor[] calldata newCoprocessors,
         uint256 newCoprocessorThreshold
     ) external virtual onlyOwner {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-
-        // Remove the old coprocessors
-        uint256 oldCoprocessorTxSenderAddressesLength = $.coprocessorTxSenderAddresses.length;
-        for (uint256 i = 0; i < oldCoprocessorTxSenderAddressesLength; i++) {
-            delete $.isCoprocessorTxSender[$.coprocessorTxSenderAddresses[i]];
-            delete $.isCoprocessorSigner[$.coprocessorSignerAddresses[i]];
-            delete $.coprocessors[$.coprocessorTxSenderAddresses[i]];
+        if (newContextId == 0) {
+            revert InvalidNullCoprocessorContextId();
         }
 
-        delete $.coprocessorTxSenderAddresses;
-        delete $.coprocessorSignerAddresses;
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
-        // Set the new coprocessors and their threshold
-        _setCoprocessors(newCoprocessors, newCoprocessorThreshold);
+        // Validate newContextId is strictly greater than the current one
+        if (newContextId <= $.currentCoprocessorContextId) {
+            revert CoprocessorContextAlreadyRegistered(newContextId, $.currentCoprocessorContextId);
+        }
 
-        emit UpdateCoprocessors(newCoprocessors, newCoprocessorThreshold);
+        // Set the new context-indexed coprocessors and threshold
+        _setCoprocessorContext(newContextId, newCoprocessors, newCoprocessorThreshold);
+
+        // Update the current coprocessor context ID
+        $.currentCoprocessorContextId = newContextId;
+
+        emit UpdateCoprocessors(newContextId, newCoprocessors, newCoprocessorThreshold);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-destroyCoprocessorContext}.
+     */
+    function destroyCoprocessorContext(uint256 coprocessorContextId) external virtual onlyOwner {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        if (coprocessorContextId == $.currentCoprocessorContextId) {
+            revert CurrentCoprocessorContextCannotBeDestroyed(coprocessorContextId);
+        }
+        // Context must exist and not be already destroyed.
+        _requireValidCoprocessorContext(coprocessorContextId);
+
+        $.destroyedCoprocessorContexts[coprocessorContextId] = true;
+        emit DestroyCoprocessorContext(coprocessorContextId);
     }
 
     /**
@@ -386,16 +457,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         _setCustodians(newCustodians);
 
         emit UpdateCustodians(newCustodians);
-    }
-
-    /**
-     * @notice See {IGatewayConfig-updateCoprocessorThreshold}.
-     * @dev Applies live; the DAO proposal/runbook must preserve host verifier compatibility
-     *      because InputVerification is not paused here.
-     */
-    function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external virtual onlyOwner {
-        _setCoprocessorThreshold(newCoprocessorThreshold);
-        emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
     }
 
     /**
@@ -550,7 +611,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function isCoprocessorTxSender(address txSenderAddress) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.isCoprocessorTxSender[txSenderAddress];
+        return $.isCoprocessorTxSenderForContext[$.currentCoprocessorContextId][txSenderAddress];
     }
 
     /**
@@ -558,7 +619,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function isCoprocessorSigner(address signerAddress) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.isCoprocessorSigner[signerAddress];
+        return $.isCoprocessorSignerForContext[$.currentCoprocessorContextId][signerAddress];
     }
 
     /**
@@ -622,7 +683,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function getCoprocessorMajorityThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.coprocessorThreshold;
+        return $.coprocessorThresholdForContext[$.currentCoprocessorContextId];
     }
 
     /**
@@ -654,7 +715,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function getCoprocessor(address coprocessorTxSenderAddress) external view virtual returns (Coprocessor memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.coprocessors[coprocessorTxSenderAddress];
+        return $.coprocessorsForContext[$.currentCoprocessorContextId][coprocessorTxSenderAddress];
     }
 
     /**
@@ -662,7 +723,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function getCoprocessorTxSenders() external view virtual returns (address[] memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.coprocessorTxSenderAddresses;
+        return $.coprocessorTxSenderAddressesForContext[$.currentCoprocessorContextId];
     }
 
     /**
@@ -670,7 +731,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function getCoprocessorSigners() external view virtual returns (address[] memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.coprocessorSignerAddresses;
+        return $.coprocessorSignerAddressesForContext[$.currentCoprocessorContextId];
     }
 
     /**
@@ -719,7 +780,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      *      on-chain verification flow rejects signatures referencing them.
      */
     function isKmsTxSenderForContext(uint256 contextId, address txSenderAddress) external view virtual returns (bool) {
-        _requireValidContext(contextId);
+        _requireValidKmsContext(contextId);
         return _getGatewayConfigStorage().isKmsTxSenderForContext[contextId][txSenderAddress];
     }
 
@@ -729,7 +790,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      *      on-chain verification flow rejects signatures referencing them.
      */
     function isKmsSignerForContext(uint256 contextId, address signerAddress) external view virtual returns (bool) {
-        _requireValidContext(contextId);
+        _requireValidKmsContext(contextId);
         return _getGatewayConfigStorage().isKmsSignerForContext[contextId][signerAddress];
     }
 
@@ -741,7 +802,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 contextId,
         address kmsTxSenderAddress
     ) external view virtual returns (KmsNode memory) {
-        _requireValidContext(contextId);
+        _requireValidKmsContext(contextId);
         return _getGatewayConfigStorage().kmsNodesForContext[contextId][kmsTxSenderAddress];
     }
 
@@ -750,7 +811,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @dev Reverts with `InvalidKmsContext` if the context is unknown or destroyed.
      */
     function getKmsTxSendersForContext(uint256 contextId) external view virtual returns (address[] memory) {
-        _requireValidContext(contextId);
+        _requireValidKmsContext(contextId);
         return _getGatewayConfigStorage().kmsTxSenderAddressesForContext[contextId];
     }
 
@@ -759,7 +820,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @dev Reverts with `InvalidKmsContext` if the context is unknown or destroyed.
      */
     function getKmsSignersForContext(uint256 contextId) external view virtual returns (address[] memory) {
-        _requireValidContext(contextId);
+        _requireValidKmsContext(contextId);
         return _getGatewayConfigStorage().kmsSignerAddressesForContext[contextId];
     }
 
@@ -783,7 +844,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @dev Reverts with `InvalidKmsContext` if the context is unknown or destroyed.
      */
     function getPublicDecryptionThresholdForContext(uint256 contextId) external view virtual returns (uint256) {
-        _requireValidContext(contextId);
+        _requireValidKmsContext(contextId);
         return _getGatewayConfigStorage().publicDecryptionThresholdForContext[contextId];
     }
 
@@ -792,8 +853,67 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @dev Reverts with `InvalidKmsContext` if the context is unknown or destroyed.
      */
     function getUserDecryptionThresholdForContext(uint256 contextId) external view virtual returns (uint256) {
-        _requireValidContext(contextId);
+        _requireValidKmsContext(contextId);
         return _getGatewayConfigStorage().userDecryptionThresholdForContext[contextId];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getCurrentCoprocessorContextId}.
+     */
+    function getCurrentCoprocessorContextId() external view virtual returns (uint256) {
+        return _getGatewayConfigStorage().currentCoprocessorContextId;
+    }
+
+    /**
+     * @notice See {IGatewayConfig-isValidCoprocessorContext}.
+     */
+    function isValidCoprocessorContext(uint256 contextId) external view virtual returns (bool) {
+        return _isValidCoprocessorContext(contextId);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-isCoprocessorTxSenderForContext}.
+     * @dev Reverts with `InvalidCoprocessorContext` if the context is unknown or destroyed.
+     */
+    function isCoprocessorTxSenderForContext(
+        uint256 contextId,
+        address txSenderAddress
+    ) external view virtual returns (bool) {
+        _requireValidCoprocessorContext(contextId);
+        return _getGatewayConfigStorage().isCoprocessorTxSenderForContext[contextId][txSenderAddress];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-isCoprocessorSignerForContext}.
+     * @dev Reverts with `InvalidCoprocessorContext` if the context is unknown or destroyed.
+     */
+    function isCoprocessorSignerForContext(
+        uint256 contextId,
+        address signerAddress
+    ) external view virtual returns (bool) {
+        _requireValidCoprocessorContext(contextId);
+        return _getGatewayConfigStorage().isCoprocessorSignerForContext[contextId][signerAddress];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getCoprocessorForContext}.
+     * @dev Reverts with `InvalidCoprocessorContext` if the context is unknown or destroyed.
+     */
+    function getCoprocessorForContext(
+        uint256 contextId,
+        address coprocessorTxSenderAddress
+    ) external view virtual returns (Coprocessor memory) {
+        _requireValidCoprocessorContext(contextId);
+        return _getGatewayConfigStorage().coprocessorsForContext[contextId][coprocessorTxSenderAddress];
+    }
+
+    /**
+     * @notice See {IGatewayConfig-getCoprocessorMajorityThresholdForContext}.
+     * @dev Reverts with `InvalidCoprocessorContext` if the context is unknown or destroyed.
+     */
+    function getCoprocessorMajorityThresholdForContext(uint256 contextId) external view virtual returns (uint256) {
+        _requireValidCoprocessorContext(contextId);
+        return _getGatewayConfigStorage().coprocessorThresholdForContext[contextId];
     }
 
     /**
@@ -874,48 +994,50 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /**
-     * @notice Sets the coprocessors and their threshold.
+     * @notice Sets the coprocessor context: coprocessors and majority threshold for a given context ID.
+     * @param contextId The context ID.
      * @param newCoprocessors The new coprocessors.
-     * @param newCoprocessorThreshold The new coprocessor threshold.
+     * @param newCoprocessorThreshold The new majority threshold for this context.
      */
-    function _setCoprocessors(
+    function _setCoprocessorContext(
+        uint256 contextId,
         Coprocessor[] calldata newCoprocessors,
         uint256 newCoprocessorThreshold
     ) internal virtual {
-        if (newCoprocessors.length == 0) {
+        uint256 coprocessorCount = newCoprocessors.length;
+        if (coprocessorCount == 0) {
             revert EmptyCoprocessors();
+        }
+        if (coprocessorCount > MAX_COPROCESSORS) {
+            revert CoprocessorSetExceedsProofFormatLimit(coprocessorCount, MAX_COPROCESSORS);
+        }
+        // More than half, so that two conflicting outputs cannot both reach the threshold.
+        if (newCoprocessorThreshold <= coprocessorCount / 2 || newCoprocessorThreshold > coprocessorCount) {
+            revert InvalidCoprocessorMajorityThreshold(newCoprocessorThreshold, coprocessorCount);
         }
 
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
-        // Register the new coprocessors
-        for (uint256 i = 0; i < newCoprocessors.length; i++) {
+        for (uint256 i = 0; i < coprocessorCount; i++) {
             address newCoprocessorTxSenderAddress = newCoprocessors[i].txSenderAddress;
             address newCoprocessorSignerAddress = newCoprocessors[i].signerAddress;
 
-            // Check for coprocessor transaction sender and signer duplicates
-            if ($.isCoprocessorTxSender[newCoprocessorTxSenderAddress]) {
+            // Check for coprocessor transaction sender and signer duplicates within this context
+            if ($.isCoprocessorTxSenderForContext[contextId][newCoprocessorTxSenderAddress]) {
                 revert CoprocessorTxSenderAlreadyRegistered(newCoprocessorTxSenderAddress);
             }
-            if ($.isCoprocessorSigner[newCoprocessorSignerAddress]) {
+            if ($.isCoprocessorSignerForContext[contextId][newCoprocessorSignerAddress]) {
                 revert CoprocessorSignerAlreadyRegistered(newCoprocessorSignerAddress);
             }
 
-            // Register coprocessor transaction sender
-            $.isCoprocessorTxSender[newCoprocessorTxSenderAddress] = true;
-            $.coprocessorTxSenderAddresses.push(newCoprocessorTxSenderAddress);
-
-            // Register coprocessor
-            $.coprocessors[newCoprocessorTxSenderAddress] = newCoprocessors[i];
-
-            // Register coprocessor signer
-            $.isCoprocessorSigner[newCoprocessorSignerAddress] = true;
-            $.coprocessorSignerAddresses.push(newCoprocessorSignerAddress);
+            $.isCoprocessorTxSenderForContext[contextId][newCoprocessorTxSenderAddress] = true;
+            $.coprocessorTxSenderAddressesForContext[contextId].push(newCoprocessorTxSenderAddress);
+            $.coprocessorsForContext[contextId][newCoprocessorTxSenderAddress] = newCoprocessors[i];
+            $.isCoprocessorSignerForContext[contextId][newCoprocessorSignerAddress] = true;
+            $.coprocessorSignerAddressesForContext[contextId].push(newCoprocessorSignerAddress);
         }
 
-        // Setting the coprocessor threshold should be done after the coprocessors have been
-        // registered as the functions reading the `coprocessorSignerAddresses` array.
-        _setCoprocessorThreshold(newCoprocessorThreshold);
+        $.coprocessorThresholdForContext[contextId] = newCoprocessorThreshold;
     }
 
     /**
@@ -970,9 +1092,32 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @dev Used by all external per-context views and setters so that callers cannot read or
      *      mutate state of a context that does not exist or has been destroyed.
      */
-    function _requireValidContext(uint256 contextId) internal view {
+    function _requireValidKmsContext(uint256 contextId) internal view {
         if (!_isValidKmsContext(contextId)) {
             revert InvalidKmsContext(contextId);
+        }
+    }
+
+    /**
+     * @notice Returns whether a coprocessor context ID has been created and not destroyed.
+     * @dev A context is considered created once `coprocessorSignerAddressesForContext[contextId].length > 0`,
+     *      which happens in `_setCoprocessorContext` (invoked by `updateCoprocessors` and the initializer)
+     *      and in `reinitializeV9`.
+     */
+    function _isValidCoprocessorContext(uint256 contextId) internal view returns (bool) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return
+            $.coprocessorSignerAddressesForContext[contextId].length != 0 && !$.destroyedCoprocessorContexts[contextId];
+    }
+
+    /**
+     * @notice Reverts with `InvalidCoprocessorContext` if the given context is unknown or destroyed.
+     * @dev Used by all external per-context views so that callers cannot read state of a context that
+     *      does not exist or has been destroyed.
+     */
+    function _requireValidCoprocessorContext(uint256 contextId) internal view {
+        if (!_isValidCoprocessorContext(contextId)) {
+            revert InvalidCoprocessorContext(contextId);
         }
     }
 
@@ -1046,27 +1191,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
 
         $.userDecryptionThresholdForContext[contextId] = newUserDecryptionThreshold;
-    }
-
-    /**
-     * @notice Sets the coprocessor threshold.
-     * @param newCoprocessorThreshold The new coprocessor threshold.
-     */
-    function _setCoprocessorThreshold(uint256 newCoprocessorThreshold) internal virtual {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        uint256 nCoprocessors = $.coprocessorSignerAddresses.length;
-
-        // Check that the coprocessor threshold `t` is valid. It must verify:
-        // - `t >= 1` : the coprocessor consensus should require at least one vote
-        // - `t <= n` : it should be less than or equal to the number of registered coprocessors
-        if (newCoprocessorThreshold == 0) {
-            revert InvalidNullCoprocessorThreshold();
-        }
-        if (newCoprocessorThreshold > nCoprocessors) {
-            revert InvalidHighCoprocessorThreshold(newCoprocessorThreshold, nCoprocessors);
-        }
-
-        $.coprocessorThreshold = newCoprocessorThreshold;
     }
 
     /**
