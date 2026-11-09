@@ -378,8 +378,8 @@ mod tests {
     }
 }
 
-// Checks the `decryption_id` EIP-712 digests against the known-good values committed in
-// `tests/vectors.json`.
+// Checks the `decryption_id` EIP-712 digests and the pad labels against the known-good values
+// committed in `tests/vectors.json`, generated independently by `tests/vectors.py`.
 #[cfg(test)]
 mod vector_tests {
     use super::*;
