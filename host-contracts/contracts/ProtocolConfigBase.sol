@@ -320,17 +320,47 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
 
     /**
      * @dev Validates `nodes` and `thresholds` and writes them under `contextId`.
+     *      The caller owns the context ID counter.
      */
     function _storeKmsCommittee(
         uint256 contextId,
         KmsNode[] memory nodes,
         KmsThresholds calldata thresholds
     ) internal virtual {
-        _checkKmsThresholds(nodes.length, thresholds);
+        if (nodes.length == 0) {
+            revert EmptyKmsNodes();
+        }
+        if (nodes.length > MAX_KMS_SIGNERS) {
+            revert KmsSignerSetExceedsProofFormatLimit(nodes.length, MAX_KMS_SIGNERS);
+        }
+
+        // Validate that thresholds are non-zero and not exceeding the node count.
+        _checkThreshold("publicDecryption", thresholds.publicDecryption, nodes.length);
+        _checkThreshold("userDecryption", thresholds.userDecryption, nodes.length);
+        _checkThreshold("kmsGen", thresholds.kmsGen, nodes.length);
+        _checkThreshold("mpc", thresholds.mpc, nodes.length);
 
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
         for (uint256 i = 0; i < nodes.length; i++) {
-            _storeKmsNode(contextId, nodes[i]);
+            KmsNode memory node = nodes[i];
+            if (node.txSenderAddress == address(0)) {
+                revert KmsNodeNullTxSender();
+            }
+            if (node.signerAddress == address(0)) {
+                revert KmsNodeNullSigner();
+            }
+            if ($.isKmsTxSenderForContext[contextId][node.txSenderAddress]) {
+                revert KmsTxSenderAlreadyRegistered(node.txSenderAddress);
+            }
+            if ($.isKmsSignerForContext[contextId][node.signerAddress]) {
+                revert KmsSignerAlreadyRegistered(node.signerAddress);
+            }
+
+            $.kmsNodesForContext[contextId].push(node);
+            $.isKmsTxSenderForContext[contextId][node.txSenderAddress] = true;
+            $.isKmsSignerForContext[contextId][node.signerAddress] = true;
+            $.kmsNodeByTxSenderForContext[contextId][node.txSenderAddress] = node;
+            $.kmsSignerAddressesForContext[contextId].push(node.signerAddress);
         }
 
         // Store thresholds
@@ -338,49 +368,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         $.userDecryptionThresholdForContext[contextId] = thresholds.userDecryption;
         $.kmsGenThresholdForContext[contextId] = thresholds.kmsGen;
         $.mpcThresholdForContext[contextId] = thresholds.mpc;
-    }
-
-    /**
-     * @dev Validates the node count, and `thresholds` against it.
-     */
-    function _checkKmsThresholds(uint256 nodeCount, KmsThresholds calldata thresholds) internal pure {
-        if (nodeCount == 0) {
-            revert EmptyKmsNodes();
-        }
-        if (nodeCount > MAX_KMS_SIGNERS) {
-            revert KmsSignerSetExceedsProofFormatLimit(nodeCount, MAX_KMS_SIGNERS);
-        }
-
-        // Validate that thresholds are non-zero and not exceeding the node count.
-        _checkThreshold("publicDecryption", thresholds.publicDecryption, nodeCount);
-        _checkThreshold("userDecryption", thresholds.userDecryption, nodeCount);
-        _checkThreshold("kmsGen", thresholds.kmsGen, nodeCount);
-        _checkThreshold("mpc", thresholds.mpc, nodeCount);
-    }
-
-    /**
-     * @dev Validates `node` and appends it to the committee of `contextId`.
-     */
-    function _storeKmsNode(uint256 contextId, KmsNode memory node) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        if (node.txSenderAddress == address(0)) {
-            revert KmsNodeNullTxSender();
-        }
-        if (node.signerAddress == address(0)) {
-            revert KmsNodeNullSigner();
-        }
-        if ($.isKmsTxSenderForContext[contextId][node.txSenderAddress]) {
-            revert KmsTxSenderAlreadyRegistered(node.txSenderAddress);
-        }
-        if ($.isKmsSignerForContext[contextId][node.signerAddress]) {
-            revert KmsSignerAlreadyRegistered(node.signerAddress);
-        }
-
-        $.kmsNodesForContext[contextId].push(node);
-        $.isKmsTxSenderForContext[contextId][node.txSenderAddress] = true;
-        $.isKmsSignerForContext[contextId][node.signerAddress] = true;
-        $.kmsNodeByTxSenderForContext[contextId][node.txSenderAddress] = node;
-        $.kmsSignerAddressesForContext[contextId].push(node.signerAddress);
     }
 
     /**
