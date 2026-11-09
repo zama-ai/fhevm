@@ -1,10 +1,14 @@
 //! Wire contract for the Solana Merkle proof HTTP service: CBOR request and
 //! success bodies, JSON error bodies.
 
+use http::uri::PathAndQuery;
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteArray;
 
 pub const MERKLE_PROOFS_PATH: &str = "/v1/solana/merkle-proofs";
+
+/// The request target a `FhevmSig` header signs for this route: its path, without a query string.
+pub const MERKLE_PROOFS_SIGNED_PATH: PathAndQuery = PathAndQuery::from_static(MERKLE_PROOFS_PATH);
 
 /// Most leaves one request may ask for.
 pub const MAX_LEAVES_PER_REQUEST: usize = 64;
@@ -100,7 +104,8 @@ pub enum ErrorCode {
     /// No `Authorization` header.
     AuthMissing,
     /// An `Authorization` header that is not `FhevmSig` with exactly `expires`, `digest` and
-    /// `sig`, in this order, or one valid for longer than the server accepts.
+    /// `sig`, in this order, whose `sig` is not a 65-byte low-s signature, or that is valid for
+    /// longer than the server accepts.
     AuthMalformed,
     /// The `FhevmSig` signature expired; sign again.
     AuthExpired,

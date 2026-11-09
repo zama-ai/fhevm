@@ -43,8 +43,8 @@ use axum::{
     Router,
 };
 use fhevm_sig_auth::{
-    AuthError, FhevmSigHeader, FhevmSigVerifier, PathAndQuery,
-    DEFAULT_CLOCK_SKEW, DEFAULT_MAX_AUTH_VALIDITY,
+    AuthError, FhevmSigHeader, FhevmSigVerifier, DEFAULT_CLOCK_SKEW,
+    DEFAULT_MAX_AUTH_VALIDITY,
 };
 use governor::{DefaultKeyedRateLimiter, Quota, RateLimiter};
 use prometheus::{
@@ -64,7 +64,7 @@ use zama_solana_acl::mmr_verify;
 use zama_solana_merkle_proofs::{
     ErrorCode, ErrorResponse, LeafQuery, LeafQueryKind, MerkleProofOutcome,
     MerkleProofRequest, MerkleProofResponse, MAX_LEAVES_PER_REQUEST,
-    MERKLE_PROOFS_PATH,
+    MERKLE_PROOFS_PATH, MERKLE_PROOFS_SIGNED_PATH,
 };
 
 use crate::{
@@ -449,10 +449,7 @@ async fn answer_merkle_proofs(
 ) -> Result<Served, HttpError> {
     // `FhevmSig` does not sign a query string.
     if uri.query().is_some() {
-        return Err(HttpError::new(
-            ErrorCode::NonCanonicalPath,
-            "a query string is not signed",
-        ));
+        return Err(auth_refusal(AuthError::QueryString));
     }
     let now = unix_now_secs();
     let authorization =
@@ -468,10 +465,7 @@ async fn answer_merkle_proofs(
             ))
         })?;
     if keccak256(&body) != authorization.body_digest {
-        return Err(HttpError::new(
-            ErrorCode::AuthBodyMismatch,
-            "the body's keccak-256 is not the signed digest",
-        ));
+        return Err(auth_refusal(AuthError::BodyMismatch));
     }
     // Parsing costs neither the rate nor a read, so a malformed request is
     // refused each time and never remembered.
@@ -611,15 +605,28 @@ fn cbor_response(body: Bytes) -> Response {
 /// waits 10 s for an answer by default (`host_rpc_call_timeout`).
 const UNKNOWN_SIGNER_WAIT: Duration = Duration::from_secs(3);
 
-/// The signed request target: the route's path, without a query string.
-fn signed_path() -> PathAndQuery {
-    PathAndQuery::from_static(MERKLE_PROOFS_PATH)
+/// The wire code of each `FhevmSig` refusal, once the header has parsed.
+fn auth_refusal(err: AuthError) -> HttpError {
+    let code = match err {
+        AuthError::Missing => ErrorCode::AuthMissing,
+        AuthError::Malformed(_) | AuthError::TooLongLived => {
+            ErrorCode::AuthMalformed
+        }
+        AuthError::QueryString => ErrorCode::NonCanonicalPath,
+        AuthError::Expired => ErrorCode::AuthExpired,
+        // A well-formed signature that recovers no address.
+        AuthError::InvalidSignature(_) | AuthError::UnknownSigner(_) => {
+            ErrorCode::AuthUnknownSigner
+        }
+        AuthError::BodyMismatch => ErrorCode::AuthBodyMismatch,
+    };
+    HttpError::new(code, err.to_string())
 }
 
 /// An `Authorization` header within its validity, and who signed it.
 struct Authorization {
     signer: Address,
-    /// What the signer signed: one hash per registry, path, body, expiry and audience.
+    /// What the signer signed: one hash per `ProtocolConfig`, path, body, expiry and audience.
     signing_hash: B256,
     /// The keccak-256 of the body the signer signed.
     body_digest: B256,
@@ -642,43 +649,30 @@ async fn authenticate(
         ));
     };
     let Some(header) = headers.get(header::AUTHORIZATION) else {
-        return Err(HttpError::new(
-            ErrorCode::AuthMissing,
-            "no Authorization header",
-        ));
+        return Err(auth_refusal(AuthError::Missing));
     };
-    let refused = |err: AuthError| {
-        let code = match err {
-            AuthError::Expired => ErrorCode::AuthExpired,
-            // A signature that recovers no address, or the high-s twin of one.
-            AuthError::InvalidSignature(_) => ErrorCode::AuthUnknownSigner,
-            AuthError::Missing
-            | AuthError::Malformed(_)
-            | AuthError::TooLongLived
-            | AuthError::QueryString
-            | AuthError::UnknownSigner(_)
-            | AuthError::BodyMismatch => ErrorCode::AuthMalformed,
-        };
-        HttpError::new(code, err.to_string())
-    };
+    // A header that does not parse is malformed, a `sig=` that is not a
+    // low-s 65-byte signature included.
     let expires = FhevmSigHeader::parse(header.as_bytes())
-        .map_err(refused)?
+        .map_err(|err| {
+            HttpError::new(ErrorCode::AuthMalformed, err.to_string())
+        })?
         .expires;
-    let domain = set.registry.eip712_domain();
+    let domain = fhevm_sig_auth::domain(set.chain_id, set.protocol_config);
     // The set is checked below, after a woken read for an unknown signer.
     let (signer, body_digest) = FhevmSigVerifier::new(
         domain.clone(),
         audience,
         std::collections::HashSet::new(),
     )
-    .recover(Some(header.as_bytes()), &signed_path(), now)
-    .map_err(refused)?;
+    .recover(Some(header.as_bytes()), &MERKLE_PROOFS_SIGNED_PATH, now)
+    .map_err(auth_refusal)?;
     let authorization = Authorization {
         signer,
         signing_hash: fhevm_sig_auth::signing_hash(
             &domain,
             audience,
-            &signed_path(),
+            &MERKLE_PROOFS_SIGNED_PATH,
             body_digest,
             expires,
         ),
@@ -702,8 +696,8 @@ async fn authenticate(
                 "{} is not, or not yet, the tx-sender of a node in an Active KMS context of \
                  ProtocolConfig {} on chain {}",
                 authorization.signer,
-                set.registry.contract,
-                set.registry.chain_id
+                set.protocol_config,
+                set.chain_id
             ),
         ));
     }
@@ -900,7 +894,6 @@ pub struct ApiDoc;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kms_tx_senders::KeyRegistry;
     use crate::{
         answer_cache::ENTRY_OVERHEAD_BYTES,
         kms_tx_senders::{stub, KmsTxSenderSet},
@@ -1017,10 +1010,8 @@ mod tests {
         assert!(ParsedQuery::parse(&query).is_ok());
     }
 
-    const REGISTRY: KeyRegistry = KeyRegistry {
-        chain_id: 12345,
-        contract: Address::repeat_byte(0xC0),
-    };
+    const CHAIN_ID: u64 = 12345;
+    const PROTOCOL_CONFIG: Address = Address::repeat_byte(0xC0);
 
     /// The signer address of the coprocessor under test.
     const AUDIENCE: Address = Address::repeat_byte(0xCC);
@@ -1033,9 +1024,9 @@ mod tests {
     ) -> String {
         fhevm_sig_auth::sign(
             signer,
-            &REGISTRY.eip712_domain(),
+            &fhevm_sig_auth::domain(CHAIN_ID, PROTOCOL_CONFIG),
             audience,
-            &signed_path(),
+            &MERKLE_PROOFS_SIGNED_PATH,
             body,
             expires,
         )
@@ -1099,7 +1090,8 @@ mod tests {
         let connector = PrivateKeySigner::random();
         let (base, cancel, server) = spawn(
             KmsTxSenders::fixed(KmsTxSenderSet {
-                registry: REGISTRY,
+                chain_id: CHAIN_ID,
+                protocol_config: PROTOCOL_CONFIG,
                 senders: HashSet::from([connector.address()]),
             }),
             1000,
@@ -1185,7 +1177,8 @@ mod tests {
             ErrorCode::AuthMalformed,
         )
         .await;
-        // Exactly `expires`, `digest` and `sig`, in this order.
+        // A header that does not parse is malformed, whichever parameter fails: here the
+        // order, then a `sig` that is no signature. fhevm-sig-auth tests the parser itself.
         let valid = signed(&connector, &body, unix_now_secs() + 30).await;
         let (expires, rest) = valid
             .strip_prefix("FhevmSig ")
@@ -1194,8 +1187,7 @@ mod tests {
         let (digest, signature) = rest.split_once(", ").expect("digest, sig");
         for malformed in [
             format!("FhevmSig {digest}, {expires}, {signature}"),
-            format!("FhevmSig {expires}, {signature}, {digest}"),
-            format!("FhevmSig {expires}, {signature}"),
+            format!("FhevmSig {expires}, {digest}, sig=0x12"),
         ] {
             refused(
                 post(Some(malformed), body.clone()).await.expect("send"),
@@ -1345,7 +1337,8 @@ mod tests {
         let connector = PrivateKeySigner::random();
         let (base, cancel, server) = spawn(
             KmsTxSenders::fixed(KmsTxSenderSet {
-                registry: REGISTRY,
+                chain_id: CHAIN_ID,
+                protocol_config: PROTOCOL_CONFIG,
                 senders: HashSet::from([connector.address()]),
             }),
             1000,
@@ -1576,7 +1569,8 @@ mod tests {
         let connector = PrivateKeySigner::random();
         let (base, cancel, server) = spawn(
             KmsTxSenders::fixed(KmsTxSenderSet {
-                registry: REGISTRY,
+                chain_id: CHAIN_ID,
+                protocol_config: PROTOCOL_CONFIG,
                 senders: HashSet::from([connector.address()]),
             }),
             1,
@@ -1639,7 +1633,8 @@ mod tests {
         let connector = PrivateKeySigner::random();
         let (base, cancel, server) = spawn(
             KmsTxSenders::fixed(KmsTxSenderSet {
-                registry: REGISTRY,
+                chain_id: CHAIN_ID,
+                protocol_config: PROTOCOL_CONFIG,
                 senders: HashSet::from([connector.address()]),
             }),
             1,
@@ -1698,7 +1693,8 @@ mod tests {
             (PrivateKeySigner::random(), PrivateKeySigner::random());
         let (base, cancel, server) = spawn(
             KmsTxSenders::fixed(KmsTxSenderSet {
-                registry: REGISTRY,
+                chain_id: CHAIN_ID,
+                protocol_config: PROTOCOL_CONFIG,
                 senders: HashSet::from([alice.address(), bob.address()]),
             }),
             1,

@@ -7,15 +7,15 @@ use alloy::{
     sol_types::Eip712Domain,
 };
 use connector_utils::config::KmsWallet;
-use fhevm_sig_auth::PathAndQuery;
 use futures::future::try_join_all;
 use rand::seq::SliceRandom;
+use reqwest::header::{AUTHORIZATION, HeaderValue};
 use solana_pubkey::Pubkey;
 use std::{future::Future, time::Duration};
 use zama_solana_merkle_proofs::{
     ErrorCode, ErrorResponse, LeafQuery as WireLeaf, LeafQueryKind as WireLeafKind,
-    MAX_LEAVES_PER_REQUEST, MERKLE_PROOFS_PATH, MerkleProofOutcome, MerkleProofRequest,
-    MerkleProofResponse,
+    MAX_LEAVES_PER_REQUEST, MERKLE_PROOFS_PATH, MERKLE_PROOFS_SIGNED_PATH, MerkleProofOutcome,
+    MerkleProofRequest, MerkleProofResponse,
 };
 
 use crate::{core::config::ProofServer, monitoring::metrics::SOLANA_PROOF_ANSWER_COUNTER};
@@ -165,12 +165,10 @@ fn unavailable(reason: String) -> ProofReadError {
 
 /// How long a signed batch stays valid. A coprocessor checks it when the request arrives, and
 /// every coprocessor is asked within a few `HEDGE_DELAY`s of signing.
-const AUTHORIZATION_VALIDITY_SECS: u64 = 30;
-const _: () =
-    assert!(AUTHORIZATION_VALIDITY_SECS <= fhevm_sig_auth::DEFAULT_MAX_AUTH_VALIDITY.as_secs());
-
-/// The signed request target: the route's path, without a query string.
-const SIGNED_PATH: PathAndQuery = PathAndQuery::from_static(MERKLE_PROOFS_PATH);
+const AUTHORIZATION_VALIDITY: Duration = Duration::from_secs(30);
+const _: () = assert!(
+    AUTHORIZATION_VALIDITY.as_secs() <= fhevm_sig_auth::DEFAULT_MAX_AUTH_VALIDITY.as_secs()
+);
 
 /// The production reader: one signed `POST` per coprocessor asked. Every coprocessor of a batch
 /// receives the same body, signed for its own signer address, so the wallet signs once per
@@ -183,7 +181,7 @@ pub struct CoprocessorProofClient {
     client: reqwest::Client,
     /// The connector's tx-sender wallet.
     wallet: KmsWallet,
-    /// The canonical `ProtocolConfig`, which the signature's EIP-712 domain names.
+    /// The `FhevmSig` EIP-712 domain: the canonical `ProtocolConfig` and its chain.
     domain: Eip712Domain,
     /// Bounds the wallet's signature, an AWS KMS call in production.
     signing_timeout: Duration,
@@ -192,8 +190,9 @@ pub struct CoprocessorProofClient {
 /// A batch signed for every coprocessor.
 pub struct SignedBatch {
     body: Vec<u8>,
-    /// One `Authorization` header per coprocessor, in configuration order.
-    authorizations: Vec<String>,
+    /// One `FhevmSig` `Authorization` header per coprocessor, in configuration order, marked
+    /// sensitive.
+    authorizations: Vec<HeaderValue>,
 }
 
 impl CoprocessorProofClient {
@@ -254,18 +253,17 @@ impl HostProofReader for CoprocessorProofClient {
 
     async fn prepare(&self, queries: &[LeafQuery]) -> Result<SignedBatch, ProofReadError> {
         let body = encode_merkle_proof_request(queries);
-        let expires = fhevm_sig_auth::unix_now() + AUTHORIZATION_VALIDITY_SECS;
         let signing = try_join_all(self.servers.iter().map(|server| async {
-            fhevm_sig_auth::sign(
+            fhevm_sig_auth::sign_valid_for(
                 &self.wallet,
                 &self.domain,
                 server.signer_address,
-                &SIGNED_PATH,
+                &MERKLE_PROOFS_SIGNED_PATH,
                 &body,
-                expires,
+                AUTHORIZATION_VALIDITY,
             )
             .await
-            .map(|header| header.to_string())
+            .map(|header| header.to_header_value())
         }));
         let authorizations = tokio::time::timeout(self.signing_timeout, signing)
             .await
@@ -294,7 +292,7 @@ impl HostProofReader for CoprocessorProofClient {
         let mut response = self
             .client
             .post(url.clone())
-            .header("authorization", &batch.authorizations[source])
+            .header(AUTHORIZATION, batch.authorizations[source].clone())
             .header("content-type", "application/cbor")
             .body(batch.body.clone())
             .send()
@@ -551,7 +549,7 @@ mod tests {
             cbor(cbor!({ "proofs" => [{ "status" => "notFound", "leafCount" => 0 }] }).unwrap());
         for (name, authorization) in ["first", "second"].into_iter().zip(&batch.authorizations) {
             let mut server = MockServer::new_http(name);
-            let authorization = authorization.clone();
+            let authorization = authorization.to_str().unwrap().to_owned();
             let answer = answer.clone();
             server.mock(move |when, then| {
                 when.post()
@@ -586,7 +584,7 @@ mod tests {
             )
             .recover(
                 Some(batch.authorizations[source].as_bytes()),
-                &SIGNED_PATH,
+                &MERKLE_PROOFS_SIGNED_PATH,
                 fhevm_sig_auth::unix_now(),
             )
         };

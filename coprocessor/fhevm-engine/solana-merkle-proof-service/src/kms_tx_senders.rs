@@ -20,7 +20,6 @@ use alloy::{
     eips::{BlockId, BlockNumberOrTag},
     primitives::{Address, U256},
     providers::Provider,
-    sol_types::Eip712Domain,
     transports::http::reqwest,
 };
 use anyhow::{anyhow, Context};
@@ -39,24 +38,12 @@ const WOKEN_POLL_SPACING: Duration = Duration::from_secs(1);
 /// The RPC client has no request timeout, so a hung call would stall every later poll.
 const READ_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// The canonical `ProtocolConfig` and its chain: the `FhevmSig` EIP-712 domain the accepted
-/// signatures name.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct KeyRegistry {
-    pub chain_id: u64,
-    pub contract: Address,
-}
-
-impl KeyRegistry {
-    pub fn eip712_domain(&self) -> Eip712Domain {
-        fhevm_sig_auth::domain(self.chain_id, self.contract)
-    }
-}
-
-/// The accepted callers and the registry their signatures name, once read.
+/// The accepted callers, once read, and the canonical `ProtocolConfig` they were read from. The
+/// contract and its chain are the `FhevmSig` EIP-712 domain the accepted signatures name.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KmsTxSenderSet {
-    pub registry: KeyRegistry,
+    pub chain_id: u64,
+    pub protocol_config: Address,
     pub senders: HashSet<Address>,
 }
 
@@ -314,10 +301,8 @@ impl<P: Provider> KmsTxSenderReader<P> {
             context_id += U256::from(1);
         }
         Ok(KmsTxSenderSet {
-            registry: KeyRegistry {
-                chain_id,
-                contract: *self.protocol_config.address(),
-            },
+            chain_id,
+            protocol_config: *self.protocol_config.address(),
             senders,
         })
     }
@@ -589,13 +574,7 @@ mod tests {
         let ledger = ledger(&[(State::Active, &[PREVIOUS, NEXT])]);
         let (mut reader, requests) = reader(&ledger);
         let set = reader.poll().await.expect("poll").expect("first read");
-        assert_eq!(
-            set.registry,
-            KeyRegistry {
-                chain_id: 12345,
-                contract: CONTRACT
-            }
-        );
+        assert_eq!((set.chain_id, set.protocol_config), (12345, CONTRACT));
         assert_eq!(set.senders, HashSet::from([PREVIOUS, NEXT]));
         ledger.lock().unwrap().finalize(|_| {});
         assert_eq!(read(&mut reader).await, HashSet::from([PREVIOUS, NEXT]));

@@ -12,6 +12,8 @@ license = "BSD-3-Clause-Clear"
 openapi = ["dep:utoipa"]
 
 [dependencies]
+# 1.4 makes `PathAndQuery::from_static` const.
+http = "1.4"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11.19"
 utoipa = { version = "5.4.0", optional = true }
