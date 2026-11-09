@@ -288,28 +288,10 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Stores a KMS context under the caller-provided `contextId`, validates nodes and
-     *      thresholds, and activates it under `epochId`. Use this on the bootstrap/mirror paths
-     *      where the context ID is externally determined. Callers are responsible for emitting
-     *      context lifecycle events and recording the matching `KmsContextAnchor` when appropriate.
+     * @dev Validates `nodes` and `thresholds` and writes them under `contextId`.
+     *      The caller owns the context ID counter.
      */
-    function _storeAndActivateKmsContextAndEpoch(
-        uint256 contextId,
-        uint256 epochId,
-        KmsNode[] memory nodes,
-        KmsThresholds calldata thresholds
-    ) internal virtual {
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        _storeKmsContext(contextId, nodes, thresholds);
-
-        // Set the context to Active and update the active context and epoch IDs.
-        $.contextState[contextId] = ContextState.Active;
-        $.latestActiveKmsContextId = contextId;
-        $.epochCounter = epochId;
-        _activateEpoch(epochId, contextId);
-    }
-
-    function _storeKmsContext(
+    function _storeKmsCommittee(
         uint256 contextId,
         KmsNode[] memory nodes,
         KmsThresholds calldata thresholds
@@ -328,12 +310,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         _checkThreshold("mpc", thresholds.mpc, nodes.length);
 
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        // Single monotonic-uniqueness gate for every context-creation path.
-        if (contextId <= $.currentKmsContextId) {
-            revert NonIncreasingKmsContextId(contextId, $.currentKmsContextId);
-        }
-        $.currentKmsContextId = contextId;
-
         for (uint256 i = 0; i < nodes.length; i++) {
             KmsNode memory node = nodes[i];
             if (node.txSenderAddress == address(0)) {
@@ -372,11 +348,13 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Promotes `epochId` to Active under `contextId` and makes it the active epoch.
-     *      Callers own the matching context-state writes and any event emission.
+     * @dev Sets `contextId` Active and activates `epochId` under it, as the latest active pair.
+     *      The caller emits any events.
      */
-    function _activateEpoch(uint256 epochId, uint256 contextId) internal virtual {
+    function _activateKmsContextAndEpoch(uint256 contextId, uint256 epochId) internal virtual {
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
+        $.contextState[contextId] = ContextState.Active;
+        $.latestActiveKmsContextId = contextId;
         $.epochState[epochId] = EpochState.Active;
         $.contextForEpoch[epochId] = contextId;
         $.latestActiveEpochId = epochId;
