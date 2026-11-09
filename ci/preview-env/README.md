@@ -444,14 +444,16 @@ auto-tests still proposes and waits for `DryRunStarted` only.
 
 Each `kms-connector-<i>` release also deploys the two new services: the **endpoint**
 and the **proxy** in front of it.
-The two out-of-chart inputs the proxy needs are produced at deploy time by
+The proxy's TLS certificate comes from the chart, and its auth inputs are set by
 `scripts/deploy-kms-connector.sh` instead of being checked in:
 
-- **TLS**: one self-signed P-256 certificate per namespace (`openssl` on the runner,
-  30-day lifetime), SANs = every party's proxy Service name, stored as the
-  `kubernetes.io/tls` Secret `kms-connector-proxy-tls` that all N releases mount
-  (`kmsConnectorProxy.tls.secretName`). Create-if-missing, so a re-run does not
-  rotate the cert under proxies that only read it at startup. The compose path's
+- **TLS**: each release's chart creates a self-signed P-256 certificate with
+  cert-manager (installed on zws-dev; the overlay turns on
+  `kmsConnectorProxy.tls.certManager.enabled`, off by default): 10-year
+  lifetime, SANs = that party's proxy Service name and its in-cluster forms. The script gives each release its own
+  `kubernetes.io/tls` Secret `kms-connector-<i>-proxy-tls`
+  (`kmsConnectorProxy.tls.secretName`). The Certificate is unchanged on re-runs, so
+  it is not rotated under proxies that only read it at startup. The compose path's
   checked-in `test-suite/fhevm/static/config/kms-connector-proxy/tls.crt` is *not*
   reusable here: its SANs are the compose hostnames, and Node rejects a SAN mismatch.
 - **FhevmSig auth**: the e2e suite signs with a fixed test key
@@ -463,7 +465,8 @@ The two out-of-chart inputs the proxy needs are produced at deploy time by
 - **Test-suite wiring**: the script publishes ConfigMap **`kms-connector-http`**
   (`endpoint-urls` = one https URL per party, `tx-sender-addresses` = each party's
   audience in the same order, `kms-threshold` = MPC `t` from `lib.sh`'s `kms_t`,
-  `ca.crt` = the proxies' cert). The idle Job and the `@fhevm/sdk` + Polygon Argo
+  `ca.crt` = every party's proxy cert, read from the Secrets once cert-manager
+  has issued them). The idle Job and the `@fhevm/sdk` + Polygon Argo
   Workflow overlays `configMapKeyRef` it into `KMS_CONNECTOR_ENDPOINT_URLS`,
   `KMS_CONNECTOR_TX_SENDER_ADDRESSES`, `KMS_THRESHOLD` and `KMS_CONNECTOR_PROXY_CA`, and
   their startup script writes the PEM to `NODE_EXTRA_CA_CERTS` (Node only trusts

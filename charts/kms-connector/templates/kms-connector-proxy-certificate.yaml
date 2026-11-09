@@ -1,0 +1,37 @@
+{{- /* Only a TLS-serving proxy reads the secret */ -}}
+{{- if and .Values.kmsConnectorProxy.enabled (eq (include "kmsConnectorProxyScheme" .) "https") (dig "certManager" "enabled" false (default dict .Values.kmsConnectorProxy.tls)) -}}
+{{- $name := include "kmsConnectorProxyName" . -}}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  labels:
+    app: kms-connector-proxy
+    app.kubernetes.io/name: {{ $name }}
+  name: {{ $name }}-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  labels:
+    app: kms-connector-proxy
+    app.kubernetes.io/name: {{ $name }}
+  name: {{ $name }}
+spec:
+  secretName: {{ .Values.kmsConnectorProxy.tls.secretName | quote }}
+  dnsNames:
+    - {{ $name }}
+    - {{ $name }}.{{ .Release.Namespace }}.svc
+    - {{ $name }}.{{ .Release.Namespace }}.svc.cluster.local
+  # The proxy reads its certificate at startup only: a long lifetime avoids renewals, and a
+  # re-issue keeps the key the running proxy still serves
+  duration: 87600h  # 10 years
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Never
+  issuerRef:
+    kind: Issuer
+    name: {{ $name }}-selfsigned
+{{- end -}}
