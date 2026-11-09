@@ -291,6 +291,11 @@ contract ProtocolConfigReplicaTest is HostContractsDeployerTestUtils {
         assertTrue(protocolConfigReplica.isValidKmsContext(contextId));
         assertTrue(protocolConfigReplica.isValidEpochForContext(contextId, epochId));
         assertEq(protocolConfigReplica.getKmsSignersForContext(contextId).length, 2);
+        assertEq(
+            abi.encode(protocolConfigReplica.getKmsNodesForContext(contextId)),
+            abi.encode(nodes),
+            "stored nodes differ from mirrored nodes"
+        );
     }
 
     function test_mirrorKmsContextAndEpochActivatesExactNextEpoch() public {

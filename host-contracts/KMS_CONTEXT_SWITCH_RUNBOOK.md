@@ -311,10 +311,9 @@ and calldata, never broadcasts) and the bare task broadcasts with
 `DEPLOYER_PRIVATE_KEY`.
 
 **No ids or committee data are passed on the command line** for the two activation mirrors.
-Those methods do take a context
-id, an epoch id and — for a context switch — the node set, thresholds, software version and
-PCR values, but the task reads all of it from canonical and encodes the arguments itself. The
-only inputs you supply are the canonical connection flags below.
+Both methods take a context id and an epoch id. A context switch also takes the node set and
+thresholds. The task reads all of them from canonical and encodes the arguments. You supply only
+the canonical connection flags below.
 
 These tasks are for a replica that is **already deployed and initialized**. Standing up a
 _new_ replica is a different path — `task:exportCanonicalProtocolConfig` then
@@ -374,7 +373,7 @@ npx hardhat task:mirrorKmsContextAndEpoch --network <replica-network> \
 There is no committee to re-type. `mirrorKmsContextAndEpoch` takes the four stored `KmsNode`
 fields and the thresholds. The task reads both from canonical storage at one finalized block.
 
-Two errors are worth knowing:
+The task can fail with these errors:
 
 - `reports version "ProtocolConfigReplica v…"; expected "ProtocolConfig v…"` — the
   `--canonical-protocol-config-address` points at a replica, not at Ethereum's `ProtocolConfig`.
@@ -383,8 +382,7 @@ Two errors are worth knowing:
 
 ### 5.4 Mirror an epoch rotation
 
-Same-set rotations carry no committee data, so this path is just the two ids — no event
-read, no anchor check:
+Same-set rotations carry no committee data, so this path takes only the two ids:
 
 ```bash
 cd host-contracts
