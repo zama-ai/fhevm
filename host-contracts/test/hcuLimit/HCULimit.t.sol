@@ -582,12 +582,12 @@ contract HCULimitTest is Test, SupportedTypesConstants {
             FheType.Uint256
         ];
         uint256[7] memory prices = [uint256(19000), 23000, 23000, 24000, 24000, 25000, 30000];
-        uint256 index =
-            operationKind == 1 ? typeIndex % randomTypes.length : 1 + (typeIndex % (randomTypes.length - 1));
-        bytes memory callData =
-            operationKind == 1
-                ? abi.encodeCall(HCULimit.checkHCUForFheRand, (randomTypes[index], mockResult, address(0xBEEF)))
-                : abi.encodeCall(HCULimit.checkHCUForFheRandBounded, (randomTypes[index], mockResult, address(0xBEEF)));
+        uint256 index = operationKind == 1
+            ? typeIndex % randomTypes.length
+            : 1 + (typeIndex % (randomTypes.length - 1));
+        bytes memory callData = operationKind == 1
+            ? abi.encodeCall(HCULimit.checkHCUForFheRand, (randomTypes[index], mockResult, address(0xBEEF)))
+            : abi.encodeCall(HCULimit.checkHCUForFheRandBounded, (randomTypes[index], mockResult, address(0xBEEF)));
         return (callData, prices[index]);
     }
 
