@@ -1261,10 +1261,11 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         _expectQuotaExceeded(address(0x1234), DEFAULT_QUOTA, type(uint256).max, 0x1001);
     }
 
-    function test_setMaxHCUDepthPerTxRevertsIfAboveMaxPerTx() public {
+    /// Depth is latency and the per-transaction total is work, so neither limit bounds the other.
+    function test_maxHCUDepthPerTxCanExceedMaxHCUPerTx() public {
         vm.prank(owner);
-        vm.expectRevert(HCULimit.MaxHCUPerTxBelowDepth.selector);
         hcuLimit.setMaxHCUDepthPerTx(20_000_001);
+        assertEq(hcuLimit.getMaxHCUDepthPerTx(), 20_000_001);
     }
 
     function test_unmeteredDefaultQuotaRecordsNoUsage() public {
