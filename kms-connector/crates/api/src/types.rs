@@ -163,7 +163,9 @@ impl PadWitness {
     ///
     /// `keccak256("FHE_padl" ‖ witnessVersion ‖ prfId ‖ chainId ‖ submitter ‖ consumer ‖
     /// expirationTimestamp ‖ decryptorCount ‖ decryptors ‖ nonce)`
-    /// with every integer big-endian at its fixed width and `decryptorCount` on one byte.
+    ///
+    /// Integers use fixed-width big-endian encoding: `witnessVersion` and `decryptorCount` are
+    /// 1 byte, `prfId` is 2 bytes, and `chainId` and `expirationTimestamp` are 8 bytes each.
     ///
     /// Computes the [`PAD_WITNESS_VERSION`] layout: checking `witness_version` and that the
     /// decryptor count is at most [`MAX_PAD_DECRYPTORS`] is up to the caller.

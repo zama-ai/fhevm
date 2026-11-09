@@ -250,6 +250,7 @@ impl EventType {
                 UserDecryptionRequest::SIGNATURE_HASH,
                 UserDecryptionRequestV2::SIGNATURE_HASH,
             ],
+            // Pad decryptions are HTTP only.
             EventType::PadDecryptionRequest => vec![],
             EventType::PrepKeygenRequest => vec![PrepKeygenRequest::SIGNATURE_HASH],
             EventType::KeygenRequest => vec![KeygenRequest::SIGNATURE_HASH],
