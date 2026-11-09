@@ -41,23 +41,23 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     // -----------------------------------------------------------------------------------------
 
     /// @dev Hash of the ContextCreationConfirmation type.
-    bytes32 internal constant EIP712_CONTEXT_CREATION_TYPE_HASH =
+    bytes32 private constant EIP712_CONTEXT_CREATION_TYPE_HASH =
         keccak256(
             "ContextCreationConfirmation(uint256 previousContextId,uint256 newContextId,bytes32 nodeConfigHash,bytes extraData)"
         );
 
     /// @dev Hash of the EpochActivationConfirmation type.
-    bytes32 internal constant EIP712_EPOCH_ACTIVATION_TYPE_HASH =
+    bytes32 private constant EIP712_EPOCH_ACTIVATION_TYPE_HASH =
         keccak256(
             "EpochActivationConfirmation(uint256 contextId,uint256 previousEpochId,uint256 epochId,bytes32 epochMaterialHash,bytes extraData)"
         );
 
     /// @dev Hash of the ContextDestructionConfirmation type.
-    bytes32 internal constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
+    bytes32 private constant EIP712_CONTEXT_DESTRUCTION_TYPE_HASH =
         keccak256("ContextDestructionConfirmation(uint256 destroyedContextId,bytes extraData)");
 
     /// @dev Hash of the EpochDestructionConfirmation type.
-    bytes32 internal constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
+    bytes32 private constant EIP712_EPOCH_DESTRUCTION_TYPE_HASH =
         keccak256("EpochDestructionConfirmation(uint256 destroyedEpochId,bytes extraData)");
 
     // -----------------------------------------------------------------------------------------
