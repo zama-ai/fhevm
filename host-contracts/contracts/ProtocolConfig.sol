@@ -512,7 +512,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         }
         $.epochActivationConfirmedBySigner[epochId][signer] = true;
         allSignersAgreed =
-            ++$.epochActivationConfirmationCountForDigest[epochId][digest] == _epochActivationQuorum(contextId);
+            ++$.epochActivationConfirmationCountForDigest[epochId][digest] == _kmsCommitteeSize(contextId);
         emit EpochActivationConfirmation(epochId, signer, epochMaterialHash, signature, extraData);
     }
 

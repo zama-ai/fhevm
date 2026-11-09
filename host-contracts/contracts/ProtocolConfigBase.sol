@@ -404,13 +404,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Returns the epoch activation quorum of `contextId`, which is every signer of its committee.
-     */
-    function _epochActivationQuorum(uint256 contextId) internal view returns (uint256) {
-        return _kmsCommitteeSize(contextId);
-    }
-
-    /**
      * @dev Returns the number of nodes in the committee of `contextId`.
      */
     function _kmsCommitteeSize(uint256 contextId) internal view returns (uint256) {
