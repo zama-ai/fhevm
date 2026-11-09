@@ -272,23 +272,41 @@ abstract contract HostContractsDeployerTestUtils is Test {
         protocolConfigImplementation = address(new ProtocolConfigReplica());
         vm.label(protocolConfigImplementation, "ProtocolConfigReplica Implementation");
 
-        vm.prank(owner);
-        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
+        _initializeReplica(
+            protocolConfigAdd,
             protocolConfigImplementation,
-            abi.encodeCall(
-                ProtocolConfigReplica.initializeFromCanonical,
-                (
-                    initialContextId,
-                    initialEpochId,
-                    initialNodes,
-                    initialThresholds,
-                    canonicalChainId,
-                    canonicalProtocolConfig
-                )
-            )
+            owner,
+            initialContextId,
+            initialEpochId,
+            initialNodes,
+            initialThresholds,
+            canonicalChainId,
+            canonicalProtocolConfig
         );
 
         protocolConfigProxy = ProtocolConfigReplica(protocolConfigAdd);
+    }
+
+    /// @dev Upgrades `proxy` to `implementation` as `owner` and runs `initializeFromCanonical`.
+    function _initializeReplica(
+        address proxy,
+        address implementation,
+        address owner,
+        uint256 contextId,
+        uint256 epochId,
+        KmsNode[] memory nodes,
+        KmsThresholds memory thresholds,
+        uint64 canonicalChainId,
+        address canonicalProtocolConfig
+    ) internal {
+        vm.prank(owner);
+        EmptyUUPSProxy(proxy).upgradeToAndCall(
+            implementation,
+            abi.encodeCall(
+                ProtocolConfigReplica.initializeFromCanonical,
+                (contextId, epochId, nodes, thresholds, canonicalChainId, canonicalProtocolConfig)
+            )
+        );
     }
 
     function _deployKMSGeneration(

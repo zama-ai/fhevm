@@ -5,7 +5,7 @@ import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {ProtocolConfigTestBase} from "../ProtocolConfigTestBase.sol";
 import {ProtocolConfigReplica} from "@fhevm-host-contracts/contracts/ProtocolConfigReplica.sol";
 import {IProtocolConfigReplica, KmsContextSubmission, KmsEpochSubmission} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfigReplica.sol";
-import {KmsThresholds, KmsNode} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
+import {KmsThresholds, KmsNode, KmsNodeParams} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {ACLOwnable} from "@fhevm-host-contracts/contracts/shared/ACLOwnable.sol";
 import {ProtocolConfig} from "@fhevm-host-contracts/contracts/ProtocolConfig.sol";
@@ -79,21 +79,44 @@ abstract contract ProtocolConfigReplicaTestBase is ProtocolConfigTestBase {
             });
     }
 
+    /// @dev Committee `seed` with `n` nodes, as the params that `defineNewKmsContextAndEpoch` takes.
+    function _nodeParams(uint256 seed, uint256 n) internal pure returns (KmsNodeParams[] memory params) {
+        uint256[] memory keys = _keys(seed, n);
+        params = _makeKmsNodeParams(n);
+        for (uint256 i = 0; i < n; i++) {
+            params[i].txSenderAddress = address(uint160(0xA1 + i + seed * 0x10));
+            params[i].signerAddress = vm.addr(keys[i]);
+        }
+    }
+
+    /// @dev Committee `seed` with `n` nodes.
+    function _nodes(uint256 seed, uint256 n) internal pure returns (KmsNode[] memory) {
+        return _toKmsNodes(_nodeParams(seed, n));
+    }
+
     function _nodes(uint256 seed) internal pure returns (KmsNode[] memory) {
         return _nodes(seed, N);
     }
 
-    function _signers(uint256 seed) internal pure returns (address[] memory) {
-        return _signers(seed, N);
+    function _signers(uint256 seed) internal pure returns (address[] memory signers) {
+        uint256[] memory keys = _keys(seed, N);
+        signers = new address[](N);
+        for (uint256 i = 0; i < N; i++) {
+            signers[i] = vm.addr(keys[i]);
+        }
+    }
+
+    /// @dev Signs `digest` with each of `keys`.
+    function _sign(bytes32 digest, uint256[] memory keys) internal pure returns (bytes[] memory signatures) {
+        signatures = new bytes[](keys.length);
+        for (uint256 i = 0; i < keys.length; i++) {
+            signatures[i] = _computeSignature(keys[i], digest);
+        }
     }
 
     /// @dev Signs `digest` with the first `count` keys of committee `seed`.
-    function _sign(bytes32 digest, uint256 seed, uint256 count) internal pure returns (bytes[] memory signatures) {
-        uint256[] memory keys = _keys(seed, count);
-        signatures = new bytes[](count);
-        for (uint256 i = 0; i < count; i++) {
-            signatures[i] = _computeSignature(keys[i], digest);
-        }
+    function _sign(bytes32 digest, uint256 seed, uint256 count) internal pure returns (bytes[] memory) {
+        return _sign(digest, _keys(seed, count));
     }
 
     /// @dev A switch from `previousContextId` to committee `seed` under `contextId`, signed by

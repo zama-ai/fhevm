@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {HostContractsDeployerTestUtils} from "@fhevm-foundry/HostContractsDeployerTestUtils.sol";
-import {KmsNode, KmsNodeParams} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
 import {protocolConfigAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /// @dev Helpers shared by the ProtocolConfig and ProtocolConfigReplica suites only.
@@ -32,29 +31,6 @@ abstract contract ProtocolConfigTestBase is HostContractsDeployerTestUtils {
         keys = new uint256[](n);
         for (uint256 i = 0; i < n; i++) {
             keys[i] = _defaultSignerPk(i) + seed;
-        }
-    }
-
-    /// @dev Committee `seed` with `n` nodes, as the params that `defineNewKmsContextAndEpoch` takes.
-    function _nodeParams(uint256 seed, uint256 n) internal pure returns (KmsNodeParams[] memory params) {
-        uint256[] memory keys = _keys(seed, n);
-        params = _makeKmsNodeParams(n);
-        for (uint256 i = 0; i < n; i++) {
-            params[i].txSenderAddress = address(uint160(0xA1 + i + seed * 0x10));
-            params[i].signerAddress = vm.addr(keys[i]);
-        }
-    }
-
-    /// @dev Committee `seed` with `n` nodes.
-    function _nodes(uint256 seed, uint256 n) internal pure returns (KmsNode[] memory) {
-        return _toKmsNodes(_nodeParams(seed, n));
-    }
-
-    function _signers(uint256 seed, uint256 n) internal pure returns (address[] memory signers) {
-        uint256[] memory keys = _keys(seed, n);
-        signers = new address[](n);
-        for (uint256 i = 0; i < n; i++) {
-            signers[i] = vm.addr(keys[i]);
         }
     }
 

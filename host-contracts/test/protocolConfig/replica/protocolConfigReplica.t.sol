@@ -31,15 +31,19 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
         _deployACL(owner);
         _deployEmptyProtocolConfigProxy();
         address impl = address(new ProtocolConfigReplica());
+        KmsNode[] memory nodes = _nodes(SEED0);
 
-        vm.prank(owner);
         vm.expectRevert(err);
-        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
+        _initializeReplica(
+            protocolConfigAdd,
             impl,
-            abi.encodeCall(
-                ProtocolConfigReplica.initializeFromCanonical,
-                (contextId, epochId, _nodes(SEED0), _thresholds(), chainId, canonical)
-            )
+            owner,
+            contextId,
+            epochId,
+            nodes,
+            _thresholds(),
+            chainId,
+            canonical
         );
     }
 
@@ -314,20 +318,16 @@ contract ProtocolConfigReplicaTest is ProtocolConfigReplicaTestBase {
             )
         );
         replicaImplementation = address(new ProtocolConfigReplica());
-        vm.prank(owner);
-        protocolConfigReplica.upgradeToAndCall(
+        _initializeReplica(
+            address(protocolConfigReplica),
             replicaImplementation,
-            abi.encodeCall(
-                ProtocolConfigReplica.initializeFromCanonical,
-                (
-                    CTX1,
-                    EPOCH1,
-                    _toKmsNodes(_makeKmsNodeParams(N)),
-                    _defaultThresholds(),
-                    uint64(block.chainid),
-                    address(protocolConfig)
-                )
-            )
+            owner,
+            CTX1,
+            EPOCH1,
+            _toKmsNodes(_makeKmsNodeParams(N)),
+            _defaultThresholds(),
+            uint64(block.chainid),
+            address(protocolConfig)
         );
 
         vm.prank(owner);
@@ -1091,11 +1091,7 @@ contract ProtocolConfigReplicaKmsTest is ProtocolConfigReplicaTestBase {
         uint256[] memory keys
     ) internal pure returns (KmsEpochSubmission memory epoch) {
         epoch = _epochSubmission(contextId, previousEpochId, epochId, SEED0, 0);
-        bytes32 digest = _epochDigest(contextId, previousEpochId, epoch);
-        epoch.signatures = new bytes[](keys.length);
-        for (uint256 i = 0; i < keys.length; i++) {
-            epoch.signatures[i] = _computeSignature(keys[i], digest);
-        }
+        epoch.signatures = _sign(_epochDigest(contextId, previousEpochId, epoch), keys);
     }
 
     function test_supersededContextDestructionWaitsForReplica() public {

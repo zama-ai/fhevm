@@ -52,7 +52,7 @@ function requireChainId(): bigint {
   return chainId;
 }
 
-function requireProtocolConfigAddress(): string {
+function requireCanonicalProtocolConfigAddress(): string {
   const raw = getRequiredEnvVar('CANONICAL_PROTOCOL_CONFIG_ADDRESS');
   if (!isAddress(raw) || getAddress(raw) === ZeroAddress) {
     throw new Error(
@@ -115,7 +115,7 @@ export function readCanonicalSnapshotFromEnv(): CanonicalSnapshot {
   // Read in the order the keys are declared, so a wholly unset environment reports the first key.
   return {
     canonicalChainId: requireChainId(),
-    protocolConfigAddress: requireProtocolConfigAddress(),
+    protocolConfigAddress: requireCanonicalProtocolConfigAddress(),
     blockNumber: Number(requireDecimal('CANONICAL_BLOCK_NUMBER')),
     blockHash: getRequiredEnvVar('CANONICAL_BLOCK_HASH'),
     currentKmsContextId: requireDecimal('CANONICAL_KMS_CONTEXT_ID'),
