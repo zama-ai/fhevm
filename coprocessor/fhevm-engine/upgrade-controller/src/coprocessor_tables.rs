@@ -385,6 +385,13 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
         duplicated: false,
         conflict_cols: &[],
     },
+    // Blue and Green share a logical consumer and catchup stream. Keep command
+    // leases, request IDs and cancellation intent shared across both stacks.
+    CoprocessorTable {
+        name: "host_consumer_catchups",
+        duplicated: false,
+        conflict_cols: &[],
+    },
     // Event-derived consensus_epoch history is shared control-plane state. Blue and
     // Green must see the same failed and successful attempts.
     CoprocessorTable {

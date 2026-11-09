@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.id, r.owner_id AS \"owner_id!\", r.block_start,\n                r.block_end, r.finalized, r.request_pending, r.cancel_pending\n         FROM host_consumer_catchups AS r\n         JOIN UNNEST($1::uuid[], $2::uuid[]) AS owned(id, owner_id)\n           ON r.id = owned.id AND r.owner_id = owned.owner_id\n         WHERE r.lease_until > clock_timestamp()\n           AND (r.status = 'ONGOING' OR r.cancel_pending)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "owner_id!",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "block_start",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "block_end",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "finalized",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "request_pending",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "cancel_pending",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "502e41981393f556a4c09f638dff84d23ad8eb3194b502a706447d883afa444a"
+}

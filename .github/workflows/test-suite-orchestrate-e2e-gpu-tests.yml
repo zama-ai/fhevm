@@ -170,6 +170,12 @@ jobs:
       path-filter-base-commit: ''
     permissions: *docker_permissions
     secrets: *docker_secrets
+  relayer-http-docker-build:
+    uses: ./.github/workflows/relayer-http-docker-build.yml
+    with:
+      path-filter-base-commit: ''
+    permissions: *docker_permissions
+    secrets: *docker_secrets
   test-suite-docker-build:
     uses: ./.github/workflows/test-suite-docker-build.yml
     with:
@@ -208,6 +214,7 @@ jobs:
       - host-contracts-docker-build
       - kms-connector-docker-build
       - relayer-docker-build
+      - relayer-http-docker-build
       - test-suite-docker-build
       - gpu-worker-build
     if: success() || failure()
@@ -234,8 +241,7 @@ jobs:
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ steps.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.resolve-baseline.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ steps.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ steps.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ steps.create-e2e-tests-input.outputs.relayer-versions }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     permissions:
       actions: 'read' # Required to download the baseline lock artifact
@@ -334,8 +340,7 @@ jobs:
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: ${{ inputs.scenario }}
       test-profile: ${{ inputs.test-profile }}
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}

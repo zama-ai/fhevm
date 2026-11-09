@@ -4,7 +4,7 @@
 # party's proxy).
 name: relayer-http-local
 log:
-  format: pretty
+  format: json   # as in production: the dashboard's log panels parse it (relayer-http/OBSERVABILITY.md)
   show_file_line: false
   show_thread_ids: false
   show_timestamp: true
@@ -16,6 +16,7 @@ http:
   supported_chain_ids: []
 kms_aggregator:
   allow_insecure_http: false
+  skip_tls_verification: false
   max_concurrent_calls: 16
   call:
     timeout: 5s

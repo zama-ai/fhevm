@@ -20,6 +20,7 @@ import {
   KEYGEN_ID_SELECTOR,
   KMS_CORE_CONTAINER,
   OBJECT_STORE_EXTERNAL_URL,
+  RELAYER_PROXY_PORT,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
   defaultHostChainKey,
@@ -187,6 +188,33 @@ const waitForCoprocessorProxy = async (prefix: string) => {
     }
     await Bun.sleep(2_000);
   }
+};
+
+/**
+ * Waits until a GET through the relayer proxy answers `expected`, or, without `expected`, any status
+ * but 502/503/504 (nginx's answers when the upstream is unresolvable or down). The upstream's own
+ * answer, such as relayer-http's 405 on a GET to a POST route, proves the route.
+ */
+export const waitForRelayerProxyRoute = async (path: string, expected?: number) => {
+  const url = `http://localhost:${RELAYER_PROXY_PORT}${path}`;
+  let last = "no response";
+  for (let attempt = 0; attempt <= 30; attempt += 1) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+      await response.body?.cancel();
+      if (expected === undefined ? ![502, 503, 504].includes(response.status) : response.status === expected) {
+        return response.status;
+      }
+      last = `HTTP ${response.status}`;
+    } catch (error) {
+      last = error instanceof Error ? error.message : String(error);
+    }
+    if (attempt === 30) {
+      throw new PreflightError(`relayer proxy did not ${expected === undefined ? "reach the upstream" : `answer HTTP ${expected}`} for ${url} after 60s (last: ${last})`);
+    }
+    await Bun.sleep(2_000);
+  }
+  return undefined;
 };
 
 /** Waits until an RPC endpoint answers a basic `eth_chainId` request. */

@@ -136,6 +136,7 @@ export const resumeSteadyStateServices = (state: State) => {
     "kms-connector": kmsConnectorServices(state).filter((service) => !service.endsWith("-db-migration")),
     "relayer": ["fhevm-relayer-db", "fhevm-relayer"],
     ...(state.versions.env.RELAYER_HTTP_VERSION ? { "relayer-http": ["fhevm-relayer-http"] } : {}),
+    "relayer-proxy": ["fhevm-relayer-proxy"],
     "test-suite": [TEST_SUITE_CONTAINER],
   } satisfies Partial<Record<StepName, string[]>>;
 };

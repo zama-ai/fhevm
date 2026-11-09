@@ -12,3 +12,6 @@ expect:
   responses: 9
   elapsed: 5s
   attempts: 13
+  metrics:                     # the hung attempts are recorded as cut at the deadline, not dropped
+    answered: 13
+    errors: { acl_denied: 2, cancelled: 2 }

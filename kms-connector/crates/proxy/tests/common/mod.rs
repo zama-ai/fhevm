@@ -160,6 +160,8 @@ pub struct TestProxy {
     pub client: Client,
     pub addr: SocketAddr,
     pub tls: TestTls,
+    /// `https`, or `http` when the test disabled TLS.
+    pub scheme: &'static str,
     pub endpoints: Vec<StubEndpoint>,
     /// The healthcheck state of the proxy, to serve with `start_monitoring_server`.
     pub state: State,
@@ -190,6 +192,7 @@ impl TestProxy {
         let tls = TestTls::generate(addr);
         let mut config = Self::config(addr, &tls, endpoint_addresses);
         customize(&mut config);
+        let scheme = config.scheme();
         let (proxy, state) = Proxy::from_config(config).unwrap();
         proxy.register_metrics();
         std::thread::spawn(move || proxy.run());
@@ -205,6 +208,7 @@ impl TestProxy {
             client,
             addr,
             tls,
+            scheme,
             endpoints,
             state,
         }
@@ -213,10 +217,10 @@ impl TestProxy {
     pub fn config(addr: SocketAddr, tls: &TestTls, endpoint_addresses: Vec<Authority>) -> Config {
         Config {
             bind_address: addr,
-            tls_config: TlsConfig {
+            tls_config: Some(TlsConfig {
                 cert_path: tls.cert_path.clone(),
                 key_path: tls.key_path.clone(),
-            },
+            }),
             ethereum_chain_id: CHAIN_ID,
             protocol_config_contract: ContractConfig {
                 address: PROTOCOL_CONFIG,
@@ -234,7 +238,7 @@ impl TestProxy {
     }
 
     pub fn url(&self, route: &str) -> String {
-        format!("https://{}{route}", self.addr)
+        format!("{}://{}{route}", self.scheme, self.addr)
     }
 
     /// A `POST` of `body` to `route`, signed by the allowed sender.

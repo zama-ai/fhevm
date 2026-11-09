@@ -16,6 +16,7 @@ export const STEP_NAMES = [
   "bootstrap",
   "relayer",
   "relayer-http",
+  "relayer-proxy",
   "test-suite",
 ] as const;
 

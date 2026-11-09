@@ -127,6 +127,37 @@ struct Args {
     )]
     pub dependent_ops_max_per_chain: u32,
 
+    #[arg(
+        long,
+        allow_hyphen_values = true,
+        help = "Replay blocks from this block, inclusive; negative values are offsets from the first observed live block"
+    )]
+    pub catchup_from_block: Option<i64>,
+
+    #[arg(
+        long,
+        allow_hyphen_values = true,
+        requires = "catchup_from_block",
+        help = "Inclusive requested end; defaults to -1 relative to the first observed live block. The resolved range is retained across restarts"
+    )]
+    pub catchup_up_to_block: Option<i64>,
+
+    #[arg(
+        long,
+        requires = "catchup_from_block",
+        help = "Replay up to the chain head instead of finalized blocks only; part of the catchup identity"
+    )]
+    pub catchup_unfinalized: bool,
+
+    /// When set, a different range does not suppress this consumer's ongoing
+    /// catchups. Both stay ongoing.
+    #[arg(
+        long,
+        requires = "catchup_from_block",
+        help = "Keep this consumer's other ongoing catchups when requesting a different range"
+    )]
+    pub no_override_catchup: bool,
+
     #[arg(long)]
     pub chain_id: String,
 }
@@ -165,6 +196,19 @@ async fn main() -> anyhow::Result<()> {
         );
         return Ok(());
     }
+    #[cfg(feature = "test-failpoints")]
+    if std::env::args().nth(1).as_deref() == Some("--catchup-test-control") {
+        let args: Vec<_> = std::env::args().skip(2).collect();
+        anyhow::ensure!(
+            args.len() == 1,
+            "exactly one private catchup control action required"
+        );
+        println!(
+            "{}",
+            host_listener::catchup_test_control::execute(&args[0])?
+        );
+        return Ok(());
+    }
     // Handle `--stack-version` before clap parsing: it prints the compiled-in
     // STACK_VERSION and exits 0. Without this, clap rejects the unknown flag
     // with exit code 2, so the Helm `--stack-version` startupProbe would never
@@ -172,6 +216,13 @@ async fn main() -> anyhow::Result<()> {
     fhevm_engine_common::handle_stack_version_flag();
 
     let args = Args::parse();
+    host_listener::consumer::catchup::ManualCatchupArgs {
+        catchup_from_block: args.catchup_from_block,
+        catchup_up_to_block: args.catchup_up_to_block,
+        catchup_unfinalized: args.catchup_unfinalized,
+        no_override_catchup: args.no_override_catchup,
+    }
+    .validate()?;
 
     let _otel_guard = telemetry::init_tracing_otel_with_logs_only_fallback(
         args.log_level,
@@ -207,6 +258,10 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let config = ConsumerConfig {
+        catchup_from_block: args.catchup_from_block,
+        catchup_up_to_block: args.catchup_up_to_block,
+        catchup_unfinalized: args.catchup_unfinalized,
+        no_override_catchup: args.no_override_catchup,
         url: args.url,
         acl_address: args.acl_contract_address,
         tfhe_address: args.tfhe_contract_address,
@@ -236,4 +291,45 @@ async fn main() -> anyhow::Result<()> {
     };
 
     run_consumer(config).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn parse(extra: &[&str]) -> Result<Args, clap::Error> {
+        let mut argv = vec![
+            "consumer", "--url=redis://localhost:6379",
+            "--acl-contract-address=0x0000000000000000000000000000000000000000",
+            "--tfhe-contract-address=0x0000000000000000000000000000000000000001",
+            "--database-url=postgresql://postgres:postgres@localhost/coprocessor",
+            "--chain-id=1",
+        ];
+        argv.extend_from_slice(extra);
+        Args::try_parse_from(argv)
+    }
+    #[test]
+    fn catchup_options_accept_signed_bounds_and_require_a_start() {
+        let args = parse(&[
+            "--catchup-from-block=-100",
+            "--catchup-up-to-block=-10",
+            "--no-override-catchup",
+        ])
+        .unwrap();
+        assert_eq!(args.catchup_from_block, Some(-100));
+        assert_eq!(args.catchup_up_to_block, Some(-10));
+        assert!(args.no_override_catchup);
+        assert!(parse(&["--catchup-up-to-block=10"]).is_err());
+        assert!(parse(&["--no-override-catchup"]).is_err());
+        assert!(parse(&["--catchup-unfinalized"]).is_err());
+        assert!(
+            parse(&["--catchup-from-block=10", "--catchup-unfinalized"])
+                .unwrap()
+                .catchup_unfinalized
+        );
+        let args = parse(&[]).unwrap();
+        assert_eq!(args.catchup_from_block, None);
+        assert_eq!(args.catchup_up_to_block, None);
+        assert!(!args.no_override_catchup);
+        assert!(!args.catchup_unfinalized);
+    }
 }

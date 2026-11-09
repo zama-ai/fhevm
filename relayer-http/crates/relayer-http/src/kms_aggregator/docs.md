@@ -38,7 +38,7 @@ flowchart TB
   DR --> V{"counted >= threshold?"}
   L -->|no call left| V
   V -->|yes| O[Ok: Flow::output]
-  V -->|no| ERR[Err: Timeout, ThresholdNotReached or Cancelled,<br/>with the dominant error]
+  V -->|no| ERR[Err: Timeout or ThresholdNotReached,<br/>with the dominant error]
 ```
 
 One aggregation over time (three nodes, one hangs):
@@ -76,14 +76,13 @@ stateDiagram-v2
   deciding --> Ok: threshold reached
   deciding --> ThresholdNotReached: all finished or fail fast
   deciding --> Timeout: deadline hit
-  deciding --> Cancelled: process shutting down
 ```
 
 ## 3. Vocabulary
 
 | term | meaning |
 |---|---|
-| node | one KMS connector endpoint (`endpoints[i]`, named in logs) |
+| node | one KMS connector endpoint (`endpoints[i]`, named in logs as `kms_node`) |
 | accepted | a `200` response that passed `Flow::check` |
 | counted | accepted responses that count toward the threshold: all of them for user decrypt, the largest agreeing group for public decrypt |
 | threshold | counted responses needed to answer (configured per flow, `1 <= threshold <= n`) |
@@ -96,7 +95,7 @@ stateDiagram-v2
 ## 4. How an aggregation runs (`Aggregator::run`)
 
 1. Serialise the request once. Spawn one task per node (`Caller::call`) sharing the body bytes, the deadline and a
-   cancellation token (a child of the process shutdown token).
+   cancellation token of its own.
 2. Loop on the next finished call or the deadline timer (the deadline is checked first).
 3. A `200` goes through `Flow::check` and is accepted or rejected. A failed call is counted with its connector code. A
    cancelled call is counted.
@@ -107,13 +106,16 @@ stateDiagram-v2
 | state at the end | result |
 |---|---|
 | `counted >= threshold` | `Ok(Flow::output(accepted))` |
-| process shutdown token cancelled | `Err(Cancelled)` |
 | deadline hit | `Err(Timeout { counted, threshold, dominant })` |
 | otherwise (every node finished, or fail fast) | `Err(ThresholdNotReached { counted, threshold, dominant })` |
 
 Two consequences to keep in mind: a single hung node makes that request last the full `call.timeout` (accepted: the
 answer then carries every share that arrived), and responses that would have arrived after the answer are cancelled,
 not stored.
+
+The instant the counted responses first reach the threshold is `Tally::threshold_reached`: the summary line reports it
+as `threshold_reached_ms` (from the request's receipt), and `run` observes the time from it to its end in
+`relayer_http_kms_wait_after_threshold_seconds{flow}`: the latency the wait for the remaining nodes adds.
 
 ## 5. One node call (`Caller::call`)
 
@@ -135,6 +137,9 @@ not stored.
   audience is wrong. `auth_expired` is retried like any retryable error, with a fresh header.
 - The reqwest client has `timeout(call.timeout)` and a 3 s connect timeout as safety nets for a socket that stops
   answering. The aggregator's deadline is the decision.
+- The reqwest client verifies every connector's TLS certificate with the platform verifier (system roots).
+  `skip_tls_verification` turns that off (no CA, expiry or hostname check), for local or devnet stacks only; startup
+  then logs a `warn`.
 
 | connector answer | `AttemptError` | retried? |
 |---|---|---|
@@ -183,9 +188,9 @@ Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 
 ```jsonc
 // user decrypt: every accepted share, acceptance order
-{ "result": [ { "payload": "a1b2…", "signature": "1a2b…", "extraData": "0x00" }, … ] }
+{ "result": [ { "payload": "a1b2…", "signature": "1a2b…", "extraData": "0x02…" }, … ] }
 // public decrypt: the largest agreeing group
-{ "decryptedValue": "0000…2a", "signatures": ["1a2b…", …], "extraData": "0x00" }
+{ "decryptedValue": "0000…2a", "signatures": ["1a2b…", …], "extraData": "0x02…" }
 ```
 
 ## 8. Configuration → behaviour
@@ -193,6 +198,7 @@ Bytes are hex without `0x`; `extraData` keeps its `0x` prefix.
 ```yaml
 kms_aggregator:
   allow_insecure_http: false   # local only: plain http to non-loopback hosts
+  skip_tls_verification: false # local/devnet only: no TLS certificate verification, section 5
   max_concurrent_calls: 4096   # semaphore size, >= number of endpoints; one aggregation takes up to n permits
   call:
     timeout: 5000ms            # the deadline (<= 60s)
@@ -226,8 +232,8 @@ real answers are a few KiB, so 4096 calls in flight hold tens of MiB (the 4 MiB 
 misbehaving node); one pooled connection per call. A pod whose permits are exhausted still answers `ready` on
 `/healthz`: see `endpoint/docs.md` section 11.
 
-- Validation (`KmsAggregatorConfig::validate`, also run by `Caller::new`): endpoints non-empty with unique names and
-  URLs; `http(s)` with a host, no credentials, query or fragment; plain `http` only towards loopback unless
+- Validation (`KmsAggregatorConfig::validate`, also run by `Caller::new`): endpoints non-empty, at most 13 (the bound of
+  the `kms_node` label, `metrics::MAX_KMS_NODES`), with unique names and URLs; `http(s)` with a host, no credentials, query or fragment; plain `http` only towards loopback unless
   `allow_insecure_http`; non-zero, unique audiences; `max_concurrent_calls >= n`; `timeout` within `1ms..=60s`;
   `call.timeout < auth.validity <= 5m`; non-zero `auth.address`; non-empty signer fields;
   `0 < delay <= backoff_max <= timeout` when retries are on (`max_retries` itself has no ceiling); each `threshold`
@@ -249,33 +255,39 @@ misbehaving node); one pooled connection per call. A pod whose permits are exhau
 - **Deadline or fail fast**: the aggregation cancels its token; every pending call returns `Cancelled` immediately with
   its attempt count and elapsed time, so the final log line accounts for every node.
 - **Caller gone** (the future returned by `run` is dropped): the node tasks are aborted and their connections closed.
-  Nothing outlives the request.
-- **Process shutdown**: `main` cancels the process token on SIGINT or SIGTERM; every running aggregation ends with
-  `Cancelled`.
+  Nothing outlives the request. Each call's metrics are recorded by a drop guard (`CallRecord`), so an aborted call
+  records its cut attempt like a cancelled one.
+- **Process shutdown**: does not reach the aggregation. `main` cancels the process token on SIGINT or SIGTERM, which
+  stops the server accepting and turns `/healthz` to 503; a running aggregation ends by its own threshold, fail fast or
+  deadline (`call.timeout`).
 
-## 10. Logging
+## 10. Logging and metrics
 
-Span `aggregation{flow, request_id, decryption_id, handles}` around `run`; the node tasks run inside it, so their
-attempt lines carry the same identifiers. Events:
+The rules are in `OBSERVABILITY.md`. The aggregator logs nothing at INFO: the request's one INFO line is the summary
+line of the endpoint, which reports the aggregation through the `Tally` that `run` fills (`counted`, `threshold`, and
+the node names that failed, were rejected or were cut, and when the threshold was reached). Span `aggregation{request_id}` wraps `run`; the node tasks run
+inside it, so their lines carry the request id; lines about one node carry its configured name as `kms_node`.
+Events:
 
 | event | level | fields |
 |---|---|---|
-| `aggregation started` | info | nodes, threshold, timeout_ms |
-| `response accepted` | info | node, attempts, elapsed_ms, counted |
-| `response rejected` | warn | node, elapsed_ms, reason |
-| `attempt failed` | warn | node, attempt, elapsed_ms (this attempt), error, code, retry_in_ms (`null` when the call gives up): one line per failed attempt, retryable or final |
-| `call failed` | warn | node, attempts, elapsed_ms, error: the node's outcome after its last attempt |
-| `call cancelled at the deadline` | warn | node, attempts, elapsed_ms: the node was still running when the deadline passed (too slow, or hung) |
-| `call cancelled` (fail fast or shutdown), `deadline reached`, `threshold unreachable` | debug | node, attempts / pending |
-| `node task failed` | error | a panic inside a node task (counted as failed, no node name available) |
-| `aggregation succeeded` / `aggregation failed` | info / warn | counted, accepted, rejected + rejected_nodes, failed + failed_nodes, cancelled + cancelled_nodes, deadline_hit, dominant, elapsed_ms |
+| `attempt failed` | warn | kms_node, attempt, elapsed_ms (this attempt), error, code, retry_in_ms (`null` when the call gives up): one line per failed attempt, retried or final, so also the skipped retries |
+| `signing failed` | warn | kms_node, attempt, elapsed_ms, error, retry_in_ms: signing the call failed, nothing reached the node (the relayer's key, not the node, is at fault) |
+| `call failed` | warn | kms_node, attempts, elapsed_ms, error: the node's outcome after its last attempt |
+| `call cut` | warn | kms_node, attempts, elapsed_ms, cause: `deadline` (too slow or hung), or `fail_fast`; a client hangup is reported by the endpoint's `Guard` (cause `client_closed`) |
+| `response rejected` | warn | kms_node, elapsed_ms, error: a check refused a 200 response |
+| `node task panicked` | error | kms_node, location: a panic inside a node task (no panic text), the panic's only ERROR line; the node is counted as failed, and the fail-fast check still runs |
+| `aggregation started`, `response accepted`, `deadline reached`, `threshold unreachable` | debug | nodes, threshold, timeout_ms / kms_node, attempts, elapsed_ms, counted / pending |
 
-Every line about one node carries its configured name (`node`), and the final line lists the names behind every
-rejection, failure and cancellation, so a node that keeps failing, timing out or being rejected is identifiable from
-the logs of one request. Together with the span fields this identifies a request end to end: `request_id` (the
-relayer's), `decryption_id` (the connector's), `handles`, `node`.
+`error` is a digest: for a KMS node's error response, its code and message truncated to `MAX_LOGGED_NODE_MESSAGE`
+characters; for a 2xx body that does not parse, `bad body: <kind>, <n> bytes` (`AttemptError::Body` keeps the kind
+and the size, never the parser's text); for a node task, the `JoinError` (its panic message is the relayer's own).
 
-Never logged: request or response bodies, shares, signatures, header values, URLs, API keys.
+Metrics (`metrics.rs`, generated reference `monitoring/metrics.md`) are recorded by `Caller::call` through a drop guard
+(`CallRecord`): once however the call ends, so an aborted call records its cut attempt like a cancelled one (a panic
+records none: the aggregator counts it as `code="panic"`). The slot wait starts after signing. A signing failure is no
+attempt: it counts in `relayer_http_signer_errors_total{flow}`, and a call that made no attempt is not observed in
+`relayer_http_kms_attempts`; the node stays in `failed_kms_nodes`, which names the nodes that gave no response.
 
 ## 11. Testing
 
@@ -286,6 +298,9 @@ Never logged: request or response bodies, shares, signatures, header values, URL
   as `APP_*` overrides, the startup checks, then a header the `fhevm_sig_auth` verifier accepts. It catches what a
   mock cannot: an AWS SDK built without an HTTP client (kms-connector #2893), or a broken signature conversion. moto
   cannot be used: its KMS `Sign` ignores `MessageType=DIGEST` and hashes the digest again.
+- Log tests (`aggregator.rs`, `call.rs`) capture the production JSON with `logging::capture_runs` and
+  assert on fields and levels: each degradation (failed attempt, failed signature, failed call, cut call, rejected
+  response) is a WARN with its `kms_node`, a panicked node task an ERROR.
 - Scenarios in `scenarios/*.yaml`, run by `cargo nextest run -p relayer-http yaml_scenarios` under paused tokio time (a 5 s
   scenario runs in microseconds and `elapsed` is exact). Adding a scenario is adding a file:
 
@@ -305,7 +320,13 @@ expect:                       # every field except outcome is optional
   elapsed: 520ms
   dominant: acl_denied
   attempts: 13
+  metrics:                    # optional: the KMS metrics the run produced
+    answered: 13              # attempts that got an answer or were cut (relayer_http_kms_attempt_duration_seconds)
+    errors: { acl_denied: 2 } # relayer_http_kms_attempt_errors_total per code; a code left out must be zero
 ```
+
+Every scenario also checks, expectation or not, that the metrics' label values are valid, that each node call is
+recorded once, and that the attempts per call add up to the attempts the nodes received.
 
 Before every commit, from `relayer-http/`:
 

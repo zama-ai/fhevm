@@ -1,17 +1,8 @@
 /**
- * Creates an Error with name 'AbortError' for consistency with fetch abort behavior.
- * Preserves the original abort reason as the error's cause.
- */
-function createAbortError(reason?: unknown): Error {
-  const error = new Error('Aborted', { cause: reason });
-  error.name = 'AbortError';
-  return error;
-}
-
-/**
  * Returns a Promise that resolves after the specified delay, but can be aborted.
  *
- * @throws {Error} An error with name 'AbortError' if the signal is aborted
+ * @throws The signal's abort reason itself (any value, unchanged), whether the signal
+ * is already aborted or aborts during the sleep, as `fetch` does.
  */
 export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
   // Check if already aborted before creating the Promise
@@ -20,7 +11,9 @@ export function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> 
   return new Promise((resolve, reject) => {
     const onAbort = (): void => {
       clearTimeout(timeoutId);
-      reject(createAbortError(signal?.reason));
+      // The reason is caller-chosen (any value) and must pass through unchanged, like fetch and throwIfAborted().
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+      reject(signal?.reason);
     };
     const timeoutId = setTimeout(() => {
       signal?.removeEventListener('abort', onAbort);

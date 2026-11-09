@@ -63,6 +63,20 @@ pub(crate) async fn partial_block() -> anyhow::Result<(Database, PgPool, DBInsta
     Ok((db, pool, instance))
 }
 
+/// Seed one in-progress GCS attempt: state-hash uploads are keyed by the
+/// attempt (`proposal`/`attempt` scopes), so without one there is nothing to
+/// upload to.
+pub(crate) async fn seed_attempt(pool: &PgPool) -> anyhow::Result<()> {
+    sqlx::query(
+        "INSERT INTO upgrade_state
+            (stack_role, host_chain_id, state, status, proposal_id, proposal_block, version, end_block)
+         VALUES ('GCS', 42, 'DryRunStarted', 'in_progress', '\\x02', 10, '1.2.3', 1000)",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub(crate) async fn repair_is_contained(db: &mut Database, pool: &PgPool) -> anyhow::Result<()> {
     let b = block();
     let error = ingest(

@@ -14,6 +14,10 @@ import {
 // `task:proposeCoprocessorUpgrade` broadcasts it with the deployer key (no-DAO devnet path).
 // Logic lives in utils/coprocessorUpgradeProposal.ts; see COPROCESSOR_UPGRADE_RUNBOOK.md.
 
+const CHAINS_FILE_HELP =
+  'EXPERIMENTAL, not for production upgrades. Path to a JSON array of host chain entries ({chainId, label, minWindowSeconds, fallbackBlockTimeSeconds, rpcUrlEnv, defaultRpcUrl?, canonical?}) ' +
+  'replacing the environment default, or env:NAME to read the same JSON from an env var (e.g. env:HOST_CHAINS, for a pod that cannot mount a file)';
+
 task(
   'task:buildProposeCoprocessorUpgradeCalldata',
   'Builds Aragon proposal calldata for ProtocolConfig.proposeCoprocessorUpgrade by computing block windows across the environment host chains and pinning gwStartBlock to the gateway tip (DAO path, never broadcasts)',
@@ -30,6 +34,7 @@ task(
     'Coprocessor upgrade proposal id (positive integer, decimal or 0x-hex), never used before on this ProtocolConfig',
   )
   .addParam('softwareVersion', 'Coprocessor release tag, vMAJOR.MINOR.PATCH (e.g. v0.15.0)')
+  .addOptionalParam('chainsFile', CHAINS_FILE_HELP, '', types.string)
   .addOptionalParam(
     'useInternalProxyAddress',
     'Resolve the ProtocolConfig address from the /addresses directory instead of the environment',
@@ -43,6 +48,7 @@ task(
     buffer,
     proposalId,
     softwareVersion,
+    chainsFile,
     useInternalProxyAddress,
   }): Promise<void> {
     const inputs = parseCoprocessorUpgradeInputs({
@@ -52,6 +58,7 @@ task(
       buffer,
       proposalId,
       softwareVersion,
+      chainsFile,
     });
     const target = requireProtocolConfigAddress(useInternalProxyAddress);
     const proposal = await buildCoprocessorUpgradeProposal(inputs);
@@ -82,6 +89,7 @@ task(
     'Coprocessor upgrade proposal id (positive integer, decimal or 0x-hex), never used before on this ProtocolConfig',
   )
   .addParam('softwareVersion', 'Coprocessor release tag, vMAJOR.MINOR.PATCH (e.g. v0.15.0)')
+  .addOptionalParam('chainsFile', CHAINS_FILE_HELP, '', types.string)
   .addOptionalParam(
     'useInternalProxyAddress',
     'Resolve the ProtocolConfig address from the /addresses directory instead of the environment',
@@ -89,7 +97,7 @@ task(
     types.boolean,
   )
   .setAction(async function (
-    { environment, startTime, duration, buffer, proposalId, softwareVersion, useInternalProxyAddress },
+    { environment, startTime, duration, buffer, proposalId, softwareVersion, chainsFile, useInternalProxyAddress },
     hre,
   ): Promise<void> {
     const inputs = parseCoprocessorUpgradeInputs({
@@ -99,6 +107,7 @@ task(
       buffer,
       proposalId,
       softwareVersion,
+      chainsFile,
     });
     const target = requireProtocolConfigAddress(useInternalProxyAddress);
     const proposal = await buildCoprocessorUpgradeProposal(inputs);
