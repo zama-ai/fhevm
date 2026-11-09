@@ -5,16 +5,19 @@ import type { FheEncryptionKeyBytes } from '../types/fheEncryptionKey.js';
 import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { FetchFheEncryptionKeyBytesParameters } from '../modules/relayer/types.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
-import type { CacheEntry } from './FheEncryptionKeyCache-p.js';
-import { unsafeBytesEquals } from '../base/bytes.js';
+import type { FheEncryptionKeySource } from '../types/fheEncryptionKey.js';
+import { isBytes32Hex, unsafeBytesEquals } from '../base/bytes.js';
+import { uint256ToBytes32Hex } from '../base/uint.js';
+import { VersionedValueCache, type CachedValue } from '../caching/versionedValueCache.js';
+import { getCacheTtl } from '../caching/cacheOptions-p.js';
 import { FheEncryptionKeyVerificationError } from '../errors/FheEncryptionKeyVerificationError.js';
 import {
   getProvidedFheEncryptionKey,
   getProvidedFheEncryptionKeyError,
   releaseProvidedFheEncryptionKey,
 } from '../runtime/CoreFhevm-p.js';
-import { globalFheEncryptionKeyCache } from './FheEncryptionKeyCache-p.js';
 import {
+  readActiveFheEncryptionKeyIds,
   requiresKeyVerification,
   resolveKmsGeneration,
   verifyFheEncryptionKeyBytes,
@@ -24,11 +27,133 @@ import {
 
 type Context = FhevmBase<FhevmChain, FhevmRuntime, OptionalNativeClient>;
 
-/** A cache entry and its bytes, checked for the client. */
+type Parameters = {
+  readonly fhevmContext: FhevmClientFrozenContext;
+  readonly options?: RelayerKeyUrlOptions | undefined;
+};
+
+/** The key bytes, checked for the client, and their cache version. */
 type ClientFheEncryptionKey = {
-  readonly slot: string;
-  readonly entry: CacheEntry;
   readonly bytes: FheEncryptionKeyBytes;
+  readonly version: string;
+};
+
+type ActiveIds = { readonly keyId: bigint; readonly crsId: bigint };
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Key material cache: one key per slot (see getFheEncryptionKeySlot). A read
+// reads the active ids on KMSGeneration first and keeps the cached key when
+// the ids are unchanged; else it downloads the key. A rotation the relayer has
+// not followed yet fails the read and leaves the cached key in place: hex ids
+// are compared before the download, label ids are checked after it, before
+// caching.
+// Clients that do not check keys download again when the TTL runs out.
+//
+////////////////////////////////////////////////////////////////////////////////
+
+class KeyMaterialCache extends VersionedValueCache<Context, Parameters, FheEncryptionKeyBytes> {
+  protected override getSlotKey(context: Context): string {
+    return getFheEncryptionKeySlot(context);
+  }
+
+  protected override async fetch(
+    context: Context,
+    parameters: Parameters,
+    cached: CachedValue<FheEncryptionKeyBytes> | undefined,
+  ): Promise<{ readonly version: string; readonly value: FheEncryptionKeyBytes }> {
+    if (!requiresKeyVerification(context.runtime)) {
+      const bytes = await _downloadFheEncryptionKeyBytes(context, parameters, undefined);
+      return { version: _bytesVersion(bytes), value: bytes };
+    }
+    const activeIds = await readActiveFheEncryptionKeyIds(context);
+    const version = fheEncryptionKeyVersion(activeIds);
+    if (cached?.version === version) {
+      return cached;
+    }
+    const bytes = await _downloadFheEncryptionKeyBytes(context, parameters, activeIds);
+    if (isBytes32Hex(bytes.publicKeyBytes.id) && isBytes32Hex(bytes.crsBytes.id)) {
+      return { version, value: bytes };
+    }
+    return { version: await _admitLabelIdKey(context, bytes), value: bytes };
+  }
+}
+
+const keyMaterialCache = new KeyMaterialCache();
+
+/**
+ * Checks a key served under label ids before it is cached (the check is
+ * memoized for this client) and versions it by the active ids it matched.
+ *
+ * @throws {FheEncryptionKeyVerificationError} when it is not the active key
+ * (e.g. the relayer has not followed a rotation yet). Nothing is cached.
+ */
+async function _admitLabelIdKey(context: Context, bytes: FheEncryptionKeyBytes): Promise<string> {
+  try {
+    const matchedIds = await _verifyFheEncryptionKeyBytesForClient(context, bytes);
+    return matchedIds === undefined ? _bytesVersion(bytes) : fheEncryptionKeyVersion(matchedIds);
+  } catch (e) {
+    if (!(e instanceof FheEncryptionKeyVerificationError)) {
+      throw e;
+    }
+    throw new FheEncryptionKeyVerificationError({
+      message:
+        'The relayer does not serve the active FHE public key and CRS (its key fails the check against ' +
+        'KMSGeneration): a key rotation may be in progress. Nothing was cached: retry later.',
+      cause: e,
+    });
+  }
+}
+
+/** The cache version of key material: `keyId:crsId`, as 32-byte hex. */
+export function fheEncryptionKeyVersion(ids: ActiveIds): string {
+  return `${uint256ToBytes32Hex(ids.keyId)}:${uint256ToBytes32Hex(ids.crsId)}`;
+}
+
+/**
+ * Reads the version of the active key material (its ids on KMSGeneration),
+ * without downloading or caching it.
+ */
+export async function readFheEncryptionKeyVersion(context: Context): Promise<string> {
+  return fheEncryptionKeyVersion(await readActiveFheEncryptionKeyIds(context));
+}
+
+/** The version of bytes no client checks: the relayer's ids, as served. */
+function _bytesVersion(bytes: FheEncryptionKeyBytes): string {
+  const normalize = (id: string): string => (isBytes32Hex(id) ? id.toLowerCase() : id);
+  return `${normalize(bytes.publicKeyBytes.id)}:${normalize(bytes.crsBytes.id)}`;
+}
+
+/**
+ * Reads the key material again (see `VersionedValueCache.refresh`). Each client
+ * checks the key on use.
+ *
+ * @returns the cache version of the current key.
+ * @internal
+ */
+export async function refreshFheEncryptionKey(
+  context: Context,
+  parameters: Parameters & { readonly invalidVersion: string | undefined },
+): Promise<string> {
+  const { version } = await keyMaterialCache.refresh(context, parameters, parameters.invalidVersion);
+  return version;
+}
+
+/** For tests and harnesses: the key cache, by slot. */
+export const fheEncryptionKeyCacheForTests = {
+  peek: (slot: string): CachedValue<FheEncryptionKeyBytes> | undefined => keyMaterialCache.peek(slot),
+  /** Stores `bytes` unchecked, versioned by their served ids. */
+  set: (slot: string, bytes: FheEncryptionKeyBytes): void => {
+    if (!slot.startsWith(`${bytes.metadata.relayerUrl}|`)) {
+      throw new Error(
+        `FheEncryptionKey relayerUrl mismatch: "${bytes.metadata.relayerUrl}" is not the slot's relayer.`,
+      );
+    }
+    keyMaterialCache.set(slot, _bytesVersion(bytes), bytes);
+  },
+  clear: (): void => {
+    keyMaterialCache.clear();
+  },
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -86,24 +211,14 @@ export function getFheEncryptionKeySlot(context: {
  * - any other error (e.g. network): the key stays as is, the next call checks
  *   it again.
  *
- * Callers use the returned entry, the one checked, never the slot's current
- * one: another entry may have taken the slot since.
- *
  * @throws {FhevmConfigError} when the client cannot check key material.
  * @throws {FheEncryptionKeyVerificationError} when the key fails the check.
  * @internal
  */
 export async function ensureFheEncryptionKeyDownload(
   context: Context,
-  parameters: {
-    readonly fhevmContext: FhevmClientFrozenContext;
-    readonly options?: RelayerKeyUrlOptions | undefined;
-    readonly ignoreCache?: boolean | undefined;
-  },
+  parameters: Parameters,
 ): Promise<ClientFheEncryptionKey> {
-  const relayerUrl = context.chain.fhevm.relayerUrl;
-  const runtime = context.runtime;
-  const logger = runtime.config.logger;
   // A provided key that failed the check: only its error is left.
   const providedError = getProvidedFheEncryptionKeyError(context);
   if (providedError !== undefined) {
@@ -115,76 +230,112 @@ export async function ensureFheEncryptionKeyDownload(
 
   const provided = getProvidedFheEncryptionKey(context);
   if (provided !== undefined) {
-    return _useProvidedFheEncryptionKey(context, provided, slot);
+    return _useProvidedFheEncryptionKey(context, slot, provided);
   }
 
-  // Caller-provided options override runtime config defaults (e.g. auth)
-  const relayerParameters: FetchFheEncryptionKeyBytesParameters = {
-    ...parameters,
-    options: { auth: context.runtime.config.auth, ...parameters.options },
-  };
-
-  // Shared by every client on the slot: a download in flight is joined, and
-  // runs with the request options (e.g. auth, abort signal, retries) of the
-  // client that started it.
-  const entry = globalFheEncryptionKeyCache.ensureBytes({
-    owner: runtime,
+  return _checkCachedFheEncryptionKey(
+    context,
     slot,
-    fetcher: async () => {
-      logger?.debug?.(
-        `Fetching FHE encryption key/CRS bytes from relayer "${relayerUrl}" (chainId=${context.chain.id}).`,
-      );
-      try {
-        const bytes = await runtime.relayer.fetchFheEncryptionKeyBytes(
-          { relayerUrl, chainId: context.chain.id },
-          relayerParameters,
-        );
-        logger?.debug?.(`Fetched FHE encryption key/CRS bytes from relayer "${relayerUrl}".`);
-        return bytes;
-      } catch (e) {
-        logger?.error?.(`Failed to fetch FHE encryption key/CRS bytes from relayer "${relayerUrl}".`, e);
-        throw e;
-      }
-    },
-    metadata: { chainId: context.chain.id, relayerUrl },
-  });
-
-  return _verifyCachedFheEncryptionKey(context, slot, entry);
+    await keyMaterialCache.get(context, parameters, getCacheTtl(context, 'keyMaterial')),
+  );
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
-// Each client's check of each key (bytes object): concurrent calls on a
-// client share one set of KMSGeneration reads. A key that fails the check stays
-// failed; any other error (e.g. network) is retried by the next call.
-const clientVerifications = new WeakMap<FheEncryptionKeyBytes, WeakMap<Context, Promise<void>>>();
-
-function _verifyFheEncryptionKeyBytesForClient(context: Context, bytes: FheEncryptionKeyBytes): Promise<void> {
-  if (!requiresKeyVerification(context.runtime)) {
-    return Promise.resolve();
-  }
-  const checks = clientVerifications.get(bytes) ?? new WeakMap<Context, Promise<void>>();
-  clientVerifications.set(bytes, checks);
-  return _memoize(checks, context, () => verifyFheEncryptionKeyBytes(context, bytes).then(() => undefined), true);
-}
-
-async function _verifyCachedFheEncryptionKey(
+/** Checks a cached key for the client; a key that fails leaves the cache. */
+async function _checkCachedFheEncryptionKey(
   context: Context,
   slot: string,
-  entry: CacheEntry,
+  cached: CachedValue<FheEncryptionKeyBytes>,
 ): Promise<ClientFheEncryptionKey> {
-  const bytes = await globalFheEncryptionKeyCache.entryBytes(entry);
   try {
-    await _verifyFheEncryptionKeyBytesForClient(context, bytes);
+    await _verifyFheEncryptionKeyBytesForClient(context, cached.value);
   } catch (e) {
     if (e instanceof FheEncryptionKeyVerificationError) {
       // Clients on this slot check against the same KMSGeneration, so they
       // reject these bytes too (unless their RPC serves other chain state).
-      globalFheEncryptionKeyCache.evict(slot, entry);
+      keyMaterialCache.evict(slot, cached.value);
     }
     throw e;
   }
-  return { slot, entry, bytes };
+  return { bytes: cached.value, version: cached.version };
+}
+
+/**
+ * The relayer serves the active key and CRS (compared for 32-byte hex ids;
+ * label ids, e.g. the decimal ids of relayer release/0.14.x, are left to the
+ * digest check; see planning-blockchain#1790).
+ *
+ * @throws {FheEncryptionKeyVerificationError} when it serves others (e.g. it
+ * has not followed a rotation yet). Nothing is downloaded.
+ */
+function _assertRelayerServesActiveKey(source: FheEncryptionKeySource, activeIds: ActiveIds): void {
+  const servedIds = [source.publicKeySource.id, source.crsSource.id];
+  const activeHexIds = [uint256ToBytes32Hex(activeIds.keyId), uint256ToBytes32Hex(activeIds.crsId)];
+  if (servedIds.some((id, i) => isBytes32Hex(id) && id.toLowerCase() !== activeHexIds[i])) {
+    throw new FheEncryptionKeyVerificationError({
+      message: `The relayer does not serve the active FHE public key and CRS yet (relayer: ${servedIds.join(', ')}; active on KMSGeneration: ${activeHexIds.join(', ')}): a key rotation is in progress. Nothing was downloaded: retry later.`,
+    });
+  }
+}
+
+/**
+ * Downloads the key bytes. With `activeIds`, first asserts the relayer serves
+ * them (a download would otherwise only fail the check).
+ */
+async function _downloadFheEncryptionKeyBytes(
+  context: Context,
+  parameters: Parameters,
+  activeIds: ActiveIds | undefined,
+): Promise<FheEncryptionKeyBytes> {
+  const relayerUrl = context.chain.fhevm.relayerUrl;
+  const logger = context.runtime.config.logger;
+  // Caller-provided options override runtime config defaults (e.g. auth)
+  const relayerParameters: FetchFheEncryptionKeyBytesParameters = {
+    options: { auth: context.runtime.config.auth, ...parameters.options },
+    beforeDownload:
+      activeIds === undefined
+        ? undefined
+        : async (source: FheEncryptionKeySource) => {
+            _assertRelayerServesActiveKey(source, activeIds);
+            return Promise.resolve();
+          },
+  };
+  logger?.debug?.(`Fetching FHE encryption key/CRS bytes from relayer "${relayerUrl}" (chainId=${context.chain.id}).`);
+  try {
+    const bytes = await context.runtime.relayer.fetchFheEncryptionKeyBytes(
+      { relayerUrl, chainId: context.chain.id },
+      relayerParameters,
+    );
+    if (bytes.metadata.relayerUrl !== relayerUrl) {
+      throw new Error(
+        `FheEncryptionKey relayerUrl mismatch: expected "${relayerUrl}" but got "${bytes.metadata.relayerUrl}". The FheEncryptionKey must originate from the same relayer.`,
+      );
+    }
+    logger?.debug?.(`Fetched FHE encryption key/CRS bytes from relayer "${relayerUrl}".`);
+    return bytes;
+  } catch (e) {
+    logger?.error?.(`Failed to fetch FHE encryption key/CRS bytes from relayer "${relayerUrl}".`, e);
+    throw e;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+// Each client's check of each key (bytes object), resolving to the active ids
+// the key matched (`undefined` when the client does not check keys): concurrent
+// calls on a client share one set of KMSGeneration reads. A key that fails the
+// check stays failed; any other error (e.g. network) is retried by the next call.
+const clientVerifications = new WeakMap<FheEncryptionKeyBytes, WeakMap<Context, Promise<ActiveIds | undefined>>>();
+
+function _verifyFheEncryptionKeyBytesForClient(
+  context: Context,
+  bytes: FheEncryptionKeyBytes,
+): Promise<ActiveIds | undefined> {
+  if (!requiresKeyVerification(context.runtime)) {
+    return Promise.resolve(undefined);
+  }
+  const checks = clientVerifications.get(bytes) ?? new WeakMap<Context, Promise<ActiveIds | undefined>>();
+  clientVerifications.set(bytes, checks);
+  return memoizeUntilRejected(checks, context, () => verifyFheEncryptionKeyBytes(context, bytes), true);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -197,33 +348,28 @@ const providedKeyUses = new WeakMap<FheEncryptionKeyBytes, Promise<ClientFheEncr
 
 function _useProvidedFheEncryptionKey(
   context: Context,
-  provided: FheEncryptionKeyBytes,
   slot: string,
+  provided: FheEncryptionKeyBytes,
 ): Promise<ClientFheEncryptionKey> {
-  return _memoize(
+  return memoizeUntilRejected(
     providedKeyUses,
     provided,
     async (): Promise<ClientFheEncryptionKey> => {
       try {
-        const cachedEntry = await _getSameCachedEntry(slot, provided);
         let checked: ClientFheEncryptionKey;
-        if (cachedEntry !== undefined) {
-          checked = await _verifyCachedFheEncryptionKey(context, slot, cachedEntry);
+        const cached = _cachedSameKey(slot, provided);
+        if (cached !== undefined) {
+          checked = await _checkCachedFheEncryptionKey(context, slot, cached);
         } else {
-          await _verifyFheEncryptionKeyBytesForClient(context, provided);
-          // Another client may have cached the same key during the check: use
-          // its entry rather than orphan it.
-          const sameEntry = await _getSameCachedEntry(slot, provided);
-          if (sameEntry !== undefined) {
-            checked = await _verifyCachedFheEncryptionKey(context, slot, sameEntry);
+          const activeIds = await _verifyFheEncryptionKeyBytesForClient(context, provided);
+          // Another client may have cached the same key during the check: use it.
+          const cachedNow = _cachedSameKey(slot, provided);
+          if (cachedNow !== undefined) {
+            checked = await _checkCachedFheEncryptionKey(context, slot, cachedNow);
           } else {
-            const entry = globalFheEncryptionKeyCache.replaceBytes(
-              context.runtime,
-              slot,
-              context.chain.fhevm.relayerUrl,
-              provided,
-            );
-            checked = { slot, entry, bytes: provided };
+            const version = activeIds === undefined ? _bytesVersion(provided) : fheEncryptionKeyVersion(activeIds);
+            keyMaterialCache.set(slot, version, provided);
+            checked = { bytes: provided, version };
           }
         }
         // The cache holds the key from now on.
@@ -241,25 +387,20 @@ function _useProvidedFheEncryptionKey(
   );
 }
 
-/**
- * The slot's entry if it holds `provided`'s bytes. Compared only with a cached
- * key already downloaded: never waits for another client's download.
- */
-async function _getSameCachedEntry(slot: string, provided: FheEncryptionKeyBytes): Promise<CacheEntry | undefined> {
-  const entry = globalFheEncryptionKeyCache.get(slot);
-  if (entry?.resolvedKind === undefined) {
-    return undefined;
-  }
-  const cached = await globalFheEncryptionKeyCache.entryBytes(entry);
-  return _sameFheEncryptionKeyBytes(provided, cached) ? entry : undefined;
+/** The cached key if it is `provided`'s bytes. Never waits for a download. */
+function _cachedSameKey(slot: string, provided: FheEncryptionKeyBytes): CachedValue<FheEncryptionKeyBytes> | undefined {
+  const cached = keyMaterialCache.peek(slot);
+  return cached !== undefined && _sameFheEncryptionKeyBytes(provided, cached.value) ? cached : undefined;
 }
 
 /**
  * Memoizes `start()` under `key`: concurrent and later calls share it. A
  * rejection is forgotten, so the next call starts again, except a
  * {@link FheEncryptionKeyVerificationError} when `keepVerificationError`.
+ *
+ * @internal
  */
-function _memoize<K extends object, T>(
+export function memoizeUntilRejected<K extends object, T>(
   memo: WeakMap<K, Promise<T>>,
   key: K,
   start: () => Promise<T>,

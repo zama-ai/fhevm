@@ -13,7 +13,6 @@ export async function fetchFheEncryptionKeyBytes(
   parameters: {
     readonly fhevmContext: FhevmClientFrozenContext;
     readonly options?: RelayerKeyUrlOptions | undefined;
-    readonly ignoreCache?: boolean | undefined;
   },
 ): Promise<FheEncryptionKeyBytes> {
   // Download (or join the download), then check the key for this client:

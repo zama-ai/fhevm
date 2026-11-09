@@ -1,3 +1,5 @@
+export { type ForceRefreshParameters, forceRefresh } from './forceRefresh.js';
+
 export {
   type DecryptPublicValueParameters,
   type DecryptPublicValueReturnType,

@@ -74,6 +74,54 @@ export function requiresKeyVerification(runtime: FhevmRuntime): boolean {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// readActiveFheEncryptionKeyIds
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * Reads the active key and CRS ids on `KMSGeneration` (two cheap reads, after
+ * the `keyVerification` client's chain id check), to tell whether the key
+ * material changed before downloading it again. Proves nothing about any
+ * bytes: {@link verifyFheEncryptionKeyBytes} still checks them.
+ *
+ * @throws {FheEncryptionKeyVerificationError} when `KMSGeneration` has no
+ * active key or CRS (id 0).
+ * @throws {FhevmConfigError} on a misconfigured `keyVerification`.
+ * @throws the client's own error on a network / RPC failure, unwrapped.
+ */
+export async function readActiveFheEncryptionKeyIds(
+  context: Context,
+): Promise<{ readonly keyId: bigint; readonly crsId: bigint }> {
+  const source = _resolveKmsGenerationSource(context);
+  await _assertChainId(context, source);
+
+  const read = (abi: readonly [Record<string, unknown> & { readonly name: string }]): Promise<unknown> =>
+    context.runtime.ethereum.readContract(source.trustedClient, {
+      address: source.address,
+      abi,
+      args: [],
+      functionName: abi[0].name,
+    });
+
+  // As in verifyFheEncryptionKeyBytes: a failed read is explained by the
+  // version check (not a KMSGeneration contract), and id 0 is no active key.
+  const checkVersion = (): Promise<void> => _assertIsKmsGeneration(() => read(getVersionAbi));
+  const [unknownKeyId, unknownCrsId] = await executeWithBatching<unknown>(
+    [
+      () => _thenChecked(read(getActiveKeyIdAbi), [checkVersion]),
+      () => _thenChecked(read(getActiveCrsIdAbi), [checkVersion]),
+    ],
+    context.options.batchRpcCalls,
+  );
+  assertIsUint256(unknownKeyId, {});
+  assertIsUint256(unknownCrsId, {});
+  const keyId = BigInt(unknownKeyId);
+  const crsId = BigInt(unknownCrsId);
+  _assertIsActive('FHE public key', keyId);
+  _assertIsActive('CRS', crsId);
+  return { keyId, crsId };
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // assertKeyVerificationConfig
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -155,7 +203,8 @@ function _kmsGenerationRef(chainId: number, address: string): KmsGenerationRef {
  * - digest: SHAKE256(`"PDAT_KEY"` ‖ public key bytes) must equal the active
  *   key's `Public` digest, SHAKE256(`"PDAT_CRS"` ‖ CRS bytes) the active CRS digest.
  *
- * @returns the same bytes, once verified.
+ * @returns the active ids the bytes were verified against (the relayer may
+ * serve label ids).
  * @throws {FheEncryptionKeyVerificationError} on a digest or id mismatch, when
  * `KMSGeneration` has no active key or CRS (id 0), or when reading the active
  * key or CRS materials reverts (e.g. `KeyNotGenerated`, `CrsNotGenerated`,
@@ -168,7 +217,7 @@ function _kmsGenerationRef(chainId: number, address: string): KmsGenerationRef {
 export async function verifyFheEncryptionKeyBytes(
   context: Context,
   bytes: FheEncryptionKeyBytes,
-): Promise<FheEncryptionKeyBytes> {
+): Promise<{ readonly keyId: bigint; readonly crsId: bigint }> {
   const source = _resolveKmsGenerationSource(context);
   const batchRpcCalls = context.options.batchRpcCalls;
 
@@ -243,7 +292,7 @@ export async function verifyFheEncryptionKeyBytes(
     `Verified FHE public key and CRS against KMSGeneration ${source.address} (keyId=0x${activeKeyId.toString(16)}, crsId=0x${activeCrsId.toString(16)}).`,
   );
 
-  return bytes;
+  return { keyId: activeKeyId, crsId: activeCrsId };
 }
 
 ////////////////////////////////////////////////////////////////////////////////

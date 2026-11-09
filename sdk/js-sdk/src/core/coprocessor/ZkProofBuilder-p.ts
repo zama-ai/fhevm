@@ -17,6 +17,7 @@ import type {
   AddressValueLike,
 } from '../types/primitives.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
+import type { UsedCacheVersions } from '../caching/usedCacheVersions-p.js';
 import { assert } from '../base/errors/InternalError.js';
 import { isUint64, uint256ToBytes32 } from '../base/uint.js';
 import { isAddress } from '../base/address.js';
@@ -143,15 +144,17 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       userAddress,
       extraData,
       fhevmContext,
+      usedVersions,
     }: {
       readonly contractAddress: string;
       readonly userAddress: string;
       readonly extraData: string;
       readonly fhevmContext: FhevmClientFrozenContext;
+      readonly usedVersions?: UsedCacheVersions | undefined;
     },
   ): Promise<ZkProof> {
     // Fetch the FheEncryptionKey (in wasm format) through the key cache.
-    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext });
+    const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext, usedVersions });
 
     if (this.#totalBits === 0) {
       throw new ZkProofError({
@@ -281,9 +284,10 @@ export async function createZkProof(
     readonly userAddress: ChecksummedAddress;
     readonly extraData: BytesHex;
     readonly fhevmContext: FhevmClientFrozenContext;
+    readonly usedVersions?: UsedCacheVersions | undefined;
   },
 ): Promise<ZkProof> {
-  const { contractAddress, userAddress, values, extraData, fhevmContext } = parameters;
+  const { contractAddress, userAddress, values, extraData, fhevmContext, usedVersions } = parameters;
 
   const builder = new ZkProofBuilderImpl(PRIVATE_TOKEN, {
     ciphertextCapacity: TFHE_ZKPROOF_CIPHERTEXT_CAPACITY,
@@ -299,6 +303,7 @@ export async function createZkProof(
     userAddress,
     extraData,
     fhevmContext,
+    usedVersions,
   });
 
   return zkProof;

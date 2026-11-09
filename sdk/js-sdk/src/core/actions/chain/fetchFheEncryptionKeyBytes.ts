@@ -11,7 +11,6 @@ import { copyFheEncryptionKeyBytes } from '../../key/copyFheEncryptionKeyBytes-p
 
 export type FetchFheEncryptionKeyBytesParameters = {
   readonly options?: RelayerKeyUrlOptions | undefined;
-  readonly ignoreCache?: boolean | undefined;
 };
 
 export type FetchFheEncryptionKeyBytesReturnType = FheEncryptionKeyBytes;

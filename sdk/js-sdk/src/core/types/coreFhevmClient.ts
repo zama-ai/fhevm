@@ -3,6 +3,7 @@ import type { FhevmRuntime } from './coreFhevmRuntime.js';
 import type { FheEncryptionKeyBytes } from './fheEncryptionKey.js';
 import type { TfheVersion, TkmsVersion } from './moduleVersions.js';
 import type { TrustedClient } from '../modules/ethereum/types.js';
+import type { FhevmCacheOptions, ResolvedFhevmCacheOptions } from './cache.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -20,6 +21,11 @@ export type FhevmBaseOptions<client extends NativeClient = NativeClient> = {
    * verified.
    */
   readonly keyVerification?: FhevmKeyVerification<client> | undefined;
+  /**
+   * How long the key material is cached, and whether a stale one is
+   * refreshed automatically.
+   */
+  readonly cache?: FhevmCacheOptions | undefined;
 };
 
 export type FhevmEncryptOptions<client extends NativeClient = NativeClient> = FhevmBaseOptions<client> & {
@@ -50,6 +56,7 @@ export type ResolvedFhevmKeyVerification = {
 export type ResolvedFhevmOptions = {
   readonly batchRpcCalls: boolean;
   readonly keyVerification: ResolvedFhevmKeyVerification | undefined;
+  readonly cache: ResolvedFhevmCacheOptions;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

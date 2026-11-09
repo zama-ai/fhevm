@@ -62,13 +62,12 @@ one loop would hide which one is actually responsible for any growth seen.
   never call `.free()` on their native handle — unlike `buildWithProofPacked`.
   **Two things worth knowing before reading this scenario's output:**
   - Naively creating "N fresh clients" does **not** stress this path.
-    `globalFheEncryptionKeyCache` (`src/core/key/FheEncryptionKeyCache-p.ts`)
-    is a process-wide singleton keyed by relayer URL with "first write wins"
-    semantics — the key is deserialized once per relayer URL for the life of
-    the process; every later client just awaits the same cached entry. This
-    scenario calls `globalFheEncryptionKeyCache.remove(relayerUrl)` before
-    every iteration (exactly what that cache's own doc comment prescribes for
-    forcing a re-fetch) to actually force fresh deserialization each time.
+    The key cache (`src/core/key/ensureFheEncryptionKeyDownload.ts`) is a
+    process-wide singleton keyed by slot (relayer URL and KMSGeneration), kept
+    for the client's `keyMaterial` TTL — the key is deserialized once per key;
+    every later client reuses it. This scenario calls
+    `fheEncryptionKeyCacheForTests.clear()` before every iteration to actually
+    force fresh deserialization each time.
   - Missing `.free()` is not automatically a leak here. The vendored tfhe glue
     is a `--weak-refs` wasm-bindgen build, and both `CompactPkeCrs` and
     `TfheCompactPublicKey` register themselves with a `FinalizationRegistry`

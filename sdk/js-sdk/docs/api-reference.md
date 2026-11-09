@@ -156,6 +156,7 @@ readonly chain: FhevmChain;
 | `signDecryptionPermit` (`@deprecated`, alias for `signLegacyDecryptionPermit`) |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
 | `serialize`/`parse` permit + key                                               |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
 | `fetchFheEncryptionKeyBytes`                                                   |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
+| `forceRefresh`                                                                 |  ✅  |   ✅    |       ✅        |   ✅    |  ✅  |
 
 The `canDecrypt*` permission checks are not client methods. `canDecryptValue`,
 `canDecryptValues`, and `canDecryptValuesFromPairs` come from
@@ -369,8 +370,12 @@ parseSignedDecryptionPermit(parameters: {
 
 fetchFheEncryptionKeyBytes(parameters?: {
   readonly options?: RelayerKeyUrlOptions | undefined;
-  readonly ignoreCache?: boolean | undefined;
 }): Promise<FheEncryptionKeyBytes>;
+
+forceRefresh(
+  item: 'keyMaterial',
+  parameters?: { readonly invalidVersion?: string | undefined },
+): Promise<void>;
 ```
 
 ## Actions
@@ -408,6 +413,7 @@ createUnsignedLegacyDecryptionPermitEip712(fhevm, parameters);
 signLegacyDecryptionPermit(fhevm, parameters);
 createUnsignedUnifiedDecryptionPermitEip712(fhevm, parameters);
 signUnifiedDecryptionPermit(fhevm, parameters);
+forceRefresh(fhevm, item, parameters?);
 
 // @fhevm/sdk/actions/chain
 signDecryptionPermit(fhevm, parameters); // @deprecated, alias for signLegacyDecryptionPermit

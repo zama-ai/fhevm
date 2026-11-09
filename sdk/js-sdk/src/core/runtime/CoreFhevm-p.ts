@@ -25,6 +25,7 @@ import { createTrustedClient } from '../modules/ethereum/createTrustedClient.js'
 import { asFhevmRuntimeWith, assertIsFhevmRuntime, assertIsFhevmRuntimeWith } from './CoreFhevmRuntime-p.js';
 import { cloneFhevmClientFrozenContext } from '../frozenContext/fhevmClientFrozenContext-p.js';
 import { copyFheEncryptionKeyBytes } from '../key/copyFheEncryptionKeyBytes-p.js';
+import { resolveCacheOptions } from '../caching/cacheOptions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -582,6 +583,7 @@ function resolveOptions(options: FhevmOptions | undefined, ownerToken: symbol): 
             chain: keyVerification.chain,
             trustedClient: createTrustedClient(keyVerification.client, ownerToken),
           }),
+    cache: resolveCacheOptions(options?.cache),
   });
 }
 
