@@ -153,15 +153,17 @@ coprocessor's `coprocessor[N]-proxy`, until the RFC-038 pad connector and its e2
 land and replace it. It signs `FhevmSig` requests with KMS party 1's
 `KMS_CONNECTOR_PRIVATE_KEY`, a tx-sender of the active KMS context in the host
 ProtocolConfig, for the coprocessor's signer in `COPROCESSOR_SIGNER_ADDRESSES`.
-Behind each proxy runs the fake prf-service of `scripts/fake-prf-service.ts`,
-which answers the PRF route, with prf-service's canonical parameters, with a
-fixed binary body and an attestation of its digest, and reports how many PRF
-requests reached it at `PRF_SERVICE_FAKE_COUNT_URLS`. The suite checks that a
-signed request reaches the fake once and comes back unchanged (the body's
-Keccak-256 is the attestation's `sns_ciphertext_digest`), and that a high-s
-signature (`401 auth_invalid_signature`), an expired one (`401 auth_expired`),
-an unknown signer (`401 auth_unknown_signer`, without `Retry-After`) and an
-unknown route (`404 not_found`) never reach the fake. The proxies serve the self-signed test
+Behind each proxy runs prf-service. No pad-worker runs yet, so
+`scripts/seed-prf-output.ts` first writes the output the suite requests into
+each coprocessor's database: a fixed binary body, its digest, and placeholder
+signer and signature. The suite reads how many PRF requests prf-service answered
+from its metric `coprocessor_prf_service_requests_total`, at
+`PRF_SERVICE_METRICS_URLS`. It checks that a signed request reaches prf-service
+once and comes back unchanged (the body's Keccak-256 is the attestation's
+`sns_ciphertext_digest`), and that a high-s signature
+(`401 auth_invalid_signature`), an expired one (`401 auth_expired`), an unknown
+signer (`401 auth_unknown_signer`, without `Retry-After`) and an unknown route
+(`404 not_found`) never reach prf-service. The proxies serve the self-signed test
 certificate under `test-suite/fhevm/static/config/coprocessor-proxy`, read
 through `COPROCESSOR_PROXY_CA_CERT`. The suite skips when
 `COPROCESSOR_PROXY_URLS` is empty (bundles without the proxy image, and

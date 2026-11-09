@@ -25,7 +25,12 @@ The relayer HTTP API (`:3000`) is also published on the zws-dev **Tailscale
 MagicDNS** as `https://relayer-<namespace>.diplodocus-boa.ts.net` (IngressClass
 `tailscale`, tag `tag:k8s-zws-dev`) so a laptop on the tailnet can call it
 without `kubectl port-forward`. Metrics `:9898` and the admin endpoint stay
-ClusterIP-only. See [`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
+ClusterIP-only. relayer-http (`:3002`) is published the same way as
+`https://relayer-http-<namespace>.diplodocus-boa.ts.net`. Both are also served on
+one **unified URL**,
+`https://kong-proxy-preview-zws-dev.diplodocus-boa.ts.net/<namespace>` (`/v2`,
+`/v3` to the relayer, `/v4` to relayer-http), the base URL to give the SDK. See
+[`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
 
 There is no local Kind/laptop-based variant of this path anymore — a full stack (dedicated
 4-party enclave KMS + coprocessor + kms-connector + relayer + test-suite) doesn't fit in a
@@ -82,6 +87,7 @@ ci/preview-env/
 ├── relayer/
 │   ├── values-relayer-e2e.yaml          # `common` chart overlay, relayer server
 │   ├── values-relayer-migrate-e2e.yaml  # `common` chart overlay, relayer DB migration Job
+│   ├── values-relayer-http-e2e.yaml     # `common` chart overlay, relayer-http (KMS connector aggregator)
 │   └── values-postgres-relayer-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to relayer + relayer-migrate
 ├── test-suite/
 │   ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
@@ -478,24 +484,73 @@ The proxy's TLS certificate comes from the chart, and its auth inputs are set by
   use their own client (`test/sdk/connector/connectorHttp.ts`), not the relayer
   SDK, so re-running them there would only duplicate the same code path.
 
+## relayer-http
+
+`deploy-relayer.sh relayer-http` installs `relayer-http` (port `3002`, as in the
+compose stack) with the generic `common` chart once the kms-connectors are up.
+Its config is the compose stack's template
+(`test-suite/fhevm/templates/config/relayer-http.yaml`) with the preview-only
+fields of `relayer/values-relayer-http-e2e.yaml` merged over it; the script fills
+in the per-deploy fields from the same **`kms-connector-http`** ConfigMap the
+test-suite reads: one endpoint per party (proxy URL + tx-sender `audience`),
+thresholds `t+1` (public) / `n-t` (user, as for the relayer), the host chain ids,
+and the host `ProtocolConfig` address for FhevmSig. It signs with the same fixed
+test key as the e2e suite. It does not verify the proxies' self-signed
+certificates (`skip_tls_verification: true`). Like the relayer, it is part of
+every preview env (a failed install fails the deploy) and is published on the
+tailnet as `relayer-http-<namespace>` (`RELAYER_HTTP_TS_URL` in the PR comment /
+run summary). Pin the image with `relayer_http_version`.
+
+### Unified relayer URL
+
+After relayer-http, `scripts/deploy/expose-relayer-kong.sh` serves both relayers
+on one URL, as the local stack's `relayer-proxy` does
+(`test-suite/fhevm/static/config/relayer-proxy/nginx.conf`):
+
+```
+https://kong-proxy-preview-zws-dev.diplodocus-boa.ts.net/<namespace>
+  /<namespace>/v2/*, /v3/*  -> relayer:3000
+  /<namespace>/v4/*         -> relayer-http:3002
+```
+
+The proxy is a second Kong shared by all preview envs (IngressClass
+`kong-preview`, zws-gitops app `environments/zws-dev-system/kong/kong-preview.yaml`).
+Unlike the dev Kong, it has no load balancer: it is reachable only on the tailnet.
+The script adds, in the preview namespace, two `kong-preview` Ingresses with
+`strip-path` (`relayer-kong` on `/<namespace>`, `relayer-http-kong` on
+`/<namespace>/v4`) and a Service `relayer-http-v4` that puts `/v4` back on the
+upstream path (120s read timeout, as `/v4` decrypts are synchronous). All three
+carry `app.kubernetes.io/component=kong-preview-route` and go away with the
+namespace. It writes `RELAYER_UNIFIED_URL` to the PR comment / run summary and
+probes `GET /v2/keyurl` (200) and `GET /v4/user-decrypt` (405) from the runner;
+a failed probe is only a warning. If kong-preview is not installed (no
+`zws-system/kong-preview-zws-dev-system-kong-proxy` Service), the step is
+skipped with a warning. The in-cluster test-suite still calls
+`http://relayer:3000/v2` directly.
+
 ## coprocessor-proxy
 
-Except on blue-green stacks, each `coprocessor-<i>` release also runs the
-coprocessor-proxy (`values-coprocessor-proxy-e2e.yaml`), one replica in front of a
-fake prf-service until prf-service deploys here. `scripts/deploy/deploy-coprocessor.sh`
-provides what the chart does not:
+Except on blue-green stacks and with a `coprocessor_version` pin (a pinned release may predate
+`pads`), each `coprocessor-<i>` release also runs the coprocessor-proxy and the prf-service
+behind it (`values-coprocessor-proxy-e2e.yaml`), one replica each. Without them, the
+`Coprocessor proxy` suite skips. `scripts/deploy/deploy-coprocessor.sh` provides what the
+chart does not:
 
-- **The fake**: a `common` chart release `coprocessor-<i>-prf-service-fake`
-  (`values-prf-service-fake-e2e.yaml`) running `test-suite/e2e/scripts/fake-prf-service.ts`
-  from the test-suite image: the PRF route over HTTP/1.1 on 8080, its request count on 9090.
-  The proxy's NetworkPolicy selects its pods (`fhevm.zama.ai/party: <i>`) and lets
-  test-suite pods (`app: fhevm-test-suite`) reach port 9090 only.
+- **The `prf_service` role**: created in party i's Postgres before the release, from
+  `prfService.databaseUser` and `databasePassword`, so the migration grants it its rights on
+  `pads`.
+- **The PRF output**: no pad-worker runs yet, so once the migration is done, a pod of the
+  test-suite image runs `test-suite/e2e/scripts/seed-prf-output.ts`, which writes the output the
+  suite requests into party i's database. The script comes from the checkout (ConfigMap
+  `prf-output-seed`), so a pinned test-suite image that predates it still runs it.
 - **TLS**: the Secret `coprocessor-proxy-tls`, made as for the kms-connector proxies,
   with SANs = every party's `coprocessor-<i>-coprocessor-proxy` Service.
-- **Per party**: the image tag (`coprocessor_proxy` in resolve-tags), the signer (the
-  derived coprocessor wallet), the prf-service address and the NetworkPolicy's podSelector.
+- **Per party**: the image tags (`coprocessor_proxy` and `coprocessor_prf_service` in
+  resolve-tags), the signer (the derived coprocessor wallet) and the NetworkPolicy's
+  podSelector, which selects only that party's prf-service and lets test-suite pods
+  (`app: fhevm-test-suite`) reach its metrics port 9100 only.
 - **Test-suite wiring**: the ConfigMap **`coprocessor-proxy`** (`urls`,
-  `signer-addresses`, `count-urls`, `metrics-urls`, `ca.crt`), read `optional` by the
+  `signer-addresses`, `prf-service-metrics-urls`, `metrics-urls`, `ca.crt`), read `optional` by the
   `@fhevm/sdk` Argo Workflow, whose `coprocessor-proxy` task runs the
   `Coprocessor proxy` suite signing with KMS party 1's tx-sender key
   (`kms-connector-tx-sender-1`).
@@ -505,10 +560,9 @@ every proxy rolled out with its replicas Ready (its `/healthz` answers once the 
 listener is up and the KMS tx-senders have been read), and restarts every proxy under a
 steady load of signed requests from a test-suite pod, which stops once every old
 proxy pod is gone: no request may fail. It also checks the NetworkPolicy: that
-test-suite pod must reach each fake's port 9090 and no fake's PRF port.
+test-suite pod must reach each prf-service's metrics port 9100 and no prf-service's PRF port 8090.
 
-When prf-service deploys here, the fake release, the NetworkPolicy overrides and the count
-URLs go, and the prf-service address points at prf-service.
+When the pad-worker deploys here, it writes the outputs, and the seed pod goes.
 
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 
