@@ -2,9 +2,10 @@
 //
 // The code list is read from where the codes are declared: the Connector's `ErrorCode`
 // (`kms-connector/crates/api/src/error.rs`), which the relayer forwards, and the relayer's own
-// (`relayer-http/crates/relayer-http/src/endpoint/error.rs`). A code this SDK has no action for falls
-// to the unknown-code rule, which gives up; giving up on something meant as transient is a client
-// that stops one attempt short of working, and nothing would report it, hence this test.
+// (`relayer-http/crates/relayer-http/src/endpoint/error.rs`, and `INTERNAL_CODE` in its `metrics.rs`).
+// A code this SDK has no action for falls to the unknown-code rule, which gives up; giving up on
+// something meant as transient is a client that stops one attempt short of working, and nothing
+// would report it, hence this test.
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
@@ -34,17 +35,20 @@ function connectorCodes(): readonly string[] {
     .map((variant) => variant.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase());
 }
 
-/** The relayer's own codes: every `StatusCode::…, "code"` pair outside its test module. */
+/** The relayer's own codes: every `StatusCode::…, "code"` pair outside its test module, and `INTERNAL_CODE`. */
 function relayerCodes(): readonly string[] {
   const source = read('relayer-http/crates/relayer-http/src/endpoint/error.rs').split('#[cfg(test)]')[0] ?? '';
-  return [...source.matchAll(/StatusCode::[A-Z_]+,\s*"([a-z_]+)"/g)].map((match) => match[1] ?? '');
+  const metrics = read('relayer-http/crates/relayer-http/src/metrics.rs');
+  const internal = /pub const INTERNAL_CODE: &str = "([a-z_]+)";/.exec(metrics)?.[1];
+  if (internal === undefined) throw new Error('metrics.rs does not declare INTERNAL_CODE');
+  return [...[...source.matchAll(/StatusCode::[A-Z_]+,\s*"([a-z_]+)"/g)].map((match) => match[1] ?? ''), internal];
 }
 
 describe('the code table', () => {
   it('has an action for every code the relayer can send', () => {
     const codes = [...connectorCodes(), ...relayerCodes()];
     expect(connectorCodes()).toContain('acl_denied');
-    expect(relayerCodes()).toContain('shutting_down');
+    expect(relayerCodes()).toContain('internal');
     for (const code of codes) {
       expect(Object.keys(SOLANA_DECRYPTION_CODE_ACTIONS), `no action for ${code}`).toContain(code);
     }
@@ -72,17 +76,12 @@ describe('the classification', () => {
   });
 
   // Nothing about the request is wrong; a later state of the host or the service passes it.
-  it.each([
-    'acl_denied',
-    'auth_expired',
-    'ciphertext_not_found',
-    'rate_limited',
-    'upstream_transient',
-    'timeout',
-    'shutting_down',
-  ])('retries the same bytes after %s', (code) => {
-    expect(classifySolanaDecryptionRejection({ code })).toBe('retry-unchanged');
-  });
+  it.each(['acl_denied', 'auth_expired', 'ciphertext_not_found', 'rate_limited', 'upstream_transient', 'timeout'])(
+    'retries the same bytes after %s',
+    (code) => {
+      expect(classifySolanaDecryptionRejection({ code })).toBe('retry-unchanged');
+    },
+  );
 
   it('gives up on a code it does not know', () => {
     expect(classifySolanaDecryptionRejection({ code: 'a_code_from_a_later_version' })).toBe('give-up');
