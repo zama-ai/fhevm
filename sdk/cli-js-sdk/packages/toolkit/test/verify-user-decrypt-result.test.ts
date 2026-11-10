@@ -46,7 +46,7 @@ const artifact = (): UserDecryptValidationArtifact => ({
   transportKeyPair: {
     publicKey: "0x1234",
     privateKey: "0x5678",
-    tkmsVersion: "0.13.20-0",
+    tkmsVersion: "0.15.0-0",
   },
   serializedPermit: {
     version: 2,
@@ -76,11 +76,9 @@ const share = { payload: "abcd", signature: "ef01" } as const;
 describe("user-decrypt result verification", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.createDecryptClientContext.mockImplementation(
-      (_options, tkmsVersion) => ({
-        fhevm: { client: true, ready: Promise.resolve(), tkmsVersion },
-      }),
-    );
+    mocks.createDecryptClientContext.mockImplementation(() => ({
+      fhevm: { client: true, ready: Promise.resolve(), tkmsVersion: "0.15.0-0" },
+    }));
     mocks.parseSavedTransportKeyPair.mockResolvedValue({
       publicKey: "0x1234",
     });
@@ -127,7 +125,7 @@ describe("user-decrypt result verification", () => {
       {
         publicKey: "0x1234",
         privateKey: "0x5678",
-        tkmsVersion: "0.13.20-0",
+        tkmsVersion: "0.15.0-0",
       },
     );
     expect(mocks.parseSignedDecryptionPermit).toHaveBeenCalledWith(
@@ -168,7 +166,7 @@ describe("user-decrypt result verification", () => {
     });
   });
 
-  it.each(["0.13.10", "0.13.20-0"] as const)(
+  it.each(["0.15.0-0"] as const)(
     "preserves TKMS version %s when parsing the saved transport key",
     async (tkmsVersion) => {
       const versionedArtifact = artifact();
@@ -189,7 +187,6 @@ describe("user-decrypt result verification", () => {
       );
       expect(mocks.createDecryptClientContext).toHaveBeenCalledWith(
         expect.anything(),
-        tkmsVersion,
       );
     },
   );
@@ -206,7 +203,7 @@ describe("user-decrypt result verification", () => {
         shares: [share],
       }),
     ).rejects.toThrow(
-      "Artifact transportKeyPair.tkmsVersion must be 0.13.10 or 0.13.20-0",
+      "Artifact transportKeyPair.tkmsVersion must be 0.15.0-0",
     );
     expect(mocks.createDecryptClientContext).not.toHaveBeenCalled();
   });
@@ -227,7 +224,7 @@ describe("user-decrypt result verification", () => {
       fhevm: {
         client: true,
         ready: Promise.reject(readinessError),
-        tkmsVersion: "0.13.20-0",
+        tkmsVersion: "0.15.0-0",
       },
     });
 
@@ -244,24 +241,14 @@ describe("user-decrypt result verification", () => {
       fhevm: {
         client: true,
         ready: Promise.resolve(),
-        tkmsVersion: "0.13.20-0",
+        tkmsVersion: "0.16.0-0",
       },
     });
 
-    const mismatchedArtifact = artifact();
     await expect(
-      verifyUserDecryptShares({
-        artifact: {
-          ...mismatchedArtifact,
-          transportKeyPair: {
-            ...mismatchedArtifact.transportKeyPair,
-            tkmsVersion: "0.13.10",
-          },
-        },
-        shares: [share],
-      }),
+      verifyUserDecryptShares({ artifact: artifact(), shares: [share] }),
     ).rejects.toThrow(
-      "Saved transport key TKMS version 0.13.10 does not match the resolved decrypt client version 0.13.20-0",
+      "Saved transport key TKMS version 0.15.0-0 does not match the resolved decrypt client version 0.16.0-0",
     );
     expect(mocks.parseSavedTransportKeyPair).not.toHaveBeenCalled();
     expect(mocks.decryptSavedUserDecryptResult).not.toHaveBeenCalled();

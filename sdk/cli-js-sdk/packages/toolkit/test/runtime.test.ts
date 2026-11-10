@@ -27,31 +27,29 @@ afterEach(() => {
 });
 
 describe("configureFhevmRuntime", () => {
-  it("uses one explicit auto-version policy", () => {
+  it("runs the SDK single-threaded", () => {
     configureFhevmRuntime();
 
     expect(mocks.setFhevmRuntimeConfig).toHaveBeenCalledWith({
       singleThread: true,
-      moduleVersions: "auto",
     });
   });
 
-  it("preserves API-key auth with the global auto-version policy", () => {
+  it("passes the API key as SDK auth", () => {
     process.env.ZAMA_FHEVM_API_KEY = "secret";
     configureFhevmRuntime();
 
     expect(mocks.setFhevmRuntimeConfig).toHaveBeenCalledWith({
       singleThread: true,
-      moduleVersions: "auto",
       auth: { type: "ApiKeyHeader", value: "secret" },
     });
   });
 
-  it("accepts the repeated global auto policy despite immutable SDK runtime configuration", async () => {
+  it("accepts repeated identical runtime configuration", async () => {
     const script = `
       import { setFhevmRuntimeConfig } from "@fhevm/sdk/viem";
       for (let index = 0; index < 4; index += 1) {
-        setFhevmRuntimeConfig({ singleThread: true, moduleVersions: "auto" });
+        setFhevmRuntimeConfig({ singleThread: true });
       }
     `;
 
