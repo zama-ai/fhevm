@@ -140,12 +140,23 @@ contract ACL is
         uint64 delegationCounter;
     }
 
+    /**
+     * @notice A persisted permission, with the carried depth of the handle when it was granted.
+     * @dev Packed into the one slot that held a `bool` before 0.7.0, with `allowed` in its low byte, so a
+     *      permission written before the upgrade reads as allowed with depth 0, and the previous ACL reads
+     *      this one as `true`. The upgrade tasks accept this one retype (see STORAGE_EXCEPTIONS).
+     */
+    struct Permission {
+        bool allowed;
+        /// @notice The handle's carried depth when it was granted (see HCULimit.setCrossTxDepthLimit).
+        uint48 depth;
+        /// @notice The block number of the grant.
+        uint48 storedBlock;
+    }
+
     /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {
-        /// @dev The bool's word also holds the handle's carried depth (bits 8-55) and the block it was
-        ///      stored at (bits 56-103), written by `allow` and read by `getStoredDepth`. It stays a `bool`
-        ///      because the upgrades validator does not accept retyping a member of namespaced storage.
-        mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
+        mapping(bytes32 handle => mapping(address account => Permission permission)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
         // prettier-ignore
         mapping(address account =>
@@ -241,14 +252,11 @@ contract ACL is
         if (!isAllowed(handle, msg.sender)) {
             revert SenderNotAllowed(msg.sender);
         }
-        if (!_getACLStorage().persistedAllowedPairs[handle][account]) {
+        Permission storage permission = _getACLStorage().persistedAllowedPairs[handle][account];
+        if (!permission.allowed) {
             // A repeated grant keeps the first record, which decays the same way.
             uint48 depth = HCULimit(hcuLimitAdd).cacheDepth(handle, msg.sender);
-            uint256 word = 1 | (uint256(depth) << 8) | (uint256(uint48(block.number)) << 56);
-            bytes32 slot = _permissionSlot(handle, account);
-            assembly ("memory-safe") {
-                sstore(slot, word)
-            }
+            _getACLStorage().persistedAllowedPairs[handle][account] = Permission(true, depth, uint48(block.number));
         }
         emit Allowed(msg.sender, account, handle);
     }
@@ -583,7 +591,10 @@ contract ACL is
         bytes32 handle
     ) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
-        if (!$.persistedAllowedPairs[handle][delegator] || !$.persistedAllowedPairs[handle][contractAddress]) {
+        if (
+            !$.persistedAllowedPairs[handle][delegator].allowed ||
+            !$.persistedAllowedPairs[handle][contractAddress].allowed
+        ) {
             return false;
         }
         return
@@ -599,7 +610,7 @@ contract ACL is
      */
     function persistAllowed(bytes32 handle, address account) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
-        return $.persistedAllowedPairs[handle][account];
+        return $.persistedAllowedPairs[handle][account].allowed;
     }
 
     /**
@@ -607,23 +618,8 @@ contract ACL is
      *         it was stored at (see HCULimit.setCrossTxDepthLimit). Both are 0 without a stored permission.
      */
     function getStoredDepth(bytes32 handle, address account) external view returns (uint48 depth, uint48 storedBlock) {
-        bytes32 slot = _permissionSlot(handle, account);
-        uint256 word;
-        assembly ("memory-safe") {
-            word := sload(slot)
-        }
-        return (uint48(word >> 8), uint48(word >> 56));
-    }
-
-    /// @dev Storage slot of `persistedAllowedPairs[handle][account]`, following Solidity's mapping layout:
-    ///      keccak256(abi.encode(account, slot of persistedAllowedPairs[handle])).
-    function _permissionSlot(bytes32 handle, address account) private view returns (bytes32 slot) {
-        mapping(address => bool) storage pairs = _getACLStorage().persistedAllowedPairs[handle];
-        assembly ("memory-safe") {
-            mstore(0, and(account, 0xffffffffffffffffffffffffffffffffffffffff))
-            mstore(32, pairs.slot)
-            slot := keccak256(0, 64)
-        }
+        Permission storage permission = _getACLStorage().persistedAllowedPairs[handle][account];
+        return (permission.depth, permission.storedBlock);
     }
 
     /**
