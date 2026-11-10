@@ -1,3 +1,6 @@
+# Bridge
+lib/bridge/
+
 # CI & config files
 ci/
 .github/
@@ -6,6 +9,8 @@ ci/
 node_modules/
 package.json
 package-lock.json
+package.json.publish.template
+publish/
 
 # Config & tooling
 .env*
@@ -45,3 +50,12 @@ types/
 typechain/
 typechain-types/
 coverage/
+fhevmTemp/
+Makefile
+
+# Docs
+SECURITY.md
+
+# Ignore files
+.gitignore
+.soldeerignore
