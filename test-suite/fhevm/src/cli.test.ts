@@ -10,6 +10,7 @@ import {
   dbRevertTargetBlock,
   keyBootstrapLogArgs,
   recentCoprocessorSenders,
+  testRunEnvArgs,
   validateNamedProfileGrep,
   waitForKeyBootstrap,
 } from "./commands/test";
@@ -282,6 +283,12 @@ describe("cli", () => {
     expect(resolveLogsFollow({})).toBe(true);
     expect(resolveLogsFollow({ follow: true })).toBe(true);
     expect(resolveLogsFollow({ follow: false })).toBe(false);
+  });
+
+  test("maps --decrypt-without-gateway to E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY=true in the test container", () => {
+    expect(testRunEnvArgs({ decryptWithoutGateway: true })).toEqual(["-e", "E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY=true"]);
+    expect(testRunEnvArgs({ decryptWithoutGateway: false })).toEqual([]);
+    expect(testRunEnvArgs({})).toEqual([]);
   });
 
   test("places extra docker exec flags before the test container", () => {
