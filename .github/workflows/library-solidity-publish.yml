@@ -63,6 +63,8 @@ jobs:
   pack:
     name: library-solidity-publish/pack
     runs-on: ubuntu-latest
+    outputs:
+      tarball-sha256: ${{ steps.hash.outputs.sha256 }}
     defaults:
       run:
         working-directory: ./library-solidity
@@ -201,7 +203,19 @@ jobs:
           ! grep -rq --include='*.sol' '@openzeppelin/' "$extract" || fail "a published file imports @openzeppelin"
 
       # ------------------------------------------------------------------------
-      # 10. Upload tarball
+      # 10. Record tarball hash
+      #    Exported as a job output: `verify` and `publish-npmjs` check that the
+      #    tarball they download is exactly the one checked above.
+      # ------------------------------------------------------------------------
+      - name: Record tarball hash
+        id: hash
+        run: |
+          sha256="$(sha256sum "$RUNNER_TEMP/tarball/package.tgz" | cut -d ' ' -f 1)"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          echo "package.tgz sha256: $sha256"
+
+      # ------------------------------------------------------------------------
+      # 11. Upload tarball
       #    Hands the tarball over to the `verify` job, then to the `publish-npmjs`
       #    job, the only job allowed to publish it.
       # ------------------------------------------------------------------------
@@ -268,7 +282,19 @@ jobs:
           path: ${{ runner.temp }}/tarball
 
       # ------------------------------------------------------------------------
-      # 5. Compare with a standard npm pack
+      # 5. Check tarball hash
+      #    Fails unless the downloaded tarball is byte-for-byte the one `pack`
+      #    checked and hashed, so the test runs on the exact bytes that will be published.
+      # ------------------------------------------------------------------------
+      - name: Check tarball hash
+        env:
+          EXPECTED_SHA256: ${{ needs.pack.outputs.tarball-sha256 }}
+        run: |
+          [ -n "$EXPECTED_SHA256" ] || { echo "::error::no tarball hash from the pack job"; exit 1; }
+          echo "$EXPECTED_SHA256  $RUNNER_TEMP/tarball/package.tgz" | sha256sum --check -
+
+      # ------------------------------------------------------------------------
+      # 6. Compare with a standard npm pack
       #    PUBLISH_TARBALL makes the test check the downloaded tarball instead of
       #    building its own from the template.
       # ------------------------------------------------------------------------
@@ -314,7 +340,19 @@ jobs:
           path: ${{ runner.temp }}/tarball
 
       # ------------------------------------------------------------------------
-      # 4. Publish to npm
+      # 4. Check tarball hash
+      #    Fails unless the downloaded tarball is byte-for-byte the one `pack`
+      #    checked and hashed, so the published bytes are the ones that were checked.
+      # ------------------------------------------------------------------------
+      - name: Check tarball hash
+        env:
+          EXPECTED_SHA256: ${{ needs.pack.outputs.tarball-sha256 }}
+        run: |
+          [ -n "$EXPECTED_SHA256" ] || { echo "::error::no tarball hash from the pack job"; exit 1; }
+          echo "$EXPECTED_SHA256  $RUNNER_TEMP/tarball/package.tgz" | sha256sum --check -
+
+      # ------------------------------------------------------------------------
+      # 5. Publish to npm
       #    Publishes the tarball as is, with provenance. Prerelease builds get the
       #    `prerelease` dist-tag, releases get `latest`. dry-run publishes nothing.
       # ------------------------------------------------------------------------
