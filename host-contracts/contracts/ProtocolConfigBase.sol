@@ -290,6 +290,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     /**
      * @dev Stores the committee under `contextId`, moves both ID counters to the pair and activates it.
      *      Use it where the context ID is set from outside, not allocated. The caller emits any events.
+     *      The caller must ensure `contextId > currentKmsContextId` and `epochId > epochCounter`.
      */
     function _storeAndActivateKmsContextAndEpoch(
         uint256 contextId,
@@ -305,7 +306,8 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Validates `nodes` and `thresholds` and writes them under `contextId`.
+     * @dev Validates `nodes` and `thresholds`, appends the nodes under `contextId` and stores the thresholds.
+     *      `contextId` must have no stored committee. Otherwise the new nodes merge into the old one.
      *      The caller owns the context ID counter.
      */
     function _storeKmsNodesAndThresholds(
