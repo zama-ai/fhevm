@@ -3,9 +3,14 @@ import type { EncryptedValue } from '@fhevm/sdk/types';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
 import { createUnsignedLegacyDecryptionPermitEip712 } from '@fhevm/sdk/actions/base';
-import { fheTypeIdFromName, clearTypeFromHandle, createLogger } from '../setupCommon.js';
+import { fheTypeIdFromName, createLogger } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
-import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import {
+  getEthersTestConfig,
+  latestBlockTimestamp,
+  type CreateEthersDecryptClientFn,
+  type FheTestEthersConfig,
+} from '../setup-ethers.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -20,10 +25,9 @@ export function defineClientDecryptExtraDataV0Tests(parameters: {
   readonly createFhevmDecryptClient: CreateEthersDecryptClientFn;
 }): void {
   // Old-permit-on-new-protocol: build a legacy V1 permit but force its extraData
-  // to the v0 sentinel ('0x00' = "the current context", the v11-era encoding),
-  // then decrypt with it on v13. This exercises the SDK's v0 → current-context
-  // resolution: an old permit that names no concrete context must still decrypt
-  // against today's KMS signer set.
+  // to the v0 sentinel ('0x00', the v11-era encoding), then decrypt with it. The
+  // KMS connector no longer accepts extraData v0 (fhevm#4724), so the SDK must
+  // refuse the permit up front with an InvalidSignedPermitError, before any request.
   describe.runIf(parameters.runIf)('Decrypt client — legacy permit with extraData v0', () => {
     let config: FheTestEthersConfig;
 
@@ -38,7 +42,7 @@ export function defineClientDecryptExtraDataV0Tests(parameters: {
       });
     });
 
-    it('decrypts one value with a legacy permit forced to extraData v0', async () => {
+    it('refuses a legacy permit forced to extraData v0', async () => {
       const fheType = 'euint64';
       const fheTypeId = fheTypeIdFromName(fheType);
       const fheTest = config.fheTestContract.connect(config.signer) as ethers.Contract;
@@ -47,7 +51,6 @@ export function defineClientDecryptExtraDataV0Tests(parameters: {
         await fheTest.getHandleOf!(config.wallet.address, fheTypeId),
       );
       expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
-      const expectedRaw: bigint = await fheTest.getClearText!(encryptedValue);
 
       const client = parameters.createFhevmDecryptClient({
         chain: config.fhevmChain,
@@ -62,7 +65,7 @@ export function defineClientDecryptExtraDataV0Tests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
       });
 
       // 2. Force extraData to the v0 sentinel. The eip712 is frozen, so rebuild it.
@@ -91,16 +94,18 @@ export function defineClientDecryptExtraDataV0Tests(parameters: {
         transportKeyPair,
       });
 
-      // 5. Decrypt one value — the v0 extraData must resolve to the current context on v13.
-      const typedValue = await client.decryptValue({
-        contractAddress: config.fheTestAddress,
-        encryptedValue,
-        signedPermit,
-        transportKeyPair,
+      // 5. Decrypting with it is refused: extraData v0 is no longer supported.
+      await expect(
+        client.decryptValue({
+          contractAddress: config.fheTestAddress,
+          encryptedValue,
+          signedPermit,
+          transportKeyPair,
+        }),
+      ).rejects.toMatchObject({
+        name: 'InvalidSignedPermitError',
+        message: expect.stringContaining('Unsupported permit extraData version 0'),
       });
-
-      expect(typedValue.type).toBe(clearTypeFromHandle(encryptedValue));
-      expect(BigInt(typedValue.value as number | bigint)).toBe(expectedRaw);
     });
   });
 }

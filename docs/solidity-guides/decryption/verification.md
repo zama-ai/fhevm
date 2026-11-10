@@ -26,7 +26,7 @@ The `decryptionProof` bytes returned by the SDK are:
 | --------------- | ----------------------------------------------- | ----------------------------------------------------------- |
 | absent or `0x00` | any                                            | Verify against the **current** KMS context.                 |
 | `0x01`          | `[0x01][contextId (32 bytes)]`                  | Verify against the KMS context `contextId`.                 |
-| `0x02`          | `[0x01][contextId (32 bytes)][epochId (32 bytes)]` | Same, plus the key epoch inside that context.            |
+| `0x02`          | `[0x02][contextId (32 bytes)][epochId (32 bytes)]` | Same, plus the key epoch inside that context.            |
 
 Any other version or a malformed length reverts with `UnsupportedExtraDataVersion` or `DeserializingExtraDataFail`. You never build this blob yourself: the SDK returns the proof exactly as the relayer assembled it, and you forward it unchanged.
 

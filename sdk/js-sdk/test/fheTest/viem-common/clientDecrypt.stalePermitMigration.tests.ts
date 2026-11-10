@@ -1,17 +1,16 @@
-import type { Account, Chain, Hex, PublicClient, Transport } from 'viem';
+import type { Account, Hex } from 'viem';
 import type { TransportKeyPair } from '@fhevm/sdk/actions/decrypt';
 import { describe, it, expect, beforeAll } from 'vitest';
-import { createWalletClient, getAddress, http } from 'viem';
+import { getAddress } from 'viem';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
-import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
-import { FHETestABI } from '../FheTest-abi-v2.js';
 import {
-  decryptTestCases,
-  fheTypeIdFromName,
-  clearTypeFromHandle,
-  createLogger,
-  prepareSingleChain,
-} from '../setupCommon.js';
+  getViemTestConfig,
+  latestBlockTimestamp,
+  type CreateViemDecryptClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
+import { FHETestABI } from '../FheTest-abi-v2.js';
+import { decryptTestCases, fheTypeIdFromName, createLogger } from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -28,14 +27,20 @@ import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/s
 // window (up to 365 days), so it legitimately comes back after the chain has
 // migrated (v11 -> v12 -> v13 -> v14). Its EIP-712 message embeds the
 // extraData encoding of the era it was signed on, and the signature covers it,
-// so the SDK cannot rewrite it — the decrypt path must accept the old encoding
-// and resolve the KMS signers context it refers to (extraData v0 = "current
-// context" sentinel, mirroring KMSVerifier._extractKmsContextId and the
-// gateway Decryption._extractContextId).
+// so the SDK cannot rewrite it.
 //
-// v11-era permits embed extraData v0 (`0x00`); v12/v13-era permits embed
-// extraData v1 (`0x01` + 32-byte context id).
+// v12/v13-era permits embed extraData v1 (`0x01` + 32-byte context id): the
+// decrypt path must accept it and resolve the KMS signers context it refers to.
+// v11-era permits embed extraData v0 (`0x00`), which the KMS connector no
+// longer accepts (fhevm#4724): the SDK refuses such a permit up front with an
+// InvalidSignedPermitError, rather than send a request that is never answered.
 const STALE_V11_EXTRA_DATA = '0x00';
+
+/** How the SDK refuses a permit embedding extraData v0. */
+const EXTRA_DATA_V0_REFUSED = {
+  name: 'InvalidSignedPermitError',
+  message: expect.stringContaining('Unsupported permit extraData version 0'),
+};
 
 const word = (value: bigint): string => value.toString(16).padStart(64, '0');
 const v1ExtraData = (kmsContextId: bigint): Hex => `0x01${word(kmsContextId)}` as Hex;
@@ -76,34 +81,9 @@ const V1_DELEGATED_TYPES = {
   ],
 } as const;
 
-const ACL_DELEGATE_ABI = [
-  {
-    inputs: [
-      { internalType: 'address', name: 'delegate', type: 'address' },
-      { internalType: 'address', name: 'contractAddress', type: 'address' },
-      { internalType: 'uint64', name: 'expirationDate', type: 'uint64' },
-    ],
-    name: 'delegateForUserDecryption',
-    outputs: [],
-    stateMutability: 'nonpayable',
-    type: 'function',
-  },
-  {
-    inputs: [
-      { internalType: 'address', name: 'delegator', type: 'address' },
-      { internalType: 'address', name: 'delegate', type: 'address' },
-      { internalType: 'address', name: 'contractAddress', type: 'address' },
-    ],
-    name: 'getUserDecryptionDelegationExpirationDate',
-    outputs: [{ internalType: 'uint64', name: '', type: 'uint64' }],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
-
 export function defineClientDecryptStalePermitMigrationTests(parameters: {
   readonly runIf: boolean;
-  /** Protocol era of the chain under test (12, 13, or 14 — see `protocolEraOf`). */
+  /** Protocol era of the chain under test (12, 13, 14, or 16 — see `protocolEraOf`). */
   readonly era: number;
   readonly createFhevmDecryptClient: CreateViemDecryptClientFn;
 }): void {
@@ -151,7 +131,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
       },
     ) {
       const account = opts.account ?? config.account;
-      const startTimestamp = opts.startTimestamp ?? Math.floor(Date.now() / 1000) - 5;
+      const startTimestamp = opts.startTimestamp ?? (await latestBlockTimestamp(config)) - 5;
       const durationDays = opts.durationDays ?? 1;
 
       const domain = {
@@ -255,7 +235,7 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
@@ -279,25 +259,23 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
       expect((stalePermit.eip712.message as { extraData: string }).extraData).toBe(STALE_V11_EXTRA_DATA);
     });
 
-    // v11 -> v12/v13/v14 migration: extraData v0 is the "current context"
-    // sentinel on-chain, so a cached v11 permit must keep decrypting after the
-    // chain migrated.
-    it('decrypts with a cached v11-era permit (extraData v0 = 0x00) after the chain migrated', async () => {
-      const { fheType, encryptedValue, expectedRaw } = await readHandleAndExpected(config.account.address);
+    // v11 -> v12+ migration: extraData v0 is no longer accepted, so a cached
+    // v11 permit is refused before any request is sent.
+    it('refuses a cached v11-era permit (extraData v0 = 0x00) after the chain migrated', async () => {
+      const { encryptedValue } = await readHandleAndExpected(config.account.address);
 
       const client = await createReadyClient();
       const transportKeyPair = await client.generateTransportKeyPair();
       const stalePermit = await forgeV1Permit(client, transportKeyPair, { extraData: STALE_V11_EXTRA_DATA as Hex });
 
-      const typedValue = await client.decryptValue({
-        contractAddress: config.fheTestAddress,
-        encryptedValue,
-        signedPermit: stalePermit,
-        transportKeyPair,
-      });
-
-      expect(typedValue.type).toBe(clearTypeFromHandle(encryptedValue));
-      expectDecryptedMatches(fheType, typedValue, expectedRaw);
+      await expect(
+        client.decryptValue({
+          contractAddress: config.fheTestAddress,
+          encryptedValue,
+          signedPermit: stalePermit,
+          transportKeyPair,
+        }),
+      ).rejects.toMatchObject(EXTRA_DATA_V0_REFUSED);
     });
 
     // v13 -> v14 migration: a v13-era cached permit embeds extraData v1
@@ -357,16 +335,38 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
       ).rejects.toThrow();
     });
 
-    // Order-of-checks pin: a permit that is BOTH stale and expired must fail
-    // with the clear expiration error, not a confusing context error.
-    it('rejects an expired stale permit with the expiration error', async () => {
+    // Order-of-checks pin (brand → version → extraData → expiry): a permit that
+    // is BOTH stale and expired fails with the extraData error. A new permit is
+    // needed either way.
+    it('rejects an expired stale permit with the extraData error', async () => {
+      const { encryptedValue } = await readHandleAndExpected(config.account.address);
+
+      const client = await createReadyClient();
+      const transportKeyPair = await client.generateTransportKeyPair();
+      const expiredStalePermit = await forgeV1Permit(client, transportKeyPair, {
+        extraData: STALE_V11_EXTRA_DATA as Hex,
+        startTimestamp: (await latestBlockTimestamp(config)) - 3 * 86400,
+        durationDays: 1,
+      });
+
+      await expect(
+        client.decryptValue({
+          contractAddress: config.fheTestAddress,
+          encryptedValue,
+          signedPermit: expiredStalePermit,
+          transportKeyPair,
+        }),
+      ).rejects.toMatchObject(EXTRA_DATA_V0_REFUSED);
+    });
+
+    it('rejects an expired permit with the expiration error', async () => {
       const { encryptedValue } = await readHandleAndExpected(config.account.address);
 
       const client = await createReadyClient();
       const transportKeyPair = await client.generateTransportKeyPair();
       const expiredPermit = await forgeV1Permit(client, transportKeyPair, {
-        extraData: STALE_V11_EXTRA_DATA as Hex,
-        startTimestamp: Math.floor(Date.now() / 1000) - 3 * 86400,
+        extraData: (await currentPermitExtraData(client)) as Hex,
+        startTimestamp: (await latestBlockTimestamp(config)) - 3 * 86400,
         durationDays: 1,
       });
 
@@ -377,75 +377,37 @@ export function defineClientDecryptStalePermitMigrationTests(parameters: {
           signedPermit: expiredPermit,
           transportKeyPair,
         }),
-      ).rejects.toThrow('request has expired');
+      ).rejects.toMatchObject({
+        name: 'InvalidSignedPermitError',
+        message: expect.stringContaining('request has expired'),
+      });
     });
 
-    // Delegated flow: same stale-cache scenario, but Bob decrypts Alice's
-    // handles via an on-chain ACL delegation and a delegated V1 permit forged
-    // with v11-era extraData.
-    describe('delegated stale permit (alice delegates to bob)', () => {
-      beforeAll(async () => {
-        const aclAddress = config.fhevmChain.fhevm.contracts.acl.address as Hex;
-        const existingExpiration = (await config.publicClient.readContract({
-          address: aclAddress,
-          abi: ACL_DELEGATE_ABI,
-          functionName: 'getUserDecryptionDelegationExpirationDate',
-          args: [config.alice.account.address, config.bob.account.address, config.fheTestAddress as Hex],
-        })) as bigint;
+    // Delegated flow: same stale-cache scenario, with a delegated V1 permit
+    // (Bob decrypting Alice's handles) forged with v11-era extraData. It is
+    // refused before any ACL check, so no on-chain delegation is needed.
+    it('refuses a delegated cached v11-era permit (extraData v0 = 0x00)', async () => {
+      const { encryptedValue } = await readHandleAndExpected(config.alice.account.address);
 
-        const block = await config.publicClient.getBlock();
-        if (existingExpiration > block.timestamp) {
-          console.log(`  Delegation already active (expires ${existingExpiration}), skipping tx`);
-          return;
-        }
+      const client = await createReadyClient();
+      const transportKeyPair = await client.generateTransportKeyPair();
 
-        console.log('  Delegation not yet active, calling delegateForUserDecryption()...');
-        const walletClient = createWalletClient({
-          account: config.alice.account,
-          chain: (config.publicClient as PublicClient<Transport, Chain>).chain,
-          transport: http(prepareSingleChain().rpcUrl),
-        });
-        const hash = await walletClient.writeContract({
-          address: aclAddress,
-          abi: ACL_DELEGATE_ABI,
-          functionName: 'delegateForUserDecryption',
-          args: [
-            config.bob.account.address,
-            config.fheTestAddress as Hex,
-            BigInt(Math.floor(Date.now() / 1000) + 86400 * 360),
-          ],
-        });
-        const receipt = await config.publicClient.waitForTransactionReceipt({ hash });
-        if (receipt.status !== 'success') {
-          throw new Error(`Delegation tx failed: ${receipt.transactionHash}`);
-        }
-        // Wait for the delegation to propagate to the gateway's MultichainACL.
-        await new Promise((r) => setTimeout(r, 15000));
-      }, 120_000);
+      // Bob signs the delegated permit (v11-era shape) to decrypt Alice's handles
+      const stalePermit = await forgeV1Permit(client, transportKeyPair, {
+        extraData: STALE_V11_EXTRA_DATA as Hex,
+        account: config.bob.account,
+        delegatorAddress: config.alice.account.address,
+      });
+      expect(stalePermit.isDelegated).toBe(true);
 
-      it('decrypts with a delegated cached v11-era permit (extraData v0 = 0x00)', async () => {
-        const { fheType, encryptedValue, expectedRaw } = await readHandleAndExpected(config.alice.account.address);
-
-        const client = await createReadyClient();
-        const transportKeyPair = await client.generateTransportKeyPair();
-
-        // Bob signs the delegated permit (v11-era shape) to decrypt Alice's handles
-        const stalePermit = await forgeV1Permit(client, transportKeyPair, {
-          extraData: STALE_V11_EXTRA_DATA as Hex,
-          account: config.bob.account,
-          delegatorAddress: config.alice.account.address,
-        });
-        expect(stalePermit.isDelegated).toBe(true);
-
-        const typedValue = await client.decryptValue({
+      await expect(
+        client.decryptValue({
           contractAddress: config.fheTestAddress,
           encryptedValue,
           signedPermit: stalePermit,
           transportKeyPair,
-        });
-
-        expectDecryptedMatches(fheType, typedValue, expectedRaw);
-      });
+        }),
+      ).rejects.toMatchObject(EXTRA_DATA_V0_REFUSED);
     });
   });
 }

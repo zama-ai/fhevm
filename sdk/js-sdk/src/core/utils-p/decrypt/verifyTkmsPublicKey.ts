@@ -22,6 +22,6 @@ export async function verifyTkmsPublicKey(
   });
 
   if (expectedTkmsPublicKeyBytesHex !== tkmsPublicKeyBytesHex) {
-    throw new Error('invalid TransportKeyPairKeyPair');
+    throw new Error('invalid TransportKeyPair');
   }
 }

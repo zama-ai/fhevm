@@ -2,6 +2,17 @@
 {{- if not .Values.kmsConnectorEndpoint.enabled }}{{ fail "kmsConnectorProxy requires kmsConnectorEndpoint.enabled" }}{{ end -}}
 {{- $contracts := include "kmsConnector.contracts" . | fromYaml -}}
 {{- $ethereum := include "kmsConnector.ethereumHostChain" . | fromYaml -}}
+{{- $shutdownGrace := int (default 60 .Values.kmsConnectorProxy.shutdownGracePeriodSeconds) -}}
+{{- $scheme := include "kmsConnectorProxyScheme" . -}}
+{{- $tlsEnabled := eq $scheme "https" -}}
+{{- if not $tlsEnabled }}
+{{- /* TLS settings left in the env would make the proxy serve TLS on its `http` port */}}
+{{- range concat (default list .Values.commonConfig.env) (default list .Values.kmsConnectorProxy.env) }}
+{{- if hasPrefix "KMS_CONNECTOR_TLS_CONFIG" (toString .name) }}
+{{- fail (printf "%s is set in the env but kmsConnectorProxy.tls.enabled is false" .name) }}
+{{- end }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -34,6 +45,8 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
+      # The shutdown grace period, then Pingora's 5s to close what is left, then 5s margin.
+      terminationGracePeriodSeconds: {{ add $shutdownGrace 10 }}
       {{- with .Values.kmsConnectorProxy.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -49,34 +62,44 @@ spec:
       {{- if .Values.kmsConnectorProxy.serviceAccountName }}
       serviceAccountName: {{ .Values.kmsConnectorProxy.serviceAccountName }}
       {{- end }}
+      {{- if $tlsEnabled }}
       volumes:
         - name: tls
           secret:
-            secretName: {{ .Values.kmsConnectorProxy.tls.secretName | quote }}
+            secretName: {{ required "kmsConnectorProxy.tls.secretName must be set when kmsConnectorProxy.tls.enabled is true" (dig "secretName" "" (default dict .Values.kmsConnectorProxy.tls)) | quote }}
+      {{- end }}
       containers:
         - name: kms-connector-proxy
           image: {{ .Values.kmsConnectorProxy.image.name }}:{{ .Values.kmsConnectorProxy.image.tag }}
+          {{- if $tlsEnabled }}
           volumeMounts:
             - name: tls
               mountPath: /etc/kms-connector/proxy
               readOnly: true
+          {{- end }}
           env:
             # Listen addresses derived from `ports`. Declared first so entries in
             # `commonConfig.env` / `kmsConnectorProxy.env` take precedence.
             - name: KMS_CONNECTOR_MONITORING_ENDPOINT
               value: {{ printf "0.0.0.0:%v" .Values.kmsConnectorProxy.ports.monitoring | quote }}
             - name: KMS_CONNECTOR_PROXY_BIND_ADDRESS
-              value: {{ printf "0.0.0.0:%v" .Values.kmsConnectorProxy.ports.https | quote }}
+              value: {{ printf "0.0.0.0:%v" (include "kmsConnectorProxyPort" .) | quote }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- with .Values.kmsConnectorProxy.env }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
+            # Set from `shutdownGracePeriodSeconds`, after `env`, so it always matches
+            # `terminationGracePeriodSeconds`.
+            - name: KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD
+              value: "{{ $shutdownGrace }}s"
+          {{- if $tlsEnabled }}
             - name: KMS_CONNECTOR_TLS_CONFIG__CERT_PATH
               value: /etc/kms-connector/proxy/tls.crt
             - name: KMS_CONNECTOR_TLS_CONFIG__KEY_PATH
               value: /etc/kms-connector/proxy/tls.key
+          {{- end }}
             - name: KMS_CONNECTOR_ENDPOINT_ADDRESSES
               value: {{ printf "%s:%v" (include "kmsConnectorEndpointName" .) .Values.kmsConnectorEndpoint.ports.http | quote }}
             - name: KMS_CONNECTOR_ETHEREUM_CHAIN_ID
@@ -97,9 +120,12 @@ spec:
           {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.kmsConnectorProxy.ports }}
+            {{- /* Only one of the `https` and `http` ports is served, depending on TLS */}}
+            {{- if or (eq $portName $scheme) (not (has $portName (list "https" "http"))) }}
             - name: {{ $portName }}
               containerPort: {{ $portValue }}
               protocol: TCP
+            {{- end }}
             {{- end }}
           {{- with .Values.kmsConnectorProxy.resources }}
           resources:

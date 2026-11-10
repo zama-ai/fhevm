@@ -1,8 +1,10 @@
-// CLI: run the standalone gateway server until Ctrl-C. Useful for local dev and
-// for non-Playwright platforms (e.g. node-server). Playwright globalSetup starts
-// the server in-process instead.
-//
-//   npx tsx test/infra/gateway/serve.ts
+/**
+ * CLI: run the standalone gateway server until Ctrl-C. Useful for local dev and
+ * for non-Playwright platforms (e.g. node-server). Playwright globalSetup starts
+ * the server in-process instead.
+ *
+ *   npx tsx test/infra/gateway/serve.ts
+ */
 
 import { GATEWAY_PORT } from '../config.js';
 import { gatewayConfig } from '../topology.js';

@@ -2,25 +2,54 @@ import type { FhevmChain } from './fhevmChain.js';
 import type { FhevmRuntime } from './coreFhevmRuntime.js';
 import type { FheEncryptionKeyBytes } from './fheEncryptionKey.js';
 import type { TfheVersion, TkmsVersion } from './moduleVersions.js';
+import type { TrustedClient } from '../modules/ethereum/types.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-export type FhevmBaseOptions = {
+/**
+ * Options shared by every client. `client` is the adapter's native client
+ * type (viem `PublicClient`, ethers `ContractRunner`), the one taken by
+ * `keyVerification`.
+ */
+export type FhevmBaseOptions<client extends NativeClient = NativeClient> = {
   readonly batchRpcCalls?: boolean | undefined;
+  /**
+   * Required to fetch the FHE public key and CRS (encryption,
+   * `fetchFheEncryptionKeyBytes`) when the host chain is not Ethereum. Applies
+   * to every client, as every client can fetch them and every fetch is
+   * verified.
+   */
+  readonly keyVerification?: FhevmKeyVerification<client> | undefined;
 };
 
-export type FhevmEncryptOptions = FhevmBaseOptions & {
+export type FhevmEncryptOptions<client extends NativeClient = NativeClient> = FhevmBaseOptions<client> & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
 };
 
-export type FhevmDecryptOptions = FhevmBaseOptions;
+export type FhevmDecryptOptions<client extends NativeClient = NativeClient> = FhevmBaseOptions<client>;
 
-export type FhevmOptions = FhevmBaseOptions & {
+export type FhevmOptions<client extends NativeClient = NativeClient> = FhevmBaseOptions<client> & {
   readonly fheEncryptionKey?: FheEncryptionKeyBytes | undefined;
+};
+
+/**
+ * An Ethereum chain definition (one that defines `kmsGeneration`) and a client
+ * connected to it. Used only to read `KMSGeneration` when the host chain is
+ * not Ethereum; every other read goes through the host-chain client.
+ */
+export type FhevmKeyVerification<client extends NativeClient = NativeClient> = {
+  readonly chain: FhevmChain;
+  readonly client: client;
+};
+
+export type ResolvedFhevmKeyVerification = {
+  readonly chain: FhevmChain;
+  readonly trustedClient: TrustedClient;
 };
 
 export type ResolvedFhevmOptions = {
   readonly batchRpcCalls: boolean;
+  readonly keyVerification: ResolvedFhevmKeyVerification | undefined;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -29,15 +58,6 @@ export type NativeClient = NonNullable<object>;
 export type OptionalNativeClient = NativeClient | undefined;
 export type OptionalFhevmChain = FhevmChain | undefined;
 
-/**
- * Semver-compatible FHEVM protocol version.
- *
- * The protocol version describes the on-chain FHEVM protocol used by a given
- * chain.
- *
- * Example: `'0.14.0'`.
- */
-export type ProtocolVersion = string;
 export type PubKeyCrsVersion = string;
 
 /**
@@ -74,23 +94,13 @@ export type VersionResolution<version extends string> = {
   readonly comparator: VersionResolutionComparator;
 };
 
-export type ProtocolVersionResolution = VersionResolution<ProtocolVersion>;
 export type PubKeyCrsVersionResolution = VersionResolution<PubKeyCrsVersion>;
 
-export type FhevmProtocolContext = {
-  readonly protocolVersion: ProtocolVersionResolution;
-  readonly pubKeyCrsVersion: PubKeyCrsVersionResolution;
-};
-
-export type WithProtocolVersion = {
-  readonly protocolVersion: ProtocolVersionResolution;
-};
-
-export type WithTfheVersion = WithProtocolVersion & {
+export type WithTfheVersion = {
   readonly tfheVersion: TfheVersion;
 };
 
-export type WithTkmsVersion = WithProtocolVersion & {
+export type WithTkmsVersion = {
   readonly tkmsVersion: TkmsVersion;
 };
 
@@ -120,7 +130,6 @@ export interface Fhevm<
   runtime extends FhevmRuntime = FhevmRuntime,
   client extends OptionalNativeClient = NativeClient,
 > extends FhevmBase<chain, runtime, client> {
-  readonly protocolVersion: ProtocolVersionResolution;
   readonly extend: <const actions extends Record<string, unknown>, extendedRuntime extends FhevmRuntime>(
     actionsFactory: (client: FhevmBase<chain, FhevmRuntime, client>) => FhevmExtension<actions, extendedRuntime>,
   ) => this & actions & { readonly runtime: extendedRuntime };

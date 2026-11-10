@@ -1,4 +1,5 @@
 import type {
+  RelayerCommonOptions,
   RelayerDelegatedUserDecryptOptions,
   RelayerInputProofOptions,
   RelayerKeyUrlOptions,
@@ -12,7 +13,15 @@ import type {
   KmsUserDecryptEip712V1Message,
   KmsUserDecryptEip712V2Message,
 } from '../../types/kms.js';
-import type { Bytes65Hex, BytesHex, ChecksummedAddress } from '../../types/primitives.js';
+import type {
+  Bytes32Hex,
+  Bytes65Hex,
+  BytesHex,
+  ChecksummedAddress,
+  Uint16Number,
+  Uint64BigInt,
+  Uint8Number,
+} from '../../types/primitives.js';
 import type { Prettify } from '../../types/utils.js';
 import type { ZkProof } from '../../types/zkProof-p.js';
 import type { Handle, InputHandle } from '../../types/encryptedTypes-p.js';
@@ -124,6 +133,13 @@ export type FetchPublicDecryptModuleFunction = {
   ): Promise<FetchPublicDecryptReturnType>;
 };
 
+export type FetchPublicDecryptNoGatewayModuleFunction = {
+  fetchPublicDecryptNoGateway(
+    relayerClient: RelayerClientWithRuntime,
+    parameters: FetchPublicDecryptParameters,
+  ): Promise<FetchPublicDecryptReturnType>;
+};
+
 ////////////////////////////////////////////////////////////////////////////////
 // 4. fetchUserDecrypt
 ////////////////////////////////////////////////////////////////////////////////
@@ -168,6 +184,13 @@ export type FetchUserDecryptModuleFunction = {
   fetchUserDecrypt(
     relayerClient: RelayerClientWithRuntime,
     parameters: FetchUserDecryptParameters,
+  ): Promise<FetchUserDecryptReturnType>;
+};
+
+export type FetchUserDecryptNoGatewayModuleFunction = {
+  fetchUserDecryptNoGateway(
+    relayerClient: RelayerClientWithRuntime,
+    parameters: FetchUserDecryptParametersV2,
   ): Promise<FetchUserDecryptReturnType>;
 };
 
@@ -221,6 +244,70 @@ export type FetchFeaturesModuleFunction = {
 };
 
 ////////////////////////////////////////////////////////////////////////////////
+// 7. fetchPadShares (RFC-030 pad decryption)
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * One pad of an RFC-030 pad decryption request (`PadWitness`): the per-pad
+ * witness fields, the pad's label and the number of pad bits to release.
+ */
+export type PadWitness = {
+  readonly submitter: ChecksummedAddress;
+  readonly consumer: ChecksummedAddress;
+  /** Unix seconds after which the pad can no longer be decrypted. */
+  readonly expirationTimestamp: Uint64BigInt;
+  /** At most 16 entries. */
+  readonly decryptors: readonly ChecksummedAddress[];
+  /** 16 bytes. */
+  readonly nonce: BytesHex;
+  /** `hash(witness)`, see RFC-030. */
+  readonly label: Bytes32Hex;
+  /** Bits of the pad stream to release, in `[1, 2048]`. Not a witness field. */
+  readonly padLength: Uint16Number;
+};
+
+export type FetchPadSharesParameters = {
+  readonly payload: {
+    /** RFC-016 signed struct (`PadDecryptRequest.auth`). */
+    readonly kmsDecryptEip712Message: KmsUserDecryptEip712V2Message;
+    /** Variable length: 65-byte EOA, ERC-1271 blob, or empty `0x`. */
+    readonly kmsDecryptEip712Signature: BytesHex;
+    /** Shared witness fields, fixed for the whole request. */
+    readonly witnessVersion: Uint8Number;
+    readonly prfId: Uint16Number;
+    readonly chainId: Uint64BigInt;
+    /** One entry per pad. */
+    readonly witnesses: readonly PadWitness[];
+  };
+  readonly fhevmContext: FhevmClientFrozenContext;
+  readonly options?: RelayerCommonOptions | undefined;
+};
+
+/**
+ * One KMS node's answer to a pad decryption request (`PadDecryptResponse` in
+ * RFC-030). The node is identified by its signatures, not by a field: the
+ * transport signature covers `requestId` and `encryptedPayload`
+ * (`CompositeEncrypt_user(PadDecryptResponsePayload)`), and every share inside
+ * carries its own signature.
+ */
+export type PadDecryptResponse = {
+  readonly requestId: Bytes32Hex;
+  readonly encryptedPayload: BytesHex;
+  /** EIP-712 transport signature over `PadDecryptResponseVerification`. */
+  readonly signature: BytesHex;
+};
+
+/** One response per KMS node that answered; order carries no meaning. */
+export type FetchPadSharesReturnType = readonly PadDecryptResponse[];
+
+export type FetchPadSharesModuleFunction = {
+  fetchPadShares(
+    relayerClient: RelayerClientWithRuntime,
+    parameters: FetchPadSharesParameters,
+  ): Promise<FetchPadSharesReturnType>;
+};
+
+////////////////////////////////////////////////////////////////////////////////
 // RelayerModule
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -229,9 +316,20 @@ export type RelayerModule = Prettify<
     FetchFheEncryptionKeyBytesModuleFunction &
     FetchCoprocessorSignaturesModuleFunction &
     FetchUserDecryptModuleFunction &
+    FetchUserDecryptNoGatewayModuleFunction &
     FetchPublicDecryptModuleFunction &
+    FetchPublicDecryptNoGatewayModuleFunction &
     FetchDelegatedUserDecryptModuleFunction &
-    FetchFeaturesModuleFunction
+    FetchFeaturesModuleFunction &
+    FetchPadSharesModuleFunction & {
+      /**
+       * `true` when the module's key / CRS bytes are never checked against
+       * KMSGeneration. Set only inside the SDK: cleartext mode (filler bytes,
+       * no FHE) and test harnesses. Apps cannot set it, and the production
+       * relayer module never does, so real keys are always checked.
+       */
+      readonly skipsFheEncryptionKeyVerification?: boolean | undefined;
+    }
 >;
 
 // Relayer is a base module. It does not take any runtime argument

@@ -103,7 +103,6 @@ const chainIds = {
   staging: 12345,
   zwsDev: 1337,
   sepolia: 11155111,
-  hoodi: 560048,
   polygonAmoy: 80002,
   bnbTestnet: 97,
   mainnet: 1,
@@ -153,7 +152,6 @@ const config: HardhatUserConfig = {
     staging: getChainConfig('staging'),
     zwsDev: getChainConfig('zwsDev'),
     sepolia: getChainConfig('sepolia'),
-    hoodi: getChainConfig('hoodi'),
     polygonAmoy: getChainConfig('polygonAmoy'),
     bnbTestnet: getChainConfig('bnbTestnet'),
     mainnet: getChainConfig('mainnet'),
@@ -185,19 +183,11 @@ const config: HardhatUserConfig = {
       viaIR: false,
     },
   },
+  sourcify: {
+    enabled: true,
+  },
   etherscan: {
     apiKey: process.env.ETHERSCAN_API_KEY!,
-    // Chains hardhat-verify does not ship a built-in config for.
-    customChains: [
-      {
-        network: 'hoodi',
-        chainId: chainIds.hoodi,
-        urls: {
-          apiURL: process.env.HOODI_ETHERSCAN_API_URL!,
-          browserURL: process.env.HOODI_ETHERSCAN_BROWSER_URL!,
-        },
-      },
-    ],
   },
   warnings: {
     '*': {

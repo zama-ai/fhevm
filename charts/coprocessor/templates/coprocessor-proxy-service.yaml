@@ -1,0 +1,25 @@
+{{- if .Values.coprocessorProxy.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-proxy
+    app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+  name: {{ include "coprocessorProxyName" . }}
+spec:
+  ports:
+    - name: https
+      port: {{ .Values.coprocessorProxy.ports.https }}
+      targetPort: https
+    - name: metrics
+      port: {{ .Values.coprocessorProxy.ports.metrics }}
+      targetPort: metrics
+    - name: healthcheck
+      port: {{ .Values.coprocessorProxy.ports.healthcheck }}
+      targetPort: healthcheck
+  selector:
+    app: coprocessor-proxy
+    app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+    {{- include "coprocessor.extraSelectorLabels" . | nindent 4 }}
+  type: ClusterIP
+{{- end }}

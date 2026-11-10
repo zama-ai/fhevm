@@ -25,7 +25,12 @@ The relayer HTTP API (`:3000`) is also published on the zws-dev **Tailscale
 MagicDNS** as `https://relayer-<namespace>.diplodocus-boa.ts.net` (IngressClass
 `tailscale`, tag `tag:k8s-zws-dev`) so a laptop on the tailnet can call it
 without `kubectl port-forward`. Metrics `:9898` and the admin endpoint stay
-ClusterIP-only. See [`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
+ClusterIP-only. relayer-http (`:3002`) is published the same way as
+`https://relayer-http-<namespace>.diplodocus-boa.ts.net`. Both are also served on
+one **unified URL**,
+`https://kong-proxy-preview-zws-dev.diplodocus-boa.ts.net/<namespace>` (`/v2`,
+`/v3` to the relayer, `/v4` to relayer-http), the base URL to give the SDK. See
+[`101-preview-env.md`](./101-preview-env.md#call-the-relayer-no-port-forward).
 
 There is no local Kind/laptop-based variant of this path anymore — a full stack (dedicated
 4-party enclave KMS + coprocessor + kms-connector + relayer + test-suite) doesn't fit in a
@@ -49,12 +54,15 @@ ci/preview-env/
 │   ├── values-anvil-host-polygon-e2e.yaml   # anvil-node overlay, Polygon host chain (deploy_polygon)
 │   ├── values-host-contracts-e2e.yaml   # contracts overlay, host-contracts
 │   ├── values-host-contracts-polygon-e2e.yaml # contracts overlay, Polygon host-contracts (mirrors ETH ProtocolConfig)
-│   └── values-host-trigger-keygen-e2e.yaml # contracts overlay, real FHE key/CRS gen ceremony
+│   ├── values-host-trigger-keygen-e2e.yaml # contracts overlay, real FHE key/CRS gen ceremony
+│   ├── values-host-define-new-kms-context-e2e.yaml # contracts overlay, same-committee context switch (manual)
+│   └── values-host-define-new-epoch-e2e.yaml # contracts overlay, same-context epoch rotation (manual)
 ├── gateway-chain/
 │   ├── values-anvil-gateway-e2e.yaml         # anvil-node overlay, gateway chain
 │   ├── values-gateway-contracts-e2e.yaml     # contracts overlay, gateway-contracts
 │   ├── values-gateway-add-host-chains-e2e.yaml # contracts overlay, deferred addHostChains step
-│   └── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
+│   ├── values-gateway-add-host-chains-polygon-e2e.yaml # contracts overlay, register Polygon (80002) (deploy_polygon)
+│   └── values-gateway-update-kms-context-e2e.yaml # contracts overlay, gateway context id bump (manual)
 ├── coprocessor/
 │   ├── values-coprocessor-e2e.yaml        # coprocessor overlay (one release per party: coprocessor-<i>)
 │   ├── values-coprocessor-bcs-e2e.yaml    # RFC-021 BCS overlay (pinned 0.14.0, extraSelectorLabels)
@@ -69,7 +77,7 @@ ci/preview-env/
 │   └── values-postgres-listener-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to the listener's cursor DB
 ├── kms-connector/
 │   ├── values-kms-connector-e2e.yaml       # kms-connector overlay
-│   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain to hostChains (deploy_polygon)
+│   ├── values-kms-connector-polygon-e2e.yaml # additive overlay: adds the Polygon host chain (deploy_polygon)
 │   ├── values-kms-insecure-keygen-redirect-e2e.yaml # `common` chart overlay: kms-worker -> kms-core redirect, insecure keygen (fhe_keys=default-insecure)
 │   └── values-postgres-connector-e2e.yaml  # `common` chart overlay: in-cluster Postgres, dedicated to kms-connector
 ├── observability/
@@ -79,6 +87,7 @@ ci/preview-env/
 ├── relayer/
 │   ├── values-relayer-e2e.yaml          # `common` chart overlay, relayer server
 │   ├── values-relayer-migrate-e2e.yaml  # `common` chart overlay, relayer DB migration Job
+│   ├── values-relayer-http-e2e.yaml     # `common` chart overlay, relayer-http (KMS connector aggregator)
 │   └── values-postgres-relayer-e2e.yaml # `common` chart overlay: in-cluster Postgres, dedicated to relayer + relayer-migrate
 ├── test-suite/
 │   ├── values-test-suite-e2e.yaml       # `common` chart overlay, e2e test-suite Job
@@ -117,7 +126,7 @@ CI path reuses `zama-ai/kms`'s own deploy pipeline as-is (see `preview-env-deplo
 Preview-env **never builds** kms-core. It sparse-checkouts `zama-ai/kms` at
 `kms_repo_ref`, pulls the enclave image that checkout's `deploy.sh` will
 install (`core-service-enclave-insecure` on current kms main,
-`core-service-enclave` on `v0.14.1`) at `<kms_core_version>` for PCR
+`core-service-enclave` on older releases such as `v0.14.1`) at `<kms_core_version>` for PCR
 attestation, and runs `deploy.sh --tag … --num-parties "${NB_KMS_CORE}"`.
 
 | Input | Override key | Meaning |
@@ -299,8 +308,11 @@ The two host chains are the real public testnets, so this is the only preview sh
   - `default-insecure` (the default): production-size **Default**
     parameters (`params-type=0`), and each kms-worker reaches its core through
     `kms-insecure-keygen-redirect-<i>` (the docker stack's keygen proxy script), which switches keygen to
-    the KMS insecure keygen (minutes, no DKG). The redirect also sits on every other
-    kms-worker call, decryptions included. The CRS ceremony is the real one; key
+    the KMS insecure keygen (minutes, no DKG). The redirect is single-threaded and
+    would sit on every other kms-worker call, so once `trigger-keygen` returns,
+    `scripts/deploy/bypass-kms-keygen-redirect.sh` points each kms-worker straight
+    at its core and uninstalls the redirect. A later insecure keygen needs
+    `deploy-kms-connector.sh` re-run to restore it. The CRS ceremony is the real one; key
     and CRS took about 6 min on a 4-party Anvil preview, so the 15 m waits and
     45 m Helm stay; testnets 60 m / 40 m and 110 m Helm.
   - `default-secure`: Default parameters from the real DKG. A four-party Default
@@ -438,14 +450,16 @@ auto-tests still proposes and waits for `DryRunStarted` only.
 
 Each `kms-connector-<i>` release also deploys the two new services: the **endpoint**
 and the **proxy** in front of it.
-The two out-of-chart inputs the proxy needs are produced at deploy time by
+The proxy's TLS certificate comes from the chart, and its auth inputs are set by
 `scripts/deploy-kms-connector.sh` instead of being checked in:
 
-- **TLS**: one self-signed P-256 certificate per namespace (`openssl` on the runner,
-  30-day lifetime), SANs = every party's proxy Service name, stored as the
-  `kubernetes.io/tls` Secret `kms-connector-proxy-tls` that all N releases mount
-  (`kmsConnectorProxy.tls.secretName`). Create-if-missing, so a re-run does not
-  rotate the cert under proxies that only read it at startup. The compose path's
+- **TLS**: each release's chart creates a self-signed P-256 certificate with
+  cert-manager (installed on zws-dev; the overlay turns on
+  `kmsConnectorProxy.tls.certManager.enabled`, off by default): 10-year
+  lifetime, SANs = that party's proxy Service name and its in-cluster forms. The script gives each release its own
+  `kubernetes.io/tls` Secret `kms-connector-<i>-proxy-tls`
+  (`kmsConnectorProxy.tls.secretName`). The Certificate is unchanged on re-runs, so
+  it is not rotated under proxies that only read it at startup. The compose path's
   checked-in `test-suite/fhevm/static/config/kms-connector-proxy/tls.crt` is *not*
   reusable here: its SANs are the compose hostnames, and Node rejects a SAN mismatch.
 - **FhevmSig auth**: the e2e suite signs with a fixed test key
@@ -457,7 +471,8 @@ The two out-of-chart inputs the proxy needs are produced at deploy time by
 - **Test-suite wiring**: the script publishes ConfigMap **`kms-connector-http`**
   (`endpoint-urls` = one https URL per party, `tx-sender-addresses` = each party's
   audience in the same order, `kms-threshold` = MPC `t` from `lib.sh`'s `kms_t`,
-  `ca.crt` = the proxies' cert). The idle Job and the `@fhevm/sdk` + Polygon Argo
+  `ca.crt` = every party's proxy cert, read from the Secrets once cert-manager
+  has issued them). The idle Job and the `@fhevm/sdk` + Polygon Argo
   Workflow overlays `configMapKeyRef` it into `KMS_CONNECTOR_ENDPOINT_URLS`,
   `KMS_CONNECTOR_TX_SENDER_ADDRESSES`, `KMS_THRESHOLD` and `KMS_CONNECTOR_PROXY_CA`, and
   their startup script writes the PEM to `NODE_EXTRA_CA_CERTS` (Node only trusts
@@ -468,6 +483,86 @@ The two out-of-chart inputs the proxy needs are produced at deploy time by
   The `@zama-fhe/relayer-sdk` workflow is left untouched on purpose: those suites
   use their own client (`test/sdk/connector/connectorHttp.ts`), not the relayer
   SDK, so re-running them there would only duplicate the same code path.
+
+## relayer-http
+
+`deploy-relayer.sh relayer-http` installs `relayer-http` (port `3002`, as in the
+compose stack) with the generic `common` chart once the kms-connectors are up.
+Its config is the compose stack's template
+(`test-suite/fhevm/templates/config/relayer-http.yaml`) with the preview-only
+fields of `relayer/values-relayer-http-e2e.yaml` merged over it; the script fills
+in the per-deploy fields from the same **`kms-connector-http`** ConfigMap the
+test-suite reads: one endpoint per party (proxy URL + tx-sender `audience`),
+thresholds `t+1` (public) / `n-t` (user, as for the relayer), the host chain ids,
+and the host `ProtocolConfig` address for FhevmSig. It signs with the same fixed
+test key as the e2e suite. It does not verify the proxies' self-signed
+certificates (`skip_tls_verification: true`). Like the relayer, it is part of
+every preview env (a failed install fails the deploy) and is published on the
+tailnet as `relayer-http-<namespace>` (`RELAYER_HTTP_TS_URL` in the PR comment /
+run summary). Pin the image with `relayer_http_version`.
+
+### Unified relayer URL
+
+After relayer-http, `scripts/deploy/expose-relayer-kong.sh` serves both relayers
+on one URL, as the local stack's `relayer-proxy` does
+(`test-suite/fhevm/static/config/relayer-proxy/nginx.conf`):
+
+```
+https://kong-proxy-preview-zws-dev.diplodocus-boa.ts.net/<namespace>
+  /<namespace>/v2/*, /v3/*  -> relayer:3000
+  /<namespace>/v4/*         -> relayer-http:3002
+```
+
+The proxy is a second Kong shared by all preview envs (IngressClass
+`kong-preview`, zws-gitops app `environments/zws-dev-system/kong/kong-preview.yaml`).
+Unlike the dev Kong, it has no load balancer: it is reachable only on the tailnet.
+The script adds, in the preview namespace, two `kong-preview` Ingresses with
+`strip-path` (`relayer-kong` on `/<namespace>`, `relayer-http-kong` on
+`/<namespace>/v4`) and a Service `relayer-http-v4` that puts `/v4` back on the
+upstream path (120s read timeout, as `/v4` decrypts are synchronous). All three
+carry `app.kubernetes.io/component=kong-preview-route` and go away with the
+namespace. It writes `RELAYER_UNIFIED_URL` to the PR comment / run summary and
+probes `GET /v2/keyurl` (200) and `GET /v4/user-decrypt` (405) from the runner;
+a failed probe is only a warning. If kong-preview is not installed (no
+`zws-system/kong-preview-zws-dev-system-kong-proxy` Service), the step is
+skipped with a warning. The in-cluster test-suite still calls
+`http://relayer:3000/v2` directly.
+
+## coprocessor-proxy
+
+Except on blue-green stacks and with a `coprocessor_version` pin (a pinned release may predate
+`pads`), each `coprocessor-<i>` release also runs the coprocessor-proxy and the prf-service
+behind it (`values-coprocessor-proxy-e2e.yaml`), one replica each. Without them, the
+`Coprocessor proxy` suite skips. `scripts/deploy/deploy-coprocessor.sh` provides what the
+chart does not:
+
+- **The `prf_service` role**: created in party i's Postgres before the release, from
+  `prfService.databaseUser` and `databasePassword`, so the migration grants it its rights on
+  `pads`.
+- **The PRF output**: no pad-worker runs yet, so once the migration is done, a pod of the
+  test-suite image runs `test-suite/e2e/scripts/seed-prf-output.ts`, which writes the output the
+  suite requests into party i's database. The script comes from the checkout (ConfigMap
+  `prf-output-seed`), so a pinned test-suite image that predates it still runs it.
+- **TLS**: the Secret `coprocessor-proxy-tls`, made as for the kms-connector proxies,
+  with SANs = every party's `coprocessor-<i>-coprocessor-proxy` Service.
+- **Per party**: the image tags (`coprocessor_proxy` and `coprocessor_prf_service` in
+  resolve-tags), the signer (the derived coprocessor wallet) and the NetworkPolicy's
+  podSelector, which selects only that party's prf-service and lets test-suite pods
+  (`app: fhevm-test-suite`) reach its metrics port 9100 only.
+- **Test-suite wiring**: the ConfigMap **`coprocessor-proxy`** (`urls`,
+  `signer-addresses`, `prf-service-metrics-urls`, `metrics-urls`, `ca.crt`), read `optional` by the
+  `@fhevm/sdk` Argo Workflow, whose `coprocessor-proxy` task runs the
+  `Coprocessor proxy` suite signing with KMS party 1's tx-sender key
+  (`kms-connector-tx-sender-1`).
+
+With `automated_tests`, `scripts/e2e/check-coprocessor-proxy.sh` then checks that
+every proxy rolled out with its replicas Ready (its `/healthz` answers once the TLS
+listener is up and the KMS tx-senders have been read), and restarts every proxy under a
+steady load of signed requests from a test-suite pod, which stops once every old
+proxy pod is gone: no request may fail. It also checks the NetworkPolicy: that
+test-suite pod must reach each prf-service's metrics port 9100 and no prf-service's PRF port 8090.
+
+When the pad-worker deploys here, it writes the outputs, and the seed pod goes.
 
 ## Multichain: second Polygon host chain (`deploy_polygon`)
 
@@ -493,7 +588,8 @@ Polygon **reuses the ETH-activated KMS key** — there is no second keygen cerem
   `postgres-listener-polygon-<i>`) publishes chain-`80002` events to the **same**
   per-party Redis; the Polygon consumer filters them out by `--chain-id`.
 - The relayer gets a second `host_chains` entry and the kms-connector a second
-  `hostChains` entry (`values-kms-connector-polygon-e2e.yaml`) so host ACL checks cover
+  host chain (`values-kms-connector-polygon-e2e.yaml`, both the chart 2.x
+  `hostChains` map and the chart 1.5.3 flat keys) so host ACL checks cover
   Polygon ciphertexts.
 - Chain `80002` is registered into the shared GatewayConfig by a second
   `addHostChainsToGatewayConfig` call (`values-gateway-add-host-chains-polygon-e2e.yaml`,
@@ -510,6 +606,103 @@ deployed. Every Polygon step in the workflow is gated on `deploy_polygon == 'tru
 > `true` and it takes the **reduced / read-only** path (the `hcu-block-cap` owner-only
 > and `evm_*` deterministic subtests `this.skip()`). The Polygon run is a multichain
 > routing smoke test; the ETH `staging` run remains the full-coverage one.
+
+## KMS context switch (manual)
+
+A same-committee switch on a namespace that already finished keygen. None of
+these commands are part of `preview-env-deploy`. The host and gateway contract
+Jobs tolerate `karpenter.sh/nodepool=zws-pool`; without that toleration the
+pod stays Pending.
+
+### Replace one party first
+
+`prepare-kms-core-replacement.sh` scales one party to 0 and installs a new
+core under a new release name. The party id stays in `kmsPeers.id` and in
+`peersList[].id`. The second argument is only the release name, the pod name,
+and the vault prefix.
+
+Replacing party 1 with name 5 installs `kms-core-5`, pod `kms-core-5-core-1`,
+and prefixes `PUB-p5` / `PRIV-p5` / `BACKUP-p5`. The chart would still fetch
+that party's CA from `PUB-p1`, so the script points the fetch at `PUB-p5`,
+strips `[[threshold.peers]]`, and starts the server only after that. The boot
+log must show `peers: None`. Connector 1 is then pointed at
+`http://kms-core-5-core-1:50100`. The tx-sender secret stays party 1's key.
+
+```bash
+NAMESPACE=fhevm-ci-<actor>-<id> \
+  bash ci/preview-env/scripts/deploy/prepare-kms-core-replacement.sh 1 5
+```
+
+Every other party stays up. A party that was already replaced counts as up
+when `kms-core-<name>-core-<id>` is Running, even if
+`kms-core-<id>-core-<id>` is scaled to 0. Do not helm-upgrade the new release
+afterwards: that restores the peer list and the old CA fetch. A peer list at
+boot on the new core stores its identity in the current context. The same list
+on the other cores deletes their private context.
+
+### Broadcast the switch
+
+`kms-context-switch.sh` keeps each party id and uses the Running pod
+`kms-core-<name>-core-<id>`. When `<name>` differs from the party id, the CA,
+signer, and storage prefix come from `PUB-p<name>`. Several Running pods for
+one id need `KMS_CORE_NAMES=1=5,4=6`. A party left out of that list is
+discovered from its Running pod.
+
+The two overlays carry the Anvil network, RPC, chain id, and deployer. The
+script overwrites those from the live releases when a testnet preview changed
+them, and appends the committee. It replaces each `KMS_NODE_CA_CERT_<i>` with
+the PEM in that party's public vault (`PUB-p<name>` for a replacement),
+`KMS_SIGNER_ADDRESS_<i>` with the newest `VerfAddress`, the node URL and MPC
+identity with the peer service the TLS certificate names, and
+`KMS_SOFTWARE_VERSION` and `KMS_PCR_VALUES` from a running core. It then
+broadcasts `defineNewKmsContextAndEpoch`, then `updateKmsContext` with the next
+id (the ProtocolConfig allocation counter + 1). This does not wipe KMS storage
+and does not destroy the active context.
+
+```bash
+helm pull oci://hub.zama.org/ghcr/zama-ai/fhevm/charts/contracts --version 0.8.2 --untar
+CONTRACTS_CHART="$PWD/contracts" NAMESPACE=fhevm-ci-<actor>-<id> \
+  bash ci/preview-env/scripts/deploy/kms-context-switch.sh
+```
+
+`CONTRACTS_CHART` defaults to `charts/contracts`. Pull the chart when the
+preview was launched with `contracts_chart_version` set.
+
+The first host deploy registers that same material. `wire-contracts-values.sh`
+reads each party's CA cert from the public vault, the software version from
+`KMS_CORE_TAG`, and the PCR triple from the enclave image labels. A later
+switch replays the previous context, so a namespace whose first context was
+registered with the placeholder certificate cannot be repaired by this
+command. Launch a new preview after that change.
+
+The two Helm jobs return once the transactions are mined. Creation
+confirmations and epoch activation continue on the cores. With the replaced
+party scaled to 0, that party is a silent Set1: the reshare waits out the
+charged rounds (hours at the 300s network timeout) and then completes.
+`Still waiting to receive from party` is not a failure. A dispatch preview
+needs a lifetime that covers the wait. The gateway update rejects an id that
+is not strictly greater than the current one.
+
+## Epoch rotation (manual)
+
+Same context, new epoch, on a namespace that already has an active context.
+`rotate-epoch.sh` copies the live host-contracts network, RPC, and deployer
+onto `values-host-define-new-epoch-e2e.yaml` and broadcasts
+`defineNewEpochForCurrentKmsContext`. It then watches that preview's host
+chain until there is one `EpochActivationConfirmation` per `NUM_KMS_NODES`,
+one `ActivateEpoch`, and `getCurrentKmsContextAndEpoch()` shows the same
+context id with a new epoch id. It does not read KMS core logs. After the
+epoch moves, it runs `./run-tests.sh --no-hardhat-compile -g "test user input uint64"`
+in the idle test-suite pod (user decrypt and public decrypt). Set `DECRYPT_CMD`
+to replace that command.
+
+```bash
+CONTRACTS_CHART="$PWD/contracts" NAMESPACE=fhevm-ci-<actor>-<id> \
+  bash ci/preview-env/scripts/deploy/rotate-epoch.sh
+```
+
+The Job stays installed once it is Complete. The next run uninstalls it
+before broadcasting again.
 
 ## TODO / remaining work
 

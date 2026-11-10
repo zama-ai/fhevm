@@ -1,0 +1,28 @@
+{{- if .Values.chainRecoveryAlerts.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ printf "%s-chain-recovery" .Release.Name | trunc 63 | trimSuffix "-" }}
+  labels:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    {{- with .Values.chainRecoveryAlerts.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: {{ .Release.Name }}.chain-recovery
+      rules:
+        - alert: CoprocessorChainHistoryContained
+          expr: >-
+            max by (namespace) (host_listener_recovery_paused{
+              namespace={{ .Release.Namespace | quote }},
+              service=~"{{ .Release.Name }}-host-listener-poller(-.*)?"
+            }) == 1
+          labels:
+            severity: critical
+            coprocessor_release: {{ .Release.Name | quote }}
+          annotations:
+            summary: "Coprocessor chain history is contained"
+            description: "A listener observed a durable history halt. Guarded work across its database is stopped. Inspect public.chain_recovery_halts; perform audited recovery and restart the listeners. Do not clear the halt merely to restore readiness."
+            runbook_url: "https://github.com/zama-ai/fhevm/blob/release/0.15.x/coprocessor/docs/chain-history-recovery.md"
+{{- end }}

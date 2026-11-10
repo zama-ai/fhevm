@@ -9,8 +9,9 @@ mod flows;
 pub(crate) mod mock;
 #[cfg(test)]
 mod scenarios;
+mod signer;
 
-pub use aggregator::{AggregationError, Aggregator};
+pub use aggregator::{AggregationError, Aggregator, Tally, note_node_panic};
 pub use call::{CallError, CallResult, Caller};
 pub use client::{
     AttemptError, ConnectorClient, Endpoint, HttpClient, HttpReply, MAX_RESPONSE_BYTES,
@@ -21,3 +22,4 @@ pub use config::{
 pub use flows::public_decrypt::{PublicDecrypt, PublicDecryptOutput};
 pub use flows::user_decrypt::{UserDecrypt, UserDecryptOutput, UserDecryptShare};
 pub use flows::{Flow, RejectReason};
+pub use signer::RequestSigner;

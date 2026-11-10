@@ -1,16 +1,18 @@
-// Centralized configuration for the test infra + browser tests.
-//
-// CONSTANTS ONLY — no functions, no `node:` imports — so the Node infra
-// (topology, anvils, gateway), the browser app bundle, and the specs can all
-// import this same file. Anything that needs to read env or the filesystem lives
-// in topology.ts, not here.
-//
-// ─── VERSION ROLL ───────────────────────────────────────────────────────────
-// The protocol rolls forward roughly every release: vX retires, vX+1 arrives.
-// When that happens, edit ONLY this file — rename LEGACY_SLOT / CURRENT_SLOT and
-// bump the matching SLOT_INFO entry (profile, dir, port, chain id, tfhe version,
-// key file). Every downstream consumer (gateway URLs, anvil specs, app pages,
-// specs) derives from these, so nothing else needs touching.
+/**
+ * Centralized configuration for the test infra + browser tests.
+ *
+ * CONSTANTS ONLY — no functions, no `node:` imports — so the Node infra
+ * (topology, anvils, gateway), the browser app bundle, and the specs can all
+ * import this same file. Anything that needs to read env or the filesystem lives
+ * in topology.ts, not here.
+ *
+ * ─── VERSION ROLL ───────────────────────────────────────────────────────────
+ * The protocol rolls forward roughly every release: vX retires, vX+1 arrives.
+ * When that happens, edit ONLY this file — rename LEGACY_SLOT / CURRENT_SLOT and
+ * bump the matching SLOT_INFO entry (profile, dir, port, chain id, tfhe version,
+ * key file). Every downstream consumer (gateway URLs, anvil specs, app pages,
+ * specs) derives from these, so nothing else needs touching.
+ */
 
 // ─── Gateway ────────────────────────────────────────────────────────────────
 // `gw` has no leading underscore on purpose: Next.js treats `_`-prefixed app

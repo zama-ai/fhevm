@@ -11,7 +11,12 @@ import {
   createLogger,
 } from '../setupCommon.js';
 import { asEncryptedValue } from '@fhevm/sdk/types';
-import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import {
+  getEthersTestConfig,
+  latestBlockTimestamp,
+  type CreateEthersDecryptClientFn,
+  type FheTestEthersConfig,
+} from '../setup-ethers.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -77,7 +82,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair: keyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
       });
@@ -148,7 +153,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair: keyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
       });
@@ -207,7 +212,7 @@ export function defineClientDecryptDecryptTests(parameters: {
           transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
-          startTimestamp: Math.floor(Date.now() / 1000) - 5,
+          startTimestamp: (await latestBlockTimestamp(config)) - 5,
           signerAddress: config.wallet.address,
           signer: config.signer,
         });
@@ -277,7 +282,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
       });
@@ -350,7 +355,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
       });
@@ -416,7 +421,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.wallet.address,
         signer: config.signer,
       });

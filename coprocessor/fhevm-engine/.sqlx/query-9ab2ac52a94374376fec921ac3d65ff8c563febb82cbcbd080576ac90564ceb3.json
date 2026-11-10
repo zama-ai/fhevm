@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE host_consumer_catchups SET request_pending = FALSE\n         WHERE id = $1 AND owner_id = $2 AND lease_until > clock_timestamp()\n           AND status = 'ONGOING'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9ab2ac52a94374376fec921ac3d65ff8c563febb82cbcbd080576ac90564ceb3"
+}

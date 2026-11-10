@@ -51,20 +51,21 @@ npx hardhat task:buildProposeCoprocessorUpgradeCalldata \
   --software-version v0.15.0
 ```
 
-| Flag                 | Value                                                                                        |
-| -------------------- | -------------------------------------------------------------------------------------------- |
-| `--environment`      | `devnet`, `testnet`, or `mainnet`.                                                           |
-| `--start-time`       | ISO 8601 UTC, e.g. `2026-07-01T12:00:00Z`.                                                   |
-| `--duration`         | Window length, e.g. `30m`.                                                                   |
-| `--buffer`           | DAO lead time, e.g. `2h`.                                                                    |
-| `--proposal-id`      | Any positive integer (operator-chosen).                                                      |
-| `--software-version` | The coprocessor release tag, e.g. `v0.15.0`. Must match the green binaries' `STACK_VERSION`. |
+| Flag                 | Value                                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--environment`      | `devnet`, `testnet`, or `mainnet`.                                                                                                                                                               |
+| `--start-time`       | ISO 8601 with an explicit time zone, `Z` or an offset: `2026-07-01T12:00:00Z` or `2026-07-01T14:00:00+02:00` (the same instant).                                                                 |
+| `--duration`         | Window length, e.g. `30m`. At least the floor of every chain in the environment (`30m` where Ethereum or Sepolia is included): the dry run cannot start before the chain finalizes `startBlock`. |
+| `--buffer`           | DAO lead time, e.g. `2h`.                                                                                                                                                                        |
+| `--proposal-id`      | Any positive integer never used before on this `ProtocolConfig` (completed and aborted ids stay reserved on the coprocessors).                                                                   |
+| `--software-version` | The coprocessor release tag, `vMAJOR.MINOR.PATCH`, e.g. `v0.15.0`. Must match the green binaries' `STACK_VERSION`.                                                                               |
 
 ## Step 2 — Copy the proposal action
 
 Scroll to the end of the output. The `## Aragon proposal action` block prints the `target` (the
-`ProtocolConfig` address) and the `calldata` hex. Copy both. Pass `--use-internal-proxy-address true` to
-resolve the target from the `/addresses` directory if `PROTOCOL_CONFIG_CONTRACT_ADDRESS` is unset.
+`ProtocolConfig` address) and the `calldata` hex. Copy both. The target comes from
+`PROTOCOL_CONFIG_CONTRACT_ADDRESS`, or from the `/addresses` directory with `--use-internal-proxy-address true`.
+RPC endpoints are printed as scheme and host only, never with their path or key.
 
 ## Step 3 — Submit to the DAO
 
@@ -82,12 +83,22 @@ Once the DAO vote passes and the proposal executes, the on-chain `proposeCoproce
 
 ## Failure modes
 
-| Error in the logs                                               | Resolution                                                                      |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `DAO buffer violated for: chain X — short by 22m`               | Re-run with `--start-time` pushed forward by at least that amount.              |
-| `env var <CHAIN>_RPC_URL is not set`                            | Export the RPC env var for that chain (names in `tasks/utils/environments.ts`). |
-| `--environment must be one of: devnet, testnet, mainnet, local` | Pass a valid `--environment`; `local` is only for the test-suite stack.         |
-| `duration too short for chain block time`                       | Use at least `1m` for `--duration`.                                             |
+| Error in the logs                                                | Resolution                                                                             |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `DAO buffer violated for: chain X — short by 22m`                | Re-run with `--start-time` pushed forward by at least that amount.                     |
+| `env var <CHAIN>_RPC_URL is not set`                             | Export the RPC env var for that chain (names in `tasks/utils/environments.ts`).        |
+| `must include the canonical chain X`                             | The set omits the ProtocolConfig chain; add it, or mark one entry `"canonical": true`. |
+| `chains[N].<field> must be ...`                                  | Fix that entry in the chains file; the message names the index and the field.          |
+| `names env var X, which is unset or empty`                       | Export the var named by `--chains-file env:X`, or pass a path instead.                 |
+| `--environment must be one of: devnet, testnet, mainnet, local`  | Pass a valid `--environment`; `local` is only for the test-suite stack.                |
+| `is below the minimum window of chain X`                         | Raise `--duration` to that chain's floor (`30m` for Ethereum-class chains).            |
+| `chain tip is N s old`                                           | The RPC for that chain is far behind the chain; check or replace the endpoint.         |
+| `has no time zone`                                               | Append `Z` or an offset to `--start-time`.                                             |
+| `No ProtocolConfig address configured`                           | Set `PROTOCOL_CONFIG_CONTRACT_ADDRESS` or pass `--use-internal-proxy-address true`.    |
+| `is not a release tag`                                           | Pass the release tag, e.g. `v0.15.0`.                                                  |
+| `reports chain id X, expected Y`                                 | The RPC env var for that chain points at another network.                              |
+| `--network is chain X but ... lives on chain Y`                  | Pass the `--network` of the environment's `ProtocolConfig` chain.                      |
+| `does not expose getVersion()` or `expected "ProtocolConfig v…"` | `PROTOCOL_CONFIG_CONTRACT_ADDRESS` is not the `ProtocolConfig` proxy on that network.  |
 
 The task exits non-zero (and prints the calldata for inspection) if any host chain's `startBlock` is
 closer to its tip than `--buffer`. `npx hardhat help task:buildProposeCoprocessorUpgradeCalldata` prints the full
@@ -100,7 +111,10 @@ broadcast directly instead of going through the DAO. `task:proposeCoprocessorUpg
 build step and then sends the byte-identical calldata with `DEPLOYER_PRIVATE_KEY` — the sibling of the
 KMS-context `task:defineNewKmsContextAndEpoch` broadcast. It sends to the host `ProtocolConfig` on the
 network passed via `--network`; resolve the address from `PROTOCOL_CONFIG_CONTRACT_ADDRESS` or pass
-`--use-internal-proxy-address true` to read it from the `addresses/` directory.
+`--use-internal-proxy-address true` to read it from the `addresses/` directory. Before sending, the task
+checks two things and stops if either fails: `--network` must be the host chain that holds the canonical
+`ProtocolConfig` of `--environment` (Sepolia for `devnet` and `testnet`, Ethereum for `mainnet`), and the
+target address must be a `ProtocolConfig` proxy, verified by reading its version.
 
 ```sh
 cd host-contracts
@@ -113,4 +127,38 @@ DEPLOYER_PRIVATE_KEY=0x... npx hardhat --network sepolia task:proposeCoprocessor
 
 ## Chain set reference
 
-Chain IDs, block times, and RPC env-var names per environment live in [`tasks/utils/environments.ts`](tasks/utils/environments.ts). New chains are added by appending to the relevant environment's `chains` array. The task logic lives in [`tasks/prepareCoprocessorUpgrade.ts`](tasks/prepareCoprocessorUpgrade.ts) and [`tasks/utils/coprocessorUpgradeProposal.ts`](tasks/utils/coprocessorUpgradeProposal.ts).
+The proposal must cover exactly the chains the coprocessors serve. `ingest.rs` compares the proposed set with each coprocessor's `host_chains` table in both directions, and a mismatch makes every coprocessor drop the proposal without starting a dry run. **Confirm the set against the deployment before you submit.** The report prints the set and its source above the calldata.
+
+Each environment's defaults — chain IDs, block times, finality floors, and RPC env-var names — live in [`tasks/utils/environments.ts`](tasks/utils/environments.ts). Pass no flag to use them.
+
+> [!WARNING]
+> **`--chains-file` is experimental. Do not use it for a production upgrade.**
+>
+> Use the environment defaults above for devnet, testnet and mainnet. A caller-supplied set is reviewed by nobody: the environment table goes through a pull request, a file on an operator's disk does not. Reach for `--chains-file` only to try a set that no environment describes, on a stack you can afford to break.
+>
+> When it is in use, the report prints `EXPERIMENTAL` beside the chain set. If you see that line above calldata destined for a DAO vote, stop.
+
+To propose for a different set, pass `--chains-file`:
+
+```bash
+--chains-file ./chains.json      # a path, inside this repo or not
+--chains-file env:HOST_CHAINS    # the same JSON from an env var, for a pod that cannot mount a file
+```
+
+[`chains.example.json`](chains.example.json) is a working template: the three testnet chains, plus Hoodi to show an entry no environment defines. Copy it, then delete every chain the coprocessors do not index. A copy sent unedited proposes Hoodi, and testnet drops that proposal. Each entry takes:
+
+| Field                      | Required | Meaning                                                                           |
+| -------------------------- | -------- | --------------------------------------------------------------------------------- |
+| `chainId`                  | yes      | Host chain ID.                                                                    |
+| `label`                    | yes      | Short name for the report, shown in place of the RPC URL.                         |
+| `minWindowSeconds`         | yes      | Shortest `--duration` the chain's finality allows (`1800` Ethereum-class).        |
+| `fallbackBlockTimeSeconds` | yes      | Block time, used only if RPC sampling fails.                                      |
+| `rpcUrlEnv`                | yes      | Env var holding the RPC URL. The file itself carries no credentials.              |
+| `defaultRpcUrl`            | no       | Public fallback endpoint. Refused on mainnet.                                     |
+| `canonical`                | no       | Marks the chain holding the ProtocolConfig, when it is not the environment's own. |
+
+A chain the environment never listed needs only an entry here plus its RPC env var. The Hoodi entry in the template is one.
+
+An env var alone never changes the set: without `--chains-file`, the environment defaults apply.
+
+The task logic lives in [`tasks/prepareCoprocessorUpgrade.ts`](tasks/prepareCoprocessorUpgrade.ts), [`tasks/utils/coprocessorUpgradeProposal.ts`](tasks/utils/coprocessorUpgradeProposal.ts) and [`tasks/utils/chainsFile.ts`](tasks/utils/chainsFile.ts).

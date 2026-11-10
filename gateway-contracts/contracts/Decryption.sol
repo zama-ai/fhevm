@@ -987,9 +987,11 @@ contract Decryption is
         }
 
         // Versions 1/2 -> extract contextId from bytes 1..33
+        // v1: [version(1)] [contextId(32)], v2: [version(1)] [contextId(32)] [epochId(32)].
         if (version == 1 || version == 2) {
-            if (extraData.length < 33) {
-                revert InvalidExtraDataLength(extraData.length, 33);
+            uint256 expectedLength = version == 1 ? 33 : 65;
+            if (extraData.length != expectedLength) {
+                revert InvalidExtraDataLength(extraData.length, expectedLength);
             }
 
             contextId = uint256(bytes32(extraData[1:33]));

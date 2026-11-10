@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM host_consumer_catchups\n         WHERE chain_id = $1 AND consumer_id = $2\n           AND requested_from = $3 AND requested_to = $4 AND finalized = $5\n           AND status = 'ONGOING'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8",
+        "Bool"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "cc8bf00aa47b5861edfbe314c70547f68e8c7c367b0329f2b53ff8fe2f3c451f"
+}

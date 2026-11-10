@@ -1,0 +1,29 @@
+{{- if .Values.bnbContractConfigMap.enabled -}}
+{{- $cm := .Values.bnbContractConfigMap -}}
+{{- $allowed := list "" "testnet" -}}
+{{- $network := default "" $cm.network -}}
+{{- if not (has $network $allowed) -}}
+{{- fail (printf "bnbContractConfigMap.network must be one of: testnet (or empty); got %q" $network) -}}
+{{- end -}}
+{{- $preset := dict -}}
+{{- if $network -}}
+{{- $path := printf "configs/bnb-%s.yaml" $network -}}
+{{- $contents := .Files.Get $path -}}
+{{- if not $contents -}}
+{{- fail (printf "BNB contract preset %s is missing" $path) -}}
+{{- end -}}
+{{- $preset = $contents | fromYaml -}}
+{{- end -}}
+{{- $merged := mergeOverwrite (deepCopy $preset) ($cm.addresses | default dict) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "coprocessor.bnbContractConfigMapName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "coprocessor.bnbContractConfigMapName" . }}
+data:
+  {{- range $k, $v := $merged }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}
+{{- end -}}

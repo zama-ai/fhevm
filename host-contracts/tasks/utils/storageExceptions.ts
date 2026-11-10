@@ -30,7 +30,7 @@ export type StorageException = {
 export const STORAGE_EXCEPTIONS: StorageException[] = [
   {
     // A persisted permission keeps its slot and also holds the handle's carried depth: `allowed` is the former bool.
-    addedIn: 'ACL v0.7.0',
+    addedIn: 'ACL v0.6.0',
     namespace: 'erc7201:fhevm.storage.ACL',
     field: 'persistedAllowedPairs',
     types: [

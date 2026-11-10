@@ -72,6 +72,76 @@ describe('fetchWithRetry', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['', '?token=private%2Fvalue', '#private-fragment', '?token=private%2Fvalue#private-fragment'])(
+    'omits query and fragment from retry warnings while preserving the fetch URL: %s',
+    async (suffix) => {
+      const endpoint = 'https://example.com/data';
+      const url = endpoint + suffix;
+      const response = new Response('ok');
+      const init = { method: 'POST', body: '{}' };
+      const logger = { warn: vi.fn() };
+      global.fetch = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce(response);
+
+      const pending = fetchWithRetry({ url, init, retries: 1, retryDelayMs: 100, logger });
+      await vi.advanceTimersByTimeAsync(100);
+
+      expect(await pending).toBe(response);
+      expect(global.fetch).toHaveBeenCalledTimes(2);
+      expect(global.fetch).toHaveBeenNthCalledWith(1, url, init);
+      expect(global.fetch).toHaveBeenNthCalledWith(2, url, init);
+      expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
+        `[fetchWithRetry] Fetch to ${endpoint} failed (attempt 1/2): TypeError: fetch failed. Retrying.`,
+      );
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+
+  it.each([
+    null,
+    undefined,
+    42,
+    Symbol('url'),
+    {
+      toString: () => {
+        throw new Error('do not coerce');
+      },
+    },
+  ])('keeps retrying with a safe log placeholder for an unexpected URL value: %#', async (url) => {
+    const response = new Response('ok');
+    const logger = { warn: vi.fn() };
+    global.fetch = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce(response);
+    const pending = fetchWithRetry({ url: url as unknown as string, retries: 1, retryDelayMs: 100, logger });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await pending).toBe(response);
+    expect(global.fetch).toHaveBeenNthCalledWith(2, url, undefined);
+    expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
+      '[fetchWithRetry] Fetch to [unavailable URL] failed (attempt 1/2): TypeError: fetch failed. Retrying.',
+    );
+  });
+
+  it('keeps retrying when URL formatting throws', async () => {
+    const url = 'https://example.com/data?token=private';
+    const response = new Response('ok');
+    const logger = { warn: vi.fn() };
+    global.fetch = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce(response);
+    const originalSplit = String.prototype.split;
+    const split = vi.spyOn(String.prototype, 'split').mockImplementation(function (this: string, ...args) {
+      if (this === url) throw new Error('formatting failed');
+      return originalSplit.apply(this, args);
+    });
+    try {
+      const pending = fetchWithRetry({ url, retries: 1, retryDelayMs: 100, logger });
+      await vi.advanceTimersByTimeAsync(100);
+      expect(await pending).toBe(response);
+      expect(global.fetch).toHaveBeenNthCalledWith(2, url, undefined);
+      expect(logger.warn).toHaveBeenCalledExactlyOnceWith(
+        '[fetchWithRetry] Fetch to [unavailable URL] failed (attempt 1/2): TypeError: fetch failed. Retrying.',
+      );
+    } finally {
+      split.mockRestore();
+    }
+  });
+
   it('returns response on HTTP error (does not retry 4xx/5xx)', async () => {
     const mockResponse = { ok: false, status: 500 };
     global.fetch = vi.fn().mockResolvedValue(mockResponse);
@@ -263,6 +333,115 @@ describe('fetchWithRetry', () => {
     await fetchWithRetry({ url: 'https://example.com', init });
 
     expect(global.fetch).toHaveBeenCalledWith('https://example.com', init);
+  });
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Abort with a reason not named 'AbortError'
+  //////////////////////////////////////////////////////////////////////////////
+
+  // Bug: aborts are detected by the error's `name`, but fetch rejects with
+  // signal.reason itself, so the error's shape depends on what the caller passed
+  // to abort(). Any other reason is mistaken for a network failure.
+
+  // A fetch that never answers on its own: it rejects with signal.reason once
+  // the signal aborts, as the real fetch does.
+  function pendingUntilAbortFetch(): typeof fetch {
+    return vi.fn(
+      (_url: unknown, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => {
+              reject(init.signal?.reason);
+            },
+            { once: true },
+          );
+        }),
+    ) as unknown as typeof fetch;
+  }
+
+  function warnLogger() {
+    return { debug: undefined, warn: vi.fn<(message: string) => void>(), error: undefined };
+  }
+
+  it('propagates a null abort reason instead of crashing on it', async () => {
+    global.fetch = pendingUntilAbortFetch();
+    const controller = new AbortController();
+
+    const promise = fetchWithRetry({ url: 'https://example.com', init: { signal: controller.signal } }).catch(
+      (e: unknown) => e,
+    );
+    controller.abort(null);
+
+    expect(await promise).toBeNull();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not treat a string abort reason as a retryable network failure', async () => {
+    global.fetch = pendingUntilAbortFetch();
+    const logger = warnLogger();
+    const controller = new AbortController();
+
+    const promise = fetchWithRetry({ url: 'https://example.com', init: { signal: controller.signal }, logger }).catch(
+      (e: unknown) => e,
+    );
+    controller.abort('user left');
+
+    expect(await promise).toBe('user left');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a TimeoutError abort reason as a retryable network failure', async () => {
+    global.fetch = pendingUntilAbortFetch();
+    const logger = warnLogger();
+    const controller = new AbortController();
+    const timeoutReason = new DOMException('Timed out', 'TimeoutError');
+
+    const promise = fetchWithRetry({ url: 'https://example.com', init: { signal: controller.signal }, logger }).catch(
+      (e: unknown) => e,
+    );
+    controller.abort(timeoutReason);
+
+    expect(await promise).toBe(timeoutReason);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  // Aborted during the retry delay: rejects with the raw reason, exactly as an abort during fetch does.
+  it('rejects with the raw reason when aborted during the retry delay', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new TypeError('fetch failed'));
+    const controller = new AbortController();
+
+    const promise = fetchWithRetry({
+      url: 'https://example.com',
+      init: { signal: controller.signal },
+      retries: 1,
+      retryDelayMs: 1000,
+    }).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(500);
+    controller.abort('user left');
+
+    expect(await promise).toBe('user left');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  // A throwing retry warn hook is swallowed: the retry still happens and its response is returned.
+  it('keeps retrying when the logger warn hook throws', async () => {
+    const mockResponse = { ok: true, status: 200 };
+    global.fetch = vi.fn().mockRejectedValueOnce(new TypeError('fetch failed')).mockResolvedValueOnce(mockResponse);
+    const logger = warnLogger();
+    logger.warn.mockImplementation(() => {
+      throw new Error('warn hook failed');
+    });
+
+    const promise = fetchWithRetry({ url: 'https://example.com', retries: 1, retryDelayMs: 100, logger });
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(await promise).toBe(mockResponse);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 });
 

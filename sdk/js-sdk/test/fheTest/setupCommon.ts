@@ -1,6 +1,5 @@
 import type { FhevmChain } from '@fhevm/sdk/chains';
 import type { EncryptedValue, TypedValue } from '@fhevm/sdk/types';
-import type { ProtocolVersion } from '../../src/core/types/coreFhevmClient.js';
 import type { Logger } from '../../src/core/types/logger.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
@@ -15,6 +14,7 @@ import { ingen_trex_cleartext } from '../chains/ingen_trex_cleartext.js';
 import { hoodi_cleartext } from '../chains/hoodi_cleartext.js';
 import { mainnet, sepolia, sepolia as testnet } from '@fhevm/sdk/chains';
 import { localcleartext_legacy } from '../chains/localcleartext_legacy.js';
+import { localcleartext_v1_0 } from '../chains/localcleartext_v1_0.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,6 +29,7 @@ export const FHE_TEST_CHAIN_NAMES = [
   'localcleartext_legacy',
   'localcleartext_v12',
   'localcleartext_v13',
+  'localcleartext_v1_0',
   'localstack',
   'localstack_v14',
   'polygon_devnet',
@@ -48,7 +49,6 @@ export type FheTestBaseEnv = {
   readonly zamaApiKey: string;
   readonly fheTestAddress: string;
   readonly fheTestVersion: FheTestVersion;
-  readonly protocolVersion: ProtocolVersion;
   readonly fheEncryptionKeyTfheVersion: string;
 };
 
@@ -82,30 +82,24 @@ export function isRealDeployedChain(chainName: FheTestChainName): boolean {
 }
 
 /**
- * Protocol era (the minor version of the protocol: 12, 13, 14) a test chain
+ * Protocol era (the minor version of the protocol: 12, 13, 14, 16) a test chain
  * runs on, derived from its name. Used to gate migration tests that only make
  * sense on chains at or above a given protocol version.
  *
  * `localstack` (latest) tracks the newest protocol (v0.14 era today).
  */
-export function protocolEraOf(chainName: FheTestChainName): 12 | 13 | 14 {
+export function protocolEraOf(chainName: FheTestChainName): 12 | 13 | 14 | 16 {
   if (chainName === 'localcleartext_v12') {
     return 12;
+  }
+  // v1.0 counts as the newest era the tests know, so every "at or above 16" gate stays on.
+  if (chainName === 'localcleartext_v1_0') {
+    return 16;
   }
   if (chainName === 'localstack' || chainName === 'localstack_v14') {
     return 14;
   }
   return 13;
-}
-
-// ---------------------------------------------------------------------------
-// Protocol version per chain
-// ---------------------------------------------------------------------------
-
-// The SDK targets a single protocol line per release and reports it for every
-// chain, so the expected protocol version no longer depends on the chain.
-export function getExpectedProtocolVersion(_chainName: FheTestChainName): ProtocolVersion {
-  return '0.15.0';
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +120,7 @@ const FHE_ENCRYPTION_KEY_TFHE_VERSION_BY_CHAIN: Readonly<Partial<Record<FheTestC
   localcleartext_legacy: 'cleartext',
   localcleartext_v12: 'cleartext',
   localcleartext_v13: 'cleartext',
+  localcleartext_v1_0: 'cleartext',
   ingen_trex_cleartext: 'cleartext',
 };
 
@@ -528,6 +523,7 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     localcleartext,
     localcleartext_v12: localcleartext_legacy,
     localcleartext_v13: localcleartext,
+    localcleartext_v1_0,
     polygon_devnet,
     ingen_trex_cleartext,
     hoodi_cleartext,
@@ -554,7 +550,6 @@ function _prepareChain(chainName: FheTestChainName): FheTestBaseEnv {
     zamaApiKey,
     fheTestAddress,
     fheTestVersion,
-    protocolVersion: getExpectedProtocolVersion(chainName),
     fheEncryptionKeyTfheVersion: getFheEncryptionKeyTfheVersion(chainName),
   };
 

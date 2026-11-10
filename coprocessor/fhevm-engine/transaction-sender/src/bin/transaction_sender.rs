@@ -63,7 +63,10 @@ struct Conf {
     #[arg(short, long)]
     database_url: Option<DatabaseURL>,
 
-    #[arg(long, default_value = "10")]
+    /// Pool capacity (minimum 5). Four connections are reserved for notification
+    /// listeners and short queries; the rest bound concurrent Gateway submissions
+    /// across both proof responses and ciphertext commits.
+    #[arg(long, default_value = "10", value_parser = clap::value_parser!(u32).range(5..))]
     database_pool_size: u32,
 
     #[arg(long, default_value = "1")]
@@ -227,7 +230,7 @@ async fn run() -> anyhow::Result<()> {
         conf.log_level,
         &conf.service_name,
         "otlp-layer",
-        transaction_sender::diagnostics::gateway_tracing_filter,
+        telemetry::transport_dependency_filter,
     );
 
     let cancel_token = CancellationToken::new();

@@ -6,6 +6,7 @@ import { ERC1271ApproveHashWallet, UserDecrypt } from '../../types';
 import {
   aclAddress,
   createInstances,
+  protocolConfigAddress,
   relayerApiKey,
   relayerUrl,
   verifyingContractAddressDecryption,
@@ -13,6 +14,7 @@ import {
 import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
 import {
   computeUnifiedDigest,
+  currentKmsExtraData,
   directHandle,
   expectStuckAtKms,
   pollJob,
@@ -151,6 +153,7 @@ describe('Decryption signature invalidation', function () {
       relayerUrl,
       decryptionContractAddress: verifyingContractAddressDecryption,
       apiKey: relayerApiKey || undefined,
+      extraData: await currentKmsExtraData(ethers.provider, protocolConfigAddress),
     };
     // Connected to eve: every direct invalidation tx in this suite is sent as
     // eve, and reads work through eve's provider.

@@ -1,0 +1,5 @@
+{
+  "$comment": "KMSGeneration digests of key.1.4.0-alpha.3.json: SHAKE256-256 of 'PDAT_KEY' + publicKeyBytes.bytes and of 'PDAT_CRS' + crsBytes.bytes (base64-decoded).",
+  "publicKeyDigest": "0x8b0517260833d1629f2c48b0ea7eb4803dcd58e4acbf1e6b3e1a099c2fbb26c3",
+  "crsDigest": "0x5d2c162525c4ad76c61b90d26be57caa6a2fc61f162bd88e2bf9f115eba41f67"
+}

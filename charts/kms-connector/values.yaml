@@ -234,10 +234,10 @@ kmsConnectorKmsWorker:
 
   resources:
     requests:
-      cpu: 100m
+      cpu: 500m
       memory: 4Gi
     limits:
-      cpu: 500m
+      cpu: "2"
       memory: 8Gi
 
   # Health check probes
@@ -438,14 +438,29 @@ kmsConnectorProxy:
 
   replicas: 1
 
+  # How long the proxy waits for requests in flight when it stops. Sets
+  # `KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD`, and the pod's `terminationGracePeriodSeconds` to this
+  # value plus 10s (the 5s Pingora takes to close what is left, plus 5s margin)
+  shutdownGracePeriodSeconds: 60
+
   # Addresses allowed to sign `FhevmSig` requests (the relayer signers)
   allowedSenders: []
   # This connector's tx-sender wallet address: the `audience` accepted requests are signed for
   txSenderAddress: ""
 
-  # `kubernetes.io/tls` secret (tls.crt, tls.key) served by the proxy, not created by this chart
   tls:
+    # Serve TLS from `secretName`. Set to `false` ONLY when the proxy sits behind a
+    # TLS-terminating layer (ingress, service mesh...): it then serves plain HTTP on `ports.http`
+    # instead of `ports.https`. Only a literal `false` disables TLS, a missing or null value keeps it on.
+    enabled: true
+    # `kubernetes.io/tls` secret (tls.crt, tls.key) served by the proxy. Created by cert-manager when
+    # `certManager.enabled`, otherwise it must exist before the proxy starts. Required when `enabled` is true.
     secretName: kms-connector-proxy-tls
+    # Self-signed certificate issued by cert-manager (must be installed in the cluster), only when
+    # `enabled`. Leave it disabled to serve a secret managed outside this chart: cert-manager would
+    # overwrite it
+    certManager:
+      enabled: false
 
   # Additional environment variables (KMS_CONNECTOR_* settings of the service)
   env:
@@ -456,7 +471,10 @@ kmsConnectorProxy:
 
   # Service ports
   ports:
+    # Proxy port when TLS is enabled (`tls.enabled`)
     https: 8443
+    # Proxy port when TLS is disabled
+    http: 8080
     monitoring: 9100
 
   # Prometheus ServiceMonitor for metrics collection

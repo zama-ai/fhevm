@@ -197,8 +197,8 @@ async fn healed(pool: &PgPool, id: i64) -> (bool, bool) {
 struct FakeObject {
     digest: B256,
     body: Option<Vec<u8>>,
-    /// Uploading epoch tag; `None` is an object from before the tag.
-    epoch: Option<String>,
+    /// Uploading epoch tag. An object from before the tag carries `legacy`.
+    epoch: String,
 }
 
 type FakeKey = (String, Vec<u8>);
@@ -226,7 +226,7 @@ impl FakeCt64 {
             FakeObject {
                 digest,
                 body: Some(body),
-                epoch: None,
+                epoch: LEGACY_CONSENSUS_EPOCH.to_owned(),
             },
         );
     }
@@ -239,7 +239,7 @@ impl FakeCt64 {
             .unwrap()
             .get_mut(&(bucket_url.to_owned(), bytes(handle)))
         {
-            object.epoch = Some(epoch.to_owned());
+            object.epoch = epoch.to_owned();
         }
     }
 
@@ -249,7 +249,7 @@ impl FakeCt64 {
             FakeObject {
                 digest,
                 body: None,
-                epoch: None,
+                epoch: LEGACY_CONSENSUS_EPOCH.to_owned(),
             },
         );
     }
@@ -290,7 +290,7 @@ impl Ct64Source for FakeCt64 {
             .get(&(bucket_url.to_owned(), handle.to_vec()))
             .and_then(|object| {
                 let body = object.body.clone()?;
-                Some(DownloadedCt64::new(body, object.epoch.as_deref()))
+                Some(DownloadedCt64::new(body, &object.epoch))
             })
             .ok_or_else(|| ExecutionError::S3ObjectNotFound(bucket_url.to_owned()))
     }
@@ -307,7 +307,7 @@ impl Ct64Source for FakeCt64 {
             .lock()
             .unwrap()
             .get(&(bucket_url.to_owned(), handle.to_vec()))
-            .map(|object| AttestedCt64::new(object.digest, object.epoch.as_deref()))
+            .map(|object| AttestedCt64::new(object.digest, &object.epoch))
             .ok_or_else(|| ExecutionError::S3ObjectNotFound(bucket_url.to_owned()))
     }
 }

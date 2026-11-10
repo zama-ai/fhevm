@@ -25,8 +25,10 @@ import {
   requiresModernHostAddressArtifacts,
   supportsCanonicalProtocolConfigSeeding,
   supportsConnectorHttp,
+  supportsCoprocessorProxy,
   supportsConsensusDetector,
   supportsHostListenerConsumer,
+  supportsPrfService,
   supportsUpgradeController,
   validateBundleCompatibility,
 } from "./compat/compat";
@@ -453,6 +455,34 @@ describe("compat", () => {
     expect(supportsUpgradeController(stateFor({ COPROCESSOR_UPGRADE_CONTROLLER_VERSION: "02f6cc0" }))).toBe(true);
   });
 
+  test("enables coprocessor-proxy only when its image is pinned or locally built", () => {
+    const stateFor = (env: Record<string, string>, overrides: LocalOverride[] = []) => ({
+      versions: { target: "latest-main" as const, lockName: "latest-main.json", env, sources: [] },
+      overrides,
+    });
+    // Pinned profiles and shas that predate the proxy image omit the (optional) key.
+    expect(supportsCoprocessorProxy(stateFor({}))).toBe(false);
+    expect(supportsCoprocessorProxy(stateFor({ COPROCESSOR_PROXY_VERSION: "02f6cc0" }))).toBe(true);
+    // A coprocessor override builds the proxy from the working tree when it covers the proxy.
+    expect(supportsCoprocessorProxy(stateFor({}, [{ group: "coprocessor" }]))).toBe(true);
+    expect(supportsCoprocessorProxy(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-proxy"] }]))).toBe(true);
+    expect(supportsCoprocessorProxy(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-tfhe-worker"] }]))).toBe(false);
+    expect(supportsCoprocessorProxy(stateFor({}, [{ group: "kms-connector" }]))).toBe(false);
+  });
+
+  test("enables the prf-service only when its image is pinned or locally built", () => {
+    const stateFor = (env: Record<string, string>, overrides: LocalOverride[] = []) => ({
+      versions: { target: "latest-main" as const, lockName: "latest-main.json", env, sources: [] },
+      overrides,
+    });
+    expect(supportsPrfService(stateFor({}))).toBe(false);
+    expect(supportsPrfService(stateFor({ COPROCESSOR_PRF_SERVICE_VERSION: "02f6cc0" }))).toBe(true);
+    expect(supportsPrfService(stateFor({}, [{ group: "coprocessor" }]))).toBe(true);
+    expect(supportsPrfService(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-prf-service"] }]))).toBe(true);
+    expect(supportsPrfService(stateFor({}, [{ group: "coprocessor", services: ["coprocessor-tfhe-worker"] }]))).toBe(false);
+    expect(supportsPrfService(stateFor({}, [{ group: "kms-connector" }]))).toBe(false);
+  });
+
   test("enables the kms-connector HTTP path only when both the endpoint and proxy images are pinned or locally built", () => {
     const stateFor = (env: Record<string, string>, overrides: LocalOverride[] = []) => ({
       versions: { target: "latest-main" as const, lockName: "latest-main.json", env, sources: [] },
@@ -568,8 +598,6 @@ describe("compat", () => {
     expect(requiresLegacyKmsBootstrapBudget("v0.13.10")).toBe(true);
     expect(requiresLegacyKmsBootstrapBudget("v0.13.20")).toBe(false);
     expect(requiresLegacyKmsBootstrapBudget("v0.13.20-0")).toBe(false);
-    // The checked-in node-by-node runbook must stay on the standard budget.
-    expect(requiresLegacyKmsBootstrapBudget("v0.13.21")).toBe(false);
     // Unparsed (sha-tagged) cores follow the modern budget, as elsewhere in compat.
     expect(requiresLegacyKmsBootstrapBudget("abc1234")).toBe(false);
   });

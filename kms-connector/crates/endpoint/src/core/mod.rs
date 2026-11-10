@@ -8,5 +8,6 @@ mod waiters;
 
 pub use config::Config;
 pub use endpoint::Endpoint;
+pub(crate) use http::decrypt::LOOKUP_OUTCOME_LABELS;
 pub use response_listener::ResponseListener;
 pub use waiters::{Waiter, WaiterRegistry};

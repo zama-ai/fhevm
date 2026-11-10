@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { resolveLogsFollow } from "./cli";
 import {
+  assertProfileRanTests,
   buildTestContainerArgs,
   dbRevertDeleteExpectations,
   dbRevertTargetBlock,
@@ -158,15 +159,6 @@ describe("cli", () => {
     expect(wrongGroup.stderr).toContain("supported only with `fhevm-cli upgrade kms-connector`");
   });
 
-  test("prints rollout help with run and receipt subcommands", async () => {
-    const result = await execCli(["rollout", "--help"]);
-    const output = normalizeCliOutput(result.stdout);
-    expect(result.code).toBe(0);
-    expect(output).toContain("fhevm-cli rollout");
-    expect(output).toContain("run");
-    expect(output).toContain("receipt");
-  });
-
   test("lists bundled test profiles", async () => {
     const result = await execCli(["test", "list"]);
     expect(result.code).toBe(0);
@@ -312,7 +304,7 @@ describe("cli", () => {
     expect(() => dbRevertTargetBlock(1)).toThrow("db-state-revert requires a positive seed boundary");
   });
 
-  test("db-state-revert only expects seeded tables to shrink", () => {
+  test("db-state-revert requires seeded results to shrink but permits retained metadata", () => {
     expect(
       dbRevertDeleteExpectations(
         {
@@ -336,7 +328,6 @@ describe("cli", () => {
       ),
     ).toEqual([
       "computationsDone",
-      "computationsTotal",
       "allowedHandles",
       "pbsComputations",
       "ciphertextDigest",
@@ -422,6 +413,18 @@ describe("cli", () => {
 
     // Malformed/short data is ignored rather than throwing.
     expect(recentCoprocessorSenders([{ data: "0x1234" }, log(a)], 24)).toEqual([`0x${a}`]);
+  });
+
+  test("the coprocessor-proxy profile fails when its suite skipped itself", () => {
+    const skipped = "  0 passing (12ms)\n  9 pending\n";
+    const ran = "  6 passing (3s)\n  3 pending\n";
+    expect(() => assertProfileRanTests("coprocessor-proxy", skipped, "test coprocessor-proxy")).toThrow(
+      "no coprocessor-proxy test passed",
+    );
+    expect(() => assertProfileRanTests("coprocessor-proxy", ran, "test coprocessor-proxy")).not.toThrow();
+    // Other profiles keep reading pending tests as a matched grep.
+    expect(() => assertProfileRanTests("erc20", skipped, "test erc20")).not.toThrow();
+    expect(() => assertProfileRanTests("erc20", "  0 passing (1ms)\n", "test erc20")).toThrow("matched zero tests");
   });
 
   test("grep-backed named profiles accept targeted grep narrowing", () => {

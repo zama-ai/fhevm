@@ -15,6 +15,8 @@ export const STEP_NAMES = [
   "kms-connector",
   "bootstrap",
   "relayer",
+  "relayer-http",
+  "relayer-proxy",
   "test-suite",
 ] as const;
 
@@ -140,8 +142,6 @@ export type BlueGreenScenario = {
   };
   gcs: {
     source?: CoprocessorInstanceSource;
-    /** Generate Green services now, but do not start them until the rollout explicitly releases them. */
-    deferredStart?: boolean;
     env?: Record<string, string>;
     args?: Record<string, string[]>;
   };
@@ -157,6 +157,11 @@ export type BlueGreenScenario = {
  */
 export type BlueGreenBootstrap = {
   tag: string;
+  /**
+   * `deferred` boots the relayer at the release too and leaves the upgrade to the test, which runs
+   * the steps itself (`Stack.upgrade`) with checks in between.
+   */
+  upgrade?: "deferred";
 };
 
 export type ResolvedBlueGreenScenarioFleet = {
@@ -178,6 +183,7 @@ export type ResolvedBlueGreenScenario = {
     threshold: number;
   };
   bcs: ResolvedBlueGreenScenarioFleet;
+  /** `deferredStart`: Green is generated at boot but starts only after the bootstrap upgrade. */
   gcs: ResolvedBlueGreenScenarioFleet & { deferredStart: boolean };
   kms: ResolvedKmsTopology;
   bootstrap?: BlueGreenBootstrap;

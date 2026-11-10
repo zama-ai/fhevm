@@ -1,5 +1,8 @@
 use broker::BrokerError;
-use primitives::event::{CatchupPayloadValidationError, FilterCommandValidationError};
+use primitives::event::{
+    CancelCatchupPayloadValidationError, CatchupPayloadValidationError,
+    FilterCommandValidationError,
+};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -11,6 +14,8 @@ pub enum ConsumerError {
     InvalidFilterCommand(#[from] FilterCommandValidationError),
     #[error(transparent)]
     InvalidCatchupPayload(#[from] CatchupPayloadValidationError),
+    #[error(transparent)]
+    InvalidCancelCatchupPayload(#[from] CancelCatchupPayloadValidationError),
     #[error("FilterCommand consumer_id '{}' does not match ListenerConsumer consumer_id '{}'", .0, .1)]
     InconsistentConsumerId(String, String),
     #[error("Invalid parameter when configuring the consumer {}", .0)]

@@ -5,7 +5,7 @@ import type { ConfigurableTaskDefinition, HardhatRuntimeEnvironment } from 'hard
 import type { ProtocolConfig, ProtocolConfigReplica } from '../types';
 import type { KmsNodeParamsStruct, PcrValuesStruct } from '../types/contracts/ProtocolConfigReplica';
 import { broadcast, getProtocolConfigReplicaInterface, requireProtocolConfigAddress } from './kmsContext';
-import { type KmsThresholds, readCanonicalSnapshot } from './protocolConfigMirror';
+import { type KmsThresholds, assertCanonicalSnapshotBlockHash, readCanonicalSnapshot } from './protocolConfigMirror';
 
 // This file defines tasks that mirror the canonical (Ethereum) ProtocolConfig's active KMS context
 // and epoch onto a non-canonical replica (e.g. Polygon) after a rotation has gone active on
@@ -119,6 +119,8 @@ export async function readCanonicalContextSwitch(
     );
   }
 
+  await assertCanonicalSnapshotBlockHash(canonicalProvider, snapshot);
+
   return {
     contextId: snapshot.currentKmsContextId,
     epochId: snapshot.currentEpochId,
@@ -175,7 +177,7 @@ function addMirrorTaskParams(definition: ConfigurableTaskDefinition, readTarget:
     )
     .addOptionalParam(
       'blockNumber',
-      `Canonical block height to read ${readTarget} from. Defaults to the latest finalized block.`,
+      `Canonical block height to read ${readTarget} from; must already be finalized. Defaults to the latest finalized block.`,
       undefined,
       types.int,
     )
@@ -198,7 +200,7 @@ addMirrorTaskParams(
   hre,
 ): Promise<void> {
   const iface = await getProtocolConfigReplicaInterface(hre);
-  const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
+  const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl, undefined, { cacheTimeout: -1 });
   const args = await readCanonicalContextSwitch(hre, {
     canonicalProvider,
     canonicalProtocolConfigAddress,
@@ -227,7 +229,7 @@ addMirrorTaskParams(
   hre,
 ): Promise<void> {
   const iface = await getProtocolConfigReplicaInterface(hre);
-  const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
+  const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl, undefined, { cacheTimeout: -1 });
   const args = await readCanonicalContextSwitch(hre, {
     canonicalProvider,
     canonicalProtocolConfigAddress,
@@ -286,7 +288,7 @@ addMirrorTaskParams(
   hre,
 ): Promise<void> {
   const iface = await getProtocolConfigReplicaInterface(hre);
-  const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
+  const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl, undefined, { cacheTimeout: -1 });
   const snapshot = await readCanonicalSnapshot(hre, {
     canonicalProvider,
     canonicalProtocolConfigAddress,
@@ -314,7 +316,7 @@ addMirrorTaskParams(
   hre,
 ): Promise<void> {
   const iface = await getProtocolConfigReplicaInterface(hre);
-  const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl);
+  const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl, undefined, { cacheTimeout: -1 });
   const snapshot = await readCanonicalSnapshot(hre, {
     canonicalProvider,
     canonicalProtocolConfigAddress,

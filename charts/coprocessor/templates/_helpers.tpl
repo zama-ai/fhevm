@@ -38,6 +38,10 @@ Usage: include "coprocessor.versionedName" (dict "root" $ "name" "eth-sc-address
 {{- include "coprocessor.versionedName" (dict "root" . "name" .Values.polygonContractConfigMap.name) -}}
 {{- end -}}
 
+{{- define "coprocessor.bnbContractConfigMapName" -}}
+{{- include "coprocessor.versionedName" (dict "root" . "name" .Values.bnbContractConfigMap.name) -}}
+{{- end -}}
+
 {{/*
 Renders a valueFrom block (or env list) through tpl so values can reference
 chart helpers, e.g. name: '{{ include "coprocessor.hostContractConfigMapName" . }}'.
@@ -55,6 +59,11 @@ Usage: include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom)
 {{- define "consensusDetectorName" -}}
 {{- $default := printf "%s-%s" .Release.Name "consensus-detector" }}
 {{- default $default .Values.consensusDetector.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "prfServiceName" -}}
+{{- $default := printf "%s-%s" .Release.Name "prf-service" }}
+{{- default $default .Values.prfService.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "tfheWorkerName" -}}
@@ -119,6 +128,11 @@ Usage: include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom)
 {{- define "zkProofWorkerName" -}}
 {{- $zkProofWorkerNameDefault := printf "%s-%s" .Release.Name "zkproof-worker" }}
 {{- default $zkProofWorkerNameDefault .Values.zkProofWorker.nameOverride | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "coprocessorProxyName" -}}
+{{- $coprocessorProxyNameDefault := printf "%s-%s" .Release.Name "coprocessor-proxy" }}
+{{- default $coprocessorProxyNameDefault .Values.coprocessorProxy.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "snsWorkerName" -}}

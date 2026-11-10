@@ -1,3 +1,10 @@
+use super::event_operands::{
+    binary_rhs_is_scalar, fhe_mul_div_factor2_is_scalar,
+};
+pub use super::event_operands::{
+    operand_boundary_mask_from_minted, tfhe_encrypted_operand_positions,
+    tfhe_inputs_handle,
+};
 use alloy_primitives::Address;
 use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
@@ -38,6 +45,10 @@ use tracing::info;
 use tracing::warn;
 
 use crate::cmd::block_history::BlockHash;
+
+pub(crate) const REPLAY_METADATA_CONFLICT: &str =
+    "committed computation execution metadata differs on replay";
+
 use crate::cmd::block_history::BlockSummary;
 use crate::contracts::AclContract::AclContractEvents;
 use crate::contracts::BridgeContract::BridgeContractEvents;
@@ -296,6 +307,8 @@ pub struct Database {
     pub consumed_boundaries: ConsumedBoundaryGuard,
     pub sealed_chains: SealedChainGuard,
     pub tick: HeartBeat,
+    pub(crate) verified_history:
+        Arc<tokio::sync::Mutex<super::history_verification::VerifiedHistory>>,
     stack_mode: Arc<StackMode>,
 }
 
@@ -317,6 +330,10 @@ pub struct LogTfhe {
     /// `None` is only valid before ordered block ingestion derives it (or for
     /// non-computation events such as `VerifyInput`).
     pub operand_boundary_mask: Option<OperandBoundaryMask>,
+    /// The output matches the old executor preimage, which did not commit
+    /// operand origin. Persist NULL so fresh replay uses the same legacy
+    /// inference as retained pre-mask rows, including repeated output handles.
+    pub has_legacy_operand_origin: bool,
     /// Whether this event is an actual executor operation whose result is
     /// marked in executor transient storage. Bridge fallback synthesis emits
     /// a `TrivialEncrypt`-shaped computation row but did not execute the
@@ -414,6 +431,7 @@ impl Database {
             consumed_boundaries,
             sealed_chains,
             tick: HeartBeat::default(),
+            verified_history: Default::default(),
             stack_mode,
         };
         db.reload_sealed_chains(dependence_cache_size).await;
@@ -804,13 +822,22 @@ impl Database {
         &self,
     ) -> Result<Option<Transaction<'_>>, SqlxError> {
         let pool = self.pool().await;
-        Ok(fhevm_engine_common::versioning::begin_write_guarded(
+        use fhevm_engine_common::versioning::{
+            begin_write_guarded, GcsRollbackPolicy, WriteGuard,
+        };
+        match begin_write_guarded(
             &pool,
             self.stack_mode.gcs_mode(),
-            fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+            GcsRollbackPolicy::Continue,
         )
         .await?
-        .into_tx())
+        {
+            WriteGuard::Proceed(tx) => Ok(Some(tx)),
+            WriteGuard::Stop => Ok(None),
+            WriteGuard::Skip => Err(SqlxError::Protocol(
+                "host history is contained; ingestion cannot advance".into(),
+            )),
+        }
     }
 
     pub async fn pool(&self) -> sqlx::Pool<Postgres> {
@@ -924,14 +951,11 @@ impl Database {
         output_count: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
-        let is_scalar = !scalar_byte.is_zero();
+        let is_scalar = binary_rhs_is_scalar(scalar_byte);
         let output_handle = result.to_vec();
-        // The output is allowed when this block also emitted persistent
-        // `Allowed` / `AllowedForDecryption` for the result. ACL.allow
-        // requires the caller to already be allowed, and transient allow dies
-        // at tx end, so a handle that must survive later blocks is persist-
-        // allowed in the producing transaction (same host block). Later
-        // Allowed events only add accounts; they do not write this table.
+        // The producing log supplies the inventory identity. Eligibility can
+        // come from this delivery or persisted ACL evidence discovered during
+        // replay; an ACL event in a later block never supplies a producer hash.
         let producer_recorded = if !log.is_fallback_grant
             && log.is_output_allowed(&output_handle)
         {
@@ -976,18 +1000,66 @@ impl Database {
         output_count: i16,
         log: &LogTfhe,
     ) -> Result<bool, SqlxError> {
-        let operand_boundary_mask = log.operand_boundary_mask.as_ref().ok_or_else(|| {
+        let derived_mask = log.operand_boundary_mask.as_ref().ok_or_else(|| {
             SqlxError::Protocol(
                 "refusing computation insert without authoritative operand boundary mask"
                     .into(),
             )
         })?;
+        let operand_boundary_mask =
+            (!log.has_legacy_operand_origin).then_some(derived_mask.as_slice());
         // Schema isolation handles BCS/GCS routing at the connection layer
         // (`search_path = gcs,public` for GCS, default `public` for BCS), so
         // this INSERT references `computations` unqualified.
         let group_id_vec = group_id.map(|g| g.to_vec());
         let output_allowed = log.is_output_allowed(output_handle);
-        let query = sqlx::query!(
+        // A complete refetch can change the reconstructed operand origin when
+        // the initial response omitted a producer. Never silently retain (or
+        // overwrite) inconsistent execution metadata: workers may have already
+        // consumed it. The block-ingestion caller rolls back and durably halts.
+        // Chain grouping and ACL eligibility are deliberately not immutable:
+        // a cold replay can regroup work or restore a missing permission.
+        // The block-number and boundary-mask migrations leave legacy rows NULL.
+        // That means unknown metadata, not a contradiction. Preserve NULL
+        // (and the worker's legacy inference) instead of backfilling metadata
+        // onto retained pre-upgrade work. All other metadata, and every
+        // already-recorded height or mask, remain immutable. Handles
+        // verified against the old executor preimage also start with NULL on
+        // fresh historical replay: their origin was never committed on-chain.
+        let conflicting: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM computations
+             WHERE output_handle = $1 AND transaction_id IS NOT DISTINCT FROM $2
+               AND ((dependencies, fhe_operation, is_scalar, host_chain_id,
+                     group_id, output_index, output_count)
+                   IS DISTINCT FROM
+                   ($3::bytea[], $4::smallint, $5::boolean, $6::bigint,
+                    $9::bytea, $10::smallint, $11::smallint)
+                    OR (block_number IS NOT NULL AND block_number IS DISTINCT FROM $7::bigint)
+                    OR ($8::bytea IS NOT NULL AND operand_boundary_mask IS NOT NULL
+                        AND operand_boundary_mask IS DISTINCT FROM $8::bytea)))",
+        )
+        .bind(output_handle)
+        .bind(log.transaction_hash.map(|hash| hash.to_vec()))
+        .bind(dependencies)
+        .bind(fhe_operation as i16)
+        .bind(is_scalar)
+        .bind(self.chain_id.as_i64())
+        .bind(log.block_number as i64)
+        .bind(operand_boundary_mask)
+        .bind(&group_id_vec)
+        .bind(output_index)
+        .bind(output_count)
+        .fetch_one(tx.deref_mut()).await?;
+        if conflicting {
+            error!(
+                output_handle = to_hex(output_handle),
+                "{REPLAY_METADATA_CONFLICT}"
+            );
+            return Err(SqlxError::Protocol(REPLAY_METADATA_CONFLICT.into()));
+        }
+        // Reconcile ACL evidence after all computation writes, before taking
+        // chain locks, to keep the worker and ingestion lock order consistent.
+        let result = sqlx::query!(
             r#"
             INSERT INTO computations (
                 output_handle,
@@ -1024,15 +1096,163 @@ impl Database {
             !output_allowed,
             self.chain_id.as_i64(),
             log.block_number as i64,
-            operand_boundary_mask.as_slice(),
+            operand_boundary_mask,
             group_id_vec,
             output_index,
             output_count,
-        );
-        query
-            .execute(tx.deref_mut())
-            .await
-            .map(|result| result.rows_affected() > 0)
+        )
+        .execute(tx.deref_mut()).await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn allowed_computation_handles(
+        &self,
+        tx: &mut Transaction<'_>,
+        handles: &[Vec<u8>],
+    ) -> Result<Vec<Vec<u8>>, SqlxError> {
+        sqlx::query_scalar(
+            "SELECT DISTINCT handle FROM allowed_handles
+             WHERE handle = ANY($1::bytea[])
+               AND (host_chain_id = $2 OR host_chain_id IS NULL)",
+        )
+        .bind(handles)
+        .bind(self.chain_id.as_i64())
+        .fetch_all(tx.as_mut())
+        .await
+    }
+
+    /// Also runs for ACL-only deliveries and duplicate ACL events. The history
+    /// admission fence makes ACL-first and computation-first cases converge even
+    /// when independent listener transactions start simultaneously.
+    pub async fn upgrade_allowed_computations(
+        &self,
+        tx: &mut Transaction<'_>,
+        handles: &[Vec<u8>],
+        block: &BlockSummary,
+        allowed_in_batch: &[Vec<u8>],
+    ) -> Result<Vec<(Vec<u8>, Option<Vec<u8>>)>, SqlxError> {
+        // Bridge sends authorize materialization with a transient allowance,
+        // so the validated batch can grant eligibility without an ACL row.
+        let upgraded: Vec<(Vec<u8>, Option<Vec<u8>>)> = sqlx::query_as(
+            r#"
+            UPDATE computations c
+            SET is_allowed = TRUE, is_completed = FALSE, completed_at = NULL
+            WHERE c.output_handle = ANY($1::bytea[])
+              AND c.host_chain_id = $2
+              AND NOT c.is_allowed
+              AND (c.output_handle = ANY($3::bytea[]) OR EXISTS (
+                  SELECT 1 FROM allowed_handles a
+                  WHERE a.handle = c.output_handle
+                    AND (a.host_chain_id = $2 OR a.host_chain_id IS NULL)
+              ))
+              AND NOT EXISTS (
+                  SELECT 1 FROM ciphertexts ct WHERE ct.handle = c.output_handle
+              )
+            RETURNING c.output_handle, c.dependence_chain_id
+            "#,
+        )
+        .bind(handles)
+        .bind(self.chain_id.as_i64())
+        .bind(allowed_in_batch)
+        .fetch_all(tx.as_mut())
+        .await?;
+        // An ACL-only replay of the producing block must repair the manifest
+        // inventory too. Newly upgraded rows cannot be synthetic/fallback work:
+        // those are always inserted allowed. A later block's ACL is insufficient
+        // evidence of the producer hash; its producer replay records that hash.
+        let upgraded_handles: Vec<_> =
+            upgraded.iter().map(|(handle, _)| handle.clone()).collect();
+        sqlx::query(
+            "INSERT INTO handle_producer_block
+                (host_chain_id, handle, producer_block_number, producer_block_hash, synthetic)
+             SELECT DISTINCT c.host_chain_id, c.output_handle, c.block_number, $4, FALSE
+             FROM computations c
+             WHERE c.output_handle = ANY($1::bytea[]) AND c.host_chain_id = $2
+               AND c.block_number = $3
+             ON CONFLICT (host_chain_id, handle, producer_block_hash) DO NOTHING",
+        )
+        .bind(&upgraded_handles).bind(self.chain_id.as_i64())
+        .bind(block.number as i64).bind(block.hash.as_slice())
+        .execute(tx.as_mut()).await?;
+        if !upgraded.is_empty() {
+            warn!(count = upgraded.len(), "Computations upgraded to allowed, re-queuing their dependence chains");
+        }
+        Ok(upgraded)
+    }
+
+    /// Read repair candidates before any chain writes so ingestion can order
+    /// them together with newly inferred chains. This must run after every
+    /// computation write, while the history admission fence is still held.
+    pub async fn pending_computation_chains(
+        &self,
+        tx: &mut Transaction<'_>,
+        handles: &[Vec<u8>],
+    ) -> Result<Vec<(Vec<u8>, PrimitiveDateTime)>, SqlxError> {
+        sqlx::query_as(
+            r#"
+            SELECT c.dependence_chain_id, MIN(c.schedule_order)
+            FROM computations c
+            WHERE c.output_handle = ANY($1::bytea[])
+              AND c.host_chain_id = $2
+              AND c.dependence_chain_id IS NOT NULL
+              AND c.is_allowed AND NOT c.is_completed AND NOT c.is_error
+              AND NOT EXISTS (SELECT 1 FROM ciphertexts ct WHERE ct.handle = c.output_handle)
+            GROUP BY c.dependence_chain_id
+            "#,
+        )
+        .bind(handles)
+        .bind(self.chain_id.as_i64())
+        .fetch_all(tx.as_mut())
+        .await
+    }
+
+    /// Repair one persisted chain in the same order as inferred-chain writes.
+    /// Only upgrades wake an active owner; ordinary pending duplicates repair
+    /// processed/missing chains without changing a valid lease.
+    pub async fn repair_pending_computation_chain(
+        &self,
+        tx: &mut Transaction<'_>,
+        chain_id: &[u8],
+        schedule_order: PrimitiveDateTime,
+        upgraded: bool,
+        slow: bool,
+    ) -> Result<bool, SqlxError> {
+        let result = sqlx::query(
+            r#"
+            INSERT INTO dependence_chain (dependence_chain_id, status, last_updated_at, schedule_priority)
+            VALUES ($1, 'updated', $2, $3)
+            ON CONFLICT (dependence_chain_id) DO UPDATE
+            SET status = CASE
+                    WHEN dependence_chain.status = 'processed' OR $4
+                    THEN 'updated' ELSE dependence_chain.status END,
+                schedule_priority = GREATEST(dependence_chain.schedule_priority, EXCLUDED.schedule_priority)
+            WHERE dependence_chain.status = 'processed' OR $4
+               OR dependence_chain.schedule_priority < EXCLUDED.schedule_priority
+            "#,
+        )
+        .bind(chain_id)
+        .bind(schedule_order)
+        .bind(i16::from(slow))
+        .bind(upgraded)
+        .execute(tx.as_mut())
+        .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    /// Publish committed identities, not a replay's newly inferred grouping.
+    /// Prefer pending work when a reusable handle occurs in several transactions.
+    pub async fn computation_chain_cache_entries(
+        &self,
+        tx: &mut Transaction<'_>,
+        handles: &[Vec<u8>],
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, SqlxError> {
+        sqlx::query_as(
+            "SELECT DISTINCT ON (output_handle) output_handle, dependence_chain_id
+             FROM computations
+             WHERE output_handle = ANY($1::bytea[]) AND host_chain_id = $2
+               AND is_allowed AND NOT is_error AND dependence_chain_id IS NOT NULL
+             ORDER BY output_handle, is_completed, schedule_order, transaction_id"
+        ).bind(handles).bind(self.chain_id.as_i64()).fetch_all(tx.as_mut()).await
     }
 
     #[rustfmt::skip]
@@ -1165,6 +1385,9 @@ impl Database {
     /// `Ok(None)` when finalization was REFUSED (row missing, already
     /// orphaned, or parent linkage contradicting the finalized predecessor);
     /// callers must stop their ascending batch on `None`.
+    /// Production callers must hold the host-history lock and run the shared
+    /// adjacent-identity check before this mutation (both admission and deferred
+    /// finalization do so). This primitive does not persist recovery halts.
     pub async fn update_block_as_finalized(
         &self,
         tx: &mut Transaction<'_>,
@@ -1463,10 +1686,10 @@ impl Database {
         allow_event_count: i32,
     ) -> Result<(), SqlxError> {
         let status = if finalized { "finalized" } else { "pending" };
-        // Insert with per-block event counts (written once at first insert and
-        // not touched on later finalization transitions). On conflict, preserve
-        // existing state but repair missing/stale ancestry so branch resolution
-        // remains available after restarts.
+        // A complete replay may restore events omitted by an earlier response.
+        // Counts for an immutable block hash can only increase: duplicate or
+        // incomplete replays and finalization-only observations must not lower
+        // the known totals. Preserve status and repair ancestry independently.
         sqlx::query!(
             r#"
             INSERT INTO host_chain_blocks_valid
@@ -1478,7 +1701,9 @@ impl Database {
             -- observed non-empty parent_hash is authoritative: prefer it. This
             -- both fills a missing value and corrects a stale/wrong one, while
             -- never clobbering a known parent with a NULL/empty re-observation.
-            SET parent_hash = COALESCE(NULLIF(EXCLUDED.parent_hash, ''::BYTEA), host_chain_blocks_valid.parent_hash);
+            SET parent_hash = COALESCE(NULLIF(EXCLUDED.parent_hash, ''::BYTEA), host_chain_blocks_valid.parent_hash),
+                fhe_event_count = GREATEST(host_chain_blocks_valid.fhe_event_count, EXCLUDED.fhe_event_count),
+                allow_event_count = GREATEST(host_chain_blocks_valid.allow_event_count, EXCLUDED.allow_event_count);
             "#,
             self.chain_id.as_i64(),
             block_summary.hash.to_vec(),
@@ -1767,7 +1992,7 @@ impl Database {
             INSERT INTO host_listener_poller_state (chain_id, last_caught_up_block)
             VALUES ($1, $2)
             ON CONFLICT (chain_id) DO UPDATE
-            SET last_caught_up_block = EXCLUDED.last_caught_up_block,
+            SET last_caught_up_block = GREATEST(host_listener_poller_state.last_caught_up_block, EXCLUDED.last_caught_up_block),
                 updated_at = NOW()
             "#,
         )
@@ -1781,6 +2006,13 @@ impl Database {
     }
 
     pub async fn read_last_valid_block(&self) -> Option<i64> {
+        self.read_last_valid_block_checked().await.ok().flatten()
+    }
+
+    /// Recovery bootstrap must distinguish an empty history from a DB failure.
+    pub(crate) async fn read_last_valid_block_checked(
+        &self,
+    ) -> Result<Option<i64>, SqlxError> {
         let query = sqlx::query!(
             r#"
             SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
@@ -1788,10 +2020,7 @@ impl Database {
             self.chain_id.as_i64(),
         );
         let pool = self.pool.read().await.clone();
-        match query.fetch_one(&pool).await {
-            Ok(record) => record.max,
-            Err(_err) => None, // table could be empty
-        }
+        Ok(query.fetch_one(&pool).await?.max)
     }
 
     /// Handles all types of ACL events
@@ -2485,76 +2714,71 @@ impl Database {
     pub async fn update_dependence_chain(
         &self,
         tx: &mut Transaction<'_>,
-        chains: OrderedChains,
+        chain: &Chain,
         block_timestamp: PrimitiveDateTime,
         block_summary: &BlockSummary,
         slow_dep_chain_ids: &HashSet<ChainHash>,
     ) -> Result<(), SqlxError> {
-        for chain in chains {
-            let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash)
-            {
-                SchedulePriority::Slow
-            } else {
-                SchedulePriority::Fast
-            };
-            let last_updated_at = block_timestamp.saturating_add(
-                TimeDuration::microseconds(chain.before_size as i64),
-            );
-            let dependents = chain
-                .dependents
-                .iter()
-                .map(|h| h.to_vec())
-                .collect::<Vec<_>>();
-            // Cross-block parents (in split_dependencies but not in the
-            // in-block dependencies) gate this chain only if they are still
-            // incomplete at ingest commit. Register the child in each such
-            // parent's dependents so the worker's release decrement reaches
-            // it, and count the rows actually updated: a parent already
-            // 'processed' delivers no future decrement and must not be
-            // counted (park-retry remains the correctness backstop for every
-            // race; the gate is an optimization, so under-counting is safe
-            // and over-counting is not).
-            //
-            // SKIP LOCKED, not a plain FOR UPDATE. A parent row locked by
-            // another session is precisely one a worker is releasing right
-            // now, and skipping it is the safe direction — it under-counts,
-            // which the gate tolerates by design. Waiting instead would
-            // (a) hold this ingest transaction behind an FHE-batch release
-            // and (b) close a deadlock cycle: this statement runs once per
-            // chain inside the enclosing loop, so the ORDER BY only sorts
-            // within one execution while the loop's chain inserts take
-            // further row locks in listener order, against a worker release
-            // that locks its held parents and their dependents in plan
-            // order.
-            let outer_dependencies = chain
-                .split_dependencies
-                .iter()
-                .filter(|dep| !chain.dependencies.contains(dep))
-                .map(|h| h.to_vec())
-                .collect::<Vec<_>>();
-            // Gate on the HANDLE, not on the chain. A parent whose boundary
-            // handle is already materialized owes this child nothing: the
-            // bytes are in `ciphertexts` and the worker will read them there,
-            // so counting the parent would make the child wait for unrelated
-            // work on a chain it no longer needs. Only a parent with at least
-            // one un-materialized consumed handle is counted.
-            //
-            // A parent that IS counted gets SEALED (below): it has work this
-            // child needs, and while it keeps absorbing continuations of its
-            // own traffic the child waits behind all of them.
-            let (gate_parents, gate_handles): (Vec<Vec<u8>>, Vec<Vec<u8>>) =
-                chain
-                    .outer_boundary_handles
-                    .iter()
-                    .filter(|(parent, _)| {
-                        outer_dependencies.contains(&parent.to_vec())
-                    })
-                    .map(|(parent, handle)| (parent.to_vec(), handle.to_vec()))
-                    .unzip();
-            let gated_parents: Vec<Vec<u8>> = if chain.new_chain
-                && !gate_parents.is_empty()
-            {
-                sqlx::query_scalar!(
+        let schedule_priority = if slow_dep_chain_ids.contains(&chain.hash) {
+            SchedulePriority::Slow
+        } else {
+            SchedulePriority::Fast
+        };
+        let last_updated_at = block_timestamp.saturating_add(
+            TimeDuration::microseconds(chain.before_size as i64),
+        );
+        let dependents = chain
+            .dependents
+            .iter()
+            .map(|h| h.to_vec())
+            .collect::<Vec<_>>();
+        // Cross-block parents (in split_dependencies but not in the
+        // in-block dependencies) gate this chain only if they are still
+        // incomplete at ingest commit. Register the child in each such
+        // parent's dependents so the worker's release decrement reaches
+        // it, and count the rows actually updated: a parent already
+        // 'processed' delivers no future decrement and must not be
+        // counted (park-retry remains the correctness backstop for every
+        // race; the gate is an optimization, so under-counting is safe
+        // and over-counting is not).
+        //
+        // SKIP LOCKED, not a plain FOR UPDATE. A parent row locked by
+        // another session is precisely one a worker is releasing right
+        // now, and skipping it is the safe direction — it under-counts,
+        // which the gate tolerates by design. Waiting instead would
+        // (a) hold this ingest transaction behind an FHE-batch release
+        // and (b) close a deadlock cycle: this statement runs once per
+        // chain inside the enclosing loop, so the ORDER BY only sorts
+        // within one execution while the loop's chain inserts take
+        // further row locks in listener order, against a worker release
+        // that locks its held parents and their dependents in plan
+        // order.
+        let outer_dependencies = chain
+            .split_dependencies
+            .iter()
+            .filter(|dep| !chain.dependencies.contains(dep))
+            .map(|h| h.to_vec())
+            .collect::<Vec<_>>();
+        // Gate on the HANDLE, not on the chain. A parent whose boundary
+        // handle is already materialized owes this child nothing: the
+        // bytes are in `ciphertexts` and the worker will read them there,
+        // so counting the parent would make the child wait for unrelated
+        // work on a chain it no longer needs. Only a parent with at least
+        // one un-materialized consumed handle is counted.
+        //
+        // A parent that IS counted gets SEALED (below): it has work this
+        // child needs, and while it keeps absorbing continuations of its
+        // own traffic the child waits behind all of them.
+        let (gate_parents, gate_handles): (Vec<Vec<u8>>, Vec<Vec<u8>>) = chain
+            .outer_boundary_handles
+            .iter()
+            .filter(|(parent, _)| outer_dependencies.contains(&parent.to_vec()))
+            .map(|(parent, handle)| (parent.to_vec(), handle.to_vec()))
+            .unzip();
+        let gated_parents: Vec<Vec<u8>> = if chain.new_chain
+            && !gate_parents.is_empty()
+        {
+            sqlx::query_scalar!(
                     r#"
                     WITH consumed AS (
                         SELECT
@@ -2604,23 +2828,23 @@ impl Database {
                 )
                 .fetch_all(tx.deref_mut())
                 .await?
-            } else {
-                Vec::new()
-            };
-            let gated_outer_count = gated_parents.len();
-            // Seal exactly the parents that were counted. Sealing is in
-            // memory and LRU-bounded: an eviction or a listener restart
-            // re-enables extension, which is the pre-existing behaviour, so
-            // this can only ever cost discharge latency, never correctness.
-            if !gated_parents.is_empty() {
-                let mut sealed = self.sealed_chains.write().await;
-                for parent in &gated_parents {
-                    if let Ok(hash) = ChainHash::try_from(parent.as_slice()) {
-                        sealed.put(hash, ());
-                    }
+        } else {
+            Vec::new()
+        };
+        let gated_outer_count = gated_parents.len();
+        // Seal exactly the parents that were counted. Sealing is in
+        // memory and LRU-bounded: an eviction or a listener restart
+        // re-enables extension, which is the pre-existing behaviour, so
+        // this can only ever cost discharge latency, never correctness.
+        if !gated_parents.is_empty() {
+            let mut sealed = self.sealed_chains.write().await;
+            for parent in &gated_parents {
+                if let Ok(hash) = ChainHash::try_from(parent.as_slice()) {
+                    sealed.put(hash, ());
                 }
             }
-            sqlx::query!(
+        }
+        sqlx::query!(
                 r#"
                 INSERT INTO dependence_chain(
                     dependence_chain_id,
@@ -2662,7 +2886,6 @@ impl Database {
             )
             .execute(tx.deref_mut())
             .await?;
-        }
         Ok(())
     }
 }
@@ -2859,408 +3082,6 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
         | AclContractEvents::UnblockedAccount(_)
         | AclContractEvents::DecryptionSignaturesInvalidated(_) => vec![],
     }
-}
-
-pub fn tfhe_inputs_handle(op: &TfheContractEvents) -> Vec<Handle> {
-    use TfheContract as C;
-    use TfheContractEvents as E;
-    match op {
-        E::Cast(C::Cast { ct, .. })
-        | E::FheNeg(C::FheNeg { ct, .. })
-        | E::FheNot(C::FheNot { ct, .. }) => vec![*ct],
-
-        E::FheAdd(C::FheAdd {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitAnd(C::FheBitAnd {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitOr(C::FheBitOr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitXor(C::FheBitXor {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheDiv(C::FheDiv {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMax(C::FheMax {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMin(C::FheMin {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMul(C::FheMul {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRem(C::FheRem {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRotl(C::FheRotl {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRotr(C::FheRotr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheShl(C::FheShl {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheShr(C::FheShr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheSub(C::FheSub {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheEq(C::FheEq {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheGe(C::FheGe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheGt(C::FheGt {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheLe(C::FheLe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheLt(C::FheLt {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheNe(C::FheNe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        }) => {
-            if scalarByte.const_is_zero() {
-                vec![*lhs, *rhs]
-            } else {
-                vec![*lhs]
-            }
-        }
-
-        E::FheIfThenElse(C::FheIfThenElse {
-            control,
-            ifTrue,
-            ifFalse,
-            ..
-        }) => {
-            vec![*control, *ifTrue, *ifFalse]
-        }
-
-        E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => vec![],
-
-        E::FheSum(C::FheSum { values, .. }) => values.clone(),
-
-        E::FheIsIn(C::FheIsIn { value, values, .. }) => {
-            let mut handles = vec![*value];
-            handles.extend(values.iter().copied());
-            handles
-        }
-
-        E::FheMulDiv(C::FheMulDiv {
-            factor1,
-            factor2,
-            scalarByte,
-            ..
-        }) => {
-            if fhe_mul_div_factor2_is_scalar(scalarByte) {
-                vec![*factor1]
-            } else {
-                vec![*factor1, *factor2]
-            }
-        }
-
-        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
-    }
-}
-
-/// Returns every encrypted executor operand together with its position in the
-/// `dependencies` vector stored for the computation. The position is also the
-/// bit position used by `FHEVMExecutor`'s `boundaryBits` preimage. Plaintext
-/// scalar positions are intentionally absent, and therefore retain their
-/// required zero bit.
-///
-/// Keep this in lock-step with both `insert_tfhe_event` and the executor's
-/// `_oneOperandBoundaryBit` callers. In particular, `FheMulDiv` always has a
-/// scalar divisor at position 2, and binary scalar operations have a scalar
-/// right operand at position 1.
-pub fn tfhe_encrypted_operand_positions(
-    op: &TfheContractEvents,
-) -> Vec<(usize, Handle)> {
-    use TfheContract as C;
-    use TfheContractEvents as E;
-
-    match op {
-        E::Cast(C::Cast { ct, .. })
-        | E::FheNeg(C::FheNeg { ct, .. })
-        | E::FheNot(C::FheNot { ct, .. }) => vec![(0, *ct)],
-
-        E::FheAdd(C::FheAdd {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitAnd(C::FheBitAnd {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitOr(C::FheBitOr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheBitXor(C::FheBitXor {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheDiv(C::FheDiv {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMax(C::FheMax {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMin(C::FheMin {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheMul(C::FheMul {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRem(C::FheRem {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRotl(C::FheRotl {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheRotr(C::FheRotr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheShl(C::FheShl {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheShr(C::FheShr {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheSub(C::FheSub {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheEq(C::FheEq {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheGe(C::FheGe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheGt(C::FheGt {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheLe(C::FheLe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheLt(C::FheLt {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        })
-        | E::FheNe(C::FheNe {
-            lhs,
-            rhs,
-            scalarByte,
-            ..
-        }) => {
-            let mut operands = vec![(0, *lhs)];
-            if scalarByte.const_is_zero() {
-                operands.push((1, *rhs));
-            }
-            operands
-        }
-
-        E::FheIfThenElse(C::FheIfThenElse {
-            control,
-            ifTrue,
-            ifFalse,
-            ..
-        }) => vec![(0, *control), (1, *ifTrue), (2, *ifFalse)],
-
-        E::FheRand(_) | E::FheRandBounded(_) | E::TrivialEncrypt(_) => {
-            vec![]
-        }
-
-        E::FheSum(C::FheSum { values, .. }) => {
-            values.iter().copied().enumerate().collect()
-        }
-
-        E::FheIsIn(C::FheIsIn { value, values, .. }) => {
-            let mut operands =
-                Vec::with_capacity(values.len().saturating_add(1));
-            operands.push((0, *value));
-            operands.extend(
-                values
-                    .iter()
-                    .copied()
-                    .enumerate()
-                    .map(|(i, value)| (i.saturating_add(1), value)),
-            );
-            operands
-        }
-
-        E::FheMulDiv(C::FheMulDiv {
-            factor1,
-            factor2,
-            scalarByte,
-            ..
-        }) => {
-            let mut operands = vec![(0, *factor1)];
-            if !fhe_mul_div_factor2_is_scalar(scalarByte) {
-                operands.push((1, *factor2));
-            }
-            operands
-        }
-
-        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => vec![],
-    }
-}
-
-/// Reconstructs the exact `uint256 boundaryBits` value committed by the
-/// executor for one operation. `was_minted` must represent successful prior
-/// executor operations in this transaction, in log order.
-///
-/// The executor only has 256 bits of provenance. Current collection events
-/// are bounded below that limit; reject a larger event rather than silently
-/// inventing a sourcing rule that its handle does not commit to.
-pub fn operand_boundary_mask_from_minted<F>(
-    op: &TfheContractEvents,
-    mut was_minted: F,
-) -> Result<OperandBoundaryMask, String>
-where
-    F: FnMut(&Handle) -> bool,
-{
-    let mut mask = [0_u8; OPERAND_BOUNDARY_MASK_BYTES];
-    for (position, handle) in tfhe_encrypted_operand_positions(op) {
-        if position >= OPERAND_BOUNDARY_MASK_BYTES * 8 {
-            return Err(format!(
-                "operation has encrypted operand at position {position}, beyond executor boundaryBits"
-            ));
-        }
-        if !was_minted(&handle) {
-            // Match `uint256` ABI byte order: Solidity bit 0 is the least
-            // significant bit of the final byte.
-            let byte_index = OPERAND_BOUNDARY_MASK_BYTES - 1 - position / 8;
-            mask[byte_index] |= 1 << (position % 8);
-        }
-    }
-    Ok(mask)
-}
-
-/// `fheMulDiv` `scalarByte` bit 1 — factor2 is a plaintext scalar (bit 0 is the
-/// always-scalar divisor).
-fn fhe_mul_div_factor2_is_scalar(scalar_byte: &ScalarByte) -> bool {
-    scalar_byte.0[0] & 0b10 != 0
 }
 
 #[cfg(test)]

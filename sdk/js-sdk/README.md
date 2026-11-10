@@ -153,7 +153,7 @@ Full documentation is available in the [`docs/`](docs/) directory:
 - [Overview](docs/README.md) — what the SDK does and where to start
 - [Getting started](docs/getting-started.md) — install, configure, and run your first encryption
 - [Clients](docs/clients.md) — client types and when to use each
-- [Encryption](docs/encryption.md) — supported types, batch encryption, using the proof
+- [Encryption](docs/encryption.md) — supported types, batch encryption, using the proof, and experimental pad-based encryption
 - [Decryption](docs/decryption.md) — private decryption, public values, delegation
 - [Chains](docs/chains.md) — built-in chains and custom chain definitions
 - [Runtime configuration](docs/runtime-configuration.md) — threads, WASM loading, browser headers

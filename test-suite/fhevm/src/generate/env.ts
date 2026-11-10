@@ -9,6 +9,7 @@ import {
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
   supportsConnectorHttp,
+  runsCoprocessorProxy,
 } from "../compat/compat";
 import type { StackSpec } from "../stack-spec/stack-spec";
 import {
@@ -20,6 +21,7 @@ import {
   objectStoreOperatorUrl,
   POSTGRES_HOST,
   coprocessorDatabaseName,
+  coprocessorProxyEnvName,
   hostChainRuntimes,
   realLzEndpointFor,
 } from "../layout";
@@ -36,7 +38,7 @@ import {
   reconstructionThreshold,
 } from "../kms-party";
 import type { State } from "../types";
-import { predictedCrsId, predictedKeyId } from "../utils/fs";
+import { predictedCrsId, predictedKeyId, toServiceName } from "../utils/fs";
 
 export type WalletMaterial = {
   address: string;
@@ -434,6 +436,40 @@ const connectorEndpointPort = (envs: Record<string, Record<string, string>>) =>
 const connectorEndpointAddress = (envs: Record<string, Record<string, string>>, party: number) =>
   `${kmsConnectorPrefix(party)}-endpoint:${connectorEndpointPort(envs)}`;
 
+/** The PRF port of prf-service (`--http-endpoint` in the compose file). */
+const PRF_SERVICE_PORT = 8090;
+
+/** The default metrics port of prf-service. */
+const PRF_SERVICE_METRICS_PORT = 9100;
+
+/** The coprocessor-proxy's default listen port. */
+const COPROCESSOR_PROXY_PORT = 8443;
+
+/** The coprocessor-proxy's default metrics port. */
+const COPROCESSOR_PROXY_METRICS_PORT = 9100;
+
+/** Coprocessor `index`'s signer address, set by `buildInstanceEnvs` for multi-coprocessor stacks. */
+const coprocessorSigner = (envs: Record<string, Record<string, string>>, index: number) =>
+  envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`];
+
+/**
+ * Each proxy's env file: it points coprocessor `index`'s proxy at its own prf-service, for
+ * requests signed for that coprocessor.
+ */
+const buildCoprocessorProxyEnvs = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
+  const proxyEnvs: Record<string, Record<string, string>> = {};
+  if (!plan.coprocessor || !runsCoprocessorProxy(plan)) {
+    return proxyEnvs;
+  }
+  for (let index = 0; index < plan.topology.count; index += 1) {
+    proxyEnvs[coprocessorProxyEnvName(index)] = {
+      COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS: coprocessorSigner(envs, index),
+      COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS: `${toServiceName("prf-service", index)}:${PRF_SERVICE_PORT}`,
+    };
+  }
+  return proxyEnvs;
+};
+
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */
 const buildInstanceEnvs = async (
   envs: Record<string, Record<string, string>>,
@@ -499,6 +535,29 @@ const validateEnvMaps = (
   }
 };
 
+/**
+ * What the "Coprocessor proxy" suite reads, one entry per coprocessor. Remove with that suite when the
+ * RFC-038 pad connector and its e2e land, including the mapping of party 1's connector key below.
+ */
+const applyCoprocessorProxyTestSuiteEnv = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
+  const supported = plan.coprocessor && runsCoprocessorProxy(plan);
+  const indices = supported ? [...Array(plan.topology.count).keys()] : [];
+  envs["test-suite"].COPROCESSOR_PROXY_URLS = indices
+    .map((index) => `https://${toServiceName("proxy", index)}:${COPROCESSOR_PROXY_PORT}`)
+    .join(",");
+  envs["test-suite"].COPROCESSOR_SIGNER_ADDRESSES = indices
+    .map((index) => coprocessorSigner(envs, index))
+    .join(",");
+  envs["test-suite"].PRF_SERVICE_METRICS_URLS = indices
+    .map((index) => `http://${toServiceName("prf-service", index)}:${PRF_SERVICE_METRICS_PORT}/metrics`)
+    .join(",");
+  envs["test-suite"].COPROCESSOR_PROXY_METRICS_URLS = indices
+    .map((index) => `http://${toServiceName("proxy", index)}:${COPROCESSOR_PROXY_METRICS_PORT}/metrics`)
+    .join(",");
+  // The suite signs as party 1's connector, a KMS tx-sender of the active context.
+  envs["test-suite"].KMS_CONNECTOR_PRIVATE_KEY = supported ? envs["kms-connector"].KMS_CONNECTOR_PRIVATE_KEY : "";
+};
+
 const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
   // The base kms-connector.env is party 1's env (the unsuffixed `kms-connector-*` containers);
   // parties 2..n get their own address in buildKmsConnectorInstanceEnvs.
@@ -514,6 +573,8 @@ const applyConnectorHttpEnv = (envs: Record<string, Record<string, string>>, pla
     .map((party) => envs["gateway-sc"][`KMS_TX_SENDER_ADDRESS_${party - 1}`])
     .join(",");
   envs["test-suite"].KMS_THRESHOLD = String(plan.kms.threshold);
+  // relayer-http signs with the e2e test key, the one sender every proxy allows.
+  envs["relayer-http"].RELAYER_SIGNER_KEY = envs["test-suite"].KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY ?? "";
 };
 
 /** Renders component and per-instance env maps from state, topology, and discovery. */
@@ -582,12 +643,13 @@ export const renderEnvMaps = async (
   const instanceEnvs = await buildInstanceEnvs(envs, plan, deriveWallet);
   envs["test-suite"].GATEWAY_DEPLOYER_PRIVATE_KEY = envs["gateway-sc"].DEPLOYER_PRIVATE_KEY;
   envs["test-suite"].GATEWAY_PAUSER_PRIVATE_KEY = envs["gateway-sc"].PAUSER_PRIVATE_KEY;
+  applyCoprocessorProxyTestSuiteEnv(envs, plan);
   Object.assign(instanceEnvs, buildKmsConnectorInstanceEnvs(envs, kmsParties));
 
   // Propagate SNS-worker S3 migration configuration.
-  // These are carried in version locks (see rollouts/.../versions.ts) so that
-  // rollout phases can request "concurrent" etc. without touching the compose
-  // command line (old pre-feature binaries must not see new --flags).
+  // These are carried in version locks so that an upgrade can request "concurrent"
+  // etc. without touching the compose command line (old pre-feature binaries must
+  // not see new --flags).
   // We write them into the coprocessor env files (base + all instance + chain copies)
   // so the clap parser (with env=) in the new binary picks them up.
   const migrationMode = plan.versions.env.S3_MIGRATION_MODE ?? "no";
@@ -676,6 +738,8 @@ export const renderEnvMaps = async (
     envs["test-suite"][`HOST_CHAIN_${chainIndex}_PROTOCOL_CONFIG_CONTRACT_ADDRESS`] = hostAddresses.PROTOCOL_CONFIG_CONTRACT_ADDRESS ?? "";
   }
 
+  // After the loops that copy coprocessor settings into every `coprocessor*` instance env.
+  Object.assign(instanceEnvs, buildCoprocessorProxyEnvs(envs, plan));
   validateEnvMaps(envs, instanceEnvs);
   const compat = compatPolicyForState(plan);
 

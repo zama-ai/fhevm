@@ -1,6 +1,6 @@
 import { task, types } from 'hardhat/config';
 
-import { requireProtocolConfigAddress, resolveProtocolConfigAddress } from './kmsContext';
+import { requireProtocolConfigAddress } from './kmsContext';
 import {
   bufferViolations,
   buildCoprocessorUpgradeProposal,
@@ -14,16 +14,27 @@ import {
 // `task:proposeCoprocessorUpgrade` broadcasts it with the deployer key (no-DAO devnet path).
 // Logic lives in utils/coprocessorUpgradeProposal.ts; see COPROCESSOR_UPGRADE_RUNBOOK.md.
 
+const CHAINS_FILE_HELP =
+  'EXPERIMENTAL, not for production upgrades. Path to a JSON array of host chain entries ({chainId, label, minWindowSeconds, fallbackBlockTimeSeconds, rpcUrlEnv, defaultRpcUrl?, canonical?}) ' +
+  'replacing the environment default, or env:NAME to read the same JSON from an env var (e.g. env:HOST_CHAINS, for a pod that cannot mount a file)';
+
 task(
   'task:buildProposeCoprocessorUpgradeCalldata',
   'Builds Aragon proposal calldata for ProtocolConfig.proposeCoprocessorUpgrade by computing block windows across the environment host chains and pinning gwStartBlock to the gateway tip (DAO path, never broadcasts)',
 )
   .addParam('environment', 'Target environment: devnet | testnet | mainnet (local is the test-suite stack)')
-  .addParam('startTime', 'ISO 8601 UTC start of the evaluation window (e.g. 2026-07-01T12:00:00Z)')
+  .addParam(
+    'startTime',
+    'ISO 8601 start of the evaluation window with an explicit time zone: Z or an offset (e.g. 2026-07-01T12:00:00Z or 2026-07-01T14:00:00+02:00)',
+  )
   .addParam('duration', 'Evaluation window length (e.g. 30s, 30m, 2h, 1d, or a bare integer of seconds)')
   .addParam('buffer', 'DAO lead time required between now and startBlock (same format as --duration)')
-  .addParam('proposalId', 'Coprocessor upgrade proposal id (positive integer, decimal or 0x-hex)')
-  .addParam('softwareVersion', 'Coprocessor software version string (e.g. v0.15.0)')
+  .addParam(
+    'proposalId',
+    'Coprocessor upgrade proposal id (positive integer, decimal or 0x-hex), never used before on this ProtocolConfig',
+  )
+  .addParam('softwareVersion', 'Coprocessor release tag, vMAJOR.MINOR.PATCH (e.g. v0.15.0)')
+  .addOptionalParam('chainsFile', CHAINS_FILE_HELP, '', types.string)
   .addOptionalParam(
     'useInternalProxyAddress',
     'Resolve the ProtocolConfig address from the /addresses directory instead of the environment',
@@ -37,6 +48,7 @@ task(
     buffer,
     proposalId,
     softwareVersion,
+    chainsFile,
     useInternalProxyAddress,
   }): Promise<void> {
     const inputs = parseCoprocessorUpgradeInputs({
@@ -46,9 +58,10 @@ task(
       buffer,
       proposalId,
       softwareVersion,
+      chainsFile,
     });
+    const target = requireProtocolConfigAddress(useInternalProxyAddress);
     const proposal = await buildCoprocessorUpgradeProposal(inputs);
-    const target = resolveProtocolConfigAddress(useInternalProxyAddress);
     printCoprocessorUpgradeProposal(proposal, target);
 
     const violations = bufferViolations(proposal);
@@ -65,11 +78,18 @@ task(
   'Broadcasts ProtocolConfig.proposeCoprocessorUpgrade computed for the environment with the deployer key (no-DAO path for devnet / test-suite). Sends to the host ProtocolConfig on --network.',
 )
   .addParam('environment', 'Target environment: devnet | testnet | mainnet (local is the test-suite stack)')
-  .addParam('startTime', 'ISO 8601 UTC start of the evaluation window (e.g. 2026-07-01T12:00:00Z)')
+  .addParam(
+    'startTime',
+    'ISO 8601 start of the evaluation window with an explicit time zone: Z or an offset (e.g. 2026-07-01T12:00:00Z or 2026-07-01T14:00:00+02:00)',
+  )
   .addParam('duration', 'Evaluation window length (e.g. 30s, 30m, 2h, 1d, or a bare integer of seconds)')
   .addParam('buffer', 'DAO lead time required between now and startBlock (same format as --duration)')
-  .addParam('proposalId', 'Coprocessor upgrade proposal id (positive integer, decimal or 0x-hex)')
-  .addParam('softwareVersion', 'Coprocessor software version string (e.g. v0.15.0)')
+  .addParam(
+    'proposalId',
+    'Coprocessor upgrade proposal id (positive integer, decimal or 0x-hex), never used before on this ProtocolConfig',
+  )
+  .addParam('softwareVersion', 'Coprocessor release tag, vMAJOR.MINOR.PATCH (e.g. v0.15.0)')
+  .addOptionalParam('chainsFile', CHAINS_FILE_HELP, '', types.string)
   .addOptionalParam(
     'useInternalProxyAddress',
     'Resolve the ProtocolConfig address from the /addresses directory instead of the environment',
@@ -77,7 +97,7 @@ task(
     types.boolean,
   )
   .setAction(async function (
-    { environment, startTime, duration, buffer, proposalId, softwareVersion, useInternalProxyAddress },
+    { environment, startTime, duration, buffer, proposalId, softwareVersion, chainsFile, useInternalProxyAddress },
     hre,
   ): Promise<void> {
     const inputs = parseCoprocessorUpgradeInputs({
@@ -87,9 +107,10 @@ task(
       buffer,
       proposalId,
       softwareVersion,
+      chainsFile,
     });
-    const proposal = await buildCoprocessorUpgradeProposal(inputs);
     const target = requireProtocolConfigAddress(useInternalProxyAddress);
+    const proposal = await buildCoprocessorUpgradeProposal(inputs);
     printCoprocessorUpgradeProposal(proposal, target);
 
     const violations = bufferViolations(proposal);

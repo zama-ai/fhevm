@@ -6,6 +6,7 @@ import type { FhevmClient } from '../../core/types/fhevmClient.js';
 import { createFhevmCleartextBaseClient } from './createFhevmCleartextBaseClient.js';
 import { encryptActions } from './decorators/encrypt.js';
 import { decryptActions } from './decorators/decrypt.js';
+import { encryptWithPadActions } from './decorators/encryptWithPad.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -15,9 +16,9 @@ export function createFhevmCleartextClient<
 >(parameters: {
   readonly provider: provider;
   readonly chain: chain;
-  readonly options?: FhevmOptions | undefined;
+  readonly options?: FhevmOptions<EthersT.ContractRunner> | undefined;
 }): FhevmClient<chain, WithAll, provider> {
   const c = createFhevmCleartextBaseClient(parameters);
 
-  return c.extend(decryptActions).extend(encryptActions);
+  return c.extend(decryptActions).extend(encryptActions).extend(encryptWithPadActions);
 }

@@ -14,7 +14,9 @@ use actix_web::{
 };
 use alloy::primitives::B256;
 use connector_utils::monitoring::otlp::PropagationContext;
-use kms_connector_api::{ErrorCode, ErrorResponse, UserDecryptionRequest, UserDecryptionResponse};
+use kms_connector_api::{
+    ErrorCode, ErrorResponse, USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse,
+};
 use sqlx::{
     PgExecutor,
     postgres::PgQueryResult,
@@ -39,6 +41,7 @@ pub async fn user_decrypt(
 pub struct UserRoute;
 
 impl DecryptionRoute for UserRoute {
+    const ROUTE: &'static str = USER_DECRYPTION_ROUTE;
     type Request = UserDecryptionRequest;
     type ResponseRow = UserDecryptionResponseRow;
 
@@ -82,7 +85,7 @@ impl DecryptionRoute for UserRoute {
                     extra_data: row.extra_data.into(),
                 }))
             }
-            // Should be unreachable thanks to the `payload_or_error` CHECK constraint.
+            // The database's `payload_or_error` CHECK constraint forbids this state.
             _ => Err(ErrorResponse::new(
                 ErrorCode::Unknown,
                 "inconsistent response row",

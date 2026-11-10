@@ -3,6 +3,7 @@ import type {
   createFhevmBaseClient as createEthersFhevmBaseClient,
   createFhevmDecryptClient as createEthersFhevmDecryptClient,
   createFhevmEncryptClient as createEthersFhevmEncryptClient,
+  createFhevmEncryptWithPadClient as createEthersFhevmEncryptWithPadClient,
 } from '@fhevm/sdk/ethers';
 import type { FhevmDecryptOptions, FhevmEncryptOptions, FhevmOptions } from '../../src/core/types/coreFhevmClient.js';
 import type { FheTestBaseEnv, FheTestChainName } from './setupCommon.js';
@@ -62,19 +63,25 @@ type CreateEthersClientParameters = {
 
 export type CreateEthersBaseClientFn = (
   params: CreateEthersClientParameters & {
-    readonly options?: FhevmOptions | undefined;
+    readonly options?: FhevmOptions<ethers.ContractRunner> | undefined;
   },
 ) => ReturnType<typeof createEthersFhevmBaseClient>;
 
 export type CreateEthersEncryptClientFn = (
   params: CreateEthersClientParameters & {
-    readonly options?: FhevmEncryptOptions | undefined;
+    readonly options?: FhevmEncryptOptions<ethers.ContractRunner> | undefined;
   },
 ) => ReturnType<typeof createEthersFhevmEncryptClient>;
 
+export type CreateEthersEncryptWithPadClientFn = (
+  params: CreateEthersClientParameters & {
+    readonly options?: FhevmEncryptOptions<ethers.ContractRunner> | undefined;
+  },
+) => ReturnType<typeof createEthersFhevmEncryptWithPadClient>;
+
 export type CreateEthersDecryptClientFn = (
   params: CreateEthersClientParameters & {
-    readonly options?: FhevmDecryptOptions | undefined;
+    readonly options?: FhevmDecryptOptions<ethers.ContractRunner> | undefined;
   },
 ) => ReturnType<typeof createEthersFhevmDecryptClient>;
 
@@ -145,4 +152,16 @@ export function areAllEthersTestConfigsCleartext(): boolean {
 
 export function isMultichain(): boolean {
   return getEthersTestConfigs().length > 1;
+}
+
+/**
+ * The latest block's timestamp, in seconds. Permit start times are checked against the chain's clock, which on an
+ * idle anvil lags the wall clock, so a permit built from `Date.now()` can look like it starts in the future.
+ */
+export async function latestBlockTimestamp(config: Pick<FheTestEthersConfig, 'provider'>): Promise<number> {
+  const block = await config.provider.getBlock('latest');
+  if (block === null) {
+    throw new Error('Unable to read the latest block');
+  }
+  return block.timestamp;
 }

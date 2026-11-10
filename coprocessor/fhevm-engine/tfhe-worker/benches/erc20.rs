@@ -2012,7 +2012,8 @@ async fn run_main_block_unpaced_traffic(
             &None,
             ingest_options(),
         )
-        .await?;
+        .await?
+        .require_complete()?;
         if block_index == 0 {
             worker_visible_at = Some(Instant::now());
         }

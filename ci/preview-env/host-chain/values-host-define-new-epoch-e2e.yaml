@@ -1,0 +1,53 @@
+# charts/contracts overlay for a same-context epoch rotation on a preview host.
+#
+# Preview counterpart of zama-zws/gitops
+# values/eth-blockchain/eth-sc-define-new-epoch/values-zws-dev.yaml.
+# Not part of preview-env-deploy.
+#
+# The network, RPC, chain ids, and deployer below are the Anvil defaults from
+# values-host-contracts-e2e.yaml. rotate-epoch.sh overwrites any of them the
+# live host-contracts release already set. defineNewEpochForCurrentKmsContext
+# takes no committee arguments. --use-internal-proxy-address reads ProtocolConfig
+# from the reused host-contracts PVC (addresses/.env.<network>). This broadcast
+# only mines the tx; the cores still reshare and confirm the new epoch.
+scDeploy:
+  enabled: true
+  preventRedeployment: false
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/host-contracts
+    tag: latest
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  configmap:
+    name: host-sc-addresses
+  env:
+    - {name: HARDHAT_NETWORK, value: "staging"}
+    - {name: MNEMONIC, value: "test test test test test test test test test test test junk"}
+    - {name: RPC_URL, value: "http://anvil-host-anvil-node:8545"}
+    - {name: CHAIN_ID, value: "12345"}
+    - {name: CHAIN_ID_GATEWAY, value: "54321"}
+    # Anvil account #9. Same key as values-host-contracts-e2e.yaml.
+    - {name: DEPLOYER_PRIVATE_KEY, value: "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"}
+  deployCommands:
+    - npx hardhat task:defineNewEpochForCurrentKmsContext --use-internal-proxy-address true
+  verifyContracts: false
+persistence:
+  enabled: true
+  mountPath: /app/addresses
+  volumeClaim:
+    name: host-sc-deploy-workdir
+    create: false
+scUpgrade:
+  enabled: false
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

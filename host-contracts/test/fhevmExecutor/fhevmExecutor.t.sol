@@ -3263,6 +3263,31 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         }
     }
 
+    function test_VerifyInputRejectsEveryOutOfRangeTypeByte() public {
+        for (uint256 typeByte = uint256(uint8(type(FheType).max)) + 1; typeByte <= type(uint8).max; ++typeByte) {
+            bytes32 handle = bytes32(typeByte << 8);
+            vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+            fhevmExecutor.verifyInput(handle, address(this), hex"01", FheType.Uint8);
+        }
+    }
+
+    function test_FheIsInRejectsEveryOutOfRangeTypeByte() public {
+        bytes32[] memory values = new bytes32[](0);
+        for (uint256 typeByte = uint256(uint8(type(FheType).max)) + 1; typeByte <= type(uint8).max; ++typeByte) {
+            bytes32 handle = bytes32(typeByte << 8);
+            vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+            fhevmExecutor.fheIsIn(handle, values, FheType.Uint8);
+        }
+    }
+
+    function test_FheAddRejectsEveryOutOfRangeTypeByte() public {
+        for (uint256 typeByte = uint256(uint8(type(FheType).max)) + 1; typeByte <= type(uint8).max; ++typeByte) {
+            bytes32 handle = bytes32(typeByte << 8);
+            vm.expectRevert(FHEVMExecutor.InvalidType.selector);
+            fhevmExecutor.fheAdd(handle, bytes32(uint256(1)), 0x01);
+        }
+    }
+
     function test_ShiftCountsAndExclusiveRandomBoundRemainValid() public {
         bytes32 lhs = fhevmExecutor.trivialEncrypt(1, FheType.Uint8);
         fhevmExecutor.fheShl(lhs, bytes32(uint256(255)), 0x01);

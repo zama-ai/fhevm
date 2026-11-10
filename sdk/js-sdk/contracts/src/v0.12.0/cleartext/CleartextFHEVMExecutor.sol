@@ -21,6 +21,10 @@ contract CleartextFHEVMExecutor is FHEVMExecutor {
     error UnsupportedCleartextBinaryOp(Operators op);
     error UnsupportedCleartextUnaryOp(Operators op);
     error UnsupportedCleartextTernaryOp(Operators op);
+
+    /// @notice No-op stub of the v14 `checkHandleType`, which the repo's FHE library calls on every operand.
+    /// @dev TEMPORARY: lets the 0.14 library run on this v12/v13 stack for the localcleartext suites; checks nothing.
+    function checkHandleType(bytes32, FheType) external view {}
     error CleartextNotFoundInProof(bytes32 inputHandle);
     error CleartextVerificationMismatch(uint256 index, bytes32 expected, bytes32 extracted);
     error CleartextVerificationLengthMismatch(uint256 clearValuesLength, uint256 numHandles);

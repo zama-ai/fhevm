@@ -1,0 +1,44 @@
+version: 1
+kind: blue-green
+name: Key migration from v0.14
+description: >
+  Boots the whole stack at v0.14 and leaves the upgrade to the key-migration-from-v0.14 test
+  profile, which upgrades one step at a time with checks in between, then migrates the
+  existing key to compressed material and reshares it.
+
+    ./fhevm-cli up --scenario key-migration-from-v0.14 --build
+    ./fhevm-cli test key-migration-from-v0.14
+
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+
+topology:
+  count: 2
+  threshold: 2
+
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.2-0
+
+gcs:
+  source:
+    mode: local
+  env:
+    # The coprocessor chart's commonConfig.forceLegacyServerKey; the test checks they agree.
+    FORCE_LEGACY_SERVER_KEY: "true"
+
+kms:
+  mode: threshold
+  parties: 4
+  threshold: 1
+  fheParams: Test
+
+bootstrap:
+  tag: v0.14.2-0
+  upgrade: deferred

@@ -21,8 +21,10 @@ done
 
 if [ "$USE_ABSOLUTE_PATHS" = true ]; then
   MIGRATION_DIR="/migrations"
+  DB_SCRIPTS_DIR="/db-scripts"
 else
   MIGRATION_DIR="${script_dir}/migrations"
+  DB_SCRIPTS_DIR="${script_dir}/db-scripts"
 fi
 
 REMOVE_TENANTS_PREVIOUS_VERSION=20260120102002
@@ -91,6 +93,12 @@ insert_host_chain_row() {
     "INSERT INTO host_chains (chain_id, name, acl_contract_address) \
      VALUES ('$chain_id', '$name', '$acl') \
      ON CONFLICT (chain_id) DO NOTHING;"
+}
+
+grant_pad_roles() {
+  # Idempotent: gives the prf-service role its rights on `pads`, when the role exists.
+  log "Granting the PRF endpoint database roles..."
+  psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "${DB_SCRIPTS_DIR}/grant_pad_roles.sql" 2>&1 | log_stream
 }
 
 seed_host_chains() {
@@ -377,6 +385,7 @@ else
   precreate_blocks_valid_pending_index
   sqlx migrate run --source "$MIGRATION_DIR" 2>&1 | log_stream || { log "Failed to run migrations."; exit 1; }
   seed_host_chains
+  grant_pad_roles
   initialize_versions_for_deployment
 fi
 

@@ -1,10 +1,20 @@
 # Encryption
 
-Encryption turns plaintext values into opaque encrypted values plus a proof that
-your contract can verify. Everything happens client-side — the plaintext never
+Encryption turns plaintext values into opaque encrypted values plus the input
+data your contract consumes. Everything happens client-side — the plaintext never
 leaves your application.
 
-Encryption is available on `createFhevmClient` and `createFhevmEncryptClient`.
+The SDK offers two encryption paths, each on its own client:
+
+| Path                                 | Client                                          | Methods                                       | Contract input | WASM           |
+| ------------------------------------ | ----------------------------------------------- | --------------------------------------------- | -------------- | -------------- |
+| **Input proof** (ZKPoK, default)     | `createFhevmClient`, `createFhevmEncryptClient` | `encryptValue`, `encryptValues`               | `inputProof`   | TFHE (~4.9 MB) |
+| **Pad-based** (RFC-030 experimental) | `createFhevmEncryptWithPadClient`               | `encryptValueWithPad`, `encryptValuesWithPad` | `inputPackage` | TKMS (~600 KB) |
+
+Use the input-proof path unless you are targeting pad-based inputs: it is the
+flow every deployed FHEVM chain verifies, and it is unchanged from previous SDK
+versions. The rest of this page up to
+[Pad-based encryption](#pad-based-encryption) describes it.
 
 ## The two methods
 
@@ -62,16 +72,16 @@ The `type` field uses **Solidity value-type names**, not Fully Homomorphic
 Encryption (FHE) names. Each maps to
 an on-chain `externalEuintXX` / `externalEbool` / `externalEaddress`.
 
-| `type`      | Accepted JS value      | Maps to on-chain    |
-| ----------- | ---------------------- | ------------------- |
-| `'bool'`    | `boolean` / `number` / `bigint` | `externalEbool`     |
-| `'uint8'`   | `number` / `bigint`    | `externalEuint8`    |
-| `'uint16'`  | `number` / `bigint`    | `externalEuint16`   |
-| `'uint32'`  | `number` / `bigint`    | `externalEuint32`   |
-| `'uint64'`  | `number` / `bigint`    | `externalEuint64`   |
-| `'uint128'` | `number` / `bigint`    | `externalEuint128`  |
-| `'uint256'` | `number` / `bigint`    | `externalEuint256`  |
-| `'address'` | `string` (hex address) | `externalEaddress`  |
+| `type`      | Accepted JS value               | Maps to on-chain   |
+| ----------- | ------------------------------- | ------------------ |
+| `'bool'`    | `boolean` / `number` / `bigint` | `externalEbool`    |
+| `'uint8'`   | `number` / `bigint`             | `externalEuint8`   |
+| `'uint16'`  | `number` / `bigint`             | `externalEuint16`  |
+| `'uint32'`  | `number` / `bigint`             | `externalEuint32`  |
+| `'uint64'`  | `number` / `bigint`             | `externalEuint64`  |
+| `'uint128'` | `number` / `bigint`             | `externalEuint128` |
+| `'uint256'` | `number` / `bigint`             | `externalEuint256` |
+| `'address'` | `string` (hex address)          | `externalEaddress` |
 
 There is no `uint160` type — an encrypted Ethereum address is `'address'`. There
 is no encrypted `bytes` type. `euint4` has been removed.
@@ -166,8 +176,8 @@ const encrypted = await client.encryptValues({
 });
 ```
 
-Common fields: `timeout`, `signal` (an `AbortSignal`), `headers`, `fetchRetries`,
-`fetchRetryDelayInMilliseconds`, and `onProgress`. See
+Common fields: `timeout`, `signal` (an `AbortSignal`), `headers`, `query`,
+`fetchRetries`, `fetchRetryDelayInMilliseconds`, and `onProgress`. See
 [API reference](api-reference.md#relayer-options) for the full set.
 
 ## What happens under the hood
@@ -186,11 +196,105 @@ offline and submit it later), use the standalone actions `generateZkProof` (from
 [`@fhevm/sdk/actions/encrypt`](actions.md)) and `fetchEncryptedValues` (from
 [`@fhevm/sdk/actions/base`](actions.md)).
 
-## Related
+## Pad-based encryption
 
-- [Decryption](decryption.md) — read encrypted values back to plaintext.
-- [Types](types.md) — the encrypted-value and typed-value type system.
-- [Actions](actions.md) — the standalone `generateZkProof` (encrypt) / `fetchEncryptedValues` (base) functions.
-- [Error handling](error-handling.md) — `EncryptionError`, `ZkProofError`, `TooManyHandlesError`.
+RFC-030 pad-based inputs mask the plaintext with a one-time pad that only the
+user can obtain from the KMS. No TFHE ciphertext, zero-knowledge proof, or
+coprocessor signature is involved, so the client loads the TKMS WASM instead of
+the TFHE one.
+
+{% hint style="warning" %}
+Pad-based encryption is experimental. The SDK only decodes the cleartext pad-share encoding for now, so it works against the v1.0.0 cleartext host contracts only (`createFhevmCleartextEncryptWithPadClient`, local stack started with `npm run start:localcleartext:v1.0.0`).
+{% endhint %}
+
+### The client and its methods
+
+```ts
+import { createFhevmEncryptWithPadClient } from '@fhevm/sdk/ethers'; // or '@fhevm/sdk/viem'
+
+const client = createFhevmEncryptWithPadClient({ chain, provider });
+await client.ready;
+
+const encrypted = await client.encryptValuesWithPad({
+  contractAddress: '0xYourContract…',
+  userAddress: '0xYourWallet…',
+  values: [
+    { type: 'uint32', value: 42 },
+    { type: 'bool', value: true },
+  ],
+  signedPermit, // v2 (unified) permit signed by userAddress
+});
+
+encrypted.encryptedValues; // readonly EncryptedValue[] — one per input, same order
+encrypted.inputPackage; // BytesHex — one package for the whole batch
 ```
 
+`encryptValueWithPad` is the single-value form; it takes `value` and returns
+`encryptedValue` and `inputPackage`. Both accept the same
+[supported input types](#supported-input-types) as the input-proof path.
+
+### The signed permit
+
+Each encryption fetches a fresh one-time pad from the KMS through a pad
+decryption request. That request is authenticated with the same v2 (unified)
+EIP-712 permit used for user decryption, so a permit you already hold for
+decryption can be reused:
+
+```ts
+const transportKeyPair = await client.generateTransportKeyPair();
+const signedPermit = await client.signUnifiedDecryptionPermit({
+  transportKeyPair,
+  contractAddresses: [contractAddress],
+  startTimestamp: Math.floor(Date.now() / 1000),
+  durationSeconds: 24 * 3600,
+  signerAddress: userAddress,
+  signer,
+});
+```
+
+The permit must be version 2, signed by `userAddress`, and not expired; a legacy
+(v1) permit is rejected. The encrypt-with-pad client generates the
+transport key pair itself (`generateTransportKeyPair`), so no decrypt client is
+needed to encrypt. A key pair it generates is interchangeable with one from a
+decrypt client: you can reuse it to decrypt with a decrypt client from the same
+adapter.
+
+### Binding, limits, and the contract call
+
+- **`contractAddress`** is the witness _consumer_ (the contract that will call
+  `FHE.fromExternal`) and **`userAddress`** is the witness _submitter_ (the
+  account that sends the transaction). If either differs at submission time,
+  `fromExternal` reverts.
+- A package holds between 1 and 255 values. Each value is padded to whole
+  bytes, and the total may not exceed 2048 bits (for example, eight `uint256`
+  values). Split larger batches across several calls.
+- Pass `inputPackage` where you would pass `inputProof`: it is the trailing
+  `bytes` argument, and the contract calls
+  `FHE.fromExternal(externalValue, inputPackage)`.
+
+The optional `options` object takes the plain Relayer request options
+(`timeout`, `signal`, `auth`, `headers`, `debug`, `fetchRetries`,
+`fetchRetryDelayInMilliseconds`); there is no `onProgress`.
+
+### What happens under the hood
+
+1. **Build a witness** — submitter (`userAddress`), consumer
+   (`contractAddress`), chain id, an expiration timestamp (one week), and a
+   fresh random nonce. Its hash is the pad _label_.
+2. **Fetch the pad** — a pad decryption request, authenticated by your signed
+   permit, asks the KMS for exactly as many pad bits as the values need. Each KMS
+   node returns a signed share; the SDK checks the signatures against the
+   context's KMS signers and reconstructs the pad.
+3. **Mask and package** — the packed values are XOR-ed with the pad, and the
+   witness, type information, and ciphertext form the input package. Each
+   external handle is derived from the package digest, the value's index, and
+   its type.
+
+Because every package uses a fresh nonce, a pad is never reused.
+
+## Related
+
+- [Decryption](decryption.md) — read encrypted values back to plaintext, and sign the permit pad-based encryption needs.
+- [Types](types.md) — the encrypted-value and typed-value type system.
+- [Actions](actions.md) — the standalone `generateZkProof` (encrypt) / `fetchEncryptedValues` (base) functions, and the `*WithPad` encrypt actions.
+- [Error handling](error-handling.md) — `EncryptionError`, `ZkProofError`, `TooManyHandlesError`.

@@ -27,7 +27,7 @@ Options:
   --ethlib viem            Run only the viem test suite.
   --ethlib ethers,viem     Run both suites (default).
   --ethlib none            Start Anvil + deploy only; wait for Anvil to exit (no tests run).
-  --foundry-profile <name> Required Foundry profile to use. Expected: v12 or v13.
+  --foundry-profile <name> Required Foundry profile to use. Expected: v12, v13 or v1.0.
   --use-pack               Use vitest-manual-pack.config.ts instead of vitest.config.ts.
   --skip-fhetest           Deploy only the FHEVM stack, not TFHETest.sol (FHETest).
   --verbose                Print Anvil logs to the console instead of redirecting to a file.
@@ -118,13 +118,13 @@ case "$LIB" in
 esac
 
 case "$PROFILE" in
-    v12|v13) ;;
+    v12|v13|v1.0) ;;
     "")
-        echo "Error: --foundry-profile is required. Expected: v12 or v13." >&2
+        echo "Error: --foundry-profile is required. Expected: v12, v13 or v1.0." >&2
         exit 1
         ;;
     *)
-        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v12 or v13." >&2
+        echo "Error: unsupported --foundry-profile '$PROFILE'. Expected: v12, v13 or v1.0." >&2
         exit 1
         ;;
 esac
@@ -148,7 +148,8 @@ anvil_setup_vars() {
     CHAIN_ID="${CHAIN_ID:-31337}"
     READY_TIMEOUT="${READY_TIMEOUT:-30}"
     export FOUNDRY_PROFILE="$PROFILE"
-    CLEAR_TEXT_CHAIN="localcleartext_${PROFILE}"
+    # Chain names use underscores, not dots: profile v1.0 -> chain localcleartext_v1_0.
+    CLEAR_TEXT_CHAIN="localcleartext_${PROFILE//./_}"
 }
 
 anvil_check_deps() {

@@ -592,6 +592,23 @@ describe('Decryption', function () {
       ).to.be.revertedWithCustomError(decryption, 'InvalidNullContextId');
     });
 
+    it('Should revert when a versioned extraData does not have the exact length of its version', async function () {
+      const currentContextId = await gatewayConfig.getCurrentKmsContextId();
+      const v1ExtraData = extraDataV1(currentContextId);
+      const v2ExtraData = extraDataV2(currentContextId, 1n);
+      const cases: [string, number][] = [
+        [v1ExtraData + 'ff', 33], // v1 with a trailing byte
+        [v1ExtraData.slice(0, -2), 33], // v1 one byte short
+        ['0x02' + v1ExtraData.slice(4), 65], // v2 carrying only a contextId
+        [v2ExtraData + 'ff', 65], // v2 with a trailing byte
+      ];
+      for (const [extraData, expectedLength] of cases) {
+        await expect(decryption.connect(tokenFundedTxSender).publicDecryptionRequest(ctHandles, extraData))
+          .to.be.revertedWithCustomError(decryption, 'InvalidExtraDataLength')
+          .withArgs((extraData.length - 2) / 2, expectedLength);
+      }
+    });
+
     it('Should reject an invalid pinned context before collecting fees or creating the request', async function () {
       const invalidContextId = 999_999n;
       const invalidContextExtraData = extraDataV1(invalidContextId);

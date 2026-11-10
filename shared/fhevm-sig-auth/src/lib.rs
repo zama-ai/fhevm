@@ -18,6 +18,9 @@ pub use http::uri::PathAndQuery;
 pub use sign::{SignError, sign, sign_valid_for};
 pub use verify::{AuthError, FhevmSigVerifier, RefreshableSigners, SignerAllowlist};
 
+/// The header in which a proxy forwards the signer it verified to the service behind it.
+pub const SIGNER_HEADER: &str = "x-fhevm-signer";
+
 use alloy::{
     primitives::{Address, B256, U256},
     sol_types::{Eip712Domain, SolStruct},

@@ -93,6 +93,8 @@ const SERVICE_CRATES: Record<string, string> = {
   "zkproof-worker": "coprocessor/fhevm-engine/zkproof-worker",
   "consensus-detector": "coprocessor/fhevm-engine/consensus-detector",
   "upgrade-controller": "coprocessor/fhevm-engine/upgrade-controller",
+  "coprocessor-proxy": "coprocessor/fhevm-engine/coprocessor-proxy",
+  "prf-service": "coprocessor/fhevm-engine/prf-service",
 };
 
 describe("coprocessor-docker-build change detection", () => {

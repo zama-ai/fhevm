@@ -5,14 +5,15 @@ mod common;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::transports::http::reqwest::StatusCode;
 use common::{
-    MAX_BODY_BYTES, StubEndpoint, TestProxy, auth_header, auth_header_expiring, free_addr, now,
-    sender,
+    MAX_BODY_BYTES, MID_BODY_OUTPUT, MID_BODY_SENT, StubEndpoint, TestProxy, auth_header,
+    auth_header_expiring, free_addr, now, sender,
 };
 use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
     VersionResponse,
 };
-use std::time::Duration;
+use proxy::core::RATE_LIMIT_INTERVAL;
+use std::{num::NonZeroU32, time::Duration};
 
 #[tokio::test]
 async fn test_forwards_authenticated_requests_untouched() {
@@ -26,7 +27,7 @@ async fn test_forwards_authenticated_requests_untouched() {
     );
 
     // Deliberately non-canonical JSON: the proxy must forward it byte-for-byte.
-    let body = r#"{ "ctHandles":["0x01"] ,  "extraData":"0x00"}"#;
+    let body = r#"{ "ctHandles":["0x01"] ,  "extraData":"0x01"}"#;
     let response = t
         .post(PUBLIC_DECRYPTION_ROUTE, body)
         .await
@@ -273,6 +274,55 @@ async fn test_passes_endpoint_errors_through() {
 }
 
 #[tokio::test]
+async fn test_rate_limits_each_sender() {
+    let endpoint = StubEndpoint::start().await;
+    let t = TestProxy::start_with_config(
+        vec![endpoint.addr.to_string().parse().unwrap()],
+        vec![endpoint],
+        |config| config.rate_limit_per_second = NonZeroU32::new(2).unwrap(),
+    )
+    .await;
+    let route = PUBLIC_DECRYPTION_ROUTE;
+
+    // Neither `GET /version` nor unauthenticated requests count against the limit.
+    for _ in 0..3 {
+        let response = t.get(VERSION_ROUTE).await.send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = t.client.post(t.url(route)).body("{}").send().await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    let mut accepted = 0;
+    for _ in 0..10 {
+        let response = t.post(route, "{}").await.send().await.unwrap();
+        if response.status() == StatusCode::OK {
+            accepted += 1;
+            continue;
+        }
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            response.headers()["retry-after"].to_str().unwrap(),
+            RATE_LIMIT_INTERVAL.as_secs().to_string()
+        );
+        let error: ErrorResponse = response.json().await.unwrap();
+        assert_eq!(error.code, ErrorCode::RateLimited);
+        assert!(error.retryable);
+    }
+    // At most 2 per window, and the 10 requests can straddle a window boundary.
+    assert!((2..=4).contains(&accepted), "{accepted} requests accepted");
+    assert_eq!(
+        t.endpoints[0].hits(),
+        accepted,
+        "rejections must not reach the endpoint"
+    );
+
+    // The sender is accepted again once the window has passed.
+    tokio::time::sleep(RATE_LIMIT_INTERVAL + Duration::from_millis(100)).await;
+    let response = t.post(route, "{}").await.send().await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn test_load_balances_across_endpoints() {
     let endpoints = vec![StubEndpoint::start().await, StubEndpoint::start().await];
     let t = TestProxy::start(endpoints).await;
@@ -308,6 +358,8 @@ async fn test_upstream_timeout() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::GATEWAY_TIMEOUT);
+    // The request body was read, so only the proxy can say the connection closes after the answer.
+    assert_eq!(response.headers()["connection"], "close");
     let error: ErrorResponse = response.json().await.unwrap();
     assert_eq!(error.code, ErrorCode::Timeout);
     assert!(error.retryable);
@@ -330,6 +382,31 @@ async fn test_unreachable_endpoint() {
     let error: ErrorResponse = response.json().await.unwrap();
     assert_eq!(error.code, ErrorCode::UpstreamTransient);
     assert!(error.retryable);
+}
+
+#[tokio::test]
+async fn test_endpoint_failure_mid_body_cuts_the_answer_short() {
+    let t = TestProxy::start(vec![StubEndpoint::start().await]).await;
+
+    let mut response = t
+        .post(PUBLIC_DECRYPTION_ROUTE, "{}")
+        .await
+        .header("x-stub-fail-mid-body", "1")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    // The client gets what the endpoint sent, then the end of the connection: no error answer
+    // inside the started body, and no answer that looks complete.
+    let mut received = Vec::new();
+    let end = loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) => received.extend_from_slice(&chunk),
+            end => break end,
+        }
+    };
+    assert_eq!(received, MID_BODY_OUTPUT[..MID_BODY_SENT]);
+    assert!(end.is_err(), "{end:?}");
 }
 
 // ---------------------------------------------------------------------------------------------

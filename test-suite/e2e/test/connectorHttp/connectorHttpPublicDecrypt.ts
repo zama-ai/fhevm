@@ -26,11 +26,12 @@ describe('Connector HTTP public decrypt', function () {
   let instances: FhevmInstances;
   let urls: string[];
   let kms: KmsSignerSet;
+  let extraData: string;
   let contract: HTTPPublicDecrypt;
 
   before(async function () {
     this.timeout(180_000);
-    ({ urls, kms } = await connectorSetup(this));
+    ({ urls, kms, extraData } = await connectorSetup(this));
     await initSigners(2);
     signers = await getSigners();
     instances = await createInstances(signers);
@@ -51,7 +52,10 @@ describe('Connector HTTP public decrypt', function () {
   it('test connector endpoint public decrypt ebool', async function () {
     this.timeout(POSITIVE_TIMEOUT_MS);
     const handles = [await contract.xBool()];
-    const out = await fanOutUntilSettled<PublicDecryptionResponse>(PUBLIC_DECRYPT_ROUTE, buildPublicRequest(handles));
+    const out = await fanOutUntilSettled<PublicDecryptionResponse>(
+      PUBLIC_DECRYPT_ROUTE,
+      buildPublicRequest(handles, extraData),
+    );
     const verified = verifyPublicDecryptQuorum(handles, out.results, kms, { minSigners: quorum() });
     expect(verified.clearValues).to.deep.equal([true]);
   });
@@ -59,7 +63,10 @@ describe('Connector HTTP public decrypt', function () {
   it('test connector endpoint public decrypt mixed types in one request', async function () {
     this.timeout(POSITIVE_TIMEOUT_MS);
     const handles = [await contract.xBool(), await contract.xUint32(), await contract.xAddress()];
-    const out = await fanOutUntilSettled<PublicDecryptionResponse>(PUBLIC_DECRYPT_ROUTE, buildPublicRequest(handles));
+    const out = await fanOutUntilSettled<PublicDecryptionResponse>(
+      PUBLIC_DECRYPT_ROUTE,
+      buildPublicRequest(handles, extraData),
+    );
     const verified = verifyPublicDecryptQuorum(handles, out.results, kms, { minSigners: quorum() });
     expect(verified.clearValues).to.deep.equal([true, 242n, '0xfC4382C084fCA3f4fB07c3BCDA906C01797595a8']);
   });
@@ -67,7 +74,7 @@ describe('Connector HTTP public decrypt', function () {
   it('test connector endpoint public decrypt same body is served from cache and concurrent duplicates attach', async function () {
     this.timeout(POSITIVE_TIMEOUT_MS);
     const handles = [await contract.xUint32()];
-    const body = buildPublicRequest(handles);
+    const body = buildPublicRequest(handles, extraData);
 
     // Two concurrent posts of the same body: the second attaches to the first's request row.
     const [first, second] = await Promise.all([
@@ -91,7 +98,10 @@ describe('Connector HTTP public decrypt', function () {
   it('test connector endpoint public decrypt agrees with the relayer path', async function () {
     this.timeout(POSITIVE_TIMEOUT_MS);
     const handles = [await contract.xBool(), await contract.xUint32(), await contract.xAddress()];
-    const out = await fanOutUntilSettled<PublicDecryptionResponse>(PUBLIC_DECRYPT_ROUTE, buildPublicRequest(handles));
+    const out = await fanOutUntilSettled<PublicDecryptionResponse>(
+      PUBLIC_DECRYPT_ROUTE,
+      buildPublicRequest(handles, extraData),
+    );
     const verified = verifyPublicDecryptQuorum(handles, out.results, kms, { minSigners: quorum() });
 
     const viaRelayer = await instances.alice.publicDecrypt(handles);
@@ -111,13 +121,20 @@ describe('Connector HTTP public decrypt', function () {
     const chain = HOST_CHAINS[1];
     const deployed = await deployContract('HTTPPublicDecrypt', getChainSigners(chain).alice);
     const handles = [(await deployed.getFunction('xUint32')()) as string];
-    const out = await fanOutUntilSettled<PublicDecryptionResponse>(PUBLIC_DECRYPT_ROUTE, buildPublicRequest(handles));
+    const out = await fanOutUntilSettled<PublicDecryptionResponse>(
+      PUBLIC_DECRYPT_ROUTE,
+      buildPublicRequest(handles, extraData),
+    );
     // The KMS signer set is shared across host chains (same committee); the primary chain's
     // KMSVerifier is the reference.
     const verified = verifyPublicDecryptQuorum(handles, out.results, kms, { minSigners: quorum() });
     expect(verified.clearValues).to.deep.equal([242n]);
     // And the id is content-derived: a single party re-post answers the same id from cache.
-    const again = await post<PublicDecryptionResponse>(urls[0], PUBLIC_DECRYPT_ROUTE, buildPublicRequest(handles));
+    const again = await post<PublicDecryptionResponse>(
+      urls[0],
+      PUBLIC_DECRYPT_ROUTE,
+      buildPublicRequest(handles, extraData),
+    );
     expect(again.httpStatus).to.equal(200);
     expect((again.body as PublicDecryptionResponse).decryptionId).to.equal(verified.decryptionId);
   });

@@ -28,6 +28,7 @@ const statePaths = (root: string) => {
     STATE_FILE: path.join(persistedStateDir, "state.json"),
     versionsEnvPath: path.join(envDir, "versions.env"),
     relayerConfigPath: path.join(generatedConfigDir, "relayer.yaml"),
+    relayerHttpConfigPath: path.join(generatedConfigDir, "relayer-http.yaml"),
     gatewayAddressesPath: path.join(addressDir, "gateway", ".env.gateway"),
   };
 };
@@ -43,6 +44,7 @@ export let GENERATED_CONFIG_DIR = currentStatePaths.GENERATED_CONFIG_DIR;
 export let STATE_FILE = currentStatePaths.STATE_FILE;
 export let versionsEnvPath = currentStatePaths.versionsEnvPath;
 export let relayerConfigPath = currentStatePaths.relayerConfigPath;
+export let relayerHttpConfigPath = currentStatePaths.relayerHttpConfigPath;
 export let gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
 export let gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
 export let paymentBridgingAddressesSolidityPath = path.join(
@@ -63,6 +65,7 @@ export const setStateDir = (root = process.env.FHEVM_STATE_DIR ?? DEFAULT_STATE_
   STATE_FILE = currentStatePaths.STATE_FILE;
   versionsEnvPath = currentStatePaths.versionsEnvPath;
   relayerConfigPath = currentStatePaths.relayerConfigPath;
+  relayerHttpConfigPath = currentStatePaths.relayerHttpConfigPath;
   gatewayAddressesPath = currentStatePaths.gatewayAddressesPath;
   gatewayAddressesSolidityPath = path.join(currentStatePaths.ADDRESS_DIR, "gateway", "GatewayAddresses.sol");
   paymentBridgingAddressesSolidityPath = path.join(
@@ -78,6 +81,7 @@ const TEMPLATE_CONFIG_DIR = path.join(TEMPLATE_DIR, "config");
 export const TEMPLATE_COMPOSE_DIR = path.join(CLI_DIR, "docker-compose");
 const STATIC_CONFIG_DIR = path.join(CLI_DIR, "static", "config");
 export const TEMPLATE_RELAYER_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer.yaml");
+export const TEMPLATE_RELAYER_HTTP_CONFIG = path.join(TEMPLATE_CONFIG_DIR, "relayer-http.yaml");
 export const TEMPLATE_KMS_CORE_CONFIG_THRESHOLD = path.join(
   TEMPLATE_CONFIG_DIR,
   "kms-core-threshold.toml",
@@ -101,7 +105,11 @@ export const POSTGRES_PORT = 5432;
 export const DEFAULT_POSTGRES_USER = "postgres";
 export const DEFAULT_POSTGRES_PASSWORD = "postgres";
 export const DEFAULT_POSTGRES_DB = "coprocessor";
-export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, OBJECT_STORE_PORT, 9001];
+/** Host port of relayer-http (in-stack `fhevm-relayer-http`). */
+export const RELAYER_HTTP_PORT = 3002;
+/** Host port of the relayer proxy (in-stack `fhevm-relayer-proxy`): /v2, /v3 → relayer, /v4 → relayer-http. */
+export const RELAYER_PROXY_PORT = 3003;
+export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, OBJECT_STORE_PORT, 9001, RELAYER_HTTP_PORT, RELAYER_PROXY_PORT];
 export const OBJECT_STORE_INTERNAL_URL = `http://object-store:${OBJECT_STORE_PORT}`;
 /**
  * Per-operator alias for the one object store. Every alias reaches the same
@@ -147,8 +155,15 @@ export const COMPONENTS = [
   "coprocessor",
   "kms-connector",
   "relayer",
+  "relayer-http",
   "test-suite",
 ] as const;
+
+/**
+ * Compose components with no env template or generated config (static config only). They have a
+ * compose file and a step, but no entry in COMPONENTS, which drives env generation.
+ */
+export const STATIC_COMPONENTS = ["relayer-proxy"] as const;
 
 export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "preflight": [],
@@ -167,6 +182,8 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "kms-connector": ["kms-connector"],
   "bootstrap": ["gateway-sc", "host-sc"],
   "relayer": ["relayer"],
+  "relayer-http": ["relayer-http"],
+  "relayer-proxy": ["relayer-proxy"],
   "test-suite": ["test-suite"],
 };
 
@@ -201,6 +218,8 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "coprocessor-transaction-sender",
     "coprocessor-consensus-detector",
     "coprocessor-upgrade-controller",
+    "coprocessor-proxy",
+    "coprocessor-prf-service",
   ],
   "kms-connector": [
     "kms-connector-db-migration",
@@ -259,6 +278,25 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
 /** The kms-connector services `supportsConnectorHttp` gates as a pair: HTTP endpoint + proxy. */
 export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
 
+/**
+ * The services that `runsCoprocessorProxy` gates, in start order: the PRF output seeder and the proxy.
+ * The seeder runs the test-suite image, so it is not a coprocessor build service.
+ */
+export const COPROCESSOR_PROXY_SUFFIXES = ["prf-output-seed", "proxy"];
+
+/**
+ * The env file of coprocessor `index`'s proxy. It holds only the proxy's own settings: the
+ * coprocessor's env carries database and signing secrets the internet-facing proxy must not get.
+ */
+export const coprocessorProxyEnvName = (index: number) =>
+  index === 0 ? "coprocessor-proxy" : `coprocessor-proxy.${index}`;
+
+/** `suffixes` without the proxy pair, then the pair in start order when `includeProxy`. */
+export const withCoprocessorProxySuffixes = (suffixes: readonly string[], includeProxy: boolean) => [
+  ...suffixes.filter((suffix) => !COPROCESSOR_PROXY_SUFFIXES.includes(suffix)),
+  ...(includeProxy ? COPROCESSOR_PROXY_SUFFIXES : []),
+];
+
 /** Services that run the same image and therefore must be built together by an override. */
 const IMAGE_SIBLINGS: Record<string, string[]> = {
   "coprocessor-host-listener": ["coprocessor-host-listener-poller"],
@@ -310,6 +348,7 @@ export const TEST_GREP: Record<string, string> = {
   "connector-http-negative": "Connector HTTP negative",
   // All three connector HTTP suites in one mocha run; this is the profile included in the standard test set.
   "connector-http": "Connector HTTP",
+  "coprocessor-proxy": "Coprocessor proxy",
   "random": "generate and decrypt|generating rand in reverting sub-call|upper bound and decrypt",
   "random-subset":
     "64 bits generate and decrypt|generating rand in reverting sub-call|64 bits generate with upper bound and decrypt",
@@ -359,6 +398,7 @@ export const STANDARD_TEST_PROFILES = [
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
   "connector-http",
+  "coprocessor-proxy",
   "negative-acl",
   "random-subset",
   "multi-chain-isolation",
@@ -397,6 +437,7 @@ export const STANDARD_SHARD_DECRYPTION_TEST_PROFILES = [
   "public-decrypt-http-ebool",
   "public-decrypt-http-mixed",
   "connector-http",
+  "coprocessor-proxy",
 ] as const;
 
 export const STANDARD_SHARD_COMPUTE_TEST_PROFILES = [

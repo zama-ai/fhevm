@@ -62,7 +62,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         /// @notice MPC threshold per context.
         /// @dev The SDK derives the MPC threshold from the MPC nodes it knows about instead of reading this value.
         mapping(uint256 contextId => uint256) mpcThresholdForContext;
-        /// @notice Whether a context has been destroyed.
+        /// @dev Deprecated.
         mapping(uint256 contextId => bool) destroyedContexts;
         /// @notice The most recently activated KMS context ID, the one reads resolve against.
         ///         Several contexts may remain in the `Active` state at once (prior contexts are not
@@ -81,16 +81,22 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
         /// @notice Context owning each epoch.
         mapping(uint256 epochId => uint256 contextId) contextForEpoch;
         /// @notice Context creation confirmations.
+        /// @dev Deprecated
         mapping(uint256 contextId => mapping(address txSender => bool confirmed)) contextCreationConfirmedByTxSender;
         /// @notice Epoch activation confirmations per signer (one digest per signer per epoch).
         mapping(uint256 epochId => mapping(address signer => bool confirmed)) epochActivationConfirmedBySigner;
-        /// @notice Number of epoch activation confirmations grouped by digest
+        /// @notice Number of epoch activation confirmations per digest.
+        /// @dev `dataHash` is the EIP-712 EpochActivationConfirmation digest.
+        ///      Previously `keccak256(abi.encode(keyHashes, crsHashes))` over the key and CRS results.
         mapping(uint256 epochId => mapping(bytes32 dataHash => uint256 confirmations)) epochActivationConfirmationCountForDigest;
         /// @notice Required previous-context confirmation quorum, cached at pending-context creation time.
+        /// @dev Deprecated
         mapping(uint256 contextId => uint256 threshold) contextCreationPreviousTxSenderThreshold;
         /// @notice New-context tx-sender confirmations for context creation.
+        /// @dev Deprecated
         mapping(uint256 contextId => uint256 confirmations) contextCreationNewTxSenderConfirmationCount;
         /// @notice Previous-context tx-sender confirmations for context creation.
+        /// @dev Deprecated
         mapping(uint256 contextId => uint256 confirmations) contextCreationPreviousTxSenderConfirmationCount;
         /// @notice Context anchor recorded when NewKmsContext was emitted.
         mapping(uint256 contextId => KmsContextAnchor) contextAnchors;
@@ -252,8 +258,9 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     }
 
     /**
-     * @dev Returns true if the context exists and has not been destroyed. Every stored context is
-     * Pending, Created or Active, and only destruction resets it to None.
+     * @dev Returns true if the context is Pending, Created or Active. Destruction resets a context
+     * to None. The v0.14 upgrade gave a state only to the context that was active at that upgrade,
+     * so older contexts also read as None and are not live.
      */
     function _isLiveKmsContext(uint256 kmsContextId) internal view virtual returns (bool) {
         return _getProtocolConfigStorage().contextState[kmsContextId] != ContextState.None;

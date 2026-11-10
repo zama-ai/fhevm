@@ -18,11 +18,13 @@ user-decryption-signature.workspace = true
 actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
+bytes.workspace = true
 dashmap.workspace = true
 futures.workspace = true
 humantime-serde.workspace = true
 kms-grpc.workspace = true
 prometheus.workspace = true
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha3.workspace = true
@@ -45,6 +47,7 @@ mocktail.workspace = true
 rstest.workspace = true
 serial_test.workspace = true
 testcontainers.workspace = true
+tokio = { workspace = true, features = ["io-util", "net"] }
 toml.workspace = true
 tracing-test.workspace = true
 

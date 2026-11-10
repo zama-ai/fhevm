@@ -60,6 +60,13 @@ struct Args {
 
     #[arg(
         long,
+        default_value_t = 64,
+        help = "Committed blocks replayed on restart; 1 through 10000"
+    )]
+    replay_window: u64,
+
+    #[arg(
+        long,
         default_value_t = 15,
         help = "Depth behind the head considered final (in blocks)"
     )]
@@ -240,6 +247,7 @@ async fn main() -> anyhow::Result<()> {
         rpc_compute_units_per_second: args.rpc_compute_units_per_second,
         health_port: args.health_port,
         seed_start_block: args.seed_start_block,
+        replay_window: args.replay_window,
         dependence_cache_size: args.dependence_cache_size,
         dependence_by_connexity: args.dependence_by_connexity,
         dependence_cross_block: args.dependence_cross_block,

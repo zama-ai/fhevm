@@ -1,0 +1,21 @@
+services:
+  # relayer-http (relayer-http/): aggregates the KMS connectors' HTTP answers through
+  # their `kms-connector[-i]-proxy`. No compose healthcheck: the runtime image has no shell; fhevm-cli
+  # waits for its startup log line.
+  relayer-http:
+    container_name: fhevm-relayer-http
+    platform: linux/amd64
+    image: ghcr.io/zama-ai/fhevm/relayer-http:${RELAYER_HTTP_VERSION}
+    env_file:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/env/relayer-http.env
+    # Trust the kms-connector proxies' test CA (rustls loads SSL_CERT_FILE instead of the system store).
+    environment:
+      SSL_CERT_FILE: /etc/kms-connector/proxy/ca.crt
+    command:
+      - /app/config/config.yaml
+    volumes:
+      - ${FHEVM_STATE_DIR:-../../../.fhevm}/runtime/config/relayer-http.yaml:/app/config/config.yaml:ro
+      - ../static/config/kms-connector-proxy/ca.crt:/etc/kms-connector/proxy/ca.crt:ro
+    ports:
+      - "3002:3002" # RELAYER_HTTP_PORT in src/layout.ts
+      - "3092:9898" # GET /metrics (metrics.endpoint default), scraped by `make -C relayer-http/dev start-monitoring`

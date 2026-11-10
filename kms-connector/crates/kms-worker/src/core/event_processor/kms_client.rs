@@ -23,8 +23,27 @@ use kms_grpc::{
     },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
-use tonic::{Code, Request, Response, Status, transport::Channel};
+use std::time::Duration;
+use tonic::{
+    Code, Request, Response, Status,
+    transport::{Channel, Endpoint},
+};
 use tracing::{info, warn};
+
+/// Builds a KMS Core endpoint with connection/request timeouts and keepalive.
+pub(crate) fn kms_core_endpoint(
+    shard_id: usize,
+    endpoint: &str,
+    config: &Config,
+) -> anyhow::Result<Endpoint> {
+    Ok(Channel::from_shared(endpoint.to_string())
+        .map_err(|e| anyhow!("Invalid KMS Core shard endpoint #{shard_id} {endpoint}: {e}"))?
+        .connect_timeout(config.kms_connect_timeout)
+        .timeout(config.kms_req_timeout)
+        .http2_keep_alive_interval(config.kms_keep_alive_interval)
+        .keep_alive_timeout(config.kms_keep_alive_timeout)
+        .keep_alive_while_idle(true))
+}
 
 /// The struct handling the communication with the KMS Core.
 #[derive(Clone, Debug)]
@@ -68,6 +87,9 @@ impl From<&ProtocolEventKind> for KmsPollTarget {
             }
             ProtocolEventKind::UserDecryptionV2(e) => {
                 Self::UserDecryption(u256_to_request_id(e.decryptionId))
+            }
+            ProtocolEventKind::PadDecryption(_) => {
+                unreachable!("pad decryptions are rejected by `check_request`")
             }
             ProtocolEventKind::PrepKeygen(e) => {
                 Self::PrepKeygen(u256_to_request_id(e.prepKeygenId))
@@ -116,15 +138,19 @@ impl KmsClient {
     pub async fn connect(config: &Config) -> anyhow::Result<Self> {
         let mut channels = vec![];
         for (i, kms_shard_endpoint) in config.kms_core_endpoints.iter().enumerate() {
-            channels.push(KmsClient::connect_single_shard(i, kms_shard_endpoint).await?);
+            channels.push(KmsClient::connect_single_shard(i, kms_shard_endpoint, config).await?);
         }
 
         Ok(Self::new(channels, config.grpc_request_retries))
     }
 
-    async fn connect_single_shard(shard_id: usize, endpoint: &str) -> anyhow::Result<Channel> {
-        let grpc_endpoint = Channel::from_shared(endpoint.to_string())
-            .map_err(|e| anyhow!("Invalid KMS Core shard endpoint #{shard_id} {endpoint}: {e}"))?;
+    /// Connects to a single KMS Core shard.
+    pub async fn connect_single_shard(
+        shard_id: usize,
+        endpoint: &str,
+        config: &Config,
+    ) -> anyhow::Result<Channel> {
+        let grpc_endpoint = kms_core_endpoint(shard_id, endpoint, config)?;
 
         for i in 1..=CONNECTION_RETRY_NUMBER {
             info!(
@@ -669,7 +695,9 @@ fn map_destroyed_epochs(
         })
 }
 
-const RETRYABLE_GRPC_CODE: [Code; 4] = [
+const RETRYABLE_GRPC_CODE: [Code; 5] = [
+    // Tonic endpoint timeouts are reported as Cancelled.
+    Code::Cancelled,
     Code::DeadlineExceeded,
     Code::ResourceExhausted,
     Code::Unavailable,
@@ -712,6 +740,10 @@ where
             .inc();
         if RETRYABLE_GRPC_CODE.contains(&error.code()) {
             warn!("#{i}/{retries} GRPC request attempt failed: {error}");
+            if i < retries as i16 {
+                let delay = Duration::from_millis(rand::random_range(100..=1000));
+                tokio::time::sleep(delay).await;
+            }
         } else {
             return (
                 i,
@@ -755,6 +787,10 @@ where
             Err(status) => {
                 if RETRYABLE_GRPC_CODE.contains(&status.code()) {
                     info!("#{i}/{retries} Failed to poll result from KMS: {status}");
+                    if i < retries as i16 {
+                        let delay = Duration::from_millis(rand::random_range(100..=1000));
+                        tokio::time::sleep(delay).await;
+                    }
                 } else {
                     // Any other error is returned immediately
                     GRPC_RESPONSE_POLLED_ERRORS
@@ -772,4 +808,64 @@ where
         retries as i16,
         Err(Status::unavailable("all result polling attempts failed")),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case(Code::Cancelled)]
+    #[case(Code::DeadlineExceeded)]
+    #[case(Code::ResourceExhausted)]
+    #[case(Code::Unavailable)]
+    #[case(Code::Unknown)]
+    #[tokio::test]
+    async fn polling_retries_then_returns_success(#[case] code: Code) {
+        let mut attempts = 0;
+        let (errors, result) = poll_for_result(
+            2,
+            || {
+                attempts += 1;
+                let result = if attempts == 1 {
+                    Err(Status::new(code, "retry"))
+                } else {
+                    Ok(Response::new(42))
+                };
+                std::future::ready(result)
+            },
+            EventType::PublicDecryptionRequest,
+        )
+        .await;
+        assert_eq!(result.unwrap().into_inner(), 42);
+        assert_eq!(errors, 1);
+        assert_eq!(attempts, 2);
+    }
+
+    #[rstest::rstest]
+    #[case(Code::InvalidArgument)]
+    #[case(Code::NotFound)]
+    #[case(Code::PermissionDenied)]
+    #[case(Code::FailedPrecondition)]
+    #[case(Code::OutOfRange)]
+    #[case(Code::Unimplemented)]
+    #[case(Code::Internal)]
+    #[case(Code::DataLoss)]
+    #[case(Code::Unauthenticated)]
+    #[tokio::test]
+    async fn polling_does_not_retry_non_retryable(#[case] code: Code) {
+        let mut attempts = 0;
+        let (errors, result) = poll_for_result(
+            2,
+            || {
+                attempts += 1;
+                std::future::ready(Err::<Response<u8>, _>(Status::new(code, "fatal")))
+            },
+            EventType::PublicDecryptionRequest,
+        )
+        .await;
+        assert_eq!(result.unwrap_err().code(), code);
+        assert_eq!(attempts, 1);
+        assert_eq!(errors, 1);
+    }
 }

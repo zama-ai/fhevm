@@ -31,6 +31,13 @@ struct Args {
     #[arg(long, default_value_t = 30)]
     poll_interval_secs: u64,
 
+    /// Age horizon (days) for the cutover gate's pre-window PBS-completion scan.
+    /// An incomplete pre-window PBS row older than this is treated as permanently
+    /// wedged and no longer blocks cutover (it is warned about instead). 0 removes
+    /// the horizon: every incomplete pre-window PBS row blocks, however old.
+    #[arg(long, default_value_t = 7)]
+    pbs_gate_max_age_days: u64,
+
     #[arg(
         long,
         value_parser = clap::value_parser!(Level),
@@ -92,6 +99,8 @@ async fn main() -> anyhow::Result<()> {
         gcs_mode,
         log_level: args.log_level,
         poll_interval: Duration::from_secs(args.poll_interval_secs),
+        pbs_gate_max_age: (args.pbs_gate_max_age_days > 0)
+            .then(|| Duration::from_secs(args.pbs_gate_max_age_days * 24 * 60 * 60)),
     };
 
     info!(

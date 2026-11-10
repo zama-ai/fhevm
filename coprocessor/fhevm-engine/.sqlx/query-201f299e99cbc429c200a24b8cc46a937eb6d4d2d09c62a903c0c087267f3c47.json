@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO host_chain_blocks_valid\n                (chain_id, block_hash, parent_hash, block_number, block_status,\n                 fhe_event_count, allow_event_count)\n            VALUES ($1, $2, $3, $4, $5, $6, $7)\n            ON CONFLICT (chain_id, block_hash) DO UPDATE\n            -- A block hash immutably determines its parent, so a freshly\n            -- observed non-empty parent_hash is authoritative: prefer it. This\n            -- both fills a missing value and corrects a stale/wrong one, while\n            -- never clobbering a known parent with a NULL/empty re-observation.\n            SET parent_hash = COALESCE(NULLIF(EXCLUDED.parent_hash, ''::BYTEA), host_chain_blocks_valid.parent_hash),\n                fhe_event_count = GREATEST(host_chain_blocks_valid.fhe_event_count, EXCLUDED.fhe_event_count),\n                allow_event_count = GREATEST(host_chain_blocks_valid.allow_event_count, EXCLUDED.allow_event_count);\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Text",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "201f299e99cbc429c200a24b8cc46a937eb6d4d2d09c62a903c0c087267f3c47"
+}

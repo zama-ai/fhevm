@@ -464,7 +464,8 @@ where
         &None,
         options,
     )
-    .await?;
+    .await?
+    .require_complete()?;
 
     let mut tx = db
         .new_transaction()

@@ -59,20 +59,32 @@ describe('HostContractVersion cache', () => {
     const client = makeClient(readContract);
 
     await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
-      version: 'ACL v0.1.0',
+      contractName: 'ACL',
+      major: 0,
+      minor: 1,
+      patch: 0,
     });
     await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
-      version: 'KMSVerifier v0.1.0',
+      contractName: 'KMSVerifier',
+      major: 0,
+      minor: 1,
+      patch: 0,
     });
     expect(readContract).toHaveBeenCalledTimes(2);
 
     invalidateVersionCache(client, { address: ACL_ADDRESS });
 
     await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
-      version: 'ACL v0.2.0',
+      contractName: 'ACL',
+      major: 0,
+      minor: 2,
+      patch: 0,
     });
     await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
-      version: 'KMSVerifier v0.1.0',
+      contractName: 'KMSVerifier',
+      major: 0,
+      minor: 1,
+      patch: 0,
     });
     expect(readContract).toHaveBeenCalledTimes(3);
   });
@@ -87,21 +99,72 @@ describe('HostContractVersion cache', () => {
     const client = makeClient(readContract);
 
     await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
-      version: 'ACL v0.1.0',
+      contractName: 'ACL',
+      major: 0,
+      minor: 1,
+      patch: 0,
     });
     await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
-      version: 'KMSVerifier v0.1.0',
+      contractName: 'KMSVerifier',
+      major: 0,
+      minor: 1,
+      patch: 0,
     });
     expect(readContract).toHaveBeenCalledTimes(2);
 
     invalidateVersionCache();
 
     await expect(getHostContractVersion(client, { address: ACL_ADDRESS })).resolves.toMatchObject({
-      version: 'ACL v0.2.0',
+      contractName: 'ACL',
+      major: 0,
+      minor: 2,
+      patch: 0,
     });
     await expect(getHostContractVersion(client, { address: KMS_VERIFIER_ADDRESS })).resolves.toMatchObject({
-      version: 'KMSVerifier v0.2.0',
+      contractName: 'KMSVerifier',
+      major: 0,
+      minor: 2,
+      patch: 0,
     });
     expect(readContract).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('HostContractVersion parsing', () => {
+  beforeEach(() => {
+    invalidateVersionCache({ includeInflight: true });
+  });
+
+  function getVersion(version: string): ReturnType<typeof getHostContractVersion> {
+    const client = makeClient(makeReadContract(new Map([[ACL_ADDRESS, [version]]])));
+    return getHostContractVersion(client, { address: ACL_ADDRESS });
+  }
+
+  it('does not validate the contract name', async () => {
+    await expect(getVersion('Foo v1.2.3')).resolves.toEqual({
+      contractName: 'Foo',
+      major: 1,
+      minor: 2,
+      patch: 3,
+    });
+  });
+
+  it('splits on the last " v"', async () => {
+    await expect(getVersion('Foo vBar v1.2.3')).resolves.toMatchObject({ contractName: 'Foo vBar' });
+  });
+
+  it.each([
+    'ACL',
+    'ACL 1.2.3',
+    'ACL v1.2',
+    'ACL v1.2.3.4',
+    'ACL v1.a.3',
+    'ACL v+1.2.3',
+    'ACL v 1.2.3',
+    'ACL v1.2.3 ',
+    ' v1.2.3',
+    'ACL v99999999999999999999.0.0',
+  ])('rejects %j', async (version) => {
+    await expect(getVersion(version)).rejects.toThrow(`Invalid version format: "${version}".`);
   });
 });

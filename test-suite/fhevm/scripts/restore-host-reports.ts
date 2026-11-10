@@ -5,7 +5,9 @@ const file = process.argv[2];
 if (!file) throw new Error("host report recovery journal required");
 const originals = hostReportOriginals(await Bun.file(file).json());
 for (const row of originals) {
-  const key = `${row.bucket}/state_hash/chain=${row.chain}/block=${row.block}.bin`;
+  // The journaled key is already scoped to the upgrade attempt that published
+  // the divergent object (state_hash.rs:state_hash_key).
+  const key = `${row.bucket}/${row.key}`;
   // The coprocessor buckets accept anonymous writes (see object-store-docker-compose.yml).
   const restored = await fetch(`http://127.0.0.1:9000/${key}`, {
     method: "PUT", headers: { "x-amz-meta-block-hash": row.blockHash }, body: Buffer.from(row.original, "hex"),

@@ -26,10 +26,14 @@ snsWorker:
     - --bucket-name-ct64=$(S3_BUCKET_NAME)
     - --bucket-name-ct128=$(S3_BUCKET_NAME)
 
-# The Gateway transport moved from WebSocket to HTTP after this release, and the base values set
-# txSender.config.gatewayUrl to the HTTP endpoint for it. v0.14.x speaks WebSocket, so pin it back
-# here. apply-chain-env.sh overwrites the value for the deployed chain mode.
+# The Gateway transport moved from WebSocket to HTTP in v0.14.2. The base values
+# pass that HTTP URL both as txSender.config.gatewayUrl and as a --gateway-url
+# extraArg (chart 0.13.8 only reads the arg). This v0.14.1 sender speaks
+# WebSocket, so drop the extraArg, turn the template flag back on, and pin it
+# to ws://. apply-chain-env.sh overwrites gatewayUrl for the deployed chain mode.
 txSender:
+  disabledArgs: ["multichain-acl-address"]
+  extraArgs: []
   config:
     gatewayUrl:
       value: "ws://anvil-gateway-anvil-node:8546"

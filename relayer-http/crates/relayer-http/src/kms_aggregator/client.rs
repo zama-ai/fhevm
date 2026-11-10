@@ -3,6 +3,7 @@
 use std::fmt;
 use std::time::Duration;
 
+use alloy::primitives::Address;
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use kms_connector_api::{ErrorCode, ErrorResponse};
@@ -10,49 +11,28 @@ use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use serde::de::DeserializeOwned;
 use url::Url;
 
-use super::config::{AuthConfig, ConfigError, EndpointConfig, KmsAggregatorConfig};
+use super::config::{ConfigError, EndpointConfig, KmsAggregatorConfig};
 
 /// Response bodies above this are dropped. One user-decrypt share is ~1.4 KiB per handle, hex-encoded in JSON;
 /// the 2048-bit budget allows 1024 handles, so the largest valid answer is ~2.8 MiB.
 pub const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 
-/// One KMS node as the caller sees it. `auth` is the `authorization: Bearer <key>` value (marked sensitive),
-/// or `None` for a local node without authentication. A future scheme turns this into an enum.
+/// One KMS node as the caller sees it.
 #[derive(Clone)]
 pub struct Endpoint {
     pub name: String,
     pub url: Url,
-    pub auth: Option<HeaderValue>,
+    pub audience: Address,
 }
 
-impl Endpoint {
-    /// Resolves the API key from the env var named in the config. The key is never logged or stored elsewhere.
-    pub fn from_config(cfg: &EndpointConfig) -> Result<Self, ConfigError> {
-        let auth = match &cfg.auth {
-            AuthConfig::None => None,
-            AuthConfig::ApiKey { value_env } => {
-                let key = std::env::var(value_env).map_err(|_| {
-                    ConfigError(format!(
-                        "endpoint '{}': env var {value_env} is not set",
-                        cfg.name
-                    ))
-                })?;
-                let mut value = HeaderValue::from_str(&format!("Bearer {key}")).map_err(|_| {
-                    ConfigError(format!(
-                        "endpoint '{}': {value_env} holds an invalid header value",
-                        cfg.name
-                    ))
-                })?;
-                value.set_sensitive(true);
-                Some(value)
-            }
-        };
-        Ok(Self {
+impl From<&EndpointConfig> for Endpoint {
+    fn from(cfg: &EndpointConfig) -> Self {
+        Self {
             name: cfg.name.clone(),
             url: cfg.url.clone(),
-            auth,
-        })
+            audience: cfg.audience,
+        }
     }
 }
 
@@ -61,7 +41,8 @@ impl fmt::Debug for Endpoint {
         f.debug_struct("Endpoint")
             .field("name", &self.name)
             .field("url", &self.url.as_str())
-            .finish_non_exhaustive()
+            .field("audience", &self.audience)
+            .finish()
     }
 }
 
@@ -89,9 +70,10 @@ pub enum AttemptError {
     /// A non-2xx status without a parsable error body (empty 404, HTML 502, a 3xx: never followed).
     #[error("http {0}")]
     Status(u16),
-    /// A 2xx whose body is unreadable.
-    #[error("bad body: {0}")]
-    Body(String),
+    /// A 2xx whose body is unreadable: only the kind of failure (`syntax`, `schema`, `truncated`, `io`) and the body
+    /// size are kept, never the parser's text, which echoes the input.
+    #[error("bad body: {kind}, {len} bytes")]
+    Body { kind: &'static str, len: usize },
     /// A body bigger than `MAX_RESPONSE_BYTES`: the declared `content-length`, or the bytes received when the
     /// stream was cut (a lower bound).
     #[error("response too large: {0} bytes (max {MAX_RESPONSE_BYTES})")]
@@ -99,6 +81,9 @@ pub enum AttemptError {
     /// Connection refused or reset, TLS failure, client-side timeout. Never contains the URL.
     #[error("transport: {0}")]
     Transport(String),
+    /// Signing failed (e.g. AWS KMS unreachable); nothing was sent.
+    #[error("signer: {0}")]
+    Signer(String),
 }
 
 impl AttemptError {
@@ -107,7 +92,7 @@ impl AttemptError {
         match self {
             Self::Api { error, .. } => error.code == ErrorCode::SenderAuthenticationFailed,
             Self::Status(status) => *status == 401,
-            Self::Body(_) | Self::TooLarge(_) | Self::Transport(_) => false,
+            Self::Body { .. } | Self::TooLarge(_) | Self::Transport(_) | Self::Signer(_) => false,
         }
     }
 
@@ -118,21 +103,44 @@ impl AttemptError {
             Self::Api { error, .. } if error.code == ErrorCode::Unknown => error.retryable,
             Self::Api { error, .. } => error.code.retryable(),
             Self::Status(status) => matches!(status, 408 | 429) || (500..600).contains(status),
-            Self::Transport(_) => true,
-            Self::Body(_) | Self::TooLarge(_) => false,
+            Self::Transport(_) | Self::Signer(_) => true,
+            Self::Body { .. } | Self::TooLarge(_) => false,
         }
     }
 
     /// The connector code reported upward as the dominant error: transport and bare 5xx count as
     /// `upstream_transient`, a bare 401 as `sender_authentication_failed`, a bare 429 as `rate_limited` (an ingress
-    /// or a future proxy rate limit answers without the connector body).
+    /// or a future proxy rate limit answers without the connector body), a signing failure (ours, not the node's) as
+    /// `unknown`.
     pub fn code(&self) -> ErrorCode {
         match self {
             Self::Api { error, .. } => error.code,
             Self::Status(401) => ErrorCode::SenderAuthenticationFailed,
             Self::Status(429) => ErrorCode::RateLimited,
             Self::Status(_) | Self::Transport(_) => ErrorCode::UpstreamTransient,
-            Self::Body(_) | Self::TooLarge(_) => ErrorCode::Unknown,
+            Self::Body { .. } | Self::TooLarge(_) | Self::Signer(_) => ErrorCode::Unknown,
+        }
+    }
+}
+
+/// Longest KMS node error message a log line carries, in characters: a node cannot flood the logs.
+pub const MAX_LOGGED_NODE_MESSAGE: usize = 256;
+
+impl AttemptError {
+    /// What a log line says about the failure: the node's error code and truncated message, or the kind of
+    /// failure. Never a body: a malformed 2xx body is reported by its kind and size only.
+    pub fn digest(&self) -> String {
+        match self {
+            Self::Api { status, error } => format!(
+                "{} (http {status}): {}",
+                error.code.as_str(),
+                error
+                    .message
+                    .chars()
+                    .take(MAX_LOGGED_NODE_MESSAGE)
+                    .collect::<String>()
+            ),
+            other => other.to_string(),
         }
     }
 }
@@ -145,15 +153,23 @@ pub trait ConnectorClient: Send + Sync + 'static {
         endpoint: &Endpoint,
         route: &str,
         body: Bytes,
+        authorization: &HeaderValue,
     ) -> Result<HttpReply, AttemptError>;
 }
 
 /// 2xx → DTO; otherwise the connector's error body when present, else the bare status.
 pub fn decode<R: DeserializeOwned>(reply: HttpReply) -> Result<R, AttemptError> {
     if (200..300).contains(&reply.status) {
-        // serde echoes the offending input in its message: truncate so a node cannot flood our logs.
-        return serde_json::from_slice(&reply.body)
-            .map_err(|e| AttemptError::Body(e.to_string().chars().take(120).collect()));
+        // serde echoes the offending input in its message: keep the kind of failure only.
+        return serde_json::from_slice(&reply.body).map_err(|e| AttemptError::Body {
+            kind: match e.classify() {
+                serde_json::error::Category::Io => "io",
+                serde_json::error::Category::Syntax => "syntax",
+                serde_json::error::Category::Data => "schema",
+                serde_json::error::Category::Eof => "truncated",
+            },
+            len: reply.body.len(),
+        });
     }
     match serde_json::from_slice::<ErrorResponse>(&reply.body) {
         Ok(error) => Err(AttemptError::Api {
@@ -170,16 +186,23 @@ pub struct HttpClient {
 }
 
 impl HttpClient {
-    /// `https_only` unless some endpoint is plain http (validated: loopback or `allow_insecure_http`).
+    /// `https_only` unless some endpoint is plain http (validated: loopback or `allow_insecure_http`); certificates
+    /// verified unless `skip_tls_verification`.
     pub fn new(cfg: &KmsAggregatorConfig) -> Result<Self, ConfigError> {
         let https_only = cfg.endpoints.iter().all(|e| e.url.scheme() == "https");
+        if cfg.skip_tls_verification {
+            tracing::warn!(
+                "kms_aggregator.skip_tls_verification is set: connector TLS certificates are not verified"
+            );
+        }
         let inner = reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT.min(cfg.call.timeout))
             // Safety net for a socket that stops answering; the aggregator's deadline is the decision.
             .timeout(cfg.call.timeout)
-            // Never forward the key to another host.
+            // Never forward the signed header to another host.
             .redirect(reqwest::redirect::Policy::none())
             .https_only(https_only)
+            .danger_accept_invalid_certs(cfg.skip_tls_verification)
             .no_proxy()
             .pool_idle_timeout(Duration::from_secs(10))
             .tcp_keepalive(Duration::from_secs(15))
@@ -209,16 +232,17 @@ impl ConnectorClient for HttpClient {
         endpoint: &Endpoint,
         route: &str,
         body: Bytes,
+        authorization: &HeaderValue,
     ) -> Result<HttpReply, AttemptError> {
-        let mut request = self
+        let mut response = self
             .inner
             .post(join_route(&endpoint.url, route))
             .header(CONTENT_TYPE, "application/json")
-            .body(body);
-        if let Some(auth) = &endpoint.auth {
-            request = request.header(AUTHORIZATION, auth.clone());
-        }
-        let mut response = request.send().await.map_err(transport)?;
+            .header(AUTHORIZATION, authorization.clone())
+            .body(body)
+            .send()
+            .await
+            .map_err(transport)?;
         let status = response.status().as_u16();
         if let Some(len) = response
             .content_length()
@@ -268,7 +292,7 @@ fn transport(e: reqwest::Error) -> AttemptError {
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::B256;
+    use alloy::primitives::{Address, B256};
     use kms_connector_api::UserDecryptionResponse;
     use wiremock::matchers::{body_bytes, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -276,56 +300,7 @@ mod tests {
     use super::*;
     use crate::kms_aggregator::config::tests::valid;
     use crate::kms_aggregator::mock::{self, Fixed};
-
-    const ALL_CODES: [ErrorCode; 17] = [
-        ErrorCode::Malformed,
-        ErrorCode::UnsupportedAttestationType,
-        ErrorCode::SenderAuthenticationFailed,
-        ErrorCode::AuthExpired,
-        ErrorCode::RateLimited,
-        ErrorCode::Overloaded,
-        ErrorCode::AclDenied,
-        ErrorCode::UserSignatureRejected,
-        ErrorCode::CiphertextNotFound,
-        ErrorCode::CoproConsensusFailed,
-        ErrorCode::KmsContextInvalid,
-        ErrorCode::KmsContextDestroyed,
-        ErrorCode::Unprocessable,
-        ErrorCode::UpstreamTransient,
-        ErrorCode::Timeout,
-        ErrorCode::Unknown,
-        ErrorCode::UserDecryptionExpired,
-    ];
-
-    /// Position of `code` in `ALL_CODES`. No `_` arm: a new connector code fails to compile here.
-    fn position(code: ErrorCode) -> usize {
-        match code {
-            ErrorCode::Malformed => 0,
-            ErrorCode::UnsupportedAttestationType => 1,
-            ErrorCode::SenderAuthenticationFailed => 2,
-            ErrorCode::AuthExpired => 3,
-            ErrorCode::RateLimited => 4,
-            ErrorCode::Overloaded => 5,
-            ErrorCode::AclDenied => 6,
-            ErrorCode::UserSignatureRejected => 7,
-            ErrorCode::CiphertextNotFound => 8,
-            ErrorCode::CoproConsensusFailed => 9,
-            ErrorCode::KmsContextInvalid => 10,
-            ErrorCode::KmsContextDestroyed => 11,
-            ErrorCode::Unprocessable => 12,
-            ErrorCode::UpstreamTransient => 13,
-            ErrorCode::Timeout => 14,
-            ErrorCode::Unknown => 15,
-            ErrorCode::UserDecryptionExpired => 16,
-        }
-    }
-
-    #[test]
-    fn all_codes_lists_every_connector_code_once() {
-        for (i, code) in ALL_CODES.into_iter().enumerate() {
-            assert_eq!(position(code), i, "{code:?}");
-        }
-    }
+    use crate::metrics::connector_codes;
 
     /// Route and body of the user-decrypt fixture.
     const USER: (&str, &[u8]) = (
@@ -347,7 +322,7 @@ mod tests {
 
     #[test]
     fn decode_every_error_code() {
-        for code in ALL_CODES {
+        for code in connector_codes() {
             let reply = mock::error_reply(USER.0, USER.1, code);
             let err = decode::<UserDecryptionResponse>(reply).unwrap_err();
             let AttemptError::Api { status, error } = &err else {
@@ -377,10 +352,28 @@ mod tests {
             status: 200,
             body: Bytes::from(format!("\"{}\"", "x".repeat(10_000))),
         };
-        let AttemptError::Body(msg) = decode::<UserDecryptionResponse>(garbage).unwrap_err() else {
-            panic!("expected Body");
-        };
-        assert!(msg.chars().count() <= 120);
+        // A string where an object is expected: the schema is wrong, and the text keeps none of the 10 000 bytes.
+        let error = decode::<UserDecryptionResponse>(garbage).unwrap_err();
+        assert_eq!(
+            error,
+            AttemptError::Body {
+                kind: "schema",
+                len: 10_002
+            }
+        );
+        assert_eq!(error.to_string(), "bad body: schema, 10002 bytes");
+        for (body, kind) in [("{ not json", "syntax"), ("{\"a\":", "truncated")] {
+            let reply = HttpReply {
+                status: 200,
+                body: Bytes::from(body),
+            };
+            let AttemptError::Body { kind: got, .. } =
+                decode::<UserDecryptionResponse>(reply).unwrap_err()
+            else {
+                panic!("expected Body");
+            };
+            assert_eq!(got, kind, "{body}");
+        }
     }
 
     #[test]
@@ -401,16 +394,25 @@ mod tests {
     fn is_auth_cases() {
         assert!(api(ErrorCode::SenderAuthenticationFailed, false).is_auth());
         assert!(AttemptError::Status(401).is_auth());
+        // An expired header is re-signed and retried, not a wrong key.
+        assert!(!api(ErrorCode::AuthExpired, true).is_auth());
+        assert!(!AttemptError::Signer("x".into()).is_auth());
         assert!(!api(ErrorCode::AclDenied, true).is_auth());
         assert!(!AttemptError::Status(403).is_auth());
         assert!(!AttemptError::Transport("x".into()).is_auth());
-        assert!(!AttemptError::Body("x".into()).is_auth());
+        assert!(
+            !AttemptError::Body {
+                kind: "syntax",
+                len: 1
+            }
+            .is_auth()
+        );
         assert!(!AttemptError::TooLarge(1).is_auth());
     }
 
     #[test]
     fn is_retryable_follows_the_connector_table() {
-        for code in ALL_CODES {
+        for code in connector_codes() {
             // The body flag is ignored for known codes and followed for `unknown`.
             let flipped = !code.retryable();
             let expected = if code == ErrorCode::Unknown {
@@ -426,7 +428,14 @@ mod tests {
         assert!(!AttemptError::Status(404).is_retryable());
         assert!(!AttemptError::Status(307).is_retryable());
         assert!(AttemptError::Transport("x".into()).is_retryable());
-        assert!(!AttemptError::Body("x".into()).is_retryable());
+        assert!(AttemptError::Signer("x".into()).is_retryable());
+        assert!(
+            !AttemptError::Body {
+                kind: "syntax",
+                len: 1
+            }
+            .is_retryable()
+        );
         assert!(!AttemptError::TooLarge(1).is_retryable());
     }
 
@@ -446,8 +455,16 @@ mod tests {
             AttemptError::Transport("x".into()).code(),
             ErrorCode::UpstreamTransient
         );
-        assert_eq!(AttemptError::Body("x".into()).code(), ErrorCode::Unknown);
+        assert_eq!(
+            AttemptError::Body {
+                kind: "syntax",
+                len: 1
+            }
+            .code(),
+            ErrorCode::Unknown
+        );
         assert_eq!(AttemptError::TooLarge(1).code(), ErrorCode::Unknown);
+        assert_eq!(AttemptError::Signer("x".into()).code(), ErrorCode::Unknown);
     }
 
     #[test]
@@ -478,32 +495,11 @@ mod tests {
 
     #[test]
     fn endpoint_from_config() {
-        let cfg = valid(1);
-        let e = Endpoint::from_config(&cfg.endpoints[0]).unwrap_err();
-        assert!(e.0.contains("KMS_00_API_KEY is not set"), "{e}");
-
-        let mut no_auth = cfg.endpoints[0].clone();
-        no_auth.auth = AuthConfig::None;
-        let endpoint = Endpoint::from_config(&no_auth).unwrap();
-        assert!(endpoint.auth.is_none());
+        let endpoint = Endpoint::from(&valid(1).endpoints[0]);
         assert_eq!(endpoint.name, "kms_00");
+        assert_eq!(endpoint.audience, Address::repeat_byte(1));
         let printed = format!("{endpoint:?}");
         assert!(printed.contains("kms_00") && printed.contains("kms-00.example.net"));
-    }
-
-    #[test]
-    fn endpoint_from_config_reads_the_key_and_hides_it() {
-        // `PATH` is always set: enough to exercise the happy path without touching the environment.
-        let mut ep = valid(1).endpoints[0].clone();
-        ep.auth = AuthConfig::ApiKey {
-            value_env: "PATH".into(),
-        };
-        let endpoint = Endpoint::from_config(&ep).unwrap();
-        let auth = endpoint.auth.clone().unwrap();
-        assert!(auth.is_sensitive());
-        assert!(auth.to_str().unwrap().starts_with("Bearer "));
-        assert_eq!(format!("{auth:?}"), "Sensitive");
-        assert!(!format!("{endpoint:?}").contains("Bearer"));
     }
 
     #[test]
@@ -554,23 +550,24 @@ mod tests {
         HttpClient::new(&cfg).unwrap()
     }
 
-    fn endpoint(server: &MockServer, key: Option<&'static str>) -> Endpoint {
+    /// A stand-in `Authorization` value: the client sends whatever it is given.
+    const AUTH: &str = "FhevmSig expires=1, sig=0x00";
+
+    fn endpoint(server: &MockServer) -> Endpoint {
         Endpoint {
             name: "node".into(),
             url: Url::parse(&server.uri()).unwrap(),
-            auth: key.map(HeaderValue::from_static),
+            audience: Address::repeat_byte(1),
         }
     }
 
-    async fn post(
-        server: &MockServer,
-        key: Option<&'static str>,
-    ) -> Result<HttpReply, AttemptError> {
+    async fn post(server: &MockServer) -> Result<HttpReply, AttemptError> {
         client()
             .post(
-                &endpoint(server, key),
+                &endpoint(server),
                 kms_connector_api::USER_DECRYPTION_ROUTE,
                 Bytes::from_static(mock::USER_REQUEST_JSON.as_bytes()),
+                &HeaderValue::from_static(AUTH),
             )
             .await
     }
@@ -586,33 +583,19 @@ mod tests {
         );
         Mock::given(method("POST"))
             .and(path("/v1/user-decrypt"))
-            .and(header("authorization", "Bearer k0"))
+            // Exact bytes: wiremock's `header` matcher splits values on commas.
+            .and(|request: &wiremock::Request| {
+                request.headers.get("authorization").map(|v| v.as_bytes()) == Some(AUTH.as_bytes())
+            })
             .and(header("content-type", "application/json"))
             .and(body_bytes(mock::USER_REQUEST_JSON.as_bytes().to_vec()))
             .respond_with(ResponseTemplate::new(200).set_body_bytes(reply.body.to_vec()))
             .expect(1)
             .mount(&server)
             .await;
-        let reply = post(&server, Some("Bearer k0")).await.unwrap();
+        let reply = post(&server).await.unwrap();
         let response = decode::<UserDecryptionResponse>(reply).unwrap();
         assert_eq!(response.decryption_id, B256::from(mock::USER_REQUEST_ID));
-    }
-
-    #[tokio::test]
-    async fn wire_no_auth_sends_no_authorization_header() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(header("authorization", "Bearer k0"))
-            .respond_with(ResponseTemplate::new(200))
-            .mount(&server)
-            .await;
-        // Without the header the only mock does not match: wiremock answers 404 with an empty body.
-        let reply = post(&server, None).await.unwrap();
-        assert_eq!(reply.status, 404);
-        assert_eq!(
-            decode::<UserDecryptionResponse>(reply).unwrap_err(),
-            AttemptError::Status(404)
-        );
     }
 
     #[tokio::test]
@@ -627,7 +610,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(403).set_body_bytes(error.body.to_vec()))
             .mount(&server)
             .await;
-        let err = decode::<UserDecryptionResponse>(post(&server, None).await.unwrap()).unwrap_err();
+        let err = decode::<UserDecryptionResponse>(post(&server).await.unwrap()).unwrap_err();
         assert_eq!(err.code(), ErrorCode::AclDenied);
         assert!(err.is_retryable());
     }
@@ -641,7 +624,7 @@ mod tests {
             )
             .mount(&server)
             .await;
-        assert_eq!(post(&server, None).await.unwrap().status, 307);
+        assert_eq!(post(&server).await.unwrap().status, 307);
     }
 
     #[tokio::test]
@@ -653,7 +636,7 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let err = post(&server, None).await.unwrap_err();
+        let err = post(&server).await.unwrap_err();
         assert_eq!(err, AttemptError::TooLarge(MAX_RESPONSE_BYTES as u64 + 1));
         assert_eq!(
             err.to_string(),
@@ -667,13 +650,102 @@ mod tests {
         let ep = Endpoint {
             name: "node".into(),
             url: Url::parse("http://127.0.0.1:1").unwrap(),
-            auth: None,
+            audience: Address::repeat_byte(1),
         };
         let err = client()
-            .post(&ep, kms_connector_api::USER_DECRYPTION_ROUTE, Bytes::new())
+            .post(
+                &ep,
+                kms_connector_api::USER_DECRYPTION_ROUTE,
+                Bytes::new(),
+                &HeaderValue::from_static(AUTH),
+            )
             .await
             .unwrap_err();
         assert!(matches!(err, AttemptError::Transport(_)), "{err}");
         assert!(err.is_retryable());
+    }
+
+    /// An https server on loopback with a self-signed certificate; answers one request with 200 and an empty body.
+    async fn self_signed_server() -> Url {
+        use tokio::io::AsyncWriteExt;
+        use tokio_rustls::rustls::{self, pki_types::pem::PemObject};
+        let cert = rustls::pki_types::CertificateDer::from_pem_slice(include_bytes!(
+            "testdata/self_signed.crt"
+        ));
+        let key = rustls::pki_types::PrivateKeyDer::from_pem_slice(include_bytes!(
+            "testdata/self_signed.key"
+        ));
+        let tls = rustls::ServerConfig::builder_with_provider(
+            rustls::crypto::aws_lc_rs::default_provider().into(),
+        )
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(vec![cert.unwrap()], key.unwrap())
+        .unwrap();
+        let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(tls));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            // A rejected handshake ends here: the client closed the connection.
+            if let Ok(mut stream) = acceptor.accept(tcp).await {
+                let reply = b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+                stream.write_all(reply).await.unwrap();
+                stream.shutdown().await.unwrap();
+            }
+        });
+        Url::parse(&format!("https://localhost:{port}")).unwrap()
+    }
+
+    /// One post to a fresh self-signed server, with `skip_tls_verification` set as given.
+    async fn post_self_signed(skip_tls_verification: bool) -> Result<HttpReply, AttemptError> {
+        let mut cfg = valid(1);
+        cfg.endpoints[0].url = self_signed_server().await;
+        cfg.call.timeout = Duration::from_secs(2);
+        cfg.skip_tls_verification = skip_tls_verification;
+        HttpClient::new(&cfg)
+            .unwrap()
+            .post(
+                &Endpoint::from(&cfg.endpoints[0]),
+                kms_connector_api::USER_DECRYPTION_ROUTE,
+                Bytes::new(),
+                &HeaderValue::from_static(AUTH),
+            )
+            .await
+    }
+
+    #[tokio::test]
+    async fn wire_self_signed_certificate_rejected_by_default() {
+        let err = post_self_signed(false).await.unwrap_err();
+        assert!(err.to_string().contains("connect:"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn wire_self_signed_certificate_accepted_when_opted_in() {
+        assert_eq!(post_self_signed(true).await.unwrap().status, 200);
+    }
+
+    #[test]
+    fn digest_keeps_the_nodes_code_and_a_truncated_message_never_a_body() {
+        let api = AttemptError::Api {
+            status: 403,
+            error: ErrorResponse::new(ErrorCode::AclDenied, "x".repeat(1000), None),
+        };
+        let digest = api.digest();
+        assert!(digest.starts_with("acl_denied (http 403): xxx"));
+        assert_eq!(
+            digest.chars().count(),
+            "acl_denied (http 403): ".len() + MAX_LOGGED_NODE_MESSAGE
+        );
+        assert_eq!(
+            AttemptError::Body {
+                kind: "syntax",
+                len: 12
+            }
+            .digest(),
+            "bad body: syntax, 12 bytes"
+        );
+        assert_eq!(AttemptError::Status(502).digest(), "http 502");
     }
 }

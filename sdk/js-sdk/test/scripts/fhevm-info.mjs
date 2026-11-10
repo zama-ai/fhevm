@@ -93,12 +93,13 @@ function addressArrayJson(value) {
 }
 
 // ---------------------------------------------------------------------------
-// Protocol version resolution (mirrors ProtocolVersionResolver-p.ts)
+// Protocol version resolution
 // ---------------------------------------------------------------------------
 
 /**
  * ACL contract version → protocol version mapping table.
- * Kept in sync with src/core/runtime/ProtocolVersionResolver-p.ts.
+ * Kept in sync with the "On-chain contracts" table in docs/compatibility.md
+ * (the SDK itself no longer derives the protocol version from ACL).
  * Each entry is a closed lower bound [lower, upper) interval.
  */
 const ACL_PROTOCOL_VERSION_TABLE = [
@@ -106,6 +107,8 @@ const ACL_PROTOCOL_VERSION_TABLE = [
   { acl: { lower: '0.3.0', upper: '0.4.0' }, protocol: '0.12.0' },
   { acl: { lower: '0.4.0', upper: '0.5.0' }, protocol: '0.13.0' },
   { acl: { lower: '0.5.0', upper: '0.6.0' }, protocol: '0.14.0' },
+  { acl: { lower: '0.6.0', upper: '0.7.0' }, protocol: '0.15.0' },
+  { acl: { lower: '0.7.0', upper: '0.8.0' }, protocol: '1.0.0' },
 ];
 
 function compareSemver(a, b) {
@@ -120,7 +123,7 @@ function compareSemver(a, b) {
 
 /**
  * Maps an ACL host-contract version string (e.g. "ACL v0.5.1") to a protocol
- * version resolution, mirroring protocolVersionFromAclVersion() in the SDK.
+ * version resolution using ACL_PROTOCOL_VERSION_TABLE.
  *
  * Returns { version, comparator } where comparator is:
  *   'eq'  — exact match found in the table

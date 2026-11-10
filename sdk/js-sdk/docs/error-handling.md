@@ -58,6 +58,8 @@ Thrown by encrypt, decrypt, and configuration operations.
 | `FhevmHandleError`        | A handle (encrypted value) couldn't be parsed.                     |
 | `TooManyHandlesError`     | More than 256 variables packed into one input ciphertext.          |
 | `FhevmConfigError`        | The FHEVM configuration is invalid.                                |
+| `InvalidSignedPermitError`      | A decryption permit can't be used: not a permit created by the SDK, an unexpected permit version, an `extraData` version the protocol no longer supports (e.g. a legacy permit with `extraData` v0, from protocol v0.11), an expired permit, or a legacy (v1) permit that doesn't list the requested contract. Sign a new permit. Also thrown for a permit whose `startTimestamp` is in the future; it becomes usable once that time is reached. Thrown before any request is sent. |
+| `FheEncryptionKeyVerificationError` | The FHE public key or CRS fails the check against `KMSGeneration`: digest or id mismatch, no active key or CRS, or a reverted read of the key or CRS materials. Not thrown on a network error, which passes through as is. |
 | `UnknownSignerError`      | A signer address isn't in the coprocessor/KMS signer set.          |
 | `ThresholdSignerError`    | The signer quorum threshold wasn't reached.                        |
 | `DuplicateSignerError`    | A duplicate signer address was found.                              |

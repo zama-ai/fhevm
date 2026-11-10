@@ -300,6 +300,7 @@ interface IKMSGeneration {
 
     /**
      * @notice Trigger a fresh FHE key generation or produce compressed material for an existing key.
+     * @dev Must not be called during a KMS context or epoch rotation.
      * @param paramsType The type of FHE parameters to use.
      * @param existingKeyId Zero for a fresh key, or the active key whose compressed material is requested.
      */
@@ -322,6 +323,7 @@ interface IKMSGeneration {
 
     /**
      * @notice Trigger a CRS generation.
+     * @dev Must not be called during a KMS context or epoch rotation.
      * @param maxBitLength The max bit length for generating the CRS.
      * @param paramsType The type of parameters to use.
      */
@@ -360,6 +362,13 @@ interface IKMSGeneration {
      * @return The parameters type used for the CRS generation.
      */
     function getCrsParamsType(uint256 crsId) external view returns (ParamsType);
+
+    /**
+     * @notice Get the max bit length used for the CRS generation.
+     * @param crsId The ID of the CRS.
+     * @return The max bit length used for the CRS generation.
+     */
+    function getCrsMaxBitLength(uint256 crsId) external view returns (uint256);
 
     /**
      * @notice Get the ID of the current active key.
@@ -420,12 +429,17 @@ interface IKMSGeneration {
     /**
      * @notice Get all materials available for a given key ID.
      * @param keyId The ID of the key.
-     * @return The key materials (storage URLs, key digests).
+     * @return The key materials: the storage URLs of the latest consensus that published material for
+     * the key (the migration consensus once a compressed key set was added, the keygen consensus
+     * otherwise), and the key digests, whose Server and Public entries come from the keygen consensus.
      */
     function getKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
 
     /**
      * @notice Get the full completed-key record for a given key ID, in a single call.
+     * @dev After a compressed key migration, this describes the migrated record KMS nodes are expected
+     * to hold: the migration's preprocessing ID, without the legacy `Server` digest that
+     * {getKeyMaterials} keeps.
      * @param keyId The ID of the key.
      * @return The key record (prepKeygenId, keyId, paramsType, key digests).
      */

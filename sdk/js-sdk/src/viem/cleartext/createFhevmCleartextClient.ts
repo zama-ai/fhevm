@@ -6,15 +6,16 @@ import type { FhevmClient } from '../../core/types/fhevmClient.js';
 import { createFhevmCleartextBaseClient } from './createFhevmCleartextBaseClient.js';
 import { encryptActions } from './decorators/encrypt.js';
 import { decryptActions } from './decorators/decrypt.js';
+import { encryptWithPadActions } from './decorators/encryptWithPad.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
 export function createFhevmCleartextClient<chain extends FhevmChain, publicClient extends PublicClient>(parameters: {
   readonly publicClient: publicClient;
   readonly chain: chain;
-  readonly options?: FhevmOptions | undefined;
+  readonly options?: FhevmOptions<PublicClient> | undefined;
 }): FhevmClient<chain, WithAll, publicClient> {
   const c = createFhevmCleartextBaseClient(parameters);
 
-  return c.extend(decryptActions).extend(encryptActions);
+  return c.extend(decryptActions).extend(encryptActions).extend(encryptWithPadActions);
 }

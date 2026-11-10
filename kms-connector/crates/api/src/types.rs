@@ -6,7 +6,7 @@
 //! Interface evolution happens via new versioned routes, not by adding fields to `v1` shapes.
 
 use alloy::{
-    primitives::{B256, Bytes},
+    primitives::{B256, Bytes, Keccak256},
     sol,
     sol_types::{Eip712Domain, SolStruct},
 };
@@ -25,6 +25,18 @@ pub const DECRYPTION_EIP712_DOMAIN: Eip712Domain = Eip712Domain {
 /// The maximum `durationSeconds` of a user decryption's validity window (365 days). Mirrors
 /// `MAX_USER_DECRYPT_DURATION_SECONDS` of the `Decryption` gateway contract.
 pub const MAX_USER_DECRYPTION_DURATION_SECONDS: u64 = 365 * 24 * 60 * 60;
+
+/// Domain tag of the pad label preimage.
+pub const PAD_LABEL_DOMAIN_TAG: &[u8; 8] = b"FHE_padl";
+
+/// The only witness format currently defined.
+pub const PAD_WITNESS_VERSION: u8 = 0x00;
+
+/// Upper bound on the number of bits of a pad stream a request can release.
+pub const MAX_PAD_LENGTH: u16 = 2048;
+
+/// Upper bound on the number of `decryptors` of a witness.
+pub const MAX_PAD_DECRYPTORS: u8 = 16;
 
 sol! {
     /// `POST v1/public-decrypt` request body: the protocol inputs of a public decryption.
@@ -74,6 +86,55 @@ sol! {
         /// The user's signature, in the scheme named by `attestationType`.
         bytes signature;
     }
+
+    /// The per-pad fields of a label witness.
+    ///
+    /// The shared fields are carried once by the [`PadDecryptionPayload`].
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PadWitness {
+        address submitter;
+        address consumer;
+        /// Unix seconds after which the pad of the label can no longer be decrypted.
+        uint64 expirationTimestamp;
+        address[] decryptors;
+        bytes16 nonce;
+    }
+
+    /// One requested pad: its label, the witness authenticating it, and the number of bits of
+    /// its pad stream to release.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PadEntry {
+        bytes32 label;
+        PadWitness witness;
+        uint16 padLength;
+    }
+
+    /// The protocol inputs of a pad decryption, i.e. the `payload` of a [`PadDecryptionRequest`].
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PadDecryptionPayload {
+        uint8 witnessVersion;
+        uint16 prfId;
+        uint64 chainId;
+        PadEntry[] pads;
+        address userAddress;
+        bytes publicKey;
+        address[] allowedContracts;
+        RequestValidity requestValidity;
+        bytes extraData;
+    }
+
+    /// `POST v1/pad-decrypt` request body.
+    #[derive(Debug, PartialEq, Serialize, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PadDecryptionRequest {
+        string attestationType;
+        PadDecryptionPayload payload;
+        /// The user's signature, in the scheme named by `attestationType`.
+        bytes signature;
+    }
 }
 
 impl PublicDecryptionRequest {
@@ -87,6 +148,54 @@ impl UserDecryptionRequest {
     /// Derives the content-derived `decryption_id`: the EIP-712 signing hash of the body.
     pub fn id(&self) -> B256 {
         self.eip712_signing_hash(&DECRYPTION_EIP712_DOMAIN)
+    }
+}
+
+impl PadDecryptionRequest {
+    /// Derives the content-derived `decryption_id`: the EIP-712 signing hash of the body.
+    pub fn id(&self) -> B256 {
+        self.eip712_signing_hash(&DECRYPTION_EIP712_DOMAIN)
+    }
+}
+
+impl PadWitness {
+    /// Derives the label of this witness under the given shared witness fields:
+    ///
+    /// `keccak256("FHE_padl" ‖ witnessVersion ‖ prfId ‖ chainId ‖ submitter ‖ consumer ‖
+    /// expirationTimestamp ‖ decryptorCount ‖ decryptors ‖ nonce)`
+    ///
+    /// Integers use fixed-width big-endian encoding: `witnessVersion` and `decryptorCount` are
+    /// 1 byte, `prfId` is 2 bytes, and `chainId` and `expirationTimestamp` are 8 bytes each.
+    ///
+    /// Computes the [`PAD_WITNESS_VERSION`] layout: checking `witness_version` and that the
+    /// decryptor count is at most [`MAX_PAD_DECRYPTORS`] is up to the caller.
+    ///
+    /// # Panics
+    ///
+    /// If there are more than 255 decryptors.
+    pub fn label(&self, witness_version: u8, prf_id: u16, chain_id: u64) -> B256 {
+        let mut hasher = Keccak256::new();
+        hasher.update(PAD_LABEL_DOMAIN_TAG);
+        hasher.update([witness_version]);
+        hasher.update(prf_id.to_be_bytes());
+        hasher.update(chain_id.to_be_bytes());
+        hasher.update(self.submitter);
+        hasher.update(self.consumer);
+        hasher.update(self.expirationTimestamp.to_be_bytes());
+        hasher.update([u8::try_from(self.decryptors.len())
+            .expect("checked against MAX_PAD_DECRYPTORS by the caller")]);
+        for decryptor in &self.decryptors {
+            hasher.update(decryptor);
+        }
+        hasher.update(self.nonce);
+        hasher.finalize()
+    }
+}
+
+impl PadDecryptionPayload {
+    /// Derives the label of `witness` under the shared witness fields of this payload.
+    pub fn label_of(&self, witness: &PadWitness) -> B256 {
+        witness.label(self.witnessVersion, self.prfId, self.chainId)
     }
 }
 
@@ -116,16 +225,33 @@ pub struct UserDecryptionResponse {
     pub extra_data: Bytes,
 }
 
+/// `200` body of `v1/pad-decrypt`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PadDecryptionResponse {
+    /// The content-derived decryption id.
+    pub decryption_id: B256,
+    /// The node's pad shares, encrypted under the request's `publicKey`.
+    pub encrypted_payload: Bytes,
+    /// The KMS node's signature over `decryptionId` and `encryptedPayload`.
+    pub signature: Bytes,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::AttestationType;
-    use alloy::primitives::Address;
+    use alloy::primitives::{Address, FixedBytes};
+
+    /// A v2 `extraData` (version, context id, epoch id).
+    fn extra_data_v2() -> Vec<u8> {
+        [vec![0x02], vec![0x07; 32], vec![0x08; 32]].concat()
+    }
 
     fn public_request() -> PublicDecryptionRequest {
         PublicDecryptionRequest {
             ctHandles: vec![B256::repeat_byte(0x11), B256::repeat_byte(0x22)],
-            extraData: Bytes::from(vec![0x00]),
+            extraData: Bytes::from(extra_data_v2()),
         }
     }
 
@@ -145,7 +271,38 @@ mod tests {
                     startTimestamp: 1_770_000_000,
                     durationSeconds: 300,
                 },
-                extraData: Bytes::from(vec![0x00]),
+                extraData: Bytes::from(extra_data_v2()),
+            },
+            signature: Bytes::from(vec![0x66; 65]),
+        }
+    }
+
+    fn pad_request() -> PadDecryptionRequest {
+        PadDecryptionRequest {
+            attestationType: AttestationType::Eip712UnifiedUserDecryptV1.to_string(),
+            payload: PadDecryptionPayload {
+                witnessVersion: 0,
+                prfId: 0,
+                chainId: 31337,
+                pads: vec![PadEntry {
+                    label: B256::repeat_byte(0xbb),
+                    witness: PadWitness {
+                        submitter: Address::repeat_byte(0x55),
+                        consumer: Address::repeat_byte(0x33),
+                        expirationTimestamp: 1_770_600_000,
+                        decryptors: vec![],
+                        nonce: FixedBytes::repeat_byte(0x0a),
+                    },
+                    padLength: 64,
+                }],
+                userAddress: Address::repeat_byte(0x55),
+                publicKey: Bytes::from(vec![0x20, 0x00, 0x20, 0x00]),
+                allowedContracts: vec![Address::repeat_byte(0x33)],
+                requestValidity: RequestValidity {
+                    startTimestamp: 1_770_000_000,
+                    durationSeconds: 300,
+                },
+                extraData: Bytes::from(extra_data_v2()),
             },
             signature: Bytes::from(vec![0x66; 65]),
         }
@@ -155,7 +312,7 @@ mod tests {
     fn unknown_fields_are_rejected() {
         let json = r#"{
             "ctHandles": ["0x1111111111111111111111111111111111111111111111111111111111111111"],
-            "extraData": "0x00",
+            "extraData": "0x0207000000000000000000000000000000000000000000000000000000000000010800000000000000000000000000000000000000000000000000000000000001",
             "sneaky": true
         }"#;
         assert!(serde_json::from_str::<PublicDecryptionRequest>(json).is_err());
@@ -167,6 +324,19 @@ mod tests {
         let mut json = serde_json::to_value(user_request()).unwrap();
         json["payload"]["sneaky"] = serde_json::Value::Bool(true);
         assert!(serde_json::from_value::<UserDecryptionRequest>(json).is_err());
+
+        let mut json = serde_json::to_value(pad_request()).unwrap();
+        json["sneaky"] = serde_json::Value::Bool(true);
+        assert!(serde_json::from_value::<PadDecryptionRequest>(json).is_err());
+        let mut json = serde_json::to_value(pad_request()).unwrap();
+        json["payload"]["sneaky"] = serde_json::Value::Bool(true);
+        assert!(serde_json::from_value::<PadDecryptionRequest>(json).is_err());
+        let mut json = serde_json::to_value(pad_request()).unwrap();
+        json["payload"]["pads"][0]["sneaky"] = serde_json::Value::Bool(true);
+        assert!(serde_json::from_value::<PadDecryptionRequest>(json).is_err());
+        let mut json = serde_json::to_value(pad_request()).unwrap();
+        json["payload"]["pads"][0]["witness"]["sneaky"] = serde_json::Value::Bool(true);
+        assert!(serde_json::from_value::<PadDecryptionRequest>(json).is_err());
     }
 
     #[test]
@@ -200,11 +370,21 @@ mod tests {
         let mut other = user.clone();
         other.attestationType = "random_attestation_type".to_owned();
         assert_ne!(user.id(), other.id());
+
+        // The unsigned pad fields are part of the id.
+        let pad = pad_request();
+        assert_eq!(pad.id(), pad.id());
+        let mut other = pad.clone();
+        other.payload.pads[0].padLength += 1;
+        assert_ne!(pad.id(), other.id());
+        let mut other = pad.clone();
+        other.payload.pads[0].witness.nonce = FixedBytes::repeat_byte(0x0b);
+        assert_ne!(pad.id(), other.id());
     }
 }
 
-// Checks the `decryption_id` EIP-712 digests against the known-good values committed in
-// `tests/vectors.json`.
+// Checks the `decryption_id` EIP-712 digests and the pad labels against the known-good values
+// committed in `tests/vectors.json`, generated independently by `tests/vectors.py`.
 #[cfg(test)]
 mod vector_tests {
     use super::*;
@@ -215,6 +395,19 @@ mod vector_tests {
     struct Vectors {
         public_decryption: Vec<DecryptionVector<PublicDecryptionRequest>>,
         user_decryption: Vec<DecryptionVector<UserDecryptionRequest>>,
+        pad_decryption: Vec<DecryptionVector<PadDecryptionRequest>>,
+        pad_label: Vec<LabelVector>,
+    }
+
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct LabelVector {
+        name: String,
+        witness_version: u8,
+        prf_id: u16,
+        chain_id: u64,
+        witness: PadWitness,
+        label: B256,
     }
 
     #[derive(Deserialize)]
@@ -244,19 +437,46 @@ mod vector_tests {
     }
 
     #[test]
-    fn requests_round_trip_through_serde() {
+    fn pad_decryption_id_vectors() {
+        for v in vectors().pad_decryption {
+            assert_eq!(v.request.id(), v.decryption_id, "{}", v.name);
+        }
+    }
+
+    #[test]
+    fn pad_label_vectors() {
+        for v in vectors().pad_label {
+            let label = v.witness.label(v.witness_version, v.prf_id, v.chain_id);
+            assert_eq!(label, v.label, "{}", v.name);
+        }
+        // The labels embedded in the request vectors are valid too.
+        for v in vectors().pad_decryption {
+            let payload = &v.request.payload;
+            for pad in &payload.pads {
+                assert_eq!(payload.label_of(&pad.witness), pad.label, "{}", v.name);
+            }
+        }
+    }
+
+    #[test]
+    fn requests_serialize_to_vectors() {
         // The id vectors only exercise deserialization; this pins the serialize direction
-        // (field casing, hex encodings) by re-parsing what we emit.
+        // (field casing, hex encodings) against the raw JSON of the vectors.
+        fn check<R: Serialize>(vectors: Vec<DecryptionVector<R>>, raw: &serde_json::Value) {
+            for (v, raw) in vectors.iter().zip(raw.as_array().unwrap()) {
+                assert_eq!(
+                    serde_json::to_value(&v.request).unwrap(),
+                    raw["request"],
+                    "{}",
+                    v.name
+                );
+            }
+        }
+        let raw: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/vectors.json")).unwrap();
         let vs = vectors();
-        for v in vs.public_decryption {
-            let json = serde_json::to_string(&v.request).unwrap();
-            let back: PublicDecryptionRequest = serde_json::from_str(&json).unwrap();
-            assert_eq!(back, v.request, "{}", v.name);
-        }
-        for v in vs.user_decryption {
-            let json = serde_json::to_string(&v.request).unwrap();
-            let back: UserDecryptionRequest = serde_json::from_str(&json).unwrap();
-            assert_eq!(back, v.request, "{}", v.name);
-        }
+        check(vs.public_decryption, &raw["publicDecryption"]);
+        check(vs.user_decryption, &raw["userDecryption"]);
+        check(vs.pad_decryption, &raw["padDecryption"]);
     }
 }

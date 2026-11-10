@@ -99,7 +99,7 @@ contract ACLTest is HostContractsDeployerTestUtils {
      * It checks that the version is correct, the owner/pauser are set to the expected addresses, and the fhevmExecutor address is correct.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.7.0")));
+        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.6.0")));
         assertEq(acl.owner(), owner);
         assertEq(acl.isPauser(pauser), true);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
@@ -109,20 +109,20 @@ contract ACLTest is HostContractsDeployerTestUtils {
     /**
      * @dev The ACL upgrade must refuse to run before HCULimit is upgraded, since `allow` calls it.
      */
-    function test_reinitializeV7RevertsUntilHCULimitIsUpgraded() public {
+    function test_reinitializeV6RevertsUntilHCULimitIsUpgraded() public {
         bytes32 initializableStorage = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
-        assertEq(uint256(vm.load(proxy, initializableStorage)), 8);
-        vm.store(proxy, initializableStorage, bytes32(uint256(7)));
+        assertEq(uint256(vm.load(proxy, initializableStorage)), 7);
+        vm.store(proxy, initializableStorage, bytes32(uint256(6)));
 
         bytes memory upgradedHCULimit = hcuLimitAdd.code;
         // An implementation without getCrossTxDepthLimit, like HCULimit before this upgrade.
         vm.etch(hcuLimitAdd, hex"00");
         vm.expectRevert();
-        acl.reinitializeV7();
+        acl.reinitializeV6();
 
         vm.etch(hcuLimitAdd, upgradedHCULimit);
-        acl.reinitializeV7();
-        assertEq(uint256(vm.load(proxy, initializableStorage)), 8);
+        acl.reinitializeV6();
+        assertEq(uint256(vm.load(proxy, initializableStorage)), 7);
     }
 
     /**

@@ -81,7 +81,7 @@ pub mod s3;
 pub mod state_hash;
 
 use crate::s3::S3Service;
-use crate::state_hash::state_hash_key;
+use crate::state_hash::{state_hash_key, UpgradeAttempt};
 
 /// pg_notify channels this service listens on.
 pub const NEW_BLOCK_CHANNEL: &str = "event_new_block";
@@ -203,21 +203,22 @@ pub enum Error {
     Gateway(String),
 }
 
-/// HTTP-GETs `state_hash` for `(chain_id, block_height)` from each opera
-/// whose slot is `None`, concurrently. Slots already populated by a prior
-/// attempt are left untouched, so retries only re-request the missing
-/// operators. Failure modes (404 / 5xx / transport) are logged distinctly
-/// so "peer hasn't uploaded yet" is visually separable from "peer's S3 is
-/// flaky".
+/// HTTP-GETs the attempt-scoped `state_hash` for `(chain_id, block_height)`
+/// from each operator whose slot is `None`, concurrently. Slots already
+/// populated by a prior attempt are left untouched, so retries only re-request
+/// the missing operators. Failure modes (404 / 5xx / transport) are logged
+/// distinctly so "peer hasn't uploaded yet" is visually separable from "peer's
+/// S3 is flaky".
 async fn fetch_state_commitments(
     http: &reqwest::Client,
     s3_urls: &[String],
+    attempt: &UpgradeAttempt,
     chain_id: i64,
     block_height: i64,
     slots: &mut [Option<Vec<u8>>],
 ) {
     debug_assert_eq!(s3_urls.len(), slots.len());
-    let key = state_hash_key(chain_id, block_height);
+    let key = state_hash_key(attempt, chain_id, block_height);
     let missing: Vec<usize> = slots
         .iter()
         .enumerate()
@@ -399,6 +400,7 @@ impl ConsensusTrack {
 async fn poll_track(
     http: &reqwest::Client,
     urls: &[String],
+    attempt: &UpgradeAttempt,
     track: &mut ConsensusTrack,
     candidates: &[i64],
     nontrivial: bool,
@@ -416,7 +418,7 @@ async fn poll_track(
         if slots.len() != urls.len() {
             *slots = vec![None; urls.len()];
         }
-        fetch_state_commitments(http, urls, track.chain_id, block, slots).await;
+        fetch_state_commitments(http, urls, attempt, track.chain_id, block, slots).await;
         if all_some_and_identical(slots) {
             info!(
                 chain_id = track.chain_id,
@@ -486,22 +488,6 @@ async fn host_consensus_candidates(
         .fetch_all(pool)
         .await?;
     Ok(rows.into_iter().map(|(b,)| b).collect())
-}
-
-/// Latest finalized GCS host-chain block for `host_chain_id`, or -1 if none.
-async fn gcs_host_watermark(pool: &Pool<Postgres>, host_chain_id: i64) -> Result<i64, Error> {
-    let sql = format!(
-        "SELECT COALESCE(
-                  (SELECT MAX(block_number) FROM {GCS_SCHEMA_QUOTED}.host_chain_blocks_valid
-                    WHERE chain_id = $1 AND block_status = 'finalized'),
-                  -1
-                )"
-    );
-    let (watermark,): (i64,) = sqlx::query_as(&sql)
-        .bind(host_chain_id)
-        .fetch_one(pool)
-        .await?;
-    Ok(watermark)
 }
 
 /// True once every block in `[start, end]` has a `state_hash`: counts the hashes and
@@ -605,7 +591,31 @@ where
     if members.is_empty() {
         return Err(anyhow::anyhow!("no coprocessor signers at block {block}"));
     }
+    // Named, not refused: the attempt still runs, so this operator still
+    // records the Abort that ends it at the deadline.
+    for (signer, url) in &members {
+        if let Err(error) = usable_member_url(url) {
+            error!(
+                %signer,
+                url,
+                %error,
+                "registered s3BucketUrl is unusable; an operator must re-register it"
+            );
+        }
+    }
     Ok(decision::members_of(&members))
+}
+
+/// The state-hash poll and the manifest reader both fetch over HTTP. Any other
+/// scheme never recovers, so name it here instead of leaving it to the timeout.
+fn usable_member_url(url: &str) -> anyhow::Result<()> {
+    let scheme = url::Url::parse(url)?.scheme().to_owned();
+    if !matches!(scheme.as_str(), "http" | "https") {
+        return Err(anyhow::anyhow!(
+            "scheme \"{scheme}\" cannot serve the state-hash reads"
+        ));
+    }
+    Ok(())
 }
 
 /// One pass over every host-chain track plus the Gateway track: resets tracks on
@@ -676,6 +686,13 @@ where
     let members = window_state.members.clone();
     let urls: Vec<String> = members.iter().map(|m| m.url.clone()).collect();
 
+    // The attempt identity scopes every state-hash S3 key (one key family per
+    // retry - see state_hash_key). The target stack version is deliberately
+    // not part of it: it lives in the signed decision payload, not in keys.
+    let attempt = UpgradeAttempt {
+        proposal_id: proposal_id.clone(),
+        proposal_block,
+    };
     // Host tracks: one per chain window, each anchoring independently.
     for &(chain_id, start, end) in &windows {
         let track = host_tracks
@@ -683,7 +700,7 @@ where
             .or_insert_with(|| ConsensusTrack::new(chain_id));
         if track.anchored.is_none() {
             let candidates = host_consensus_candidates(pool, chain_id, start, end, true).await?;
-            poll_track(http, &urls, track, &candidates, true).await?;
+            poll_track(http, &urls, &attempt, track, &candidates, true).await?;
             // No FHE op in the whole window: let this chain anchor on any block so it
             // doesn't block the upgrade. Require every window block hashed (no gap), so a
             // finalized-but-unfinished non-trivial block can't be mistaken for quiet.
@@ -693,7 +710,7 @@ where
             {
                 let readiness =
                     host_consensus_candidates(pool, chain_id, start, end, false).await?;
-                poll_track(http, &urls, track, &readiness, false).await?;
+                poll_track(http, &urls, &attempt, track, &readiness, false).await?;
             }
         }
     }
@@ -706,7 +723,7 @@ where
         ) {
             let candidates =
                 pending_gw_consensus_blocks(pool, gateway.chain_id, gw_start, gw_tip).await?;
-            poll_track(http, &urls, gateway, &candidates, true).await?;
+            poll_track(http, &urls, &attempt, gateway, &candidates, true).await?;
         }
     }
 
@@ -717,17 +734,21 @@ where
 
     let own_name = fleet.signer.map(|s| decision::name_of(s.address()));
 
-    // One deadline per chain, so an early chain ends the attempt without a wait
-    // for a later window.
+    // One deadline per chain, armed only once that chain is actually READY to
+    // anchor — its whole window is hashed — or a stuck listener's window was
+    // closed by Blue. Arming on the watermark (blocks merely finalized) instead
+    // let an early chain's timer fire while it was still hashing, or while a
+    // later, legitimately staggered window had not even opened yet, aborting a
+    // healthy disjoint-window upgrade. Measuring from "ready to anchor" means a
+    // chain that then stays un-anchored past the timeout is genuinely divergent,
+    // not merely lagging, so ending the attempt on it is correct.
     let mut expired = false;
     if !both_anchored {
-        for &(chain_id, _, end) in &windows {
+        for &(chain_id, start, end) in &windows {
             if window_state.deadlines.contains_key(&chain_id) {
                 continue;
             }
-            // A stuck listener still ends once Blue passed the window. The peers
-            // decided before that moment.
-            if gcs_host_watermark(pool, chain_id).await? >= end
+            if gcs_window_fully_hashed(pool, chain_id, start, end).await?
                 || state_hash::chain_upload_closed(pool, chain_id, end, commitment_timeout).await?
             {
                 window_state
@@ -737,7 +758,7 @@ where
                     chain_id,
                     end_block = end,
                     timeout_secs = commitment_timeout.as_secs(),
-                    "arming consensus timeout (the chain reached end_block, or uploads closed)"
+                    "arming consensus timeout (window fully hashed, or uploads closed)"
                 );
             }
         }
@@ -817,9 +838,9 @@ where
         .await
         {
             Ok(record) => {
-                if let Err(e) = decision::put(client, bucket, &proposal_id, &record).await {
-                    warn!(error = %e, "failed to write the decision record; retrying next pass");
-                }
+                // put() logs every outcome (written / kept / failed) with the
+                // key and the serialized record; a failure retries next pass.
+                let _ = decision::put(client, bucket, &proposal_id, &record).await;
             }
             Err(e) => warn!(error = %e, "failed to sign the decision record"),
         }
@@ -1217,6 +1238,18 @@ mod tests {
         pool.close().await;
     }
 
+    #[test]
+    fn member_url_must_be_fetchable_over_http() {
+        for url in [
+            "http://object-store-2:9000/coproc-2",
+            "https://peer-bucket.s3.eu-west-3.amazonaws.com",
+            "https://coprocessor-3.dev.zama.cloud",
+        ] {
+            usable_member_url(url).unwrap_or_else(|error| panic!("{url}: {error}"));
+        }
+        assert!(usable_member_url("s3://peer-bucket").is_err());
+    }
+
     const GW: i64 = 54321;
 
     fn track(chain_id: i64, anchored: Option<i64>, nontrivial: bool) -> ConsensusTrack {
@@ -1386,3 +1419,5 @@ mod tests {
         assert!(!all_slots_filled(&empty));
     }
 }
+#[cfg(test)]
+mod ingestion_recovery_tests;

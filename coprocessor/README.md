@@ -237,7 +237,7 @@ Options:
   -d, --database-url <DATABASE_URL>
           
       --database-pool-size <DATABASE_POOL_SIZE>
-          [default: 10]
+          Pool capacity (minimum 5). Four connections are reserved for notification listeners and short queries; the rest bound concurrent Gateway submissions across both proof responses and ciphertext commits [default: 10]
       --database-polling-interval-secs <DATABASE_POLLING_INTERVAL_SECS>
           [default: 1]
       --verify-proof-resp-database-channel <VERIFY_PROOF_RESP_DATABASE_CHANNEL>

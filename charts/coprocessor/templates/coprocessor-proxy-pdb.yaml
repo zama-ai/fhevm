@@ -1,0 +1,18 @@
+{{- $proxy := .Values.coprocessorProxy -}}
+{{- /* A budget over a single replica would block every node drain. */ -}}
+{{- if and $proxy.enabled $proxy.podDisruptionBudget.enabled (ge (int $proxy.replicas) 2) -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    app: coprocessor-proxy
+    app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+  name: {{ include "coprocessorProxyName" . }}
+spec:
+  minAvailable: {{ $proxy.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app: coprocessor-proxy
+      app.kubernetes.io/name: {{ include "coprocessorProxyName" . }}
+      {{- include "coprocessor.extraSelectorLabels" . | nindent 6 }}
+{{- end -}}

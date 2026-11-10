@@ -22,23 +22,27 @@ relayer-http/
 ├── Dockerfile                                     # container image, built from the repository root (see Container image)
 ├── .gitignore                                     # target/, config/*.local.yaml (local variants of the configuration)
 ├── config/config.yaml                             # example configuration: name, log, http, kms_aggregator
-├── dev/                                           # local development tooling: Makefile, per-topology configs, proxy port-forwards, flow scripts; start with its README.md
+├── monitoring/                                    # dashboard, alert rules and their tests, runbook, measurement design (design.md), generated references (OBSERVABILITY.md)
+├── dev/                                           # local development tooling: Makefile, host run, flow scripts; start with its README.md
 └── crates/relayer-http/src/
     ├── main.rs                # load config → init logging → App → serve until SIGINT/SIGTERM → drain → exit
-    ├── lib.rs                 # App: the one shared state (both aggregators, http config, shutdown token)
-    ├── config.rs              # RelayerConfig, LogConfig, HttpConfig: YAML + APP_<SECTION>__<FIELD> overrides
-    ├── logging.rs             # tracing subscriber (json | pretty | compact, RUST_LOG) + Log: one request's identifiers on every line
+    ├── lib.rs                 # App: the one shared state (both aggregators, http config, metrics registry, shutdown token: healthz and the servers, never an aggregation)
+    ├── config.rs              # RelayerConfig, LogConfig, HttpConfig, MetricsConfig: YAML + APP_<SECTION>__<FIELD> overrides
+    ├── logging.rs             # tracing subscriber (json | pretty | compact, RUST_LOG), the `log` bridge, the panic hook; test only: the JSON capture helpers
+    ├── metrics.rs             # the metric registry, label values, the /metrics listener (its own port)
+    ├── reference.rs, monitoring.rs   # test only: generated references and series budget; dashboard and alerts checked against the code
     ├── endpoint/              # the HTTP layer; start with its docs.md
-    │   ├── mod.rs             # router() and serve()
+    │   ├── mod.rs             # router(), serve() and the middleware that logs the summary line and counts the request
+    │   ├── summary.rs         # Summary: one request's state, the summary line and its field list
     │   ├── error.rs           # ApiError: the one error body and its mapping
     │   ├── validate.rs        # rules shared by the routes (handles, extraData)
     │   ├── ops.rs             # GET /liveness, GET /healthz
-    │   └── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per route: wire types, validation, handler (logs each step)
+    │   └── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per route: wire types, validation, handler (fills the Summary)
     └── kms_aggregator/        # fan-out to the KMS connectors and t-of-n aggregation; start with its docs.md
-        ├── mod.rs, config.rs, client.rs, call.rs, aggregator.rs
+        ├── mod.rs, config.rs, client.rs, call.rs, aggregator.rs, signer.rs   # signer: FhevmSig headers (RFC-038)
         ├── flows/{mod,user_decrypt,public_decrypt}.rs   # one file per flow: checks, counting, output
         ├── mock.rs, scenarios.rs                       # test only: scripted connector, YAML scenario runner
-        └── scenarios/*.yaml                            # behaviour scenarios, run by cargo test
+        └── scenarios/*.yaml                            # behaviour scenarios, run by the test suite
 ```
 
 Two modules, each with its `docs.md` next to the code: `endpoint/docs.md` (routes, payloads, responses, every
@@ -47,11 +51,12 @@ configuration → behaviour). The implementation plans live outside the reposito
 
 ## Configuration
 
-One YAML file (`config/config.yaml` is the example), four sections: `name`, `log` (optional, defaults to JSON
-lines), `http` (bind address, body limit, body read timeout, supported chain ids) and `kms_aggregator` (deadline,
+One YAML file (`config/config.yaml` is the example), five sections: `name`, `log` (optional, defaults to JSON
+lines), `http` (bind address, body limit, body read timeout, supported chain ids, optional request limits defaulting to the connector's), `metrics` (optional: `endpoint`, default `0.0.0.0:9898`, the Prometheus listener on its own port) and `kms_aggregator` (deadline,
 retries, thresholds, optional checks, the KMS endpoints). Any field can be overridden with `APP_<SECTION>__<FIELD>` (durations carry a
-unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). API keys are never in the file: each endpoint names the env var
-holding its key. Local variants go to `config/*.local.yaml`, ignored by git.
+unit, e.g. `APP_KMS_AGGREGATOR__CALL__TIMEOUT=7s`). Every connector call carries an `FhevmSig` header (RFC-038)
+signed for that endpoint's `audience`; the signing key is never in the file: `kms_aggregator.auth.signer` names the env
+var holding it, or an AWS KMS key, and startup fails unless that key has the address `kms_aggregator.auth.address` and signs a test message. Local variants go to `config/*.local.yaml`, ignored by git.
 
 ## Commands
 
@@ -60,16 +65,23 @@ From `relayer-http/`:
 ```sh
 cargo fmt -- --check      # not --all: cargo-fmt would follow the kms-connector-api path dependency into generated bindings
 cargo clippy --workspace --all-targets -- -W clippy::perf -W clippy::suspicious -W clippy::style -D warnings
-cargo test --workspace
-cargo test -p relayer-http yaml_scenarios          # the aggregator scenarios only
-cargo run -p relayer-http -- config/config.yaml    # needs the KMS_<i>_API_KEY env vars named in the config
+cargo nextest run --workspace
+cargo nextest run -p relayer-http yaml_scenarios   # the aggregator scenarios only
+make -C dev test-aws      # the AWS KMS signer as deployed (IRSA credentials), against Floci (an AWS emulator); needs Docker
+cargo run -p relayer-http -- config/config.yaml    # needs the signing key env var named in auth.signer (RELAYER_SIGNER_KEY)
 ```
 
-Every change must pass the first three. Check exit codes strictly (a grep on the output hides a failing build).
+`make -C dev references` regenerates `monitoring/{summary_log,metrics,labels}.md` after a change to the summary fields, the
+metrics or the labels (a test fails while they differ); `make -C dev check-alerts` runs `promtool` on the alert rules
+and their unit tests (Docker).
 
-Against the local fhevm stack: `make -C dev up` (connector proxies and their host port-forwards), `make -C dev run`
-(the relayer with the config matching the running topology), `make -C dev public-decrypt` / `user-decrypt` (one flow
-each, from the e2e container), `make -C dev check` (the three commands above). See `dev/README.md`.
+Every change must pass the first three; a change to the AWS signer or the AWS dependencies also `make -C dev test-aws`.
+Tests that need an external service are `#[ignore = "<why>"]` and grouped in one module per service, run by name with
+`--run-ignored only -E 'test(/<module>/)'` once the service is up (never an env var that silently skips). Check exit codes strictly (a grep on the output hides a failing build).
+
+Against the local fhevm stack: `./fhevm-cli up` runs relayer-http in the stack (`fhevm-relayer-http`, :3002);
+`make -C dev run` runs it on the host instead (:4002, the stack's config); `make -C dev public-decrypt` / `user-decrypt`
+(one flow each, from the e2e container); `make -C dev check` (the three commands above). See `dev/README.md`.
 
 ## Container image
 
@@ -83,15 +95,15 @@ siblings, which the Dockerfile copies at the same relative places.
 # from the repository root
 docker build -f relayer-http/Dockerfile --build-arg RUST_IMAGE_VERSION=1.97.1 -t relayer-http .
 docker run --rm -p 8080:8080 -v "$PWD/relayer-http/config/config.yaml:/app/config/config.yaml:ro" \
-  -e KMS_00_API_KEY=... relayer-http            # the config is mounted at /app/config/config.yaml
+  -e RELAYER_SIGNER_KEY=... relayer-http        # the config is mounted at /app/config/config.yaml
 ```
 
 CI publishes the image as `ghcr.io/zama-ai/fhevm/relayer-http` through `.github/workflows/relayer-http-docker-build.yml`
 (pushes to `main`/`release/*`, releases, manual runs, or a call from the e2e orchestrator). The two other workflows,
-`relayer-http-tests.yml` and `relayer-http-dependency-analysis.yml`, run on pull requests: the three commands above,
-then `cargo update -w --locked`, `cargo-deny check license` against `deny.toml` (every allowed license must be used)
+`relayer-http-tests.yml` and `relayer-http-dependency-analysis.yml`, run on pull requests: the three commands above and
+`make -C dev test-aws`, then `cargo update -w --locked`, `cargo-deny check license` against `deny.toml` (every allowed license must be used)
 and `cargo-audit audit` with `.cargo/audit.toml`. All three are gated on changes under `relayer-http/**`,
-`kms-connector/crates/api/**` and `kms-connector/Cargo.toml`.
+`kms-connector/crates/api/**`, `kms-connector/Cargo.toml` and `shared/fhevm-sig-auth/**`.
 
 ## Rules
 
@@ -99,7 +111,7 @@ and `cargo-audit audit` with `.cargo/audit.toml`. All three are gated on changes
 configuration, optional checks included. Every on-chain read goes to a host chain through host contracts, Ethereum
 being the reference.
 
-**No unexpected panic.** Both crate roots deny `clippy::unwrap_used`, `expect_used`, `indexing_slicing` and `panic`
+**No unexpected panic.** A panicking handler still answers `500 internal` (`CatchPanicLayer`). Both crate roots deny `clippy::unwrap_used`, `expect_used`, `indexing_slicing` and `panic`
 (allowed in tests). Every failure is a typed error returned to the caller. Configuration validation bounds every value
 the runtime arithmetic relies on (`call.timeout <= 60s`, `backoff_max <= call.timeout`, semaphore size capped) so that no
 arithmetic can overflow later. A panic inside a spawned task is counted as a failure, never propagated.
@@ -112,17 +124,15 @@ session. Every replica is identical; the call semaphore is per pod. If per-reque
 a trait so that Redis (or another store) can back it later.
 
 **Errors.** Modules return typed errors (`thiserror`), with what the caller needs to act (counts, dominant connector
-error). Errors are logged once, at the boundary that answers the client. No `error!` inside a module for an expected
-failure.
+error). Errors are reported once, in the summary line of the request that the boundary answering the client emits. No `error!`
+inside a module for an expected failure.
 
-**Logging.** `tracing` only, structured fields, short messages. Every endpoint line about a request goes through its
-`Log` (`logging.rs`) and carries `request_id`, `flow`, `handles`, `decryption_id`, the last two `none` until known:
-a known event is a method on `Log`, any other line is `log!(level, log, fields…, "message")`. Aggregator lines carry
-the same identifiers through the `aggregation` span; a task spawned for a request inherits it (`in_current_span`).
-Every failed node attempt is one `warn`. Never log request or response bodies, shares, signatures, header values or
-URLs. The subscriber is installed by `main`, never by a module; `log:` is optional and defaults to JSON lines
-(`log.format`: `json` | `pretty` | `compact`, plus the relayer's `show_*` switches); the level filter is `RUST_LOG`,
-default `warn,relayer_http=info`.
+**Logging and metrics.** `OBSERVABILITY.md` is the policy: read it before adding a log line, a metric, an alert or a
+dashboard. `tracing` only; the subscriber is installed by `main`, never by a module; `log:` is optional and defaults to
+JSON lines (`log.format`: `json` | `pretty` | `compact`, plus the relayer's `show_*` switches); the level filter is
+`RUST_LOG`, default `warn,relayer_http=debug` (never a global `debug`: library lines may carry URLs); `log`-crate
+libraries reach the same subscriber; the panic hook logs a panic as one JSON ERROR line, location only. Log tests use `logging::capture` and assert on JSON fields, not
+`tracing-test`.
 
 **Configuration.** Nested structs use `deny_unknown_fields`; `validate()` messages name the field with its dotted path
 (`kms_aggregator.call.timeout must …`); secrets appear only as env var names; durations carry a unit.
@@ -134,7 +144,7 @@ Production-ready means no panic, typed errors, logs, cancellation and tests, not
 `endpoint` feature): DTOs, routes, error codes and their `retryable` flag are used as they are, never redefined.
 
 **Tests.** A unit test per function, next to it. Paused tokio time (`start_paused`) for anything timed, so durations
-are exact and tests are instant. Behaviour is described in YAML scenarios run by `cargo test`; adding a case is adding
+are exact and tests are instant. Behaviour is described in YAML scenarios run by the test suite; adding a case is adding
 a file.
 
 **Documentation.** Every module has a `docs.md` produced with the module and updated in the same change as any

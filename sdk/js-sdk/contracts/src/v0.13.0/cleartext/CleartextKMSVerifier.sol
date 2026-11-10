@@ -6,6 +6,28 @@ import {KMSVerifier} from "../host-contracts/contracts/KMSVerifier.sol";
 import {FheType} from "../host-contracts/contracts/shared/FheType.sol";
 import {aclAdd} from "../host-contracts/addresses/FHEVMHostAddresses.sol";
 
+/// @notice A v1 user-decryption permit: the signed fields plus the signer. Same layout as the v14
+///         cleartext `UserDecryptPermitV1`, so one sdk ABI serves both.
+struct UserDecryptPermitV1 {
+    address userAddress;
+    bytes publicKey;
+    address[] contractAddresses;
+    uint256 startTimestamp;
+    uint256 durationDays;
+    bytes extraData;
+}
+
+/// @notice A v1 delegated user-decryption permit. Same layout as the v14 cleartext one.
+struct DelegatedUserDecryptPermitV1 {
+    address delegateAddress;
+    bytes publicKey;
+    address[] contractAddresses;
+    address delegatorAddress;
+    uint256 startTimestamp;
+    uint256 durationDays;
+    bytes extraData;
+}
+
 /**
  * @title CleartextKMSVerifier
  */
@@ -300,6 +322,113 @@ contract CleartextKMSVerifier is KMSVerifier {
 
         signers = getKmsSigners();
         threshold = getThreshold();
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // extraData-taking entry points, as in the v14 cleartext KMSVerifier. TEMPORARY: sdk v14 calls
+    // these on every stack; v12/v13 are outside its supported range and carry them only so the
+    // localcleartext v12/v13 suites keep passing.
+    // ---------------------------------------------------------------------------------------------
+
+    /// @notice Same as `publicDecrypt(handles)`, signed over the requested `extraData`, with the signers
+    ///         and threshold of the KMS context it names.
+    function publicDecrypt(bytes32[] memory handles, bytes memory extraData)
+        external
+        view
+        virtual
+        returns (
+            bytes memory abiEncodedCleartexts,
+            bytes32 digest,
+            address[] memory signers,
+            uint256 threshold,
+            bytes memory signedExtraData
+        )
+    {
+        uint256[] memory cleartexts = CleartextACL(aclAdd).plaintextForPublicDecryption(handles);
+        abiEncodedCleartexts = _encodeTypedCleartexts(handles, cleartexts);
+        signedExtraData = _signedExtraData(extraData);
+        digest = _hashPublicDecryptionResult(handles, abiEncodedCleartexts, signedExtraData);
+        (signers, threshold) = this.getContextSignersAndThresholdFromExtraData(extraData);
+    }
+
+    /// @notice Same as `userDecrypt`, verified against exactly the `extraData` the user signed.
+    function userDecryptV1(
+        HandleContractPair[] calldata pairs,
+        UserDecryptPermitV1 memory permit,
+        bytes memory signature
+    )
+        external
+        view
+        virtual
+        returns (bytes memory payload, address[] memory signers, uint256 threshold, bytes memory signedExtraData)
+    {
+        if (permit.contractAddresses.length > 10) {
+            revert("Too many contracts");
+        }
+
+        signedExtraData = permit.extraData;
+        {
+            uint256[] memory rawCleartexts =
+                CleartextACL(aclAdd).plaintextForUserDecryption(pairs, permit.userAddress);
+            payload = abi.encode(_xorMaskWithPublicKey(permit.publicKey, rawCleartexts), signedExtraData);
+        }
+
+        _verifySignature(
+            _hashUserDecryptionResult(
+                permit.publicKey, permit.contractAddresses, permit.startTimestamp, permit.durationDays, permit.extraData
+            ),
+            signature,
+            permit.userAddress
+        );
+        _requireAllPairsAuthorized(pairs, permit.contractAddresses);
+
+        (signers, threshold) = this.getContextSignersAndThresholdFromExtraData(permit.extraData);
+    }
+
+    /// @notice Same as `delegatedUserDecrypt`, verified against exactly the `extraData` the delegate signed.
+    function delegatedUserDecryptV1(
+        HandleContractPair[] calldata pairs,
+        DelegatedUserDecryptPermitV1 memory permit,
+        bytes memory signature
+    )
+        external
+        view
+        virtual
+        returns (bytes memory payload, address[] memory signers, uint256 threshold, bytes memory signedExtraData)
+    {
+        if (permit.contractAddresses.length > 10) {
+            revert("Too many contracts");
+        }
+
+        signedExtraData = permit.extraData;
+        {
+            uint256[] memory rawCleartexts = CleartextACL(aclAdd).plaintextForDelegatedUserDecryption(
+                pairs, permit.delegatorAddress, permit.delegateAddress
+            );
+            payload = abi.encode(_xorMaskWithPublicKey(permit.publicKey, rawCleartexts), signedExtraData);
+        }
+
+        _verifySignature(
+            _hashDelegatedUserDecryptionResult(
+                permit.publicKey,
+                permit.contractAddresses,
+                permit.delegatorAddress,
+                permit.startTimestamp,
+                permit.durationDays,
+                permit.extraData
+            ),
+            signature,
+            permit.delegateAddress
+        );
+        _requireAllPairsAuthorized(pairs, permit.contractAddresses);
+
+        (signers, threshold) = this.getContextSignersAndThresholdFromExtraData(permit.extraData);
+    }
+
+    /// @dev A v0 extraData (empty or `0x00`) is signed as empty, as the sdk signs it; v1 as it is.
+    function _signedExtraData(bytes memory extraData) private pure returns (bytes memory) {
+        if (extraData.length == 0 || uint8(extraData[0]) == 0x00) return new bytes(0);
+        return extraData;
     }
 
     /// @notice Recovers a signer from `signature` over `digest` and reverts if the

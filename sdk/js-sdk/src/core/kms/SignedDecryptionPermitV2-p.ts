@@ -16,6 +16,7 @@ import { verifyErc1271UserDecrypt } from '../utils-p/decrypt/verifyErc1271UserDe
 import { assert } from '../base/errors/InternalError.js';
 import { EXTRA_DATA_V2 } from './kmsExtraData-p.js';
 import { assertIsUintNumber } from '../base/uint.js';
+import { InvalidSignedPermitError } from '../errors/InvalidSignedPermitError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -146,7 +147,7 @@ async function _createSignedDecryptionPermitV2(
     signature,
   });
 
-  return new SignedDecryptionPermitV2Impl(PRIVATE_TOKEN, parameters);
+  return Object.freeze(new SignedDecryptionPermitV2Impl(PRIVATE_TOKEN, parameters));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -354,17 +355,17 @@ function _assertKmsEip712V2DeadlineValidity({
 }): void {
   const durationSecBigInt = BigInt(durationSeconds);
   if (durationSecBigInt === 0n) {
-    throw Error('durationSeconds is zero');
+    throw new InvalidSignedPermitError({ message: 'Invalid permit: durationSeconds is zero, sign a new permit' });
   }
 
   const startTimestampBigInt = BigInt(startTimestamp);
 
   const currentTimestamp = BigInt(Math.floor(Date.now() / 1000));
   if (startTimestampBigInt > currentTimestamp) {
-    throw Error('startTimestamp is set in the future');
+    throw new InvalidSignedPermitError({ message: 'Invalid permit: startTimestamp is set in the future' });
   }
 
   if (startTimestampBigInt + durationSecBigInt < currentTimestamp) {
-    throw Error('request has expired');
+    throw new InvalidSignedPermitError({ message: 'Invalid permit: request has expired, sign a new permit' });
   }
 }

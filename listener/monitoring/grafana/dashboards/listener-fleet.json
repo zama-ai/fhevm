@@ -1416,7 +1416,7 @@
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rate(listener_final_catchup_subranges_total[$__rate_interval])",
+              "expr": "rate(listener_catchup_subranges_total{flow=\"final_catchup\"}[$__rate_interval])",
               "legendFormat": "chain {{chain_id}}",
               "refId": "A"
             }

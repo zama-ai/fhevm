@@ -154,6 +154,26 @@ pub fn init_tracing_otel_with_logs_only_fallback_and_filter(
     }
 }
 
+/// A metadata filter for the `_with_filter` initializers. These dependencies
+/// emit full RPC URLs, response bodies, or request details independently of our
+/// error formatting. Disable their events AND spans in both JSON logs and OTLP,
+/// including when the service runs at DEBUG/TRACE.
+pub fn transport_dependency_filter(metadata: &tracing::Metadata<'_>) -> bool {
+    let target = metadata.target();
+    ![
+        "alloy",
+        "reqwest",
+        "hyper",
+        "rustls",
+        "h2",
+        "tower_http",
+        "tungstenite",
+        "tokio_tungstenite",
+    ]
+    .iter()
+    .any(|prefix| target.starts_with(prefix))
+}
+
 fn setup_otel_with_tracer(
     service_name: &str,
     tracer_name: &'static str,

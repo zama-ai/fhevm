@@ -39,6 +39,45 @@ npm run sdk:registry -- 0.13.2
 Both commands wrap `scripts/install-sdk.sh` (`local`/`registry` modes) — see
 its header comment for details.
 
+## Selecting a chain (`run-tests.sh --chain`)
+
+One container can hold the env vars of several chains and run the tests against any of them:
+
+```shell
+./run-tests.sh --chain bnb -g "test user decrypt"
+```
+
+| `--chain`         | Hardhat network | Chain id |
+| ----------------- | --------------- | -------- |
+| `eth`             | `sepolia`       | 11155111 |
+| `polygon`         | `polygonAmoy`   | 80002    |
+| `bnb`             | `bnbTestnet`    | 97       |
+| `hoodi`           | `hoodi`         | 560048   |
+| `eth-mainnet`     | `mainnet`       | 1        |
+| `polygon-mainnet` | `polygon`       | 137      |
+| `bnb-mainnet`     | `bnb`           | 56       |
+
+The environment (DevNet, Testnet, Mainnet) comes from the env vars themselves; only mainnet chains need the
+`-mainnet` suffix. Each chain reads its own prefixed vars (`ETH_`, `POLYGON_`, `BNB_`, `HOODI_`):
+
+- required: `<PREFIX>_ACL_CONTRACT_ADDRESS`, `<PREFIX>_FHEVM_EXECUTOR_CONTRACT_ADDRESS`,
+  `<PREFIX>_KMS_VERIFIER_CONTRACT_ADDRESS`, `<PREFIX>_INPUT_VERIFIER_CONTRACT_ADDRESS`,
+  `<PREFIX>_PROTOCOL_CONFIG_CONTRACT_ADDRESS`, `<PREFIX>_RPC_URL`
+- optional: `<PREFIX>_HCU_LIMIT_CONTRACT_ADDRESS`
+- shared (unprefixed): `CHAIN_ID_GATEWAY`, `DECRYPTION_ADDRESS`, `INPUT_VERIFICATION_ADDRESS`, `RELAYER_URL`, `MNEMONIC`
+
+`scripts/resolve-chain-env.ts` validates them all before anything else runs: if one is missing or invalid, the run
+fails and lists every problem. Otherwise it exports the unprefixed vars, the network and the chain id, and enables the
+coprocessor config generator (`E2E_COPROCESSOR_CONFIG_FROM_ENV=true`).
+
+Only one `--chain` run is allowed per container at a time: the run holds `e2e.lock` (next to `run-tests.sh`) and a
+second run fails immediately, showing who holds it. A lock left by a run that was killed is detected and replaced.
+Without `--chain`, `run-tests.sh` behaves as before and does not take the lock, so avoid mixing such runs with `--chain`
+runs in the same container. `--chain` cannot be combined with `--no-hardhat-compile`.
+
+Known limitation: other per-chain values that the tests read unprefixed, such as `TEST_INPUT_CONTRACT_ADDRESS` or the
+bridge addresses, are not handled by `--chain`.
+
 ## Unified user-decryption suites
 
 E2E coverage for ERC-1271 smart-account signature verification and the unified
@@ -97,15 +136,49 @@ checks, signed with `KMS_CONNECTOR_ALLOWED_SENDER_PRIVATE_KEY` for the party's a
 leaves quorum verification to `verify.ts` (the endpoint only returns its own
 party's answer). The suites skip when `KMS_CONNECTOR_ENDPOINT_URLS` is empty
 (bundles without the endpoint and proxy images). The proxies serve the
-self-signed test certificate checked in under
-`test-suite/fhevm/static/config/kms-connector-proxy`, which the e2e container
-trusts through `NODE_EXTRA_CA_CERTS`; the proxy's own rejections (401, 404/405,
+test certificate checked in under
+`test-suite/fhevm/static/config/kms-connector-proxy`, whose CA (`ca.crt`) the
+e2e container trusts through `NODE_EXTRA_CA_CERTS`; the proxy's own rejections (401, 404/405,
 oversized bodies, upstream errors) are covered by the crate's integration tests.
 
 Run via the fhevm-cli profile `connector-http` (part of `standard`; runs all
 three suites), the narrower `connector-http-public-decrypt`,
 `connector-http-user-decrypt` and `connector-http-negative` profiles, or directly with
 `npx hardhat test --grep "Connector HTTP" --network staging`.
+
+## Coprocessor proxy suite
+
+`test/coprocessorProxy/coprocessorProxy.ts` plays the KMS connector against every
+coprocessor's `coprocessor[N]-proxy`, until the RFC-038 pad connector and its e2e
+land and replace it. It signs `FhevmSig` requests with KMS party 1's
+`KMS_CONNECTOR_PRIVATE_KEY`, a tx-sender of the active KMS context in the host
+ProtocolConfig, for the coprocessor's signer in `COPROCESSOR_SIGNER_ADDRESSES`.
+Behind each proxy runs prf-service. No pad-worker runs yet, so
+`scripts/seed-prf-output.ts` first writes the output the suite requests into
+each coprocessor's database: a fixed binary body, its digest, and placeholder
+signer and signature. The suite reads how many PRF requests prf-service answered
+from its metric `coprocessor_prf_service_requests_total`, at
+`PRF_SERVICE_METRICS_URLS`. It checks that a signed request reaches prf-service
+once and comes back unchanged (the body's Keccak-256 is the attestation's
+`sns_ciphertext_digest`), and that a high-s signature
+(`401 auth_invalid_signature`), an expired one (`401 auth_expired`), an unknown
+signer (`401 auth_unknown_signer`, without `Retry-After`) and an unknown route
+(`404 not_found`) never reach prf-service. The proxies serve the self-signed test
+certificate under `test-suite/fhevm/static/config/coprocessor-proxy`, read
+through `COPROCESSOR_PROXY_CA_CERT`. The suite skips when
+`COPROCESSOR_PROXY_URLS` is empty (bundles without the proxy image, and
+blue-green stacks).
+
+Run via the fhevm-cli profile `coprocessor-proxy` (part of `standard`), or
+directly with `npx hardhat test --grep "Coprocessor proxy" --network staging`.
+
+The `across a KMS context switch` tests run only from fhevm-cli's
+`kms-context-switch` profile, which passes a KMS node's tx-sender key in
+`COPROCESSOR_PROXY_SWITCH_SIGNER_KEY`: after the node swap, every proxy accepts
+the promoted spare and, while the outgoing context is still Active, the dropped
+node. Once every pre-swap context is destroyed and each proxy has read the KMS
+tx-senders again (`COPROCESSOR_PROXY_METRICS_URLS`), every proxy refuses the
+dropped node with `401 auth_unknown_signer`. Without the key they skip.
 
 ## Operator edge-case suite
 
@@ -135,19 +208,22 @@ You only need:
 - `MNEMONIC`
 - `ZAMA_FHEVM_API_KEY` (mainnet only)
 
-**For devnet**, use the pre-configured `.env.devnet` (all addresses included):
+**For devnet** (runs on Sepolia), use the pre-configured `.env.devnet` (all addresses included):
 
 ```shell
-DOTENV_CONFIG_PATH=./.env.devnet npx hardhat run --network devnet scripts/smoke-inputflow.ts
+DOTENV_CONFIG_PATH=./.env.devnet npx hardhat run --network sepolia scripts/smoke-inputflow.ts
 ```
 
 **For other networks** (staging, custom), set all variables manually - see `.env.example`.
 
 Network-specific RPC URLs:
 
-- staging/zwsDev: `RPC_URL` (defaults to localhost:8545)
+- staging: `RPC_URL` (defaults to localhost:8545)
 - sepolia: `SEPOLIA_ETH_RPC_URL` (falls back to `RPC_URL`)
 - mainnet: `MAINNET_ETH_RPC_URL` (falls back to `RPC_URL`)
+- polygon / polygonAmoy: `POLYGON_RPC_URL` / `POLYGON_AMOY_RPC_URL` (fall back to `RPC_URL`)
+- bnb / bnbTestnet: `BNB_RPC_URL` / `BNB_TESTNET_RPC_URL` (fall back to `RPC_URL`)
+- hoodi: `HOODI_RPC_URL` (falls back to `RPC_URL`)
 
 For pod deployments, just set `RPC_URL` - it works for all networks.
 
@@ -195,7 +271,6 @@ cast wallet address --mnemonic "your mnemonic here" --mnemonic-index 2
 
 ```shell
 cd test-suite/e2e
-npx hardhat run --network zwsDev scripts/smoke-inputflow.ts
 npx hardhat run --network sepolia scripts/smoke-inputflow.ts
 npx hardhat run --network mainnet scripts/smoke-inputflow.ts
 ```

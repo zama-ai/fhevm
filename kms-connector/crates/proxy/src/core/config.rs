@@ -11,24 +11,22 @@ use connector_utils::{
 };
 use http::uri::Authority;
 use serde::{Deserialize, Deserializer};
-#[cfg(test)]
-use serde::{Serialize, Serializer};
 use std::{
     collections::HashSet,
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    num::NonZeroU32,
     path::PathBuf,
     time::Duration,
 };
 
 /// Configuration of the `Proxy` service.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The public bind address of the proxy.
     #[serde(alias = "proxy_bind_address", default = "default_bind_address")]
     pub bind_address: SocketAddr,
-    /// The TLS configuration of the proxy.
-    pub tls_config: TlsConfig,
+    /// The TLS configuration of the proxy. Without it, the proxy serves plain HTTP.
+    pub tls_config: Option<TlsConfig>,
 
     /// The Ethereum chain id, part of the `FhevmSig` (RFC-038) EIP-712 domain.
     pub ethereum_chain_id: u64,
@@ -43,35 +41,30 @@ pub struct Config {
 
     /// The `host:port` addresses of the endpoints to forward requests to.
     #[serde(deserialize_with = "parse_endpoint_addresses")]
-    #[cfg_attr(test, serde(serialize_with = "serialize_endpoint_addresses"))]
     pub endpoint_addresses: Vec<Authority>,
     /// The timeout to establish a TCP connection to an endpoint.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_connect_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_connect_timeout: Duration,
     /// How often the endpoints are probed in the background to filter which ones receive requests.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_healthcheck_frequency"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_healthcheck_frequency: Duration,
-    /// How long the proxy waits for an endpoint response before answering `502`.
+    /// How long the proxy waits for an endpoint response before answering `504`.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_response_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_response_timeout: Duration,
     /// How long an idle pooled endpoint connection is kept before being closed.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_endpoint_idle_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub endpoint_idle_timeout: Duration,
 
     /// The maximum accepted size of a request body.
@@ -82,8 +75,10 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_request_read_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub request_read_timeout: Duration,
+    /// The maximum number of requests per second accepted from each sender.
+    #[serde(default = "default_rate_limit_per_second")]
+    pub rate_limit_per_second: NonZeroU32,
     /// How long in-flight requests are given to complete after `SIGTERM`.
     #[serde(with = "humantime_serde", default = "default_shutdown_grace_period")]
     pub shutdown_grace_period: Duration,
@@ -99,7 +94,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_healthcheck_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
@@ -118,7 +112,6 @@ where
 
 /// The TLS material used by the proxy to terminate TLS.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct TlsConfig {
     /// The path of the PEM certificate chain.
     pub cert_path: PathBuf,
@@ -148,6 +141,17 @@ where
 
 impl DeserializeConfig for Config {}
 
+impl Config {
+    /// The URL scheme served by the proxy's listener.
+    pub fn scheme(&self) -> &'static str {
+        if self.tls_config.is_some() {
+            "https"
+        } else {
+            "http"
+        }
+    }
+}
+
 fn default_service_name() -> String {
     "kms-connector-proxy".to_string()
 }
@@ -166,7 +170,7 @@ fn default_endpoint_healthcheck_frequency() -> Duration {
 
 fn default_endpoint_response_timeout() -> Duration {
     // Should exceed the endpoint's `decryption_timeout` (30s by default) so the endpoint's own
-    // `504 timeout` reaches the relayer instead of a proxy `502`.
+    // `504 timeout` reaches the relayer instead of the proxy's own.
     Duration::from_secs(60)
 }
 
@@ -186,6 +190,10 @@ fn default_request_read_timeout() -> Duration {
     Duration::from_secs(30)
 }
 
+fn default_rate_limit_per_second() -> NonZeroU32 {
+    NonZeroU32::new(100).unwrap()
+}
+
 fn default_shutdown_grace_period() -> Duration {
     Duration::from_secs(60)
 }
@@ -195,10 +203,10 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             bind_address: default_bind_address(),
-            tls_config: TlsConfig {
+            tls_config: Some(TlsConfig {
                 cert_path: PathBuf::from("/etc/kms-connector/proxy/tls.crt"),
                 key_path: PathBuf::from("/etc/kms-connector/proxy/tls.key"),
-            },
+            }),
             ethereum_chain_id: 11155111,
             protocol_config_contract: default_protocol_config_contract_config(),
             allowed_senders: HashSet::from([Address::ZERO]),
@@ -213,23 +221,13 @@ impl Default for Config {
             endpoint_idle_timeout: default_endpoint_idle_timeout(),
             max_body_bytes: default_max_body_bytes(),
             request_read_timeout: default_request_read_timeout(),
+            rate_limit_per_second: default_rate_limit_per_second(),
             shutdown_grace_period: default_shutdown_grace_period(),
             service_name: default_service_name(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout: default_healthcheck_timeout(),
         }
     }
-}
-
-#[cfg(test)]
-fn serialize_endpoint_addresses<S>(
-    addresses: &[http::uri::Authority],
-    s: S,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    s.collect_seq(addresses.iter().map(Authority::as_str))
 }
 
 #[cfg(test)]
@@ -258,6 +256,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_ENDPOINT_IDLE_TIMEOUT");
             env::remove_var("KMS_CONNECTOR_MAX_BODY_BYTES");
             env::remove_var("KMS_CONNECTOR_REQUEST_READ_TIMEOUT");
+            env::remove_var("KMS_CONNECTOR_RATE_LIMIT_PER_SECOND");
             env::remove_var("KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_MONITORING_ENDPOINT");
@@ -305,6 +304,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_ENDPOINT_IDLE_TIMEOUT", "7s");
             env::set_var("KMS_CONNECTOR_MAX_BODY_BYTES", "2048");
             env::set_var("KMS_CONNECTOR_REQUEST_READ_TIMEOUT", "12s");
+            env::set_var("KMS_CONNECTOR_RATE_LIMIT_PER_SECOND", "1500");
             env::set_var("KMS_CONNECTOR_SHUTDOWN_GRACE_PERIOD", "15s");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
             env::set_var("KMS_CONNECTOR_MONITORING_ENDPOINT", "127.0.0.1:9101");
@@ -316,10 +316,10 @@ mod tests {
         assert_eq!(config.bind_address, "127.0.0.1:9443".parse().unwrap());
         assert_eq!(
             config.tls_config,
-            TlsConfig {
+            Some(TlsConfig {
                 cert_path: PathBuf::from("/etc/proxy/tls.crt"),
                 key_path: PathBuf::from("/etc/proxy/tls.key"),
-            }
+            })
         );
         assert_eq!(config.ethereum_chain_id, 31444);
         assert_eq!(
@@ -347,6 +347,7 @@ mod tests {
         assert_eq!(config.endpoint_idle_timeout, Duration::from_secs(7));
         assert_eq!(config.max_body_bytes, 2048);
         assert_eq!(config.request_read_timeout, Duration::from_secs(12));
+        assert_eq!(config.rate_limit_per_second.get(), 1500);
         assert_eq!(config.shutdown_grace_period, Duration::from_secs(15));
         assert_eq!(config.service_name, "kms-connector-test");
         assert_eq!(

@@ -1,5 +1,7 @@
-// Resolve each KMS party's on-chain signer (VerfAddress) from the shared S3
-// public vault (PUB-p<i>/ prefix) and print [{party,signer}] to stdout.
+// Resolve each KMS party's on-chain signer (VerfAddress) and CA certificate
+// (newest CACert object, or the signer handle when listing is off) from the
+// shared S3 public vault (PUB-p<i>/ prefix) and print [{party, signer, caCert}]
+// to stdout. caCert is 0x-prefixed hex of the raw PEM bytes.
 // Resolve the newest VerfAddress OBJECT dynamically rather than a hardcoded
 // handle: the handle drifts across kms-core versions and a stale one yields a
 // signer that no longer matches the running node, which reverts every
@@ -32,6 +34,28 @@ async function resolveHandle(i) {
   }
 }
 
+// Newest object under PUB-p<i>/CACert/, or the signer handle when listing is off.
+async function resolveCaHandle(i, signerHandle) {
+  const url = `${base}?list-type=2&prefix=PUB-p${i}/CACert/`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return signerHandle;
+    const xml = await res.text();
+    const items = [...xml.matchAll(/<Contents>([\s\S]*?)<\/Contents>/g)]
+      .map((m) => {
+        const key = (m[1].match(/<Key>([^<]+)<\/Key>/) || [])[1];
+        const lm = (m[1].match(/<LastModified>([^<]+)<\/LastModified>/) || [])[1];
+        return { key, lm: lm ? Date.parse(lm) : 0 };
+      })
+      .filter((o) => o.key && /\/CACert\/[^/]+$/.test(o.key));
+    if (!items.length) return signerHandle;
+    items.sort((a, b) => b.lm - a.lm);
+    return items[0].key.split('/').pop();
+  } catch (e) {
+    return signerHandle;
+  }
+}
+
 (async () => {
   const out = [];
   for (let i = 1; i <= n; i++) {
@@ -47,8 +71,22 @@ async function resolveHandle(i) {
       console.error(`::error::party ${i} VerfAddress at ${url} is not a valid address: "${signer}"`);
       process.exit(1);
     }
-    console.error(`Party ${i}: handle=${handle} signer=${signer}`);
-    out.push({ party: i, signer });
+    const certHandle = await resolveCaHandle(i, handle);
+    const certUrl = `${base}/PUB-p${i}/CACert/${certHandle}`;
+    const certRes = await fetch(certUrl);
+    if (!certRes.ok) {
+      console.error(`::error::failed to fetch CA cert for party ${i} at ${certUrl} (HTTP ${certRes.status})`);
+      process.exit(1);
+    }
+    const pem = Buffer.from(await certRes.arrayBuffer());
+    const text = pem.toString('utf8');
+    if (!text.includes('-----BEGIN CERTIFICATE-----') || !text.includes('-----END CERTIFICATE-----')) {
+      console.error(`::error::party ${i} CACert at ${certUrl} is not a PEM certificate`);
+      process.exit(1);
+    }
+    const caCert = '0x' + pem.toString('hex');
+    console.error(`Party ${i}: handle=${handle} signer=${signer} caCertBytes=${pem.length}`);
+    out.push({ party: i, signer, caCert });
   }
   // N parties must map to N distinct signers; a duplicate means a stale/shared
   // identity that would scramble the signer<->tx-sender pairing on-chain.

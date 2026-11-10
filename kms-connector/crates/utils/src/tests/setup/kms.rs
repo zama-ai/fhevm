@@ -26,7 +26,10 @@ impl KmsInstance {
         let s3_port: u16 = s3_url.split(":").nth(2).unwrap().parse()?;
         let s3_internal_url = format!("http://host.docker.internal:{s3_port}");
 
-        let cmd = "kms-gen-keys --config-file config/gen-keys-config.toml && \
+        // The KMS runs as one threshold party. Secure builds refuse to start the core-to-core
+        // network without TLS, so generate a self-signed certificate for it first.
+        let cmd = "kms-gen-tls-certs --ca-names kms-threshold-test-1 --output-dir certs && \
+            kms-gen-keys --config-file config/gen-keys-config.toml && \
             kms-server --config-file config/config.toml";
         let version = ROOT_CARGO_TOML.get_kms_grpc_version();
         let container = GenericImage::new("ghcr.io/zama-ai/kms/core-service", &version)

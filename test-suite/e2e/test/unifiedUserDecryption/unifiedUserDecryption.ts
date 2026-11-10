@@ -15,6 +15,7 @@ import { FhevmSdk } from '../sdk/fhevm-sdk/sdk';
 import type { UnifiedConfig, UnifiedDecryptRequest } from '../sdk/unified/unifiedUserDecrypt';
 import {
   backdatedStartTimestamp,
+  currentKmsExtraData,
   delegatedHandle,
   describeUnifiedFailure,
   directHandle,
@@ -124,6 +125,7 @@ describe('Unified user decryption', function () {
       relayerUrl,
       decryptionContractAddress: verifyingContractAddressDecryption,
       apiKey: relayerApiKey || undefined,
+      extraData: await currentKmsExtraData(ethers.provider, protocolConfigAddress),
     };
 
     const factory = await ethers.getContractFactory('UserDecrypt');
@@ -484,16 +486,12 @@ describe('Unified user decryption', function () {
   describe('extraData versions', function () {
     // Backend behavior on the unified path (relayer
     // `validate_extra_data_field_decryption`, kms-connector `validate_context`):
-    // the relayer accepts extraData v0 ("0x00"), v1 (0x01 + 32B contextId), and
-    // v2 (0x02 + 32B contextId + 32B epochId). The KMS Connector validates the
-    // contextId of v1/v2 (DB, falling back to on-chain ProtocolConfig) and —
-    // for v2 — that the epochId is the ACTIVE epoch of that context; it SKIPS
-    // all checks for v0 (backward compat with pre-context SDKs, normalized to
-    // empty for KMS core). New SDKs are expected to send v2 with the values
-    // from `ProtocolConfig.getCurrentKmsContextAndEpoch()`; v0/v1 may be
-    // dropped later — the explicit v0 test below is the canary that fails
-    // loudly when that happens, forcing a conscious update instead of a
-    // silent break.
+    // the KMS Connector requires a contextId: v1 (0x01 + 32B contextId) and
+    // v2 (0x02 + 32B contextId + 32B epochId) are accepted, and it validates
+    // the contextId (DB, falling back to on-chain ProtocolConfig) and — for
+    // v2 — that the epochId is the ACTIVE epoch of that context. SDKs are
+    // expected to send v2 with the values from
+    // `ProtocolConfig.getCurrentKmsContextAndEpoch()`.
     //
     // The relayer's wire validation also requires embedded ids to be type
     // tagged: a v1/v2 contextId must start with byte 0x07 and a v2 epochId
@@ -535,7 +533,7 @@ describe('Unified user decryption', function () {
       // Fresh re-encryption key: the relayer dedups requests on
       // (handles, userAddress, allowedContracts, publicKey, extraData) — a
       // fresh key guarantees these are real jobs, not cache hits from the
-      // earlier tests that also use extraData 0x00 on the same handles.
+      // earlier tests that use the same extraData on the same handles.
       extraDataPublicKey = (await instances.alice.generateKeypair()).publicKey;
 
       // The values a compliant new SDK must embed: the CURRENT context id and
@@ -548,37 +546,6 @@ describe('Unified user decryption', function () {
         ethers.provider,
       );
       [currentContextId, currentEpochId] = await protocolConfig.getCurrentKmsContextAndEpoch();
-    });
-
-    it('test unified user decrypt accepts legacy extraData v0 (0x00, no contextId/epochId)', async function () {
-      this.timeout(POSITIVE_TIMEOUT_MS + TIMEOUT_MARGIN_MS);
-      const handle = await aliceContract.xUint64();
-      const req: UnifiedDecryptRequest = {
-        handles: [directHandle(handle, aliceContractAddress, signers.alice.address)],
-        userAddress: signers.alice.address,
-        allowedContracts: [],
-        publicKey: extraDataPublicKey,
-        startTimestamp: backdatedStartTimestamp(),
-        durationSeconds: DURATION_SECONDS,
-        extraData: '0x00',
-      };
-      const { post, poll } = await requestUnifiedUserDecrypt(
-        cfg,
-        req,
-        { kind: 'eoa', signer: signers.alice },
-        {
-          waitForTerminal: true,
-          timeoutMs: POSITIVE_TIMEOUT_MS,
-        },
-      );
-      expect(post.httpStatus, describeUnifiedFailure(post)).to.equal(202);
-      expect(poll?.status, describeUnifiedFailure(post, poll)).to.equal('succeeded');
-      const clear = await instances.alice.userDecryptSingleHandle({
-        handle: handle,
-        contractAddress: aliceContractAddress,
-        signer: signers.alice,
-      });
-      expect(clear).to.equal(18446744073709551600n);
     });
 
     it('test unified user decrypt accepts extraData v1 with the current contextId', async function () {

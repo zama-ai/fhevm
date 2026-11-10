@@ -448,6 +448,15 @@ export const supportsUpgradeController = (state: Pick<CompatState, "versions">) 
   return !versionBeforeReleaseFamily(version, [0, 14, 0], { unparsed: "modern" });
 };
 
+/** Detects when the resolved coprocessor bundle includes the prf-service, published or built locally. */
+export const supportsPrfService = (state: Pick<CompatState, "versions" | "overrides">) =>
+  Boolean(state.versions.env.COPROCESSOR_PRF_SERVICE_VERSION) ||
+  state.overrides.some(
+    (override) =>
+      override.group === "coprocessor" &&
+      (!override.services?.length || override.services.includes("coprocessor-prf-service")),
+  );
+
 /** Detects when the resolved kms-connector bundle includes the HTTP decryption path. */
 export const supportsConnectorHttp = (state: Pick<CompatState, "versions" | "overrides">) => {
   const available = (service: string, versionKey: string) =>
@@ -461,6 +470,26 @@ export const supportsConnectorHttp = (state: Pick<CompatState, "versions" | "ove
     available("kms-connector-proxy", "CONNECTOR_PROXY_VERSION")
   );
 };
+
+/** Detects when the resolved coprocessor bundle includes coprocessor-proxy. */
+export const supportsCoprocessorProxy = (state: Pick<CompatState, "versions" | "overrides">) =>
+  Boolean(state.versions.env.COPROCESSOR_PROXY_VERSION) ||
+  state.overrides.some(
+    (override) =>
+      override.group === "coprocessor" && (!override.services?.length || override.services.includes("coprocessor-proxy")),
+  );
+
+/**
+ * Whether a stack runs coprocessor-proxy: the bundle has the proxy and prf-service, and the stack is
+ * not blue-green (one proxy per fleet comes later). Takes a state (`scenario`) or a stack spec (`blueGreen`).
+ */
+export const runsCoprocessorProxy = (
+  state: Pick<CompatState, "versions" | "overrides"> & { scenario?: { kind: string }; blueGreen?: unknown },
+) =>
+  state.scenario?.kind !== "blue-green" &&
+  !state.blueGreen &&
+  supportsCoprocessorProxy(state) &&
+  supportsPrfService(state);
 
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>

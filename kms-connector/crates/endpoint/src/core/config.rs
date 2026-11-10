@@ -1,24 +1,22 @@
 use connector_utils::{
     config::{
-        DeserializeConfig, default_database_pool_size, deserialize_non_zero_duration,
-        deserialize_one_or_many,
+        DatabaseUrl, DeserializeConfig, default_database_pool_size,
+        default_max_handles_per_decryption, deserialize_non_zero_duration, deserialize_one_or_many,
     },
     monitoring::{health::default_healthcheck_timeout, server::default_monitoring_endpoint},
 };
 use serde::Deserialize;
-#[cfg(test)]
-use serde::Serialize;
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    num::NonZeroUsize,
     time::Duration,
 };
 
 /// Configuration of the `Endpoint` service.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
-#[cfg_attr(test, derive(Serialize))]
 pub struct Config {
     /// The URL of the Postgres database.
-    pub database_url: String,
+    pub database_url: DatabaseUrl,
     /// The size of the database connection pool.
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
@@ -34,14 +32,12 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_decryption_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub decryption_timeout: Duration,
     /// How long an irrecoverable decryption error is reused before reprocessing.
     #[serde(
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_error_serve_window"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub error_serve_window: Duration,
     /// The maximum accepted size of a JSON request body.
     #[serde(default = "default_max_body_bytes")]
@@ -50,9 +46,16 @@ pub struct Config {
     /// `MAX_USER_DECRYPT_CONTRACT_ADDRESSES` of the `Decryption` gateway contract.
     #[serde(default = "default_max_allowed_contracts")]
     pub max_allowed_contracts: usize,
-    /// The host chain ids accepted in ciphertext handles.
+    /// The maximum number of handles a single decryption request can contain.
+    #[serde(default = "default_max_handles_per_decryption")]
+    pub max_handles_per_decryption: NonZeroUsize,
+    /// The host chain ids accepted in ciphertext handles and pad witnesses.
     #[serde(deserialize_with = "deserialize_one_or_many")]
     pub supported_chain_ids: Vec<u64>,
+
+    /// The maximum number of pads of a single pad decryption request.
+    #[serde(default = "default_max_pads")]
+    pub max_pads: NonZeroUsize,
 
     /// The service name used for tracing.
     #[serde(default = "default_service_name")]
@@ -65,7 +68,6 @@ pub struct Config {
         deserialize_with = "deserialize_non_zero_duration",
         default = "default_healthcheck_timeout"
     )]
-    #[cfg_attr(test, serde(serialize_with = "humantime_serde::serialize"))]
     pub healthcheck_timeout: Duration,
 }
 
@@ -99,11 +101,17 @@ fn default_max_allowed_contracts() -> usize {
     10
 }
 
+fn default_max_pads() -> NonZeroUsize {
+    NonZeroUsize::new(10).unwrap()
+}
+
 // Default implementation for testing purpose
 impl Default for Config {
     fn default() -> Self {
         Self {
-            database_url: "postgres://postgres:postgres@localhost/kms-connector".to_string(),
+            database_url: "postgres://postgres:postgres@localhost/kms-connector"
+                .parse()
+                .unwrap(),
             database_pool_size: default_database_pool_size(),
             http_endpoint: default_http_endpoint(),
             max_in_flight_decryptions: default_max_in_flight_decryptions(),
@@ -111,7 +119,9 @@ impl Default for Config {
             error_serve_window: default_error_serve_window(),
             max_body_bytes: default_max_body_bytes(),
             max_allowed_contracts: default_max_allowed_contracts(),
+            max_handles_per_decryption: default_max_handles_per_decryption(),
             supported_chain_ids: vec![11155111],
+            max_pads: default_max_pads(),
             service_name: default_service_name(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout: default_healthcheck_timeout(),
@@ -139,7 +149,9 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_ERROR_SERVE_WINDOW");
             env::remove_var("KMS_CONNECTOR_MAX_BODY_BYTES");
             env::remove_var("KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS");
+            env::remove_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION");
             env::remove_var("KMS_CONNECTOR_SUPPORTED_CHAIN_IDS");
+            env::remove_var("KMS_CONNECTOR_MAX_PADS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_MONITORING_ENDPOINT");
             env::remove_var("KMS_CONNECTOR_HEALTHCHECK_TIMEOUT");
@@ -171,7 +183,9 @@ mod tests {
             env::set_var("KMS_CONNECTOR_ERROR_SERVE_WINDOW", "7d");
             env::set_var("KMS_CONNECTOR_MAX_BODY_BYTES", "2048");
             env::set_var("KMS_CONNECTOR_MAX_ALLOWED_CONTRACTS", "3");
+            env::set_var("KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION", "20");
             env::set_var("KMS_CONNECTOR_SUPPORTED_CHAIN_IDS", "1,31337");
+            env::set_var("KMS_CONNECTOR_MAX_PADS", "4");
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
             env::set_var("KMS_CONNECTOR_MONITORING_ENDPOINT", "127.0.0.1:9101");
             env::set_var("KMS_CONNECTOR_HEALTHCHECK_TIMEOUT", "7s");
@@ -181,7 +195,7 @@ mod tests {
 
         assert_eq!(
             config.database_url,
-            "postgres://postgres:postgres@localhost"
+            "postgres://postgres:postgres@localhost".parse().unwrap()
         );
         assert_eq!(config.database_pool_size, 4);
         assert_eq!(config.http_endpoint, "127.0.0.1:9090".parse().unwrap());
@@ -190,7 +204,9 @@ mod tests {
         assert_eq!(config.error_serve_window, Duration::from_hours(7 * 24));
         assert_eq!(config.max_body_bytes, 2048);
         assert_eq!(config.max_allowed_contracts, 3);
+        assert_eq!(config.max_handles_per_decryption.get(), 20);
         assert_eq!(config.supported_chain_ids, vec![1, 31337]);
+        assert_eq!(config.max_pads.get(), 4);
         assert_eq!(config.service_name, "kms-connector-test");
         assert_eq!(
             config.monitoring_endpoint,

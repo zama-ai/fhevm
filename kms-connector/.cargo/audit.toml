@@ -5,7 +5,15 @@
 # The ignored vulnerability RUSTSEC-2023-0071 is due to sqlx-mysql which is not used
 # The ignored vulnerability RUSTSEC-2025-0111 is affecting only the testcontainers only used for testing
 # The ignored vulnerability RUSTSEC-2026-0258 low severity and a real fix is tracked in https://github.com/zama-ai/fhevm-internal/issues/1923
-ignore = ["RUSTSEC-2023-0071", "RUSTSEC-2025-0111", "RUSTSEC-2026-0258"]
+# The ignored vulnerability RUSTSEC-2026-0387 (crypto-bigint via alloy) is a low-risk timing side channel. No upgrade available yet, tracked in https://github.com/zama-ai/fhevm-internal/issues/2256
+# The ignored vulnerability RUSTSEC-2026-0459 is due to libsqlite3-sys (via sqlx-sqlite) which is not used
+ignore = [
+    "RUSTSEC-2023-0071",
+    "RUSTSEC-2025-0111",
+    "RUSTSEC-2026-0258",
+    "RUSTSEC-2026-0387",
+    "RUSTSEC-2026-0459",
+]
 informational_warnings = ["unmaintained"]
 severity_threshold = "medium"
 

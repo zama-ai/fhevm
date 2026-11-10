@@ -11,12 +11,21 @@
 # - SNS worker (notification service)
 # - Consensus detector (manifest publication and peer verification)
 # - Transaction sender (blockchain transaction submission)
+# - Coprocessor proxy (public HTTPS entry point, FhevmSig auth)
 # - Upgrade controller / consensus detector (RFC-021 GCS control plane, off by default)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
 # Common Configuration
 # -----------------------------------------------------------------------------
+# Requires Prometheus Operator, a running host-listener poller, and
+# hostListenerPollerShared.serviceMonitor.enabled=true. Configure Prometheus's
+# rule selector and Alertmanager routing to deliver the critical alert.
+chainRecoveryAlerts:
+  enabled: false
+  # Labels required by the deployment's Prometheus ruleSelector, if any.
+  additionalLabels: {}
+
 # Shared configuration across all coprocessor components
 commonConfig:
   # Keep production Blue on legacy material during a compressed-key migration.
@@ -148,13 +157,13 @@ podLabels: {}
 # hostListenerCatchupOnly) reference its keys via configMapKeyRef.
 #
 # When commonConfig.stackVersion is set, it is appended to the rendered name of
-# this and the gateway/polygon ConfigMaps (lowercased, dots replaced by dashes),
+# this and the gateway/polygon/BNB ConfigMaps (lowercased, dots replaced by dashes),
 # e.g. stackVersion v0.13.7 renders eth-sc-addresses-v0-13-7. valueFrom blocks
 # and env lists are rendered through tpl, so reference the computed name with:
 #   configMapKeyRef:
 #     name: '{{ include "coprocessor.hostContractConfigMapName" . }}'
 # (coprocessor.gatewayContractConfigMapName / coprocessor.polygonContractConfigMapName
-# for the other two).
+# / coprocessor.bnbContractConfigMapName for the other chains).
 hostContractConfigMap:
   enabled: false
 
@@ -222,6 +231,27 @@ polygonContractConfigMap:
   #   addresses:
   #     acl.address: "0xabc..."             # override preset
   #     custom_thing.address: "0xdef..."    # add bespoke key
+  addresses: {}
+
+# -----------------------------------------------------------------------------
+# BNB Contract ConfigMap
+# -----------------------------------------------------------------------------
+# Optional ConfigMap rendering BNB host chain contract addresses.
+# Only testnet has a bundled preset. For other deployments use network: ""
+# and provide the approved addresses explicitly.
+bnbContractConfigMap:
+  enabled: false
+
+  # Base resource name; suffixed with commonConfig.stackVersion when set.
+  # Reference it via '{{ include "coprocessor.bnbContractConfigMapName" . }}'.
+  name: bnb-sc-addresses
+
+  # Selects configs/bnb-testnet.yaml. Allowed values: "" or "testnet".
+  # An unsupported network or missing preset fails the render.
+  network: ""
+
+  # Operator overrides, deep-merged on top of the preset. Keys are used
+  # as-is and operator entries win on collision, e.g. acl.address: "0x...".
   addresses: {}
 
 # -----------------------------------------------------------------------------
@@ -1707,6 +1737,90 @@ consensusDetector:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
+# PRF Service
+# -----------------------------------------------------------------------------
+# Internal PRF output endpoint. Only the proxy calls it.
+prfService:
+  enabled: false
+  nameOverride:
+
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/prf-service
+    tag: v0.14.0
+
+  replicas: 1
+
+  # The `prf_service` role, as in commonConfig. The user is required. No password: the commonConfig one.
+  databaseUser: {}
+  databasePassword: {}
+  # The listener, two admissions for each connector, and reads: 32 for 13 connectors. At least 4.
+  databasePoolSize: 32
+  # Time to serve after SIGTERM, closing each connection after its response. It must exceed the
+  # time the pod's removal takes to reach every node. Termination grace: this delay + 10 s.
+  shutdownDelaySeconds: 5
+
+  # Limits for each connector. Above a limit, prf-service answers `429 concurrency_limited`.
+  limits:
+    # Pad bits under evaluation that one connector can trigger, in all pods. At least 2048.
+    maxConcurrentPerConnector: 16384
+    # Requests in progress of one connector in one pod.
+    maxInFlightPerConnector: 256
+
+  env: []
+  extraArgs: []
+
+  ports:
+    http: 8090
+    healthcheck: 8080
+    metrics: 9100
+
+  serviceMonitor:
+    enabled: false
+
+  serviceAccountName:
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  probes:
+    liveness:
+      enabled: true
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+    readiness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      # The check runs 2 database queries, each with a 5 s limit.
+      timeoutSeconds: 10
+
+  tracing:
+    enabled: false
+    service: "prf-service"
+
+  podLabels: {}
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
 # Transaction Sender
 # -----------------------------------------------------------------------------
 # Submits transactions to the blockchain
@@ -1850,6 +1964,163 @@ txSender:
   nodeSelector:
   affinity:
   tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
+# Coprocessor proxy
+# -----------------------------------------------------------------------------
+# Public HTTPS entry point: checks each request's FhevmSig against the KMS
+# tx-senders ProtocolConfig lists, then forwards it to prf-service, its one
+# upstream, over HTTP/1.1, with the authenticated signer in X-Fhevm-Signer in
+# place of Authorization. The Service is ClusterIP; exposing it is
+# the deployment's, within the requirement in the chart README.
+coprocessorProxy:
+  enabled: false
+  # nameOverride: override default <release>-<component> resource name.
+  nameOverride:
+
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/coprocessor-proxy
+    # Required when enabled.
+    tag: ""
+
+  # Stateless: replicas answer alike. Run at least 2 in an environment that exposes the proxy, so
+  # a node drain or an eviction leaves one serving.
+  replicas: 1
+
+  tls:
+    # kubernetes.io/tls Secret holding tls.crt and tls.key.
+    secretName: ""
+
+  # Domain and registry RPC come from the chains entry matching
+  # commonConfig.canonicalProtocolConfigChainId. That entry needs a ProtocolConfig address
+  # and HTTP RPC URL (literal or valueFrom). The RPC URL is never logged.
+
+  # This coprocessor's signer address: the audience requests must be signed for (required).
+  coprocessorSignerAddress:
+
+  # `host:port` of prf-service's Service, which serves the PRF route, e.g.
+  # "<release>-prf-service:8090". The Service routes each connection to a ready pod. With
+  # prfService.enabled, leave it empty: the chart uses this release's prf-service.
+  prfServiceAddress: ""
+  # Last in the timeout chain: the connector's PRF_RETRIEVAL_DEADLINE (RFC-038) < every
+  # front-layer timeout < this. Also sets the SIGTERM drain grace, which Pingora waits even when
+  # idle.
+  prfServiceResponseTimeoutSeconds: 120
+  # How long the proxy keeps serving after SIGTERM, asking each client to reconnect, before it
+  # stops accepting connections. Must exceed the time the pod's removal from the Service takes to
+  # reach every node. The pod's termination budget is this delay, the drain grace and 10 s.
+  shutdownDelaySeconds: 10
+  # Requests per second each signer (KMS connector) can send to one replica; more get `429`.
+  # The Service balances connections, not requests, and a connector opens one per in-flight
+  # request, so a signer's limit is up to about `replicas` times this: adding replicas raises it.
+  maxRequestsPerSigner: 200
+
+  # Ingress allowed from this release's proxy pods to prf-service.
+  prfServiceNetworkPolicy:
+    enabled: true
+    # Labels of the prf-service pods (required when enabled): every prf-service pod in the
+    # namespace. Add `app.kubernetes.io/name: <release>-prf-service` to select one release's.
+    podSelector:
+      app: coprocessor-prf-service
+    # prf-service pod ports, which may differ from the Service port in prfServiceAddress: its PRF
+    # port.
+    ports:
+      - {port: 8090, protocol: TCP}
+    # More ingress rules for those pods, e.g. Prometheus scraping their metrics port. Each rule
+    # must set `from`: a rule without it admits every source.
+    extraIngress: []
+
+  # Additional environment variables, e.g. COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL.
+  # `coprocessor-proxy --help` lists every setting and its variable. commonConfig.env does not
+  # apply to the proxy.
+  env: []
+
+  tracing:
+    # null inherits commonConfig.tracing.enabled; true/false overrides it.
+    enabled: null
+    # OTEL service name. If empty, the proxy uses "coprocessor-proxy".
+    service: ""
+
+  ports:
+    https: 8443
+    healthcheck: 8080
+    metrics: 9100
+
+  serviceMonitor:
+    enabled: false
+
+  # Worker threads of the proxy (COPROCESSOR_PROXY_THREADS): TLS handshakes, signature checks,
+  # forwarding and the readiness self-check share them. At least the CPU request: with 2, a
+  # replica stayed under about 1 core in the load test, and a flood of unknown-signer requests no
+  # longer stalled its readiness check as it did with 1.
+  threads: 2
+  resources:
+    requests:
+      cpu: "1"
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+  probes:
+    liveness:
+      enabled: true
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      # Above the proxy's 3 s TLS self-check timeout.
+      timeoutSeconds: 5
+
+  # Extra pod labels merged on top of global .Values.podLabels (this map wins on key conflict).
+  podLabels: {}
+  # Extra pod annotations merged with global .Values.podAnnotations (this map wins on key
+  # conflict). The proxy reads its certificate at startup only: restart it on renewal, e.g. with
+  # `reloader.stakater.com/auto: "true"` or a checksum of the TLS Secret.
+  podAnnotations: {}
+
+  securityContext:
+    # The image's `fhevm` user. runAsNonRoot needs a numeric user, and the image names it.
+    runAsUser: 10000
+    runAsGroup: 10001
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+  serviceAccountName:
+
+  # Scheduling: https://kubernetes.io/docs/concepts/scheduling-eviction/
+  nodeSelector:
+  affinity:
+  tolerations:
+  # Spreads the replicas over nodes when possible. A constraint without `labelSelector` selects
+  # this release's proxy pods.
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
+
+  # Rendered only when `replicas` is at least 2, so it never blocks a node drain.
+  podDisruptionBudget:
+    enabled: false
+    minAvailable: 1
 
   updateStrategy:
     type: RollingUpdate

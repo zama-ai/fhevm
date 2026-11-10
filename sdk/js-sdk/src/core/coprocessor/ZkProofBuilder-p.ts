@@ -4,6 +4,7 @@ import type { EncryptionBits, FheType } from '../types/fheType.js';
 import type { ZkProofBuilder } from '../types/zkProofBuilder-p.js';
 import type { WithEncrypt } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { FhevmBase, OptionalNativeClient } from '../types/coreFhevmClient.js';
 import type {
   TypedValue,
   Uint32ValueLike,
@@ -28,10 +29,7 @@ import { fetchFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
-type Context = {
-  readonly chain: FhevmChain;
-  readonly runtime: WithEncrypt;
-};
+type Context = FhevmBase<FhevmChain, WithEncrypt, OptionalNativeClient>;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -152,7 +150,7 @@ class ZkProofBuilderImpl implements ZkProofBuilder {
       readonly fhevmContext: FhevmClientFrozenContext;
     },
   ): Promise<ZkProof> {
-    // Fetch the FheEncryptionKey (in wasm format) from the global cache.
+    // Fetch the FheEncryptionKey (in wasm format) through the key cache.
     const fheEncryptionKeyWasm = await fetchFheEncryptionKeyWasm(context, { fhevmContext });
 
     if (this.#totalBits === 0) {

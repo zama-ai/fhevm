@@ -2,7 +2,12 @@ import { asEncryptedValue, type EncryptedValue } from '@fhevm/sdk/types';
 import { ethers } from 'ethers';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/ethers';
-import { getEthersTestConfig, type CreateEthersDecryptClientFn, type FheTestEthersConfig } from '../setup-ethers.js';
+import {
+  getEthersTestConfig,
+  latestBlockTimestamp,
+  type CreateEthersDecryptClientFn,
+  type FheTestEthersConfig,
+} from '../setup-ethers.js';
 import {
   createLogger,
   decryptTestCases,
@@ -166,7 +171,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           transportKeyPair: keyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
-          startTimestamp: Math.floor(Date.now() / 1000) - 5,
+          startTimestamp: (await latestBlockTimestamp(config)) - 5,
           signerAddress: config.bob.wallet.address,
           signer: config.bob.signer,
           delegatorAddress: config.alice.wallet.address,
@@ -222,7 +227,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
             transportKeyPair: transportKeyPair,
             contractAddresses: [config.fheTestAddress],
             durationSeconds: 24 * 3600,
-            startTimestamp: Math.floor(Date.now() / 1000) - 5,
+            startTimestamp: (await latestBlockTimestamp(config)) - 5,
             signerAddress: config.bob.wallet.address,
             signer: config.bob.signer,
             delegatorAddress: config.alice.wallet.address,
@@ -288,7 +293,7 @@ export function defineClientDecryptDelegateDecryptTests(parameters: {
           transportKeyPair: bobKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
-          startTimestamp: Math.floor(Date.now() / 1000) - 5,
+          startTimestamp: (await latestBlockTimestamp(config)) - 5,
           signerAddress: config.bob.wallet.address,
           signer: config.bob.signer,
           delegatorAddress: config.alice.wallet.address,

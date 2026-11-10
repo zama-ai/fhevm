@@ -1,5 +1,6 @@
 use super::containment_test_support::*;
 use super::*;
+use clap::Parser;
 use scheduler::dfg::types::DFGTxResult;
 
 fn result(tx: u8, out: u8, success: bool) -> DFGTxResult {
@@ -19,7 +20,7 @@ fn result(tx: u8, out: u8, success: bool) -> DFGTxResult {
 }
 
 async fn check_late_drift(success: bool) {
-    let (_db, pool) = setup().await;
+    let (db, pool) = setup().await;
     computation(&pool, 2, 1, 10, true, 90).await;
     computation(&pool, 3, 2, 10, false, 90).await;
     computation(&pool, 4, 3, 11, true, 90).await;
@@ -85,10 +86,16 @@ async fn check_late_drift(success: bool) {
         ],
         ..Default::default()
     };
-    let (progress, _) =
+    let (progress, cooldown_transactions) =
         upload_transaction_graph_results(&mut graph, &mut trx, &mut locks, false, &mut freeze)
             .await
             .unwrap();
+    // Mirror the lockless caller: any returned transaction is excluded from
+    // selection until its cooldown expires, even if healing finishes sooner.
+    let mut cooldown = DeferredTransactionCooldown::new();
+    for transaction_id in cooldown_transactions {
+        cooldown.quarantine(&transaction_id);
+    }
     assert!(progress, "independent output still commits");
     trx.commit().await.unwrap();
     let after: Vec<serde_json::Value> = sqlx::query_scalar(
@@ -128,6 +135,43 @@ async fn check_late_drift(success: bool) {
             .await
             .unwrap();
     assert_eq!(queued, 0);
+
+    // The healer clears the finding before the next pick. Discarding a late
+    // result must not make these transactions wait for the one-minute retry
+    // cooldown. This covers both discarded successes and discarded errors.
+    sqlx::query(
+        "UPDATE drifted_handle SET healed_at = NOW(), quorum_ct64_digest = $1 WHERE handle = $1",
+    )
+    .bind(handle(1))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut args = crate::daemon_cli::Args::parse_from(["tfhe-worker"]);
+    args.disable_dcid_locking = true;
+    let health = crate::health_check::HealthCheck::new(
+        db.db_url().to_owned().into(),
+        Duration::from_secs(300),
+    );
+    let mut trx = pool.begin().await.unwrap();
+    let (nodes, _, _, freeze) = query_for_work(
+        &args,
+        &health,
+        &mut trx,
+        &mut locks,
+        &mut 0,
+        &mut cooldown,
+        false,
+    )
+    .await
+    .unwrap();
+    assert!(freeze.frozen.is_empty());
+    let selected: HashSet<_> = nodes.iter().flat_map(|node| &node.results).collect();
+    for output in [2, 3, 4] {
+        assert!(
+            selected.contains(&handle(output)),
+            "healed output {output} must be immediately eligible for selection"
+        );
+    }
 }
 
 #[tokio::test]

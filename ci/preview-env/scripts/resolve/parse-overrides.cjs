@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // Parse workflow_dispatch `overrides` JSON into GITHUB_OUTPUT.
-// Env: OVERRIDES_RAW (string JSON or empty), EVENT_NAME, GITHUB_OUTPUT.
+// Env: OVERRIDES_RAW (string JSON or empty), EVENT_NAME, GITHUB_OUTPUT,
+// BCS_KMS_CORE_TAG (set only for an RFC-021 pair with the pinned Blue).
 // Unknown keys fail. Empty / {} means resolve as today.
-// Dispatch-only default: relayer_sdk_version=0.4.4 (PR stays empty → @fhevm/sdk only).
+// relayer_sdk_version is empty unless set, so only @fhevm/sdk runs.
+// BCS_KMS_CORE_TAG replaces the kms_repo_ref / kms_core_version defaults, so
+// keys come from Blue's kms release; explicit overrides still win.
 
 const ALLOWED = new Set([
   "host_contracts_version",
@@ -16,6 +19,7 @@ const ALLOWED = new Set([
   "kms_core_version",
   "kms_repo_ref",
   "relayer_version",
+  "relayer_http_version",
   "relayer_sdk_version",
   "test_suite_version",
   "common_chart_version",
@@ -27,12 +31,18 @@ const ALLOWED = new Set([
 const ALWAYS_DEFAULTS = {
   coprocessor_infra_chart_version: "0.6.5",
   common_chart_version: "0.3.3",
-  // zama-ai/kms v0.14.1 (75b85afd, 2026-09-01). Image tag is github.ref_name
-  // on the kms release docker-build; keep both keys on the same release.
-  kms_repo_ref: "v0.14.1",
-  kms_core_version: "v0.14.1",
+  // zama-ai/kms v0.15.0-1. Image tag is github.ref_name on the kms release
+  // docker-build; keep both keys on the same release.
+  kms_repo_ref: "v0.15.0-1",
+  kms_core_version: "v0.15.0-1",
   redis_chart_version: "25.3.8",
 };
+
+const bcsKmsCoreTag = String(process.env.BCS_KMS_CORE_TAG || "").trim();
+if (bcsKmsCoreTag) {
+  ALWAYS_DEFAULTS.kms_repo_ref = bcsKmsCoreTag;
+  ALWAYS_DEFAULTS.kms_core_version = bcsKmsCoreTag;
+}
 
 const fs = require("node:fs");
 
@@ -62,7 +72,6 @@ if (raw && raw !== "{}") {
   }
 }
 
-const isDispatch = process.env.EVENT_NAME === "workflow_dispatch";
 const out = {};
 for (const key of ALLOWED) {
   const hasKey = Object.prototype.hasOwnProperty.call(parsed, key);
@@ -72,9 +81,6 @@ for (const key of ALLOWED) {
   } else if (ALWAYS_DEFAULTS[key]) {
     // Empty or omitted → workflow pin (same as `inputs.x || 'pin'`).
     out[key] = ALWAYS_DEFAULTS[key];
-  } else if (isDispatch && key === "relayer_sdk_version" && !hasKey) {
-    // Omitted on dispatch → 0.4.4. Explicit "" skips the relayer-sdk suite.
-    out[key] = "0.4.4";
   } else {
     out[key] = "";
   }

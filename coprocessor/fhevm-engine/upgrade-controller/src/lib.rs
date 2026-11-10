@@ -154,6 +154,13 @@ pub struct Config {
     /// Fallback poll interval used while waiting for notifications, so a missed
     /// NOTIFY (e.g. dropped connection) still gets re-checked eventually.
     pub poll_interval: Duration,
+    /// Age horizon for the cutover gate's pre-window PBS-completion scan
+    /// (`assert_bcs_ciphertexts_uploaded`). A pre-window `pbs_computations` row
+    /// older than this no longer blocks cutover: a row that has sat incomplete
+    /// for this long is treated as permanently wedged rather than in flight, so
+    /// it cannot hold every future upgrade hostage. `None` scans all history
+    /// (the previous behavior). Rows inside the horizon keep blocking as before.
+    pub pbs_gate_max_age: Option<Duration>,
 }
 
 impl Default for Config {
@@ -165,9 +172,14 @@ impl Default for Config {
             gcs_mode: false,
             log_level: Level::INFO,
             poll_interval: Duration::from_secs(30),
+            pbs_gate_max_age: Some(DEFAULT_PBS_GATE_MAX_AGE),
         }
     }
 }
+
+/// Default [`Config::pbs_gate_max_age`]: one week. Old enough that anything
+/// still incomplete is wedged, not in flight.
+pub const DEFAULT_PBS_GATE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Payload published over `upgrade_activated`.
 ///
@@ -271,6 +283,7 @@ pub async fn handle_upgrade_activated(
     readiness: &Arc<AtomicI64>,
     gcs_mode: bool,
     raw_payload: &str,
+    pbs_gate_max_age: Option<Duration>,
 ) -> Result<(), Error> {
     let payload: UpgradeActivatedPayload =
         serde_json::from_str(raw_payload).map_err(|e| Error::Payload(e.to_string()))?;
@@ -281,7 +294,7 @@ pub async fn handle_upgrade_activated(
         "event_upgrade_activated received — reconciling from persisted upgrade_state row"
     );
 
-    reconcile(pool, cancel, readiness, gcs_mode).await
+    reconcile(pool, cancel, readiness, gcs_mode, pbs_gate_max_age).await
 }
 
 fn spawn_gcs_dry_run_readiness(
@@ -527,6 +540,7 @@ async fn reset_gcs_schema(tx: &mut Transaction<'_, Postgres>) -> Result<(), Erro
     let drop_sql = format!("DROP SCHEMA IF EXISTS {GCS_SCHEMA_QUOTED} CASCADE");
     sqlx::query(&drop_sql).execute(&mut **tx).await?;
     let duplicated = create_gcs_tables(tx).await?;
+    fhevm_engine_common::chain_recovery::reset_green_replay_tx(tx).await?;
     info!(
         schema = GCS_SCHEMA_QUOTED,
         tables = ?duplicated,
@@ -637,6 +651,9 @@ async fn check_dry_run_ready(
     let (ready,): (bool,) = sqlx::query_as(
         r#"
         SELECT
+          NOT EXISTS (SELECT 1 FROM public.chain_recovery_halts WHERE resolved_at IS NULL)
+          AND NOT EXISTS (SELECT 1 FROM public.listener_replay_state WHERE pending)
+          AND
           -- 1. Watermark: the host-listener has ingested at least up to start_block.
           --    Without this, an un-ingested start_block would make the two checks
           --    below vacuously true (nothing to find yet != nothing wrong).
@@ -732,6 +749,7 @@ async fn wait_until_dry_run_ready(
             NEW_BLOCK_CHANNEL,
             EVENT_CIPHERTEXT_COMPUTED_CHANNEL,
             EVENT_DRY_RUN_ROLLED_BACK,
+            fhevm_engine_common::chain_recovery::EVENT_RECOVERY_CHANGED,
         ])
         .await?;
 
@@ -801,6 +819,9 @@ async fn wait_until_dry_run_ready(
                 info!("readiness loop cancelled");
                 return Ok(false);
             }
+            // Notifications are hints; reconnects and operator recovery must
+            // not require new chain activity to release an otherwise-ready gate.
+            _ = tokio::time::sleep(Duration::from_secs(5)) => {}
             recv = listener.recv() => {
                 match recv {
                     Ok(notification) => {
@@ -892,6 +913,15 @@ async fn transition_to_dry_run_started(
         }
     }
 
+    let Some(mut readiness_tx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        true,
+        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+    )
+    .await?
+    .into_tx() else {
+        return Ok(());
+    };
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -904,8 +934,10 @@ async fn transition_to_dry_run_started(
     )
     .bind(proposal_id)
     .bind(proposal_block)
-    .execute(pool)
+    .execute(&mut *readiness_tx)
     .await?;
+
+    readiness_tx.commit().await?;
 
     if result.rows_affected() == 0 {
         warn!(
@@ -998,7 +1030,9 @@ async fn check_gw_dry_run_ready(
 ) -> Result<bool, sqlx::Error> {
     let sql = format!(
         "SELECT
-           COALESCE(
+           NOT EXISTS (SELECT 1 FROM public.chain_recovery_halts WHERE resolved_at IS NULL)
+           AND NOT EXISTS (SELECT 1 FROM public.listener_replay_state WHERE pending)
+           AND COALESCE(
              (SELECT last_block_num FROM {GCS_SCHEMA_QUOTED}.gw_listener_last_block
               WHERE dummy_id = true),
              -1
@@ -1052,7 +1086,11 @@ async fn wait_until_gw_dry_run_ready(
     // and the host-chain readiness loop.
     let mut listener = PgListener::connect_with(&pool).await?;
     listener
-        .listen_all([GW_NEW_BLOCK_CHANNEL, EVENT_DRY_RUN_ROLLED_BACK])
+        .listen_all([
+            GW_NEW_BLOCK_CHANNEL,
+            EVENT_DRY_RUN_ROLLED_BACK,
+            fhevm_engine_common::chain_recovery::EVENT_RECOVERY_CHANGED,
+        ])
         .await?;
 
     loop {
@@ -1113,6 +1151,7 @@ async fn wait_until_gw_dry_run_ready(
                 info!("gw readiness loop cancelled");
                 return Ok(false);
             }
+            _ = tokio::time::sleep(Duration::from_secs(5)) => {}
             recv = listener.recv() => {
                 match recv {
                     Ok(notification) => {
@@ -1194,6 +1233,15 @@ async fn transition_to_gw_dry_run_started(
     proposal_id: &[u8],
     proposal_block: i64,
 ) -> Result<(), Error> {
+    let Some(mut readiness_tx) = fhevm_engine_common::versioning::begin_write_guarded(
+        pool,
+        true,
+        fhevm_engine_common::versioning::GcsRollbackPolicy::Continue,
+    )
+    .await?
+    .into_tx() else {
+        return Ok(());
+    };
     let result = sqlx::query(
         r#"
         UPDATE upgrade_state
@@ -1207,8 +1255,10 @@ async fn transition_to_gw_dry_run_started(
     )
     .bind(proposal_id)
     .bind(proposal_block)
-    .execute(pool)
+    .execute(&mut *readiness_tx)
     .await?;
+
+    readiness_tx.commit().await?;
 
     if result.rows_affected() == 0 {
         warn!(
@@ -1304,6 +1354,36 @@ async fn delete_bcs_chain_leftovers(
                 "delete_bcs_leftovers: deleted BCS-leftover ciphertexts"
             );
         }
+    }
+
+    // Also clear the in-window `ciphertext_digest` rows. BCS (blue) writes its digest here
+    // during the window; the GCS merge below can only overwrite a handle GCS itself produced,
+    // so if GCS's dry-run never digested a handle (e.g. a lagging operator), blue's stale
+    // digest would survive the merge — and being write-once it can never be corrected by the
+    // post-cutover re-digest, so the sns-worker loops forever on "computed ciphertext digest
+    // mismatch". Dropping it here lets the merge (or the post-cutover re-ingest) lay down the
+    // correct GCS digest. Must run before the computation deletes below, since it reaches rows
+    // through them.
+    for comp_table in COMPUTATION_TABLES {
+        let sql = format!(
+            "DELETE FROM public.ciphertext_digest d
+               USING public.{comp_table} comp
+              WHERE d.handle = comp.output_handle
+                AND comp.host_chain_id = $1 AND comp.block_number >= $2"
+        );
+        let deleted = sqlx::query(&sql)
+            .bind(chain_id)
+            .bind(start_block)
+            .execute(&mut **tx)
+            .await?
+            .rows_affected();
+        info!(
+            host_chain_id = chain_id,
+            start_block,
+            comp_table,
+            deleted,
+            "delete_bcs_leftovers: deleted BCS-leftover ciphertext_digest rows"
+        );
     }
 
     for pbs_table in PBS_COMPUTATION_TABLES {
@@ -1616,6 +1696,30 @@ async fn delete_bcs_gw_leftovers(tx: &mut Transaction<'_, Postgres>) -> Result<(
             .await?;
     }
 
+    // Also clear in-window `ciphertext_digest` rows for input handles. An input that is
+    // allowed (ACL `Allowed` / `AllowedForDecryption`) gets a pbs_computation, so the
+    // sns-worker produces its ct128 + digest — but an input has no `computations` row, so
+    // the host-window delete in `delete_bcs_chain_leftovers` (which joins through
+    // `computations`) never reaches it. Green re-verifies and re-randomizes inputs, so
+    // blue's digest goes stale; left here it is write-once, and a lagging operator's
+    // post-cutover re-digest loops forever on "computed ciphertext digest mismatch".
+    // Dropping it lets the merge (or the post-cutover re-digest) lay down green's value.
+    // Reached through `input_handles`, so it must run before that table is cleared below.
+    let deleted_input_digests = sqlx::query(
+        "DELETE FROM public.ciphertext_digest d
+           USING public.input_handles ih
+          WHERE d.handle = ih.handle AND ih.block_number >= $1",
+    )
+    .bind(gw_start_block)
+    .execute(&mut **tx)
+    .await?
+    .rows_affected();
+    info!(
+        gw_start_block,
+        rows_deleted = deleted_input_digests,
+        "delete_bcs_gw_leftovers: deleted BCS-leftover input ciphertext_digest rows"
+    );
+
     // Clear the whole gw window last: the ciphertext deletes above reach their rows
     // through this table, and the merge restores every handle green reproduced.
     let deleted_input_handles = sqlx::query!(
@@ -1888,7 +1992,16 @@ async fn authorized_stack_version(
 /// Scope limit: this counts only handles that already have a `ciphertext_digest` row, which
 /// is exactly what the resubmit loop can act on. A pre-window handle whose digest row was
 /// never created at all is not detected here.
-async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> Result<(), Error> {
+///
+/// `pbs_gate_max_age` bounds the PBS-completion scan (stage one) to rows created within
+/// that horizon: an incomplete pre-window PBS row older than it is treated as permanently
+/// wedged, warned about, and no longer blocks cutover. `None` keeps the scan unbounded.
+/// The upload-witness scan (stage two) is never age-bounded: those rows have a digest and
+/// the resubmit loop keeps acting on them regardless of age.
+async fn assert_bcs_ciphertexts_uploaded(
+    tx: &mut Transaction<'_, Postgres>,
+    pbs_gate_max_age: Option<Duration>,
+) -> Result<(), Error> {
     // Gate on pre-window PBS completion first. A `ciphertext_digest` row is written by the
     // sns-worker only once it finishes the PBS job, so a still-pending pre-`start_block` PBS
     // computation has no digest row yet — the upload scan below would pass it over vacuously
@@ -1903,45 +2016,61 @@ async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> 
     // otherwise block every cutover attempt forever. A handle with no `computations` row at all
     // (e.g. a directly-allowed input, never computed) is not excluded — nothing marks that case
     // as unrecoverable, so it keeps blocking like any other still-pending row.
-    let pbs_origins = PBS_COMPUTATION_TABLES
-        .iter()
-        .map(|pbs_table| {
-            let not_terminally_errored = COMPUTATION_TABLES
-                .iter()
-                .map(|comp_table| {
-                    format!(
-                        "SELECT 1 FROM public.{comp_table} c
-                          WHERE c.output_handle = p.handle
-                            AND c.is_error = true
-                            AND c.error_message NOT LIKE '%' || $1 || '%'"
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(" UNION ALL ");
-            format!(
-                "SELECT p.host_chain_id, p.handle
-                   FROM public.{pbs_table} p
-                   JOIN windows w ON w.host_chain_id = p.host_chain_id
-                  WHERE p.block_number < w.start_block
-                    AND p.is_completed = false
-                    AND NOT EXISTS ({not_terminally_errored})"
-            )
-        })
-        .collect::<Vec<_>>()
-        // UNION, not UNION ALL: a handle in both the legacy and branch table counts once.
-        .join(" UNION ");
-    let pbs_sql = format!(
-        "WITH windows AS (
-             SELECT host_chain_id, start_block
-               FROM public.upgrade_state
-              WHERE stack_role = 'GCS' AND start_block IS NOT NULL
-         )
-         SELECT host_chain_id, COUNT(*) FROM ({pbs_origins}) o
-          GROUP BY host_chain_id
-          ORDER BY host_chain_id"
-    );
-    let pbs_pending: Vec<(i64, i64)> = sqlx::query_as(&pbs_sql)
+    //
+    // `pbs_gate_max_age` adds a second escape hatch for the wedged cases the terminal-error
+    // exclusion cannot see (no `computations` row at all, or a retryable stamp that stopped
+    // being retried): a row older than the horizon no longer blocks. $2 is the horizon in
+    // seconds; NULL disables it (NULL propagates through `make_interval`, the comparison
+    // yields NULL, and the `IS NULL` arm keeps the row).
+    let age_predicate = "AND ($2::double precision IS NULL
+                          OR p.created_at >= NOW() - make_interval(secs => $2))";
+    let pbs_origin = |age_predicate: &str| {
+        PBS_COMPUTATION_TABLES
+            .iter()
+            .map(|pbs_table| {
+                let not_terminally_errored = COMPUTATION_TABLES
+                    .iter()
+                    .map(|comp_table| {
+                        format!(
+                            "SELECT 1 FROM public.{comp_table} c
+                              WHERE c.output_handle = p.handle
+                                AND c.is_error = true
+                                AND c.error_message NOT LIKE '%' || $1 || '%'"
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" UNION ALL ");
+                format!(
+                    "SELECT p.host_chain_id, p.handle
+                       FROM public.{pbs_table} p
+                       JOIN windows w ON w.host_chain_id = p.host_chain_id
+                      WHERE p.block_number < w.start_block
+                        AND p.is_completed = false
+                        {age_predicate}
+                        AND NOT EXISTS ({not_terminally_errored})"
+                )
+            })
+            .collect::<Vec<_>>()
+            // UNION, not UNION ALL: a handle in both the legacy and branch table counts once.
+            .join(" UNION ")
+    };
+    let pbs_count_sql = |age_predicate: &str| {
+        let origins = pbs_origin(age_predicate);
+        format!(
+            "WITH windows AS (
+                 SELECT host_chain_id, start_block
+                   FROM public.upgrade_state
+                  WHERE stack_role = 'GCS' AND start_block IS NOT NULL
+             )
+             SELECT host_chain_id, COUNT(*) FROM ({origins}) o
+              GROUP BY host_chain_id
+              ORDER BY host_chain_id"
+        )
+    };
+    let max_age_secs = pbs_gate_max_age.map(|age| age.as_secs_f64());
+    let pbs_pending: Vec<(i64, i64)> = sqlx::query_as(&pbs_count_sql(age_predicate))
         .bind(RETRYABLE_STAMP_MARKER)
+        .bind(max_age_secs)
         .fetch_all(&mut **tx)
         .await?;
     if !pbs_pending.is_empty() {
@@ -1955,6 +2084,26 @@ async fn assert_bcs_ciphertexts_uploaded(tx: &mut Transaction<'_, Postgres>) -> 
             pbs_total += pending;
         }
         return Err(Error::PendingBcsUploads { pending: pbs_total });
+    }
+
+    // The gate is about to pass stage one. If the horizon silenced rows that would have
+    // blocked, say so loudly: each one is a handle whose ct128/digest may never exist,
+    // deliberately no longer holding up the upgrade.
+    if let Some(max_age_secs) = max_age_secs {
+        let aged_out = "AND p.created_at < NOW() - make_interval(secs => $2)";
+        let pbs_aged_out: Vec<(i64, i64)> = sqlx::query_as(&pbs_count_sql(aged_out))
+            .bind(RETRYABLE_STAMP_MARKER)
+            .bind(max_age_secs)
+            .fetch_all(&mut **tx)
+            .await?;
+        for (chain_id, aged_out) in &pbs_aged_out {
+            warn!(
+                host_chain_id = chain_id,
+                aged_out,
+                max_age_secs,
+                "cutover gate: incomplete pre-window PBS rows older than the age horizon are NOT blocking cutover — their ct128/ciphertext_digest may never be produced"
+            );
+        }
     }
 
     // Digests exist before upload. Only a witness matching the current ct64
@@ -2434,14 +2583,17 @@ async fn delete_gcs_synthetic_inputs(tx: &mut Transaction<'_, Postgres>) -> Resu
 /// re-reads the bumped `versioning` row, finds its own binary older, and stops (see
 /// `begin_write_guarded`). It is not the FSM that retires blue: no `BCS` row exists in
 /// `upgrade_state`, since activation only ever inserts `GCS` rows.
-pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
+pub async fn execute_cutover(
+    pool: &Pool<Postgres>,
+    pbs_gate_max_age: Option<Duration>,
+) -> Result<(), Error> {
     info!("execute_cutover() starting");
 
     let started = Instant::now();
     let mut tx = pool.begin().await?;
 
     // 0. Pre-flight checks, no lock held: uploads must be complete first
-    assert_bcs_ciphertexts_uploaded(&mut tx).await?;
+    assert_bcs_ciphertexts_uploaded(&mut tx, pbs_gate_max_age).await?;
 
     let acquire_start = Instant::now();
     info!("execute_cutover() pre-flight checks passed; acquiring exclusive advisory lock ...");
@@ -2461,6 +2613,13 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
         elapsed = acquire_start.elapsed().as_millis(),
         "cutover acquired exclusive advisory lock"
     );
+
+    if fhevm_engine_common::chain_recovery::is_halted_tx(&mut tx).await?
+        || fhevm_engine_common::chain_recovery::replay_pending_tx(&mut tx).await?
+    {
+        warn!("cutover blocked by chain history recovery");
+        return Ok(());
+    }
 
     // Read the GCS proposal rows under the lock, and return early if they are
     // not `UpgradeAuthorized` (normally because a previous attempt already committed).
@@ -2626,12 +2785,14 @@ pub async fn execute_cutover(pool: &Pool<Postgres>) -> Result<(), Error> {
 async fn execute_cutover_with_retry(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
+    pbs_gate_max_age: Option<Duration>,
 ) -> Result<(), Error> {
     retry_cutover(
         pool,
         cancel,
         CUTOVER_RETRY_ATTEMPTS,
         CUTOVER_RETRY_BASE_DELAY,
+        pbs_gate_max_age,
     )
     .await
 }
@@ -2649,11 +2810,12 @@ async fn retry_cutover(
     cancel: &CancellationToken,
     attempts: u32,
     base_delay: Duration,
+    pbs_gate_max_age: Option<Duration>,
 ) -> Result<(), Error> {
     let mut attempt: u32 = 1;
     let mut delay = base_delay;
     loop {
-        let err = match execute_cutover(pool).await {
+        let err = match execute_cutover(pool, pbs_gate_max_age).await {
             Ok(()) => return Ok(()),
             Err(err) => err,
         };
@@ -2721,6 +2883,7 @@ fn validate_cutover_release(release: &str, live_stack_version: &str) -> Result<(
 async fn try_cutover_if_consensus(
     pool: &Pool<Postgres>,
     cancel: &CancellationToken,
+    pbs_gate_max_age: Option<Duration>,
 ) -> Result<(), Error> {
     // Cutover is atomic across the whole proposal: every host chain's + the Gateway's
     // consensus latch must be set. The per-chain host latches are now emitted independently
@@ -2771,7 +2934,7 @@ async fn try_cutover_if_consensus(
     }
     info!("gateway + all host chains reached consensus — transitioning to UpgradeAuthorized and running cutover");
 
-    execute_cutover_with_retry(pool, cancel).await
+    execute_cutover_with_retry(pool, cancel, pbs_gate_max_age).await
 }
 
 /// Roll back a dry-run under the write lock: PAUSED/failed, reset schema, wake
@@ -2914,6 +3077,7 @@ async fn reconcile(
     cancel: &CancellationToken,
     readiness: &Arc<AtomicI64>,
     gcs_mode: bool,
+    pbs_gate_max_age: Option<Duration>,
 ) -> Result<(), Error> {
     if !gcs_mode {
         return fail_expired_without_gcs(pool).await;
@@ -2984,7 +3148,7 @@ async fn reconcile(
         }
         "UpgradeAuthorized" => {
             info!("reconcile: GCS in UpgradeAuthorized — resuming cutover");
-            execute_cutover_with_retry(pool, cancel).await?;
+            execute_cutover_with_retry(pool, cancel, pbs_gate_max_age).await?;
         }
         "DryRunStarted" => {
             // Restore an incomplete Gateway gate after a controller restart.
@@ -3006,7 +3170,7 @@ async fn reconcile(
                 }
             }
             // Guarded on both latches, so it no-ops until they're set.
-            try_cutover_if_consensus(pool, cancel).await?;
+            try_cutover_if_consensus(pool, cancel, pbs_gate_max_age).await?;
         }
         _ => {}
     }
@@ -3113,6 +3277,7 @@ pub async fn handle_unanimity_consensus(
     cancel: &CancellationToken,
     gcs_mode: bool,
     raw_payload: &str,
+    pbs_gate_max_age: Option<Duration>,
 ) -> Result<(), Error> {
     if !gcs_mode {
         debug!(
@@ -3290,7 +3455,7 @@ pub async fn handle_unanimity_consensus(
         },
     }
 
-    try_cutover_if_consensus(pool, cancel).await?;
+    try_cutover_if_consensus(pool, cancel, pbs_gate_max_age).await?;
     Ok(())
 }
 
@@ -3408,7 +3573,15 @@ pub async fn run(
     let readiness = Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT));
 
     // Boot reconcile: recover an upgrade whose NOTIFY was missed while down (LISTEN already registered).
-    if let Err(e) = reconcile(&pool, &cancel, &readiness, stack_mode.gcs_mode()).await {
+    if let Err(e) = reconcile(
+        &pool,
+        &cancel,
+        &readiness,
+        stack_mode.gcs_mode(),
+        config.pbs_gate_max_age,
+    )
+    .await
+    {
         error!(error = %e, "boot reconcile failed");
     }
 
@@ -3431,12 +3604,12 @@ pub async fn run(
 
                         let result = match channel {
                             UPGRADE_ACTIVATED_CHANNEL => {
-                                handle_upgrade_activated(&pool, &cancel, &readiness, stack_mode.gcs_mode(), payload).await
+                                handle_upgrade_activated(&pool, &cancel, &readiness, stack_mode.gcs_mode(), payload, config.pbs_gate_max_age).await
                             }
                             UNANIMITY_CONSENSUS_CHANNEL => {
                                 // Emitted by consensus-detector when every operator publishes
                                 // the same state commitment at the upgrade's end_block.
-                                handle_unanimity_consensus(&pool, &cancel, stack_mode.gcs_mode(), payload).await
+                                handle_unanimity_consensus(&pool, &cancel, stack_mode.gcs_mode(), payload, config.pbs_gate_max_age).await
                             }
                             UNANIMITY_CONSENSUS_TIMEOUT_CHANNEL => {
                                 // Window never reached unanimity — roll back the dry-run.
@@ -3461,7 +3634,7 @@ pub async fn run(
             }
             _ = poll.tick() => {
                 // Fallback for a missed NOTIFY: re-derive the next step from the row.
-                if let Err(e) = reconcile(&pool, &cancel, &readiness, stack_mode.gcs_mode()).await {
+                if let Err(e) = reconcile(&pool, &cancel, &readiness, stack_mode.gcs_mode(), config.pbs_gate_max_age).await {
                     error!(error = %e, "poll reconcile failed");
                 }
             }
@@ -4138,7 +4311,9 @@ mod tests {
             .expect("select Green consensus_epoch");
 
         // The bug surfaced exactly here: a planning-time ON CONFLICT error.
-        execute_cutover(&pool).await.expect("cutover succeeds");
+        execute_cutover(&pool, None)
+            .await
+            .expect("cutover succeeds");
 
         // Blue may have uploaded any block it knew: the promoted epoch's own
         // S3 objects start one past the highest.
@@ -4202,9 +4377,131 @@ mod tests {
         (instance, pool)
     }
 
+    #[tokio::test]
+    async fn green_schema_reset_invalidates_only_green_replay() {
+        use fhevm_engine_common::chain_recovery::{begin_replay, pending_replay, ListenerSource};
+        let (_db, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.unwrap();
+        begin_replay(&pool, ListenerSource::Host, true, 42, 1, 64)
+            .await
+            .unwrap();
+        begin_replay(&pool, ListenerSource::Host, false, 42, 1, 64)
+            .await
+            .unwrap();
+        // A real history halt must survive discarding an upgrade attempt.
+        sqlx::query("INSERT INTO public.chain_recovery_halts (source, stack_role, chain_id, block_number, reason) VALUES ('host', 'GCS', 42, 1, 'retained evidence')").execute(&pool).await.unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(CUTOVER_LOCK_ID)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        reset_gcs_schema(&mut tx).await.unwrap();
+        tx.commit().await.unwrap();
+        assert!(pending_replay(&pool, ListenerSource::Host, true, 42)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(pending_replay(&pool, ListenerSource::Host, false, 42)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(fhevm_engine_common::chain_recovery::is_halted(&pool)
+            .await
+            .unwrap());
+    }
+
     fn timeout_payload() -> String {
         serde_json::json!({ "proposal_id": vec![2; 32], "proposal_block": 10, "chain_id": 1_i64, "block_height": 200_i64, "block_hash": "0x00" })
             .to_string()
+    }
+
+    #[tokio::test]
+    async fn idle_readiness_recovers_after_replay_with_and_without_notification() {
+        use fhevm_engine_common::chain_recovery::{
+            begin_replay, complete_replay, ListenerSource, EVENT_RECOVERY_CHANGED,
+        };
+        use tokio::time::timeout;
+
+        for notify in [true, false] {
+            let (_db, pool) = test_pool().await;
+            seed_gcs_row(&pool, "UpgradeActivated", "in_progress").await;
+            create_gcs_schema(&pool).await.unwrap();
+            sqlx::query("UPDATE upgrade_state SET gw_dry_run_started=FALSE, gw_window_rewound=TRUE WHERE stack_role='GCS'")
+                .execute(&pool).await.unwrap();
+            for schema in ["public", GCS_SCHEMA_QUOTED] {
+                sqlx::query(&format!("INSERT INTO {schema}.gw_listener_last_block (dummy_id,last_block_num) VALUES (TRUE,1) ON CONFLICT (dummy_id) DO UPDATE SET last_block_num=1"))
+                    .execute(&pool).await.unwrap();
+            }
+            sqlx::query("INSERT INTO public.host_chain_blocks_valid (chain_id,block_hash,block_number,block_status) VALUES (1,$1,100,'finalized')")
+                .bind(vec![1_u8;32]).execute(&pool).await.unwrap();
+            let replay = begin_replay(&pool, ListenerSource::Host, false, 1, 100, 100)
+                .await
+                .unwrap();
+            assert!(!check_dry_run_ready(&pool, 1, 100).await.unwrap());
+            assert!(!check_gw_dry_run_ready(&pool, 1).await.unwrap());
+
+            let cancel = CancellationToken::new();
+            let proposal = [0x02_u8; 32];
+            let mut host = Box::pin(wait_until_dry_run_ready(
+                pool.clone(),
+                cancel.clone(),
+                &proposal,
+                10,
+                1,
+                100,
+            ));
+            let mut gateway = Box::pin(wait_until_gw_dry_run_ready(
+                pool.clone(),
+                cancel.clone(),
+                &proposal,
+                10,
+                1,
+            ));
+            // Drive both real waiters while replay blocks them. Keep their
+            // futures alive across the timeout so recovery must wake them.
+            assert!(timeout(Duration::from_millis(200), async {
+                tokio::join!(&mut host, &mut gateway)
+            })
+            .await
+            .is_err());
+            let mut events = PgListener::connect_with(&pool).await.unwrap();
+            events.listen(EVENT_RECOVERY_CHANGED).await.unwrap();
+            if notify {
+                complete_replay(
+                    &pool,
+                    ListenerSource::Host,
+                    false,
+                    1,
+                    100,
+                    100,
+                    replay.generation,
+                )
+                .await
+                .unwrap();
+                timeout(Duration::from_secs(2), events.recv())
+                    .await
+                    .unwrap()
+                    .unwrap();
+            } else {
+                // Model a recovery whose notification was lost: no host or
+                // Gateway block, worker result or controller restart follows.
+                sqlx::query(
+                    "UPDATE public.listener_replay_state SET pending=FALSE WHERE chain_id=1",
+                )
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+            let deadline = Duration::from_secs(if notify { 2 } else { 8 });
+            let (host_ready, gateway_ready) =
+                timeout(deadline, async { tokio::join!(&mut host, &mut gateway) })
+                    .await
+                    .expect("idle readiness must recover without chain activity");
+            assert!(host_ready.unwrap());
+            assert!(gateway_ready.unwrap());
+            cancel.cancel();
+        }
     }
 
     /// Seed one GCS proposal row with all latches set.
@@ -4539,6 +4836,7 @@ mod tests {
             &CancellationToken::new(),
             &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
             true,
+            None,
         )
         .await
         .expect("reconcile");
@@ -4573,6 +4871,7 @@ mod tests {
             &CancellationToken::new(),
             &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
             true,
+            None,
         )
         .await
         .expect("replacement reconciles durable state");
@@ -4705,6 +5004,7 @@ mod tests {
             &CancellationToken::new(),
             &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
             true,
+            None,
         )
         .await
         .expect("reconcile");
@@ -4806,7 +5106,7 @@ mod tests {
         seed_gcs_chain(&pool, 1, true, true).await;
         seed_gcs_chain(&pool, 2, false, true).await;
 
-        try_cutover_if_consensus(&pool, &CancellationToken::new())
+        try_cutover_if_consensus(&pool, &CancellationToken::new(), None)
             .await
             .expect("try cutover");
         assert_eq!(
@@ -4817,7 +5117,7 @@ mod tests {
 
         // Chain 2 now reaches consensus → cutover fires for the whole proposal.
         seed_gcs_chain(&pool, 2, true, true).await;
-        try_cutover_if_consensus(&pool, &CancellationToken::new())
+        try_cutover_if_consensus(&pool, &CancellationToken::new(), None)
             .await
             .expect("try cutover 2");
 
@@ -4840,6 +5140,7 @@ mod tests {
             &CancellationToken::new(),
             true,
             &consensus_payload(1, 150),
+            None,
         )
         .await
         .expect("handle chain 1");
@@ -4872,6 +5173,7 @@ mod tests {
             &CancellationToken::new(),
             true,
             &consensus_payload(999, 5),
+            None,
         )
         .await
         .expect("handle gateway");
@@ -4970,6 +5272,7 @@ mod tests {
             &cancel,
             &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
             true,
+            None,
         )
         .await
         .expect("reconcile");
@@ -5026,7 +5329,7 @@ mod tests {
         // Chain 1 past its window, chain 2 still inside it: the proposal stays.
         seed_tip(&pool, 1, 201).await;
         seed_tip(&pool, 2, 200).await;
-        reconcile(&pool, &cancel, &readiness, false)
+        reconcile(&pool, &cancel, &readiness, false, None)
             .await
             .expect("reconcile");
         assert_eq!(
@@ -5036,7 +5339,7 @@ mod tests {
 
         // Every window passed: the whole proposal is failed.
         seed_tip(&pool, 2, 201).await;
-        reconcile(&pool, &cancel, &readiness, false)
+        reconcile(&pool, &cancel, &readiness, false, None)
             .await
             .expect("reconcile");
         let rows: Vec<(String, String, Option<String>)> = sqlx::query_as(
@@ -5086,6 +5389,7 @@ mod tests {
             &CancellationToken::new(),
             &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
             false,
+            None,
         )
         .await
         .expect("reconcile");
@@ -5121,6 +5425,7 @@ mod tests {
             &CancellationToken::new(),
             &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
             false,
+            None,
         )
         .await
         .expect("reconcile");
@@ -5152,6 +5457,7 @@ mod tests {
             &CancellationToken::new(),
             &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
             false,
+            None,
         )
         .await
         .expect("reconcile");
@@ -5173,6 +5479,7 @@ mod tests {
             &CancellationToken::new(),
             &Arc::new(AtomicI64::new(NO_READINESS_ATTEMPT)),
             false,
+            None,
         )
         .await
         .expect("reconcile");
@@ -5284,7 +5591,7 @@ mod tests {
             "block_hash": "0x00"
         })
         .to_string();
-        handle_unanimity_consensus(&pool, &CancellationToken::new(), true, &payload)
+        handle_unanimity_consensus(&pool, &CancellationToken::new(), true, &payload, None)
             .await
             .expect("handler ok");
 
@@ -5398,7 +5705,9 @@ mod tests {
             .await
             .expect("seed gcs pbs_computation");
 
-        execute_cutover(&pool).await.expect("cutover succeeds");
+        execute_cutover(&pool, None)
+            .await
+            .expect("cutover succeeds");
 
         // Leftover (no gcs row): every row deleted, so the green stack re-derives the
         // handle from the chain instead of inheriting blue's copy.
@@ -5484,7 +5793,9 @@ mod tests {
                 .expect("seed gcs allowed_handle");
         }
 
-        execute_cutover(&pool).await.expect("cutover succeeds");
+        execute_cutover(&pool, None)
+            .await
+            .expect("cutover succeeds");
 
         // Pre-start handle: blue's rows are intact and green's copy did not overwrite them.
         assert_eq!(
@@ -5600,7 +5911,9 @@ mod tests {
             .await
             .expect("seed gcs input_handles");
 
-        execute_cutover(&pool).await.expect("cutover succeeds");
+        execute_cutover(&pool, None)
+            .await
+            .expect("cutover succeeds");
 
         let (cts, inputs): (i64, i64) = sqlx::query_as(
             "SELECT (SELECT COUNT(*) FROM ciphertexts WHERE handle = $1),
@@ -5677,7 +5990,9 @@ mod tests {
             .await
             .expect("seed gcs digests");
 
-        execute_cutover(&pool).await.expect("cutover succeeds");
+        execute_cutover(&pool, None)
+            .await
+            .expect("cutover succeeds");
 
         let sent: bool =
             sqlx::query_scalar("SELECT txn_is_sent FROM ciphertext_digest WHERE handle = $1")
@@ -5725,7 +6040,7 @@ mod tests {
             .await
             .expect("name another release");
 
-        execute_cutover(&pool).await.expect("cutover returns");
+        execute_cutover(&pool, None).await.expect("cutover returns");
 
         assert_eq!(
             gcs_state(&pool).await,
@@ -5764,7 +6079,7 @@ mod tests {
 
         let base_delay = Duration::from_millis(200);
         let started = Instant::now();
-        retry_cutover(&pool, &CancellationToken::new(), 6, base_delay)
+        retry_cutover(&pool, &CancellationToken::new(), 6, base_delay, None)
             .await
             .expect("cutover must succeed once the transient fault clears");
         let elapsed = started.elapsed();
@@ -5797,6 +6112,7 @@ mod tests {
             &CancellationToken::new(),
             3,
             Duration::from_millis(10),
+            None,
         )
         .await
         .expect_err("a permanently failing cutover must surface the error");
@@ -5828,7 +6144,7 @@ mod tests {
 
         // A 60s backoff the retry must NOT wait out.
         let started = Instant::now();
-        retry_cutover(&pool, &cancel, 6, Duration::from_secs(60))
+        retry_cutover(&pool, &cancel, 6, Duration::from_secs(60), None)
             .await
             .expect_err("cancellation surfaces the last error");
         assert!(
@@ -5872,7 +6188,7 @@ mod tests {
                 .expect("seed digest");
         }
 
-        let err = execute_cutover(&pool)
+        let err = execute_cutover(&pool, None)
             .await
             .expect_err("cutover must refuse while a pre-window upload is pending");
         assert!(
@@ -5897,6 +6213,7 @@ mod tests {
             &CancellationToken::new(),
             2,
             Duration::from_millis(10),
+            None,
         )
         .await
         .expect_err("retry must not cut over while the upload is pending");
@@ -5914,7 +6231,7 @@ mod tests {
             .await
             .expect("mark uploaded");
 
-        execute_cutover(&pool)
+        execute_cutover(&pool, None)
             .await
             .expect("cutover proceeds once the pre-window upload landed");
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
@@ -5946,7 +6263,7 @@ mod tests {
             .await
             .expect("seed digest row");
 
-        let err = execute_cutover(&pool)
+        let err = execute_cutover(&pool, None)
             .await
             .expect_err("cutover must refuse while the legacy upload is pending");
         assert!(
@@ -5968,7 +6285,7 @@ mod tests {
         .await
         .expect("legacy mark uploaded");
 
-        execute_cutover(&pool)
+        execute_cutover(&pool, None)
             .await
             .expect("cutover proceeds once the legacy blue upload landed");
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
@@ -6020,7 +6337,7 @@ mod tests {
             .expect("seed pbs_computations");
         }
 
-        let err = execute_cutover(&pool)
+        let err = execute_cutover(&pool, None)
             .await
             .expect_err("cutover must refuse while the genuinely pending PBS row remains");
         assert!(
@@ -6034,9 +6351,67 @@ mod tests {
             .await
             .expect("complete the genuinely pending PBS row");
 
-        execute_cutover(&pool)
+        execute_cutover(&pool, None)
             .await
             .expect("cutover proceeds once the only genuinely pending PBS row completes");
+        assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
+    }
+
+    /// The age horizon releases a wedged pre-window PBS row (older than the horizon,
+    /// no terminal error to exclude it) while a fresh pending row keeps blocking.
+    /// Without a horizon both rows block, however old.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cutover_age_horizon_releases_wedged_pbs_rows() {
+        let (_instance, pool) = test_pool().await;
+        create_gcs_schema(&pool).await.expect("create gcs schema");
+        seed_gcs_row(&pool, "UpgradeAuthorized", "in_progress").await; // start=100
+
+        let wedged = &[0xF3u8; 32][..]; // incomplete for 8 days, no computations row
+        let fresh = &[0xF4u8; 32][..]; // genuinely in flight
+
+        sqlx::query(
+            "INSERT INTO pbs_computations (handle, host_chain_id, block_number, is_completed, created_at)
+             VALUES ($1, 1, 50, false, NOW() - make_interval(days => 8))",
+        )
+        .bind(wedged)
+        .execute(&pool)
+        .await
+        .expect("seed wedged pbs row");
+        sqlx::query(
+            "INSERT INTO pbs_computations (handle, host_chain_id, block_number, is_completed)
+             VALUES ($1, 1, 50, false)",
+        )
+        .bind(fresh)
+        .execute(&pool)
+        .await
+        .expect("seed fresh pbs row");
+
+        let err = execute_cutover(&pool, None)
+            .await
+            .expect_err("without a horizon every incomplete pre-window PBS row blocks");
+        assert!(
+            matches!(err, Error::PendingBcsUploads { pending: 2 }),
+            "expected both rows to block, got: {err:?}"
+        );
+
+        let week = Duration::from_secs(7 * 24 * 60 * 60);
+        let err = execute_cutover(&pool, Some(week))
+            .await
+            .expect_err("the fresh pending row must keep blocking under the horizon");
+        assert!(
+            matches!(err, Error::PendingBcsUploads { pending: 1 }),
+            "the wedged row must have aged out of the gate, got: {err:?}"
+        );
+
+        sqlx::query("UPDATE pbs_computations SET is_completed = true WHERE handle = $1")
+            .bind(fresh)
+            .execute(&pool)
+            .await
+            .expect("complete the fresh row");
+
+        execute_cutover(&pool, Some(week))
+            .await
+            .expect("cutover proceeds once only the aged-out row remains");
         assert_eq!(gcs_state(&pool).await, ("LIVE".into(), "completed".into()));
     }
 

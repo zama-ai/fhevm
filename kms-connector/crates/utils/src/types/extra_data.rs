@@ -1,9 +1,6 @@
 use alloy::primitives::U256;
 use anyhow::anyhow;
 
-/// Version `0x00`: legacy default-context marker (no explicit context, no epoch).
-pub const EXTRA_DATA_V0_VERSION: u8 = 0x00;
-
 /// Version `0x01`: context_id only (RFC 003).
 pub const EXTRA_DATA_V1_VERSION: u8 = 0x01;
 
@@ -19,15 +16,13 @@ pub const EXTRA_DATA_V2_LENGTH: usize = 65;
 /// Parsed extra_data contents.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtraData {
-    // TODO: Remove `Option` as soon as the relayer-sdk 0.4.2 is deprecated.
-    // https://github.com/zama-ai/fhevm-internal/issues/1506
-    pub context_id: Option<U256>,
+    pub context_id: U256,
     pub epoch_id: Option<U256>,
 }
 
 /// Parses the `extra_data` bytes to extract a context ID and an optional epoch ID.
 ///
-/// Versions `0x00`, `0x01` and `0x02` are accepted (rolling compatibility window).
+/// Versions `0x01` and `0x02` are accepted (rolling compatibility window).
 ///
 /// Format (v1, RFC 003):
 /// - Byte 0: version (`0x01`)
@@ -40,14 +35,10 @@ pub struct ExtraData {
 /// - Bytes 33..65: epoch ID (32 bytes, big-endian U256)
 /// - Bytes 65..: optional additional data (ignored)
 ///
-/// Empty or `0x00` → both context_id and epoch_id are `None`.
 /// Version `0x01` → epoch_id is `None`.
 pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
     match extra_data.first().copied() {
-        None | Some(EXTRA_DATA_V0_VERSION) => Ok(ExtraData {
-            context_id: None,
-            epoch_id: None,
-        }),
+        None => Err(anyhow!("Empty extra_data: a versioned payload is required")),
         Some(EXTRA_DATA_V1_VERSION) => {
             if extra_data.len() < EXTRA_DATA_V1_LENGTH {
                 return Err(anyhow!(
@@ -62,7 +53,7 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
                 .map_err(|e| anyhow!("Failed to extract context_id from extra_data: {e}"))?;
 
             Ok(ExtraData {
-                context_id: Some(U256::from_be_bytes(context_id_bytes)),
+                context_id: U256::from_be_bytes(context_id_bytes),
                 epoch_id: None,
             })
         }
@@ -84,14 +75,12 @@ pub fn parse_extra_data(extra_data: &[u8]) -> anyhow::Result<ExtraData> {
                 .map_err(|e| anyhow!("Failed to extract epoch_id from extra_data: {e}"))?;
 
             Ok(ExtraData {
-                context_id: Some(U256::from_be_bytes(context_id_bytes)),
+                context_id: U256::from_be_bytes(context_id_bytes),
                 epoch_id: Some(U256::from_be_bytes(epoch_id_bytes)),
             })
         }
-        _ => Err(anyhow!(
-            "Unsupported extra_data version: 0x{:02x}, expected 0x{:02x}, 0x{:02x}, or 0x{:02x}",
-            extra_data[0],
-            EXTRA_DATA_V0_VERSION,
+        Some(version) => Err(anyhow!(
+            "Unsupported extra_data version: 0x{version:02x}, expected 0x{:02x} or 0x{:02x}",
             EXTRA_DATA_V1_VERSION,
             EXTRA_DATA_V2_VERSION
         )),
@@ -111,36 +100,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_returns_default_context() {
-        assert_eq!(
-            parse_extra_data(&[]).unwrap(),
-            ExtraData {
-                context_id: None,
-                epoch_id: None
-            }
+    fn empty_errors() {
+        let err = parse_extra_data(&[]).unwrap_err();
+        assert!(
+            err.to_string().contains("Empty extra_data"),
+            "Unexpected error: {err}"
         );
     }
 
     #[test]
-    fn single_zero_byte_returns_default_context() {
-        assert_eq!(
-            parse_extra_data(&[0x00]).unwrap(),
-            ExtraData {
-                context_id: None,
-                epoch_id: None
-            }
-        );
-    }
-
-    #[test]
-    fn zero_prefixed_with_trailing_bytes_returns_default_context() {
-        assert_eq!(
-            parse_extra_data(&[0x00, 0xde, 0xad, 0xbe, 0xef]).unwrap(),
-            ExtraData {
-                context_id: None,
-                epoch_id: None
-            }
-        );
+    fn v0_errors() {
+        for data in [vec![0x00], vec![0x00, 0xde, 0xad, 0xbe, 0xef]] {
+            let err = parse_extra_data(&data).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("Unsupported extra_data version: 0x00"),
+                "Unexpected error: {err}"
+            );
+        }
     }
 
     #[test]
@@ -154,7 +131,7 @@ mod tests {
         assert_eq!(
             result,
             ExtraData {
-                context_id: Some(U256::from(69u64)),
+                context_id: U256::from(69u64),
                 epoch_id: None
             }
         );
@@ -172,7 +149,7 @@ mod tests {
         assert_eq!(
             result,
             ExtraData {
-                context_id: Some(U256::from(42u64)),
+                context_id: U256::from(42u64),
                 epoch_id: Some(U256::from(7u64))
             }
         );
@@ -189,7 +166,7 @@ mod tests {
         assert_eq!(
             result,
             ExtraData {
-                context_id: Some(U256::from(1u64)),
+                context_id: U256::from(1u64),
                 epoch_id: Some(U256::from(2u64))
             }
         );
@@ -229,7 +206,7 @@ mod tests {
         assert_eq!(
             parse_extra_data(&payload).unwrap(),
             ExtraData {
-                context_id: Some(context_id),
+                context_id,
                 epoch_id: Some(epoch_id),
             }
         );

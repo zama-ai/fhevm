@@ -36,19 +36,10 @@ export async function recoverTypedDataAddress(
 ): Promise<RecoverTypedDataAddressReturnType> {
   const { primaryType, types, domain, message, signature } = parameters;
 
-  // If primaryType is specified, filter types to only include the primary type
-  // This ensures ethers uses the correct primary type for signing
-  let typesToSign: Record<string, TypedDataField[]>;
-
-  if ((primaryType as unknown) !== undefined) {
-    const primaryTypeFields = types[primaryType];
-    if (primaryTypeFields === undefined) {
-      throw new Error(`Primary type "${primaryType}" not found in types`);
-    }
-    typesToSign = { [primaryType]: primaryTypeFields };
-  } else {
-    typesToSign = types;
-  }
+  // If primaryType is specified, filter types to the primary type and the
+  // struct types it references, so ethers uses the correct primary type.
+  const typesToSign: Record<string, TypedDataField[]> =
+    (primaryType as unknown) !== undefined ? _typesReachableFrom(types, primaryType) : types;
 
   const recoveredAddress = verifyTypedData(domain, typesToSign, message, signature);
 
@@ -90,16 +81,42 @@ export function hashTypedData(parameters: HashTypedDataParameters): HashTypedDat
   const { primaryType, types, domain, message } = parameters;
 
   // ethers rejects EIP712Domain in the types map and expects a single primary
-  // struct; mirror recoverTypedDataAddress/signTypedData by filtering to it.
-  const primaryTypeFields = types[primaryType];
-  if (primaryTypeFields === undefined) {
-    throw new Error(`Primary type "${primaryType}" not found in types`);
-  }
-  const typesToHash: Record<string, TypedDataField[]> = {
-    [primaryType]: primaryTypeFields,
-  };
+  // struct; filter to the primary type and the struct types it references.
+  const typesToHash = _typesReachableFrom(types, primaryType);
 
   return TypedDataEncoder.hash(domain, typesToHash, message) as Bytes32Hex;
+}
+
+/**
+ * Returns `primaryType` and every struct type it references, transitively, so
+ * nested structs such as `PadShare[]` are kept. `EIP712Domain` is excluded.
+ */
+function _typesReachableFrom(
+  types: Readonly<Record<string, ReadonlyArray<{ name: string; type: string }>>>,
+  primaryType: string,
+): Record<string, TypedDataField[]> {
+  if (types[primaryType] === undefined) {
+    throw new Error(`Primary type "${primaryType}" not found in types`);
+  }
+  const reachable: Record<string, TypedDataField[]> = {};
+  const pending: string[] = [primaryType];
+  while (pending.length > 0) {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const typeName = pending.pop()!;
+    const fields = types[typeName];
+    if (fields === undefined || typeName in reachable) {
+      continue;
+    }
+    reachable[typeName] = [...fields];
+    for (const field of fields) {
+      // Strip array suffixes: `PadShare[]` / `PadShare[2]` -> `PadShare`.
+      const baseType = field.type.replace(/(\[\d*\])+$/, '');
+      if (baseType !== 'EIP712Domain' && types[baseType] !== undefined) {
+        pending.push(baseType);
+      }
+    }
+  }
+  return reachable;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

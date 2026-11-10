@@ -18,3 +18,8 @@ prefix = "PUB"
 
 [private_vault.storage.file]
 path = "./keys"
+
+# Generate the signing key pair and self-signed CA certificate for party 1.
+[threshold]
+my_id = 1
+tls_subject = "kms-threshold-test-1"

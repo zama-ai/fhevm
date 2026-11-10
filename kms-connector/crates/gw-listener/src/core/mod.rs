@@ -2,6 +2,7 @@ mod config;
 mod ethereum;
 mod gateway;
 mod gw_listener;
+mod head;
 mod publish;
 
 pub use config::Config;

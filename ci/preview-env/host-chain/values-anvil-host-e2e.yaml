@@ -16,8 +16,25 @@ storage:
   size: 1Gi
 resources:
   requests:
-    cpu: 250m
+    cpu: 500m
     memory: 512Mi
   limits:
-    cpu: "1"
+    cpu: "4"
     memory: 2Gi
+
+# Anvil keeps the chain in memory only: a rescheduled pod restarts at genesis,
+# wiping every deployed contract and breaking the whole env. zws-pool consolidates
+# underutilized nodes outside its weekday 06:00-19:00 UTC budget window, so block
+# that voluntary disruption for the node hosting this pod.
+podAnnotations:
+  karpenter.sh/do-not-disrupt: "true"
+
+# Pins onto the zws-pool Karpenter node pool - see
+# ../coprocessor-infra/values-postgres-coprocessor-e2e.yaml's matching note.
+nodeSelector:
+  karpenter.sh/nodepool: zws-pool
+tolerations:
+  - key: "karpenter.sh/nodepool"
+    operator: "Equal"
+    value: "zws-pool"
+    effect: "NoSchedule"

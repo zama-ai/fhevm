@@ -1,4 +1,4 @@
-use crate::config::{Error, Result};
+use crate::config::{Error, REDACTED, Result};
 use alloy::{
     hex::decode,
     network::{EthereumWallet, IntoWallet},
@@ -7,7 +7,7 @@ use alloy::{
 };
 use aws_config::BehaviorVersion;
 use aws_sdk_kms::Client as KmsClient;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tracing::{debug, info};
 
 /// KMS wallet used by `alloy::Provider` for signing decryption responses.
@@ -33,7 +33,6 @@ pub enum KmsWallet {
 /// The [`Debug`] implementation redacts the inner secret, so the key is not leaked through debug
 /// logs.
 #[derive(Clone, Deserialize, PartialEq)]
-#[cfg_attr(debug_assertions, derive(Serialize))]
 #[serde(transparent)]
 pub struct TestingPrivateKey(String);
 
@@ -45,7 +44,7 @@ impl TestingPrivateKey {
 
 impl std::fmt::Debug for TestingPrivateKey {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("PrivateKey(<redacted>)")
+        write!(f, "PrivateKey({REDACTED})")
     }
 }
 
@@ -62,7 +61,7 @@ impl From<&str> for TestingPrivateKey {
 }
 
 /// Configuration for AWS KMS signer.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct AwsKmsConfig {
     /// AWS KMS key ID for signing.
     pub key_id: String,

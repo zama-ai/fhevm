@@ -51,6 +51,7 @@ latency = ["fhevm-engine-common/latency"]
 throughput = ["fhevm-engine-common/throughput"]
 
 [dev-dependencies]
+alloy = { workspace = true, features = ["node-bindings"] }
 criterion = { version = "0.5.1", features = ["async_futures"] }
 host-listener = { path = "../host-listener" }
 testcontainers = { workspace = true }

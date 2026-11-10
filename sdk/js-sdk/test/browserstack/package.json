@@ -1,0 +1,8 @@
+{
+  "name": "@fhevm/sdk-browserstack-test",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "browserstack-node-sdk": "1.72.1"
+  }
+}

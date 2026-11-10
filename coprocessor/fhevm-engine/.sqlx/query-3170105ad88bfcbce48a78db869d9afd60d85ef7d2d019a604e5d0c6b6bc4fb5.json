@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                WITH decrements AS (\n                    SELECT dependent_id, count(*) AS n\n                    FROM unnest($1::bytea[]) AS dependent_id\n                    GROUP BY dependent_id\n                ),\n                locked_dependents AS MATERIALIZED (\n                    SELECT dc.dependence_chain_id\n                    FROM dependence_chain dc JOIN decrements\n                      ON dc.dependence_chain_id = decrements.dependent_id\n                    ORDER BY dc.dependence_chain_id\n                    FOR NO KEY UPDATE OF dc NOWAIT\n                ),\n                updated AS (\n                    UPDATE dependence_chain AS dc\n                    SET dependency_count = GREATEST(dc.dependency_count - decrements.n, 0)\n                    FROM decrements JOIN locked_dependents\n                      ON locked_dependents.dependence_chain_id = decrements.dependent_id\n                    WHERE dc.dependence_chain_id = decrements.dependent_id\n                    RETURNING dc.dependency_count\n                )\n                SELECT EXISTS (\n                    SELECT 1 FROM updated WHERE dependency_count = 0\n                ) AS \"dependent_became_ready!\"\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "dependent_became_ready!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "3170105ad88bfcbce48a78db869d9afd60d85ef7d2d019a604e5d0c6b6bc4fb5"
+}

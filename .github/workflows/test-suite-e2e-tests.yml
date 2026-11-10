@@ -67,6 +67,14 @@ on:
         description: "Coprocessor Upgrade Controller Image Version"
         default: ""
         type: string
+      coprocessor-proxy-version:
+        description: "Coprocessor Proxy Image Version"
+        default: ""
+        type: string
+      coprocessor-prf-service-version:
+        description: "Coprocessor PRF Service Image Version"
+        default: ""
+        type: string
       listener-core-version:
         description: "Listener Core Image Version"
         default: ""
@@ -89,13 +97,11 @@ on:
         description: "Test suite version"
         default: ""
         type: string
-      relayer-migrate-version:
-        description: "Relayer migrate version"
-        default: ""
-        type: string
-      relayer-version:
-        description: "Relayer version"
-        default: ""
+      relayer-versions:
+        description:
+          'Relayer image versions as a JSON object. Keys: relayer, relayer-migrate, relayer-http.
+          Example: {"relayer":"01cf0ff","relayer-http":"01cf0ff"}'
+        default: "{}"
         type: string
       lock-artifact-name:
         description: "Uploaded lock artifact name used to freeze the resolved bundle"
@@ -121,6 +127,9 @@ on:
         required: true
       CGR_PASSWORD:
         required: true
+      # Read access to the private zama-ai/kms git dependencies, only needed with `build: true`.
+      BLOCKCHAIN_ACTIONS_TOKEN:
+        required: false
     inputs: *shared_inputs
 
 permissions: {}
@@ -166,6 +175,8 @@ jobs:
       COPROCESSOR_ZKPROOF_WORKER_VERSION: ${{ inputs.coprocessor-zkproof-worker-version }}
       COPROCESSOR_CONSENSUS_DETECTOR_VERSION: ${{ inputs.coprocessor-consensus-detector-version }}
       COPROCESSOR_UPGRADE_CONTROLLER_VERSION: ${{ inputs.coprocessor-upgrade-controller-version }}
+      COPROCESSOR_PROXY_VERSION: ${{ inputs.coprocessor-proxy-version }}
+      COPROCESSOR_PRF_SERVICE_VERSION: ${{ inputs.coprocessor-prf-service-version }}
       LISTENER_CORE_VERSION: ${{ inputs.listener-core-version }}
       GATEWAY_VERSION: ${{ inputs.gateway-version }}
       HOST_VERSION: ${{ inputs.host-version }}
@@ -176,8 +187,9 @@ jobs:
       CONNECTOR_ENDPOINT_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['endpoint'] }}
       CONNECTOR_PROXY_VERSION: ${{ fromJSON(inputs.connector-versions || '{}')['proxy'] }}
       TEST_SUITE_VERSION: ${{ inputs.test-suite-version }}
-      RELAYER_MIGRATE_VERSION: ${{ inputs.relayer-migrate-version }}
-      RELAYER_VERSION: ${{ inputs.relayer-version }}
+      RELAYER_MIGRATE_VERSION: ${{ fromJSON(inputs.relayer-versions || '{}')['relayer-migrate'] }}
+      RELAYER_VERSION: ${{ fromJSON(inputs.relayer-versions || '{}')['relayer'] }}
+      RELAYER_HTTP_VERSION: ${{ fromJSON(inputs.relayer-versions || '{}')['relayer-http'] }}
       CORE_VERSION: ${{ inputs.kms-core-version }}
       ORCHESTRATED: ${{ inputs.orchestrated && 'true' || 'false' }}
       SCENARIO: ${{ inputs.scenario || 'two-of-three-multi-chain' }}
@@ -337,6 +349,10 @@ jobs:
 
       - name: Boot fhevm Stack
         working-directory: test-suite/fhevm
+        env:
+          # Read access to the private zama-ai/kms git dependencies, for `--build` of the
+          # connector. Must be explicit: the `gh auth token` fallback would return GH_TOKEN.
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           args=(--scenario "$SCENARIO")
           if [ -n "${LOCK_FILE:-}" ]; then
@@ -363,6 +379,9 @@ jobs:
 
       - name: Selected e2e suite
         working-directory: test-suite/fhevm
+        env:
+          # The upgrade profile builds the connector mid-test, like `--build` at boot; other profiles never need it.
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ env.TEST_PROFILE == 'key-migration-from-v0.14' && secrets.BLOCKCHAIN_ACTIONS_TOKEN || '' }} # zizmor: ignore[secrets-outside-env] Same secret and trust boundary as the boot step of this job: dispatches, callers, and same-repo PRs with the e2e label.
         run: |
           args=("$TEST_PROFILE")
           ./fhevm-cli test "${args[@]}"
@@ -441,6 +460,9 @@ jobs:
             snapshot_logs "${label} - TFHE Worker" "${prefix}-tfhe-worker"
             snapshot_logs "${label} - Consensus Detector" "${prefix}-consensus-detector" "" all
             snapshot_logs "${label} - Upgrade Controller" "${prefix}-upgrade-controller" "" all
+            snapshot_logs "${label} - Proxy" "${prefix}-proxy"
+            snapshot_logs "${label} - PRF Service" "${prefix}-prf-service"
+            snapshot_logs "${label} - PRF Output Seed" "${prefix}-prf-output-seed"
           done
           # Party 1 of the KMS cluster is the bare `kms-core` / `kms-connector-*` already
           # captured above; parties 2..N use the `-{i}-` suffix. Use `docker ps -a` so a crashed
@@ -458,6 +480,18 @@ jobs:
             snapshot_logs "${prefix} - Transaction Sender" "${prefix}-tx-sender"
             snapshot_logs "${prefix} - Endpoint" "${prefix}-endpoint"
           done
+
+      - name: Upload rollout receipt
+        # Written by profiles that change the stack between checks, such as key-migration-from-v0.14.
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: rollout-receipt-${{ github.run_id }}-${{ github.run_attempt }}-${{ env.SCENARIO }}-${{ env.TEST_PROFILE }}
+          path: |
+            .fhevm/rollout/receipt.md
+            .fhevm/rollout/receipt.jsonl
+          include-hidden-files: true
+          if-no-files-found: ignore
 
       - name: Cleanup
         working-directory: test-suite/fhevm

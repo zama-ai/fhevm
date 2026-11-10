@@ -1,6 +1,6 @@
 // Minimal client for the kms-connector HTTP decryption endpoint (RFC 033):
 // `GET /version`, `POST /v1/public-decrypt`, `POST /v1/user-decrypt`.
-import type { Signer } from 'ethers';
+import type { BaseWallet, Signer } from 'ethers';
 import { Wallet, getBytes, hexlify, keccak256, toUtf8Bytes } from 'ethers';
 
 import type { SignMode, UnifiedDecryptRequest } from '../unified/unifiedUserDecrypt';
@@ -68,11 +68,19 @@ const fhevmSigDomain = () => ({
   verifyingContract: process.env.PROTOCOL_CONFIG_CONTRACT_ADDRESS!,
 });
 
-/** `Authorization` value for `path` and `body`, signed for `audience` and valid for one minute. */
-export async function fhevmSigHeader(path: string, body: string, audience: string): Promise<string> {
+/**
+ * `Authorization` value for `path` and `body`, signed for `audience`. By default the relayer stand-in
+ * signs it and it is valid for one minute.
+ */
+export async function fhevmSigHeader(
+  path: string,
+  body: string,
+  audience: string,
+  opts?: { signer?: BaseWallet; expires?: number },
+): Promise<string> {
   const bodyDigest = keccak256(toUtf8Bytes(body));
-  const expires = Math.floor(Date.now() / 1000) + 60;
-  const sig = await senderWallet().signTypedData(fhevmSigDomain(), FHEVM_SIG_TYPES, {
+  const expires = opts?.expires ?? Math.floor(Date.now() / 1000) + 60;
+  const sig = await (opts?.signer ?? senderWallet()).signTypedData(fhevmSigDomain(), FHEVM_SIG_TYPES, {
     path,
     bodyDigest,
     expires,
@@ -303,12 +311,7 @@ export async function fanOutUntilSettled<T>(
 // Request builders
 ////////////////////////////////////////////////////////////////////////////////
 
-/** Empty v0 `extraData`. */
-export const PUBLIC_EXTRA_DATA = '0x';
-/** Legacy v0 `extraData`. */
-export const USER_EXTRA_DATA = '0x00';
-
-export const buildPublicRequest = (ctHandles: string[], extraData = PUBLIC_EXTRA_DATA): PublicDecryptionRequest => ({
+export const buildPublicRequest = (ctHandles: string[], extraData: string): PublicDecryptionRequest => ({
   ctHandles: ctHandles.map((h) => hexlify(getBytes(h))),
   extraData,
 });
@@ -320,7 +323,8 @@ export interface UserRequestInput {
   readonly allowedContracts?: string[];
   readonly startTimestamp?: number;
   readonly durationSeconds?: number;
-  readonly extraData?: string;
+  /** See `currentKmsExtraData`. */
+  readonly extraData: string;
   readonly decryptionContractAddress: string;
 }
 
@@ -344,10 +348,10 @@ export async function buildUserRequest(
     publicKey: input.publicKey,
     startTimestamp: input.startTimestamp ?? backdatedStartTimestamp(),
     durationSeconds: input.durationSeconds ?? 7 * 24 * 60 * 60,
-    extraData: input.extraData ?? USER_EXTRA_DATA,
+    extraData: input.extraData,
   };
   const signature = await signRequest(
-    { relayerUrl: '', decryptionContractAddress: input.decryptionContractAddress },
+    { relayerUrl: '', decryptionContractAddress: input.decryptionContractAddress, extraData: input.extraData },
     unified,
     mode ?? { kind: 'eoa', signer },
   );
@@ -359,7 +363,7 @@ export async function buildUserRequest(
       publicKey: unified.publicKey,
       allowedContracts: [...unified.allowedContracts],
       requestValidity: { startTimestamp: unified.startTimestamp, durationSeconds: unified.durationSeconds },
-      extraData: unified.extraData ?? USER_EXTRA_DATA,
+      extraData: input.extraData,
     },
     signature,
   };

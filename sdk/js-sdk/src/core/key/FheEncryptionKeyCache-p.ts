@@ -41,6 +41,8 @@ export class CacheEntryImpl implements CacheEntry {
 
   /** @internal promise on the future value being resolved. Do not use externally. */
   _pending!: Promise<FheEncryptionKeyBytes | FheEncryptionKeyWasm>;
+  /** @internal promise on the bytes as fetched, kept after conversion to wasm. Do not use externally. */
+  _bytes!: Promise<FheEncryptionKeyBytes>;
   /** @internal debug: true if `_pending` has been chained from (e.g. by ensureWasm). */
   _pendingChained: boolean;
 
@@ -82,28 +84,31 @@ function _assertWasmIsTerminal(entry: CacheEntry): void {
 /**
  * Global cache for FHE public key parameters.
  *
- * Keyed by relayer URL. Each entry is a live mutable placeholder that callers
- * hold a reference to and observe state changes across awaits.
+ * Keyed by slot: the relayer URL, then the KMSGeneration contract the key
+ * is checked against, or `unverified` for never-verified keys (see
+ * {@link getFheEncryptionKeySlot}). Each entry is a
+ * live mutable placeholder that callers hold a reference to and observe state
+ * changes across awaits.
  */
 export class FheEncryptionKeyCache {
   readonly #cache = new Map<string, CacheEntryImpl>();
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  get(relayerUrl: string): CacheEntry | undefined {
-    return this.#cache.get(relayerUrl);
+  get(slot: string): CacheEntry | undefined {
+    return this.#cache.get(slot);
   }
 
-  has(relayerUrl: string): boolean {
-    return this.#cache.has(relayerUrl);
+  has(slot: string): boolean {
+    return this.#cache.has(slot);
   }
 
-  remove(relayerUrl: string): boolean {
-    const entry = this.#cache.get(relayerUrl);
+  remove(slot: string): boolean {
+    const entry = this.#cache.get(slot);
     if (entry !== undefined) {
       this.#invalidate(entry);
     }
-    return this.#cache.delete(relayerUrl);
+    return this.#cache.delete(slot);
   }
 
   clear(): void {
@@ -111,6 +116,16 @@ export class FheEncryptionKeyCache {
       this.#invalidate(entry);
     }
     this.#cache.clear();
+  }
+
+  /**
+   * Empties the slot if it still holds `entry`. Unlike `remove`, the entry is
+   * not invalidated: callers holding it finish with it.
+   */
+  evict(slot: string, entry: CacheEntry): void {
+    if (this.#cache.get(slot) === entry) {
+      this.#cache.delete(slot);
+    }
   }
 
   /** Stale-ify an entry so in-flight callbacks hit the guard and get swallowed. */
@@ -122,19 +137,42 @@ export class FheEncryptionKeyCache {
 
   ////////////////////////////////////////////////////////////////////////////////
 
-  setBytes(owner: FhevmRuntime, relayerUrl: string, bytes: FheEncryptionKeyBytes): void {
-    // First write wins: if an entry already exists (resolved or in-flight),
-    // skip to avoid creating a closure over the 50MB bytes unnecessarily.
-    if (this.#cache.has(relayerUrl)) {
+  /**
+   * Stores bytes in an empty slot, unchecked: callers check them first.
+   * First write wins: an existing entry (resolved or in-flight) is kept.
+   * For tests only (e.g. the browser smoke harness).
+   */
+  setBytes(owner: FhevmRuntime, slot: string, relayerUrl: string, bytes: FheEncryptionKeyBytes): void {
+    // Skip to avoid creating a closure over the key bytes unnecessarily.
+    if (this.#cache.has(slot)) {
       return;
     }
     _assertRelayerUrlMatch(bytes.metadata.relayerUrl, relayerUrl);
     // The closure over `bytes` is ephemeral: ensureBytes calls the fetcher
     // immediately, the promise resolves synchronously, and the closure becomes
-    // unreachable. No extra copy of the 50MB data is retained.
+    // unreachable. The entry keeps `bytes` itself (not a copy), as served.
     this.ensureBytes({
       owner,
-      relayerUrl,
+      slot,
+      fetcher: () => Promise.resolve(bytes),
+      metadata: bytes.metadata,
+    });
+  }
+
+  /**
+   * Stores bytes in the slot, replacing any entry, unchecked: callers check
+   * them first. A new entry object takes the slot, so callers holding the old
+   * entry finish with the old key.
+   *
+   * @returns the new entry.
+   */
+  replaceBytes(owner: FhevmRuntime, slot: string, relayerUrl: string, bytes: FheEncryptionKeyBytes): CacheEntry {
+    // Before emptying the slot: a mismatch leaves the cache as is.
+    _assertRelayerUrlMatch(bytes.metadata.relayerUrl, relayerUrl);
+    this.#cache.delete(slot);
+    return this.ensureBytes({
+      owner,
+      slot,
       fetcher: () => Promise.resolve(bytes),
       metadata: bytes.metadata,
     });
@@ -143,23 +181,26 @@ export class FheEncryptionKeyCache {
   ////////////////////////////////////////////////////////////////////////////////
 
   /**
-   * Ensures the cache has an entry for the given relayer URL.
+   * Ensures the cache has an entry for the given slot.
    *
    * **First write wins**: if an entry already exists (resolved or in-flight,
    * bytes or wasm), it is kept as-is and the fetcher is never called.
    * Only when no entry exists is the fetcher invoked to start a new fetch.
    *
-   * To force a re-fetch, call `remove(relayerUrl)` before `ensureBytes`.
+   * To force a re-fetch, call `remove(slot)` before `ensureBytes`.
+   *
+   * @returns the slot's entry, kept or new.
    */
   ensureBytes(parameters: {
     readonly owner: FhevmRuntime;
-    readonly relayerUrl: string;
+    readonly slot: string;
     readonly fetcher: () => Promise<FheEncryptionKeyBytes>;
     readonly metadata: FheEncryptionKeyMetadata;
-  }): void {
-    const { owner, relayerUrl, fetcher, metadata } = parameters;
-    if (this.#cache.has(relayerUrl)) {
-      return;
+  }): CacheEntry {
+    const { owner, slot, fetcher, metadata } = parameters;
+    const existing = this.#cache.get(slot);
+    if (existing !== undefined) {
+      return existing;
     }
 
     const entry = new CacheEntryImpl(owner, metadata);
@@ -168,9 +209,11 @@ export class FheEncryptionKeyCache {
     entry.pendingKind = 'bytes';
     entry.pendingOp = 'fetching';
     entry._pending = pendingValue;
-    entry.ready = this.#makeReady(relayerUrl, entry, 'bytes', pendingValue);
+    entry._bytes = pendingValue;
+    entry.ready = this.#makeReady(slot, entry, 'bytes', pendingValue);
 
-    this.#cache.set(relayerUrl, entry);
+    this.#cache.set(slot, entry);
+    return entry;
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -180,18 +223,19 @@ export class FheEncryptionKeyCache {
    * If already wasm (pending or resolved), returns the existing entry.
    * Chains from `_pending` so it works whether bytes are resolved or still pending.
    * Idempotent: repeated calls return the same entry.
+   *
+   * Upgrades `entry`, the one the caller checked, even if another entry has
+   * taken the `slot` since.
    */
   ensureWasm(parameters: {
     readonly owner: FhevmRuntime;
-    readonly relayerUrl: string;
+    readonly slot: string;
+    readonly entry: CacheEntry;
     readonly deserializeFn: (bytes: FheEncryptionKeyBytes) => Promise<FheEncryptionKeyWasm>;
   }): void {
-    const { relayerUrl, deserializeFn } = parameters;
-
-    const entry = this.#cache.get(relayerUrl);
-    if (entry === undefined) {
-      return;
-    }
+    const { slot, deserializeFn } = parameters;
+    // Entries only come from this cache.
+    const entry = parameters.entry as CacheEntryImpl;
 
     if (entry.resolvedKind === 'wasm' || entry.pendingKind === 'wasm') {
       return;
@@ -212,65 +256,19 @@ export class FheEncryptionKeyCache {
     entry.pendingKind = 'wasm';
     entry.pendingOp = 'converting';
     entry._pending = pendingValue;
-    entry.ready = this.#makeReady(relayerUrl, entry, 'wasm', pendingValue);
+    entry.ready = this.#makeReady(slot, entry, 'wasm', pendingValue);
   }
 
   /**
-   * Get bytes from the cache, converting from wasm if necessary.
+   * The bytes of `entry`, as fetched, whether or not it still holds its slot.
    *
-   * - No entry → `undefined`
-   * - Resolved bytes → return immediately
-   * - Resolved wasm → serialize to bytes and return
-   * - Pending bytes → await, return resolved bytes
-   * - Pending wasm → await, serialize to bytes and return
+   * Never serializes the wasm value back to bytes: tfhe upgrades older
+   * serialization versions on load, so the result could differ from the
+   * bytes the relayer served.
    */
-  async resolveBytes(parameters: {
-    readonly relayerUrl: string;
-    readonly serializeFn?: ((parameters: FheEncryptionKeyWasm) => Promise<FheEncryptionKeyBytes>) | undefined;
-  }): Promise<FheEncryptionKeyBytes | undefined> {
-    const { relayerUrl, serializeFn } = parameters;
-
-    const entry = this.#cache.get(relayerUrl);
-    if (entry === undefined) {
-      return undefined;
-    }
-
-    // Bytes already available — return immediately, don't wait for pending wasm
-    if (entry.resolvedKind === 'bytes') {
-      return entry.value as FheEncryptionKeyBytes;
-    }
-
-    // Wasm already available — serialize to bytes
-    if (entry.resolvedKind === 'wasm') {
-      if (serializeFn === undefined) {
-        throw new Error('Cannot convert wasm to bytes: serialize function not provided');
-      }
-      return serializeFn(entry.value as FheEncryptionKeyWasm);
-    }
-
-    if (entry.pendingKind === undefined) {
-      return undefined;
-    }
-
-    await entry.ready;
-
-    // Re-read after potential await — entry is mutable across await boundaries.
-    // Cast needed: TS narrows out "bytes" from the early return above,
-    // but the entry can become "bytes" during the await.
-    const kind = entry.resolvedKind as 'bytes' | 'wasm' | undefined;
-
-    if (kind === 'bytes') {
-      return entry.value as FheEncryptionKeyBytes;
-    }
-
-    if (kind === 'wasm') {
-      if (serializeFn === undefined) {
-        throw new Error('Cannot convert wasm to bytes: serialize function not provided');
-      }
-      return serializeFn(entry.value as FheEncryptionKeyWasm);
-    }
-
-    return undefined;
+  entryBytes(entry: CacheEntry): Promise<FheEncryptionKeyBytes> {
+    // Entries only come from this cache.
+    return (entry as CacheEntryImpl)._bytes;
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -280,7 +278,7 @@ export class FheEncryptionKeyCache {
    * self-evicts on rejection (if still current), and swallows stale errors.
    */
   #makeReady(
-    relayerUrl: string,
+    slot: string,
     entry: CacheEntryImpl,
     resolvedKind: 'bytes' | 'wasm',
     pendingValue: Promise<FheEncryptionKeyBytes | FheEncryptionKeyWasm>,
@@ -294,9 +292,9 @@ export class FheEncryptionKeyCache {
         if (entry.ready !== ready) {
           return; // stale: a newer operation replaced us
         }
-        // Verify the resolved value's metadata matches the cache key.
+        // Verify the resolved value's metadata matches the entry's relayer.
         // Catches bugs where a fetcher/deserializer returns data for a different relayer.
-        _assertRelayerUrlMatch(resolved.metadata.relayerUrl, relayerUrl);
+        _assertRelayerUrlMatch(resolved.metadata.relayerUrl, entry.metadata.relayerUrl);
         entry.resolvedKind = resolvedKind;
         entry.value = resolved;
         entry.pendingKind = undefined;
@@ -311,18 +309,21 @@ export class FheEncryptionKeyCache {
         entry.pendingKind = undefined;
         entry.pendingOp = undefined;
         // Self-evict
-        if (this.#cache.get(relayerUrl) === entry) {
-          this.#cache.delete(relayerUrl);
+        if (this.#cache.get(slot) === entry) {
+          this.#cache.delete(slot);
         }
         entry.owner
           .deref()
           ?.config.logger?.error?.(
-            `FheEncryptionKeyCache: ${resolvedKind === 'bytes' ? 'fetch' : 'conversion to wasm'} failed for relayerUrl="${relayerUrl}". Evicting cache entry; the next call will re-fetch.`,
+            `FheEncryptionKeyCache: ${resolvedKind === 'bytes' ? 'fetch' : 'conversion to wasm'} failed for slot="${slot}". Evicting cache entry; the next call will re-fetch.`,
             err,
           );
         throw err;
       },
     );
+    // Callers get the error through `_bytes` or by awaiting `ready`: never
+    // leave `ready` unhandled when no one awaits it.
+    ready.catch(() => undefined);
     return ready;
   }
 }

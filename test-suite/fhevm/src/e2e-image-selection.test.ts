@@ -25,9 +25,12 @@ function successfulBuilds() {
       'zkproof_worker',
       'consensus_detector',
       'upgrade_controller',
+      'coprocessor_proxy',
+      'prf_service',
     ],
     'kms-connector-docker-build': ['db_migration', 'gw_listener', 'kms_worker', 'tx_sender', 'endpoint', 'proxy'],
     'relayer-docker-build': ['relayer_migrate', 'relayer'],
+    'relayer-http-docker-build': [''],
     'listener-docker-build': [''],
     'gateway-contracts-docker-build': [''],
     'host-contracts-docker-build': [''],
@@ -85,6 +88,69 @@ for (const gpuWorkerTag of [undefined, 'abcdef0-cuda12.8-sm90']) {
       expect(selected.built.some(({ repo }) => repo === `fhevm/kms-connector/${service}`)).toBe(false);
     });
   }
+
+  for (const [service, resultKey, output, repo, envKey] of [
+    ['coprocessor-proxy', 'coprocessor_proxy_build_result', 'coprocessor-proxy-version', 'fhevm/coprocessor/coprocessor-proxy', 'COPROCESSOR_PROXY_VERSION'],
+    ['prf-service', 'prf_service_build_result', 'coprocessor-prf-service-version', 'fhevm/coprocessor/prf-service', 'COPROCESSOR_PRF_SERVICE_VERSION'],
+  ]) {
+    test(`${service} tag and registry check are selected (GPU=${!!gpuWorkerTag})`, () => {
+      const selected = selectImages({ buildResults: successfulBuilds(), headTag: 'abcdef0', gpuWorkerTag });
+      expect(selected.outputs[output]).toBe('abcdef0');
+      expect(selected.built).toContainEqual({ repo, tag: 'abcdef0' });
+    });
+
+    for (const result of ['failure', 'cancelled', 'missing']) {
+      test(`${service} ${result} rejects selection (GPU=${!!gpuWorkerTag})`, () => {
+        const builds = successfulBuilds();
+        if (result === 'missing') delete builds['coprocessor-docker-build'].outputs[resultKey];
+        else builds['coprocessor-docker-build'].outputs[resultKey] = result;
+        expect(() => selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag })).toThrow(resultKey);
+      });
+    }
+
+    test(`skipped ${service} is left to the verified baseline (GPU=${!!gpuWorkerTag})`, () => {
+      const builds = successfulBuilds();
+      builds['coprocessor-docker-build'].outputs[resultKey] = 'skipped';
+      const selected = selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag });
+      expect(selected.outputs[output]).toBe('');
+      expect(selected.skipped).toContainEqual({ repo, envKey });
+    });
+  }
+
+  test(`relayer-http tag and registry check are selected (GPU=${!!gpuWorkerTag})`, () => {
+    const selected = selectImages({ buildResults: successfulBuilds(), headTag: 'abcdef0', gpuWorkerTag });
+    expect(selected.outputs['relayer-http-version']).toBe('abcdef0');
+    expect(selected.built).toContainEqual({ repo: 'fhevm/relayer-http', tag: 'abcdef0' });
+  });
+
+  for (const result of ['failure', 'cancelled', 'missing']) {
+    test(`relayer-http ${result} rejects selection (GPU=${!!gpuWorkerTag})`, () => {
+      const builds = successfulBuilds();
+      if (result === 'missing') delete builds['relayer-http-docker-build'].outputs.build_result;
+      else builds['relayer-http-docker-build'].outputs.build_result = result;
+      expect(() => selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag })).toThrow(
+        'relayer-http-docker-build.build_result',
+      );
+    });
+  }
+
+  test(`skipped relayer-http is left to the verified baseline (GPU=${!!gpuWorkerTag})`, () => {
+    const builds = successfulBuilds();
+    builds['relayer-http-docker-build'].outputs.build_result = 'skipped';
+    const selected = selectImages({ buildResults: builds, headTag: 'abcdef0', gpuWorkerTag });
+    expect(selected.outputs['relayer-http-version']).toBe('');
+    expect(selected.skipped).toContainEqual({ repo: 'fhevm/relayer-http', envKey: 'RELAYER_HTTP_VERSION' });
+    expect(JSON.parse(selected.outputs['relayer-versions'])['relayer-http']).toBe('');
+  });
+
+  test(`relayer tags are grouped in one JSON output (GPU=${!!gpuWorkerTag})`, () => {
+    const selected = selectImages({ buildResults: successfulBuilds(), headTag: 'abcdef0', gpuWorkerTag });
+    expect(JSON.parse(selected.outputs['relayer-versions'])).toEqual({
+      relayer: 'abcdef0',
+      'relayer-migrate': 'abcdef0',
+      'relayer-http': 'abcdef0',
+    });
+  });
 }
 
 test('GPU override selects exact worker tags without requiring CPU worker builds', () => {

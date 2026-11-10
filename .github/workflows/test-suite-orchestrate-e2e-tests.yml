@@ -153,6 +153,13 @@ jobs:
       path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
     permissions: *docker_permissions
     secrets: *docker_secrets
+  relayer-http-docker-build:
+    if: *build-trigger-condition
+    uses: ./.github/workflows/relayer-http-docker-build.yml
+    with:
+      path-filter-base-commit: ${{ github.event.pull_request.base.sha }}
+    permissions: *docker_permissions
+    secrets: *docker_secrets
   test-suite-docker-build:
     if: *build-trigger-condition
     uses: ./.github/workflows/test-suite-docker-build.yml
@@ -171,6 +178,7 @@ jobs:
       - host-contracts-docker-build
       - kms-connector-docker-build
       - relayer-docker-build
+      - relayer-http-docker-build
       - test-suite-docker-build
     if: |
       needs.resolve-baseline.result == 'success' &&
@@ -202,14 +210,15 @@ jobs:
       coprocessor-zkproof-worker-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
       coprocessor-consensus-detector-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
+      coprocessor-proxy-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ steps.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ steps.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ steps.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ steps.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ steps.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ steps.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.resolve-baseline.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ steps.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ steps.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ steps.create-e2e-tests-input.outputs.relayer-versions }}
       test-suite-version: ${{ steps.create-e2e-tests-input.outputs.test-suite-version }}
     steps:
       - name: Checkout code
@@ -267,14 +276,15 @@ jobs:
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
       coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
+      coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: two-of-three-multi-chain
       test-profile: standard-shard-compute
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -298,14 +308,15 @@ jobs:
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
       coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
+      coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       # Host ingestion by listener-core and host-consumers only.
       scenario: two-of-three-multi-chain-consumer
       test-profile: standard
@@ -328,14 +339,15 @@ jobs:
       coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: two-of-three-multi-chain
       test-profile: standard-shard-decryption
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -363,8 +375,7 @@ jobs:
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: two-of-three-multi-chain
       test-profile: standard-shard-stateful
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -399,14 +410,15 @@ jobs:
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
       coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
+      coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: four-party-threshold-kms
       test-profile: kms-generation
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -441,8 +453,7 @@ jobs:
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: four-party-threshold-kms
       test-profile: kms-generation-abort
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -468,14 +479,15 @@ jobs:
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
       coprocessor-consensus-detector-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-consensus-detector-version }}
       coprocessor-upgrade-controller-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-upgrade-controller-version }}
+      coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: blue-green-two-of-three-multi-chain
       test-profile: blue-green
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}
@@ -505,14 +517,15 @@ jobs:
       coprocessor-tfhe-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tfhe-worker-version }}
       coprocessor-tx-sender-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-tx-sender-version }}
       coprocessor-zkproof-worker-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-zkproof-worker-version }}
+      coprocessor-proxy-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-proxy-version }}
+      coprocessor-prf-service-version: ${{ needs.create-e2e-tests-input.outputs.coprocessor-prf-service-version }}
       listener-core-version: ${{ needs.create-e2e-tests-input.outputs.listener-core-version }}
       connector-versions: ${{ needs.create-e2e-tests-input.outputs.connector-versions }}
       gateway-version: ${{ needs.create-e2e-tests-input.outputs.gateway-version }}
       host-version: ${{ needs.create-e2e-tests-input.outputs.host-version }}
       kms-core-version: ${{ needs.create-e2e-tests-input.outputs.kms-core-version }}
       lock-artifact-name: ${{ needs.create-e2e-tests-input.outputs.lock-artifact-name }}
-      relayer-migrate-version: ${{ needs.create-e2e-tests-input.outputs.relayer-migrate-version }}
-      relayer-version: ${{ needs.create-e2e-tests-input.outputs.relayer-version }}
+      relayer-versions: ${{ needs.create-e2e-tests-input.outputs.relayer-versions }}
       scenario: five-party-swap-threshold-kms
       test-profile: kms-context-switch
       test-suite-version: ${{ needs.create-e2e-tests-input.outputs.test-suite-version }}

@@ -19,8 +19,8 @@ use connector_utils::{
         },
         rand::rand_digest,
         setup::{
-            DbInstance, S3_CT_HANDLE, S3Instance, TestInstanceBuilder, erc1271_magic_response,
-            init_host_chains_acl_contracts_mock,
+            DbInstance, S3_CT_HANDLE, S3Instance, TestInstanceBuilder, acl_multicall_response,
+            erc1271_magic_response, init_host_chains_acl_contracts_mock,
         },
     },
     types::{
@@ -132,31 +132,28 @@ async fn test_processing_request(
         .connect_mocked_client(asserter.clone());
     info!("Gateway + Ethereum mock started!");
 
-    // Mocking Host chain. ACL call counts per variant:
+    // Mocking Host chain. ACL reads are batched in a single `ACL.multicall` per variant:
     //   - Public:            1 `isAllowedForDecryption`
     //   - Legacy user:       1 U256 (`decryptionSignatureInvalidatedBefore`) + 2 `isAllowed`
     //                        (user + contract)
     //   - RFC016 user (V2):  1 `isValidSignature` (RFC-012, ERC-1271 fallback — random fixture
-    //                        signature can't ecrecover to userAddress so the call always fires)
-    //                        + 1 U256 (`decryptionSignatureInvalidatedBefore`) + 1 `isAllowed`
-    //                        (direct ownership path, empty `allowedContracts`). All three fire
-    //                        concurrently via `try_join!`, consumed FIFO in poll order thanks
-    //                        to the `biased` annotation.
+    //                        signature can't ecrecover to userAddress so the call always fires),
+    //                        then a multicall of 1 U256 (`decryptionSignatureInvalidatedBefore`)
+    //                        + 1 `isAllowed` (direct ownership path, empty `allowedContracts`).
+    //                        Both fire concurrently via `try_join!`, consumed FIFO in poll order
+    //                        thanks to the `biased` annotation.
     // ACL checks are re-run on every attempt, so `already_sent` events consume them too.
     let acl_responses = match event_type {
-        TestEventType::PublicDecryption => vec![true.abi_encode()],
+        TestEventType::PublicDecryption => vec![acl_multicall_response(vec![true.abi_encode()])],
         TestEventType::UserDecryptionV2 => vec![
             erc1271_magic_response(),
+            acl_multicall_response(vec![U256::ZERO.abi_encode(), true.abi_encode()]),
+        ],
+        TestEventType::UserDecryption => vec![acl_multicall_response(vec![
             U256::ZERO.abi_encode(),
             true.abi_encode(),
-        ],
-        TestEventType::UserDecryption => {
-            vec![
-                U256::ZERO.abi_encode(),
-                true.abi_encode(),
-                true.abi_encode(),
-            ]
-        }
+            true.abi_encode(),
+        ])],
         _ => vec![],
     };
     let acl_contracts_mock = init_host_chains_acl_contracts_mock(handle, acl_responses);
@@ -215,6 +212,7 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
 
     // Gets the request ID and endpoints for the given request type
     let (request_id_u256, req_endpoint, resp_endpoint) = match req {
+        ProtocolEventKind::PadDecryption(_) => unreachable!("pad decryption is not tested here"),
         ProtocolEventKind::PublicDecryption(r) => {
             (r.decryptionId, "PublicDecrypt", "GetPublicDecryptionResult")
         }
@@ -257,6 +255,9 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
             "/kms_service.v1.CoreServiceEndpoint/{resp_endpoint}"
         ));
         match req {
+            ProtocolEventKind::PadDecryption(_) => {
+                unreachable!("pad decryption is not tested here")
+            }
             ProtocolEventKind::PublicDecryption(_) => then.pb(PublicDecryptionResponse {
                 payload: Some(PublicDecryptionResponsePayload::default()),
                 signatures: mock_signatures(),
@@ -312,6 +313,7 @@ async fn wait_for_response_in_db(
 ) -> anyhow::Result<KmsResponse> {
     info!("Waiting for response to be stored in DB...");
     let query = match req {
+        ProtocolEventKind::PadDecryption(_) => unreachable!("pad decryption is not tested here"),
         ProtocolEventKind::PublicDecryption(_) => "SELECT * FROM public_decryption_responses",
         ProtocolEventKind::UserDecryption(_) | ProtocolEventKind::UserDecryptionV2(_) => {
             "SELECT * FROM user_decryption_responses"
@@ -336,6 +338,9 @@ async fn wait_for_response_in_db(
             tokio::time::sleep(Duration::from_millis(200)).await;
         } else {
             match req {
+                ProtocolEventKind::PadDecryption(_) => {
+                    unreachable!("pad decryption is not tested here")
+                }
                 ProtocolEventKind::PublicDecryption(_) => {
                     break kms_response::from_public_decryption_row(&result[0])?;
                 }
@@ -373,6 +378,7 @@ async fn wait_for_response_in_db(
 fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> anyhow::Result<()> {
     info!("Checking response data...");
     let expected_response = match request {
+        ProtocolEventKind::PadDecryption(_) => unreachable!("pad decryption is not tested here"),
         ProtocolEventKind::PublicDecryption(r) => KmsGrpcResponse::PublicDecryption {
             decryption_id: r.decryptionId,
             grpc_response: PublicDecryptionResponse {

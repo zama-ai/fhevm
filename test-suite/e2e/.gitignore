@@ -1,5 +1,7 @@
 node_modules
 .env
+e2e.lock
+e2e.lock.*
 
 # Hardhat files
 /cache

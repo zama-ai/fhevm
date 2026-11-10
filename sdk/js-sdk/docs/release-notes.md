@@ -10,6 +10,25 @@
   **Breaking:** this SDK release only supports FHEVM protocol `0.15.0` through `0.17.0` — older
   protocol lines are no longer supported. Upgrade your host chain to protocol `>= 0.15.0` before
   upgrading to this SDK version.
+- **Custom query parameters for relayer requests.** `RelayerCommonOptions` now accepts a
+  `query: Record<string, string>` field next to `headers`. Its entries are appended,
+  percent-encoded, to the URL of job requests (submission and polling) and the key-URL
+  lookup. `headers` remains the preferred option; use `query` only when a proxy in front of
+  the relayer strips custom headers before they reach it.
+- **Experimental: RFC-030 pad-based input encryption.** A new client,
+  `createFhevmEncryptWithPadClient` (and `createFhevmCleartextEncryptWithPadClient` in the
+  cleartext entry points), exposes `encryptValueWithPad` / `encryptValuesWithPad`: values are
+  masked with a one-time pad fetched from the KMS instead of being proven with a ZK proof. They
+  require a `signedPermit` (a v2 permit from `signUnifiedDecryptionPermit`, signed by
+  `userAddress`), take `RelayerCommonOptions`, and return an `inputPackage` to pass as the `bytes`
+  argument of your contract call. The client loads the TKMS WASM, not the TFHE one, and also
+  exposes `generateTransportKeyPair`, so no decrypt client is needed to build the permit (the
+  `generateTransportKeyPair` action accepts it too). Also added:
+  the matching standalone actions in `@fhevm/sdk/actions/encrypt`,
+  `initFhevmEncryptWithPadRuntime`, and the `FhevmEncryptWithPadClient` type. Only the cleartext
+  pad-share encoding is supported for now, so this works against the v1.0.0 cleartext host
+  contracts only (`npm run start:localcleartext:v1.0`). The input-proof flow
+  (`encryptValue` / `encryptValues`, `inputProof`) is unchanged.
 
 #### Changed
 
@@ -28,6 +47,19 @@
 - The ERC-1271 `isValidSignature` STATICCALL gas cap (`ERC1271_GAS_LIMIT`) is raised from `100_000`
   to `250_000`, matching the relayer/KMS default — a nested Safe (a Safe owning a Safe) alone costs
   ~91k gas, so the old cap could reject valid nested-multisig signatures.
+- **Breaking: legacy permits with `extraData` v0 are refused at decrypt, with `InvalidSignedPermitError`.**
+  The KMS connector no longer accepts `extraData` v0 (`0x00`, protocol v0.11), so such a permit used
+  to hang until the relayer polling timed out. `decryptValue`/`decryptValues` and
+  `canDecryptValue`/`canDecryptValues` now throw the new `InvalidSignedPermitError` up front, before any
+  request; parsing the permit still succeeds. Sign a new permit. `InvalidSignedPermitError` is also thrown
+  for a value that isn't an SDK-created permit (previously `InvalidTypeError`), for a unified
+  (v2) permit whose `extraData` is older than v2, and, instead of a plain `Error` (the messages keep
+  their wording), for an expired permit, a permit whose `startTimestamp` is in the future, and a
+  legacy (v1) permit that doesn't list the requested contract. A unified (v2) permit is now checked
+  for expiry before the relayer-features request.
+- `canDecryptValue`/`canDecryptValues` throw `InvalidSignedPermitError` instead of a plain `Error` when
+  the permit's publicKey doesn't match the given `transportKeyPair`. The message keeps its wording, minus
+  a typo (`TransportKeyPairKeyPair` → `TransportKeyPair`).
 
 #### Fixed
 

@@ -1,6 +1,7 @@
 //! Ciphertext-material management for incoming decryption requests.
 
 pub mod manager;
+pub mod pool;
 pub mod s3;
 
 pub use manager::CiphertextManager;

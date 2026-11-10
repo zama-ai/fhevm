@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use crate::{
     metrics::{ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER, ADD_CIPHERTEXT_MATERIAL_SUCCESS_COUNTER},
@@ -19,7 +19,7 @@ use anyhow::bail;
 use async_trait::async_trait;
 use fhevm_engine_common::{telemetry, utils::to_hex};
 use sqlx::{Pool, Postgres, Transaction};
-use tokio::task::JoinSet;
+use tokio::{sync::Semaphore, task::JoinSet};
 use tracing::{error, info, warn};
 
 use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
@@ -35,6 +35,7 @@ where
     conf: crate::ConfigSettings,
     gas: Option<u64>,
     db_pool: Pool<Postgres>,
+    submission_slots: Arc<Semaphore>,
 }
 
 impl<P> AddCiphertextOperation<P>
@@ -59,15 +60,24 @@ where
 
         info!(handle = h, "Processing transaction");
 
-        let receipt = match self
+        // Share admission with proof responses and retain it through bookkeeping.
+        // Waiting tasks must not hold connections or start pool-acquisition timers.
+        let _permit = self.submission_slots.acquire().await?;
+        // Keep the acceptance fence across submission. Release it before the
+        // bookkeeping helpers open their own guarded transactions.
+        let Some(submission_fence) = begin_live_write(&self.db_pool).await? else {
+            return Ok(());
+        };
+        let submission = self
             .provider
             .send_sync_with_overprovision(
                 txn_request,
                 self.conf.gas_limit_overprovision_percent,
                 Duration::from_secs(self.conf.send_txn_sync_timeout_secs.into()),
             )
-            .await
-        {
+            .await;
+        submission_fence.rollback().await?;
+        let receipt = match submission {
             Ok(receipt) => receipt,
             Err(e) if self.already_added_error(&e).is_some() => {
                 warn!(
@@ -236,6 +246,7 @@ where
         conf: crate::ConfigSettings,
         gas: Option<u64>,
         db_pool: Pool<Postgres>,
+        submission_slots: Arc<Semaphore>,
     ) -> Self {
         info!(
             gas = gas.unwrap_or(0),
@@ -245,6 +256,7 @@ where
 
         Self {
             db_pool,
+            submission_slots,
             ciphertext_commits_address,
             provider,
             conf,

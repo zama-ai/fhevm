@@ -1,5 +1,5 @@
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import type { KmsSigncryptedShare, KmsSigncryptedSharesMetadata } from '../types/kms-p.js';
+import type { KmsExtraData, KmsSigncryptedShare, KmsSigncryptedSharesMetadata } from '../types/kms-p.js';
 import type { KmsSigncryptedShares } from '../types/kms.js';
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { ChecksummedAddress, Uint64BigInt } from '../types/primitives.js';
@@ -11,12 +11,16 @@ import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext
 import { assertHandlesBelongToSameChainId } from '../handle/FhevmHandle.js';
 import { createKmsSigncryptedShares } from './KmsSigncryptedShares-p.js';
 import { readKmsSignersContextFromPermitExtraData } from '../host-contracts/readKmsSignersContext-p.js';
-import { assertIsSignedDecryptionPermit } from './SignedDecryptionPermit-p.js';
+import {
+  assertSignedDecryptionPermitExtraDataSupported,
+  isSignedDecryptionPermit,
+} from './SignedDecryptionPermit-p.js';
+import { isSignedDecryptionPermitV2 } from './SignedDecryptionPermitV2-p.js';
+import { InvalidSignedPermitError } from '../errors/InvalidSignedPermitError.js';
 import { assertKmsDecryptionBitLimit } from './utils.js';
 import { checkPersistAllowed } from '../host-contracts/checkPersistAllowed.js';
 import { checkDelegation } from '../host-contracts/checkDelegation.js';
 import { createKmsEip712Domain } from './createKmsEip712Domain.js';
-import { EXTRA_DATA_V2, createKmsExtraDataFromBytesHex } from './kmsExtraData-p.js';
 import { ensureRelayerFeatures } from '../relayerFeatures/ensureRelayerFeatures-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -50,6 +54,29 @@ type ReturnType = KmsSigncryptedShares;
 export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: Parameters): Promise<ReturnType> {
   const { options, pairs, fhevmContext } = parameters;
 
+  // Note:
+  // Validate the permit first: an unusable permit fails here, without the network call of the
+  // relayer-features check below.
+
+  // The brand, not `version`: only the SDK builds a SignedDecryptionPermit.
+  if (!isSignedDecryptionPermit(parameters.signedPermit)) {
+    throw new InvalidSignedPermitError({
+      message: 'Invalid permit: not a signed decryption permit created by the SDK',
+    });
+  }
+  if (!isSignedDecryptionPermitV2(parameters.signedPermit)) {
+    throw new InvalidSignedPermitError({
+      message: `Unexpected permit version ${String(parameters.signedPermit.version)}, expecting version 2`,
+    });
+  }
+
+  const signedPermitV2: SignedDecryptionPermitV2 = parameters.signedPermit;
+
+  // Order: brand → version → extraData → expiry (same as canDecryptValuesFromPairs).
+  const signedPermitExtraData: KmsExtraData = assertSignedDecryptionPermitExtraDataSupported(signedPermitV2);
+
+  signedPermitV2.assertNotExpired();
+
   // The v3 / unified user-decrypt route only exists on relayers that advertise it. Guard here — not
   // only at callers — so any direct caller of this V2 path is protected too. Resolved once per client
   // (cached), using the same effective auth this function uses for the actual relayer request.
@@ -63,8 +90,6 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
     );
   }
 
-  const signedPermit = parameters.signedPermit as SignedDecryptionPermitV2;
-
   const tkmsVersion = fhevmContext.tkmsVersion;
 
   const relayerOptions = {
@@ -72,26 +97,8 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
     ...options,
   };
 
-  assertIsSignedDecryptionPermit(signedPermit, {});
-
-  /*
-    it should not be possible to produce a unified eip712 
-    (protocol v14+) with an extraData coming from an 
-    old protocol v11/12/13.
-  */
-  const signedPermitVersion: number = signedPermit.version;
-  if (signedPermitVersion !== 2) {
-    throw Error(`fetchKmsSigncryptedSharesV2 requires a v2 permit, got v${signedPermitVersion}`);
-  }
-  const signedPermitExtraData = createKmsExtraDataFromBytesHex(signedPermit.eip712.message.extraData);
-  if (signedPermitExtraData.lt(EXTRA_DATA_V2)) {
-    throw new Error(
-      `fetchKmsSigncryptedSharesV2 error: Invalid extraData version (< 2) extraData=${signedPermitExtraData.bytesHex}`,
-    );
-  }
-
-  const { signerAddress, signature } = signedPermit;
-  const userAddress = signedPermit.eip712.message.userAddress;
+  const { signerAddress, signature } = signedPermitV2;
+  const userAddress = signedPermitV2.eip712.message.userAddress;
 
   // 1. Check: At least one handle/contract pair is required
   if (pairs.length === 0) {
@@ -117,8 +124,7 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
   // 3. Check: 2048 bits limit
   assertKmsDecryptionBitLimit(handles);
 
-  // 4. Check: Expiration date
-  signedPermit.assertNotExpired();
+  // 4. Check: Expiration date — done up front, with the other permit checks
 
   // 5. Check: ACL permissions — split pairs by direct vs delegated access
   const directPairs = resolvedPairs.filter((p) => p.ownerAddress.toLowerCase() === userAddress.toLowerCase());
@@ -171,7 +177,7 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
     payload: {
       handleContractPairs: resolvedPairs,
       kmsDecryptEip712Signer: signerAddress,
-      kmsDecryptEip712Message: signedPermit.eip712.message,
+      kmsDecryptEip712Message: signedPermitV2.eip712.message,
       kmsDecryptEip712Signature: signature,
     },
     options: relayerOptions,
@@ -185,7 +191,7 @@ export async function fetchKmsSigncryptedSharesV2(context: Context, parameters: 
       chainId: context.chain.fhevm.gateway.id,
       verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address,
     }),
-    eip712ExtraData: signedPermit.eip712.message.extraData,
+    eip712ExtraData: signedPermitV2.eip712.message.extraData,
     eip712Signature: signature,
     eip712SignerAddress: signerAddress,
     handles,

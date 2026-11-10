@@ -1,36 +1,34 @@
-// Shared harness for the browser smoke / robustness tests.
-//
-// Centralizes the runtime config, module init + readiness assertions, dummy
-// chains, key loading/caching, encryption, and the DOM logging harness, so each
-// test page stays small and focused on the behavior it exercises.
+/**
+ * Shared harness for the browser smoke / robustness tests.
+ *
+ * Centralizes the runtime config, module readiness assertions, dummy chains,
+ * test keys, encryption, and the DOM logging harness, so each test page stays
+ * small and focused on the behavior it exercises.
+ *
+ * Pages drive the SDK through its public entry points only (clients, actions,
+ * runtime config). A dummy chain mocks the host chain's RPC alone: the SDK
+ * checks the test keys for real against its mocked KMSGeneration.
+ */
 
+import type { ethers as EthersT } from 'ethers';
 import type { TfheVersion } from '../../../src/wasm/tfhe/loadTfheLib.js';
 import type { TkmsVersion } from '../../../src/wasm/tkms/loadKmsLib.js';
 import type { FheEncryptionCrsBytes, FheEncryptionKeyBytes } from '../../../src/core/types/fheEncryptionKey.js';
 import type { FhevmChain } from '../../../src/core/types/fhevmChain.js';
-import type { FhevmRuntime, WithDecrypt, WithEncrypt } from '../../../src/core/types/coreFhevmRuntime.js';
-import type { ZkProof } from '../../../src/core/types/zkProof-p.js';
+import type { WithDecrypt, WithEncrypt } from '../../../src/core/types/coreFhevmRuntime.js';
+import type { FhevmEncryptClient } from '../../../src/core/types/fhevmClient.js';
+import type { GenerateZkProofReturnType as ZkProof } from '../../../src/core/actions/encrypt/index.js';
+import { Interface } from 'ethers';
 import { setFhevmRuntimeConfig } from '../../../src/ethers/index.js';
+import { defineFhevmChain } from '../../../src/core/chains/index.js';
+import { generateZkProof } from '../../../src/core/actions/encrypt/index.js';
 import { createLogger } from './common.js';
-import { getEthersRuntime } from '../../../src/ethers/internal/runtime.js';
-import { encryptModule } from '../../../src/core/modules/encrypt/module/index.js';
-import { decryptModule } from '../../../src/core/modules/decrypt/module/index.js';
-import { defineFhevmChain } from '../../../src/core/chains/utils.js';
-import { createZkProofBuilder } from '../../../src/core/coprocessor/ZkProofBuilder-p.js';
-import { globalFheEncryptionKeyCache } from '../../../src/core/key/FheEncryptionKeyCache-p.js';
-import { createFhevmClientFrozenContext } from '../../../src/core/frozenContext/fhevmClientFrozenContext-p.js';
-import { CANONICAL_WASM_VERSIONS } from '../../../src/core/runtime/WasmVersions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
-// Versions + resource budget
+// Resource budget
 ////////////////////////////////////////////////////////////////////////////////
 
 export const EXPECTED_THREADS = 1;
-export const TFHE_VERSION: TfheVersion = CANONICAL_WASM_VERSIONS.tfhe;
-export const TKMS_VERSION: TkmsVersion = CANONICAL_WASM_VERSIONS.kms;
-
-/** A runtime equipped with both the encrypt and decrypt modules. */
-export type SmokeRuntime = WithEncrypt & WithDecrypt;
 
 ////////////////////////////////////////////////////////////////////////////////
 // DOM logging harness
@@ -112,35 +110,23 @@ export function base64ToBytes(base64: string): Uint8Array {
 // Runtime setup
 ////////////////////////////////////////////////////////////////////////////////
 
-const WASM_URLS: Record<string, URL> = {
-  [`tfhe_bg.v${TFHE_VERSION}.wasm`]: new URL(
-    `/__raw_wasm/src/wasm/tfhe/v${TFHE_VERSION}/tfhe_bg.wasm`,
-    location.origin,
-  ),
-  [`tfhe-worker.v${TFHE_VERSION}.mjs`]: new URL(
-    `/__raw_wasm/src/wasm/tfhe/v${TFHE_VERSION}/tfhe-worker.mjs`,
-    location.origin,
-  ),
-  [`kms_lib_bg.v${TKMS_VERSION}.wasm`]: new URL(
-    `/__raw_wasm/src/wasm/tkms/v${TKMS_VERSION}/kms_lib_bg.wasm`,
-    location.origin,
-  ),
-};
+/** `<name>.v<version>.<ext>`, as the SDK asks for it, and the folder of its build. */
+const WASM_FILE_PATTERN = /^(tfhe_bg|tfhe-worker|kms_lib_bg)\.v(.+)\.(wasm|mjs)$/;
+const WASM_FOLDERS: Record<string, string> = { tfhe_bg: 'tfhe', 'tfhe-worker': 'tfhe', kms_lib_bg: 'tkms' };
 
+/** Serves the version the SDK asks for from its raw build folder. */
 function locateWasmFile(file: string): URL {
-  const url = WASM_URLS[file];
-  if (!url) {
+  const match = WASM_FILE_PATTERN.exec(file);
+  if (match === null) {
     throw new Error(`Unknown WASM file: ${file}`);
   }
-  return url;
+  const [, name, version, ext] = match as unknown as [string, string, string, string];
+  return new URL(`/__raw_wasm/src/wasm/${WASM_FOLDERS[name]}/v${version}/${name}.${ext}`, location.origin);
 }
 
-/**
- * Configures the runtime for direct, URL-backed, multithreaded module init, then
- * returns a runtime extended with the encrypt + decrypt modules.
- */
-export function setupSmokeRuntime(): SmokeRuntime {
-  log('Setting runtime config for direct module initialization...');
+/** Configures the runtime for URL-backed, multithreaded module init. */
+export function setSmokeRuntimeConfig(): void {
+  log('Setting runtime config...');
   setFhevmRuntimeConfig({
     wasmAssetLoadMode: 'verified-blob',
     singleThread: false,
@@ -149,18 +135,11 @@ export function setupSmokeRuntime(): SmokeRuntime {
     logger: createLogger(log),
   });
   log('[PASS] Runtime config set');
-
-  return getEthersRuntime().extend(encryptModule).extend(decryptModule);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Module init + readiness assertions
+// Module readiness assertions
 ////////////////////////////////////////////////////////////////////////////////
-
-/** Initializes the TFHE and TKMS modules concurrently. */
-export async function initAllModules(runtime: SmokeRuntime): Promise<void> {
-  await Promise.all([runtime.encrypt.initTfheModule(), runtime.decrypt.initTkmsModule()]);
-}
 
 /** Asserts a TFHE module is initialized, multithreaded with the expected thread count, and URL-backed. */
 export async function assertTfheModuleReady(runtime: WithEncrypt, tfheVersion: TfheVersion): Promise<void> {
@@ -239,11 +218,10 @@ const DUMMY_CONTRACT_ADDRESS = '0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c';
 const DUMMY_USER_ADDRESS = '0x857Ca72A957920Fa0FB138602995839866Bd4005';
 
 /**
- * A self-contained dummy chain (no live provider/relayer needed). The Zk proof
- * builder only reads `id`, the ACL address, and `relayerUrl`; the key itself is
- * injected into the global cache before building.
+ * A self-contained dummy chain: no relayer is ever reached (the key is
+ * provided), and its RPC is mocked (see createDummyChainRunner).
  */
-export function makeDummyChain(relayerUrl: string): FhevmChain {
+function makeDummyChain(relayerUrl: string, withKmsGeneration: boolean): FhevmChain {
   return defineFhevmChain({
     id: 12_345,
     fhevm: {
@@ -251,6 +229,7 @@ export function makeDummyChain(relayerUrl: string): FhevmChain {
         acl: { address: DUMMY_CONTRACT_ADDRESS },
         inputVerifier: { address: DUMMY_USER_ADDRESS },
         kmsVerifier: { address: '0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11' },
+        kmsGeneration: withKmsGeneration ? { address: '0x3E0fBCcE61af7C01113027449eEFFF5DCd501419' } : undefined,
         protocolConfig: undefined, // To be filled
       },
       relayerUrl,
@@ -265,27 +244,184 @@ export function makeDummyChain(relayerUrl: string): FhevmChain {
   });
 }
 
+/** Host contract versions of the v1.0.0 stack, as each `getVersion()` returns them. */
+const HOST_CONTRACT_VERSIONS = {
+  acl: 'ACL v0.6.0',
+  inputVerifier: 'InputVerifier v0.3.0',
+  kmsVerifier: 'KMSVerifier v0.5.0',
+  kmsGeneration: 'KMSGeneration v0.1.0',
+} as const;
+
+/** The active key and CRS ids of the mocked KMSGeneration: any non-zero id (the test keys carry label ids). */
+const ACTIVE_KEY_ID = 1n;
+const ACTIVE_CRS_ID = 1n;
+
+/** What a dummy chain's mocked KMSGeneration serves as the active key. */
+type MockedKmsGeneration = {
+  readonly activeKeyId: bigint;
+  readonly digests: FheEncryptionKeyDigests;
+  /** Every KMSGeneration function called, in order. */
+  readonly calls: string[];
+};
+/** `KeyType.Public` in KMSGeneration's key digests. */
+const KEY_TYPE_PUBLIC = 1;
+
+/** The host contract views the SDK reads, as deployed. */
+const HOST_CONTRACT_ABI = new Interface([
+  'function getVersion() view returns (string)',
+  'function getActiveKeyId() view returns (uint256)',
+  'function getActiveCrsId() view returns (uint256)',
+  'function getKeyMaterials(uint256 keyId) view returns (string[], (uint8 keyType, bytes digest)[])',
+  'function getCrsMaterials(uint256 crsId) view returns (string[], bytes)',
+]);
+
+/**
+ * The mocked RPC of a dummy chain, as an ethers runner: answers `getVersion()`
+ * for its ACL, InputVerifier and KMSVerifier, and, for its KMSGeneration (if
+ * any), the reads that check a key: version, active ids, and the digests as
+ * the active key and CRS materials. Any other call fails the test.
+ */
+function createDummyChainRunner(
+  chain: FhevmChain,
+  kmsGenerationMock: MockedKmsGeneration | undefined,
+): EthersT.ContractRunner {
+  const { acl, inputVerifier, kmsVerifier, kmsGeneration } = chain.fhevm.contracts;
+  const versionsByAddress = new Map<string, string>([
+    [acl.address.toLowerCase(), HOST_CONTRACT_VERSIONS.acl],
+    [inputVerifier.address.toLowerCase(), HOST_CONTRACT_VERSIONS.inputVerifier],
+    [kmsVerifier.address.toLowerCase(), HOST_CONTRACT_VERSIONS.kmsVerifier],
+  ]);
+  const kmsGenerationAddress = kmsGeneration?.address.toLowerCase();
+
+  const answer = (to: string, data: string): string => {
+    const fn = HOST_CONTRACT_ABI.getFunction(data.slice(0, 10));
+    if (fn === null) {
+      throw new Error(`Unexpected call to ${to}: selector ${data.slice(0, 10)}`);
+    }
+    const version = versionsByAddress.get(to.toLowerCase());
+    if (fn.name === 'getVersion' && version !== undefined) {
+      return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [version]);
+    }
+    if (kmsGenerationMock === undefined || to.toLowerCase() !== kmsGenerationAddress) {
+      throw new Error(`Unexpected call to ${to}: ${fn.name}`);
+    }
+    kmsGenerationMock.calls.push(fn.name);
+    const { activeKeyId, digests } = kmsGenerationMock;
+    const args = HOST_CONTRACT_ABI.decodeFunctionData(fn, data);
+    switch (fn.name) {
+      case 'getVersion':
+        return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [HOST_CONTRACT_VERSIONS.kmsGeneration]);
+      case 'getActiveKeyId':
+        return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [activeKeyId]);
+      case 'getActiveCrsId':
+        return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [ACTIVE_CRS_ID]);
+      case 'getKeyMaterials':
+        if (args[0] !== activeKeyId) {
+          throw new Error(`Unexpected getKeyMaterials(${String(args[0])})`);
+        }
+        return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [[], [[KEY_TYPE_PUBLIC, digests.publicKeyDigest]]]);
+      case 'getCrsMaterials':
+        if (args[0] !== ACTIVE_CRS_ID) {
+          throw new Error(`Unexpected getCrsMaterials(${String(args[0])})`);
+        }
+        return HOST_CONTRACT_ABI.encodeFunctionResult(fn, [[], digests.crsDigest]);
+      default:
+        throw new Error(`Unexpected call to ${to}: ${fn.name}`);
+    }
+  };
+
+  return {
+    provider: null,
+    call: (tx: { readonly to?: unknown; readonly data?: unknown }): Promise<string> => {
+      try {
+        return Promise.resolve(answer(String(tx.to), String(tx.data)));
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    },
+  } as unknown as EthersT.ContractRunner;
+}
+
+/** A dummy chain, its mocked RPC, and the test key it serves as active. */
+export type DummyChain = {
+  readonly chain: FhevmChain;
+  readonly provider: EthersT.ContractRunner;
+  /** For `options.fheEncryptionKey`: no relayer is reached. */
+  readonly fheEncryptionKey: FheEncryptionKeyBytes;
+  /** Every KMSGeneration function the SDK called, in order (empty without a KMSGeneration). */
+  readonly kmsGenerationCalls: readonly string[];
+};
+
+/** Deviations of a dummy chain from a KMSGeneration serving the key as active (negative key checks). */
+export type DummyChainOptions = {
+  /** Serves these digests in place of the key's own. */
+  readonly digests?: { readonly publicKeyDigest?: string; readonly crsDigest?: string } | undefined;
+  /** Serves this active key id (0: no key generation completed). */
+  readonly activeKeyId?: bigint | undefined;
+  /** Deploys no KMSGeneration on the chain. */
+  readonly withoutKmsGeneration?: boolean | undefined;
+};
+
+/**
+ * A dummy chain whose active key is test/keys/key.<keyTfheVersion>.json: its
+ * mocked KMSGeneration serves that key's digests (key.<keyTfheVersion>.digests.json),
+ * so the SDK checks the key for real before using it. `options` make it serve
+ * something else, for the check to fail.
+ */
+export async function setupDummyChain(
+  relayerUrl: string,
+  keyTfheVersion: string,
+  options: DummyChainOptions = {},
+): Promise<DummyChain> {
+  const chain = makeDummyChain(relayerUrl, options.withoutKmsGeneration !== true);
+  const [keyFile, digests] = await Promise.all([
+    fetchTestKeyFile<SerializedKeyFile>(`key.${keyTfheVersion}.json`),
+    fetchTestKeyFile<FheEncryptionKeyDigests>(`key.${keyTfheVersion}.digests.json`),
+  ]);
+  const kmsGenerationCalls: string[] = [];
+  const kmsGenerationMock: MockedKmsGeneration | undefined =
+    options.withoutKmsGeneration === true
+      ? undefined
+      : {
+          activeKeyId: options.activeKeyId ?? ACTIVE_KEY_ID,
+          digests: { ...digests, ...options.digests },
+          calls: kmsGenerationCalls,
+        };
+  return {
+    chain,
+    provider: createDummyChainRunner(chain, kmsGenerationMock),
+    fheEncryptionKey: toFheEncryptionKeyBytes(keyFile, chain),
+    kmsGenerationCalls,
+  };
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Encryption keys (test/keys/*.json)
 ////////////////////////////////////////////////////////////////////////////////
 
 /** Shape of the JSON key files stored under test/keys (bytes are base64-encoded). */
-export type SerializedKeyFile = {
+type SerializedKeyFile = {
   readonly publicKeyBytes: { readonly id: string; readonly bytes: string };
   readonly crsBytes: { readonly id: string; readonly capacity: number; readonly bytes: string };
 };
 
-/** Fetches and parses test/keys/key.<keyTfheVersion>.json. */
-export async function fetchSerializedKeyFile(keyTfheVersion: string): Promise<SerializedKeyFile> {
-  const res = await fetch(new URL(`/test/keys/key.${keyTfheVersion}.json`, location.origin));
+/** Shape of test/keys/key.<version>.digests.json: the key's KMSGeneration digests. */
+type FheEncryptionKeyDigests = {
+  readonly publicKeyDigest: string;
+  readonly crsDigest: string;
+};
+
+/** Fetches and parses test/keys/<name>. */
+async function fetchTestKeyFile<T>(name: string): Promise<T> {
+  const res = await fetch(new URL(`/test/keys/${name}`, location.origin));
   if (!res.ok) {
-    throw new Error(`Failed to fetch key.${keyTfheVersion}: ${res.status} ${res.statusText}`);
+    throw new Error(`Failed to fetch ${name}: ${res.status} ${res.statusText}`);
   }
-  return (await res.json()) as SerializedKeyFile;
+  return (await res.json()) as T;
 }
 
 /** Decodes a serialized key file into wasm-ready (Uint8Array) key bytes tagged for `chain`. */
-export function toFheEncryptionKeyBytes(keyFile: SerializedKeyFile, chain: FhevmChain): FheEncryptionKeyBytes {
+function toFheEncryptionKeyBytes(keyFile: SerializedKeyFile, chain: FhevmChain): FheEncryptionKeyBytes {
   return {
     publicKeyBytes: {
       id: keyFile.publicKeyBytes.id,
@@ -300,39 +436,17 @@ export function toFheEncryptionKeyBytes(keyFile: SerializedKeyFile, chain: Fhevm
   };
 }
 
-/**
- * Loads test/keys/key.<keyTfheVersion>.json and injects it into `chain`'s cache
- * slot (its relayer URL), so an encryption can resolve the key offline.
- */
-export async function loadAndCacheKey(runtime: FhevmRuntime, chain: FhevmChain, keyTfheVersion: string): Promise<void> {
-  const keyFile = await fetchSerializedKeyFile(keyTfheVersion);
-  const keyBytes = toFheEncryptionKeyBytes(keyFile, chain);
-  globalFheEncryptionKeyCache.setBytes(runtime, chain.fhevm.relayerUrl, keyBytes);
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Encryption
 ////////////////////////////////////////////////////////////////////////////////
 
-/**
- * Builds a real ZK proof for a single uint64 on `chain`. The key must already
- * be cached for `chain` (see loadAndCacheKey).
- */
-export async function buildUint64Proof(runtime: WithEncrypt, chain: FhevmChain): Promise<ZkProof> {
-  const builder = createZkProofBuilder();
-  builder.addUint64(42n);
-  return builder.build(
-    { chain, runtime },
-    {
-      contractAddress: DUMMY_CONTRACT_ADDRESS,
-      userAddress: DUMMY_USER_ADDRESS,
-      extraData: '0x00',
-      // No real client here — synthesize a frozen version basis. build() no
-      // longer reads a tfheVersion from it: this SDK release always builds
-      // against the canonical TFHE module.
-      fhevmContext: createFhevmClientFrozenContext({}),
-    },
-  );
+/** Builds a real ZK proof for a single uint64 with `client`'s (checked) key. */
+export function generateUint64Proof(client: FhevmEncryptClient): Promise<ZkProof> {
+  return generateZkProof(client, {
+    contractAddress: DUMMY_CONTRACT_ADDRESS,
+    userAddress: DUMMY_USER_ADDRESS,
+    values: [{ type: 'uint64', value: 42n }],
+  });
 }
 
 /** Asserts a built proof is non-empty and exposes exactly `expectedHandleCount` handles. */

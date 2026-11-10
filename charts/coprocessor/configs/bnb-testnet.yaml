@@ -1,0 +1,12 @@
+# BNB Testnet host contracts v0.14.4, deployed 2026-10-30.
+# Source: protocol-registry-internal data/testnet/contracts.yaml (163a89b).
+# BNB does not deploy KMSGeneration.
+contracts.version: "v0.14.4"
+acl.address: "0x9Adac873Ae2f737AF011f0778305Cff0B220ac36"
+fhevm_executor.address: "0x24f6bBCd97E2FE90E43cb9C32B89A9828d8Ece08"
+input_verifier.address: "0xDd378841F0125656b97818d9d371e1027Df4c424"
+kms_verifier.address: "0x1F7CAD0c05fDED5F988683AdfDB4F242b310cdcB"
+hcu_limit.address: "0x7bDfa66E82659de3e47C6bc69E97B82f7142441E"
+protocol_config.address: "0xC320dd3d4e15D8E4c20dff42fE09Aa936A88b3ED"
+confidential_bridge.address: "0x09564bb4558A45422e467050f7a5939468542FcD"
+pauser_set.address: "0x50BE8E5f57bd7A8A22fEfd0340Bbe8b425A4a1A3"

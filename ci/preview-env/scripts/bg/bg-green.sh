@@ -107,7 +107,10 @@ green_values() {
   gw_http=$(kubectl get deploy -n "${NAMESPACE}" kms-connector-1-kms-connector-tx-sender \
     -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="KMS_CONNECTOR_GATEWAY_URL")].value}' 2>/dev/null || true)
   if [[ -n "${gw_http}" ]]; then
-    GW="${gw_http}" yq -i '.txSender.config.gatewayUrl.value = strenv(GW)' "${out}"
+    GW="${gw_http}" yq -i '
+      .txSender.config.gatewayUrl.value = strenv(GW) |
+      .txSender.extraArgs = ["--gateway-url=" + strenv(GW)]
+    ' "${out}"
   else
     echo "::warning::could not resolve the gateway HTTP URL from kms-connector; Green keeps ${values_dir}'s default" >&2
   fi

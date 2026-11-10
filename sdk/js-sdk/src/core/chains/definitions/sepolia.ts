@@ -17,6 +17,9 @@ export const sepolia: FhevmChain = /*#__PURE__*/ defineFhevmChain({
       protocolConfig: {
         address: '0x51f9AFBc89Ea792e1a21a12AB802ab58D4dbee83',
       },
+      kmsGeneration: {
+        address: '0x77389113d7000EcBCfc2bDed57202f5f46109934',
+      },
     },
     relayerUrl: 'https://relayer.testnet.zama.org',
     gateway: {

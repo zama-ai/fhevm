@@ -1,0 +1,45 @@
+version: 1
+kind: blue-green
+name: Key migration from v0.14, with the GPU phase
+description: >
+  key-migration-from-v0.14 with a Default-parameter key, so the migrated compressed key can
+  also be served on GPU: threshold Test keys use drift noise reduction, which CUDA does not
+  support. The GPU phase also needs the package-migration image receipt.
+
+    ./fhevm-cli up --scenario key-migration-from-v0.14-gpu --build
+    RFC029_GPU_IMAGES=<receipt> ./fhevm-cli test key-migration-from-v0.14
+
+hostChains:
+  - key: host
+    chainId: "12345"
+    rpcPort: 8545
+  - key: chain-b
+    chainId: "67890"
+    rpcPort: 8547
+
+topology:
+  count: 2
+  threshold: 2
+
+bcs:
+  source:
+    mode: registry
+    tag: v0.14.2-0
+
+gcs:
+  source:
+    mode: local
+  env:
+    # The coprocessor chart's commonConfig.forceLegacyServerKey; the test checks they agree.
+    FORCE_LEGACY_SERVER_KEY: "true"
+
+kms:
+  mode: threshold
+  parties: 4
+  threshold: 1
+  fheParams: Default
+  insecureTestKeygen: true
+
+bootstrap:
+  tag: v0.14.2-0
+  upgrade: deferred

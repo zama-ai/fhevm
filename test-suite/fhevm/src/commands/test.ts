@@ -12,11 +12,19 @@ import { syntheticTrackReadinessSql, syntheticEvidenceAuditSql, SYNTHETIC_EVIDEN
 /**
  * Runs named e2e test profiles, standard/heavy CI suites, and topology-specific test flows.
  */
-import { compatPolicyForState, supportsConnectorHttp, supportsCoprocessorDbStateRevert } from "../compat/compat";
+import {
+  compatPolicyForState,
+  supportsConnectorHttp,
+  supportsCoprocessorDbStateRevert,
+  runsCoprocessorProxy,
+} from "../compat/compat";
 import { consumerOnlyHostListeners } from "../host-listener-mode";
 import { type DecryptionRunner, runKmsGenerationProfile } from "./kms-generation";
 import { runKmsGenerationAbortProfile } from "./kms-generation-abort";
-import { runKmsContextSwitchProfile } from "./kms-context-switch";
+import { runKeyMigrationProfile } from "../../rollouts/key-migration-from-v0.14/run";
+import { isDeferredBootstrap } from "../flow/bootstrap";
+import { type ProxyCheckRunner, runKmsContextSwitchProfile } from "./kms-context-switch";
+import { runStackTest } from "./stack";
 import { DRIFT_CLEANUP_SQL, DRIFT_INSTALL_SQL, parseDriftInstanceIndex, parsePositiveInteger } from "../drift";
 
 import { PreflightError, formatCliError } from "../errors";
@@ -101,6 +109,7 @@ const TEST_PROFILE_NAMES = [
   "ciphertext-drift-auto-recovery",
   "coprocessor-db-state-revert",
   "heavy",
+  "key-migration-from-v0.14",
   "kms-context-switch",
   "kms-generation",
   "kms-generation-abort",
@@ -123,6 +132,7 @@ const SOME_PENDING_RE = /\b[1-9]\d* pending\b/;
 // Mocha prints "0 passing" alongside "N failing" when every matched test failed —
 // the grep DID match; the run failed for a different reason than an empty grep.
 const SOME_FAILING_RE = /\b[1-9]\d* failing\b/;
+const SOME_PASSING_RE = /\b[1-9]\d* passing\b/;
 /** True when the grep actually matched tests (some passed, failed, or are pending). */
 const matchedTests = (output: string) =>
   !(ZERO_TESTS_RE.test(output) && !SOME_PENDING_RE.test(output) && !SOME_FAILING_RE.test(output));
@@ -159,6 +169,8 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
     "Run kms-connector HTTP endpoint rejections.",
   "connector-http":
     "Run the three connector-http-* suites (public decrypt, user decrypt, negative) in one go.",
+  "coprocessor-proxy":
+    "Sign as KMS party 1's connector against every coprocessor-proxy and the prf-service behind it.",
   random: "Run random generation coverage.",
   "random-subset": "Run a narrower random generation subset.",
   operators: "Run manual operator workflows.",
@@ -193,8 +205,26 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
     "Audit the on-chain key/CRS generation state (KMSGeneration contract) and prove the 2t+1 decryption quorum (threshold-mode KMS).",
   "kms-generation-abort":
     "Abort an in-flight keygen and crsgen, prove the contract and every kms-connector retire the requests, then prove the pipeline recovers with a fresh keygen/crsgen to full activation. Disruptive: rotates the active key/CRS — run last or re-up afterwards.",
+  "key-migration-from-v0.14":
+    "Upgrade a 0.14 stack to this branch step by step with checks in between, then migrate the existing key to compressed material and reshare it (requires --scenario key-migration-from-v0.14; the GPU phase needs key-migration-from-v0.14-gpu and RFC029_GPU_IMAGES). Disruptive + single-run: re-up between runs.",
   "kms-context-switch":
-    "Drive the full KMS-context lifecycle on the host ProtocolConfig (requires --scenario five-party-swap-threshold-kms). Runs, in order: a same-committee context switch (NewKmsContext) and an epoch rotation (NewKmsEpoch), proving the KMS reshares, activates, and still decrypts under each; destruction of the retired context and epoch (destroyKmsContext / destroyKmsEpoch), proving every layer retires them — reverts for non-owner/current/unknown/already-destroyed ids, on-chain invalidation without moving the active pointer, per-party DestroyMpcContext/DestroyMpcEpoch forwarding and cache invalidation (the spare, which never held the material, acks the context destroy but fails the epoch destroy — both benign; the context-to-epoch cascade reaches committee caches only), and the current context/epoch still serving; a further switch after the destroy; a stuck-rotation abort (single-in-flight revert + Pending-epoch destroy) and recovery; and finally a genuine node swap — stop the dropped node's tx-sender before the switch, promote the spare, and force it into the 2t+1 quorum. The input-proof app smoke runs at baseline, while a switch is pending, and after each transition. Disruptive + single-run: it advances the context/epoch and destroys the retired ones, so it must start from a pristine stack — re-up between runs.",
+    "Drive the full KMS-context lifecycle on the host ProtocolConfig (requires --scenario five-party-swap-threshold-kms). Runs, in order: a same-committee context switch (NewKmsContext) and an epoch rotation (NewKmsEpoch), proving the KMS reshares, activates, and still decrypts under each; destruction of the retired context and epoch (destroyKmsContext / destroyKmsEpoch), proving every layer retires them — reverts for non-owner/current/unknown/already-destroyed ids, on-chain invalidation without moving the active pointer, per-party DestroyMpcContext/DestroyMpcEpoch forwarding and cache invalidation (the spare, which never held the material, acks the context destroy but fails the epoch destroy — both benign; the context-to-epoch cascade reaches committee caches only), and the current context/epoch still serving; a further switch after the destroy; a stuck-rotation abort (single-in-flight revert + Pending-epoch destroy) and recovery; and finally a genuine node swap — stop the dropped node's tx-sender before the switch, promote the spare, and force it into the 2t+1 quorum. When the stack runs coprocessor-proxy, every proxy refuses the spare while the swap's context is Created (the spare's tx-sender is stopped once it has confirmed creation, so the swap cannot activate meanwhile), then accepts the promoted spare and the dropped node once the swap is finalized and, after every pre-swap context is destroyed, refuses the dropped node. The input-proof app smoke runs at baseline, while a switch is pending, and after each transition. Disruptive + single-run: it advances the context/epoch and destroys the retired ones, so it must start from a pristine stack — re-up between runs.",
+};
+
+/** Profiles that drive a stack whose scenario defers the bootstrap upgrade to the test. */
+const DEFERRED_BOOTSTRAP_PROFILES = ["key-migration-from-v0.14"];
+
+/**
+ * Refuses other profiles on a stack still at its `bootstrap` release: they would run against the
+ * previous release while claiming to test the bundle. Checked at the command, not in `test`, which
+ * the upgrade profile itself calls between steps.
+ */
+export const assertProfileFitsStack = (testName: string | undefined, state: State | undefined) => {
+  if (state?.bootstrapPending && isDeferredBootstrap(state.scenario) && !DEFERRED_BOOTSTRAP_PROFILES.includes(testName ?? "")) {
+    throw new PreflightError(
+      `This stack is still at its bootstrap release and waits for ${DEFERRED_BOOTSTRAP_PROFILES.join(" or ")} to upgrade it`,
+    );
+  }
 };
 
 /** Validates whether a named profile supports an extra grep narrowing expression. */
@@ -584,20 +614,19 @@ type DriftRevertDbOptions = {
   postgresPassword: string;
 };
 
-/** Counts computations rows for the host chain (coprocessor DB). */
-const countComputations = async (dbOptions: DriftRevertDbOptions, hostChainId: string) => {
+/** Counts completed computations; rollback can retain committed metadata rows. */
+const countCompletedComputations = async (dbOptions: DriftRevertDbOptions, hostChainId: string) => {
   const dbName = coprocessorDatabaseName(dbOptions.instanceIndex);
   const value = await psql(
     dbName,
-    ["-t", "-A", "-c", `SELECT COUNT(*) FROM computations WHERE host_chain_id = ${hostChainId};`],
+    ["-t", "-A", "-c", `SELECT COUNT(*) FROM computations WHERE host_chain_id = ${hostChainId} AND is_completed = true;`],
     dbOptions,
   );
   return Number(value);
 };
 
-/** Polls `computations` row count until it reaches `target` — signals that
- * the host-listener has caught up with blocks re-processed after a revert. */
-const waitForComputationsCatchup = async (
+/** Waits for reverted computations to finish again, including retained rows. */
+const waitForCompletedComputationsCatchup = async (
   options: DriftRevertDbOptions & {
     hostChainId: string;
     target: number;
@@ -608,13 +637,13 @@ const waitForComputationsCatchup = async (
   const attempts = Math.max(0, Math.ceil(options.timeoutSeconds / options.pollIntervalSeconds));
   let lastCount = -1;
   for (let attempt = 0; attempt <= attempts; attempt += 1) {
-    lastCount = await countComputations(options, options.hostChainId);
+    lastCount = await countCompletedComputations(options, options.hostChainId);
     if (lastCount >= options.target) {
       return lastCount;
     }
     if (attempt === attempts) {
       throw new PreflightError(
-        `timed out waiting for computations to catch up: have ${lastCount}, need >= ${options.target}`,
+        `timed out waiting for completed computations to catch up: have ${lastCount}, need >= ${options.target}`,
       );
     }
     await Bun.sleep(options.pollIntervalSeconds * 1000);
@@ -694,6 +723,18 @@ const runTestsCommand = (
 const assertMatchedTests = (output: string, label: string) => {
   if (!matchedTests(output)) {
     throw new PreflightError(`${label} matched zero tests`);
+  }
+};
+
+/**
+ * Throws unless the run of profile `name` executed its tests. The coprocessor-proxy suite skips
+ * itself when it finds no proxy URL, so its tests all end pending; the CLI only runs the profile on
+ * a stack with proxies, so such a run must fail rather than pass.
+ */
+export const assertProfileRanTests = (name: string, output: string, label: string) => {
+  assertMatchedTests(output, label);
+  if (name === "coprocessor-proxy" && !SOME_PASSING_RE.test(output)) {
+    throw new PreflightError(`${label}: no coprocessor-proxy test passed; the suite skips itself without COPROCESSOR_PROXY_URLS`);
   }
 };
 
@@ -893,11 +934,10 @@ const formatDbRevertSnapshot = (snapshot: DbRevertSnapshot) =>
 
 type DbRevertMetric = Exclude<keyof DbRevertSnapshot, "erroredComputations">;
 
-/** Lists seed-generated tables that should shrink after the revert. */
+/** Lists seed-generated results that should shrink; committed metadata may remain. */
 export const dbRevertDeleteExpectations = (baseline: DbRevertSnapshot, seeded: DbRevertSnapshot) => {
   const metrics: DbRevertMetric[] = [
     "computationsDone",
-    "computationsTotal",
     "allowedHandles",
     "pbsComputations",
     "ciphertextDigest",
@@ -915,7 +955,6 @@ const assertRevertDeletedData = (baseline: DbRevertSnapshot, seeded: DbRevertSna
   }
   const unchanged = [
     expected.includes("computationsDone") && after.computationsDone >= seeded.computationsDone ? "completed computations" : "",
-    expected.includes("computationsTotal") && after.computationsTotal >= seeded.computationsTotal ? "computations" : "",
     expected.includes("allowedHandles") && after.allowedHandles >= seeded.allowedHandles ? "allowed_handles" : "",
     expected.includes("pbsComputations") && after.pbsComputations >= seeded.pbsComputations ? "pbs_computations" : "",
     expected.includes("ciphertextDigest") && after.ciphertextDigest >= seeded.ciphertextDigest ? "ciphertext_digest" : "",
@@ -2186,6 +2225,15 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       ? undefined
       : "CONNECTOR_ENDPOINT_VERSION / CONNECTOR_PROXY_VERSION are not part of the resolved bundle (no kms-connector-endpoint / -proxy containers)";
 
+  const coprocessorProxySkipReason = () => {
+    if (runsCoprocessorProxy(state)) {
+      return undefined;
+    }
+    return state.scenario.kind === "blue-green"
+      ? "blue-green stacks run without coprocessor-proxy"
+      : "COPROCESSOR_PROXY_VERSION or COPROCESSOR_PRF_SERVICE_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
+  };
+
   const dbStateRevertSkipReason = () =>
     supportsCoprocessorDbStateRevert(state)
       ? undefined
@@ -2256,6 +2304,25 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     await runNamedE2e(options, grep, label);
   };
 
+  // One test of the "Coprocessor proxy" suite for the kms-context-switch profile. The env reaches
+  // `docker exec` through its own environment, so no key is on an argv an error would print. A
+  // skipped test means the env did not arrive, so it fails the check like a failed one.
+  const runCoprocessorProxyCheck: ProxyCheckRunner = async (label, test, env) => {
+    console.log(`[test] ${label}`);
+    const result = await runWithHeartbeat(
+      buildTestContainerArgs(
+        runTestsArgs({ ...options, verbose: false, parallel: false, grep: test }),
+        Object.keys(env).flatMap((name) => ["-e", name]),
+      ),
+      label,
+      { env },
+    );
+    const output = result.stdout + result.stderr;
+    if (ZERO_TESTS_RE.test(output) || SOME_PENDING_RE.test(output)) {
+      throw new PreflightError(`${label}: the test did not run`);
+    }
+  };
+
   const runProfile = async (name: string) => {
     if (name === "manifest-healing-stress") {
       return runLogged(name, Date.now(), () => runManifestHealingStressProfile(
@@ -2304,7 +2371,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
       return runKmsGenerationAbortProfile(state);
     }
     if (name === "kms-context-switch") {
-      return runKmsContextSwitchProfile(state, runUserDecryption, runInputProofSmoke);
+      return runKmsContextSwitchProfile(
+        state, runUserDecryption, runInputProofSmoke,
+        coprocessorProxySkipReason() ? undefined : runCoprocessorProxyCheck,
+      );
+    }
+    if (name === "key-migration-from-v0.14") {
+      return runStackTest(name, runKeyMigrationProfile, test);
     }
     if (name === "blue-green") {
       return runBlueGreenProfile(state, options);
@@ -2487,10 +2560,10 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           pollIntervalSeconds: driftAlertPollIntervalSeconds,
         });
 
-        // Snapshot row counts before the revert runs. The gw-listener is
+        // Snapshot completion counts before the revert runs. The gw-listener is
         // still in the grace period (pending status), so this is stable.
-        const computationsBefore = await countComputations(dbOptions, hostChainId);
-        console.log(`[drift-auto-recovery] computations before revert: ${computationsBefore}`);
+        const computationsBefore = await countCompletedComputations(dbOptions, hostChainId);
+        console.log(`[drift-auto-recovery] completed computations before revert: ${computationsBefore}`);
 
         // Wait for the revert to actually run (status transitions to
         // "reverting" and the SQL completes). DRIFT_REVERT_TEST_HOLD_SECS
@@ -2505,11 +2578,11 @@ export const test = async (testName: string | undefined, options: TestOptions) =
 
         // Snapshot counts while status=reverting. Services are still blocked
         // waiting for status=done, so no new writes are racing.
-        const computationsAfterRevert = await countComputations(dbOptions, hostChainId);
-        console.log(`[drift-auto-recovery] computations after revert: ${computationsAfterRevert}`);
+        const computationsAfterRevert = await countCompletedComputations(dbOptions, hostChainId);
+        console.log(`[drift-auto-recovery] completed computations after revert: ${computationsAfterRevert}`);
         if (computationsAfterRevert >= computationsBefore) {
           throw new PreflightError(
-            `drift revert did not delete any computations (before=${computationsBefore}, after=${computationsAfterRevert})`,
+            `drift revert did not reset any completed computations (before=${computationsBefore}, after=${computationsAfterRevert})`,
           );
         }
 
@@ -2521,16 +2594,16 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           pollIntervalSeconds: driftRecoveryPollIntervalSeconds,
         });
 
-        // Wait for host-listener to re-process the reverted blocks so the
-        // follow-up test isn't racing against catchup.
-        const caughtUp = await waitForComputationsCatchup({
+        // Wait for replay AND worker completion. Retained metadata alone
+        // must not make recovery appear complete.
+        const caughtUp = await waitForCompletedComputationsCatchup({
           ...dbOptions,
           hostChainId,
           target: computationsBefore,
           timeoutSeconds: driftRecoveryTimeoutSeconds,
           pollIntervalSeconds: driftRecoveryPollIntervalSeconds,
         });
-        console.log(`[drift-auto-recovery] revert completed; computations caught up to ${caughtUp} (>= ${computationsBefore}); re-running tests to verify recovery`);
+        console.log(`[drift-auto-recovery] revert completed; completed computations caught up to ${caughtUp} (>= ${computationsBefore}); re-running tests to verify recovery`);
 
         // Re-run the e2e tests to verify the services have fully recovered.
         const followUp = await runWithHeartbeat(
@@ -2558,6 +2631,12 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         throw new PreflightError(`${name}: ${precondition}`);
       }
     }
+    if (name === "coprocessor-proxy") {
+      const precondition = coprocessorProxySkipReason();
+      if (precondition) {
+        throw new PreflightError(`${name}: ${precondition}`);
+      }
+    }
 
     const filter = TEST_GREP[name];
     if (!filter) {
@@ -2575,7 +2654,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
           await waitForKeyBootstrap(state);
         }
         const result = await runWithHeartbeat(buildTestContainerArgs(["sh", "-lc", command]), `test ${name}`);
-        assertMatchedTests(result.stdout + result.stderr, `test ${name}`);
+        assertProfileRanTests(name, result.stdout + result.stderr, `test ${name}`);
       });
     };
 
@@ -2632,6 +2711,13 @@ export const test = async (testName: string | undefined, options: TestOptions) =
         }
         if (profile.startsWith("connector-http")) {
           const skipReason = connectorEndpointSkipReason();
+          if (skipReason) {
+            console.log(`[test] skipping ${profile}: ${skipReason}`);
+            continue;
+          }
+        }
+        if (profile === "coprocessor-proxy") {
+          const skipReason = coprocessorProxySkipReason();
           if (skipReason) {
             console.log(`[test] skipping ${profile}: ${skipReason}`);
             continue;

@@ -290,34 +290,57 @@ describe('Multi-Chain State Isolation', function () {
       const supplyBBefore = await erc20B.totalSupply();
       const chainBBlockBefore = await providerB.getBlockNumber();
 
-      const snapshotId = await evmSnapshot(ethers.provider);
+      // Keep this a one-block, pre-finality reorg. The poller finalizes at a
+      // two-block lag; leaving interval mining on while awaiting Chain B can
+      // cross that boundary on slow CI and correctly contain the whole stack.
+      let snapshotId: string | undefined;
+      try {
+        await ethers.provider.send('evm_setAutomine', [false]);
+        await ethers.provider.send('evm_setIntervalMining', [0]);
+        snapshotId = await evmSnapshot(ethers.provider);
+        const snapshotBlock = BigInt(await ethers.provider.send('eth_blockNumber', []));
 
-      const mintTx = await (erc20A.connect(this.deployerA) as EncryptedERC20).mint(7000, { gasLimit: 10_000_000 });
-      await mintTx.wait();
-      expect(await erc20A.totalSupply()).to.eq(supplyABefore + 7000n);
+        const mintTx = await (erc20A.connect(this.deployerA) as EncryptedERC20).mint(7000, { gasLimit: 10_000_000 });
+        await ethers.provider.send('evm_mine', []);
+        await mintTx.wait();
+        expect(await erc20A.totalSupply()).to.eq(supplyABefore + 7000n);
 
-      const transferB = await this.deployerB.sendTransaction({
-        to: this.signersB.bob.address,
-        value: ethers.parseEther('0.1'),
-      });
-      const receiptB = await transferB.wait();
+        const transferB = await this.deployerB.sendTransaction({
+          to: this.signersB.bob.address,
+          value: ethers.parseEther('0.1'),
+        });
+        const receiptB = await transferB.wait();
 
-      const chainBBlockDuring = receiptB!.blockNumber;
-      expect(chainBBlockDuring).to.be.greaterThan(chainBBlockBefore);
+        const chainBBlockDuring = receiptB!.blockNumber;
+        expect(chainBBlockDuring).to.be.greaterThan(chainBBlockBefore);
+        expect(BigInt(await ethers.provider.send('eth_blockNumber', []))).to.eq(
+          snapshotBlock + 1n,
+          'Chain A must not advance beyond the single block being reverted',
+        );
 
-      const reverted = await evmRevert(ethers.provider, snapshotId);
-      expect(reverted).to.eq(true);
+        expect(await evmRevert(ethers.provider, snapshotId)).to.eq(true);
+        snapshotId = undefined;
 
-      // After evm_revert, reset NonceManager so it re-fetches the reverted nonce
-      if (this.deployerA.reset) this.deployerA.reset();
+        // After evm_revert, reset NonceManager so it re-fetches the reverted nonce.
+        if (this.deployerA.reset) this.deployerA.reset();
 
-      expect(await erc20A.totalSupply()).to.eq(supplyABefore);
-      expect(await erc20B.totalSupply()).to.eq(supplyBBefore);
-      expect(await providerB.getBlockNumber()).to.be.greaterThanOrEqual(chainBBlockDuring);
-      // The transfer mined on Chain B during the snapshot window must still be
-      // canonical — a leaked revert would have dropped it or changed its block.
-      const receiptBAfter = await providerB.getTransactionReceipt(transferB.hash);
-      expect(receiptBAfter?.blockHash).to.eq(receiptB!.blockHash);
+        expect(await erc20A.totalSupply()).to.eq(supplyABefore);
+        expect(await erc20B.totalSupply()).to.eq(supplyBBefore);
+        expect(await providerB.getBlockNumber()).to.be.greaterThanOrEqual(chainBBlockDuring);
+        // Chain B's transfer must remain canonical after Chain A's revert.
+        const receiptBAfter = await providerB.getTransactionReceipt(transferB.hash);
+        expect(receiptBAfter?.blockHash).to.eq(receiptB!.blockHash);
+      } finally {
+        try {
+          if (snapshotId !== undefined) {
+            await evmRevert(ethers.provider, snapshotId);
+            if (this.deployerA.reset) this.deployerA.reset();
+          }
+        } finally {
+          await ethers.provider.send('evm_setAutomine', [true]);
+          await ethers.provider.send('evm_setIntervalMining', [1]);
+        }
+      }
     });
   });
 

@@ -1,6 +1,11 @@
 import type { BytesHex, ChecksummedAddress } from '../../../types/primitives.js';
+import type { KmsSigncryptedShare } from '../../../types/kms-p.js';
+import type { FetchUserDecryptResultItem } from '../../../types/relayer.js';
 import type { CleartextEthereumModule } from '../../ethereum/types-ct.js';
 import type { RelayerClientWithRuntime } from '../types.js';
+import { remove0x } from '../../../base/string.js';
+import { randomUniqueUints } from '../../../base/uint.js';
+import { userDecryptResultToKmsSigncryptedShares } from '../utils.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -66,6 +71,62 @@ export function getKmsSignersPrivateKeyMap(relayerClient: RelayerClientWithRunti
     signersPrivateKeyMap.kms.set(FORGE_FHEVM_V1_KMS_SIGNER.address, FORGE_FHEVM_V1_KMS_SIGNER.privateKey);
   }
   return signersPrivateKeyMap.kms;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * The KMS nodes that answer a request, as a relayer forwards one response per node: a random subset of
+ * `signersAddress`, of random size between `threshold` and all of them.
+ */
+export function pickRespondingKmsSigners(
+  signersAddress: readonly ChecksummedAddress[],
+  threshold: number,
+): ChecksummedAddress[] {
+  const n = signersAddress.length;
+  if (!Number.isInteger(threshold) || threshold < 1 || threshold > n) {
+    throw new Error(`Invalid KMS threshold ${threshold} for ${n} signers`);
+  }
+  let count = threshold + Math.floor(Math.random() * (n - threshold + 1));
+  // Defensive: the guard above already keeps count within [threshold, n].
+  if (count < 1) {
+    count = 1;
+  }
+  if (count > n) {
+    count = n;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  return randomUniqueUints(n, count).map((i) => signersAddress[i]!);
+}
+
+/** One signcrypted share per responding KMS node, each signing the common payload. */
+export async function signKmsSigncryptedShares(
+  relayerClient: RelayerClientWithRuntime,
+  parameters: {
+    readonly commonKmsSigncryptedSharePayload: BytesHex;
+    readonly extraData: BytesHex;
+    readonly signersAddress: readonly ChecksummedAddress[];
+    readonly threshold: number;
+  },
+): Promise<readonly KmsSigncryptedShare[]> {
+  const cleartextEthereumModule = relayerClient.runtime.ethereum as CleartextEthereumModule;
+  const { commonKmsSigncryptedSharePayload: payload, extraData, signersAddress, threshold } = parameters;
+  const privateKeys = getKmsSignersPrivateKeyMap(relayerClient);
+  const responders = pickRespondingKmsSigners(signersAddress, threshold);
+
+  const result: FetchUserDecryptResultItem[] = [];
+  for (const signerAddress of responders) {
+    const privateKey = privateKeys.get(signerAddress);
+    if (privateKey === undefined) {
+      throw new Error(
+        `Unable to find KMS signer for address ${signerAddress} (${responders.length} of ${signersAddress.length} responding)`,
+      );
+    }
+    const signature = await cleartextEthereumModule.sign({ hash: payload, privateKey });
+    result.push({ signature: remove0x(signature), payload: remove0x(payload), extraData });
+  }
+
+  return userDecryptResultToKmsSigncryptedShares(result);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

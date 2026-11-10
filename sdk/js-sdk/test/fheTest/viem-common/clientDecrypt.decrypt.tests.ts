@@ -2,9 +2,20 @@ import type { Hex } from 'viem';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { canDecryptValue, canDecryptValues, canDecryptValuesFromPairs } from '@fhevm/sdk/actions/decrypt';
-import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import {
+  getViemTestConfig,
+  latestBlockTimestamp,
+  type CreateViemDecryptClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
 import { FHETestABI } from '../FheTest-abi-v2.js';
-import { decryptTestCases, fheTypeIdFromName, clearTypeFromHandle, createLogger } from '../setupCommon.js';
+import {
+  decryptTestCases,
+  fheTypeIdFromHandle,
+  fheTypeIdFromName,
+  clearTypeFromHandle,
+  createLogger,
+} from '../setupCommon.js';
 import { asEncryptedValue, type EncryptedValue, type TypedValue } from '@fhevm/sdk/types';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -45,6 +56,7 @@ export function defineClientDecryptDecryptTests(parameters: {
       expect(typeof client.decryptValuesFromPairs).toBe('function');
       expect(typeof client.generateTransportKeyPair).toBe('function');
       expect(typeof client.signLegacyDecryptionPermit).toBe('function');
+      expect(typeof client.signUnifiedDecryptionPermit).toBe('function');
     });
 
     it('should generate an e2e transport key pair', async () => {
@@ -70,7 +82,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair: keyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
@@ -141,7 +153,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair: keyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
@@ -185,6 +197,7 @@ export function defineClientDecryptDecryptTests(parameters: {
           }),
         );
         expect(encryptedValue).not.toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+        expect(fheTypeIdFromHandle(encryptedValue)).toBe(fheTypeIdFromName(fheType));
         console.log(`  ${fheType}: handle=${encryptedValue.slice(0, 20)}...`);
 
         // Read expected clear value from FHETest._db
@@ -207,7 +220,7 @@ export function defineClientDecryptDecryptTests(parameters: {
           transportKeyPair: transportKeyPair,
           contractAddresses: [config.fheTestAddress],
           durationSeconds: 24 * 3600,
-          startTimestamp: Math.floor(Date.now() / 1000) - 5,
+          startTimestamp: (await latestBlockTimestamp(config)) - 5,
           signerAddress: config.account.address,
           signer: config.account,
         });
@@ -284,7 +297,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
@@ -364,7 +377,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair: transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });
@@ -433,7 +446,7 @@ export function defineClientDecryptDecryptTests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
         signerAddress: config.account.address,
         signer: config.account,
       });

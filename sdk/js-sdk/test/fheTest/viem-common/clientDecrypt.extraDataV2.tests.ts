@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { setFhevmRuntimeConfig } from '@fhevm/sdk/viem';
 import { createUnsignedLegacyDecryptionPermitEip712 } from '@fhevm/sdk/actions/base';
-import { getViemTestConfig, type CreateViemDecryptClientFn, type FheTestViemConfig } from '../setup-viem.js';
+import {
+  getViemTestConfig,
+  latestBlockTimestamp,
+  type CreateViemDecryptClientFn,
+  type FheTestViemConfig,
+} from '../setup-viem.js';
 import { createLogger } from '../setupCommon.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -58,7 +63,7 @@ export function defineClientDecryptExtraDataV2Tests(parameters: {
         transportKeyPair,
         contractAddresses: [config.fheTestAddress],
         durationSeconds: 24 * 3600,
-        startTimestamp: Math.floor(Date.now() / 1000) - 5,
+        startTimestamp: (await latestBlockTimestamp(config)) - 5,
       });
 
       // 2. Force extraData to a (well-formed) v2 value. The eip712 is frozen, so rebuild it.

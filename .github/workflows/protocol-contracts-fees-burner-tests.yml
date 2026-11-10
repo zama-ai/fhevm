@@ -47,7 +47,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
-          node-version: 24
+          node-version: '>=24.22.1 <25'
           cache: npm
           cache-dependency-path: protocol-contracts/contracts/feesBurner/package-lock.json
 

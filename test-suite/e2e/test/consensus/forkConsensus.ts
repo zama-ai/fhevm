@@ -765,7 +765,7 @@ describe('Fork byte consensus', function () {
     console.info(`[fork-consensus] F3 canonical control decrypted to ${String(canonicalPlaintext)}`);
 
     expect(String(canonicalPlaintext), 'canonical control plaintext').to.eq('12');
-    const [{ requestUnifiedUserDecrypt, expectRelayerAclRejection, directHandle, backdatedStartTimestamp }, config] = await Promise.all([
+    const [{ requestUnifiedUserDecrypt, expectRelayerAclRejection, directHandle, backdatedStartTimestamp, currentKmsExtraData }, config] = await Promise.all([
       import('../sdk/unified/unifiedUserDecrypt'), import('../instance'),
     ]);
     const keypair = await instance.generateKeypair();
@@ -773,6 +773,7 @@ describe('Fork byte consensus', function () {
       relayerUrl: config.relayerUrl,
       decryptionContractAddress: config.verifyingContractAddressDecryption,
       apiKey: config.relayerApiKey,
+      extraData: await currentKmsExtraData(getCanonicalProvider(forkConfig), config.protocolConfigAddress),
     }, {
       handles: [directHandle(forkOnlyHandle, contractAddress, signers.alice.address)],
       userAddress: signers.alice.address, allowedContracts: [contractAddress],

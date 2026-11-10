@@ -103,7 +103,10 @@ deploy `ProtocolConfigReplica` seeded from the `CANONICAL_*` env variables (see 
 **Ethereum is the canonical host — the single source of truth for KMS context/epoch state. The
 lifecycle runs only there.** Governance opens a context/epoch
 (`defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext`) and KMS signers reach
-quorum (`confirmKmsContextCreation`, `confirmEpochActivation`) before it activates. `KMSGeneration`
+quorum (`confirmKmsContextCreation`, `confirmEpochActivation`) before it activates. Each confirmation
+carries the signer's EIP-712 signature, and anyone may submit it. The contract also collects
+destruction confirmations (`confirmKmsContextDestruction`, `confirmKmsEpochDestruction`) from the
+active committee. It emits a quorum event once `n - t` of them agree on one digest. `KMSGeneration`
 is deployed only here.
 
 Every other host chain (e.g. Polygon) runs `ProtocolConfigReplica`, a read-replica. Replicas never
@@ -132,7 +135,7 @@ The Ethereum `ProtocolConfig` is the source of truth for protocol state, so **ne
 seed their replica from it.
 
 An existing replica proxy that still runs `ProtocolConfig` does not need this flow. It migrates in
-place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV4())`. Both contracts use the
+place with `upgradeToAndCall(<ProtocolConfigReplica impl>, reinitializeV3())`. Both contracts use the
 same storage, so the KMS context, epoch and nodes stay as they are.
 
 The flow is artifact-centric — the same three steps in every environment:

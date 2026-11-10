@@ -111,6 +111,15 @@ describe("stack", () => {
     expect(plan.runtimeServices).toEqual(["relayer"]);
   });
 
+  test("coprocessor version-lock upgrade plans leave the proxy out of blue-green stacks", () => {
+    const plain = resolveUpgradePlan({ overrides: [], scenario: defaultScenario }, "coprocessor", { lockFile: true });
+    expect(plain.versionKeys).toContain("COPROCESSOR_PROXY_VERSION");
+    expect(plain.runtimeServices).toContain("coprocessor-proxy");
+    const blueGreen = resolveUpgradePlan({ overrides: [], scenario: blueGreenScenario }, "coprocessor", { lockFile: true });
+    expect(blueGreen.runtimeServices).toContain("coprocessor1-tfhe-worker");
+    expect(blueGreen.runtimeServices.some((service) => service.endsWith("-proxy"))).toBe(false);
+  });
+
   test("upgrade plan supports listener-core version-lock upgrades", () => {
     const plan = resolveUpgradePlan({ overrides: [], scenario: defaultScenario }, "listener-core", { lockFile: true });
     expect(plan.versionKeys).toEqual(["LISTENER_CORE_VERSION"]);

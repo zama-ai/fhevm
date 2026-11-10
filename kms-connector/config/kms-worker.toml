@@ -56,9 +56,29 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_GRPC_REQUEST_RETRIES
 # grpc_request_retries = 3
 
+# Timeout to establish the connection to a KMS Core shard (optional, defaults to 5s)
+# ENV: KMS_CONNECTOR_KMS_CONNECT_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# kms_connect_timeout = "5s"
+
+# Timeout for each KMS RPC attempt, including result polling (optional, defaults to 20s).
+# ENV: KMS_CONNECTOR_KMS_REQ_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# kms_req_timeout = "20s"
+
+# Interval between HTTP/2 keepalive pings sent to the KMS Core, even when idle (optional, defaults to 10s)
+# ENV: KMS_CONNECTOR_KMS_KEEP_ALIVE_INTERVAL (format: https://docs.rs/humantime/latest/humantime/)
+# kms_keep_alive_interval = "10s"
+
+# Time to wait for a keepalive ping acknowledgement before closing the KMS Core connection (optional, defaults to 5s)
+# ENV: KMS_CONNECTOR_KMS_KEEP_ALIVE_TIMEOUT (format: https://docs.rs/humantime/latest/humantime/)
+# kms_keep_alive_timeout = "5s"
+
 # The maximum number of decryption attempts before a decryption request is considered failed (optional, defaults to 20)
 # ENV: KMS_CONNECTOR_MAX_DECRYPTION_ATTEMPTS
 # max_decryption_attempts = 20
+
+# The maximum number of handles a single decryption request can contain (optional, defaults to 50)
+# ENV: KMS_CONNECTOR_MAX_HANDLES_PER_DECRYPTION
+# max_handles_per_decryption = 50
 
 # Retry interval to poll GRPC responses from KMS Core (optional, defaults to 1s)
 # ENV: KMS_CONNECTOR_GRPC_POLL_INTERVAL (format: https://docs.rs/humantime/latest/humantime/)
@@ -94,6 +114,13 @@ database_url = "postgres://postgres:postgres@localhost/kms-connector"
 # ENV: KMS_CONNECTOR_S3_MAX_CIPHERTEXT_SIZE
 # s3_max_ciphertext_size = 131072
 
+# Number of ciphertext buffers allocated at startup, each `s3_max_ciphertext_size` bytes
+# (optional, defaults to 16384, i.e. 2GiB). Requests wait when no buffer is free.
+# Must be at least `max_handles_per_decryption`. The memory is committed at startup, so the
+# container's memory limit must cover it, plus roughly 0.5GiB for everything else.
+# ENV: KMS_CONNECTOR_CIPHERTEXT_POOL_SLOTS
+# ciphertext_pool_slots = 16384
+
 # Refresh interval of the Coprocessor registry read from the GatewayConfig contract (optional, defaults to 60s)
 # ENV: KMS_CONNECTOR_COPRO_REGISTRY_REFRESH (format: https://docs.rs/humantime/latest/humantime/)
 # copro_registry_refresh = "60s"
@@ -127,7 +154,7 @@ address = "0x0000000000000000000000000000000000000000"
 # ENV: KMS_CONNECTOR_DECRYPTION_CONTRACT__DOMAIN_NAME
 # domain_name = "Decryption"
 # EIP-712 domain version for Decryption contract (optional, defaults to "1")
-# ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
+# ENV: KMS_CONNECTOR_DECRYPTION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
 # Configuration of the GatewayConfig contract (required)

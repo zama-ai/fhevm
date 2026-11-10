@@ -143,7 +143,7 @@ on:
           - "4"
           - "13"
       overrides:
-        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. Dispatch default for relayer_sdk_version is 0.4.4 when omitted."
+        description: "Optional JSON object of version/chart pins (empty / {} = resolve as today). Allowed keys: host_contracts_version, gateway_contracts_version, contracts_chart_version, coprocessor_version, coprocessor_chart_version, coprocessor_infra_chart_version, kms_connector_version, kms_connector_chart_version, kms_core_version, kms_repo_ref, relayer_version, relayer_http_version, relayer_sdk_version, test_suite_version, common_chart_version, redis_chart_version, listener_chart_version, listener_version. Unknown keys fail the run. relayer_sdk_version (e.g. 0.4.4) also runs the @zama-fhe/relayer-sdk e2e suite; empty by default."
         required: false
         default: ""
       deploy_polygon:
@@ -185,8 +185,7 @@ permissions: {}
 # change-detection base commit - a preview deploys what the branch actually
 # runs, not a hand-maintained release that has quietly gone stale. Version
 # and chart pins come from check-labels' overrides_json (empty image pins on
-# pull_request; dispatch may set them via the overrides input). Do not put
-# relayer_sdk_version=0.4.4 here: PRs must stay empty so only @fhevm/sdk runs.
+# pull_request; dispatch may set them via the overrides input).
 ##############################################################################
 env:
   # How far back from the base commit to look for a published image before
@@ -211,8 +210,8 @@ env:
   # environment runs. Deploy overwrites these from overrides_json.
   COPROCESSOR_INFRA_CHART: oci://hub.zama.org/ghcr/zama-zws/crossplane/coprocessor-infra
   COPROCESSOR_INFRA_CHART_VERSION: "0.6.5"
-  # Empty at workflow level: PR runs stay @fhevm/sdk only. Dispatch default
-  # 0.4.4 is applied in parse-overrides.cjs when EVENT_NAME=workflow_dispatch.
+  # Empty: only @fhevm/sdk runs. Set relayer_sdk_version in overrides to add
+  # the @zama-fhe/relayer-sdk suite.
   RELAYER_SDK_VERSION: ""
   COMMON_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/common
   COMMON_CHART_VERSION: "0.3.3"
@@ -220,8 +219,8 @@ env:
   SYNC_SECRETS_CHART: oci://hub.zama.org/ghcr/zama-zws/helm-charts/sync-secrets
   SYNC_SECRETS_CHART_VERSION: "0.2.3"
   #=====KMS==================================================================
-  KMS_REPO_REF: "v0.14.1"
-  KMS_CORE_TAG: "v0.14.1"
+  KMS_REPO_REF: "v0.15.0-1"
+  KMS_CORE_TAG: "v0.15.0-1"
   #=====REDIS================================================================
   REDIS_CHART: oci://hub.zama.org/cgr/zama.ai/iamguarded-charts/redis
   REDIS_CHART_VERSION: "25.3.8"
@@ -347,11 +346,13 @@ jobs:
           STACK_VERSION: ${{ steps.stack_version.outputs.stack_version }}
           # Previous-release pin for the BCS fleet.
           PINNED_BCS_IMAGE_TAG: "v0.14.1"
+          PINNED_BCS_KMS_CORE_TAG: "v0.14.1"
         run: |
           if [[ "${BCS_FROM_HEAD}" != "true" ]]; then
             {
               echo "from_head=false"
               echo "image_tag=${PINNED_BCS_IMAGE_TAG}"
+              echo "kms_core_tag=${PINNED_BCS_KMS_CORE_TAG}"
               echo "consensus_version="
               echo "stack_version="
             } >> "$GITHUB_OUTPUT"
@@ -390,11 +391,6 @@ jobs:
           echo "Blue from HEAD: tag bcs-${GITHUB_SHA:0:7}, release ${bcs_stack}, consensus ${bcs_consensus}" \
             "(Green: ${STACK_VERSION}, consensus ${consensus})"
 
-      - id: parse_overrides
-        env:
-          OVERRIDES_RAW: ${{ inputs.overrides }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: node ci/preview-env/scripts/resolve/parse-overrides.cjs
       - id: check
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -526,6 +522,15 @@ jobs:
             echo "chain_mode=${chain_mode}"
           } >> "$GITHUB_OUTPUT"
 
+      # After check: an RFC-021 pair with the pinned Blue defaults kms to that
+      # Blue's release. bcs_from_head is HEAD's tfhe, so it keeps the default.
+      - id: parse_overrides
+        env:
+          OVERRIDES_RAW: ${{ inputs.overrides }}
+          EVENT_NAME: ${{ github.event_name }}
+          BCS_KMS_CORE_TAG: ${{ steps.check.outputs.blue_green == 'true' && steps.bcs_pin.outputs.kms_core_tag || '' }}
+        run: node ci/preview-env/scripts/resolve/parse-overrides.cjs
+
   ##########################################################################
   # Build every fhevm-owned image at this PR's HEAD (or the dispatched
   # branch), only when build_images is on. Each reusable workflow builds+
@@ -616,6 +621,14 @@ jobs:
     permissions: *docker_permissions
     secrets: *docker_secrets
 
+  build-relayer-http:
+    name: build/relayer-http
+    needs: check-labels
+    if: *should_build_images
+    uses: ./.github/workflows/relayer-http-docker-build.yml
+    permissions: *docker_permissions
+    secrets: *docker_secrets
+
   build-test-suite:
     name: build/test-suite
     needs: check-labels
@@ -646,6 +659,7 @@ jobs:
       - build-coprocessor
       - build-listener
       - build-relayer
+      - build-relayer-http
       - build-test-suite
     if: >-
       !cancelled() &&
@@ -707,7 +721,9 @@ jobs:
     # twice (DryRunStarted, then after cutover), so allow a second suite.
     timeout-minutes: 360
     permissions:
+      id-token: write # Required for Tailscale OIDC
       pull-requests: write # Required to comment on the PR with connection info
+    environment: preview-env
     env:
       # Job-specific: topology from check-labels, image tags from resolve-tags,
       # version/chart pins from overrides_json.
@@ -729,9 +745,11 @@ jobs:
       # can force shared Geth/Nitro (inputs.* is empty on pull_request).
       CHAIN_MODE: ${{ needs.check-labels.outputs.chain_mode }}
       # Pins from parse-overrides (always-defaults + dispatch overrides).
-      # RELAYER_SDK_VERSION stays empty on PR so only @fhevm/sdk runs.
+      # RELAYER_SDK_VERSION is empty unless set in overrides, so only @fhevm/sdk runs.
       CONTRACTS_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).contracts_chart_version }}
       COPROCESSOR_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).coprocessor_chart_version }}
+      # A pinned release can predate pads: then no coprocessor-proxy and no prf-service.
+      COPROCESSOR_VERSION_PIN: ${{ fromJSON(needs.check-labels.outputs.overrides_json).coprocessor_version }}
       KMS_CONNECTOR_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).kms_connector_chart_version }}
       LISTENER_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).listener_chart_version }}
       COPROCESSOR_INFRA_CHART_VERSION: ${{ fromJSON(needs.check-labels.outputs.overrides_json).coprocessor_infra_chart_version }}
@@ -760,8 +778,8 @@ jobs:
       - name: Setup preview tooling
         uses: ./.github/actions/setup-preview-tooling
         with:
-          ts-oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          ts-oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          ts-oauth-client-id: ${{ secrets.TS_FHEVM_CI_OAUTH_CLIENT_ID }}
+          ts-oauth-audience: ${{ secrets.TS_FHEVM_CI_OAUTH_AUDIENCE }}
           ts-tags: tag:fhevm-ci
           tailscale-hostname: ${{ env.TAILSCALE_HOSTNAME }}
           harbor-url: ${{ secrets.HARBOR_URL }}
@@ -875,9 +893,9 @@ jobs:
 
       - name: Resolve KMS enclave image
         working-directory: .kms-deploy
-        # PCR labels must come from the image deploy.sh will start.
-        # v0.14.1 hardcodes core-service-enclave. Current kms main defaults
-        # KMS_CORE_ENCLAVE_IMAGE_NAME to core-service-enclave-insecure.
+        # PCR labels must come from the image deploy.sh will start: the
+        # KMS_CORE_ENCLAVE_IMAGE_NAME default of the pinned deploy.sh, or
+        # core-service-enclave when that release hardcodes it.
         run: |
           image_name="hub.zama.org/ghcr/zama-ai/kms/core-service-enclave"
           line=$(grep -E '^KMS_CORE_ENCLAVE_IMAGE_NAME=' ci/scripts/deploy.sh || true)
@@ -961,8 +979,8 @@ jobs:
           # deploy.sh's parse_args takes CLI flags, not env vars, for these
           # (--tag sets both KMS_CORE_TAG and KMS_CLIENT_TAG). TLS and the
           # enclave image name are the env-var exceptions. The image is the
-          # one whose PCR labels were read above; current kms main uses it,
-          # v0.14.1 ignores it and hardcodes the same secure name.
+          # one whose PCR labels were read above; releases that hardcode it
+          # ignore the variable and use the same secure name.
           TLS: "true"
           KMS_CORE_ENCLAVE_IMAGE_NAME: ${{ env.KMS_ENCLAVE_IMAGE }}
         run: |
@@ -1004,7 +1022,9 @@ jobs:
         # consensus is never reached and only preprocessing ever runs.
         # FALLBACK_HANDLE is used only if anonymous bucket listing is disabled.
         # Emits s3_endpoint and signers_json (one JSON blob, since step outputs
-        # can't be addressed by a looped name later).
+        # can't be addressed by a looped name later). Each entry also carries
+        # caCert, the 0x-hex PEM at PUB-p<i>/CACert/<handle>, which the host
+        # wiring step stores as KMS_NODE_CA_CERT_<i>.
         env:
           FALLBACK_HANDLE: "60b7070add74be3827160aa635fb255eeeeb88586c4debf7ab1134ddceb4beee"
         run: |
@@ -1352,6 +1372,13 @@ jobs:
       - name: Trigger KMS keygen + CRS generation
         run: bash ci/preview-env/scripts/deploy/deploy-contracts.sh trigger-keygen
 
+      # The insecure-keygen redirect is single-threaded and sits on every
+      # kms-worker call. Keygen is done here, so point the workers straight at
+      # their cores and drop it.
+      - name: Bypass the insecure-keygen redirect
+        if: env.KEYGEN == 'insecure'
+        run: bash ci/preview-env/scripts/deploy/bypass-kms-keygen-redirect.sh
+
       ######################################################################
       # RELAYER + TEST-SUITE: generic `common` chart + published images.
       ######################################################################
@@ -1360,6 +1387,10 @@ jobs:
 
       - name: Deploy relayer
         run: bash ci/preview-env/scripts/deploy/deploy-relayer.sh relayer
+
+      # Reads the kms-connector-http ConfigMap published by the kms-connector step.
+      - name: Deploy relayer-http
+        run: bash ci/preview-env/scripts/deploy/deploy-relayer.sh relayer-http
 
       - name: Deploy test-suite
         run: bash ci/preview-env/scripts/deploy/deploy-relayer.sh test-suite
@@ -1418,6 +1449,15 @@ jobs:
           KMS_CONNECTOR_TAG: ${{ fromJSON(needs.resolve-tags.outputs.tags_json).kms_connector_gw_listener }}
           REPORT_PHASE: ${{ env.BLUE_GREEN == 'true' && 'during DryRunStarted (BCS live, GCS shadowing)' || '' }}
         run: bash ci/preview-env/scripts/e2e/build-e2e-report.sh
+
+      - name: Check coprocessor-proxy (rollout, rolling restart, NetworkPolicy)
+        # Also after a failed e2e test: these checks do not depend on the suites.
+        if: >-
+          !cancelled() && steps.e2e_report.outcome != 'skipped' &&
+          env.AUTOMATED_TESTS == 'true' && env.BLUE_GREEN != 'true' && env.COPROCESSOR_VERSION_PIN == ''
+        env:
+          E2E_IMAGE: hub.zama.org/ghcr/zama-ai/fhevm/test-suite/e2e:${{ fromJSON(needs.resolve-tags.outputs.tags_json).test_suite }}
+        run: bash ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh
 
       - name: Assert RFC-021 cutover
         if: env.BLUE_GREEN == 'true' && env.AUTOMATED_TESTS == 'true'
@@ -1500,6 +1540,13 @@ jobs:
             # or point @fhevm/sdk / a toy dapp at ${{ env.RELAYER_TS_URL }}
             ```
 
+            relayer-http (`POST /v4/user-decrypt`, `/v4/public-decrypt`):
+            ```bash
+            curl -sS ${{ env.RELAYER_HTTP_TS_URL }}/healthz
+            ```
+
+            ${{ env.RELAYER_UNIFIED_URL && format('Unified relayer URL (tailnet only; `/v2`, `/v3` to the relayer, `/v4` to relayer-http): point @fhevm/sdk `relayerUrl` at {0}, e.g. `curl -sS {0}/v2/keyurl`', env.RELAYER_UNIFIED_URL) || '' }}
+
             > Note: each coprocessor party requests substantial `tfhe`/`sns` worker capacity on the `coprocessor` nodepool, so `nb_coprocessor` > 1 multiplies the cluster resources needed. Default stays 1.
 
             This environment is destroyed automatically when the PR is closed
@@ -1535,6 +1582,21 @@ jobs:
               echo '```bash'
               echo "curl -sS ${RELAYER_TS_URL}/v2/keyurl"
               echo "# or point @fhevm/sdk / a toy dapp at ${RELAYER_TS_URL}"
+              echo '```'
+              echo
+            fi
+            if [[ -n "${RELAYER_HTTP_TS_URL:-}" ]]; then
+              echo "relayer-http (\`POST /v4/user-decrypt\`, \`/v4/public-decrypt\`):"
+              echo '```bash'
+              echo "curl -sS ${RELAYER_HTTP_TS_URL}/healthz"
+              echo '```'
+              echo
+            fi
+            if [[ -n "${RELAYER_UNIFIED_URL:-}" ]]; then
+              echo "Unified relayer URL (tailnet only; \`/v2\`, \`/v3\` to the relayer, \`/v4\` to relayer-http):"
+              echo '```bash'
+              echo "curl -sS ${RELAYER_UNIFIED_URL}/v2/keyurl"
+              echo "# point @fhevm/sdk relayerUrl at ${RELAYER_UNIFIED_URL}"
               echo '```'
               echo
             fi

@@ -672,9 +672,6 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
     throw new Error(`${sourceLabel}: gcs block is required`);
   }
   const gcsObj = gcs as Record<string, unknown>;
-  if (gcsObj.deferredStart !== undefined && typeof gcsObj.deferredStart !== "boolean") {
-    throw new Error(`${sourceLabel}: gcs.deferredStart must be a boolean`);
-  }
 
   const bcs = parsed.bcs;
   if (bcs !== undefined && (bcs === null || typeof bcs !== "object")) {
@@ -703,7 +700,6 @@ export const parseBlueGreenScenario = (text: string, sourceLabel = "scenario"): 
       : undefined,
     gcs: {
       source: parseSource(gcsObj.source, `${sourceLabel}.gcs.source`),
-      deferredStart: gcsObj.deferredStart === true,
       env: { ...((gcsObj.env as Record<string, string> | undefined) ?? {}) },
       args: normalizeArgs(
         gcsObj.args as Record<string, unknown> | undefined,
@@ -723,11 +719,14 @@ const parseBootstrap = (block: unknown, sourceLabel: string): BlueGreenBootstrap
   if (block === null || typeof block !== "object" || Array.isArray(block)) {
     throw new Error(`${sourceLabel} must be a map with tag`);
   }
-  const { tag } = block as Record<string, unknown>;
+  const { tag, upgrade } = block as Record<string, unknown>;
   if (typeof tag !== "string" || !tag.trim()) {
     throw new Error(`${sourceLabel}.tag must be a non-empty release tag`);
   }
-  return { tag: tag.trim() };
+  if (upgrade !== undefined && upgrade !== "deferred") {
+    throw new Error(`${sourceLabel}.upgrade must be deferred when set`);
+  }
+  return { tag: tag.trim(), ...(upgrade ? { upgrade } : {}) };
 };
 
 /** Applies defaults and resolves derived fields. */
@@ -748,7 +747,7 @@ export const resolveBlueGreenScenario = (
   const gcs = {
     source: normalizeSource(input.gcs.source ?? { mode: "local" as const }),
     // Green starts once the bootstrapped stack has been upgraded, never against the old release.
-    deferredStart: (input.gcs.deferredStart ?? false) || bootstrap !== undefined,
+    deferredStart: bootstrap !== undefined,
     env: { ...(input.gcs.env ?? {}) },
     args: input.gcs.args ?? {},
   };

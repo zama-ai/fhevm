@@ -518,7 +518,7 @@ impl<'a> WriteGuard<'a> {
 /// Controls GCS writes after a rollback.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GcsRollbackPolicy {
-    /// Used by raw chain ingestion.
+    /// Continue after rollback, but still honor chain recovery containment.
     Continue,
     /// Used by derived output workers.
     Skip,
@@ -560,11 +560,18 @@ async fn cutover_gate(
     tx: &mut Transaction<'_, Postgres>,
     gcs_mode: bool,
     rollback_policy: GcsRollbackPolicy,
+    allow_recovery_halt: bool,
 ) -> Result<Option<GateBlock>, sqlx::Error> {
     sqlx::query("SELECT pg_advisory_xact_lock_shared($1)")
         .bind(CUTOVER_LOCK_ID)
         .execute(&mut **tx)
         .await?;
+    if !allow_recovery_halt && crate::chain_recovery::is_halted_tx(tx).await? {
+        return Ok(Some(GateBlock::Skip));
+    }
+    // Routine host replay is background repair, not evidence of divergence.
+    // An unavailable RPC must not prevent already-admitted work from draining.
+    // Actual contradictions still close the database-wide halt gate above.
     if gcs_mode {
         if rollback_policy == GcsRollbackPolicy::Skip {
             let paused: bool = sqlx::query_scalar(
@@ -595,8 +602,27 @@ pub async fn begin_write_guarded(
     gcs_mode: bool,
     rollback_policy: GcsRollbackPolicy,
 ) -> Result<WriteGuard<'static>, sqlx::Error> {
+    begin_write_guarded_inner(pool, gcs_mode, rollback_policy, false).await
+}
+
+/// Persist request intent even while history recovery is halted. The shared
+/// cutover lock and retirement checks still apply. Use only for control metadata;
+/// ingestion, result acceptance and publication must use [`begin_write_guarded`].
+pub async fn begin_request_write_guarded(
+    pool: &Pool<Postgres>,
+    gcs_mode: bool,
+) -> Result<WriteGuard<'static>, sqlx::Error> {
+    begin_write_guarded_inner(pool, gcs_mode, GcsRollbackPolicy::Continue, true).await
+}
+
+async fn begin_write_guarded_inner(
+    pool: &Pool<Postgres>,
+    gcs_mode: bool,
+    rollback_policy: GcsRollbackPolicy,
+    allow_recovery_halt: bool,
+) -> Result<WriteGuard<'static>, sqlx::Error> {
     let mut tx = begin_guarded_pool(pool).await?;
-    match cutover_gate(&mut tx, gcs_mode, rollback_policy).await? {
+    match cutover_gate(&mut tx, gcs_mode, rollback_policy, allow_recovery_halt).await? {
         None => Ok(WriteGuard::Proceed(tx)),
         Some(block) => {
             tx.rollback().await?;
@@ -616,7 +642,7 @@ pub async fn begin_write_guarded_conn(
     rollback_policy: GcsRollbackPolicy,
 ) -> Result<WriteGuard<'_>, sqlx::Error> {
     let mut tx = begin_guarded_conn(conn).await?;
-    match cutover_gate(&mut tx, gcs_mode, rollback_policy).await? {
+    match cutover_gate(&mut tx, gcs_mode, rollback_policy, false).await? {
         None => Ok(WriteGuard::Proceed(tx)),
         Some(block) => {
             tx.rollback().await?;

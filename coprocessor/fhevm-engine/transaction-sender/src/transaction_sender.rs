@@ -3,7 +3,7 @@ use fhevm_engine_common::versioning::{run_stack_version_listener, StackMode};
 use futures_util::FutureExt;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use std::{sync::Arc, time::Duration};
-use tokio::task::JoinSet;
+use tokio::{sync::Semaphore, task::JoinSet};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
@@ -41,6 +41,22 @@ where
         conf: ConfigSettings,
         gas: Option<u64>,
     ) -> anyhow::Result<Self> {
+        // Three PgListeners retain connections (one per operation plus stack
+        // versioning). Reserve another for health checks and other short queries.
+        // Both operations share the remaining capacity: waiting for admission
+        // must not consume a connection or its pool-acquisition timeout.
+        let pool_size = db_pool.options().get_max_connections();
+        anyhow::ensure!(
+            pool_size >= 5,
+            "transaction sender database pool must have at least 5 connections \
+             (3 listeners, 1 query reserve, and at least 1 submission)"
+        );
+        let submission_limit = (pool_size - 4) as usize;
+        let submission_slots = Arc::new(Semaphore::new(submission_limit));
+        info!(
+            pool_size,
+            submission_limit, "Configured Gateway submission concurrency"
+        );
         let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![
             Arc::new(
                 ops::verify_proof::VerifyProofOperation::new(
@@ -50,6 +66,7 @@ where
                     conf.clone(),
                     gas,
                     db_pool.clone(),
+                    submission_slots.clone(),
                 )
                 .await?,
             ),
@@ -59,6 +76,7 @@ where
                 conf.clone(),
                 gas,
                 db_pool.clone(),
+                submission_slots,
             )),
         ];
         Ok(Self {
@@ -157,7 +175,23 @@ where
                             continue;
                         }
 
-                        match op.execute().await {
+                        // A contained full batch stays pending. Without this pause,
+                        // its skipped submissions report more work and immediately
+                        // repeat selection and proof signing. Submission still takes
+                        // its own fence in case a halt starts after this check.
+                        let execution = match fhevm_engine_common::chain_recovery::is_halted(&sender.db_pool).await {
+                            Ok(true) => {
+                                sender.reset_sleep_duration(&mut sleep_duration);
+                                tokio::select! {
+                                    _ = token.cancelled() => break,
+                                    _ = tokio::time::sleep(Duration::from_secs(u64::from(db_polling_interval_secs).max(1))) => {}
+                                }
+                                continue;
+                            }
+                            Ok(false) => op.execute().await,
+                            Err(error) => Err(error.into()),
+                        };
+                        match execution {
                             Err(e) => {
                                 if is_backend_gone(&e) {
                                     error!(
@@ -327,5 +361,120 @@ where
                 error_details.join("; "),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::providers::ProviderBuilder;
+    use alloy::signers::local::PrivateKeySigner;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use test_harness::instance::{setup_test_db, ImportMode};
+
+    #[tokio::test]
+    async fn rejects_pool_without_submission_headroom() -> anyhow::Result<()> {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(4)
+            .connect_lazy("postgresql://localhost/unused")?;
+        // Validation must fail before contacting either database or Gateway.
+        let provider = ProviderBuilder::default().connect_http("http://127.0.0.1:1".parse()?);
+        let result = TransactionSender::new(
+            pool,
+            Address::ZERO,
+            Address::ZERO,
+            crate::make_abstract_signer(PrivateKeySigner::random()),
+            NonceManagedProvider::new(provider, None),
+            CancellationToken::new(),
+            ConfigSettings::default(),
+            None,
+        )
+        .await;
+        let error = result.err().expect("undersized pool must be rejected");
+        assert!(
+            error.to_string().contains("at least 5 connections"),
+            "{error}"
+        );
+        Ok(())
+    }
+
+    struct FullBatchOperation(AtomicUsize);
+
+    #[async_trait::async_trait]
+    impl<P: Provider<Ethereum> + Clone + 'static> ops::TransactionOperation<P> for FullBatchOperation {
+        fn channel(&self) -> &str {
+            "test_full_batch"
+        }
+
+        async fn execute(&self) -> anyhow::Result<bool> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            tokio::task::yield_now().await;
+            Ok(true)
+        }
+    }
+
+    #[tokio::test]
+    async fn contained_full_batch_waits_then_resumes_without_restarting() -> anyhow::Result<()> {
+        use fhevm_engine_common::chain_recovery::{record_halt, HistoryMismatch, ListenerSource};
+        let instance = setup_test_db(ImportMode::None)
+            .await
+            .map_err(|error| anyhow::anyhow!("{error}"))?;
+        let pool = sqlx::PgPool::connect(instance.db_url()).await?;
+        record_halt(
+            &pool,
+            HistoryMismatch {
+                source: ListenerSource::Host,
+                gcs_mode: false,
+                chain_id: 42,
+                block_number: 10,
+                expected_hash: None,
+                observed_hash: None,
+                reason: "sender pacing regression",
+            },
+        )
+        .await?;
+        let operation = Arc::new(FullBatchOperation(AtomicUsize::new(0)));
+        let token = CancellationToken::new();
+        let _cancel_on_exit = token.clone().drop_guard();
+        // The operation only models a perpetually full batch; no RPC calls occur.
+        let provider = ProviderBuilder::default().connect_http("http://127.0.0.1:1".parse()?);
+        let sender = TransactionSender {
+            cancel_token: token.clone(),
+            conf: ConfigSettings {
+                db_polling_interval_secs: 1,
+                ..Default::default()
+            },
+            operations: vec![operation.clone()],
+            input_verification_address: Address::ZERO,
+            ciphertext_commits_address: Address::ZERO,
+            db_pool: pool.clone(),
+            gateway_provider: NonceManagedProvider::new(provider, None),
+        };
+        let run = tokio::spawn(async move { sender.run().await });
+        tokio::time::sleep(Duration::from_millis(2200)).await;
+        assert!(!run.is_finished());
+        assert_eq!(
+            operation.0.load(Ordering::SeqCst),
+            0,
+            "contained batches must not be repeatedly prepared"
+        );
+
+        let mut recovery = pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(fhevm_engine_common::versioning::CUTOVER_LOCK_ID)
+            .execute(&mut *recovery)
+            .await?;
+        sqlx::query("UPDATE public.chain_recovery_halts SET resolved_at=NOW(), recovery_note='verified fixture baseline' WHERE resolved_at IS NULL")
+            .execute(&mut *recovery).await?;
+        recovery.commit().await?;
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while operation.0.load(Ordering::SeqCst) < 2 {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await?;
+        token.cancel();
+        tokio::time::timeout(Duration::from_secs(5), run).await???;
+        Ok(())
     }
 }

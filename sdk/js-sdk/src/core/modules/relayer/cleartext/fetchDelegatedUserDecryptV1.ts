@@ -1,6 +1,4 @@
 import type { BytesHex, ChecksummedAddress, Uint32BigInt } from '../../../types/primitives.js';
-import type { FetchUserDecryptResultItem } from '../../../types/relayer.js';
-import type { CleartextEthereumModule } from '../../ethereum/types-ct.js';
 import type {
   FetchDelegatedUserDecryptParameters,
   FetchUserDecryptReturnType,
@@ -8,11 +6,9 @@ import type {
 } from '../types.js';
 import type { KmsSignersContext } from '../../../types/kmsSignersContext.js';
 import type { FhevmClientFrozenContext } from '../../../types/fhevmClientFrozenContext-p.js';
-import { remove0x } from '../../../base/string.js';
-import { asUint32BigInt, tryParseUintBigIntString, randomUniqueUints } from '../../../base/uint.js';
+import { asUint32BigInt, tryParseUintBigIntString } from '../../../base/uint.js';
 import { getTrustedClient } from '../../../runtime/CoreFhevm-p.js';
-import { userDecryptResultToKmsSigncryptedShares } from '../utils.js';
-import { getKmsSignersPrivateKeyMap } from './signers.js';
+import { signKmsSigncryptedShares } from './signers.js';
 import { isForgeFhevmV1, readPlaintexts, xorMaskWithPublicKey } from './forgeFhevmV1.js';
 import { readCurrentKmsSignersContext } from '../../../host-contracts/readKmsSignersContext-p.js';
 
@@ -74,10 +70,10 @@ async function runDelegatedUserDecryptOffChain(
 // runDelegatedUserDecryptOnChain
 ////////////////////////////////////////////////////////////////////////////////
 
-const delegatedUserDecryptAbi = [
+const delegatedUserDecryptV1Abi = [
   {
     type: 'function',
-    name: 'delegatedUserDecrypt',
+    name: 'delegatedUserDecryptV1',
     inputs: [
       {
         name: 'pairs',
@@ -92,31 +88,39 @@ const delegatedUserDecryptAbi = [
           },
         ],
       },
-      { name: 'delegator', type: 'address', internalType: 'address' },
-      { name: 'delegate', type: 'address', internalType: 'address' },
-      { name: 'publicKey', type: 'bytes', internalType: 'bytes' },
       {
-        name: 'contractAddresses',
-        type: 'address[]',
-        internalType: 'address[]',
+        name: 'permit',
+        type: 'tuple',
+        internalType: 'struct DelegatedUserDecryptPermitV1',
+        components: [
+          { name: 'delegateAddress', type: 'address', internalType: 'address' },
+          { name: 'publicKey', type: 'bytes', internalType: 'bytes' },
+          {
+            name: 'contractAddresses',
+            type: 'address[]',
+            internalType: 'address[]',
+          },
+          { name: 'delegatorAddress', type: 'address', internalType: 'address' },
+          {
+            name: 'startTimestamp',
+            type: 'uint256',
+            internalType: 'uint256',
+          },
+          {
+            name: 'durationDays',
+            type: 'uint256',
+            internalType: 'uint256',
+          },
+          { name: 'extraData', type: 'bytes', internalType: 'bytes' },
+        ],
       },
-      {
-        name: 'startTimestamp',
-        type: 'uint256',
-        internalType: 'uint256',
-      },
-      {
-        name: 'durationDays',
-        type: 'uint256',
-        internalType: 'uint256',
-      },
-      { name: 'delegateSignature', type: 'bytes', internalType: 'bytes' },
+      { name: 'signature', type: 'bytes', internalType: 'bytes' },
     ],
     outputs: [
       { name: 'payload', type: 'bytes', internalType: 'bytes' },
       { name: 'signers', type: 'address[]', internalType: 'address[]' },
       { name: 'threshold', type: 'uint256', internalType: 'uint256' },
-      { name: 'extraData', type: 'bytes', internalType: 'bytes' },
+      { name: 'signedExtraData', type: 'bytes', internalType: 'bytes' },
     ],
     stateMutability: 'view',
   },
@@ -134,23 +138,33 @@ async function runDelegatedUserDecryptOnChain(
   const { kmsDecryptEip712Message, kmsDecryptEip712Signer, kmsDecryptEip712Signature } = payload;
   const pairs = payload.handleContractPairs;
   const trustedClient = getTrustedClient(relayerClient);
+  // The permit's extraData is passed verbatim, as in fetchUserDecryptV1.
   const res = (await relayerClient.runtime.ethereum.readContract(trustedClient, {
-    abi: delegatedUserDecryptAbi,
+    abi: delegatedUserDecryptV1Abi,
     address: relayerClient.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     args: [
       pairs.map((p) => ({
         handle: p.handle.bytes32Hex,
         contractAddress: p.contractAddress,
       })),
-      kmsDecryptEip712Message.delegatorAddress,
-      kmsDecryptEip712Signer,
-      kmsDecryptEip712Message.publicKey,
-      kmsDecryptEip712Message.contractAddresses,
-      _parseUintBigIntString('kmsDecryptEip712Message.startTimestamp', kmsDecryptEip712Message.startTimestamp),
-      _parseUintBigIntString('kmsDecryptEip712Message.durationDays', kmsDecryptEip712Message.durationDays),
+      {
+        delegateAddress: kmsDecryptEip712Signer,
+        publicKey: kmsDecryptEip712Message.publicKey,
+        contractAddresses: kmsDecryptEip712Message.contractAddresses,
+        delegatorAddress: kmsDecryptEip712Message.delegatorAddress,
+        startTimestamp: _parseUintBigIntString(
+          'kmsDecryptEip712Message.startTimestamp',
+          kmsDecryptEip712Message.startTimestamp,
+        ),
+        durationDays: _parseUintBigIntString(
+          'kmsDecryptEip712Message.durationDays',
+          kmsDecryptEip712Message.durationDays,
+        ),
+        extraData: kmsDecryptEip712Message.extraData,
+      },
       kmsDecryptEip712Signature,
     ],
-    functionName: delegatedUserDecryptAbi[0].name,
+    functionName: delegatedUserDecryptV1Abi[0].name,
   })) as unknown[];
 
   const commonKmsSigncryptedSharePayload = res[0] as BytesHex;
@@ -172,7 +186,6 @@ export async function fetchDelegatedUserDecrypt(
   relayerClient: RelayerClientWithRuntime,
   parameters: FetchDelegatedUserDecryptParameters,
 ): Promise<FetchUserDecryptReturnType> {
-  const cleartextEthereumModule = relayerClient.runtime.ethereum as CleartextEthereumModule;
   const { payload, fhevmContext } = parameters;
   const pairs = payload.handleContractPairs;
   const contractAddresses = payload.kmsDecryptEip712Message.contractAddresses;
@@ -200,31 +213,7 @@ export async function fetchDelegatedUserDecrypt(
     res = await runDelegatedUserDecryptOnChain(relayerClient, payload);
   }
 
-  const commonKmsSigncryptedSharePayload = res.commonKmsSigncryptedSharePayload;
-  const extraData = res.extraData;
-  const threshold = res.threshold;
-  const signersAddress = res.signersAddress;
-
-  const signers = getKmsSignersPrivateKeyMap(relayerClient);
-
-  const randomSignersAddress = randomUniqueUints(signersAddress.length, Number(threshold)).map(
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    (i) => signersAddress[i]!,
-  );
-
-  const result: FetchUserDecryptResultItem[] = [];
-
-  for (const signerAddress of randomSignersAddress) {
-    const privateKey = signers.get(signerAddress);
-    if (privateKey === undefined) {
-      throw new Error(`Unable to find KMS signer for address ${signerAddress}`);
-    }
-
-    const signature = await cleartextEthereumModule.sign({ hash: commonKmsSigncryptedSharePayload, privateKey });
-    result.push({ signature: remove0x(signature), payload: remove0x(commonKmsSigncryptedSharePayload), extraData });
-  }
-
-  return userDecryptResultToKmsSigncryptedShares(result);
+  return signKmsSigncryptedShares(relayerClient, { ...res, threshold: Number(res.threshold) });
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -57,12 +57,13 @@ impl ProcessingError {
     pub fn from_grpc_status(status: tonic::Status) -> Self {
         match status.code() {
             Code::Aborted => Self::aborted(),
-            Code::DeadlineExceeded | Code::Unavailable | Code::ResourceExhausted => {
-                Self::recoverable(
-                    ErrorCode::UpstreamTransient,
-                    anyhow!("KMS GRPC error: {status}"),
-                )
-            }
+            Code::DeadlineExceeded
+            | Code::Unavailable
+            | Code::ResourceExhausted
+            | Code::Cancelled => Self::recoverable(
+                ErrorCode::UpstreamTransient,
+                anyhow!("KMS GRPC error: {status}"),
+            ),
             _ => Self::irrecoverable(
                 ErrorCode::Unprocessable,
                 anyhow!("KMS GRPC error: {status}"),
@@ -126,6 +127,8 @@ pub enum RequestCheckKind {
     CoproConsensus,
     /// KMS context/epoch validity check.
     KmsContext,
+    /// Maximum number of handles per decryption request check.
+    HandleLimit,
     /// Network error (on-chain call or DB query) encountered while running any check.
     Network,
 }
@@ -137,6 +140,7 @@ impl RequestCheckKind {
             Self::Signature => "signature",
             Self::CoproConsensus => "copro_consensus",
             Self::KmsContext => "kms_context",
+            Self::HandleLimit => "handle_limit",
             Self::Network => "network",
         }
     }

@@ -3,7 +3,7 @@ import YAML from "yaml";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { renderRelayerConfig } from "./generate/config";
+import { renderRelayerConfig, renderRelayerHttpConfig } from "./generate/config";
 import { predictedCrsId, predictedKeyId } from "./utils/fs";
 
 describe("config", () => {
@@ -144,4 +144,55 @@ test("local relayer configurations retain a polling path for responses emitted d
       type: "polling", url: "http://gateway-node:8546",
     });
   }
+});
+
+describe("relayer-http config", () => {
+  const template = readFileSync(path.resolve(import.meta.dir, "..", "templates/config/relayer-http.yaml"), "utf8");
+  const envs = {
+    "kms-connector": { KMS_CONNECTOR_ALLOWED_SENDERS: "0xAE808c0968fF9557C8E0EAbcf57747c75B490Aa0" },
+    // The lists env.ts renders for the e2e suite (committee parties only).
+    "test-suite": {
+      KMS_CONNECTOR_ENDPOINT_URLS: [1, 2, 3, 4]
+        .map((party) => `https://kms-connector${party === 1 ? "" : `-${party}`}-proxy:8443`)
+        .join(","),
+      KMS_CONNECTOR_TX_SENDER_ADDRESSES: [1, 2, 3, 4].map((party) => `0x${"0".repeat(37)}a0${party}`).join(","),
+    },
+  };
+  const plan = {
+    hostChains: [
+      { key: "alpha", chainId: "12345", rpcPort: 8545 },
+      { key: "beta", chainId: "67890", rpcPort: 8547 },
+    ],
+    kms: { threshold: 1, committeeSize: 4, parties: 5 },
+  } as never;
+
+  test("targets the committee's proxies with thresholds derived from t", () => {
+    const config = YAML.parse(
+      renderRelayerHttpConfig(
+        { discovery: { hosts: { alpha: { PROTOCOL_CONFIG_CONTRACT_ADDRESS: "0x00000000000000000000000000000000000000c0" } } } as never },
+        template,
+        plan,
+        envs,
+      ),
+    );
+    expect(config.http.endpoint).toBe("0.0.0.0:3002");
+    expect(config.http.supported_chain_ids).toEqual([12345, 67890]);
+    expect(config.kms_aggregator.public_decrypt.threshold).toBe(2);
+    expect(config.kms_aggregator.user_decrypt.threshold).toBe(3);
+    expect(config.kms_aggregator.auth.chain_id).toBe(12345);
+    expect(config.kms_aggregator.auth.protocol_config).toBe("0x00000000000000000000000000000000000000c0");
+    expect(config.kms_aggregator.auth.address).toBe("0xAE808c0968fF9557C8E0EAbcf57747c75B490Aa0");
+    expect(config.kms_aggregator.endpoints).toEqual([
+      { name: "kms_1", url: "https://kms-connector-proxy:8443", audience: "0x0000000000000000000000000000000000000a01" },
+      { name: "kms_2", url: "https://kms-connector-2-proxy:8443", audience: "0x0000000000000000000000000000000000000a02" },
+      { name: "kms_3", url: "https://kms-connector-3-proxy:8443", audience: "0x0000000000000000000000000000000000000a03" },
+      { name: "kms_4", url: "https://kms-connector-4-proxy:8443", audience: "0x0000000000000000000000000000000000000a04" },
+    ]);
+  });
+
+  test("keeps the placeholder ProtocolConfig before discovery", () => {
+    const config = YAML.parse(renderRelayerHttpConfig({ discovery: undefined }, template, plan, envs));
+    expect(config.kms_aggregator.auth.protocol_config).toBe("0x0000000000000000000000000000000000000000");
+  });
+
 });

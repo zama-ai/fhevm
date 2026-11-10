@@ -10,6 +10,11 @@
 #
 # Env: TARGET (gateway|host|host-polygon), NB_KMS_CORE, NB_COPROCESSOR, NAMESPACE,
 # SIGNERS_JSON, WALLETS_JSON, COPROC_WALLETS_JSON, S3_ENDPOINT.
+# Host targets also need KMS_CORE_TAG and PCR0/PCR1/PCR2 (set by the deploy job
+# from the enclave image). Those replace the placeholder software version and
+# PCR values in the source file, and each party's CA cert comes from SIGNERS_JSON
+# (discover-kms-signers.mjs). The node URL and MPC identity are the peer service
+# name the core's TLS certificate uses (CN kms-core-<i>-core-<i>, port 50001).
 set -euo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -113,30 +118,57 @@ for i in $(seq 1 "${n}"); do
   tx_sender=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .address' <<<"${WALLETS_JSON}")
   require_nonempty "${signer}" "no discovered signer for party ${i} in signers_json=${SIGNERS_JSON}"
   require_nonempty "${tx_sender}" "no derived tx-sender wallet for party ${i} in wallets_json=${WALLETS_JSON}"
+  # Peer DNS and TLS CN are <release>-core-<partyId> (release kms-core-<i>).
+  # The core parses ipAddress as a URL and checks mpc_identity against the cert CN.
+  node_host="kms-core-${i}-core-${i}"
+  node_url="http://${node_host}:50001"
   if [[ "${TARGET}" == gateway ]]; then
     yq -i "
       .scDeploy.env += [
         {\"name\": \"KMS_TX_SENDER_ADDRESS_${idx}\", \"value\": \"${tx_sender}\"},
         {\"name\": \"KMS_SIGNER_ADDRESS_${idx}\", \"value\": \"${signer}\"},
-        {\"name\": \"KMS_NODE_IP_ADDRESS_${idx}\", \"value\": \"kms-core-${i}-core-${i}\"},
+        {\"name\": \"KMS_NODE_IP_ADDRESS_${idx}\", \"value\": \"${node_url}\"},
         {\"name\": \"KMS_NODE_STORAGE_URL_${idx}\", \"value\": \"${S3_ENDPOINT}\"}
       ]
     " "${generated}"
   else
+    ca_cert=$(jq -r --argjson party "${i}" '.[] | select(.party == $party) | .caCert' <<<"${SIGNERS_JSON}")
+    require_nonempty "${ca_cert}" "no discovered CA cert for party ${i} in signers_json=${SIGNERS_JSON}"
     yq -i "
       .scDeploy.env += [
         {\"name\": \"KMS_TX_SENDER_ADDRESS_${idx}\", \"value\": \"${tx_sender}\"},
         {\"name\": \"KMS_SIGNER_ADDRESS_${idx}\", \"value\": \"${signer}\"},
-        {\"name\": \"KMS_NODE_IP_${idx}\", \"value\": \"kms-core-${i}-core-${i}\"},
+        {\"name\": \"KMS_NODE_IP_${idx}\", \"value\": \"${node_url}\"},
         {\"name\": \"KMS_NODE_STORAGE_URL_${idx}\", \"value\": \"${S3_ENDPOINT}\"},
         {\"name\": \"KMS_NODE_PARTY_ID_${idx}\", \"value\": \"${i}\"},
-        {\"name\": \"KMS_NODE_MPC_IDENTITY_${idx}\", \"value\": \"kms-core-${i}\"},
-        {\"name\": \"KMS_NODE_CA_CERT_${idx}\", \"value\": \"0x706c616365686f6c6465722d63612d636572742d6532652d7370696b65\"},
+        {\"name\": \"KMS_NODE_MPC_IDENTITY_${idx}\", \"value\": \"${node_host}\"},
+        {\"name\": \"KMS_NODE_CA_CERT_${idx}\", \"value\": \"${ca_cert}\"},
         {\"name\": \"KMS_NODE_STORAGE_PREFIX_${idx}\", \"value\": \"PUB-p${i}\"}
       ]
     " "${generated}"
   fi
 done
+
+# The source files ship a placeholder version and a zero PCR triple. The first
+# host context is what every later switch replays, so replace them with the
+# enclave image tag and the PCR labels the KMS deploy already trusted.
+if [[ "${TARGET}" != gateway ]]; then
+  : "${KMS_CORE_TAG:?KMS_CORE_TAG is required to set KMS_SOFTWARE_VERSION}"
+  : "${PCR0:?PCR0 is required to set KMS_PCR_VALUES}"
+  : "${PCR1:?PCR1 is required to set KMS_PCR_VALUES}"
+  : "${PCR2:?PCR2 is required to set KMS_PCR_VALUES}"
+  for pcr in "${PCR0}" "${PCR1}" "${PCR2}"; do
+    if [[ ! "${pcr}" =~ ^[0-9a-fA-F]+$ ]]; then
+      echo "::error::PCR value '${pcr}' is not hex" >&2
+      exit 1
+    fi
+  done
+  pcr_json="[{\"pcr0\":\"0x${PCR0}\",\"pcr1\":\"0x${PCR1}\",\"pcr2\":\"0x${PCR2}\"}]"
+  VER="${KMS_CORE_TAG}" PCR="${pcr_json}" yq -i '
+    (.scDeploy.env[] | select(.name == "KMS_SOFTWARE_VERSION")).value = strenv(VER) |
+    (.scDeploy.env[] | select(.name == "KMS_PCR_VALUES")).value = strenv(PCR)
+  ' "${generated}"
+fi
 # Force values to double-quoted strings (a bare hex address is valid YAML int).
 yq -i '(.scDeploy.env[] | select(has("value")) | .value) style="double"' "${generated}"
 echo "values_file=${generated}" >> "$GITHUB_OUTPUT"

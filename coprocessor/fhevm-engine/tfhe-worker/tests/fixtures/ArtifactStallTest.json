@@ -1,0 +1,1192 @@
+{
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "contract ArtifactStallAcl",
+          "name": "acl_",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "ct",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum FheType",
+          "name": "toType",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "Cast",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheAdd",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheBitAnd",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheBitOr",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheBitXor",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheDiv",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheEq",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheGe",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheGt",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "control",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "ifTrue",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "ifFalse",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheIfThenElse",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "value",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32[]",
+          "name": "values",
+          "type": "bytes32[]"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheIsIn",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheLe",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheLt",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheMax",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheMin",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheMul",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "factor1",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "factor2",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "divisor",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheMulDiv",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheNe",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "ct",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheNeg",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "ct",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheNot",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum FheType",
+          "name": "randType",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes16",
+          "name": "seed",
+          "type": "bytes16"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheRand",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "upperBound",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum FheType",
+          "name": "randType",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes16",
+          "name": "seed",
+          "type": "bytes16"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheRandBounded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheRem",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheRotl",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheRotr",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheShl",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheShr",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "rhs",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes1",
+          "name": "scalarByte",
+          "type": "bytes1"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheSub",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32[]",
+          "name": "values",
+          "type": "bytes32[]"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "FheSum",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "pt",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum FheType",
+          "name": "toType",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "TrivialEncrypt",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "caller",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "inputHandle",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "userAddress",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes",
+          "name": "inputProof",
+          "type": "bytes"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum FheType",
+          "name": "inputType",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "name": "VerifyInput",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "lhs",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint64",
+          "name": "rhs",
+          "type": "uint64"
+        },
+        {
+          "internalType": "uint64",
+          "name": "nonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "add",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint64",
+          "name": "value",
+          "type": "uint64"
+        },
+        {
+          "internalType": "uint64",
+          "name": "nonce",
+          "type": "uint64"
+        }
+      ],
+      "name": "seed",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint64",
+          "name": "value",
+          "type": "uint64"
+        }
+      ],
+      "name": "seedBlock",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "result",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": {
+    "object": "0x60a0604052348015600e575f80fd5b5060405161065b38038061065b833981016040819052602b91603b565b6001600160a01b03166080526066565b5f60208284031215604a575f80fd5b81516001600160a01b0381168114605f575f80fd5b9392505050565b6080516105c96100925f395f818160fc015281816101800152818161025f015261034301526105c95ff3fe608060405234801561000f575f80fd5b506004361061003f575f3560e01c80631fffaa9c14610043578063b945986414610068578063d08e7be91461007b575b5f80fd5b61005661005136600461041f565b61008e565b60405190815260200160405180910390f35b610056610076366004610450565b610161565b610056610089366004610470565b6102c5565b5f610098826103a9565b9050336001600160a01b03167f063ccd1bba45151d91f6a418065047a3d048d058a922535747bb2b575a01d236846005846040516100d8939291906104a9565b60405180910390a2604051635ca4b5b160e11b8152600481018290523360248201527f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03169063b9496b62906044015f604051808303815f87803b158015610145575f80fd5b505af1158015610157573d5f803e3d5ffd5b5050505092915050565b5f806704648455f636f6d760c41b601867ffffffffffffffff851660057f0000000000000000000000000000000000000000000000000000000000000000466101ab6001436104e7565b40426040516020016101c498979695949392919061050c565b60408051601f198184030181529082905280516020909101206aff000000000000000005004660101b6affffffffffffffffffffff198316811782179550919350179033907f063ccd1bba45151d91f6a418065047a3d048d058a922535747bb2b575a01d2369061023b90879060059088906104a9565b60405180910390a2604051635ca4b5b160e11b8152600481018490523360248201527f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03169063b9496b62906044015f604051808303815f87803b1580156102a8575f80fd5b505af11580156102ba573d5f803e3d5ffd5b505050505050919050565b5f6102cf826103a9565b6040805186815267ffffffffffffffff86166020820152600160f81b8183015260608101839052905191925033917fdb9050d65240431621d61d6f94b970e63f53a67a5766614ee6e5c5bbd41c8e2e9181900360800190a2604051635ca4b5b160e11b8152600481018290523360248201527f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03169063b9496b62906044015f604051808303815f87803b15801561038c575f80fd5b505af115801561039e573d5f803e3d5ffd5b505050509392505050565b604080513060208083019190915267ffffffffffffffff9390931681830152815180820383018152606090910190915280519101204660101b6affffffffffffffffffffff19909116176aff000000000000000005001790565b803567ffffffffffffffff8116811461041a575f80fd5b919050565b5f8060408385031215610430575f80fd5b61043983610403565b915061044760208401610403565b90509250929050565b5f60208284031215610460575f80fd5b61046982610403565b9392505050565b5f805f60608486031215610482575f80fd5b8335925061049260208501610403565b91506104a060408501610403565b90509250925092565b67ffffffffffffffff8416815260608101605484106104d657634e487b7160e01b5f52602160045260245ffd5b602082019390935260400152919050565b8181038181111561050657634e487b7160e01b5f52601160045260245ffd5b92915050565b6001600160c01b03198916815260f888901b6001600160f81b0319166008820152600981018790525f6054871061055157634e487b7160e01b5f52602160045260245ffd5b5060f89590951b602986015260609390931b6bffffffffffffffffffffffff1916602a850152603e840191909152605e830152607e820152609e01939250505056fea26469706673582212204c05d5d66de4be7e9e0d2c11557a144505f2e286413371fed03a975706f0210b64736f6c634300081a0033"
+  },
+  "deployedBytecode": {
+    "object": "0x608060405234801561000f575f80fd5b506004361061003f575f3560e01c80631fffaa9c14610043578063b945986414610068578063d08e7be91461007b575b5f80fd5b61005661005136600461041f565b61008e565b60405190815260200160405180910390f35b610056610076366004610450565b610161565b610056610089366004610470565b6102c5565b5f610098826103a9565b9050336001600160a01b03167f063ccd1bba45151d91f6a418065047a3d048d058a922535747bb2b575a01d236846005846040516100d8939291906104a9565b60405180910390a2604051635ca4b5b160e11b8152600481018290523360248201527f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03169063b9496b62906044015f604051808303815f87803b158015610145575f80fd5b505af1158015610157573d5f803e3d5ffd5b5050505092915050565b5f806704648455f636f6d760c41b601867ffffffffffffffff851660057f0000000000000000000000000000000000000000000000000000000000000000466101ab6001436104e7565b40426040516020016101c498979695949392919061050c565b60408051601f198184030181529082905280516020909101206aff000000000000000005004660101b6affffffffffffffffffffff198316811782179550919350179033907f063ccd1bba45151d91f6a418065047a3d048d058a922535747bb2b575a01d2369061023b90879060059088906104a9565b60405180910390a2604051635ca4b5b160e11b8152600481018490523360248201527f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03169063b9496b62906044015f604051808303815f87803b1580156102a8575f80fd5b505af11580156102ba573d5f803e3d5ffd5b505050505050919050565b5f6102cf826103a9565b6040805186815267ffffffffffffffff86166020820152600160f81b8183015260608101839052905191925033917fdb9050d65240431621d61d6f94b970e63f53a67a5766614ee6e5c5bbd41c8e2e9181900360800190a2604051635ca4b5b160e11b8152600481018290523360248201527f00000000000000000000000000000000000000000000000000000000000000006001600160a01b03169063b9496b62906044015f604051808303815f87803b15801561038c575f80fd5b505af115801561039e573d5f803e3d5ffd5b505050509392505050565b604080513060208083019190915267ffffffffffffffff9390931681830152815180820383018152606090910190915280519101204660101b6affffffffffffffffffffff19909116176aff000000000000000005001790565b803567ffffffffffffffff8116811461041a575f80fd5b919050565b5f8060408385031215610430575f80fd5b61043983610403565b915061044760208401610403565b90509250929050565b5f60208284031215610460575f80fd5b61046982610403565b9392505050565b5f805f60608486031215610482575f80fd5b8335925061049260208501610403565b91506104a060408501610403565b90509250925092565b67ffffffffffffffff8416815260608101605484106104d657634e487b7160e01b5f52602160045260245ffd5b602082019390935260400152919050565b8181038181111561050657634e487b7160e01b5f52601160045260245ffd5b92915050565b6001600160c01b03198916815260f888901b6001600160f81b0319166008820152600981018790525f6054871061055157634e487b7160e01b5f52602160045260245ffd5b5060f89590951b602986015260609390931b6bffffffffffffffffffffffff1916602a850152603e840191909152605e830152607e820152609e01939250505056fea26469706673582212204c05d5d66de4be7e9e0d2c11557a144505f2e286413371fed03a975706f0210b64736f6c634300081a0033"
+  }
+}

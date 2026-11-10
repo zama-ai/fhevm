@@ -104,7 +104,7 @@ There are four kinds of inputs/runtime artifacts:
 - tracked env templates: `templates/env/.env.*`
 - tracked config:
   - relayer template input: `templates/config/relayer.yaml`
-  - template/static config: `templates/config/kms-core-threshold.toml`, `static/config/prometheus/prometheus.yml`
+  - template/static config: `templates/config/kms-core-threshold.toml`, `static/config/prometheus/prometheus.yml`, `static/config/relayer-proxy/nginx.conf`
 - checked-in scenario inputs under `scenarios/` (`two-of-two.yaml`, `two-of-two-multi-chain.yaml`, `multi-chain.yaml`)
 
 Generated runtime artifacts always live under `.fhevm/`:
@@ -190,29 +190,24 @@ The lock file must contain every version key. Example:
 If you also pass `--target`, it must match the lock file. Otherwise the CLI infers the target from the lock file itself.
 The lock file replaces only the version resolution step — preflight, boot pipeline, and everything else run normally.
 
-## Stateful Rollout Runbooks
+## Upgrade tests
 
-Release rollouts are executable TypeScript runbooks under `rollouts/`. A runbook boots one baseline stack, performs each upgrade step in order, preserves chain/database/container state, and runs rollout-safe e2e coverage after each step:
+An upgrade test is a test profile that changes the stack between its checks. It runs on a Blue-Green scenario whose `bootstrap` block boots the contracts, KMS core and connector, listener-core and relayer at a previous release and sets `upgrade: deferred`, so `up` leaves the upgrade to the test:
 
 ```sh
-./fhevm-cli rollout run ./rollouts/v0.13.21-to-v0.13.22-kms-node-by-node/run.ts
+./fhevm-cli up --scenario key-migration-from-v0.14 --build
+./fhevm-cli test key-migration-from-v0.14
 ```
 
-Use `./fhevm-cli rollout receipt` to print the markdown receipt of the most recent rollout run.
+The profile drives the stack through a `Stack` handle (`src/commands/stack.ts`):
 
-Runbooks use the same primitives an operator needs during a release:
+- `stack.upgrade(...steps)` runs the next bootstrap upgrade steps. They must continue the order `contracts`, `relayer`, `kms-operator:<n>` for each KMS operator, `listener-core`, then `green`, which starts the deferred Green fleet; a list that does not fails before anything changes. A test can upgrade a few steps, run checks, then upgrade the rest. Without `upgrade: deferred`, `up` runs the same order itself, except `relayer`, which then boots at the bundle.
+- `stack.test(profile)` runs another test profile against the current state.
+- `stack.runHostContractTask(...)` and `stack.runGatewayContractTask(...)` run contract tasks from the deploy images.
 
-- `ctx.up(...)` starts the old baseline once.
-- `ctx.writeVersionLock(...)` writes explicit version locks from the runbook: every version key comes from the runbook.
-- `ctx.resolveVersionLock(...)` writes a lock over the resolved current stack, changing only the keys the runbook names. The surrounding stack is resolved once per run, so every lock derived this way shares one snapshot.
-- `ctx.applyVersionLock(...)` applies version changes that do not restart runtime services, then regenerates env/compose.
-- `ctx.runHostContractTask(...)` and `ctx.runGatewayContractTask(...)` run contract migration/upgrade tasks from the selected deploy images.
-- `ctx.upgradeRuntimeGroup(...)` restarts selected runtime components in place and runs their DB migrations when present.
-- `ctx.test(...)` runs the rollout-safe e2e profile after each state.
+Each action is recorded in `.fhevm/rollout/receipt.md` and `receipt.jsonl`, with the container images and the version changes since the previous entry. The e2e workflow uploads both files.
 
-`rollout-standard` is intentionally narrow: it covers encrypted input, FHE compute/write paths, user decrypt, delegated user decrypt, public decrypt, and ERC20 transfer coverage. Broader profiles such as `multi-chain-isolation`, HCU, pause/unpause, DB revert, and drift recovery stay available as explicit tests but are not part of the per-step rollout gate.
-
-The `test-suite-stateful-rollout` workflow executes a checked-in runbook through manual dispatch with a path relative to `test-suite/fhevm`.
+`rollout-standard` is intentionally narrow: it covers encrypted input, FHE compute/write paths, user decrypt, delegated user decrypt, public decrypt, and ERC20 transfer coverage. Broader profiles such as `multi-chain-isolation`, HCU, pause/unpause, DB revert, and drift recovery stay available as explicit tests.
 
 ## Version Override via Environment Variables
 
@@ -245,6 +240,7 @@ COPROCESSOR_TX_SENDER_VERSION
 COPROCESSOR_TFHE_WORKER_VERSION
 COPROCESSOR_ZKPROOF_WORKER_VERSION
 COPROCESSOR_SNS_WORKER_VERSION
+COPROCESSOR_PROXY_VERSION    # optional: omitted when the resolved images predate coprocessor-proxy
 LISTENER_CORE_VERSION
 CONNECTOR_DB_MIGRATION_VERSION
 CONNECTOR_GW_LISTENER_VERSION
@@ -255,8 +251,23 @@ CONNECTOR_PROXY_VERSION      # optional: omitted when the resolved images predat
 CORE_VERSION
 RELAYER_VERSION
 RELAYER_MIGRATE_VERSION
+RELAYER_HTTP_VERSION         # optional: omitted when relayer-http is not published at the resolved sha (GitOps targets never carry it)
 TEST_SUITE_VERSION
 ```
+
+### Relayer endpoints
+
+`up` always starts `fhevm-relayer-proxy` (nginx, `static/config/relayer-proxy/nginx.conf`), so fhevm-sdk gets one relayer base URL: `http://localhost:3003` from the host, `http://fhevm-relayer-proxy:3003` inside the stack. The test-suite's `RELAYER_URL` points at it.
+
+| Path | Upstream |
+| --- | --- |
+| `/v2/*`, `/v3/*` | relayer (`fhevm-relayer:3000`) |
+| `/v4/*` (`/v4/user-decrypt`, `/v4/public-decrypt`) | relayer-http (`fhevm-relayer-http:3002`); 502 when `RELAYER_HTTP_VERSION` is unset |
+| anything else | 404 |
+
+The relayer (3000) and relayer-http (3002) stay published for direct access.
+
+The proxy does not route `/v1`. Profiles whose test suite predates v0.11 (e.g. `v0.11.0-mainnet`) call the relayer on `/v1`, so their e2e tests fail through the proxy; this is intended, as they are no longer tested.
 
 Example — test a local coprocessor image without `--override`:
 
@@ -350,6 +361,7 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli test decryption-signature-invalidation
 ./fhevm-cli test connector-http-public-decrypt
 ./fhevm-cli test connector-http
+./fhevm-cli test coprocessor-proxy
 ./fhevm-cli test light
 ./fhevm-cli test standard
 ./fhevm-cli test heavy
@@ -478,7 +490,7 @@ Available runtime suffixes:
 
 | Group           | Suffixes                                                                                                                                    |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `coprocessor`   | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender` |
+| `coprocessor`   | `db-migration`, `host-listener`, `host-listener-poller`, `gw-listener`, `tfhe-worker`, `zkproof-worker`, `sns-worker`, `transaction-sender`, `proxy` |
 | `kms-connector` | `db-migration`, `gw-listener`, `kms-worker`, `tx-sender`, `endpoint`, `proxy`                |
 | `test-suite`    | `e2e-debug`                                                                                                                                 |
 
@@ -530,7 +542,7 @@ If a runtime override is already active and you only want to rebuild and restart
 
 ## Coprocessor Scenarios
 
-Use `--scenario <name-or-file>` for consensus and stateful rollout runs. Bundled presets resolve by filename stem, and explicit file paths still work. The scenario file is the source of truth for:
+Use `--scenario <name-or-file>` for consensus and upgrade test runs. Bundled presets resolve by filename stem, and explicit file paths still work. The scenario file is the source of truth for:
 
 - coprocessor count and threshold
 - per-instance source mode: `inherit`, `registry`, or `local`
@@ -989,3 +1001,19 @@ operator cut over, with the same checks.
 Both resolve before the background traffic starts: while the delayed operator
 still runs Blue, its ciphertexts differ from its upgraded peers', which the e2e
 consensus watchdog rejects.
+
+## Ingestion recovery against a full environment
+
+The `ingestion-recovery` consensus selection exercises an actual partial ACL
+delivery and replay across deployed services, ending in three-operator Gateway
+consensus and SDK/KMS public decryption. On a compatible isolated
+`three-of-three-backlog` stack running the branch images:
+
+```sh
+./scripts/run-artifact-ingestion-recovery.sh overlap
+./scripts/run-artifact-ingestion-recovery.sh cursor
+```
+
+See [the scenario contract and complete branch test split](../e2e/test/consensus/README.md#artifact-ingestion-recovery)
+for prerequisites, assertions and failure recovery. These cases deliberately
+stop services and must not share an environment with another campaign.

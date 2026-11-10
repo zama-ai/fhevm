@@ -1,57 +1,32 @@
-import {
-  clientKeyDecryptor,
-  createEIP712,
-  createInstance as createFhevmInstance,
-  generateKeypair,
-  getCiphertextCallParams,
-} from '@zama-fhe/relayer-sdk/node';
-import dotenv from 'dotenv';
-import { readFileSync } from 'fs';
-import * as fs from 'fs';
-import { ethers, ethers as hethers, network } from 'hardhat';
-import { homedir } from 'os';
-import path from 'path';
+import { ethers, network } from 'hardhat';
 
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
 import { createEncryptedInputMocked, userDecryptRequestMocked } from './fhevmjsMocked';
+import { createEIP712Mocked } from './legacyRelayerSdk/eip712';
+import type { FhevmInstance, PublicDecryptResults, PublicParams } from './legacyRelayerSdk/types';
 import type { Signers } from './signers';
-import { FhevmInstances } from './types';
+import type { FhevmInstances } from './types';
 
-const FHE_CLIENT_KEY_PATH = process.env.FHE_CLIENT_KEY_PATH;
+const verifyingContractAddressDecryption = process.env.DECRYPTION_ADDRESS!;
 
-let clientKey: Uint8Array | undefined;
-
-const abiKmsVerifier = ['function getKmsSigners() view returns (address[])'];
-
-const kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).KMS_VERIFIER_CONTRACT_ADDRESS;
-const aclAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;
-const gatewayChainID = +process.env.CHAIN_ID_GATEWAY!;
-const hostChainId = Number(network.config.chainId);
-const verifyingContract = process.env.DECRYPTION_ADDRESS!;
-
-const getKMSSigners = async (): Promise<string[]> => {
-  const kmsContract = new ethers.Contract(kmsAdd, abiKmsVerifier, ethers.provider);
-  const signers: string[] = await kmsContract.getKmsSigners();
-  return signers;
-};
-
-const createInstanceMocked = async () => {
-  const kmsSigners = await getKMSSigners();
-
-  const instance = {
-    userDecrypt: userDecryptRequestMocked(
-      kmsSigners,
-      gatewayChainID,
-      hostChainId,
-      verifyingContract,
-      aclAdd,
-      'http://localhost:3000',
-      ethers.provider,
-    ),
+const createInstanceMocked = async (): Promise<FhevmInstance> => {
+  const instance: FhevmInstance = {
+    userDecrypt: userDecryptRequestMocked,
     createEncryptedInput: createEncryptedInputMocked,
-    getPublicKey: () => '0xFFAA44433',
-    generateKeypair: generateKeypair,
-    createEIP712: createEIP712(verifyingContract, network.config.chainId),
+    getPublicKey: () => {
+      throw new Error('Function not implemented in mock mode.');
+    },
+    generateKeypair: () => ({
+      publicKey: ethers.hexlify(ethers.randomBytes(32)).slice(2),
+      privateKey: ethers.hexlify(ethers.randomBytes(32)).slice(2),
+    }),
+    createEIP712: createEIP712Mocked(verifyingContractAddressDecryption, network.config.chainId!),
+    publicDecrypt: function (_handles: (string | Uint8Array)[]): Promise<PublicDecryptResults> {
+      throw new Error('Function not implemented in mock mode.');
+    },
+    getPublicParams: function (_bits: keyof PublicParams): { publicParams: Uint8Array; publicParamsId: string } | null {
+      throw new Error('Function not implemented in mock mode.');
+    },
   };
   return instance;
 };
@@ -66,43 +41,9 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
       }),
     );
   } else {
-    await Promise.all(
-      Object.keys(accounts).map(async (k) => {
-        instances[k as keyof FhevmInstances] = await createInstance();
-      }),
-    );
+    throw new Error(`network.name ${network.name} is not supported`);
   }
   return instances;
-};
-
-export const createInstance = async () => {
-  const relayerUrl = 'http://localhost:3000';
-  const instance = await createFhevmInstance({
-    verifyingContractAddress: verifyingContract,
-    kmsContractAddress: kmsAdd,
-    aclContractAddress: aclAdd,
-    network: network.config.url,
-    relayerUrl: relayerUrl,
-    gatewayChainId: gatewayChainID || '54321',
-  });
-  return instance;
-};
-
-const getCiphertext = async (handle: string, ethers: typeof hethers): Promise<string> => {
-  return ethers.provider.call(getCiphertextCallParams(handle));
-};
-
-const getDecryptor = () => {
-  if (clientKey == null) {
-    if (FHE_CLIENT_KEY_PATH) {
-      clientKey = readFileSync(FHE_CLIENT_KEY_PATH);
-    } else {
-      const home = homedir();
-      const clientKeyPath = path.join(home, 'network-fhe-keys/cks');
-      clientKey = readFileSync(clientKeyPath);
-    }
-  }
-  return clientKeyDecryptor(clientKey);
 };
 
 /**
@@ -118,7 +59,7 @@ export const decryptBool = async (handle: string): Promise<boolean> => {
     await awaitCoprocessor();
     return (await getClearText(handle)) === '1';
   } else {
-    return getDecryptor().decryptBool(await getCiphertext(handle, ethers));
+    throw new Error(`network.name ${network.name} is not supported`);
   }
 };
 
@@ -135,7 +76,7 @@ export const decrypt8 = async (handle: string): Promise<bigint> => {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
   } else {
-    return getDecryptor().decrypt8(await getCiphertext(handle, ethers));
+    throw new Error(`network.name ${network.name} is not supported`);
   }
 };
 
@@ -152,7 +93,7 @@ export const decrypt16 = async (handle: string): Promise<bigint> => {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
   } else {
-    return getDecryptor().decrypt16(await getCiphertext(handle, ethers));
+    throw new Error(`network.name ${network.name} is not supported`);
   }
 };
 
@@ -169,7 +110,7 @@ export const decrypt32 = async (handle: string): Promise<bigint> => {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
   } else {
-    return getDecryptor().decrypt32(await getCiphertext(handle, ethers));
+    throw new Error(`network.name ${network.name} is not supported`);
   }
 };
 
@@ -186,7 +127,7 @@ export const decrypt64 = async (handle: string): Promise<bigint> => {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
   } else {
-    return getDecryptor().decrypt64(await getCiphertext(handle, ethers));
+    throw new Error(`network.name ${network.name} is not supported`);
   }
 };
 
@@ -203,7 +144,7 @@ export const decrypt128 = async (handle: string): Promise<bigint> => {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
   } else {
-    return getDecryptor().decrypt128(await getCiphertext(handle, ethers));
+    throw new Error(`network.name ${network.name} is not supported`);
   }
 };
 
@@ -220,7 +161,7 @@ export const decrypt256 = async (handle: string): Promise<bigint> => {
     await awaitCoprocessor();
     return BigInt(await getClearText(handle));
   } else {
-    return getDecryptor().decrypt256(await getCiphertext(handle, ethers));
+    throw new Error(`network.name ${network.name} is not supported`);
   }
 };
 
@@ -239,6 +180,6 @@ export const decryptAddress = async (handle: string): Promise<string> => {
     const handleStr = '0x' + bigintAdd.toString(16).padStart(40, '0');
     return handleStr;
   } else {
-    return getDecryptor().decryptAddress(await getCiphertext(handle, ethers));
+    throw new Error(`network.name ${network.name} is not supported`);
   }
 };

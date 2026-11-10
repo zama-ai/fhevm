@@ -1,0 +1,502 @@
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+pragma solidity ^0.8.24;
+
+import {PaddedInputter} from "../host-contracts/contracts/PaddedInputter.sol";
+import {KMSVerifier} from "../host-contracts/contracts/KMSVerifier.sol";
+import {ACL} from "../host-contracts/contracts/ACL.sol";
+import {IProtocolConfig} from "../host-contracts/contracts/interfaces/IProtocolConfig.sol";
+import {EXTRA_DATA_V2} from "../host-contracts/contracts/shared/Constants.sol";
+import {aclAdd, kmsVerifierAdd, protocolConfigAdd} from "../host-contracts/addresses/FHEVMHostAddresses.sol";
+import {LibCleartextPad} from "./shared/LibCleartextPad.sol";
+import {LibKmsVerifier, UserDecryptPermitV2} from "./shared/LibKmsVerifier.sol";
+
+// -----------------------------------------------------------------------------------------
+// RFC-030 (pad-based input encryption) — pad decryption request/response types.
+// Field names, types and order follow the RFC verbatim. The authentication struct is RFC-016's,
+// `UserDecryptPermitV2` (LibKmsVerifier), the one `CleartextKMSVerifier.userDecryptV2` checks.
+// -----------------------------------------------------------------------------------------
+
+/// @notice One pad: its witness fields, its label (`hash(witness)`) and the number of bits to release.
+struct PadWitness {
+    address submitter; // witness field
+    address consumer; // witness field
+    uint64 expirationTimestamp; // witness field; Unix seconds
+    address[] decryptors; // witness field
+    bytes16 nonce; // witness field
+    bytes32 label; // the pad's label, the hash of the witness
+    uint16 padLength; // bits of the pad stream to release; not a witness field
+}
+
+/// @notice Unsigned part of a pad decryption request.
+struct PadDecryptRequestPayload {
+    uint8 witnessVersion; // shared witness field, fixed for the whole request
+    uint16 prfId; // shared witness field, fixed for the whole request
+    uint64 chainId; // shared witness field, fixed for the whole request
+    PadWitness[] witnesses; // one entry per pad
+}
+
+/// @notice Pad decryption request (`PadDecryptRequest` in RFC-030).
+struct PadDecryptRequest {
+    UserDecryptPermitV2 auth; // same as RFC-016
+    bytes signature; // signature for auth
+    PadDecryptRequestPayload payload; // unsigned
+}
+
+/// @notice One node's share of one pad, keyed by label (`PadShare` in RFC-030), signed on its own.
+struct PadShare {
+    bytes32 label; // the label of the pad
+    bytes rawShares; // versioned, encoded ring elements
+    uint32 partyId; // this node's 1-indexed evaluation point
+    uint32 degree; // the sharing polynomial degree t
+    bytes32 contextId; // KMS context, selecting the signer set
+    bytes16 sessionId; // opaque id of the MPC session that produced the share
+    bytes extraData; // versioned, unstructured metadata
+    bytes signature; // share signature using PadShareVerification
+}
+
+/// @notice The decrypted content of a pad decryption response (`PadDecryptResponsePayload` in RFC-030).
+struct PadDecryptResponsePayload {
+    PadShare[] shares; // one per pad in the request; order carries no meaning
+}
+
+/// @notice One node's pad decryption response (`PadDecryptResponse` in RFC-030).
+struct PadDecryptResponse {
+    bytes32 requestId; // which request this answers
+    bytes encryptedPayload; // CompositeEncrypt_user( PadDecryptResponsePayload )
+    bytes signature; // transport signature using PadDecryptResponseVerification
+}
+
+/**
+ * @notice Everything the KMS nodes of a context would sign and return for a pad decryption request, except the
+ *         signatures (cleartext mode only).
+ * @dev `shares` holds one entry per witness, in request order, as node `signers[i]` returns it with `partyId` set to
+ *      `partyIds[i]` and its signature over `shareDigests[i][j]`; every other field is the same for every node.
+ *      Once the shares are signed, `getCleartextPadResponsesMaterial` builds every node's encrypted payload and the
+ *      transport digest it signs.
+ */
+struct CleartextPadSharesMaterial {
+    bytes32 requestId; // mock-defined request id: keccak256(labels ‖ extraData ‖ signature)
+    PadShare[] shares; // one per witness, in request order; partyId 0 and no signature: set per node
+    address[] signers; // KMS signers of the context named by the request's extraData
+    uint32[] partyIds; // partyIds[i] is the 1-based party id of signers[i]
+    bytes32[][] shareDigests; // shareDigests[i][j] is what signers[i] signs for shares[j]
+    uint256 threshold; // user-decryption threshold of that context
+}
+
+/**
+ * @notice Every node's response to a pad decryption request once its shares are signed, except the transport
+ *         signatures (cleartext mode only).
+ * @dev Node `signers[i]` answers `PadDecryptResponse{requestId, encryptedPayloads[i], signature}`, its signature over
+ *      `transportDigests[i]`.
+ */
+struct CleartextPadResponsesMaterial {
+    bytes32 requestId; // as in CleartextPadSharesMaterial
+    address[] signers; // as in CleartextPadSharesMaterial
+    bytes[] encryptedPayloads; // encryptedPayloads[i] is signers[i]'s encrypted PadDecryptResponsePayload
+    bytes32[] transportDigests; // transportDigests[i] is what signers[i] signs over encryptedPayloads[i]
+}
+
+/**
+ * @title CleartextPaddedInputter
+ * @notice The RFC-030 padded inputter of a cleartext stack: the markers that identify one, and the cleartext mock
+ *         of RFC-030 pad DECRYPTION.
+ * @dev The input half is `PaddedInputter`'s, unchanged: this overrides nothing. The cleartext value of a pad-based
+ *      input is recovered by `CleartextArithmetic`, from the input package the executor hands it
+ *      (`LibCleartextPad.unmaskPart`).
+ *
+ *      The decryption half, `getCleartextPadSharesMaterial` then `getCleartextPadResponsesMaterial`, stands in for
+ *      the KMS Connector and Core, which serve it in production; nothing here does that on a real chain. It lives
+ *      on this contract because it is the RFC-030 contract, reached from the executor
+ *      (`CleartextFHEVMExecutor.getPaddedInputterAddress()`), and because it must hold a pad to the same witness
+ *      rules the input half accepted it under: it reads `PaddedInputter`'s own constants and errors rather than a
+ *      second copy of them. Ported from fhevm's
+ *      sdk/js-sdk/contracts/src/v0.16.0/cleartext/CleartextInputVerifier.sol (`getPadShares`), adapted to this
+ *      stack: `IProtocolConfig`, `LibCleartextPad`, `LibKmsVerifier`, the ACL's `isDelegatedForUserDecryption`
+ *      (fhevm#4536, backported into the vendored ACL).
+ *
+ *      Flow (the client signs, this contract does the rest):
+ *        1. `getCleartextPadSharesMaterial(request)` → `shareDigests[i][j]`.
+ *        2. Sign: `signers[i]` signs each `shareDigests[i][j]` → `shareSignatures[i][j]`.
+ *        3. `getCleartextPadResponsesMaterial(request, shareSignatures)`
+ *           → `encryptedPayloads[i]`, `transportDigests[i]`.
+ *        4. Sign: `signers[i]` signs `transportDigests[i]` → node i's `PadDecryptResponse`.
+ *
+ *      A real deployment has no `IS_CLEARTEXT` selector, so a consumer can probe it to tell a cleartext stack from
+ *      a production deployment. The generation marker lives on `CleartextACL` alone, the one address every
+ *      consumer already holds; `getVersion()` here still reports the base contract.
+ *
+ *      Constants rather than storage: these run behind proxies, where an initialized state variable is only ever
+ *      written to the implementation's own storage and reads back as `false` or zero through the proxy.
+ */
+/// @custom:security-contact https://github.com/zama-ai/fhevm/blob/main/SECURITY.md
+contract CleartextPaddedInputter is PaddedInputter {
+    /// @notice Marks a cleartext (mock) implementation. Real host contracts have no such selector, so a
+    ///         consumer can probe it to tell a cleartext stack from a production deployment.
+    bool public constant IS_CLEARTEXT = true;
+
+    // ---- RFC-030 pad decryption constants (the witness limits are PaddedInputter's own) ----
+
+    /// @notice Upper bound on the number of witnesses in one request (implementation-specific).
+    uint256 private constant PAD_DECRYPT_MAX_WITNESSES = 32;
+
+    // ---- RFC-030 pad decryption errors (PaddedInputter's own where the meaning is the same) ----
+
+    error PadDecryptInvalidExtraData(bytes extraData);
+    error PadDecryptInvalidKmsContextOrEpoch(uint256 contextId, uint256 epochId);
+    error PadDecryptInvalidWitnessCount(uint256 count);
+    error PadDecryptDuplicateLabel(bytes32 label);
+    error PadDecryptTooManyDecryptors(bytes32 label, uint256 count);
+    error PadDecryptNullWitnessAddress(bytes32 label);
+    error PadDecryptInvalidPadLength(bytes32 label, uint16 padLength);
+    error PadDecryptWitnessExpired(bytes32 label, uint64 expirationTimestamp);
+    error PadDecryptConsumerNotAllowed(bytes32 label, address consumer);
+    error PadDecryptUserNotAuthorized(bytes32 label, address userAddress);
+    error CleartextPadInvalidNodeCount(uint256 count, uint256 expected);
+    error CleartextPadInvalidShareCount(uint256 node, uint256 count, uint256 expected);
+
+    // -----------------------------------------------------------------------------------------
+    // RFC-030 pad decryption ("Request pad decryption")
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * @notice [Flow.1] Cleartext mock of the KMS pad decryption flow (RFC-030 `verify_pad_decryption_request`):
+     *         everything each KMS node of the context would sign and send back, except the signatures.
+     * @dev Runs the RFC's authentication and authorization checks against host-chain state, releases each
+     *      requested pad as a share keyed by label, and builds, for every signer of the context and every share, the
+     *      EIP-712 digest of the `PadShareVerification` that node signs. The SDK then signs `shareDigests[i][j]` with
+     *      the key of `signers[i]` [Flow.2], then passes those signatures to `getCleartextPadResponsesMaterial`
+     *      [Flow.3]. All-or-nothing: any failing witness reverts.
+     *
+     *      Deviations from the real KMS, all inherent to cleartext mode:
+     *      - The pad comes from a keccak-based stand-in PRF (see `LibCleartextPad`), not from
+     *        `PRF_{FHE(k)}(label)`. It is deterministic in `(prfId, label)` only, as RFC-030 requires.
+     *      - Instead of threshold shares, each node's `rawShares` is the whole pad: version
+     *        `LibCleartextPad.CLEARTEXT_RAW_SHARES_VERSION`, then ⌈padLength/256⌉ cleartext PRF blocks of 32 bytes,
+     *        one per ring element. The client keeps the first `padLength` bits. Every node returns the same
+     *        `rawShares`; only `partyId`, and so the digests, differ.
+     *      - Each share's `sessionId` is a deterministic function of `(prfId, label)`: one mock "session" per
+     *        label, shared by every node and every requester of that label. Its `extraData` is
+     *        `LibCleartextPad.CLEARTEXT_SHARE_EXTRA_DATA`.
+     *      - `degree` is `⌊(n - 1) / 3⌋` for the context's `n` signers (n = 3t + 1), and `requestId` is a
+     *        mock-defined hint: keccak256(labels ‖ extraData ‖ signature).
+     *
+     *      The permit is held to the same limits as `CleartextKMSVerifier.userDecryptV2` (see `_checkPermit`),
+     *      including a start not in the future: both are views, and a client must align its clock the same way.
+     *
+     * @param request The pad decryption request.
+     * @return material What every node of the context signs, index-aligned with `material.signers`.
+     */
+    function getCleartextPadSharesMaterial(PadDecryptRequest calldata request)
+        external
+        view
+        returns (CleartextPadSharesMaterial memory material)
+    {
+        return _padSharesMaterial(request, _responseDomainHash());
+    }
+
+    /**
+     * @notice [Flow.3] Every node's response to a pad decryption request, from its share signatures: each node's
+     *         encrypted `PadDecryptResponsePayload` and the digest of the `PadDecryptResponseVerification` it signs
+     *         over it [Flow.4].
+     * @dev Re-runs `getCleartextPadSharesMaterial` on the same request, then, for node i, sets each share's `partyId`
+     *      and `shareSignatures[i][j]` and encrypts the payload (`cleartextDecryptPadPayload` decrypts it). The
+     *      signatures are not checked here: the client checks them, as it checks a real node's.
+     * @param request The pad decryption request.
+     * @param shareSignatures `shareSignatures[i][j]` is `signers[i]`'s signature over `shareDigests[i][j]`.
+     * @return responses What every node of the context sends back, index-aligned with `responses.signers`.
+     */
+    function getCleartextPadResponsesMaterial(PadDecryptRequest calldata request, bytes[][] calldata shareSignatures)
+        external
+        view
+        returns (CleartextPadResponsesMaterial memory responses)
+    {
+        bytes32 domainHash = _responseDomainHash();
+        CleartextPadSharesMaterial memory material = _padSharesMaterial(request, domainHash);
+        uint256 n = material.signers.length;
+        if (shareSignatures.length != n) revert CleartextPadInvalidNodeCount(shareSignatures.length, n);
+
+        responses.requestId = material.requestId;
+        responses.signers = material.signers;
+        responses.encryptedPayloads = new bytes[](n);
+        responses.transportDigests = new bytes32[](n);
+        bytes32 mask = LibKmsVerifier.publicKeyMask(request.auth.publicKey);
+        PadDecryptResponsePayload memory payload = PadDecryptResponsePayload({shares: material.shares});
+        for (uint256 i = 0; i < n; ++i) {
+            _fillNodeShares(payload.shares, material.partyIds[i], shareSignatures[i], i);
+            // Production: CompositeEncrypt_user(payload); here the same mask as `CleartextKMSVerifier`.
+            bytes memory encryptedPayload = LibCleartextPad.xorMask(abi.encode(payload), mask);
+            responses.encryptedPayloads[i] = encryptedPayload;
+            responses.transportDigests[i] = _typedDataHash(
+                domainHash,
+                LibCleartextPad.padDecryptResponseVerificationStructHash(material.requestId, encryptedPayload)
+            );
+        }
+    }
+
+    /**
+     * @notice Client side, after [Flow.4]: decrypts a cleartext `encryptedPayload` (NOT real decryption): unmasks it
+     *         with the first 32 bytes of `publicKey`, repeated, and decodes the `PadDecryptResponsePayload`. Reverts
+     *         if it does not decode.
+     * @param encryptedPayload A response's `encryptedPayload`.
+     * @param publicKey The request's `auth.publicKey`.
+     */
+    function cleartextDecryptPadPayload(bytes calldata encryptedPayload, bytes calldata publicKey)
+        external
+        pure
+        returns (PadDecryptResponsePayload memory payload)
+    {
+        bytes memory encoded = LibCleartextPad.xorMask(encryptedPayload, LibKmsVerifier.publicKeyMask(publicKey));
+        return abi.decode(encoded, (PadDecryptResponsePayload));
+    }
+
+    // ---- RFC-030 internals ----
+
+    /// @dev Steps 1 to 7 of the RFC: check and authenticate the permit, resolve the context, check and authorize
+    ///      every witness, then release each pad as a share. `partyId`, `degree` and `signature` are left unset.
+    function _releasePadShares(PadDecryptRequest calldata request)
+        private
+        view
+        returns (PadShare[] memory shares, uint256 contextId)
+    {
+        UserDecryptPermitV2 calldata auth = request.auth;
+        PadDecryptRequestPayload calldata payload = request.payload;
+
+        // The request's chain first: it is also the chain the permit is signed for.
+        if (payload.chainId != block.chainid) revert PadInvalidChainId(payload.chainId);
+
+        // 1.-2. The permit: its shape and window, its signature, its freshness against the ACL.
+        // Production: KMS Connector.
+        _checkPermit(request);
+        ACL acl = ACL(aclAdd);
+
+        // 3. Resolve the context and epoch to serve the request under (v2 extraData only).
+        // Production: KMS Connector, against ProtocolConfig.
+        contextId = _checkPadExtraData(auth.extraData);
+
+        // 4.-6. Witness structure, label authentication, pad authorization.
+        // Production: KMS Connector; it verifies each label, the client (SDK) computed it.
+        _checkPadPayload(payload);
+        for (uint256 i = 0; i < payload.witnesses.length; ++i) {
+            _authorizePadWitness(acl, auth, payload.witnesses[i]);
+        }
+
+        // 7. Release each pad as a share, keyed by its label.
+        shares = new PadShare[](payload.witnesses.length);
+        for (uint256 i = 0; i < payload.witnesses.length; ++i) {
+            PadWitness calldata w = payload.witnesses[i];
+            shares[i] = PadShare({
+                label: w.label,
+                // Production: coprocessor computes FHE(r) = PRF_{FHE(k)}(label); KMS Core threshold-decrypts it.
+                rawShares: LibCleartextPad.cleartextRawShares(payload.prfId, w.label, w.padLength),
+                partyId: 0,
+                degree: 0,
+                // Production: KMS Core signs the context it served the request under into every share.
+                contextId: bytes32(contextId),
+                // Production: KMS Core, the MPC session that produced this node's share.
+                sessionId: LibCleartextPad.sessionId(payload.prfId, w.label),
+                extraData: LibCleartextPad.CLEARTEXT_SHARE_EXTRA_DATA,
+                signature: ""
+            });
+        }
+    }
+
+    /// @dev `getCleartextPadSharesMaterial`, with the response domain already resolved.
+    function _padSharesMaterial(PadDecryptRequest calldata request, bytes32 domainHash)
+        private
+        view
+        returns (CleartextPadSharesMaterial memory material)
+    {
+        uint256 contextId;
+        (material.shares, contextId) = _releasePadShares(request);
+
+        // Production: each KMS Core node of the context signs each of its shares.
+        IProtocolConfig protocolConfig = IProtocolConfig(protocolConfigAdd);
+        material.signers = protocolConfig.getKmsSignersForContext(contextId);
+        material.threshold = protocolConfig.getUserDecryptionThresholdForContext(contextId);
+        material.requestId = _padRequestId(request);
+
+        uint256 n = material.signers.length;
+        // forge-lint: disable-next-line(unsafe-typecast)
+        uint32 degree = n == 0 ? 0 : uint32((n - 1) / 3);
+        for (uint256 j = 0; j < material.shares.length; ++j) {
+            material.shares[j].degree = degree;
+        }
+
+        material.partyIds = new uint32[](n);
+        material.shareDigests = new bytes32[][](n);
+        for (uint256 i = 0; i < n; ++i) {
+            // Party ids are 1-based, matching the deployed KMS node set.
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint32 partyId = uint32(i + 1);
+            material.partyIds[i] = partyId;
+            material.shareDigests[i] = new bytes32[](material.shares.length);
+            for (uint256 j = 0; j < material.shares.length; ++j) {
+                PadShare memory share = material.shares[j];
+                material.shareDigests[i][j] = _typedDataHash(
+                    domainHash,
+                    LibCleartextPad.padShareVerificationStructHash(
+                        share.label,
+                        share.rawShares,
+                        partyId,
+                        share.degree,
+                        share.contextId,
+                        share.sessionId,
+                        share.extraData
+                    )
+                );
+            }
+        }
+    }
+
+    /// @dev Fills `shares` as node `node` returns them: its party id, and its signature on each.
+    function _fillNodeShares(PadShare[] memory shares, uint32 partyId, bytes[] calldata signatures, uint256 node)
+        private
+        pure
+    {
+        if (signatures.length != shares.length) {
+            revert CleartextPadInvalidShareCount(node, signatures.length, shares.length);
+        }
+        for (uint256 j = 0; j < shares.length; ++j) {
+            shares[j].partyId = partyId;
+            shares[j].signature = signatures[j];
+        }
+    }
+
+    /// @dev The mock request id over the request's labels, in request order.
+    function _padRequestId(PadDecryptRequest calldata request) private pure returns (bytes32) {
+        PadWitness[] calldata witnesses = request.payload.witnesses;
+        bytes32[] memory labels = new bytes32[](witnesses.length);
+        for (uint256 i = 0; i < witnesses.length; ++i) {
+            labels[i] = witnesses[i].label;
+        }
+        return LibCleartextPad.cleartextPadRequestId(labels, request.auth.extraData, request.signature);
+    }
+
+    /// @dev The EIP-712 digest of `structHash` under `domainHash`.
+    function _typedDataHash(bytes32 domainHash, bytes32 structHash) private pure returns (bytes32) {
+        return keccak256(abi.encodePacked(hex"1901", domainHash, structHash));
+    }
+
+    /// @dev The domain KMS responses are signed under: the KMSVerifier's own, with the gateway chain id.
+    function _responseDomainHash() private view returns (bytes32) {
+        (, string memory name, string memory version, uint256 gatewayChainId, address verifyingContract,,) =
+            KMSVerifier(kmsVerifierAdd).eip712Domain();
+        return LibKmsVerifier.domainSeparatorFrom(name, version, gatewayChainId, verifyingContract);
+    }
+
+    /**
+     * @dev The RFC-016 permit, held to exactly what `CleartextKMSVerifier.userDecryptV2` holds the same permit to,
+     *      in the same order and with the same errors (LibKmsVerifier): at most `MAX_USER_DECRYPT_CONTRACT_ADDRESSES`
+     *      allowed contracts, a non-zero window of at most `MAX_USER_DECRYPT_DURATION_SECONDS`, started and not
+     *      expired, the user not one of its own allowed contracts, a signature that `ecrecover`s to the user or
+     *      passes its gas-capped ERC-1271 check, and a start no earlier than the user's ACL invalidation. One
+     *      permit, one rule set: a request `userDecryptV2` refuses is refused here the same way.
+     *
+     *      The digest is under the KMS `Decryption` domain with the host chain id, already checked to be
+     *      `payload.chainId`.
+     */
+    function _checkPermit(PadDecryptRequest calldata request) private view {
+        UserDecryptPermitV2 memory permit = request.auth;
+        LibKmsVerifier.requirePermitV2AllowedContractsWithinLimit(permit);
+        LibKmsVerifier.requireValidRequestWindowSeconds(permit.startTimestamp, permit.durationSeconds);
+        LibKmsVerifier.requirePermitV2UserNotInAllowedContracts(permit);
+
+        (, string memory name, string memory version,, address verifyingContract,,) =
+            KMSVerifier(kmsVerifierAdd).eip712Domain();
+        LibKmsVerifier.requireUserSignatureV2(
+            LibKmsVerifier.domainSeparatorFrom(name, version, block.chainid, verifyingContract),
+            permit,
+            request.signature
+        );
+        LibKmsVerifier.requireNotInvalidated(aclAdd, permit.userAddress, permit.startTimestamp);
+    }
+
+    /// @dev Requires v2 extraData `[0x02 | contextId | epochId]` naming a valid context and epoch.
+    function _checkPadExtraData(bytes calldata extraData) private view returns (uint256 contextId) {
+        if (extraData.length != 65 || uint8(extraData[0]) != EXTRA_DATA_V2) {
+            revert PadDecryptInvalidExtraData(extraData);
+        }
+        contextId = uint256(bytes32(extraData[1:33]));
+        uint256 epochId = uint256(bytes32(extraData[33:65]));
+
+        IProtocolConfig protocolConfig = IProtocolConfig(protocolConfigAdd);
+        if (!protocolConfig.isValidKmsContext(contextId) || !protocolConfig.isValidEpochForContext(contextId, epochId))
+        {
+            revert PadDecryptInvalidKmsContextOrEpoch(contextId, epochId);
+        }
+    }
+
+    /// @dev Steps 4 and 5: request-wide fields, per-witness structure and freshness, label authentication.
+    function _checkPadPayload(PadDecryptRequestPayload calldata payload) private view {
+        if (payload.witnessVersion != PAD_WITNESS_VERSION) revert PadUnsupportedWitnessVersion(payload.witnessVersion);
+        // RFC-030: the KMS checks every request against this contract's registry, its single source of truth. A
+        // retired instance is refused too: the coprocessor no longer evaluates it.
+        if (!isSupportedPrfInstance(payload.prfId)) revert PadUnsupportedPrf(payload.prfId);
+
+        uint256 n = payload.witnesses.length;
+        if (n == 0 || n > PAD_DECRYPT_MAX_WITNESSES) revert PadDecryptInvalidWitnessCount(n);
+
+        for (uint256 i = 0; i < n; ++i) {
+            PadWitness calldata w = payload.witnesses[i];
+
+            for (uint256 j = 0; j < i; ++j) {
+                if (payload.witnesses[j].label == w.label) revert PadDecryptDuplicateLabel(w.label);
+            }
+
+            if (w.decryptors.length > PAD_MAX_DECRYPTORS) {
+                revert PadDecryptTooManyDecryptors(w.label, w.decryptors.length);
+            }
+            if (w.submitter == address(0)) revert PadDecryptNullWitnessAddress(w.label);
+            for (uint256 j = 0; j < w.decryptors.length; ++j) {
+                if (w.decryptors[j] == address(0)) revert PadDecryptNullWitnessAddress(w.label);
+            }
+            if (w.padLength == 0 || w.padLength > PAD_MAX_PAD_LENGTH) {
+                revert PadDecryptInvalidPadLength(w.label, w.padLength);
+            }
+            if (w.expirationTimestamp <= block.timestamp) {
+                revert PadDecryptWitnessExpired(w.label, w.expirationTimestamp);
+            }
+
+            // Production: the client (SDK) computes the label; the Connector, PaddedInputter and coprocessor verify it.
+            bytes32 expectedLabel = LibCleartextPad.padLabel(
+                payload.witnessVersion,
+                payload.prfId,
+                payload.chainId,
+                w.submitter,
+                w.consumer,
+                w.expirationTimestamp,
+                w.decryptors,
+                w.nonce
+            );
+            if (expectedLabel != w.label) revert PadLabelMismatch(w.label, expectedLabel);
+        }
+    }
+
+    /// @dev Step 6: the consumer must be in `allowedContracts` (unless empty), and the user must be
+    ///      the submitter, a listed decryptor, or a live delegate of one of them for the consumer.
+    function _authorizePadWitness(ACL acl, UserDecryptPermitV2 calldata auth, PadWitness calldata w) private view {
+        if (auth.allowedContracts.length != 0) {
+            bool allowed;
+            for (uint256 i = 0; i < auth.allowedContracts.length; ++i) {
+                if (auth.allowedContracts[i] == w.consumer) {
+                    allowed = true;
+                    break;
+                }
+            }
+            if (!allowed) revert PadDecryptConsumerNotAllowed(w.label, w.consumer);
+        }
+
+        address user = auth.userAddress;
+        if (user == w.submitter) return;
+        for (uint256 i = 0; i < w.decryptors.length; ++i) {
+            if (user == w.decryptors[i]) return;
+        }
+
+        // Delegation fallback (RFC-030: the ACL's handle-free `isDelegatedForUserDecryption` view).
+        if (acl.isDelegatedForUserDecryption(w.submitter, user, w.consumer)) return;
+        for (uint256 i = 0; i < w.decryptors.length; ++i) {
+            if (acl.isDelegatedForUserDecryption(w.decryptors[i], user, w.consumer)) return;
+        }
+        revert PadDecryptUserNotAuthorized(w.label, user);
+    }
+}

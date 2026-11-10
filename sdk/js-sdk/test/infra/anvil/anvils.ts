@@ -1,15 +1,17 @@
-// Reusable anvil orchestration for the fresh test infra.
-//
-// Spawns N cleartext anvils (one per WASM/protocol version) by shelling out to
-// the existing `test/scripts/fhevm-anvil.sh` with `--skip-fhetest`, so each anvil
-// deploys only the FHEVM stack (no TFHETest.sol). Readiness is detected by
-// scanning the script's stdout for its "stack deployed" marker, which prints
-// only after anvil is up AND the deploy has finished.
-//
-// Pure orchestration: no Playwright/Next/Vite. Consumers (Playwright globalSetup,
-// a node-server runner, a CLI) import `startAnvils` / `stopAnvils`.
-//
-// Requires `anvil`/`cast`/`forge` on PATH (inherited from the caller's env).
+/**
+ * Reusable anvil orchestration for the fresh test infra.
+ *
+ * Spawns N cleartext anvils (one per WASM/protocol version) by shelling out to
+ * the existing `test/scripts/fhevm-anvil.sh` with `--skip-fhetest`, so each anvil
+ * deploys only the FHEVM stack (no TFHETest.sol). Readiness is detected by
+ * scanning the script's stdout for its "stack deployed" marker, which prints
+ * only after anvil is up AND the deploy has finished.
+ *
+ * Pure orchestration: no Playwright/Next/Vite. Consumers (Playwright globalSetup,
+ * a node-server runner, a CLI) import `startAnvils` / `stopAnvils`.
+ *
+ * Requires `anvil`/`cast`/`forge` on PATH (inherited from the caller's env).
+ */
 
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';

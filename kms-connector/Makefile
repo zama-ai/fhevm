@@ -1,4 +1,4 @@
-# kms-connector test helpers
+# kms-connector test and build helpers
 #
 # The DB-backed tests run against an already-running, shared Postgres server
 # (each test creates its own uniquely-named database on it). These targets
@@ -17,7 +17,11 @@ TEST_ENV := SQLX_OFFLINE=true RUST_BACKTRACE=full
 # Foundry root holding the mock contracts the blockchain tests deploy at runtime.
 CONTRACTS_ROOT := tests
 
-.PHONY: help db-up db-down precompile-mocks test test-ci regen-sqlx-cache
+# Runtime images built from Dockerfile.workspace (the builder stage is shared and cached).
+DOCKER_TARGETS := gw-listener kms-worker tx-sender endpoint proxy
+RUST_IMAGE_VERSION := $(shell sed -n 's/^channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+
+.PHONY: help db-up db-down precompile-mocks test test-ci regen-sqlx-cache docker-build
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -54,3 +58,19 @@ regen-sqlx-cache: ## Spin up DB + run migrations, regenerate the sqlx offline ca
 	fi; \
 	$(DB_COMPOSE) down -v; \
 	exit $$status
+
+# The zama-ai/kms git dependencies are private: the build reads a token with read access to it
+# from the BLOCKCHAIN_ACTIONS_TOKEN BuildKit secret (never stored in a layer). Defaults to the
+# `gh` CLI token.
+docker-build: ## Build the connector images as kms-connector-<target>:local (TARGETS="kms-worker" for a subset)
+	@export BLOCKCHAIN_ACTIONS_TOKEN="$${BLOCKCHAIN_ACTIONS_TOKEN:-$$(gh auth token 2>/dev/null)}"; \
+	if [ -z "$$BLOCKCHAIN_ACTIONS_TOKEN" ]; then \
+		echo "Needs read access to the private zama-ai/kms repository: set BLOCKCHAIN_ACTIONS_TOKEN or run 'gh auth login'." >&2; \
+		exit 1; \
+	fi; \
+	for target in $(or $(TARGETS),$(DOCKER_TARGETS)); do \
+		docker build -f Dockerfile.workspace --target $$target \
+			--secret id=BLOCKCHAIN_ACTIONS_TOKEN,env=BLOCKCHAIN_ACTIONS_TOKEN \
+			--build-arg RUST_IMAGE_VERSION=$(RUST_IMAGE_VERSION) \
+			-t kms-connector-$$target:local .. || exit 1; \
+	done

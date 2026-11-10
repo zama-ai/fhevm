@@ -37,7 +37,6 @@ thiserror = { workspace = true }
 prometheus = { workspace = true }
 url = { workspace = true }
 
-
 # crates.io dependencies
 lazy_static = "1.5.0"
 rand_chacha = "0.3.1"

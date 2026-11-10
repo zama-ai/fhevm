@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-/// @dev Fixture for test/upgrades/storageExceptions.ts: the ACL namespace with the bool permission of ACL v0.5 and v0.6.
+/// @dev Fixture for test/upgrades/storageExceptions.ts: the ACL namespace with the bool permission of ACL v0.5.
 contract BoolACL {
     /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {

@@ -61,6 +61,7 @@ export function defineClientBaseTests(
       expect(typeof client.decryptPublicValues).toBe('function');
       expect(typeof client.decryptPublicValuesWithSignatures).toBe('function');
       expect(typeof client.signLegacyDecryptionPermit).toBe('function');
+      expect(typeof client.signUnifiedDecryptionPermit).toBe('function');
       expect(typeof client.parseTransportKeyPair).toBe('function');
       expect(typeof client.fetchFheEncryptionKeyBytes).toBe('function');
     });
@@ -118,20 +119,6 @@ export function defineClientBaseTests(
       const initPromise = client.init();
       expect(readyPromise).toBeDefined();
       expect(readyPromise).toBe(initPromise);
-    });
-
-    it('should detect the protocolVersion for the configured chain', async () => {
-      const client = options.createClient({
-        chain: config.fhevmChain,
-        publicClient: config.publicClient,
-      });
-
-      await client.ready;
-
-      expect(client.protocolVersion).toEqual({
-        version: config.protocolVersion,
-        comparator: 'eq',
-      });
     });
 
     it('should fetch FheEncryptionKey in bytes format', async () => {

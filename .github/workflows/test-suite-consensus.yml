@@ -59,8 +59,11 @@ on:
           - byte-agreement
           - bridge
           - backlog
+          - FM-HOST-LONG-OFFLINE
+          - FM-HOST-RELATIVE-CATCHUP
           - object-integrity
           - host-rpc
+          - ingestion-recovery
           - broker-redelivery
           - storage-pressure
           - submission-partition
@@ -418,6 +421,10 @@ jobs:
 
       - name: Boot the stack
         working-directory: test-suite/fhevm
+        env:
+          # Read access to the private zama-ai/kms git dependencies, for `--build` of the
+          # connector. Must be explicit: the `gh auth token` fallback would return GH_TOKEN.
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           test_features=()
           if [[ " ${CAPABILITIES:-} " == *" failpoints "* ]]; then
@@ -486,6 +493,17 @@ jobs:
         working-directory: test-suite/fhevm
         run: ./scripts/run-submission-partition.sh
 
+      - name: Artifact ingestion recovery through deployed services
+        if: ${{ matrix.leg == 'ingestion-recovery' }}
+        working-directory: test-suite/fhevm
+        env:
+          SELECTED_CASES: ${{ join(matrix.cases, ' ') }}
+        run: |
+          for case_id in $SELECTED_CASES; do
+            mode="${case_id#INGEST-ACL-}"
+            ./scripts/run-artifact-ingestion-recovery.sh "${mode,,}"
+          done
+
       - name: Host RPC retry and paginated catch-up
         if: ${{ matrix.leg == 'host-rpc' }}
         working-directory: test-suite/fhevm
@@ -507,12 +525,14 @@ jobs:
       - name: Durable backlog and paginated host replay
         if: ${{ matrix.leg == 'backlog' }}
         working-directory: test-suite/fhevm
+        env:
+          SELECTED_CASES: ${{ join(matrix.cases, ' ') }}
         run: |
-          # Run both even if the first fails: a NOT_RUN second case would hide
-          # which of the two broke.
+          # Run every selected case even if an earlier one fails.
           status=0
-          ./scripts/run-failure-matrix.sh --case FM-HOST-LONG-OFFLINE || status=1
-          ./scripts/run-failure-matrix.sh --case FM-DURABLE-BACKLOG || status=1
+          for case_id in $SELECTED_CASES; do
+            ./scripts/run-failure-matrix.sh --case "$case_id" || status=1
+          done
           exit "$status"
 
       - name: Bridge dependency byte agreement
@@ -617,7 +637,9 @@ jobs:
           mkdir -p /tmp/consensus-artifacts
           cp -r ../../.fhevm/runtime/consensus-results /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/object-integrity /tmp/consensus-artifacts/ 2>/dev/null || true
+          cp -r ../../.fhevm/runtime/artifact-recovery-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/host-rpc-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
+          cp -r ../../.fhevm/runtime/failure-matrix /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/broker-redelivery /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/storage-pressure-evidence /tmp/consensus-artifacts/ 2>/dev/null || true
           cp -r ../../.fhevm/runtime/submission-partition /tmp/consensus-artifacts/ 2>/dev/null || true
@@ -800,6 +822,9 @@ jobs:
         working-directory: test-suite/fhevm
         env:
           SCENARIO: three-of-three-heterogeneous-scheduling
+          # Read access to the private zama-ai/kms git dependencies, for `--build` of the
+          # connector. Must be explicit: the `gh auth token` fallback would return GH_TOKEN.
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           echo "CONSENSUS_RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
           lock_file="$(./fhevm-cli resolve --target latest-main | tail -n1)"

@@ -244,6 +244,8 @@ impl KmsResponseKind {
 ///
 /// The `signatures` list is the source of truth. The deprecated `external_signature` field is
 /// only used as a fallback for KMS Cores that predate the multi-scheme `signatures` list.
+// TODO: reuse for the single epoch-level EIP-712 signature once the KMS Core returns it.
+#[allow(dead_code)]
 fn ecdsa_signature(signatures: Vec<TypedSignature>, legacy: Vec<u8>) -> anyhow::Result<Vec<u8>> {
     match signatures
         .into_iter()
@@ -277,7 +279,6 @@ fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec
             prepKeygenId: preproc_id,
             keyId: key_id,
             keyDigests: key_digests,
-            signature: ecdsa_signature(key.signatures, key.external_signature)?.into(),
         });
     }
 
@@ -289,7 +290,6 @@ fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec
             crsId: crs_id,
             maxBitLength: U256::from(crs.max_num_bits),
             crsDigest: crs.crs_digest.into(),
-            signature: ecdsa_signature(crs.signatures, crs.external_signature)?.into(),
         });
     }
 
@@ -393,12 +393,12 @@ impl PublicDecryptionResponse {
         grpc_response: GrpcPublicDecryptionResponse,
     ) -> anyhow::Result<Self> {
         let payload = grpc_response.payload.ok_or_else(|| {
-            anyhow!("Received empty payload for public decryption {decryption_id}")
+            anyhow!("Received empty payload for public decryption {decryption_id:#066x}")
         })?;
 
         for pt in &payload.plaintexts {
             debug!(
-                "Public decryption result type: {:?} for request {}",
+                "Public decryption result type: {:?} for request {:#066x}",
                 pt.fhe_type, decryption_id
             );
         }
@@ -420,9 +420,9 @@ impl UserDecryptionResponse {
         decryption_id: U256,
         grpc_response: GrpcUserDecryptionResponse,
     ) -> anyhow::Result<Self> {
-        let payload = grpc_response
-            .payload
-            .ok_or_else(|| anyhow!("Received empty payload for user decryption {decryption_id}"))?;
+        let payload = grpc_response.payload.ok_or_else(|| {
+            anyhow!("Received empty payload for user decryption {decryption_id:#066x}")
+        })?;
 
         // Serialize all signcrypted ciphertexts
         let serialized_response_payload = bc2wrap::serialize(&payload)
@@ -430,7 +430,7 @@ impl UserDecryptionResponse {
 
         for ct in &payload.signcrypted_ciphertexts {
             debug!(
-                "User decryption result type: {:?} for request {}",
+                "User decryption result type: {:?} for request {:#066x}",
                 ct.fhe_type, decryption_id
             );
         }

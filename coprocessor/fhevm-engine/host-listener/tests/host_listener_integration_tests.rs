@@ -23,6 +23,7 @@ use std::collections::HashSet;
 use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::sync::atomic::{AtomicU32, AtomicU64};
+use std::sync::Arc;
 use test_harness::health_check;
 use test_harness::instance::ImportMode;
 use tracing::{info, warn, Level};
@@ -44,13 +45,14 @@ use common::{
 };
 
 const NB_EVENTS_PER_WALLET: i64 = 50;
+const REORG_DEPTH: u64 = 25;
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
     url: &str,
     tfhe_contract: RawLogInstance<P, N>,
     acl_contract: RawLogInstance<P, N>,
-    reorg: bool,
+    reorg_ingestion_pool: Option<sqlx::PgPool>,
     nb_events_per_wallet: i64,
 ) where
     P: Clone + alloy::providers::Provider<N> + 'static,
@@ -59,17 +61,21 @@ async fn emit_events<P, N>(
         + 'static,
 {
     static UNIQUE_INT: AtomicU32 = AtomicU32::new(1); // to counter avoid idempotency
+    let reorg_barrier = Arc::new(tokio::sync::Barrier::new(wallets.len()));
+    let nb_wallets = wallets.len() as i64;
     let mut threads = vec![];
     for (i_wallet, wallet) in wallets.iter().enumerate() {
         let wallet = wallet.clone();
         let tfhe_contract = tfhe_contract.clone();
         let acl_contract = acl_contract.clone();
         let url = url.to_string();
+        let reorg_ingestion_pool = reorg_ingestion_pool.clone();
+        let reorg_barrier = reorg_barrier.clone();
         let thread = tokio::spawn(async move {
             for i_message in 1..=nb_events_per_wallet {
                 eprintln!("Emitting event {i_message} for wallet {i_wallet}");
-                let reorg_point =
-                    reorg && i_message == (2 * nb_events_per_wallet) / 3;
+                let reorg_point = reorg_ingestion_pool.is_some()
+                    && i_message == (2 * nb_events_per_wallet) / 3;
                 let provider = ProviderBuilder::new()
                     .wallet(wallet.clone())
                     .connect_ws(WsConnect::new(url.to_string()))
@@ -79,6 +85,7 @@ async fn emit_events<P, N>(
                     .signer_addresses()
                     .next()
                     .expect("anvil signer available");
+                let chain_id = provider.get_chain_id().await.unwrap();
                 let to_type: ToType = 4_u8;
                 let pt = U256::from(UNIQUE_INT.fetch_add(1, Ordering::SeqCst));
                 let tfhe_txn_req = trivial_encrypt_request(
@@ -86,6 +93,7 @@ async fn emit_events<P, N>(
                     caller,
                     pt,
                     to_type,
+                    chain_id,
                 );
                 let pending_txn = provider
                     .send_transaction(tfhe_txn_req.clone())
@@ -93,14 +101,29 @@ async fn emit_events<P, N>(
                     .unwrap();
                 let receipt = pending_txn.get_receipt().await.unwrap();
                 assert!(receipt.status());
-                // Mock quirk: allow() used plaintext-as-handle, not the
-                // trivialEncrypt result handle.
-                let acl_txn_req =
-                    allowed_request(&acl_contract, caller, caller, pt.into());
+                // Grant the actual result handle, including its validated metadata.
+                let acl_txn_req = allowed_request(
+                    &acl_contract,
+                    caller,
+                    caller,
+                    mock_trivial_encrypt_result(pt, to_type, chain_id),
+                );
                 if reorg_point && i_wallet == 0 {
-                    // ensure no event is lost also on losing chain to facilitate the test assert
-                    tokio::time::sleep(tokio::time::Duration::from_secs(5))
-                        .await;
+                    reorg_barrier.wait().await;
+                    // Confirm orphan events committed before removing their
+                    // branch; fixed sleeps race the repeated listener restarts.
+                    let expected_tfhe = nb_wallets * i_message;
+                    let expected_acl = expected_tfhe - 1;
+                    wait_for_event_counts(
+                        reorg_ingestion_pool.as_ref().unwrap(),
+                        tokio::time::Duration::from_secs(60),
+                        "waiting for orphan events before reorg",
+                        |tfhe, acl| {
+                            tfhe == expected_tfhe && acl == expected_acl
+                        },
+                    )
+                    .await
+                    .unwrap();
                     // ACL event is only in the past of winning chain in reorg
                     let cur_block = receipt.block_number.unwrap();
                     warn!("Start reorg");
@@ -108,9 +131,12 @@ async fn emit_events<P, N>(
                         .anvil_reorg(ReorgOptions {
                             // Use a large reorg depth (25) to ensure Anvil triggers subscription events correctly;
                             // smaller depths may not reliably cause event notifications.
-                            depth: 25,
+                            depth: REORG_DEPTH,
                             tx_block_pairs: vec![
-                                (TransactionData::JSON(tfhe_txn_req), 24),
+                                (
+                                    TransactionData::JSON(tfhe_txn_req),
+                                    REORG_DEPTH - 1,
+                                ),
                                 // this event is only on winning chain
                                 (TransactionData::JSON(acl_txn_req), 0),
                             ],
@@ -118,6 +144,7 @@ async fn emit_events<P, N>(
                         .await
                         .unwrap();
                     warn!("Reorg happened at block {cur_block}");
+                    reorg_barrier.wait().await;
                 } else {
                     let pending_txn = provider
                         .send_transaction(acl_txn_req.clone())
@@ -126,9 +153,10 @@ async fn emit_events<P, N>(
                     let receipt = pending_txn.get_receipt().await.unwrap();
                     assert!(receipt.status());
                     if reorg_point {
-                        // ensure no event is lost also on losing chain to facilitate the test assert
-                        tokio::time::sleep(tokio::time::Duration::from_secs(5))
-                            .await;
+                        // Stop all wallets until their orphan events have
+                        // committed and wallet 0 has installed the new branch.
+                        reorg_barrier.wait().await;
+                        reorg_barrier.wait().await;
                     }
                 }
             }
@@ -338,6 +366,132 @@ async fn test_mark_block_as_valid_repairs_missing_parent_hash(
 
 #[tokio::test]
 #[serial(db)]
+async fn test_catchup_loop_preserves_work_until_finalized(
+) -> Result<(), anyhow::Error> {
+    let setup = setup_with_block_time(None, 0.25).await?;
+    let provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(setup.args.url.clone()))
+        .await?;
+    provider.anvil_mine(Some(100), None).await?;
+    emit_events(
+        &setup.wallets[..1],
+        &setup.args.url,
+        setup.tfhe_contract.clone(),
+        setup.acl_contract.clone(),
+        None,
+        1,
+    )
+    .await;
+
+    // Every fresh relative window is newer than the finality boundary. The
+    // loop must retain its unread range until these events become eligible.
+    let mut args = setup.args.clone();
+    args.start_at_block = Some(-10);
+    args.end_at_block = Some(-5);
+    args.catchup_finalization_in_blocks = 20;
+    args.only_catchup_loop = true;
+    args.catchup_loop_sleep_secs = 1;
+    args.catchup_paging = 100;
+    let listener = tokio::spawn(main(args));
+    let counts = wait_for_event_counts(
+        &setup.db_pool,
+        tokio::time::Duration::from_secs(30),
+        "catchup loop waiting for finality beyond its lookback",
+        |tfhe, acl| tfhe >= 1 && acl >= 1,
+    )
+    .await;
+    listener.abort();
+    let _ = listener.await;
+    assert_eq!(counts?, (1, 1));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_restart_lookback_before_genesis() -> Result<(), anyhow::Error> {
+    let setup = setup(None).await?;
+    let provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(setup.args.url.clone()))
+        .await?;
+    provider.anvil_mine(Some(1), None).await?;
+    let watermark = provider.get_block_number().await?;
+    let block = provider
+        .get_block_by_number(watermark.into())
+        .await?
+        .expect("the watermark block exists");
+    let mut db = Database::new(
+        &setup.args.database_url,
+        setup.chain_id,
+        setup.args.dependence_cache_size,
+    )
+    .await?;
+    ingest_block_logs(
+        setup.chain_id,
+        &mut db,
+        &BlockLogs {
+            logs: vec![],
+            summary: block.header.into(),
+            catchup: false,
+            finalized: false,
+        },
+        &Some(*setup.acl_contract.address()),
+        &Some(*setup.tfhe_contract.address()),
+        &Some(*setup.kms_generation_contract.address()),
+        &None,
+        &None,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: true,
+            dependent_ops_max_per_chain: 0,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        },
+    )
+    .await?
+    .require_complete()?;
+    assert_eq!(db.read_last_valid_block().await, Some(watermark as i64));
+
+    // New events arrive after the persisted watermark while the listener
+    // is offline. Its replay margin reaches before genesis.
+    emit_events(
+        &setup.wallets[..1],
+        &setup.args.url,
+        setup.tfhe_contract.clone(),
+        setup.acl_contract.clone(),
+        None,
+        1,
+    )
+    .await;
+    provider.anvil_mine(Some(5), None).await?;
+    let mut args = setup.args.clone();
+    args.service_name.clear();
+    args.health_port = 0;
+    args.catchup_margin = watermark + 1;
+    args.end_at_block = Some(provider.get_block_number().await? as i64);
+    provider
+        .anvil_mine(Some(args.catchup_finalization_in_blocks + 1), None)
+        .await?;
+    // start_at_block=None must resolve the DB watermark to absolute zero,
+    // not -1, which would mean one block behind the newer chain head.
+    assert!(args.start_at_block.is_none());
+    tokio::time::timeout(tokio::time::Duration::from_secs(30), main(args))
+        .await??;
+    let tfhe = sqlx::query!("SELECT COUNT(*) FROM computations")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    let acl = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    assert_eq!((tfhe, acl), (1, 1));
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
 async fn test_allowed_computation_records_its_producer_block(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use alloy::primitives::Log as EventLog;
@@ -391,6 +545,7 @@ async fn test_allowed_computation_records_its_producer_block(
             tx_depth_size: 0,
             log_index: None,
             operand_boundary_mask: Some(Default::default()),
+            has_legacy_operand_origin: false,
             is_executor_minted: true,
             is_fallback_grant: false,
             is_synthetic,
@@ -557,7 +712,8 @@ async fn ingest_blocks_for_receipts(
             &None,
             options.clone(),
         )
-        .await?;
+        .await?
+        .require_complete()?;
     }
     Ok(())
 }
@@ -607,8 +763,13 @@ async fn emit_dependent_burst_seeded(
         .expect("anvil signer available");
 
     let mut pending = Vec::new();
-    let mut current = input_handle
-        .unwrap_or_else(|| mock_trivial_encrypt_result(U256::from(seed), 4_u8));
+    let mut current = input_handle.unwrap_or_else(|| {
+        mock_trivial_encrypt_result(
+            U256::from(seed),
+            4_u8,
+            setup.chain_id.as_u64(),
+        )
+    });
 
     if input_handle.is_none() {
         let trivial_tx = trivial_encrypt_request(
@@ -616,6 +777,7 @@ async fn emit_dependent_burst_seeded(
             signer_address,
             U256::from(seed),
             4_u8,
+            setup.chain_id.as_u64(),
         );
         pending.push(provider.send_transaction(trivial_tx).await?);
         let allow_trivial_tx = allowed_request(
@@ -1559,6 +1721,173 @@ async fn test_listener_restart_and_chain_reorg() -> Result<(), anyhow::Error> {
     test_listener_no_event_loss(true, true).await
 }
 
+type BlockVariants = std::collections::HashMap<i64, Vec<(Vec<u8>, String)>>;
+
+async fn finalization_mismatch<P: Provider>(
+    provider: &P,
+    blocks_by_number: &BlockVariants,
+    contract_addresses: &[Address],
+) -> anyhow::Result<Option<String>> {
+    for (block_number, block_variants) in blocks_by_number {
+        let finalized_count = block_variants
+            .iter()
+            .filter(|(_, status)| status == "finalized")
+            .count();
+        let orphan_count = block_variants
+            .iter()
+            .filter(|(_, status)| status == "orphaned")
+            .count();
+        let expected_hash = provider
+            .get_block_by_number((*block_number as u64).into())
+            .await?
+            .expect("canonical block exists")
+            .header
+            .hash;
+        if finalized_count == 0 && orphan_count == block_variants.len() {
+            // Range catchup emits only blocks with matching logs. Replaying
+            // a new fork's root can orphan its old descendants without storing
+            // their empty replacements. Accept that sparse history only after
+            // independently checking every configured contract on the canonical
+            // block; a missing event-bearing replacement must still fail.
+            let logs = provider
+                .get_logs(
+                    &Filter::new()
+                        .at_block_hash(expected_hash)
+                        .address(contract_addresses.to_vec()),
+                )
+                .await?;
+            if logs.is_empty() {
+                continue;
+            }
+        }
+        if finalized_count != 1 {
+            return Ok(Some(format!(
+                "Block {block_number} should have exactly one finalized variant, found {finalized_count}"
+            )));
+        }
+        if orphan_count != block_variants.len() - 1 {
+            return Ok(Some(format!(
+                "Block {block_number} should have remaining variants as orphan"
+            )));
+        }
+        let finalized_hash = block_variants
+            .iter()
+            .find(|(_, status)| status == "finalized")
+            .map(|(hash, _)| hash)
+            .unwrap();
+        if expected_hash.0 != finalized_hash.as_slice() {
+            return Ok(Some(format!(
+                "Finalized block hash for block {block_number} does not match expected"
+            )));
+        }
+    }
+    Ok(None)
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_finalization_assertion_distinguishes_empty_reorg_replacements(
+) -> anyhow::Result<()> {
+    let instance = test_harness::instance::setup_test_db(ImportMode::None)
+        .await
+        .map_err(|err| anyhow::anyhow!("{err}"))?;
+    let chain_id = ChainId::try_from(42_u64)?;
+    let mut db = Database::new(&instance.db_url, chain_id, 16).await?;
+    let pool = db.pool().await;
+    let anvil = Anvil::new().chain_id(42).spawn();
+    let signer: PrivateKeySigner = anvil.first_key().clone().into();
+    let provider = ProviderBuilder::new()
+        .wallet(EthereumWallet::new(signer))
+        .connect_http(anvil.endpoint_url());
+    let tfhe = RawLog::deploy(provider.clone()).await?;
+    let acl = RawLog::deploy(provider.clone()).await?;
+    provider.anvil_mine(Some(3), None).await?;
+    for number in 1_u64..=5 {
+        let block = provider.get_block_by_number(number.into()).await?.unwrap();
+        sqlx::query("INSERT INTO host_chain_blocks_valid (chain_id, block_hash, parent_hash, block_number, block_status) VALUES (42, $1, $2, $3, $4)")
+            .bind(block.header.hash.as_slice())
+            .bind(block.header.parent_hash.as_slice())
+            .bind(number as i64)
+            .bind(if number <= 2 { "finalized" } else { "pending" })
+            .execute(&pool).await?;
+    }
+    let caller = provider.signer_addresses().next().unwrap();
+    let handle = mock_trivial_encrypt_result(U256::from(7), 4, 42);
+    provider
+        .anvil_reorg(ReorgOptions {
+            depth: 3,
+            tx_block_pairs: vec![
+                (
+                    TransactionData::JSON(trivial_encrypt_request(
+                        &tfhe,
+                        caller,
+                        U256::from(7),
+                        4,
+                        42,
+                    )),
+                    0,
+                ),
+                (
+                    TransactionData::JSON(allowed_request(
+                        &acl, caller, caller, handle,
+                    )),
+                    2,
+                ),
+            ],
+        })
+        .await?;
+    let root = provider.get_block_by_number(3_u64.into()).await?.unwrap();
+    let logs = provider
+        .get_logs(&Filter::new().at_block_hash(root.header.hash))
+        .await?;
+    ingest_block_logs(
+        chain_id,
+        &mut db,
+        &BlockLogs {
+            logs,
+            summary: root.into(),
+            catchup: true,
+            finalized: true,
+        },
+        &Some(*acl.address()),
+        &Some(*tfhe.address()),
+        &None,
+        &None,
+        &None,
+        IngestOptions {
+            dependence_by_connexity: false,
+            dependence_cross_block: false,
+            dependent_ops_max_per_chain: 0,
+            is_protocol_config_listener: false,
+            disable_synthetic_ops: true,
+        },
+    )
+    .await?
+    .require_complete()?;
+    for (number, should_fail) in [(4_i64, false), (5, true)] {
+        let variants: Vec<(Vec<u8>, String)> = sqlx::query_as(
+            "SELECT block_hash, block_status FROM host_chain_blocks_valid WHERE block_number=$1",
+        )
+        .bind(number)
+        .fetch_all(&pool)
+        .await?;
+        assert_eq!(variants.len(), 1);
+        assert_eq!(variants[0].1, "orphaned");
+        let mismatch = finalization_mismatch(
+            &provider,
+            &BlockVariants::from([(number, variants)]),
+            &[*tfhe.address(), *acl.address()],
+        )
+        .await?;
+        assert_eq!(
+            mismatch.is_some(),
+            should_fail,
+            "height {number}: only the empty replacement may be omitted"
+        );
+    }
+    Ok(())
+}
+
 async fn check_finalization_status(setup: &Setup) {
     let provider = ProviderBuilder::new()
         .wallet(setup.wallets[0].clone())
@@ -1585,12 +1914,13 @@ async fn check_finalization_status(setup: &Setup) {
             .max()
             .expect("At least one block should be ingested");
 
-        let mut blocks_by_number: std::collections::HashMap<
-            i64,
-            Vec<(Vec<u8>, String)>,
-        > = std::collections::HashMap::new();
+        let mut blocks_by_number = BlockVariants::new();
         for block in blocks {
-            if block.block_number > block_max - 5 {
+            if block.block_number
+                > block_max
+                    - setup.args.catchup_finalization_in_blocks as i64
+                    - 2
+            {
                 continue; // pending blocks within finalization window can be ignored for this assert
             }
             blocks_by_number
@@ -1599,47 +1929,18 @@ async fn check_finalization_status(setup: &Setup) {
                 .push((block.block_hash, block.block_status));
         }
 
-        let mut mismatch = None;
-        for (block_number, block_variants) in blocks_by_number.iter() {
-            let finalized_count = block_variants
-                .iter()
-                .filter(|(_, status)| status == "finalized")
-                .count();
-            let orphan_count = block_variants
-                .iter()
-                .filter(|(_, status)| status == "orphaned")
-                .count();
-            if finalized_count != 1 {
-                mismatch = Some(format!(
-                    "Block {block_number} should have exactly one finalized variant, found {finalized_count}"
-                ));
-                break;
-            }
-            if orphan_count != block_variants.len() - 1 {
-                mismatch = Some(format!(
-                    "Block {block_number} should have remaining variants as orphan"
-                ));
-                break;
-            }
-            let finalized_hash = block_variants
-                .iter()
-                .find(|(_, status)| status == "finalized")
-                .map(|(hash, _)| hash)
-                .unwrap();
-            let expected_hash = provider
-                .get_block_by_number((*block_number as u64).into())
-                .await
-                .unwrap()
-                .unwrap()
-                .header
-                .hash;
-            if expected_hash.0 != finalized_hash.as_slice() {
-                mismatch = Some(format!(
-                    "Finalized block hash for block {block_number} does not match expected"
-                ));
-                break;
-            }
-        }
+        let mismatch = finalization_mismatch(
+            &provider,
+            &blocks_by_number,
+            &[
+                *setup.acl_contract.address(),
+                *setup.tfhe_contract.address(),
+                *setup.kms_generation_contract.address(),
+                *setup.protocol_config_contract.address(),
+            ],
+        )
+        .await
+        .expect("Failed to check canonical block history");
         if mismatch.is_none() {
             return;
         }
@@ -1653,12 +1954,20 @@ async fn test_listener_no_event_loss(
     kill: bool,
     reorg: bool,
 ) -> Result<(), anyhow::Error> {
-    let setup = setup(None).await?;
+    let mut setup = setup(None).await?;
+    if reorg {
+        // This test exercises recoverable forks, not finalized-history loss.
+        // Its 25-block Anvil reorg must stay inside the configured finality lag.
+        setup.args.catchup_finalization_in_blocks = 32;
+    }
     let mut args = setup.args.clone();
     // This test intentionally aborts/restarts the listener many times.
     // Keep telemetry disabled here to avoid coupling event-loss assertions
     // with exporter/shutdown timing.
     args.service_name.clear();
+    if reorg {
+        args.catchup_margin = 2 * REORG_DEPTH;
+    }
 
     // Start listener in background task
     let listener_handle = tokio::spawn(main(args.clone()));
@@ -1669,13 +1978,14 @@ async fn test_listener_no_event_loss(
     let url_clone = setup.args.url.clone();
     let tfhe_contract_clone = setup.tfhe_contract.clone();
     let acl_contract_clone = setup.acl_contract.clone();
+    let reorg_ingestion_pool = reorg.then(|| setup.db_pool.clone());
     let event_source = tokio::spawn(async move {
         emit_events(
             &wallets_clone,
             &url_clone,
             tfhe_contract_clone,
             acl_contract_clone,
-            reorg,
+            reorg_ingestion_pool,
             NB_EVENTS_PER_WALLET,
         )
         .await;
@@ -1761,13 +2071,15 @@ async fn test_listener_no_event_loss(
         }
         eprintln!(
             "Kill {nb_kill} ongoing, event source ongoing: {}, {} {} (vs {})",
-            event_source.is_finished(),
+            !event_source.is_finished(),
             tfhe_events_count,
             acl_events_count,
             nb_wallets * NB_EVENTS_PER_WALLET,
         );
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     }
+    tokio::time::timeout(tokio::time::Duration::from_secs(30), event_source)
+        .await??;
     if reorg {
         // Orphan cleanup removes any events from the orphaned branch, so
         // the final counts are bounded above by the raw emission totals
@@ -1857,7 +2169,7 @@ async fn test_catchup_and_listen() -> Result<(), anyhow::Error> {
         &url_clone,
         tfhe_contract_clone,
         acl_contract_clone,
-        false, // no reorg
+        None, // no reorg
         nb_event_per_wallet,
     )
     .await;
@@ -1888,7 +2200,7 @@ async fn test_catchup_and_listen() -> Result<(), anyhow::Error> {
         &url_clone,
         tfhe_contract_clone,
         acl_contract_clone,
-        false, // no reorg
+        None, // no reorg
         nb_event_per_wallet,
     )
     .await;
@@ -1924,17 +2236,25 @@ async fn test_catchup_only() -> Result<(), anyhow::Error> {
         &url_clone,
         tfhe_contract_clone,
         acl_contract_clone,
-        false, // no reorg
+        None, // no reorg
         nb_event_per_wallet,
     )
     .await;
 
     // Start listener in background task
-    args.start_at_block = Some(-30 + 2 * nb_event_per_wallet);
-    args.end_at_block = Some(15 + 2 * nb_event_per_wallet);
+    let provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(setup.args.url.clone()))
+        .await?;
+    let end_block = provider.get_block_number().await?;
+    args.start_at_block = Some(0);
+    args.end_at_block = Some(end_block as i64);
     args.catchup_paging = 2;
     let listener_handle = tokio::spawn(main(args.clone()));
-    assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
+    // Bounded replay waits for its last height to finalize. Advance the
+    // chain explicitly rather than tying completion to wall-clock mining.
+    provider
+        .anvil_mine(Some(args.catchup_finalization_in_blocks + 1), None)
+        .await?;
     let nb_wallets = setup.wallets.len() as i64;
     let expected = nb_wallets * nb_event_per_wallet;
     let (tfhe_events_count, acl_events_count) = wait_for_event_counts(
@@ -1947,16 +2267,9 @@ async fn test_catchup_only() -> Result<(), anyhow::Error> {
     eprintln!("End block {:?}", args.end_at_block);
     assert_eq!(tfhe_events_count, expected);
     assert_eq!(acl_events_count, expected);
-    // Allow the listener to finish after ingesting all events
-    let finish_deadline =
-        tokio::time::Instant::now() + tokio::time::Duration::from_secs(10);
-    while !listener_handle.is_finished() {
-        assert!(
-            tokio::time::Instant::now() < finish_deadline,
-            "Listener should stop"
-        );
-        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-    }
+    tokio::time::timeout(tokio::time::Duration::from_secs(10), listener_handle)
+        .await
+        .expect("Listener should stop after its bounded replay")??;
     Ok(())
 }
 
@@ -1989,7 +2302,7 @@ where
         &url_clone,
         tfhe_contract_clone,
         acl_contract_clone,
-        false,
+        None,
         nb_event_per_wallet,
     )
     .await;
@@ -2093,7 +2406,7 @@ async fn test_catchup_only_relative_end() -> Result<(), anyhow::Error> {
         &url_clone,
         tfhe_contract_clone,
         acl_contract_clone,
-        false,
+        None,
         nb_event_per_wallet,
     )
     .await;
@@ -2247,7 +2560,7 @@ async fn test_host_listener_recovers_after_revert() -> Result<(), anyhow::Error>
         &setup.args.url,
         setup.tfhe_contract.clone(),
         setup.acl_contract.clone(),
-        false,
+        None,
         nb_events_per_wallet,
     )
     .await;
@@ -2478,14 +2791,17 @@ async fn test_cross_block_join_gates_on_incomplete_parents(
     };
     let now = time::OffsetDateTime::now_utc();
     let block_timestamp = time::PrimitiveDateTime::new(now.date(), now.time());
-    db.update_dependence_chain(
-        &mut tx,
-        chains,
-        block_timestamp,
-        &block_summary,
-        &std::collections::HashSet::new(),
-    )
-    .await?;
+    for chain in chains {
+        db.update_dependence_chain(
+            &mut tx,
+            &chain,
+            block_timestamp,
+            &block_summary,
+            &std::collections::HashSet::new(),
+        )
+        .await?;
+    }
+
     tx.commit().await?;
 
     let (count, status): (i32, String) = sqlx::query_as(

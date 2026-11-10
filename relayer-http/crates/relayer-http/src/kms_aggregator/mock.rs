@@ -10,24 +10,39 @@ use kms_connector_api::{
     ErrorCode, ErrorResponse, PUBLIC_DECRYPTION_ROUTE, PublicDecryptionRequest,
     PublicDecryptionResponse, USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse,
 };
+use reqwest::header::HeaderValue;
 use serde::Deserialize;
 use tokio::time::sleep;
 use url::Url;
 
 use super::call::Caller;
 use super::client::{AttemptError, ConnectorClient, Endpoint, HttpReply};
+use super::config::tests::{audience, valid};
 use super::config::{
-    AuthConfig, CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RetryConfig,
-    UserChecks, UserDecryptConfig,
+    CallConfig, EndpointConfig, KmsAggregatorConfig, PublicDecryptConfig, RetryConfig, UserChecks,
+    UserDecryptConfig,
 };
+use super::signer::RequestSigner;
+use super::signer::tests::test_signer;
+use crate::metrics::Metrics;
+
+/// The v2 `extraData` of the api vectors: `0x02` + context id + epoch id.
+/// The same literal is repeated inside `USER_REQUEST_JSON` and `PUBLIC_REQUEST_JSON` (a const string cannot be
+/// interpolated): keep the three in sync. The mock connector echoes the request's `extraData`, so responses carry it too.
+pub const EXTRA_DATA_V2: &str = "0x0207000000000000000000000000000000000000000000000000000000000000010800000000000000000000000000000000000000000000000000000000000001";
 
 /// From `kms-connector/crates/api/tests/vectors.json`.
-pub const USER_REQUEST_JSON: &str = r#"{"attestationType":"eip712-unified-user-decrypt-v1","payload":{"handles":[{"handle":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","contractAddress":"0x3333333333333333333333333333333333333333","ownerAddress":"0x4444444444444444444444444444444444444444"}],"userAddress":"0x5555555555555555555555555555555555555555","publicKey":"0x20002000","allowedContracts":["0x3333333333333333333333333333333333333333"],"requestValidity":{"startTimestamp":1770000000,"durationSeconds":300},"extraData":"0x00"},"signature":"0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"}"#;
+pub const USER_REQUEST_JSON: &str = r#"{"attestationType":"eip712-unified-user-decrypt-v1","payload":{"handles":[{"handle":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","contractAddress":"0x3333333333333333333333333333333333333333","ownerAddress":"0x4444444444444444444444444444444444444444"}],"userAddress":"0x5555555555555555555555555555555555555555","publicKey":"0x20002000","allowedContracts":["0x3333333333333333333333333333333333333333"],"requestValidity":{"startTimestamp":1770000000,"durationSeconds":300},"extraData":"0x0207000000000000000000000000000000000000000000000000000000000000010800000000000000000000000000000000000000000000000000000000000001"},"signature":"0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"}"#;
 pub const USER_REQUEST_ID: B256 =
-    b256!("0x87d71ab4145107e91e1ac6f1e1766739e2b231cd5d04323f40f1803417a95243");
-pub const PUBLIC_REQUEST_JSON: &str = r#"{"ctHandles":["0x1111111111111111111111111111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222222222222222222222222222"],"extraData":"0x00"}"#;
+    b256!("0xad268e528bdbb84d96b30ac754fa4c4b34d9c0e00095d679a4684b8355e306c5");
+pub const PUBLIC_REQUEST_JSON: &str = r#"{"ctHandles":["0x1111111111111111111111111111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222222222222222222222222222"],"extraData":"0x0207000000000000000000000000000000000000000000000000000000000000010800000000000000000000000000000000000000000000000000000000000001"}"#;
 pub const PUBLIC_REQUEST_ID: B256 =
-    b256!("0xaaa2956d918458882642374b5ef6fc9117ee708e1930c84510faa0e4afa018b8");
+    b256!("0x150e8fbf5cc4ccbe3152aaabf1a2dc8fbf532e19ba9ff1cdfe69b522b53a1e8b");
+
+/// `EXTRA_DATA_V2` as bytes.
+pub fn extra_data_v2() -> AlloyBytes {
+    EXTRA_DATA_V2.parse().expect("mock: EXTRA_DATA_V2 is hex")
+}
 
 /// A YAML string is either one of our fixed replies or a connector error code (`acl_denied`, `rate_limited`, …).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -54,6 +69,8 @@ pub enum Fixed {
     Hang,
     /// Connection refused.
     Refused,
+    /// The node's task panics.
+    Panic,
     /// `429` with a plain-text body: a rate limit answered in front of the connector (ingress, a future proxy limit).
     BareRateLimited,
 }
@@ -62,16 +79,20 @@ pub struct MockClient {
     scripts: Vec<Vec<Reply>>,
     delay: Duration,
     attempts: Mutex<Vec<u32>>,
+    /// The `Authorization` value of every attempt, per node.
+    authorizations: Mutex<Vec<Vec<HeaderValue>>>,
 }
 
 impl MockClient {
     /// `scripts[node]` = replies per attempt (the last one repeats). Endpoint names are `node-<i>`.
     pub fn new(scripts: Vec<Vec<Reply>>, delay: Duration) -> Arc<Self> {
         let attempts = Mutex::new(vec![0; scripts.len()]);
+        let authorizations = Mutex::new(vec![Vec::new(); scripts.len()]);
         Arc::new(Self {
             scripts,
             delay,
             attempts,
+            authorizations,
         })
     }
 
@@ -79,10 +100,16 @@ impl MockClient {
         self.attempts.lock().unwrap()[node]
     }
 
-    /// A validated config for `n` mock nodes (loopback urls, no auth, thresholds 1).
+    /// The `Authorization` values `node` received, one per attempt.
+    pub fn authorizations(&self, node: usize) -> Vec<HeaderValue> {
+        self.authorizations.lock().unwrap()[node].clone()
+    }
+
+    /// A validated config for `n` mock nodes (loopback urls, audiences `audience(i)`, thresholds 1).
     pub fn config(n: usize, timeout: Duration, max_retries: u32) -> KmsAggregatorConfig {
         KmsAggregatorConfig {
             allow_insecure_http: false,
+            skip_tls_verification: false,
             max_concurrent_calls: n.max(1),
             call: CallConfig {
                 timeout,
@@ -98,20 +125,32 @@ impl MockClient {
                 checks: UserChecks::default(),
             },
             public_decrypt: PublicDecryptConfig { threshold: 1 },
+            auth: valid(0).auth,
             endpoints: (0..n)
                 .map(|i| EndpointConfig {
                     name: format!("node-{i}"),
                     url: Url::parse(&format!("http://localhost:3000/{i}")).unwrap(),
-                    auth: AuthConfig::None,
+                    audience: audience(i),
                 })
                 .collect(),
         }
     }
 
-    /// A `Caller` over this mock, one endpoint per script.
+    /// A `Caller` over this mock, one endpoint per script, signing with `test_signer()`.
     pub fn caller(self: Arc<Self>, timeout: Duration, max_retries: u32) -> Arc<Caller> {
+        self.caller_with(timeout, max_retries, test_signer())
+    }
+
+    /// A `Caller` over this mock signing with `signer`.
+    pub fn caller_with(
+        self: Arc<Self>,
+        timeout: Duration,
+        max_retries: u32,
+        signer: Arc<RequestSigner>,
+    ) -> Arc<Caller> {
         let cfg = Self::config(self.scripts.len(), timeout, max_retries);
-        Arc::new(Caller::new(&cfg, self).unwrap())
+        let metrics = Arc::new(Metrics::new().unwrap());
+        Arc::new(Caller::new(&cfg, self, signer, metrics).unwrap())
     }
 }
 
@@ -122,6 +161,7 @@ impl ConnectorClient for MockClient {
         endpoint: &Endpoint,
         route: &str,
         body: Bytes,
+        authorization: &HeaderValue,
     ) -> Result<HttpReply, AttemptError> {
         let node: usize = endpoint
             .name
@@ -133,6 +173,7 @@ impl ConnectorClient for MockClient {
             attempts[node] += 1;
             attempts[node] - 1
         };
+        self.authorizations.lock().unwrap()[node].push(authorization.clone());
         let script = &self.scripts[node];
         let reply = script
             .get(attempt as usize)
@@ -142,6 +183,7 @@ impl ConnectorClient for MockClient {
         sleep(self.delay).await;
         match reply {
             Reply::Fixed(Fixed::Hang) => std::future::pending().await,
+            Reply::Fixed(Fixed::Panic) => panic!("mock: the node task panics"),
             Reply::Fixed(Fixed::Refused) => Err(AttemptError::Transport(
                 "mock: connection refused".to_owned(),
             )),
@@ -264,7 +306,7 @@ mod tests {
         assert_eq!(response.decryption_id, PUBLIC_REQUEST_ID);
         assert_eq!(response.signature, signature(2));
         assert_eq!(response.decrypted_result, result(0));
-        assert_eq!(response.extra_data.as_ref(), &[0u8]);
+        assert_eq!(response.extra_data, extra_data_v2());
 
         let divergent = ok_reply(
             PUBLIC_DECRYPTION_ROUTE,
@@ -335,13 +377,14 @@ mod tests {
         let endpoint = Endpoint {
             name: "node-0".into(),
             url: Url::parse("http://localhost:3000/0").unwrap(),
-            auth: None,
+            audience: audience(0),
         };
         let body = Bytes::from_static(USER_REQUEST_JSON.as_bytes());
+        let auth = HeaderValue::from_static("FhevmSig expires=1, sig=0x00");
         let mut seen = Vec::new();
         for _ in 0..3 {
             let reply = mock
-                .post(&endpoint, USER_DECRYPTION_ROUTE, body.clone())
+                .post(&endpoint, USER_DECRYPTION_ROUTE, body.clone(), &auth)
                 .await
                 .unwrap();
             seen.push(reply.status);

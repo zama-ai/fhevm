@@ -1,7 +1,7 @@
 // Public decrypt happy path: deploy HTTPPublicDecrypt (three publicly decryptable values), POST the three
 // handles to the relayer, check the clear values against the fixture.
 import { decodeDecryptedResult } from '../../test/sdk/connector/verify';
-import { alice, deploy, fail, postUntilSettled, requireRelayer, run, show } from './common';
+import { alice, deploy, fail, kmsExtraData, postUntilSettled, requireRelayer, run, show } from './common';
 
 interface PublicReply {
   status: string;
@@ -22,7 +22,10 @@ run(async () => {
   ];
   console.log(`handles: ${show(handles)}`);
 
-  const reply = await postUntilSettled<PublicReply>('/v4/public-decrypt', { ciphertextHandles: handles, extraData: '0x00' });
+  const reply = await postUntilSettled<PublicReply>('/v4/public-decrypt', {
+    ciphertextHandles: handles,
+    extraData: await kmsExtraData(),
+  });
   if (reply.status !== 200) fail('public decrypt', reply);
   const clear = decodeDecryptedResult(handles, `0x${reply.body.result.decryptedValue}`);
   console.log(

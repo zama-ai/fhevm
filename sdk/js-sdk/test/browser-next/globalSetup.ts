@@ -1,7 +1,9 @@
-// Playwright globalSetup: bring up the cleartext anvils (one per WASM version)
-// and the standalone same-origin gateway server. The Next dev server proxies
-// `/gw/*` to the gateway via rewrites (see next.config.mjs). Requires foundry
-// (anvil/cast/forge) on PATH.
+/**
+ * Playwright globalSetup: bring up the cleartext anvils (one per WASM version)
+ * and the standalone same-origin gateway server. The Next dev server proxies
+ * `/gw/*` to the gateway via rewrites (see next.config.mjs). Requires foundry
+ * (anvil/cast/forge) on PATH.
+ */
 
 import type { Server } from 'node:http';
 import { startAnvils } from '../infra/anvil/anvils.js';
