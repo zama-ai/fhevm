@@ -15,6 +15,7 @@ members = [
     "solana-host-follower",
     "solana-merkle-proof-service",
     "coprocessor-proxy",
+    "prf-service",
 ]
 
 [workspace.package]
@@ -24,6 +25,7 @@ license = "BSD-3-Clause-Clear"
 
 [workspace.dependencies]
 zama-solana-merkle-proofs = { path = "../../solana/crates/zama-solana-merkle-proofs" }
+actix-web = { version = "=4.18.2", default-features = false }
 alloy = { version = "2.2.0", default-features = false, features = [
     "essentials",
     "std",

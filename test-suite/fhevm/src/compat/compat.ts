@@ -461,6 +461,10 @@ const serviceAvailable = (
     (override) => override.group === group && (!override.services?.length || override.services.includes(service)),
   );
 
+/** Detects when the resolved coprocessor bundle includes the prf-service, published or built locally. */
+export const supportsPrfService = (state: Pick<CompatState, "versions" | "overrides">) =>
+  serviceAvailable(state, "coprocessor", "coprocessor-prf-service", "COPROCESSOR_PRF_SERVICE_VERSION");
+
 /** Detects when the resolved kms-connector bundle includes the HTTP decryption path. */
 export const supportsConnectorHttp = (state: Pick<CompatState, "versions" | "overrides">) =>
   serviceAvailable(state, "kms-connector", "kms-connector-endpoint", "CONNECTOR_ENDPOINT_VERSION") &&
@@ -479,13 +483,16 @@ export const supportsCoprocessorProxy = (state: Pick<CompatState, "versions" | "
   );
 
 /**
- * Whether a stack runs coprocessor-proxy: its bundle includes the proxy, and the stack is not
- * blue-green, where one proxy per fleet is a follow-up. Takes a state (`scenario`) or a stack spec
- * (`blueGreen`).
+ * Whether a stack runs coprocessor-proxy: the bundle has the proxy and prf-service, and the stack is
+ * not blue-green (one proxy per fleet comes later). Takes a state (`scenario`) or a stack spec (`blueGreen`).
  */
 export const runsCoprocessorProxy = (
   state: Pick<CompatState, "versions" | "overrides"> & { scenario?: { kind: string }; blueGreen?: unknown },
-) => state.scenario?.kind !== "blue-green" && !state.blueGreen && supportsCoprocessorProxy(state);
+) =>
+  state.scenario?.kind !== "blue-green" &&
+  !state.blueGreen &&
+  supportsCoprocessorProxy(state) &&
+  supportsPrfService(state);
 
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>

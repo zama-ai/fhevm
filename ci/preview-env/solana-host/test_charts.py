@@ -359,40 +359,32 @@ class SolanaCharts(unittest.TestCase):
                                                 input=wallets, text=True)
         self.assertEqual(json.loads(proof_servers), PROOF_SERVERS)
 
-    def test_relayer_http_serves_the_connector_chains_through_every_proxy(self):
-        # Runs deploy-preview.sh's generator on the connector's host chains (the e2e values plus the
-        # Solana overlay, as `helm get values --all` returns them), from the repository root like the script.
+    def test_relayer_http_adds_the_solana_chain_to_the_installed_config(self):
+        # Runs deploy-preview.sh's patch on the values deploy-relayer.sh installs (the overlay, whose
+        # config deploy-relayer.sh completes with the host chain ids), from the repository root like the script.
         script = (VALUES / "deploy-preview.sh").read_text()
-        program = re.search(r"THRESHOLD=\$\(kms_reconstruct \"\$NB_KMS_CORE\"\) yq '(.*?)' \"\$work/connector\.yaml\"",
-                            script, re.S).group(1)
-        host_chains = {}
-        for values in [ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml",
-                       VALUES / "values-solana-connector-e2e.yaml"]:
-            host_chains.update(yaml.safe_load(values.read_text())["commonConfig"]["hostChains"])
-        allowed_senders = yaml.safe_load((ROOT / "ci/preview-env/kms-connector/values-kms-connector-e2e.yaml")
-                                         .read_text())["kmsConnectorProxy"]["allowedSenders"]
-        proxies = [f"https://kms-connector-{i}-kms-connector-proxy:8443" for i in range(1, 5)]
-        tx_senders = [f"0x{i:040x}" for i in range(1, 5)]
-        protocol_config = "0x" + "11" * 20
+        program = re.search(r"^SOLANA_CHAIN_ID=\$\(.*?\) yq -i '(.*?)' \"\$work/relayer-http\.yaml\"",
+                            script, re.S | re.M).group(1)
+        solana_chain_id = yaml.safe_load((VALUES / "values-solana-connector-e2e.yaml").read_text())[
+            "commonConfig"]["hostChains"]["solana"]["chainId"]
+        installed = yaml.safe_load((ROOT / "ci/preview-env/relayer/values-relayer-http-e2e.yaml").read_text())
+        installed["configmapFiles"]["files"]["config.yaml"]["http"]["supported_chain_ids"] = [12345, 80002]
         with tempfile.TemporaryDirectory() as tmp:
-            connector = pathlib.Path(tmp) / "connector.yaml"
-            connector.write_text(yaml.safe_dump({"commonConfig": {
-                "hostChains": host_chains, "ethereumContractAddresses": {"protocolConfig": protocol_config}},
-                "kmsConnectorProxy": {"allowedSenders": allowed_senders}}))
-            config = yaml.safe_load(subprocess.check_output(["yq", program, str(connector)], text=True, cwd=ROOT, env={
-                **os.environ, "ENDPOINT_URLS": ",".join(proxies), "TX_SENDERS": ",".join(tx_senders),
-                "THRESHOLD": "3"}))
-        # Chain ids stay strings: Helm would read 130140237723663404 as a float64 and round it.
-        self.assertEqual(config["http"]["supported_chain_ids"], ["12345", "130140237723663404"])
-        self.assertEqual([e["url"] for e in config["kms_aggregator"]["endpoints"]], proxies)
-        # FhevmSig: each endpoint signs for its own party's tx-sender, in the domain the proxies verify.
-        self.assertEqual([e["audience"] for e in config["kms_aggregator"]["endpoints"]], tx_senders)
-        self.assertEqual(config["kms_aggregator"]["auth"]["chain_id"], 12345)
-        self.assertEqual(config["kms_aggregator"]["auth"]["protocol_config"], protocol_config)
-        self.assertEqual(config["kms_aggregator"]["auth"]["address"], allowed_senders[0])
-        self.assertEqual(config["kms_aggregator"]["auth"]["signer"]["value_env"], "RELAYER_SIGNER_KEY")
-        # The rest of relayer-http's own config is kept.
-        self.assertEqual(config["kms_aggregator"]["call"]["timeout"], "5000ms")
+            values = pathlib.Path(tmp) / "relayer-http.yaml"
+            values.write_text(yaml.safe_dump(installed))
+            subprocess.check_call(["yq", "-i", program, str(values)], cwd=ROOT,
+                                  env={**os.environ, "SOLANA_CHAIN_ID": solana_chain_id})
+            patched = yaml.safe_load(values.read_text())
+        # One string: Helm would read 130140237723663404 as a float64 and round it.
+        config = patched["configmapFiles"]["files"]["config.yaml"]
+        self.assertIsInstance(config, str)
+        config = yaml.safe_load(config)
+        self.assertEqual(config["http"]["supported_chain_ids"], ["12345", "80002", "130140237723663404"])
+        # The rest of the installed release is kept.
+        expected = installed["configmapFiles"]["files"]["config.yaml"]
+        self.assertEqual(config["kms_aggregator"], expected["kms_aggregator"])
+        self.assertEqual({k: v for k, v in patched.items() if k != "configmapFiles"},
+                         {k: v for k, v in installed.items() if k != "configmapFiles"})
 
     def test_relayer_http_signer_is_an_allowed_sender_of_the_proxies(self):
         # Otherwise every relayer-http request fails with auth_unknown_signer.

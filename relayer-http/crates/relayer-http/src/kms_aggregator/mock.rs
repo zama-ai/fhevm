@@ -29,6 +29,7 @@ use super::flows::user_decrypt::UserRequest;
 use super::signer::RequestSigner;
 use super::signer::tests::test_signer;
 use crate::endpoint::flows::public_decrypt::is_solana;
+use crate::metrics::Metrics;
 
 /// The v2 `extraData` of the api vectors: `0x02` + context id + epoch id.
 /// The same literal is repeated inside `USER_REQUEST_JSON` and `PUBLIC_REQUEST_JSON` (a const string cannot be
@@ -109,6 +110,8 @@ pub enum Fixed {
     Hang,
     /// Connection refused.
     Refused,
+    /// The node's task panics.
+    Panic,
     /// `429` with a plain-text body: a rate limit answered in front of the connector (ingress, a future proxy limit).
     BareRateLimited,
 }
@@ -194,7 +197,8 @@ impl MockClient {
         signer: Arc<RequestSigner>,
     ) -> Arc<Caller> {
         let cfg = Self::config(self.scripts.len(), timeout, max_retries);
-        Arc::new(Caller::new(&cfg, self, signer).unwrap())
+        let metrics = Arc::new(Metrics::new().unwrap());
+        Arc::new(Caller::new(&cfg, self, signer, metrics).unwrap())
     }
 }
 
@@ -228,6 +232,7 @@ impl ConnectorClient for MockClient {
         sleep(self.delay).await;
         match reply {
             Reply::Fixed(Fixed::Hang) => std::future::pending().await,
+            Reply::Fixed(Fixed::Panic) => panic!("mock: the node task panics"),
             Reply::Fixed(Fixed::Refused) => Err(AttemptError::Transport(
                 "mock: connection refused".to_owned(),
             )),

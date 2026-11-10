@@ -8,12 +8,30 @@ use kms_worker::core::{
     Config,
     event_processor::{
         ProcessingErrorKind,
-        ciphertext::s3::{retrieve_verified_ciphertext, s3_client_from_config},
+        ciphertext::{
+            pool::{CiphertextPool, Slot},
+            s3::{retrieve_verified_ciphertext, s3_client_from_config},
+        },
     },
 };
 use std::num::NonZeroUsize;
 
 const ATTEMPTS: NonZeroUsize = NonZeroUsize::new(3).unwrap();
+
+/// A buffer from a one-slot pool.
+async fn slot() -> Slot {
+    CiphertextPool::from_config(&Config {
+        max_handles_per_decryption: NonZeroUsize::MIN,
+        ciphertext_pool_slots: NonZeroUsize::MIN,
+        ..Config::default()
+    })
+    .unwrap()
+    .reserve(1)
+    .await
+    .unwrap()
+    .pop()
+    .unwrap()
+}
 
 fn stored_handle() -> anyhow::Result<B256> {
     Ok(B256::from_slice(&hex::decode(S3_CT_HANDLE)?))
@@ -44,6 +62,7 @@ async fn test_get_ciphertext_from_winning_bucket() -> anyhow::Result<()> {
         &stored_material()?,
         &[bucket_url],
         ATTEMPTS,
+        slot().await,
     )
     .await
     .unwrap();
@@ -75,6 +94,7 @@ async fn test_get_ciphertext_rejects_digest_mismatch() -> anyhow::Result<()> {
         &material,
         &[bucket_url],
         ATTEMPTS,
+        slot().await,
     )
     .await
     .unwrap_err();
@@ -107,6 +127,7 @@ async fn test_get_unstored_ciphertext_is_unavailable() -> anyhow::Result<()> {
         &stored_material()?,
         &[bucket_url],
         ATTEMPTS,
+        slot().await,
     )
     .await
     .unwrap_err();

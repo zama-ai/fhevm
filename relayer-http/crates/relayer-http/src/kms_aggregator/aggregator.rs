@@ -1,17 +1,39 @@
 //! Fan out one request to every node and decide under one deadline.
 
+use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use bytes::Bytes;
 use kms_connector_api::ErrorCode;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep_until};
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, debug, error, info, instrument, warn};
+use tracing::{Instrument, debug, error, instrument, warn};
 
 use super::call::{CallError, Caller};
 use super::flows::Flow;
+use crate::metrics::PANIC_CODE;
+
+/// Where a node task panicked (`file:line:column`), filled by the panic hook and read from the task's `JoinError`.
+type PanicSlot = Arc<Mutex<Option<String>>>;
+
+tokio::task_local! {
+    /// The panic slot of the node task being polled: one per task, set when the aggregation spawns it.
+    static NODE_PANIC: PanicSlot;
+}
+
+/// The panic hook's part: keeps `location` for the `node task panicked` line, so a node task's panic is one ERROR
+/// line. False outside a node task: the hook logs the panic itself.
+pub fn note_node_panic(location: Option<String>) -> bool {
+    NODE_PANIC
+        .try_with(|slot| {
+            if let Ok(mut noted) = slot.lock() {
+                *noted = location;
+            }
+        })
+        .is_ok()
+}
 
 /// Why the threshold was not met. `dominant` = most frequent connector error among the failed calls.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -32,9 +54,6 @@ pub enum AggregationError {
         rejected: usize,
         dominant: Option<ErrorCode>,
     },
-    /// The process is shutting down.
-    #[error("cancelled by shutdown")]
-    Cancelled,
     /// A bug: serialisation or an impossible state. Never expected in production.
     #[error("internal: {0}")]
     Internal(String),
@@ -47,9 +66,27 @@ impl AggregationError {
             Self::Timeout { dominant, .. } | Self::ThresholdNotReached { dominant, .. } => {
                 *dominant
             }
-            Self::Cancelled | Self::Internal(_) => None,
+            Self::Internal(_) => None,
         }
     }
+}
+
+/// What one aggregation counted: the request's summary line reports it, whatever the verdict.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Tally {
+    /// Responses that count toward the threshold.
+    pub counted: usize,
+    pub threshold: usize,
+    /// Nodes whose call failed.
+    pub failed: Vec<String>,
+    /// Nodes whose response was refused by a check.
+    pub rejected: Vec<String>,
+    /// Nodes whose call was cut: at the deadline, or by fail fast.
+    pub cancelled: Vec<String>,
+    /// Nodes whose call has not ended; if the run is dropped they are cut with it.
+    pub pending: Vec<String>,
+    /// When the counted responses first reached the threshold; `None` if they never did.
+    pub threshold_reached: Option<Instant>,
 }
 
 /// One per flow. Cheap to share behind an `Arc`.
@@ -57,43 +94,29 @@ pub struct Aggregator<F: Flow> {
     caller: Arc<Caller>,
     threshold: usize,
     checks: F::Checks,
-    shutdown: CancellationToken,
     _flow: PhantomData<F>,
 }
 
 impl<F: Flow> Aggregator<F> {
     /// `checks`: the flow's optional checks, from the configuration.
-    pub fn new(
-        caller: Arc<Caller>,
-        threshold: usize,
-        checks: F::Checks,
-        shutdown: CancellationToken,
-    ) -> Self {
+    pub fn new(caller: Arc<Caller>, threshold: usize, checks: F::Checks) -> Self {
         Self {
             caller,
             threshold,
             checks,
-            shutdown,
             _flow: PhantomData,
         }
     }
 
     /// Posts `request` to every node and answers when all nodes have finished or at the deadline
-    /// (`call.timeout`). `request_id` is the relayer's own correlation id, never generated here.
-    #[instrument(
-        name = "aggregation",
-        skip_all,
-        fields(
-            flow = F::NAME,
-            request_id = %request_id,
-            decryption_id = %F::decryption_id(&request),
-            handles = ?F::handles(&request),
-        )
-    )]
+    /// (`call.timeout`). `request_id` is the relayer's own correlation id, never generated here; `tally` is
+    /// filled in whatever the verdict.
+    #[instrument(name = "aggregation", skip_all, fields(request_id = %request_id))]
     pub async fn run(
         &self,
         request_id: &str,
         request: F::Request,
+        tally: &mut Tally,
     ) -> Result<F::Output, AggregationError> {
         let nodes = self.caller.endpoints().len();
         let threshold = self.threshold;
@@ -101,11 +124,18 @@ impl<F: Flow> Aggregator<F> {
         let started = Instant::now();
         // `timeout` is validated to be at most 60 s (see `Caller::new`): this cannot overflow.
         let deadline = started + timeout;
-        let cancel = self.shutdown.child_token();
+        let cancel = CancellationToken::new();
         let body = serde_json::to_vec(&request)
             .map(Bytes::from)
             .map_err(|e| AggregationError::Internal(format!("serialise request: {e}")))?;
-        info!(
+        tally.threshold = threshold;
+        tally.pending = self
+            .caller
+            .endpoints()
+            .iter()
+            .map(|endpoint| endpoint.name.clone())
+            .collect();
+        debug!(
             nodes,
             threshold,
             timeout_ms = timeout.as_millis() as u64,
@@ -114,29 +144,38 @@ impl<F: Flow> Aggregator<F> {
 
         // One task per node; all of them share the body bytes, the deadline and the cancellation token.
         let mut pending = JoinSet::new();
+        // A task that panics returns no result: its id says which node it was.
+        let mut task_nodes: HashMap<tokio::task::Id, (String, PanicSlot)> = HashMap::new();
         for endpoint in self.caller.endpoints() {
             // The task must own its endpoint: it outlives this borrow.
             let endpoint = endpoint.clone();
+            let name = endpoint.name.clone();
             let (caller, body, cancel) = (self.caller.clone(), body.clone(), cancel.clone());
-            // The task carries the `aggregation` span: its attempt lines have the request's identifiers.
-            pending.spawn(
-                async move {
-                    caller
-                        .call::<F::Response>(&endpoint, F::ROUTE, body, deadline, cancel)
-                        .await
-                }
-                .in_current_span(),
+            // The task carries the `aggregation` span: its lines have the request's id.
+            let slot = PanicSlot::default();
+            let task = pending.spawn(
+                NODE_PANIC.scope(
+                    slot.clone(),
+                    async move {
+                        caller
+                            .call::<F::Response>(
+                                F::NAME,
+                                &endpoint,
+                                F::ROUTE,
+                                body,
+                                deadline,
+                                cancel,
+                            )
+                            .await
+                    }
+                    .in_current_span(),
+                ),
             );
+            task_nodes.insert(task.id(), (name, slot));
         }
 
-        // Tallies for the final log line: the node names behind every outcome, so one line names the culprits.
         let mut accepted: Vec<F::Response> = Vec::with_capacity(nodes);
         let mut codes: Vec<ErrorCode> = Vec::new();
-        let (mut rejected, mut failed, mut cancelled) = (
-            Vec::<String>::new(),
-            Vec::<String>::new(),
-            Vec::<String>::new(),
-        );
         let mut deadline_hit = false;
 
         // Three ways out of the loop: (a) every node finished, `join_next` returns None; (b) the deadline
@@ -154,47 +193,63 @@ impl<F: Flow> Aggregator<F> {
                 }
                 joined = pending.join_next() => match joined {
                     None => break,
-                    Some(Ok(call)) => call,
-                    // A panic inside a node task: counted as failed, never propagated.
+                    Some(Ok(call)) => Some(call),
+                    // A panic inside a node task: the node is counted as failed, never propagated. One ERROR line
+                    // with the location the hook noted; the panic message is not logged: it is the relayer's own
+                    // text, but nothing proves it quotes no input.
                     Some(Err(e)) => {
-                        failed.push("?".to_owned());
-                        error!(error = %e, "node task failed");
-                        continue;
+                        let (node, slot) = task_nodes.remove(&e.id()).unzip();
+                        if let Some(node) = &node {
+                            tally.pending.retain(|name| name != node);
+                            tally.failed.push(node.clone());
+                            self.caller.metrics().attempt_error(node, F::NAME, PANIC_CODE);
+                        }
+                        let location = slot.and_then(|slot| slot.lock().ok().and_then(|mut noted| noted.take()));
+                        error!(kms_node = node.as_deref(), location = location.as_deref(), "node task panicked");
+                        None
                     }
                 },
             };
-            let elapsed_ms = call.elapsed.as_millis() as u64;
-            match call.result {
-                Ok(response) => match F::check(&self.checks, &request, &accepted, &response) {
-                    Ok(()) => {
-                        accepted.push(response);
-                        info!(
-                            node = %call.node,
-                            attempts = call.attempts,
-                            elapsed_ms,
-                            counted = F::counted(&self.checks, &accepted),
-                            "response accepted"
-                        );
+            // A panicked task has no result to account for, but it still counts against the threshold.
+            if let Some(call) = call {
+                tally.pending.retain(|name| *name != call.node);
+                let elapsed_ms = call.elapsed.as_millis() as u64;
+                match call.result {
+                    Ok(response) => match F::check(&self.checks, &request, &accepted, &response) {
+                        Ok(()) => {
+                            accepted.push(response);
+                            let counted = F::counted(&self.checks, &accepted);
+                            if counted >= threshold && tally.threshold_reached.is_none() {
+                                tally.threshold_reached = Some(Instant::now());
+                            }
+                            debug!(
+                                kms_node = %call.node,
+                                attempts = call.attempts,
+                                elapsed_ms,
+                                counted,
+                                "response accepted"
+                            );
+                        }
+                        Err(reason) => {
+                            tally.rejected.push(call.node.clone());
+                            warn!(kms_node = %call.node, elapsed_ms, error = %reason, "response rejected");
+                        }
+                    },
+                    Err(CallError::Cancelled) => {
+                        tally.cancelled.push(call.node.clone());
+                        // Still running at the deadline: too slow, or hung. Otherwise fail fast cut it.
+                        let cause = if deadline_hit {
+                            "deadline"
+                        } else {
+                            "fail_fast"
+                        };
+                        warn!(kms_node = %call.node, attempts = call.attempts, elapsed_ms, cause, "call cut");
                     }
-                    Err(reason) => {
-                        rejected.push(call.node.clone());
-                        warn!(node = %call.node, elapsed_ms, %reason, "response rejected");
+                    Err(CallError::Failed(failure)) => {
+                        tally.failed.push(call.node.clone());
+                        codes.push(failure.code());
+                        warn!(kms_node = %call.node, attempts = call.attempts, elapsed_ms, error = %failure.digest(), "call failed");
                     }
-                },
-                Err(CallError::Cancelled) => {
-                    cancelled.push(call.node.clone());
-                    if deadline_hit {
-                        // Still running at the deadline: too slow, or hung. Visible at the default level.
-                        warn!(node = %call.node, attempts = call.attempts, elapsed_ms, "call cancelled at the deadline");
-                    } else {
-                        // Fail fast or shutdown: not the node's fault.
-                        debug!(node = %call.node, attempts = call.attempts, elapsed_ms, "call cancelled");
-                    }
-                }
-                Err(e) => {
-                    failed.push(call.node.clone());
-                    codes.extend(e.code());
-                    warn!(node = %call.node, attempts = call.attempts, elapsed_ms, error = %e, "call failed");
                 }
             }
             // Fail fast: even if every pending node answered we could not reach the threshold.
@@ -206,56 +261,32 @@ impl<F: Flow> Aggregator<F> {
             }
         }
 
+        // The answer waited for the remaining nodes after the threshold: the latency added for safety.
+        if let Some(reached) = tally.threshold_reached {
+            self.caller
+                .metrics()
+                .wait_after_threshold(F::NAME, reached.elapsed());
+        }
         let counted = F::counted(&self.checks, &accepted);
-        let dominant = dominant(&codes);
-        let elapsed_ms = started.elapsed().as_millis() as u64;
+        tally.counted = counted;
         if counted >= threshold {
-            info!(
-                counted,
-                accepted = accepted.len(),
-                rejected = rejected.len(),
-                rejected_nodes = ?rejected,
-                failed = failed.len(),
-                failed_nodes = ?failed,
-                cancelled = cancelled.len(),
-                cancelled_nodes = ?cancelled,
-                deadline_hit,
-                elapsed_ms,
-                "aggregation succeeded"
-            );
             return F::output(&self.checks, accepted).ok_or_else(|| {
                 AggregationError::Internal("no output from the accepted responses".to_owned())
             });
         }
-        warn!(
-            counted,
-            threshold,
-            accepted = accepted.len(),
-            rejected = rejected.len(),
-            rejected_nodes = ?rejected,
-            failed = failed.len(),
-            failed_nodes = ?failed,
-            cancelled = cancelled.len(),
-            cancelled_nodes = ?cancelled,
-            deadline_hit,
-            dominant = dominant.map(ErrorCode::as_str),
-            elapsed_ms,
-            "aggregation failed"
-        );
-        let error = if self.shutdown.is_cancelled() {
-            AggregationError::Cancelled
-        } else if deadline_hit {
+        let dominant = dominant(&codes);
+        let error = if deadline_hit {
             AggregationError::Timeout {
                 counted,
                 threshold,
-                rejected: rejected.len(),
+                rejected: tally.rejected.len(),
                 dominant,
             }
         } else {
             AggregationError::ThresholdNotReached {
                 counted,
                 threshold,
-                rejected: rejected.len(),
+                rejected: tally.rejected.len(),
                 dominant,
             }
         };
@@ -280,11 +311,16 @@ mod tests {
     use crate::kms_aggregator::flows::public_decrypt::PublicDecrypt;
     use crate::kms_aggregator::flows::user_decrypt::UserDecrypt;
     use crate::kms_aggregator::mock::{Fixed, MockClient, Reply, public_request, user_request};
+    use crate::logging::capture::capture_runs;
+    use crate::metrics::Metrics;
+    use crate::metrics::tests::{histogram_sum, total, value};
 
     const OK: Reply = Reply::Fixed(Fixed::Ok);
     const HANG: Reply = Reply::Fixed(Fixed::Hang);
     const DIVERGENT: Reply = Reply::Fixed(Fixed::Divergent);
     const ACL: Reply = Reply::Error(ErrorCode::AclDenied);
+    const PANIC: Reply = Reply::Fixed(Fixed::Panic);
+    const BAD_SIGNATURE: Reply = Reply::Fixed(Fixed::BadSignature);
     const NOT_FOUND: Reply = Reply::Error(ErrorCode::CiphertextNotFound);
 
     fn ms(v: u64) -> Duration {
@@ -304,78 +340,258 @@ mod tests {
         groups: &[(usize, Reply)],
         threshold: usize,
         checks: F::Checks,
-        shutdown: CancellationToken,
     ) -> (Arc<MockClient>, Aggregator<F>) {
         let mock = MockClient::new(nodes(groups), ms(10));
         let caller = mock.clone().caller(Duration::from_secs(5), 0);
-        (mock, Aggregator::new(caller, threshold, checks, shutdown))
+        (mock, Aggregator::new(caller, threshold, checks))
     }
 
     fn user(groups: &[(usize, Reply)], threshold: usize) -> Aggregator<UserDecrypt> {
-        aggregator(
-            groups,
-            threshold,
-            UserChecks::default(),
-            CancellationToken::new(),
-        )
-        .1
+        aggregator(groups, threshold, UserChecks::default()).1
     }
 
     fn public(groups: &[(usize, Reply)], threshold: usize) -> Aggregator<PublicDecrypt> {
-        aggregator(groups, threshold, (), CancellationToken::new()).1
+        aggregator(groups, threshold, ()).1
     }
 
     #[tokio::test(start_paused = true)]
     async fn all_nodes_ok_answers_when_the_last_one_finishes() {
         let started = Instant::now();
         let output = user(&[(13, OK)], 9)
-            .run("req-1", user_request())
+            .run("req-1", user_request(), &mut Tally::default())
             .await
             .unwrap();
         assert_eq!(output.result.len(), 13);
         assert_eq!(started.elapsed(), ms(10));
     }
 
+    /// The lines of one aggregation over `groups` (user decrypt, no retries), until all of `expected` were logged.
+    async fn logged(
+        groups: &[(usize, Reply)],
+        threshold: usize,
+        expected: &[&str],
+    ) -> Vec<serde_json::Value> {
+        capture_runs(expected, || async {
+            let mut tally = Tally::default();
+            let _ = user(groups, threshold)
+                .run("req-lines", user_request(), &mut tally)
+                .await;
+        })
+        .await
+    }
+
+    fn lines_of<'a>(lines: &'a [serde_json::Value], message: &str) -> Vec<&'a serde_json::Value> {
+        lines
+            .iter()
+            .filter(|l| l["fields"]["message"] == message)
+            .collect()
+    }
+
     #[tokio::test(start_paused = true)]
-    async fn attempt_lines_carry_the_request_identifiers() {
-        let (_guard, sink) = crate::kms_aggregator::call::tests::capture_attempts().await;
-        let request = user_request();
-        let decryption_id = UserDecrypt::decryption_id(&request).to_string();
-        user(&[(1, ACL), (12, OK)], 9)
-            .run("req-attempt", request)
-            .await
-            .unwrap();
-        let lines = sink.lines("attempt failed");
-        assert_eq!(lines.len(), 1, "{lines:?}");
-        let span = &lines[0]["span"];
-        assert_eq!(span["name"], "aggregation");
-        assert_eq!(span["request_id"], "req-attempt");
-        assert_eq!(span["flow"], "user_decrypt");
-        assert_eq!(span["decryption_id"], decryption_id);
-        assert_eq!(lines[0]["fields"]["code"], "acl_denied");
+    async fn lines_carry_the_request_id_and_only_that_from_the_request() {
+        let lines = logged(&[(1, ACL), (12, OK)], 9, &["attempt failed"]).await;
+        for line in lines_of(&lines, "attempt failed") {
+            let span = &line["span"];
+            assert_eq!(span["name"], "aggregation");
+            assert_eq!(span["request_id"], "req-lines");
+            for field in ["flow", "decryption_id", "handles"] {
+                assert!(span[field].is_null(), "{field} is on the summary line only");
+            }
+            assert_eq!(line["fields"]["code"], "acl_denied");
+            assert_eq!(line["fields"]["kms_node"], "node-0");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_call_a_rejected_response_and_a_cut_call_are_each_a_warn() {
+        // Nodes 0-7 answer, 8 sends a bad signature, 9 is denied, 10 and 11 hang until the deadline.
+        let expected = ["call failed", "response rejected", "call cut"];
+        let lines = logged(
+            &[(8, OK), (1, BAD_SIGNATURE), (1, ACL), (2, HANG)],
+            8,
+            &expected,
+        )
+        .await;
+        for message in expected {
+            for line in lines_of(&lines, message) {
+                assert_eq!(line["level"], "WARN", "{message}");
+                assert_eq!(line["span"]["request_id"], "req-lines");
+            }
+        }
+        let failed = lines_of(&lines, "call failed");
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0]["fields"]["kms_node"], "node-9");
+        assert!(
+            failed[0]["fields"]["error"]
+                .as_str()
+                .unwrap()
+                .starts_with("acl_denied")
+        );
+        let rejected = lines_of(&lines, "response rejected");
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(rejected[0]["fields"]["kms_node"], "node-8");
+        assert_eq!(
+            rejected[0]["fields"]["error"],
+            "signature is 64 bytes, expected 65"
+        );
+        let cut = lines_of(&lines, "call cut");
+        let nodes: Vec<&str> = cut
+            .iter()
+            .map(|l| l["fields"]["kms_node"].as_str().unwrap())
+            .collect();
+        assert_eq!(nodes.len(), 2);
+        assert!(nodes.contains(&"node-10") && nodes.contains(&"node-11"));
+        for line in cut {
+            assert_eq!(line["fields"]["cause"], "deadline");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_call_cut_by_fail_fast_is_a_warn_too() {
+        // Five denials make 9 of 13 unreachable: the 8 hung calls are cut at once.
+        let lines = logged(&[(5, ACL), (8, HANG)], 9, &["call cut"]).await;
+        let cut = lines_of(&lines, "call cut");
+        assert_eq!(cut.len(), 8);
+        for line in cut {
+            assert_eq!(line["level"], "WARN");
+            assert_eq!(line["fields"]["cause"], "fail_fast");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_tally_names_the_nodes_behind_every_outcome() {
+        let mut tally = Tally::default();
+        let result = user(&[(8, OK), (1, BAD_SIGNATURE), (1, ACL), (2, HANG)], 8)
+            .run("req-tally", user_request(), &mut tally)
+            .await;
+        assert!(result.is_ok());
+        assert_eq!(tally.counted, 8);
+        assert_eq!(tally.threshold, 8);
+        assert_eq!(tally.rejected, ["node-8"]);
+        assert_eq!(tally.failed, ["node-9"]);
+        let mut cut = tally.cancelled.clone();
+        cut.sort();
+        assert_eq!(cut, ["node-10", "node-11"]);
+    }
+
+    /// Runs `groups` (user decrypt, threshold `threshold`) once, capturing its lines until `expected` were logged.
+    async fn run_logged(
+        groups: &[(usize, Reply)],
+        threshold: usize,
+        expected: &[&str],
+    ) -> (Tally, Vec<serde_json::Value>, Arc<Metrics>) {
+        let result = std::cell::RefCell::new(None);
+        let lines = capture_runs(expected, || async {
+            let (_, aggregator) =
+                aggregator::<UserDecrypt>(groups, threshold, UserChecks::default());
+            let mut tally = Tally::default();
+            let _ = aggregator
+                .run("req-panic", user_request(), &mut tally)
+                .await;
+            *result.borrow_mut() = Some((tally, aggregator.caller.metrics().clone()));
+        })
+        .await;
+        let (tally, metrics) = result.into_inner().unwrap();
+        (tally, lines, metrics)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_panicked_node_task_is_an_error_line_a_failed_node_and_a_metric() {
+        let (tally, lines, metrics) =
+            run_logged(&[(12, OK), (1, PANIC)], 9, &["node task panicked"]).await;
+        assert_eq!(tally.failed, ["node-12"]);
+        assert_eq!(tally.counted, 12);
+        assert!(tally.pending.is_empty(), "{:?}", tally.pending);
+        let line = lines_of(&lines, "node task panicked")[0];
+        assert_eq!(line["level"], "ERROR");
+        assert_eq!(line["fields"]["kms_node"], "node-12");
+        assert_eq!(line["span"]["request_id"], "req-panic");
+        // The panic text is the task's own; the line has a fixed message and no error field.
+        assert!(line["fields"]["error"].is_null(), "{line}");
+        let panic = [
+            ("kms_node", "node-12"),
+            ("flow", "user_decrypt"),
+            ("code", "panic"),
+        ];
+        assert!(value(&metrics, "relayer_http_kms_attempt_errors_total", &panic) >= Some(1));
+    }
+
+    #[tokio::test]
+    async fn a_node_panic_is_noted_only_inside_a_node_task() {
+        assert!(!note_node_panic(Some("a.rs:1:1".to_owned())));
+        let slot = PanicSlot::default();
+        let noted = NODE_PANIC
+            .scope(slot.clone(), async {
+                note_node_panic(Some("a.rs:1:1".to_owned()))
+            })
+            .await;
+        assert!(noted);
+        assert_eq!(slot.lock().unwrap().as_deref(), Some("a.rs:1:1"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_panicked_node_task_with_the_hook_is_one_error_line_with_its_location() {
+        crate::logging::init_panic_hook();
+        let (_, lines, _) = run_logged(&[(12, OK), (1, PANIC)], 9, &["node task panicked"]).await;
+        let _ = std::panic::take_hook();
+        let errors: Vec<_> = lines.iter().filter(|l| l["level"] == "ERROR").collect();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert_eq!(errors[0]["fields"]["message"], "node task panicked");
+        assert!(
+            errors[0]["fields"]["location"].as_str().is_some(),
+            "{}",
+            errors[0]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_panic_that_makes_the_threshold_unreachable_ends_the_aggregation_at_once() {
+        // 4 denials and 1 panic leave 8 hung nodes: 8 < 9, so they are cut now, not at the 5 s deadline.
+        let started = Instant::now();
+        let (aggregator, mut tally) = (
+            aggregator::<UserDecrypt>(&[(4, ACL), (1, PANIC), (8, HANG)], 9, UserChecks::default())
+                .1,
+            Tally::default(),
+        );
+        let result = aggregator
+            .run("req-panic-fast", user_request(), &mut tally)
+            .await;
+        assert!(matches!(
+            result,
+            Err(AggregationError::ThresholdNotReached { .. })
+        ));
+        assert!(started.elapsed() < ms(100), "{:?}", started.elapsed());
+        assert_eq!(tally.cancelled.len(), 8);
     }
 
     #[tokio::test(start_paused = true)]
     async fn threshold_reached_two_nodes_hang_until_the_deadline() {
         let started = Instant::now();
-        let output = user(&[(9, OK), (2, HANG), (2, ACL)], 9)
-            .run("req-2", user_request())
+        let aggregator = user(&[(9, OK), (2, HANG), (2, ACL)], 9);
+        let mut tally = Tally::default();
+        let output = aggregator
+            .run("req-2", user_request(), &mut tally)
             .await
             .unwrap();
         assert_eq!(output.result.len(), 9);
         assert_eq!(started.elapsed(), Duration::from_secs(5));
+        // The threshold was reached with the 9 answers at 10 ms; the answer waited for the hung nodes until 5 s.
+        assert_eq!(tally.threshold_reached, Some(started + ms(10)));
+        let metrics = aggregator.caller.metrics();
+        let name = "relayer_http_kms_wait_after_threshold_seconds";
+        assert_eq!(value(metrics, name, &[("flow", "user_decrypt")]), Some(1));
+        assert!((histogram_sum(metrics, name) - 4.99).abs() < 1e-9);
     }
 
     #[tokio::test(start_paused = true)]
     async fn threshold_unreachable_fails_fast_and_cancels_the_rest() {
         let started = Instant::now();
-        let (mock, aggregator) = aggregator::<UserDecrypt>(
-            &[(5, ACL), (8, HANG)],
-            9,
-            UserChecks::default(),
-            CancellationToken::new(),
-        );
-        let err = aggregator.run("req-3", user_request()).await.unwrap_err();
+        let (mock, aggregator) =
+            aggregator::<UserDecrypt>(&[(5, ACL), (8, HANG)], 9, UserChecks::default());
+        let err = aggregator
+            .run("req-3", user_request(), &mut Tally::default())
+            .await
+            .unwrap_err();
         assert_eq!(
             err,
             AggregationError::ThresholdNotReached {
@@ -392,10 +608,16 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn deadline_before_threshold_is_a_timeout() {
         let started = Instant::now();
-        let err = user(&[(8, OK), (5, HANG)], 9)
-            .run("req-4", user_request())
+        let aggregator = user(&[(8, OK), (5, HANG)], 9);
+        let mut tally = Tally::default();
+        let err = aggregator
+            .run("req-4", user_request(), &mut tally)
             .await
             .unwrap_err();
+        // Never reached: no wait after the threshold is observed.
+        assert_eq!(tally.threshold_reached, None);
+        let name = "relayer_http_kms_wait_after_threshold_seconds";
+        assert_eq!(total(aggregator.caller.metrics(), name), 0);
         assert_eq!(
             err,
             AggregationError::Timeout {
@@ -412,7 +634,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn dominant_error_is_reported() {
         let err = user(&[(4, OK), (6, NOT_FOUND), (3, ACL)], 9)
-            .run("req-5", user_request())
+            .run("req-5", user_request(), &mut Tally::default())
             .await
             .unwrap_err();
         assert_eq!(err.dominant(), Some(ErrorCode::CiphertextNotFound));
@@ -434,7 +656,7 @@ mod tests {
             ],
             9,
         )
-        .run("req-6", user_request())
+        .run("req-6", user_request(), &mut Tally::default())
         .await
         .unwrap();
         assert_eq!(output.result.len(), 11);
@@ -446,7 +668,7 @@ mod tests {
             &[(4, OK), (1, Reply::Fixed(Fixed::BadSignature)), (8, ACL)],
             9,
         )
-        .run("req-6b", user_request())
+        .run("req-6b", user_request(), &mut Tally::default())
         .await
         .unwrap_err();
         assert!(
@@ -466,7 +688,7 @@ mod tests {
     async fn decryption_id_mismatch_is_rejected_only_when_checked() {
         let groups = [(2, Reply::Fixed(Fixed::WrongId)), (11, OK)];
         let unchecked = user(&groups, 9)
-            .run("req-6c", user_request())
+            .run("req-6c", user_request(), &mut Tally::default())
             .await
             .unwrap();
         assert_eq!(unchecked.result.len(), 13);
@@ -475,10 +697,10 @@ mod tests {
             decryption_id_match: true,
             decryption_id_majority: false,
         };
-        let (_, checked) = aggregator::<UserDecrypt>(&groups, 9, checks, CancellationToken::new());
+        let (_, checked) = aggregator::<UserDecrypt>(&groups, 9, checks);
         assert_eq!(
             checked
-                .run("req-6d", user_request())
+                .run("req-6d", user_request(), &mut Tally::default())
                 .await
                 .unwrap()
                 .result
@@ -490,10 +712,10 @@ mod tests {
             decryption_id_match: false,
             decryption_id_majority: true,
         };
-        let (_, majority) = aggregator::<UserDecrypt>(&groups, 9, checks, CancellationToken::new());
+        let (_, majority) = aggregator::<UserDecrypt>(&groups, 9, checks);
         assert_eq!(
             majority
-                .run("req-6e", user_request())
+                .run("req-6e", user_request(), &mut Tally::default())
                 .await
                 .unwrap()
                 .result
@@ -505,7 +727,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn public_majority_wins_and_only_its_signatures_are_returned() {
         let output = public(&[(8, OK), (3, DIVERGENT), (2, HANG)], 5)
-            .run("req-7", public_request())
+            .run("req-7", public_request(), &mut Tally::default())
             .await
             .unwrap();
         assert_eq!(output.signatures.len(), 8);
@@ -518,7 +740,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn public_split_vote_does_not_reach_the_threshold() {
         let err = public(&[(4, OK), (4, DIVERGENT), (5, ACL)], 5)
-            .run("req-8", public_request())
+            .run("req-8", public_request(), &mut Tally::default())
             .await
             .unwrap_err();
         assert_eq!(
@@ -533,28 +755,10 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn shutdown_cancels_a_running_aggregation() {
-        let shutdown = CancellationToken::new();
-        let (_, aggregator) =
-            aggregator::<UserDecrypt>(&[(13, HANG)], 9, UserChecks::default(), shutdown.clone());
-        let started = Instant::now();
-        let (result, ()) = tokio::join!(aggregator.run("req-9", user_request()), async {
-            tokio::time::sleep(ms(100)).await;
-            shutdown.cancel();
-        });
-        assert_eq!(result.unwrap_err(), AggregationError::Cancelled);
-        assert_eq!(started.elapsed(), ms(100));
-    }
-
-    #[tokio::test(start_paused = true)]
     async fn dropping_the_run_future_aborts_the_node_tasks() {
-        let (mock, aggregator) = aggregator::<UserDecrypt>(
-            &[(13, HANG)],
-            9,
-            UserChecks::default(),
-            CancellationToken::new(),
-        );
-        let run = aggregator.run("req-10", user_request());
+        let (mock, aggregator) = aggregator::<UserDecrypt>(&[(13, HANG)], 9, UserChecks::default());
+        let mut tally = Tally::default();
+        let run = aggregator.run("req-10", user_request(), &mut tally);
         tokio::select! {
             _ = run => panic!("hung nodes cannot finish"),
             () = tokio::time::sleep(ms(50)) => {}
@@ -602,7 +806,6 @@ mod tests {
             .dominant(),
             some
         );
-        assert_eq!(AggregationError::Cancelled.dominant(), None);
         assert_eq!(AggregationError::Internal("x".into()).dominant(), None);
         assert_eq!(
             AggregationError::Timeout {

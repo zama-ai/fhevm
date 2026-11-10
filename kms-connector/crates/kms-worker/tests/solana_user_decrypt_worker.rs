@@ -236,9 +236,12 @@ impl Scenario {
 }
 
 fn config() -> Config {
+    let config = Config::default();
     Config {
         copro_registry_refresh: TEST_COPRO_REGISTRY_REFRESH,
-        ..Config::default()
+        // Enough buffers for one request, instead of the much larger default.
+        ciphertext_pool_slots: config.max_handles_per_decryption,
+        ..config
     }
 }
 

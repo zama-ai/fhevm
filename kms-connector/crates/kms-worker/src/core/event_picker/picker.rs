@@ -140,9 +140,9 @@ impl DbEventPicker {
     /// The maximum number of events returned by a single pick query of the given event type.
     fn batch_limit(&self, event_type: &EventType) -> usize {
         match event_type {
-            EventType::PublicDecryptionRequest | EventType::UserDecryptionRequest => {
-                self.events_batch_size as usize
-            }
+            EventType::PublicDecryptionRequest
+            | EventType::UserDecryptionRequest
+            | EventType::PadDecryptionRequest => self.events_batch_size as usize,
             _ => 1,
         }
     }
@@ -154,6 +154,7 @@ impl DbEventPicker {
         match event_type {
             EventType::PublicDecryptionRequest => self.pick_public_decryption_requests().await,
             EventType::UserDecryptionRequest => self.pick_user_decryption_requests().await,
+            EventType::PadDecryptionRequest => self.pick_pad_decryption_requests().await,
             EventType::PrepKeygenRequest => self.pick_prep_keygen_requests().await,
             EventType::KeygenRequest => self.pick_keygen_requests().await,
             EventType::CrsgenRequest => self.pick_crsgen_requests().await,
@@ -214,6 +215,32 @@ impl DbEventPicker {
         .await?
         .iter()
         .map(event::from_user_decryption_row)
+        .collect()
+    }
+
+    async fn pick_pad_decryption_requests(&self) -> anyhow::Result<Vec<ProtocolEvent>> {
+        sqlx::query(
+            "
+                UPDATE pad_decryption_requests
+                SET status = 'under_process'
+                FROM (
+                    SELECT decryption_id
+                    FROM pad_decryption_requests
+                    WHERE status = 'pending'
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                ) AS req
+                WHERE pad_decryption_requests.decryption_id = req.decryption_id
+                RETURNING req.decryption_id, witness_version, prf_id, chain_id, pads,
+                user_address, public_key, allowed_contracts, start_timestamp, duration_seconds,
+                extra_data, signature,
+                source, already_sent, error_counter, created_at, otlp_context
+            ",
+        )
+        .bind(self.events_batch_size as i16)
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(event::from_pad_decryption_row)
         .collect()
     }
 

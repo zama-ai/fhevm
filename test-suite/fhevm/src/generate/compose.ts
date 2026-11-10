@@ -18,6 +18,7 @@ import {
   supportsConsensusDetector,
   runsCoprocessorProxy,
   supportsHostListenerConsumer,
+  supportsPrfService,
   supportsUpgradeController,
 } from "../compat/compat";
 import {
@@ -189,6 +190,7 @@ const COPROCESSOR_BUILD_TARGETS: Record<string, string> = {
   "coprocessor-consensus-detector": "consensus-detector",
   "coprocessor-upgrade-controller": "upgrade-controller",
   "coprocessor-proxy": "coprocessor-proxy",
+  "coprocessor-prf-service": "prf-service",
 };
 
 const coprocessorBuildSpec = (target: string, e2ePublicRuntime = false) =>
@@ -567,11 +569,11 @@ const applyInstanceAdjustments = (
 };
 
 // Suffixes of services that only run on the GCS fleet in blue-green mode.
-export const GCS_ONLY_SUFFIXES = new Set(["upgrade-controller", "consensus-detector"]);
+export const GCS_ONLY_SUFFIXES = new Set(["upgrade-controller", "consensus-detector", "prf-service"]);
 
 /** Blue-green container names per operator: BCS (previous-release shape) + GCS fleet reusing BCS's db-migration. */
 export const blueGreenServiceNames = (
-  state: Pick<State, "scenario" | "versions">,
+  state: Pick<State, "scenario" | "versions" | "overrides">,
   options: { includeMigration: boolean; includeDeferredGreen?: boolean },
 ): string[] => {
   const includeConsumer = supportsHostListenerConsumer(state);
@@ -590,6 +592,7 @@ export const blueGreenServiceNames = (
       for (const suffix of suffixes) {
         if (suffix.includes("migration")) continue;
         if (suffix === "host-listener-consumer" && !includeConsumer) continue;
+        if (suffix === "prf-service" && !supportsPrfService(state)) continue;
         names.push(`${prefix}gcs-${suffix}`);
       }
     }
@@ -638,13 +641,15 @@ export const serviceNameList = (
   const includeConsumer = supportsHostListenerConsumer(state);
   const includeConsensusDetector = supportsConsensusDetector(state);
   const includeUpgradeController = supportsUpgradeController(state);
+  const includePrfService = supportsPrfService(state);
   const suffixes = withCoprocessorProxySuffixes(
     GROUP_SERVICE_SUFFIXES.coprocessor.filter(
       (suffix) =>
         (!consumerOnlyHostListeners(state.scenario) || !isLegacyHostListener(suffix)) &&
         (includeConsumer || suffix !== "host-listener-consumer") &&
         (includeConsensusDetector || suffix !== "consensus-detector") &&
-        (includeUpgradeController || suffix !== "upgrade-controller"),
+        (includeUpgradeController || suffix !== "upgrade-controller") &&
+        (includePrfService || suffix !== "prf-service"),
     ),
     runsCoprocessorProxy(state),
   );
@@ -804,6 +809,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
     ...(supportsConsensusDetector(plan) ? [] : ["coprocessor-consensus-detector"]),
     ...(supportsUpgradeController(plan) ? [] : ["coprocessor-upgrade-controller"]),
     ...(runsCoprocessorProxy(plan) ? [] : COPROCESSOR_PROXY_SERVICES),
+    ...(supportsPrfService(plan) ? [] : ["coprocessor-prf-service"]),
   ]);
   const includeConsumer = supportsHostListenerConsumer(plan);
   const isBlueGreen = Boolean(plan.blueGreen);
@@ -893,9 +899,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       if (plan.coprocessor.hostListenerMode === "consumer" && isLegacyHostListener(suffix)) {
         adjusted.profiles = ["legacy-host-listeners"];
       }
-      // The proxy pair keeps the bundle's images unless built locally: a registry instance's tag names
-      // a coprocessor release that may predate the proxy, and the fake runs the test-suite image.
-      if (locallyBuilt || !COPROCESSOR_PROXY_SERVICES.has(name)) {
+      // The proxy pair and prf-service keep the bundle's images unless built locally: an older
+      // registry tag may not have them, and the seeder runs the test-suite image.
+      if (locallyBuilt || !(COPROCESSOR_PROXY_SERVICES.has(name) || name === "coprocessor-prf-service")) {
         applyCoprocessorSource(adjusted, name, sourceInstance, locallyBuilt, plan.e2ePublicRuntime, plan.versions.env);
       }
       if (instance.index > 0 && adjusted.depends_on && typeof adjusted.depends_on === "object") {
@@ -930,6 +936,9 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
           continue;
         }
         if (baseName === "coprocessor-db-migration" || COPROCESSOR_PROXY_SERVICES.has(baseName)) {
+          continue;
+        }
+        if (baseName === "coprocessor-prf-service" && !supportsPrfService(plan)) {
           continue;
         }
         const suffix = baseName.replace(/^coprocessor-/, "");

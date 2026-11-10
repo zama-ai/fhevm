@@ -18,3 +18,4 @@ services:
       - ../static/config/kms-connector-proxy/ca.crt:/etc/kms-connector/proxy/ca.crt:ro
     ports:
       - "3002:3002" # RELAYER_HTTP_PORT in src/layout.ts
+      - "3092:9898" # GET /metrics (metrics.endpoint default), scraped by `make -C relayer-http/dev start-monitoring`

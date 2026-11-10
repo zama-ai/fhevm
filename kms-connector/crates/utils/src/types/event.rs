@@ -6,10 +6,11 @@ use crate::{
     types::db::{OperationStatus, ParamsTypeDb, RequestSource},
 };
 use alloy::{
-    primitives::{Address, B256, FixedBytes, U256},
+    primitives::{Address, B256, Bytes, FixedBytes, U256},
     sol_types::SolValue,
 };
 use anyhow::anyhow;
+use kms_connector_api::{PadDecryptionPayload, PadEntry, RequestValidity};
 // Handle-only overloaded decryption events
 use fhevm_gateway_bindings::decryption::{
     Decryption::{
@@ -128,6 +129,10 @@ impl ProtocolEvent {
                 update_user_decryption_status(db, e.decryption_id, status, already_sent, err_count)
                     .await
             }
+            ProtocolEventKind::PadDecryption(e) => {
+                update_pad_decryption_status(db, e.decryption_id, status, already_sent, err_count)
+                    .await
+            }
             ProtocolEventKind::PrepKeygen(e) => {
                 update_prep_keygen_status(db, e.prepKeygenId, status, already_sent).await
             }
@@ -181,6 +186,7 @@ pub enum ProtocolEventKind {
     /// fields, signature) directly in the event, so processing does not need to re-fetch calldata.
     UserDecryptionV2(UserDecryptionRequestV2),
     SolanaUserDecryptionV1(SolanaUserDecryptionRequestV1),
+    PadDecryption(PadDecryptionEvent),
     PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
     Crsgen(CrsgenRequest),
@@ -209,6 +215,7 @@ impl std::fmt::Debug for ProtocolEventKind {
             Self::SolanaUserDecryptionV1(e) => {
                 f.debug_tuple("SolanaUserDecryptionV1").field(e).finish()
             }
+            Self::PadDecryption(e) => f.debug_tuple("PadDecryption").field(e).finish(),
             Self::PrepKeygen(e) => f.debug_tuple("PrepKeygen").field(e).finish(),
             Self::Keygen(e) => f.debug_tuple("Keygen").field(e).finish(),
             Self::Crsgen(e) => f.debug_tuple("Crsgen").field(e).finish(),
@@ -239,6 +246,7 @@ impl PartialEq for ProtocolEventKind {
                 a.decryptionId == b.decryptionId && a.handles == b.handles && a.payload == b.payload
             }
             (Self::SolanaUserDecryptionV1(a), Self::SolanaUserDecryptionV1(b)) => a == b,
+            (Self::PadDecryption(a), Self::PadDecryption(b)) => a == b,
             (Self::PrepKeygen(a), Self::PrepKeygen(b)) => a == b,
             (Self::Keygen(a), Self::Keygen(b)) => a == b,
             (Self::Crsgen(a), Self::Crsgen(b)) => a == b,
@@ -450,6 +458,63 @@ fn fixed_width<const N: usize>(bytes: Vec<u8>, column: &str) -> anyhow::Result<[
         .map_err(|_| anyhow::anyhow!("{column} holds {len} bytes, expected {N}"))
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct PadDecryptionEvent {
+    /// The content-derived decryption id of the request.
+    pub decryption_id: U256,
+    pub payload: PadDecryptionPayload,
+    /// The user's signature over the RFC-016 fields of `payload`.
+    pub signature: Bytes,
+}
+
+pub fn from_pad_decryption_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
+    let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);
+    let witness_version: i16 = row.try_get("witness_version")?;
+    let prf_id: i32 = row.try_get("prf_id")?;
+    let chain_id: i64 = row.try_get("chain_id")?;
+    let start_timestamp: i64 = row.try_get("start_timestamp")?;
+    let duration_seconds: i64 = row.try_get("duration_seconds")?;
+    let pads: Vec<PadEntry> = SolValue::abi_decode(&row.try_get::<Vec<u8>, _>("pads")?)?;
+    let allowed_contracts = row
+        .try_get::<Vec<Vec<u8>>, _>("allowed_contracts")?
+        .iter()
+        .map(|a| Address::try_from(a.as_slice()).map_err(anyhow::Error::from))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let payload = PadDecryptionPayload {
+        witnessVersion: u8::try_from(witness_version)
+            .map_err(|_| anyhow!("witness_version out of range: {witness_version}"))?,
+        prfId: u16::try_from(prf_id).map_err(|_| anyhow!("prf_id out of range: {prf_id}"))?,
+        chainId: u64::try_from(chain_id)
+            .map_err(|_| anyhow!("chain_id is negative: {chain_id}"))?,
+        pads,
+        userAddress: row.try_get::<[u8; 20], _>("user_address")?.into(),
+        publicKey: row.try_get::<Vec<u8>, _>("public_key")?.into(),
+        allowedContracts: allowed_contracts,
+        requestValidity: RequestValidity {
+            startTimestamp: u64::try_from(start_timestamp)
+                .map_err(|_| anyhow!("start_timestamp is negative: {start_timestamp}"))?,
+            durationSeconds: u64::try_from(duration_seconds)
+                .map_err(|_| anyhow!("duration_seconds is negative: {duration_seconds}"))?,
+        },
+        extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
+    };
+
+    Ok(ProtocolEvent {
+        kind: ProtocolEventKind::PadDecryption(PadDecryptionEvent {
+            decryption_id,
+            payload,
+            signature: row.try_get::<Vec<u8>, _>("signature")?.into(),
+        }),
+        tx_hash: None,
+        already_sent: row.try_get::<bool, _>("already_sent")?,
+        error_counter: row.try_get::<i16, _>("error_counter")?,
+        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        otlp_context: otlp_context_from_row(row)?,
+        source: row.try_get::<RequestSource, _>("source")?,
+    })
+}
+
 pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<ProtocolEvent> {
     let kind = ProtocolEventKind::PrepKeygen(PrepKeygenRequest {
         prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
@@ -650,6 +715,24 @@ async fn update_user_decryption_status(
     execute_update_event_query(db, query).await
 }
 
+async fn update_pad_decryption_status(
+    db: &Pool<Postgres>,
+    id: U256,
+    status: OperationStatus,
+    already_sent: bool,
+    error_counter: i16,
+) -> anyhow::Result<()> {
+    let query = sqlx::query!(
+        "UPDATE pad_decryption_requests SET status = $1, already_sent = $2, error_counter = $3
+        WHERE decryption_id = $4",
+        status as OperationStatus,
+        already_sent,
+        error_counter,
+        id.as_le_slice()
+    );
+    execute_update_event_query(db, query).await
+}
+
 async fn update_prep_keygen_status(
     db: &Pool<Postgres>,
     id: U256,
@@ -816,6 +899,9 @@ impl Display for ProtocolEventKind {
             ProtocolEventKind::SolanaUserDecryptionV1(e) => {
                 write!(f, "UserDecryptionRequest #{:#066x}", e.decryption_id)
             }
+            ProtocolEventKind::PadDecryption(e) => {
+                write!(f, "PadDecryptionRequest #{:#066x}", e.decryption_id)
+            }
             ProtocolEventKind::PrepKeygen(e) => {
                 write!(f, "PrepKeygenRequest #{:#066x}", e.prepKeygenId)
             }
@@ -874,6 +960,12 @@ impl From<UserDecryptionRequestV2> for ProtocolEventKind {
 impl From<SolanaUserDecryptionRequestV1> for ProtocolEventKind {
     fn from(value: SolanaUserDecryptionRequestV1) -> Self {
         Self::SolanaUserDecryptionV1(value)
+    }
+}
+
+impl From<PadDecryptionEvent> for ProtocolEventKind {
+    fn from(value: PadDecryptionEvent) -> Self {
+        Self::PadDecryption(value)
     }
 }
 

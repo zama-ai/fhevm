@@ -137,6 +137,7 @@ impl Display for RequestSource {
 pub enum EventType {
     PublicDecryptionRequest,
     UserDecryptionRequest,
+    PadDecryptionRequest,
     PrepKeygenRequest,
     KeygenRequest,
     CrsgenRequest,
@@ -153,6 +154,7 @@ impl Display for EventType {
         match self {
             EventType::PublicDecryptionRequest => write!(f, "PublicDecryptionRequest"),
             EventType::UserDecryptionRequest => write!(f, "UserDecryptionRequest"),
+            EventType::PadDecryptionRequest => write!(f, "PadDecryptionRequest"),
             EventType::PrepKeygenRequest => write!(f, "PrepKeygenRequest"),
             EventType::KeygenRequest => write!(f, "KeygenRequest"),
             EventType::CrsgenRequest => write!(f, "CrsgenRequest"),
@@ -176,6 +178,7 @@ impl From<&ProtocolEventKind> for EventType {
             ProtocolEventKind::UserDecryption(_)
             | ProtocolEventKind::UserDecryptionV2(_)
             | ProtocolEventKind::SolanaUserDecryptionV1(_) => Self::UserDecryptionRequest,
+            ProtocolEventKind::PadDecryption(_) => Self::PadDecryptionRequest,
             ProtocolEventKind::PrepKeygen(_) => Self::PrepKeygenRequest,
             ProtocolEventKind::Keygen(_) => Self::KeygenRequest,
             ProtocolEventKind::Crsgen(_) => Self::CrsgenRequest,
@@ -196,6 +199,7 @@ impl TryFrom<PgNotification> for EventType {
         match value.channel() {
             PUBLIC_DECRYPT_REQUEST_NOTIFICATION => Ok(Self::PublicDecryptionRequest),
             USER_DECRYPT_REQUEST_NOTIFICATION => Ok(Self::UserDecryptionRequest),
+            PAD_DECRYPT_REQUEST_NOTIFICATION => Ok(Self::PadDecryptionRequest),
             PREP_KEYGEN_REQUEST_NOTIFICATION => Ok(Self::PrepKeygenRequest),
             KEYGEN_REQUEST_NOTIFICATION => Ok(Self::KeygenRequest),
             CRSGEN_REQUEST_NOTIFICATION => Ok(Self::CrsgenRequest),
@@ -215,6 +219,7 @@ impl EventType {
         match self {
             Self::PublicDecryptionRequest => PUBLIC_DECRYPT_REQUEST_NOTIFICATION,
             Self::UserDecryptionRequest => USER_DECRYPT_REQUEST_NOTIFICATION,
+            Self::PadDecryptionRequest => PAD_DECRYPT_REQUEST_NOTIFICATION,
             Self::PrepKeygenRequest => PREP_KEYGEN_REQUEST_NOTIFICATION,
             Self::KeygenRequest => KEYGEN_REQUEST_NOTIFICATION,
             Self::CrsgenRequest => CRSGEN_REQUEST_NOTIFICATION,
@@ -231,6 +236,7 @@ impl EventType {
         match self {
             EventType::PublicDecryptionRequest => "public_decryption_request",
             EventType::UserDecryptionRequest => "user_decryption_request",
+            EventType::PadDecryptionRequest => "pad_decryption_request",
             EventType::PrepKeygenRequest => "prep_keygen_request",
             EventType::KeygenRequest => "keygen_request",
             EventType::CrsgenRequest => "crsgen_request",
@@ -243,34 +249,30 @@ impl EventType {
         }
     }
 
-    pub fn signature_hash(&self) -> B256 {
-        match self {
-            EventType::PublicDecryptionRequest => PublicDecryptionRequest::SIGNATURE_HASH,
-            EventType::UserDecryptionRequest => UserDecryptionRequest::SIGNATURE_HASH,
-            EventType::PrepKeygenRequest => PrepKeygenRequest::SIGNATURE_HASH,
-            EventType::KeygenRequest => KeygenRequest::SIGNATURE_HASH,
-            EventType::CrsgenRequest => CrsgenRequest::SIGNATURE_HASH,
-            EventType::AbortKeygenRequest => AbortKeygen::SIGNATURE_HASH,
-            EventType::AbortCrsgenRequest => AbortCrsgen::SIGNATURE_HASH,
-            EventType::NewKmsContext => NewKmsContext::SIGNATURE_HASH,
-            EventType::NewKmsEpoch => NewKmsEpoch::SIGNATURE_HASH,
-            EventType::KmsContextDestroyed => KmsContextDestroyed::SIGNATURE_HASH,
-            EventType::KmsEpochDestroyed => KmsEpochDestroyed::SIGNATURE_HASH,
-        }
-    }
-
     /// Returns every topic0 hash that maps to this `EventType` in the Gateway ABI.
     ///
     /// `UserDecryptionRequest` currently covers two overloaded events — the legacy shape and the
-    /// RFC016 shape — so both topic0 hashes must be listed in the `eth_getLogs` filter. All other
-    /// event types map one-to-one to a single topic0.
+    /// RFC016 shape — so both topic0 hashes must be listed in the `eth_getLogs` filter.
+    /// `PadDecryptionRequest` has no on-chain event. All other event types map one-to-one to a
+    /// single topic0.
     pub fn signature_hashes(&self) -> Vec<B256> {
         match self {
+            EventType::PublicDecryptionRequest => vec![PublicDecryptionRequest::SIGNATURE_HASH],
             EventType::UserDecryptionRequest => vec![
                 UserDecryptionRequest::SIGNATURE_HASH,
                 UserDecryptionRequestV2::SIGNATURE_HASH,
             ],
-            _ => vec![self.signature_hash()],
+            // Pad decryptions are HTTP only.
+            EventType::PadDecryptionRequest => vec![],
+            EventType::PrepKeygenRequest => vec![PrepKeygenRequest::SIGNATURE_HASH],
+            EventType::KeygenRequest => vec![KeygenRequest::SIGNATURE_HASH],
+            EventType::CrsgenRequest => vec![CrsgenRequest::SIGNATURE_HASH],
+            EventType::AbortKeygenRequest => vec![AbortKeygen::SIGNATURE_HASH],
+            EventType::AbortCrsgenRequest => vec![AbortCrsgen::SIGNATURE_HASH],
+            EventType::NewKmsContext => vec![NewKmsContext::SIGNATURE_HASH],
+            EventType::NewKmsEpoch => vec![NewKmsEpoch::SIGNATURE_HASH],
+            EventType::KmsContextDestroyed => vec![KmsContextDestroyed::SIGNATURE_HASH],
+            EventType::KmsEpochDestroyed => vec![KmsEpochDestroyed::SIGNATURE_HASH],
         }
     }
 }
@@ -278,6 +280,7 @@ impl EventType {
 // Postgres notifications
 pub const PUBLIC_DECRYPT_REQUEST_NOTIFICATION: &str = "public_decryption_request_available";
 pub const USER_DECRYPT_REQUEST_NOTIFICATION: &str = "user_decryption_request_available";
+pub const PAD_DECRYPT_REQUEST_NOTIFICATION: &str = "pad_decryption_request_available";
 pub const PREP_KEYGEN_REQUEST_NOTIFICATION: &str = "prep_keygen_request_available";
 pub const KEYGEN_REQUEST_NOTIFICATION: &str = "keygen_request_available";
 pub const CRSGEN_REQUEST_NOTIFICATION: &str = "crsgen_request_available";

@@ -44,6 +44,7 @@ COPY solana/crates/zama-solana-request ./solana/crates/zama-solana-request
 # git through GIT_CONFIG_* env vars, so it never lands in a layer or a .gitconfig.
 WORKDIR /app/kms-connector
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/app/kms-connector/target,sharing=locked \
     --mount=type=secret,id=sccache_aws_access_key_id \
     --mount=type=secret,id=sccache_aws_secret_access_key \

@@ -364,6 +364,7 @@ describe("render-compose", () => {
         "coprocessor-consensus-detector",
         "coprocessor-upgrade-controller",
         "coprocessor-proxy",
+        "coprocessor-prf-service",
       ];
       // These implement exit-for-restart: fatal error, non-zero exit, and they
       // expect to be brought back. Without a policy the stack degraded
@@ -518,27 +519,31 @@ describe("render-compose", () => {
     expect(modernServices).toContain("coprocessor-upgrade-controller");
   });
 
-  test("requests a coprocessor-proxy and its fake prf-service per coprocessor only when the bundle pins the proxy", () => {
-    const withoutProxy: State = {
+  test("requests a coprocessor-proxy and its PRF output seeder per coprocessor only when the bundle pins the proxy and prf-service", () => {
+    const without = (key: string): State => ({
       ...state,
       versions: {
         ...state.versions,
-        env: Object.fromEntries(Object.entries(state.versions.env).filter(([key]) => key !== "COPROCESSOR_PROXY_VERSION")),
+        env: Object.fromEntries(Object.entries(state.versions.env).filter(([name]) => name !== key)),
       },
-    };
-    expect(
-      serviceNameList(withoutProxy, "coprocessor").some((name) => name.endsWith("-proxy") || name.endsWith("-prf-service-fake")),
-    ).toBe(false);
+    });
+    for (const key of ["COPROCESSOR_PROXY_VERSION", "COPROCESSOR_PRF_SERVICE_VERSION"]) {
+      expect(
+        serviceNameList(without(key), "coprocessor").some((name) => name.endsWith("-proxy") || name.endsWith("-prf-output-seed")),
+        key,
+      ).toBe(false);
+    }
 
     const services = serviceNameList(state, "coprocessor");
     for (const prefix of ["coprocessor-", "coprocessor1-"]) {
-      // The fake starts no later than its proxy, which resolves the fake's hostname once at startup.
-      expect(services).toContain(`${prefix}prf-service-fake`);
-      expect(services.indexOf(`${prefix}prf-service-fake`)).toBeLessThan(services.indexOf(`${prefix}proxy`));
+      // The proxy resolves the prf-service hostname once at startup, so it starts last.
+      expect(services).toContain(`${prefix}prf-output-seed`);
+      expect(services.indexOf(`${prefix}prf-service`)).toBeLessThan(services.indexOf(`${prefix}proxy`));
+      expect(services.indexOf(`${prefix}prf-output-seed`)).toBeLessThan(services.indexOf(`${prefix}proxy`));
     }
   });
 
-  test("gives each coprocessor its own proxy and fake prf-service, on the bundle's images", async () => {
+  test("gives each coprocessor its own proxy, prf-service and seeder, on the bundle's images", async () => {
     // Instance 1 runs a coprocessor release by tag, which may predate the proxy.
     const pinned: State = {
       ...state,
@@ -576,16 +581,43 @@ instances:
         >;
       };
       const proxy = doc.services["coprocessor1-proxy"];
-      const fake = doc.services["coprocessor1-prf-service-fake"];
+      const seed = doc.services["coprocessor1-prf-output-seed"];
       expect(doc.services["coprocessor1-tfhe-worker"]?.image).toMatch(/:v0\.15\.0$/);
       expect(proxy?.image).toBe("ghcr.io/zama-ai/fhevm/coprocessor/coprocessor-proxy:${COPROCESSOR_PROXY_VERSION}");
-      expect(fake?.image).toBe("ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}");
-      expect(proxy?.depends_on).toEqual({ "coprocessor1-prf-service-fake": { condition: "service_healthy" } });
+      expect(doc.services["coprocessor1-prf-service"]?.image).toBe(
+        "ghcr.io/zama-ai/fhevm/coprocessor/prf-service:${COPROCESSOR_PRF_SERVICE_VERSION}",
+      );
+      expect(seed?.image).toBe("ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}");
+      expect(proxy?.depends_on).toEqual({
+        "coprocessor1-prf-service": { condition: "service_started" },
+        "coprocessor1-prf-output-seed": { condition: "service_healthy" },
+      });
       expect(proxy?.env_file).toEqual([envPath("coprocessor-proxy.1")]);
       expect(proxy?.environment?.COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS).toBe("0x00000000000000000000000000000000000000c1");
       expect(proxy?.volumes?.[0]).toMatch(/\/static\/config\/coprocessor-proxy:\/etc\/coprocessor-proxy\/tls:ro$/);
-      expect(fake?.volumes?.[0]).toMatch(/\/test-suite\/e2e\/scripts\/fake-prf-service\.ts:\/opt\/fake-prf-service\.ts:ro$/);
+      // The seeder writes into instance 1's database, after its migration.
+      expect(seed?.env_file).toEqual([envPath("coprocessor.1")]);
+      expect(seed?.depends_on).toEqual({ "coprocessor1-db-migration": { condition: "service_completed_successfully" } });
+      expect(seed?.volumes?.[0]).toMatch(
+        /\/test-suite\/e2e\/scripts\/seed-prf-output\.ts:\/app\/test-suite\/e2e\/scripts\/seed-prf-output\.ts:ro$/,
+      );
     });
+  });
+
+  test("requests the prf-service only when the bundle pins its image", () => {
+    const withoutPrf: State = {
+      ...state,
+      versions: { ...state.versions, env: { ...state.versions.env, COPROCESSOR_PRF_SERVICE_VERSION: "" } },
+    };
+    expect(serviceNameList(withoutPrf, "coprocessor")).not.toContain("coprocessor-prf-service");
+
+    const withPrf: State = {
+      ...state,
+      versions: { ...state.versions, env: { ...state.versions.env, COPROCESSOR_PRF_SERVICE_VERSION: "02f6cc0" } },
+    };
+    const services = serviceNameList(withPrf, "coprocessor");
+    expect(services).toContain("coprocessor-prf-service");
+    expect(services).toContain("coprocessor1-prf-service");
   });
 
   test("requests the kms-connector endpoint and proxy only when the bundle pins their images", () => {
@@ -668,7 +700,7 @@ instances:
       };
 
       for (const [name, service] of Object.entries(doc.services)) {
-        if (name.endsWith("-prf-service-fake")) {
+        if (name.endsWith("-prf-output-seed")) {
           // Runs the test-suite image; nothing to build.
           expect(service.build, name).toBeUndefined();
           continue;
@@ -1093,7 +1125,7 @@ gcs:
       // GCS reuses BCS's db-migration — no `coprocessor-gcs-db-migration`.
       expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
       // Blue-green stacks run without the proxy pair.
-      const proxyPair = (name: string) => name.endsWith("-proxy") || name.endsWith("-prf-service-fake");
+      const proxyPair = (name: string) => name.endsWith("-proxy") || name.endsWith("-prf-output-seed");
       expect(Object.keys(doc.services).some(proxyPair)).toBe(false);
       expect(serviceNameList(bgState, "coprocessor").some(proxyPair)).toBe(false);
     });
@@ -1163,6 +1195,15 @@ bootstrap:
     });
     expect(explicitGreenServices).toContain("coprocessor-gcs-host-listener");
     expect(explicitGreenServices).toContain("coprocessor-gcs-upgrade-controller");
+    expect(explicitGreenServices).toContain("coprocessor-gcs-prf-service");
+    expect(explicitGreenServices).not.toContain("coprocessor-prf-service");
+
+    const withoutPrf: State = {
+      ...deferredState,
+      versions: { ...state.versions, env: { ...state.versions.env, COPROCESSOR_PRF_SERVICE_VERSION: "" } },
+    };
+    const greenWithoutPrf = blueGreenServiceNames(withoutPrf, { includeMigration: false, includeDeferredGreen: true });
+    expect(greenWithoutPrf).not.toContain("coprocessor-gcs-prf-service");
   });
 
   test("multi-operator blue-green emits BCS + GCS fleets per operator with correct prefixes", async () => {
