@@ -203,7 +203,26 @@ jobs:
           ! grep -rq --include='*.sol' '@openzeppelin/' "$extract" || fail "a published file imports @openzeppelin"
 
       # ------------------------------------------------------------------------
-      # 10. Record tarball hash
+      # 10. Check release version (release only)
+      #    Fails if the version is a prerelease (`x.y.z-…`, which must not get the
+      #    `latest` dist-tag) or is already published on npm.
+      # ------------------------------------------------------------------------
+      - name: Check release version
+        if: ${{ inputs.release }}
+        shell: bash
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          version="$(tar -xzOf "$RUNNER_TEMP/tarball/package.tgz" package/package.json | jq -r .version)"
+          case "$version" in
+            *-*) fail "$version is a prerelease: publish it with release=false" ;;
+          esac
+          published="$(npm view @fhevm/solidity versions --json)"
+          ! jq -e --arg v "$version" 'index($v) != null' <<< "$published" > /dev/null \
+            || fail "@fhevm/solidity@$version is already published"
+          echo "Release version: $version"
+
+      # ------------------------------------------------------------------------
+      # 11. Record tarball hash
       #    Exported as a job output: `verify` and `publish-npmjs` check that the
       #    tarball they download is exactly the one checked above.
       # ------------------------------------------------------------------------
@@ -215,7 +234,7 @@ jobs:
           echo "package.tgz sha256: $sha256"
 
       # ------------------------------------------------------------------------
-      # 11. Upload tarball
+      # 12. Upload tarball
       #    Hands the tarball over to the `verify` job, then to the `publish-npmjs`
       #    job, the only job allowed to publish it.
       # ------------------------------------------------------------------------
