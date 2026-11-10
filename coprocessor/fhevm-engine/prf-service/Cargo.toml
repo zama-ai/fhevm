@@ -22,6 +22,7 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 ciphertext-attestation = { path = "../../../shared/ciphertext-attestation" }
+coprocessor-api = { path = "../coprocessor-api" }
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 fhevm-sig-auth = { path = "../../../shared/fhevm-sig-auth" }
 

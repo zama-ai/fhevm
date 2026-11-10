@@ -3158,6 +3158,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9885fa71e26b8ab7855e2ec7cae6e9b380edff76cd052e07c683a0319d51b3a2"
 
 [[package]]
+name = "coprocessor-api"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "ciphertext-attestation",
+ "serde",
+ "serde_json",
+ "strum 0.26.3",
+]
+
+[[package]]
 name = "coprocessor-proxy"
 version = "0.1.0"
 dependencies = [
@@ -6837,6 +6848,7 @@ dependencies = [
  "anyhow",
  "ciphertext-attestation",
  "clap",
+ "coprocessor-api",
  "fhevm-engine-common",
  "fhevm-sig-auth",
  "hex",
