@@ -57,11 +57,9 @@ pub enum ValidationError {
         min: u64,
         max: u64,
     },
-    #[error(
-        "unsupported attestationType, supported: [{supported}]",
-        supported = supported_attestation_types()
-    )]
-    UnsupportedAttestationType,
+    /// `supported` lists what the route accepts for the body it read.
+    #[error("unsupported attestationType, supported: [{supported}]")]
+    UnsupportedAttestationType { supported: String },
     #[error("invalid body: {0}")]
     InvalidBody(String),
     #[error("invalid Solana request: {0}")]
@@ -84,15 +82,11 @@ pub enum ValidationError {
     LabelMismatch { label: B256 },
 }
 
-fn supported_attestation_types() -> String {
-    AttestationType::supported().collect::<Vec<_>>().join(", ")
-}
-
 impl ValidationError {
     /// The error code this failure is answered with.
     pub fn code(&self) -> ErrorCode {
         match self {
-            Self::UnsupportedAttestationType => ErrorCode::UnsupportedAttestationType,
+            Self::UnsupportedAttestationType { .. } => ErrorCode::UnsupportedAttestationType,
             Self::InvalidBody(_)
             | Self::InvalidSolanaRequest(_)
             | Self::SolanaChainInEvmRequest(_)
@@ -151,8 +145,11 @@ fn validate_permit(
     config: &Config,
 ) -> Result<(), ValidationError> {
     // Both bodies carry an EIP-712 permit; the Solana scheme has its own body.
-    if attestation_type.parse() != Ok(AttestationType::Eip712UnifiedUserDecryptV1) {
-        return Err(ValidationError::UnsupportedAttestationType);
+    let eip712 = AttestationType::Eip712UnifiedUserDecryptV1;
+    if attestation_type.parse() != Ok(eip712) {
+        return Err(ValidationError::UnsupportedAttestationType {
+            supported: eip712.to_string(),
+        });
     }
     validate_user_address(user_address)?;
     if allowed_contracts_len > config.max_allowed_contracts {
@@ -200,10 +197,10 @@ pub fn validate_pad_decryption(
             payload.witnessVersion,
         ));
     }
-    if is_solana_host_chain_id(payload.chainId) {
-        return Err(ValidationError::SolanaChainInEvmRequest(payload.chainId));
-    }
-    if !config.supported_chain_ids.contains(&payload.chainId) {
+    // Pads are EVM-only, also on a connector that serves a Solana host chain.
+    if is_solana_host_chain_id(payload.chainId)
+        || !config.supported_chain_ids.contains(&payload.chainId)
+    {
         return Err(ValidationError::UnsupportedChainId(payload.chainId));
     }
     let max_pads = config.max_pads.get();
@@ -294,7 +291,9 @@ pub fn attestation_type(body: &Value) -> Result<AttestationType, ValidationError
         .and_then(Value::as_str)
         .ok_or_else(|| ValidationError::InvalidBody("attestationType must be a string".into()))?
         .parse()
-        .map_err(|_| ValidationError::UnsupportedAttestationType)
+        .map_err(|_| ValidationError::UnsupportedAttestationType {
+            supported: AttestationType::supported().collect::<Vec<_>>().join(", "),
+        })
 }
 
 /// Whether a public-decryption body is the Solana one: its first handle names a Solana chain. A
@@ -739,7 +738,10 @@ pub(crate) mod tests {
             "payload": { "shape": "unknown" },
         });
         let error = attestation_type(&body).unwrap_err();
-        assert_eq!(error, ValidationError::UnsupportedAttestationType);
+        assert_eq!(
+            error.to_string(),
+            "unsupported attestationType, supported: [eip712-unified-user-decrypt-v1, solana-srfc38-user-decrypt-v1]"
+        );
         assert_eq!(error.code(), ErrorCode::UnsupportedAttestationType);
 
         let error = attestation_type(&serde_json::json!({ "payload": {} })).unwrap_err();
@@ -832,10 +834,13 @@ pub(crate) mod tests {
             "wrong-attestation".to_string(),
             AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
         ] {
+            // The pad route takes the EIP-712 permit only, and says so.
+            let error = validate_pad_with(|r| r.attestationType = attestation_type).unwrap_err();
             assert_eq!(
-                validate_pad_with(|r| r.attestationType = attestation_type),
-                Err(ValidationError::UnsupportedAttestationType)
+                error.to_string(),
+                "unsupported attestationType, supported: [eip712-unified-user-decrypt-v1]"
             );
+            assert_eq!(error.code(), ErrorCode::UnsupportedAttestationType);
         }
         assert_eq!(
             validate_pad_with(|r| r.payload.userAddress = Address::ZERO),
@@ -1003,11 +1008,12 @@ pub(crate) mod tests {
         );
         assert_eq!(error.code(), ErrorCode::Malformed);
 
+        // Pads have no Solana form: the chain is unsupported on that route.
         let mut pad = pad_request(vec![pad_entry(solana_chain, 1)], extra_data_v2());
         pad.payload.chainId = solana_chain;
         assert_eq!(
             validate_pad_decryption(&pad, &cfg, NOW),
-            Err(ValidationError::SolanaChainInEvmRequest(solana_chain))
+            Err(ValidationError::UnsupportedChainId(solana_chain))
         );
     }
 
