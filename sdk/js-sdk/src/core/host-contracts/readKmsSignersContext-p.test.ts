@@ -10,11 +10,11 @@ import { createCoreFhevm } from '../runtime/CoreFhevm-p.js';
 import { createFhevmRuntime } from '../runtime/CoreFhevmRuntime-p.js';
 import { invalidateVersionCache } from './HostContractVersion-p.js';
 import {
+  kmsContextCache,
   kmsContextVersion,
   permitRequestStaleContextError,
   readCurrentKmsSignersContext,
   readKmsSignersContextFromPermitExtraData,
-  refreshCurrentKmsContext,
 } from './readKmsSignersContext-p.js';
 import { createKmsExtraDataV0, createKmsExtraDataV1, createKmsExtraDataV2 } from '../kms/kmsExtraData-p.js';
 import { InvalidSignedPermitError } from '../errors/InvalidSignedPermitError.js';
@@ -26,6 +26,15 @@ import { InvalidSignedPermitError } from '../errors/InvalidSignedPermitError.js'
 const KMS_VERIFIER_ADDRESS = sepolia.fhevm.contracts.kmsVerifier.address as ChecksummedAddress;
 const SIGNER_A = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266' as ChecksummedAddress;
 const SIGNER_B = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8' as ChecksummedAddress;
+
+/** Reads the current KMS context again (see `VersionedValueCache.refresh`); resolves to its version. */
+async function refreshCurrentKmsContext(
+  client: Parameters<typeof kmsContextCache.currentParameters>[0],
+  invalidVersion: string | undefined,
+): Promise<string> {
+  const parameters = kmsContextCache.currentParameters(client);
+  return (await kmsContextCache.refresh(client, parameters, invalidVersion)).version;
+}
 
 const PROTOCOL_CONFIG_ADDRESS = sepolia.fhevm.contracts.protocolConfig?.address as ChecksummedAddress;
 

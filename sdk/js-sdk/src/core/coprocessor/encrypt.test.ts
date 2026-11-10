@@ -17,6 +17,7 @@ import { RelayerResponseInputProofRejectedError } from '../errors/RelayerRespons
 import { createZkProof } from './ZkProofBuilder-p.js';
 import { fetchVerifiedInputProof } from './fetchVerifiedInputProof.js';
 import { encrypt } from './encrypt.js';
+import { keyMaterialCache } from '../key/ensureFheEncryptionKeyDownload.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 // npx vitest run --config src/vitest.config.ts src/core/coprocessor/encrypt.test.ts
@@ -37,11 +38,6 @@ const chain = vi.hoisted(() => ({ keyVersion: 'k1', coprocessorSigner: '' }));
 // The key in use: the one active on-chain when it is read.
 vi.mock('../key/fetchFheEncryptionKey.js', () => ({
   fetchVersionedFheEncryptionKeyWasm: vi.fn(async () => Promise.resolve({ key: {}, version: chain.keyVersion })),
-}));
-// Reading the key again after a rejected proof: the active one.
-vi.mock('../key/ensureFheEncryptionKeyDownload.js', async (importOriginal) => ({
-  ...(await importOriginal<object>()),
-  refreshFheEncryptionKey: vi.fn(async () => Promise.resolve(chain.keyVersion)),
 }));
 // A client that checks keys: a rejected proof may come from a rotated key.
 vi.mock('../key/verifyFheEncryptionKeyBytes-p.js', async (importOriginal) => ({
@@ -112,6 +108,11 @@ const encryptOne = (client: Fhevm<FhevmChain, WithEncrypt>) =>
     values: [createTypedValue({ type: 'uint64', value: 42n })],
     fhevmContext,
   });
+
+// Reading the key again after a rejected proof: the active one.
+vi.spyOn(keyMaterialCache, 'refresh').mockImplementation(async () =>
+  Promise.resolve({ version: chain.keyVersion, value: {} as never, timestamp: 0 }),
+);
 
 beforeEach(() => {
   chain.keyVersion = 'k1';

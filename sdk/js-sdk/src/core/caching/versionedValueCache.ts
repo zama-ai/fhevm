@@ -1,4 +1,6 @@
 import type { Logger } from '../types/logger.js';
+import type { FhevmChain } from '../types/fhevmChain.js';
+import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { FhevmConfigError } from '../errors/FhevmConfigError.js';
 
 /** A value as cached, with its version and the time it was read. */
@@ -43,6 +45,11 @@ const MAX_SLOTS = 100;
  * - When versions only increase ({@link isOlderVersion}), an older value read
  *   (e.g. from a lagging RPC node) never replaces a newer cached one, unless
  *   a {@link refresh} reads it: the newer value failed, or the read is forced.
+ *
+ * For `retryOnStaleCache`, a subclass also tells which request errors may come
+ * from a stale value ({@link mayBeStale}), the parameters of the value a client
+ * currently uses ({@link currentParameters}), and how to read only the current
+ * version ({@link readCurrentVersion}).
  */
 export abstract class VersionedValueCache<TContext, TParams, TValue> {
   #slots = new Map<string, Slot<TValue>>();
@@ -88,6 +95,30 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
   protected isOlderVersion(_version: string, _than: string): boolean {
     return false;
   }
+
+  //////////////////////////////////////////////////////////////////////////////
+  // Overridable, for retryOnStaleCache
+  //////////////////////////////////////////////////////////////////////////////
+
+  /**
+   * Whether a failed request's error may come from a stale value of this
+   * cache. Defaults to `false`: the request is never run again for it.
+   */
+  public mayBeStale(_context: TContext, _error: unknown): boolean {
+    return false;
+  }
+
+  /** The parameters of the value the client currently uses (its slot). */
+  public abstract currentParameters(
+    context: TContext & { readonly chain: FhevmChain },
+    fhevmContext: FhevmClientFrozenContext,
+  ): TParams;
+
+  /**
+   * Reads only the current version, caching nothing: cheaper than
+   * {@link fetch} (e.g. the key ids, not the key).
+   */
+  public abstract readCurrentVersion(context: TContext, parameters: TParams): Promise<string>;
 
   //////////////////////////////////////////////////////////////////////////////
   // Public API

@@ -12,6 +12,7 @@ import { uint256ToBytes32Hex } from '../base/uint.js';
 import { VersionedValueCache, type CachedValue } from '../caching/versionedValueCache.js';
 import { getCacheTtl } from '../caching/cacheOptions-p.js';
 import { FheEncryptionKeyVerificationError } from '../errors/FheEncryptionKeyVerificationError.js';
+import { RelayerResponseInputProofRejectedError } from '../errors/RelayerResponseInputProofRejectedError.js';
 import {
   getProvidedFheEncryptionKey,
   getProvidedFheEncryptionKeyError,
@@ -84,9 +85,26 @@ class KeyMaterialCache extends VersionedValueCache<Context, Parameters, FheEncry
     }
     return { version: await _admitLabelIdKey(context, bytes), value: bytes };
   }
+
+  // An input proof rejected by the coprocessors: the key may have rotated.
+  // Not for clients that do not check keys (the cleartext mock relayer): their
+  // key never changes, and its labels cannot tell.
+  public override mayBeStale(context: Context, error: unknown): boolean {
+    return error instanceof RelayerResponseInputProofRejectedError && requiresKeyVerification(context.runtime);
+  }
+
+  public override currentParameters(_context: Context, fhevmContext: FhevmClientFrozenContext): Parameters {
+    return { fhevmContext };
+  }
+
+  // The active ids on KMSGeneration, without downloading the key.
+  public override async readCurrentVersion(context: Context): Promise<string> {
+    return fheEncryptionKeyVersion(await readActiveFheEncryptionKeyIds(context));
+  }
 }
 
-const keyMaterialCache = new KeyMaterialCache();
+/** @internal The key material cache (shared by every client in the thread). */
+export const keyMaterialCache = new KeyMaterialCache();
 
 /**
  * Checks a key served under label ids before it is cached (the check is
@@ -117,33 +135,10 @@ export function fheEncryptionKeyVersion(ids: ActiveIds): string {
   return `${uint256ToBytes32Hex(ids.keyId)}:${uint256ToBytes32Hex(ids.crsId)}`;
 }
 
-/**
- * Reads the version of the active key material (its ids on KMSGeneration),
- * without downloading or caching it.
- */
-export async function readFheEncryptionKeyVersion(context: Context): Promise<string> {
-  return fheEncryptionKeyVersion(await readActiveFheEncryptionKeyIds(context));
-}
-
 /** The version of bytes no client checks: the relayer's ids, as served. */
 function _bytesVersion(bytes: FheEncryptionKeyBytes): string {
   const normalize = (id: string): string => (isBytes32Hex(id) ? id.toLowerCase() : id);
   return `${normalize(bytes.publicKeyBytes.id)}:${normalize(bytes.crsBytes.id)}`;
-}
-
-/**
- * Reads the key material again (see `VersionedValueCache.refresh`). Each client
- * checks the key on use.
- *
- * @returns the cache version of the current key.
- * @internal
- */
-export async function refreshFheEncryptionKey(
-  context: Context,
-  parameters: Parameters & { readonly invalidVersion: string | undefined },
-): Promise<string> {
-  const { version } = await keyMaterialCache.refresh(context, parameters, parameters.invalidVersion);
-  return version;
 }
 
 /** For tests and harnesses: the key cache, by slot. */

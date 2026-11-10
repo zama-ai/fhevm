@@ -11,6 +11,7 @@ import { keccak_256 } from '@noble/hashes/sha3.js';
 import { VersionedValueCache } from '../caching/versionedValueCache.js';
 import { bytesToHex } from '../base/bytes.js';
 import { getCacheTtl } from '../caching/cacheOptions-p.js';
+import { DuplicateSignerError, ThresholdSignerError, UnknownSignerError } from '../errors/SignersError.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -54,9 +55,29 @@ class CoprocessorSignersCache extends VersionedValueCache<Context, Parameters, R
     const value = await _getCoprocessorContextSignersAndThreshold(context, params);
     return { version: coprocessorSignersVersion(value), value };
   }
+
+  // A coprocessor signature check failure: the signer set may have changed.
+  public override mayBeStale(_context: Context, error: unknown): boolean {
+    return (
+      error instanceof UnknownSignerError ||
+      error instanceof ThresholdSignerError ||
+      error instanceof DuplicateSignerError
+    );
+  }
+
+  // The InputVerifier's signers: the ones input proofs are checked against.
+  public override currentParameters(context: Context & { readonly chain: FhevmChain }): Parameters {
+    return { address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress };
+  }
+
+  // The whole set (its version is its hash), not cached.
+  public override async readCurrentVersion(context: Context, params: Parameters): Promise<string> {
+    return coprocessorSignersVersion(await _getCoprocessorContextSignersAndThreshold(context, params));
+  }
 }
 
-const coprocessorSignersCache = new CoprocessorSignersCache();
+/** @internal The coprocessor signers cache (shared by every client in the thread). */
+export const coprocessorSignersCache = new CoprocessorSignersCache();
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -84,33 +105,6 @@ export async function getCoprocessorContextSignersAndThreshold(
 ): Promise<ReturnType> {
   const entry = await coprocessorSignersCache.get(context, parameters, getCacheTtl(context, 'coprocessorSigners'));
   return entry.value;
-}
-
-/** Reads the version of the current coprocessor signer set, without caching it. */
-export async function readCoprocessorSignersVersion(
-  context: Context & { readonly chain: FhevmChain },
-): Promise<string> {
-  const value = await _getCoprocessorContextSignersAndThreshold(context, {
-    address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
-  });
-  return coprocessorSignersVersion(value);
-}
-
-/**
- * Reads the coprocessor signers again (see `VersionedValueCache.refresh`).
- *
- * @returns the cache version of the current set.
- */
-export async function refreshCoprocessorContextSignersAndThreshold(
-  context: Context & { readonly chain: FhevmChain },
-  invalidVersion: string | undefined,
-): Promise<string> {
-  const { version } = await coprocessorSignersCache.refresh(
-    context,
-    { address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress },
-    invalidVersion,
-  );
-  return version;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

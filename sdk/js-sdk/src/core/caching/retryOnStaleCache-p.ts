@@ -3,17 +3,12 @@ import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmBase } from '../types/coreFhevmClient.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import type { UsedCacheVersions } from './usedCacheVersions-p.js';
+import type { VersionedValueCache } from './versionedValueCache.js';
 import { CachedValueInvalidError } from '../errors/CachedValueInvalidError.js';
-import { RelayerResponseInputProofRejectedError } from '../errors/RelayerResponseInputProofRejectedError.js';
 import { RelayerAbortError } from '../errors/RelayerAbortError.js';
-import { DuplicateSignerError, ThresholdSignerError, UnknownSignerError } from '../errors/SignersError.js';
-import {
-  readCoprocessorSignersVersion,
-  refreshCoprocessorContextSignersAndThreshold,
-} from '../host-contracts/getCoprocessorContextSignersAndThreshold-p.js';
-import { readCurrentKmsContextVersion, refreshCurrentKmsContext } from '../host-contracts/readKmsSignersContext-p.js';
-import { readFheEncryptionKeyVersion, refreshFheEncryptionKey } from '../key/ensureFheEncryptionKeyDownload.js';
-import { requiresKeyVerification } from '../key/verifyFheEncryptionKeyBytes-p.js';
+import { coprocessorSignersCache } from '../host-contracts/getCoprocessorContextSignersAndThreshold-p.js';
+import { kmsContextCache } from '../host-contracts/readKmsSignersContext-p.js';
+import { keyMaterialCache } from '../key/ensureFheEncryptionKeyDownload.js';
 import { getCacheOptions } from './cacheOptions-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -21,54 +16,26 @@ import { getCacheOptions } from './cacheOptions-p.js';
 type Context = FhevmBase<FhevmChain>;
 
 /**
- * Per cached item: which request errors may come from a stale value, how to
- * read the value again (resolving to its version), and how to read only its
- * current version, caching nothing.
+ * The cache of each item: it tells which request errors may come from a stale
+ * value, reads the value again, or reads only its current version.
  */
-const ITEMS: Readonly<
-  Record<
-    FhevmCacheItem,
-    {
-      readonly mayBeStale: (context: Context, error: unknown) => boolean;
-      readonly refresh: (
-        context: Context,
-        fhevmContext: FhevmClientFrozenContext,
-        invalidVersion: string | undefined,
-      ) => Promise<string>;
-      readonly readVersion: (context: Context, fhevmContext: FhevmClientFrozenContext) => Promise<string>;
-    }
-  >
-> = {
-  // An input proof rejected by the coprocessors: the key may have rotated.
-  // Not for clients that do not check keys (the cleartext mock relayer): their
-  // key never changes, and its labels cannot tell.
-  keyMaterial: {
-    mayBeStale: (context, error) =>
-      error instanceof RelayerResponseInputProofRejectedError && requiresKeyVerification(context.runtime),
-    refresh: (context, fhevmContext, invalidVersion) =>
-      refreshFheEncryptionKey(context, { fhevmContext, invalidVersion }),
-    readVersion: (context) => readFheEncryptionKeyVersion(context),
-  },
-  // A coprocessor signature check failure: the signer set may have changed.
-  coprocessorSigners: {
-    mayBeStale: (_context, error) =>
-      error instanceof UnknownSignerError ||
-      error instanceof ThresholdSignerError ||
-      error instanceof DuplicateSignerError,
-    refresh: (context, _fhevmContext, invalidVersion) =>
-      refreshCoprocessorContextSignersAndThreshold(context, invalidVersion),
-    readVersion: (context) => readCoprocessorSignersVersion(context),
-  },
-  // Any failure of a KMS request handed to the relayer (an error, a timeout,
-  // an abort): the KMS reports a refused context no other way. The request
-  // records the context only then, so earlier errors (bad input, an ACL
-  // denial) never get here.
-  kmsContext: {
-    mayBeStale: () => true,
-    refresh: (context, _fhevmContext, invalidVersion) => refreshCurrentKmsContext(context, invalidVersion),
-    readVersion: (context) => readCurrentKmsContextVersion(context),
-  },
+const CACHES: Readonly<Record<FhevmCacheItem, VersionedValueCache<Context, unknown, unknown>>> = {
+  keyMaterial: keyMaterialCache,
+  coprocessorSigners: coprocessorSignersCache,
+  kmsContext: kmsContextCache,
 };
+
+/** Reads `item` again into the cache (see `VersionedValueCache.refresh`); resolves to its version. */
+async function _refreshItem(
+  context: Context,
+  fhevmContext: FhevmClientFrozenContext,
+  item: FhevmCacheItem,
+  invalidVersion: string | undefined,
+): Promise<string> {
+  const cache = CACHES[item];
+  const { version } = await cache.refresh(context, cache.currentParameters(context, fhevmContext), invalidVersion);
+  return version;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -89,7 +56,7 @@ export async function forceRefreshCachedValue(
   },
 ): Promise<void> {
   const { item, invalidVersion, fhevmContext } = parameters;
-  const version = await ITEMS[item].refresh(context, fhevmContext, invalidVersion);
+  const version = await _refreshItem(context, fhevmContext, item, invalidVersion);
   if (invalidVersion !== undefined && version === invalidVersion) {
     throw new CachedValueInvalidError({
       item,
@@ -208,13 +175,14 @@ async function _findStaleValue(
   refresh: boolean,
 ): Promise<StaleValue | undefined> {
   for (const [item, used] of Object.entries(usedVersions) as Array<[FhevmCacheItem, string]>) {
-    if (!ITEMS[item].mayBeStale(context, error)) {
+    const cache = CACHES[item];
+    if (!cache.mayBeStale(context, error)) {
       continue;
     }
     try {
       const current = refresh
-        ? await ITEMS[item].refresh(context, fhevmContext, used)
-        : await ITEMS[item].readVersion(context, fhevmContext);
+        ? await _refreshItem(context, fhevmContext, item, used)
+        : await cache.readCurrentVersion(context, cache.currentParameters(context, fhevmContext));
       if (current !== used) {
         return { item, version: used };
       }

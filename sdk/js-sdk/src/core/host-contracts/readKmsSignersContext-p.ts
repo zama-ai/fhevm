@@ -88,9 +88,28 @@ class KmsContextCache extends VersionedValueCache<Context, Parameters, KmsContex
   protected override isOlderVersion(version: string, than: string): boolean {
     return _compareKmsContextVersions(version, than) < 0;
   }
+
+  // Any failure of a KMS request handed to the relayer (an error, a timeout,
+  // an abort): the KMS reports a refused context no other way. The request
+  // records the context only then, so earlier errors (bad input, an ACL
+  // denial) never get here.
+  public override mayBeStale(): boolean {
+    return true;
+  }
+
+  public override currentParameters(context: Context & { readonly chain: FhevmChain }): Parameters {
+    return _currentKmsContextParameters(context);
+  }
+
+  // The ids only, without the signers.
+  public override async readCurrentVersion(context: Context, params: Parameters): Promise<string> {
+    const extraData = await _readCurrentKmsExtraData(context, params);
+    return kmsContextVersion(extraData.kmsContextId, extraData.kmsEpochId);
+  }
 }
 
-const kmsContextCache = new KmsContextCache();
+/** @internal The KMS context cache (shared by every client in the thread). */
+export const kmsContextCache = new KmsContextCache();
 
 /** Compares two {@link kmsContextVersion}s: context id, then epoch id. */
 function _compareKmsContextVersions(a: string, b: string): number {
@@ -121,25 +140,6 @@ function _currentKmsContextParameters(context: Context & { readonly chain: Fhevm
     kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
     protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
   };
-}
-
-/**
- * Reads the current KMS context again (see `VersionedValueCache.refresh`).
- *
- * @returns the cache version of the current context.
- */
-export async function refreshCurrentKmsContext(
-  context: Context & { readonly chain: FhevmChain },
-  invalidVersion: string | undefined,
-): Promise<string> {
-  const { version } = await kmsContextCache.refresh(context, _currentKmsContextParameters(context), invalidVersion);
-  return version;
-}
-
-/** Reads the version of the current KMS context, without caching it. */
-export async function readCurrentKmsContextVersion(context: Context & { readonly chain: FhevmChain }): Promise<string> {
-  const extraData = await _readCurrentKmsExtraData(context, _currentKmsContextParameters(context));
-  return kmsContextVersion(extraData.kmsContextId, extraData.kmsEpochId);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

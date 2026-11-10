@@ -50,6 +50,14 @@ class TestCache extends VersionedValueCache<TestContext, object, TestValue> {
   protected override now(): number {
     return this.#nowFn();
   }
+
+  public override currentParameters(): object {
+    return {};
+  }
+
+  public override async readCurrentVersion(context: TestContext, parameters: object): Promise<string> {
+    return (await this.#fetchFn(context, parameters, undefined)).version;
+  }
 }
 
 /** A {@link TestCache} whose versions only increase: `v1` < `v2` < `v3`. */
