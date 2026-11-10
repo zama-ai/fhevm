@@ -1422,8 +1422,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         } else {
             revert UnsupportedOperation();
         }
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
-        _setHCUForHandle(result, opHCU);
+        _adjustAndCheckFheTransactionLimitZeroOp(opHCU, caller, result);
     }
 
     /**
@@ -1492,8 +1491,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         } else {
             revert UnsupportedOperation();
         }
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
-        _setHCUForHandle(result, opHCU);
+        _adjustAndCheckFheTransactionLimitZeroOp(opHCU, caller, result);
     }
 
     /**
@@ -1520,8 +1518,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         } else {
             revert UnsupportedOperation();
         }
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
-        _setHCUForHandle(result, opHCU);
+        _adjustAndCheckFheTransactionLimitZeroOp(opHCU, caller, result);
     }
 
     /**
@@ -1831,6 +1828,19 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         if ($.allowlisters[account] == 0) return;
         delete $.allowlisters[account];
         emit AllowlisterRemoved(account);
+    }
+
+    /**
+     * @notice Checks the HCU depth for an operation with no ciphertext operands.
+     */
+    function _adjustAndCheckFheTransactionLimitZeroOp(uint256 opHCU, address caller, bytes32 result) internal virtual {
+        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+
+        if (opHCU > uint256(_getHCULimitStorage().maxHCUDepthPerTx)) {
+            revert HCUTransactionDepthLimitExceeded();
+        }
+
+        _setHCUForHandle(result, opHCU);
     }
 
     /**
