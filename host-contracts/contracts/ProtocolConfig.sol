@@ -118,7 +118,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 1;
         uint256 newEpochId = EPOCH_COUNTER_BASE + 1;
-        _storeKmsCommittee(newContextId, _toKmsNodes(initialKmsNodeParams), initialThresholds);
+        _storeKmsNodesAndThresholds(newContextId, _toKmsNodes(initialKmsNodeParams), initialThresholds);
         $.currentKmsContextId = newContextId;
         $.epochCounter = newEpochId;
         _activateKmsContextAndEpoch(newContextId, newEpochId);
@@ -171,7 +171,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         uint256 previousContextId = $.latestActiveKmsContextId;
         uint256 contextId = ++$.currentKmsContextId;
         KmsNode[] memory nodes = _toKmsNodes(kmsNodeParams);
-        _storeKmsCommittee(contextId, nodes, thresholds);
+        _storeKmsNodesAndThresholds(contextId, nodes, thresholds);
         $.contextState[contextId] = ContextState.Pending;
 
         // Commit to the stored node set and thresholds. Both committees sign it in ContextCreationConfirmation.
