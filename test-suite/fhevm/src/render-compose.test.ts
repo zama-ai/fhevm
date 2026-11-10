@@ -526,6 +526,9 @@ instances:
       expect(seed?.volumes?.[0]).toMatch(
         /\/test-suite\/e2e\/scripts\/seed-prf-output\.ts:\/app\/test-suite\/e2e\/scripts\/seed-prf-output\.ts:ro$/,
       );
+      expect(seed?.volumes?.[1]).toMatch(
+        /\/test-suite\/e2e\/test\/coprocessorProxy\/prfOutput\.ts:\/app\/test-suite\/e2e\/test\/coprocessorProxy\/prfOutput\.ts:ro$/,
+      );
     });
   });
 

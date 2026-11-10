@@ -541,8 +541,10 @@ chart does not:
   `pads`.
 - **The PRF output**: no pad-worker runs yet, so once the migration is done, a pod of the
   test-suite image runs `test-suite/e2e/scripts/seed-prf-output.ts`, which writes the output the
-  suite requests into party i's database. The script comes from the checkout (ConfigMap
-  `prf-output-seed`), so a pinned test-suite image that predates it still runs it.
+  suite requests into party i's database, signed with the party's coprocessor key (its derived
+  wallet, as the sns-worker signs). The suite checks that attestation as a KMS connector will.
+  The script and its `prfOutput.ts` module come from the checkout (ConfigMap `prf-output-seed`),
+  so a pinned test-suite image that predates them still runs them.
 - **TLS**: the Secret `coprocessor-proxy-tls`, made as for the kms-connector proxies,
   with SANs = every party's `coprocessor-<i>-coprocessor-proxy` Service.
 - **Per party**: the image tags (`coprocessor_proxy` and `coprocessor_prf_service` in
