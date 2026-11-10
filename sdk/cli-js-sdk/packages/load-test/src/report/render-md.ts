@@ -806,6 +806,7 @@ export const renderMarkdownReport = (report: Report): string => {
   lines.push("");
   lines.push(`- **Network:** ${run.network}`);
   lines.push(`- **Relayers:** ${report.targets.map(targetLabel).join(" · ")}`);
+  lines.push(`- **Decrypt transport:** ${run.decryptTransport ?? "gateway"}`);
   lines.push(`- **Model:** ${run.model}`);
   lines.push(`- **Status:** ${run.status}`);
   lines.push(`- **Window:** ${run.startedAt} -> ${run.endedAt}`);

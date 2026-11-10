@@ -105,6 +105,13 @@ describe("resolveEnv A/B target validation", () => {
     expect(env.relayerBUrl).toBe("https://gateway.example/tenant-b");
   });
 
+  it("rejects --use-relayer-http combined with a relayer B URL", () => {
+    expect(() => resolveEnv({
+      useRelayerHttp: true,
+      relayerBUrl: "https://candidate.example",
+    })).toThrow(/paired dispatch is not supported against relayer-http/);
+  });
+
   it("rejects relayer B with an identical URL and the same effective prefix", () => {
     expect(() => resolveEnv({
       relayerUrl: "https://gateway.example",
@@ -112,5 +119,27 @@ describe("resolveEnv A/B target validation", () => {
       relayerBUrl: "https://gateway.example",
       // B prefix falls back to A's (/v2), so this is the same target.
     })).toThrow(/same target as the primary relayer/);
+  });
+});
+
+describe("resolveEnv relayer-http toggle", () => {
+  beforeEach(() => {
+    delete process.env.LOAD_TEST_USE_RELAYER_HTTP;
+  });
+
+  it("defaults to the gateway relayer", () => {
+    expect(resolveEnv({}).useRelayerHttp).toBe(false);
+  });
+
+  it("honors LOAD_TEST_USE_RELAYER_HTTP=true only for the exact value", () => {
+    process.env.LOAD_TEST_USE_RELAYER_HTTP = "true";
+    expect(resolveEnv({}).useRelayerHttp).toBe(true);
+    process.env.LOAD_TEST_USE_RELAYER_HTTP = "1";
+    expect(resolveEnv({}).useRelayerHttp).toBe(false);
+  });
+
+  it("prefers an explicit override over LOAD_TEST_USE_RELAYER_HTTP", () => {
+    process.env.LOAD_TEST_USE_RELAYER_HTTP = "true";
+    expect(resolveEnv({ useRelayerHttp: false }).useRelayerHttp).toBe(false);
   });
 });

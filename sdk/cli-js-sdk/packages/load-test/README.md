@@ -64,6 +64,46 @@ per environment. Pools are consumed through persisted cursors that advance
 requests are always unique because the dedup hash includes the per-leg
 transport public key.
 
+## Decrypting without the gateway (relayer-http)
+
+`--use-relayer-http` (env `LOAD_TEST_USE_RELAYER_HTTP=true`) drives the decrypt
+flows against relayer-http's `/v4` routes instead of the gateway relayer.
+`--relayer-url` then points at the relayer-http origin; the SDK builds the
+`/v4/...` paths itself, so `--relayer-api-prefix` is ignored.
+
+| Flow | SDK call | Permit |
+| --- | --- | --- |
+| `public-decrypt` | `decryptPublicValuesWithSignaturesNoGateway` | none (preflight signs a throwaway unified permit) |
+| `user-decrypt` | `decryptValuesNoGateway` | unified (V2), `signUnifiedDecryptionPermit` |
+
+Limits of this mode:
+
+- Only `user-decrypt` and `public-decrypt`. relayer-http has no input-proof
+  route and no delegated user-decrypt, so a scenario containing any other flow
+  is rejected before anything is sent. Run a single-flow scenario with
+  `--flow user-decrypt` or `--flow public-decrypt`; mixed scenarios (`smoke`,
+  `baseline`, `open-mixed`) and the built-in suites are rejected.
+- No A/B comparison: `--relayer-b-url` is rejected.
+- Readiness is `GET /healthz`. The Prometheus collector is skipped, because
+  relayer-http serves `/metrics` on a separate listener.
+- Each request is one POST with no job and no progress events, so `jobId`,
+  `firstRetryAfterMs`, and submit latency stay empty and `pollCount` is 0.
+  End-to-end latency covers the whole SDK call, including local permit signing
+  and KMS share reconstruction.
+- Outcomes come from the SDK's relayer-http errors: an error response is
+  `failed` with the relayer's `code` as the label (`http_<status>` when it has
+  none) plus its status and `requestId`; the client deadline is `timed_out`;
+  a transport error or a non-relayer response (for example from a load
+  balancer) is `submit_failed`; a success body with the wrong shape is
+  `protocol_error`. Other SDK errors are `failed` (`sdk_*_decrypt_error`),
+  except a user-decrypt permit-signing failure, which is `submit_failed`.
+- Handle pools are not tied to a relayer, but creating them encrypts through
+  input-proof, which relayer-http does not serve. Create pools against the
+  gateway relayer first, then run against relayer-http without `--prepare`.
+
+The report records `decryptTransport: "relayer-http"`, and `report diff`
+refuses to compare a relayer-http run with a gateway baseline.
+
 ## Setup
 
 Environment (read from the workspace-root `.env` or the environment):
@@ -82,7 +122,8 @@ Environment (read from the workspace-root `.env` or the environment):
 - `ZAMA_FHEVM_API_KEY_B` — optional distinct API key for the candidate relayer
   (`--relayer-b-url`); falls back to `ZAMA_FHEVM_API_KEY` when unset.
 - `LOAD_TEST_RELAYER_URL`, `LOAD_TEST_NETWORK`, `LOAD_TEST_DATA_DIR`,
-  `LOAD_TEST_RELAYER_CONFIG` — defaults for the matching CLI flags.
+  `LOAD_TEST_RELAYER_CONFIG`, `LOAD_TEST_USE_RELAYER_HTTP` — defaults for the
+  matching CLI flags.
 
 All commands run from this directory with `node --import tsx index.ts …`
 (alias: `pnpm load-test …`).
@@ -332,6 +373,9 @@ into environment-specific CI only where credentials, funding, and a dedicated
 relayer are available.
 
 ## Development
+
+`@fhevm/sdk` is the in-repo `sdk/js-sdk`, consumed from source; build it once
+(and after SDK changes) before `pnpm install` — see the workspace README.
 
 ```bash
 pnpm typecheck

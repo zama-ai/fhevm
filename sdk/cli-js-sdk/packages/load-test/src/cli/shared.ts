@@ -16,6 +16,7 @@ type EnvCommandOptions = Readonly<{
   dataDir?: string;
   relayerConfig?: string;
   relayerBConfig?: string;
+  useRelayerHttp?: true;
 }>;
 
 /**
@@ -36,7 +37,11 @@ export const withEnvOptions = <T extends CommandUnknownOpts>(command: T): T => {
     .option("--rpc-url <url>", "host chain RPC URL override")
     .option("--data-dir <dir>", "pools and run artifacts root (default .load-test)")
     .option("--relayer-config <path>", "primary relayer config file to snapshot")
-    .option("--relayer-b-config <path>", "candidate relayer config file to snapshot");
+    .option("--relayer-b-config <path>", "candidate relayer config file to snapshot")
+    .option(
+      "--use-relayer-http",
+      "decrypt without the gateway, using relayer-http's /v4 routes (env LOAD_TEST_USE_RELAYER_HTTP=true)",
+    );
   return command;
 };
 
@@ -81,6 +86,7 @@ export const envFromCommand = async (command: {
     dataDir: options.dataDir,
     relayerConfigPath: options.relayerConfig,
     relayerBConfigPath: options.relayerBConfig,
+    useRelayerHttp: options.useRelayerHttp,
   };
   const { resolveEnv } = await import("../env");
   return resolveEnv(overrides);
