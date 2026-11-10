@@ -32,7 +32,10 @@ jobs:
               - 'ci/preview-env/solana-host/**'
               - 'ci/preview-env/scripts/lib.sh'
               - 'ci/preview-env/scripts/resolve/parse-overrides.cjs'
-              - 'ci/preview-env/scripts/deploy/deploy-kms-connector.sh'
+              - 'ci/preview-env/scripts/deploy/deploy-relayer.sh'
+              - 'ci/preview-env/relayer/values-relayer-http-e2e.yaml'
+              - 'ci/preview-env/kms-connector/values-kms-connector-e2e.yaml'
+              - 'ci/preview-env/coprocessor/values-coprocessor-e2e.yaml'
   lint:
     name: charts-helm-checks/lint
     needs: check-changes
