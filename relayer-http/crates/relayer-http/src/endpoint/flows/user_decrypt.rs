@@ -253,9 +253,9 @@ pub(crate) mod tests {
     use zama_solana_permit::TRANSPORT_KEY_LEN;
 
     use super::*;
-    use crate::endpoint::validate::MAX_DURATION_SECONDS;
     use crate::endpoint::validate::tests::{SOLANA, handle};
     use crate::kms_aggregator::mock::EXTRA_DATA_V2;
+    use kms_connector_api::MAX_USER_DECRYPTION_DURATION_SECONDS;
 
     pub(crate) const NOW: u64 = 1_800_000_000;
 
@@ -444,7 +444,8 @@ pub(crate) mod tests {
             ),
             (
                 Box::new(|r| {
-                    r.payload.request_validity.duration_seconds = MAX_DURATION_SECONDS + 1
+                    r.payload.request_validity.duration_seconds =
+                        MAX_USER_DECRYPTION_DURATION_SECONDS + 1
                 }),
                 "payload.requestValidity.durationSeconds",
             ),
@@ -477,9 +478,13 @@ pub(crate) mod tests {
         let error = validate(&request, &HttpConfig::for_tests(&[1, 137]), NOW).unwrap_err();
         assert_eq!(error.value.as_deref(), Some("11 contracts"));
         let mut request = valid();
-        request.payload.request_validity.duration_seconds = MAX_DURATION_SECONDS + 1;
+        request.payload.request_validity.duration_seconds =
+            MAX_USER_DECRYPTION_DURATION_SECONDS + 1;
         let error = validate(&request, &HttpConfig::for_tests(&[1, 137]), NOW).unwrap_err();
-        assert_eq!(error.value, Some((MAX_DURATION_SECONDS + 1).to_string()));
+        assert_eq!(
+            error.value,
+            Some((MAX_USER_DECRYPTION_DURATION_SECONDS + 1).to_string())
+        );
     }
 
     #[test]

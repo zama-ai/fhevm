@@ -4,14 +4,13 @@
 use std::fmt::Display;
 
 use alloy::primitives::B256;
+use kms_connector_api::MAX_USER_DECRYPTION_DURATION_SECONDS;
 use zama_solana_acl::host_chain::is_solana_host_chain_id;
 
 use crate::config::HttpConfig;
 
 /// The connector's budget for one decryption request, in plaintext bits.
 const MAX_DECRYPTION_BITS: u32 = 2048;
-/// The connector's longest `requestValidity.durationSeconds`: one year.
-pub const MAX_DURATION_SECONDS: u64 = 365 * 24 * 60 * 60;
 
 /// Which field is wrong, and how. Rendered as the message of a `400 malformed`.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -131,13 +130,13 @@ pub fn evm_handles<'a>(
     Ok(())
 }
 
-/// `duration` at most [`MAX_DURATION_SECONDS`] and `start <= now < start + duration`, `now` in seconds since the
+/// `duration` at most [`MAX_USER_DECRYPTION_DURATION_SECONDS`] and `start <= now < start + duration`, `now` in seconds since the
 /// epoch.
 pub fn request_window(field: &str, start: u64, duration: u64, now: u64) -> Result<(), Invalid> {
-    if duration > MAX_DURATION_SECONDS {
+    if duration > MAX_USER_DECRYPTION_DURATION_SECONDS {
         return Err(Invalid::new(
             format!("{field}.durationSeconds"),
-            format!("at most {MAX_DURATION_SECONDS} seconds"),
+            format!("at most {MAX_USER_DECRYPTION_DURATION_SECONDS} seconds"),
         )
         .with_value(duration));
     }
