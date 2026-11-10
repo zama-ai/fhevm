@@ -25,16 +25,16 @@ const devnet = defineFhevmChain({
   fhevm: {
     contracts: {
       acl: {
-        address: "0xBCA6F8De823a399Dc431930FD5EE550Bf1C0013e",
+        address: "0x6da02d370A0EAa21A67f7f2180E0348e8Be57A2A",
       },
       inputVerifier: {
-        address: "0x6B32f47E39B0F8bE8bEAD5B8990F62E3e28ac08d",
+        address: "0x6A8bf4dBdA66f47af2C988606BA33eF4C4B9CF43",
       },
       kmsVerifier: {
-        address: "0x3F3819BeBE4bD0EFEf8078Df6f9B574ADa80CCA4",
+        address: "0xf75BCED1A3f04f693dFD52f6210BDFf43CD232a1",
       },
       protocolConfig: {
-        address: "0x1aa1E8f03E6aC23EEd65305fF6C89A3Fc55f13a0",
+        address: "0xf9759981BFFaAab05265a73e32136CEd6b1358dc",
       },
     },
     relayerUrl: "https://relayer.dev.zama.cloud",
@@ -42,10 +42,10 @@ const devnet = defineFhevmChain({
       id: 10_900,
       contracts: {
         decryption: {
-          address: "0xA4dc265D54D25D41565c60d36097E8955B03decD",
+          address: "0xd86A08489887Fae000de21fa064D89C75b5CC62B",
         },
         inputVerification: {
-          address: "0xf091D9B4C2da7ecd11858cDD1F4515a8a767D755",
+          address: "0xcC3355b1849F8a73F8e4d51cF3Be9C1753fD4B5B",
         },
       },
     },
