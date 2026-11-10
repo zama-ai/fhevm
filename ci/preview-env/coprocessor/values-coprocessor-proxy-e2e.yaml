@@ -12,17 +12,11 @@ coprocessorProxy:
   tls:
     secretName: coprocessor-proxy-tls
   prfServiceNetworkPolicy:
-    # The PRF port of prf-service.
-    ports:
-      - {port: 8090, protocol: TCP}
     # Test-suite pods reach only the metrics port.
-    extraIngress:
-      - from:
-          - podSelector:
-              matchLabels:
-                app: fhevm-test-suite
-        ports:
-          - {port: 9100, protocol: TCP}
+    metricsFrom:
+      - podSelector:
+          matchLabels:
+            app: fhevm-test-suite
 
 prfService:
   enabled: true

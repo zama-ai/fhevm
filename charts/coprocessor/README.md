@@ -47,16 +47,16 @@ certificate expires; alert when it comes close, for example
 `commonConfig.env` does not apply to the proxy, the internet-facing pod: put a shared setting it
 needs in `coprocessorProxy.env`.
 
-A NetworkPolicy allows this release's proxy pods to reach the prf-service pods selected by
-`prfServiceNetworkPolicy.podSelector`, on `prfServiceNetworkPolicy.ports` (TCP 8090 by default).
-Set these to the prf-service **pod** ports, which may differ from the Service port in
-`prfServiceAddress`. Add other required ingress, such as metrics scraping, to
-`prfServiceNetworkPolicy.extraIngress`; rendering fails on a rule without `from`, which would
-admit every source. Isolation requires a CNI that enforces NetworkPolicy and no other policy
-granting broader access: Kubernetes policies are additive. A `podSelector` that matches no
-prf-service pod, for example after a typo or a label change, renders without error and leaves
-prf-service open. After each deployment, check from a pod that is not the proxy that prf-service's
-port refuses the connection, as `ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh` does.
+A NetworkPolicy selects the prf-service pods with `prfServiceNetworkPolicy.podSelector` and allows
+only two kinds of ingress: this release's proxy pods to `prfService.ports.http` (the PRF port), and
+the peers in `prfServiceNetworkPolicy.metricsFrom`, such as Prometheus, to `prfService.ports.metrics`.
+No chart value adds another source to the PRF port. If prf-service runs in another release, set
+`prfService.ports` in this release to that release's pod ports. Isolation requires a CNI that
+enforces NetworkPolicy and no other policy granting broader access: Kubernetes policies are
+additive. A `podSelector` that matches no prf-service pod, for example after a typo or a label
+change, renders without error and leaves prf-service open. After each deployment, check from a pod
+that is not the proxy that prf-service's port refuses the connection, as
+`ci/preview-env/scripts/e2e/check-coprocessor-proxy.sh` does.
 
 The proxy reads the signers at the latest finalized block. It checks that block every 5 s
 (`COPROCESSOR_PROXY_KMS_REGISTRY_REFRESH_INTERVAL`) after each poll completes, and reads the signers
@@ -173,7 +173,6 @@ Before you enable it:
   password authentication. `commonConfig.databaseUrl` must use `$(DATABASE_USER)`. The migration job
   gives the table rights on each deploy.
 - Leave `coprocessorProxy.prfServiceAddress` empty: the chart uses this release's prf-service. The
-  render fails if the address or `prfServiceNetworkPolicy.ports` does not match
-  `prfService.ports.http`.
-- With `prfService.serviceMonitor.enabled`, add an ingress rule for the metrics port to
-  `coprocessorProxy.prfServiceNetworkPolicy.extraIngress`. The NetworkPolicy admits only the proxy.
+  render fails if the address does not match `prfService.ports.http`.
+- With `prfService.serviceMonitor.enabled`, list Prometheus in
+  `coprocessorProxy.prfServiceNetworkPolicy.metricsFrom`, or the NetworkPolicy blocks the scrape.

@@ -547,8 +547,8 @@ chart does not:
   with SANs = every party's `coprocessor-<i>-coprocessor-proxy` Service.
 - **Per party**: the image tags (`coprocessor_proxy` and `coprocessor_prf_service` in
   resolve-tags), the signer (the derived coprocessor wallet) and the NetworkPolicy's
-  podSelector, which selects only that party's prf-service and lets test-suite pods
-  (`app: fhevm-test-suite`) reach its metrics port 9100 only.
+  podSelector, which selects only that party's prf-service. Its `metricsFrom` lets test-suite
+  pods (`app: fhevm-test-suite`) reach the metrics port 9100 only.
 - **Test-suite wiring**: the ConfigMap **`coprocessor-proxy`** (`urls`,
   `signer-addresses`, `prf-service-metrics-urls`, `metrics-urls`, `ca.crt`), read `optional` by the
   `@fhevm/sdk` Argo Workflow, whose `coprocessor-proxy` task runs the
