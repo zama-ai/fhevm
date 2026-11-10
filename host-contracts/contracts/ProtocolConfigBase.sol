@@ -327,7 +327,7 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
      * @dev Validates `nodes` and `thresholds` and writes them under `contextId`.
      *      The caller owns the context ID counter.
      */
-    function _storeKmsCommittee(
+    function _storeKmsNodesAndThresholds(
         uint256 contextId,
         KmsNode[] memory nodes,
         KmsThresholds calldata thresholds

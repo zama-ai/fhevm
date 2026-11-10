@@ -117,7 +117,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         PcrValues[] calldata pcrValues
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 1;
-        _storeKmsCommittee(newContextId, _toKmsNodes(initialKmsNodeParams, initialConnectorUrls), initialThresholds);
+        _storeKmsNodesAndThresholds(newContextId, _toKmsNodes(initialKmsNodeParams, initialConnectorUrls), initialThresholds);
 
         // Scoped so `$` and `newEpochId` leave the stack before the event.
         {
@@ -178,7 +178,7 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
         uint256 previousContextId = $.latestActiveKmsContextId;
         uint256 contextId = ++$.currentKmsContextId;
         KmsNode[] memory nodes = _toKmsNodes(kmsNodeParams, connectorUrls);
-        _storeKmsCommittee(contextId, nodes, thresholds);
+        _storeKmsNodesAndThresholds(contextId, nodes, thresholds);
         $.contextState[contextId] = ContextState.Pending;
 
         // Commit to the stored node set and thresholds. Both committees sign it in ContextCreationConfirmation.

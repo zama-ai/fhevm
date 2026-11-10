@@ -85,7 +85,7 @@ contract ProtocolConfigReplica is
             revert InvalidKmsEpoch(canonicalEpochId);
         }
 
-        _storeKmsCommittee(canonicalContextId, canonicalNodes, canonicalThresholds);
+        _storeKmsNodesAndThresholds(canonicalContextId, canonicalNodes, canonicalThresholds);
         _activateKmsContextAndEpoch(canonicalContextId, canonicalEpochId);
         _initCanonicalDomain(canonicalChainId, canonicalProtocolConfig);
     }
@@ -272,7 +272,7 @@ contract ProtocolConfigReplica is
         delete $.kmsNodesForContext[contextId];
         delete $.kmsSignerAddressesForContext[contextId];
 
-        _storeKmsCommittee(contextId, nodes, thresholds);
+        _storeKmsNodesAndThresholds(contextId, nodes, thresholds);
     }
 
     /**
