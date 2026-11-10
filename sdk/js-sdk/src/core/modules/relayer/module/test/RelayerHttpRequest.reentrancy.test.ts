@@ -12,7 +12,7 @@ import { RelayerHttpTimeoutError } from '../../../../errors/RelayerHttpTimeoutEr
 
 const RELAYER_URL = 'https://relayer-http.example.com/v4/user-decrypt';
 const OTHER_URL = 'https://relayer-http.example.com/v4/public-decrypt';
-const VALID_REQUEST_ID = '018f4d2e-7c3a-7b1e-8c2d-abcdef123456';
+const VALID_REQUEST_ID = '9b2c1f4e-3a5d-4e6f-8a7b-1c2d3e4f5a6b';
 const SHARES = [{ payload: 'ab'.repeat(32), signature: 'cd'.repeat(65), extraData: '0x00' }];
 const ONE_SHOT_MESSAGE =
   'RelayerHttpRequest.run() was already called on this instance. Create a new instance per request.';
