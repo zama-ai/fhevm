@@ -6,13 +6,11 @@ import type { RelayerInputProofOptions } from '../types/relayer.js';
 import type { InputHandle } from '../types/encryptedTypes-p.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import type { UsedCacheVersions } from '../caching/usedCacheVersions-p.js';
-import { fetchVerifiedInputProof } from './fetchVerifiedInputProof.js';
+import { fetchInputProofWithCurrentSigners } from './fetchInputProofWithCurrentSigners.js';
 import { createZkProof } from './ZkProofBuilder-p.js';
 import { retryOnStaleCache } from '../caching/retryOnStaleCache-p.js';
 import { recordUsedCacheVersion } from '../caching/usedCacheVersions-p.js';
 import { fetchVersionedFheEncryptionKeyWasm } from '../key/fetchFheEncryptionKey.js';
-import { readCoprocessorSignersContext } from '../host-contracts/readCoprocessorSignersContext-p.js';
-import { coprocessorSignersVersion } from '../host-contracts/getCoprocessorContextSignersAndThreshold-p.js';
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -37,25 +35,23 @@ type ReturnType = {
 ////////////////////////////////////////////////////////////////////////////////
 
 export async function encrypt(context: Context, parameters: Parameters): Promise<ReturnType> {
-  // A rotated key (input proof rejected) or a changed coprocessor signer set
-  // is refreshed and the whole request runs once more: a new key needs a new
-  // proof.
-  return retryOnStaleCache(context, parameters.fhevmContext, (usedVersions) =>
-    _encrypt(context, parameters, usedVersions),
+  // Two nested retries, one per cached value: a rotated key (input proof
+  // rejected) rebuilds the proof (outer); a changed coprocessor signer set only
+  // sends the same proof again (inner, in _encrypt). Each retry checks only the
+  // values it recorded, so an error the inner one cannot explain reaches the
+  // outer one.
+  return retryOnStaleCache(context, parameters.fhevmContext, (keyVersions) =>
+    _encrypt(context, parameters, keyVersions),
   );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * The request: reads each cached value it uses and records its version; the
- * steps below get the values.
+ * The outer request: the key (its version recorded), the ZK proof built with
+ * it, then the input proof, sent with its own retry on the coprocessor signers.
  */
-async function _encrypt(
-  context: Context,
-  parameters: Parameters,
-  usedVersions: UsedCacheVersions,
-): Promise<ReturnType> {
+async function _encrypt(context: Context, parameters: Parameters, keyVersions: UsedCacheVersions): Promise<ReturnType> {
   const { fhevmContext } = parameters;
   const hardCodedExtraData = '0x00' as BytesHex;
 
@@ -63,7 +59,7 @@ async function _encrypt(
   const { key: fheEncryptionKey, version: keyVersion } = await fetchVersionedFheEncryptionKeyWasm(context, {
     fhevmContext,
   });
-  recordUsedCacheVersion(usedVersions, 'keyMaterial', keyVersion);
+  recordUsedCacheVersion(keyVersions, 'keyMaterial', keyVersion);
 
   const zkProof = await createZkProof(context, {
     contractAddress: parameters.contractAddress,
@@ -73,19 +69,10 @@ async function _encrypt(
     fheEncryptionKey,
   });
 
-  // 2. The coprocessor signers, then the input proof checked against them
-  const coprocessorSigners = await readCoprocessorSignersContext(context, {
-    address: context.chain.fhevm.contracts.inputVerifier.address as ChecksummedAddress,
-    fhevmContext,
-  });
-  recordUsedCacheVersion(usedVersions, 'coprocessorSigners', coprocessorSignersVersion(coprocessorSigners));
-
-  const inputProof = await fetchVerifiedInputProof(context, {
-    zkProof,
-    options: parameters.options,
-    fhevmContext,
-    coprocessorSigners,
-  });
+  // 2. The input proof, checked against the current coprocessor signers
+  const inputProof = await retryOnStaleCache(context, fhevmContext, (signerVersions) =>
+    fetchInputProofWithCurrentSigners(context, { zkProof, options: parameters.options, fhevmContext }, signerVersions),
+  );
 
   return {
     inputHandles: inputProof.inputHandles,
