@@ -91,8 +91,38 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.expectRevert(expectedRevert);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             impl,
-            abi.encodeCall(ProtocolConfig.initializeFromEmptyProxy, (nodes, thresholds, "", new PcrValues[](0)))
+            abi.encodeCall(
+                ProtocolConfig.initializeFromEmptyProxy,
+                (KMS_CONTEXT_COUNTER_BASE + 1, EPOCH_COUNTER_BASE + 1, nodes, thresholds, "", new PcrValues[](0))
+            )
         );
+    }
+
+    function _emptyProxyInitializerCall(uint256 contextId, uint256 epochId) internal view returns (bytes memory) {
+        return
+            abi.encodeCall(
+                ProtocolConfig.initializeFromEmptyProxy,
+                (contextId, epochId, _makeKmsNodeParams(2), _defaultThresholds(), "", new PcrValues[](0))
+            );
+    }
+
+    function _initializeEmptyProxyAt(uint256 contextId, uint256 epochId) internal {
+        address impl = address(new ProtocolConfig());
+        vm.prank(owner);
+        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(impl, _emptyProxyInitializerCall(contextId, epochId));
+        protocolConfig = ProtocolConfig(protocolConfigAdd);
+    }
+
+    function _expectEmptyProxyInitializerRevert(
+        uint256 contextId,
+        uint256 epochId,
+        bytes memory expectedRevert
+    ) internal {
+        _setupEmptyProxy();
+        address impl = address(new ProtocolConfig());
+        vm.prank(owner);
+        vm.expectRevert(expectedRevert);
+        EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(impl, _emptyProxyInitializerCall(contextId, epochId));
     }
 
     function _revertThreshold(IProtocolConfig.KmsThresholds memory t, bytes memory expectedRevert) internal {
@@ -2051,7 +2081,67 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         vm.prank(owner);
         EmptyUUPSProxy(protocolConfigAdd).upgradeToAndCall(
             impl,
-            abi.encodeCall(ProtocolConfig.initializeFromEmptyProxy, (nodeParams, thresholds, "", pcrValues))
+            abi.encodeCall(
+                ProtocolConfig.initializeFromEmptyProxy,
+                (KMS_CONTEXT_COUNTER_BASE + 1, EPOCH_COUNTER_BASE + 1, nodeParams, thresholds, "", pcrValues)
+            )
+        );
+    }
+
+    /// @dev The initializer seeds a fleet that already rotated (here context 0x0b and epoch 0x0e) at its live IDs.
+    ///      It keeps the anchor and the NewKmsContext event with the sentinel predecessor. The next context
+    ///      starts above the seeded ID.
+    function test_emptyProxyInitializer_seedsInitialIds() public {
+        _setupEmptyProxy();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 0x0b;
+        uint256 epochId = EPOCH_COUNTER_BASE + 0x0e;
+        KmsNodeParams[] memory nodeParams = _makeKmsNodeParams(2);
+        PcrValues[] memory pcrValues = new PcrValues[](0);
+        IProtocolConfig.KmsThresholds memory thresholds = _defaultThresholds();
+
+        vm.expectEmit(true, true, false, true, protocolConfigAdd);
+        emit IProtocolConfig.NewKmsContext(contextId, KMS_CONTEXT_COUNTER_BASE, nodeParams, thresholds, "", pcrValues);
+        _initializeEmptyProxyAt(contextId, epochId);
+
+        (uint256 activeContextId, uint256 activeEpochId) = protocolConfig.getCurrentKmsContextAndEpoch();
+        assertEq(activeContextId, contextId);
+        assertEq(activeEpochId, epochId);
+        assertTrue(protocolConfig.isValidEpochForContext(contextId, epochId));
+        (uint256 emissionBlockNumber, bytes32 contextInfoHash) = protocolConfig.getKmsContextAnchor(contextId);
+        assertEq(emissionBlockNumber, block.number);
+        assertEq(contextInfoHash, keccak256(abi.encode(nodeParams, thresholds, "", pcrValues)));
+
+        vm.expectEmit(true, true, false, true, protocolConfigAdd);
+        emit IProtocolConfig.NewKmsContext(contextId + 1, contextId, nodeParams, thresholds, "", pcrValues);
+        vm.prank(owner);
+        protocolConfig.defineNewKmsContextAndEpoch(nodeParams, thresholds, "", pcrValues);
+    }
+
+    function test_emptyProxyInitializer_seededEpochCounterContinues() public {
+        _setupEmptyProxy();
+        uint256 contextId = KMS_CONTEXT_COUNTER_BASE + 0x0b;
+        uint256 epochId = EPOCH_COUNTER_BASE + 0x0e;
+        _initializeEmptyProxyAt(contextId, epochId);
+
+        vm.expectEmit(true, true, false, true, protocolConfigAdd);
+        emit IProtocolConfig.NewKmsEpoch(contextId, epochId + 1, contextId, epochId, block.number - 1);
+        vm.prank(owner);
+        protocolConfig.defineNewEpochForCurrentKmsContext();
+    }
+
+    function test_revertEmptyProxyInitializerBaseContextId() public {
+        _expectEmptyProxyInitializerRevert(
+            KMS_CONTEXT_COUNTER_BASE,
+            EPOCH_COUNTER_BASE + 1,
+            abi.encodeWithSelector(IProtocolConfig.InvalidKmsContext.selector, KMS_CONTEXT_COUNTER_BASE)
+        );
+    }
+
+    function test_revertEmptyProxyInitializerBaseEpochId() public {
+        _expectEmptyProxyInitializerRevert(
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            EPOCH_COUNTER_BASE,
+            abi.encodeWithSelector(IProtocolConfig.InvalidKmsEpoch.selector, EPOCH_COUNTER_BASE)
         );
     }
 
@@ -2240,7 +2330,14 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
         // onlyFromEmptyProxy fires first (version is 3, not 1) before reinitializer.
         vm.prank(owner);
         vm.expectRevert(UUPSUpgradeableEmptyProxy.NotInitializingFromEmptyProxy.selector);
-        protocolConfig.initializeFromEmptyProxy(_makeKmsNodeParams(1), _defaultThresholds(), "", new PcrValues[](0));
+        protocolConfig.initializeFromEmptyProxy(
+            KMS_CONTEXT_COUNTER_BASE + 1,
+            EPOCH_COUNTER_BASE + 1,
+            _makeKmsNodeParams(1),
+            _defaultThresholds(),
+            "",
+            new PcrValues[](0)
+        );
     }
 
     function test_revertInitializeFromCanonicalAfterInit() public {
@@ -2382,7 +2479,14 @@ contract ProtocolConfigTest is HostContractsDeployerTestUtils {
             impl,
             abi.encodeCall(
                 ProtocolConfig.initializeFromEmptyProxy,
-                (bootstrapNodes, thresholds, "", new PcrValues[](0))
+                (
+                    KMS_CONTEXT_COUNTER_BASE + 1,
+                    EPOCH_COUNTER_BASE + 1,
+                    bootstrapNodes,
+                    thresholds,
+                    "",
+                    new PcrValues[](0)
+                )
             )
         );
         protocolConfig = ProtocolConfig(protocolConfigAdd);

@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import { ethers, upgrades } from 'hardhat';
 
+import { EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE } from '../../tasks/utils/kmsGenerationConstants';
 import { ACL, ACLUpgradedExample } from '../../types';
 import { getSigners, initSigners } from '../signers';
 import { buildProtocolConfigNodes, buildProtocolConfigThresholds, readHostAddress } from '../tasks/taskHelpers';
@@ -47,7 +48,14 @@ describe('Upgrades', function () {
     const pc = await upgrades.upgradeProxy(emptyUUPS, factory, {
       call: {
         fn: 'initializeFromEmptyProxy',
-        args: [buildProtocolConfigNodes(), buildProtocolConfigThresholds(), '', []],
+        args: [
+          KMS_CONTEXT_COUNTER_BASE + 1n,
+          EPOCH_COUNTER_BASE + 1n,
+          buildProtocolConfigNodes(),
+          buildProtocolConfigThresholds(),
+          '',
+          [],
+        ],
       },
     });
     await pc.waitForDeployment();
