@@ -15,6 +15,9 @@ import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext
 import type { ExternalHandle } from '../types/encryptedTypes-p.js';
 import type { SignedDecryptionPermit, SignedDecryptionPermitV2 } from '../types/signedDecryptionPermit.js';
 import type { PadWitness } from '../modules/relayer/types.js';
+import type { ReconstructPadsModuleReturnType } from '../modules/encryptWithPad/types.js';
+import type { KmsExtraData } from '../types/kms-p.js';
+import type { UsedCacheVersions } from '../caching/usedCacheVersions-p.js';
 import { keccak_256 } from '@noble/hashes/sha3.js';
 import { bytes32ToHex, bytesToHex, concatBytes, hexToBytes } from '../base/bytes.js';
 import { encryptionBitsFromFheType, fheTypeIdFromName, fheTypeNameFromTypeName } from '../handle/FheType.js';
@@ -139,51 +142,15 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
   //    outdated permit is never sent), then the pad shares (one response per
   //    KMS node). As for a user decryption, a failure checks the KMS context
   //    but the request is not run again: the permit names its context.
-  const extraData = signedPermit.eip712.message.extraData;
   const pads = await retryOnStaleCache(
     context,
     fhevmContext,
-    async (usedVersions) => {
-      const { kmsSignersContext, version: kmsContextVersion } = await readVersionedKmsSignersContextFromPermitExtraData(
+    (usedVersions) =>
+      _fetchPads(
         context,
-        {
-          kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
-          protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as
-            | ChecksummedAddress
-            | undefined,
-          extraData: signedPermitExtraData,
-        },
-      );
-      // The request goes to the relayer: a failure may come from a KMS context switch.
-      recordUsedCacheVersion(usedVersions, 'kmsContext', kmsContextVersion);
-      const padDecryptResponses = await context.runtime.relayer.fetchPadShares(context, {
-        payload: {
-          kmsDecryptEip712Message: signedPermit.eip712.message,
-          kmsDecryptEip712Signature: signedPermit.signature,
-          witnessVersion: PAD_WITNESS_VERSION,
-          prfId: PAD_PRF_INSTANCE,
-          chainId,
-          witnesses: [witness],
-        },
-        fhevmContext,
-        options,
-      });
-      // 5. Verify the responses against the context signers and reconstruct
-      //    the pad (a failure here also checks the KMS context).
-      return context.runtime.encryptWithPad.reconstructPads({
-        responses: padDecryptResponses,
-        witnesses: [witness],
-        extraData,
-        transportPublicKey: signedPermit.eip712.message.publicKey,
-        kmsSigners: kmsSignersContext.signers,
-        // The sharing degree t, not `kmsSignersContext.threshold` (the public decryption
-        // threshold). Per the KMS team, n = 3t+1 when the context does not expose it.
-        mpcThreshold: kmsSignersContext.mpcThreshold ?? Math.floor((kmsSignersContext.signers.length - 1) / 3),
-        gatewayChainId: context.chain.fhevm.gateway.id,
-        verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption
-          .address as ChecksummedAddress,
-      });
-    },
+        { signedPermit, signedPermitExtraData, witness, chainId, fhevmContext, options },
+        usedVersions,
+      ),
     { createStaleError: (_stale, error) => permitRequestStaleContextError(context, signedPermitExtraData, error) },
   );
   const pad = pads.get(label);
@@ -217,6 +184,65 @@ export async function encryptWithPad(context: Context, parameters: Parameters): 
     externalHandles: Object.freeze(externalHandles),
     inputPackage: bytesToHex(inputPackage),
   };
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * The request: the signers of the permit's KMS context (recorded once the
+ * request goes to the relayer), then the pad shares, checked against them and
+ * reconstructed.
+ */
+async function _fetchPads(
+  context: Context,
+  parameters: {
+    readonly signedPermit: SignedDecryptionPermitV2;
+    readonly signedPermitExtraData: KmsExtraData;
+    readonly witness: PadWitness;
+    readonly chainId: Uint64BigInt;
+    readonly fhevmContext: FhevmClientFrozenContext;
+    readonly options?: RelayerCommonOptions | undefined;
+  },
+  usedVersions: UsedCacheVersions,
+): Promise<ReconstructPadsModuleReturnType> {
+  const { signedPermit, signedPermitExtraData, witness, chainId, fhevmContext, options } = parameters;
+  const extraData = signedPermit.eip712.message.extraData;
+  const { kmsSignersContext, version: kmsContextVersion } = await readVersionedKmsSignersContextFromPermitExtraData(
+    context,
+    {
+      kmsVerifierAddress: context.chain.fhevm.contracts.kmsVerifier.address as ChecksummedAddress,
+      protocolConfigAddress: context.chain.fhevm.contracts.protocolConfig?.address as ChecksummedAddress | undefined,
+      extraData: signedPermitExtraData,
+    },
+  );
+  // The request goes to the relayer: a failure may come from a KMS context switch.
+  recordUsedCacheVersion(usedVersions, 'kmsContext', kmsContextVersion);
+  const padDecryptResponses = await context.runtime.relayer.fetchPadShares(context, {
+    payload: {
+      kmsDecryptEip712Message: signedPermit.eip712.message,
+      kmsDecryptEip712Signature: signedPermit.signature,
+      witnessVersion: PAD_WITNESS_VERSION,
+      prfId: PAD_PRF_INSTANCE,
+      chainId,
+      witnesses: [witness],
+    },
+    fhevmContext,
+    options,
+  });
+  // Verify the responses against the context signers and reconstruct the pad
+  // (a failure here also checks the KMS context).
+  return context.runtime.encryptWithPad.reconstructPads({
+    responses: padDecryptResponses,
+    witnesses: [witness],
+    extraData,
+    transportPublicKey: signedPermit.eip712.message.publicKey,
+    kmsSigners: kmsSignersContext.signers,
+    // The sharing degree t, not `kmsSignersContext.threshold` (the public decryption
+    // threshold). Per the KMS team, n = 3t+1 when the context does not expose it.
+    mpcThreshold: kmsSignersContext.mpcThreshold ?? Math.floor((kmsSignersContext.signers.length - 1) / 3),
+    gatewayChainId: context.chain.fhevm.gateway.id,
+    verifyingContractAddressDecryption: context.chain.fhevm.gateway.contracts.decryption.address as ChecksummedAddress,
+  });
 }
 
 ////////////////////////////////////////////////////////////////////////////////

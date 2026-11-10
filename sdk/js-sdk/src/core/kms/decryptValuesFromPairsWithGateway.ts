@@ -48,7 +48,7 @@ export async function decryptValuesFromPairsWithGateway(fhevm: Context, paramete
   const kmsSigncryptedShares: KmsSigncryptedShares = await retryOnStaleCache(
     fhevm,
     fhevmContext,
-    (usedVersions) => _fetchKmsSigncryptedShares(fhevm, { ...parameters, usedVersions }),
+    (usedVersions) => _fetchKmsSigncryptedShares(fhevm, parameters, usedVersions),
     {
       createStaleError: (_stale, error) =>
         permitRequestStaleContextError(
@@ -67,9 +67,13 @@ export async function decryptValuesFromPairsWithGateway(fhevm: Context, paramete
   });
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+/** The request: the shares, from the route of the permit's version (which records the KMS context used). */
 function _fetchKmsSigncryptedShares(
   fhevm: Context,
-  parameters: Parameters & { readonly usedVersions: UsedCacheVersions },
+  parameters: Parameters,
+  usedVersions: UsedCacheVersions,
 ): Promise<KmsSigncryptedShares> {
   // Route on the permit's OWN version, never the resolved protocol version. A signed
   // permit is a self-describing artifact: its version fixes the EIP-712 message shape,
@@ -81,10 +85,11 @@ function _fetchKmsSigncryptedShares(
   //   v1: message.contractAddresses              -> fetchKmsSigncryptedSharesV1 -> POST v2/user-decrypt
   //   v2: message.userAddress + allowedContracts -> fetchKmsSigncryptedSharesV2 -> POST v3/user-decrypt
   if (parameters.signedPermit.version === 1) {
-    return fetchKmsSigncryptedSharesV1(fhevm, parameters);
+    return fetchKmsSigncryptedSharesV1(fhevm, { ...parameters, usedVersions });
   }
   return fetchKmsSigncryptedSharesV2(fhevm, {
     ...parameters,
+    usedVersions,
     options: parameters.options as RelayerUserDecryptOptions | undefined,
   });
 }
