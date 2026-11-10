@@ -14,7 +14,10 @@ type StorageException = {
   addedIn: string;
   namespace: string;
   field: string;
-  /** The field's type before and after, as OpenZeppelin labels them. Accepted in both directions. */
+  /**
+   * The field's type before and after, as OpenZeppelin labels them. Only this direction is accepted: a rollback
+   * points the proxy back at the deployed implementation with upgradeToAndCall, without these tasks.
+   */
   types: [string, string];
 };
 
@@ -50,9 +53,8 @@ function revertExceptions(current: StorageLayout, updated: StorageLayout): Stora
     const updatedEntries = namespaces[exception.namespace];
     const updatedEntry = updatedEntries?.find((e) => e.label === exception.field);
     if (!currentEntry || !updatedEntry) continue;
-    const change = [current.types[currentEntry.type]?.label, updated.types[updatedEntry.type]?.label];
     const [before, after] = exception.types;
-    if ((change[0] === before && change[1] === after) || (change[0] === after && change[1] === before)) {
+    if (current.types[currentEntry.type]?.label === before && updated.types[updatedEntry.type]?.label === after) {
       namespaces[exception.namespace] = updatedEntries.map((e) =>
         e === updatedEntry ? { ...e, type: currentEntry.type } : e,
       );
