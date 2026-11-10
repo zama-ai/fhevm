@@ -3178,6 +3178,7 @@ dependencies = [
  "axum 0.7.9",
  "bytes",
  "clap",
+ "coprocessor-api",
  "fhevm-engine-common",
  "fhevm-sig-auth",
  "fhevm_host_bindings",

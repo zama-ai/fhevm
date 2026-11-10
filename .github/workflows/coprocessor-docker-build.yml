@@ -338,9 +338,11 @@ jobs:
         coprocessor-proxy:
           - .github/workflows/coprocessor-docker-build.yml
           - coprocessor/fhevm-engine/coprocessor-proxy/**
+          - coprocessor/fhevm-engine/coprocessor-api/**
           - coprocessor/fhevm-engine/fhevm-engine-common/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**
+          - shared/ciphertext-attestation/**
           - shared/fhevm-sig-auth/**
 
   check-changes-prf-service:
