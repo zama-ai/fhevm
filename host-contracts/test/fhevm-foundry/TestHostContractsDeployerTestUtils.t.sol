@@ -200,7 +200,7 @@ contract TestHostContractsDeployerTestUtils is HostContractsDeployerTestUtils {
     function test_DeployProtocolConfigReplica_UsesProxyUpgradeFlow() public {
         _deployACL(OWNER);
 
-        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2));
+        KmsNode[] memory nodes = _toKmsNodes(_makeKmsNodeParams(2), _makeConnectorUrls(2));
         uint256 canonicalContextId = KMS_CONTEXT_COUNTER_BASE + 7;
         uint256 canonicalEpochId = EPOCH_COUNTER_BASE + 7;
         KmsThresholds memory thresholds = KmsThresholds({publicDecryption: 1, userDecryption: 2, kmsGen: 2, mpc: 1});

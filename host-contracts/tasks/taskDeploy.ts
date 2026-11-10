@@ -572,6 +572,11 @@ export function buildKmsNodeParams(): {
   return nodes;
 }
 
+export function buildKmsConnectorUrls(): string[] {
+  const numNodes = getRequiredCountEnvVar('NUM_KMS_NODES');
+  return Array.from({ length: numNodes }, (_, idx) => getRequiredEnvVar(`KMS_NODE_CONNECTOR_URL_${idx}`));
+}
+
 export function buildKmsThresholds() {
   return {
     publicDecryption: +getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD'),
@@ -585,8 +590,14 @@ export function buildPcrValues(): { pcr0: string; pcr1: string; pcr2: string }[]
   return JSON.parse(getRequiredEnvVar('KMS_PCR_VALUES'));
 }
 
-export function buildProtocolConfigContextArgs(): [ReturnType, ReturnType, string, ReturnType] {
-  return [buildKmsNodeParams(), buildKmsThresholds(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
+export function buildProtocolConfigContextArgs(): [ReturnType, string[], ReturnType, string, ReturnType] {
+  return [
+    buildKmsNodeParams(),
+    buildKmsConnectorUrls(),
+    buildKmsThresholds(),
+    getRequiredEnvVar('KMS_SOFTWARE_VERSION'),
+    buildPcrValues(),
+  ];
 }
 
 task('task:assertProtocolConfigReady').setAction(async function (_, hre) {

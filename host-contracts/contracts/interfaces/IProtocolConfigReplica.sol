@@ -8,7 +8,8 @@ import {IProtocolConfigBase} from "./IProtocolConfigBase.sol";
  * @notice A canonical context switch, with the ContextCreationConfirmation signatures of the
  *         previous committee. The previous context is the active one.
  * @param contextId The new canonical context ID.
- * @param nodes The new committee, as stored on the canonical.
+ * @param nodes The new committee, as stored on the canonical, including each `connectorUrl`.
+ *        The signatures commit to every field.
  * @param thresholds The thresholds of the new committee.
  * @param signatures The previous committee's signatures over one ContextCreationConfirmation.
  * @param extraData The extra data that every signature commits to.
@@ -222,7 +223,7 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
      * @dev Replaces any committee stored under `contextId`.
      * @param contextId The canonical context ID to mirror.
      * @param epochId The canonical epoch ID to activate for the mirrored context.
-     * @param nodes The KMS nodes of the canonical context.
+     * @param nodes The KMS nodes of the canonical context, including each `connectorUrl`.
      * @param thresholds The thresholds of the canonical context.
      */
     function mirrorKmsContextAndEpoch(

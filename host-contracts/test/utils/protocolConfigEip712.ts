@@ -74,15 +74,18 @@ const EXTRA_DATA_V2 = 2;
 
 // keccak256(abi.encode(KmsNode[] nodes, KmsThresholds thresholds)). The encode types come from the
 // ProtocolConfig ABI, so the tuple layout always matches the contract. KmsNode is the projection of
-// KmsNodeParams that ProtocolConfig stores, and the encoder drops the fields KmsNode does not have.
+// KmsNodeParams that ProtocolConfig stores, then `connectorUrls[i]` as node i's connectorUrl. The encoder
+// drops the fields KmsNode does not have.
 function hashNodeConfig(
   iface: ProtocolConfigInterface,
   params: KmsNodeParamsStruct[],
+  connectorUrls: string[],
   thresholds: KmsThresholdsStruct,
 ): string {
   const [kmsNodesType] = iface.getFunction('getKmsNodesForContext').outputs;
-  const [, thresholdsType] = iface.getFunction('defineNewKmsContextAndEpoch').inputs;
-  return keccak256(abi.encode([kmsNodesType, thresholdsType], [params, thresholds]));
+  const [, , thresholdsType] = iface.getFunction('defineNewKmsContextAndEpoch').inputs;
+  const nodes = params.map((p, i) => ({ ...p, connectorUrl: connectorUrls[i] }));
+  return keccak256(abi.encode([kmsNodesType, thresholdsType], [nodes, thresholds]));
 }
 
 // keccak256(abi.encode(keyHashes, crsHashes)), where each entry is the EIP-712 hashStruct of its
@@ -105,6 +108,7 @@ function hashEpochMaterial(
 export interface DefinedKmsContext {
   contextId: bigint;
   nodes: KmsNodeParamsStruct[];
+  connectorUrls: string[];
   thresholds: KmsThresholdsStruct;
 }
 
@@ -137,12 +141,12 @@ export async function confirmContextCreationQuorum(
 async function submitContextCreation(
   pc: ProtocolConfig,
   signers: Signer[],
-  { contextId, nodes, thresholds }: DefinedKmsContext,
+  { contextId, nodes, connectorUrls, thresholds }: DefinedKmsContext,
   extraData: string,
 ): Promise<bigint | undefined> {
   const domain = await protocolConfigDomain(pc);
   const previousContextId = await pc.getCurrentKmsContextId();
-  const configHash = hashNodeConfig(pc.interface, nodes, thresholds);
+  const configHash = hashNodeConfig(pc.interface, nodes, connectorUrls, thresholds);
   let epochId: bigint | undefined;
   for (const signer of signers) {
     const signature = await signer.signTypedData(domain, CONFIRMATION_TYPES.ContextCreationConfirmation, {
@@ -203,11 +207,12 @@ export const DUMMY_EPOCH_MATERIAL: {
 export async function defineNewKmsContext(
   pc: ProtocolConfig,
   nodes: KmsNodeParamsStruct[],
+  connectorUrls: string[],
   thresholds: KmsThresholdsStruct,
 ): Promise<DefinedKmsContext> {
-  const receipt = await (await pc.defineNewKmsContextAndEpoch(nodes, thresholds, '', [])).wait();
+  const receipt = await (await pc.defineNewKmsContextAndEpoch(nodes, connectorUrls, thresholds, '', [])).wait();
   const contextId = findEventArg(pc, receipt!.logs, 'NewKmsContext', 'contextId');
-  return { contextId, nodes, thresholds };
+  return { contextId, nodes, connectorUrls, thresholds };
 }
 
 // Confirms the creation of the pending context `context` and activates its epoch over

@@ -205,6 +205,11 @@ function buildKmsNodeParams(): {
   return nodes;
 }
 
+function buildKmsConnectorUrls(): string[] {
+  const numNodes = getRequiredCountEnvVar('NUM_KMS_NODES');
+  return Array.from({ length: numNodes }, (_, idx) => getRequiredEnvVar(`KMS_NODE_CONNECTOR_URL_${idx}`));
+}
+
 export function buildKmsThresholds() {
   return {
     publicDecryption: +getRequiredEnvVar('PUBLIC_DECRYPTION_THRESHOLD'),
@@ -254,7 +259,7 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [buildKmsNodeParams(), buildKmsThresholds(), softwareVersion, pcrValues],
+      args: [buildKmsNodeParams(), buildKmsConnectorUrls(), buildKmsThresholds(), softwareVersion, pcrValues],
     },
   });
   console.info('ProtocolConfig code set successfully at address:', proxyAddress);
