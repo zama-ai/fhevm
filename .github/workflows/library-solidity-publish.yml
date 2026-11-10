@@ -72,7 +72,26 @@ jobs:
       contents: "read" # Required to checkout repository code
     steps:
       # ------------------------------------------------------------------------
-      # 1. Checkout
+      # 1. Check branch
+      #    Real publishes run only from release/0.14.x: the workflow must be
+      #    dispatched on that branch. Dry-runs are allowed from any branch, for
+      #    testing. This guards against mistakes only: the check lives in this
+      #    file, so a branch could remove it (see the protected-environment
+      #    follow-up for real enforcement).
+      # ------------------------------------------------------------------------
+      - name: Check branch
+        working-directory: .
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$DRY_RUN" != "true" ] && [ "$REF" != "refs/heads/release/0.14.x" ]; then
+            echo "::error::Real publishes run only from release/0.14.x (got $REF). Use dry-run=true to test from another branch."
+            exit 1
+          fi
+
+      # ------------------------------------------------------------------------
+      # 2. Checkout
       #    Pinned to a full commit SHA (not a mutable tag) to prevent supply
       #    chain attacks. persist-credentials: false removes the Git token from
       #    the local config so subsequent steps can't accidentally leak it.
@@ -83,7 +102,7 @@ jobs:
           persist-credentials: "false"
 
       # ------------------------------------------------------------------------
-      # 2. Node.js setup
+      # 3. Node.js setup
       #    Provides npm, for `npm pack`. Same patched Node 22 as the other
       #    library-solidity workflows.
       # ------------------------------------------------------------------------
@@ -93,7 +112,7 @@ jobs:
           node-version: ">=22.23.4 <23"
 
       # ------------------------------------------------------------------------
-      # 3. Safe-chain
+      # 4. Safe-chain
       # ------------------------------------------------------------------------
       - name: Install safe-chain
         shell: bash
@@ -104,7 +123,7 @@ jobs:
           curl -fsSL https://github.com/AikidoSec/safe-chain/releases/download/1.5.3/install-safe-chain.sh | sh -s -- --ci
 
       # ------------------------------------------------------------------------
-      # 4. Copy package sources
+      # 5. Copy package sources
       #    - copies the shipped sources (the `files` field of the template
       #      decides what npm packs);
       #    - generates the published package.json from `package.json.publish.template`,
@@ -120,7 +139,7 @@ jobs:
             package.json.publish.template > "$out/package.json"
 
       # ------------------------------------------------------------------------
-      # 5. Run `npm pack`
+      # 6. Run `npm pack`
       #    Packs the staged package into a tarball, the exact file published by
       #    the `publish-npmjs` job:
       #
@@ -136,7 +155,7 @@ jobs:
           mv "$RUNNER_TEMP"/tarball/*.tgz "$RUNNER_TEMP/tarball/package.tgz"
 
       # ------------------------------------------------------------------------
-      # 6. Show tarball content
+      # 7. Show tarball content
       #    Logs what will be published: the tarball's files and its package.json,
       #    read from the tarball itself.
       # ------------------------------------------------------------------------
@@ -146,7 +165,7 @@ jobs:
           tar -xzOf "$RUNNER_TEMP/tarball/package.tgz" package/package.json
 
       # ------------------------------------------------------------------------
-      # 7. Check tarball contains only Solidity files
+      # 8. Check tarball contains only Solidity files
       #    Fails if any file other than package.json, README.md and LICENSE is not
       #    a .sol file.
       #
@@ -168,7 +187,7 @@ jobs:
           done <<< "$files"
 
       # ------------------------------------------------------------------------
-      # 8. Check tarball structure
+      # 9. Check tarball structure
       #    Fails if an entry is not a regular file (symlink, hard link, directory),
       #    or if package.json, README.md, LICENSE or any Solidity file is missing.
       # ------------------------------------------------------------------------
@@ -186,7 +205,7 @@ jobs:
           grep -q '\.sol$' <<< "$files" || fail "no Solidity file in the tarball"
 
       # ------------------------------------------------------------------------
-      # 9. Check tarball has no bridge contracts
+      # 10. Check tarball has no bridge contracts
       #    Fails if lib/bridge/ is published, or if a published file imports
       #    OpenZeppelin (not a dependency of the package).
       # ------------------------------------------------------------------------
@@ -203,7 +222,7 @@ jobs:
           ! grep -rq --include='*.sol' '@openzeppelin/' "$extract" || fail "a published file imports @openzeppelin"
 
       # ------------------------------------------------------------------------
-      # 10. Check release version (release only)
+      # 11. Check release version (release only)
       #    Fails if the version is a prerelease (`x.y.z-…`, which must not get the
       #    `latest` dist-tag) or is already published on npm.
       # ------------------------------------------------------------------------
@@ -222,7 +241,7 @@ jobs:
           echo "Release version: $version"
 
       # ------------------------------------------------------------------------
-      # 11. Record tarball hash
+      # 12. Record tarball hash
       #    Exported as a job output: `verify` and `publish-npmjs` check that the
       #    tarball they download is exactly the one checked above.
       # ------------------------------------------------------------------------
@@ -234,7 +253,7 @@ jobs:
           echo "package.tgz sha256: $sha256"
 
       # ------------------------------------------------------------------------
-      # 12. Upload tarball
+      # 13. Upload tarball
       #    Hands the tarball over to the `verify` job, then to the `publish-npmjs`
       #    job, the only job allowed to publish it.
       # ------------------------------------------------------------------------
