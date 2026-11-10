@@ -47,7 +47,7 @@ describe('HCULimit allowlist tasks', function () {
     await runAllowlistTask('task:addToAllowlist', { accounts: dapp, broadcast: true });
     expect(await hcuLimit.getFunction('isAllowlisted').staticCall(dapp)).to.equal(true);
 
-    await runAllowlistTask('task:setAllowlistActivated', { activated: true, requiredAccounts: dapp, broadcast: true });
+    await runAllowlistTask('task:setAllowlistActivated', { activate: true, requiredAccounts: dapp, broadcast: true });
     expect(await hcuLimit.getFunction('isAllowlistActivated').staticCall()).to.equal(true);
 
     const deadline = BigInt((await ethers.provider.getBlock('latest'))!.timestamp) + 3600n;
@@ -60,16 +60,16 @@ describe('HCULimit allowlist tasks', function () {
     await runAllowlistTask('task:removeFromAllowlist', { accounts: dapp, broadcast: true });
     expect(await hcuLimit.getFunction('isAllowlisted').staticCall(dapp)).to.equal(false);
 
-    await runAllowlistTask('task:setAllowlistActivated', { activated: false, broadcast: true });
+    await runAllowlistTask('task:setAllowlistActivated', { activate: false, broadcast: true });
     expect(await hcuLimit.getFunction('isAllowlistActivated').staticCall()).to.equal(false);
   });
 
   it('blocks activation when the required dApp list is empty or incomplete', async function () {
-    await rejects(runAllowlistTask('task:setAllowlistActivated', { activated: true }), /nonempty comma-separated list/);
+    await rejects(runAllowlistTask('task:setAllowlistActivated', { activate: true }), /nonempty comma-separated list/);
     await runAllowlistTask('task:addToAllowlist', { accounts: dapp, broadcast: true });
     await rejects(
       runAllowlistTask('task:setAllowlistActivated', {
-        activated: true,
+        activate: true,
         requiredAccounts: `${dapp},${otherDapp}`,
         broadcast: true,
       }),
@@ -114,7 +114,7 @@ describe('HCULimit allowlist tasks', function () {
       expect(await hcuLimit.getFunction('isAllowlisted').staticCall(dapp)).to.equal(true);
       await rejects(
         runAllowlistTask('task:setAllowlistActivated', {
-          activated: true,
+          activate: true,
           requiredAccounts: dapp,
           broadcast: true,
           signerKeyEnv: 'TEST_ALLOWLISTER_PRIVATE_KEY',

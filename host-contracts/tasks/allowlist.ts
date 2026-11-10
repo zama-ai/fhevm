@@ -1,7 +1,8 @@
-import { type Contract, Wallet } from 'ethers';
+import { type Interface, Wallet } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
+import type { HCULimit } from '../types';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 
 type CommonArgs = {
@@ -28,16 +29,12 @@ function allowlistTask(name: string, description: string) {
 
 function parseAddresses(raw: string, ethers: HardhatRuntimeEnvironment['ethers']): string[] {
   const entries = raw.split(',').map((entry) => entry.trim());
-  if (entries.some((entry) => entry.length === 0)) {
+  if (entries.includes('')) {
     throw new Error('Provide a nonempty comma-separated list of addresses without empty entries.');
   }
   const accounts = entries.map((entry) => ethers.getAddress(entry));
-  if (accounts.some((account) => account === ethers.ZeroAddress)) {
-    throw new Error('The zero address is not a valid allowlist account.');
-  }
-  if (new Set(accounts.map((account) => account.toLowerCase())).size !== accounts.length) {
-    throw new Error('Duplicate addresses are not allowed.');
-  }
+  if (accounts.includes(ethers.ZeroAddress)) throw new Error('The zero address is not a valid allowlist account.');
+  if (new Set(accounts).size !== accounts.length) throw new Error('Duplicate addresses are not allowed.');
   return accounts;
 }
 
@@ -46,23 +43,29 @@ function parseAccount(raw: string, ethers: HardhatRuntimeEnvironment['ethers']):
   return parseAddresses(raw, ethers)[0];
 }
 
+async function getHCULimit(
+  hre: HardhatRuntimeEnvironment,
+  options: CommonArgs,
+): Promise<{ target: string; contract: HCULimit }> {
+  if (options.useInternalProxyAddress) loadHostAddresses();
+  const target = hre.ethers.getAddress(getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS'));
+  const contract = (await hre.ethers.getContractAt('HCULimit', target)) as unknown as HCULimit;
+  const version = await contract.getVersion();
+  if (!version.startsWith('HCULimit v')) {
+    throw new Error(`Contract at ${target} reports version "${version}"; expected HCULimit.`);
+  }
+  return { target, contract };
+}
+
 async function runAllowlistTask(
   hre: HardhatRuntimeEnvironment,
   options: CommonArgs,
   method: 'setAllowlistActivated' | 'addToAllowlist' | 'removeFromAllowlist' | 'addAllowlister' | 'removeAllowlister',
   args: unknown[],
-  preflight?: (contract: Contract) => Promise<void>,
 ): Promise<void> {
-  if (options.useInternalProxyAddress) loadHostAddresses();
-  const target = hre.ethers.getAddress(getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS'));
-  const contract = (await hre.ethers.getContractAt('HCULimit', target)) as unknown as Contract;
-  const version = await contract.getFunction('getVersion').staticCall();
-  if (!version.startsWith('HCULimit v')) {
-    throw new Error(`Contract at ${target} reports version "${version}"; expected HCULimit.`);
-  }
-  if (preflight) await preflight(contract);
+  const { target, contract } = await getHCULimit(hre, options);
 
-  const calldata = contract.interface.encodeFunctionData(method, args);
+  const calldata = (contract.interface as Interface).encodeFunctionData(method, args);
   console.log(`Chain ID: ${(await hre.ethers.provider.getNetwork()).chainId}`);
   console.log(`HCULimit proxy: ${target}`);
   console.log(`Call: ${method}`);
@@ -88,26 +91,28 @@ async function runAllowlistTask(
   await tx.wait();
 }
 
-allowlistTask('task:setAllowlistActivated', 'Activate or deactivate the HCULimit computation allowlist')
-  .addParam('activated', 'Whether to activate the computation allowlist', undefined, types.boolean)
+allowlistTask(
+  'task:setAllowlistActivated',
+  'Activate or deactivate the HCULimit computation allowlist. Optionally, checks that `requiredAccounts` is allowlisted before activating the HCULimit computation allowlist.',
+)
+  .addParam('activate', 'Whether to activate or deactivate the computation allowlist', undefined, types.boolean)
   .addOptionalParam(
     'requiredAccounts',
     'Comma-separated live dApp contract addresses to check before activation',
     '',
     types.string,
   )
-  .setAction(async function ({ activated, requiredAccounts, ...options }, hre) {
-    const required = activated ? parseAddresses(requiredAccounts, hre.ethers) : [];
-    await runAllowlistTask(hre, options, 'setAllowlistActivated', [activated], async (contract) => {
-      if (!activated) return;
-      const membership = await Promise.all(
-        required.map((account) => contract.getFunction('isAllowlisted').staticCall(account)),
-      );
+  .setAction(async function ({ activate, requiredAccounts, ...options }, hre) {
+    if (activate) {
+      const required = parseAddresses(requiredAccounts, hre.ethers);
+      const { contract } = await getHCULimit(hre, options);
+      const membership = await Promise.all(required.map((account) => contract.isAllowlisted(account)));
       const missing = required.filter((_, index) => !membership[index]);
       if (missing.length > 0) {
         throw new Error(`Cannot activate: these required dApps are not allowlisted: ${missing.join(', ')}`);
       }
-    });
+    }
+    await runAllowlistTask(hre, options, 'setAllowlistActivated', [activate]);
   });
 
 allowlistTask('task:addToAllowlist', 'Admit dApp contracts to HCULimit computation')
