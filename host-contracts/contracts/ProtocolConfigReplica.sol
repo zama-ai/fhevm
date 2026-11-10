@@ -66,11 +66,7 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
             revert InvalidKmsEpoch(canonicalEpochId);
         }
 
-        ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        _storeKmsNodesAndThresholds(canonicalContextId, canonicalNodes, canonicalThresholds);
-        $.currentKmsContextId = canonicalContextId;
-        $.epochCounter = canonicalEpochId;
-        _activateKmsContextAndEpoch(canonicalContextId, canonicalEpochId);
+        _storeAndActivateKmsContextAndEpoch(canonicalContextId, canonicalEpochId, canonicalNodes, canonicalThresholds);
     }
 
     /**
@@ -108,10 +104,7 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
             revert NonIncreasingKmsContextId(contextId, currentKmsContextId);
         }
 
-        _storeKmsNodesAndThresholds(contextId, nodes, thresholds);
-        $.currentKmsContextId = contextId;
-        $.epochCounter = epochId;
-        _activateKmsContextAndEpoch(contextId, epochId);
+        _storeAndActivateKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
         emit MirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds);
     }
 
