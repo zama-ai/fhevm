@@ -360,21 +360,41 @@ class SolanaCharts(unittest.TestCase):
         self.assertEqual(json.loads(proof_servers), PROOF_SERVERS)
 
     def test_relayer_http_adds_the_solana_chain_to_the_installed_config(self):
-        # Runs deploy-preview.sh's patch on the values deploy-relayer.sh installs (the overlay, whose
-        # config deploy-relayer.sh completes with the host chain ids), from the repository root like the script.
+        # deploy-relayer.sh renders relayer-http's values from the overlay; deploy-preview.sh then
+        # patches them and checks the patch. Both programs run as the scripts run them, from the
+        # repository root.
+        installer = (ROOT / "ci/preview-env/scripts/deploy/deploy-relayer.sh").read_text()
+        template = re.search(r"^ *TEMPLATE=(\S+) ", installer, re.M).group(1)
+        render = re.search(r"USER_T=\"\$\{user_t\}\" yq -i '([^']*)' \"\$\{http_values\}\"", installer, re.S).group(1)
         script = (VALUES / "deploy-preview.sh").read_text()
-        program = re.search(r"^SOLANA_CHAIN_ID=\$\(.*?\) yq -i '(.*?)' \"\$work/relayer-http\.yaml\"",
-                            script, re.S | re.M).group(1)
+        patch = re.search(r"^SOLANA_CHAIN_ID=\"\$solana_chain_id\" yq -i '([^']*)' \"\$work/relayer-http\.yaml\"",
+                          script, re.S | re.M).group(1)
+        check = re.search(r"^SOLANA_CHAIN_ID=\"\$solana_chain_id\" yq -e '([^']*)' \"\$work/relayer-http\.yaml\"",
+                          script, re.S | re.M).group(1)
         solana_chain_id = yaml.safe_load((VALUES / "values-solana-connector-e2e.yaml").read_text())[
             "commonConfig"]["hostChains"]["solana"]["chainId"]
-        installed = yaml.safe_load((ROOT / "ci/preview-env/relayer/values-relayer-http-e2e.yaml").read_text())
-        installed["configmapFiles"]["files"]["config.yaml"]["http"]["supported_chain_ids"] = [12345, 80002]
+        endpoints = [{"name": "kms_1", "url": "https://kms-connector-proxy-1:8443", "audience": "0x" + "22" * 20}]
+        installer_env = {**os.environ, "TEMPLATE": template, "ENDPOINTS": json.dumps(endpoints),
+                         "CHAINS": "[12345, 80002]", "CHAIN_ID": "12345", "PROTOCOL_CONFIG": "0x" + "33" * 20,
+                         "PUBLIC_T": "1", "USER_T": "1"}
+        solana_env = {**os.environ, "SOLANA_CHAIN_ID": solana_chain_id}
         with tempfile.TemporaryDirectory() as tmp:
             values = pathlib.Path(tmp) / "relayer-http.yaml"
-            values.write_text(yaml.safe_dump(installed))
-            subprocess.check_call(["yq", "-i", program, str(values)], cwd=ROOT,
-                                  env={**os.environ, "SOLANA_CHAIN_ID": solana_chain_id})
+            values.write_text((ROOT / "ci/preview-env/relayer/values-relayer-http-e2e.yaml").read_text())
+            subprocess.check_call(["yq", "-i", render, str(values)], cwd=ROOT, env=installer_env)
+            installed = yaml.safe_load(values.read_text())
+            subprocess.check_call(["yq", "-i", patch, str(values)], cwd=ROOT, env=solana_env)
             patched = yaml.safe_load(values.read_text())
+            subprocess.check_call(["yq", "-e", check, str(values)], cwd=ROOT, env=solana_env,
+                                  stdout=subprocess.DEVNULL)
+            # A config that is already a string passes the patch unchanged; the check refuses it.
+            installed_as_string = {**installed, "configmapFiles": {"files": {
+                "config.yaml": yaml.safe_dump(installed["configmapFiles"]["files"]["config.yaml"])}}}
+            values.write_text(yaml.safe_dump(installed_as_string))
+            subprocess.check_call(["yq", "-i", patch, str(values)], cwd=ROOT, env=solana_env)
+            refused = subprocess.run(["yq", "-e", check, str(values)], cwd=ROOT, env=solana_env,
+                                     capture_output=True)
+            self.assertNotEqual(refused.returncode, 0)
         # One string: Helm would read 130140237723663404 as a float64 and round it.
         config = patched["configmapFiles"]["files"]["config.yaml"]
         self.assertIsInstance(config, str)
@@ -383,6 +403,7 @@ class SolanaCharts(unittest.TestCase):
         # The rest of the installed release is kept.
         expected = installed["configmapFiles"]["files"]["config.yaml"]
         self.assertEqual(config["kms_aggregator"], expected["kms_aggregator"])
+        self.assertEqual(config["kms_aggregator"]["endpoints"], endpoints)
         self.assertEqual({k: v for k, v in patched.items() if k != "configmapFiles"},
                          {k: v for k, v in installed.items() if k != "configmapFiles"})
 
