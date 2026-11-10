@@ -1,6 +1,7 @@
 import type { KmsSignersContext } from '../types/kmsSignersContext.js';
 import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { Logger } from '../types/logger.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { KmsExtraData } from '../types/kms-p.js';
 import { createKmsSignersContext } from './KmsSignersContext-p.js';
@@ -55,6 +56,12 @@ function _kmsContextSlot(context: Context, params: Parameters): string {
 }
 
 class KmsContextCache extends VersionedValueCache<Context, Parameters, KmsContextValue> {
+  protected override readonly itemName = 'kmsContext';
+
+  protected override getLogger(context: Context): Logger | undefined {
+    return context.runtime.config.logger;
+  }
+
   protected override getSlotKey(context: Context, params: Parameters): string {
     return _kmsContextSlot(context, params);
   }
@@ -198,6 +205,10 @@ export async function readVersionedKmsSignersContextFromPermitExtraData(
   let current = await kmsContextCache.get(context, parameters, getCacheTtl(context, 'kmsContext'));
   if (!_namesKmsContext(parameters.extraData, current.value.extraData)) {
     if (_namesNewerKmsContext(parameters.extraData, current.value.extraData)) {
+      context.runtime.config.logger?.debug?.(
+        `The permit names KMS context ${_formatKmsContext(parameters.extraData)}, newer than the cached ` +
+          `${_formatKmsContext(current.value.extraData)}: reading the current context again.`,
+      );
       current = await kmsContextCache.get(context, parameters, 0);
     }
     if (!_namesKmsContext(parameters.extraData, current.value.extraData)) {

@@ -1,3 +1,4 @@
+import type { Logger } from '../types/logger.js';
 import type { EthCallParameters, EthCallResult, EthereumModule, TrustedClient } from '../modules/ethereum/types.js';
 import type { RelayerModule } from '../modules/relayer/types.js';
 import type { EncryptModuleFactory } from '../modules/encrypt/types.js';
@@ -149,6 +150,7 @@ function makeClient(parameters: {
   readonly batchRpcCalls?: boolean | undefined;
   readonly call?: ((parameters: EthCallParameters) => Promise<EthCallResult>) | undefined;
   readonly auth?: Auth | undefined;
+  readonly logger?: Logger | undefined;
 }) {
   const readClients: unknown[] = [];
   // 'start:<fn>' / 'end:<fn>' per RPC call; each call takes one macrotask.
@@ -188,7 +190,7 @@ function makeClient(parameters: {
   const runtime = createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
     ethereum,
     relayer: { fetchFheEncryptionKeyBytes: fetchFheEncryptionKeyBytesFn, ...parameters.relayer } as RelayerModule,
-    config: { auth: parameters.auth },
+    config: { auth: parameters.auth, logger: parameters.logger },
   });
 
   const hostClient = { name: 'host' };
@@ -884,6 +886,38 @@ describe('fetchFheEncryptionKeyBytes', () => {
     expect(keyCache.peek(KMSGEN_SLOT)).toBeUndefined();
   });
 
+  it('warns once that a client keeps rejecting its stale caller-provided bytes', async () => {
+    const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const { client } = makeClient({
+      logger,
+      chain: ethereumChain,
+      handlers: kmsGenerationHandlers(),
+      fheEncryptionKey: keyBytes({ publicKey: new Uint8Array([9]) as Bytes }),
+    });
+
+    await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toThrow(
+      FheEncryptionKeyVerificationError,
+    );
+    await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toThrow(
+      FheEncryptionKeyVerificationError,
+    );
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.warn.mock.calls[0]?.[0]).toContain('throws this error on every call from now on');
+  });
+
+  it('warns when a cached key fails the check and is evicted for every client on the slot', async () => {
+    const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    keyCache.set(KMSGEN_SLOT, keyBytes({ crs: CRS.slice(1) as Bytes }));
+    const { client } = makeClient({ logger, chain: ethereumChain, handlers: kmsGenerationHandlers() });
+
+    await expect(fetchFheEncryptionKeyBytes(client, { fhevmContext })).rejects.toThrow(
+      FheEncryptionKeyVerificationError,
+    );
+    expect(keyCache.peek(KMSGEN_SLOT)).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.warn.mock.calls[0]?.[0]).toContain(`evicted for every client on "${KMSGEN_SLOT}"`);
+  });
+
   it('keeps caller-provided bytes after a network error: the next call checks them again', async () => {
     const networkError = new Error('fetch failed');
     let fail = true;
@@ -1384,9 +1418,11 @@ describe('fetchFheEncryptionKeyBytes with several clients', () => {
     const OLD = keyBytes();
     const NEW = keyBytes({ publicKey: new Uint8Array([0xb0]) as Bytes, crs: new Uint8Array([0xb1]) as Bytes });
     const gate = deferred();
+    const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
     // Client A provides OLD, still active when it checks it (its check is held
     // back). Meanwhile the key rotates: client B downloads NEW and caches it.
     const a = makeClient({
+      logger,
       chain: ethereumChain,
       handlers: precomputedHandlers({
         getCrsMaterials: async () => {
@@ -1412,8 +1448,9 @@ describe('fetchFheEncryptionKeyBytes with several clients', () => {
     gate.resolve();
     // A gets the key it checked, for this call…
     await expect(bytesA).resolves.toEqual(OLD);
-    // …but the slot keeps B's newer key.
+    // …but the slot keeps B's newer key, and A says so.
     await expect(cachedBytes(KMSGEN_SLOT)).resolves.toEqual(NEW);
+    expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('during the check of the provided one'));
   });
 
   it("uses a provided key without waiting for another client's download in flight", async () => {

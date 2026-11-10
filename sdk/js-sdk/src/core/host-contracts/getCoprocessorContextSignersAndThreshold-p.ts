@@ -1,6 +1,7 @@
 import type { ChecksummedAddress, Uint8Number } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
+import type { Logger } from '../types/logger.js';
 import { assertIsChecksummedAddressArray } from '../base/address.js';
 import { asUint8Number, isUint8 } from '../base/uint.js';
 import { executeWithBatching } from '../base/promise.js';
@@ -34,6 +35,12 @@ type ReturnType = {
 // The current set only: the on-chain check expects it (until coprocessor
 // contexts exist).
 class CoprocessorSignersCache extends VersionedValueCache<Context, Parameters, ReturnType> {
+  protected override readonly itemName = 'coprocessorSigners';
+
+  protected override getLogger(context: Context): Logger | undefined {
+    return context.runtime.config.logger;
+  }
+
   // One slot per chain and contract: two chains can deploy at the same address.
   // A client with no chain reads by address only.
   protected override getSlotKey(context: Context, params: Parameters): string {

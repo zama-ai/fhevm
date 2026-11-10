@@ -6,6 +6,7 @@ import type { RelayerKeyUrlOptions } from '../types/relayer.js';
 import type { FetchFheEncryptionKeyBytesParameters } from '../modules/relayer/types.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import type { FheEncryptionKeySource } from '../types/fheEncryptionKey.js';
+import type { Logger } from '../types/logger.js';
 import { isBytes32Hex, unsafeBytesEquals } from '../base/bytes.js';
 import { uint256ToBytes32Hex } from '../base/uint.js';
 import { VersionedValueCache, type CachedValue } from '../caching/versionedValueCache.js';
@@ -53,6 +54,12 @@ type ActiveIds = { readonly keyId: bigint; readonly crsId: bigint };
 ////////////////////////////////////////////////////////////////////////////////
 
 class KeyMaterialCache extends VersionedValueCache<Context, Parameters, FheEncryptionKeyBytes> {
+  protected override readonly itemName = 'keyMaterial';
+
+  protected override getLogger(context: Context): Logger | undefined {
+    return context.runtime.config.logger;
+  }
+
   protected override getSlotKey(context: Context): string {
     return getFheEncryptionKeySlot(context);
   }
@@ -253,6 +260,10 @@ async function _checkCachedFheEncryptionKey(
       // Clients on this slot check against the same KMSGeneration, so they
       // reject these bytes too (unless their RPC serves other chain state).
       keyMaterialCache.evict(slot, cached.value);
+      context.runtime.config.logger?.warn?.(
+        `The cached FHE public key and CRS (${cached.version}) fail the check against KMSGeneration for this ` +
+          `client: evicted for every client on "${slot}", the next call downloads them again.`,
+      );
     }
     throw e;
   }
@@ -375,6 +386,11 @@ function _useProvidedFheEncryptionKey(
             const current = keyMaterialCache.peek(slot);
             if (current === undefined || current === cachedBefore) {
               keyMaterialCache.set(slot, version, provided);
+            } else {
+              context.runtime.config.logger?.debug?.(
+                `The cache got another FHE key (${current.version}) during the check of the provided one ` +
+                  `(${version}): kept; the provided key serves this call only.`,
+              );
             }
             checked = { bytes: provided, version };
           }
@@ -386,6 +402,10 @@ function _useProvidedFheEncryptionKey(
         if (e instanceof FheEncryptionKeyVerificationError) {
           // The client keeps only the error, not the bytes.
           releaseProvidedFheEncryptionKey(context, provided, e);
+          context.runtime.config.logger?.warn?.(
+            'The provided FHE public key and CRS (options.fheEncryptionKey) fail the check against KMSGeneration: ' +
+              'this client throws this error on every call from now on; create a new client without them.',
+          );
         }
         throw e;
       }

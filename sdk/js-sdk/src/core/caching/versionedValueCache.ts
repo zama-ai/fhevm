@@ -1,3 +1,4 @@
+import type { Logger } from '../types/logger.js';
 import { FhevmConfigError } from '../errors/FhevmConfigError.js';
 
 /** A value as cached, with its version and the time it was read. */
@@ -28,7 +29,10 @@ const MAX_SLOTS = 100;
  * the cache is shared by every caller in the thread.
  *
  * A subclass names the slot ({@link getSlotKey}) and reads the value
- * ({@link fetch}); it may override the clock ({@link now}), e.g. for tests.
+ * ({@link fetch}); it may override the clock ({@link now}), e.g. for tests,
+ * and give a logger ({@link getLogger}) for the cache's decisions (a version
+ * change, an older value ignored, a retry on another client's
+ * configuration, slots evicted), never a cache hit.
  *
  * - The TTL is given on each read, so each client applies its own. Nothing
  *   expires in the background.
@@ -65,6 +69,17 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
     return Date.now();
   }
 
+  /** What the cache holds, as named in its logs (e.g. `keyMaterial`). */
+  protected readonly itemName: string = 'value';
+
+  /**
+   * The logger of the client whose call caused a log (the cache is shared by
+   * clients that may each have their own). Defaults to none.
+   */
+  protected getLogger(_context: TContext): Logger | undefined {
+    return undefined;
+  }
+
   /**
    * Whether `version` is older than `than`. Defaults to `false`: versions are
    * not ordered, and the last value read wins. Override it when versions only
@@ -80,7 +95,7 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
 
   /** The current value: the cached one while younger than `ttlMs` (`0`: never), else read. */
   public get(context: TContext, parameters: TParams, ttlMs: number): Promise<CachedValue<TValue>> {
-    const slot = this.#getSlot(this.getSlotKey(context, parameters));
+    const slot = this.#getSlot(this.getSlotKey(context, parameters), context);
     const current = slot.current;
     if (current !== undefined && ttlMs > 0 && this.now() - current.timestamp <= ttlMs) {
       return Promise.resolve(current);
@@ -99,7 +114,7 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
    * failed (`invalidVersion`), or the read is forced (no `invalidVersion`).
    */
   public async refresh(context: TContext, parameters: TParams, invalidVersion?: string): Promise<CachedValue<TValue>> {
-    const slot = this.#getSlot(this.getSlotKey(context, parameters));
+    const slot = this.#getSlot(this.getSlotKey(context, parameters), context);
     const current = slot.current;
     if (
       invalidVersion !== undefined &&
@@ -149,11 +164,20 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
     return Object.freeze({ version, value, timestamp: this.now() });
   }
 
-  #getSlot(key: string): Slot<TValue> {
+  #getSlot(key: string, context?: TContext): Slot<TValue> {
     let slot = this.#slots.get(key);
     if (slot === undefined) {
       if (this.#slots.size >= MAX_SLOTS) {
+        const before = this.#slots.size;
         this.#slots = new Map([...this.#slots].filter(([, s]) => s.pendingRead !== undefined));
+        // Slots are per chain, contract and runtime: this many hints at a
+        // process creating them in a loop, which defeats the cache.
+        if (context !== undefined) {
+          this.getLogger(context)?.warn?.(
+            `${this.itemName}: more than ${MAX_SLOTS} cache slots, evicted ${before - this.#slots.size} idle ones ` +
+              `(many chains, relayers or runtimes in one process?).`,
+          );
+        }
       }
       slot = { current: undefined, pendingRead: undefined };
       this.#slots.set(key, slot);
@@ -164,6 +188,24 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
   /** Whether a value read with `version` must not replace the cached `current`. */
   #keepsNewer(current: CachedValue<TValue> | undefined, version: string, acceptOlder: boolean): boolean {
     return !acceptOlder && current !== undefined && this.isOlderVersion(version, current.version);
+  }
+
+  /** Keeps the newer cached value over an older one read, and says so. */
+  #keepNewer(context: TContext, current: CachedValue<TValue>, version: string): CachedValue<TValue> {
+    this.getLogger(context)?.warn?.(
+      `${this.itemName}: ignored a value read with an older version (${version}) than the cached one ` +
+        `(${current.version}): a source (e.g. an RPC node) may lag.`,
+    );
+    return current;
+  }
+
+  /** Stores a value read, logging a version change. */
+  #store(slot: Slot<TValue>, cached: CachedValue<TValue>, context: TContext): void {
+    const previous = slot.current;
+    if (previous !== undefined && previous.version !== cached.version) {
+      this.getLogger(context)?.debug?.(`${this.itemName}: version changed, ${previous.version} -> ${cached.version}.`);
+    }
+    slot.current = cached;
   }
 
   /**
@@ -190,10 +232,10 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
           slot.pendingRead = undefined;
           const current = slot.current;
           if (current !== undefined && this.#keepsNewer(current, version, acceptOlder)) {
-            return current;
+            return this.#keepNewer(context, current, version);
           }
           if (value !== cachedAtStart?.value || slot.current?.value === value) {
-            slot.current = cached;
+            this.#store(slot, cached, context);
           }
         }
         return cached;
@@ -226,15 +268,20 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
           if (!(e instanceof FhevmConfigError)) {
             throw e;
           }
+          // Points at the client whose setup is wrong, not at this one.
+          this.getLogger(context)?.warn?.(
+            `${this.itemName}: a read started by another client failed on its configuration ` +
+              `(${e.message.split('\n')[0]}); reading again with this client's.`,
+          );
           const currentAtRetry = slot.current;
           const { version, value } = await this.fetch(context, parameters, currentAtRetry);
           if (currentAtRetry !== undefined && this.#keepsNewer(currentAtRetry, version, acceptOlder)) {
-            return currentAtRetry;
+            return this.#keepNewer(context, currentAtRetry, version);
           }
           const cached = this.#stamp(version, value);
           // Not stored if `set` or `evict` changed the slot meanwhile.
           if (slot.pendingRead === undefined && slot.current === currentAtRetry) {
-            slot.current = cached;
+            this.#store(slot, cached, context);
           }
           return cached;
         })

@@ -1,3 +1,4 @@
+import type { Logger } from '../types/logger.js';
 import { describe, expect, it, vi } from 'vitest';
 import { FhevmConfigError } from '../errors/FhevmConfigError.js';
 import { VersionedValueCache, type CachedValue } from './versionedValueCache.js';
@@ -8,7 +9,12 @@ import { VersionedValueCache, type CachedValue } from './versionedValueCache.js'
 
 const SLOT = 'slot';
 
-type TestContext = { readonly misconfigured?: boolean };
+/** A client: its configuration, its logger, and (by default) the one slot. */
+type TestContext = {
+  readonly misconfigured?: boolean;
+  readonly logger?: Logger | undefined;
+  readonly slot?: string | undefined;
+};
 type TestValue = { readonly data: string };
 type TestFetch = VersionedValueCache<TestContext, object, TestValue>['fetch'];
 
@@ -23,8 +29,14 @@ class TestCache extends VersionedValueCache<TestContext, object, TestValue> {
     this.#nowFn = nowFn;
   }
 
-  protected override getSlotKey(): string {
-    return SLOT;
+  protected override readonly itemName = 'testValue';
+
+  protected override getSlotKey(context: TestContext): string {
+    return context.slot ?? SLOT;
+  }
+
+  protected override getLogger(context: TestContext): Logger | undefined {
+    return context.logger;
   }
 
   protected override fetch(
@@ -294,5 +306,69 @@ describe('VersionedValueCache with ordered versions', () => {
     await expect(reading).resolves.toMatchObject({ version: 'v2' });
     await expect(refreshing).resolves.toMatchObject({ version: 'v1' });
     expect(cache.peek(SLOT)?.version).toBe('v1');
+  });
+});
+
+// The cache logs its decisions, never a cache hit, to the logger of the client
+// whose call caused them.
+describe('VersionedValueCache logs', () => {
+  function makeLogger() {
+    return { debug: vi.fn(), warn: vi.fn(), error: vi.fn() } satisfies Logger;
+  }
+
+  it('a version change: debug, with both versions; nothing on a hit or an unchanged read', async () => {
+    const { cache, change } = makeCache();
+    const logger = makeLogger();
+    await cache.get({ logger }, {}, 1_000);
+    await cache.get({ logger }, {}, 1_000); // a hit
+    await cache.get({ logger }, {}, 0); // unchanged
+    expect(logger.debug).not.toHaveBeenCalled();
+
+    change('v2');
+    await cache.get({ logger }, {}, 0);
+    expect(logger.debug).toHaveBeenCalledOnce();
+    expect(logger.debug).toHaveBeenCalledWith('testValue: version changed, v1 -> v2.');
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it('an older value read and ignored: warn, with both versions', async () => {
+    const { cache, change } = makeCache({ ordered: true });
+    const logger = makeLogger();
+    change('v2');
+    await cache.get({ logger }, {}, 1_000);
+    change('v1');
+
+    await cache.get({ logger }, {}, 0);
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.warn.mock.calls[0]?.[0]).toContain('older version (v1) than the cached one (v2)');
+  });
+
+  it('a joined read failing on another client configuration: warn on the client that reads again', async () => {
+    const { cache, hold } = makeCache();
+    const misconfigured = makeLogger();
+    const good = makeLogger();
+    const release = hold();
+    const badRead = cache.get({ misconfigured: true, logger: misconfigured }, {}, 1_000);
+    const goodRead = cache.get({ logger: good }, {}, 1_000);
+    release();
+    await expect(badRead).rejects.toThrow(FhevmConfigError);
+    await goodRead;
+
+    expect(good.warn).toHaveBeenCalledOnce();
+    expect(good.warn.mock.calls[0]?.[0]).toContain('failed on its configuration (wrong network)');
+    expect(misconfigured.warn).not.toHaveBeenCalled();
+  });
+
+  it('more than 100 slots: warn, with the number of idle slots evicted', async () => {
+    const { cache } = makeCache();
+    const logger = makeLogger();
+    for (let i = 0; i < 100; i++) {
+      await cache.get({ slot: `slot-${i}` }, {}, 1_000);
+    }
+    expect(logger.warn).not.toHaveBeenCalled();
+
+    await cache.get({ slot: 'slot-100', logger }, {}, 1_000);
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.warn.mock.calls[0]?.[0]).toContain('more than 100 cache slots, evicted 100 idle ones');
   });
 });

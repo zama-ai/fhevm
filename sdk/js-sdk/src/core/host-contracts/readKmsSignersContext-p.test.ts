@@ -2,6 +2,7 @@ import type { EthereumModule } from '../modules/ethereum/types.js';
 import type { RelayerModule } from '../modules/relayer/types.js';
 import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
 import type { FhevmCacheOptions } from '../types/cache.js';
+import type { Logger } from '../types/logger.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PRIVATE_ETHERS_TOKEN } from '../../ethers/internal/ethers-p.js';
 import { sepolia } from '../chains/definitions/sepolia.js';
@@ -40,7 +41,7 @@ type ReadContractHandlers = Record<string, (parameters: { readonly args: readonl
  * A missing handler throws, so every test also asserts which on-chain calls
  * are (not) made.
  */
-function makeClient(handlers: ReadContractHandlers, cache?: FhevmCacheOptions) {
+function makeClient(handlers: ReadContractHandlers, cache?: FhevmCacheOptions, logger?: Logger) {
   const readContract = vi.fn(
     async (
       _trustedClient: unknown,
@@ -61,7 +62,7 @@ function makeClient(handlers: ReadContractHandlers, cache?: FhevmCacheOptions) {
   const runtime = createFhevmRuntime(PRIVATE_ETHERS_TOKEN, {
     ethereum,
     relayer: {} as RelayerModule,
-    config: {},
+    config: { logger },
   });
 
   const client = createCoreFhevm(PRIVATE_ETHERS_TOKEN, {
@@ -158,7 +159,7 @@ describe('KMS context cache', () => {
   const v14 = addresses;
 
   /** A host whose current KMS context (and epoch) can switch; context 5 is signed by A, others by B. */
-  function makeSwitchingClient(cache?: FhevmCacheOptions) {
+  function makeSwitchingClient(cache?: FhevmCacheOptions, logger?: Logger) {
     const current = { contextId: 5n, epochId: 1n };
     const made = makeClient(
       {
@@ -167,6 +168,7 @@ describe('KMS context cache', () => {
           BigInt(`0x${(parameters.args[0] as string).slice(4, 68)}`) === 5n ? [[SIGNER_A], 1n] : [[SIGNER_B], 1n],
       },
       cache,
+      logger,
     );
     return { ...made, current };
   }
@@ -231,6 +233,23 @@ describe('KMS context cache', () => {
     expect(readContract).not.toHaveBeenCalled();
     expect(error).toBeInstanceOf(InvalidSignedPermitError);
     expect((error as Error).message).toContain('signed for KMS context 5, but the current KMS context is 6 (epoch 1)');
+  });
+
+  it('a permit for a newer context than the cached one: debug, then read again', async () => {
+    const logger = { debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const { client, current } = makeSwitchingClient(undefined, logger);
+    await readCurrentKmsSignersContext(client, v14);
+    current.contextId = 6n;
+
+    await readKmsSignersContextFromPermitExtraData(client, {
+      ...v14,
+      extraData: createKmsExtraDataV1({ kmsContextId: 6n as Uint256BigInt }),
+    });
+    expect(logger.debug).toHaveBeenCalledWith(
+      'The permit names KMS context 6, newer than the cached 5 (epoch 1): reading the current context again.',
+    );
+    // The read that follows switched the cached context.
+    expect(logger.debug).toHaveBeenCalledWith(expect.stringContaining('kmsContext: version changed'));
   });
 
   it('a lagging RPC node: an old permit is rejected, and the cache keeps the newer context', async () => {
