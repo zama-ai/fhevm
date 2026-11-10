@@ -371,20 +371,15 @@ export const verifyUserDecryptShares = async (
   const tkmsVersion = (
     options.artifact.transportKeyPair as { readonly tkmsVersion?: unknown }
   ).tkmsVersion;
-  if (tkmsVersion !== "0.13.10" && tkmsVersion !== "0.13.20-0") {
-    throw new Error(
-      "Artifact transportKeyPair.tkmsVersion must be 0.13.10 or 0.13.20-0",
-    );
+  if (tkmsVersion !== "0.15.0-0") {
+    throw new Error("Artifact transportKeyPair.tkmsVersion must be 0.15.0-0");
   }
 
-  const context = createDecryptClientContext(
-    {
-      network: options.artifact.network,
-      rpcUrl: options.rpcUrl,
-      contractAddress: options.artifact.contractAddress,
-    },
-    tkmsVersion,
-  );
+  const context = createDecryptClientContext({
+    network: options.artifact.network,
+    rpcUrl: options.rpcUrl,
+    contractAddress: options.artifact.contractAddress,
+  });
   await context.fhevm.ready;
   if (context.fhevm.tkmsVersion !== tkmsVersion) {
     throw new Error(

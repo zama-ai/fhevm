@@ -39,7 +39,7 @@ describe("decryptUserValues", () => {
     sdk.client.ready = Promise.resolve();
     sdk.client.generateTransportKeyPair.mockResolvedValue({
       key: "transport",
-      tkmsVersion: "0.13.20-0",
+      tkmsVersion: "0.15.0-0",
     });
     sdk.client.signLegacyDecryptionPermit.mockResolvedValue({
       version: 2,
@@ -98,13 +98,13 @@ describe("decryptUserValues", () => {
       transportKeyPair: {
         publicKey: "0x1234",
         privateKey: "0x5678",
-        tkmsVersion: "0.13.20-0",
+        tkmsVersion: "0.15.0-0",
       },
       permit: { version: 2, durationSeconds: 604_800 },
     });
   });
 
-  it.each(["0.13.10", "0.13.20-0"] as const)(
+  it.each(["0.15.0-0"] as const)(
     "preserves TKMS version %s in the validation artifact JSON",
     async (tkmsVersion) => {
       sdk.client.generateTransportKeyPair.mockResolvedValue({

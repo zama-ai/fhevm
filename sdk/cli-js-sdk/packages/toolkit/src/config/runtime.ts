@@ -11,7 +11,6 @@ export const configureFhevmRuntime = (): void => {
   const apiKey = process.env.ZAMA_FHEVM_API_KEY;
   setFhevmRuntimeConfig({
     singleThread: true,
-    moduleVersions: "auto",
     ...(apiKey
       ? {
           auth: {
