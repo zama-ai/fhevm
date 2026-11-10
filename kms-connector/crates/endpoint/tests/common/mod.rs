@@ -113,8 +113,8 @@ impl RunningEndpoint {
     }
 
     pub fn spawn_post(&self, request: impl Into<AnyRequest>) -> JoinHandle<Response> {
-        let request = request.into();
-        self.spawn_post_json(request.route().path(), &request.to_json())
+        let post = self.prepare_post(&request.into());
+        tokio::spawn(async move { post.send().await.expect("request failed") })
     }
 
     /// Posts a JSON body to `route` from a task, for a body no [`AnyRequest`] models.
