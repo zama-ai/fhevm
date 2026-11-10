@@ -8,8 +8,11 @@
     "prettier-plugin-solidity": "^1.1.3"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/node": "^20.0.0",
-    "typescript": ">=5.0.4"
+    "eslint": "10.5.0",
+    "typescript": ">=5.0.4",
+    "typescript-eslint": "8.62.0"
   },
   "imports": {
     "#lib": {
@@ -19,6 +22,7 @@
   },
   "scripts": {
     "postinstall": "npm run rebuild",
+    "lint": "eslint --config ./eslint.config.mjs",
     "prettier:check": "prettier --config ./.prettierrc.json --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier:write": "prettier --config ./.prettierrc.json --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "rebuild": "npm run clean && npm run build",
