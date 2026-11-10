@@ -231,14 +231,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         /// @notice Contracts that skipped the global block cap. No setter since quotas replaced it; read only to route
         ///         allowlisted contracts nobody assigned (see _quotaOf).
         mapping(address account => bool isWhitelisted) blockHCUWhitelist;
-        /// @notice Whether the allowlist restricted FHE computation when quotas replaced it. No setter; while true and
-        ///         the default quota is stopped, allowlisted contracts nobody assigned keep computing (see _quotaOf).
-        bool isAllowlistActivated;
+        // The next three fields are the allowlist of the 0.14.x patch, in its order and types.
         /// @notice Contracts the allowlist admitted. No setter since quotas replaced it; an entry is deleted when its
         ///         contract moves to the default quota.
         mapping(address account => bool allowed) isAllowlisted;
-        /// @notice Unused since quota admins replaced allowlisters.
-        mapping(address account => bool authorized) allowlisters;
+        /// @notice Unused since quota admins replaced allowlisters (the patch stored each allowlister's deadline).
+        mapping(address account => uint256 deadline) allowlisters;
+        /// @notice Whether the allowlist restricted FHE computation when quotas replaced it. No setter; while true and
+        ///         the default quota is stopped, allowlisted contracts nobody assigned keep computing (see _quotaOf).
+        bool isAllowlistActivated;
         /// @notice Maximum depth carried across transactions; 0 disables the check.
         uint48 maxCrossTxDepth;
         /// @notice Carried depth the coprocessors are assumed to drain per block.
