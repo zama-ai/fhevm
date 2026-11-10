@@ -2,8 +2,11 @@
 //!
 //! An operator records `quorum` after every track reached unanimity, or
 //! `abort` after the deadline. It cuts over only after it reads `quorum` from
-//! every member, and it rolls back after it reads `abort` from one member. Both
-//! actions need a record, so a peer's silence makes this operator wait.
+//! every member. It rolls back on its own `abort`, or after it reads `abort`
+//! from [`abort_threshold`] members: enough that at least one of them is
+//! honest under the majority-honest assumption, so rollback cannot race a
+//! cutover (see `fleet_outcome`). Both actions need records, so a peer's
+//! silence makes this operator wait.
 
 use alloy::primitives::{keccak256, Address, Signature};
 use aws_sdk_s3::error::ProvideErrorMetadata;
@@ -271,17 +274,46 @@ pub(crate) async fn get(
     Some(record)
 }
 
-/// Rules 2 and 3 over one record per member. `Abort` wins, so an operator that
-/// wrote `quorum` still rolls back. `None` means wait: an absent or unreadable
-/// record is not a decision.
-pub(crate) fn fleet_outcome(records: &[Option<Decision>]) -> Option<Decision> {
-    if records.contains(&Some(Decision::Abort)) {
+/// The fleet decision over one record per member, assuming an honest majority
+/// of the member set.
+///
+/// Cutover needs `quorum` from every member, so it carries every honest
+/// signature. Rollback is allowed only when a cutover provably cannot exist,
+/// now or later: on this operator's own `abort` (its quorum signature then
+/// never exists), or on `abort` from at least `abort_threshold` members, a set
+/// large enough to contain one honest member whose quorum signature likewise
+/// never exists. Fewer aborts decide nothing: they could all come from
+/// equivocating members that also signed `quorum` for someone else, and
+/// rolling back on them is what let one such member split the fleet
+/// (fhevm-internal#2284). `None` means wait: an absent or unreadable record is
+/// not a decision.
+pub(crate) fn fleet_outcome(
+    own: Option<Decision>,
+    records: &[Option<Decision>],
+    abort_threshold: usize,
+) -> Option<Decision> {
+    if records.is_empty() {
+        return None;
+    }
+    let aborts = records
+        .iter()
+        .filter(|r| **r == Some(Decision::Abort))
+        .count();
+    if own == Some(Decision::Abort) || aborts >= abort_threshold {
         return Some(Decision::Abort);
     }
-    if !records.is_empty() && records.iter().all(|r| *r == Some(Decision::Quorum)) {
+    if records.iter().all(|r| *r == Some(Decision::Quorum)) {
         return Some(Decision::Quorum);
     }
     None
+}
+
+/// `n - h + 1`: the smallest number of `abort` records that must include an
+/// honest member when at least `h` of `n` members are honest. We assume an
+/// honest majority, `h = n/2 + 1`, which makes the threshold `ceil(n/2)`:
+/// 2 of 3, 3 of 5, 4 of 7.
+pub(crate) fn abort_threshold(members: usize) -> usize {
+    members.div_ceil(2)
 }
 
 #[cfg(test)]
@@ -421,16 +453,46 @@ mod tests {
     }
 
     #[test]
-    fn abort_beats_quorum_and_a_gap_decides_nothing() {
+    fn rollback_needs_own_abort_or_the_abort_threshold() {
         use Decision::{Abort, Quorum};
-        assert_eq!(fleet_outcome(&[Some(Quorum); 3]), Some(Quorum));
+        // Unanimous quorum cuts over; a gap waits.
         assert_eq!(
-            fleet_outcome(&[Some(Quorum), Some(Abort), Some(Quorum)]),
+            fleet_outcome(Some(Quorum), &[Some(Quorum); 3], 2),
+            Some(Quorum)
+        );
+        assert_eq!(
+            fleet_outcome(Some(Quorum), &[Some(Quorum), None, Some(Quorum)], 2),
+            None
+        );
+        assert_eq!(fleet_outcome(None, &[None, None], 2), None);
+        // A peer abort below the threshold could be an equivocator that also
+        // signed quorum for someone else, so it decides nothing.
+        assert_eq!(
+            fleet_outcome(Some(Quorum), &[Some(Quorum), Some(Abort), Some(Quorum)], 2),
+            None
+        );
+        assert_eq!(fleet_outcome(None, &[Some(Abort), None, None], 2), None);
+        // At the threshold one abort signer must be honest: rollback is safe.
+        assert_eq!(
+            fleet_outcome(Some(Quorum), &[Some(Abort), Some(Abort), Some(Quorum)], 2),
             Some(Abort)
         );
-        assert_eq!(fleet_outcome(&[Some(Abort), None]), Some(Abort));
-        assert_eq!(fleet_outcome(&[Some(Quorum), None]), None);
-        assert_eq!(fleet_outcome(&[None, None]), None);
-        assert_eq!(fleet_outcome(&[]), None);
+        // Our own abort rolls back alone: our quorum signature never exists,
+        // so no peer can ever cut over on this attempt.
+        assert_eq!(
+            fleet_outcome(Some(Abort), &[Some(Abort), None, None], 2),
+            Some(Abort)
+        );
+        assert_eq!(fleet_outcome(None, &[], 2), None);
+    }
+
+    #[test]
+    fn abort_threshold_is_n_minus_h_plus_one_for_an_honest_majority() {
+        assert_eq!(abort_threshold(1), 1);
+        assert_eq!(abort_threshold(2), 1);
+        assert_eq!(abort_threshold(3), 2);
+        assert_eq!(abort_threshold(4), 2);
+        assert_eq!(abort_threshold(5), 3);
+        assert_eq!(abort_threshold(7), 4);
     }
 }

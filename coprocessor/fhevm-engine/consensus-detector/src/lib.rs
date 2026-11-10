@@ -846,12 +846,18 @@ where
         }
     }
 
-    // Cut over only on `quorum` from every member, roll back on `abort` from any
-    // member. An unreadable record counts as neither, so this operator waits.
+    // Cut over only on `quorum` from every member. Roll back only when rollback
+    // provably cannot race a cutover: on this operator's own `abort`, or on
+    // `abort` from `abort_threshold` members, so a single equivocating member
+    // cannot split the fleet by serving `abort` to some peers after serving
+    // `quorum` to others (fhevm-internal#2284). An unreadable record counts as
+    // neither, so this operator waits.
     let addresses = members
         .iter()
         .map(|m| m.address.as_str())
         .collect::<Vec<_>>();
+    let abort_threshold = decision::abort_threshold(members.len());
+    let mut aborts = 0usize;
     let mut decisions = Vec::with_capacity(members.len());
     for member in &members {
         let record = match &own {
@@ -874,19 +880,42 @@ where
                 );
             }
         }
-        decisions.push(
-            record
-                .filter(|r| r.payload.addresses() == addresses)
-                .map(|r| r.payload.decision),
-        );
+        let decision = record
+            .filter(|r| r.payload.addresses() == addresses)
+            .map(|r| r.payload.decision);
+        // Every abort read this pass is logged, so the trail names which
+        // members fed an abort tally even when it stays below the threshold.
+        if decision == Some(decision::Decision::Abort) {
+            aborts += 1;
+            info!(
+                member = member.address,
+                proposal_block,
+                aborts,
+                abort_threshold,
+                remaining_to_threshold = abort_threshold.saturating_sub(aborts),
+                "member decision record reads abort"
+            );
+        }
+        decisions.push(decision);
     }
 
-    match decision::fleet_outcome(&decisions) {
+    // Our own published record, as the fleet reads it. Only a record already in
+    // a bucket counts: an unwritten local verdict could still change after a
+    // restart, and rollback on it could then race a peer's cutover.
+    let own_decision = members
+        .iter()
+        .zip(&decisions)
+        .find(|(member, _)| Some(&member.address) == own_name.as_ref())
+        .and_then(|(_, decision)| *decision);
+    match decision::fleet_outcome(own_decision, &decisions, abort_threshold) {
         Some(decision::Decision::Abort) => {
             warn!(
                 chains = windows.len(),
                 max_end_block = max_end,
-                "a member decided abort — emitting event_unanimity_consensus_timeout"
+                aborts,
+                abort_threshold,
+                own_abort = (own_decision == Some(decision::Decision::Abort)),
+                "rollback decided - emitting event_unanimity_consensus_timeout"
             );
             notify_unanimity(
                 pool,
@@ -935,7 +964,12 @@ where
                 .filter(|(_, decision)| decision.is_none())
                 .map(|(member, _)| member.address.as_str())
                 .collect();
-            info!(waiting = ?waiting, "waiting for a decision from every member");
+            info!(
+                waiting = ?waiting,
+                aborts,
+                abort_threshold,
+                "waiting for a fleet decision"
+            );
         }
     }
 
