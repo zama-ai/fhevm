@@ -104,27 +104,6 @@ pub const FIELDS: &[Field] = &[
     },
 ];
 
-/// The fields every other line about a request carries when they apply: its `request_id`, and the `kms_node` when it
-/// concerns one; then the fields of the KMS node lines that the lookup's node table reads (`attempt`, `attempts`,
-/// `error`, `cause`, the retry decision of a failed attempt: `retry_class`, `retry_in_ms`, `retry_after_ms`,
-/// `give_up_reason`, and the budgets a failed call used: `transient_retries`, `rate_limit_retries`; `code` and
-/// `elapsed_ms` are also summary fields). `request_id` is a `fields` entry on the lines the endpoint emits and
-/// `span.request_id` on those emitted inside the `aggregation` span; `kms_node` is always a `fields` entry.
-pub const OTHER_LINE_FIELDS: [&str; 12] = [
-    "request_id",
-    "kms_node",
-    "attempt",
-    "attempts",
-    "error",
-    "cause",
-    "retry_class",
-    "retry_in_ms",
-    "retry_after_ms",
-    "give_up_reason",
-    "transient_retries",
-    "rate_limit_retries",
-];
-
 /// The message of the summary line.
 pub const MESSAGE: &str = "request completed";
 
