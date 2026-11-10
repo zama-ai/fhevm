@@ -58,7 +58,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if an allowlister deadline is not in the future.
     error InvalidAllowlisterDeadline(uint256 deadline);
 
-    /// @notice Returned if an account without an active allowlister role tries to renounce.
+    /// @notice Returned if an account without a stored allowlister grant tries to renounce.
     error NotAllowlister(address account);
 
     /// @notice Returned if an addition uses the zero address.
@@ -530,9 +530,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
         _removeAllowlister(account);
     }
 
-    /// @notice Renounces the sender's active allowlister role without removing previously admitted dapps.
+    /// @notice Clears the sender's stored allowlister grant, active or expired, without removing previously admitted dapps.
     function renounceAllowlister() external {
-        if (_getHCULimitStorage().allowlisters[msg.sender] <= block.timestamp) revert NotAllowlister(msg.sender);
+        if (_getHCULimitStorage().allowlisters[msg.sender] == 0) revert NotAllowlister(msg.sender);
         _removeAllowlister(msg.sender);
     }
 
