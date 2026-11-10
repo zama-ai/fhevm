@@ -169,7 +169,6 @@ export async function verifySolanaUserDecryptResponse(response: {
   }
   const kmsLib = await initTkmsModule(response.runtime);
   const { request } = response;
-  // The KMS client address of a Solana user: `solana:` and the base58 key. An EVM user's is `0x`.
   const clientAddress = `solana:${getAddressDecoder().decode(request.userAddress)}`;
   const domain = request.gatewayEip712Domain;
 
