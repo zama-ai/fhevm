@@ -16,6 +16,12 @@ on:
 
 permissions: {}
 
+# One run at a time: a second dispatch waits for the running one instead of
+# publishing concurrently. Never cancel a run that may be publishing.
+concurrency:
+  group: library-solidity-publish
+  cancel-in-progress: false
+
 # ------------------------------------------------------------------------------
 # Publish @fhevm/solidity: a Solidity ONLY npm package
 # ------------------------------------------------------------------------------
