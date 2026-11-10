@@ -7,8 +7,9 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::{
-    CrsgenResponse, EpochResultResponse, KeygenResponse, KmsResponseKind, NewKmsContextResponse,
-    PrepKeygenResponse,
+    ContextDestructionResponse, CrsgenResponse, EpochDestructionResponse, EpochResultResponse,
+    KeygenResponse, KmsResponseKind, NewKmsContextResponse, PrepKeygenResponse,
+    extra_data::extra_data_v2_payload,
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::KMSGenerationInstance,
@@ -85,6 +86,12 @@ where
             KmsResponseKind::EpochResult(response) => {
                 self.send_epoch_result_response(response).await
             }
+            KmsResponseKind::ContextDestruction(response) => {
+                self.send_context_destruction_response(response).await
+            }
+            KmsResponseKind::EpochDestruction(response) => {
+                self.send_epoch_destruction_response(response).await
+            }
             _ => {
                 unreachable!("Only keygen and ProtocolConfig responses should be sent to Ethereum")
             }
@@ -147,9 +154,39 @@ where
         &self,
         response: NewKmsContextResponse,
     ) -> Result<TransactionReceipt, Error> {
-        let call_builder = self
-            .protocol_config_contract
-            .confirmKmsContextCreation(response.context_id);
+        let call_builder = self.protocol_config_contract.confirmKmsContextCreation(
+            response.context_id,
+            response.signature.into(),
+            response.extra_data.into(),
+        );
+
+        let call = call_builder.into_transaction_request();
+        self.send_tx_with_retry(call).await
+    }
+
+    pub async fn send_context_destruction_response(
+        &self,
+        response: ContextDestructionResponse,
+    ) -> Result<TransactionReceipt, Error> {
+        let call_builder = self.protocol_config_contract.confirmKmsContextDestruction(
+            response.context_id,
+            response.signature.into(),
+            response.extra_data.into(),
+        );
+
+        let call = call_builder.into_transaction_request();
+        self.send_tx_with_retry(call).await
+    }
+
+    pub async fn send_epoch_destruction_response(
+        &self,
+        response: EpochDestructionResponse,
+    ) -> Result<TransactionReceipt, Error> {
+        let call_builder = self.protocol_config_contract.confirmKmsEpochDestruction(
+            response.epoch_id,
+            response.signature.into(),
+            response.extra_data.into(),
+        );
 
         let call = call_builder.into_transaction_request();
         self.send_tx_with_retry(call).await
@@ -164,9 +201,14 @@ where
         let crs_list = <Vec<EpochCrsResult> as SolValue>::abi_decode(&response.crs_list)
             .map_err(|e| Error::Irrecoverable(anyhow!("Failed to decode epoch crs_list: {e}")))?;
 
-        let call_builder =
-            self.protocol_config_contract
-                .confirmEpochActivation(response.epoch_id, keys, crs_list);
+        let call_builder = self.protocol_config_contract.confirmEpochActivation(
+            response.epoch_id,
+            keys,
+            crs_list,
+            extra_data_v2_payload(response.context_id, response.epoch_id).into(),
+            response.signature.into(),
+            response.extra_data.into(),
+        );
 
         let call = call_builder.into_transaction_request();
         self.send_tx_with_retry(call).await

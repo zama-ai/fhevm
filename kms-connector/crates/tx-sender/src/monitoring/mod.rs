@@ -34,4 +34,6 @@ const OPERATION_TABLES: &[&str] = &[
     "epoch_result_responses",
     "kms_context_destroyed",
     "kms_epoch_destroyed",
+    "kms_context_destruction_responses",
+    "kms_epoch_destruction_responses",
 ];

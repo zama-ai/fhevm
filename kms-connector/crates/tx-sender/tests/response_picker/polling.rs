@@ -18,6 +18,8 @@ use tx_sender::core::{Config, DbKmsResponsePicker, KmsResponsePicker};
 #[case::crsgen(TestResponseType::Crsgen)]
 #[case::new_kms_context(TestResponseType::NewKmsContext)]
 #[case::epoch_result(TestResponseType::EpochResult)]
+#[case::context_destruction(TestResponseType::ContextDestruction)]
+#[case::epoch_destruction(TestResponseType::EpochDestruction)]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_pick_response_with_polling_backup(
