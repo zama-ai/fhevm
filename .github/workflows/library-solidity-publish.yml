@@ -56,7 +56,7 @@ jobs:
   # Solidity sources, so no dependency code runs before it is packed.
   pack:
     name: library-solidity-publish/pack
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./library-solidity
@@ -213,7 +213,7 @@ jobs:
   verify:
     name: library-solidity-publish/verify
     needs: pack
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./library-solidity
@@ -277,7 +277,7 @@ jobs:
   publish-npmjs:
     name: library-solidity-publish/publish-npmjs
     needs: [pack, verify]
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     permissions:
       id-token: "write" # Required for OIDC authentication
     steps:
@@ -340,7 +340,7 @@ jobs:
     # below has no status function, so GitHub implicitly adds `success()`.
     needs: [pack, publish-npmjs]
     if: ${{ inputs.release }}
-    runs-on: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./library-solidity
