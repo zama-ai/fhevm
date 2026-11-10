@@ -100,7 +100,8 @@ export default async function runHcuAclPermission(ctx: RolloutRunContext) {
   });
 
   logPhase(`00 boot ${BASELINE_TAG} and seed permissions with the bool ACL`);
-  await ctx.up({ lockFile: baselineLock, overrides: [{ group: "test-suite" }] });
+  // The retained-material check compares coprocessors, so it needs at least two.
+  await ctx.up({ lockFile: baselineLock, overrides: [{ group: "test-suite" }], scenario: "two-of-two" });
   await runRetainedMaterial(await ctx.readState(), "seed", "hcu-before-upgrade");
   const host = await readHost(ctx);
   const previousImplementations = {
