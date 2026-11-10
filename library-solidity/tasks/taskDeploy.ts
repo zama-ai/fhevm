@@ -250,11 +250,21 @@ task('task:deployProtocolConfig').setAction(async function (_taskArguments: Task
 
   const softwareVersion = process.env.KMS_SOFTWARE_VERSION || '';
   const pcrValues: { pcr0: string; pcr1: string; pcr2: string }[] = [];
+  // First IDs of a fresh KMS fleet: request type in the top byte (KmsContext = 7, Epoch = 8), counter 1.
+  const initialKmsContextId = (7n << 248n) + 1n;
+  const initialEpochId = (8n << 248n) + 1n;
 
   await upgrades.upgradeProxy(proxy, newImplem, {
     call: {
       fn: 'initializeFromEmptyProxy',
-      args: [buildKmsNodeParams(), buildKmsThresholds(), softwareVersion, pcrValues],
+      args: [
+        initialKmsContextId,
+        initialEpochId,
+        buildKmsNodeParams(),
+        buildKmsThresholds(),
+        softwareVersion,
+        pcrValues,
+      ],
     },
   });
   console.info('ProtocolConfig code set successfully at address:', proxyAddress);

@@ -728,7 +728,11 @@ task('task:deployProtocolConfig').setAction(async function (_, hre) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const initArgs = buildProtocolConfigContextArgs();
+  const initArgs = [
+    BigInt(getRequiredEnvVar('INITIAL_KMS_CONTEXT_ID')),
+    BigInt(getRequiredEnvVar('INITIAL_EPOCH_ID')),
+    ...buildProtocolConfigContextArgs(),
+  ];
   const newImplem = await ethers.getContractFactory('ProtocolConfig', deployer);
   const parsedEnv = readHostEnv();
   const proxyAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;

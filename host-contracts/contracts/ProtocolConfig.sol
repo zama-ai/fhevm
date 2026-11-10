@@ -129,6 +129,12 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
     /**
      * @notice Fresh deploy initializer: creates the first KMS context.
      * @dev When deploying a fresh ProtocolConfig on Ethereum (canonical host), this function is called.
+     *      A fresh KMS fleet starts at `KMS_CONTEXT_COUNTER_BASE + 1` and `EPOCH_COUNTER_BASE + 1`.
+     *      A fleet that already rotated must pass its active IDs, because the KMS rejects a reused ID.
+     *      The active IDs must also be the highest IDs ever issued. The next rotation issues again any pending or
+     *      abandoned ID above them.
+     * @param initialKmsContextId The first KMS context ID. Must be above `KMS_CONTEXT_COUNTER_BASE`.
+     * @param initialEpochId The first epoch ID. Must be above `EPOCH_COUNTER_BASE`.
      * @param initialKmsNodeParams The initial KMS node set, including MPC metadata.
      * @param initialThresholds The initial thresholds.
      * @param softwareVersion The KMS software version expected for the context.
@@ -136,27 +142,35 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
+        uint256 initialKmsContextId,
+        uint256 initialEpochId,
         KmsNodeParams[] calldata initialKmsNodeParams,
         KmsThresholds calldata initialThresholds,
         string calldata softwareVersion,
         PcrValues[] calldata pcrValues
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+        if (initialKmsContextId < KMS_CONTEXT_COUNTER_BASE + 1) {
+            revert InvalidKmsContext(initialKmsContextId);
+        }
+        if (initialEpochId < EPOCH_COUNTER_BASE + 1) {
+            revert InvalidKmsEpoch(initialEpochId);
+        }
+
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
 
-        uint256 newContextId = KMS_CONTEXT_COUNTER_BASE + 1;
         _storeAndActivateKmsContextAndEpoch(
-            newContextId,
-            EPOCH_COUNTER_BASE + 1,
+            initialKmsContextId,
+            initialEpochId,
             initialKmsNodeParams,
             initialThresholds
         );
 
-        $.contextAnchors[newContextId] = KmsContextAnchor({
+        $.contextAnchors[initialKmsContextId] = KmsContextAnchor({
             emissionBlockNumber: block.number,
             contextInfoHash: keccak256(abi.encode(initialKmsNodeParams, initialThresholds, softwareVersion, pcrValues))
         });
         emit NewKmsContext(
-            newContextId,
+            initialKmsContextId,
             KMS_CONTEXT_COUNTER_BASE,
             initialKmsNodeParams,
             initialThresholds,

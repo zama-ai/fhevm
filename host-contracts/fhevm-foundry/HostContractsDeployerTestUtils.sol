@@ -18,7 +18,7 @@ import {KMSGeneration} from "@fhevm-host-contracts/contracts/KMSGeneration.sol";
 import {IProtocolConfig} from "@fhevm-host-contracts/contracts/interfaces/IProtocolConfig.sol";
 import {IKMSGeneration} from "@fhevm-host-contracts/contracts/interfaces/IKMSGeneration.sol";
 import {KmsThresholds, KmsNode, KmsNodeParams, PcrValues} from "@fhevm-host-contracts/contracts/shared/Structs.sol";
-import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE, EXTRA_DATA_V2} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
+import {PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE, EPOCH_COUNTER_BASE} from "@fhevm-host-contracts/contracts/shared/Constants.sol";
 import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd, protocolConfigAdd, kmsGenerationAdd} from "@fhevm-host-contracts/addresses/FHEVMHostAddresses.sol";
 
 /**
@@ -257,7 +257,14 @@ abstract contract HostContractsDeployerTestUtils is Test {
             protocolConfigImplementation,
             abi.encodeCall(
                 ProtocolConfig.initializeFromEmptyProxy,
-                (initialKmsNodeParams, initialThresholds, "", pcrValues)
+                (
+                    KMS_CONTEXT_COUNTER_BASE + 1,
+                    EPOCH_COUNTER_BASE + 1,
+                    initialKmsNodeParams,
+                    initialThresholds,
+                    "",
+                    pcrValues
+                )
             )
         );
 
