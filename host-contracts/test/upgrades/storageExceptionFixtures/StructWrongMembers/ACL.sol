@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 /// @dev Fixture for test/upgrades/storageExceptions.ts: the ACL namespace with a Permission struct whose bool is not first.
-contract ACL {
+contract StructWrongMembersACL {
     struct Permission {
         uint48 depth;
         bool allowed;

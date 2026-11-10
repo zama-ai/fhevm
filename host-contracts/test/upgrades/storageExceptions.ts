@@ -12,7 +12,7 @@ function minorVersion(version: string): string {
 }
 
 async function fixtureLayout(name: string): Promise<StorageLayout> {
-  const factory = await ethers.getContractFactory(`${FIXTURES}/${name}/ACL.sol:ACL`);
+  const factory = await ethers.getContractFactory(`${FIXTURES}/${name}/ACL.sol:${name}ACL`);
   return getStorageLayout(await readValidations(hre), getVersion(factory.bytecode));
 }
 
