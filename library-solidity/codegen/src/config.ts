@@ -312,9 +312,25 @@ function prettierConfigExists(baseDir: string): boolean {
   return existsSync(path.join(baseDir, '.prettierrc.yml')) || existsSync(path.join(baseDir, '.prettierrc.json'));
 }
 
+// Prettier resolves its config by walking up from the formatted file, so a config in any
+// ancestor directory (e.g. the repo root `.prettierrc.yml`) applies to `baseDir` as well.
+function prettierConfigExistsInTree(baseDir: string): boolean {
+  let dir = path.resolve(baseDir);
+  while (true) {
+    if (prettierConfigExists(dir)) {
+      return true;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      return false;
+    }
+    dir = parent;
+  }
+}
+
 export function generatePrettierConfig(baseDir: string) {
   if (!isDryRun()) {
-    if (!prettierConfigExists(baseDir)) {
+    if (!prettierConfigExistsInTree(baseDir)) {
       const prettierConfigFile = path.resolve('./.prettierrc.json');
 
       if (!existsSync(prettierConfigFile)) {
