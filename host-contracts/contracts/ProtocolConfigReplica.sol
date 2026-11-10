@@ -67,7 +67,7 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
         }
 
         ProtocolConfigStorage storage $ = _getProtocolConfigStorage();
-        _storeKmsCommittee(canonicalContextId, canonicalNodes, canonicalThresholds);
+        _storeKmsNodesAndThresholds(canonicalContextId, canonicalNodes, canonicalThresholds);
         $.currentKmsContextId = canonicalContextId;
         $.epochCounter = canonicalEpochId;
         _activateKmsContextAndEpoch(canonicalContextId, canonicalEpochId);
@@ -108,7 +108,7 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
             revert NonIncreasingKmsContextId(contextId, currentKmsContextId);
         }
 
-        _storeKmsCommittee(contextId, nodes, thresholds);
+        _storeKmsNodesAndThresholds(contextId, nodes, thresholds);
         $.currentKmsContextId = contextId;
         $.epochCounter = epochId;
         _activateKmsContextAndEpoch(contextId, epochId);
