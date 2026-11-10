@@ -320,7 +320,7 @@ jobs:
       # ------------------------------------------------------------------------
       - name: Publish prerelease to npm
         if: ${{ !inputs.release }}
-        uses: JS-DevTools/npm-publish@7f8fe47b3bea1be0c3aec2b717c5ec1f3e03410b # v4.1.1
+        uses: JS-DevTools/npm-publish@0fd2f4369c5d6bcfcde6091a7c527d810b9b5c3f # v4.1.5
         with:
           package: ${{ runner.temp }}/tarball/package.tgz
           tag: prerelease
@@ -330,7 +330,7 @@ jobs:
 
       - name: Publish release to npm
         if: ${{ inputs.release }}
-        uses: JS-DevTools/npm-publish@7f8fe47b3bea1be0c3aec2b717c5ec1f3e03410b # v4.1.1
+        uses: JS-DevTools/npm-publish@0fd2f4369c5d6bcfcde6091a7c527d810b9b5c3f # v4.1.5
         with:
           package: ${{ runner.temp }}/tarball/package.tgz
           provenance: true
