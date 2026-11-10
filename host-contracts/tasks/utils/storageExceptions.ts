@@ -15,7 +15,8 @@ export type StorageException = {
   namespace: string;
   field: string;
   /**
-   * The field's type before and after, as OpenZeppelin labels them. Only this direction is accepted: a rollback
+   * The field's type before and after, as OpenZeppelin labels them without the contract prefix of struct names
+   * (`struct Permission`, not `struct ACL.Permission`). Only this direction is accepted: a rollback
    * points the proxy back at the deployed implementation with upgradeToAndCall, without these tasks.
    */
   types: [string, string];
@@ -34,17 +35,22 @@ export const STORAGE_EXCEPTIONS: StorageException[] = [
     field: 'persistedAllowedPairs',
     types: [
       'mapping(bytes32 => mapping(address => bool))',
-      'mapping(bytes32 => mapping(address => struct ACL.Permission))',
+      'mapping(bytes32 => mapping(address => struct Permission))',
     ],
     valueStruct: {
-      label: 'struct ACL.Permission',
+      label: 'struct Permission',
       members: ['allowed:t_bool', 'depth:t_uint48', 'storedBlock:t_uint48'],
     },
   },
 ];
 
+function labelOf(layout: StorageLayout, typeId: string): string | undefined {
+  return layout.types[typeId]?.label.replace(/struct \w+\./g, 'struct ');
+}
+
 function assertValueStruct(layout: StorageLayout, exception: StorageException): void {
-  const struct = Object.values(layout.types).find((t) => t.label === exception.valueStruct.label);
+  const id = Object.keys(layout.types).find((typeId) => labelOf(layout, typeId) === exception.valueStruct.label);
+  const struct = id === undefined ? undefined : layout.types[id];
   const members = struct?.members as { label: string; type: string; offset?: number; slot?: string }[] | undefined;
   const found = members?.map((m) => `${m.label}:${m.type}`);
   const oneSlot = members?.every((m) => m.slot === '0') && members[0]?.offset === 0;
@@ -69,7 +75,7 @@ export function storageExceptionFor(current: StorageLayout, updated: StorageLayo
     const updatedEntry = updatedEntries?.find((e) => e.label === exception.field);
     if (!currentEntry || !updatedEntry) continue;
     const [before, after] = exception.types;
-    if (current.types[currentEntry.type]?.label === before && updated.types[updatedEntry.type]?.label === after) {
+    if (labelOf(current, currentEntry.type) === before && labelOf(updated, updatedEntry.type) === after) {
       assertValueStruct(updated, exception);
       namespaces[exception.namespace] = updatedEntries.map((e) =>
         e === updatedEntry ? { ...e, type: currentEntry.type } : e,

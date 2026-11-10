@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 /// @dev Fixture for test/upgrades/storageExceptions.ts: the ACL namespace with the Permission struct and a second, incompatible change.
-contract ACL {
+contract StructAndOtherChangeACL {
     struct Permission {
         bool allowed;
         uint48 depth;

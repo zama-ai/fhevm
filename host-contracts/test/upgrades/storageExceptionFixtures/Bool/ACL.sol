@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 /// @dev Fixture for test/upgrades/storageExceptions.ts: the ACL namespace with the bool permission of ACL v0.5 and v0.6.
-contract ACL {
+contract BoolACL {
     /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {
         mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
