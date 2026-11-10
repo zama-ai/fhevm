@@ -1,7 +1,6 @@
 use crate::core::tx_sender::{Error, get_revert_reason, overprovision_gas};
 use alloy::{
     hex,
-    primitives::Bytes,
     providers::Provider,
     rpc::types::{TransactionReceipt, TransactionRequest},
     sol_types::SolValue,
@@ -148,12 +147,9 @@ where
         &self,
         response: NewKmsContextResponse,
     ) -> Result<TransactionReceipt, Error> {
-        // TODO: forward the KMS Core's EIP-712 signature and extraData once available.
-        let call_builder = self.protocol_config_contract.confirmKmsContextCreation(
-            response.context_id,
-            Bytes::new(),
-            Bytes::new(),
-        );
+        let call_builder = self
+            .protocol_config_contract
+            .confirmKmsContextCreation(response.context_id);
 
         let call = call_builder.into_transaction_request();
         self.send_tx_with_retry(call).await
@@ -168,16 +164,9 @@ where
         let crs_list = <Vec<EpochCrsResult> as SolValue>::abi_decode(&response.crs_list)
             .map_err(|e| Error::Irrecoverable(anyhow!("Failed to decode epoch crs_list: {e}")))?;
 
-        // TODO: forward materialExtraData, the KMS Core's EIP-712 signature and extraData once
-        // available. The contract also requires keys and crs_list sorted by ID.
-        let call_builder = self.protocol_config_contract.confirmEpochActivation(
-            response.epoch_id,
-            keys,
-            crs_list,
-            Bytes::new(),
-            Bytes::new(),
-            Bytes::new(),
-        );
+        let call_builder =
+            self.protocol_config_contract
+                .confirmEpochActivation(response.epoch_id, keys, crs_list);
 
         let call = call_builder.into_transaction_request();
         self.send_tx_with_retry(call).await
