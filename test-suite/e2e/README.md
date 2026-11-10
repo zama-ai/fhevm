@@ -197,9 +197,10 @@ coprocessor's `coprocessor[N]-proxy`, until the RFC-038 pad connector and its e2
 land and replace it. It signs `FhevmSig` requests with KMS party 1's
 `KMS_CONNECTOR_PRIVATE_KEY`, a tx-sender of the active KMS context in the host
 ProtocolConfig, for the coprocessor's signer in `COPROCESSOR_SIGNER_ADDRESSES`.
-Behind each proxy runs prf-service. No pad-worker runs yet, so
-`scripts/seed-prf-output.ts` first writes the output the suite requests into
-each coprocessor's database: a fixed binary body and its attestation, signed with the coprocessor's `TX_SENDER_PRIVATE_KEY` as
+Behind each proxy runs prf-service, logged in as the `prf_service` database
+role. No pad-worker runs yet, so `scripts/seed-prf-output.ts` first writes the
+output the suite requests into each coprocessor's database: a fixed binary body
+and its attestation, signed with the coprocessor's `TX_SENDER_PRIVATE_KEY` as
 its sns-worker signs. The suite reads how many PRF requests prf-service answered
 from its metric `coprocessor_prf_service_requests_total`, at
 `PRF_SERVICE_METRICS_URLS`. It checks that a signed request reaches prf-service

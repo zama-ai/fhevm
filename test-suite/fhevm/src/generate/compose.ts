@@ -26,6 +26,7 @@ import {
   COMPONENTS,
   COMPOSE_OUT_DIR,
   COPROCESSOR_PROXY_SUFFIXES,
+  OWN_ENV_COPROCESSOR_SERVICES,
   DEFAULT_CHAIN_ID,
   GROUP_BUILD_COMPONENTS,
   GROUP_BUILD_SERVICES,
@@ -34,7 +35,7 @@ import {
   REPO_ROOT,
   TEMPLATE_COMPOSE_DIR,
   composePath,
-  coprocessorProxyEnvName,
+  coprocessorServiceEnvName,
   envPath,
   hostChainNames,
   hostChainRuntimes,
@@ -772,6 +773,10 @@ const pointConsumerAtItsOperator = (
 
 const COPROCESSOR_PROXY_SERVICES = new Set(COPROCESSOR_PROXY_SUFFIXES.map((suffix) => `coprocessor-${suffix}`));
 
+/** The env file of coprocessor `index`'s service `name`: its own, or the coprocessor's. */
+const serviceEnvFile = (name: string, index: number, coprocessorEnvFile: string) =>
+  OWN_ENV_COPROCESSOR_SERVICES.includes(name) ? envPath(coprocessorServiceEnvName(name, index)) : coprocessorEnvFile;
+
 /** Builds the generated coprocessor compose override across all scenario instances. */
 const buildCoprocessorOverride = async (plan: StackSpec) => {
   const doc = rewriteComposePaths(await loadComposeDoc("coprocessor"));
@@ -832,7 +837,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
       const adjusted = applyInstanceAdjustments(
         name,
         service,
-        name === "coprocessor-proxy" ? envPath(coprocessorProxyEnvName(instance.index)) : envFileValue,
+        serviceEnvFile(name, instance.index, envFileValue),
         instanceEnv,
         sourceInstance,
         locallyBuilt ? {} : argPolicy.coprocessorArgs,
@@ -933,7 +938,7 @@ const buildCoprocessorOverride = async (plan: StackSpec) => {
         const adjusted = applyInstanceAdjustments(
           baseName,
           service,
-          gcsEnvFileValue,
+          serviceEnvFile(baseName, bcsInstance.index, gcsEnvFileValue),
           gcsInstanceEnv,
           gcsInstance,
           locallyBuilt ? {} : gcsArgPolicy.coprocessorArgs,

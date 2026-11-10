@@ -529,6 +529,8 @@ instances:
       expect(seed?.volumes?.[1]).toMatch(
         /\/test-suite\/e2e\/test\/coprocessorProxy\/prfOutput\.ts:\/app\/test-suite\/e2e\/test\/coprocessorProxy\/prfOutput\.ts:ro$/,
       );
+      // prf-service logs in as the prf_service role, without the coprocessor's env.
+      expect(doc.services["coprocessor1-prf-service"]?.env_file).toEqual([envPath("coprocessor-prf-service.1")]);
     });
   });
 
@@ -1013,7 +1015,7 @@ gcs:
       const doc = YAML.parse(await readFile(composePath("coprocessor"), "utf8")) as {
         services: Record<
           string,
-          { container_name?: string; build?: { args?: Record<string, string> } }
+          { container_name?: string; env_file?: string[]; build?: { args?: Record<string, string> } }
         >;
       };
       // BCS side keeps the base `coprocessor-*` names.
@@ -1029,6 +1031,8 @@ gcs:
       expect(doc.services["coprocessor-gcs-host-listener"]?.build).toBeDefined();
       // GCS reuses BCS's db-migration — no `coprocessor-gcs-db-migration`.
       expect(doc.services["coprocessor-gcs-db-migration"]).toBeUndefined();
+      // Green's prf-service logs in as the prf_service role, without the coprocessor's env.
+      expect(doc.services["coprocessor-gcs-prf-service"]?.env_file).toEqual([envPath("coprocessor-prf-service")]);
       // Blue-green stacks run without the proxy pair.
       const proxyPair = (name: string) => name.endsWith("-proxy") || name.endsWith("-prf-output-seed");
       expect(Object.keys(doc.services).some(proxyPair)).toBe(false);
