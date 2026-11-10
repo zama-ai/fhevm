@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {Coprocessor, KmsThresholds, KmsNodeParams, PcrValues} from "../shared/Structs.sol";
+import {KmsThresholds, KmsNodeParams, PcrValues} from "../shared/Structs.sol";
 import {IProtocolConfigBase} from "./IProtocolConfigBase.sol";
 
 /**
@@ -38,14 +38,6 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
      */
     event MirrorKmsEpoch(uint256 indexed contextId, uint256 indexed epochId);
 
-    /**
-     * @notice Emitted when a canonical coprocessor context is mirrored. It becomes current immediately.
-     * @param contextId The mirrored canonical coprocessor context ID.
-     * @param coprocessors The coprocessors of the context.
-     * @param majorityThreshold The majority threshold of the context.
-     */
-    event MirrorCoprocessorContext(uint256 indexed contextId, Coprocessor[] coprocessors, uint256 majorityThreshold);
-
     // -----------------------------------------------------------------------------------------
     // Errors
     // -----------------------------------------------------------------------------------------
@@ -54,11 +46,6 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
     /// @param epochId The rejected epoch ID.
     /// @param currentEpochId The latest known epoch ID.
     error NonIncreasingEpochId(uint256 epochId, uint256 currentEpochId);
-
-    /// @notice The mirrored coprocessor context ID is not strictly greater than the current one.
-    /// @param contextId The rejected coprocessor context ID.
-    /// @param currentCoprocessorContextId The current coprocessor context ID on this replica.
-    error NonIncreasingCoprocessorContextId(uint256 contextId, uint256 currentCoprocessorContextId);
 
     // -----------------------------------------------------------------------------------------
     // Mirror functions
@@ -101,25 +88,4 @@ interface IProtocolConfigReplica is IProtocolConfigBase {
      * @param epochId The canonical epoch ID to mirror; must exceed the latest known epoch ID.
      */
     function mirrorKmsEpoch(uint256 contextId, uint256 epochId) external;
-
-    /**
-     * @notice Mirror a canonical coprocessor context and make it current.
-     * @dev Owner only. `contextId` must be strictly greater than the current coprocessor context ID.
-     *      The set is checked as on the canonical contract.
-     * @param contextId The canonical coprocessor context ID.
-     * @param coprocessors The coprocessors of the canonical context.
-     * @param majorityThreshold The majority threshold of the canonical context.
-     */
-    function mirrorCoprocessorContext(
-        uint256 contextId,
-        Coprocessor[] calldata coprocessors,
-        uint256 majorityThreshold
-    ) external;
-
-    /**
-     * @notice Mirror the destruction of a canonical coprocessor context.
-     * @dev Owner only. Same checks as `destroyCoprocessorContext`, against this replica's state.
-     * @param coprocessorContextId The coprocessor context ID to destroy.
-     */
-    function mirrorCoprocessorContextDestruction(uint256 coprocessorContextId) external;
 }

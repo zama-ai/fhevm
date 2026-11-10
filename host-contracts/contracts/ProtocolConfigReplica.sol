@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {ProtocolConfigBase} from "./ProtocolConfigBase.sol";
 import {IProtocolConfigReplica} from "./interfaces/IProtocolConfigReplica.sol";
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
-import {Coprocessor, KmsThresholds, KmsNodeParams, PcrValues} from "./shared/Structs.sol";
+import {KmsThresholds, KmsNodeParams, PcrValues} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
@@ -123,16 +123,6 @@ contract ProtocolConfigReplica is IProtocolConfigReplica, ProtocolConfigBase, UU
         $.epochCounter = epochId;
         _activateEpoch(epochId, contextId);
         emit MirrorKmsEpoch(contextId, epochId);
-    }
-
-    /// @inheritdoc IProtocolConfigReplica
-    function mirrorCoprocessorContext(uint256, Coprocessor[] calldata, uint256) external virtual onlyACLOwner {
-        revert("Not implemented");
-    }
-
-    /// @inheritdoc IProtocolConfigReplica
-    function mirrorCoprocessorContextDestruction(uint256) external virtual onlyACLOwner {
-        revert("Not implemented");
     }
 
     /// @inheritdoc IProtocolConfigBase

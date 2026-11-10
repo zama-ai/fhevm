@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {Coprocessor, KmsThresholds, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "../shared/Structs.sol";
+import {KmsThresholds, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "../shared/Structs.sol";
 import {IKMSGeneration} from "./IKMSGeneration.sol";
 import {IProtocolConfigBase} from "./IProtocolConfigBase.sol";
 
@@ -132,21 +132,6 @@ interface IProtocolConfig is IProtocolConfigBase {
      * @param epochId The destroyed epoch ID.
      */
     event KmsEpochDestroyed(uint256 indexed epochId);
-
-    /**
-     * @notice Emitted when a new coprocessor context is defined. It becomes current immediately.
-     * @dev Carries the whole set and threshold, so readers can rebuild the registry from logs alone.
-     * @param contextId The new coprocessor context ID.
-     * @param previousContextId The coprocessor context it replaces, or 0 for the context defined at initialization.
-     * @param coprocessors The coprocessors of the new context.
-     * @param majorityThreshold The majority threshold of the new context.
-     */
-    event NewCoprocessorContext(
-        uint256 indexed contextId,
-        uint256 indexed previousContextId,
-        Coprocessor[] coprocessors,
-        uint256 majorityThreshold
-    );
 
     /**
      * @notice Emitted when a coprocessor upgrade is proposed. This event drives the
@@ -318,22 +303,6 @@ interface IProtocolConfig is IProtocolConfigBase {
      * @param epochId The epoch ID to destroy.
      */
     function destroyKmsEpoch(uint256 epochId) external;
-
-    /**
-     * @notice Define the next coprocessor context and make it current.
-     * @dev Owner only. The new ID is the current one plus one. The previous context stays valid
-     *      until destroyed.
-     * @param coprocessors The coprocessors of the new context.
-     * @param majorityThreshold More than half the number of coprocessors, and at most that number.
-     */
-    function defineNewCoprocessorContext(Coprocessor[] calldata coprocessors, uint256 majorityThreshold) external;
-
-    /**
-     * @notice Destroy a past coprocessor context. Its set and threshold stay readable.
-     * @dev Owner only. Reverts for the current context, an unknown ID or an already destroyed one.
-     * @param coprocessorContextId The coprocessor context ID to destroy.
-     */
-    function destroyCoprocessorContext(uint256 coprocessorContextId) external;
 
     /**
      * @notice Propose a coprocessor upgrade. Emits `CoprocessorUpgradeProposed` and does not

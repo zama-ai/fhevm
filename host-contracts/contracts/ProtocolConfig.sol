@@ -5,7 +5,7 @@ import {ProtocolConfigBase} from "./ProtocolConfigBase.sol";
 import {IProtocolConfig} from "./interfaces/IProtocolConfig.sol";
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
 import {IKMSGeneration} from "./interfaces/IKMSGeneration.sol";
-import {Coprocessor, KmsContextAnchor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
+import {KmsContextAnchor, KmsThresholds, KmsNode, KmsNodeParams, PcrValues, ChainUpgradeWindow} from "./shared/Structs.sol";
 import {EPOCH_COUNTER_BASE, EXTRA_DATA_V2, KMS_CONTEXT_COUNTER_BASE} from "./shared/Constants.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
@@ -375,16 +375,6 @@ contract ProtocolConfig is IProtocolConfig, ProtocolConfigBase, UUPSUpgradeableE
 
         _clearEpoch(epochId);
         emit KmsEpochDestroyed(epochId);
-    }
-
-    /// @inheritdoc IProtocolConfig
-    function defineNewCoprocessorContext(Coprocessor[] calldata, uint256) external virtual onlyACLOwner {
-        revert("Not implemented");
-    }
-
-    /// @inheritdoc IProtocolConfig
-    function destroyCoprocessorContext(uint256) external virtual onlyACLOwner {
-        revert("Not implemented");
     }
 
     /// @inheritdoc IProtocolConfig

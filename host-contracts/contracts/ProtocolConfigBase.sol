@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IProtocolConfigBase} from "./interfaces/IProtocolConfigBase.sol";
-import {Coprocessor, KmsContextAnchor, KmsNode, KmsNodeParams, KmsThresholds} from "./shared/Structs.sol";
+import {KmsContextAnchor, KmsNode, KmsNodeParams, KmsThresholds} from "./shared/Structs.sol";
 
 /**
  * @title ProtocolConfigBase
@@ -249,36 +249,6 @@ abstract contract ProtocolConfigBase is IProtocolConfigBase {
     function getMpcThresholdForContext(uint256 kmsContextId) external view virtual returns (uint256) {
         _requireValidContext(kmsContextId);
         return _getProtocolConfigStorage().mpcThresholdForContext[kmsContextId];
-    }
-
-    /// @inheritdoc IProtocolConfigBase
-    function getCurrentCoprocessorContextId() external view virtual returns (uint256) {
-        revert("Not implemented");
-    }
-
-    /// @inheritdoc IProtocolConfigBase
-    function isValidCoprocessorContext(uint256) external view virtual returns (bool) {
-        revert("Not implemented");
-    }
-
-    /// @inheritdoc IProtocolConfigBase
-    function getCoprocessorsForContext(uint256) external view virtual returns (Coprocessor[] memory) {
-        revert("Not implemented");
-    }
-
-    /// @inheritdoc IProtocolConfigBase
-    function getCoprocessorMajorityThresholdForContext(uint256) external view virtual returns (uint256) {
-        revert("Not implemented");
-    }
-
-    /// @inheritdoc IProtocolConfigBase
-    function isCoprocessorSignerForContext(uint256, address) external view virtual returns (bool) {
-        revert("Not implemented");
-    }
-
-    /// @inheritdoc IProtocolConfigBase
-    function isCoprocessorTxSenderForContext(uint256, address) external view virtual returns (bool) {
-        revert("Not implemented");
     }
 
     /**
