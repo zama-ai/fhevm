@@ -183,9 +183,9 @@ export class RelayerHttpAttempt<O extends RelayerHttpOperation> {
 function _bodyExcerpt(bodyText: string): string;
 
 // relayer-http's error body: non-blank `code` and `message` strings (isNonBlankString: a whitespace-only
-// string is rejected; the value itself is not trimmed) and a UUIDv7 `requestId`. Codes are an open set.
+// string is rejected; the value itself is not trimmed) and a UUIDv4 `requestId`. Codes are an open set.
 function _isRelayerHttpErrorBody(value: unknown): value is { code: string; message: string; requestId: string };
-// Success envelope: status 'succeeded' and a UUIDv7 requestId.
+// Success envelope: status 'succeeded' and a UUIDv4 requestId.
 function _assertIsRelayerHttpSucceeded(value: unknown, name: string): asserts value is { status: 'succeeded'; requestId: string };
 // Envelope + non-empty result.result; per share: payload (hex, no 0x, at least 1 byte), 65-byte signature
 // (hex, no 0x), required extraData (hex, 0x).
