@@ -87,6 +87,7 @@ async function upgradeCurrentToNew(
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
   const unsafeSkipStorageCheck = await acceptsStorageException(
     hre,
+    proxyAddress,
     currentImplementationFactory,
     newImplementationFactory,
   );
@@ -141,6 +142,7 @@ async function deployImplementationForPreparedUpgrade(
   const newImplementationFactory = await hre.ethers.getContractFactory(newImplementation, deployer);
   const unsafeSkipStorageCheck = await acceptsStorageException(
     hre,
+    proxyAddress,
     currentImplementationFactory,
     newImplementationFactory,
   );
