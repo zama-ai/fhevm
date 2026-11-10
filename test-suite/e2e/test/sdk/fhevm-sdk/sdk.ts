@@ -23,7 +23,7 @@ type Auth = any;
 export type FheEncryptionKeyBytes = Awaited<ReturnType<FhevmClient['fetchFheEncryptionKeyBytes']>>;
 
 const CLEARTEXT = false;
-const USE_RELAYER_HTTP = process.env.USE_RELAYER_HTTP === 'true';
+const DECRYPT_WITHOUT_GATEWAY = process.env.E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY === 'true';
 
 /**
  * Reads the canonical host's KMSGeneration address. The SDK checks the FHE key
@@ -238,7 +238,7 @@ export class FhevmSdk implements SdkInstance {
 
     // relayer-http only accepts unified (v2) permits: a legacy (v1) permit's signed message lacks the
     // userAddress and allowedContracts its POST /v4/user-decrypt requires.
-    const signedPermit = USE_RELAYER_HTTP
+    const signedPermit = DECRYPT_WITHOUT_GATEWAY
       ? await this.#fullClient.signUnifiedDecryptionPermit(permitParameters)
       : await this.#fullClient.signLegacyDecryptionPermit(permitParameters);
 
@@ -251,7 +251,7 @@ export class FhevmSdk implements SdkInstance {
     };
 
     // relayer-http (POST /v4/user-decrypt) bypasses the gateway chain; decryptValue goes through it.
-    const res = USE_RELAYER_HTTP
+    const res = DECRYPT_WITHOUT_GATEWAY
       ? await this.#fullClient.decryptValueNoGateway(decryptParameters)
       : await this.#fullClient.decryptValue(decryptParameters);
 
@@ -294,7 +294,7 @@ export class FhevmSdk implements SdkInstance {
     };
 
     // relayer-http (POST /v4/user-decrypt) bypasses the gateway chain; decryptValue goes through it.
-    const res = USE_RELAYER_HTTP
+    const res = DECRYPT_WITHOUT_GATEWAY
       ? await this.#fullClient.decryptValueNoGateway(decryptParameters)
       : await this.#fullClient.decryptValue(decryptParameters);
 
@@ -333,7 +333,7 @@ export class FhevmSdk implements SdkInstance {
 
     // relayer-http only accepts unified (v2) permits: a legacy (v1) permit's signed message lacks the
     // userAddress and allowedContracts its POST /v4/user-decrypt requires.
-    const signedPermit = USE_RELAYER_HTTP
+    const signedPermit = DECRYPT_WITHOUT_GATEWAY
       ? await this.#fullClient.signUnifiedDecryptionPermit(permitParameters)
       : await this.#fullClient.signLegacyDecryptionPermit(permitParameters);
 
@@ -345,7 +345,7 @@ export class FhevmSdk implements SdkInstance {
     };
 
     // relayer-http (POST /v4/user-decrypt) bypasses the gateway chain; decryptValue goes through it.
-    const res = USE_RELAYER_HTTP
+    const res = DECRYPT_WITHOUT_GATEWAY
       ? await this.#fullClient.decryptValueNoGateway(decryptParameters)
       : await this.#fullClient.decryptValue(decryptParameters);
 
@@ -361,7 +361,7 @@ export class FhevmSdk implements SdkInstance {
     };
 
     // relayer-http (POST /v4/public-decrypt) bypasses the gateway chain; decryptPublicValuesWithSignatures goes through it.
-    const res = USE_RELAYER_HTTP
+    const res = DECRYPT_WITHOUT_GATEWAY
       ? await this.#fullClient.decryptPublicValuesWithSignaturesNoGateway(decryptParameters)
       : await this.#fullClient.decryptPublicValuesWithSignatures(decryptParameters);
 

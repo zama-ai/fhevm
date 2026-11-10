@@ -313,9 +313,9 @@ const root = defineCommand({
           description: "Skip the Hardhat compilation step inside the test runner.",
         },
         parallel: { type: "boolean", description: "Run supported test suites in parallel." },
-        "relayer-http": {
+        "decrypt-without-gateway": {
           type: "boolean",
-          description: "Decrypt through relayer-http (/v4) instead of the gateway chain (sets USE_RELAYER_HTTP=true).",
+          description: "Decrypt through relayer-http (/v4) instead of the gateway chain (sets E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY=true).",
         },
       },
       async run({ args }) {
@@ -331,7 +331,7 @@ const root = defineCommand({
           verbose: asBool(args.verbose),
           noHardhatCompile: asBool(args["no-hardhat-compile"]),
           parallel: args.parallel === undefined ? undefined : asBool(args.parallel),
-          relayerHttp: asBool(args["relayer-http"]),
+          decryptWithoutGateway: asBool(args["decrypt-without-gateway"]),
         });
       },
     }),

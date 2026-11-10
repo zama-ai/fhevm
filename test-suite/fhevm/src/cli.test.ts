@@ -285,9 +285,9 @@ describe("cli", () => {
     expect(resolveLogsFollow({ follow: false })).toBe(false);
   });
 
-  test("maps --relayer-http to USE_RELAYER_HTTP=true in the test container", () => {
-    expect(testRunEnvArgs({ relayerHttp: true })).toEqual(["-e", "USE_RELAYER_HTTP=true"]);
-    expect(testRunEnvArgs({ relayerHttp: false })).toEqual([]);
+  test("maps --decrypt-without-gateway to E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY=true in the test container", () => {
+    expect(testRunEnvArgs({ decryptWithoutGateway: true })).toEqual(["-e", "E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY=true"]);
+    expect(testRunEnvArgs({ decryptWithoutGateway: false })).toEqual([]);
     expect(testRunEnvArgs({})).toEqual([]);
   });
 

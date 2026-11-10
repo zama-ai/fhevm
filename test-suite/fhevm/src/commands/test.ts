@@ -689,13 +689,13 @@ const waitForDriftRevertStatus = async (
 
 /**
  * Env vars `test` adds to every `docker exec` in the test-suite container for the current run
- * (e.g. USE_RELAYER_HTTP=true for --relayer-http). Set by `test`, reset when it returns.
+ * (e.g. E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY=true for --decrypt-without-gateway). Set by `test`, reset when it returns.
  */
 let testRunEnv: string[] = [];
 
 /** Returns the `-e NAME=value` docker exec flags for the test command's per-run options. */
-export const testRunEnvArgs = (options: Pick<TestOptions, "relayerHttp">) =>
-  options.relayerHttp ? ["-e", "USE_RELAYER_HTTP=true"] : [];
+export const testRunEnvArgs = (options: Pick<TestOptions, "decryptWithoutGateway">) =>
+  options.decryptWithoutGateway ? ["-e", "E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY=true"] : [];
 
 /** Builds the `docker exec` argv used to run tests inside the test-suite container. */
 export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] = []) => [
@@ -2189,8 +2189,8 @@ const runTest = async (testName: string | undefined, options: TestOptions) => {
   if (!state?.discovery?.actualFheKeyId) {
     throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
   }
-  if (options.relayerHttp && !state.versions.env.RELAYER_HTTP_VERSION) {
-    throw new PreflightError("--relayer-http needs a stack that runs relayer-http, but RELAYER_HTTP_VERSION is not set in its bundle");
+  if (options.decryptWithoutGateway && !state.versions.env.RELAYER_HTTP_VERSION) {
+    throw new PreflightError("--decrypt-without-gateway needs a stack that runs relayer-http, but RELAYER_HTTP_VERSION is not set in its bundle");
   }
 
   const ciphertextDriftRequirement = () => {

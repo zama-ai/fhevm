@@ -320,6 +320,6 @@ export type TestOptions = {
   verbose: boolean;
   noHardhatCompile: boolean;
   parallel?: boolean;
-  /** Decrypt through relayer-http (/v4, via fhevm-relayer-proxy): sets USE_RELAYER_HTTP=true in the test container. */
-  relayerHttp?: boolean;
+  /** Decrypt through relayer-http (/v4, via fhevm-relayer-proxy): sets E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY=true in the test container. */
+  decryptWithoutGateway?: boolean;
 };
