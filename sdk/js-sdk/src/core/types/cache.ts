@@ -4,9 +4,9 @@
  * - `'kmsContext'`: the KMS context, with its epoch, signers and threshold;
  * - `'coprocessorSigners'`: the coprocessor signers and threshold.
  */
-export type FhevmCacheItem = 'keyMaterial' | 'kmsContext' | 'coprocessorSigners';
+export type FhevmCacheName = 'keyMaterial' | 'kmsContext' | 'coprocessorSigners';
 
-export type FhevmCacheItemOptions = {
+export type FhevmSingleCacheOptions = {
   /**
    * How long a cached value is used, in milliseconds: at most (and by
    * default) 24 hours. `0` turns the cache off for the client.
@@ -15,21 +15,21 @@ export type FhevmCacheItemOptions = {
 };
 
 export type FhevmCacheOptions = {
-  readonly keyMaterial?: FhevmCacheItemOptions | undefined;
-  readonly kmsContext?: FhevmCacheItemOptions | undefined;
-  readonly coprocessorSigners?: FhevmCacheItemOptions | undefined;
+  readonly keyMaterial?: FhevmSingleCacheOptions | undefined;
+  readonly kmsContext?: FhevmSingleCacheOptions | undefined;
+  readonly coprocessorSigners?: FhevmSingleCacheOptions | undefined;
   /**
    * When a request fails because a cached value went stale, the SDK refreshes
    * it and retries the request once (default `true`). A request signed for the
    * old value (e.g. a user decryption's permit) is not retried: the new value
    * is cached for the next permit. With `false`, the SDK throws
    * `CachedValueInvalidError` and leaves the cache as is: call
-   * `forceRefresh(item, { invalidVersion })` and retry.
+   * `forceRefresh(cacheName, { invalidVersion })` and retry.
    */
   readonly autoRefreshOnInvalidity?: boolean | undefined;
 };
 
 export type ResolvedFhevmCacheOptions = {
-  readonly ttl: Readonly<Record<FhevmCacheItem, number>>;
+  readonly ttl: Readonly<Record<FhevmCacheName, number>>;
   readonly autoRefreshOnInvalidity: boolean;
 };

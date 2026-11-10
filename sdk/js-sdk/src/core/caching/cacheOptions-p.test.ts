@@ -21,7 +21,7 @@ describe('resolveCacheOptions', () => {
     expect(MAX_CACHE_TTL).toBe(24 * 60 * 60 * 1000);
   });
 
-  it('takes a shorter TTL per item, and 0', () => {
+  it('takes a shorter TTL per cache, and 0', () => {
     const resolved = resolveCacheOptions({
       kmsContext: { ttl: 60_000 },
       coprocessorSigners: { ttl: 0 },
@@ -85,7 +85,7 @@ describe('client cache options', () => {
     expect(getCacheOptions({ options: { batchRpcCalls: false } }).autoRefreshOnInvalidity).toBe(true);
   });
 
-  it('rejects an item entry that is not an object, and an unknown key, with FhevmConfigError', () => {
+  it('rejects an cache entry that is not an object, and an unknown key, with FhevmConfigError', () => {
     expect(() => resolveCacheOptions({ kmsContext: 3_600_000 } as unknown as FhevmCacheOptions)).toThrow(
       "'options.cache.kmsContext' must be an object",
     );

@@ -258,13 +258,13 @@ describe('key material cache', () => {
       const client = newClient();
       await fetchBytes(client);
       const error = await forceRefreshCachedValue(client, {
-        item: 'keyMaterial',
+        cacheName: 'keyMaterial',
         invalidVersion: version(GEN1),
         fhevmContext,
       }).catch((e: unknown) => e);
       expect(error).toMatchObject({
         name: 'CachedValueInvalidError',
-        item: 'keyMaterial',
+        cacheName: 'keyMaterial',
         invalidVersion: version(GEN1),
       });
       expect(downloads).toHaveBeenCalledTimes(1);
@@ -402,12 +402,12 @@ describe('encryption after a key rotation', () => {
 
     await expect(request.send()).rejects.toMatchObject({
       name: 'CachedValueInvalidError',
-      item: 'keyMaterial',
+      cacheName: 'keyMaterial',
       invalidVersion: version(GEN1),
     });
     // Only the active ids were read: the new key was not downloaded.
     expect(world.downloads).toHaveBeenCalledTimes(1);
-    await forceRefreshCachedValue(client, { item: 'keyMaterial', invalidVersion: version(GEN1), fhevmContext });
+    await forceRefreshCachedValue(client, { cacheName: 'keyMaterial', invalidVersion: version(GEN1), fhevmContext });
     expect(world.downloads).toHaveBeenCalledTimes(2);
     await expect(request.send()).resolves.toBe(version(GEN2));
   });

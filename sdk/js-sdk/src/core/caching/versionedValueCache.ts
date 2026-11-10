@@ -77,7 +77,7 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
   }
 
   /** What the cache holds, as named in its logs (e.g. `keyMaterial`). */
-  protected readonly itemName: string = 'value';
+  protected readonly cacheName: string = 'value';
 
   /**
    * The logger of the client whose call caused a log (the cache is shared by
@@ -205,7 +205,7 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
         // process creating them in a loop, which defeats the cache.
         if (context !== undefined) {
           this.getLogger(context)?.warn?.(
-            `${this.itemName}: more than ${MAX_SLOTS} cache slots, evicted ${before - this.#slots.size} idle ones ` +
+            `${this.cacheName}: more than ${MAX_SLOTS} cache slots, evicted ${before - this.#slots.size} idle ones ` +
               `(many chains, relayers or runtimes in one process?).`,
           );
         }
@@ -224,7 +224,7 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
   /** Keeps the newer cached value over an older one read, and says so. */
   #keepNewer(context: TContext, current: CachedValue<TValue>, version: string): CachedValue<TValue> {
     this.getLogger(context)?.warn?.(
-      `${this.itemName}: ignored a value read with an older version (${version}) than the cached one ` +
+      `${this.cacheName}: ignored a value read with an older version (${version}) than the cached one ` +
         `(${current.version}): a source (e.g. an RPC node) may lag.`,
     );
     return current;
@@ -234,7 +234,7 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
   #store(slot: Slot<TValue>, cached: CachedValue<TValue>, context: TContext): void {
     const previous = slot.current;
     if (previous !== undefined && previous.version !== cached.version) {
-      this.getLogger(context)?.debug?.(`${this.itemName}: version changed, ${previous.version} -> ${cached.version}.`);
+      this.getLogger(context)?.debug?.(`${this.cacheName}: version changed, ${previous.version} -> ${cached.version}.`);
     }
     slot.current = cached;
   }
@@ -301,7 +301,7 @@ export abstract class VersionedValueCache<TContext, TParams, TValue> {
           }
           // Points at the client whose setup is wrong, not at this one.
           this.getLogger(context)?.warn?.(
-            `${this.itemName}: a read started by another client failed on its configuration ` +
+            `${this.cacheName}: a read started by another client failed on its configuration ` +
               `(${e.message.split('\n')[0]}); reading again with this client's.`,
           );
           const currentAtRetry = slot.current;

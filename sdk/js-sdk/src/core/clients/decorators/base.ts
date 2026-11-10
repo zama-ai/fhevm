@@ -1,7 +1,7 @@
 import type { Fhevm, FhevmBase, FhevmExtension } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
 import type { SignedDecryptionPermit } from '../../types/signedDecryptionPermit.js';
-import type { FhevmCacheItem } from '../../types/cache.js';
+import type { FhevmCacheName } from '../../types/cache.js';
 import type {
   SerializeTransportKeyPairParameters,
   SerializeTransportKeyPairReturnType,
@@ -240,14 +240,14 @@ export type BaseActions = {
   ) => Promise<FetchFheEncryptionKeyBytesReturnType>;
   /**
    * Fetches a cached value again: `'keyMaterial'` (FHE public key and CRS),
-   * `'kmsContext'` or `'coprocessorSigners'`. Pass the `item` and
+   * `'kmsContext'` or `'coprocessorSigners'`. Pass the `cacheName` and
    * `invalidVersion` of a `CachedValueInvalidError`, then retry the request
    * that failed. The cache is shared by every client; concurrent calls share
    * one fetch.
    *
    * Resolves once the cache holds a value other than `invalidVersion`.
    *
-   * @throws {FhevmConfigError} on an unknown `item`.
+   * @throws {FhevmConfigError} on an unknown `cacheName`.
    * @throws {CachedValueInvalidError} when the value fetched still has
    * `invalidVersion`: refreshing cannot fix the failure.
    * @throws the fetch error, as is.
@@ -258,14 +258,14 @@ export type BaseActions = {
    *   await client.encryptValues({ contractAddress, userAddress, values });
    * } catch (err) {
    *   if (err instanceof Error && err.name === 'CachedValueInvalidError') {
-   *     const { item, invalidVersion } = err as Error & { item: FhevmCacheItem; invalidVersion: string };
-   *     await client.forceRefresh(item, { invalidVersion });
+   *     const { cacheName, invalidVersion } = err as Error & { cacheName: FhevmCacheName; invalidVersion: string };
+   *     await client.forceRefresh(cacheName, { invalidVersion });
    *     await client.encryptValues({ contractAddress, userAddress, values });
    *   }
    * }
    * ```
    */
-  readonly forceRefresh: (item: FhevmCacheItem, parameters?: ForceRefreshParameters) => Promise<void>;
+  readonly forceRefresh: (cacheName: FhevmCacheName, parameters?: ForceRefreshParameters) => Promise<void>;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -291,7 +291,7 @@ function _baseActions(fhevm: Fhevm<FhevmChain>): BaseActions {
     serializeSignedDecryptionPermit: (parameters) => serializeSignedDecryptionPermit(fhevm, parameters),
     parseSignedDecryptionPermit: (parameters) => parseSignedDecryptionPermit(fhevm, parameters),
     fetchFheEncryptionKeyBytes: (parameters) => fetchFheEncryptionKeyBytes(fhevm, parameters),
-    forceRefresh: (item, parameters) => forceRefresh(fhevm, item, parameters),
+    forceRefresh: (cacheName, parameters) => forceRefresh(fhevm, cacheName, parameters),
   };
 }
 

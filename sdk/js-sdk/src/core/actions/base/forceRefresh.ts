@@ -1,8 +1,8 @@
 import type { Fhevm } from '../../types/coreFhevmClient.js';
 import type { FhevmChain } from '../../types/fhevmChain.js';
-import type { FhevmCacheItem } from '../../types/cache.js';
+import type { FhevmCacheName } from '../../types/cache.js';
 import { forceRefreshCachedValue } from '../../caching/retryOnStaleCache-p.js';
-import { FHEVM_CACHE_ITEMS } from '../../caching/cacheOptions-p.js';
+import { FHEVM_CACHE_NAMES } from '../../caching/cacheOptions-p.js';
 import { initPublicAction } from '../../runtime/CoreFhevm-p.js';
 import { FhevmConfigError } from '../../errors/FhevmConfigError.js';
 
@@ -28,23 +28,23 @@ export type ForceRefreshParameters = {
  * Resolves once the cache holds a value other than `invalidVersion`; then
  * retry the failed request.
  *
- * @throws {FhevmConfigError} on an unknown `item`.
+ * @throws {FhevmConfigError} on an unknown `cacheName`.
  * @throws {CachedValueInvalidError} when the value fetched still has
  * `invalidVersion`: refreshing cannot fix the failure.
  * @throws the fetch error, as is.
  */
 export async function forceRefresh(
   fhevm: Fhevm<FhevmChain>,
-  item: FhevmCacheItem,
+  cacheName: FhevmCacheName,
   parameters?: ForceRefreshParameters,
 ): Promise<void> {
-  if (!FHEVM_CACHE_ITEMS.includes(item)) {
+  if (!FHEVM_CACHE_NAMES.includes(cacheName)) {
     throw new FhevmConfigError({
-      message: `Unknown cache item ${JSON.stringify(item)}: expected one of ${FHEVM_CACHE_ITEMS.join(', ')}.`,
+      message: `Unknown cache name ${JSON.stringify(cacheName)}: expected one of ${FHEVM_CACHE_NAMES.join(', ')}.`,
     });
   }
 
   const fhevmContext = await initPublicAction(fhevm);
 
-  await forceRefreshCachedValue(fhevm, { item, invalidVersion: parameters?.invalidVersion, fhevmContext });
+  await forceRefreshCachedValue(fhevm, { cacheName, invalidVersion: parameters?.invalidVersion, fhevmContext });
 }

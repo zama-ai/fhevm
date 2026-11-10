@@ -56,7 +56,7 @@ function _kmsContextSlot(context: Context, params: Parameters): string {
 }
 
 class KmsContextCache extends VersionedValueCache<Context, Parameters, KmsContextValue> {
-  protected override readonly itemName = 'kmsContext';
+  protected override readonly cacheName = 'kmsContext';
 
   protected override getLogger(context: Context): Logger | undefined {
     return context.runtime.config.logger;

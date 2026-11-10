@@ -36,7 +36,7 @@ type ReturnType = {
 // The current set only: the on-chain check expects it (until coprocessor
 // contexts exist).
 class CoprocessorSignersCache extends VersionedValueCache<Context, Parameters, ReturnType> {
-  protected override readonly itemName = 'coprocessorSigners';
+  protected override readonly cacheName = 'coprocessorSigners';
 
   protected override getLogger(context: Context): Logger | undefined {
     return context.runtime.config.logger;

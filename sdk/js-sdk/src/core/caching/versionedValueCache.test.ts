@@ -29,7 +29,7 @@ class TestCache extends VersionedValueCache<TestContext, object, TestValue> {
     this.#nowFn = nowFn;
   }
 
-  protected override readonly itemName = 'testValue';
+  protected override readonly cacheName = 'testValue';
 
   protected override getSlotKey(context: TestContext): string {
     return context.slot ?? SLOT;

@@ -171,7 +171,7 @@ beforeEach(() => {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// The rules are the same for every item: tested once, on a coprocessor
+// The rules are the same for every cache: tested once, on a coprocessor
 // signer change (signer errors are its stale signal).
 describe('refresh and retry', () => {
   it('a signer change: refreshes once, retries once, succeeds, and logs it', async () => {
@@ -229,7 +229,10 @@ describe('refresh and retry', () => {
       throw new ThresholdSignerError({ type: 'coprocessor' });
     });
 
-    await expect(request.send()).rejects.toMatchObject({ name: 'CachedValueInvalidError', item: 'coprocessorSigners' });
+    await expect(request.send()).rejects.toMatchObject({
+      name: 'CachedValueInvalidError',
+      cacheName: 'coprocessorSigners',
+    });
     expect(request.run).toHaveBeenCalledTimes(2);
   });
 
@@ -242,7 +245,7 @@ describe('refresh and retry', () => {
 
     const error = await request.send().catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CachedValueInvalidError);
-    expect(error).toMatchObject({ item: 'coprocessorSigners', invalidVersion: usedVersion });
+    expect(error).toMatchObject({ cacheName: 'coprocessorSigners', invalidVersion: usedVersion });
     expect((error as Error).cause).toBeInstanceOf(ThresholdSignerError);
     expect(request.run).toHaveBeenCalledTimes(2);
     // Nothing was cached: the next request still uses the old set.
@@ -250,7 +253,7 @@ describe('refresh and retry', () => {
     // forceRefresh reads the new set; then the request succeeds.
     const reads = world.reads('getCoprocessorSigners');
     await forceRefreshCachedValue(world.client, {
-      item: 'coprocessorSigners',
+      cacheName: 'coprocessorSigners',
       invalidVersion: usedVersion,
       fhevmContext,
     });
@@ -263,7 +266,7 @@ describe('refresh and retry', () => {
     await inputProofRequest(world).send();
     const v1 = coprocessorSignersVersion({ threshold: 1, signers: [SIGNER_A] });
     const refresh = () =>
-      forceRefreshCachedValue(world.client, { item: 'coprocessorSigners', invalidVersion: v1, fhevmContext });
+      forceRefreshCachedValue(world.client, { cacheName: 'coprocessorSigners', invalidVersion: v1, fhevmContext });
 
     await expect(refresh()).rejects.toMatchObject({ name: 'CachedValueInvalidError', invalidVersion: v1 });
 
@@ -281,7 +284,7 @@ describe('refresh and retry', () => {
     world.chainState.coprocessorSigner = SIGNER_B;
 
     const error = await retryOnStaleCache(world.client, fhevmContext, request.run, {
-      createStaleError: (stale, cause) => new Error(`stale ${stale.item}`, { cause }),
+      createStaleError: (stale, cause) => new Error(`stale ${stale.cacheName}`, { cause }),
     }).catch((e: unknown) => e);
     expect((error as Error).message).toBe('stale coprocessorSigners');
     expect((error as Error).cause).toBeInstanceOf(ThresholdSignerError);
@@ -336,7 +339,7 @@ describe('KMS context', () => {
     // Only the ids were read: the new context's signers were not loaded.
     expect(world.reads('getContextSignersAndThresholdFromExtraData')).toBe(signerReads);
     await forceRefreshCachedValue(world.client, {
-      item: 'kmsContext',
+      cacheName: 'kmsContext',
       invalidVersion: kmsContextVersion(5n, 1n),
       fhevmContext,
     });
@@ -353,7 +356,7 @@ describe('KMS context', () => {
     const error = await retryOnStaleCache(world.client, fhevmContext, request.run, { createStaleError }).catch(
       (e: unknown) => e,
     );
-    expect(error).toMatchObject({ name: 'CachedValueInvalidError', item: 'kmsContext' });
+    expect(error).toMatchObject({ name: 'CachedValueInvalidError', cacheName: 'kmsContext' });
     expect(createStaleError).not.toHaveBeenCalled();
   });
 });

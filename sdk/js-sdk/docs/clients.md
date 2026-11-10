@@ -199,7 +199,7 @@ rotation, a KMS context switch or a coprocessor signer change. By default, a
 request that fails on a stale value refreshes it and runs once more: usually
 you have nothing to do.
 
-| Item                   | What                                   | Shared by clients with the same          | Version (in errors)         |
+| Cache                  | What                                   | Shared by clients with the same          | Version (in errors)         |
 | ---------------------- | -------------------------------------- | ---------------------------------------- | --------------------------- |
 | `'keyMaterial'`        | FHE public key and CRS                 | relayer URL and KMSGeneration            | `keyId:crsId` (active ids)  |
 | `'kmsContext'`         | KMS context, its signers and threshold | runtime, chain id and contract addresses | `contextId:epochId`         |
@@ -219,7 +219,7 @@ const client = createFhevmClient({
 });
 ```
 
-- `<item>.ttl`: per client, in ms. Default and maximum 24 h. `0`: no cache for this client.
+- `<cacheName>.ttl`: per client, in ms. Default and maximum 24 h. `0`: no cache for this client.
 - `keyMaterial.ttl: 0`: the active ids are read on every call; the key is downloaded only after a rotation.
 - `autoRefreshOnInvalidity`: default `true`. For `false`, see [Manual refresh](#manual-refresh).
 
@@ -244,13 +244,13 @@ try {
   await client.encryptValues({ contractAddress, userAddress, values });
 } catch (err) {
   if (!(err instanceof Error) || err.name !== 'CachedValueInvalidError') throw err;
-  const { item, invalidVersion } = err as Error & { item: FhevmCacheItem; invalidVersion: string };
-  await client.forceRefresh(item, { invalidVersion });
+  const { cacheName, invalidVersion } = err as Error & { cacheName: FhevmCacheName; invalidVersion: string };
+  await client.forceRefresh(cacheName, { invalidVersion });
   await client.encryptValues({ contractAddress, userAddress, values });
 }
 ```
 
-`forceRefresh(item, { invalidVersion })`:
+`forceRefresh(cacheName, { invalidVersion })`:
 
 - Fetches only if the cache still holds `invalidVersion` (without it: always). Concurrent calls share one fetch.
 - Resolves once the cache holds another version; rejects with the fetch error.

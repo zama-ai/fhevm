@@ -55,7 +55,7 @@ type ActiveIds = { readonly keyId: bigint; readonly crsId: bigint };
 ////////////////////////////////////////////////////////////////////////////////
 
 class KeyMaterialCache extends VersionedValueCache<Context, Parameters, FheEncryptionKeyBytes> {
-  protected override readonly itemName = 'keyMaterial';
+  protected override readonly cacheName = 'keyMaterial';
 
   protected override getLogger(context: Context): Logger | undefined {
     return context.runtime.config.logger;

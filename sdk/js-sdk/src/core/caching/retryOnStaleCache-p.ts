@@ -1,4 +1,4 @@
-import type { FhevmCacheItem } from '../types/cache.js';
+import type { FhevmCacheName } from '../types/cache.js';
 import type { FhevmChain } from '../types/fhevmChain.js';
 import type { FhevmBase } from '../types/coreFhevmClient.js';
 import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
@@ -16,23 +16,23 @@ import { getCacheOptions } from './cacheOptions-p.js';
 type Context = FhevmBase<FhevmChain>;
 
 /**
- * The cache of each item: it tells which request errors may come from a stale
+ * The cache of each cache: it tells which request errors may come from a stale
  * value, reads the value again, or reads only its current version.
  */
-const CACHES: Readonly<Record<FhevmCacheItem, VersionedValueCache<Context, unknown, unknown>>> = {
+const CACHES: Readonly<Record<FhevmCacheName, VersionedValueCache<Context, unknown, unknown>>> = {
   keyMaterial: keyMaterialCache,
   coprocessorSigners: coprocessorSignersCache,
   kmsContext: kmsContextCache,
 };
 
-/** Reads `item` again into the cache (see `VersionedValueCache.refresh`); resolves to its version. */
-async function _refreshItem(
+/** Reads `cacheName` again into the cache (see `VersionedValueCache.refresh`); resolves to its version. */
+async function _refreshCache(
   context: Context,
   fhevmContext: FhevmClientFrozenContext,
-  item: FhevmCacheItem,
+  cacheName: FhevmCacheName,
   invalidVersion: string | undefined,
 ): Promise<string> {
-  const cache = CACHES[item];
+  const cache = CACHES[cacheName];
   const { version } = await cache.refresh(context, cache.currentParameters(context, fhevmContext), invalidVersion);
   return version;
 }
@@ -40,7 +40,7 @@ async function _refreshItem(
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Fetches `item` again into the cache (see `VersionedValueCache.refresh` for
+ * Fetches `cacheName` again into the cache (see `VersionedValueCache.refresh` for
  * `invalidVersion`). Concurrent calls share one fetch.
  *
  * @throws {CachedValueInvalidError} when the value read again still has
@@ -50,24 +50,24 @@ async function _refreshItem(
 export async function forceRefreshCachedValue(
   context: Context,
   parameters: {
-    readonly item: FhevmCacheItem;
+    readonly cacheName: FhevmCacheName;
     readonly invalidVersion?: string | undefined;
     readonly fhevmContext: FhevmClientFrozenContext;
   },
 ): Promise<void> {
-  const { item, invalidVersion, fhevmContext } = parameters;
-  const version = await _refreshItem(context, fhevmContext, item, invalidVersion);
+  const { cacheName, invalidVersion, fhevmContext } = parameters;
+  const version = await _refreshCache(context, fhevmContext, cacheName, invalidVersion);
   if (invalidVersion !== undefined && version === invalidVersion) {
     throw new CachedValueInvalidError({
-      item,
+      cacheName,
       invalidVersion,
-      message: `The ${item} read again (version ${invalidVersion}) is the cached one: refreshing it cannot help.`,
+      message: `The ${cacheName} read again (version ${invalidVersion}) is the cached one: refreshing it cannot help.`,
     });
   }
 }
 
 /** A cached value a failed request used, found stale (read again, its version changed). */
-export type StaleValue = { readonly item: FhevmCacheItem; readonly version: string };
+export type StaleValue = { readonly cacheName: FhevmCacheName; readonly version: string };
 
 export type RetryOnStaleCacheOptions = {
   /**
@@ -144,8 +144,8 @@ async function _refreshForRetry(
   }
   context.runtime.config.logger?.warn?.(
     autoRefresh
-      ? `Cached ${stale.item} (version ${stale.version}) was stale and has been refreshed.`
-      : `Cached ${stale.item} (version ${stale.version}) is stale; not refreshed (autoRefreshOnInvalidity: false).`,
+      ? `Cached ${stale.cacheName} (version ${stale.version}) was stale and has been refreshed.`
+      : `Cached ${stale.cacheName} (version ${stale.version}) is stale; not refreshed (autoRefreshOnInvalidity: false).`,
   );
   if (_isAbort(error)) {
     throw error;
@@ -162,7 +162,7 @@ async function _refreshForRetry(
 ////////////////////////////////////////////////////////////////////////////////
 
 /**
- * Reads again each value the failed request used whose item may explain the
+ * Reads again each value the failed request used whose cache may explain the
  * error. The first one whose version changed is the stale one: with
  * `refresh`, the new value is cached; without, only its version is read. A
  * failed read proves nothing: it is logged, and the request's error stands.
@@ -174,21 +174,21 @@ async function _findStaleValue(
   usedVersions: UsedCacheVersions,
   refresh: boolean,
 ): Promise<StaleValue | undefined> {
-  for (const [item, used] of Object.entries(usedVersions) as Array<[FhevmCacheItem, string]>) {
-    const cache = CACHES[item];
+  for (const [cacheName, used] of Object.entries(usedVersions) as Array<[FhevmCacheName, string]>) {
+    const cache = CACHES[cacheName];
     if (!cache.mayBeStale(context, error)) {
       continue;
     }
     try {
       const current = refresh
-        ? await _refreshItem(context, fhevmContext, item, used)
+        ? await _refreshCache(context, fhevmContext, cacheName, used)
         : await cache.readCurrentVersion(context, cache.currentParameters(context, fhevmContext));
       if (current !== used) {
-        return { item, version: used };
+        return { cacheName, version: used };
       }
     } catch (refreshError) {
       context.runtime.config.logger?.warn?.(
-        `Could not read the ${item} again (${String(refreshError)}): passing the request error on.`,
+        `Could not read the ${cacheName} again (${String(refreshError)}): passing the request error on.`,
       );
     }
   }
@@ -205,7 +205,7 @@ function _isAbort(error: unknown): boolean {
 
 function _staleValueError(stale: StaleValue, cause: unknown): CachedValueInvalidError {
   return new CachedValueInvalidError({
-    item: stale.item,
+    cacheName: stale.cacheName,
     invalidVersion: stale.version,
     cause: cause instanceof Error ? cause : undefined,
   });
