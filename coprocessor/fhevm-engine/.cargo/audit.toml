@@ -17,6 +17,11 @@ ignore = [
     # Remove once both versions are replaced by patched implementations.
     # https://rustsec.org/advisories/RUSTSEC-2026-0387.html
     "RUSTSEC-2026-0387",
+    # Not used: libsqlite3-sys (C SQLite CVE) is in Cargo.lock only as an
+    # optional dependency of sqlx (sqlx-sqlite). No crate enables the sqlx
+    # SQLite backend, so it is never compiled: `cargo tree --target all
+    # -i libsqlite3-sys` prints nothing. Same exception as on main.
+    "RUSTSEC-2026-0459",
 ]
 # RUSTSEC-2025-0111 impacts only testcontainers
 informational_warnings = ["unmaintained"]
