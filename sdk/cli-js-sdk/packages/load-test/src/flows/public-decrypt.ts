@@ -20,6 +20,7 @@ import type { RelayerClient } from "../relayer/client";
 import { epochNowMs, monotonicNowMs } from "../shared/time";
 import { interruptedLeg } from "./interruption";
 import { assertSdkPreflight, type PreflightSdkClient } from "./preflight";
+import { classifyRelayerHttpError } from "./relayer-http";
 import {
   captureInitialPostIdentity,
   sdkTerminalIdentityError,
@@ -127,6 +128,7 @@ export class PublicDecryptExecutor implements FlowExecutor {
         contractAddress: store.meta.contractAddress,
         durationSeconds: 86_400,
         signer: probeSigner,
+        permit: this.env.useRelayerHttp ? "unified" : "legacy",
       });
       signal?.throwIfAborted();
     }
@@ -231,6 +233,61 @@ export class PublicDecryptExecutor implements FlowExecutor {
     }
   }
 
+  /**
+   * relayer-http answers in a single POST with no job and no progress events,
+   * so jobId, firstRetryAfterMs and submit latency stay unset and pollCount is 0.
+   */
+  private async executeRelayerHttpLeg(
+    context: ClientContext,
+    requestId: string,
+    startedMono: number,
+    handles: readonly Hex[],
+    combination: readonly FheHandlePoolItem[],
+    signal: AbortSignal,
+  ): Promise<RelayerLegRecord> {
+    try {
+      const result = await context.fhevm.decryptPublicValuesWithSignaturesNoGateway({
+        encryptedValues: handles,
+        options: {
+          timeout: this.requestTimeoutMs,
+          signal,
+          headers: { "x-request-id": requestId },
+        },
+      });
+      const common = { pollCount: 0, e2eLatencyMs: monotonicNowMs() - startedMono };
+      return publicValuesMatch(
+        result.clearValues,
+        combination.map((item) => ({ type: item.type, value: item.value })),
+      )
+        ? { ...common, outcome: "succeeded", verified: true }
+        : {
+            ...common,
+            outcome: "verify_failed",
+            errorLabel: "values_mismatch",
+            errorMessage: "SDK-verified clear values did not match the known pool values.",
+            verified: false,
+          };
+    } catch (error) {
+      const common = {
+        pollCount: 0,
+        e2eLatencyMs: monotonicNowMs() - startedMono,
+        verified: false,
+      };
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const interruption = interruptedLeg(signal);
+      if (interruption) return { ...common, ...interruption, errorMessage };
+      const httpFailure = classifyRelayerHttpError(error);
+      if (httpFailure) return { ...common, ...httpFailure };
+      // Not from the HTTP exchange: local ACL/handle checks or KMS signature verification.
+      return {
+        ...common,
+        outcome: "failed",
+        errorLabel: "sdk_public_decrypt_error",
+        errorMessage,
+      };
+    }
+  }
+
   async execute(index: number, signal: AbortSignal): Promise<RequestRecord> {
     if (!this.context) throw new Error("Executor not prepared.");
     const combination = this.claimCombination();
@@ -239,6 +296,18 @@ export class PublicDecryptExecutor implements FlowExecutor {
     const startedAtMs = epochNowMs();
     const startedMono = monotonicNowMs();
     const base = { flow: this.flow, index, startedAtMs, sentRequestId };
+
+    if (this.env.useRelayerHttp) {
+      const leg = await this.executeRelayerHttpLeg(
+        this.context,
+        sentRequestId,
+        startedMono,
+        handles,
+        combination,
+        signal,
+      );
+      return { ...base, ...leg };
+    }
 
     const [primary, candidate] = await Promise.all([
       this.executeLeg(
