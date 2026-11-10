@@ -44,20 +44,22 @@ If you hit `HCUBlockLimitExceeded`, options include:
 
 The computation allowlist is inactive by default. When `isAllowlistActivated()` is `true`, every HCU-charged FHE operation checks the original dApp contract address passed by `FHEVMExecutor`. If `isAllowlisted(dappAddress)` is `false`, the operation reverts with `CallerNotAllowlisted(dappAddress)`. The address is the dApp contract, not the user's wallet. Retrying the transaction will not resolve a missing admission.
 
+This allowlist does not gate input verification (`FHEVMExecutor.verifyInput`), ACL permission grants, or decryption. Those paths retain their own authorization checks; a non-whitelisted dApp can use them if it meets those checks, but it cannot perform HCU-charged FHE computation while the allowlist is active.
+
 The computation allowlist and the block HCU whitelist are independent. `isBlockHCUWhitelisted(dappAddress)` only exempts a caller from the global block HCU cap; it does not admit the caller to computation. An allowlisted dApp remains subject to all HCU limits; a separate block whitelist entry exempts it only from the block cap. `isAllowlisted` reports stored membership even while the computation allowlist is inactive.
 
 ### DApp admission
 
-Before a dApp's first FHE transaction, check `isAllowlistActivated()` and `isAllowlisted(dappAddress)` on the target chain's deployed `HCULimit`. If activation is planned or already enabled and the dApp is absent, request admission from the ACL owner or an active allowlister. Provide the target chain and every dApp contract address that will call FHE operations. Admission is performed with `addToAllowlist(address[])`; it can be granted before the dApp is deployed. Check membership again after the admission transaction is confirmed. A new dApp address needs its own admission.
+Before a dApp's first HCU-charged FHE operation, check `isAllowlistActivated()` and `isAllowlisted(dappAddress)` on the target chain's deployed `HCULimit`. If activation is planned or already enabled and the dApp is absent, request admission from the ACL owner or an active allowlister. Provide the target chain and every dApp contract address that will call HCU-charged FHE operations. Admission is performed with `addToAllowlist(address[])`; it can be granted before the dApp is deployed. Check membership again after the admission transaction is confirmed. A new dApp address needs its own admission.
 
 ### Activating and operating the allowlist
 
 Activation has no on-chain readiness check. The ACL owner should use this sequence before calling `setAllowlistActivated(true)`:
 
-1. Identify the correct chain and `HCULimit` proxy, then inventory **every live dApp contract address** that must continue using FHE operations, including callers on the block HCU whitelist.
+1. Identify the correct chain and `HCULimit` proxy, then inventory **every live dApp contract address** that must continue performing HCU-charged FHE operations, including callers on the block HCU whitelist.
 2. While the allowlist is inactive, admit missing addresses with `addToAllowlist(address[])`. The ACL owner can call it directly or delegate admission temporarily with `addAllowlister(account, futureDeadline)`. Delegation does not itself admit any dApps.
 3. After the admission transactions are confirmed, check `isAllowlisted(address)` on-chain for every address in the inventory. Stop if any are missing, and review the inventory for omissions before activation.
-4. Only then submit `setAllowlistActivated(true)`. Confirm `isAllowlistActivated()` returns `true` afterward and exercise a representative FHE call from an admitted dApp. On the other hand, check now that calls to non-allowlised dapps using fhevm are now reverting with the `CallerNotAllowlisted(dappAddress)` custom error.
+4. Only then submit `setAllowlistActivated(true)`. Confirm `isAllowlistActivated()` returns `true` afterward and exercise a representative HCU-charged FHE operation from an admitted dApp. Also confirm that the same operation from an non-whitelisted dApp reverts with `CallerNotAllowlisted(dappAddress)`.
 
 The ACL owner can remove dApps with `removeFromAllowlist(address[])` and revoke delegated admission authority with `removeAllowlister(account)`. Removing an allowlister does not remove dApps it previously admitted. If activation disrupts live dApps, the ACL owner can call `setAllowlistActivated(false)` to restore HCU computation for all dApps while the missing addresses are identified and added; deactivation preserves stored memberships and allowlister deadlines.
 
