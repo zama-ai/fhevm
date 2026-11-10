@@ -324,7 +324,7 @@ kubectl port-forward -n <namespace> svc/jaeger 16686:16686    # http://localhost
 - **Without:** the stack is deployed with an idle test-suite Job — run tests
   yourself against the namespace, or re-label with `preview-env-e2e-tests`.
 
-To poke a party's connector proxy by hand (test CA, so `-k`). Requests need an
+To poke a party's connector proxy by hand (self-signed cert, so `-k`). Requests need an
 `Authorization: FhevmSig ...` header (RFC 038, see `fhevmSigHeader` in
 `test-suite/e2e/test/sdk/connector/connectorHttp.ts`), so an unsigned call only proves the
 proxy is up, answering `401` with `auth_missing`:
