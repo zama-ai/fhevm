@@ -722,6 +722,38 @@ pub(crate) mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn summary_line_of_a_solana_request_names_its_handles_and_request_id_only() {
+        // A Solana user is not an EVM address, and a Solana handle names no contract.
+        let user = user_body(flows::now() - 10);
+        let public = public_body();
+        for (route, body, handles, decryption_id) in [
+            (
+                "/v4/user-decrypt",
+                serde_json::to_string(&user).unwrap(),
+                handle(SOLANA, 4).to_string(),
+                user.id(),
+            ),
+            (
+                "/v4/public-decrypt",
+                serde_json::to_string(&public).unwrap(),
+                format!("{},{}", handle(SOLANA, 0), handle(SOLANA, 5)),
+                public.id(),
+            ),
+        ] {
+            let (status, lines) = logged(healthy, route, &body, &[]).await;
+            assert_eq!(status, StatusCode::OK, "{route}");
+            let f = &the_summary(&lines)["fields"];
+            assert_eq!(f["outcome"], "succeeded", "{route}");
+            assert_eq!(f["handles"], handles, "{route}");
+            assert_eq!(f["chain_id"], SOLANA.to_string(), "{route}");
+            assert_eq!(f["decryption_id"], decryption_id.to_string(), "{route}");
+            for absent in ["user_address", "contract_addresses", "allowed_contracts"] {
+                assert_eq!(f[absent], "none", "{route}: {absent}");
+            }
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn summary_line_of_an_invalid_request_bounds_its_lists_and_the_value_goes_to_debug() {
         // One handle over the default limit of 50: only the limit's worth is listed.
         let handles: Vec<String> = (0..=50)
@@ -1149,7 +1181,24 @@ pub(crate) mod tests {
                 format!(r#"{{"ciphertextHandles": {{"{MARKER}": 1}}, "extraData": "0x00"}}"#),
             ),
             ("/v4/public-decrypt", format!("not json {MARKER}")),
+            // A Solana user decryption reaches the nodes; a Solana public one is refused.
+            (
+                "/v4/user-decrypt",
+                serde_json::to_string(&user_body(flows::now() - 10))
+                    .unwrap()
+                    .replace(&"00".repeat(64), MARKER),
+            ),
+            (
+                "/v4/public-decrypt",
+                serde_json::to_string(&public_body())
+                    .unwrap()
+                    .replace(&"aa".repeat(64), MARKER),
+            ),
         ];
+        assert!(
+            bodies.iter().all(|(_, body)| body.contains(MARKER)),
+            "every body carries the marker"
+        );
         // A failing and a succeeding node set: every path of the aggregator logs.
         let mut mixed = vec![
             vec![
