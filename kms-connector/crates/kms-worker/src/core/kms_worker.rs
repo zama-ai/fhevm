@@ -114,7 +114,8 @@ where
         max_decryption_attempts: u16,
     ) {
         let otlp_context = event.otlp_context.clone();
-        tracing::Span::current().set_parent(otlp_context.extract());
+        // Only fails if the span is filtered out or no OTel layer is set (tests): no span is exported then.
+        let _ = tracing::Span::current().set_parent(otlp_context.extract());
 
         info!("Starting to process {:?}...", event.kind);
         let response_kind = match event_processor.process(&mut event).await {

@@ -63,9 +63,9 @@ futures = { version = "=0.3.31", default-features = false }
 git-version = { version = "=0.3.9", default-features = false }
 http = { version = "=1.4.0", default-features = false }
 humantime-serde = "=1.1.1"
-opentelemetry = "=0.30.0"
-opentelemetry-otlp = { version = "=0.30.0", default-features = false, features = ["grpc-tonic", "trace"] }
-opentelemetry_sdk = "=0.30.0"
+opentelemetry = "=0.33.1"
+opentelemetry-otlp = { version = "=0.33.1", default-features = false, features = ["grpc-tonic", "trace"] }
+opentelemetry_sdk = "=0.33.1"
 pingora = { version = "=0.9.1", default-features = false, features = [
     "openssl",
     "lb",
@@ -113,8 +113,8 @@ tower = { version = "=0.5.3", default-features = false, features = [
     "util",
 ] }
 tracing = { version = "=0.1.44", default-features = true }
-tracing-opentelemetry = "=0.31.0"
-tracing-subscriber = { version = "=0.3.20", default-features = true, features = [
+tracing-opentelemetry = "=0.34.0"
+tracing-subscriber = { version = "=0.3.23", default-features = true, features = [
     "env-filter",
 ] }
 url = { version = "=2.5.8", default-features = false, features = ["serde"] }
