@@ -3190,8 +3190,8 @@ Consequences:
   retry runs a new kms-worker attempt that asks the coprocessors again, until relayer-http's
   deadline.
 - The retries are relayer-http's, and they are bounded. With the settings of the example config
-  `relayer-http/config/config.yaml`, which the preview deploys from, and of the e2e's
-  `test-suite/fhevm/templates/config/relayer-http.yaml` (`call.timeout` 5 seconds, `max_retries` 5,
+  `relayer-http/config/config.yaml` and of `test-suite/fhevm/templates/config/relayer-http.yaml`,
+  which the e2e and the preview deploy from (`call.timeout` 5 seconds, `max_retries` 5,
   a backoff from 200 ms, and a retry only when its delay fits before the deadline), a node makes at most 5 attempts per decryption. A config without `retries` makes
   none (`RetryConfig::default`, `max_retries: 0`): a node whose coprocessors lag then gives no
   share for that request, and the other nodes can still reach the threshold. Each kms-worker attempt sends one batch for every
