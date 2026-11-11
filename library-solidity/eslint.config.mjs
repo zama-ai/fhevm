@@ -194,6 +194,7 @@ export default createConfig({
     'tasks/hostDeployment.ts',
     'tasks/prepareTestContracts.ts',
     'tasks/zamaConfigAddresses.ts',
+    'test/coprocessorConfig/testEthereumCoprocessorConfig.ts',
     'test/coprocessorUtils.ts',
     'test/encryptedERC20/EncryptedERC20.HCU.ts',
     'test/encryptedERC20/EncryptedERC20.fixture.ts',
