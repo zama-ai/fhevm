@@ -182,14 +182,30 @@ export function createConfig({ files, ignores, tsconfigRootDir, allowDefaultProj
 
 export default createConfig({
   // Hardhat 3 migration: only the files already ported to Hardhat 3 are linted (they are also the only files in
-  // tsconfig.json). The Hardhat 2 code (tasks/, test/, CustomProvider.ts) is added back as it gets ported.
+  // tsconfig.json). The Hardhat 2 tests (test/) are added back as they get ported.
   files: [
     'hardhat.config.ts',
+    'lib-js/common.ts',
+    'lib-js/fheTypeInfos.ts',
+    'lib-js/operatorsPrices.ts',
     'tasks/compileAll.ts',
+    'tasks/env.ts',
     'tasks/hostContracts.ts',
     'tasks/hostDeployment.ts',
     'tasks/prepareTestContracts.ts',
     'tasks/zamaConfigAddresses.ts',
+    'test/coprocessorUtils.ts',
+    'test/fhevmjsMocked.ts',
+    'test/hardhat.ts',
+    'test/instance.ts',
+    'test/legacyRelayerSdk/eip712.ts',
+    'test/legacyRelayerSdk/types.ts',
+    'test/networkHooks.ts',
+    'test/rand/Rand.fixture.ts',
+    'test/rand/Rand.ts',
+    'test/signers.ts',
+    'test/types.ts',
+    'test/utils.ts',
   ],
   ignores: [
     // codegen is a separate workspace with its own eslint.config.mjs

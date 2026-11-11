@@ -19,6 +19,7 @@ import path from 'node:path';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
 import type { NetworkConnection } from 'hardhat/types/network';
 
+import { getIntegerEnvVar, getRequiredEnvVar } from './env.js';
 import { FHEVM_HOST_ADDRESSES_SOL, FHEVM_TEMP_CONTRACTS_DIR, copyHostContracts } from './hostContracts.js';
 import { assertHostAddressesMatchZamaConfig } from './zamaConfigAddresses.js';
 
@@ -29,39 +30,6 @@ export const FHEVM_HOST_ADDRESSES_ENV = path.join(path.dirname(FHEVM_HOST_ADDRES
 
 /** HCULimit initializer arguments, as in HH2. */
 const HCU_LIMIT_INITIAL_VALUES = [BigInt('281474976710655'), BigInt('5000000'), BigInt('20000000')] as const;
-
-////////////////////////////////////////////////////////////////////////////////
-// Environment (.env, see .env.example)
-////////////////////////////////////////////////////////////////////////////////
-
-/** Loads library-solidity/.env into process.env (variables already set in the environment take precedence). */
-export function loadDeploymentEnv(): void {
-  const envFile = path.join(LIBRARY_SOLIDITY_DIR, '.env');
-  if (!fs.existsSync(envFile)) {
-    throw new Error(`${envFile} does not exist: copy .env.example to .env`);
-  }
-  dotenv.config({ path: envFile });
-}
-
-function getRequiredEnvVar(name: string): string {
-  const value = process.env[name];
-  if (value === undefined || value.trim() === '') {
-    throw new Error(`"${name}" env variable is not set or empty (see .env.example)`);
-  }
-  return value;
-}
-
-function getIntegerEnvVar(name: string, defaultValue?: number): number {
-  const value = process.env[name];
-  if ((value === undefined || value.trim() === '') && defaultValue !== undefined) {
-    return defaultValue;
-  }
-  const integer = Number(getRequiredEnvVar(name));
-  if (!Number.isInteger(integer)) {
-    throw new Error(`"${name}" env variable must be an integer, got "${value ?? ''}"`);
-  }
-  return integer;
-}
 
 /** The deployer of every host contract. Its address is part of the deterministic host contract addresses. */
 function getDeployer(connection: NetworkConnection): Wallet {
@@ -103,11 +71,14 @@ function readHostAddress(envVarName: string): string {
 // Build helpers
 ////////////////////////////////////////////////////////////////////////////////
 
-/** Builds only the given files (a partial build keeps every other artifact). */
+/**
+ * Builds the given files (a partial build keeps every other artifact), or every source folder if `files` is empty
+ * (a full build).
+ */
 async function buildFiles(hre: HardhatRuntimeEnvironment, files: string[]): Promise<void> {
   await hre.tasks.getTask('build').run({ files, quiet: true });
   // The artifact manager caches the artifact list: without this, the artifacts just built are not found
-  // (HHE1000) by `ethers.getContractFactory` in this same process.
+  // (HHE1000) by `ethers.getContractFactory` in this same process. Needed after every build, full or partial.
   await hre.artifacts.clearCache();
 }
 
@@ -202,7 +173,9 @@ export async function prepareAndCompileAll(
   const { chainId } = await connection.ethers.provider.getNetwork();
   assertHostAddressesMatchZamaConfig(FHEVM_HOST_ADDRESSES_SOL, chainId);
 
-  await hre.tasks.getTask('build').run({});
+  // Full build. On a clean checkout, the real host contracts (e.g. ACL) are compiled here for the first time:
+  // upgradeHostProxies, run next by task:prepareTestContracts, needs them.
+  await buildFiles(hre, []);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

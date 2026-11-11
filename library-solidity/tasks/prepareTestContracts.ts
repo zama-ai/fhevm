@@ -5,13 +5,14 @@
 // get the same connection, so they see these deployments. Run on its own, the chain is discarded when the task ends.
 import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
 
-import { addHostPausers, loadDeploymentEnv, prepareAndCompileAll, upgradeHostProxies } from './hostDeployment.js';
+import { loadEnv } from './env.js';
+import { addHostPausers, prepareAndCompileAll, upgradeHostProxies } from './hostDeployment.js';
 
 export default async function prepareTestContracts(
   _taskArguments: object,
   hre: HardhatRuntimeEnvironment,
 ): Promise<void> {
-  loadDeploymentEnv();
+  loadEnv();
   const connection = await hre.network.getOrCreate();
   await prepareAndCompileAll(hre, connection);
   await upgradeHostProxies(hre, connection);

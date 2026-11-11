@@ -5,10 +5,11 @@
 // deploying the empty host proxies on a throwaway in-process chain (as in HH2). No host contract is upgraded.
 import type { HardhatRuntimeEnvironment } from 'hardhat/types/hre';
 
-import { loadDeploymentEnv, prepareAndCompileAll } from './hostDeployment.js';
+import { loadEnv } from './env.js';
+import { prepareAndCompileAll } from './hostDeployment.js';
 
 export default async function compileAll(_taskArguments: object, hre: HardhatRuntimeEnvironment): Promise<void> {
-  loadDeploymentEnv();
+  loadEnv();
   const connection = await hre.network.getOrCreate();
   await prepareAndCompileAll(hre, connection);
 }

@@ -1,12 +1,13 @@
 import { toBufferBE } from 'bigint-buffer';
-import crypto from 'crypto';
 import dotenv from 'dotenv';
 import { type BigNumberish, type Signer, ethers } from 'ethers';
-import * as fs from 'fs';
-import hre from 'hardhat';
-import { getRequiredEnvVar } from '../tasks/utils/loadVariables';
-import { coprocDbWriteCleartext } from './coprocessorUtils';
-import { awaitCoprocessor, coprocDbReadCleartext } from './coprocessorUtils';
+import crypto from 'node:crypto';
+import * as fs from 'node:fs';
+
+import { getRequiredEnvVar } from '../tasks/env.js';
+import { coprocDbWriteCleartext } from './coprocessorUtils.js';
+import { awaitCoprocessor, coprocDbReadCleartext } from './coprocessorUtils.js';
+import { chainId as networkChainId, ethers as hardhatEthers } from './hardhat.js';
 import {
   checkIsHardhatSigner,
   fromHexString,
@@ -15,16 +16,15 @@ import {
   sum,
   toHexString,
   uint8ArrayToHexStringNo0x,
-} from './utils';
-import { ENCRYPTION_TYPES } from './legacyRelayerSdk/types';
-import type { HandleContractPair, RelayerEncryptedInput, UserDecryptResults } from './legacyRelayerSdk/types';
-import type { ACL } from '../typechain-types';
+} from './utils.js';
+import { ENCRYPTION_TYPES } from './legacyRelayerSdk/types.js';
+import type { HandleContractPair, RelayerEncryptedInput, UserDecryptResults } from './legacyRelayerSdk/types.js';
 
 async function getCoprocessorSigners(): Promise<Array<Signer & { address: string }>> {
   const coprocessorSigners = [];
   const numKMSSigners = getRequiredEnvVar('NUM_COPROCESSORS');
   for (let idx = 0; idx < +numKMSSigners; idx++) {
-    const coprocessorSigner = await hre.ethers.getSigner(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
+    const coprocessorSigner = await hardhatEthers.getSigner(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
     await checkIsHardhatSigner(coprocessorSigner);
     coprocessorSigners.push(coprocessorSigner);
   }
@@ -125,7 +125,7 @@ export const userDecryptRequestMocked = async (
   const domain = {
     name: 'Decryption',
     version: '1',
-    chainId: hre.network.config.chainId,
+    chainId: networkChainId,
     verifyingContract: process.env.DECRYPTION_ADDRESS,
   };
   const types = {
@@ -153,8 +153,8 @@ export const userDecryptRequestMocked = async (
   }
 
   // ACL checking
-  const aclFactory = await hre.ethers.getContractFactory('ACL');
-  const acl = aclFactory.attach(aclAdd) as unknown as ACL;
+  const aclFactory = await hardhatEthers.getContractFactory('ACL');
+  const acl = aclFactory.attach(aclAdd);
   const verifications = handles.map(async ({ handle, contractAddress }) => {
     const userAllowed = await acl.persistAllowed(handle, userAddress);
     const contractAllowed = await acl.persistAllowed(handle, contractAddress);
@@ -322,7 +322,7 @@ export function createEncryptedInputMocked(contractAddress: string, userAddress:
       const hash = ethers.getBytes(ethers.keccak256(encryptedArray));
       const extraDataV0 = ethers.solidityPacked(['uint8'], [0]);
 
-      const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
+      const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : networkChainId;
       if (chainId === undefined) {
         throw new Error('Chain ID is not defined');
       }
@@ -399,7 +399,7 @@ async function coprocSign(
 ): Promise<string> {
   const inputVerificationAdd = process.env.INPUT_VERIFICATION_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;
-  const hostChainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
+  const hostChainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : networkChainId;
 
   const domain = {
     name: 'InputVerification',

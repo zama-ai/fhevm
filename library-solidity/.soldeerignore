@@ -30,7 +30,6 @@ mlc_config.json
 foundry.toml
 remappings.txt
 soldeer.lock
-CustomProvider.ts
 
 # Source directories not needed by consumers
 codegen/
