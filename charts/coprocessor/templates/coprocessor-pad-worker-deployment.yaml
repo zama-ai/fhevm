@@ -1,0 +1,263 @@
+{{- /* One lane for each PRF instance. Only the pad release of an operator sets `padLanes`. */}}
+{{- $component := .Values.padWorkerShared -}}
+{{- if .Values.padLanes }}
+{{- /* The commonConfig user owns every table: the lanes must use their own role. */}}
+{{- if not (or $component.databaseUser.value $component.databaseUser.valueFrom) }}
+{{- fail "padWorkerShared.databaseUser must name the pad_worker role" }}
+{{- end }}
+{{- if not (contains "$(DATABASE_USER)" (.Values.commonConfig.databaseUrl | default "")) }}
+{{- fail "commonConfig.databaseUrl must use $(DATABASE_USER), or the pad-worker logs in as another role" }}
+{{- end }}
+{{- if not (or $component.config.s3BucketName.value $component.config.s3BucketName.valueFrom) }}
+{{- fail "padWorkerShared.config.s3BucketName is required" }}
+{{- end }}
+{{- end }}
+{{- $seen := dict }}
+{{- range $index, $lane := .Values.padLanes }}
+{{- if or (not (regexMatch "^[0-9]+$" (toString $lane.prfId))) (gt (int $lane.prfId) 65535) }}
+{{- fail (printf "padLanes[%d].prfId must be a number from 0 to 65535" $index) }}
+{{- end }}
+{{- if hasKey $seen (toString $lane.prfId) }}
+{{- fail (printf "padLanes[%d].prfId %v has another lane" $index $lane.prfId) }}
+{{- end }}
+{{- $_ := set $seen (toString $lane.prfId) true }}
+{{- if not $lane.keyId }}
+{{- fail (printf "padLanes[%d].keyId is required" $index) }}
+{{- end }}
+{{- /* YAML reads an unquoted 0x0a as the number 10: another key. */}}
+{{- if not (kindIs "string" $lane.keyId) }}
+{{- fail (printf "padLanes[%d].keyId must be a quoted hex string" $index) }}
+{{- end }}
+{{- $name := printf "%s-pad-worker-%d" $.Release.Name (int $lane.prfId) | trunc 63 | trimSuffix "-" }}
+{{- $image := mergeOverwrite (deepCopy $component.image) ($lane.image | default dict) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: coprocessor-pad-worker
+    app.kubernetes.io/name: {{ $name }}
+    prf-instance: {{ int $lane.prfId | quote }}
+  name: {{ $name }}
+spec:
+  replicas: {{ $component.replicas }}
+  selector:
+    matchLabels:
+      app: coprocessor-pad-worker
+      app.kubernetes.io/name: {{ $name }}
+      prf-instance: {{ int $lane.prfId | quote }}
+      {{- include "coprocessor.extraSelectorLabels" $ | nindent 6 }}
+  {{- with $component.updateStrategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: coprocessor-pad-worker
+        app.kubernetes.io/name: {{ $name }}
+        prf-instance: {{ int $lane.prfId | quote }}
+        {{- include "coprocessor.extraSelectorLabels" $ | nindent 8 }}
+        {{- with $.Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- with $component.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $.Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- with $component.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $component.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $component.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $component.serviceAccountName }}
+      serviceAccountName: {{ . }}
+      {{- end }}
+      containers:
+        - name: coprocessor-pad-worker
+          image: {{ $image.name }}:{{ $image.tag }}
+          command: ["pad-worker"]
+          args:
+            - --prf-instance={{ int $lane.prfId }}
+            - --prf-key-id={{ $lane.keyId }}
+            - --database-url=$(DATABASE_URL)
+            - --s3-bucket=$(S3_BUCKET_NAME)
+            {{- if $component.wallet.awsKms.enabled }}
+            - --signer-type=aws-kms
+            {{- else }}
+            - --signer-type=private-key
+            - --private-key=$(TX_SENDER_PRIVATE_KEY)
+            {{- end }}
+            - --health-check-port={{ $component.ports.healthcheck }}
+            - --metrics-addr=0.0.0.0:{{ $component.ports.metrics }}
+            - --pending-max-age={{ int $component.config.pendingMaxAgeSeconds }}s
+            {{- with $component.config.outputMaxAgeSeconds }}
+            - --output-max-age={{ int . }}s
+            {{- end }}
+            {{- with $component.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            - name: PAD_DATABASE_POOL_SIZE
+              value: {{ $component.databasePoolSize | quote }}
+            {{- /* The pad_worker role: it writes only the outputs and the lane state. */}}
+            {{- with $component.databaseUser }}
+            - name: DATABASE_USER
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseEndpoint }}
+            - name: DATABASE_ENDPOINT
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" $) "password" }}
+            {{- with (default $.Values.commonConfig.databasePassword $component.databasePassword) }}
+            - name: DATABASE_PASSWORD
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- with $.Values.commonConfig.databaseUrl }}
+            - name: DATABASE_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if eq (include "coprocessorDatabaseAuthMode" $) "iam" }}
+            - name: DATABASE_IAM_AUTH_ENABLED
+              value: "true"
+            {{- with $.Values.commonConfig.databaseIamRegion }}
+            - name: DATABASE_IAM_REGION
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if eq (include "coprocessor.databaseSslRootCertEnvEnabled" $) "true" }}
+            {{- include "coprocessor.databaseSslRootCertEnv" $ | nindent 12 }}
+            {{- end }}
+            {{- end }}
+            {{- with $component.config.s3BucketName }}
+            - name: S3_BUCKET_NAME
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .valueFrom) | nindent 16 }}
+              {{- end }}
+            {{- end }}
+            {{- if $component.wallet.awsKms.enabled }}
+            - name: AWS_KEY_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ $component.wallet.awsKms.configmap.name | quote }}
+                  key: {{ $component.wallet.awsKms.configmap.key | quote }}
+            {{- else if $component.wallet.secret.value }}
+            - name: TX_SENDER_PRIVATE_KEY
+              value: {{ $component.wallet.secret.value | quote }}
+            {{- else }}
+            - name: TX_SENDER_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $component.wallet.secret.name | quote }}
+                  key: {{ $component.wallet.secret.key | quote }}
+            {{- end }}
+          {{- if default $.Values.commonConfig.tracing.enabled $component.tracing.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ $.Values.commonConfig.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ $name | quote }}
+          {{- end }}
+          {{- with $.Values.commonConfig.env }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
+          {{- end }}
+          {{- with $component.env }}
+            {{- include "coprocessor.valueFrom" (dict "root" $ "valueFrom" .) | nindent 12 }}
+          {{- end }}
+          {{- /* Only the health and metrics ports: nothing calls a lane. */}}
+          ports:
+            - name: healthcheck
+              containerPort: {{ $component.ports.healthcheck }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ $component.ports.metrics }}
+              protocol: TCP
+          {{- include "coprocessor.containerResources" $component.resources | nindent 10 }}
+          {{- if $component.probes.liveness.enabled }}
+          livenessProbe:
+            {{- toYaml (omit $component.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if $component.probes.readiness.enabled }}
+          readinessProbe:
+            {{- toYaml (omit $component.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" $) "true" }}
+          {{- include "coprocessor.databaseSslRootCertVolumeMount" $ | nindent 10 }}
+          {{- end }}
+      {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" $) "true" }}
+      {{- include "coprocessor.databaseSslRootCertVolume" $ | nindent 6 }}
+      {{- end }}
+{{- if $component.serviceMonitor.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-pad-worker
+    app.kubernetes.io/name: {{ $name }}
+  name: {{ $name }}
+spec:
+  ports:
+    - name: metrics
+      port: {{ $component.ports.metrics }}
+      targetPort: metrics
+  selector:
+    app: coprocessor-pad-worker
+    app.kubernetes.io/name: {{ $name }}
+    prf-instance: {{ int $lane.prfId | quote }}
+    {{- include "coprocessor.extraSelectorLabels" $ | nindent 4 }}
+  type: ClusterIP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: coprocessor-pad-worker
+    app.kubernetes.io/name: {{ $name }}
+  name: {{ $name }}
+spec:
+  selector:
+    matchLabels:
+      app: coprocessor-pad-worker
+      app.kubernetes.io/name: {{ $name }}
+  endpoints:
+    - port: metrics
+{{- end }}
+{{- end }}
