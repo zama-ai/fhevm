@@ -188,7 +188,9 @@ export default createConfig({
     'hello.ts',
     'tasks/compileAll.ts',
     'tasks/hostContracts.ts',
+    'tasks/hostDeployment.ts',
     'tasks/networkInfo.ts',
+    'tasks/prepareTestContracts.ts',
     'tasks/zamaConfigAddresses.ts',
   ],
   ignores: [
