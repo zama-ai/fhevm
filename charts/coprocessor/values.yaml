@@ -1830,6 +1830,106 @@ prfService:
       maxUnavailable: 0
 
 # -----------------------------------------------------------------------------
+# Pad worker lanes
+# -----------------------------------------------------------------------------
+# One pad-worker Deployment for each PRF instance, `<release>-pad-worker-<prfId>`. Set `padLanes`
+# only in the pad release of the operator (see the README), never in a fleet release.
+padLanes: []
+# - prfId: 0
+#   # key_id_gw of the instance, in quoted hex.
+#   # TODO: remove when the instance records give the key of each instance.
+#   keyId: "0x01"
+#   # Optional. Keep the image for the life of the instance (see the README).
+#   image:
+#     tag: v0.15.0
+
+padWorkerShared:
+  image:
+    name: hub.zama.org/zama-protocol/zama-ai/fhevm/coprocessor/pad-worker
+    # TODO: set the first release that has the pad-worker.
+    tag: v0.14.0
+
+  replicas: 1
+
+  # The `pad_worker` role, as in commonConfig. Required. Without a password, the commonConfig one.
+  databaseUser: {}
+  databasePassword: {}
+  databasePoolSize: 8
+
+  config:
+    # The bucket of the operator. Accepts `value` or `valueFrom`. Required.
+    s3BucketName: {}
+    # Use `prfService.limits.padPendingMaxAgeSeconds`: older pending rows are not computed.
+    pendingMaxAgeSeconds: 600
+    # Uploaded or failed rows older than this are deleted. If not set, no row is deleted.
+    outputMaxAgeSeconds:
+
+  # Signer of the PRF output attestations: the coprocessor signer, as the sns-worker has.
+  wallet:
+    awsKms:
+      enabled: false
+      configmap:
+        name: coprocessor-tx-sender
+        key: AWS_KEY_ID
+    secret:
+      name: coprocessor-tx-sender
+      key: private-key
+      value: ""  # devnet only: set a raw private key here to skip secret creation (not for production)
+
+  env: []
+  # The other settings, for example `--max-concurrent=8`. See `pad-worker --help`.
+  extraArgs: []
+
+  ports:
+    healthcheck: 8080
+    metrics: 9100
+
+  serviceMonitor:
+    enabled: false
+
+  serviceAccountName:
+
+  # TODO: size for the tfhe-rs evaluator, when tfhe-rs gives the PRF API.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2
+      memory: 2Gi
+
+  probes:
+    liveness:
+      enabled: true
+      httpGet:
+        path: /liveness
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+    readiness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: healthcheck
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 10
+
+  tracing:
+    enabled: false
+
+  podLabels: {}
+  nodeSelector:
+  affinity:
+  tolerations:
+
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+# -----------------------------------------------------------------------------
 # Transaction Sender
 # -----------------------------------------------------------------------------
 # Submits transactions to the blockchain
