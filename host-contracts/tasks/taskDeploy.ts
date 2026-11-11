@@ -275,13 +275,17 @@ task('task:deployEmptyUUPSProxies')
     await run('task:setHCUConfiguratorAddress', { address: hcuConfiguratorAddress });
   });
 
-task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, { ethers, upgrades, run }) {
+// Deploys the empty proxy of a contract that a chain deployed from an earlier release lacks, and writes its address,
+// unless addresses/.env.host already has one.
+async function deployMissingEmptyProxy(
+  envKey: string,
+  setAddressTask: string,
+  { ethers, upgrades, run }: HardhatRuntimeEnvironment,
+) {
   ensureAddressesDirectoryExists();
 
-  if (readExistingHostEnv().CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS) {
-    console.warn(
-      'Empty-proxy bootstrap is a no-op; addresses/.env.host already contains CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS.',
-    );
+  if (readExistingHostEnv()[envKey]) {
+    console.warn(`Empty-proxy bootstrap is a no-op; addresses/.env.host already contains ${envKey}.`);
     return;
   }
 
@@ -289,8 +293,16 @@ task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, 
   await run('compile:specific', { contract: 'contracts/emptyProxy' });
 
   const proxyAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setBridgeAddress', { address: proxyAddress });
-  process.env.CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS = proxyAddress;
+  await run(setAddressTask, { address: proxyAddress });
+  process.env[envKey] = proxyAddress;
+}
+
+task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, hre) {
+  await deployMissingEmptyProxy('CONFIDENTIAL_BRIDGE_CONTRACT_ADDRESS', 'task:setBridgeAddress', hre);
+});
+
+task('task:deployEmptyProxyForHCUConfigurator').setAction(async function (_, hre) {
+  await deployMissingEmptyProxy('HCU_CONFIGURATOR_CONTRACT_ADDRESS', 'task:setHCUConfiguratorAddress', hre);
 });
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -6,6 +6,7 @@ import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol"
 import {aclAdd, hcuConfiguratorAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "./ACL.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
+import {HCUConfigurator} from "./HCUConfigurator.sol";
 import {HCULimitOperators} from "./HCULimitOperators.sol";
 import {ALLOWLIST_QUOTA, BLOCK_WHITELIST_QUOTA, DEFAULT_QUOTA, MAX_BPS, MAX_TIER, NO_CAP, RESERVED_TIER, hcuScaled} from "./shared/Constants.sol";
 
@@ -222,6 +223,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV6() public virtual reinitializer(REINITIALIZER_VERSION) {
+        // HCUConfigurator is the only writer of these settings: refuse the upgrade until it runs.
+        HCUConfigurator(hcuConfiguratorAdd).getVersion();
         HCULimitStorage storage $ = _getHCULimitStorage();
         uint48 globalCap = $.globalHCUCapPerBlock;
         if ($.isAllowlistActivated) {

@@ -446,6 +446,43 @@ task('task:prepareUpgradeConfidentialBridge')
     return preparedUpgrade;
   });
 
+// Governance prepare for the first HCUConfigurator upgrade: EmptyUUPSProxy -> HCUConfigurator via
+// initializeFromEmptyProxy. The proposal runs it before HCULimit's upgrade, whose reinitializeV6 needs it.
+task('task:prepareUpgradeHCUConfigurator')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function (taskArgs: TaskArguments, hre) {
+    if (taskArgs.useInternalProxyAddress) {
+      loadHostAddresses();
+    }
+    const proxyAddress = getRequiredEnvVar('HCU_CONFIGURATOR_CONTRACT_ADDRESS');
+
+    await hre.run('compile:specific', { contract: 'contracts' });
+
+    const preparedUpgrade = await buildUpgradeProposal(hre, {
+      proxyAddress,
+      contractName: 'contracts/HCUConfigurator.sol:HCUConfigurator',
+      innerFunctionName: 'initializeFromEmptyProxy',
+      decodedArgs: [],
+    });
+
+    printUpgradeProposal(preparedUpgrade);
+    if (taskArgs.verifyContract) {
+      await verifyProposalImplementation(hre, preparedUpgrade);
+    }
+    return preparedUpgrade;
+  });
+
 task('task:upgradeKMSVerifier')
   .addParam(
     'currentImplementation',

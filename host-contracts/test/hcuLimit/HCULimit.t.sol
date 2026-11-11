@@ -1682,6 +1682,17 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         assertEq(reservedBps, 10_000);
     }
 
+    /// HCULimit takes settings from HCUConfigurator only, so the upgrade waits until HCUConfigurator runs.
+    function test_reinitializeV6RefusesTheUpgradeUntilHCUConfiguratorRuns() public {
+        // Puts an empty implementation back behind HCUConfigurator's proxy.
+        this.upgradeHCUConfigurator(owner);
+        // V5 runs at reinitializer version 6.
+        vm.store(proxy, INITIALIZABLE_STORAGE, bytes32(uint256(6)));
+        // The empty proxy has no getVersion.
+        vm.expectRevert(bytes(""));
+        hcuLimit.reinitializeV6();
+    }
+
     function test_reinitializeV6WithTheAllowlistActiveStopsTheDefaultQuota() public {
         _upgradeFromV5(true);
 
