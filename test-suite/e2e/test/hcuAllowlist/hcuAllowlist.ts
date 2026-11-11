@@ -290,7 +290,7 @@ describe('HCU allowlist', function () {
       const dapp = await deployDapp();
       expect(await hcuLimit.isAllowlisted(await dapp.getAddress())).to.eq(false);
 
-      await mined(dapp.addTrivials(40, 2));
+      await mined(dapp.addTrivialValues(40, 2));
       expect(await publicDecrypt(this, await dapp.result())).to.eq(42n);
     });
 
@@ -309,7 +309,7 @@ describe('HCU allowlist', function () {
 
       const rejected: [string, () => Promise<unknown>][] = [
         ['trivial encryption', () => dapp.trivialEncrypt.staticCall(1)],
-        ['binary operation', () => dapp.addTrivials.staticCall(1, 2)],
+        ['binary operation', () => dapp.addTrivialValues.staticCall(1, 2)],
         ['binary operation on an input', () => dapp.addToInput.staticCall(input.handles[0], input.inputProof, 1)],
         ['scalar binary operation', () => dapp.addScalarToStored.staticCall(1)],
         ['unary operation', () => dapp.notStored.staticCall()],
@@ -383,7 +383,7 @@ describe('HCU allowlist', function () {
     it('should keep input verification, ACL and decryption available to a dapp absent from the allowlist', async function () {
       const dapp = await deployDapp();
       const dappAddress = await dapp.getAddress();
-      await mined(dapp.addTrivials(20, 3));
+      await mined(dapp.addTrivialValues(20, 3));
       const computedBeforeActivation = await dapp.result();
 
       await mined(hcuLimit.setAllowlistActivated(true));
@@ -436,7 +436,7 @@ describe('HCU allowlist', function () {
       // Deactivation restores access for everyone and keeps membership.
       const deactivation = await mined(hcuLimit.setAllowlistActivated(false));
       assert.deepEqual(eventsOf(deactivation, 'AllowlistActivationChanged'), [[false]]);
-      await mined(removed.addTrivials(1, 2));
+      await mined(removed.addTrivialValues(1, 2));
       expect(await publicDecrypt(this, await removed.result())).to.eq(3n);
       await mined(stranger.trivialEncrypt(1));
       expect(await hcuLimit.isAllowlisted(memberAddress)).to.eq(true);
@@ -444,7 +444,7 @@ describe('HCU allowlist', function () {
 
       // Reactivation enforces the preserved membership.
       await mined(hcuLimit.setAllowlistActivated(true));
-      await mined(member.addTrivials(5, 6));
+      await mined(member.addTrivialValues(5, 6));
       expect(await publicDecrypt(this, await member.result())).to.eq(11n);
       await expectHcuLimitRevert(removed.trivialEncrypt.staticCall(1), 'CallerNotAllowlisted', [removedAddress]);
       await expectHcuLimitRevert(stranger.trivialEncrypt.staticCall(1), 'CallerNotAllowlisted', [strangerAddress]);
@@ -457,7 +457,7 @@ describe('HCU allowlist', function () {
       await mined(hcuLimit.setAllowlistActivated(true));
       await mined(hcuLimit.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX));
 
-      await expectHcuLimitRevert(dapp.addTrivials.staticCall(1, 2), 'HCUTransactionDepthLimitExceeded');
+      await expectHcuLimitRevert(dapp.addTrivialValues.staticCall(1, 2), 'HCUTransactionDepthLimitExceeded');
       await mined(dapp.trivialEncrypt(1));
     });
 
@@ -499,7 +499,7 @@ describe('HCU allowlist', function () {
       expect(await hcuLimit.isAllowlisted(whitelistedAddress)).to.eq(false);
 
       const expectAccepted = async (dapp: HCUAllowlistDapp, bypassesBlockMeter: boolean) => {
-        const receipt = await mined(dapp.addTrivials(1, 2));
+        const receipt = await mined(dapp.addTrivialValues(1, 2));
         const usedHCU = await blockMeterAt(receipt.blockNumber);
         if (bypassesBlockMeter) {
           expect(usedHCU).to.eq(0n, 'block HCU whitelisted dapp should bypass the block meter');
@@ -558,7 +558,7 @@ describe('HCU allowlist', function () {
 
       const admission = await mined(asAllowlister.addToAllowlist([dappAddress]));
       assert.deepEqual(eventsOf(admission, 'AllowlistAdded'), [[dappAddress, allowlister.address]]);
-      await mined(dapp.addTrivials(30, 12));
+      await mined(dapp.addTrivialValues(30, 12));
       expect(await publicDecrypt(this, await dapp.result())).to.eq(42n);
 
       // Everything else stays with the ACL owner.
@@ -640,7 +640,7 @@ describe('HCU allowlist', function () {
       await mined(hcuLimit.addAllowlister(allowlister.address, renewedDeadline));
       expect(await hcuLimit.isAllowlister(allowlister.address)).to.eq(true);
       await mined(asAllowlister.addToAllowlist([lateAddress]));
-      await mined(late.addTrivials(2, 3));
+      await mined(late.addTrivialValues(2, 3));
       expect(await publicDecrypt(this, await late.result())).to.eq(5n);
     });
 
@@ -691,7 +691,7 @@ describe('HCU allowlist', function () {
 
       expect(await hcuLimit.isAllowlisted(firstAddress)).to.eq(true);
       expect(await hcuLimit.isAllowlisted(secondAddress)).to.eq(true);
-      await mined(second.addTrivials(4, 4));
+      await mined(second.addTrivialValues(4, 4));
       expect(await publicDecrypt(this, await second.result())).to.eq(8n);
     });
 
@@ -895,7 +895,7 @@ describe('HCU allowlist', function () {
       await expectHcuLimitRevert(dapp.trivialEncrypt.staticCall(1), 'CallerNotAllowlisted', [dappAddress]);
 
       await mined(hcuLimitAs(allowlister).addToAllowlist([dappAddress]));
-      await mined(dapp.addTrivials(8, 9));
+      await mined(dapp.addTrivialValues(8, 9));
       expect(await publicDecrypt(this, await dapp.result())).to.eq(17n);
     });
 

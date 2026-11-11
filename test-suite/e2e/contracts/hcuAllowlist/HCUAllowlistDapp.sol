@@ -25,7 +25,7 @@ contract HCUAllowlistDapp is E2ECoprocessorConfig {
         _publish(FHE.asEuint64(value));
     }
 
-    function addTrivials(uint64 a, uint64 b) external {
+    function addTrivialValues(uint64 a, uint64 b) external {
         _publish(FHE.add(FHE.asEuint64(a), FHE.asEuint64(b)));
     }
 
