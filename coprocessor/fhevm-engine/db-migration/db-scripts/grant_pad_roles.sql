@@ -1,16 +1,34 @@
--- Gives the database role of prf-service its rights on `pads`. initialize_db.sh runs this file after
--- the migrations, on each deploy. The role is created outside the migrations. Until then, this file
--- does nothing.
+-- Rights of the prf-service and pad-worker roles. initialize_db.sh runs this file after the
+-- migrations, on each deploy. A role that does not exist gets no grants.
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'prf_service') THEN
         -- Revoke all first, so a right removed from this file is also removed from the role.
-        REVOKE ALL ON pads FROM prf_service;
+        REVOKE ALL ON pads, prf_lanes FROM prf_service;
         GRANT SELECT ON pads TO prf_service;
         -- prf-service only adds rows. It cannot change a row after that.
         GRANT INSERT (prf_instance, label, pad_length, triggered_by) ON pads TO prf_service;
+        GRANT SELECT ON prf_lanes TO prf_service;
     ELSE
         RAISE NOTICE 'Role prf_service does not exist: no grants';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pad_worker') THEN
+        REVOKE ALL ON pads, prf_lanes, keys FROM pad_worker;
+        -- No INSERT, and no UPDATE of the key or the payer.
+        GRANT SELECT, DELETE ON pads TO pad_worker;
+        GRANT UPDATE (
+            claimed_at, attempts, error_message, is_error, s3_verified_at,
+            ciphertext128, ciphertext_digest, ciphertext128_digest, signer, signature,
+            attestation_version
+        ) ON pads TO pad_worker;
+        GRANT SELECT ON prf_lanes TO pad_worker;
+        GRANT INSERT (prf_instance) ON prf_lanes TO pad_worker;
+        -- Only the consensus-detector writes the reference digest.
+        GRANT UPDATE (ready_at, heartbeat_at) ON prf_lanes TO pad_worker;
+        GRANT SELECT ON keys TO pad_worker;
+    ELSE
+        RAISE NOTICE 'Role pad_worker does not exist: no grants';
     END IF;
 END
 $$;
