@@ -37,8 +37,8 @@ interface ICoprocessorConfigReplica is ICoprocessorConfigBase {
 
     /**
      * @notice Mirror a canonical coprocessor context and make it current.
-     * @dev Owner only. `contextId` must be strictly greater than the current coprocessor context ID.
-     *      The set is checked as on the canonical contract.
+     * @dev Owner only. `contextId` must be a coprocessor context ID, strictly greater than the
+     *      current one. Gaps are allowed. The set is checked as on the canonical contract.
      * @param contextId The canonical coprocessor context ID.
      * @param coprocessors The coprocessors of the canonical context.
      * @param majorityThreshold The majority threshold of the canonical context.
