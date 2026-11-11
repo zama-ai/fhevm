@@ -22,6 +22,16 @@ where
         }
     }
 
+    /// The members at the latest block.
+    pub async fn get_current_members(&self) -> anyhow::Result<Vec<(Address, String)>> {
+        let block = self
+            .gateway_config_contract
+            .provider()
+            .get_block_number()
+            .await?;
+        self.get_members_at(block).await
+    }
+
     /// The members as of one block: each coprocessor's signer with the bucket it
     /// registered. `GatewayConfig` keys `coprocessors` by tx-sender address, so
     /// this walks the tx senders and takes the signer from each registration.

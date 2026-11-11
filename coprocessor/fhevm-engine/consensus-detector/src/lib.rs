@@ -77,6 +77,7 @@ use tracing::{debug, error, info, warn, Level};
 
 mod decision;
 pub mod manifest_consensus;
+pub mod prf_reference;
 pub mod s3;
 pub mod state_hash;
 
@@ -145,6 +146,8 @@ pub struct Config {
     pub manifest_consensus: manifest_consensus::Config,
     /// Signer used for this consensus_epoch's immutable manifests.
     pub manifest_signer: Option<fhevm_engine_common::types::CoproSigner>,
+    /// Interval of the PRF reference digest comparison.
+    pub prf_reference_interval: Duration,
 }
 
 impl Default for Config {
@@ -166,6 +169,7 @@ impl Default for Config {
             state_hash_batch_limit: 256,
             manifest_consensus: manifest_consensus::Config::default(),
             manifest_signer: None,
+            prf_reference_interval: Duration::from_secs(30),
         }
     }
 }
@@ -1165,6 +1169,13 @@ where
     let http = reqwest::Client::builder()
         .timeout(Duration::from_secs(5))
         .build()?;
+    tokio::spawn(prf_reference::run(
+        pool.clone(),
+        http.clone(),
+        s3_service.clone(),
+        config.prf_reference_interval,
+        cancel.child_token(),
+    ));
 
     let s3_client = Arc::new(build_s3_client(&config).await);
 
