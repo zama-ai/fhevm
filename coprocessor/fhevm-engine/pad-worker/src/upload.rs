@@ -5,6 +5,7 @@ use alloy::primitives::keccak256;
 use anyhow::{ensure, Context};
 use aws_sdk_s3::{primitives::ByteStream, Client};
 use ciphertext_attestation::{PrfOutputAttestation, S3_METADATA_ATTESTATION_KEY};
+use fhevm_engine_common::prf_reference;
 use std::{num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::sync::Semaphore;
 
@@ -77,19 +78,15 @@ impl Uploader {
 
 /// The key of an output, `pads/{prf}/{label}/{padLength}/ct128`.
 pub fn s3_key(claim: &Claim) -> String {
-    key("pads", claim)
-}
-
-/// The key of a reference output. No lifecycle rule deletes `pads-reference/`.
-pub fn reference_key(claim: &Claim) -> String {
-    key("pads-reference", claim)
-}
-
-fn key(prefix: &str, claim: &Claim) -> String {
     format!(
-        "{prefix}/{}/{}/{}/ct128",
+        "pads/{}/{}/{}/ct128",
         claim.prf_instance,
         hex::encode(claim.label),
         claim.pad_length
     )
+}
+
+/// The key of a reference output.
+pub fn reference_key(claim: &Claim) -> String {
+    prf_reference::reference_key(claim.prf_instance, claim.label, claim.pad_length)
 }
