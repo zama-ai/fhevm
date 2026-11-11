@@ -714,7 +714,7 @@ const registerExtraChainInCoprocessor = async (state: State, chain: { key: strin
 /** Name of the export snapshot written into the canonical chain's mounted addresses directory. */
 const CANONICAL_SNAPSHOT_FILE = "canonical-protocol-config-snapshot.json";
 /** Name of the CoprocessorConfig export snapshot, written next to the ProtocolConfig one. */
-const CANONICAL_COPROCESSOR_SNAPSHOT_FILE = "canonical-coprocessor-config-snapshot.json";
+const CANONICAL_COPROCESSOR_CONFIG_SNAPSHOT_FILE = "canonical-coprocessor-config-snapshot.json";
 
 /**
  * Builds the `task:deployAllHostContracts` args and env that seed a non-canonical chain's
@@ -769,7 +769,7 @@ const canonicalProtocolConfigSeeding = async (
     path.join(path.dirname(hostChainAddressesPath(canonicalChain.key)), CANONICAL_SNAPSHOT_FILE),
   );
   // Host images that deploy CoprocessorConfig also seed its replica from the canonical chain. Older
-  // images write no CoprocessorConfig address and need no coprocessor snapshot.
+  // images write no CoprocessorConfig address and need no CoprocessorConfig snapshot.
   const canonicalCoprocessorConfigAddress = canonicalAddresses.COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
   let exportedCoprocessor: Record<string, string> = {};
   if (canonicalCoprocessorConfigAddress) {
@@ -777,12 +777,12 @@ const canonicalProtocolConfigSeeding = async (
       runContractTask(
         "host-sc",
         "host-sc-deploy",
-        `npx hardhat task:exportCanonicalCoprocessorConfig --canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort} --canonical-coprocessor-config-address ${canonicalCoprocessorConfigAddress} --block-number ${blockNumber} --out /app/addresses/${CANONICAL_COPROCESSOR_SNAPSHOT_FILE}`,
+        `npx hardhat task:exportCanonicalCoprocessorConfig --canonical-rpc-url http://${canonicalChain.node}:${canonicalChain.rpcPort} --canonical-coprocessor-config-address ${canonicalCoprocessorConfigAddress} --block-number ${blockNumber} --out /app/addresses/${CANONICAL_COPROCESSOR_CONFIG_SNAPSHOT_FILE}`,
       ),
     );
     exportedCoprocessor = (
       await readJson<{ export: Record<string, string> }>(
-        path.join(path.dirname(hostChainAddressesPath(canonicalChain.key)), CANONICAL_COPROCESSOR_SNAPSHOT_FILE),
+        path.join(path.dirname(hostChainAddressesPath(canonicalChain.key)), CANONICAL_COPROCESSOR_CONFIG_SNAPSHOT_FILE),
       )
     ).export;
   }

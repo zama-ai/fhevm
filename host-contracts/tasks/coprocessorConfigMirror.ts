@@ -13,7 +13,7 @@ export type Coprocessor = {
   prfEndpointUrl: string;
 };
 
-export type CanonicalCoprocessorSnapshot = {
+export type CanonicalCoprocessorConfigSnapshot = {
   coprocessorConfigAddress: string;
   currentCoprocessorContextId: bigint;
   coprocessors: Coprocessor[];
@@ -35,10 +35,10 @@ export async function getCoprocessorConfig(
 
 // Reads the canonical CoprocessorConfig's current coprocessor context, pinned to one finalized block,
 // for exports and mirror tasks. See `resolveCanonicalBlock` for `blockNumber`.
-export async function readCanonicalCoprocessorSnapshot(
+export async function readCanonicalCoprocessorConfigSnapshot(
   hre: HardhatRuntimeEnvironment,
   options: { canonicalProvider: Provider; canonicalCoprocessorConfigAddress: string; blockNumber?: number },
-): Promise<CanonicalCoprocessorSnapshot> {
+): Promise<CanonicalCoprocessorConfigSnapshot> {
   const { canonicalProvider, canonicalCoprocessorConfigAddress } = options;
   const { canonicalChainId, blockNumber, blockHash } = await resolveCanonicalBlock(
     canonicalProvider,
@@ -88,9 +88,9 @@ export async function readCanonicalCoprocessorSnapshot(
 // the implementation and returns the upgradeToAndCall(initializeFromCanonical(...)) payload. The DAO
 // path prints it for signers. The direct (devnet) path executes the very same payload with the
 // deployer key (executeUpgradeProposal).
-export async function buildCanonicalCoprocessorUpgradeProposal(
+export async function buildCanonicalCoprocessorConfigUpgradeProposal(
   hre: HardhatRuntimeEnvironment,
-  options: { snapshot: CanonicalCoprocessorSnapshot; proxyAddress: string },
+  options: { snapshot: CanonicalCoprocessorConfigSnapshot; proxyAddress: string },
 ): Promise<UpgradeProposal> {
   const { snapshot, proxyAddress } = options;
   console.log(

@@ -6,12 +6,15 @@ import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 import path from 'path';
 
-import { buildCanonicalCoprocessorUpgradeProposal, readCanonicalCoprocessorSnapshot } from './coprocessorConfigMirror';
+import {
+  buildCanonicalCoprocessorConfigUpgradeProposal,
+  readCanonicalCoprocessorConfigSnapshot,
+} from './coprocessorConfigMirror';
 import { buildCanonicalUpgradeProposal, readCanonicalSnapshot } from './protocolConfigMirror';
 import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import {
-  buildCanonicalCoprocessorSnapshotEnv,
-  readCanonicalCoprocessorSnapshotFromEnv,
+  buildCanonicalCoprocessorConfigSnapshotEnv,
+  readCanonicalCoprocessorConfigSnapshotFromEnv,
 } from './utils/coprocessorConfigCanonicalEnv';
 import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
@@ -114,7 +117,7 @@ task('task:deployAllHostContracts')
       }
       // Fail before the clean/compile sequence rather than at the mirror steps, which run last.
       readCanonicalSnapshotFromEnv();
-      readCanonicalCoprocessorSnapshotFromEnv();
+      readCanonicalCoprocessorConfigSnapshotFromEnv();
     }
 
     if (process.env.SOLIDITY_COVERAGE !== 'true') {
@@ -963,11 +966,11 @@ task(
     types.boolean,
   )
   .setAction(async function ({ verifyContract }, hre) {
-    const snapshot = readCanonicalCoprocessorSnapshotFromEnv();
+    const snapshot = readCanonicalCoprocessorConfigSnapshotFromEnv();
     const proxyAddress = readHostEnv().COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
     // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild.
     await hre.run('compile:specific', { contract: 'contracts' });
-    const preparedUpgrade = await buildCanonicalCoprocessorUpgradeProposal(hre, { snapshot, proxyAddress });
+    const preparedUpgrade = await buildCanonicalCoprocessorConfigUpgradeProposal(hre, { snapshot, proxyAddress });
 
     printUpgradeProposal(preparedUpgrade);
     if (verifyContract) {
@@ -977,14 +980,14 @@ task(
   });
 
 // Initializes the local CoprocessorConfigReplica from the canonical chain's current coprocessor
-// context, as read by readCanonicalCoprocessorSnapshotFromEnv.
+// context, as read by readCanonicalCoprocessorConfigSnapshotFromEnv.
 task(
   'task:deployCoprocessorConfigFromCanonical',
   "Upgrades the existing proxy to CoprocessorConfigReplica from the canonical chain's reviewed snapshot artifact.",
 ).setAction(async function (_, hre) {
   // Read the snapshot before the compile below, so a misconfigured environment fails immediately.
   console.log('Applying the reviewed canonical snapshot from the CANONICAL_COPROCESSOR_* env variables.');
-  const snapshot = readCanonicalCoprocessorSnapshotFromEnv();
+  const snapshot = readCanonicalCoprocessorConfigSnapshotFromEnv();
 
   // CoprocessorConfigReplica embeds aclAdd from addresses/FHEVMHostAddresses.sol at compile time.
   await hre.run('compile:specific', { contract: 'contracts' });
@@ -992,7 +995,7 @@ task(
 
   // Same prepare step as the DAO path, then execute the produced payload directly: devnet runs
   // byte-identical calldata to what the DAO would sign.
-  const prepared = await buildCanonicalCoprocessorUpgradeProposal(hre, { snapshot, proxyAddress });
+  const prepared = await buildCanonicalCoprocessorConfigUpgradeProposal(hre, { snapshot, proxyAddress });
   await executeUpgradeProposal(hre, prepared);
 
   // On interval-mining networks, the upgrade can return before the tx is mined.
@@ -1042,18 +1045,18 @@ task(
     }: { canonicalRpcUrl: string; canonicalCoprocessorConfigAddress: string; blockNumber?: number; out: string },
     hre,
   ) {
-    // readCanonicalCoprocessorSnapshot needs the CoprocessorConfig artifact for its ABI; compile so
+    // readCanonicalCoprocessorConfigSnapshot needs the CoprocessorConfig artifact for its ABI; compile so
     // the export also works from a clean checkout.
     await hre.run('compile:specific', { contract: 'contracts' });
     const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl, undefined, { cacheTimeout: -1 });
-    const snapshot = await readCanonicalCoprocessorSnapshot(hre, {
+    const snapshot = await readCanonicalCoprocessorConfigSnapshot(hre, {
       canonicalProvider,
       canonicalCoprocessorConfigAddress,
       blockNumber,
     });
 
     // `export` holds the snapshot as a flat KEY=value map, which is what the deploy tasks read.
-    const output = { export: buildCanonicalCoprocessorSnapshotEnv(snapshot) };
+    const output = { export: buildCanonicalCoprocessorConfigSnapshotEnv(snapshot) };
     fs.writeFileSync(out, JSON.stringify(output, null, 2));
     console.log(
       `Canonical CoprocessorConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, coprocessor context ${snapshot.currentCoprocessorContextId}, ${snapshot.coprocessors.length} coprocessors.`,

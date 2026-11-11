@@ -1,6 +1,6 @@
 import { isAddress } from 'ethers';
 
-import { type CanonicalCoprocessorSnapshot, type Coprocessor } from '../coprocessorConfigMirror';
+import { type CanonicalCoprocessorConfigSnapshot, type Coprocessor } from '../coprocessorConfigMirror';
 import { makeEnvHelpers } from './envSnapshot';
 import { formatError } from './formatError';
 import { getRequiredEnvVar } from './loadVariables';
@@ -9,20 +9,20 @@ import { getRequiredEnvVar } from './loadVariables';
 // checks them in full. The chain id and block number are provenance, parsed as decimal strings. The
 // block hash and the address are provenance that the task only checks for presence, then prints.
 // The keys differ from the ProtocolConfig snapshot's, so both snapshots can be loaded together.
-const CANONICAL_COPROCESSOR_SNAPSHOT_ENV_KEYS = [
-  'CANONICAL_COPROCESSOR_CHAIN_ID',
+const CANONICAL_COPROCESSOR_CONFIG_SNAPSHOT_ENV_KEYS = [
+  'CANONICAL_COPROCESSOR_CONFIG_CHAIN_ID',
   'CANONICAL_COPROCESSOR_CONFIG_ADDRESS',
-  'CANONICAL_COPROCESSOR_BLOCK_NUMBER',
-  'CANONICAL_COPROCESSOR_BLOCK_HASH',
+  'CANONICAL_COPROCESSOR_CONFIG_BLOCK_NUMBER',
+  'CANONICAL_COPROCESSOR_CONFIG_BLOCK_HASH',
   'CANONICAL_COPROCESSOR_CONTEXT_ID',
   'CANONICAL_COPROCESSORS',
   'CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD',
 ] as const;
 
-type CanonicalCoprocessorSnapshotEnvKey = (typeof CANONICAL_COPROCESSOR_SNAPSHOT_ENV_KEYS)[number];
-export type CanonicalCoprocessorSnapshotEnv = Record<CanonicalCoprocessorSnapshotEnvKey, string>;
+type CanonicalCoprocessorConfigSnapshotEnvKey = (typeof CANONICAL_COPROCESSOR_CONFIG_SNAPSHOT_ENV_KEYS)[number];
+export type CanonicalCoprocessorConfigSnapshotEnv = Record<CanonicalCoprocessorConfigSnapshotEnvKey, string>;
 
-function requireDecimal(name: CanonicalCoprocessorSnapshotEnvKey): bigint {
+function requireDecimal(name: CanonicalCoprocessorConfigSnapshotEnvKey): bigint {
   const raw = getRequiredEnvVar(name);
   if (!/^\d+$/.test(raw)) {
     throw new Error(`"${name}" env variable must be a decimal string, got ${JSON.stringify(raw)}.`);
@@ -58,15 +58,15 @@ function requireCoprocessors(): Coprocessor[] {
   return coprocessors as Coprocessor[];
 }
 
-// Reads the reviewed canonical coprocessor snapshot from the environment. This is the only way to
+// Reads the reviewed canonical CoprocessorConfig snapshot from the environment. This is the only way to
 // configure the replica deployment.
-export function readCanonicalCoprocessorSnapshotFromEnv(): CanonicalCoprocessorSnapshot {
+export function readCanonicalCoprocessorConfigSnapshotFromEnv(): CanonicalCoprocessorConfigSnapshot {
   // Read in the order the keys are declared, so a wholly unset environment reports the first key.
   return {
-    canonicalChainId: requireDecimal('CANONICAL_COPROCESSOR_CHAIN_ID'),
+    canonicalChainId: requireDecimal('CANONICAL_COPROCESSOR_CONFIG_CHAIN_ID'),
     coprocessorConfigAddress: getRequiredEnvVar('CANONICAL_COPROCESSOR_CONFIG_ADDRESS'),
-    blockNumber: Number(requireDecimal('CANONICAL_COPROCESSOR_BLOCK_NUMBER')),
-    blockHash: getRequiredEnvVar('CANONICAL_COPROCESSOR_BLOCK_HASH'),
+    blockNumber: Number(requireDecimal('CANONICAL_COPROCESSOR_CONFIG_BLOCK_NUMBER')),
+    blockHash: getRequiredEnvVar('CANONICAL_COPROCESSOR_CONFIG_BLOCK_HASH'),
     currentCoprocessorContextId: requireDecimal('CANONICAL_COPROCESSOR_CONTEXT_ID'),
     coprocessors: requireCoprocessors(),
     majorityThreshold: requireDecimal('CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD'),
@@ -75,14 +75,14 @@ export function readCanonicalCoprocessorSnapshotFromEnv(): CanonicalCoprocessorS
 
 // Serializes a snapshot into the flat KEY=value map the deploy tasks read, with bigints as decimal
 // strings. task:exportCanonicalCoprocessorConfig writes it.
-export function buildCanonicalCoprocessorSnapshotEnv(
-  snapshot: CanonicalCoprocessorSnapshot,
-): CanonicalCoprocessorSnapshotEnv {
+export function buildCanonicalCoprocessorConfigSnapshotEnv(
+  snapshot: CanonicalCoprocessorConfigSnapshot,
+): CanonicalCoprocessorConfigSnapshotEnv {
   return {
-    CANONICAL_COPROCESSOR_CHAIN_ID: snapshot.canonicalChainId.toString(),
+    CANONICAL_COPROCESSOR_CONFIG_CHAIN_ID: snapshot.canonicalChainId.toString(),
     CANONICAL_COPROCESSOR_CONFIG_ADDRESS: snapshot.coprocessorConfigAddress,
-    CANONICAL_COPROCESSOR_BLOCK_NUMBER: String(snapshot.blockNumber),
-    CANONICAL_COPROCESSOR_BLOCK_HASH: snapshot.blockHash,
+    CANONICAL_COPROCESSOR_CONFIG_BLOCK_NUMBER: String(snapshot.blockNumber),
+    CANONICAL_COPROCESSOR_CONFIG_BLOCK_HASH: snapshot.blockHash,
     CANONICAL_COPROCESSOR_CONTEXT_ID: snapshot.currentCoprocessorContextId.toString(),
     CANONICAL_COPROCESSORS: JSON.stringify(snapshot.coprocessors),
     CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD: snapshot.majorityThreshold.toString(),
@@ -93,4 +93,4 @@ export const {
   apply: applyCoprocessorConfigCanonicalEnv,
   snapshot: snapshotCoprocessorConfigCanonicalEnv,
   restore: restoreCoprocessorConfigCanonicalEnv,
-} = makeEnvHelpers(CANONICAL_COPROCESSOR_SNAPSHOT_ENV_KEYS);
+} = makeEnvHelpers(CANONICAL_COPROCESSOR_CONFIG_SNAPSHOT_ENV_KEYS);

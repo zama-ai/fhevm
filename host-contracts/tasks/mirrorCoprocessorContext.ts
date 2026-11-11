@@ -2,7 +2,11 @@ import type { Interface, Provider } from 'ethers';
 import { task, types } from 'hardhat/config';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
-import { type Coprocessor, getCoprocessorConfig, readCanonicalCoprocessorSnapshot } from './coprocessorConfigMirror';
+import {
+  type Coprocessor,
+  getCoprocessorConfig,
+  readCanonicalCoprocessorConfigSnapshot,
+} from './coprocessorConfigMirror';
 import { broadcast } from './kmsContext';
 import { assertCanonicalBlockHash } from './utils/canonicalBlock';
 import {
@@ -35,7 +39,7 @@ export async function readCanonicalCoprocessorContext(
   hre: HardhatRuntimeEnvironment,
   options: { canonicalProvider: Provider; canonicalCoprocessorConfigAddress: string; blockNumber?: number },
 ): Promise<MirrorCoprocessorContextArgs> {
-  const snapshot = await readCanonicalCoprocessorSnapshot(hre, options);
+  const snapshot = await readCanonicalCoprocessorConfigSnapshot(hre, options);
   return {
     contextId: snapshot.currentCoprocessorContextId,
     coprocessors: snapshot.coprocessors,
@@ -135,7 +139,7 @@ export async function assertCanonicalCoprocessorContextDestroyed(
   },
 ): Promise<void> {
   const { canonicalProvider, canonicalCoprocessorConfigAddress, coprocessorContextId } = options;
-  const snapshot = await readCanonicalCoprocessorSnapshot(hre, options);
+  const snapshot = await readCanonicalCoprocessorConfigSnapshot(hre, options);
   if (
     coprocessorContextId <= COPROCESSOR_CONTEXT_COUNTER_BASE ||
     coprocessorContextId >= snapshot.currentCoprocessorContextId

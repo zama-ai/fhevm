@@ -236,15 +236,15 @@ Context IDs carry the type byte `0x09`, so the first context is `0x0900...0001`.
   `task:deployCoprocessorConfigFromCanonical` (devnet) or `task:prepareDeployCoprocessorConfigFromCanonical`
   (DAO). The apply tasks read these variables:
 
-| Variable                                   | Type           | Meaning                                                   |
-| ------------------------------------------ | -------------- | --------------------------------------------------------- |
-| `CANONICAL_COPROCESSOR_CHAIN_ID`           | decimal string | Chain id of the canonical host chain.                     |
-| `CANONICAL_COPROCESSOR_CONFIG_ADDRESS`     | address        | Canonical `CoprocessorConfig` the snapshot was read from. |
-| `CANONICAL_COPROCESSOR_BLOCK_NUMBER`       | decimal string | Block the snapshot was pinned to.                         |
-| `CANONICAL_COPROCESSOR_BLOCK_HASH`         | 32-byte hex    | Hash of that block.                                       |
-| `CANONICAL_COPROCESSOR_CONTEXT_ID`         | decimal string | Current coprocessor context id to mirror.                 |
-| `CANONICAL_COPROCESSORS`                   | JSON array     | The coprocessor set, one JSON object per coprocessor.     |
-| `CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD` | decimal string | Majority threshold of the coprocessor context.            |
+| Variable                                    | Type           | Meaning                                                   |
+| ------------------------------------------- | -------------- | --------------------------------------------------------- |
+| `CANONICAL_COPROCESSOR_CONFIG_CHAIN_ID`     | decimal string | Chain id of the canonical host chain.                     |
+| `CANONICAL_COPROCESSOR_CONFIG_ADDRESS`      | address        | Canonical `CoprocessorConfig` the snapshot was read from. |
+| `CANONICAL_COPROCESSOR_CONFIG_BLOCK_NUMBER` | decimal string | Block the snapshot was pinned to.                         |
+| `CANONICAL_COPROCESSOR_CONFIG_BLOCK_HASH`   | 32-byte hex    | Hash of that block.                                       |
+| `CANONICAL_COPROCESSOR_CONTEXT_ID`          | decimal string | Current coprocessor context id to mirror.                 |
+| `CANONICAL_COPROCESSORS`                    | JSON array     | The coprocessor set, one JSON object per coprocessor.     |
+| `CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD`  | decimal string | Majority threshold of the coprocessor context.            |
 
 `task:deployAllHostContracts --protocol-config-source canonical` also seeds the replica, so it needs
 these variables too. Later canonical contexts are mirrored with `task:mirrorCoprocessorContext` and
