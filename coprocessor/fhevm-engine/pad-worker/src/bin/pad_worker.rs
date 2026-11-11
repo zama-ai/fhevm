@@ -53,6 +53,14 @@ struct Args {
     #[arg(long, env = "PAD_PENDING_MAX_AGE", default_value = "10m", value_parser = humantime::parse_duration)]
     pending_max_age: Duration,
 
+    /// Delete uploaded or failed rows older than this. If not set, keep all rows.
+    #[arg(long, env = "PRF_OUTPUT_MAX_AGE", value_parser = humantime::parse_duration)]
+    output_max_age: Option<Duration>,
+
+    /// Interval of the GC and the row age metrics.
+    #[arg(long, env = "PAD_GC_INTERVAL", default_value = "1m", value_parser = humantime::parse_duration)]
+    gc_interval: Duration,
+
     /// RFC-023 bucket of the operator, for the S3 copy of the outputs.
     #[arg(long, env = "PAD_S3_BUCKET")]
     s3_bucket: String,
@@ -173,6 +181,8 @@ async fn main() -> anyhow::Result<()> {
         claim_timeout = ?args.claim_timeout,
         poll_interval = ?args.poll_interval,
         pending_max_age = ?args.pending_max_age,
+        output_max_age = ?args.output_max_age,
+        gc_interval = ?args.gc_interval,
         s3_bucket = args.s3_bucket,
         s3_max_concurrent_uploads = args.s3_max_concurrent_uploads,
         s3_resubmit_interval = ?args.s3_resubmit_interval,
@@ -204,6 +214,8 @@ async fn main() -> anyhow::Result<()> {
             claim_timeout: args.claim_timeout,
             poll_interval: args.poll_interval,
             pending_max_age: args.pending_max_age,
+            output_max_age: args.output_max_age,
+            gc_interval: args.gc_interval,
         },
         pool,
         Arc::new(MockEvaluator),
