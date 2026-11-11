@@ -444,7 +444,7 @@ describe("render-compose", () => {
     expect(modernServices).toContain("coprocessor-upgrade-controller");
   });
 
-  test("requests a coprocessor-proxy and its PRF output seeder per coprocessor only when the bundle pins the proxy and prf-service", () => {
+  test("requests a coprocessor-proxy and its pad-worker lane per coprocessor only when the bundle pins the proxy, prf-service and pad-worker", () => {
     const without = (key: string): State => ({
       ...state,
       versions: {
@@ -452,9 +452,9 @@ describe("render-compose", () => {
         env: Object.fromEntries(Object.entries(state.versions.env).filter(([name]) => name !== key)),
       },
     });
-    for (const key of ["COPROCESSOR_PROXY_VERSION", "COPROCESSOR_PRF_SERVICE_VERSION"]) {
+    for (const key of ["COPROCESSOR_PROXY_VERSION", "COPROCESSOR_PRF_SERVICE_VERSION", "COPROCESSOR_PAD_WORKER_VERSION"]) {
       expect(
-        serviceNameList(without(key), "coprocessor").some((name) => name.endsWith("-proxy") || name.endsWith("-prf-output-seed")),
+        serviceNameList(without(key), "coprocessor").some((name) => name.endsWith("-proxy") || name.endsWith("-pad-worker")),
         key,
       ).toBe(false);
     }
@@ -462,13 +462,13 @@ describe("render-compose", () => {
     const services = serviceNameList(state, "coprocessor");
     for (const prefix of ["coprocessor-", "coprocessor1-"]) {
       // The proxy resolves the prf-service hostname once at startup, so it starts last.
-      expect(services).toContain(`${prefix}prf-output-seed`);
+      expect(services).toContain(`${prefix}pad-worker`);
       expect(services.indexOf(`${prefix}prf-service`)).toBeLessThan(services.indexOf(`${prefix}proxy`));
-      expect(services.indexOf(`${prefix}prf-output-seed`)).toBeLessThan(services.indexOf(`${prefix}proxy`));
+      expect(services.indexOf(`${prefix}pad-worker`)).toBeLessThan(services.indexOf(`${prefix}proxy`));
     }
   });
 
-  test("gives each coprocessor its own proxy, prf-service and seeder, on the bundle's images", async () => {
+  test("gives each coprocessor its own proxy, prf-service and pad-worker lane, on the bundle's images", async () => {
     // Instance 1 runs a coprocessor release by tag, which may predate the proxy.
     const pinned: State = {
       ...state,
@@ -506,29 +506,20 @@ instances:
         >;
       };
       const proxy = doc.services["coprocessor1-proxy"];
-      const seed = doc.services["coprocessor1-prf-output-seed"];
+      const lane = doc.services["coprocessor1-pad-worker"];
       expect(doc.services["coprocessor1-tfhe-worker"]?.image).toMatch(/:v0\.15\.0$/);
       expect(proxy?.image).toBe("ghcr.io/zama-ai/fhevm/coprocessor/coprocessor-proxy:${COPROCESSOR_PROXY_VERSION}");
       expect(doc.services["coprocessor1-prf-service"]?.image).toBe(
         "ghcr.io/zama-ai/fhevm/coprocessor/prf-service:${COPROCESSOR_PRF_SERVICE_VERSION}",
       );
-      expect(seed?.image).toBe("ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}");
-      expect(proxy?.depends_on).toEqual({
-        "coprocessor1-prf-service": { condition: "service_started" },
-        "coprocessor1-prf-output-seed": { condition: "service_healthy" },
-      });
+      expect(lane?.image).toBe("ghcr.io/zama-ai/fhevm/coprocessor/pad-worker:${COPROCESSOR_PAD_WORKER_VERSION}");
+      expect(proxy?.depends_on).toEqual({ "coprocessor1-prf-service": { condition: "service_started" } });
       expect(proxy?.env_file).toEqual([envPath("coprocessor-proxy.1")]);
       expect(proxy?.environment?.COPROCESSOR_PROXY_PROTOCOL_CONFIG_ADDRESS).toBe("0x00000000000000000000000000000000000000c1");
       expect(proxy?.volumes?.[0]).toMatch(/\/static\/config\/coprocessor-proxy:\/etc\/coprocessor-proxy\/tls:ro$/);
-      // The seeder writes into instance 1's database, after its migration.
-      expect(seed?.env_file).toEqual([envPath("coprocessor.1")]);
-      expect(seed?.depends_on).toEqual({ "coprocessor1-db-migration": { condition: "service_completed_successfully" } });
-      expect(seed?.volumes?.[0]).toMatch(
-        /\/test-suite\/e2e\/scripts\/seed-prf-output\.ts:\/app\/test-suite\/e2e\/scripts\/seed-prf-output\.ts:ro$/,
-      );
-      expect(seed?.volumes?.[1]).toMatch(
-        /\/test-suite\/e2e\/test\/coprocessorProxy\/prfOutput\.ts:\/app\/test-suite\/e2e\/test\/coprocessorProxy\/prfOutput\.ts:ro$/,
-      );
+      // The lane computes into instance 1's database, after its migration, as the pad_worker role.
+      expect(lane?.env_file).toEqual([envPath("coprocessor-pad-worker.1")]);
+      expect(lane?.depends_on).toEqual({ "coprocessor1-db-migration": { condition: "service_completed_successfully" } });
       // prf-service logs in as the prf_service role, without the coprocessor's env.
       expect(doc.services["coprocessor1-prf-service"]?.env_file).toEqual([envPath("coprocessor-prf-service.1")]);
     });
@@ -630,11 +621,6 @@ instances:
       };
 
       for (const [name, service] of Object.entries(doc.services)) {
-        if (name.endsWith("-prf-output-seed")) {
-          // Runs the test-suite image; nothing to build.
-          expect(service.build, name).toBeUndefined();
-          continue;
-        }
         expect(service.build?.args?.COPROCESSOR_RUNTIME_BASE_IMAGE, name).toBe("e2e-public-runtime");
         expect(service.build?.args?.COPROCESSOR_DB_MIGRATION_RUNTIME_BASE_IMAGE, name).toBe(
           "e2e-public-db-migration-runtime",
@@ -1034,7 +1020,7 @@ gcs:
       // Green's prf-service logs in as the prf_service role, without the coprocessor's env.
       expect(doc.services["coprocessor-gcs-prf-service"]?.env_file).toEqual([envPath("coprocessor-prf-service")]);
       // Blue-green stacks run without the proxy pair.
-      const proxyPair = (name: string) => name.endsWith("-proxy") || name.endsWith("-prf-output-seed");
+      const proxyPair = (name: string) => name.endsWith("-proxy") || name.endsWith("-pad-worker");
       expect(Object.keys(doc.services).some(proxyPair)).toBe(false);
       expect(serviceNameList(bgState, "coprocessor").some(proxyPair)).toBe(false);
     });
