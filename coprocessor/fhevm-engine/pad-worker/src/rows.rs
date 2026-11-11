@@ -69,18 +69,19 @@ pub async fn claim(
     }))
 }
 
-/// Writes the output and its attestation; the trigger sends `pad_ready`. Returns false if the row was
-/// deleted or completed.
+/// Writes the outputs and the attestation; the trigger sends `pad_ready`. Returns false if the row
+/// was deleted or completed.
 pub async fn write_output(
     pool: &PgPool,
     claim: &Claim,
+    ct64: &[u8],
     ct128: &[u8],
     attestation: &PrfOutputAttestation,
 ) -> sqlx::Result<bool> {
     let result = sqlx::query!(
         "UPDATE pads
             SET ciphertext128 = $4, ciphertext_digest = $5, ciphertext128_digest = $6,
-                signer = $7, signature = $8, attestation_version = $9
+                signer = $7, signature = $8, attestation_version = $9, ciphertext64 = $10
           WHERE prf_instance = $1 AND label = $2 AND pad_length = $3
             AND signature IS NULL AND NOT is_error",
         i32::from(claim.prf_instance),
@@ -92,6 +93,7 @@ pub async fn write_output(
         attestation.signer.as_slice(),
         attestation.signature,
         i16::from(u8::from(attestation.version)),
+        ct64,
     )
     .execute(pool)
     .await?;
@@ -297,6 +299,28 @@ pub async fn delete_expired_pending(
     .execute(pool)
     .await?;
     Ok(result.rows_affected())
+}
+
+/// Clears the ct64 of the rows of all instances older than `max_age`. The digest stays.
+pub async fn clear_old_ct64(pool: &PgPool, max_age: Duration) -> sqlx::Result<u64> {
+    let result = sqlx::query!(
+        "UPDATE pads SET ciphertext64 = NULL
+          WHERE ciphertext64 IS NOT NULL AND created_at <= NOW() - make_interval(secs => $1)",
+        max_age.as_secs_f64(),
+    )
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// The bytes of all stored ct64.
+pub async fn stored_ct64_bytes(pool: &PgPool) -> sqlx::Result<i64> {
+    sqlx::query_scalar!(
+        r#"SELECT COALESCE(SUM(OCTET_LENGTH(ciphertext64)), 0)::BIGINT AS "bytes!"
+             FROM pads WHERE ciphertext64 IS NOT NULL"#,
+    )
+    .fetch_one(pool)
+    .await
 }
 
 /// The age in seconds of the oldest row of an instance, for each state.

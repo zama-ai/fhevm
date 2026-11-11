@@ -66,6 +66,7 @@ fn config() -> Config {
         pending_max_age: Duration::from_secs(600),
         output_max_age: None,
         gc_interval: Duration::from_secs(3600),
+        ct64_max_age: Duration::from_secs(3600),
         start_check_interval: Duration::from_millis(100),
     }
 }
@@ -200,6 +201,11 @@ async fn computes_signs_and_writes_a_row() {
     let label = B256::repeat_byte(0xab);
     let expected = MockEvaluator.evaluate(LANE, label, 64).unwrap();
     assert_eq!(row.0, expected.ct128);
+    let ct64: Vec<u8> = sqlx::query_scalar("SELECT ciphertext64 FROM pads")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(ct64, expected.ct64);
     let attestation = PrfOutputAttestation {
         version: Version::try_from(u8::try_from(row.5).unwrap()).unwrap(),
         ciphertext_digest: B256::try_from(row.1.as_slice()).unwrap(),
@@ -480,10 +486,10 @@ async fn writes_the_output_of_a_pending_row_only() {
     };
 
     // The second write is from a pod whose claim went stale: the row keeps the first output.
-    assert!(rows::write_output(&pool, &claim, &[1], &attestation)
+    assert!(rows::write_output(&pool, &claim, &[9], &[1], &attestation)
         .await
         .unwrap());
-    assert!(!rows::write_output(&pool, &claim, &[2], &attestation)
+    assert!(!rows::write_output(&pool, &claim, &[9], &[2], &attestation)
         .await
         .unwrap());
     let ct128: Vec<u8> = sqlx::query_scalar("SELECT ciphertext128 FROM pads")
@@ -694,4 +700,33 @@ async fn exits_if_the_agreed_reference_digest_is_another() {
     let error = run.await.unwrap().unwrap_err();
     assert!(error.to_string().contains("not the agreed"), "{error}");
     assert!(pending(&pool, LANE, 1).await);
+}
+
+#[tokio::test]
+async fn clears_the_old_ct64_and_keeps_the_digest() {
+    let (_instance, pool) = db().await;
+    for (label, age) in [(1, 3600.0), (2, 60.0)] {
+        add_row(&pool, LANE, label, 1, age).await;
+        set_state(&pool, LANE, label, "uploaded").await;
+    }
+    sqlx::query("UPDATE pads SET ciphertext64 = '\\x0102'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(rows::stored_ct64_bytes(&pool).await.unwrap(), 4);
+
+    let cleared = rows::clear_old_ct64(&pool, Duration::from_secs(1800))
+        .await
+        .unwrap();
+
+    assert_eq!(cleared, 1);
+    let rows: Vec<(Vec<u8>, bool, bool)> = sqlx::query_as(
+        "SELECT label, ciphertext64 IS NULL, ciphertext_digest IS NOT NULL FROM pads ORDER BY label",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let states: Vec<(u8, bool, bool)> = rows.into_iter().map(|(l, c, d)| (l[0], c, d)).collect();
+    assert_eq!(states, vec![(1, true, true), (2, false, true)]);
+    assert_eq!(rows::stored_ct64_bytes(&pool).await.unwrap(), 2);
 }

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pads SET ciphertext64 = NULL\n          WHERE ciphertext64 IS NOT NULL AND created_at <= NOW() - make_interval(secs => $1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fbcba180f2c1b310b1dd0a237c39a8c7216727c03fd717ac39c75c3a4070fbcd"
+}

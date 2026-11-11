@@ -12,7 +12,7 @@ use fhevm_engine_common::{
     types::{CoproSigner, SignerType},
     utils::DatabaseURL,
 };
-use pad_worker::{evaluator::MockEvaluator, upload::Uploader, Config, PadWorker};
+use pad_worker::{evaluator::TimedMockEvaluator, upload::Uploader, Config, PadWorker};
 use sqlx::postgres::PgPoolOptions;
 use std::{num::NonZeroUsize, str::FromStr, sync::Arc, time::Duration};
 use tokio::signal::unix::{signal, SignalKind};
@@ -60,6 +60,14 @@ struct Args {
     /// Interval of the GC and the row age metrics.
     #[arg(long, env = "PAD_GC_INTERVAL", default_value = "1m", value_parser = humantime::parse_duration)]
     gc_interval: Duration,
+
+    /// The GC clears the ct64 of rows older than this. Unmask then computes it again.
+    #[arg(long, env = "PAD_CT64_MAX_AGE", default_value = "1h", value_parser = humantime::parse_duration)]
+    ct64_max_age: Duration,
+
+    /// Latency of one OPRF PBS in the mock evaluator. `0s`: no delay.
+    #[arg(long, env = "PAD_MOCK_PBS_LATENCY", default_value = "13ms", value_parser = humantime::parse_duration)]
+    mock_pbs_latency: Duration,
 
     /// Interval of the reference digest read until the lane is ready.
     #[arg(long, env = "PAD_START_CHECK_INTERVAL", default_value = "30s", value_parser = humantime::parse_duration)]
@@ -187,6 +195,7 @@ async fn main() -> anyhow::Result<()> {
         pending_max_age = ?args.pending_max_age,
         output_max_age = ?args.output_max_age,
         gc_interval = ?args.gc_interval,
+        ct64_max_age = ?args.ct64_max_age,
         start_check_interval = ?args.start_check_interval,
         s3_bucket = args.s3_bucket,
         s3_max_concurrent_uploads = args.s3_max_concurrent_uploads,
@@ -200,7 +209,7 @@ async fn main() -> anyhow::Result<()> {
     install_signal_handlers(cancel_token.clone())?;
     let signer = signer(&args).await?;
     info!(signer = %signer.address(), "Signer loaded");
-    warn!("Mock evaluator: the outputs are not PRF outputs");
+    warn!(pbs_latency = ?args.mock_pbs_latency, "Mock evaluator: the outputs are not PRF outputs");
     let uploader = uploader(&args).await;
 
     let database_url = resolve_database_url_from_option(args.database_url)?;
@@ -221,10 +230,15 @@ async fn main() -> anyhow::Result<()> {
             pending_max_age: args.pending_max_age,
             output_max_age: args.output_max_age,
             gc_interval: args.gc_interval,
+            ct64_max_age: args.ct64_max_age,
             start_check_interval: args.start_check_interval,
         },
         pool,
-        Arc::new(MockEvaluator),
+        Arc::new(TimedMockEvaluator {
+            pbs_latency: args.mock_pbs_latency,
+            // The CPUs of the pod: std reads the cgroup limit.
+            parallel: std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
+        }),
         signer,
         cancel_token.clone(),
     )
