@@ -2,6 +2,7 @@ import { strict as assert } from 'node:assert';
 
 import { ArgumentType, OperatorArguments, ReturnType } from './common';
 import type { FheTypeInfo, FunctionType, Operator, OverloadShard, OverloadSignature } from './common';
+import type { HardhatVersion } from './config';
 import type { OverloadTests } from './generateOverloads';
 import { rndBit } from './pseudoRand';
 import { getUint } from './utils';
@@ -261,12 +262,17 @@ function generateIntroTestCode(
   imports: TypescriptTestGroupImports,
   options: {
     publicDecrypt: boolean;
+    hardhatVersion: HardhatVersion;
   },
 ): string {
   if (options.publicDecrypt) {
+    if (options.hardhatVersion === 3) {
+      // Not needed yet (only test-suite/e2e uses publicDecrypt, with HH2): refuse rather than generate untested code.
+      throw new Error('"tests.typescript.hardhatVersion": 3 is not supported with "tests.publicDecrypt": true yet.');
+    }
     return generateIntroTestCodePublicDecrypt(shards, idxSplit, imports);
   } else {
-    return generateIntroTestCodeUserDecrypt(shards, idxSplit, imports);
+    return generateIntroTestCodeUserDecrypt(shards, idxSplit, imports, options.hardhatVersion);
   }
 }
 /**
@@ -285,17 +291,49 @@ function generateIntroTestCodeUserDecrypt(
   shards: OverloadShard[],
   idxSplit: number,
   typescriptImports: TypescriptTestGroupImports,
+  hardhatVersion: HardhatVersion,
 ): string {
   const intro: string[] = [];
   // Imports are emitted already sorted (third-party modules, blank line, relative paths)
   // so the output does not depend on an import-sorting prettier plugin.
+  // HH3 tests are ESM: relative imports need the `.js` extension (the configured paths already have it).
+  const typechainExtension = hardhatVersion === 3 ? '.js' : '';
   const typechainImports = shards
     .map(
       (os) =>
-        `import type { FHEVMTestSuite${os.shardNumber} } from '${typescriptImports.typechain}/FHEVMTestSuite${os.shardNumber}';`,
+        `import type { FHEVMTestSuite${os.shardNumber} } from '${typescriptImports.typechain}/FHEVMTestSuite${os.shardNumber}${typechainExtension}';`,
     )
     .join('\n');
-  intro.push(`
+  if (hardhatVersion === 3) {
+    if (typescriptImports.hardhat === undefined) {
+      throw new Error("Missing operations test group 'hardhat' import declaration.");
+    }
+    // `ethers` comes from the shared network connection; no HardhatEthersSigner import (unused). The decrypt helpers
+    // actually used are only known once the file's tests are generated: see `importOnlyUsedDecryptHelpers`.
+    // The tests access the contracts through mocha's `this` (as in HH2): type those properties of mocha's Context
+    // (every file deploys every shard, so all files declare the same members, which TypeScript merges).
+    const contextMembers = shards
+      .map(
+        (os) =>
+          `    contract${os.shardNumber}: FHEVMTestSuite${os.shardNumber};\n    contract${os.shardNumber}Address: string;`,
+      )
+      .join('\n');
+    intro.push(`
+import { expect } from 'chai';
+
+${typechainImports}
+import { ethers } from '${typescriptImports.hardhat}';
+import { createInstances, ${DECRYPT_HELPERS_PLACEHOLDER} } from '${typescriptImports.instance}';
+import { getSigners, initSigners } from '${typescriptImports.signers}';
+
+declare module 'mocha' {
+  interface Context {
+${contextMembers}
+  }
+}
+`);
+  } else {
+    intro.push(`
 import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
@@ -304,8 +342,12 @@ ${typechainImports}
 import { createInstances, decrypt8, decrypt16, decrypt32, decrypt64, decrypt128, decrypt256, decryptBool } from '${typescriptImports.instance}';
 import { getSigners, initSigners } from '${typescriptImports.signers}';
 `);
+  }
 
   shards.forEach((os) => {
+    // HH3's typechain types `getContractFactory('FHEVMTestSuite<n>')`: the cast is unnecessary (and refused by ESLint).
+    const returnedContract =
+      hardhatVersion === 3 ? 'contract' : `contract as unknown as FHEVMTestSuite${os.shardNumber}`;
     intro.push(`
 async function deployFHEVMTestFixture${os.shardNumber}(): Promise<FHEVMTestSuite${os.shardNumber}> {
   const signers = await getSigners();
@@ -315,7 +357,7 @@ async function deployFHEVMTestFixture${os.shardNumber}(): Promise<FHEVMTestSuite
   const contract = await contractFactory.connect(admin).deploy();
   await contract.waitForDeployment();
 
-  return contract as unknown as FHEVMTestSuite${os.shardNumber};
+  return ${returnedContract};
 }
     `);
   });
@@ -405,7 +447,34 @@ async function deployFHEVMTestFixture${os.shardNumber}(signer: HardhatEthersSign
   return intro.join('');
 }
 
-export type TypescriptTestGroupImports = { signers: string; instance: string; typechain: string };
+/** HH3 only: replaced by `importOnlyUsedDecryptHelpers` with the decrypt helpers a generated test file uses. */
+const DECRYPT_HELPERS_PLACEHOLDER = '__DECRYPT_HELPERS__';
+
+/** The decrypt helpers of test/instance.ts, in their import order. */
+const DECRYPT_HELPERS = ['decrypt8', 'decrypt16', 'decrypt32', 'decrypt64', 'decrypt128', 'decrypt256', 'decryptBool'];
+
+/**
+ * HH3 only: imports only the decrypt helpers `testFile` calls (an unused import fails ESLint), in place of
+ * DECRYPT_HELPERS_PLACEHOLDER.
+ */
+function importOnlyUsedDecryptHelpers(testFile: string): string {
+  if (!testFile.includes(DECRYPT_HELPERS_PLACEHOLDER)) {
+    throw new Error(`Generated test file without the ${DECRYPT_HELPERS_PLACEHOLDER} import placeholder`);
+  }
+  const used = DECRYPT_HELPERS.filter((helper) => new RegExp(`\\b${helper}\\(`).test(testFile));
+  // `createInstances, ${DECRYPT_HELPERS_PLACEHOLDER}` becomes `createInstances` when no helper is used.
+  return used.length > 0
+    ? testFile.replace(DECRYPT_HELPERS_PLACEHOLDER, used.join(', '))
+    : testFile.replace(`, ${DECRYPT_HELPERS_PLACEHOLDER}`, '');
+}
+
+export type TypescriptTestGroupImports = {
+  signers: string;
+  instance: string;
+  typechain: string;
+  /** HH3 only: the module exporting the shared network connection's `ethers` (HH2: `import { ethers } from 'hardhat'`). */
+  hardhat?: string;
+};
 
 /**
  * Generates TypeScript test code for the given overload shards.
@@ -428,6 +497,7 @@ export function generateTypeScriptTestCode(
     publicDecrypt: boolean;
     shuffle: boolean;
     shuffleWithPseuseRand: boolean;
+    hardhatVersion: HardhatVersion;
   },
 ): string[] {
   const numSolTest = shards.reduce((sum, os) => sum + os.overloads.length, 0);
@@ -560,7 +630,8 @@ export function generateTypeScriptTestCode(
         res.push(`
       });
     `);
-        listRes.push(res.join(''));
+        const split = res.join('');
+        listRes.push(options.hardhatVersion === 3 ? importOnlyUsedDecryptHelpers(split) : split);
         res = [];
       }
     });
