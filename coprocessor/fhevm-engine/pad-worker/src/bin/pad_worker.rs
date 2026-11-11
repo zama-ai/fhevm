@@ -1,17 +1,23 @@
-use anyhow::anyhow;
+use alloy::signers::{
+    aws::{aws_sdk_kms, AwsSigner},
+    local::PrivateKeySigner,
+};
+use anyhow::{anyhow, Context};
+use aws_config::BehaviorVersion;
 use clap::Parser;
 use fhevm_engine_common::{
     database::{connect_pool_with_options, resolve_database_url_from_option},
     healthz_server::HttpServer,
     metrics_server, telemetry,
+    types::{CoproSigner, SignerType},
     utils::DatabaseURL,
 };
-use pad_worker::{Config, PadWorker};
+use pad_worker::{evaluator::MockEvaluator, Config, PadWorker};
 use sqlx::postgres::PgPoolOptions;
-use std::{num::NonZeroUsize, sync::Arc, time::Duration};
+use std::{num::NonZeroUsize, str::FromStr, sync::Arc, time::Duration};
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
-use tracing::{info, Level};
+use tracing::{info, warn, Level};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -39,10 +45,6 @@ struct Args {
     #[arg(long, env = "PAD_CLAIM_TIMEOUT", default_value = "5m", value_parser = humantime::parse_duration)]
     claim_timeout: Duration,
 
-    /// Failed tries before a row fails for good.
-    #[arg(long, env = "PAD_MAX_ATTEMPTS", default_value_t = 3)]
-    max_attempts: u32,
-
     /// Interval of the read that finds a lost `pad_work_available`.
     #[arg(long, env = "PAD_POLL_INTERVAL", default_value = "1s", value_parser = humantime::parse_duration)]
     poll_interval: Duration,
@@ -50,6 +52,13 @@ struct Args {
     /// Pending rows older than this are not claimed. Use the prf-service value.
     #[arg(long, env = "PAD_PENDING_MAX_AGE", default_value = "10m", value_parser = humantime::parse_duration)]
     pending_max_age: Duration,
+
+    /// Coprocessor signer. `aws-kms` reads `AWS_KEY_ID`.
+    #[arg(long, value_enum, default_value = "private-key")]
+    signer_type: SignerType,
+
+    #[arg(long)]
+    private_key: Option<String>,
 
     /// HTTP server port for health checks
     #[arg(long, default_value_t = 8080)]
@@ -85,6 +94,25 @@ fn parse_key_id(s: &str) -> Result<KeyId, String> {
     Ok(KeyId(bytes))
 }
 
+async fn signer(args: &Args) -> anyhow::Result<CoproSigner> {
+    Ok(match args.signer_type {
+        SignerType::PrivateKey => {
+            let key = args
+                .private_key
+                .as_deref()
+                .context("--private-key is required for the private-key signer")?;
+            Arc::new(PrivateKeySigner::from_str(key.trim())?)
+        }
+        SignerType::AwsKms => {
+            let key_id =
+                std::env::var("AWS_KEY_ID").context("AWS_KEY_ID is required for aws-kms")?;
+            let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
+            let client = aws_sdk_kms::Client::new(&aws_conf);
+            Arc::new(AwsSigner::new(client, key_id, None).await?)
+        }
+    })
+}
+
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
     let mut sigint = signal(SignalKind::interrupt())?;
     let mut sigterm = signal(SignalKind::terminate())?;
@@ -114,7 +142,6 @@ async fn main() -> anyhow::Result<()> {
         database_pool_size = args.database_pool_size,
         max_concurrent = args.max_concurrent,
         claim_timeout = ?args.claim_timeout,
-        max_attempts = args.max_attempts,
         poll_interval = ?args.poll_interval,
         pending_max_age = ?args.pending_max_age,
         health_check_port = args.health_check_port,
@@ -124,6 +151,9 @@ async fn main() -> anyhow::Result<()> {
 
     let cancel_token = CancellationToken::new();
     install_signal_handlers(cancel_token.clone())?;
+    let signer = signer(&args).await?;
+    info!(signer = %signer.address(), "Signer loaded");
+    warn!("Mock evaluator: the outputs are not PRF outputs");
 
     let database_url = resolve_database_url_from_option(args.database_url)?;
     let (pool, _refresh) = connect_pool_with_options(
@@ -139,11 +169,12 @@ async fn main() -> anyhow::Result<()> {
             key_id: args.prf_key_id.0,
             max_concurrent: args.max_concurrent,
             claim_timeout: args.claim_timeout,
-            max_attempts: args.max_attempts,
             poll_interval: args.poll_interval,
             pending_max_age: args.pending_max_age,
         },
         pool,
+        Arc::new(MockEvaluator),
+        signer,
         cancel_token.clone(),
     );
 
