@@ -12,9 +12,45 @@ export {
   decryptValuesFromPairs,
 } from './decryptValuesFromPairs.js';
 
+export {
+  type DecryptValuesFromPairsWithGatewayParameters,
+  type DecryptValuesFromPairsWithGatewayReturnType,
+  decryptValuesFromPairsWithGateway,
+} from './decryptValuesFromPairsWithGateway.js';
+
+export {
+  type DecryptValuesFromPairsNoGatewayParameters,
+  type DecryptValuesFromPairsNoGatewayReturnType,
+  decryptValuesFromPairsNoGateway,
+} from './decryptValuesFromPairsNoGateway.js';
+
 export { type DecryptValueParameters, type DecryptValueReturnType, decryptValue } from './decryptValue.js';
 
+export {
+  type DecryptValueWithGatewayParameters,
+  type DecryptValueWithGatewayReturnType,
+  decryptValueWithGateway,
+} from './decryptValueWithGateway.js';
+
+export {
+  type DecryptValueNoGatewayParameters,
+  type DecryptValueNoGatewayReturnType,
+  decryptValueNoGateway,
+} from './decryptValueNoGateway.js';
+
 export { type DecryptValuesParameters, type DecryptValuesReturnType, decryptValues } from './decryptValues.js';
+
+export {
+  type DecryptValuesWithGatewayParameters,
+  type DecryptValuesWithGatewayReturnType,
+  decryptValuesWithGateway,
+} from './decryptValuesWithGateway.js';
+
+export {
+  type DecryptValuesNoGatewayParameters,
+  type DecryptValuesNoGatewayReturnType,
+  decryptValuesNoGateway,
+} from './decryptValuesNoGateway.js';
 
 export {
   type CanDecryptValuesFromPairsWithUserAddressParameters,

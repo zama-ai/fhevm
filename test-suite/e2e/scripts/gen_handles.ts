@@ -85,7 +85,7 @@ async function main(): Promise<void> {
 
   // test/instance reads its addresses/urls from process.env at import time; the
   // container already loads them from the stack env files.
-  const { createInstance, aclAddress, coprocessorAddress, kmsVerifierAddress } = await import(
+  const { createInstance, aclAddress, coprocessorAddress, kmsVerifierAddress, relayerApiKey } = await import(
     '../test/instance'
   );
 
@@ -98,6 +98,7 @@ async function main(): Promise<void> {
   if (!hasFhevmRuntimeConfig()) {
     setFhevmRuntimeConfig({
       singleThread: true,
+      ...(relayerApiKey ? { auth: { type: 'ApiKeyHeader' as const, value: relayerApiKey } } : {}),
       logger: {
         debug: () => {},
         warn: () => {},

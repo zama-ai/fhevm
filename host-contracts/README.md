@@ -103,7 +103,10 @@ deploy `ProtocolConfigReplica` seeded from the `CANONICAL_*` env variables (see 
 **Ethereum is the canonical host — the single source of truth for KMS context/epoch state. The
 lifecycle runs only there.** Governance opens a context/epoch
 (`defineNewKmsContextAndEpoch` / `defineNewEpochForCurrentKmsContext`) and KMS signers reach
-quorum (`confirmKmsContextCreation`, `confirmEpochActivation`) before it activates. `KMSGeneration`
+quorum (`confirmKmsContextCreation`, `confirmEpochActivation`) before it activates. Each confirmation
+carries the signer's EIP-712 signature, and anyone may submit it. The contract also collects
+destruction confirmations (`confirmKmsContextDestruction`, `confirmKmsEpochDestruction`) from the
+active committee. It emits a quorum event once `n - t` of them agree on one digest. `KMSGeneration`
 is deployed only here.
 
 Every other host chain (e.g. Polygon) runs `ProtocolConfigReplica`, a read-replica. Replicas never
@@ -116,7 +119,7 @@ have no `KMSGeneration`, and their only write path is the mirror methods below.
 and bypass the confirmation quorum — a replica can't re-run the MPC attestations, so it trusts the
 operator to import state Ethereum has already finalized, landing it as immediately `Active`:
 
-- `mirrorKmsContextAndEpoch(contextId, epochId, kmsNodeParams, thresholds, softwareVersion, pcrValues)` —
+- `mirrorKmsContextAndEpoch(contextId, epochId, nodes, thresholds)` —
   imports a context and its epoch as active; emits `MirrorKmsContextAndEpoch`.
 - `mirrorKmsEpoch(contextId, epochId)` — advances the active epoch of the mirrored context; emits
   `MirrorKmsEpoch`.
@@ -201,8 +204,7 @@ Only step 1 talks to the canonical chain. The tasks check what the environment g
 They do not prove the values match the reviewed artifact. The deployment platform
 owns that binding. Both apply tasks print `decodedArgs`, the context id, epoch id, node set and
 thresholds the payload encodes. They also print the chain id, block number, block hash and canonical
-`ProtocolConfig` address. An operator compares every provenance value against the artifact. The
-printed node set carries placeholder MPC fields, so the operator compares it field by field.
+`ProtocolConfig` address. An operator compares every provenance value against the artifact.
 
 When deploying a full non-canonical host stack, `task:deployAllHostContracts
 --protocol-config-source canonical` runs the mirror in sequence with the other host contracts, with
@@ -213,8 +215,7 @@ Later canonical rotations are mirrored with `task:buildMirrorKmsContextAndEpochC
 `task:mirrorKmsContextAndEpoch` (context switch) and `task:buildMirrorKmsEpochCalldata` /
 `task:mirrorKmsEpoch` (same-set epoch rotation), defined in `tasks/mirrorKmsContext.ts`. Both read
 canonical's active KMS context/epoch over `--canonical-rpc-url` / `--canonical-protocol-config-address`
-(the context-switch pair also cross-checks the recovered `NewKmsContext` event data against the
-canonical `contextInfoHash` anchor) and call the replica's `mirrorKmsContextAndEpoch` /
+and call the replica's `mirrorKmsContextAndEpoch` /
 `mirrorKmsEpoch` described in [Mirror methods](#mirror-methods-non-canonical-write-path).
 
 ## CoprocessorConfig

@@ -4,7 +4,7 @@ import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import { type Coprocessor, getCoprocessorConfig, readCanonicalCoprocessorSnapshot } from './coprocessorConfigMirror';
 import { broadcast } from './kmsContext';
-import { assertCanonicalSnapshotBlockHash } from './protocolConfigMirror';
+import { assertCanonicalBlockHash } from './utils/canonicalBlock';
 import {
   addMirrorTaskParams,
   getCanonicalProvider,
@@ -157,7 +157,7 @@ export async function assertCanonicalCoprocessorContextDestroyed(
     throw new Error(`Coprocessor context ${coprocessorContextId} is not destroyed on canonical. Nothing to mirror.`);
   }
 
-  await assertCanonicalSnapshotBlockHash(canonicalProvider, snapshot);
+  await assertCanonicalBlockHash(canonicalProvider, snapshot);
 }
 
 export function encodeMirrorCoprocessorContextDestruction(iface: Interface, coprocessorContextId: bigint): string {

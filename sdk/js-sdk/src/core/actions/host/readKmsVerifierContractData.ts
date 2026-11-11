@@ -56,6 +56,7 @@ export async function readKmsVerifierContractData(
   const eip712DomainRes = res[1] as Eip712DomainReturnType;
   const kmsSignersContext = res[2] as KmsSignersContext;
 
+  // The version is not stored: `getVersion()` is only read to check that `address` is a KMSVerifier.
   assertIsHostContractVersionOf(contractVersion, 'KMSVerifier');
 
   try {
@@ -69,7 +70,6 @@ export async function readKmsVerifierContractData(
   }
 
   const data = createKmsVerifierContractData(new WeakRef(fhevm.runtime), {
-    version: contractVersion,
     address: kmsVerifierAddress,
     eip712Domain: eip712DomainRes,
     kmsSignerThreshold: kmsSignersContext.threshold,

@@ -53,6 +53,7 @@ export async function readInputVerifierContractData(
   const eip712DomainRes = res[1] as Eip712DomainReturnType;
   const coprocessorSignersContext = res[2] as CoprocessorSignersContext;
 
+  // The version is not stored: `getVersion()` is only read to check that `address` is a InputVerifier.
   assertIsHostContractVersionOf(contractVersion, 'InputVerifier');
 
   try {
@@ -66,7 +67,6 @@ export async function readInputVerifierContractData(
   }
 
   const data = createInputVerifierContractData(new WeakRef(fhevm.runtime), {
-    version: contractVersion,
     address: inputVerifierContractAddress,
     eip712Domain: eip712DomainRes,
     coprocessorSignerThreshold: coprocessorSignersContext.threshold,

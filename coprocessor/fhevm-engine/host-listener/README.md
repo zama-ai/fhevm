@@ -2,6 +2,8 @@
 
 The fhevm-listener primary role is to observe the block chain execution and extend that execution off the chain.
 
+For persisted finalized replay with `host_listener_consumer`, see [manual catchup](docs/manual-catchup.md).
+
 ## How
 
 Our contracts actively emits events that forms the trace of a symbolic execution. These events can be observed via the blockchain node pubsub events feature.

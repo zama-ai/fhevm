@@ -104,7 +104,7 @@ There are four kinds of inputs/runtime artifacts:
 - tracked env templates: `templates/env/.env.*`
 - tracked config:
   - relayer template input: `templates/config/relayer.yaml`
-  - template/static config: `templates/config/kms-core-threshold.toml`, `static/config/prometheus/prometheus.yml`
+  - template/static config: `templates/config/kms-core-threshold.toml`, `static/config/prometheus/prometheus.yml`, `static/config/relayer-proxy/nginx.conf`
 - checked-in scenario inputs under `scenarios/` (`two-of-two.yaml`, `two-of-two-multi-chain.yaml`, `multi-chain.yaml`)
 
 Generated runtime artifacts always live under `.fhevm/`:
@@ -255,6 +255,20 @@ RELAYER_HTTP_VERSION         # optional: omitted when relayer-http is not publis
 TEST_SUITE_VERSION
 ```
 
+### Relayer endpoints
+
+`up` always starts `fhevm-relayer-proxy` (nginx, `static/config/relayer-proxy/nginx.conf`), so fhevm-sdk gets one relayer base URL: `http://localhost:3003` from the host, `http://fhevm-relayer-proxy:3003` inside the stack. The test-suite's `RELAYER_URL` points at it.
+
+| Path | Upstream |
+| --- | --- |
+| `/v2/*`, `/v3/*` | relayer (`fhevm-relayer:3000`) |
+| `/v4/*` (`/v4/user-decrypt`, `/v4/public-decrypt`) | relayer-http (`fhevm-relayer-http:3002`); 502 when `RELAYER_HTTP_VERSION` is unset |
+| anything else | 404 |
+
+The relayer (3000) and relayer-http (3002) stay published for direct access.
+
+The proxy does not route `/v1`. Profiles whose test suite predates v0.11 (e.g. `v0.11.0-mainnet`) call the relayer on `/v1`, so their e2e tests fail through the proxy; this is intended, as they are no longer tested.
+
 Example — test a local coprocessor image without `--override`:
 
 ```sh
@@ -354,6 +368,7 @@ When changing runtime flags, env contracts, target semantics, or external compan
 ./fhevm-cli test operators
 ./fhevm-cli test --grep "oversized shift and rotate" --verbose
 ./fhevm-cli test operators --grep "edge cases" --verbose
+./fhevm-cli test erc20 --decrypt-without-gateway   # decrypt without the gateway chain, through relayer-http (/v4); needs a stack that runs it
 ./fhevm-cli pause host
 ./fhevm-cli unpause host
 

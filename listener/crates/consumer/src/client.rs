@@ -6,7 +6,7 @@ pub use broker::{AckDecision, Broker, HandlerError};
 use broker::{BrokerError, CancellationToken, Consumer, Handler, Message, Topic};
 use primitives::event::{
     BlockPayload, CancelCatchupPayload, CatchupPayload, FilterCommand,
-    FilterCommandValidationError, FilterType,
+    FilterCommandValidationError, FilterType, WatchCommand,
 };
 use primitives::routing;
 use primitives::utils::chain_id_to_namespace;
@@ -714,17 +714,50 @@ impl ListenerConsumer {
         builder.build()
     }
 
-    /// Publish filters registration command to watch contracts.
+    /// Register the complete live and finalized contract sets in one database
+    /// transaction on core. Declare delivery queues before publishing this
+    /// command. Requires core with atomic WATCH support; success confirms broker
+    /// publication rather than database activation.
+    pub async fn register_live_and_final_contracts(
+        &self,
+        contracts: &[Address],
+    ) -> Result<(), ConsumerError> {
+        let mut command = WatchCommand::Atomic(
+            contracts
+                .iter()
+                .flat_map(|address| {
+                    [
+                        self.create_filter_on_log_address(*address),
+                        self.create_final_filter_on_log_address(*address),
+                    ]
+                })
+                .collect(),
+        );
+        command.validate()?;
+        let namespace = chain_id_to_namespace(self.chain_id);
+        let publisher = self.broker.publisher(&namespace).await?;
+        publisher.publish(routing::WATCH, &command).await?;
+        Ok(())
+    }
+
+    /// Register the complete live contract set in one atomic WATCH command.
+    ///
+    /// Declare delivery queues before calling this method. Core validates all
+    /// filters and adds them in one transaction; existing filters are retained.
+    /// An empty contract list is rejected. Success confirms command publication,
+    /// not database activation. Requires core with atomic WATCH support.
+    /// `register_filter` remains available for a single custom filter.
     pub async fn register_contracts(&self, contracts: &[Address]) -> Result<(), ConsumerError> {
-        if contracts.is_empty() {
-            return Err(ConsumerError::InvalidParameter(
-                "contracts array cannot be empty".into(),
-            ));
-        }
-        for contract in contracts {
-            self.register_filter(&self.create_filter_on_log_address(*contract))
-                .await?;
-        }
+        let mut command = WatchCommand::Atomic(
+            contracts
+                .iter()
+                .map(|address| self.create_filter_on_log_address(*address))
+                .collect(),
+        );
+        command.validate()?;
+        let namespace = chain_id_to_namespace(self.chain_id);
+        let publisher = self.broker.publisher(&namespace).await?;
+        publisher.publish(routing::WATCH, &command).await?;
         Ok(())
     }
 

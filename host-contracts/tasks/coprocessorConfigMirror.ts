@@ -2,7 +2,7 @@ import { type Provider, getAddress } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { CoprocessorConfig } from '../types';
-import { assertCanonicalSnapshotBlockHash, resolveCanonicalBlock } from './protocolConfigMirror';
+import { assertCanonicalBlockHash, resolveCanonicalBlock } from './utils/canonicalBlock';
 import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
 import { type UpgradeProposal, buildUpgradeProposal } from './utils/upgradeProposal';
 
@@ -71,7 +71,7 @@ export async function readCanonicalCoprocessorSnapshot(
     prfEndpointUrl: coprocessor.prfEndpointUrl,
   }));
 
-  await assertCanonicalSnapshotBlockHash(canonicalProvider, { blockNumber, blockHash });
+  await assertCanonicalBlockHash(canonicalProvider, { blockNumber, blockHash });
 
   return {
     coprocessorConfigAddress: getAddress(canonicalCoprocessorConfigAddress),

@@ -47,6 +47,10 @@ impl AwsS3Interface for MaterialStore {
 
 fn config() -> ConsumerConfig {
     ConsumerConfig {
+        catchup_from_block: None,
+        catchup_up_to_block: None,
+        catchup_unfinalized: false,
+        no_override_catchup: false,
         url: String::new(),
         acl_address: Address::ZERO,
         tfhe_address: Address::repeat_byte(1),

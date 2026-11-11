@@ -9,6 +9,7 @@ import {
   supportsCoprocessorDbStateRevert,
   runsCoprocessorProxy,
   supportsHostListenerConsumer,
+  supportsPrfService,
   supportsUpgradeController,
 } from "../compat/compat";
 import { BootstrapTimeout, ContainerCrashed, ObjectStoreError, PreflightError, ProbeTimeout, RpcError } from "../errors";
@@ -20,6 +21,7 @@ import {
   KEYGEN_ID_SELECTOR,
   KMS_CORE_CONTAINER,
   OBJECT_STORE_EXTERNAL_URL,
+  RELAYER_PROXY_PORT,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
   defaultHostChainKey,
@@ -42,7 +44,7 @@ const KMS_CONNECTOR_KMS_GENERATION_READY =
 /** Number of KMS connector instances: one per party. */
 const kmsConnectorPartyCount = (state: State) => state.scenario.kms.parties;
 
-/** The coprocessor-proxy's default `/healthz` port. */
+/** The default `/healthz` port of coprocessor-proxy and prf-service. */
 const COPROCESSOR_PROXY_HEALTHCHECK_PORT = 8080;
 
 /** gw-listener / kms-worker / tx-sender (+ endpoint and proxy when the bundle ships them) health containers across every KMS party. */
@@ -163,19 +165,18 @@ export const waitForLog = async (container: string, pattern: RegExp) => {
 };
 
 /**
- * Waits until a coprocessor's proxy is ready: its `/healthz` answers 200 once the TLS listener
- * answers and the KMS tx-senders have been read. The proxy image has no HTTP client, so the probe
- * runs in the coprocessor's fake prf-service, on the same network.
+ * Waits until the `service` of a coprocessor answers 200 on `/healthz`. The images have no HTTP
+ * client, so the probe runs in the PRF output seeder of the coprocessor.
  */
-const waitForCoprocessorProxy = async (prefix: string) => {
-  const proxy = `${prefix}proxy`;
-  const url = `http://${proxy}:${COPROCESSOR_PROXY_HEALTHCHECK_PORT}/healthz`;
+const waitForHealthz = async (prefix: string, service: "prf-service" | "proxy") => {
+  const container = `${prefix}${service}`;
+  const url = `http://${container}:${COPROCESSOR_PROXY_HEALTHCHECK_PORT}/healthz`;
   for (let attempt = 0; attempt <= 90; attempt += 1) {
-    const [inspect] = await dockerInspect(proxy);
+    const [inspect] = await dockerInspect(container);
     if (inspect && containerFailure(inspect)) {
-      throw new ContainerCrashed(proxy, inspect.State.ExitCode || -1, "");
+      throw new ContainerCrashed(container, inspect.State.ExitCode || -1, "");
     }
-    const probe = await run(["docker", "exec", `${prefix}prf-service-fake`, "wget", "-qO-", url], {
+    const probe = await run(["docker", "exec", `${prefix}prf-output-seed`, "wget", "-qO-", url], {
       allowFailure: true,
       timeoutMs: 10_000,
     });
@@ -183,10 +184,37 @@ const waitForCoprocessorProxy = async (prefix: string) => {
       return;
     }
     if (attempt === 90) {
-      throw new ProbeTimeout(proxy, 180);
+      throw new ProbeTimeout(container, 180);
     }
     await Bun.sleep(2_000);
   }
+};
+
+/**
+ * Waits until a GET through the relayer proxy answers `expected`, or, without `expected`, any status
+ * but 502/503/504 (nginx's answers when the upstream is unresolvable or down). The upstream's own
+ * answer, such as relayer-http's 405 on a GET to a POST route, proves the route.
+ */
+export const waitForRelayerProxyRoute = async (path: string, expected?: number) => {
+  const url = `http://localhost:${RELAYER_PROXY_PORT}${path}`;
+  let last = "no response";
+  for (let attempt = 0; attempt <= 30; attempt += 1) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+      await response.body?.cancel();
+      if (expected === undefined ? ![502, 503, 504].includes(response.status) : response.status === expected) {
+        return response.status;
+      }
+      last = `HTTP ${response.status}`;
+    } catch (error) {
+      last = error instanceof Error ? error.message : String(error);
+    }
+    if (attempt === 30) {
+      throw new PreflightError(`relayer proxy did not ${expected === undefined ? "reach the upstream" : `answer HTTP ${expected}`} for ${url} after 60s (last: ${last})`);
+    }
+    await Bun.sleep(2_000);
+  }
+  return undefined;
 };
 
 /** Waits until an RPC endpoint answers a basic `eth_chainId` request. */
@@ -254,7 +282,8 @@ export const coprocessorHealthContainers = (state: Pick<State, "scenario" | "ver
         !suffix.includes("migration") &&
         (suffix !== "host-listener-consumer" || supportsHostListenerConsumer(state)) &&
         (suffix !== "consensus-detector" || supportsConsensusDetector(state)) &&
-        (suffix !== "upgrade-controller" || supportsUpgradeController(state)),
+        (suffix !== "upgrade-controller" || supportsUpgradeController(state)) &&
+        (suffix !== "prf-service" || supportsPrfService(state)),
     ),
     runsCoprocessorProxy(state),
   );
@@ -351,14 +380,22 @@ export const waitForCoprocessorServices = async (state: State, skipMigration: bo
   for (let index = 0; index < count; index += 1) {
     const prefix = index === 0 ? "coprocessor-" : `coprocessor${index}-`;
     await waitCoreFleet(prefix, true);
+    // In blue-green mode, prf-service runs only in the green fleet (below).
+    if (state.scenario.kind !== "blue-green" && supportsPrfService(state)) {
+      await waitForContainer(`${prefix}prf-service`, "running");
+    }
     if (includeProxy) {
-      await waitForContainer(`${prefix}prf-service-fake`, "healthy");
-      await waitForCoprocessorProxy(prefix);
+      await waitForContainer(`${prefix}prf-output-seed`, "healthy");
+      await waitForHealthz(prefix, "prf-service");
+      await waitForHealthz(prefix, "proxy");
     }
     if (state.scenario.kind === "blue-green" && !state.scenario.gcs.deferredStart) {
       await waitCoreFleet(`${prefix}gcs-`, false);
       await waitForContainer(`${prefix}gcs-upgrade-controller`, "running");
       await waitForContainer(`${prefix}gcs-consensus-detector`, "running");
+      if (supportsPrfService(state)) {
+        await waitForContainer(`${prefix}gcs-prf-service`, "running");
+      }
     }
   }
   // Both of these are about who is allowed to serve the queues, so they belong

@@ -2,8 +2,8 @@ import { type Provider, getAddress } from 'ethers';
 import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig } from '../types';
+import { assertCanonicalBlockHash, resolveCanonicalBlock } from './utils/canonicalBlock';
 import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
-import { formatError } from './utils/formatError';
 import { type UpgradeProposal, buildUpgradeProposal } from './utils/upgradeProposal';
 
 export type KmsNode = {
@@ -30,60 +30,6 @@ export type CanonicalSnapshot = {
   blockNumber: number;
   blockHash: string;
 };
-
-// RPC providers must disable caching so this check re-fetches the block after the state reads.
-export async function assertCanonicalSnapshotBlockHash(
-  canonicalProvider: Provider,
-  snapshot: Pick<CanonicalSnapshot, 'blockNumber' | 'blockHash'>,
-): Promise<void> {
-  const block = await canonicalProvider.getBlock(snapshot.blockNumber);
-  if (block === null || block.hash === null || block.hash !== snapshot.blockHash) {
-    throw new Error(`Canonical block ${snapshot.blockNumber} is missing or its hash changed during the read; retry.`);
-  }
-}
-
-// Resolves the canonical block a snapshot is pinned to. Pass `requestedBlockNumber` to pin to a
-// finalized historical block (an export artifact's blockNumber) so a DAO signer can reproduce a
-// snapshot byte-for-byte even after a later change on canonical. Omit it to use the latest
-// finalized block.
-export async function resolveCanonicalBlock(
-  canonicalProvider: Provider,
-  requestedBlockNumber?: number,
-): Promise<{ canonicalChainId: bigint; blockNumber: number; blockHash: string }> {
-  if (requestedBlockNumber !== undefined && (!Number.isSafeInteger(requestedBlockNumber) || requestedBlockNumber < 0)) {
-    throw new Error('Canonical block number must be a nonnegative safe integer.');
-  }
-
-  // Handshake before the identity check so a dead or mistyped RPC URL is reported as an RPC
-  // problem, not as a contract identity failure. Require finality even for an explicit block:
-  // a finalized block can't be reorged out, so the exported artifact stays
-  // reproducible. We resolve the full block (not just its number) to capture the hash too, which
-  // uniquely identifies the read's state across reorgs — a height alone is ambiguous.
-  let canonicalChainId: bigint;
-  let finalizedBlock: Awaited<ReturnType<Provider['getBlock']>>;
-  try {
-    canonicalChainId = (await canonicalProvider.getNetwork()).chainId;
-    finalizedBlock = await canonicalProvider.getBlock('finalized');
-  } catch (err) {
-    throw new Error(`Canonical RPC handshake failed (${formatError(err)}).`);
-  }
-  if (finalizedBlock === null || finalizedBlock.hash === null) {
-    throw new Error('Canonical RPC returned no finalized block.');
-  }
-  if (requestedBlockNumber !== undefined && requestedBlockNumber > finalizedBlock.number) {
-    throw new Error(
-      `Canonical block ${requestedBlockNumber} is above the latest finalized block ${finalizedBlock.number}; wait for finalization.`,
-    );
-  }
-  const block =
-    requestedBlockNumber === undefined || requestedBlockNumber === finalizedBlock.number
-      ? finalizedBlock
-      : await canonicalProvider.getBlock(requestedBlockNumber);
-  if (block === null || block.hash === null) {
-    throw new Error(`Canonical RPC returned no block or hash for "${requestedBlockNumber}".`);
-  }
-  return { canonicalChainId, blockNumber: block.number, blockHash: block.hash };
-}
 
 // Reads the canonical ProtocolConfig's current KMS context, pinned to one finalized block, for
 // exports and mirror tasks. Pass blockNumber to pin to a finalized historical block (the export
@@ -143,7 +89,7 @@ export async function readCanonicalSnapshot(
   }));
   const thresholds: KmsThresholds = { publicDecryption, userDecryption, kmsGen, mpc };
 
-  await assertCanonicalSnapshotBlockHash(canonicalProvider, { blockNumber, blockHash });
+  await assertCanonicalBlockHash(canonicalProvider, { blockNumber, blockHash });
 
   return {
     protocolConfigAddress: getAddress(canonicalProtocolConfigAddress),
@@ -171,25 +117,10 @@ export async function buildCanonicalUpgradeProposal(
     `Mirroring ProtocolConfig ${snapshot.protocolConfigAddress} from canonical chain ${snapshot.canonicalChainId} at block ${snapshot.blockNumber} (${snapshot.blockHash}): contextId=${snapshot.currentKmsContextId}, epochId=${snapshot.currentEpochId}, kmsNodes=${snapshot.kmsNodes.length}.`,
   );
 
-  // initializeFromCanonical takes KmsNodeParams (txSender/signer/ip/storageUrl plus MPC metadata:
-  // partyId, mpcIdentity, caCert, storagePrefix). Only the first four are persisted in the on-chain
-  // KmsNode struct, so the MPC metadata can't be read back from canonical and isn't part of the
-  // mirrored state. _storeKmsContext neither stores nor validates those fields, so we fill them with
-  // deterministic placeholders; the replica's stored node set still matches canonical exactly. The
-  // fresh deploy path numbers party ids from 1 (KMS_NODE_PARTY_ID_0="1"), while the mirror path
-  // numbers them from 0.
-  const kmsNodeParams = snapshot.kmsNodes.map((node, index) => ({
-    ...node,
-    partyId: index,
-    mpcIdentity: '',
-    caCert: '0x',
-    storagePrefix: '',
-  }));
-
   return buildUpgradeProposal(hre, {
     proxyAddress,
     contractName: 'contracts/ProtocolConfigReplica.sol:ProtocolConfigReplica',
     innerFunctionName: 'initializeFromCanonical',
-    decodedArgs: [snapshot.currentKmsContextId, snapshot.currentEpochId, kmsNodeParams, snapshot.thresholds],
+    decodedArgs: [snapshot.currentKmsContextId, snapshot.currentEpochId, snapshot.kmsNodes, snapshot.thresholds],
   });
 }

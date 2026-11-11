@@ -260,28 +260,6 @@ export const getKmsSignersAbi: readonly [Record<string, unknown> & { readonly na
 ] as const;
 
 ////////////////////////////////////////////////////////////////////////////////
-// KMSVerifier.getCurrentKmsContextId()
-////////////////////////////////////////////////////////////////////////////////
-
-export const getCurrentKmsContextIdAbi: readonly [
-  Record<string, unknown> & { readonly name: 'getCurrentKmsContextId' },
-] = [
-  {
-    inputs: [],
-    name: 'getCurrentKmsContextId',
-    outputs: [
-      {
-        internalType: 'uint256',
-        name: '',
-        type: 'uint256',
-      },
-    ],
-    stateMutability: 'view',
-    type: 'function',
-  },
-] as const;
-
-////////////////////////////////////////////////////////////////////////////////
 // KMSVerifier.getSignersForKmsContext()
 ////////////////////////////////////////////////////////////////////////////////
 

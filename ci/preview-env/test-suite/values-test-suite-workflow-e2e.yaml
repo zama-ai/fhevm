@@ -327,7 +327,7 @@ additionalResources:
                   # exactly like values-test-suite-e2e.yaml does for the idle Job.
                   CONFIG_SOL=/app/test-suite/e2e/contracts/E2ECoprocessorConfigLocal.sol
 
-                  # The kms-connector proxies' self-signed certificate (env
+                  # The kms-connector proxies' self-signed certificates (env
                   # KMS_CONNECTOR_PROXY_CA below): Node only trusts extra CAs from
                   # a file, so write it where NODE_EXTRA_CA_CERTS points first.
                   printf '%s\n' "${KMS_CONNECTOR_PROXY_CA}" > "${NODE_EXTRA_CA_CERTS}"
@@ -495,8 +495,8 @@ additionalResources:
                   valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: urls, optional: true}}
                 - name: COPROCESSOR_SIGNER_ADDRESSES
                   valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: signer-addresses, optional: true}}
-                - name: PRF_SERVICE_FAKE_COUNT_URLS
-                  valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: count-urls, optional: true}}
+                - name: PRF_SERVICE_METRICS_URLS
+                  valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: prf-service-metrics-urls, optional: true}}
                 - name: COPROCESSOR_PROXY_METRICS_URLS
                   valueFrom: {configMapKeyRef: {name: coprocessor-proxy, key: metrics-urls, optional: true}}
                 - name: COPROCESSOR_PROXY_CA

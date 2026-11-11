@@ -4,6 +4,18 @@ export {
   decryptPublicValue,
 } from './decryptPublicValue.js';
 
+export {
+  type DecryptPublicValueWithGatewayParameters,
+  type DecryptPublicValueWithGatewayReturnType,
+  decryptPublicValueWithGateway,
+} from './decryptPublicValueWithGateway.js';
+
+export {
+  type DecryptPublicValueNoGatewayParameters,
+  type DecryptPublicValueNoGatewayReturnType,
+  decryptPublicValueNoGateway,
+} from './decryptPublicValueNoGateway.js';
+
 export type { RelayerPublicDecryptOptions, RelayerPublicDecryptProgressArgs } from '../../types/relayer.js';
 
 export {
@@ -13,10 +25,34 @@ export {
 } from './decryptPublicValues.js';
 
 export {
+  type DecryptPublicValuesWithGatewayParameters,
+  type DecryptPublicValuesWithGatewayReturnType,
+  decryptPublicValuesWithGateway,
+} from './decryptPublicValuesWithGateway.js';
+
+export {
+  type DecryptPublicValuesNoGatewayParameters,
+  type DecryptPublicValuesNoGatewayReturnType,
+  decryptPublicValuesNoGateway,
+} from './decryptPublicValuesNoGateway.js';
+
+export {
   type DecryptPublicValuesWithSignaturesParameters,
   type DecryptPublicValuesWithSignaturesReturnType,
   decryptPublicValuesWithSignatures,
 } from './decryptPublicValuesWithSignatures.js';
+
+export {
+  type DecryptPublicValuesWithSignaturesWithGatewayParameters,
+  type DecryptPublicValuesWithSignaturesWithGatewayReturnType,
+  decryptPublicValuesWithSignaturesWithGateway,
+} from './decryptPublicValuesWithSignaturesWithGateway.js';
+
+export {
+  type DecryptPublicValuesWithSignaturesNoGatewayParameters,
+  type DecryptPublicValuesWithSignaturesNoGatewayReturnType,
+  decryptPublicValuesWithSignaturesNoGateway,
+} from './decryptPublicValuesWithSignaturesNoGateway.js';
 
 export {
   type CanDecryptPublicValueParameters,

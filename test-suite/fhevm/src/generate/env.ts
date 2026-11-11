@@ -436,11 +436,11 @@ const connectorEndpointPort = (envs: Record<string, Record<string, string>>) =>
 const connectorEndpointAddress = (envs: Record<string, Record<string, string>>, party: number) =>
   `${kmsConnectorPrefix(party)}-endpoint:${connectorEndpointPort(envs)}`;
 
-/** Port the fake prf-service (`test-suite/e2e/scripts/fake-prf-service.ts`) serves HTTP/1.1 on. */
-const PRF_SERVICE_FAKE_PORT = 8080;
+/** The PRF port of prf-service (`--http-endpoint` in the compose file). */
+const PRF_SERVICE_PORT = 8090;
 
-/** Port the fake prf-service reports its PRF request count on, over plain HTTP. */
-const PRF_SERVICE_FAKE_COUNT_PORT = 9090;
+/** The default metrics port of prf-service. */
+const PRF_SERVICE_METRICS_PORT = 9100;
 
 /** The coprocessor-proxy's default listen port. */
 const COPROCESSOR_PROXY_PORT = 8443;
@@ -453,7 +453,7 @@ const coprocessorSigner = (envs: Record<string, Record<string, string>>, index: 
   envs["host-sc"][`COPROCESSOR_SIGNER_ADDRESS_${index}`];
 
 /**
- * Each proxy's env file: it points coprocessor `index`'s proxy at its own fake prf-service, for
+ * Each proxy's env file: it points coprocessor `index`'s proxy at its own prf-service, for
  * requests signed for that coprocessor.
  */
 const buildCoprocessorProxyEnvs = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
@@ -464,7 +464,7 @@ const buildCoprocessorProxyEnvs = (envs: Record<string, Record<string, string>>,
   for (let index = 0; index < plan.topology.count; index += 1) {
     proxyEnvs[coprocessorProxyEnvName(index)] = {
       COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS: coprocessorSigner(envs, index),
-      COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS: `${toServiceName("prf-service-fake", index)}:${PRF_SERVICE_FAKE_PORT}`,
+      COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS: `${toServiceName("prf-service", index)}:${PRF_SERVICE_PORT}`,
     };
   }
   return proxyEnvs;
@@ -552,8 +552,8 @@ const applyCoprocessorProxyTestSuiteEnv = (envs: Record<string, Record<string, s
   envs["test-suite"].COPROCESSOR_SIGNER_ADDRESSES = indices
     .map((index) => coprocessorSigner(envs, index))
     .join(",");
-  envs["test-suite"].PRF_SERVICE_FAKE_COUNT_URLS = indices
-    .map((index) => `http://${toServiceName("prf-service-fake", index)}:${PRF_SERVICE_FAKE_COUNT_PORT}/count`)
+  envs["test-suite"].PRF_SERVICE_METRICS_URLS = indices
+    .map((index) => `http://${toServiceName("prf-service", index)}:${PRF_SERVICE_METRICS_PORT}/metrics`)
     .join(",");
   envs["test-suite"].COPROCESSOR_PROXY_METRICS_URLS = indices
     .map((index) => `http://${toServiceName("proxy", index)}:${COPROCESSOR_PROXY_METRICS_PORT}/metrics`)

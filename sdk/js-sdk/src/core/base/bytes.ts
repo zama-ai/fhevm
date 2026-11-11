@@ -956,13 +956,15 @@ export function assertRecordBytes65HexProperty<K extends string>(
  * @template K - The property key type (string literal)
  * @param record - The value to check (can be any type)
  * @param property - The property name to check for
- * @param byteLength - Optional byte length (e.g., 8, 20, 32)
+ * @param options - Optional size rules
+ * @param options.byteLength - Exact byte length (e.g., 8, 20, 32)
+ * @param options.minByteLength - Minimum byte length (e.g., 1 to reject an empty string)
  * @returns True if `o` is an object with the specified property that is a valid BytesHexNo0x string
  *
  * @example
  * ```typescript
  * const data: unknown = { signature: "1234abcd", value: 42 };
- * if (isRecordBytesHexNo0xProperty(data, 'signature')) {
+ * if (isRecordBytesHexNo0xProperty(data, 'signature', { minByteLength: 1 })) {
  *   console.log(data.signature); // "1234abcd"
  * }
  * ```
@@ -970,12 +972,17 @@ export function assertRecordBytes65HexProperty<K extends string>(
 export function isRecordBytesHexNo0xProperty<K extends string>(
   record: unknown,
   property: K,
-  byteLength?: ByteLength,
+  options?: { byteLength?: ByteLength; minByteLength?: ByteLength },
 ): record is RecordWithPropertyType<K, BytesHexNo0x> {
   if (!isRecordNonNullableProperty(record, property)) {
     return false;
   }
-  return isBytesHexNo0x(record[property], byteLength);
+  const value = record[property];
+  if (!isBytesHexNo0x(value, options?.byteLength)) {
+    return false;
+  }
+  // A hex string without 0x holds length / 2 bytes.
+  return options?.minByteLength === undefined || value.length >= 2 * options.minByteLength;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -993,6 +1000,7 @@ export function isRecordBytesHexNo0xProperty<K extends string>(
  * @param recordName - The name of the object being validated (used in error messages)
  * @param options - Validation options
  * @param options.byteLength - Optional expected byte length (e.g., 8, 20, 32)
+ * @param options.minByteLength - Optional minimum byte length (e.g., 1 to reject an empty string)
  * @throws {InvalidPropertyError} When the property is missing, not a string, or not valid BytesHexNo0x format
  * @throws {never} No other errors are thrown
  *
@@ -1008,14 +1016,14 @@ export function assertRecordBytesHexNo0xProperty<K extends string>(
   record: unknown,
   property: K,
   recordName: string,
-  options: { byteLength?: ByteLength } & ErrorMetadataParams,
+  options: { byteLength?: ByteLength; minByteLength?: ByteLength } & ErrorMetadataParams,
 ): asserts record is RecordWithPropertyType<K, BytesHexNo0x> {
-  if (!isRecordBytesHexNo0xProperty(record, property, options.byteLength)) {
+  if (!isRecordBytesHexNo0xProperty(record, property, options)) {
     throw new InvalidPropertyError(
       {
         subject: recordName,
         property,
-        expectedType: `bytes${options.byteLength ?? ''}HexNo0x`,
+        expectedType: `bytes${options.byteLength ?? ''}HexNo0x${options.minByteLength !== undefined ? ` (min ${options.minByteLength} bytes)` : ''}`,
         type: typeofProperty(record, property),
       },
       options,
@@ -1180,7 +1188,7 @@ export function assertRecordBytesHexNo0xArrayProperty<K extends string>(
   assertRecordArrayProperty(record, property, recordName, options);
   const arr = record[property];
   for (let i = 0; i < arr.length; ++i) {
-    if (!isBytesHexNo0x(arr[i])) {
+    if (!isBytesHexNo0x(arr[i], options.byteLength)) {
       throw new InvalidPropertyError(
         {
           subject: recordName,

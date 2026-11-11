@@ -84,6 +84,7 @@ import {
   REPO_ROOT,
   SCHEMA_COUPLED_GROUPS,
   STATE_DIR,
+  STATIC_COMPONENTS,
   TEST_SUITE_CONTAINER,
   coprocessorDatabaseName,
   composePath,
@@ -146,6 +147,7 @@ import {
   waitForKmsConnector,
   waitForKmsConnectorParty,
   waitForLog,
+  waitForRelayerProxyRoute,
   waitForRpc,
   waitForStableChainListeners,
   waitForTestSuite,
@@ -1244,6 +1246,16 @@ export const runStep = async (state: State, step: StepName) => {
       await waitForContainer("fhevm-relayer-http", "running");
       await waitForLog("fhevm-relayer-http", /relayer-http started/);
       break;
+    case "relayer-proxy":
+      // Always started: without relayer-http, /v4 answers 502 and /v2, /v3 still reach the relayer.
+      await stepComposeUp("relayer-proxy", state);
+      await waitForContainer("fhevm-relayer-proxy", "running");
+      console.log(`[relayer-proxy] /v2 -> relayer: HTTP ${await waitForRelayerProxyRoute("/v2/keyurl", 200)}`);
+      if (state.versions.env.RELAYER_HTTP_VERSION) {
+        // GET on a POST route: relayer-http answers 405, which proves the route.
+        console.log(`[relayer-proxy] /v4 -> relayer-http: HTTP ${await waitForRelayerProxyRoute("/v4/user-decrypt")}`);
+      }
+      break;
     case "test-suite":
       await stepComposeUp("test-suite", state);
       await waitForTestSuite();
@@ -1585,7 +1597,7 @@ export const down = async () => {
       if (!ok) failed.push(name);
     }
   }
-  for (const component of [...COMPONENTS].reverse()) {
+  for (const component of [...COMPONENTS, ...STATIC_COMPONENTS].reverse()) {
     console.log(`[down] ${component}`);
     const ok = await composeDown(component);
     if (!ok) {

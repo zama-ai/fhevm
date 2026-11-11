@@ -66,6 +66,7 @@ interface IKMSGeneration {
     function getConsensusTxSenders(uint256 requestId) external view returns (address[] memory);
     function getCrsCounter() external view returns (uint256);
     function getCrsMaterials(uint256 crsId) external view returns (string[] memory, bytes memory);
+    function getCrsMaxBitLength(uint256 crsId) external view returns (uint256);
     function getCrsParamsType(uint256 crsId) external view returns (ParamsType);
     function getKeyCounter() external view returns (uint256);
     function getKeyInfo(uint256 keyId) external view returns (KeyInfo memory);
@@ -253,6 +254,25 @@ interface IKMSGeneration {
         "name": "",
         "type": "bytes",
         "internalType": "bytes"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getCrsMaxBitLength",
+    "inputs": [
+      {
+        "name": "crsId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -7166,6 +7186,166 @@ function getCrsMaterials(uint256 crsId) external view returns (string[] memory, 
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getCrsMaxBitLength(uint256)` and selector `0xdbe3b15f`.
+```solidity
+function getCrsMaxBitLength(uint256 crsId) external view returns (uint256);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCrsMaxBitLengthCall {
+        #[allow(missing_docs)]
+        pub crsId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getCrsMaxBitLength(uint256)`](getCrsMaxBitLengthCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getCrsMaxBitLengthReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCrsMaxBitLengthCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCrsMaxBitLengthCall) -> Self {
+                    (value.crsId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCrsMaxBitLengthCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { crsId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            #[allow(dead_code)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getCrsMaxBitLengthReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getCrsMaxBitLengthReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getCrsMaxBitLengthReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getCrsMaxBitLengthCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::primitives::aliases::U256;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getCrsMaxBitLength(uint256)";
+            const SELECTOR: [u8; 4] = [219u8, 227u8, 177u8, 95u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.crsId),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getCrsMaxBitLengthReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getCrsMaxBitLengthReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCrsParamsType(uint256)` and selector `0x45af261b`.
 ```solidity
 function getCrsParamsType(uint256 crsId) external view returns (ParamsType);
@@ -8774,6 +8954,8 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
         #[allow(missing_docs)]
         getCrsMaterials(getCrsMaterialsCall),
         #[allow(missing_docs)]
+        getCrsMaxBitLength(getCrsMaxBitLengthCall),
+        #[allow(missing_docs)]
         getCrsParamsType(getCrsParamsTypeCall),
         #[allow(missing_docs)]
         getKeyCounter(getKeyCounterCall),
@@ -8822,6 +9004,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             [211u8, 220u8, 2u8, 95u8],
             [213u8, 47u8, 16u8, 235u8],
             [218u8, 189u8, 115u8, 47u8],
+            [219u8, 227u8, 177u8, 95u8],
             [228u8, 16u8, 17u8, 126u8],
         ];
         /// The names of the variants in the same order as `SELECTORS`.
@@ -8846,6 +9029,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             ::core::stringify!(keygen),
             ::core::stringify!(getActiveKeyId),
             ::core::stringify!(getCompletedCrsIds),
+            ::core::stringify!(getCrsMaxBitLength),
             ::core::stringify!(getCompletedKeyIds),
         ];
         /// The signatures in the same order as `SELECTORS`.
@@ -8870,6 +9054,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             <keygenCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getActiveKeyIdCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCompletedCrsIdsCall as alloy_sol_types::SolCall>::SIGNATURE,
+            <getCrsMaxBitLengthCall as alloy_sol_types::SolCall>::SIGNATURE,
             <getCompletedKeyIdsCall as alloy_sol_types::SolCall>::SIGNATURE,
         ];
         /// Returns the signature for the given selector, if known.
@@ -8897,7 +9082,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
     impl alloy_sol_types::SolInterface for IKMSGenerationCalls {
         const NAME: &'static str = "IKMSGenerationCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 21usize;
+        const COUNT: usize = 22usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -8933,6 +9118,9 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::getCrsMaterials(_) => {
                     <getCrsMaterialsCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getCrsMaxBitLength(_) => {
+                    <getCrsMaxBitLengthCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getCrsParamsType(_) => {
                     <getCrsParamsTypeCall as alloy_sol_types::SolCall>::SELECTOR
@@ -9200,6 +9388,17 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     getCompletedCrsIds
                 },
                 {
+                    fn getCrsMaxBitLength(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
+                        <getCrsMaxBitLengthCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IKMSGenerationCalls::getCrsMaxBitLength)
+                    }
+                    getCrsMaxBitLength
+                },
+                {
                     fn getCompletedKeyIds(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
@@ -9451,6 +9650,17 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     getCompletedCrsIds
                 },
                 {
+                    fn getCrsMaxBitLength(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
+                        <getCrsMaxBitLengthCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IKMSGenerationCalls::getCrsMaxBitLength)
+                    }
+                    getCrsMaxBitLength
+                },
+                {
                     fn getCompletedKeyIds(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKMSGenerationCalls> {
@@ -9527,6 +9737,11 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::getCrsMaterials(inner) => {
                     <getCrsMaterialsCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getCrsMaxBitLength(inner) => {
+                    <getCrsMaxBitLengthCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -9641,6 +9856,12 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 }
                 Self::getCrsMaterials(inner) => {
                     <getCrsMaterialsCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getCrsMaxBitLength(inner) => {
+                    <getCrsMaxBitLengthCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -11447,6 +11668,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             crsId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<&P, getCrsMaterialsCall, N> {
             self.call_builder(&getCrsMaterialsCall { crsId })
+        }
+        ///Creates a new call builder for the [`getCrsMaxBitLength`] function.
+        pub fn getCrsMaxBitLength(
+            &self,
+            crsId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, getCrsMaxBitLengthCall, N> {
+            self.call_builder(&getCrsMaxBitLengthCall { crsId })
         }
         ///Creates a new call builder for the [`getCrsParamsType`] function.
         pub fn getCrsParamsType(

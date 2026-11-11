@@ -94,5 +94,155 @@
       },
       "decryptionId": "0xe9edd7679afb0beb4d177dfcb49e6fd117a9acf6b985c1b60b84336d4da5377f"
     }
+  ],
+  "padDecryption": [
+    {
+      "name": "single pad, RFC-033-style request",
+      "request": {
+        "attestationType": "eip712-unified-user-decrypt-v1",
+        "payload": {
+          "witnessVersion": 0,
+          "prfId": 0,
+          "chainId": 31337,
+          "pads": [
+            {
+              "label": "0xa79e2702c4ba43e4b96a713e39842683da5a84da1361613f889e8cce6be9e5c1",
+              "witness": {
+                "submitter": "0x5555555555555555555555555555555555555555",
+                "consumer": "0x3333333333333333333333333333333333333333",
+                "expirationTimestamp": 1770600000,
+                "decryptors": [
+                  "0x6666666666666666666666666666666666666666"
+                ],
+                "nonce": "0x000102030405060708090a0b0c0d0e0f"
+              },
+              "padLength": 64
+            }
+          ],
+          "userAddress": "0x5555555555555555555555555555555555555555",
+          "publicKey": "0x20002000",
+          "allowedContracts": [
+            "0x3333333333333333333333333333333333333333"
+          ],
+          "requestValidity": {
+            "startTimestamp": 1770000000,
+            "durationSeconds": 300
+          },
+          "extraData": "0x0207070707070707070707070707070707070707070707070707070707070707070808080808080808080808080808080808080808080808080808080808080808"
+        },
+        "signature": "0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "decryptionId": "0x4bf59f019e7cd2b600b0333103d9d90553e0d4b38b949ce7d69290e36bc3f34f"
+    },
+    {
+      "name": "two pads, permissive signature",
+      "request": {
+        "attestationType": "eip712-unified-user-decrypt-v1",
+        "payload": {
+          "witnessVersion": 0,
+          "prfId": 0,
+          "chainId": 31337,
+          "pads": [
+            {
+              "label": "0xa79e2702c4ba43e4b96a713e39842683da5a84da1361613f889e8cce6be9e5c1",
+              "witness": {
+                "submitter": "0x5555555555555555555555555555555555555555",
+                "consumer": "0x3333333333333333333333333333333333333333",
+                "expirationTimestamp": 1770600000,
+                "decryptors": [
+                  "0x6666666666666666666666666666666666666666"
+                ],
+                "nonce": "0x000102030405060708090a0b0c0d0e0f"
+              },
+              "padLength": 2048
+            },
+            {
+              "label": "0xfafb1d3ae651e707bebf0da00ec5cf975c0f3483a646cbfe7c7cbdd737ced25f",
+              "witness": {
+                "submitter": "0x5555555555555555555555555555555555555555",
+                "consumer": "0x3434343434343434343434343434343434343434",
+                "expirationTimestamp": 1770700000,
+                "decryptors": [],
+                "nonce": "0x101112131415161718191a1b1c1d1e1f"
+              },
+              "padLength": 1
+            }
+          ],
+          "userAddress": "0x5555555555555555555555555555555555555555",
+          "publicKey": "0x20002000",
+          "allowedContracts": [],
+          "requestValidity": {
+            "startTimestamp": 1770000000,
+            "durationSeconds": 300
+          },
+          "extraData": "0x0207070707070707070707070707070707070707070707070707070707070707070808080808080808080808080808080808080808080808080808080808080808"
+        },
+        "signature": "0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "decryptionId": "0xf9ab89b8afa1b116f0389aa2c1dc0a8302ac27984e0f30190ad9a6e866c65fe9"
+    }
+  ],
+  "padLabel": [
+    {
+      "name": "one decryptor",
+      "witnessVersion": 0,
+      "prfId": 0,
+      "chainId": 31337,
+      "witness": {
+        "submitter": "0x5555555555555555555555555555555555555555",
+        "consumer": "0x3333333333333333333333333333333333333333",
+        "expirationTimestamp": 1770600000,
+        "decryptors": [
+          "0x6666666666666666666666666666666666666666"
+        ],
+        "nonce": "0x000102030405060708090a0b0c0d0e0f"
+      },
+      "label": "0xa79e2702c4ba43e4b96a713e39842683da5a84da1361613f889e8cce6be9e5c1"
+    },
+    {
+      "name": "no decryptor",
+      "witnessVersion": 0,
+      "prfId": 1,
+      "chainId": 1,
+      "witness": {
+        "submitter": "0x5555555555555555555555555555555555555555",
+        "consumer": "0x3434343434343434343434343434343434343434",
+        "expirationTimestamp": 1770700000,
+        "decryptors": [],
+        "nonce": "0x101112131415161718191a1b1c1d1e1f"
+      },
+      "label": "0x86dad2ac75d4bd4b80853fd49219170a2b63858716918e728f85f5488b9e61e8"
+    },
+    {
+      "name": "max decryptors, max chain id",
+      "witnessVersion": 0,
+      "prfId": 65535,
+      "chainId": 18446744073709551615,
+      "witness": {
+        "submitter": "0x7777777777777777777777777777777777777777",
+        "consumer": "0x3333333333333333333333333333333333333333",
+        "expirationTimestamp": 1770800000,
+        "decryptors": [
+          "0x1010101010101010101010101010101010101010",
+          "0x1111111111111111111111111111111111111111",
+          "0x1212121212121212121212121212121212121212",
+          "0x1313131313131313131313131313131313131313",
+          "0x1414141414141414141414141414141414141414",
+          "0x1515151515151515151515151515151515151515",
+          "0x1616161616161616161616161616161616161616",
+          "0x1717171717171717171717171717171717171717",
+          "0x1818181818181818181818181818181818181818",
+          "0x1919191919191919191919191919191919191919",
+          "0x1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+          "0x1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b",
+          "0x1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c",
+          "0x1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d",
+          "0x1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+          "0x1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
+        ],
+        "nonce": "0xf0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+      },
+      "label": "0x5f8de76be7feeaef7cd6fe29c5a73bfbccfef96599ccfe6de9b86bf2ca41c8b4"
+    }
   ]
 }

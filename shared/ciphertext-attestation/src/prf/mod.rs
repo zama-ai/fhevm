@@ -10,9 +10,6 @@ pub mod sign;
 /// Domain separator for the canonical signed payload.
 pub const PRF_DOMAIN_TAG: [u8; 8] = *b"FHEVMPRF";
 
-/// HTTP response header that carries the JSON-serialized [`PrfOutputAttestation`].
-pub const PRF_ATTESTATION_HEADER: &str = "x-prf-attestation";
-
 /// Versioned encoding of the PRF output attestation.
 ///
 /// The version byte is part of the signed payload, so a stripped or downgraded `version`
@@ -78,7 +75,7 @@ impl PrfOutputAttestationPayload {
     }
 }
 
-/// Signed wire form served as the [`PRF_ATTESTATION_HEADER`] response header.
+/// Signed wire form, served in a response header of the PRF output route.
 ///
 /// `prf_id`, `label` and `pad_length` are intentionally absent: the verifier reconstructs them
 /// from the request path and supplies them to [`Self::verify`]. All are bound by the signature,

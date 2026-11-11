@@ -33,7 +33,7 @@ jobs:
               - coprocessor/fhevm-engine/**
               - coprocessor/proto/**
               - host-contracts/rust_bindings/**
-              # consensus-detector and coprocessor-proxy depend on these crates by path.
+              # Coprocessor crates depend on these crates by path.
               - shared/block-manifest/**
               - shared/ciphertext-attestation/**
               - shared/fhevm-sig-auth/**
@@ -132,6 +132,16 @@ jobs:
             needs_localstack: false
             needs_foundry: false
             runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
+          - service: prf-service
+            package: prf-service
+            needs_localstack: false
+            needs_foundry: false
+            runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
+          - service: coprocessor-api
+            package: coprocessor-api
+            needs_localstack: false
+            needs_foundry: false
+            runner: runs-on=${{ github.run_id }}/runner=4cpu-linux-x64/spot=false
     steps:
     - name: Checkout code
       uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -206,6 +216,21 @@ jobs:
       if: ${{ matrix.needs_localstack }}
       run: docker run --rm -d -p 4566:4566 --name localstack localstack/localstack:4.14.0
 
+    - name: Start Redis for consumer catchup tests
+      if: ${{ matrix.package == 'host-listener' }}
+      timeout-minutes: 5
+      run: |
+        set -euo pipefail
+        docker run --rm -d -p 6379:6379 --name catchup-redis redis:8.6.2
+        for _ in $(seq 1 30); do
+          if docker exec catchup-redis redis-cli ping | grep -qx PONG; then
+            exit 0
+          fi
+          sleep 1
+        done
+        echo "::error::Redis did not become ready"
+        exit 1
+
     # Shared by every test in the job, so the FHE keys are imported once, not per test.
     - name: Start postgres
       if: ${{ matrix.use_nextest }}
@@ -227,6 +252,7 @@ jobs:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/coprocessor
         SQLX_OFFLINE: 'true'
         TEST_GLOBAL_LOCALSTACK: ${{ matrix.needs_localstack && '1' || '0' }}
+        CATCHUP_BROKER_URL: redis://127.0.0.1:6379
         TEST_PACKAGE: ${{ matrix.package }}
         IS_MERGE_QUEUE: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') && '1' || '0' }}
       run: |
@@ -237,6 +263,14 @@ jobs:
         fi
         cargo llvm-cov clean --workspace --profile coverage
         cargo llvm-cov test -p "$TEST_PACKAGE" --profile coverage
+      working-directory: coprocessor/fhevm-engine
+
+    # Its doc links point clients at the source of each rule: a link that no longer resolves fails.
+    - name: Check doc links
+      if: ${{ matrix.package == 'coprocessor-api' }}
+      env:
+        RUSTDOCFLAGS: -D warnings
+      run: cargo doc --no-deps -p coprocessor-api
       working-directory: coprocessor/fhevm-engine
 
     - name: Run tests with coverage (sharded)

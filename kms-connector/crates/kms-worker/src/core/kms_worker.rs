@@ -239,6 +239,17 @@ where
                     )
                     .await
             }
+            ProtocolEventKind::PadDecryption(e) => {
+                response_publisher
+                    .publish_pad_decryption_error(
+                        e.decryption_id,
+                        error.code,
+                        &details,
+                        &e.payload.extraData,
+                        &event.otlp_context,
+                    )
+                    .await
+            }
             kind => {
                 error!(
                     "Unexpected HTTP-sourced {kind}: only decryption requests can be HTTP-sourced"

@@ -1,0 +1,11 @@
+services:
+  # relayer-proxy: one base URL (:3003) for fhevm-sdk. /v2 and /v3 go to fhevm-relayer, /v4 to
+  # fhevm-relayer-http (502 when the bundle has no relayer-http). Static config, no env file.
+  relayer-proxy:
+    container_name: fhevm-relayer-proxy
+    platform: linux/amd64
+    image: nginx:1.27.5-alpine-slim
+    volumes:
+      - ../static/config/relayer-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "3003:3003"

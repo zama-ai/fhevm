@@ -170,7 +170,7 @@ const TEST_PROFILE_DESCRIPTIONS: Partial<Record<(typeof TEST_PROFILE_NAMES)[numb
   "connector-http":
     "Run the three connector-http-* suites (public decrypt, user decrypt, negative) in one go.",
   "coprocessor-proxy":
-    "Sign as KMS party 1's connector against every coprocessor-proxy and its fake prf-service.",
+    "Sign as KMS party 1's connector against every coprocessor-proxy and the prf-service behind it.",
   random: "Run random generation coverage.",
   "random-subset": "Run a narrower random generation subset.",
   operators: "Run manual operator workflows.",
@@ -687,6 +687,16 @@ const waitForDriftRevertStatus = async (
   }
 };
 
+/**
+ * Env vars `test` adds to every `docker exec` in the test-suite container for the current run
+ * (e.g. E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY=true for --decrypt-without-gateway). Set by `test`, reset when it returns.
+ */
+let testRunEnv: string[] = [];
+
+/** Returns the `-e NAME=value` docker exec flags for the test command's per-run options. */
+export const testRunEnvArgs = (options: Pick<TestOptions, "decryptWithoutGateway">) =>
+  options.decryptWithoutGateway ? ["-e", "E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY=true"] : [];
+
 /** Builds the `docker exec` argv used to run tests inside the test-suite container. */
 export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] = []) => [
   "docker",
@@ -695,6 +705,7 @@ export const buildTestContainerArgs = (tail: string[], extraExecArgs: string[] =
   "npm_config_update_notifier=false",
   "-e",
   "NPM_CONFIG_UPDATE_NOTIFIER=false",
+  ...testRunEnv,
   ...extraExecArgs,
   TEST_SUITE_CONTAINER,
   ...tail,
@@ -2157,6 +2168,15 @@ const runDbStateRevert = async (
 
 /** Runs a named test profile, custom grep, or the standard/heavy CI suites. */
 export const test = async (testName: string | undefined, options: TestOptions) => {
+  testRunEnv = testRunEnvArgs(options);
+  try {
+    await runTest(testName, options);
+  } finally {
+    testRunEnv = [];
+  }
+};
+
+const runTest = async (testName: string | undefined, options: TestOptions) => {
   if (testName === "list") {
     listTestProfiles();
     return;
@@ -2168,6 +2188,9 @@ export const test = async (testName: string | undefined, options: TestOptions) =
   const state = await loadState();
   if (!state?.discovery?.actualFheKeyId) {
     throw new PreflightError("Stack has not completed bootstrap; run `fhevm-cli up` first");
+  }
+  if (options.decryptWithoutGateway && !state.versions.env.RELAYER_HTTP_VERSION) {
+    throw new PreflightError("--decrypt-without-gateway needs a stack that runs relayer-http, but RELAYER_HTTP_VERSION is not set in its bundle");
   }
 
   const ciphertextDriftRequirement = () => {
@@ -2231,7 +2254,7 @@ export const test = async (testName: string | undefined, options: TestOptions) =
     }
     return state.scenario.kind === "blue-green"
       ? "blue-green stacks run without coprocessor-proxy"
-      : "COPROCESSOR_PROXY_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
+      : "COPROCESSOR_PROXY_VERSION or COPROCESSOR_PRF_SERVICE_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
   };
 
   const dbStateRevertSkipReason = () =>

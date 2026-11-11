@@ -1,14 +1,17 @@
-//! Default-deny routing of the interface: exactly three routes, anything else is rejected before
+//! Default-deny routing of the interface: exactly four routes, anything else is rejected before
 //! any body byte is read.
 
 use http::{Method, StatusCode};
-use kms_connector_api::{PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE};
+use kms_connector_api::{
+    PAD_DECRYPTION_ROUTE, PUBLIC_DECRYPTION_ROUTE, USER_DECRYPTION_ROUTE, VERSION_ROUTE,
+};
 
 /// The routes the proxy forwards.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Route {
     PublicDecrypt,
     UserDecrypt,
+    PadDecrypt,
     Version,
 }
 
@@ -42,6 +45,7 @@ pub fn match_route(method: &Method, path: &str) -> Result<Route, RouteError> {
     let (route, expected) = match path {
         PUBLIC_DECRYPTION_ROUTE => (Route::PublicDecrypt, Method::POST),
         USER_DECRYPTION_ROUTE => (Route::UserDecrypt, Method::POST),
+        PAD_DECRYPTION_ROUTE => (Route::PadDecrypt, Method::POST),
         VERSION_ROUTE => (Route::Version, Method::GET),
         _ => return Err(RouteError::NotFound),
     };
@@ -57,7 +61,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn matches_the_three_interface_routes() {
+    fn matches_the_four_interface_routes() {
         assert_eq!(
             match_route(&Method::POST, PUBLIC_DECRYPTION_ROUTE),
             Ok(Route::PublicDecrypt)
@@ -65,6 +69,10 @@ mod tests {
         assert_eq!(
             match_route(&Method::POST, USER_DECRYPTION_ROUTE),
             Ok(Route::UserDecrypt)
+        );
+        assert_eq!(
+            match_route(&Method::POST, PAD_DECRYPTION_ROUTE),
+            Ok(Route::PadDecrypt)
         );
         assert_eq!(match_route(&Method::GET, VERSION_ROUTE), Ok(Route::Version));
     }
