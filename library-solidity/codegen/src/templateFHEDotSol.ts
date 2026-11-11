@@ -1,9 +1,9 @@
 import { readFileSync } from 'fs';
 
-import type { AdjustedFheType, FheTypeInfo, Operator } from './common';
-import { OperatorArguments, ReturnType } from './common';
-import { resolveTemplatePath } from './paths';
-import { getUint, removeTemplateComments } from './utils';
+import type { AdjustedFheType, FheTypeInfo, Operator } from './common.js';
+import { OperatorArguments, ReturnType } from './common.js';
+import { resolveTemplatePath } from './paths.js';
+import { getUint, removeTemplateComments } from './utils.js';
 
 export function generateFhevmECDSALib(): string {
   const file = resolveTemplatePath('FhevmECDSA.sol-template');

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'fs';
 import * as path from 'path';
 import { isDeepStrictEqual } from 'util';
 
-import type { OverloadSignature } from './common';
+import type { OverloadSignature } from './common.js';
 import {
   type LibCommandOptions,
   type OverloadsCommandOptions,
@@ -18,32 +18,32 @@ import {
   toAbsoluteFileWithExtension,
   toAbsulteConfig,
   toImportsCode,
-} from './config';
-import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos';
-import { type OverloadTest, type OverloadTests, generateOverloads } from './generateOverloads';
-import { generateSolidityHCULimit } from './hcuLimitGenerator';
-import { ALL_OPERATORS } from './operators';
-import { ALL_OPERATORS_PRICES } from './operatorsPrices';
-import { fromDirToFile, fromFileToFile, isDirectory } from './paths';
+} from './config.js';
+import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos.js';
+import { type OverloadTest, type OverloadTests, generateOverloads } from './generateOverloads.js';
+import { generateSolidityHCULimit } from './hcuLimitGenerator.js';
+import { ALL_OPERATORS } from './operators.js';
+import { ALL_OPERATORS_PRICES } from './operatorsPrices.js';
+import { fromDirToFile, fromFileToFile, isDirectory } from './paths.js';
 import {
   generateConfidentialOAppCoreLib,
   generateConfidentialOAppLib,
   generateConfidentialOAppReceiverLib,
   generateConfidentialOAppSenderLib,
   generateIDstAppLib,
-} from './templateBridge';
-import { generateFhevmECDSALib, generateSolidityFHELib } from './templateFHEDotSol';
-import { generateSolidityFheType } from './templateFheTypeDotSol';
-import { generateSolidityImplLib } from './templateImpDotSol';
+} from './templateBridge.js';
+import { generateFhevmECDSALib, generateSolidityFHELib } from './templateFHEDotSol.js';
+import { generateSolidityFheType } from './templateFheTypeDotSol.js';
+import { generateSolidityImplLib } from './templateImpDotSol.js';
 import {
   type TypescriptTestGroupImports,
   generateSolidityOverloadTestFiles,
   generateSolidityUnitTestContracts,
   generateTypeScriptTestCode,
   splitOverloadsToShards,
-} from './testgen';
-import { toBigInt } from './utils';
-import { validate } from './validate';
+} from './testgen.js';
+import { toBigInt } from './utils.js';
+import { validate } from './validate.js';
 
 function isNumberOrBigInt(value: unknown): value is number | bigint {
   return typeof value === 'number' || typeof value === 'bigint';
