@@ -7,7 +7,7 @@ import {aclAdd, hcuConfiguratorAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "./ACL.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {HCULimitOperators} from "./HCULimitOperators.sol";
-import {ALLOWLIST_QUOTA, BLOCK_WHITELIST_QUOTA, DEFAULT_QUOTA, MAX_BPS} from "./shared/Constants.sol";
+import {ALLOWLIST_QUOTA, BLOCK_WHITELIST_QUOTA, DEFAULT_QUOTA, MAX_BPS, MAX_TIER, RESERVED_TIER} from "./shared/Constants.sol";
 
 /**
  * @title HCULimit
@@ -91,9 +91,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /// @notice A quota or capacity with this maximum is not metered.
     uint48 private constant NO_CAP = type(uint48).max;
 
-    /// @notice Tier of every quota never moved to another tier.
-    uint8 private constant DEFAULT_TIER = 0;
-
     /// @dev Per-handle transient word: bit 255 marks the depths as known, bits 128-254 hold the
     ///      depth carried across transactions and bits 0-127 the depth within this transaction.
     uint256 private constant DEPTH_KNOWN = 1 << 255;
@@ -110,11 +107,17 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         uint8 tier;
     }
 
-    /// @dev Limit and meter of all FHE work on this chain, in one slot. Every operation charges it, whatever its quota,
-    ///      and the load decays as a quota's usage does.
+    /// @dev The HCU load the coprocessors absorb on this chain and how much of it they drain per block. Every tier's
+    ///      threshold is a share of maxHCU, and every tier's meter drains at decayPerBlock.
     struct Capacity {
         uint48 maxHCU;
         uint48 decayPerBlock;
+    }
+
+    /// @dev Threshold and meter of one tier, in one slot. The meter holds the load of this tier and every tier below it
+    ///      (higher numbers), so Reserved's meter holds the chain's whole load.
+    struct Tier {
+        uint16 maxLoadBps;
         uint48 usedHCU;
         uint48 lastBlock;
     }
@@ -153,10 +156,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         mapping(uint16 quotaId => Quota) quotas;
         /// @notice Quota of each contract; the default quota when never assigned.
         mapping(address account => uint16 quotaId) contractQuota;
-        /// @notice HCU load the coprocessors absorb on this chain, metered across all quotas.
+        /// @notice HCU load the coprocessors absorb on this chain, shared by the tiers.
         Capacity capacity;
-        /// @notice Load, in basis points of the capacity's maximum, above which each tier's operations are refused.
-        mapping(uint8 tier => uint16 maxLoadBps) tierMaxLoadBps;
+        /// @notice Threshold, in basis points of the capacity's maximum, and meter of each tier.
+        mapping(uint8 tier => Tier) tiers;
     }
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
@@ -197,7 +200,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         _setQuota(DEFAULT_QUOTA, defaultQuotaHCUPerBlock, defaultQuotaHCUPerBlock);
         _setCapacity(NO_CAP, NO_CAP);
-        _setTier(DEFAULT_TIER, MAX_BPS);
+        _setTier(RESERVED_TIER, MAX_BPS);
         _setTxLimits(maxHCUPerTx, maxHCUDepthPerTx);
     }
 
@@ -223,7 +226,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
             _setQuota(DEFAULT_QUOTA, globalCap, globalCap);
         }
         _setCapacity(NO_CAP, NO_CAP);
-        _setTier(DEFAULT_TIER, MAX_BPS);
+        _setTier(RESERVED_TIER, MAX_BPS);
     }
 
     // Setters for HCUConfigurator, which checks each value and emits its event.
@@ -453,9 +456,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
-     * @notice Charges one operation to the quota of the contract that runs it and to the chain's capacity. The
-     *         operation must fit the quota's maximum and keep the chain's load within the threshold of the quota's tier.
-     * @dev Checks both meters before writing either, so a refused operation spends neither.
+     * @notice Charges one operation to the quota of the contract that runs it and to the meters of its quota's tier and
+     *         every tier above it. The operation must fit the quota's maximum and each of those meters' thresholds.
+     * @dev Checks every meter before writing any, so a refused operation spends none.
      * @param opHCU HCU cost of the current operation.
      * @param caller Contract that calls FHEVMExecutor.
      */
@@ -471,19 +474,22 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         if (maxHCU != NO_CAP) {
             (used, quotaWait) = _meter(quota.usedHCU, quota.lastBlock, quota.decayPerBlock, maxHCU, opHCU);
         }
-        // An unmetered quota still charges the capacity, so the capacity sees all load.
-        (uint256 load, uint256 loadWait) = _chainLoad(quota.tier, opHCU, caller, quotaId);
-        // The meter with the longer wait names the error, so waiting that long clears both.
+        // An unmetered quota still charges the tiers' meters, so Reserved's meter sees all load.
+        uint8 tier = quota.tier;
+        (uint256[MAX_TIER + 1] memory loads, uint256 loadWait) = _tierLoads(tier, opHCU, caller, quotaId);
+        // The longer wait names the error, so waiting that long clears every meter.
         if (loadWait > quotaWait) revert HCUChainLoadTooHigh(caller, quotaId, loadWait);
         if (quotaWait != 0) revert HCUQuotaExceeded(caller, quotaId, quotaWait);
         if (maxHCU != NO_CAP) {
             quota.usedHCU = uint48(used);
             quota.lastBlock = uint48(block.number);
         }
-        Capacity storage capacity = $.capacity;
-        if (capacity.maxHCU != NO_CAP) {
-            capacity.usedHCU = uint48(load);
-            capacity.lastBlock = uint48(block.number);
+        if ($.capacity.maxHCU != NO_CAP) {
+            for (uint8 k = 0; k <= tier; ++k) {
+                Tier storage meter = $.tiers[k];
+                meter.usedHCU = uint48(loads[k]);
+                meter.lastBlock = uint48(block.number);
+            }
         }
     }
 
@@ -497,21 +503,36 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         return $.blockHCUWhitelist[account] ? BLOCK_WHITELIST_QUOTA : ALLOWLIST_QUOTA;
     }
 
-    /// @dev Returns the chain's load after decay plus `opHCU`, and the blocks of decay before it fits the threshold of
-    ///      `tier`; (0, 0) while the capacity is unmetered.
-    function _chainLoad(
+    /// @dev Returns the meters of Reserved down to `tier` after decay plus `opHCU`, and the longest wait under their
+    ///      thresholds; zeros while the capacity is unmetered.
+    function _tierLoads(
         uint8 tier,
         uint256 opHCU,
         address caller,
         uint16 quotaId
-    ) private view returns (uint256 load, uint256 retryAfterBlocks) {
+    ) private view returns (uint256[MAX_TIER + 1] memory loads, uint256 retryAfterBlocks) {
         HCULimitStorage storage $ = _getHCULimitStorage();
-        Capacity storage capacity = $.capacity;
-        uint48 maxLoad = capacity.maxHCU;
-        if (maxLoad == NO_CAP) return (0, 0);
-        uint256 threshold = (uint256(maxLoad) * $.tierMaxLoadBps[tier]) / MAX_BPS;
-        if (threshold == 0) revert HCUTierStopped(caller, quotaId);
-        return _meter(capacity.usedHCU, capacity.lastBlock, capacity.decayPerBlock, threshold, opHCU);
+        Capacity memory capacity = $.capacity;
+        if (capacity.maxHCU == NO_CAP) return (loads, 0);
+        // Thresholds never increase with the tier number, so the quota's own tier is the first to reach 0.
+        if (_threshold(capacity.maxHCU, $.tiers[tier].maxLoadBps) == 0) revert HCUTierStopped(caller, quotaId);
+        for (uint8 k = 0; k <= tier; ++k) {
+            Tier storage meter = $.tiers[k];
+            uint256 wait;
+            (loads[k], wait) = _meter(
+                meter.usedHCU,
+                meter.lastBlock,
+                capacity.decayPerBlock,
+                _threshold(capacity.maxHCU, meter.maxLoadBps),
+                opHCU
+            );
+            if (wait > retryAfterBlocks) retryAfterBlocks = wait;
+        }
+    }
+
+    /// @dev Returns a tier's threshold in HCU: `maxLoadBps` of the capacity's maximum.
+    function _threshold(uint256 maxHCU, uint16 maxLoadBps) private pure returns (uint256) {
+        return (maxHCU * maxLoadBps) / MAX_BPS;
     }
 
     /**
@@ -563,7 +584,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     function _setTier(uint8 tier, uint16 maxLoadBps) private {
-        _getHCULimitStorage().tierMaxLoadBps[tier] = maxLoadBps;
+        _getHCULimitStorage().tiers[tier].maxLoadBps = maxLoadBps;
     }
 
     function _setTxLimits(uint48 maxHCUPerTx, uint48 maxHCUDepthPerTx) private {
@@ -633,22 +654,24 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
-     * @notice Returns the chain's capacity, its decay per block and its current load after decay.
+     * @notice Returns the chain's capacity, its decay per block and the chain's load after decay, which is Reserved's
+     *         meter.
      */
     function getCapacity() public view virtual returns (uint48 maxHCU, uint48 decayPerBlock, uint48 usedHCU) {
-        Capacity storage capacity = _getHCULimitStorage().capacity;
-        return (
-            capacity.maxHCU,
-            capacity.decayPerBlock,
-            uint48(_decayed(capacity.usedHCU, capacity.lastBlock, capacity.decayPerBlock))
-        );
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        Capacity memory capacity = $.capacity;
+        (, usedHCU) = getTier(RESERVED_TIER);
+        return (capacity.maxHCU, capacity.decayPerBlock, usedHCU);
     }
 
     /**
-     * @notice Returns a tier's load threshold, in basis points of the capacity's maximum; 0 when stopped or never set.
+     * @notice Returns a tier's threshold, in basis points of the capacity's maximum (0 when stopped or never set), and
+     *         the load of this tier and every tier below it, after decay.
      */
-    function getTier(uint8 tier) public view virtual returns (uint16) {
-        return _getHCULimitStorage().tierMaxLoadBps[tier];
+    function getTier(uint8 tier) public view virtual returns (uint16 maxLoadBps, uint48 usedHCU) {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        Tier storage meter = $.tiers[tier];
+        return (meter.maxLoadBps, uint48(_decayed(meter.usedHCU, meter.lastBlock, $.capacity.decayPerBlock)));
     }
 
     /**
