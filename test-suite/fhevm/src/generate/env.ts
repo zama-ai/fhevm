@@ -9,6 +9,7 @@ import {
   requiresMultichainAclAddress,
   requiresModernHostAddressArtifacts,
   supportsConnectorHttp,
+  supportsPrfService,
   runsCoprocessorProxy,
 } from "../compat/compat";
 import type { StackSpec } from "../stack-spec/stack-spec";
@@ -21,7 +22,7 @@ import {
   objectStoreOperatorUrl,
   POSTGRES_HOST,
   coprocessorDatabaseName,
-  coprocessorProxyEnvName,
+  coprocessorServiceEnvName,
   hostChainRuntimes,
   realLzEndpointFor,
 } from "../layout";
@@ -462,12 +463,28 @@ const buildCoprocessorProxyEnvs = (envs: Record<string, Record<string, string>>,
     return proxyEnvs;
   }
   for (let index = 0; index < plan.topology.count; index += 1) {
-    proxyEnvs[coprocessorProxyEnvName(index)] = {
+    proxyEnvs[coprocessorServiceEnvName("coprocessor-proxy", index)] = {
       COPROCESSOR_PROXY_COPROCESSOR_SIGNER_ADDRESS: coprocessorSigner(envs, index),
       COPROCESSOR_PROXY_PRF_SERVICE_ADDRESS: `${toServiceName("prf-service", index)}:${PRF_SERVICE_PORT}`,
     };
   }
   return proxyEnvs;
+};
+
+/** Each prf-service's env file: its coprocessor's database, as the prf_service role. */
+const buildPrfServiceEnvs = (envs: Record<string, Record<string, string>>, plan: StackSpec) => {
+  const prfServiceEnvs: Record<string, Record<string, string>> = {};
+  if (!plan.coprocessor || !supportsPrfService(plan)) {
+    return prfServiceEnvs;
+  }
+  // A fixed name: grant_pad_roles.sql grants only to `prf_service`.
+  const credentials = `prf_service:${envs.database.PRF_SERVICE_DATABASE_PASSWORD}`;
+  for (let index = 0; index < plan.topology.count; index += 1) {
+    prfServiceEnvs[coprocessorServiceEnvName("coprocessor-prf-service", index)] = {
+      DATABASE_URL: `postgresql://${credentials}@${POSTGRES_HOST}/${coprocessorDatabaseName(index)}`,
+    };
+  }
+  return prfServiceEnvs;
 };
 
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */
@@ -739,7 +756,7 @@ export const renderEnvMaps = async (
   }
 
   // After the loops that copy coprocessor settings into every `coprocessor*` instance env.
-  Object.assign(instanceEnvs, buildCoprocessorProxyEnvs(envs, plan));
+  Object.assign(instanceEnvs, buildCoprocessorProxyEnvs(envs, plan), buildPrfServiceEnvs(envs, plan));
   validateEnvMaps(envs, instanceEnvs);
   const compat = compatPolicyForState(plan);
 
