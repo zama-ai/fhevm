@@ -1,0 +1,103 @@
+# Local Prometheus + Loki + Grafana for relayer-http's dashboards and alerts (OBSERVABILITY.md): `make start-monitoring`.
+# Two relayers, told apart by the label `instance` on both metrics and logs:
+#   fhevm-cli  the stack's container `fhevm-relayer-http` (./fhevm-cli up, or this checkout's image after
+#              `make upgrade-fhevm-cli-relayer`): metrics on RELAYER_HTTP_STACK_METRICS_PORT, logs from Docker.
+#   host       `make run` (cargo, on this machine): metrics on RELAYER_HTTP_METRICS_PORT, logs from the file it
+#              writes, relayer-http/target/relayer-run.log.
+# A relayer not running is a down target. Prometheus evaluates monitoring/alerts.yaml (no Alertmanager: firing alerts
+# show on its /alerts page). Alloy ships the logs (JSON lines, as in production) to Loki as `app="relayer-http"`.
+# Loki is published for `make check-dashboards`, which pushes test lines. Grafana loads the dashboards of monitoring/.
+name: relayer-http-monitoring
+services:
+  prometheus:
+    image: prom/prometheus:v3.9.1   # the listener's pin
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    configs:
+      - source: prometheus
+        target: /etc/prometheus/prometheus.yml
+    volumes:
+      - ../../monitoring/alerts.yaml:/etc/prometheus/alerts.yaml:ro
+    ports: ["${RELAYER_HTTP_MONITORING_HOST:-127.0.0.1}:${RELAYER_HTTP_PROMETHEUS_PORT:-9390}:9090"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+  loki:
+    image: grafana/loki:3.4.2
+    command: ["-config.file=/etc/loki/local-config.yaml", "-reporting.enabled=false"]   # the image's single-binary config
+    ports: ["${RELAYER_HTTP_MONITORING_HOST:-127.0.0.1}:${RELAYER_HTTP_LOKI_PORT:-3310}:3100"]
+  alloy:
+    image: grafana/alloy:v1.7.1
+    command: ["run", "--disable-reporting", "/etc/alloy/config.alloy"]
+    configs:
+      - source: alloy
+        target: /etc/alloy/config.alloy
+    volumes:
+      # Read-only Docker API access, to discover the stack relayer's container and read its logs.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # The log file of `make run`.
+      - ../../target:/relayer-target:ro
+    depends_on: [loki]
+  grafana:
+    image: grafana/grafana:12.3.2   # the listener's pin
+    ports: ["${RELAYER_HTTP_MONITORING_HOST:-127.0.0.1}:${RELAYER_HTTP_GRAFANA_PORT:-3300}:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      # The directory, not each file: a single-file mount keeps the file it first saw when an editor replaces it.
+      - ../../monitoring:/var/lib/grafana/dashboards:ro
+    depends_on: [prometheus, loki]
+configs:
+  prometheus:
+    content: |
+      global:
+        scrape_interval: 5s
+        evaluation_interval: 5s
+      rule_files: [/etc/prometheus/alerts.yaml]
+      scrape_configs:
+        - job_name: relayer-http
+          static_configs:
+            - targets: ["host.docker.internal:${RELAYER_HTTP_STACK_METRICS_PORT:-3092}"]
+              labels: {instance: fhevm-cli}
+            - targets: ["host.docker.internal:${RELAYER_HTTP_METRICS_PORT:-4092}"]
+              labels: {instance: host}
+  alloy:
+    content: |
+      discovery.docker "relayer" {
+        host = "unix:///var/run/docker.sock"
+        filter {
+          name   = "name"
+          values = ["^fhevm-relayer-http$$"]
+        }
+      }
+      // The label the dashboards' log queries select on ($$app), as in production, and the relayer's instance.
+      discovery.relabel "relayer" {
+        targets = discovery.docker.relayer.targets
+        rule {
+          target_label = "app"
+          replacement  = "relayer-http"
+        }
+        rule {
+          target_label = "instance"
+          replacement  = "fhevm-cli"
+        }
+      }
+      loki.source.docker "relayer" {
+        host       = "unix:///var/run/docker.sock"
+        targets    = discovery.relabel.relayer.output
+        forward_to = [loki.write.local.receiver]
+      }
+      // `make run` tees its output to this file, truncated at each run.
+      local.file_match "host" {
+        path_targets = [{"__path__" = "/relayer-target/relayer-run.log", "app" = "relayer-http", "instance" = "host"}]
+      }
+      loki.source.file "host" {
+        targets    = local.file_match.host.targets
+        forward_to = [loki.write.local.receiver]
+      }
+      loki.write "local" {
+        endpoint {
+          url = "http://loki:3100/loki/api/v1/push"
+        }
+      }

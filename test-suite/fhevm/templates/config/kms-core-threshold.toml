@@ -66,14 +66,3 @@ max_opened_inactive_sessions_per_party = 2000
 tracing_service_name = "kms-threshold" # KMS_CORE__TELEMETRY__TRACING_SERVICE_NAME (per party)
 tracing_otlp_timeout_ms = 10000
 metrics_bind_address = "0.0.0.0:9646"
-
-# KMS v1.0 removes the rate limiter (zama-ai/kms#949) and rejects this section as an
-# unknown field. Remove it when the test-suite moves to KMS v1.0.
-[rate_limiter_conf]
-bucket_size = 50000
-pub_decrypt = 1
-user_decrypt = 1
-crsgen = 100
-preproc = 25000
-keygen = 1000
-new_epoch = 1

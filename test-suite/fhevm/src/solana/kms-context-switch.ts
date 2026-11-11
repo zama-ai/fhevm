@@ -33,7 +33,7 @@ import { SOLANA_ACL_PROGRAM } from '../layout';
 import type { State } from '../types';
 import { until } from '../utils/until';
 import { readEvmKmsSignersForContext, uint256Bytes } from './addresses';
-import { aggregationOutcome, nodeOutcomes, relayerHttpRequests } from './decryption-trace';
+import { nodeOutcomes, RELAYER_HTTP_LOG, relayerHttpRequests, requestSummary } from './decryption-trace';
 import {
   assertActiveKmsPairMatchesEvmHost,
   assertKmsContextMatchesEvmHost,
@@ -183,33 +183,35 @@ export const prepareSolanaKmsContextLeg = async (
         const requests = [...(await relayerHttpRequests()).entries()]
           .filter(([requestId]) => !before.has(requestId))
           .map(([, lines]) => lines)
-          .filter((lines) => lines.some((line) => handles.some((handle) => String(line.fields.handles).includes(handle))))
-          .filter((lines) => aggregationOutcome(lines)?.message === 'aggregation succeeded');
-        const flows = new Set(requests.map((lines) => String(lines[0]?.fields.flow)));
+          .map((lines) => ({ lines, summary: requestSummary(lines) }))
+          .filter(({ summary }) => summary?.fields.outcome === 'succeeded')
+          .filter(({ summary }) => handles.some((handle) => String(summary?.fields.handles).includes(handle)));
+        const flows = new Set(requests.map(({ summary }) => String(summary?.fields.flow)));
         return flows.has('user_decrypt') && flows.has('public_decrypt') ? requests : undefined;
       },
       { description: "relayer-http's answered user and public decrypts of the leg's values", timeoutMs: 10_000, intervalMs: 500 },
     );
-    for (const lines of answered) {
-      const started = lines.find((line) => line.message === 'aggregation started');
-      const outcome = aggregationOutcome(lines)!;
+    for (const { lines, summary } of answered) {
+      const flow = String(summary!.fields.flow);
+      const started = lines.find((line) => line.message === RELAYER_HTTP_LOG.aggregationStarted);
       if (started === undefined) throw new Error('relayer-http logged no aggregation start for a decrypt');
       const timeoutMs = Number(started.fields.timeout_ms);
-      if (outcome.fields.deadline_hit !== false) {
-        throw new Error(`a ${String(started.fields.flow)} decrypt waited for its ${timeoutMs} ms deadline`);
+      // A succeeded request cuts a call only at its deadline: fail fast needs an unreachable threshold.
+      if (summary!.fields.cancelled_kms_nodes !== 'none') {
+        throw new Error(`a ${flow} decrypt waited for its ${timeoutMs} ms deadline`);
       }
       for (const party of outsideParties) {
         const node = nodeOutcomes(lines).find((outcomeOfNode) => outcomeOfNode.node === relayerHttpNodeName(party));
-        if (node?.message !== 'call failed' || node.attempts !== 1 || node.code !== 'unprocessable') {
+        if (node?.message !== RELAYER_HTTP_LOG.callFailed || node.attempts !== 1 || node.code !== 'unprocessable') {
           throw new Error(
-            `party ${party}, outside the context, ended its ${String(started.fields.flow)} call with ` +
+            `party ${party}, outside the context, ended its ${flow} call with ` +
               `${node === undefined ? 'no line' : `"${node.message}" (${node.code}) after ${node.attempts} attempt(s)`}, ` +
               'expected one attempt refused as unprocessable',
           );
         }
         console.log(
-          `[kms-context-switch] solana: ${String(started.fields.flow)}: party ${party} refused (${node.code}) in ` +
-            `${node.elapsedMs} ms; the aggregation took ${String(outcome.fields.elapsed_ms)} ms of its ${timeoutMs} ms`,
+          `[kms-context-switch] solana: ${flow}: party ${party} refused (${node.code}) in ` +
+            `${node.elapsedMs} ms; the request took ${String(summary!.fields.elapsed_ms)} ms of its ${timeoutMs} ms`,
         );
       }
     }

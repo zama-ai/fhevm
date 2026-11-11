@@ -232,7 +232,7 @@ describe("resumeRepairStep", () => {
     expect(resumeRepairStep(withHttp, [...running, "kms-connector-endpoint", "kms-connector-proxy"])).toBeUndefined();
   });
 
-  test("expects coprocessor-proxy and its fake prf-service only when the bundle pins the proxy", () => {
+  test("expects coprocessor-proxy, prf-service and the PRF output seeder only when the bundle pins them", () => {
     const running = [
       "fhevm-object-store",
       "coprocessor-and-kms-db",
@@ -263,11 +263,16 @@ describe("resumeRepairStep", () => {
     const base = completeState();
     const withProxy = {
       ...base,
-      versions: { ...base.versions, env: { ...base.versions.env, COPROCESSOR_PROXY_VERSION: "02f6cc0" } },
+      versions: {
+        ...base.versions,
+        env: { ...base.versions.env, COPROCESSOR_PROXY_VERSION: "02f6cc0", COPROCESSOR_PRF_SERVICE_VERSION: "02f6cc0" },
+      },
     };
     expect(resumeRepairStep(withProxy, running)).toBe("coprocessor");
-    expect(resumeRepairStep(withProxy, [...running, "coprocessor-proxy"])).toBe("coprocessor");
-    expect(resumeRepairStep(withProxy, [...running, "coprocessor-prf-service-fake", "coprocessor-proxy"])).toBeUndefined();
+    expect(resumeRepairStep(withProxy, [...running, "coprocessor-prf-service", "coprocessor-proxy"])).toBe("coprocessor");
+    expect(
+      resumeRepairStep(withProxy, [...running, "coprocessor-prf-service", "coprocessor-prf-output-seed", "coprocessor-proxy"]),
+    ).toBeUndefined();
   });
 
   test("returns nothing when every steady-state service is present", () => {

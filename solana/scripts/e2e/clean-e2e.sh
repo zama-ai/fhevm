@@ -107,9 +107,11 @@ elif [ "$squads_fixtures_status" -ne 0 ]; then
   echo "[clean-e2e] WARN: Squads fixtures unavailable; the Squads delegation scenario will not run"
 fi
 
-# Pin the EVM stack to the main SHA this PoC was validated against. Solana host support
-# is not yet on a release bundle, so we resolve a specific main commit explicitly.
-BASE_SHA="feaf86e"
+# Pin the EVM stack to the main commit the latest feature/solana sync merged; each sync moves
+# it. Solana host support is not on a release bundle yet, so a main commit is resolved
+# explicitly. Its published images then run main scripts the branch contains, such as
+# test-suite/e2e's seed-prf-output.ts, with the dependencies those scripts expect.
+BASE_SHA="dc9bbf8"
 LOCK="$ROOT/.fhevm/state/locks/sha-$BASE_SHA.json"
 
 # 0. Resolve the pinned bundle so the lock exists even from a fully clean state (fhevm-cli clean
@@ -122,9 +124,9 @@ LOCK="$ROOT/.fhevm/state/locks/sha-$BASE_SHA.json"
 #    tags (space-separated KEY=TAG entries, see select-overrides.sh).
 # shellcheck source=/dev/null
 source "$FHEVM/solana-images.env"
-#    The pinned base commit publishes no consensus-detector image. A source-built coprocessor group
-#    builds it, so its lock key takes the host-listener tag, as fhevm-cli does for release bundles;
-#    a published group gets it from SOLANA_E2E_LOCK_PINS.
+#    A source-built coprocessor group builds the consensus-detector, so its lock key takes the
+#    host-listener tag, as fhevm-cli does for release bundles; a published group keeps the base
+#    commit's tag, or the one SOLANA_E2E_LOCK_PINS sets.
 DETECTOR_BUILT_FROM_SOURCE=0
 case " $SOLANA_E2E_OVERRIDES " in *" coprocessor "*) DETECTOR_BUILT_FROM_SOURCE=1 ;; esac
 # shellcheck disable=SC2086 # SOLANA_E2E_LOCK_PINS is a space-separated KEY=TAG list, one arg each

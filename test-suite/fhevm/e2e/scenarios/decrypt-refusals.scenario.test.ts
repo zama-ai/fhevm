@@ -19,9 +19,8 @@
 //   [proof catch-up]     (local) a balance written while the Merkle indexer is paused -> 403 acl_denied;
 //                        once it resumes, the same request is answered.
 //
-// Who refused is read from relayer-http's log, on the local stack only: a request it refuses itself
-// has no `request forwarded` line and no decryption id. On another target the cases assert the status
-// and the code.
+// Who refused is read from relayer-http's log, on the local stack only: the summary line of a request
+// it refuses itself has no decryption id. On another target the cases assert the status and the code.
 import { describe, expect, test } from 'bun:test';
 import { address, getAddressEncoder, type Address } from '@solana/kit';
 import { hexToBytes } from '@fhevm/sdk/base';
@@ -31,7 +30,6 @@ import {
   type DecryptionCall,
   loggedDecryptionId,
   relayerHttpLines,
-  wasForwarded,
 } from '../../src/solana/decryption-trace';
 import {
   createConfidentialMint,
@@ -86,9 +84,7 @@ const expectRefusal = async (
 ) => {
   expect({ status: call.status, code: call.code }).toEqual({ status: expected.status, code: expected.code });
   if (!readsLogs) return;
-  const lines = await linesOf(call);
-  expect(wasForwarded(lines)).toBe(expected.refusedBy === 'connectors');
-  expect(loggedDecryptionId(lines) !== undefined).toBe(expected.refusedBy === 'connectors');
+  expect(loggedDecryptionId(await linesOf(call)) !== undefined).toBe(expected.refusedBy === 'connectors');
 };
 
 describe.skipIf(!env.capabilities.protocolServices)('solana decrypt refusals through relayer-http', () => {

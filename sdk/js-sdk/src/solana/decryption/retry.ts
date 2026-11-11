@@ -81,7 +81,6 @@ export const SOLANA_DECRYPTION_CODE_ACTIONS: Readonly<Record<string, SolanaDecry
   not_found: 'give-up',
   method_not_allowed: 'give-up',
   internal: 'give-up',
-  shutting_down: 'retry-unchanged',
 };
 
 /**

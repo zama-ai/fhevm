@@ -14,7 +14,9 @@ source "${script_dir}/../lib.sh"
 # "<release>-kms-connector-proxy") and kmsConnectorProxy.ports.https (8443).
 proxy_service() { echo "kms-connector-${1}-kms-connector-proxy"; }
 proxy_port=8443
-tls_secret=kms-connector-proxy-tls          # kmsConnectorProxy.tls.secretName in the overlay
+# Party i's proxy TLS secret, written by the chart's cert-manager Certificate
+# (named like the proxy Service). One per release: they share the namespace.
+tls_secret() { echo "kms-connector-${1}-proxy-tls"; }
 http_configmap=kms-connector-http           # read by the test-suite overlays
 # Party i's KMS tx-sender address: the `audience` its proxy accepts.
 tx_sender() { jq -r --argjson party "${1}" '.[] | select(.party == $party) | .address' <<<"${WALLETS_JSON}"; }
@@ -65,78 +67,6 @@ if [[ "${OBSERVABILITY}" == "true" ]]; then
   )
 fi
 
-######################################################################
-# Proxy TLS: one test CA and one server certificate per namespace, shared
-# by every party's proxy. The chart only mounts an existing
-# `kubernetes.io/tls` Secret, so it is created here, before the first
-# release installs. The SANs cover each party's proxy Service name (what
-# the e2e suite and relayer-http dial). Clients trust ca.crt. The server
-# certificate is not a CA: rustls clients such as relayer-http reject a CA
-# certificate served as a server certificate (CaUsedAsEndEntity).
-######################################################################
-if kubectl get secret "${tls_secret}" -n "${NAMESPACE}" >/dev/null 2>&1; then
-  echo "Secret ${tls_secret} already exists in ${NAMESPACE}; keeping it."
-else
-  sans="DNS:$(proxy_service 1)"
-  for i in $(seq 2 "${NB_KMS_CORE}"); do
-    sans="${sans},DNS:$(proxy_service "${i}")"
-  done
-  # Also match the fully-qualified in-cluster forms in case a client dials them.
-  fq=""
-  for i in $(seq 1 "${NB_KMS_CORE}"); do
-    fq="${fq},DNS:$(proxy_service "${i}").${NAMESPACE}.svc,DNS:$(proxy_service "${i}").${NAMESPACE}.svc.cluster.local"
-  done
-  sans="${sans}${fq}"
-  tls_dir=$(mktemp -d)
-  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 30 \
-    -keyout "${tls_dir}/ca.key" -out "${tls_dir}/ca.crt" -subj "/CN=kms-connector-proxy test CA" \
-    -addext "basicConstraints=critical,CA:TRUE" \
-    -addext "keyUsage=critical,keyCertSign" 2>/dev/null
-  openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
-    -keyout "${tls_dir}/tls.key" -subj "/CN=$(proxy_service 1)" -out "${tls_dir}/tls.csr" 2>/dev/null
-  printf '%s\n' "subjectAltName=${sans}" "basicConstraints=critical,CA:FALSE" \
-    "keyUsage=critical,digitalSignature" "extendedKeyUsage=serverAuth" > "${tls_dir}/tls.ext"
-  openssl x509 -req -in "${tls_dir}/tls.csr" -CA "${tls_dir}/ca.crt" -CAkey "${tls_dir}/ca.key" \
-    -set_serial "0x$(openssl rand -hex 16)" -days 30 -extfile "${tls_dir}/tls.ext" \
-    -out "${tls_dir}/tls.crt" 2>/dev/null
-  kubectl create secret generic "${tls_secret}" -n "${NAMESPACE}" --type=kubernetes.io/tls \
-    --from-file=tls.crt="${tls_dir}/tls.crt" --from-file=tls.key="${tls_dir}/tls.key" \
-    --from-file=ca.crt="${tls_dir}/ca.crt"
-  rm -rf "${tls_dir}"
-  echo "Created ${tls_secret} (SANs: ${sans})"
-fi
-
-######################################################################
-# What the e2e suite needs to exercise the HTTP decryption path (see
-# test-suite/e2e/test/sdk/connector/connectorHttp.ts), published as a
-# ConfigMap so the static test-suite overlays can configMapKeyRef it
-# instead of being yq-patched per party count:
-#   endpoint-urls  KMS_CONNECTOR_ENDPOINT_URLS, one https proxy URL per party
-#   kms-threshold  KMS_THRESHOLD: MPC t, quorum is 2t+1 (kms_t in lib.sh)
-#   ca.crt         the proxies' CA, for NODE_EXTRA_CA_CERTS
-#   tx-sender-addresses  KMS_CONNECTOR_TX_SENDER_ADDRESSES, aligned with endpoint-urls
-# The FhevmSig test key itself is a fixed literal in the overlays.
-######################################################################
-urls="https://$(proxy_service 1):${proxy_port}"
-tx_senders="$(tx_sender 1)"
-for i in $(seq 2 "${NB_KMS_CORE}"); do
-  urls="${urls},https://$(proxy_service "${i}"):${proxy_port}"
-  tx_senders="${tx_senders},$(tx_sender "${i}")"
-done
-threshold=$(kms_t "${NB_KMS_CORE}")
-ca=$(kubectl get secret "${tls_secret}" -n "${NAMESPACE}" -o jsonpath='{.data.ca\.crt}')
-require_nonempty "${ca}" "${tls_secret} has no ca.crt: it predates the proxy CA; destroy the preview and deploy it again"
-ca_file=$(mktemp)
-base64 -d <<<"${ca}" > "${ca_file}"
-kubectl create configmap "${http_configmap}" -n "${NAMESPACE}" \
-  --from-literal=endpoint-urls="${urls}" \
-  --from-literal=kms-threshold="${threshold}" \
-  --from-literal=tx-sender-addresses="${tx_senders}" \
-  --from-file=ca.crt="${ca_file}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-rm -f "${ca_file}"
-echo "Connector HTTP: urls=${urls} tx-senders=${tx_senders} threshold=${threshold}"
-
 kms_core_url() { echo "http://kms-core-${1}-core-${1}:50100"; }
 keygen_redirect() { echo "kms-insecure-keygen-redirect-${1}"; }
 keygen_redirect_port=3000 # the script's default; service.ports in values-kms-insecure-keygen-redirect-e2e.yaml
@@ -179,6 +109,7 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
     --set-string "kmsConnectorKmsWorker.config.kmsCoreEndpoints=$(kms_worker_endpoint "${i}")" \
     --set-string "kmsConnectorTxSender.wallet.secret.name=kms-connector-tx-sender-${i}" \
     --set-string "kmsConnectorProxy.txSenderAddress=$(tx_sender "${i}")" \
+    --set-string "kmsConnectorProxy.tls.secretName=$(tls_secret "${i}")" \
     --set-string "kmsConnectorDbMigration.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/db-migration" \
     --set-string "kmsConnectorDbMigration.image.tag=$(jq -r .kms_connector_db_migration <<<"${TAGS_JSON}")" \
     --set-string "kmsConnectorGwListener.image.name=hub.zama.org/ghcr/zama-ai/fhevm/kms-connector/gw-listener" \
@@ -193,4 +124,37 @@ for i in $(seq 1 "${NB_KMS_CORE}"); do
     --set-string "kmsConnectorProxy.image.tag=$(jq -r .kms_connector_proxy <<<"${TAGS_JSON}")" \
     "${tracing[@]}"
 done
+
+######################################################################
+# What the e2e suite needs to exercise the HTTP decryption path (see
+# test-suite/e2e/test/sdk/connector/connectorHttp.ts), published as a
+# ConfigMap so the static test-suite overlays can configMapKeyRef it
+# instead of being yq-patched per party count:
+#   endpoint-urls  KMS_CONNECTOR_ENDPOINT_URLS, one https proxy URL per party
+#   kms-threshold  KMS_THRESHOLD: MPC t, quorum is 2t+1 (kms_t in lib.sh)
+#   ca.crt         every party's self-signed proxy certificate, for NODE_EXTRA_CA_CERTS
+#   tx-sender-addresses  KMS_CONNECTOR_TX_SENDER_ADDRESSES, aligned with endpoint-urls
+# The FhevmSig test key itself is a fixed literal in the overlays.
+######################################################################
+urls="https://$(proxy_service 1):${proxy_port}"
+tx_senders="$(tx_sender 1)"
+for i in $(seq 2 "${NB_KMS_CORE}"); do
+  urls="${urls},https://$(proxy_service "${i}"):${proxy_port}"
+  tx_senders="${tx_senders},$(tx_sender "${i}")"
+done
+threshold=$(kms_t "${NB_KMS_CORE}")
+ca_file=$(mktemp)
+for i in $(seq 1 "${NB_KMS_CORE}"); do
+  kubectl wait certificate "$(proxy_service "${i}")" -n "${NAMESPACE}" --for=condition=Ready --timeout=5m
+  kubectl get secret "$(tls_secret "${i}")" -n "${NAMESPACE}" -o jsonpath='{.data.tls\.crt}' | base64 -d >> "${ca_file}"
+done
+kubectl create configmap "${http_configmap}" -n "${NAMESPACE}" \
+  --from-literal=endpoint-urls="${urls}" \
+  --from-literal=kms-threshold="${threshold}" \
+  --from-literal=tx-sender-addresses="${tx_senders}" \
+  --from-file=ca.crt="${ca_file}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+rm -f "${ca_file}"
+echo "Connector HTTP: urls=${urls} tx-senders=${tx_senders} threshold=${threshold}"
+
 sleep 60

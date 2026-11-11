@@ -1,7 +1,5 @@
-# coprocessor-proxy in front of party i's fake prf-service (values-prf-service-fake-e2e.yaml).
-# scripts/deploy/deploy-coprocessor.sh applies it to the coprocessor-<i> release, except on
-# blue-green stacks, and sets the image tag, the signer, the fake's address and the NetworkPolicy's
-# podSelector per party. apply-chain-env.sh sets canonicalProtocolConfigChainId to the host chain.
+# coprocessor-proxy and prf-service of party i. scripts/deploy/deploy-coprocessor.sh applies it,
+# except on blue-green stacks, and sets the per-party values. apply-chain-env.sh sets the chain ID.
 commonConfig:
   canonicalProtocolConfigChainId: "12345"
 
@@ -14,14 +12,23 @@ coprocessorProxy:
   tls:
     secretName: coprocessor-proxy-tls
   prfServiceNetworkPolicy:
-    # The fake serves the PRF route on 8080.
+    # The PRF port of prf-service.
     ports:
-      - {port: 8080, protocol: TCP}
-    # The e2e suite reads the fake's request count; it reaches nothing else of the fake.
+      - {port: 8090, protocol: TCP}
+    # Test-suite pods reach only the metrics port.
     extraIngress:
       - from:
           - podSelector:
               matchLabels:
                 app: fhevm-test-suite
         ports:
-          - {port: 9090, protocol: TCP}
+          - {port: 9100, protocol: TCP}
+
+prfService:
+  enabled: true
+  image:
+    name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/prf-service
+    tag: latest
+  # deploy-coprocessor.sh creates this role before the migration, which grants its rights.
+  databaseUser: {value: prf_service}
+  databasePassword: {value: prf_service}

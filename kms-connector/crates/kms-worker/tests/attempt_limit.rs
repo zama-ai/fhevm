@@ -253,6 +253,7 @@ fn prepare_mocks(req: &ProtocolEventKind) -> MockSet {
 
     // Gets the endpoints for the given request type
     let (req_endpoint, resp_endpoint) = match req {
+        ProtocolEventKind::PadDecryption(_) => unreachable!("pad decryption is not tested here"),
         ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::SolanaPublicDecryption(_) => {
             ("PublicDecrypt", "GetPublicDecryptionResult")
         }

@@ -3,17 +3,17 @@ use crate::core::event_processor::{
     context::ContextManager,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
+    pad,
     protocol_config::ProtocolConfigProcessor,
 };
 use crate::core::solana::SolanaDecryptionVerifier;
 use alloy::{primitives::B256, providers::Provider};
 use anyhow::anyhow;
 use connector_utils::types::{
-    KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, KmsSendResponse, ProtocolEvent,
-    ProtocolEventKind, db::invalidate_kms_epoch, extra_data::parse_extra_data, u256_to_request_id,
+    KmsGrpcRequest, KmsGrpcResponse, KmsResponseKind, ProtocolEvent, ProtocolEventKind,
+    extra_data::parse_extra_data, u256_to_request_id,
 };
 use kms_connector_api::ErrorCode;
-use kms_grpc::kms::v1::{DestroyMpcContextRequest, DestroyMpcEpochRequest};
 use sqlx::{Pool, Postgres};
 use tracing::warn;
 
@@ -81,19 +81,8 @@ where
 
             let (error_count, result) = self.kms_client.send_request(&request).await;
             event.error_counter += error_count;
-            let send_response = result?;
+            result?;
             event.already_sent = true;
-
-            // Invalidate epochs associated to destroyed context returned by the KMS Core.
-            // A failure must not prevent the event from completing, as retrying would result in an
-            // `NotFound` from KMS Core with no epoch IDs.
-            if let KmsSendResponse::DestroyedEpochs(epoch_ids) = send_response {
-                for epoch_id in epoch_ids {
-                    if let Err(e) = invalidate_kms_epoch(&self.db_pool, epoch_id).await {
-                        warn!("Failed to invalidate destroyed KMS epoch #{epoch_id:#066x}: {e}");
-                    }
-                }
-            }
         }
 
         let (error_count, grpc_result) = self
@@ -232,6 +221,7 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .await
                     .map_err(RequestCheckError::record)
             }
+            ProtocolEventKind::PadDecryption(_) => Err(pad::unsupported()),
             ProtocolEventKind::PrepKeygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Keygen(req) => self.check_context(&req.extraData).await,
             ProtocolEventKind::Crsgen(req) => self.check_context(&req.extraData).await,
@@ -317,6 +307,9 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     )
                     .await
             }
+            ProtocolEventKind::PadDecryption(_) => {
+                unreachable!("pad decryptions are rejected by `check_request`")
+            }
             ProtocolEventKind::PrepKeygen(req) => {
                 self.kms_generation_processor
                     .prepare_prep_keygen_request(req)
@@ -348,16 +341,12 @@ impl<GP: Provider + Clone + 'static, HP: Provider, C: ContextManager> DbEventPro
                     .prepare_new_kms_epoch_request(req)
                     .await
             }
-            ProtocolEventKind::KmsContextDestroyed(req) => Ok(KmsGrpcRequest::DestroyMpcContext(
-                DestroyMpcContextRequest {
-                    context_id: Some(u256_to_request_id(req.kmsContextId)),
-                },
-            )),
-            ProtocolEventKind::KmsEpochDestroyed(req) => {
-                Ok(KmsGrpcRequest::DestroyMpcEpoch(DestroyMpcEpochRequest {
-                    epoch_id: Some(u256_to_request_id(req.epochId)),
-                }))
-            }
+            ProtocolEventKind::KmsContextDestroyed(req) => Ok(self
+                .protocol_config_processor
+                .prepare_destroy_kms_context_request(req)),
+            ProtocolEventKind::KmsEpochDestroyed(req) => Ok(self
+                .protocol_config_processor
+                .prepare_destroy_kms_epoch_request(req)),
         }
     }
 }

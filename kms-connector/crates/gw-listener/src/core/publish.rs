@@ -116,6 +116,13 @@ async fn publish_event_inner<'e>(
         | ProtocolEventKind::SolanaUserDecryptionV1(_) => Err(anyhow!(
             "Solana decryptions arrive through HTTP, not on chain"
         )),
+        // Only stored by the Connector endpoint: there is no on-chain pad decryption event.
+        ProtocolEventKind::PadDecryption(e) => {
+            return Err(anyhow!(
+                "Unexpected on-chain {}",
+                ProtocolEventKind::from(e)
+            ));
+        }
         ProtocolEventKind::PrepKeygen(e) => {
             let params_type: ParamsTypeDb = e.paramsType.try_into()?;
             publish_prep_keygen_request(executor, e, params_type, tx_hash, created_at, otlp_ctx)

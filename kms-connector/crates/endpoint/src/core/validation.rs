@@ -1,20 +1,22 @@
 //! Cheap, stateless request checks (no RPC, no DB). Any failure maps to `400 Bad Request`.
 
 use crate::core::Config;
-use alloy::primitives::{B256, U256};
+use alloy::primitives::{Address, B256, U256};
 use connector_utils::types::{
     extra_data::parse_extra_data,
     handle::{extract_chain_id_from_handle, extract_fhe_type_from_handle},
     solana_request::{SolanaPublicDecryptionRequest, SolanaUserDecryptionRequestV1},
 };
 use kms_connector_api::{
-    AttestationType, ErrorCode, MAX_USER_DECRYPTION_DURATION_SECONDS, PublicDecryptionRequest,
-    RequestValidity, SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody,
-    SolanaUserDecryptionRequest, UserDecryptionRequest,
+    AttestationType, ErrorCode, MAX_PAD_DECRYPTORS, MAX_PAD_LENGTH,
+    MAX_USER_DECRYPTION_DURATION_SECONDS, PAD_WITNESS_VERSION, PadDecryptionRequest,
+    PublicDecryptionRequest, RequestValidity,
+    SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody, SolanaUserDecryptionRequest,
+    UserDecryptionRequest,
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use std::ops::RangeInclusive;
+use std::{collections::HashSet, ops::RangeInclusive};
 use tfhe::FheTypes;
 use thiserror::Error;
 use zama_solana_acl::host_chain::{handle_chain_id, is_solana_host_chain_id};
@@ -55,28 +57,36 @@ pub enum ValidationError {
         min: u64,
         max: u64,
     },
-    #[error(
-        "unsupported attestationType, supported: [{supported}]",
-        supported = supported_attestation_types()
-    )]
-    UnsupportedAttestationType,
+    /// `supported` lists what the route accepts for the body it read.
+    #[error("unsupported attestationType, supported: [{supported}]")]
+    UnsupportedAttestationType { supported: String },
     #[error("invalid body: {0}")]
     InvalidBody(String),
     #[error("invalid Solana request: {0}")]
     InvalidSolanaRequest(String),
     #[error("chain id {0} is a Solana host chain, whose requests use the Solana body")]
     SolanaChainInEvmRequest(u64),
-}
-
-fn supported_attestation_types() -> String {
-    AttestationType::supported().collect::<Vec<_>>().join(", ")
+    #[error("{field} must not be the zero address")]
+    ZeroAddress { field: &'static str },
+    #[error("unsupported witnessVersion: {0}, supported: [{PAD_WITNESS_VERSION}]")]
+    UnsupportedWitnessVersion(u8),
+    #[error("no pad provided")]
+    NoPads,
+    #[error("too many pads: {0}, maximum is {1}")]
+    TooManyPads(usize, usize),
+    #[error("duplicate pad label {0}")]
+    DuplicateLabel(B256),
+    #[error("pad {label}: {reason}")]
+    InvalidPad { label: B256, reason: String },
+    #[error("pad {label}: label does not match its witness")]
+    LabelMismatch { label: B256 },
 }
 
 impl ValidationError {
     /// The error code this failure is answered with.
     pub fn code(&self) -> ErrorCode {
         match self {
-            Self::UnsupportedAttestationType => ErrorCode::UnsupportedAttestationType,
+            Self::UnsupportedAttestationType { .. } => ErrorCode::UnsupportedAttestationType,
             Self::InvalidBody(_)
             | Self::InvalidSolanaRequest(_)
             | Self::SolanaChainInEvmRequest(_)
@@ -88,7 +98,14 @@ impl ValidationError {
             | Self::MixedChainIds(..)
             | Self::UnsupportedChainId(_)
             | Self::InvalidExtraData(_)
-            | Self::RequestValidityOutOfRange { .. } => ErrorCode::Malformed,
+            | Self::ZeroAddress { .. }
+            | Self::RequestValidityOutOfRange { .. }
+            | Self::UnsupportedWitnessVersion(_)
+            | Self::NoPads
+            | Self::TooManyPads(..)
+            | Self::DuplicateLabel(_)
+            | Self::InvalidPad { .. }
+            | Self::LabelMismatch { .. } => ErrorCode::Malformed,
         }
     }
 }
@@ -119,20 +136,132 @@ pub fn validate_solana_public_decryption(
     .map_err(|e| ValidationError::InvalidSolanaRequest(e.to_string()))
 }
 
+/// Stateless checks of the RFC-016 permit fields shared by the user and pad decrypt routes.
+fn validate_permit(
+    attestation_type: &str,
+    user_address: Address,
+    allowed_contracts_len: usize,
+    request_validity: &RequestValidity,
+    config: &Config,
+) -> Result<(), ValidationError> {
+    // Both bodies carry an EIP-712 permit; the Solana scheme has its own body.
+    let eip712 = AttestationType::Eip712UnifiedUserDecryptV1;
+    if attestation_type.parse() != Ok(eip712) {
+        return Err(ValidationError::UnsupportedAttestationType {
+            supported: eip712.to_string(),
+        });
+    }
+    validate_user_address(user_address)?;
+    if allowed_contracts_len > config.max_allowed_contracts {
+        return Err(ValidationError::TooManyAllowedContracts(
+            allowed_contracts_len,
+            config.max_allowed_contracts,
+        ));
+    }
+    validate_request_validity(request_validity)
+}
+
 pub fn validate_user_decryption(
     request: &UserDecryptionRequest,
     config: &Config,
 ) -> Result<(), ValidationError> {
     let payload = &request.payload;
+    validate_permit(
+        &request.attestationType,
+        payload.userAddress,
+        payload.allowedContracts.len(),
+        &payload.requestValidity,
+        config,
+    )?;
     validate_evm_handles(payload.handles.iter().map(|h| &h.handle), config)?;
-    if payload.allowedContracts.len() > config.max_allowed_contracts {
-        return Err(ValidationError::TooManyAllowedContracts(
-            payload.allowedContracts.len(),
-            config.max_allowed_contracts,
+    validate_extra_data(&payload.extraData)
+}
+
+pub fn validate_pad_decryption(
+    request: &PadDecryptionRequest,
+    config: &Config,
+    now: u64,
+) -> Result<(), ValidationError> {
+    let payload = &request.payload;
+    validate_permit(
+        &request.attestationType,
+        payload.userAddress,
+        payload.allowedContracts.len(),
+        &payload.requestValidity,
+        config,
+    )?;
+    validate_extra_data_v2(&payload.extraData)?;
+
+    if payload.witnessVersion != PAD_WITNESS_VERSION {
+        return Err(ValidationError::UnsupportedWitnessVersion(
+            payload.witnessVersion,
         ));
     }
-    validate_request_validity(&payload.requestValidity)?;
-    validate_extra_data(&payload.extraData)
+    // Pads are EVM-only, also on a connector that serves a Solana host chain.
+    if is_solana_host_chain_id(payload.chainId)
+        || !config.supported_chain_ids.contains(&payload.chainId)
+    {
+        return Err(ValidationError::UnsupportedChainId(payload.chainId));
+    }
+    let max_pads = config.max_pads.get();
+    match payload.pads.len() {
+        0 => return Err(ValidationError::NoPads),
+        n if n > max_pads => return Err(ValidationError::TooManyPads(n, max_pads)),
+        _ => (),
+    }
+
+    let mut labels = HashSet::with_capacity(payload.pads.len());
+    for pad in &payload.pads {
+        if !labels.insert(pad.label) {
+            return Err(ValidationError::DuplicateLabel(pad.label));
+        }
+        let invalid = |reason: String| ValidationError::InvalidPad {
+            label: pad.label,
+            reason,
+        };
+        let witness = &pad.witness;
+        if witness.submitter == Address::ZERO {
+            return Err(invalid("submitter must not be the zero address".into()));
+        }
+        if witness.decryptors.len() > usize::from(MAX_PAD_DECRYPTORS) {
+            return Err(invalid(format!(
+                "too many decryptors: {}, maximum is {MAX_PAD_DECRYPTORS}",
+                witness.decryptors.len()
+            )));
+        }
+        if witness.decryptors.contains(&Address::ZERO) {
+            return Err(invalid(
+                "decryptors must not contain the zero address".into(),
+            ));
+        }
+        if !(1..=MAX_PAD_LENGTH).contains(&pad.padLength) {
+            return Err(invalid(format!(
+                "padLength is out of range: {}, expected 1..={MAX_PAD_LENGTH}",
+                pad.padLength
+            )));
+        }
+        if witness.expirationTimestamp <= now {
+            return Err(invalid(format!(
+                "expired at {}, now is {now}",
+                witness.expirationTimestamp
+            )));
+        }
+
+        if payload.label_of(witness) != pad.label {
+            return Err(ValidationError::LabelMismatch { label: pad.label });
+        }
+    }
+    Ok(())
+}
+
+/// The zero address is what `ecrecover` yields on failure: no request can be signed for it.
+fn validate_user_address(user_address: Address) -> Result<(), ValidationError> {
+    if user_address == Address::ZERO {
+        return Err(ValidationError::ZeroAddress {
+            field: "userAddress",
+        });
+    }
+    Ok(())
 }
 
 /// Checks the Solana payload as [`validate_user_decryption`] checks the EIP-712 one. The permit's
@@ -162,7 +291,9 @@ pub fn attestation_type(body: &Value) -> Result<AttestationType, ValidationError
         .and_then(Value::as_str)
         .ok_or_else(|| ValidationError::InvalidBody("attestationType must be a string".into()))?
         .parse()
-        .map_err(|_| ValidationError::UnsupportedAttestationType)
+        .map_err(|_| ValidationError::UnsupportedAttestationType {
+            supported: AttestationType::supported().collect::<Vec<_>>().join(", "),
+        })
 }
 
 /// Whether a public-decryption body is the Solana one: its first handle names a Solana chain. A
@@ -295,14 +426,26 @@ fn validate_extra_data(extra_data: &[u8]) -> Result<(), ValidationError> {
         .map_err(|e| ValidationError::InvalidExtraData(format!("{e:#}")))
 }
 
+/// Pad decryption only accepts a `v2` `extraData`, which names the epoch to serve it under.
+fn validate_extra_data_v2(extra_data: &[u8]) -> Result<(), ValidationError> {
+    let parsed = parse_extra_data(extra_data)
+        .map_err(|e| ValidationError::InvalidExtraData(format!("{e:#}")))?;
+    if parsed.epoch_id.is_none() {
+        return Err(ValidationError::InvalidExtraData(
+            "pad decryption requires a v2 extraData (context and epoch)".into(),
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use alloy::primitives::{Address, Bytes};
+    use alloy::primitives::{Bytes, FixedBytes};
     use connector_utils::types::solana_request::MAX_REQUEST_HANDLES;
     use kms_connector_api::{
-        AttestationType, HandleEntry, SolanaHandleEntry, SolanaUserDecryptionPayload,
-        UserDecryptionPayload,
+        AttestationType, HandleEntry, PadDecryptionPayload, PadEntry, PadWitness,
+        SolanaHandleEntry, SolanaUserDecryptionPayload, UserDecryptionPayload,
     };
     use std::num::NonZeroUsize;
 
@@ -517,6 +660,20 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn zero_user_address_is_rejected() {
+        let mut request = user_request(vec![handle(1, EUINT64)], extra_data_v2());
+        request.payload.userAddress = Address::ZERO;
+        let error = validate_user_decryption(&request, &config()).unwrap_err();
+        assert_eq!(
+            error,
+            ValidationError::ZeroAddress {
+                field: "userAddress"
+            }
+        );
+        assert_eq!(error.code(), ErrorCode::Malformed);
+    }
+
+    #[test]
     fn too_many_allowed_contracts() {
         let cfg = config();
         let mut request = user_request(vec![handle(1, EUINT64)], extra_data_v2());
@@ -581,13 +738,238 @@ pub(crate) mod tests {
             "payload": { "shape": "unknown" },
         });
         let error = attestation_type(&body).unwrap_err();
-        assert_eq!(error, ValidationError::UnsupportedAttestationType);
+        assert_eq!(
+            error.to_string(),
+            "unsupported attestationType, supported: [eip712-unified-user-decrypt-v1, solana-srfc38-user-decrypt-v1]"
+        );
         assert_eq!(error.code(), ErrorCode::UnsupportedAttestationType);
 
         let error = attestation_type(&serde_json::json!({ "payload": {} })).unwrap_err();
         assert!(matches!(error, ValidationError::InvalidBody(_)));
         assert_eq!(error.code(), ErrorCode::Malformed);
         assert_eq!(ValidationError::NoHandles.code(), ErrorCode::Malformed);
+    }
+
+    /// The timestamp the pad test requests are built around.
+    const NOW: u64 = 1_770_000_000;
+
+    /// A valid pad entry for `chain_id`, made unique by `nonce`.
+    pub fn pad_entry(chain_id: u64, nonce: u8) -> PadEntry {
+        let witness = PadWitness {
+            submitter: Address::repeat_byte(0x55),
+            consumer: Address::repeat_byte(0x33),
+            expirationTimestamp: NOW + 3600,
+            decryptors: vec![Address::repeat_byte(0x66)],
+            nonce: FixedBytes::repeat_byte(nonce),
+        };
+        PadEntry {
+            label: witness.label(PAD_WITNESS_VERSION, 0, chain_id),
+            witness,
+            padLength: 64,
+        }
+    }
+
+    pub fn pad_request(pads: Vec<PadEntry>, extra_data: Vec<u8>) -> PadDecryptionRequest {
+        PadDecryptionRequest {
+            attestationType: AttestationType::Eip712UnifiedUserDecryptV1.to_string(),
+            payload: PadDecryptionPayload {
+                witnessVersion: PAD_WITNESS_VERSION,
+                prfId: 0,
+                chainId: 1,
+                pads,
+                userAddress: Address::repeat_byte(0x55),
+                publicKey: Bytes::from(vec![0x20; 32]),
+                allowedContracts: vec![Address::repeat_byte(0x33)],
+                requestValidity: RequestValidity {
+                    startTimestamp: NOW - 60,
+                    durationSeconds: 300,
+                },
+                extraData: Bytes::from(extra_data),
+            },
+            signature: Bytes::from(vec![0x66; 65]),
+        }
+    }
+
+    fn valid_pad_request() -> PadDecryptionRequest {
+        pad_request(vec![pad_entry(1, 1), pad_entry(1, 2)], extra_data_v2())
+    }
+
+    /// Validates `valid_pad_request()` once modified by `mutate`.
+    fn validate_pad_with(
+        mutate: impl FnOnce(&mut PadDecryptionRequest),
+    ) -> Result<(), ValidationError> {
+        let mut request = valid_pad_request();
+        mutate(&mut request);
+        validate_pad_decryption(&request, &config(), NOW)
+    }
+
+    /// Re-derives the label of every pad, so a witness mutation only trips the targeted check.
+    fn relabel(request: &mut PadDecryptionRequest) {
+        let payload = &mut request.payload;
+        let (version, prf_id, chain_id) = (payload.witnessVersion, payload.prfId, payload.chainId);
+        for pad in &mut payload.pads {
+            pad.label = pad.witness.label(version, prf_id, chain_id);
+        }
+    }
+
+    #[test]
+    fn valid_pad_request_passes() {
+        assert_eq!(validate_pad_with(|_| {}), Ok(()));
+        // No decryptor, permissive signature, extreme pad lengths.
+        assert_eq!(
+            validate_pad_with(|r| {
+                r.payload.allowedContracts.clear();
+                r.payload.pads[0].witness.decryptors.clear();
+                r.payload.pads[0].padLength = 1;
+                r.payload.pads[1].padLength = MAX_PAD_LENGTH;
+                relabel(r);
+            }),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn pad_request_structure() {
+        for attestation_type in [
+            "wrong-attestation".to_string(),
+            AttestationType::SolanaSrfc38UserDecryptV1.to_string(),
+        ] {
+            // The pad route takes the EIP-712 permit only, and says so.
+            let error = validate_pad_with(|r| r.attestationType = attestation_type).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "unsupported attestationType, supported: [eip712-unified-user-decrypt-v1]"
+            );
+            assert_eq!(error.code(), ErrorCode::UnsupportedAttestationType);
+        }
+        assert_eq!(
+            validate_pad_with(|r| r.payload.userAddress = Address::ZERO),
+            Err(ValidationError::ZeroAddress {
+                field: "userAddress"
+            })
+        );
+        assert_eq!(
+            validate_pad_with(|r| r.payload.allowedContracts.push(Address::repeat_byte(0x34))),
+            Err(ValidationError::TooManyAllowedContracts(2, 1))
+        );
+        assert!(matches!(
+            validate_pad_with(|r| r.payload.requestValidity.durationSeconds = 0),
+            Err(ValidationError::RequestValidityOutOfRange { .. })
+        ));
+        assert_eq!(
+            validate_pad_with(|r| {
+                r.payload.witnessVersion = 1;
+                relabel(r);
+            }),
+            Err(ValidationError::UnsupportedWitnessVersion(1))
+        );
+        assert_eq!(
+            validate_pad_with(|r| {
+                r.payload.chainId = 9;
+                relabel(r);
+            }),
+            Err(ValidationError::UnsupportedChainId(9))
+        );
+    }
+
+    #[test]
+    fn pad_request_requires_v2_extra_data() {
+        for extra_data in [vec![], [vec![0x01], vec![0xaa; 32]].concat()] {
+            assert!(matches!(
+                validate_pad_with(|r| r.payload.extraData = Bytes::from(extra_data)),
+                Err(ValidationError::InvalidExtraData(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn pad_count_bounds() {
+        assert_eq!(
+            validate_pad_with(|r| r.payload.pads.clear()),
+            Err(ValidationError::NoPads)
+        );
+        let mut cfg = config();
+        cfg.max_pads = NonZeroUsize::new(2).unwrap();
+        let request = pad_request((1..=2).map(|n| pad_entry(1, n)).collect(), extra_data_v2());
+        assert_eq!(validate_pad_decryption(&request, &cfg, NOW), Ok(()));
+        let request = pad_request((1..=3).map(|n| pad_entry(1, n)).collect(), extra_data_v2());
+        assert_eq!(
+            validate_pad_decryption(&request, &cfg, NOW),
+            Err(ValidationError::TooManyPads(3, 2))
+        );
+    }
+
+    #[test]
+    fn duplicate_labels_are_rejected() {
+        let duplicate = pad_entry(1, 1);
+        assert_eq!(
+            validate_pad_with(|r| r.payload.pads.push(duplicate.clone())),
+            Err(ValidationError::DuplicateLabel(duplicate.label))
+        );
+    }
+
+    #[test]
+    fn pad_entry_structure() {
+        let is_invalid_pad = |result, needle: &str| match result {
+            Err(ValidationError::InvalidPad { reason, .. }) => {
+                assert!(reason.contains(needle), "{reason}")
+            }
+            other => panic!("unexpected: {other:?}"),
+        };
+        is_invalid_pad(
+            validate_pad_with(|r| {
+                r.payload.pads[1].witness.submitter = Address::ZERO;
+                relabel(r);
+            }),
+            "submitter",
+        );
+        is_invalid_pad(
+            validate_pad_with(|r| {
+                r.payload.pads[1].witness.decryptors.push(Address::ZERO);
+                relabel(r);
+            }),
+            "decryptors",
+        );
+        for pad_length in [0, MAX_PAD_LENGTH + 1] {
+            is_invalid_pad(
+                validate_pad_with(|r| r.payload.pads[1].padLength = pad_length),
+                "padLength",
+            );
+        }
+        is_invalid_pad(
+            validate_pad_with(|r| {
+                r.payload.pads[1].witness.decryptors =
+                    vec![Address::repeat_byte(0x66); usize::from(MAX_PAD_DECRYPTORS) + 1];
+            }),
+            "too many decryptors",
+        );
+        is_invalid_pad(
+            validate_pad_with(|r| {
+                r.payload.pads[1].witness.expirationTimestamp = NOW;
+                relabel(r);
+            }),
+            "expired",
+        );
+    }
+
+    #[test]
+    fn label_must_match_its_witness() {
+        // A witness field changed after the label was derived.
+        let mut request = valid_pad_request();
+        request.payload.pads[1].witness.consumer = Address::repeat_byte(0x34);
+        let label = request.payload.pads[1].label;
+        assert_eq!(
+            validate_pad_decryption(&request, &config(), NOW),
+            Err(ValidationError::LabelMismatch { label })
+        );
+        // A shared field changed after the labels were derived.
+        let mut request = valid_pad_request();
+        request.payload.prfId = 1;
+        let label = request.payload.pads[0].label;
+        assert_eq!(
+            validate_pad_decryption(&request, &config(), NOW),
+            Err(ValidationError::LabelMismatch { label })
+        );
     }
 
     #[test]
@@ -625,6 +1007,14 @@ pub(crate) mod tests {
             ValidationError::SolanaChainInEvmRequest(solana_chain)
         );
         assert_eq!(error.code(), ErrorCode::Malformed);
+
+        // Pads have no Solana form: the chain is unsupported on that route.
+        let mut pad = pad_request(vec![pad_entry(solana_chain, 1)], extra_data_v2());
+        pad.payload.chainId = solana_chain;
+        assert_eq!(
+            validate_pad_decryption(&pad, &cfg, NOW),
+            Err(ValidationError::UnsupportedChainId(solana_chain))
+        );
     }
 
     #[test]

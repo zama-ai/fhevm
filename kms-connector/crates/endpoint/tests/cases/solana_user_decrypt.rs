@@ -1,4 +1,8 @@
-use super::*;
+use crate::common::{
+    SOLANA_CHAIN_ID, USER_REQUESTS_TABLE, complete_udec, count_rows, db_id, error_body,
+    rand_handle, rand_user_request, setup, setup_with, wait_for_request_row,
+};
+use alloy::{primitives::U256, transports::http::reqwest::StatusCode};
 use connector_utils::{
     monitoring::otlp::PropagationContext,
     tests::rand::solana_user_decryption_request,
@@ -7,10 +11,12 @@ use connector_utils::{
         solana_request::SolanaUserDecryptionRequestV1,
     },
 };
+use endpoint::core::Config;
 use kms_connector_api::{
-    SolanaHandleEntry, SolanaUserDecryptionPayload, SolanaUserDecryptionRequest,
+    AttestationType, ErrorCode, RequestValidity, SolanaHandleEntry, SolanaUserDecryptionPayload,
+    SolanaUserDecryptionRequest, USER_DECRYPTION_ROUTE,
 };
-use sqlx::postgres::PgRow;
+use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 
 #[tokio::test]
 async fn a_solana_http_request_is_stored_as_its_typed_request() -> anyhow::Result<()> {
@@ -23,11 +29,8 @@ async fn a_solana_http_request_is_stored_as_its_typed_request() -> anyhow::Resul
     let body = http_body(&request);
     let id = body.id();
 
-    let pending = tokio::spawn({
-        let request = endpoint.client.post(endpoint.url(USER_DECRYPTION_ROUTE));
-        async move { request.json(&body).send().await }
-    });
-    let http_row = wait_for_request_row(&endpoint.db, USER_REQUESTS, id).await;
+    let pending = endpoint.spawn_post_json(USER_DECRYPTION_ROUTE, &serde_json::to_value(&body)?);
+    let http_row = wait_for_request_row(&endpoint.db, USER_REQUESTS_TABLE, id).await;
     assert_eq!(
         http_row.get::<Vec<u8>, _>("user_address"),
         request.request.permit().user_address().as_bytes()
@@ -39,7 +42,7 @@ async fn a_solana_http_request_is_stored_as_its_typed_request() -> anyhow::Resul
     assert_eq!(from_http, request);
 
     complete_udec(&endpoint.db, id).await?;
-    assert_eq!(pending.await??.status(), StatusCode::OK);
+    assert_eq!(pending.await?.status(), StatusCode::OK);
     endpoint.stop().await
 }
 
@@ -93,7 +96,7 @@ async fn solana_rows_of_the_wrong_shape_are_unwritable() -> anyhow::Result<()> {
 #[tokio::test]
 async fn solana_attestation_type_with_an_eip712_payload_is_malformed() -> anyhow::Result<()> {
     let endpoint = setup().await?;
-    let mut body = serde_json::to_value(user_request())?;
+    let mut body = serde_json::to_value(rand_user_request())?;
     body["attestationType"] = AttestationType::SolanaSrfc38UserDecryptV1
         .to_string()
         .into();
@@ -102,7 +105,7 @@ async fn solana_attestation_type_with_an_eip712_payload_is_malformed() -> anyhow
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(error_body(response).await.code, ErrorCode::Malformed);
-    assert_eq!(count_rows(&endpoint.db, USER_REQUESTS).await, 0);
+    assert_eq!(count_rows(&endpoint.db, USER_REQUESTS_TABLE).await, 0);
     endpoint.stop().await
 }
 

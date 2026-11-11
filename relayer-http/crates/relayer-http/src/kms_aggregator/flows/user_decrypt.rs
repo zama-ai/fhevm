@@ -7,6 +7,8 @@ use kms_connector_api::{
 };
 use serde::Serialize;
 
+use crate::metrics::FlowName;
+
 use super::{Flow, RejectReason, check_signature, hex};
 use crate::kms_aggregator::config::UserChecks;
 
@@ -18,6 +20,16 @@ pub struct UserDecrypt;
 pub enum UserRequest {
     Evm(UserDecryptionRequest),
     Solana(SolanaUserDecryptionRequest),
+}
+
+impl UserRequest {
+    /// The connector's content-derived `decryptionId`, the same on every node.
+    pub fn id(&self) -> B256 {
+        match self {
+            UserRequest::Evm(request) => request.id(),
+            UserRequest::Solana(request) => request.id(),
+        }
+    }
 }
 
 /// `{ "result": [ { "payload", "signature", "extraData" } ] }`: the current relayer's user-decrypt result.
@@ -42,24 +54,8 @@ impl Flow for UserDecrypt {
     type Response = UserDecryptionResponse;
     type Output = UserDecryptOutput;
     type Checks = UserChecks;
-    const NAME: &'static str = "user_decrypt";
+    const NAME: FlowName = FlowName::UserDecrypt;
     const ROUTE: &'static str = USER_DECRYPTION_ROUTE;
-
-    fn decryption_id(request: &Self::Request) -> B256 {
-        match request {
-            UserRequest::Evm(request) => request.id(),
-            UserRequest::Solana(request) => request.id(),
-        }
-    }
-
-    fn handles(request: &Self::Request) -> Vec<B256> {
-        match request {
-            UserRequest::Evm(request) => request.payload.handles.iter().map(|h| h.handle).collect(),
-            UserRequest::Solana(request) => {
-                request.payload.handles.iter().map(|h| h.handle).collect()
-            }
-        }
-    }
 
     fn check(
         checks: &UserChecks,
@@ -67,7 +63,7 @@ impl Flow for UserDecrypt {
         accepted: &[Self::Response],
         response: &Self::Response,
     ) -> Result<(), RejectReason> {
-        if checks.decryption_id_match && response.decryption_id != Self::decryption_id(request) {
+        if checks.decryption_id_match && response.decryption_id != request.id() {
             return Err(RejectReason::IdMismatch);
         }
         check_signature(
@@ -113,7 +109,7 @@ fn majority_id(checks: &UserChecks, accepted: &[UserDecryptionResponse]) -> Opti
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::{Bytes, b256};
+    use alloy::primitives::Bytes;
     use serde_json::json;
 
     use super::*;
@@ -150,23 +146,6 @@ mod tests {
             decryption_id: B256::repeat_byte(0xEE),
             ..response(node)
         }
-    }
-
-    #[test]
-    fn id_and_handles_come_from_the_request() {
-        assert_eq!(UserDecrypt::decryption_id(&request()), USER_REQUEST_ID);
-        assert_eq!(
-            UserDecrypt::handles(&request()),
-            vec![b256!(
-                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-            )]
-        );
-        let solana = mock::solana_user_request();
-        assert_eq!(
-            UserDecrypt::decryption_id(&solana),
-            mock::vector("solanaUserDecryption").1
-        );
-        assert_eq!(UserDecrypt::handles(&solana), vec![B256::repeat_byte(1)]);
     }
 
     #[test]

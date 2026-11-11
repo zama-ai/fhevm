@@ -67,6 +67,7 @@ WORKDIR /app/kms-connector
 # The zama-ai/kms git dependencies are private: the BLOCKCHAIN_ACTIONS_TOKEN secret is exposed to
 # git through GIT_CONFIG_* env vars, so it never lands in a layer or a .gitconfig.
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
     --mount=type=cache,target=/app/kms-connector/target,sharing=locked \
     --mount=type=secret,id=sccache_aws_access_key_id \
     --mount=type=secret,id=sccache_aws_secret_access_key \

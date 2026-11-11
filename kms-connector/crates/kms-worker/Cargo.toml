@@ -24,6 +24,7 @@ zama-solana-request.workspace = true
 actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
+bytes.workspace = true
 ciborium.workspace = true
 dashmap.workspace = true
 futures.workspace = true

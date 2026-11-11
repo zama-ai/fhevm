@@ -3,10 +3,11 @@
 use alloy::{
     hex,
     primitives::{B256, U256},
+    sol_types::SolValue,
 };
 use anyhow::anyhow;
 use connector_utils::monitoring::otlp::PropagationContext;
-use kms_connector_api::{PublicDecryptionRequest, UserDecryptionRequest};
+use kms_connector_api::{PadDecryptionRequest, PublicDecryptionRequest, UserDecryptionRequest};
 use sqlx::{
     PgExecutor,
     postgres::PgQueryResult,
@@ -30,6 +31,16 @@ pub struct UserDecryptionResponseRow {
     pub user_decrypted_shares: Option<Vec<u8>>,
     pub signature: Option<Vec<u8>>,
     pub extra_data: Vec<u8>,
+    pub error_code: Option<String>,
+    pub error_details: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
+
+/// A `pad_decryption_responses` row, either a payload or a worker-side error.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PadDecryptionResponseRow {
+    pub encrypted_payload: Option<Vec<u8>>,
+    pub signature: Option<Vec<u8>>,
     pub error_code: Option<String>,
     pub error_details: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -65,6 +76,83 @@ pub async fn read_user_decryption_response<'e>(
     )
     .fetch_optional(executor)
     .await
+}
+
+/// Reads the pad decryption response of `id`, if any.
+pub async fn read_pad_decryption_response<'e>(
+    executor: impl PgExecutor<'e>,
+    id: B256,
+) -> sqlx::Result<Option<PadDecryptionResponseRow>> {
+    let db_id = id_to_db_bytes(id);
+    sqlx::query_as!(
+        PadDecryptionResponseRow,
+        "SELECT encrypted_payload, signature, error_code, error_details, created_at
+        FROM pad_decryption_responses WHERE decryption_id = $1",
+        db_id.as_slice(),
+    )
+    .fetch_optional(executor)
+    .await
+}
+
+/// Upserts a pad decryption request, or resets its status to `pending` if it previously `failed`.
+pub async fn upsert_pad_decryption_request<'e>(
+    executor: impl PgExecutor<'e>,
+    id: B256,
+    request: &PadDecryptionRequest,
+    otlp_ctx: &PropagationContext,
+) -> anyhow::Result<PgQueryResult> {
+    let payload = &request.payload;
+    let allowed_contracts: Vec<Vec<u8>> = payload
+        .allowedContracts
+        .iter()
+        .map(|a| a.to_vec())
+        .collect();
+    let chain_id: i64 = payload
+        .chainId
+        .try_into()
+        .map_err(|_| anyhow!("chainId does not fit in i64"))?;
+    let start_timestamp: i64 = payload
+        .requestValidity
+        .startTimestamp
+        .try_into()
+        .map_err(|_| anyhow!("startTimestamp does not fit in i64"))?;
+    let duration_seconds: i64 = payload
+        .requestValidity
+        .durationSeconds
+        .try_into()
+        .map_err(|_| anyhow!("durationSeconds does not fit in i64"))?;
+    let db_id = id_to_db_bytes(id);
+
+    sqlx::query!(
+        "INSERT INTO pad_decryption_requests AS existing (
+            decryption_id, witness_version, prf_id, chain_id, pads, user_address, public_key,
+            allowed_contracts, start_timestamp, duration_seconds, extra_data, signature,
+            created_at, otlp_context
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+        ON CONFLICT (decryption_id) DO UPDATE SET
+            status = 'pending',
+            created_at = EXCLUDED.created_at,
+            otlp_context = EXCLUDED.otlp_context
+        WHERE existing.status = 'failed'",
+        db_id.as_slice(),
+        i16::from(payload.witnessVersion),
+        i32::from(payload.prfId),
+        chain_id,
+        payload.pads.abi_encode(),
+        payload.userAddress.as_slice(),
+        payload.publicKey.as_ref(),
+        &allowed_contracts,
+        start_timestamp,
+        duration_seconds,
+        payload.extraData.as_ref(),
+        request.signature.as_ref(),
+        Utc::now(),
+        bc2wrap::serialize(otlp_ctx)?,
+    )
+    .execute(executor)
+    .await
+    .map_err(anyhow::Error::from)
 }
 
 /// Upserts an HTTP-sourced public decryption request, or resets its status to `pending` if it

@@ -38,7 +38,7 @@ static REQUESTS: LazyLock<IntCounterVec> = LazyLock::new(|| {
 
 /// The signer the proxy authenticated, EIP-55 checksummed: prf-service's caller. Any inbound value
 /// is dropped first.
-pub const X_FHEVM_SIGNER: HeaderName = HeaderName::from_static("x-fhevm-signer");
+pub const X_FHEVM_SIGNER: HeaderName = HeaderName::from_static(fhevm_sig_auth::SIGNER_HEADER);
 // The `X-Forwarded-*` headers set by the proxy (any inbound value is dropped first).
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 const X_FORWARDED_PROTO: HeaderName = HeaderName::from_static("x-forwarded-proto");

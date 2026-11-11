@@ -1,10 +1,21 @@
-use super::*;
-use connector_utils::types::{
-    ProtocolEventKind, event::from_public_decryption_row, extra_data::extra_data_v2_payload,
-    solana_request::SolanaPublicDecryptionRequest,
+use crate::common::{
+    PUBLIC_REQUESTS_TABLE, RunningEndpoint, SOLANA_CHAIN_ID, complete_public, count_rows, db_id,
+    error_body, rand_handle, setup_with, wait_for_request_row,
 };
-use kms_connector_api::SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody;
-use sqlx::postgres::PgRow;
+use alloy::{
+    primitives::{B256, U256},
+    transports::http::reqwest::StatusCode,
+};
+use connector_utils::types::{
+    ProtocolEventKind, db::RequestSource, event::from_public_decryption_row,
+    extra_data::extra_data_v2_payload, solana_request::SolanaPublicDecryptionRequest,
+};
+use endpoint::core::Config;
+use kms_connector_api::{
+    ErrorCode, PUBLIC_DECRYPTION_ROUTE, PublicDecryptionRequest,
+    SolanaPublicDecryptionRequest as SolanaPublicDecryptionBody,
+};
+use sqlx::{Row, postgres::PgRow};
 
 fn solana_body(stores: usize) -> SolanaPublicDecryptionBody {
     SolanaPublicDecryptionBody {
@@ -46,12 +57,8 @@ async fn a_solana_public_request_is_stored_with_the_store_of_each_handle() -> an
         "the stores are part of the request id"
     );
 
-    let pending = tokio::spawn({
-        let request = endpoint.client.post(endpoint.url(PUBLIC_DECRYPTION_ROUTE));
-        let body = serde_json::to_value(&body)?;
-        async move { request.json(&body).send().await }
-    });
-    let row = wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, id).await;
+    let pending = endpoint.spawn_post_json(PUBLIC_DECRYPTION_ROUTE, &serde_json::to_value(&body)?);
+    let row = wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS_TABLE, id).await;
     assert_eq!(row.get::<RequestSource, _>("source"), RequestSource::Http);
     let stored = stored_request(&row)?;
     assert_eq!(stored.decryption_id, db_id(id));
@@ -60,7 +67,7 @@ async fn a_solana_public_request_is_stored_with_the_store_of_each_handle() -> an
     assert_eq!(stored.extra_data(), body.extraData.as_ref());
 
     complete_public(&endpoint.db, id).await?;
-    assert_eq!(pending.await??.status(), StatusCode::OK);
+    assert_eq!(pending.await?.status(), StatusCode::OK);
     endpoint.stop().await
 }
 
@@ -81,7 +88,7 @@ async fn a_solana_public_request_names_one_store_per_handle() -> anyhow::Result<
         );
         assert_eq!(error_body(response).await.code, ErrorCode::Malformed);
     }
-    assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS).await, 0);
+    assert_eq!(count_rows(&endpoint.db, PUBLIC_REQUESTS_TABLE).await, 0);
     endpoint.stop().await
 }
 
@@ -90,12 +97,8 @@ async fn a_solana_public_row_naming_another_store_count_is_unwritable() -> anyho
     let endpoint = solana_endpoint().await?;
     let body = solana_body(2);
     let id = body.id();
-    let _pending = tokio::spawn({
-        let request = endpoint.client.post(endpoint.url(PUBLIC_DECRYPTION_ROUTE));
-        let body = serde_json::to_value(&body)?;
-        async move { request.json(&body).send().await }
-    });
-    wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS, id).await;
+    let _pending = endpoint.spawn_post_json(PUBLIC_DECRYPTION_ROUTE, &serde_json::to_value(&body)?);
+    wait_for_request_row(&endpoint.db, PUBLIC_REQUESTS_TABLE, id).await;
 
     let error = sqlx::query(
         "UPDATE public_decryption_requests

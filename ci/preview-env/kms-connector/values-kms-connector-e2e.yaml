@@ -80,12 +80,12 @@ kmsConnectorProxy:
   # txSenderAddress is set per-release by deploy-kms-connector.sh to that party's tx-sender.
   allowedSenders:
     - "0xAE808c0968fF9557C8E0EAbcf57747c75B490Aa0"
-  # `kubernetes.io/tls` Secret the chart does NOT create. deploy-kms-connector.sh
-  # generates one test CA and one server certificate per namespace and stores them
-  # under this name before the first release installs. So all N releases share it
-  # and clients trust the one CA (`ca.crt`).
+  # TLS: a cert-manager self-signed certificate (off by default in the chart). tls.secretName is
+  # set per-release by deploy-kms-connector.sh (the N releases share the namespace),
+  # which also publishes all N certificates for the test-suite's NODE_EXTRA_CA_CERTS.
   tls:
-    secretName: kms-connector-proxy-tls
+    certManager:
+      enabled: true
   # Raised from the 100 req/s default (per sender, per proxy replica) so benchmarks
   # run against the preview env are not throttled by the proxy.
   env:

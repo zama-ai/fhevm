@@ -3,7 +3,7 @@
 # EVM and Solana user decryption both load it through versionsManifest.js.
 #
 # DESIGNED TO BE DELETED: this exists only because Solana user decryption is not yet in a
-# published `tkms` npm release; it lives on the kms `solana` branch. When kms publishes it,
+# published `tkms` npm release. Build it from a kms `main` commit. When kms publishes it,
 # delete this script and .regen-tkms.env, set the published version in versionsManifest.js,
 # src/core/runtime/WasmVersions-p.ts and scripts/wasm/loaders/KmsLibApi.template.d.ts, and run
 # `npm run wasm:install -- --lib tkms --force` (it also regenerates the loaders). Also remove
@@ -16,7 +16,7 @@
 # scripts/.regen-tkms.env > sibling default. The kms source is also required:
 # positional source selector > $KMS_COMMIT > scripts/.regen-tkms.env.
 # Pass an exact commit for reproducibility, or --feature-head to resolve the freshly fetched
-# origin/$KMS_BRANCH head (default `solana`) to an exact commit before building.
+# origin/$KMS_BRANCH head (default `main`) to an exact commit before building.
 # Usage:
 #   sdk/js-sdk/scripts/regen-tkms-wasm.sh [/path/to/kms] <40-character-kms-commit|--feature-head>
 #   sdk/js-sdk/scripts/regen-tkms-wasm.sh <40-character-kms-commit|--feature-head>
@@ -44,7 +44,7 @@ FIRST_ARG="${1:-}"
 SECOND_ARG="${2:-}"
 SIBLING_KMS_DIR="$(cd "$ROOT/../../zama/kms" 2>/dev/null && pwd || true)"
 KMS_DIR_DEFAULT="${KMS_DIR_INPUT:-${KMS_DIR:-$SIBLING_KMS_DIR}}"
-KMS_BRANCH="${KMS_BRANCH_INPUT:-${KMS_BRANCH:-solana}}"
+KMS_BRANCH="${KMS_BRANCH_INPUT:-${KMS_BRANCH:-main}}"
 if [[ "$FIRST_ARG" = "--feature-head" || "$FIRST_ARG" =~ ^[0-9a-fA-F]{40}$ ]]; then
   if [ -n "$SECOND_ARG" ]; then
     echo "ERROR: pass the kms source either after the optional checkout path or as the only argument." >&2

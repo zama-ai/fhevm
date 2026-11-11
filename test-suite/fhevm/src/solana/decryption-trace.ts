@@ -1,18 +1,31 @@
 // decryption-trace — follows one decryption from the client to the KMS Connectors.
 //
 // relayer-http answers every request with `x-request-id` and writes each of its log lines with that
-// request id. Once it forwards a request it adds the Connectors' `decryption_id`, the id every
-// kms-connector endpoint logs. Its response bodies carry neither the decryption id nor the per-node
-// outcomes, so the logs are the only link from a client's call to what each node did. Reading them
-// needs the local stack's containers.
+// request id. Its last line, the summary, carries the Connectors' `decryption_id` once the request was
+// forwarded: the id every kms-connector endpoint logs. Its response bodies carry neither the
+// decryption id nor the per-node outcomes, so the logs are the only link from a client's call to what
+// each node did. Reading them needs the local stack's containers.
 import { RELAYER_HTTP_CONTAINER } from '../layout';
 import { kmsConnectorPrefix } from '../kms-party';
 import { run } from '../utils/process';
 import { until } from '../utils/until';
 
 const DECRYPTION_ROUTE = /\/v4\/(user|public)-decrypt$/;
-/** The last line relayer-http writes about a request (`endpoint/docs.md` §9). */
-const TERMINAL_MESSAGES = new Set(['request succeeded', 'request rejected', 'request failed']);
+/**
+ * The relayer-http log names this trace and its callers read. decryption-trace.test.ts checks each
+ * against relayer-http's source, so a rename there fails a unit test instead of a scenario.
+ */
+export const RELAYER_HTTP_LOG = {
+  /** The summary line: the last line about a request (`endpoint/summary.rs`). */
+  summaryMessage: 'request completed',
+  /** The summary fields read here and by the callers. */
+  summaryFields: ['request_id', 'flow', 'outcome', 'handles', 'decryption_id', 'elapsed_ms', 'cancelled_kms_nodes'],
+  /** The fields of a KMS node's lines read here; `code` and `elapsed_ms` are also summary fields. */
+  nodeFields: ['kms_node', 'attempts', 'code', 'elapsed_ms'],
+  /** The aggregation's lines the callers look for. */
+  aggregationStarted: 'aggregation started',
+  callFailed: 'call failed',
+} as const;
 /** Wide enough for the slowest scenario step, narrow enough to keep a long run's logs cheap. */
 const LOG_WINDOW = '30m';
 
@@ -110,8 +123,8 @@ export const recordDecryptionCalls = async <T>(action: () => Promise<T>): Promis
 };
 
 /**
- * relayer-http's lines about `requestId`, once its last line is written. The aggregator's lines carry
- * the request id in their span, the handler's in their own fields.
+ * relayer-http's lines about `requestId`, once its summary line is written. The aggregator's lines
+ * carry the request id in their span, the handler's in their own fields.
  */
 export const relayerHttpLines = async (requestId: string): Promise<RelayerHttpLine[]> =>
   until(
@@ -119,7 +132,7 @@ export const relayerHttpLines = async (requestId: string): Promise<RelayerHttpLi
       const lines = parseRelayerHttpLines(await containerLogs(RELAYER_HTTP_CONTAINER)).filter(
         (line) => line.fields.request_id === requestId,
       );
-      return lines.some((line) => TERMINAL_MESSAGES.has(line.message)) ? lines : undefined;
+      return requestSummary(lines) === undefined ? undefined : lines;
     },
     { description: `relayer-http's last log line for request ${requestId}`, timeoutMs: 10_000, intervalMs: 250 },
   );
@@ -138,15 +151,18 @@ export const relayerHttpRequests = async (): Promise<Map<string, RelayerHttpLine
   return requests;
 };
 
-/** The Connectors' decryption id relayer-http logged for the request, once it forwarded it. */
-export const loggedDecryptionId = (lines: readonly RelayerHttpLine[]): string | undefined => {
-  const id = lines.map((line) => line.fields.decryption_id).find((value) => typeof value === 'string' && value !== 'none');
-  return id as string | undefined;
-};
+/** The request's summary line: its outcome, flow, handles, decryption id and timings. */
+export const requestSummary = (lines: readonly RelayerHttpLine[]): RelayerHttpLine | undefined =>
+  lines.find((line) => line.message === RELAYER_HTTP_LOG.summaryMessage);
 
-/** True when relayer-http sent the request on to the Connectors. */
-export const wasForwarded = (lines: readonly RelayerHttpLine[]): boolean =>
-  lines.some((line) => line.message === 'request forwarded');
+/**
+ * The Connectors' decryption id relayer-http logged for the request; undefined when relayer-http
+ * answered without forwarding it.
+ */
+export const loggedDecryptionId = (lines: readonly RelayerHttpLine[]): string | undefined => {
+  const id = requestSummary(lines)?.fields.decryption_id;
+  return typeof id === 'string' && id !== 'none' ? id : undefined;
+};
 
 /**
  * Each node's last line for the request: how its call ended and how long it took. The code is the
@@ -156,9 +172,10 @@ export const nodeOutcomes = (lines: readonly RelayerHttpLine[]): RelayerHttpNode
   const last = new Map<string, RelayerHttpLine>();
   const codes = new Map<string, string>();
   for (const line of lines) {
-    if (typeof line.fields.node !== 'string') continue;
-    last.set(line.fields.node, line);
-    if (typeof line.fields.code === 'string') codes.set(line.fields.node, line.fields.code);
+    const node = line.fields.kms_node;
+    if (typeof node !== 'string') continue;
+    last.set(node, line);
+    if (typeof line.fields.code === 'string') codes.set(node, line.fields.code);
   }
   return [...last.entries()].map(([node, line]) => ({
     node,
@@ -168,10 +185,6 @@ export const nodeOutcomes = (lines: readonly RelayerHttpLine[]): RelayerHttpNode
     code: codes.get(node),
   }));
 };
-
-/** The aggregation's final line: `aggregation succeeded` or `aggregation failed`. */
-export const aggregationOutcome = (lines: readonly RelayerHttpLine[]): RelayerHttpLine | undefined =>
-  lines.find((line) => line.message === 'aggregation succeeded' || line.message === 'aggregation failed');
 
 /** Party i's kms-connector endpoint lines that name `decryptionId`, colour codes removed. */
 const connectorEndpointLines = async (party: number, decryptionId: string): Promise<string[]> =>

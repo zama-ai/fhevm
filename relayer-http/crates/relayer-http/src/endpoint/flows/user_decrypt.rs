@@ -3,6 +3,8 @@
 //! `attestationType: "solana-srfc38-user-decrypt-v1"` is the connector's Solana DTO, checked and forwarded equal
 //! field by field.
 
+use std::collections::HashSet;
+
 use alloy::primitives::{Address, B256, Bytes};
 use axum::extract::{Request, State};
 use axum::response::{IntoResponse, Response};
@@ -13,16 +15,16 @@ use kms_connector_api::{
 use serde::{Deserialize, Deserializer};
 use serde_json::value::RawValue;
 
-use super::{Reply, field, invalid, parse, read_json, rejected};
+use super::{Reply, field, invalid, parse_raw, read_json};
 use crate::App;
+use crate::config::HttpConfig;
 use crate::endpoint::ApiError;
+use crate::endpoint::summary::{Guard, Summary};
 use crate::endpoint::validate::{self, Invalid};
 use crate::kms_aggregator::UserRequest;
-use crate::logging::Log;
+use crate::metrics::FlowName;
 
 pub const ATTESTATION_TYPE: &str = "eip712-unified-user-decrypt-v1";
-/// The connector's cap.
-const MAX_ALLOWED_CONTRACTS: usize = 10;
 
 /// Request body. Hex fields are typed: length and format are checked by deserialisation.
 ///
@@ -83,7 +85,7 @@ fn u64_from_string_or_number<'de, D: Deserializer<'de>>(deserializer: D) -> Resu
 }
 
 /// The current relayer's rules plus the connector's cheap handle rules. `now` in seconds since the epoch.
-pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Result<(), Invalid> {
+pub fn validate(request: &UserDecryptRequest, http: &HttpConfig, now: u64) -> Result<(), Invalid> {
     validate::expect(
         "attestationType",
         &request.attestation_type,
@@ -93,13 +95,18 @@ pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Re
     validate::evm_handles(
         "payload.handles",
         payload.handles.iter().map(|h| &h.ct_handle),
-        chain_ids,
+        http,
     )?;
-    if payload.allowed_contracts.len() > MAX_ALLOWED_CONTRACTS {
+    let max_contracts = http.max_allowed_contracts;
+    if payload.allowed_contracts.len() > max_contracts {
         return Err(Invalid::new(
             "payload.allowedContracts",
-            format!("at most {MAX_ALLOWED_CONTRACTS} contracts"),
-        ));
+            format!("at most {max_contracts} contracts"),
+        )
+        .with_value(format_args!(
+            "{} contracts",
+            payload.allowed_contracts.len()
+        )));
     }
     if payload.public_key.is_empty() {
         return Err(Invalid::new("payload.publicKey", "must not be empty"));
@@ -118,14 +125,14 @@ pub fn validate(request: &UserDecryptRequest, chain_ids: &[u64], now: u64) -> Re
 /// through the connector crate's `assemble()`. The permit's signature and program are the connector worker's.
 pub fn validate_solana(
     request: &SolanaUserDecryptionRequest,
-    chain_ids: &[u64],
+    http: &HttpConfig,
     now: u64,
 ) -> Result<(), Invalid> {
     let payload = &request.payload;
     validate::handles(
         "payload.handles",
         payload.handles.iter().map(|h| &h.handle),
-        chain_ids,
+        http,
     )?;
     let validity = &payload.requestValidity;
     validate::request_window(
@@ -141,61 +148,72 @@ pub fn validate_solana(
     Ok(())
 }
 
-/// One request, logged step by step under its own `Log`.
+/// One request, summarized in its own `Summary`.
 pub async fn handle(app: State<App>, request: Request) -> Response {
-    let mut log = Log::new("user_decrypt");
-    process(&app, request, &mut log)
-        .await
-        .unwrap_or_else(IntoResponse::into_response)
+    let mut guard = Guard::new(FlowName::UserDecrypt, app.metrics.clone());
+    let result = process(&app, request, &mut guard.summary).await;
+    guard.disarm();
+    result.unwrap_or_else(IntoResponse::into_response)
 }
 
 /// Read the body (bounded by `http.body_read_timeout`), dispatch on its `attestationType`, validate,
 /// aggregate, answer.
-async fn process(app: &App, request: Request, log: &mut Log) -> Result<Response, ApiError> {
-    let body = read_json(app, request, log).await?;
+async fn process(app: &App, request: Request, summary: &mut Summary) -> Result<Response, ApiError> {
+    let body: Box<RawValue> = read_json(app, request, summary).await?;
     let attestation = field(&body, "attestationType").and_then(|t| t.as_str()?.parse().ok());
-    if attestation == Some(AttestationType::SolanaSrfc38UserDecryptV1) {
-        process_solana(app, &body, log).await
+    let request = if attestation == Some(AttestationType::SolanaSrfc38UserDecryptV1) {
+        let request: SolanaUserDecryptionRequest =
+            parse_raw(&body).map_err(|reason| ApiError::malformed(summary, reason))?;
+        // A Solana user is not an EVM address: the summary leaves `user_address` out.
+        summary.received(
+            &app.http,
+            request.payload.handles.iter().map(|h| h.handle).collect(),
+            Vec::new(),
+            Vec::new(),
+            None,
+        );
+        validate_solana(&request, &app.http, super::now()).map_err(|e| invalid(summary, e))?;
+        summary.forwarded(request.id());
+        UserRequest::Solana(request)
     } else {
-        process_evm(app, &body, log).await
+        let request: UserDecryptRequest =
+            parse_raw(&body).map_err(|reason| ApiError::malformed(summary, reason))?;
+        summary.received(
+            &app.http,
+            request
+                .payload
+                .handles
+                .iter()
+                .map(|h| h.ct_handle)
+                .collect(),
+            handle_contracts(&request.payload),
+            request.payload.allowed_contracts.clone(),
+            Some(request.payload.user_address),
+        );
+        validate(&request, &app.http, super::now()).map_err(|e| invalid(summary, e))?;
+        let request = UserDecryptionRequest::from(request);
+        summary.forwarded(request.id());
+        UserRequest::Evm(request)
+    };
+    let result = app
+        .user_decrypt
+        .run(&summary.request_id, request, &mut summary.tally)
+        .await;
+    match result {
+        Ok(output) => Ok(Reply::succeeded(summary.take(), output).into_response()),
+        Err(e) => Err(ApiError::aggregation(summary, e)),
     }
 }
 
-/// The Solana body: checked, then forwarded as parsed.
-async fn process_solana(app: &App, body: &RawValue, log: &mut Log) -> Result<Response, ApiError> {
-    let request: SolanaUserDecryptionRequest = parse(body).map_err(|e| rejected(log, e))?;
-    log.received(request.payload.handles.iter().map(|h| h.handle).collect());
-    validate_solana(&request, &app.http.supported_chain_ids, super::now())
-        .map_err(|e| invalid(log, e))?;
-    log.forwarded(request.id());
-    let output = app
-        .user_decrypt
-        .run(&log.request_id, UserRequest::Solana(request))
-        .await
-        .map_err(|e| ApiError::aggregation(log, e))?;
-    Ok(Reply::succeeded(log.clone(), output).into_response())
-}
-
-/// The EVM body: validated, converted to the connector DTO, aggregated.
-async fn process_evm(app: &App, body: &RawValue, log: &mut Log) -> Result<Response, ApiError> {
-    let request: UserDecryptRequest = parse(body).map_err(|e| rejected(log, e))?;
-    log.received(
-        request
-            .payload
-            .handles
-            .iter()
-            .map(|h| h.ct_handle)
-            .collect(),
-    );
-    validate(&request, &app.http.supported_chain_ids, super::now()).map_err(|e| invalid(log, e))?;
-    let request = UserDecryptionRequest::from(request);
-    log.forwarded(request.id());
-    let output = app
-        .user_decrypt
-        .run(&log.request_id, UserRequest::Evm(request))
-        .await
-        .map_err(|e| ApiError::aggregation(log, e))?;
-    Ok(Reply::succeeded(log.clone(), output).into_response())
+/// The contracts of the handles, once each, in order. Linear: the handles are not validated yet.
+fn handle_contracts(payload: &UserDecryptPayload) -> Vec<Address> {
+    let mut seen = HashSet::new();
+    payload
+        .handles
+        .iter()
+        .map(|h| h.contract_address)
+        .filter(|address| seen.insert(*address))
+        .collect()
 }
 
 /// The body the connector receives (RFC-033), field by field.
@@ -237,6 +255,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::endpoint::validate::tests::{SOLANA, handle};
     use crate::kms_aggregator::mock::EXTRA_DATA_V2;
+    use kms_connector_api::MAX_USER_DECRYPTION_DURATION_SECONDS;
 
     pub(crate) const NOW: u64 = 1_800_000_000;
 
@@ -268,7 +287,11 @@ pub(crate) mod tests {
     #[test]
     fn a_solana_request_passes_and_each_rule_names_its_field() {
         assert_eq!(
-            validate_solana(&user_body(NOW - 10), &[1, SOLANA], NOW),
+            validate_solana(
+                &user_body(NOW - 10),
+                &HttpConfig::for_tests(&[1, SOLANA]),
+                NOW
+            ),
             Ok(())
         );
         type Mutation = Box<dyn Fn(&mut SolanaUserDecryptionRequest)>;
@@ -306,7 +329,8 @@ pub(crate) mod tests {
         for (mutate, field) in cases {
             let mut request = user_body(NOW - 10);
             mutate(&mut request);
-            let error = validate_solana(&request, &[1, SOLANA], NOW).unwrap_err();
+            let error =
+                validate_solana(&request, &HttpConfig::for_tests(&[1, SOLANA]), NOW).unwrap_err();
             assert_eq!(error.field, field, "{error}");
         }
     }
@@ -370,8 +394,28 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn handle_contracts_lists_each_contract_once_in_order() {
+        let (a, b) = (Address::repeat_byte(0xaa), Address::repeat_byte(0xbb));
+        let mut payload = valid().payload;
+        let entry = payload.handles[0].clone();
+        payload.handles = [a, b, a, b, a]
+            .into_iter()
+            .map(|contract_address| HandleEntry {
+                contract_address,
+                ..entry.clone()
+            })
+            .collect();
+        assert_eq!(handle_contracts(&payload), [a, b]);
+        payload.handles.clear();
+        assert!(handle_contracts(&payload).is_empty());
+    }
+
+    #[test]
     fn valid_request_passes() {
-        assert_eq!(validate(&valid(), &[1, 137], NOW), Ok(()));
+        assert_eq!(
+            validate(&valid(), &HttpConfig::for_tests(&[1, 137]), NOW),
+            Ok(())
+        );
     }
 
     #[test]
@@ -399,6 +443,13 @@ pub(crate) mod tests {
                 "payload.publicKey",
             ),
             (
+                Box::new(|r| {
+                    r.payload.request_validity.duration_seconds =
+                        MAX_USER_DECRYPTION_DURATION_SECONDS + 1
+                }),
+                "payload.requestValidity.durationSeconds",
+            ),
+            (
                 Box::new(|r| r.payload.request_validity.start_timestamp = NOW + 1),
                 "payload.requestValidity.startTimestamp",
             ),
@@ -414,9 +465,26 @@ pub(crate) mod tests {
         for (mutate, field) in cases {
             let mut request = valid();
             mutate(&mut request);
-            let error = validate(&request, &[1, 137], NOW).unwrap_err();
+            let error = validate(&request, &HttpConfig::for_tests(&[1, 137]), NOW).unwrap_err();
             assert_eq!(error.field, field, "{error}");
         }
+    }
+
+    #[test]
+    fn a_limit_error_names_the_offending_value() {
+        let mut request = valid();
+        request.payload.allowed_contracts =
+            vec![address!("0x3333333333333333333333333333333333333333"); 11];
+        let error = validate(&request, &HttpConfig::for_tests(&[1, 137]), NOW).unwrap_err();
+        assert_eq!(error.value.as_deref(), Some("11 contracts"));
+        let mut request = valid();
+        request.payload.request_validity.duration_seconds =
+            MAX_USER_DECRYPTION_DURATION_SECONDS + 1;
+        let error = validate(&request, &HttpConfig::for_tests(&[1, 137]), NOW).unwrap_err();
+        assert_eq!(
+            error.value,
+            Some((MAX_USER_DECRYPTION_DURATION_SECONDS + 1).to_string())
+        );
     }
 
     #[test]

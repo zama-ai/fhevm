@@ -13,3 +13,6 @@ expect:
   dominant: rate_limited
   elapsed: 520ms
   attempts: 17
+  metrics:                     # a bare 429 is recorded under the connector code rate_limited
+    answered: 17
+    errors: { rate_limited: 8 }

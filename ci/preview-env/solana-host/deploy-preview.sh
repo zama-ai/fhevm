@@ -13,6 +13,8 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"; solana_release_operation' EXIT
 values=ci/preview-env/solana-host
 tag=$(jq -er .solana_programs <<< "$TAGS_JSON")
+# A string throughout: as a number, the Solana chain id exceeds float64 precision.
+solana_chain_id=$(yq -er .commonConfig.hostChains.solana.chainId "$values/values-solana-connector-e2e.yaml")
 # The canonical EVM host chain (per-namespace Anvil) whose key material the Solana chain shares.
 key_source_chain_id=12345
 
@@ -94,47 +96,29 @@ for i in $(seq 1 "$NB_KMS_CORE"); do
 done
 # Relayer host dispatch also needs the Solana RPC/program identity; preserve its EVM entry.
 helm get values relayer -n "$NAMESPACE" -o yaml > "$work/relayer.yaml"
-yq -i '.env = ((.env // []) | map(select(.name != "APP_HOST_CHAINS__1__CHAIN_ID" and .name != "APP_HOST_CHAINS__1__URL" and .name != "APP_HOST_CHAINS__1__ACL_ADDRESS"))) + [
-  {"name":"APP_HOST_CHAINS__1__CHAIN_ID","value":"130140237723663404"},
+SOLANA_CHAIN_ID="$solana_chain_id" yq -i '.env = ((.env // []) | map(select(.name != "APP_HOST_CHAINS__1__CHAIN_ID" and .name != "APP_HOST_CHAINS__1__URL" and .name != "APP_HOST_CHAINS__1__ACL_ADDRESS"))) + [
+  {"name":"APP_HOST_CHAINS__1__CHAIN_ID","value":strenv(SOLANA_CHAIN_ID)},
   {"name":"APP_HOST_CHAINS__1__URL","valueFrom":{"secretKeyRef":{"name":"solana-rpc","key":"rpc-url"}}},
   {"name":"APP_HOST_CHAINS__1__ACL_ADDRESS","valueFrom":{"configMapKeyRef":{"name":"solana-host-addresses","key":"zama_host.address"}}}
 ]' "$work/relayer.yaml"
 helm upgrade relayer "$COMMON_CHART" --version "$COMMON_CHART_VERSION" -n "$NAMESPACE" -f "$work/relayer.yaml" \
   --set-string "image.tag=$(jq -r .relayer <<< "$TAGS_JSON")" --wait --wait-for-jobs --timeout=10m
 
-# relayer-http serves decryption over HTTP for the host chains the connectors serve, through every
-# party's proxy. Chain ids stay strings, and the config reaches the chart as one string: Helm reads
-# numeric values as float64.
-helm get values kms-connector-1 -n "$NAMESPACE" --all -o yaml > "$work/connector.yaml"
-endpoint_urls=$(kubectl get configmap kms-connector-http -n "$NAMESPACE" -o jsonpath='{.data.endpoint-urls}')
-require_nonempty "$endpoint_urls" "kms-connector-http[endpoint-urls] is empty"
-tx_senders=$(kubectl get configmap kms-connector-http -n "$NAMESPACE" -o jsonpath='{.data.tx-sender-addresses}')
-require_nonempty "$tx_senders" "kms-connector-http[tx-sender-addresses] is empty"
-# FhevmSig: the domain is the one each proxy verifies (the connector's Ethereum chain id and
-# ProtocolConfig); the signer address is the proxies' one allowed sender, which relayer-http checks
-# its key against at startup; each endpoint's audience is that party's tx-sender, aligned with the URLs.
-ENDPOINT_URLS="$endpoint_urls" TX_SENDERS="$tx_senders" THRESHOLD=$(kms_reconstruct "$NB_KMS_CORE") yq '
-  load("relayer-http/config/config.yaml") * {
-      "log": {"format": "json"},
-      "http": {
-        "supported_chain_ids": [.commonConfig.hostChains[] | select(. != null) | .chainId]
-      },
-      "kms_aggregator": {
-        "public_decrypt": {"threshold": env(THRESHOLD)},
-        "user_decrypt": {"threshold": env(THRESHOLD)},
-        "auth": {
-          "chain_id": (.commonConfig.hostChains.ethereum.chainId | tonumber),
-          "protocol_config": .commonConfig.ethereumContractAddresses.protocolConfig,
-          "address": .kmsConnectorProxy.allowedSenders[0]
-        },
-        "endpoints": [strenv(ENDPOINT_URLS) | split(",") | to_entries | .[] | {"name": "kms_" + (.key | tostring), "url": .value, "audience": (strenv(TX_SENDERS) | split(","))[.key]}]
-      }
-    }' "$work/connector.yaml" > "$work/relayer-http-config.yaml"
-CONFIG="$work/relayer-http-config.yaml" yq -n '.configmapFiles.files."config.yaml" = load_str(strenv(CONFIG))' \
-  > "$work/relayer-http.yaml"
-helm upgrade --install relayer-http "$COMMON_CHART" --version "$COMMON_CHART_VERSION" -n "$NAMESPACE" \
-  -f ci/preview-env/relayer/values-relayer-http-e2e.yaml -f "$work/relayer-http.yaml" \
-  --set-string "image.tag=$(jq -er .relayer_http <<< "$TAGS_JSON")" --wait --timeout=10m
+# relayer-http (deploy-relayer.sh) serves the EVM host chains; add the Solana one. The config then
+# reaches the chart as one string with the chain ids as strings: Helm reads numeric values as
+# float64, which rounds a Solana chain id.
+helm get values relayer-http -n "$NAMESPACE" -o yaml > "$work/relayer-http.yaml"
+SOLANA_CHAIN_ID="$solana_chain_id" yq -i '
+  .configmapFiles.files."config.yaml" |= (
+    .http.supported_chain_ids = ([.http.supported_chain_ids[] | tostring] + [strenv(SOLANA_CHAIN_ID)])
+    | to_yaml)' "$work/relayer-http.yaml"
+# The patch leaves a config that is already a string unchanged, without an error.
+SOLANA_CHAIN_ID="$solana_chain_id" yq -e '
+  .configmapFiles.files."config.yaml" | from_yaml | .http.supported_chain_ids | any_c(. == strenv(SOLANA_CHAIN_ID))
+  ' "$work/relayer-http.yaml" >/dev/null ||
+  { echo "::error::relayer-http's patched config does not list the Solana chain id $solana_chain_id"; exit 1; }
+helm upgrade relayer-http "$COMMON_CHART" --version "$COMMON_CHART_VERSION" -n "$NAMESPACE" \
+  -f "$work/relayer-http.yaml" --wait --timeout=10m
 
 # HTTP readiness alone does not prove that Yellowstone is delivering sealed blocks.
 for i in $(seq 1 "$NB_COPROCESSOR"); do

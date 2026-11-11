@@ -213,6 +213,7 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
 
     // Gets the request ID and endpoints for the given request type
     let (request_id_u256, req_endpoint, resp_endpoint) = match req {
+        ProtocolEventKind::PadDecryption(_) => unreachable!("pad decryption is not tested here"),
         ProtocolEventKind::PublicDecryption(r) => {
             (r.decryptionId, "PublicDecrypt", "GetPublicDecryptionResult")
         }
@@ -263,6 +264,9 @@ fn prepare_mocks(req: &ProtocolEventKind, already_sent: bool) -> MockSet {
             "/kms_service.v1.CoreServiceEndpoint/{resp_endpoint}"
         ));
         match req {
+            ProtocolEventKind::PadDecryption(_) => {
+                unreachable!("pad decryption is not tested here")
+            }
             ProtocolEventKind::PublicDecryption(_)
             | ProtocolEventKind::SolanaPublicDecryption(_) => then.pb(PublicDecryptionResponse {
                 payload: Some(PublicDecryptionResponsePayload::default()),
@@ -320,6 +324,7 @@ async fn wait_for_response_in_db(
 ) -> anyhow::Result<KmsResponse> {
     info!("Waiting for response to be stored in DB...");
     let query = match req {
+        ProtocolEventKind::PadDecryption(_) => unreachable!("pad decryption is not tested here"),
         ProtocolEventKind::PublicDecryption(_) | ProtocolEventKind::SolanaPublicDecryption(_) => {
             "SELECT * FROM public_decryption_responses"
         }
@@ -346,6 +351,9 @@ async fn wait_for_response_in_db(
             tokio::time::sleep(Duration::from_millis(200)).await;
         } else {
             match req {
+                ProtocolEventKind::PadDecryption(_) => {
+                    unreachable!("pad decryption is not tested here")
+                }
                 ProtocolEventKind::PublicDecryption(_)
                 | ProtocolEventKind::SolanaPublicDecryption(_) => {
                     break kms_response::from_public_decryption_row(&result[0])?;
@@ -386,6 +394,7 @@ async fn wait_for_response_in_db(
 fn check_response_data(request: &ProtocolEventKind, response: KmsResponse) -> anyhow::Result<()> {
     info!("Checking response data...");
     let expected_response = match request {
+        ProtocolEventKind::PadDecryption(_) => unreachable!("pad decryption is not tested here"),
         ProtocolEventKind::PublicDecryption(r) => KmsGrpcResponse::PublicDecryption {
             decryption_id: r.decryptionId,
             grpc_response: PublicDecryptionResponse {

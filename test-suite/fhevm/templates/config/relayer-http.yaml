@@ -4,7 +4,7 @@
 # party's proxy).
 name: relayer-http-local
 log:
-  format: pretty
+  format: json   # as in production: the dashboard's log panels parse it (relayer-http/OBSERVABILITY.md)
   show_file_line: false
   show_thread_ids: false
   show_timestamp: true

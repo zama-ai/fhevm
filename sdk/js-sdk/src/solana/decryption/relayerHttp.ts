@@ -12,7 +12,7 @@ import type { FhevmSolanaChain } from '../../core/types/fhevmSolanaChain.js';
 import type { SolanaDecryptionDeadline, SolanaDecryptionOperation, SolanaDecryptionOptions } from './deadline.js';
 import type { SolanaDecryptionOutcome } from './retry.js';
 import { setAuth } from '../../core/base/auth.js';
-import { normalizeHeaders } from '../../core/base/fetch.js';
+import { fetchWithRetry, normalizeHeaders } from '../../core/base/fetch.js';
 import { buildRelayerUrlString, validateRelayerBaseUrl } from '../../core/modules/relayer/module/relayerUrl.js';
 import { sdkName, version } from '../../core/_version.js';
 import { createSolanaDecryptionDeadline } from './deadline.js';
@@ -26,10 +26,11 @@ const ROUTES = {
 export type SolanaDecryptionRelayer = {
   readonly deadline: SolanaDecryptionDeadline;
   /**
-   * Posts the body once and reads the answer.
+   * Posts the body once and reads the answer. A network failure (a refused connection, as while
+   * the relayer shuts down) is retried as the EVM relayer client does, by `fetchWithRetry`.
    *
    * @returns The `result` of a succeeded envelope, or the code and message of an error body.
-   * @throws If the request does not reach the relayer, or the answer is neither envelope.
+   * @throws If the request still does not reach the relayer, or the answer is neither envelope.
    */
   submit<TResult>(body: unknown): Promise<SolanaDecryptionOutcome<TResult>>;
 };
@@ -92,7 +93,7 @@ async function post<TResult>(
     },
     options?.auth,
   );
-  const response = await fetch(url, init);
+  const response = await fetchWithRetry({ url, init });
   const text = await response.text();
   let envelope: unknown;
   try {
