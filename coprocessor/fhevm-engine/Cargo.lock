@@ -6217,6 +6217,8 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
+ "aws-config",
+ "ciphertext-attestation",
  "clap",
  "fhevm-engine-common",
  "hex",

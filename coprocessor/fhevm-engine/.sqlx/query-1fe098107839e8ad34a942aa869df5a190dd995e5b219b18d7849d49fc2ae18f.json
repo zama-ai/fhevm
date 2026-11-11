@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pads SET is_error = TRUE, error_message = $4\n          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3\n            AND signature IS NULL AND NOT is_error",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Int4",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1fe098107839e8ad34a942aa869df5a190dd995e5b219b18d7849d49fc2ae18f"
+}
