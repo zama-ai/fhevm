@@ -1,9 +1,21 @@
 import hardhatEthers from '@nomicfoundation/hardhat-ethers';
+import hardhatEthersChaiMatchers from '@nomicfoundation/hardhat-ethers-chai-matchers';
+import hardhatMocha from '@nomicfoundation/hardhat-mocha';
 import hardhatTypechain from '@nomicfoundation/hardhat-typechain';
 import hardhatUpgrades from '@openzeppelin/hardhat-upgrades';
 import { defineConfig, overrideTask, task } from 'hardhat/config';
+import type { HardhatPlugin } from 'hardhat/types/plugins';
 
 import { isFhevmTempPrepared } from './tasks/hostContracts.js';
+
+// Project-local plugin: the network hook the tests need (HH2: extendProvider(CustomProvider)).
+const fhevmTestNetworkPlugin: HardhatPlugin = {
+  id: 'fhevm-library-solidity-test-network',
+  npmPackage: null,
+  hookHandlers: {
+    network: () => import('./test/networkHooks.js'),
+  },
+};
 
 // Well-known test mnemonic (HH2's DEFAULT_MNEMONIC). Never use it to hold real funds.
 // The host contract deployer (DEPLOYER_PRIVATE_KEY in .env.example) is its account 5: it must be funded on the
@@ -12,7 +24,14 @@ const TEST_MNEMONIC =
   'adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer';
 
 export default defineConfig({
-  plugins: [hardhatEthers, hardhatTypechain, hardhatUpgrades],
+  plugins: [
+    hardhatEthers,
+    hardhatEthersChaiMatchers,
+    hardhatMocha,
+    hardhatTypechain,
+    hardhatUpgrades,
+    fhevmTestNetworkPlugin,
+  ],
   networks: {
     // The in-process network, with HH2's accounts.
     default: {
@@ -51,7 +70,22 @@ export default defineConfig({
         return buildResult;
       })
       .build(),
+    // The mocha tests run in this process (not in parallel mode): deploy the host contracts first, on the
+    // `network.getOrCreate()` connection the tests share (HH2: the `test` task ran task:prepareTestContracts first).
+    overrideTask(['test', 'mocha'])
+      .setInlineAction(async (taskArguments, hre, runSuper) => {
+        await hre.tasks.getTask('task:prepareTestContracts').run({});
+        const testResult: unknown = await runSuper(taskArguments);
+        return testResult;
+      })
+      .build(),
   ],
+  test: {
+    mocha: {
+      // As in HH2: the mocked coprocessor and some tests are slow.
+      timeout: 500000,
+    },
+  },
   paths: {
     sources: [
       // Everything published in @fhevm/solidity (package.json.publish.template: lib/**/*.sol, config/**/*.sol).

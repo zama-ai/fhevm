@@ -13,11 +13,27 @@
   },
   "files": [
     "./hardhat.config.ts",
+    "./lib-js/common.ts",
+    "./lib-js/fheTypeInfos.ts",
+    "./lib-js/operatorsPrices.ts",
     "./tasks/compileAll.ts",
+    "./tasks/env.ts",
     "./tasks/hostContracts.ts",
     "./tasks/hostDeployment.ts",
     "./tasks/prepareTestContracts.ts",
-    "./tasks/zamaConfigAddresses.ts"
+    "./tasks/zamaConfigAddresses.ts",
+    "./test/coprocessorUtils.ts",
+    "./test/fhevmjsMocked.ts",
+    "./test/hardhat.ts",
+    "./test/instance.ts",
+    "./test/legacyRelayerSdk/eip712.ts",
+    "./test/legacyRelayerSdk/types.ts",
+    "./test/networkHooks.ts",
+    "./test/rand/Rand.fixture.ts",
+    "./test/rand/Rand.ts",
+    "./test/signers.ts",
+    "./test/types.ts",
+    "./test/utils.ts"
   ],
   "include": ["./typechain-types/**/*.ts"]
 }

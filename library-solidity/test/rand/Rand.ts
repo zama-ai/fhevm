@@ -1,5 +1,6 @@
 import { expect } from 'chai';
-import { ethers, network } from 'hardhat';
+
+import { ethers, isInProcessNetwork } from '../hardhat.js';
 
 import {
   createInstances,
@@ -10,10 +11,10 @@ import {
   decrypt128,
   decrypt256,
   decryptBool,
-} from '../instance';
-import { getSigners, initSigners } from '../signers';
-import { evmSnapshot } from '../utils';
-import { deployRandFixture } from './Rand.fixture';
+} from '../instance.js';
+import { getSigners, initSigners } from '../signers.js';
+import { evmSnapshot } from '../utils.js';
+import { deployRandFixture } from './Rand.fixture.js';
 
 describe('Rand', function () {
   before(async function () {
@@ -254,7 +255,7 @@ describe('Rand', function () {
   });
 
   it('8 and 16 bits generate and decrypt with hardhat snapshots [skip-on-coverage]', async function () {
-    if (network.name === 'hardhat') {
+    if (isInProcessNetwork) {
       // snapshots are only possible in hardhat node, i.e in mocked mode
       this.snapshotId = await evmSnapshot();
       const values: bigint[] = [];

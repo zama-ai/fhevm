@@ -1,12 +1,12 @@
 import dotenv from 'dotenv';
 import type { ethers as EthersT } from 'ethers';
-import * as fs from 'fs';
-import { ethers } from 'hardhat';
+import * as fs from 'node:fs';
 
-import type { FheTypeInfo } from '../lib-js/common';
-import { ALL_FHE_TYPE_INFOS } from '../lib-js/fheTypeInfos';
-import { ALL_OPERATORS_PRICES } from '../lib-js/operatorsPrices';
-import { HOST_ADDRESSES_ENV_PATH } from './utils';
+import type { FheTypeInfo } from '../lib-js/common.js';
+import { ALL_FHE_TYPE_INFOS } from '../lib-js/fheTypeInfos.js';
+import { ALL_OPERATORS_PRICES } from '../lib-js/operatorsPrices.js';
+import { ethers } from './hardhat.js';
+import { HOST_ADDRESSES_ENV_PATH } from './utils.js';
 
 const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH));
 const coprocAddress = parsedEnvCoprocessor.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
@@ -190,25 +190,13 @@ function assertLogsInEmissionOrder(logs: readonly EthersT.Log[]): void {
   }
 }
 
-// Validates the [lastBlockSnapshot, lastCounterRand] pair returned by CustomProvider's `get_lastBlockSnapshot`.
-// lastCounterRand is a number, or a 32-byte hex string once CustomProvider has read it from storage after `evm_revert`.
-function parseLastBlockSnapshot(value: unknown): [number, number] {
-  if (!Array.isArray(value) || value.length !== 2) {
-    throw new Error('get_lastBlockSnapshot: expected a [lastBlockSnapshot, lastCounterRand] pair');
+// Validates the block number returned by the `get_lastBlockSnapshot` method of the test network hook
+// (test/networkHooks.ts): the block reached after the last `evm_revert`, or the last block processed.
+function parseLastBlockSnapshot(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    throw new Error(`get_lastBlockSnapshot: expected an integer block number, got ${String(value)}`);
   }
-  const blockSnapshot: unknown = value[0];
-  const counterRandValue: unknown = value[1];
-  if (typeof blockSnapshot !== 'number') {
-    throw new Error(`get_lastBlockSnapshot: expected lastBlockSnapshot to be a number, got ${typeof blockSnapshot}`);
-  }
-  if (typeof counterRandValue !== 'number' && typeof counterRandValue !== 'string') {
-    throw new Error(`get_lastBlockSnapshot: expected lastCounterRand to be a number or a hex string`);
-  }
-  const counterRandNumber = Number(counterRandValue);
-  if (!Number.isInteger(counterRandNumber)) {
-    throw new Error(`get_lastBlockSnapshot: invalid lastCounterRand ${String(counterRandValue)}`);
-  }
-  return [blockSnapshot, counterRandNumber];
+  return value;
 }
 
 async function processAllPastFHEVMExecutorEvents(): Promise<void> {
@@ -217,7 +205,7 @@ async function processAllPastFHEVMExecutorEvents(): Promise<void> {
 
   if (process.env.SOLIDITY_COVERAGE !== 'true') {
     // evm_snapshot is not supported in coverage mode
-    [lastBlockSnapshot] = parseLastBlockSnapshot(await provider.send('get_lastBlockSnapshot', []));
+    lastBlockSnapshot = parseLastBlockSnapshot(await provider.send('get_lastBlockSnapshot', []));
     if (lastBlockSnapshot < firstBlockListening) {
       firstBlockListening = lastBlockSnapshot + 1;
     }
