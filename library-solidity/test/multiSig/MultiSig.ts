@@ -1,14 +1,15 @@
 import { expect } from 'chai';
 import dotenv from 'dotenv';
-import fs from 'fs';
-import hre from 'hardhat';
-import { createInstances } from '../instance';
-import { getSigners, initSigners } from '../signers';
-import { HOST_ADDRESSES_ENV_PATH, userDecryptSingleEuint } from '../utils';
-import { deploySimpleMultiSigFixture } from './MultiSig.fixture';
-import type { EncryptedSetter, MultiSigHelper, SimpleMultiSig } from '../../typechain-types';
-import type { Signers } from '../signers';
-import type { FhevmInstances } from '../types';
+import fs from 'node:fs';
+
+import type { EncryptedSetter, MultiSigHelper, SimpleMultiSig } from '../../typechain-types/index.js';
+import { ethers } from '../hardhat.js';
+import { createInstances } from '../instance.js';
+import { getSigners, initSigners } from '../signers.js';
+import type { Signers } from '../signers.js';
+import type { FhevmInstances } from '../types.js';
+import { HOST_ADDRESSES_ENV_PATH, userDecryptSingleEuint } from '../utils.js';
+import { deploySimpleMultiSigFixture } from './MultiSig.fixture.js';
 
 describe('MultiSig', function () {
   let multiSig: SimpleMultiSig;
@@ -26,10 +27,10 @@ describe('MultiSig', function () {
     const contract = await deploySimpleMultiSigFixture();
     this.contractAddress = await contract.getAddress();
     multiSig = contract;
-    const helperFactory = await hre.ethers.getContractFactory('MultiSigHelper');
+    const helperFactory = await ethers.getContractFactory('MultiSigHelper');
     helper = await helperFactory.deploy(this.contractAddress);
     instances = await createInstances(signers);
-    const setterFactory = await hre.ethers.getContractFactory('EncryptedSetter');
+    const setterFactory = await ethers.getContractFactory('EncryptedSetter');
     setter = await setterFactory.deploy();
   });
 
@@ -80,16 +81,16 @@ describe('MultiSig', function () {
     expect(carolDecrypted).to.equal(clearValue);
 
     // now either any allowed owner OR the multisig (via a proposal) should allow handle to EncryptedSetter (an owner allowing is simpler):
-    const ifaceACL = new hre.ethers.Interface([
+    const ifaceACL = new ethers.Interface([
       'function allow(bytes32 handle, address account)',
       'function multicall(bytes[] calldata data)',
     ]);
     const aclAddress = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH)).ACL_CONTRACT_ADDRESS;
-    const acl = new hre.ethers.Contract(aclAddress, ifaceACL, signers.alice);
+    const acl = new ethers.Contract(aclAddress, ifaceACL, signers.alice);
     await acl.allow(encryptedValue.handles[0], setter);
 
     // now the multisig can finally use this handle and send it to EncryptedSetter contract;
-    const ifaceSetter = new hre.ethers.Interface(['function setEncryptedValue(bytes32 inputHandle, bytes inputProof)']);
+    const ifaceSetter = new ethers.Interface(['function setEncryptedValue(bytes32 inputHandle, bytes inputProof)']);
     const calldata2 = ifaceSetter.encodeFunctionData('setEncryptedValue', [
       encryptedValue.handles[0],
       '0x', // use an empty bytes array for inputProof, because handle has already been verified and allowed to multiSig
@@ -143,12 +144,12 @@ describe('MultiSig', function () {
   });
 
   it('should be able to use an uninitialized handle in the setter', async function () {
-    const setterFactory = await hre.ethers.getContractFactory('EncryptedSetter');
-    const setter2 = (await setterFactory.deploy()) as unknown as EncryptedSetter;
+    const setterFactory = await ethers.getContractFactory('EncryptedSetter');
+    const setter2 = await setterFactory.deploy();
     await multiSig.executeSpecialTx(await setter2.getAddress());
 
     const aclAddress = dotenv.parse(fs.readFileSync(HOST_ADDRESSES_ENV_PATH)).ACL_CONTRACT_ADDRESS;
-    const ifaceACL = new hre.ethers.Interface([
+    const ifaceACL = new ethers.Interface([
       'function allow(bytes32 handle, address account)',
       'function multicall(bytes[] calldata data)',
     ]);

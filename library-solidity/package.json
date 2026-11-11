@@ -21,7 +21,7 @@
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "test": "npm run _check:peer-deps && npm run test:publish && npm run test:hardhat",
     "test:forge": "forge test",
-    "test:hardhat": "hardhat test mocha test/rand/Rand.ts test/encryptedERC20/EncryptedERC20.ts test/encryptedERC20/EncryptedERC20.HCU.ts",
+    "test:hardhat": "hardhat test mocha test/rand/Rand.ts test/encryptedERC20/EncryptedERC20.ts test/encryptedERC20/EncryptedERC20.HCU.ts test/multiSig/MultiSig.ts",
     "test:publish": "node --test publish/package.test.mjs",
     "tsc": "tsc --project ./tsconfig.json --noEmit"
   },
