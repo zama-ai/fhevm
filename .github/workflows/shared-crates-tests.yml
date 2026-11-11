@@ -26,7 +26,6 @@ jobs:
       changes-ciphertext-attestation: ${{ steps.filter.outputs.ciphertext-attestation }}
       changes-block-manifest: ${{ steps.filter.outputs.block-manifest }}
       changes-user-decryption-signature: ${{ steps.filter.outputs.user-decryption-signature }}
-      changes-request-authorization: ${{ steps.filter.outputs.request-authorization }}
       changes-kms-context: ${{ steps.filter.outputs.kms-context }}
       changes-fhevm-sig-auth: ${{ steps.filter.outputs.fhevm-sig-auth }}
       changes-gateway-contracts-bindings: ${{ steps.filter.outputs.gateway-contracts-bindings }}
@@ -51,8 +50,6 @@ jobs:
             - shared/ciphertext-attestation/**
           user-decryption-signature:
             - shared/user-decryption-signature/**
-          request-authorization:
-            - shared/request-authorization/**
           kms-context:
             # Path dependency. A change there can break this crate's tests.
             - shared/kms-context/**
@@ -97,17 +94,6 @@ jobs:
       - name: Run Tests
         run: |
           RUST_BACKTRACE=full cargo test --all-features
-
-  test-request-authorization:
-    name: test-request-authorization
-    needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-request-authorization == 'true' }}
-    permissions: *shared-crate-test-permissions
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: shared/request-authorization
-    steps: *shared-crate-test-steps
 
   test-kms-context:
     name: test-kms-context

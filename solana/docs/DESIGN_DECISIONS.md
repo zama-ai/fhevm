@@ -2446,8 +2446,10 @@ signature is `FhevmSig` (RFC 038, the scheme RFC 033 names for its own hops): EI
 with its own (`--coprocessor-signer-address`), until `ProtocolConfig` lists the coprocessors. The
 signature travels as `Authorization: FhevmSig expires=<unix seconds>, digest=0x<32 bytes>,
 sig=0x<65 bytes>`, exactly these parameters in this order, where `digest` is `bodyDigest`. The
-`shared/request-authorization` crate builds and checks it for both sides, and pins its wire bytes
-against viem. A server refuses a signature with `expires < now - CLOCK_SKEW` (30 s) as
+`shared/fhevm-sig-auth` crate, which relayer-http and the KMS connector proxy also use, builds and
+checks it for both sides; the check is to move into coprocessor-proxy, in front of the server. It
+accepts the scheme name in any case (RFC 9110) and refuses a high-s signature, so a request has one
+signature. A server refuses a signature with `expires < now - CLOCK_SKEW` (30 s) as
 `auth_expired` (401, retryable), and one with `expires > now + MAX_AUTH_VALIDITY + CLOCK_SKEW`
 (300 + 30 s) as `auth_malformed`. It refuses a request with a query string as `non_canonical_path`
 (400), since the signature does not cover one. kms-worker signs for 30 seconds, once per
@@ -2467,7 +2469,8 @@ and waits up to 3 seconds for it. If the signer is still unknown, the request ge
 than 30 seconds, keeps the last set. Until the first read succeeds, every request gets `upstream_transient` (502,
 retryable) and `/healthz` answers 503. The server authenticates the signer from the header before it
 reads the body, with RFC 038's codes (401, not retryable): no header is `auth_missing`, a header of
-any other form `auth_malformed`, and a signature that recovers no address `auth_unknown_signer`.
+any other form `auth_malformed` (a `sig` that is not a 65-byte low-s signature included), and a
+signature that recovers no address `auth_unknown_signer`.
 A signature for another audience recovers an unrelated address, so it is answered as an unknown
 signer, `upstream_transient`: a connector configured with a wrong `signer_address` for one
 coprocessor reads its proofs from the others, and one with a wrong `signer_address` for every

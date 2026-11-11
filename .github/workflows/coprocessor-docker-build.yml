@@ -205,7 +205,7 @@ jobs:
           - coprocessor/fhevm-engine/solana-host-follower/**
           - coprocessor/fhevm-engine/solana-merkle-proof-service/**
           - coprocessor/fhevm-engine/fhevm-engine-common/**
-          - shared/request-authorization/**
+          - shared/fhevm-sig-auth/**
           - shared/kms-context/**
           - coprocessor/fhevm-engine/Cargo.*
           - host-contracts/rust_bindings/**

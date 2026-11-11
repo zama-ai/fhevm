@@ -11,7 +11,6 @@ use std::{
 };
 
 use alloy::signers::local::PrivateKeySigner;
-use request_authorization::KeyRegistry;
 
 use serial_test::serial;
 use solana_host_follower::host::EncryptedStoreWrite;
@@ -35,6 +34,7 @@ use zama_solana_acl::{
 use zama_solana_merkle_proofs::{
     ErrorCode, ErrorResponse, LeafQuery, LeafQueryKind, MerkleProofOutcome,
     MerkleProofRequest, MerkleProofResponse, MERKLE_PROOFS_PATH,
+    MERKLE_PROOFS_SIGNED_PATH,
 };
 
 const ACCOUNT: [u8; 32] = [0xAC; 32];
@@ -57,10 +57,9 @@ fn write(
     }
 }
 
-const REGISTRY: KeyRegistry = KeyRegistry {
-    chain_id: 12345,
-    contract: alloy::primitives::Address::repeat_byte(0xC0),
-};
+const CHAIN_ID: u64 = 12345;
+const PROTOCOL_CONFIG: alloy::primitives::Address =
+    alloy::primitives::Address::repeat_byte(0xC0);
 
 /// The coprocessor signer address the server answers for.
 const AUDIENCE: alloy::primitives::Address =
@@ -91,16 +90,17 @@ impl ProofClient {
             .expect("clock")
             .as_secs()
             + 30;
-        let authorization = request_authorization::authorize(
+        let authorization = fhevm_sig_auth::sign(
             &self.connector,
-            &REGISTRY,
-            MERKLE_PROOFS_PATH,
+            &fhevm_sig_auth::domain(CHAIN_ID, PROTOCOL_CONFIG),
+            AUDIENCE,
+            &MERKLE_PROOFS_SIGNED_PATH,
             &body,
             expires,
-            AUDIENCE,
         )
         .await
-        .expect("sign");
+        .expect("sign")
+        .to_string();
         (body, authorization)
     }
 
@@ -142,7 +142,8 @@ async fn serve_proofs(
     let server = HttpServer::merkle_proofs(
         pool.clone(),
         KmsTxSenders::fixed(KmsTxSenderSet {
-            registry: REGISTRY,
+            chain_id: CHAIN_ID,
+            protocol_config: PROTOCOL_CONFIG,
             senders: HashSet::from([connector.address()]),
         }),
         AUDIENCE,

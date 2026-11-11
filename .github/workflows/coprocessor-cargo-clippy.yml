@@ -43,14 +43,13 @@ jobs:
               - solana/crates/zama-solana-merkle-proofs/**
               - solana/crates/zama-solana-transaction/**
               - solana/test-fixtures/**
-              # consensus-detector and coprocessor-proxy depend on these crates by
-              # path. Clippy of the engine compiles them, but does not run their own
-              # tests.
+              # consensus-detector, coprocessor-proxy and the Solana Merkle proof server
+              # depend on these crates by path. Clippy of the engine compiles them, but
+              # does not run their own tests.
               - shared/block-manifest/**
               - shared/ciphertext-attestation/**
               - shared/fhevm-sig-auth/**
               # The Merkle proof server depends on it by path.
-              - shared/request-authorization/**
               - shared/kms-context/**
   cargo-clippy:
     name: coprocessor-cargo-clippy/cargo-clippy

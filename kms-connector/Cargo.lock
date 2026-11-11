@@ -4790,6 +4790,7 @@ dependencies = [
  "ciphertext-attestation",
  "connector-utils",
  "dashmap 6.1.0",
+ "fhevm-sig-auth",
  "fhevm_gateway_bindings",
  "fhevm_host_bindings",
  "futures",
@@ -4801,7 +4802,6 @@ dependencies = [
  "prometheus",
  "prost 0.14.4",
  "rand 0.9.2",
- "request-authorization",
  "reqwest 0.12.28",
  "ring",
  "rstest",
@@ -6583,16 +6583,6 @@ name = "relative-path"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
-
-[[package]]
-name = "request-authorization"
-version = "0.15.0"
-dependencies = [
- "alloy-primitives",
- "alloy-signer",
- "alloy-sol-types",
- "thiserror 2.0.20",
-]
 
 [[package]]
 name = "reqwest"
@@ -10990,6 +10980,7 @@ dependencies = [
 name = "zama-solana-merkle-proofs"
 version = "0.1.0"
 dependencies = [
+ "http 1.4.0",
  "serde",
  "serde_bytes",
  "zama-solana-acl",
