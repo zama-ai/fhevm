@@ -385,11 +385,14 @@ else
   instant_prefill_s3_format_version
   precreate_s3_format_version_null_index
   sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }
+  # Seed before the index builds and VACUUM below, which can take long. With
+  # IAM auth the token is minted once and expires after 15 minutes, so a
+  # later connection can fail; the Job retry then skips the built indexes.
+  seed_host_chains
   # A fresh database only has the column once the migrations ran.
   precreate_s3_format_version_null_index
   precreate_s3_migration_pending_count_index
   tune_ciphertext_digest_for_s3_migration
-  seed_host_chains
 fi
 
 echo "Database initialization completed successfully."
