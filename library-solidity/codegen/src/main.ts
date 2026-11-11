@@ -6,7 +6,7 @@ import type { OverloadSignature } from './common';
 import {
   type LibCommandOptions,
   type OverloadsCommandOptions,
-  type TestGroup,
+  type TypescriptTestGroup,
   debugLog,
   errorLog,
   formatAndWriteFile,
@@ -397,7 +397,7 @@ export async function commandGenerateAllFiles(options: LibCommandOptions): Promi
       numberOfTestSplits,
       overloadTests,
       typescriptTestGroupImports,
-      config.tests,
+      { ...config.tests, hardhatVersion: typescriptTestGroup.hardhatVersion },
     );
     await Promise.all(
       tsSplits.map((split, splitIdx) =>
@@ -409,15 +409,20 @@ export async function commandGenerateAllFiles(options: LibCommandOptions): Promi
   }
 }
 
-function computeOperationsTestsGroupImports(operationsTestGroup: TestGroup): TypescriptTestGroupImports {
+function computeOperationsTestsGroupImports(operationsTestGroup: TypescriptTestGroup): TypescriptTestGroupImports {
   const imports: TypescriptTestGroupImports = {
     signers: '',
     instance: '',
     typechain: '',
   };
 
-  const importModuleNames = Object.keys(imports) as Array<keyof TypescriptTestGroupImports>;
-  const importModuleNamesSet = new Set(importModuleNames);
+  // `hardhat` (the module exporting the shared HH3 network connection) exists only for HH3 tests: it is required
+  // with `hardhatVersion: 3`, and refused otherwise (so an HH2 config cannot set it by mistake, and be ignored).
+  const requiredModuleNames: Array<keyof TypescriptTestGroupImports> = ['signers', 'instance', 'typechain'];
+  if (operationsTestGroup.hardhatVersion === 3) {
+    requiredModuleNames.push('hardhat');
+  }
+  const importModuleNamesSet = new Set(requiredModuleNames);
 
   if (operationsTestGroup.imports) {
     for (let i = 0; i < operationsTestGroup.imports.length; ++i) {
@@ -429,15 +434,19 @@ function computeOperationsTestsGroupImports(operationsTestGroup: TestGroup): Typ
       if (importModuleNamesSet.has(k)) {
         imports[k] = imp[1];
       } else {
-        throw new Error(`Unknown operations import module name ${k}`);
+        throw new Error(
+          `Unknown operations import module name ${k}` +
+            (k === 'hardhat' ? ' (only allowed with "tests.typescript.hardhatVersion": 3)' : ''),
+        );
       }
     }
   } else {
     throw new Error('Missing operations test group imports declaration.');
   }
 
-  importModuleNames.forEach((k) => {
-    if (imports[k].length === 0) {
+  requiredModuleNames.forEach((k) => {
+    const value = imports[k];
+    if (value === undefined || value.length === 0) {
       throw new Error(`Missing operations test group '${k}' import declaration.`);
     }
   });
