@@ -2,8 +2,8 @@ import { defineConfig } from 'hardhat/config';
 
 export default defineConfig({
   paths: {
-    // `sources` is left at its default (contracts/), which does not exist here, so nothing is compiled yet.
-    // lib/ comes back in step 1.1.
+    // Everything published in @fhevm/solidity (package.json.publish.template: lib/**/*.sol, config/**/*.sol).
+    sources: ['./lib', './config'],
     tests: {
       // The Foundry tests in test/*.t.sol run with `forge test`, not Hardhat. This folder does not exist, so
       // Hardhat finds no Solidity tests to build.
