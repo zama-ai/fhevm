@@ -45,6 +45,8 @@ fn config() -> Config {
         claim_timeout: Duration::from_secs(60),
         poll_interval: Duration::from_millis(100),
         pending_max_age: Duration::from_secs(600),
+        output_max_age: None,
+        gc_interval: Duration::from_secs(3600),
     }
 }
 
@@ -463,4 +465,123 @@ async fn writes_the_output_of_a_pending_row_only() {
         .await
         .unwrap();
     assert_eq!(ct128, vec![1]);
+}
+
+/// Sets `state` on the row of `label`: `uploaded`, `not_uploaded`, `failed` or `claimed` (live).
+async fn set_state(pool: &PgPool, prf: u16, label: u8, state: &str) {
+    let update = match state {
+        "uploaded" | "not_uploaded" => {
+            "UPDATE pads SET ciphertext128 = '\\x01', ciphertext_digest = $3,
+                             ciphertext128_digest = $3, signer = $4, signature = $5,
+                             attestation_version = 1,
+                             s3_verified_at = CASE WHEN $6 THEN NOW() END
+              WHERE prf_instance = $1 AND label = $2"
+        }
+        "failed" => "UPDATE pads SET is_error = TRUE WHERE prf_instance = $1 AND label = $2",
+        "claimed" => "UPDATE pads SET claimed_at = NOW() WHERE prf_instance = $1 AND label = $2",
+        _ => panic!("unknown state {state}"),
+    };
+    let mut query = sqlx::query(update)
+        .bind(i32::from(prf))
+        .bind(B256::repeat_byte(label).to_vec());
+    if state.ends_with("uploaded") {
+        query = query
+            .bind(vec![0u8; 32])
+            .bind(vec![0u8; 20])
+            .bind(vec![1u8; 65])
+            .bind(state == "uploaded");
+    }
+    query.execute(pool).await.unwrap();
+}
+
+/// The labels of the rows of `prf`, sorted.
+async fn labels(pool: &PgPool, prf: u16) -> Vec<u8> {
+    let labels: Vec<Vec<u8>> =
+        sqlx::query_scalar("SELECT label FROM pads WHERE prf_instance = $1 ORDER BY label")
+            .bind(i32::from(prf))
+            .fetch_all(pool)
+            .await
+            .unwrap();
+    labels.iter().map(|l| l[0]).collect()
+}
+
+#[tokio::test]
+async fn deletes_old_rows_of_all_instances_that_are_uploaded_or_failed() {
+    let (_instance, pool) = db().await;
+    for (label, age, state) in [
+        (1, 3600.0, "uploaded"),
+        (2, 3600.0, "failed"),
+        (3, 3600.0, "not_uploaded"),
+        (4, 60.0, "uploaded"),
+    ] {
+        add_row(&pool, LANE, label, 1, age).await;
+        set_state(&pool, LANE, label, state).await;
+    }
+    add_row(&pool, LANE + 1, 5, 1, 3600.0).await;
+    set_state(&pool, LANE + 1, 5, "uploaded").await;
+
+    let deleted = rows::delete_old_outputs(&pool, Duration::from_secs(1800))
+        .await
+        .unwrap();
+
+    assert_eq!(deleted, 3);
+    assert_eq!(labels(&pool, LANE).await, vec![3, 4]);
+    assert!(labels(&pool, LANE + 1).await.is_empty());
+}
+
+#[tokio::test]
+async fn deletes_expired_pending_rows_of_all_instances_without_a_live_claim() {
+    let (_instance, pool) = db().await;
+    add_row(&pool, LANE, 1, 1, 3600.0).await;
+    add_row(&pool, LANE, 2, 1, 3600.0).await;
+    set_state(&pool, LANE, 2, "claimed").await;
+    add_row(&pool, LANE, 3, 1, 3600.0).await;
+    set_state(&pool, LANE, 3, "not_uploaded").await;
+    // Another instance: one expired row, one new row.
+    add_row(&pool, LANE + 1, 4, 1, 3600.0).await;
+    add_row(&pool, LANE + 1, 5, 1, 60.0).await;
+
+    let deleted =
+        rows::delete_expired_pending(&pool, Duration::from_secs(600), Duration::from_secs(60))
+            .await
+            .unwrap();
+
+    assert_eq!(deleted, 2);
+    assert_eq!(labels(&pool, LANE).await, vec![2, 3]);
+    assert_eq!(labels(&pool, LANE + 1).await, vec![5]);
+}
+
+#[tokio::test]
+async fn gives_the_age_of_the_oldest_rows_of_each_instance() {
+    let (_instance, pool) = db().await;
+    add_row(&pool, LANE, 1, 1, 100.0).await;
+    add_row(&pool, LANE, 2, 1, 200.0).await;
+    set_state(&pool, LANE, 2, "not_uploaded").await;
+    add_row(&pool, LANE + 1, 3, 1, 300.0).await;
+    set_state(&pool, LANE + 1, 3, "uploaded").await;
+
+    let mut oldest = rows::oldest_rows(&pool).await.unwrap();
+    oldest.sort_by_key(|o| o.prf_instance);
+
+    let near = |age: Option<f64>, expected: f64| age.is_some_and(|a| (a - expected).abs() < 5.0);
+    assert_eq!(oldest.len(), 2);
+    assert!(near(oldest[0].pending, 100.0));
+    assert!(near(oldest[0].not_uploaded, 200.0));
+    assert_eq!((oldest[1].pending, oldest[1].not_uploaded), (None, None));
+}
+
+#[tokio::test]
+async fn the_gc_runs_in_the_worker() {
+    let (_instance, pool) = db().await;
+    add_row(&pool, LANE + 1, 1, 1, 3600.0).await;
+    let config = Config {
+        gc_interval: Duration::from_millis(100),
+        ..config()
+    };
+    let (_signer, cancel, run) = start(&pool, config, Arc::new(MockEvaluator));
+
+    until(&pool, "SELECT COUNT(*) = 0 FROM pads").await;
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
 }
