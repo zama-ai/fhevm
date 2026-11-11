@@ -85,6 +85,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
     address internal constant BLOCK_WHITELISTED_ONLY = address(0xC3);
     address internal constant UNKNOWN = address(0xC4);
     address internal constant CAPACITY_OPERATOR = address(0xE1);
+    bytes32 internal constant HCU_LIMIT_STORAGE_LOCATION =
+        0xc13af6c514bff8997f30c90003baa82bd02aad978179d1ce58d85c4319ad6500;
 
     bytes32 mockLHS = bytes32(uint256(int256(-1)));
     bytes32 mockRHS = bytes32(uint256(int256(-2)));
@@ -160,7 +162,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
     }
 
     function _expectOnlyHCUConfiguratorChangesTheSettings(address caller) internal {
-        bytes[9] memory calls = [
+        bytes[10] memory calls = [
             abi.encodeCall(HCULimit.setQuota, (3, 1, 1)),
             abi.encodeCall(HCULimit.assignQuota, (3, address(0xBEEF))),
             abi.encodeCall(HCULimit.setQuotaPaused, (3, true)),
@@ -168,6 +170,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
             abi.encodeCall(HCULimit.setTier, (1, 5_000)),
             abi.encodeCall(HCULimit.setCapacity, (1, 1)),
             abi.encodeCall(HCULimit.setCapacityScale, (5_000)),
+            abi.encodeCall(HCULimit.setQuotaMaxStoredDepth, (3, 1)),
             abi.encodeCall(HCULimit.setTxLimits, (1, 1)),
             abi.encodeCall(HCULimit.setCrossTxDepthLimit, (1, 1))
         ];
@@ -2034,6 +2037,25 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         _setQuotaTier(LOW_QUOTA, 1);
         _assign(LOW_QUOTA, LOW);
         _assign(HIGH_QUOTA, HIGH);
+    }
+
+    /// RFC 040 relies on a quota's limits, usage, pause flag, tier and stored-depth limit sharing one slot.
+    function test_aQuotaFitsInOneSlot() public {
+        vm.startPrank(hcuConfiguratorAdd);
+        hcuLimit.setQuota(PARTNER_QUOTA, 1_000_000, 1_000_000);
+        hcuLimit.setQuotaPaused(PARTNER_QUOTA, true);
+        hcuLimit.setQuotaTier(PARTNER_QUOTA, type(uint8).max);
+        hcuLimit.setQuotaMaxStoredDepth(PARTNER_QUOTA, type(uint48).max);
+        vm.stopPrank();
+
+        // `quotas` is the sixth slot of HCULimit's namespaced storage.
+        bytes32 quotaSlot = keccak256(abi.encode(uint256(PARTNER_QUOTA), uint256(HCU_LIMIT_STORAGE_LOCATION) + 5));
+        uint256 word = uint256(vm.load(proxy, quotaSlot));
+        assertEq(uint48(word), 1_000_000);
+        assertEq(uint8(word >> 192), 1);
+        assertEq(uint8(word >> 200), type(uint8).max);
+        assertEq(word >> 208, type(uint48).max);
+        assertEq(vm.load(proxy, bytes32(uint256(quotaSlot) + 1)), bytes32(0));
     }
 
     function test_theCapacityScaleShrinksEveryThresholdAndTheDecay() public {

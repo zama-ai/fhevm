@@ -97,6 +97,8 @@ The per-transaction depth limit restarts at every transaction. A chain of depend
 
 `retryAfterBlocks` is the wait for the operation that failed. Later operations of the same transaction can need more, so wait at least that many blocks, simulate again, and repeat until the simulation passes. As with quotas, a transaction that simulates successfully can still revert if another transaction extends the same chain first.
 
+Governance can also give a quota a stored-depth limit with `setQuotaMaxStoredDepth(quotaId, maxStoredDepth)`, from `maxHCUDepthPerTx` to `maxDepth`. A contract in that quota cannot grant a handle deeper than the limit, with `FHE.allow` or `FHE.allowTransient`, to itself or to anyone else: the grant reverts with `HCUStoredDepthExceeded(account, quotaId, retryAfterBlocks)`, and succeeds once the handle has decayed for `retryAfterBlocks`. This limit does not refuse computing a deeper result, only granting it. So a quota can be generous in HCU but keep each value shallow. 0 means no limit beyond `maxDepth`. The default quota should keep the strictest limit: governance sets it first and refuses another quota's limit below it, but does not check a later raise of the default quota's limit against the others. You can read a quota's limit with `getQuotaMaxStoredDepth(quotaId)`.
+
 ## HCU costs for common operations
 
 ### Boolean operations (`ebool`)
