@@ -5,7 +5,7 @@ import { defineConfig, overrideTask, task } from 'hardhat/config';
 
 import { isFhevmTempPrepared } from './tasks/hostContracts.js';
 
-// Well-known test mnemonic (HH2's DEFAULT_MNEMONIC, .env.example's MNEMONIC). Never use it to hold real funds.
+// Well-known test mnemonic (HH2's DEFAULT_MNEMONIC). Never use it to hold real funds.
 // The host contract deployer (DEPLOYER_PRIVATE_KEY in .env.example) is its account 5: it must be funded on the
 // in-process network, and the host contract addresses (and config/ZamaConfig.sol) depend on it.
 const TEST_MNEMONIC =
@@ -26,9 +26,6 @@ export default defineConfig({
     outDir: 'typechain-types',
   },
   tasks: [
-    task('task:networkInfo', 'Prints the chain id, the signers and the first signer balance of a network')
-      .setAction(() => import('./tasks/networkInfo.js'))
-      .build(),
     task('task:compileAll', 'Prepares fhevmTemp/ (host contracts and addresses), then compiles every source folder')
       .setAction(() => import('./tasks/compileAll.js'))
       .build(),
