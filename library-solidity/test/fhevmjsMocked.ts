@@ -322,7 +322,7 @@ export function createEncryptedInputMocked(contractAddress: string, userAddress:
       const hash = ethers.getBytes(ethers.keccak256(encryptedArray));
       const extraDataV0 = ethers.solidityPacked(['uint8'], [0]);
 
-      const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : networkChainId;
+      const chainId = networkChainId;
       if (chainId === undefined) {
         throw new Error('Chain ID is not defined');
       }
@@ -399,7 +399,7 @@ async function coprocSign(
 ): Promise<string> {
   const inputVerificationAdd = process.env.INPUT_VERIFICATION_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;
-  const hostChainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : networkChainId;
+  const hostChainId = networkChainId;
 
   const domain = {
     name: 'InputVerification',

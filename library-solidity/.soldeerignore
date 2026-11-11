@@ -20,7 +20,6 @@ publish/
 .npmignore
 .prettierignore
 .prettierrc.json
-.solcover.js
 .solhintignore
 hardhat.config.ts
 tsconfig.json

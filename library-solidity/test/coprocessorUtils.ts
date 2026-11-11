@@ -203,12 +203,9 @@ async function processAllPastFHEVMExecutorEvents(): Promise<void> {
   const provider = ethers.provider;
   const latestBlockNumber = await provider.getBlockNumber();
 
-  if (process.env.SOLIDITY_COVERAGE !== 'true') {
-    // evm_snapshot is not supported in coverage mode
-    lastBlockSnapshot = parseLastBlockSnapshot(await provider.send('get_lastBlockSnapshot', []));
-    if (lastBlockSnapshot < firstBlockListening) {
-      firstBlockListening = lastBlockSnapshot + 1;
-    }
+  lastBlockSnapshot = parseLastBlockSnapshot(await provider.send('get_lastBlockSnapshot', []));
+  if (lastBlockSnapshot < firstBlockListening) {
+    firstBlockListening = lastBlockSnapshot + 1;
   }
 
   const contract = new ethers.Contract(coprocAddress, abi, provider);
@@ -233,10 +230,7 @@ async function processAllPastFHEVMExecutorEvents(): Promise<void> {
   }
 
   firstBlockListening = latestBlockNumber + 1;
-  if (process.env.SOLIDITY_COVERAGE !== 'true') {
-    // evm_snapshot is not supported in coverage mode
-    await provider.send('set_lastBlockSnapshot', [firstBlockListening]);
-  }
+  await provider.send('set_lastBlockSnapshot', [firstBlockListening]);
   // Process events in emission order: each operation's inputs are produced by earlier events.
   for (const event of events) {
     await insertHandleFromEvent(event);

@@ -254,7 +254,7 @@ describe('Rand', function () {
     expect(unique.size).to.be.greaterThanOrEqual(5);
   });
 
-  it('8 and 16 bits generate and decrypt with hardhat snapshots [skip-on-coverage]', async function () {
+  it('8 and 16 bits generate and decrypt with hardhat snapshots', async function () {
     if (isInProcessNetwork) {
       // snapshots are only possible in hardhat node, i.e in mocked mode
       this.snapshotId = await evmSnapshot();
