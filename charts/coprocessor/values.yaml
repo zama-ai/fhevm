@@ -1863,6 +1863,8 @@ padWorkerShared:
     pendingMaxAgeSeconds: 600
     # Uploaded or failed rows older than this are deleted. If not set, no row is deleted.
     outputMaxAgeSeconds:
+    # The ct64 of rows older than this is deleted. Unmask then computes it again.
+    ct64MaxAgeSeconds: 3600
 
   # Signer of the PRF output attestations: the coprocessor signer, as the sns-worker has.
   wallet:

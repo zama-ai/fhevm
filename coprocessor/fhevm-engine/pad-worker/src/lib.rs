@@ -33,7 +33,7 @@ use upload::{reference_key, s3_key, Uploader};
 /// The same limit as the database check of `HealthStatus`.
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 /// Maximum rows for each resubmit read.
-const RESUBMIT_BATCH: i64 = 100;
+const RESUBMIT_BATCH: i64 = 16;
 /// Channel of the `pads_work_available` trigger.
 pub const PAD_WORK_AVAILABLE: &str = "pad_work_available";
 
@@ -55,6 +55,8 @@ pub struct Config {
     pub output_max_age: Option<Duration>,
     /// Interval of the GC and the row age metrics (`PAD_GC_INTERVAL`).
     pub gc_interval: Duration,
+    /// The GC clears the ct64 of rows older than this (`PAD_CT64_MAX_AGE`).
+    pub ct64_max_age: Duration,
     /// Interval of the reference digest read until the lane is ready (`PAD_START_CHECK_INTERVAL`).
     pub start_check_interval: Duration,
 }
@@ -172,7 +174,7 @@ impl PadWorker {
                 pad_length,
             };
             match self.compute(claim).await {
-                Ok(output) => outputs.push(output),
+                Ok((output, _)) => outputs.push(output),
                 Err(OutputError::Evaluation(e) | OutputError::Signing(e)) => {
                     return Err(anyhow!("reference output {claim:?}: {e}"));
                 }
@@ -230,8 +232,8 @@ impl PadWorker {
         true
     }
 
-    /// Evaluates and signs the output of `claim`.
-    async fn compute(&self, claim: Claim) -> Result<Output, OutputError> {
+    /// Evaluates and signs the output of `claim`. Also returns the ct64.
+    async fn compute(&self, claim: Claim) -> Result<(Output, Vec<u8>), OutputError> {
         let evaluator = self.evaluator.clone();
         let outputs = tokio::task::spawn_blocking(move || {
             evaluator.evaluate(claim.prf_instance, claim.label, claim.pad_length)
@@ -253,7 +255,7 @@ impl PadWorker {
             .sign_hash(&payload.canonical_digest())
             .await
             .map_err(|e| OutputError::Signing(format!("signing: {e}")))?;
-        Ok(Output {
+        let output = Output {
             claim,
             ct128: outputs.ct128,
             attestation: PrfOutputAttestation {
@@ -263,7 +265,8 @@ impl PadWorker {
                 signer: self.signer.address(),
                 signature: signature.as_bytes().to_vec(),
             },
-        })
+        };
+        Ok((output, outputs.ct64))
     }
 
     /// Computes, signs and writes one claimed row. Fails only on a lost database connection.
@@ -277,8 +280,8 @@ impl PadWorker {
                 .await
                 .or_else(non_fatal);
         }
-        let output = match self.compute(claim).await {
-            Ok(output) => output,
+        let (output, ct64) = match self.compute(claim).await {
+            Ok(computed) => computed,
             Err(OutputError::Evaluation(message)) => {
                 warn!(?claim, message, "PRF evaluation failed");
                 return rows::fail(&self.pool, &claim, &message)
@@ -287,7 +290,15 @@ impl PadWorker {
             }
             Err(OutputError::Signing(message)) => return self.retry(&claim, &message).await,
         };
-        match rows::write_output(&self.pool, &claim, &output.ct128, &output.attestation).await {
+        match rows::write_output(
+            &self.pool,
+            &claim,
+            &ct64,
+            &output.ct128,
+            &output.attestation,
+        )
+        .await
+        {
             Ok(true) => {}
             // Another pod completed the row, or the GC deleted it: do not upload this output.
             Ok(false) => return Ok(()),
@@ -332,10 +343,12 @@ impl PadWorker {
         let expired =
             rows::delete_expired_pending(&self.pool, config.pending_max_age, config.claim_timeout)
                 .await?;
-        if old + expired > 0 {
-            info!(old, expired, "Deleted pads rows");
+        let ct64 = rows::clear_old_ct64(&self.pool, config.ct64_max_age).await?;
+        if old + expired + ct64 > 0 {
+            info!(old, expired, ct64, "Deleted pads rows and ct64");
         }
         metrics::set_oldest_rows(&rows::oldest_rows(&self.pool).await?);
+        metrics::set_stored_ct64_bytes(rows::stored_ct64_bytes(&self.pool).await?);
         Ok(())
     }
 
@@ -406,6 +419,7 @@ impl HealthCheckService for Health {
         status.set_db_connected(&self.0).await;
         let rights = sqlx::query_scalar::<_, bool>(
             "SELECT has_column_privilege('pads', 'signature', 'UPDATE')
+                AND has_column_privilege('pads', 'ciphertext64', 'UPDATE')
                 AND has_column_privilege('prf_lanes', 'heartbeat_at', 'UPDATE')",
         )
         .fetch_one(&self.0);

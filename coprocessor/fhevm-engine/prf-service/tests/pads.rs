@@ -719,7 +719,7 @@ async fn pad_worker_role_writes_only_outputs_and_lane_state() {
         "UPDATE pads SET claimed_at = NOW(), attempts = attempts + 1, error_message = 'e',
              is_error = true, s3_verified_at = NOW()",
         "UPDATE pads SET ciphertext128 = NULL, ciphertext_digest = NULL, ciphertext128_digest = NULL,
-             signer = NULL, signature = NULL, attestation_version = NULL",
+             signer = NULL, signature = NULL, attestation_version = NULL, ciphertext64 = NULL",
         "DELETE FROM pads",
         "INSERT INTO prf_lanes (prf_instance) VALUES (1) ON CONFLICT DO NOTHING",
         "UPDATE prf_lanes SET ready_at = NOW(), heartbeat_at = NOW()",
@@ -738,6 +738,35 @@ async fn pad_worker_role_writes_only_outputs_and_lane_state() {
         "UPDATE prf_lanes SET reference_digest = NULL",
         "UPDATE prf_lanes SET reference_mismatch_at = NOW()",
         "DELETE FROM prf_lanes",
+    ] {
+        assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
+    }
+}
+
+#[tokio::test]
+async fn pad_worker_grants_keep_newer_rights_and_drop_forbidden_ones() {
+    let (_instance, pool) = admin_db().await;
+    sqlx::raw_sql(
+        "DO $$ BEGIN CREATE ROLE pad_worker NOLOGIN;
+         EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+         ALTER TABLE pads ADD COLUMN future_output BYTEA NULL;
+         GRANT UPDATE (future_output) ON pads TO pad_worker;
+         GRANT UPDATE (triggered_by) ON pads TO pad_worker;
+         GRANT UPDATE (reference_digest) ON prf_lanes TO pad_worker;",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // An older copy of the file does not know `future_output`: the lane keeps that right.
+    sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
+
+    as_role(&pool, "pad_worker", "UPDATE pads SET future_output = NULL")
+        .await
+        .expect("a newer right stays");
+    for denied in [
+        "UPDATE pads SET triggered_by = triggered_by",
+        "UPDATE prf_lanes SET reference_digest = NULL",
     ] {
         assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
     }
