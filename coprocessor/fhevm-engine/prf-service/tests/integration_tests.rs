@@ -1,8 +1,9 @@
 mod common;
 
 use alloy::primitives::B256;
-use ciphertext_attestation::{prf::PRF_ATTESTATION_HEADER, PrfOutputAttestation, PrfOutputRef};
+use ciphertext_attestation::{PrfOutputAttestation, PrfOutputRef};
 use common::{CONNECTOR, DEADLINE};
+use coprocessor_api::PRF_ATTESTATION_HEADER;
 use prf_service::{Config, PrfService, SIGNER_HEADER};
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, Version};
 use sqlx::{postgres::PgPoolOptions, PgPool};

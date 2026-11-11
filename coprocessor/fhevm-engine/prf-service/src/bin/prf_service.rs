@@ -1,6 +1,6 @@
 use anyhow::anyhow;
-use ciphertext_attestation::prf::consensus::MAX_PAD_LENGTH;
 use clap::Parser;
+use coprocessor_api::MAX_PAD_LENGTH;
 use fhevm_engine_common::{
     database::{connect_pool_with_options, resolve_database_url_from_option},
     healthz_server::HttpServer,

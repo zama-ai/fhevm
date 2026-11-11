@@ -18,7 +18,8 @@ use actix_web::{
 };
 use alloy::primitives::Address;
 use anyhow::anyhow;
-use ciphertext_attestation::{prf::PRF_ATTESTATION_HEADER, PrfOutputAttestation, PrfOutputRef};
+use ciphertext_attestation::PrfOutputAttestation;
+use coprocessor_api::{parse_prf_output_path, PRF_ATTESTATION_HEADER};
 use sqlx::PgPool;
 use std::{
     convert::Infallible,
@@ -98,7 +99,7 @@ async fn serve(req: &HttpRequest, state: &AppState) -> Result<HttpResponse, PrfE
     if req.uri().query().is_some() {
         return Err(PrfError::NonCanonicalPath);
     }
-    let path = PrfOutputRef::from_path(req.uri().path()).ok_or(PrfError::NonCanonicalPath)?;
+    let path = parse_prf_output_path(req.uri().path()).ok_or(PrfError::NonCanonicalPath)?;
     if !instance::is_known(path.prf_id) {
         return Err(PrfError::UnknownPrf);
     }
