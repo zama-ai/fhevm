@@ -1,6 +1,7 @@
 //! The pad-worker: one lane computes the PRF outputs of one PRF instance (RFC-038).
 
 pub mod evaluator;
+pub mod metrics;
 pub mod rows;
 pub mod upload;
 
@@ -49,6 +50,10 @@ pub struct Config {
     pub poll_interval: Duration,
     /// Pending rows older than this are not claimed (`PAD_PENDING_MAX_AGE`).
     pub pending_max_age: Duration,
+    /// Delete uploaded or failed rows older than this. `None`: keep all (`PRF_OUTPUT_MAX_AGE`).
+    pub output_max_age: Option<Duration>,
+    /// Interval of the GC and the row age metrics (`PAD_GC_INTERVAL`).
+    pub gc_interval: Duration,
 }
 
 pub struct PadWorker {
@@ -99,6 +104,7 @@ impl PadWorker {
         let worker = Arc::new(self);
         let slots = Arc::new(Semaphore::new(worker.config.max_concurrent.get()));
         let mut tasks = JoinSet::new();
+        tasks.spawn(worker.clone().gc());
         if let Some(uploader) = worker.uploader.clone() {
             tasks.spawn(worker.clone().resubmit(uploader));
         }
@@ -220,6 +226,33 @@ impl PadWorker {
         rows::set_uploaded(&self.pool, &output.claim)
             .await
             .or_else(non_fatal)
+    }
+
+    /// Deletes old and expired rows, and sets the row age metrics.
+    async fn gc(self: Arc<Self>) -> anyhow::Result<()> {
+        loop {
+            tokio::select! {
+                () = self.cancel_token.cancelled() => return Ok(()),
+                () = sleep(self.config.gc_interval) => {}
+            }
+            self.gc_pass().await.or_else(non_fatal)?;
+        }
+    }
+
+    async fn gc_pass(&self) -> sqlx::Result<()> {
+        let config = &self.config;
+        let old = match config.output_max_age {
+            Some(max_age) => rows::delete_old_outputs(&self.pool, max_age).await?,
+            None => 0,
+        };
+        let expired =
+            rows::delete_expired_pending(&self.pool, config.pending_max_age, config.claim_timeout)
+                .await?;
+        if old + expired > 0 {
+            info!(old, expired, "Deleted pads rows");
+        }
+        metrics::set_oldest_rows(&rows::oldest_rows(&self.pool).await?);
+        Ok(())
     }
 
     /// Uploads the complete rows whose upload failed or stopped.

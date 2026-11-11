@@ -1,0 +1,32 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT prf_instance,\n                  EXTRACT(EPOCH FROM NOW() - MIN(created_at)\n                      FILTER (WHERE signature IS NULL AND NOT is_error))::FLOAT8 AS pending,\n                  EXTRACT(EPOCH FROM NOW() - MIN(created_at)\n                      FILTER (WHERE signature IS NOT NULL AND s3_verified_at IS NULL))::FLOAT8\n                      AS not_uploaded\n             FROM pads\n            GROUP BY prf_instance",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "prf_instance",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "pending",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 2,
+        "name": "not_uploaded",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "77e58c1b6c66b92f0274d38867546df76b12718312572660f7f1ddea972fb6e1"
+}
