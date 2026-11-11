@@ -95,6 +95,7 @@ const SERVICE_CRATES: Record<string, string> = {
   "upgrade-controller": "coprocessor/fhevm-engine/upgrade-controller",
   "coprocessor-proxy": "coprocessor/fhevm-engine/coprocessor-proxy",
   "prf-service": "coprocessor/fhevm-engine/prf-service",
+  "pad-worker": "coprocessor/fhevm-engine/pad-worker",
 };
 
 describe("coprocessor-docker-build change detection", () => {
