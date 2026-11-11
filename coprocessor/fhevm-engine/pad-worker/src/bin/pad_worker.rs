@@ -3,7 +3,7 @@ use alloy::signers::{
     local::PrivateKeySigner,
 };
 use anyhow::{anyhow, Context};
-use aws_config::BehaviorVersion;
+use aws_config::{timeout::TimeoutConfig, BehaviorVersion};
 use clap::Parser;
 use fhevm_engine_common::{
     database::{connect_pool_with_options, resolve_database_url_from_option},
@@ -12,7 +12,7 @@ use fhevm_engine_common::{
     types::{CoproSigner, SignerType},
     utils::DatabaseURL,
 };
-use pad_worker::{evaluator::MockEvaluator, Config, PadWorker};
+use pad_worker::{evaluator::MockEvaluator, upload::Uploader, Config, PadWorker};
 use sqlx::postgres::PgPoolOptions;
 use std::{num::NonZeroUsize, str::FromStr, sync::Arc, time::Duration};
 use tokio::signal::unix::{signal, SignalKind};
@@ -52,6 +52,17 @@ struct Args {
     /// Pending rows older than this are not claimed. Use the prf-service value.
     #[arg(long, env = "PAD_PENDING_MAX_AGE", default_value = "10m", value_parser = humantime::parse_duration)]
     pending_max_age: Duration,
+
+    /// RFC-023 bucket of the operator, for the S3 copy of the outputs.
+    #[arg(long, env = "PAD_S3_BUCKET")]
+    s3_bucket: String,
+
+    #[arg(long, env = "PAD_S3_MAX_CONCURRENT_UPLOADS", default_value = "16")]
+    s3_max_concurrent_uploads: NonZeroUsize,
+
+    /// Interval of the read that finds failed uploads.
+    #[arg(long, env = "PAD_S3_RESUBMIT_INTERVAL", default_value = "30s", value_parser = humantime::parse_duration)]
+    s3_resubmit_interval: Duration,
 
     /// Coprocessor signer. `aws-kms` reads `AWS_KEY_ID`.
     #[arg(long, value_enum, default_value = "private-key")]
@@ -113,6 +124,24 @@ async fn signer(args: &Args) -> anyhow::Result<CoproSigner> {
     })
 }
 
+async fn uploader(args: &Args) -> Uploader {
+    let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
+    let config = aws_sdk_s3::config::Builder::from(&aws_conf)
+        .timeout_config(
+            TimeoutConfig::builder()
+                .connect_timeout(Duration::from_secs(10))
+                .operation_attempt_timeout(Duration::from_secs(60))
+                .build(),
+        )
+        .build();
+    Uploader::new(
+        aws_sdk_s3::Client::from_conf(config),
+        args.s3_bucket.clone(),
+        args.s3_max_concurrent_uploads,
+        args.s3_resubmit_interval,
+    )
+}
+
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
     let mut sigint = signal(SignalKind::interrupt())?;
     let mut sigterm = signal(SignalKind::terminate())?;
@@ -144,6 +173,9 @@ async fn main() -> anyhow::Result<()> {
         claim_timeout = ?args.claim_timeout,
         poll_interval = ?args.poll_interval,
         pending_max_age = ?args.pending_max_age,
+        s3_bucket = args.s3_bucket,
+        s3_max_concurrent_uploads = args.s3_max_concurrent_uploads,
+        s3_resubmit_interval = ?args.s3_resubmit_interval,
         health_check_port = args.health_check_port,
         metrics_addr = args.metrics_addr.as_deref().unwrap_or("none"),
         "Starting pad-worker"
@@ -154,6 +186,7 @@ async fn main() -> anyhow::Result<()> {
     let signer = signer(&args).await?;
     info!(signer = %signer.address(), "Signer loaded");
     warn!("Mock evaluator: the outputs are not PRF outputs");
+    let uploader = uploader(&args).await;
 
     let database_url = resolve_database_url_from_option(args.database_url)?;
     let (pool, _refresh) = connect_pool_with_options(
@@ -176,7 +209,8 @@ async fn main() -> anyhow::Result<()> {
         Arc::new(MockEvaluator),
         signer,
         cancel_token.clone(),
-    );
+    )
+    .with_uploader(uploader);
 
     // The health server runs until the process exits, so a stop does not look like a crash.
     let health_server = HttpServer::new(
@@ -205,6 +239,7 @@ mod tests {
             "pad-worker",
             "--prf-instance=1",
             "--prf-key-id=0xab01",
+            "--s3-bucket=b",
             "--claim-timeout=2m",
         ])
         .unwrap();
@@ -216,10 +251,13 @@ mod tests {
 
     #[test]
     fn refuses_a_missing_or_bad_key_id() {
-        assert!(Args::try_parse_from(["pad-worker", "--prf-instance=1"]).is_err());
-        assert!(
-            Args::try_parse_from(["pad-worker", "--prf-instance=1", "--prf-key-id=zz"]).is_err()
-        );
-        assert!(Args::try_parse_from(["pad-worker", "--prf-instance=1", "--prf-key-id="]).is_err());
+        let parse = |key_id: Option<&str>| {
+            let mut args = vec!["pad-worker", "--prf-instance=1", "--s3-bucket=b"];
+            args.extend(key_id);
+            Args::try_parse_from(args)
+        };
+        assert!(parse(None).is_err());
+        assert!(parse(Some("--prf-key-id=zz")).is_err());
+        assert!(parse(Some("--prf-key-id=")).is_err());
     }
 }

@@ -1,7 +1,7 @@
-//! The `pads` rows of one lane: claim, output, failure, and the lane heartbeat.
+//! The `pads` rows of one lane: claim, output, failure, upload, and the lane heartbeat.
 
-use alloy::primitives::B256;
-use ciphertext_attestation::PrfOutputAttestation;
+use alloy::primitives::{Address, B256};
+use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
 use sqlx::PgPool;
 use std::time::Duration;
 
@@ -69,15 +69,15 @@ pub async fn claim(
     }))
 }
 
-/// Writes the output and its attestation; the trigger sends `pad_ready`. No change if the row was
+/// Writes the output and its attestation; the trigger sends `pad_ready`. Returns false if the row was
 /// deleted or completed.
 pub async fn write_output(
     pool: &PgPool,
     claim: &Claim,
     ct128: &[u8],
     attestation: &PrfOutputAttestation,
-) -> sqlx::Result<()> {
-    sqlx::query!(
+) -> sqlx::Result<bool> {
+    let result = sqlx::query!(
         "UPDATE pads
             SET ciphertext128 = $4, ciphertext_digest = $5, ciphertext128_digest = $6,
                 signer = $7, signature = $8, attestation_version = $9
@@ -95,7 +95,7 @@ pub async fn write_output(
     )
     .execute(pool)
     .await?;
-    Ok(())
+    Ok(result.rows_affected() == 1)
 }
 
 /// Fails the row for good. The trigger then sends `pad_ready`.
@@ -147,6 +147,86 @@ pub async fn heartbeat(pool: &PgPool, prf_instance: u16) -> sqlx::Result<()> {
     sqlx::query!(
         "UPDATE prf_lanes SET heartbeat_at = NOW() WHERE prf_instance = $1",
         i32::from(prf_instance),
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// A complete row to upload to S3.
+pub struct Output {
+    pub claim: Claim,
+    pub ct128: Vec<u8>,
+    pub attestation: PrfOutputAttestation,
+}
+
+/// Claims up to `limit` complete rows that have no S3 copy and a stale claim.
+pub async fn claim_uploads(
+    pool: &PgPool,
+    prf_instance: u16,
+    claim_timeout: Duration,
+    limit: i64,
+) -> sqlx::Result<Vec<Output>> {
+    let rows = sqlx::query!(
+        r#"UPDATE pads SET claimed_at = NOW()
+            WHERE (prf_instance, label, pad_length) IN (
+                  SELECT prf_instance, label, pad_length
+                    FROM pads
+                   WHERE prf_instance = $1 AND signature IS NOT NULL AND s3_verified_at IS NULL
+                     AND claimed_at <= NOW() - make_interval(secs => $2)
+                   ORDER BY created_at
+                   LIMIT $3
+                     FOR UPDATE SKIP LOCKED)
+        RETURNING label, pad_length, ciphertext128 AS "ciphertext128!",
+                  ciphertext_digest AS "ciphertext_digest!",
+                  ciphertext128_digest AS "ciphertext128_digest!", signer AS "signer!",
+                  signature AS "signature!", attestation_version AS "attestation_version!""#,
+        i32::from(prf_instance),
+        claim_timeout.as_secs_f64(),
+        limit,
+    )
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            let version = u8::try_from(row.attestation_version)
+                .ok()
+                .and_then(|v| Version::try_from(v).ok())
+                .ok_or_else(|| decode_error("attestation_version"))?;
+            Ok(Output {
+                claim: Claim {
+                    prf_instance,
+                    label: B256::try_from(row.label.as_slice()).expect("label is 32 bytes"),
+                    pad_length: u16::try_from(row.pad_length).expect("pad_length is in range"),
+                },
+                ct128: row.ciphertext128,
+                attestation: PrfOutputAttestation {
+                    version,
+                    ciphertext_digest: B256::try_from(row.ciphertext_digest.as_slice())
+                        .map_err(|_| decode_error("ciphertext_digest"))?,
+                    sns_ciphertext_digest: B256::try_from(row.ciphertext128_digest.as_slice())
+                        .map_err(|_| decode_error("ciphertext128_digest"))?,
+                    signer: Address::try_from(row.signer.as_slice())
+                        .map_err(|_| decode_error("signer"))?,
+                    signature: row.signature,
+                },
+            })
+        })
+        .collect()
+}
+
+fn decode_error(column: &str) -> sqlx::Error {
+    sqlx::Error::Decode(format!("bad {column}").into())
+}
+
+/// Sets `s3_verified_at`.
+pub async fn set_uploaded(pool: &PgPool, claim: &Claim) -> sqlx::Result<()> {
+    sqlx::query!(
+        "UPDATE pads SET s3_verified_at = NOW()
+          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
+        i32::from(claim.prf_instance),
+        claim.label.as_slice(),
+        i32::from(claim.pad_length),
     )
     .execute(pool)
     .await?;

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE pads SET s3_verified_at = NOW()\n          WHERE prf_instance = $1 AND label = $2 AND pad_length = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "90e5a5478846df0be8213883fc160203c5a15cc0c820db00e02803d655ddc7c2"
+}

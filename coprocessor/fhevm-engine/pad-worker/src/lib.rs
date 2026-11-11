@@ -2,6 +2,7 @@
 
 pub mod evaluator;
 pub mod rows;
+pub mod upload;
 
 use alloy::primitives::keccak256;
 use anyhow::Context;
@@ -15,19 +16,22 @@ use fhevm_engine_common::{
     pg_pool::is_fatal_connection_error,
     types::CoproSigner,
 };
-use rows::Claim;
+use rows::{Claim, Output};
 use sqlx::{postgres::PgListener, PgPool};
 use std::{num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::{
     sync::{OwnedSemaphorePermit, Semaphore},
     task::JoinSet,
-    time::timeout,
+    time::{sleep, timeout},
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
+use upload::Uploader;
 
 /// The same limit as the database check of `HealthStatus`.
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+/// Maximum rows for each resubmit read.
+const RESUBMIT_BATCH: i64 = 100;
 /// Channel of the `pads_work_available` trigger.
 pub const PAD_WORK_AVAILABLE: &str = "pad_work_available";
 
@@ -52,6 +56,7 @@ pub struct PadWorker {
     pool: PgPool,
     evaluator: Arc<dyn PadEvaluator>,
     signer: CoproSigner,
+    uploader: Option<Uploader>,
     cancel_token: CancellationToken,
 }
 
@@ -68,8 +73,15 @@ impl PadWorker {
             pool,
             evaluator,
             signer,
+            uploader: None,
             cancel_token,
         }
+    }
+
+    /// Uploads each output to S3. Without an uploader, no row gets `s3_verified_at`.
+    pub fn with_uploader(mut self, uploader: Uploader) -> Self {
+        self.uploader = Some(uploader);
+        self
     }
 
     pub fn health(&self) -> Health {
@@ -87,6 +99,9 @@ impl PadWorker {
         let worker = Arc::new(self);
         let slots = Arc::new(Semaphore::new(worker.config.max_concurrent.get()));
         let mut tasks = JoinSet::new();
+        if let Some(uploader) = worker.uploader.clone() {
+            tasks.spawn(worker.clone().resubmit(uploader));
+        }
         loop {
             rows::heartbeat(&worker.pool, worker.config.prf_instance)
                 .await
@@ -129,7 +144,7 @@ impl PadWorker {
     async fn process(
         self: Arc<Self>,
         claim: Claim,
-        _slot: OwnedSemaphorePermit,
+        slot: OwnedSemaphorePermit,
     ) -> anyhow::Result<()> {
         if claim.pad_length > MAX_PAD_LENGTH {
             return rows::fail(&self.pool, &claim, "pad_length above MAX_PAD_LENGTH")
@@ -178,9 +193,58 @@ impl PadWorker {
             signature: signature.as_bytes().to_vec(),
         };
         match rows::write_output(&self.pool, &claim, &outputs.ct128, &attestation).await {
-            Ok(()) => Ok(()),
-            Err(e) if is_fatal_connection_error(&e) => Err(e.into()),
-            Err(e) => self.retry(&claim, &format!("write: {e}")).await,
+            Ok(true) => {}
+            // Another pod completed the row, or the GC deleted it: do not upload this output.
+            Ok(false) => return Ok(()),
+            Err(e) if is_fatal_connection_error(&e) => return Err(e.into()),
+            Err(e) => return self.retry(&claim, &format!("write: {e}")).await,
+        }
+        drop(slot);
+        self.upload(Output {
+            claim,
+            ct128: outputs.ct128,
+            attestation,
+        })
+        .await
+    }
+
+    /// Uploads the output and sets `s3_verified_at`. If the upload fails, `resubmit` tries again.
+    async fn upload(&self, output: Output) -> anyhow::Result<()> {
+        let Some(uploader) = &self.uploader else {
+            return Ok(());
+        };
+        if let Err(e) = uploader.upload(&output).await {
+            warn!(claim = ?output.claim, error = %e, "S3 upload failed");
+            return Ok(());
+        }
+        rows::set_uploaded(&self.pool, &output.claim)
+            .await
+            .or_else(non_fatal)
+    }
+
+    /// Uploads the complete rows whose upload failed or stopped.
+    async fn resubmit(self: Arc<Self>, uploader: Uploader) -> anyhow::Result<()> {
+        loop {
+            tokio::select! {
+                () = self.cancel_token.cancelled() => return Ok(()),
+                () = sleep(uploader.resubmit_interval) => {}
+            }
+            let claimed = rows::claim_uploads(
+                &self.pool,
+                self.config.prf_instance,
+                self.config.claim_timeout,
+                RESUBMIT_BATCH,
+            )
+            .await;
+            match claimed {
+                Ok(outputs) => {
+                    futures_util::future::try_join_all(
+                        outputs.into_iter().map(|output| self.upload(output)),
+                    )
+                    .await?;
+                }
+                Err(e) => non_fatal(e)?,
+            }
         }
     }
 
