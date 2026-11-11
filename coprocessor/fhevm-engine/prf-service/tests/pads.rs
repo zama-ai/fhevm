@@ -433,6 +433,25 @@ async fn trigger_wakes_the_request_of_each_row() {
 }
 
 #[tokio::test]
+async fn a_new_row_wakes_the_lane_of_its_instance() {
+    let (_instance, pool, _service, admissions) = test_db().await;
+    let mut listener = sqlx::postgres::PgListener::connect_with(&pool)
+        .await
+        .unwrap();
+    listener.listen("pad_work_available").await.unwrap();
+
+    admissions.admit(&path(1, 64), CONNECTOR).await.unwrap();
+    let notification = timeout(DEADLINE, listener.recv()).await.unwrap().unwrap();
+    assert_eq!(notification.payload(), "1");
+
+    // A request that joins the row adds no row, so it wakes nobody.
+    admissions.admit(&path(1, 64), OTHER_CONNECTOR).await.unwrap();
+    assert!(timeout(Duration::from_millis(500), listener.recv())
+        .await
+        .is_err());
+}
+
+#[tokio::test]
 async fn poll_wakes_a_request_without_notification() {
     let (_instance, pool, service, admissions) = test_db().await;
     let row = path(1, 64);
@@ -573,8 +592,13 @@ const INSERT_PAD: &str = "INSERT INTO pads (prf_instance, label, pad_length, tri
 
 /// Runs `sql` as `prf_service` in a transaction, then rolls the transaction back.
 async fn as_prf_service(pool: &PgPool, sql: &str) -> Result<(), sqlx::Error> {
+    as_role(pool, "prf_service", sql).await
+}
+
+/// Runs `sql` as `role` in a transaction, then rolls the transaction back.
+async fn as_role(pool: &PgPool, role: &str, sql: &str) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await?;
-    sqlx::raw_sql("SET LOCAL ROLE prf_service")
+    sqlx::raw_sql(&format!("SET LOCAL ROLE {role}"))
         .execute(&mut *tx)
         .await?;
     let result = sqlx::raw_sql(sql).execute(&mut *tx).await.map(|_| ());
@@ -591,7 +615,7 @@ fn assert_denied(result: Result<(), sqlx::Error>, sql: &str) {
 #[tokio::test]
 async fn grants_skip_a_missing_role() {
     let (_instance, pool) = admin_db().await;
-    sqlx::raw_sql("DROP ROLE IF EXISTS prf_service")
+    sqlx::raw_sql("DROP ROLE IF EXISTS prf_service; DROP ROLE IF EXISTS pad_worker")
         .execute(&pool)
         .await
         .unwrap();
@@ -612,7 +636,11 @@ async fn prf_service_role_writes_only_the_queue() {
     sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
     sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
 
-    for allowed in [INSERT_PAD, "SELECT prf_instance, signature FROM pads"] {
+    for allowed in [
+        INSERT_PAD,
+        "SELECT prf_instance, signature FROM pads",
+        "SELECT ready_at, heartbeat_at FROM prf_lanes",
+    ] {
         as_prf_service(&pool, allowed).await.expect(allowed);
     }
 
@@ -623,7 +651,51 @@ async fn prf_service_role_writes_only_the_queue() {
         "UPDATE pads SET is_error = false",
         "UPDATE pads SET signature = NULL",
         "DELETE FROM pads",
+        "INSERT INTO prf_lanes (prf_instance) VALUES (1)",
+        "UPDATE prf_lanes SET ready_at = NOW()",
     ] {
         assert_denied(as_prf_service(&pool, denied).await, denied);
+    }
+}
+
+#[tokio::test]
+async fn pad_worker_role_writes_only_outputs_and_lane_state() {
+    let (_instance, pool) = admin_db().await;
+    sqlx::raw_sql(
+        "DO $$ BEGIN CREATE ROLE pad_worker NOLOGIN;
+         EXCEPTION WHEN duplicate_object THEN NULL; END $$",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
+    sqlx::raw_sql(GRANTS).execute(&pool).await.unwrap();
+
+    for allowed in [
+        "SELECT 1 FROM pads WHERE signature IS NULL FOR UPDATE SKIP LOCKED",
+        "UPDATE pads SET claimed_at = NOW(), attempts = attempts + 1, error_message = 'e',
+             is_error = true, s3_verified_at = NOW()",
+        "UPDATE pads SET ciphertext128 = NULL, ciphertext_digest = NULL, ciphertext128_digest = NULL,
+             signer = NULL, signature = NULL, attestation_version = NULL",
+        "DELETE FROM pads",
+        "INSERT INTO prf_lanes (prf_instance) VALUES (1) ON CONFLICT DO NOTHING",
+        "UPDATE prf_lanes SET ready_at = NOW(), heartbeat_at = NOW()",
+        "SELECT reference_digest, reference_mismatch_at FROM prf_lanes",
+        "SELECT 1 FROM keys",
+    ] {
+        as_role(&pool, "pad_worker", allowed).await.expect(allowed);
+    }
+
+    for denied in [
+        "SELECT 1 FROM computations",
+        "SELECT 1 FROM ciphertexts",
+        INSERT_PAD,
+        "UPDATE pads SET triggered_by = triggered_by",
+        "UPDATE pads SET label = label",
+        "UPDATE prf_lanes SET reference_digest = NULL",
+        "UPDATE prf_lanes SET reference_mismatch_at = NOW()",
+        "DELETE FROM prf_lanes",
+    ] {
+        assert_denied(as_role(&pool, "pad_worker", denied).await, denied);
     }
 }
