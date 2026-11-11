@@ -26,9 +26,12 @@ use connector_utils::{
     },
 };
 use kms_connector_api::ErrorCode;
-use kms_grpc::kms::v1::{
-    Empty, SigningSchemeType, TypedSignature, UserDecryptionRequest, UserDecryptionResponse,
-    UserDecryptionResponsePayload,
+use kms_grpc::{
+    kms::v1::{
+        Empty, SigningSchemeType, TypedSignature, UserDecryptionRequest, UserDecryptionResponse,
+        UserDecryptionResponsePayload,
+    },
+    rpc_types::ClientAddress,
 };
 use kms_worker::core::{
     Config,
@@ -516,7 +519,7 @@ async fn a_destroyed_context_sends_no_proof_request(#[case] public: bool) {
 /// The identity a `UserDecrypt` call must carry for a Solana user.
 #[derive(Debug, PartialEq, PartialOrd)]
 struct SolanaIdentity {
-    /// Base58 of the signer's public key.
+    /// The signer, as kms-grpc's `ClientAddress` writes it.
     client_address: String,
     transport_key: Vec<u8>,
 }
@@ -614,8 +617,8 @@ async fn a_node_its_coprocessor_does_not_know_yet_is_answered_at_a_later_attempt
     assert!(matches!(response, Some(KmsResponseKind::UserDecryption(_))));
 }
 
-/// An authorized request reaches the KMS as its Solana signer: the signer's base58 public key as
-/// `client_address`, and the request's transport key. A poll of a request already sent
+/// An authorized request reaches the KMS as its Solana signer: the signer's Solana client address
+/// as `client_address`, and the request's transport key. A poll of a request already sent
 /// authorizes it again and fetches the result without sending it twice.
 #[rstest]
 #[case::send(false)]
@@ -626,7 +629,7 @@ async fn an_authorized_request_reaches_the_kms_as_its_signer(#[case] already_sen
     let bucket = S3Instance::setup().await.unwrap();
     let scenario = Scenario::naming(B256::from_hex(S3_SOLANA_CT_HANDLE).unwrap().0).await;
     let identity = SolanaIdentity {
-        client_address: scenario.victim.pubkey().to_string(),
+        client_address: ClientAddress::Solana(scenario.victim.pubkey().to_bytes()).to_string(),
         transport_key: scenario.fields.transport_key.clone(),
     };
     let mut kms = MockServer::new_grpc("kms_service.v1.CoreServiceEndpoint");

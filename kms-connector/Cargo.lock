@@ -196,6 +196,7 @@ dependencies = [
  "cipher 0.5.1",
  "cpubits",
  "cpufeatures 0.3.0",
+ "zeroize",
 ]
 
 [[package]]
@@ -2076,7 +2077,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?rev=97e46335036e237b00524a2c2c000034306f1833#97e46335036e237b00524a2c2c000034306f1833"
+source = "git+https://github.com/zama-ai/kms.git?rev=08f5f65f5a5d2a85d90fa792bb34b8d39d8cf1f8#08f5f65f5a5d2a85d90fa792bb34b8d39d8cf1f8"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -4745,8 +4746,8 @@ dependencies = [
 
 [[package]]
 name = "kms-grpc"
-version = "0.15.0-1"
-source = "git+https://github.com/zama-ai/kms.git?rev=97e46335036e237b00524a2c2c000034306f1833#97e46335036e237b00524a2c2c000034306f1833"
+version = "0.16.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=08f5f65f5a5d2a85d90fa792bb34b8d39d8cf1f8#08f5f65f5a5d2a85d90fa792bb34b8d39d8cf1f8"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -4756,7 +4757,6 @@ dependencies = [
  "bs58",
  "bytes",
  "cfg-if",
- "hex",
  "prost 0.14.4",
  "rand 0.8.6",
  "serde",
@@ -9270,9 +9270,9 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.8.1"
+version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d60dcde24115624e62a9a8dc627daa8d3dad40e8de69975957d12ee9ab70a2b"
+checksum = "f7c68a185ef0d2287eeb9ae3123e6d0f927dc3a33cc9ff393e59987104dcb816"
 dependencies = [
  "aligned-vec",
  "bincode 1.3.3",
@@ -9451,8 +9451,8 @@ dependencies = [
 
 [[package]]
 name = "threshold-hashing"
-version = "0.15.0-1"
-source = "git+https://github.com/zama-ai/kms.git?rev=97e46335036e237b00524a2c2c000034306f1833#97e46335036e237b00524a2c2c000034306f1833"
+version = "0.16.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=08f5f65f5a5d2a85d90fa792bb34b8d39d8cf1f8#08f5f65f5a5d2a85d90fa792bb34b8d39d8cf1f8"
 dependencies = [
  "anyhow",
  "bc2wrap",
@@ -9464,13 +9464,16 @@ dependencies = [
 
 [[package]]
 name = "threshold-types"
-version = "0.15.0-1"
-source = "git+https://github.com/zama-ai/kms.git?rev=97e46335036e237b00524a2c2c000034306f1833#97e46335036e237b00524a2c2c000034306f1833"
+version = "0.16.0-0"
+source = "git+https://github.com/zama-ai/kms.git?rev=08f5f65f5a5d2a85d90fa792bb34b8d39d8cf1f8#08f5f65f5a5d2a85d90fa792bb34b8d39d8cf1f8"
 dependencies = [
+ "aes 0.9.3",
  "anyhow",
  "async-trait",
  "bytes",
+ "rand 0.8.6",
  "serde",
+ "tfhe-csprng",
  "tfhe-versionable",
  "threshold-hashing",
  "zeroize",
@@ -10508,7 +10511,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

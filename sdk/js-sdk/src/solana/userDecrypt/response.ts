@@ -1,13 +1,13 @@
 // Turning the KMS answer into plaintext, and refusing every answer that is not this request's.
 //
 // A Solana user decryption runs the KMS client's user-decryption path, through the same WASM module
-// and entry points as the EVM decrypt module. The user address is base58 of the permit's 32-byte
-// user key, and that format is what makes the client hold the response to the Solana link: the
-// EIP-712 `SolanaUserDecryptionLinker(publicKey, handles, userAddress)` struct hashed under the
-// gateway's `Decryption` domain. The client checks each share's node signature and the link, and
-// needs at least 2t+1 authenticated shares from distinct parties, of which t+1 agree on the
-// response, with t = (n - 1)/3 from the signer count. A set that fails any of them yields nothing
-// rather than a partial answer.
+// and entry points as the EVM decrypt module. The user address is `solana:` and base58 of the
+// permit's 32-byte user key, and that format is what makes the client hold the response to the
+// Solana link: the EIP-712 `SolanaUserDecryptionLinker(publicKey, handles, userAddress)` struct
+// hashed under the gateway's `Decryption` domain. The client checks each share's node signature
+// and the link, and needs at least 2t+1 authenticated shares from distinct parties, of which t+1
+// agree on the response, with t = (n - 1)/3 from the signer count. A set that fails any of them
+// yields nothing rather than a partial answer.
 //
 // Every input passed to the client is the client's own: the permit's fields, the requested handles,
 // the signers of the permit's `KmsContext` and the gateway domain from `HostConfig`. None comes from
@@ -169,7 +169,7 @@ export async function verifySolanaUserDecryptResponse(response: {
   }
   const kmsLib = await initTkmsModule(response.runtime);
   const { request } = response;
-  const userAddress = getAddressDecoder().decode(request.userAddress);
+  const clientAddress = `solana:${getAddressDecoder().decode(request.userAddress)}`;
   const domain = request.gatewayEip712Domain;
 
   const scope = new WasmScope();
@@ -180,7 +180,7 @@ export async function verifySolanaUserDecryptResponse(response: {
     const client = scope.track(
       kmsLib.new_client(
         response.signers.map((signer) => kmsLib.new_server_id_addr(signer.partyId, eip55Normalized(signer.address))),
-        userAddress,
+        clientAddress,
         response.fheParameter,
       ),
     );
@@ -188,7 +188,7 @@ export async function verifySolanaUserDecryptResponse(response: {
       client,
       {
         signature: undefined,
-        client_address: userAddress,
+        client_address: clientAddress,
         enc_key: bytesToHexNo0x(request.transportKey),
         ciphertext_handles: request.handles.map((handle) => bytesToHexNo0x(handle)),
         eip712_verifying_contract: eip55Normalized(domain.verifyingContract),

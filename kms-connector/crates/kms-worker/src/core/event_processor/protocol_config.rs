@@ -6,14 +6,16 @@ use connector_utils::types::{
 };
 use fhevm_host_bindings::{
     kms_generation::KMSGeneration::{self, KMSGenerationInstance},
-    protocol_config::ProtocolConfig::{NewKmsContext, NewKmsEpoch, ProtocolConfigInstance},
+    protocol_config::ProtocolConfig::{
+        KmsContextDestroyed, KmsEpochDestroyed, NewKmsContext, NewKmsEpoch, ProtocolConfigInstance,
+    },
 };
 use kms_connector_api::ErrorCode;
 use kms_context::read_kms_context;
 use kms_grpc::kms::v1::{
-    CrsInfo, Eip712DomainMsg, FheParameter, KeyDigest, KeyInfo, MpcContext, MpcNode,
-    NewMpcContextRequest, NewMpcEpochRequest, PcrValues, PreviousEpochInfo, SchemeDigest,
-    SigningSchemeType,
+    CrsInfo, DestroyMpcContextRequest, DestroyMpcEpochRequest, Eip712DomainMsg, FheParameter,
+    KeyDigest, KeyInfo, MpcContext, MpcNode, NewMpcContextRequest, NewMpcEpochRequest, PcrValues,
+    PreviousEpochInfo, SchemeDigest, SigningSchemeType,
 };
 
 /// Builder for the KMS Core gRPC requests triggered by `ProtocolConfig` events.
@@ -90,9 +92,32 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             previous_epoch: Some(previous_epoch),
             domain: Some(self.domain.clone()),
             extra_data: extra_data_v2_payload(event.kmsContextId, event.epochId),
-            // Currently hardcoded to Ecdsa256k1 as it is the only scheme used for Ethereum.
-            signing_schemes: vec![SigningSchemeType::Ecdsa256k1 as i32],
+            signing_schemes: ethereum_signing_schemes(),
         }))
+    }
+
+    /// The KMS signs its confirmation of the destruction under the `ProtocolConfig` domain. The
+    /// connector does not forward that confirmation yet, so the request carries no extra data.
+    pub fn prepare_destroy_kms_context_request(
+        &self,
+        event: &KmsContextDestroyed,
+    ) -> KmsGrpcRequest {
+        KmsGrpcRequest::DestroyMpcContext(DestroyMpcContextRequest {
+            context_id: Some(u256_to_request_id(event.kmsContextId)),
+            domain: Some(self.domain.clone()),
+            extra_data: Vec::new(),
+            signing_schemes: ethereum_signing_schemes(),
+        })
+    }
+
+    /// See [`Self::prepare_destroy_kms_context_request`].
+    pub fn prepare_destroy_kms_epoch_request(&self, event: &KmsEpochDestroyed) -> KmsGrpcRequest {
+        KmsGrpcRequest::DestroyMpcEpoch(DestroyMpcEpochRequest {
+            epoch_id: Some(u256_to_request_id(event.epochId)),
+            domain: Some(self.domain.clone()),
+            extra_data: Vec::new(),
+            signing_schemes: ethereum_signing_schemes(),
+        })
     }
 
     /// Fetch the material of the previous epoch from `KMSGeneration` contract.
@@ -176,6 +201,11 @@ impl<P: Provider> ProtocolConfigProcessor<P> {
             crs_info,
         })
     }
+}
+
+/// Ecdsa256k1 is the only scheme used for Ethereum.
+fn ethereum_signing_schemes() -> Vec<i32> {
+    vec![SigningSchemeType::Ecdsa256k1 as i32]
 }
 
 fn build_new_kms_context_grpc_from_event(
