@@ -200,6 +200,7 @@ export default createConfig({
     'test/encryptedERC20/EncryptedERC20.fixture.ts',
     'test/encryptedERC20/EncryptedERC20.ts',
     'test/fhevmjsMocked.ts',
+    'test/fhevmjsTest/fhevmjsTest.ts',
     'test/hardhat.ts',
     'test/instance.ts',
     'test/legacyRelayerSdk/eip712.ts',
