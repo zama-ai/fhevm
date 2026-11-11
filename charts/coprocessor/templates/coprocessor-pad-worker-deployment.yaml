@@ -114,6 +114,9 @@ spec:
           env:
             - name: PAD_DATABASE_POOL_SIZE
               value: {{ $component.databasePoolSize | quote }}
+            {{- /* Env, not a flag: a lane keeps an older image, which ignores an unknown env var. */}}
+            - name: PAD_CT64_MAX_AGE
+              value: {{ printf "%ds" (int $component.config.ct64MaxAgeSeconds) | quote }}
             {{- /* The pad_worker role: it writes only the outputs and the lane state. */}}
             {{- with $component.databaseUser }}
             - name: DATABASE_USER

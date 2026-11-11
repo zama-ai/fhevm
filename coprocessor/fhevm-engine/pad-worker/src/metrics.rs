@@ -1,7 +1,7 @@
 //! Row age gauges for each `prfId`. Each lane sets them for all instances, to show a dead lane.
 
 use crate::rows::OldestRows;
-use prometheus::{register_gauge_vec, GaugeVec};
+use prometheus::{register_gauge_vec, register_int_gauge, GaugeVec, IntGauge};
 use std::sync::LazyLock;
 
 static OLDEST_PENDING: LazyLock<GaugeVec> = LazyLock::new(|| {
@@ -21,6 +21,18 @@ static OLDEST_NOT_UPLOADED: LazyLock<GaugeVec> = LazyLock::new(|| {
     )
     .unwrap()
 });
+
+static STORED_CT64_BYTES: LazyLock<IntGauge> = LazyLock::new(|| {
+    register_int_gauge!(
+        "coprocessor_pad_worker_stored_ct64_bytes",
+        "Bytes of the ct64 stored for Unmask, in all instances"
+    )
+    .unwrap()
+});
+
+pub fn set_stored_ct64_bytes(bytes: i64) {
+    STORED_CT64_BYTES.set(bytes);
+}
 
 pub fn set_oldest_rows(rows: &[OldestRows]) {
     // An instance with no rows must not keep an old value.
