@@ -139,19 +139,19 @@ export function getUserOverloadsFile(options: any): string | undefined {
   return options.overloads;
 }
 
-export function debugLog(s: string) {
+export function debugLog(s: string): void {
   if (isVerbose()) {
     console.log(s);
   }
 }
 
-export function errorLog(s: string) {
+export function errorLog(s: string): void {
   const RED_COLOR = '\x1b[31m';
   const RESET_COLOR = '\x1b[0m';
   console.error(RED_COLOR + s + RESET_COLOR);
 }
 
-export function debugLogDirectoriesUserConfig(config: HostContractsUserConfig) {
+export function debugLogDirectoriesUserConfig(config: HostContractsUserConfig): void {
   debugLog(JSON.stringify(config, null, 2));
 }
 
@@ -284,17 +284,16 @@ function toAbsoluteLibConfig(resolved: LibConfig, baseDir: string): LibConfig {
   };
 }
 
-function toAbsoluteTestGroup(testGroup: SolidityTestGroup | TypescriptTestGroup, baseDir: string): TestGroup {
+// Returns a copy of `testGroup` with an absolute `outDir`. All other fields (e.g. a Solidity group's
+// `parentContractName`) are kept as they are.
+function toAbsoluteTestGroup<T extends TestGroup>(testGroup: T, baseDir: string): T {
   return {
     ...testGroup,
     outDir: toAbsoluteDirectory(testGroup.outDir, baseDir),
-    ...((testGroup as SolidityTestGroup).parentContractName
-      ? { parentContractName: (testGroup as SolidityTestGroup).parentContractName }
-      : {}),
   };
 }
 
-export function mkDir(dir: string) {
+export function mkDir(dir: string): void {
   if (!path.isAbsolute(dir)) {
     throw new Error(`Path ${dir} is not absolute.`);
   }
@@ -312,23 +311,32 @@ function prettierConfigExists(baseDir: string): boolean {
   return existsSync(path.join(baseDir, '.prettierrc.yml')) || existsSync(path.join(baseDir, '.prettierrc.json'));
 }
 
+// Upper bound on the number of directories walked by `prettierConfigExistsInTree`. Reaching the
+// filesystem root normally stops the walk long before this; the bound only guards against an
+// endless loop.
+const MAX_PRETTIER_CONFIG_SEARCH_DEPTH = 64;
+
 // Prettier resolves its config by walking up from the formatted file, so a config in any
 // ancestor directory (e.g. the repo root `.prettierrc.yml`) applies to `baseDir` as well.
 function prettierConfigExistsInTree(baseDir: string): boolean {
   let dir = path.resolve(baseDir);
-  while (true) {
+  for (let depth = 0; depth < MAX_PRETTIER_CONFIG_SEARCH_DEPTH; ++depth) {
     if (prettierConfigExists(dir)) {
       return true;
     }
     const parent = path.dirname(dir);
     if (parent === dir) {
+      // Reached the filesystem root without finding a config.
       return false;
     }
     dir = parent;
   }
+  throw new Error(
+    `Prettier config search from ${baseDir} did not reach the filesystem root within ${MAX_PRETTIER_CONFIG_SEARCH_DEPTH} directories.`,
+  );
 }
 
-export function generatePrettierConfig(baseDir: string) {
+export function generatePrettierConfig(baseDir: string): void {
   if (!isDryRun()) {
     if (!prettierConfigExistsInTree(baseDir)) {
       const prettierConfigFile = path.resolve('./.prettierrc.json');
@@ -351,7 +359,7 @@ export function generatePrettierConfig(baseDir: string) {
   }
 }
 
-export async function formatAndWriteFile(file: string, content: string) {
+export async function formatAndWriteFile(file: string, content: string): Promise<void> {
   if (!path.isAbsolute(file)) {
     throw new Error(`Path ${file} is not absolute.`);
   }
@@ -382,9 +390,9 @@ export async function formatAndWriteFile(file: string, content: string) {
   }
 }
 
-export function toImportsCode(imports: (string | [string, string])[]) {
+export function toImportsCode(imports: Array<string | [string, string]>): string[] {
   let importsCode: string[] = [];
-  if (imports) {
+  if ((imports as unknown) !== undefined && imports.length > 0) {
     importsCode = imports.map((i) => {
       if (typeof i === 'string') {
         return `import "${i}"`;
@@ -399,11 +407,11 @@ export function toImportsCode(imports: (string | [string, string])[]) {
   return importsCode;
 }
 
-function _isPromise(value: any) {
-  return typeof value === 'object' && value !== null && typeof value.then === 'function';
+function _isPromise(value: unknown): value is PromiseLike<unknown> {
+  return typeof value === 'object' && value !== null && 'then' in value && typeof value.then === 'function';
 }
 
-async function _resolveValue(value: any): Promise<string> {
+async function _resolveValue(value: unknown): Promise<string> {
   if (_isPromise(value)) {
     const res = await value;
     if (typeof res !== 'string') {
