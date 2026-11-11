@@ -84,6 +84,9 @@ poll wakes the requests.
 Keep 4 times `PRF_MAX_BODY_BYTES_PER_CONNECTOR` below `PRF_MAX_BODY_BYTES` (8 MiB and 64 MiB by
 default), so the 4 faulty connectors that the protocol tolerates cannot fill it.
 
+A pending row older than `PAD_PENDING_MAX_AGE` (default 10 min) does not count in the budget: no
+pad-worker computes it.
+
 Do not autoscale `prf-service`. With more pods, one connector can have more requests in progress.
 
 ## Tests
