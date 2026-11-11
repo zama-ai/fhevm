@@ -479,9 +479,10 @@ async fn a_new_row_wakes_the_lane_of_its_instance() {
         .unwrap();
     listener.listen("pad_work_available").await.unwrap();
 
-    admissions.admit(&path(1, 64), CONNECTOR).await.unwrap();
+    let row = path(1, 64);
+    admissions.admit(&row, CONNECTOR).await.unwrap();
     let notification = timeout(DEADLINE, listener.recv()).await.unwrap().unwrap();
-    assert_eq!(notification.payload(), "1");
+    assert_eq!(notification.payload(), row.prf_id.to_string());
 
     // A request that joins the row adds no row, so it wakes nobody.
     admissions
