@@ -26,7 +26,6 @@ hardhat.config.ts
 tsconfig.json
 commitlint.config.ts
 codegen.config.json
-mlc_config.json
 foundry.toml
 remappings.txt
 soldeer.lock
