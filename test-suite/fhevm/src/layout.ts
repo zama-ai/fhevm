@@ -285,11 +285,15 @@ export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-conne
 export const COPROCESSOR_PROXY_SUFFIXES = ["prf-output-seed", "proxy"];
 
 /**
- * The env file of coprocessor `index`'s proxy. It holds only the proxy's own settings: the
- * coprocessor's env carries database and signing secrets the internet-facing proxy must not get.
+ * The coprocessor services with their own env file, holding only their own settings. The
+ * coprocessor's env carries database and signing secrets: the internet-facing proxy must not get
+ * them, and prf-service logs in as the prf_service role instead.
  */
-export const coprocessorProxyEnvName = (index: number) =>
-  index === 0 ? "coprocessor-proxy" : `coprocessor-proxy.${index}`;
+export const OWN_ENV_COPROCESSOR_SERVICES = ["coprocessor-proxy", "coprocessor-prf-service"];
+
+/** The env file of coprocessor `index`'s `service`, one of `OWN_ENV_COPROCESSOR_SERVICES`. */
+export const coprocessorServiceEnvName = (service: string, index: number) =>
+  index === 0 ? service : `${service}.${index}`;
 
 /** `suffixes` without the proxy pair, then the pair in start order when `includeProxy`. */
 export const withCoprocessorProxySuffixes = (suffixes: readonly string[], includeProxy: boolean) => [

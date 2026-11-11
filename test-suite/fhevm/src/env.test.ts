@@ -173,6 +173,13 @@ describe("env", () => {
     );
     expectNoProxySetting(pair.componentEnvs.coprocessor);
     expectNoProxySetting(pair.instanceEnvs["coprocessor.1"]);
+    // prf-service's env file holds only its own database login, as the prf_service role.
+    expect(pair.instanceEnvs["coprocessor-prf-service"]).toEqual({
+      DATABASE_URL: "postgresql://prf_service:prf_service@db:5432/coprocessor",
+    });
+    expect(pair.instanceEnvs["coprocessor-prf-service.1"]).toEqual({
+      DATABASE_URL: "postgresql://prf_service:prf_service@db:5432/coprocessor_1",
+    });
   });
 
   test("points the e2e suite at every coprocessor's proxy, signing as KMS party 1's connector", async () => {

@@ -197,14 +197,19 @@ coprocessor's `coprocessor[N]-proxy`, until the RFC-038 pad connector and its e2
 land and replace it. It signs `FhevmSig` requests with KMS party 1's
 `KMS_CONNECTOR_PRIVATE_KEY`, a tx-sender of the active KMS context in the host
 ProtocolConfig, for the coprocessor's signer in `COPROCESSOR_SIGNER_ADDRESSES`.
-Behind each proxy runs prf-service. No pad-worker runs yet, so
-`scripts/seed-prf-output.ts` first writes the output the suite requests into
-each coprocessor's database: a fixed binary body, its digest, and placeholder
-signer and signature. The suite reads how many PRF requests prf-service answered
+Behind each proxy runs prf-service, logged in as the `prf_service` database
+role. No pad-worker runs yet, so `scripts/seed-prf-output.ts` first writes the
+output the suite requests into each coprocessor's database: a fixed binary body
+and its attestation, signed with the coprocessor's `TX_SENDER_PRIVATE_KEY` as
+its sns-worker signs. The suite reads how many PRF requests prf-service answered
 from its metric `coprocessor_prf_service_requests_total`, at
 `PRF_SERVICE_METRICS_URLS`. It checks that a signed request reaches prf-service
-once and comes back unchanged (the body's Keccak-256 is the attestation's
-`sns_ciphertext_digest`), and that a high-s signature
+once and comes back as a KMS connector accepts it: the attestation's signature
+recovers the coprocessor's signer over the requested PRF, label and pad length,
+and the body's Keccak-256 is its `sns_ciphertext_digest`. A HEAD request returns
+the same attestation and `Content-Length` without a body. `test/coprocessorProxy/prfOutput.ts`
+mirrors the signed digest of `shared/ciphertext-attestation/src/prf/sign.rs`,
+and the suite pins it to that crate's test vector. It also checks that a high-s signature
 (`401 auth_invalid_signature`), an expired one (`401 auth_expired`), an unknown
 signer (`401 auth_unknown_signer`, without `Retry-After`) and an unknown route
 (`404 not_found`) never reach prf-service. The proxies serve the self-signed test
