@@ -203,6 +203,7 @@ export default createConfig({
     'test/instance.ts',
     'test/legacyRelayerSdk/eip712.ts',
     'test/legacyRelayerSdk/types.ts',
+    'test/makePubliclyDecryptable/makePubliclyDecryptable.ts',
     'test/multiSig/MultiSig.fixture.ts',
     'test/multiSig/MultiSig.ts',
     'test/networkHooks.ts',
