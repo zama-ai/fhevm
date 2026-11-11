@@ -5,5 +5,6 @@ UPDATE public.consensus_test_host_report_fault
            'block', $2::text,
            'original', $3::text,
            'blockHash', $4::text,
-           'bucket', $5::text))
+           'bucket', $5::text,
+           'key', $6::text))
  WHERE chain_id = $1

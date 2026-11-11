@@ -123,10 +123,20 @@ pub(crate) fn members_of(members: &[(Address, String)]) -> Vec<Member> {
 }
 
 pub(crate) fn key(proposal_id: &[u8], proposal_block: i64) -> String {
-    format!(
-        "decision/proposal={}/attempt={proposal_block}/outcome.json",
-        hex::encode(proposal_id)
+    keyed(&hex::encode(proposal_id), proposal_block)
+}
+
+/// The key as shown in logs: the proposal id abbreviated like the state-hash
+/// log key (first 2 + last 4 bytes). Display only - never a real object key.
+fn log_key(proposal_id: &[u8], proposal_block: i64) -> String {
+    keyed(
+        &crate::state_hash::display_proposal_id(proposal_id),
+        proposal_block,
     )
+}
+
+fn keyed(proposal_hex: &str, proposal_block: i64) -> String {
+    format!("decision/proposal={proposal_hex}/attempt={proposal_block}/outcome.json")
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -159,6 +169,10 @@ pub(crate) async fn sign(
 
 /// Create this operator's record. A conditional create keeps the first value:
 /// a restart must not replace a record a peer already read.
+///
+/// Every outcome is logged here with the key and the serialized record, like
+/// the state-hash uploads: `info!` on a write (and on a kept first write),
+/// `warn!` on a failure.
 pub(crate) async fn put(
     client: &Client,
     bucket: &str,
@@ -166,27 +180,39 @@ pub(crate) async fn put(
     record: &Record,
 ) -> anyhow::Result<()> {
     let key = key(proposal_id, record.payload.proposal_block);
+    // Logged keys abbreviate the proposal id; the record JSON keeps it full.
+    let log_key = log_key(proposal_id, record.payload.proposal_block);
+    // The exact JSON uploaded as the object body, reused for the logs.
+    let body = serde_json::to_string(record)?;
     let result = client
         .put_object()
         .bucket(bucket)
         .key(&key)
         .content_type("application/json")
         .if_none_match("*")
-        .body(ByteStream::from(serde_json::to_vec(record)?))
+        .body(ByteStream::from(body.clone().into_bytes()))
         .send()
         .await;
     match result {
         Ok(_) => {
-            info!(bucket, key, decision = ?record.payload.decision, "decision record written");
+            info!(bucket, key = %log_key, decision = ?record.payload.decision, record = %body, "decision record written");
             Ok(())
         }
         Err(err)
             if err.as_service_error().and_then(ProvideErrorMetadata::code)
                 == Some("PreconditionFailed") =>
         {
+            info!(
+                bucket,
+                key = %log_key,
+                "decision record already exists; keeping the first write"
+            );
             Ok(())
         }
-        Err(err) => Err(anyhow::anyhow!("decision record write failed: {err}")),
+        Err(err) => {
+            warn!(bucket, key = %log_key, record = %body, error = %err, "decision record write failed; retrying next pass");
+            Err(anyhow::anyhow!("decision record write failed: {err}"))
+        }
     }
 }
 
@@ -380,6 +406,18 @@ mod tests {
             "decision/proposal=abcd/attempt=7/outcome.json"
         );
         assert_ne!(key(&[0xab, 0xcd], 7), key(&[0xab, 0xcd], 8));
+    }
+
+    #[test]
+    fn log_key_abbreviates_the_proposal_id() {
+        let mut id = vec![0u8; 32];
+        id[28..].copy_from_slice(&[0x00, 0x11, 0x11, 0x22]);
+        assert_eq!(
+            log_key(&id, 7),
+            "decision/proposal=0000...00111122/attempt=7/outcome.json"
+        );
+        // Short ids print in full - nothing to elide.
+        assert_eq!(log_key(&[0xab, 0xcd], 7), key(&[0xab, 0xcd], 7));
     }
 
     #[test]
