@@ -6220,6 +6220,7 @@ dependencies = [
  "aws-sdk-s3",
  "ciphertext-attestation",
  "clap",
+ "coprocessor-api",
  "fhevm-engine-common",
  "futures-util",
  "hex",

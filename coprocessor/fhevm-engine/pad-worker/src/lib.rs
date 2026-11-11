@@ -8,9 +8,9 @@ pub mod upload;
 use alloy::primitives::keccak256;
 use anyhow::Context;
 use ciphertext_attestation::{
-    prf::{consensus::MAX_PAD_LENGTH, Version as AttestationVersion},
-    PrfOutputAttestation, PrfOutputAttestationPayload,
+    prf::Version as AttestationVersion, PrfOutputAttestation, PrfOutputAttestationPayload,
 };
+use coprocessor_api::MAX_PAD_LENGTH;
 use evaluator::PadEvaluator;
 use fhevm_engine_common::{
     healthz_server::{HealthCheckService, HealthStatus, Version},
