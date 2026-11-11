@@ -211,6 +211,7 @@ export default createConfig({
     'test/rand/Rand.fixture.ts',
     'test/rand/Rand.ts',
     'test/signers.ts',
+    'test/tracing/tracing.ts',
     'test/types.ts',
     'test/utils.ts',
   ],
