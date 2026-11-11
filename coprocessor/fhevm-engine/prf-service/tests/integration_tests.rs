@@ -61,6 +61,7 @@ impl TestService {
                 max_body_bytes: NonZeroU32::new(pod_bytes).unwrap(),
                 max_body_bytes_per_connector: NonZeroU32::new(share_bytes).unwrap(),
                 pad_pending_max_age: Duration::from_secs(3600),
+                lane_heartbeat_max_age: Duration::from_secs(30),
             },
             service_pool,
             cancel_token.clone(),

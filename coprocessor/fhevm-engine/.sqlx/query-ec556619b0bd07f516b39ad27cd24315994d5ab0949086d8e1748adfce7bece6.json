@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT EXISTS (\n               SELECT 1 FROM prf_lanes\n                WHERE prf_instance = $1 AND ready_at IS NOT NULL\n                  AND heartbeat_at > NOW() - make_interval(secs => $2)\n           ) AS \"live!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "live!",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "ec556619b0bd07f516b39ad27cd24315994d5ab0949086d8e1748adfce7bece6"
+}
