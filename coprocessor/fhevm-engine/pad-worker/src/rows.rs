@@ -1,4 +1,4 @@
-//! The `pads` rows of one lane: claim, output, failure, upload, and the lane heartbeat.
+//! The `pads` rows of one lane: claim, output, failure, upload, GC, and the lane heartbeat.
 
 use alloy::primitives::{Address, B256};
 use ciphertext_attestation::{prf::Version, PrfOutputAttestation};
@@ -231,4 +231,67 @@ pub async fn set_uploaded(pool: &PgPool, claim: &Claim) -> sqlx::Result<()> {
     .execute(pool)
     .await?;
     Ok(())
+}
+
+/// Deletes uploaded or failed rows older than `max_age`, of all instances (also retired lanes).
+pub async fn delete_old_outputs(pool: &PgPool, max_age: Duration) -> sqlx::Result<u64> {
+    let result = sqlx::query!(
+        "DELETE FROM pads
+          WHERE (s3_verified_at IS NOT NULL OR is_error)
+            AND created_at <= NOW() - make_interval(secs => $1)",
+        max_age.as_secs_f64(),
+    )
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Deletes expired pending rows with no live claim, of all instances (also dead lanes).
+pub async fn delete_expired_pending(
+    pool: &PgPool,
+    pending_max_age: Duration,
+    claim_timeout: Duration,
+) -> sqlx::Result<u64> {
+    let result = sqlx::query!(
+        "DELETE FROM pads
+          WHERE signature IS NULL AND NOT is_error
+            AND created_at <= NOW() - make_interval(secs => $1)
+            AND (claimed_at IS NULL OR claimed_at <= NOW() - make_interval(secs => $2))",
+        pending_max_age.as_secs_f64(),
+        claim_timeout.as_secs_f64(),
+    )
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// The age in seconds of the oldest row of an instance, for each state.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct OldestRows {
+    pub prf_instance: u16,
+    pub pending: Option<f64>,
+    pub not_uploaded: Option<f64>,
+}
+
+pub async fn oldest_rows(pool: &PgPool) -> sqlx::Result<Vec<OldestRows>> {
+    let rows = sqlx::query!(
+        r#"SELECT prf_instance,
+                  EXTRACT(EPOCH FROM NOW() - MIN(created_at)
+                      FILTER (WHERE signature IS NULL AND NOT is_error))::FLOAT8 AS pending,
+                  EXTRACT(EPOCH FROM NOW() - MIN(created_at)
+                      FILTER (WHERE signature IS NOT NULL AND s3_verified_at IS NULL))::FLOAT8
+                      AS not_uploaded
+             FROM pads
+            GROUP BY prf_instance"#,
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| OldestRows {
+            prf_instance: u16::try_from(row.prf_instance).expect("prf_instance is in range"),
+            pending: row.pending,
+            not_uploaded: row.not_uploaded,
+        })
+        .collect())
 }

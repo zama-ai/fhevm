@@ -6225,6 +6225,7 @@ dependencies = [
  "futures-util",
  "hex",
  "humantime",
+ "prometheus",
  "serde_json",
  "sqlx",
  "test-harness",
