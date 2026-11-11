@@ -13,11 +13,9 @@
   },
   "files": [
     "./hardhat.config.ts",
-    "./hello.ts",
     "./tasks/compileAll.ts",
     "./tasks/hostContracts.ts",
     "./tasks/hostDeployment.ts",
-    "./tasks/networkInfo.ts",
     "./tasks/prepareTestContracts.ts",
     "./tasks/zamaConfigAddresses.ts"
   ],

@@ -10,11 +10,10 @@
   "scripts": {
     "_check:peer-deps": "node ci/check-peer-deps.mjs",
     "build": "hardhat task:compileAll && npm run lint",
-    "clean": "rimraf ./artifacts ./cache ./coverage ./typechain-types ./fhevmTemp ./coverage.json",
+    "clean": "rimraf ./artifacts ./cache ./coverage ./typechain-types ./fhevmTemp",
     "codegen": "./codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
     "codegen:overloads": "./codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
     "forge:soldeer": "forge soldeer install",
-    "hello": "hardhat run hello.ts",
     "lint": "npm run _check:peer-deps && npm run tsc && npm run lint:ts && npm run prettier:check",
     "lint:ts": "eslint --config ./eslint.config.mjs",
     "postinstall": "if command -v forge >/dev/null 2>&1; then npm run forge:soldeer; else echo 'forge not found: skipping forge soldeer install (install Foundry, then run: npm run forge:soldeer)'; fi",
@@ -57,10 +56,6 @@
     "rimraf": "^4.1.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "8.62.0"
-  },
-  "optionalDependencies": {
-    "solidity-comments-darwin-arm64": "0.1.1",
-    "solidity-comments-linux-x64-gnu": "0.1.1"
   },
   "dependencies": {
     "encrypted-types": "^0.0.4"

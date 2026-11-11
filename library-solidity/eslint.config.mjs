@@ -185,11 +185,9 @@ export default createConfig({
   // tsconfig.json). The Hardhat 2 code (tasks/, test/, CustomProvider.ts) is added back as it gets ported.
   files: [
     'hardhat.config.ts',
-    'hello.ts',
     'tasks/compileAll.ts',
     'tasks/hostContracts.ts',
     'tasks/hostDeployment.ts',
-    'tasks/networkInfo.ts',
     'tasks/prepareTestContracts.ts',
     'tasks/zamaConfigAddresses.ts',
   ],

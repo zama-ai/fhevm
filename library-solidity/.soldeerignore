@@ -16,7 +16,6 @@ publish/
 .env*
 .eslintignore
 .eslintrc.yml
-.gitpod.yml
 .lintstagedrc.json
 .npmignore
 .prettierignore
