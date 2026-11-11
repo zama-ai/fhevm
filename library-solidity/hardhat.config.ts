@@ -70,6 +70,23 @@ export default defineConfig({
         return buildResult;
       })
       .build(),
+    // `hardhat test` builds before running its subtasks: prepare fhevmTemp/ first, as `npm run build` does (on a
+    // clean checkout). The host contracts are then deployed by the `test mocha` override below.
+    //
+    // Gas stats (`--gas-stats`): run `hardhat task:compileAll` in a separate process first (`npm run test:gas-stats`).
+    // HH3 builds the contract decoder that maps gas measurements to contracts once per process, from the artifacts on
+    // disk when the first network connection opens. Here that connection necessarily opens before the full build (the
+    // empty host proxies are deployed to get the addresses the host contracts and examples are compiled with), so on a
+    // clean or stale tree the decoder misses or misreads those contracts and the gas tables are empty or wrong.
+    overrideTask('test')
+      .setInlineAction(async (taskArguments, hre, runSuper) => {
+        if (!isFhevmTempPrepared()) {
+          await hre.tasks.getTask('task:compileAll').run({});
+        }
+        const testResult: unknown = await runSuper(taskArguments);
+        return testResult;
+      })
+      .build(),
     // The mocha tests run in this process (not in parallel mode): deploy the host contracts first, on the
     // `network.getOrCreate()` connection the tests share (HH2: the `test` task ran task:prepareTestContracts first).
     overrideTask(['test', 'mocha'])

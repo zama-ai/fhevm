@@ -4,7 +4,7 @@
   "version": "0.15.0",
   "type": "module",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.23.4"
   },
   "main": "lib/FHE.sol",
   "scripts": {
@@ -25,7 +25,7 @@
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "test": "npm run _check:peer-deps && npm run test:publish && npm run test:hardhat",
     "test:forge": "forge test",
-    "test:gas-stats": "hardhat test --gas-stats",
+    "test:gas-stats": "hardhat task:compileAll && hardhat test --gas-stats",
     "test:hardhat": "hardhat test",
     "test:publish": "node --test publish/package.test.mjs",
     "tsc": "tsc --project ./tsconfig.json --noEmit"
