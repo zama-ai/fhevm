@@ -1,7 +1,7 @@
 import type { NBucketedCost, PriceData } from './common';
 
 export function generateSolidityHCULimit(priceData: PriceData): string {
-  if (!priceData) {
+  if ((priceData as unknown) === undefined || (priceData as unknown) === null) {
     throw new Error('undefined or null priceData');
   }
 
@@ -162,10 +162,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     const functionName = `checkHCUFor${operation.charAt(0).toUpperCase() + operation.slice(1)}`;
     const lhsName = operation === 'fheMulDiv' ? 'factor1' : 'lhs';
     const rhsName = operation === 'fheMulDiv' ? 'factor2' : 'rhs';
-    const lhsDoc =
-      operation === 'fheMulDiv' ? 'The first multiplication factor.' : 'The left-hand side operand.';
-    const rhsDoc =
-      operation === 'fheMulDiv' ? 'The second multiplication factor.' : 'The right-hand side operand.';
+    const lhsDoc = operation === 'fheMulDiv' ? 'The first multiplication factor.' : 'The left-hand side operand.';
+    const rhsDoc = operation === 'fheMulDiv' ? 'The second multiplication factor.' : 'The right-hand side operand.';
 
     if (data.supportScalar && data.scalar && data.nonScalar) {
       switch (data.numberInputs) {
@@ -349,11 +347,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
       output += `        if(scalarByte != 0x00) revert OnlyNonScalarOperationsAreSupported();`;
       output += `${generatePriceChecks(data.nonScalar)}
       `;
-      output += `${generateCheckTransactionLimit(data.numberInputs, false, lhsName, rhsName)}`;
+      output += generateCheckTransactionLimit(data.numberInputs, false, lhsName, rhsName);
     } else if (data.types) {
       output += `${generatePriceChecks(data.types)}
       `;
-      output += `${generateCheckTransactionLimit(data.numberInputs, false, lhsName, rhsName)}`;
+      output += generateCheckTransactionLimit(data.numberInputs, false, lhsName, rhsName);
     } else if (data.nBucketed) {
       output += generateNBucketedPriceChecks(data.nBucketed, data.numberInputs === -2 ? 'valueType' : 'resultType');
       output += data.numberInputs === -2 ? generateIsInTransactionLimit() : generateVariadicTransactionLimit();
@@ -696,7 +694,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
   );
 }
 
-function generatePriceChecks(prices: { [key: string]: number }): string {
+function generatePriceChecks(prices: Record<string, number>): string {
   return (
     Object.entries(prices)
       .map(

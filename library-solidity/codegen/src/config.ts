@@ -8,17 +8,17 @@ import { assertRelative } from './paths';
 export type UserSolidityTestGroup = {
   outDir: string;
   parentContractName?: string;
-  imports?: (string | [string, string])[];
+  imports?: Array<string | [string, string]>;
 };
 
 export type UserTypescriptTestGroup = {
   outDir: string;
-  imports?: (string | [string, string])[];
+  imports?: Array<string | [string, string]>;
 };
 
 export type TestGroup = {
   outDir: string;
-  imports?: (string | [string, string])[];
+  imports?: Array<string | [string, string]>;
 };
 
 export type SolidityTestGroup = TestGroup & {

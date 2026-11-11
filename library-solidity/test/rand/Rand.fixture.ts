@@ -10,5 +10,5 @@ export async function deployRandFixture(): Promise<Rand> {
   const contract = await contractFactory.connect(signers.alice).deploy();
   await contract.waitForDeployment();
 
-  return contract as unknown as Rand;
+  return contract;
 }
