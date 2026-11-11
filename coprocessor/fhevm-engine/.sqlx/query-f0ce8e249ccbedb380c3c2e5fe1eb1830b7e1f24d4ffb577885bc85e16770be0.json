@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE prf_lanes SET ready_at = COALESCE(ready_at, NOW()), heartbeat_at = NOW()\n          WHERE prf_instance = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f0ce8e249ccbedb380c3c2e5fe1eb1830b7e1f24d4ffb577885bc85e16770be0"
+}

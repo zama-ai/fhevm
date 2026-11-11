@@ -1,4 +1,4 @@
-//! The S3 copy of the pad outputs (RFC-038). The object metadata holds the attestation (RFC-023).
+//! The S3 copy of the pad outputs. The object metadata holds the attestation.
 
 use crate::rows::{Claim, Output};
 use alloy::primitives::keccak256;
@@ -32,15 +32,14 @@ impl Uploader {
         }
     }
 
-    /// Uploads the output, then reads it back and checks it.
-    pub async fn upload(&self, output: &Output) -> anyhow::Result<()> {
+    /// Uploads the output to `key`, then reads it back and checks it.
+    pub async fn upload(&self, key: &str, output: &Output) -> anyhow::Result<()> {
         let _slot = self.slots.acquire().await?;
-        let key = s3_key(&output.claim);
         let attestation = serde_json::to_string(&output.attestation)?;
         self.client
             .put_object()
             .bucket(&self.bucket)
-            .key(&key)
+            .key(key)
             .metadata(S3_METADATA_ATTESTATION_KEY, &attestation)
             .body(ByteStream::from(output.ct128.clone()))
             .send()
@@ -51,7 +50,7 @@ impl Uploader {
             .client
             .get_object()
             .bucket(&self.bucket)
-            .key(&key)
+            .key(key)
             .send()
             .await
             .context("read back")?;
@@ -76,9 +75,19 @@ impl Uploader {
     }
 }
 
+/// The key of an output, `pads/{prf}/{label}/{padLength}/ct128`.
 pub fn s3_key(claim: &Claim) -> String {
+    key("pads", claim)
+}
+
+/// The key of a reference output. No lifecycle rule deletes `pads-reference/`.
+pub fn reference_key(claim: &Claim) -> String {
+    key("pads-reference", claim)
+}
+
+fn key(prefix: &str, claim: &Claim) -> String {
     format!(
-        "pads/{}/{}/{}/ct128",
+        "{prefix}/{}/{}/{}/ct128",
         claim.prf_instance,
         hex::encode(claim.label),
         claim.pad_length
