@@ -4,7 +4,7 @@ import { createRequire } from 'module';
 import * as path from 'path';
 import * as prettier from 'prettier';
 
-import { assertRelative } from './paths';
+import { assertRelative } from './paths.js';
 
 export type UserSolidityTestGroup = {
   outDir: string;

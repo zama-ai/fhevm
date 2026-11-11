@@ -1,11 +1,11 @@
 import { strict as assert } from 'node:assert';
 
-import { ArgumentType, OperatorArguments, ReturnType } from './common';
-import type { FheTypeInfo, FunctionType, Operator, OverloadShard, OverloadSignature } from './common';
-import type { HardhatVersion } from './config';
-import type { OverloadTests } from './generateOverloads';
-import { rndBit } from './pseudoRand';
-import { getUint } from './utils';
+import { ArgumentType, OperatorArguments, ReturnType } from './common.js';
+import type { FheTypeInfo, FunctionType, Operator, OverloadShard, OverloadSignature } from './common.js';
+import type { HardhatVersion } from './config.js';
+import type { OverloadTests } from './generateOverloads.js';
+import { rndBit } from './pseudoRand.js';
+import { getUint } from './utils.js';
 
 export function generateSolidityOverloadTestFiles(operators: Operator[], fheTypes: FheTypeInfo[]): OverloadSignature[] {
   const signatures: OverloadSignature[] = [];

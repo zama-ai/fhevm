@@ -115,6 +115,9 @@ export function createConfig({ files, ignores, tsconfigRootDir, allowDefaultProj
           'error',
           { prefer: 'type-imports', fixStyle: 'separate-type-imports' },
         ],
+        // With verbatimModuleSyntax (codegen), `import { type A } from 'x'` still loads 'x' at runtime: use
+        // `import type { A } from 'x'` when every specifier is a type.
+        '@typescript-eslint/no-import-type-side-effects': 'error',
         '@typescript-eslint/consistent-type-exports': ['error', { fixMixedExportsWithInlineTypeSpecifier: false }],
         '@typescript-eslint/consistent-type-definitions': 'off', // Allow both interface and type
         '@typescript-eslint/array-type': ['error', { default: 'array-simple' }],

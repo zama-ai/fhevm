@@ -2,9 +2,9 @@ import dotenv from 'dotenv';
 import type { ethers as EthersT } from 'ethers';
 import * as fs from 'node:fs';
 
-import type { FheTypeInfo } from '../lib-js/common.js';
-import { ALL_FHE_TYPE_INFOS } from '../lib-js/fheTypeInfos.js';
-import { ALL_OPERATORS_PRICES } from '../lib-js/operatorsPrices.js';
+import type { FheTypeInfo } from '../codegen/src/common.js';
+import { ALL_FHE_TYPE_INFOS } from '../codegen/src/fheTypeInfos.js';
+import { ALL_OPERATORS_PRICES } from '../codegen/src/operatorsPrices.js';
 import { ethers } from './hardhat.js';
 import { HOST_ADDRESSES_ENV_PATH } from './utils.js';
 
