@@ -1,12 +1,13 @@
 import { assert, expect } from 'chai';
 import type { ContractTransactionResponse } from 'ethers';
-import hre from 'hardhat';
 
-import type { EncryptedERC20 } from '../../typechain-types';
-import { createInstances } from '../instance';
-import { type Signers, getSigners, initSigners } from '../signers';
-import { userDecryptSingleEuint } from '../utils';
-import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
+import type { EncryptedERC20 } from '../../typechain-types/index.js';
+import { chainId as networkChainId, ethers } from '../hardhat.js';
+
+import { createInstances } from '../instance.js';
+import { type Signers, getSigners, initSigners } from '../signers.js';
+import { userDecryptSingleEuint } from '../utils.js';
+import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture.js';
 
 type Signer = Signers['alice'];
 
@@ -57,7 +58,7 @@ describe('EncryptedERC20', function () {
     // Byte 21 was set to 0xff.
     expect(balanceHandleAlice.slice(44, 46)).to.eq('ff');
     // Bytes 22-29 must be the chainId
-    const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
+    const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : networkChainId;
     assert(chainId !== undefined, 'Host chainId not set');
     expect(balanceHandleAlice.slice(46, 62)).to.eq(chainId.toString(16).padStart(16, '0'));
     // Byte30: type is euint64 (so position 5 in the FheType enum)
@@ -89,7 +90,7 @@ describe('EncryptedERC20', function () {
 
       await expect(
         callWithHandle(this.erc20, this.signers.bob, operation, this.signers.alice, this.signers.bob, amount),
-      ).to.be.reverted;
+      ).to.be.revert(ethers);
     });
 
     it(`should allow ${operation} with a handle the caller can access`, async function () {
