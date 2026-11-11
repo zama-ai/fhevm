@@ -459,9 +459,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         return uint48(_handleDepths(handle, holder) >> 128);
     }
 
-    /// @dev Records `result`'s depths: `opHCU` added to both depths of its deepest input, checked against both limits.
-    function _setResultDepths(bytes32 result, uint256 opHCU, uint256 inputDepths) private {
-        uint256 depths = (opHCU | (opHCU << 128)) + inputDepths;
+    /// @dev Records `result`'s depths: the operation's latency added to both depths of its deepest input, checked
+    ///      against both limits.
+    function _setResultDepths(bytes32 result, uint256 opLatency, uint256 inputDepths) private {
+        uint256 depths = (opLatency | (opLatency << 128)) + inputDepths;
         HCULimitStorage storage $ = _getHCULimitStorage();
         if (uint128(depths) > $.maxHCUDepthPerTx) revert HCUTransactionDepthLimitExceeded();
         uint256 maxDepth = $.maxCrossTxDepth;
@@ -521,44 +522,44 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      * @notice Adjusts the sequential HCU for the transaction.
      */
     function _adjustAndCheckFheTransactionLimitOneOp(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32 op1,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
-        _setResultDepths(result, opHCU, _handleDepths(op1, caller));
+        _updateAndVerifyHCUTransactionLimit(opCost >> 32, caller);
+        _setResultDepths(result, uint32(opCost), _handleDepths(op1, caller));
     }
 
     /**
      * @notice Adjusts the current HCU for the transaction.
      */
     function _adjustAndCheckFheTransactionLimitTwoOps(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32 op1,
         bytes32 op2,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
-        _setResultDepths(result, opHCU, _maxDepths(_handleDepths(op1, caller), _handleDepths(op2, caller)));
+        _updateAndVerifyHCUTransactionLimit(opCost >> 32, caller);
+        _setResultDepths(result, uint32(opCost), _maxDepths(_handleDepths(op1, caller), _handleDepths(op2, caller)));
     }
 
     /**
      * @notice Adjusts the current HCU for the transaction.
      */
     function _adjustAndCheckFheTransactionLimitThreeOps(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32 op1,
         bytes32 op2,
         bytes32 op3,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+        _updateAndVerifyHCUTransactionLimit(opCost >> 32, caller);
         _setResultDepths(
             result,
-            opHCU,
+            uint32(opCost),
             _maxDepths(_handleDepths(op1, caller), _maxDepths(_handleDepths(op2, caller), _handleDepths(op3, caller)))
         );
     }
@@ -567,62 +568,62 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
      * @notice Adjusts the current HCU for an operation without encrypted inputs.
      */
     function _adjustAndCheckFheTransactionLimitNoOps(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
-        _setResultDepths(result, opHCU, 0);
+        _updateAndVerifyHCUTransactionLimit(opCost >> 32, caller);
+        _setResultDepths(result, uint32(opCost), 0);
     }
 
     /**
      * @notice Adjusts the current HCU for an operation on an array of handles.
      */
     function _adjustAndCheckFheTransactionLimitArray(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32[] calldata values,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+        _updateAndVerifyHCUTransactionLimit(opCost >> 32, caller);
 
         uint256 inputDepths = 0;
         for (uint256 i = 0; i < values.length; i++) {
             inputDepths = _maxDepths(inputDepths, _handleDepths(values[i], caller));
         }
 
-        _setResultDepths(result, opHCU, inputDepths);
+        _setResultDepths(result, uint32(opCost), inputDepths);
     }
 
     /**
      * @notice Adjusts the current HCU for an operation on a handle and an array of handles.
      */
     function _adjustAndCheckFheTransactionLimitValueAndArray(
-        uint256 opHCU,
+        uint256 opCost,
         address caller,
         bytes32 value,
         bytes32[] calldata values,
         bytes32 result
     ) internal virtual override {
-        _updateAndVerifyHCUTransactionLimit(opHCU, caller);
+        _updateAndVerifyHCUTransactionLimit(opCost >> 32, caller);
 
         uint256 inputDepths = _handleDepths(value, caller);
         for (uint256 i = 0; i < values.length; i++) {
             inputDepths = _maxDepths(inputDepths, _handleDepths(values[i], caller));
         }
 
-        _setResultDepths(result, opHCU, inputDepths);
+        _setResultDepths(result, uint32(opCost), inputDepths);
     }
 
     /**
      * @notice Updates and verifies the HCU transaction limit.
-     * @param opHCU The HCU for the operation.
+     * @param opWork The operation's work, charged to the quota, the capacity and the transaction.
      * @param caller Contract that runs the operation, charged to its quota.
      */
-    function _updateAndVerifyHCUTransactionLimit(uint256 opHCU, address caller) internal virtual {
-        _updateAndVerifyHCUQuota(opHCU, caller);
+    function _updateAndVerifyHCUTransactionLimit(uint256 opWork, address caller) internal virtual {
+        _updateAndVerifyHCUQuota(opWork, caller);
 
-        uint256 transactionHCU = opHCU + _getHCUForTransaction();
+        uint256 transactionHCU = opWork + _getHCUForTransaction();
         if (transactionHCU > uint256(_getHCULimitStorage().maxHCUPerTx)) {
             revert HCUTransactionLimitExceeded();
         }

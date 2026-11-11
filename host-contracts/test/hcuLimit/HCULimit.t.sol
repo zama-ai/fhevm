@@ -29,6 +29,16 @@ contract MockHCULimit is HCULimit {
         _setHCUForHandle(handle, handleHCU);
     }
 
+    function getHCUForHandle(bytes32 handle) external view returns (uint256 depths) {
+        assembly {
+            depths := tload(handle)
+        }
+    }
+
+    function meterOneOpForTest(uint256 opCost, address caller, bytes32 op1, bytes32 result) external {
+        _adjustAndCheckFheTransactionLimitOneOp(opCost, caller, op1, result);
+    }
+
     function setLegacyGlobalCapForTest(uint48 cap) external {
         _getHCULimitStorage().globalHCUCapPerBlock = cap;
     }
@@ -682,6 +692,27 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.prank(randomAccount);
         vm.expectRevert(HCULimitOperators.CallerMustBeFHEVMExecutorContract.selector);
         hcuLimit.checkHCUForFheRandBounded(FheType.Uint8, mockResult, fhevmExecutor);
+    }
+
+    /// @dev The cost rows give slots to FheType values below 64 only.
+    function test_typesFromSixtyFourHaveNoPrice() public {
+        FheType[2] memory types = [FheType(64), FheType.Int248];
+        for (uint256 i = 0; i < types.length; i++) {
+            vm.expectRevert(HCULimitOperators.UnsupportedOperation.selector);
+            vm.prank(fhevmExecutor);
+            hcuLimit.checkHCUForFheAdd(types[i], 0x00, mockLHS, mockRHS, mockResult, fhevmExecutor);
+        }
+    }
+
+    function test_meteringChargesWorkAndAddsLatencyToDepth() public {
+        _setQuota(DEFAULT_QUOTA, 1_000_000, 1_000_000);
+        uint256 work = 300_000;
+        uint256 latency = 100_000;
+        hcuLimit.meterOneOpForTest((work << 32) | latency, address(0x1234), mockLHS, mockResult);
+        (, , uint48 used) = hcuLimit.getQuota(DEFAULT_QUOTA);
+        assertEq(used, work);
+        assertEq(hcuLimit.getHCUForTransaction(), work);
+        assertEq(uint128(hcuLimit.getHCUForHandle(mockResult)), latency);
     }
 
     function test_checkHCUForFheAddRevertsForUnsupportedTypes(uint8 fheType, bytes1 scalarByte) public {
