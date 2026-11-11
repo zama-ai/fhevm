@@ -21,7 +21,7 @@
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "test": "npm run _check:peer-deps && npm run test:publish && npm run test:hardhat",
     "test:forge": "forge test",
-    "test:hardhat": "hardhat test mocha test/rand/Rand.ts test/encryptedERC20/EncryptedERC20.ts test/encryptedERC20/EncryptedERC20.HCU.ts test/multiSig/MultiSig.ts test/makePubliclyDecryptable/makePubliclyDecryptable.ts test/onchainPublicDecrypt/OnchainPublicDecrypt.ts test/tracing/tracing.ts test/coprocessorConfig/testEthereumCoprocessorConfig.ts test/fhevmjsTest/fhevmjsTest.ts",
+    "test:hardhat": "hardhat test mocha test/rand/Rand.ts test/encryptedERC20/EncryptedERC20.ts test/encryptedERC20/EncryptedERC20.HCU.ts test/multiSig/MultiSig.ts test/makePubliclyDecryptable/makePubliclyDecryptable.ts test/onchainPublicDecrypt/OnchainPublicDecrypt.ts test/tracing/tracing.ts test/coprocessorConfig/testEthereumCoprocessorConfig.ts test/fhevmjsTest/fhevmjsTest.ts test/fhevmOperations/manual.ts test/fhevmOperations/fhevmOperations1.ts test/fhevmOperations/fhevmOperations2.ts test/fhevmOperations/fhevmOperations3.ts test/fhevmOperations/fhevmOperations4.ts test/fhevmOperations/fhevmOperations5.ts test/fhevmOperations/fhevmOperations6.ts test/fhevmOperations/fhevmOperations7.ts test/fhevmOperations/fhevmOperations8.ts test/fhevmOperations/fhevmOperations9.ts test/fhevmOperations/fhevmOperations10.ts test/fhevmOperations/fhevmOperations11.ts test/fhevmOperations/fhevmOperations12.ts test/fhevmOperations/fhevmOperations13.ts",
     "test:publish": "node --test publish/package.test.mjs",
     "tsc": "tsc --project ./tsconfig.json --noEmit"
   },
