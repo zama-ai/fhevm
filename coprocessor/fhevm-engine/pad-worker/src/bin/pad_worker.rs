@@ -69,6 +69,10 @@ struct Args {
     #[arg(long, env = "PAD_MOCK_PBS_LATENCY", default_value = "13ms", value_parser = humantime::parse_duration)]
     mock_pbs_latency: Duration,
 
+    /// A fixed delay added to each evaluation of the mock evaluator, for e2e tests.
+    #[arg(long, env = "PAD_MOCK_EXTRA_LATENCY", default_value = "0s", value_parser = humantime::parse_duration)]
+    mock_extra_latency: Duration,
+
     /// Interval of the reference digest read until the lane is ready.
     #[arg(long, env = "PAD_START_CHECK_INTERVAL", default_value = "30s", value_parser = humantime::parse_duration)]
     start_check_interval: Duration,
@@ -209,7 +213,11 @@ async fn main() -> anyhow::Result<()> {
     install_signal_handlers(cancel_token.clone())?;
     let signer = signer(&args).await?;
     info!(signer = %signer.address(), "Signer loaded");
-    warn!(pbs_latency = ?args.mock_pbs_latency, "Mock evaluator: the outputs are not PRF outputs");
+    warn!(
+        pbs_latency = ?args.mock_pbs_latency,
+        extra_latency = ?args.mock_extra_latency,
+        "Mock evaluator: the outputs are not PRF outputs"
+    );
     let uploader = uploader(&args).await;
 
     let database_url = resolve_database_url_from_option(args.database_url)?;
@@ -238,6 +246,7 @@ async fn main() -> anyhow::Result<()> {
             pbs_latency: args.mock_pbs_latency,
             // The CPUs of the pod: std reads the cgroup limit.
             parallel: std::thread::available_parallelism().unwrap_or(NonZeroUsize::MIN),
+            extra: args.mock_extra_latency,
         }),
         signer,
         cancel_token.clone(),

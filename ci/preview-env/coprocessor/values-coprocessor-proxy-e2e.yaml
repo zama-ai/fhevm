@@ -33,6 +33,11 @@ prfService:
   # deploy-coprocessor.sh creates this role before the migration, which grants its rights.
   databaseUser: {value: prf_service}
   databasePassword: {value: prf_service}
+  # e2e limits: 2,048 pending bits and 8 requests in progress for each connector.
+  limits:
+    maxConcurrentPerConnector: 2048
+    maxInFlightPerConnector: 8
+    padPendingMaxAgeSeconds: 60
 
 # Compares the reference digests of the lanes of all operators, so that the lanes start.
 consensusDetector:

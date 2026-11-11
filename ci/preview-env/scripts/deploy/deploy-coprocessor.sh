@@ -22,6 +22,7 @@ source "${script_dir}/../lib.sh"
 #   signer-addresses          COPROCESSOR_SIGNER_ADDRESSES, the audience of each proxy and the
 #                             signer the suite expects on each PRF output attestation
 #   prf-service-metrics-urls  PRF_SERVICE_METRICS_URLS, each prf-service's request metric
+#   pad-worker-metrics-urls   PAD_WORKER_METRICS_URLS, each pad-worker lane's metrics
 #   metrics-urls              COPROCESSOR_PROXY_METRICS_URLS
 #   ca.crt                    the proxies' certificate
 ######################################################################
@@ -281,11 +282,12 @@ if [[ "${with_proxy}" == "true" ]]; then
   for i in $(seq 1 "${NB_COPROCESSOR}"); do
     wait_pad_lane "${i}"
   done
-  urls="" signers="" prf_metrics_urls="" metrics_urls=""
+  urls="" signers="" prf_metrics_urls="" pad_metrics_urls="" metrics_urls=""
   for i in $(seq 1 "${NB_COPROCESSOR}"); do
     urls="${urls:+${urls},}https://$(proxy_service "${i}"):8443"
     signers="${signers:+${signers},}$(coproc_signer "${i}")"
     prf_metrics_urls="${prf_metrics_urls:+${prf_metrics_urls},}http://$(prf_service "${i}"):9100/metrics"
+    pad_metrics_urls="${pad_metrics_urls:+${pad_metrics_urls},}http://coprocessor-${i}-pads-pad-worker-0:9100/metrics"
     metrics_urls="${metrics_urls:+${metrics_urls},}http://$(proxy_service "${i}"):9100/metrics"
   done
   ca_file=$(mktemp)
@@ -294,6 +296,7 @@ if [[ "${with_proxy}" == "true" ]]; then
     --from-literal=urls="${urls}" \
     --from-literal=signer-addresses="${signers}" \
     --from-literal=prf-service-metrics-urls="${prf_metrics_urls}" \
+    --from-literal=pad-worker-metrics-urls="${pad_metrics_urls}" \
     --from-literal=metrics-urls="${metrics_urls}" \
     --from-file=ca.crt="${ca_file}" \
     --dry-run=client -o yaml | kubectl apply -f -

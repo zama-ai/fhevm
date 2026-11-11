@@ -1,8 +1,27 @@
-//! Row age gauges for each `prfId`. Each lane sets them for all instances, to show a dead lane.
+//! Evaluations of the lane, and row age gauges for each `prfId`. Each lane sets the gauges for all
+//! instances, to show a dead lane.
 
 use crate::rows::OldestRows;
-use prometheus::{register_gauge_vec, register_int_gauge, GaugeVec, IntGauge};
+use prometheus::{
+    register_gauge_vec, register_int_counter_vec, register_int_gauge, GaugeVec, IntCounterVec,
+    IntGauge,
+};
 use std::sync::LazyLock;
+
+static EVALUATIONS: LazyLock<IntCounterVec> = LazyLock::new(|| {
+    register_int_counter_vec!(
+        "coprocessor_pad_worker_evaluations_total",
+        "PRF evaluations of claimed rows",
+        &["prf_instance"]
+    )
+    .unwrap()
+});
+
+pub fn count_evaluation(prf_instance: u16) {
+    EVALUATIONS
+        .with_label_values(&[&prf_instance.to_string()])
+        .inc();
+}
 
 static OLDEST_PENDING: LazyLock<GaugeVec> = LazyLock::new(|| {
     register_gauge_vec!(

@@ -225,6 +225,9 @@ describe("env", () => {
     expect(suite.PRF_SERVICE_METRICS_URLS).toBe(
       "http://coprocessor-prf-service:9100/metrics,http://coprocessor1-prf-service:9100/metrics",
     );
+    expect(suite.PAD_WORKER_METRICS_URLS).toBe(
+      "http://coprocessor-pad-worker:9100/metrics,http://coprocessor1-pad-worker:9100/metrics",
+    );
     expect(suite.COPROCESSOR_PROXY_METRICS_URLS).toBe(
       "http://coprocessor-proxy:9100/metrics,http://coprocessor1-proxy:9100/metrics",
     );
@@ -250,6 +253,7 @@ describe("env", () => {
         "COPROCESSOR_PROXY_URLS",
         "COPROCESSOR_SIGNER_ADDRESSES",
         "PRF_SERVICE_METRICS_URLS",
+        "PAD_WORKER_METRICS_URLS",
         "COPROCESSOR_PROXY_METRICS_URLS",
         "KMS_CONNECTOR_PRIVATE_KEY",
       ]) {
