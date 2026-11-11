@@ -49,7 +49,7 @@ jobs:
           - service: tfhe-worker
             package: tfhe-worker
             needs_localstack: false
-            needs_foundry: false
+            needs_foundry: true
             runner: large_ubuntu_16
           - service: sns-worker
             package: sns-worker
