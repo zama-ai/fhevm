@@ -279,6 +279,57 @@ precreate_s3_format_version_null_index() {
        AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL);"
 }
 
+# 20260619170000 adds s3_migration_failure_count and builds
+# idx_ciphertext_digest_s3_migration_pending on it in the same transaction, so
+# ciphertext_digest stays locked for reads and writes during the build (57 s on
+# testnet). Before that migration runs, apply the other migrations, add its
+# columns as it would, and build the index concurrently: the migration then
+# finds both and its file stays unchanged. The other migrations go first
+# because 20260610130100 copies the ciphertext_digest columns into
+# ciphertext_digest_branch; none of them uses the new columns.
+precreate_s3_migration_pending_index() {
+  local column_state
+  column_state=$(ciphertext_digest_column_state s3_migration_failure_count)
+  if [ "$column_state" = "no-table" ]; then
+    echo "Skipping S3 migration pending index pre-creation (column no-table)"
+    return 0
+  fi
+  local migration_applied
+  migration_applied=$(psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -Atc "
+    SELECT EXISTS (SELECT 1 FROM _sqlx_migrations WHERE version = 20260619170000);")
+  if [ "$migration_applied" = "t" ]; then
+    echo "Skipping S3 migration pending index pre-creation (20260619170000 applied)"
+    return 0
+  fi
+
+  local other_migrations
+  if ! other_migrations=$(mktemp -d); then
+    echo "No temporary directory, 20260619170000 will build its index itself"
+    return 0
+  fi
+  cp "$MIGRATION_DIR"/*.sql "$other_migrations"/
+  rm "$other_migrations"/20260619170000_*.sql
+  echo "Running the migrations other than 20260619170000..."
+  sqlx migrate run --source "$other_migrations" || { echo "Failed to run migrations."; exit 1; }
+  rm -rf "$other_migrations"
+
+  if [ "$column_state" = "missing" ]; then
+    echo "Adding the 20260619170000 columns without a table rewrite..."
+    run_sql "
+      SET LOCAL lock_timeout = '10s';
+      ALTER TABLE ciphertext_digest
+        ADD COLUMN s3_migration_failure_count INT NOT NULL DEFAULT 0,
+        ADD COLUMN s3_migration_last_error TEXT DEFAULT NULL,
+        ADD COLUMN s3_migration_last_error_at TIMESTAMPTZ DEFAULT NULL;"
+  fi
+  drop_invalid_index "idx_ciphertext_digest_s3_migration_pending"
+  precreate_index "idx_ciphertext_digest_s3_migration_pending" \
+    "CREATE INDEX CONCURRENTLY idx_ciphertext_digest_s3_migration_pending \
+     ON ciphertext_digest (s3_format_version, s3_migration_failure_count, handle) \
+     WHERE s3_format_version = 0 \
+       AND (ciphertext IS NOT NULL OR ciphertext128 IS NOT NULL);"
+}
+
 # Before every batch the S3 migration counts its pending and failed rows. The
 # migration pending index also carries the 32-byte handle (1.4 GB for 21M rows
 # on testnet, about 5 s per count). Keyed on the failure count alone, Postgres
@@ -384,6 +435,7 @@ else
   precreate_blocks_valid_pending_index
   instant_prefill_s3_format_version
   precreate_s3_format_version_null_index
+  precreate_s3_migration_pending_index
   sqlx migrate run --source "$MIGRATION_DIR" || { echo "Failed to run migrations."; exit 1; }
   # Seed before the index builds and VACUUM below, which can take long. With
   # IAM auth the token is minted once and expires after 15 minutes, so a
