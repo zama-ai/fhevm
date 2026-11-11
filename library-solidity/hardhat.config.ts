@@ -1,6 +1,13 @@
-import { defineConfig } from 'hardhat/config';
+import hardhatEthers from '@nomicfoundation/hardhat-ethers';
+import { defineConfig, task } from 'hardhat/config';
 
 export default defineConfig({
+  plugins: [hardhatEthers],
+  tasks: [
+    task('task:networkInfo', 'Prints the chain id, the signers and the first signer balance of a network')
+      .setAction(() => import('./tasks/networkInfo.js'))
+      .build(),
+  ],
   paths: {
     // Everything published in @fhevm/solidity (package.json.publish.template: lib/**/*.sol, config/**/*.sol).
     sources: ['./lib', './config'],

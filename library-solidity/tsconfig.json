@@ -11,5 +11,5 @@
     "target": "es2022",
     "types": ["node"]
   },
-  "files": ["./hardhat.config.ts", "./hello.ts"]
+  "files": ["./hardhat.config.ts", "./hello.ts", "./tasks/networkInfo.ts"]
 }

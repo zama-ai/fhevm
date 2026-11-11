@@ -38,6 +38,7 @@
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@fhevm/host-contracts": "*",
+    "@nomicfoundation/hardhat-ethers": "^4.2.2",
     "@openzeppelin/contracts": "^5.0.1",
     "@openzeppelin/contracts-upgradeable": "5.0.2",
     "@types/chai": "^4.3.4",
@@ -47,7 +48,7 @@
     "chai": "^4.3.7",
     "dotenv": "^16.0.3",
     "eslint": "10.5.0",
-    "ethers": "^6.13.4",
+    "ethers": "^6.17.0",
     "hardhat": "^3.21.2",
     "prettier": "^3.4.2",
     "prettier-plugin-solidity": "^1.1.3",
