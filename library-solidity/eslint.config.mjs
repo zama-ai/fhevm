@@ -207,6 +207,7 @@ export default createConfig({
     'test/multiSig/MultiSig.fixture.ts',
     'test/multiSig/MultiSig.ts',
     'test/networkHooks.ts',
+    'test/onchainPublicDecrypt/OnchainPublicDecrypt.ts',
     'test/rand/Rand.fixture.ts',
     'test/rand/Rand.ts',
     'test/signers.ts',
