@@ -1,0 +1,22 @@
+[package]
+name = "coprocessor-api"
+description = "The coprocessor's HTTP interface: the PRF output route and its error answers"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+version = "0.1.0"
+
+# Dependencies are deliberately NOT workspace-inherited. The workspace pins exact versions, and
+# inheriting them would export those pins to the consumers of this interface outside the workspace
+# (the KMS connector).
+[dependencies]
+alloy-primitives = { version = "1", default-features = false, features = ["std"] }
+ciphertext-attestation = { path = "../../../shared/ciphertext-attestation" }
+serde = { version = "1", default-features = false, features = ["derive", "std"] }
+strum = { version = "0.26", default-features = false, features = ["derive"] }
+
+[dev-dependencies]
+serde_json = { version = "1", default-features = false, features = ["std"] }
+
+[lints]
+workspace = true

@@ -5,7 +5,7 @@ use actix_web::{
     },
     HttpResponse, ResponseError,
 };
-use serde::Serialize;
+use coprocessor_api::{ErrorCode, ErrorResponse};
 
 pub(crate) const NO_STORE: &str = "no-store";
 
@@ -27,48 +27,35 @@ pub enum PrfError {
     Unavailable,
 }
 
-/// Error body: the same shape as the kms-connector endpoint errors.
-#[derive(Serialize)]
-struct ErrorBody {
-    code: &'static str,
-    message: String,
-    retryable: bool,
-}
-
 impl PrfError {
-    fn parts(&self) -> (StatusCode, &'static str, bool) {
+    fn code(&self) -> ErrorCode {
         match self {
-            Self::MissingSigner => (StatusCode::UNAUTHORIZED, "auth_missing", false),
-            Self::MalformedSigner => (StatusCode::UNAUTHORIZED, "auth_malformed", false),
-            Self::NonCanonicalPath => (StatusCode::BAD_REQUEST, "non_canonical_path", false),
-            Self::UnknownPrf => (StatusCode::NOT_FOUND, "unknown_prf", false),
-            Self::ConcurrencyLimited => {
-                (StatusCode::TOO_MANY_REQUESTS, "concurrency_limited", true)
-            }
-            Self::EvaluationFailed => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "prf_evaluation_failed",
-                false,
-            ),
-            Self::Unavailable => (StatusCode::SERVICE_UNAVAILABLE, "unavailable", true),
+            Self::MissingSigner => ErrorCode::AuthMissing,
+            Self::MalformedSigner => ErrorCode::AuthMalformed,
+            Self::NonCanonicalPath => ErrorCode::NonCanonicalPath,
+            Self::UnknownPrf => ErrorCode::UnknownPrf,
+            Self::ConcurrencyLimited => ErrorCode::ConcurrencyLimited,
+            Self::EvaluationFailed => ErrorCode::PrfEvaluationFailed,
+            Self::Unavailable => ErrorCode::Unavailable,
         }
     }
 }
 
 impl ResponseError for PrfError {
     fn status_code(&self) -> StatusCode {
-        self.parts().0
+        StatusCode::from_u16(self.code().http_status()).expect("error codes map to valid statuses")
     }
 
     fn error_response(&self) -> HttpResponse {
-        let (status, code, retryable) = self.parts();
-        let mut response = HttpResponse::build(status);
+        let code = self.code();
+        let mut response = HttpResponse::build(self.status_code());
         // Only a `200` answer can be kept in a cache.
         response.insert_header((CACHE_CONTROL, NO_STORE));
         match self {
             // A `HEAD` answer has no body, so a `401` names its code in the challenge.
             Self::MissingSigner | Self::MalformedSigner => {
-                response.insert_header((WWW_AUTHENTICATE, format!("FhevmSig error=\"{code}\"")));
+                let challenge = format!("{} error=\"{}\"", fhevm_sig_auth::SCHEME, code.as_str());
+                response.insert_header((WWW_AUTHENTICATE, challenge));
             }
             Self::ConcurrencyLimited => {
                 response.insert_header((RETRY_AFTER, "1"));
@@ -78,10 +65,6 @@ impl ResponseError for PrfError {
             | Self::EvaluationFailed
             | Self::Unavailable => {}
         }
-        response.json(ErrorBody {
-            code,
-            message: self.to_string(),
-            retryable,
-        })
+        response.json(ErrorResponse::new(code, self.to_string()))
     }
 }
