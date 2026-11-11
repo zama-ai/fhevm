@@ -177,3 +177,30 @@ Before you enable it:
   `prfService.ports.http`.
 - With `prfService.serviceMonitor.enabled`, add an ingress rule for the metrics port to
   `coprocessorProxy.prfServiceNetworkPolicy.extraIngress`. The NetworkPolicy admits only the proxy.
+
+## Pad-worker lanes
+
+`padLanes` deploys one pad-worker for each PRF instance, `<release>-pad-worker-<prfId>`. A lane runs
+outside the blue and green fleets, for the life of its instance. Deploy the lanes in a separate pad
+release of the operator, for example `coprocessor-<party>-pads`, with `dbMigration.enabled` and
+`tfheWorker.enabled` set to `false` and no other component. Leave `padLanes` empty in the fleet
+releases. `ci/pad-lanes-values.yaml` is an example.
+
+Before you add a lane:
+
+- Create the database role `pad_worker` with `LOGIN`, and `GRANT rds_iam TO pad_worker` for IAM
+  authentication. Set `padWorkerShared.databaseUser` (required), and
+  `padWorkerShared.databasePassword` for password authentication. `commonConfig.databaseUrl` must
+  use `$(DATABASE_USER)`. The migration job of the fleet release gives the table rights.
+- Set `padWorkerShared.config.s3BucketName` to the bucket of the operator, and
+  `padWorkerShared.wallet` to the coprocessor signer.
+- Do not set an S3 lifecycle rule on `pads-reference/`. The reference objects must stay for the life
+  of the instance. A rule on `pads/` can delete objects after
+  `padWorkerShared.config.outputMaxAgeSeconds`.
+
+A lane keeps its image (`padLanes[].image`) for the life of its instance. An image that changes the
+bytes of the outputs needs a new `prfId`: the lane exits at start if its reference digest is not the
+agreed one.
+
+The lane has no Service except the metrics one (`padWorkerShared.serviceMonitor.enabled`): nothing
+calls a lane.
