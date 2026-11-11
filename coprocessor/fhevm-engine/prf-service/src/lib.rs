@@ -46,6 +46,8 @@ pub struct Config {
     pub max_body_bytes: NonZeroU32,
     /// Bytes of response bodies in memory for each connector (`PRF_MAX_BODY_BYTES_PER_CONNECTOR`).
     pub max_body_bytes_per_connector: NonZeroU32,
+    /// Pending rows older than this do not count in the budget (`PAD_PENDING_MAX_AGE`).
+    pub pad_pending_max_age: Duration,
 }
 
 /// The internal PRF output endpoint. Only the proxy calls it.
@@ -74,6 +76,7 @@ impl PrfService {
                 pool.clone(),
                 config.max_pending_bits,
                 config.max_adds_per_connector,
+                config.pad_pending_max_age,
             ),
             waiter: waiter.clone(),
             bodies: BodyBudget::new(

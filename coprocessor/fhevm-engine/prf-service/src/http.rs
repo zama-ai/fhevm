@@ -119,6 +119,8 @@ async fn serve(req: &HttpRequest, state: &AppState) -> Result<HttpResponse, PrfE
         .map_err(unavailable)?
     {
         Admission::OverBudget => return Err(PrfError::ConcurrencyLimited),
+        // After GC deletes the row, the retry adds a new one.
+        Admission::Expired => return Err(PrfError::Unavailable),
         Admission::Created | Admission::Existing(PadState::Pending) => {
             state.waiter.wait(&path).await.map_err(unavailable)?
         }

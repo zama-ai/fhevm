@@ -1772,6 +1772,8 @@ prfService:
     # Bytes of all response bodies in memory, in one pod. Real memory use is up to about 2 times
     # this, so keep `resources.limits.memory` at least 3 times this, plus the base use.
     maxBodyBytes: 67108864
+    # Pending rows older than this do not count in the budget. Set it above the connectors' deadline.
+    padPendingMaxAgeSeconds: 600
 
   env: []
   extraArgs: []
