@@ -43,6 +43,8 @@ pub enum Admission {
     OverBudget,
     /// The row is pending and expired: no lane computes it.
     Expired,
+    /// The lane of the instance is not ready, or its heartbeat is old: no row is added.
+    NoLane,
 }
 
 /// Admits requests in one pod.
@@ -52,6 +54,8 @@ pub struct Admissions {
     max_adds_per_connector: NonZeroUsize,
     /// Pending rows older than this do not count in the budget.
     pending_max_age: Duration,
+    /// A lane with an older heartbeat is down.
+    lane_heartbeat_max_age: Duration,
     /// One semaphore for each connector with an add in progress in this pod.
     adds: Adds,
 }
@@ -62,12 +66,14 @@ impl Admissions {
         max_pending_bits: i64,
         max_adds_per_connector: NonZeroUsize,
         pending_max_age: Duration,
+        lane_heartbeat_max_age: Duration,
     ) -> Self {
         Self {
             pool,
             max_pending_bits,
             max_adds_per_connector,
             pending_max_age,
+            lane_heartbeat_max_age,
             adds: Adds::default(),
         }
     }
@@ -80,12 +86,19 @@ impl Admissions {
         connector: Address,
     ) -> anyhow::Result<Admission> {
         if let Some(state) = read(&self.pool, path).await? {
-            if state == PadState::Pending
-                && is_expired(&self.pool, path, self.pending_max_age).await?
-            {
+            if state != PadState::Pending {
+                return Ok(Admission::Existing(state));
+            }
+            if is_expired(&self.pool, path, self.pending_max_age).await? {
                 return Ok(Admission::Expired);
             }
+            if !lane_is_live(&self.pool, path.prf_id, self.lane_heartbeat_max_age).await? {
+                return Ok(Admission::NoLane);
+            }
             return Ok(Admission::Existing(state));
+        }
+        if !lane_is_live(&self.pool, path.prf_id, self.lane_heartbeat_max_age).await? {
+            return Ok(Admission::NoLane);
         }
         // Wait in memory: a request that waits for the lock in Postgres holds a connection.
         let slot = self.add_slot(connector).await;
@@ -194,6 +207,22 @@ async fn add(
         0 => Admission::Existing(PadState::Pending),
         _ => Admission::Created,
     })
+}
+
+/// Whether the lane of `prf_id` passed its start check and has a heartbeat newer than `max_age`.
+async fn lane_is_live(pool: &PgPool, prf_id: u16, max_age: Duration) -> anyhow::Result<bool> {
+    let live = sqlx::query_scalar!(
+        r#"SELECT EXISTS (
+               SELECT 1 FROM prf_lanes
+                WHERE prf_instance = $1 AND ready_at IS NOT NULL
+                  AND heartbeat_at > NOW() - make_interval(secs => $2)
+           ) AS "live!""#,
+        i32::from(prf_id),
+        max_age.as_secs_f64(),
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(live)
 }
 
 /// Whether the row of `path` is older than `pending_max_age`. False if there is no row.
@@ -327,6 +356,7 @@ mod tests {
             64,
             NonZeroUsize::new(2).unwrap(),
             Duration::from_secs(600),
+            Duration::from_secs(30),
         )
     }
 
