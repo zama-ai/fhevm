@@ -4,6 +4,8 @@ use alloy::primitives::B256;
 use kms_connector_api::{USER_DECRYPTION_ROUTE, UserDecryptionRequest, UserDecryptionResponse};
 use serde::Serialize;
 
+use crate::metrics::FlowName;
+
 use super::{Flow, RejectReason, check_signature, hex};
 use crate::kms_aggregator::config::UserChecks;
 
@@ -31,16 +33,8 @@ impl Flow for UserDecrypt {
     type Response = UserDecryptionResponse;
     type Output = UserDecryptOutput;
     type Checks = UserChecks;
-    const NAME: &'static str = "user_decrypt";
+    const NAME: FlowName = FlowName::UserDecrypt;
     const ROUTE: &'static str = USER_DECRYPTION_ROUTE;
-
-    fn decryption_id(request: &Self::Request) -> B256 {
-        request.id()
-    }
-
-    fn handles(request: &Self::Request) -> Vec<B256> {
-        request.payload.handles.iter().map(|h| h.handle).collect()
-    }
 
     fn check(
         checks: &UserChecks,
@@ -94,7 +88,7 @@ fn majority_id(checks: &UserChecks, accepted: &[UserDecryptionResponse]) -> Opti
 
 #[cfg(test)]
 mod tests {
-    use alloy::primitives::{Bytes, b256};
+    use alloy::primitives::Bytes;
     use serde_json::json;
 
     use super::*;
@@ -122,7 +116,7 @@ mod tests {
             decryption_id: USER_REQUEST_ID,
             user_decrypted_shares: mock::share(node),
             signature: mock::signature(node),
-            extra_data: Bytes::from_static(&[0]),
+            extra_data: mock::extra_data_v2(),
         }
     }
 
@@ -131,17 +125,6 @@ mod tests {
             decryption_id: B256::repeat_byte(0xEE),
             ..response(node)
         }
-    }
-
-    #[test]
-    fn id_and_handles_come_from_the_request() {
-        assert_eq!(UserDecrypt::decryption_id(&request()), USER_REQUEST_ID);
-        assert_eq!(
-            UserDecrypt::handles(&request()),
-            vec![b256!(
-                "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-            )]
-        );
     }
 
     #[test]
@@ -197,8 +180,8 @@ mod tests {
         let output = UserDecrypt::output(&OFF, vec![response(0), response(1)]).unwrap();
         let expected = json!({
             "result": [
-                { "payload": hex(&mock::share(0)), "signature": hex(&mock::signature(0)), "extraData": "0x00" },
-                { "payload": hex(&mock::share(1)), "signature": hex(&mock::signature(1)), "extraData": "0x00" },
+                { "payload": hex(&mock::share(0)), "signature": hex(&mock::signature(0)), "extraData": mock::EXTRA_DATA_V2 },
+                { "payload": hex(&mock::share(1)), "signature": hex(&mock::signature(1)), "extraData": mock::EXTRA_DATA_V2 },
             ]
         });
         assert_eq!(serde_json::to_value(&output).unwrap(), expected);

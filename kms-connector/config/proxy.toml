@@ -77,7 +77,8 @@ endpoint_addresses = ["kms-connector-endpoint-1:8080", "kms-connector-endpoint-2
 # ENV: KMS_CONNECTOR_PROTOCOL_CONFIG_CONTRACT__ADDRESS
 address = "0x0000000000000000000000000000000000000000"
 
-# TLS configuration of the proxy (required)
+# TLS configuration of the proxy (optional). WITHOUT IT, THE PROXY SERVES PLAINTEXT HTTP: only omit
+# it when the proxy sits behind a TLS-terminating layer (ingress, service mesh...).
 [tls_config]
 # Path of the PEM certificate chain
 # ENV: KMS_CONNECTOR_TLS_CONFIG__CERT_PATH

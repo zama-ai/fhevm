@@ -23,6 +23,17 @@
 {{- default $kmsConnectorProxyNameDefault .Values.kmsConnectorProxy.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- /* Scheme served by the proxy, also the name of its port. Only an explicit `false` (bool or string) disables TLS. */ -}}
+{{- define "kmsConnectorProxyScheme" -}}
+{{- if eq (toString (dig "enabled" true (default dict .Values.kmsConnectorProxy.tls))) "false" }}http{{ else }}https{{ end -}}
+{{- end -}}
+
+{{- /* Port served by the proxy, `ports.<scheme>`. */ -}}
+{{- define "kmsConnectorProxyPort" -}}
+{{- $scheme := include "kmsConnectorProxyScheme" . -}}
+{{- required (printf "kmsConnectorProxy.ports.%s must be set" $scheme) (index .Values.kmsConnectorProxy.ports $scheme) -}}
+{{- end -}}
+
 {{- define "kmsConnectorDbMigrationName" -}}
 {{- $kmsConnectorDbMigrationNameDefault := printf "%s-db-migration-%s" .Release.Name .Values.kmsConnectorDbMigration.image.tag }}
 {{- default $kmsConnectorDbMigrationNameDefault .Values.kmsConnectorDbMigration.nameOverride | trunc 63 | trimSuffix "-" -}}

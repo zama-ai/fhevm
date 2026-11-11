@@ -140,7 +140,6 @@ init(): Promise<void>;         // preload + compile WASM
 readonly ready: Promise<void>; // resolves when usable
 readonly uid: string;
 readonly chain: FhevmChain;
-readonly protocolVersion: ProtocolVersionResolution;
 ```
 
 ### Method availability

@@ -78,6 +78,50 @@ runs in the same container. `--chain` cannot be combined with `--no-hardhat-comp
 Known limitation: other per-chain values that the tests read unprefixed, such as `TEST_INPUT_CONTRACT_ADDRESS` or the
 bridge addresses, are not handled by `--chain`.
 
+## DevNet relayer URL and API key
+
+The FHEVM SDK reads `RELAYER_URL` and `ZAMA_FHEVM_API_KEY` from the test
+process environment. Set them **inside the container**, before starting the
+tests. `RELAYER_URL` overrides the network default and accepts a base URL or
+a `/v2` suffix, with or without a trailing slash; proxy path prefixes are
+preserved. Use HTTPS when supplying an API key (the SDK permits authenticated
+HTTP only on localhost).
+
+`ZAMA_FHEVM_API_KEY` is optional and is sent as `x-api-key`. If it is absent,
+the existing Hardhat vars fallback is used; an explicitly empty value disables
+that fallback. With no effective key, requests remain unauthenticated.
+SDK authentication is configured once per process, before creating clients.
+Restart the test process to change the key. `scripts/gen_handles.ts` also
+includes the key when initializing its single-threaded runtime.
+
+For an initial test, export the URL and obtain the key from your usual secret
+source in the local shell, then forward the variables to an existing DevNet
+container:
+
+```shell
+export RELAYER_URL="https://relayer.dev.zama.cloud/v2"
+# ZAMA_FHEVM_API_KEY must already be exported if authentication is required.
+docker exec -e RELAYER_URL -e ZAMA_FHEVM_API_KEY <devnet-test-container> \
+  ./run-tests.sh -n staging -g "test user input uint64"
+```
+
+The container must already have the DevNet RPC, chain IDs, contract addresses
+and funded test signers.
+Here `staging` is the existing Hardhat network accepting `RPC_URL` and
+`CHAIN_ID_HOST`; this checkout has no network named `devnet`.
+
+For deployment, keep the URL as ordinary configuration and inject only the API
+key from a Secret into `ZAMA_FHEVM_API_KEY`. The application reads the same env
+variable in either case. Do not put the key in the image, committed env files,
+or logs. Changing these values does not require rebuilding the image.
+
+The DevNet GitOps FHEVM test workloads currently use
+`RELAYER_URL=http://relayer:3000/v2`. A follow-up GitOps change must switch to the
+authenticated HTTPS endpoint and inject the Secret when enabling authentication;
+adding a key to that internal HTTP URL would be rejected by the SDK. This change
+does not modify GitOps, CI, preview, or Testnet/Mainnet deployments. The Relayer
+SDK adapter and multichain factory are outside this implementation's scope.
+
 ## Unified user-decryption suites
 
 E2E coverage for ERC-1271 smart-account signature verification and the unified
@@ -153,15 +197,17 @@ coprocessor's `coprocessor[N]-proxy`, until the RFC-038 pad connector and its e2
 land and replace it. It signs `FhevmSig` requests with KMS party 1's
 `KMS_CONNECTOR_PRIVATE_KEY`, a tx-sender of the active KMS context in the host
 ProtocolConfig, for the coprocessor's signer in `COPROCESSOR_SIGNER_ADDRESSES`.
-Behind each proxy runs the fake prf-service of `scripts/fake-prf-service.ts`,
-which answers the PRF route, with prf-service's canonical parameters, with a
-fixed binary body and an attestation of its digest, and reports how many PRF
-requests reached it at `PRF_SERVICE_FAKE_COUNT_URLS`. The suite checks that a
-signed request reaches the fake once and comes back unchanged (the body's
-Keccak-256 is the attestation's `sns_ciphertext_digest`), and that a high-s
-signature (`401 auth_invalid_signature`), an expired one (`401 auth_expired`),
-an unknown signer (`401 auth_unknown_signer`, without `Retry-After`) and an
-unknown route (`404 not_found`) never reach the fake. The proxies serve the self-signed test
+Behind each proxy runs prf-service. No pad-worker runs yet, so
+`scripts/seed-prf-output.ts` first writes the output the suite requests into
+each coprocessor's database: a fixed binary body, its digest, and placeholder
+signer and signature. The suite reads how many PRF requests prf-service answered
+from its metric `coprocessor_prf_service_requests_total`, at
+`PRF_SERVICE_METRICS_URLS`. It checks that a signed request reaches prf-service
+once and comes back unchanged (the body's Keccak-256 is the attestation's
+`sns_ciphertext_digest`), and that a high-s signature
+(`401 auth_invalid_signature`), an expired one (`401 auth_expired`), an unknown
+signer (`401 auth_unknown_signer`, without `Retry-After`) and an unknown route
+(`404 not_found`) never reach prf-service. The proxies serve the self-signed test
 certificate under `test-suite/fhevm/static/config/coprocessor-proxy`, read
 through `COPROCESSOR_PROXY_CA_CERT`. The suite skips when
 `COPROCESSOR_PROXY_URLS` is empty (bundles without the proxy image, and

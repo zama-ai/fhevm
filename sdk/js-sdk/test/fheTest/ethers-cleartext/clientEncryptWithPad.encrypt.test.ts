@@ -5,12 +5,12 @@ import { defineClientEncryptWithPadEncryptTests } from '../ethers-common/clientE
 
 ////////////////////////////////////////////////////////////////////////////////
 //
-// CHAIN=localcleartext_v16 npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientEncryptWithPad.encrypt.test.ts
+// CHAIN=localcleartext_v1_0 npx vitest run --config test/fheTest/vitest.config.ts ethers-cleartext/clientEncryptWithPad.encrypt.test.ts
 //
 ////////////////////////////////////////////////////////////////////////////////
 
 defineClientEncryptWithPadEncryptTests({
-  // RFC-030 pad-based encryption needs the v0.16 cleartext executor (PaddedInputter).
+  // RFC-030 pad-based encryption needs the v1.0 cleartext stack (PaddedInputter).
   runIf: isCleartext(getEthersTestConfig().chainName) && protocolEraOf(getEthersTestConfig().chainName) >= 16,
   createFhevmEncryptWithPadClient: (params) => createFhevmCleartextEncryptWithPadClient(params),
 });

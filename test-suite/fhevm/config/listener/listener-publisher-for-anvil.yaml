@@ -23,6 +23,8 @@ blockchain:
   chain_id: 12345
   rpc_url: http://host-node:8545
   network: ethereum-mainnet
+  catchup:
+    catchup_max_sub_range: 4
   strategy:
     automatic_startup: true
     block_start_on_first_start: "current"

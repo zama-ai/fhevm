@@ -11,6 +11,7 @@ use tracing::{debug, error, info, warn};
 
 pub const HTTP_PUBLIC_DECRYPT_NOTIFICATION: &str = "http_public_decryption_response_available";
 pub const HTTP_USER_DECRYPT_NOTIFICATION: &str = "http_user_decryption_response_available";
+pub const HTTP_PAD_DECRYPT_NOTIFICATION: &str = "http_pad_decryption_response_available";
 
 /// Listens to the `http_*_decryption_response_available` channels and wakes up the matching
 /// waiters.
@@ -20,7 +21,7 @@ pub struct ResponseListener {
 }
 
 impl ResponseListener {
-    /// Connects a dedicated listener connection and subscribes to both HTTP response channels.
+    /// Connects a dedicated listener connection and subscribes to the HTTP response channels.
     pub async fn connect(
         db_pool: &Pool<Postgres>,
         waiter_registry: Arc<WaiterRegistry>,
@@ -32,6 +33,7 @@ impl ResponseListener {
             .listen_all([
                 HTTP_PUBLIC_DECRYPT_NOTIFICATION,
                 HTTP_USER_DECRYPT_NOTIFICATION,
+                HTTP_PAD_DECRYPT_NOTIFICATION,
             ])
             .await
             .map_err(|e| anyhow!("Failed to listen to HTTP responses: {e}"))?;

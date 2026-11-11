@@ -1,7 +1,5 @@
-#[cfg(test)]
-use crate::core::TlsConfig;
 use crate::{
-    core::Config,
+    core::{Config, TlsConfig},
     monitoring::{
         health::{self, endpoint_health_check},
         metrics,
@@ -20,7 +18,7 @@ use pingora::{
 };
 use pingora_limits::rate::Rate;
 use std::{sync::Arc, time::Duration};
-use tracing::info;
+use tracing::{info, warn};
 
 /// The `Proxy` service: sender authentication and load-balancing in front of the endpoints.
 pub struct Proxy {
@@ -57,11 +55,7 @@ impl Proxy {
         endpoint_balancer.parallel_health_check = true;
         let endpoint_balancer = Arc::new(endpoint_balancer);
 
-        let state = health::State::new(
-            config.bind_address,
-            Arc::clone(&endpoint_balancer),
-            config.healthcheck_timeout,
-        )?;
+        let state = health::State::new(&config, Arc::clone(&endpoint_balancer))?;
         let domain = fhevm_sig_auth::domain(
             config.ethereum_chain_id,
             config.protocol_config_contract.address,
@@ -107,15 +101,12 @@ impl Proxy {
         server.bootstrap();
 
         let listen_addr = self.config.bind_address.to_string();
-        let tls_config = &self.config.tls_config;
-        let cert_path = path_to_str(&tls_config.cert_path)?;
-        let key_path = path_to_str(&tls_config.key_path)?;
-        let tls = TlsSettings::intermediate(cert_path, key_path)
-            .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
-        // OpenSSL silently drops a private key that does not match the certificate loaded after
-        // it, so check their consistency explicitly to fail fast.
-        tls.check_private_key()
-            .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
+        let tls = self
+            .config
+            .tls_config
+            .as_ref()
+            .map(tls_settings)
+            .transpose()?;
 
         let endpoint_health_service = GenBackgroundService::new(
             "BG endpoint health check".to_string(),
@@ -126,12 +117,33 @@ impl Proxy {
         let service_name = self.config.service_name.clone();
         let mut proxy_service =
             http_proxy_service_with_name(&server.configuration, self, &service_name);
-        proxy_service.add_tls_with_settings(&listen_addr, None, tls);
+        match tls {
+            Some(tls) => {
+                proxy_service.add_tls_with_settings(&listen_addr, None, tls);
+                info!("Proxy will listen at: https://{listen_addr}");
+            }
+            None => {
+                proxy_service.add_tcp(&listen_addr);
+                warn!("TLS is disabled, proxy will listen at: http://{listen_addr}");
+            }
+        }
         server.add_service(proxy_service);
-        info!("Proxy will listen at: https://{listen_addr}");
 
         Ok(server)
     }
+}
+
+/// Loads the TLS material served by the proxy.
+fn tls_settings(tls_config: &TlsConfig) -> anyhow::Result<TlsSettings> {
+    let cert_path = path_to_str(&tls_config.cert_path)?;
+    let key_path = path_to_str(&tls_config.key_path)?;
+    let tls = TlsSettings::intermediate(cert_path, key_path)
+        .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
+    // OpenSSL silently drops a private key that does not match the certificate loaded after
+    // it, so check their consistency explicitly to fail fast.
+    tls.check_private_key()
+        .map_err(|e| anyhow!("Failed to configure TLS: {e}"))?;
+    Ok(tls)
 }
 
 fn path_to_str(path: &std::path::Path) -> anyhow::Result<&str> {
@@ -180,10 +192,10 @@ mod tests {
     fn build_server_rejects_invalid_tls_material(#[case] overwrite: &str, #[case] content: String) {
         let dir = tls_dir(overwrite, &content);
         let config = Config {
-            tls_config: TlsConfig {
+            tls_config: Some(TlsConfig {
                 cert_path: dir.join("tls.crt"),
                 key_path: dir.join("tls.key"),
-            },
+            }),
             endpoint_addresses: vec!["127.0.0.1:1".parse().unwrap()],
             ..Config::default()
         };

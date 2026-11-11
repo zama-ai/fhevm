@@ -24,14 +24,25 @@ use super::config::{
 };
 use super::signer::RequestSigner;
 use super::signer::tests::test_signer;
+use crate::metrics::Metrics;
+
+/// The v2 `extraData` of the api vectors: `0x02` + context id + epoch id.
+/// The same literal is repeated inside `USER_REQUEST_JSON` and `PUBLIC_REQUEST_JSON` (a const string cannot be
+/// interpolated): keep the three in sync. The mock connector echoes the request's `extraData`, so responses carry it too.
+pub const EXTRA_DATA_V2: &str = "0x0207000000000000000000000000000000000000000000000000000000000000010800000000000000000000000000000000000000000000000000000000000001";
 
 /// From `kms-connector/crates/api/tests/vectors.json`.
-pub const USER_REQUEST_JSON: &str = r#"{"attestationType":"eip712-unified-user-decrypt-v1","payload":{"handles":[{"handle":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","contractAddress":"0x3333333333333333333333333333333333333333","ownerAddress":"0x4444444444444444444444444444444444444444"}],"userAddress":"0x5555555555555555555555555555555555555555","publicKey":"0x20002000","allowedContracts":["0x3333333333333333333333333333333333333333"],"requestValidity":{"startTimestamp":1770000000,"durationSeconds":300},"extraData":"0x00"},"signature":"0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"}"#;
+pub const USER_REQUEST_JSON: &str = r#"{"attestationType":"eip712-unified-user-decrypt-v1","payload":{"handles":[{"handle":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","contractAddress":"0x3333333333333333333333333333333333333333","ownerAddress":"0x4444444444444444444444444444444444444444"}],"userAddress":"0x5555555555555555555555555555555555555555","publicKey":"0x20002000","allowedContracts":["0x3333333333333333333333333333333333333333"],"requestValidity":{"startTimestamp":1770000000,"durationSeconds":300},"extraData":"0x0207000000000000000000000000000000000000000000000000000000000000010800000000000000000000000000000000000000000000000000000000000001"},"signature":"0x6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666"}"#;
 pub const USER_REQUEST_ID: B256 =
-    b256!("0x87d71ab4145107e91e1ac6f1e1766739e2b231cd5d04323f40f1803417a95243");
-pub const PUBLIC_REQUEST_JSON: &str = r#"{"ctHandles":["0x1111111111111111111111111111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222222222222222222222222222"],"extraData":"0x00"}"#;
+    b256!("0xad268e528bdbb84d96b30ac754fa4c4b34d9c0e00095d679a4684b8355e306c5");
+pub const PUBLIC_REQUEST_JSON: &str = r#"{"ctHandles":["0x1111111111111111111111111111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222222222222222222222222222"],"extraData":"0x0207000000000000000000000000000000000000000000000000000000000000010800000000000000000000000000000000000000000000000000000000000001"}"#;
 pub const PUBLIC_REQUEST_ID: B256 =
-    b256!("0xaaa2956d918458882642374b5ef6fc9117ee708e1930c84510faa0e4afa018b8");
+    b256!("0x150e8fbf5cc4ccbe3152aaabf1a2dc8fbf532e19ba9ff1cdfe69b522b53a1e8b");
+
+/// `EXTRA_DATA_V2` as bytes.
+pub fn extra_data_v2() -> AlloyBytes {
+    EXTRA_DATA_V2.parse().expect("mock: EXTRA_DATA_V2 is hex")
+}
 
 /// A YAML string is either one of our fixed replies or a connector error code (`acl_denied`, `rate_limited`, …).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -58,6 +69,8 @@ pub enum Fixed {
     Hang,
     /// Connection refused.
     Refused,
+    /// The node's task panics.
+    Panic,
     /// `429` with a plain-text body: a rate limit answered in front of the connector (ingress, a future proxy limit).
     BareRateLimited,
 }
@@ -136,7 +149,8 @@ impl MockClient {
         signer: Arc<RequestSigner>,
     ) -> Arc<Caller> {
         let cfg = Self::config(self.scripts.len(), timeout, max_retries);
-        Arc::new(Caller::new(&cfg, self, signer).unwrap())
+        let metrics = Arc::new(Metrics::new().unwrap());
+        Arc::new(Caller::new(&cfg, self, signer, metrics).unwrap())
     }
 }
 
@@ -169,6 +183,7 @@ impl ConnectorClient for MockClient {
         sleep(self.delay).await;
         match reply {
             Reply::Fixed(Fixed::Hang) => std::future::pending().await,
+            Reply::Fixed(Fixed::Panic) => panic!("mock: the node task panics"),
             Reply::Fixed(Fixed::Refused) => Err(AttemptError::Transport(
                 "mock: connection refused".to_owned(),
             )),
@@ -291,7 +306,7 @@ mod tests {
         assert_eq!(response.decryption_id, PUBLIC_REQUEST_ID);
         assert_eq!(response.signature, signature(2));
         assert_eq!(response.decrypted_result, result(0));
-        assert_eq!(response.extra_data.as_ref(), &[0u8]);
+        assert_eq!(response.extra_data, extra_data_v2());
 
         let divergent = ok_reply(
             PUBLIC_DECRYPTION_ROUTE,

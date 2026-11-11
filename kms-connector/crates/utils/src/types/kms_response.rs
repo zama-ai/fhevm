@@ -244,6 +244,8 @@ impl KmsResponseKind {
 ///
 /// The `signatures` list is the source of truth. The deprecated `external_signature` field is
 /// only used as a fallback for KMS Cores that predate the multi-scheme `signatures` list.
+// TODO: reuse for the single epoch-level EIP-712 signature once the KMS Core returns it.
+#[allow(dead_code)]
 fn ecdsa_signature(signatures: Vec<TypedSignature>, legacy: Vec<u8>) -> anyhow::Result<Vec<u8>> {
     match signatures
         .into_iter()
@@ -277,7 +279,6 @@ fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec
             prepKeygenId: preproc_id,
             keyId: key_id,
             keyDigests: key_digests,
-            signature: ecdsa_signature(key.signatures, key.external_signature)?.into(),
         });
     }
 
@@ -289,7 +290,6 @@ fn encode_epoch_result(response: GrpcEpochResultResponse) -> anyhow::Result<(Vec
             crsId: crs_id,
             maxBitLength: U256::from(crs.max_num_bits),
             crsDigest: crs.crs_digest.into(),
-            signature: ecdsa_signature(crs.signatures, crs.external_signature)?.into(),
         });
     }
 

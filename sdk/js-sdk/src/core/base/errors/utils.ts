@@ -5,9 +5,11 @@ export function ensureError(e: unknown): Error {
     return e;
   }
 
-  const message = (e as { message?: string }).message ?? 'Non-Error value caught in exception handler';
-  const name = (e as { name?: string }).name ?? 'ErrorWrapper';
-  const cause = (e as { cause: unknown }).cause ?? e;
+  // null and undefined have no properties to read: wrap them like any other primitive.
+  const shaped = (e ?? {}) as { message?: string; name?: string; cause?: unknown };
+  const message = shaped.message ?? 'Non-Error value caught in exception handler';
+  const name = shaped.name ?? 'ErrorWrapper';
+  const cause = shaped.cause ?? e;
 
   const err = new Error(message, { cause });
   err.name = name;

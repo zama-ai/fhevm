@@ -19,12 +19,18 @@ pub mod config;
 pub mod endpoint;
 pub mod kms_aggregator;
 pub mod logging;
+pub mod metrics;
+#[cfg(test)]
+mod monitoring;
+#[cfg(test)]
+mod reference;
 
 use std::sync::Arc;
 
 use tokio_util::sync::CancellationToken;
 
 use crate::config::{HttpConfig, RelayerConfig};
+use crate::metrics::Metrics;
 use kms_aggregator::{
     Aggregator, Caller, ConfigError, HttpClient, PublicDecrypt, RequestSigner, UserDecrypt,
 };
@@ -37,7 +43,10 @@ pub struct App {
     pub public_decrypt: Arc<Aggregator<PublicDecrypt>>,
     /// Bind address, body limit, supported chain ids.
     pub http: Arc<HttpConfig>,
-    /// Cancelled on SIGINT/SIGTERM: `/healthz` answers 503 and every running aggregation ends.
+    /// The one registry of the process, served on `metrics.endpoint`.
+    pub metrics: Arc<Metrics>,
+    /// Cancelled on SIGINT/SIGTERM: `/healthz` answers 503 and the server stops accepting. Running requests are
+    /// not cut: they drain to their own end.
     pub shutdown: CancellationToken,
 }
 
@@ -51,21 +60,17 @@ impl App {
         let client = Arc::new(HttpClient::new(kms)?);
         let signer = Arc::new(RequestSigner::from_config(&kms.auth).await?);
         tracing::info!(address = %signer.address(), "FhevmSig signer loaded");
-        let caller = Arc::new(Caller::new(kms, client, signer)?);
+        let metrics = Arc::new(Metrics::new().map_err(|e| ConfigError(format!("metrics: {e}")))?);
+        let caller = Arc::new(Caller::new(kms, client, signer, metrics.clone())?);
         Ok(Self {
             user_decrypt: Arc::new(Aggregator::new(
                 caller.clone(),
                 kms.user_decrypt.threshold,
                 kms.user_decrypt.checks,
-                shutdown.clone(),
             )),
-            public_decrypt: Arc::new(Aggregator::new(
-                caller,
-                kms.public_decrypt.threshold,
-                (),
-                shutdown.clone(),
-            )),
+            public_decrypt: Arc::new(Aggregator::new(caller, kms.public_decrypt.threshold, ())),
             http: Arc::new(config.http.clone()),
+            metrics,
             shutdown,
         })
     }

@@ -1190,6 +1190,24 @@ describe('isRecordBytesHexNo0xProperty', () => {
     expect(isRecordBytesHexNo0xProperty({}, 'foo')).toBe(false);
     expect(isRecordBytesHexNo0xProperty(null, 'foo')).toBe(false);
   });
+
+  // minByteLength: at least that many bytes (2 hex chars per byte); without it, '' stays valid.
+  it('enforces minByteLength', () => {
+    expect(isRecordBytesHexNo0xProperty({ foo: '' }, 'foo', { minByteLength: 1 })).toBe(false);
+    expect(isRecordBytesHexNo0xProperty({ foo: 'ab' }, 'foo', { minByteLength: 1 })).toBe(true);
+    expect(isRecordBytesHexNo0xProperty({ foo: 'ab' }, 'foo', { minByteLength: 2 })).toBe(false);
+    expect(isRecordBytesHexNo0xProperty({ foo: 'abcd' }, 'foo', { minByteLength: 2 })).toBe(true);
+    expect(isRecordBytesHexNo0xProperty({ foo: '' }, 'foo', {})).toBe(true);
+  });
+
+  // byteLength stays exact, and still combines with minByteLength.
+  it('keeps byteLength exact', () => {
+    expect(isRecordBytesHexNo0xProperty({ foo: 'ab'.repeat(65) }, 'foo', { byteLength: 65 })).toBe(true);
+    expect(isRecordBytesHexNo0xProperty({ foo: 'ab'.repeat(64) }, 'foo', { byteLength: 65 })).toBe(false);
+    expect(isRecordBytesHexNo0xProperty({ foo: 'ab'.repeat(65) }, 'foo', { byteLength: 65, minByteLength: 1 })).toBe(
+      true,
+    );
+  });
 });
 
 describe('assertRecordBytesHexNo0xProperty', () => {
@@ -1211,6 +1229,22 @@ describe('assertRecordBytesHexNo0xProperty', () => {
       ),
     );
     expect(() => assertRecordBytesHexNo0xProperty({}, 'foo', 'Obj', {})).toThrow(InvalidPropertyError);
+  });
+
+  // minByteLength: an empty value is rejected, and the error names the minimum.
+  it('throws below minByteLength, naming the minimum', () => {
+    expect(() => assertRecordBytesHexNo0xProperty({ foo: 'ab' }, 'foo', 'Obj', { minByteLength: 1 })).not.toThrow();
+    expect(() => assertRecordBytesHexNo0xProperty({ foo: '' }, 'foo', 'Obj', { minByteLength: 1 })).toThrow(
+      new InvalidPropertyError(
+        {
+          subject: 'Obj',
+          property: 'foo',
+          expectedType: 'bytesHexNo0x (min 1 bytes)',
+          type: 'string',
+        },
+        {},
+      ),
+    );
   });
 });
 
@@ -1257,6 +1291,21 @@ describe('assertRecordBytesHexNo0xArrayProperty', () => {
         {},
       ),
     );
+  });
+
+  it('accepts items of exactly byteLength bytes', () => {
+    expect(() =>
+      assertRecordBytesHexNo0xArrayProperty({ foo: ['ab'.repeat(65)] }, 'foo', 'Obj', { byteLength: 65 }),
+    ).not.toThrow();
+  });
+
+  // Bug: byteLength is ignored; an item of any length passes.
+  it('throws for an item that is not byteLength bytes', () => {
+    expect(() =>
+      assertRecordBytesHexNo0xArrayProperty({ foo: ['ab'.repeat(65), 'ab'.repeat(64)] }, 'foo', 'Obj', {
+        byteLength: 65,
+      }),
+    ).toThrow(InvalidPropertyError);
   });
 });
 

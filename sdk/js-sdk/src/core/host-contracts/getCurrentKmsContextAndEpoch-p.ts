@@ -1,9 +1,7 @@
 import type { ChecksummedAddress, Uint256BigInt } from '../types/primitives.js';
 import type { FhevmRuntime } from '../types/coreFhevmRuntime.js';
-import type { FhevmClientFrozenContext } from '../types/fhevmClientFrozenContext-p.js';
 import { getCurrentKmsContextAndEpochAbi } from './abi-fragments/fragments.js';
 import { getTrustedClient } from '../runtime/CoreFhevm-p.js';
-import { isVersionStrictlyBefore } from './HostContractVersion-p.js';
 import { assertIsUint256 } from '../base/uint.js';
 import { CACHE_TTL_15MIN, createCachedFetch } from '../base/cachedFetch.js';
 
@@ -16,7 +14,6 @@ type Context = {
 
 type Parameters = {
   readonly protocolConfigAddress: ChecksummedAddress;
-  readonly fhevmContext: FhevmClientFrozenContext;
 };
 
 type ReturnType = { readonly contextId: Uint256BigInt; readonly epochId: Uint256BigInt };
@@ -33,8 +30,6 @@ const cachedGetCurrentKmsContextAndEpoch = createCachedFetch<Context, Parameters
 /**
  * Reads the current KMS context ID and epoch ID from a ProtocolConfig contract.
  *
- * Requires ProtocolConfig >= v0.2.0 (protocol v0.14.0) or any ProtocolConfigReplica.
- *
  * Results are cached per (runtime, address) with a 24-hour TTL.
  * Concurrent callers share a single in-flight RPC request (deduplication).
  *
@@ -50,18 +45,6 @@ export function getCurrentKmsContextAndEpoch(
 }
 
 async function _getCurrentKmsContextAndEpoch(context: Context, parameters: Parameters): Promise<ReturnType> {
-  const protocolConfigVersion = parameters.fhevmContext.hostContractVersion('ProtocolConfig');
-
-  // getCurrentKmsContextAndEpoch requires ProtocolConfig >= v0.2.0 (protocol v0.14.0)
-  if (
-    protocolConfigVersion.contractName !== 'ProtocolConfigReplica' &&
-    isVersionStrictlyBefore(protocolConfigVersion, { major: 0, minor: 2 })
-  ) {
-    throw new Error(
-      'ProtocolConfig.getCurrentKmsContextAndEpoch() requires ProtocolConfig >= v0.2.0 (protocol v0.14.0)',
-    );
-  }
-
   const trustedClient = getTrustedClient(context);
 
   const res = await context.runtime.ethereum.readContract(trustedClient, {

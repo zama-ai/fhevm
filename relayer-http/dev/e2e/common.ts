@@ -9,6 +9,8 @@ import { getSigners, initSigners } from '../../test/signers';
 
 if (!process.env.RELAYER_HTTP_URL) throw new Error('RELAYER_HTTP_URL is not set: run the flow through make (dev/scripts/e2e.sh)');
 export const RELAYER = process.env.RELAYER_HTTP_URL.replace(/\/$/, '');
+/** Where /healthz is checked: the stack's relayer-http when RELAYER is the relayer proxy, which routes only /v2-/v4. */
+const HEALTH = (process.env.RELAYER_HTTP_HEALTH_URL ?? RELAYER).replace(/\/$/, '');
 const TIMEOUT_MS = 120_000;
 
 /** v2 extraData for the current KMS context and epoch, read from ProtocolConfig (the connectors reject v0). */
@@ -62,8 +64,8 @@ export async function postUntilSettled<T>(route: string, body: unknown): Promise
 /** The relayer must be ready before a flow starts. */
 export async function requireRelayer(): Promise<void> {
   try {
-    const health = await fetch(`${RELAYER}/healthz`, { signal: AbortSignal.timeout(5_000) });
-    console.log(`GET ${RELAYER}/healthz -> ${health.status} ${await health.text()}`);
+    const health = await fetch(`${HEALTH}/healthz`, { signal: AbortSignal.timeout(5_000) });
+    console.log(`GET ${HEALTH}/healthz -> ${health.status} ${await health.text()}`);
     if (health.status === 200) return;
   } catch (e) {
     console.error(`relayer unreachable at ${RELAYER}: ${(e as Error).message}`);

@@ -360,7 +360,7 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     // bridge_handle_events, delegate_user_decrypt, drift_revert_signal) have moved
     // to the duplicated sections above. What is left is deliberately shared: config
     // (tenants/host_chains/keys/crs), the control-plane rows
-    // (upgrade_state/versioning), and the deprecated input_blobs.
+    // (upgrade_state/versioning), the PRF endpoint pads, and the deprecated input_blobs.
     // ---------------------------------------------------------------------
     // Control plane — the blue-green FSM's own coordination state; MUST stay
     // shared and single-copy across both stacks.
@@ -382,6 +382,13 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     },
     CoprocessorTable {
         name: "listener_replay_state",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    // Blue and Green share a logical consumer and catchup stream. Keep command
+    // leases, request IDs and cancellation intent shared across both stacks.
+    CoprocessorTable {
+        name: "host_consumer_catchups",
         duplicated: false,
         conflict_cols: &[],
     },
@@ -430,6 +437,12 @@ pub const COPROCESSOR_TABLES: &[CoprocessorTable] = &[
     // manifests against the same observed GatewayConfig state.
     CoprocessorTable {
         name: "gateway_config_coprocessors",
+        duplicated: false,
+        conflict_cols: &[],
+    },
+    // Both stacks share the PRF endpoint pads.
+    CoprocessorTable {
+        name: "pads",
         duplicated: false,
         conflict_cols: &[],
     },

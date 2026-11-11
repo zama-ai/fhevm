@@ -107,7 +107,9 @@ export const DEFAULT_POSTGRES_PASSWORD = "postgres";
 export const DEFAULT_POSTGRES_DB = "coprocessor";
 /** Host port of relayer-http (in-stack `fhevm-relayer-http`). */
 export const RELAYER_HTTP_PORT = 3002;
-export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, OBJECT_STORE_PORT, 9001, RELAYER_HTTP_PORT];
+/** Host port of the relayer proxy (in-stack `fhevm-relayer-proxy`): /v2, /v3 → relayer, /v4 → relayer-http. */
+export const RELAYER_PROXY_PORT = 3003;
+export const PORTS = [3000, 3001, POSTGRES_PORT, 5433, DEFAULT_HOST_RPC_PORT, DEFAULT_GATEWAY_RPC_PORT, DEFAULT_EXTRA_HOST_RPC_PORT, OBJECT_STORE_PORT, 9001, RELAYER_HTTP_PORT, RELAYER_PROXY_PORT];
 export const OBJECT_STORE_INTERNAL_URL = `http://object-store:${OBJECT_STORE_PORT}`;
 /**
  * Per-operator alias for the one object store. Every alias reaches the same
@@ -157,6 +159,12 @@ export const COMPONENTS = [
   "test-suite",
 ] as const;
 
+/**
+ * Compose components with no env template or generated config (static config only). They have a
+ * compose file and a step, but no entry in COMPONENTS, which drives env generation.
+ */
+export const STATIC_COMPONENTS = ["relayer-proxy"] as const;
+
 export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "preflight": [],
   "resolve": [],
@@ -175,6 +183,7 @@ export const COMPONENT_BY_STEP: Record<StepName, string[]> = {
   "bootstrap": ["gateway-sc", "host-sc"],
   "relayer": ["relayer"],
   "relayer-http": ["relayer-http"],
+  "relayer-proxy": ["relayer-proxy"],
   "test-suite": ["test-suite"],
 };
 
@@ -210,6 +219,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "coprocessor-consensus-detector",
     "coprocessor-upgrade-controller",
     "coprocessor-proxy",
+    "coprocessor-prf-service",
   ],
   "kms-connector": [
     "kms-connector-db-migration",
@@ -269,11 +279,10 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
 export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
 
 /**
- * The coprocessor services `runsCoprocessorProxy` gates as a pair: the proxy and the fake
- * prf-service it forwards to, in start order. The fake runs the test-suite image, so it is not a
- * coprocessor build service.
+ * The services that `runsCoprocessorProxy` gates, in start order: the PRF output seeder and the proxy.
+ * The seeder runs the test-suite image, so it is not a coprocessor build service.
  */
-export const COPROCESSOR_PROXY_SUFFIXES = ["prf-service-fake", "proxy"];
+export const COPROCESSOR_PROXY_SUFFIXES = ["prf-output-seed", "proxy"];
 
 /**
  * The env file of coprocessor `index`'s proxy. It holds only the proxy's own settings: the

@@ -1,0 +1,21 @@
+{{- if .Values.prfService.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: coprocessor-prf-service
+    app.kubernetes.io/name: {{ include "prfServiceName" . }}
+  name: {{ include "prfServiceName" . }}
+spec:
+  ports:
+    {{- range $portName, $portValue := .Values.prfService.ports }}
+    - name: {{ $portName }}
+      port: {{ $portValue }}
+      targetPort: {{ $portName }}
+    {{- end }}
+  selector:
+    app: coprocessor-prf-service
+    app.kubernetes.io/name: {{ include "prfServiceName" . }}
+    {{- include "coprocessor.extraSelectorLabels" . | nindent 4 }}
+  type: ClusterIP
+{{- end }}

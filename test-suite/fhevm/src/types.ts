@@ -16,6 +16,7 @@ export const STEP_NAMES = [
   "bootstrap",
   "relayer",
   "relayer-http",
+  "relayer-proxy",
   "test-suite",
 ] as const;
 
@@ -319,4 +320,6 @@ export type TestOptions = {
   verbose: boolean;
   noHardhatCompile: boolean;
   parallel?: boolean;
+  /** Decrypt through relayer-http (/v4, via fhevm-relayer-proxy): sets E2E_TEST_SUITE_DECRYPT_WITHOUT_GATEWAY=true in the test container. */
+  decryptWithoutGateway?: boolean;
 };
