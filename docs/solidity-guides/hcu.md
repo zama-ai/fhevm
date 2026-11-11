@@ -64,6 +64,8 @@ A quota admin can add contracts only while the default quota is stopped (`Defaul
 
 Governance can set a capacity for the whole chain with `setCapacity(maxHCU, decayPerBlock)`: the HCU load the coprocessors absorb, and how much of it they drain per block. Every FHE operation adds its HCU to this load, whatever its quota, including a quota that is not metered. The load decays like a quota's usage. A maximum of `type(uint48).max` leaves the capacity off.
 
+Governance can also name a capacity operator with `setCapacityOperator(operator, minScaleBps, maxStepBps, stepBlocks)`: an address that watches the coprocessors and calls `adjustCapacity(scaleBps)` to scale the capacity, both its maximum and its decay, when several chains peak together. The scale stays between the minimum governance sets and 10,000 basis points, each call moves it by at most `maxStepBps`, and calls are at least `stepBlocks` apart. Lowering the scale lowers every tier's threshold at once. Naming or removing the operator resets the scale to 10,000. The capacity's maximum at the minimum scale must stay at least `maxHCUPerTx`, so that Reserved can always run a full transaction: `setCapacity`, `setCapacityOperator` and `setMaxHCUPerTx` refuse a value that breaks this with `InvalidCapacity`.
+
 Each quota belongs to a tier: Reserved (tier 0), Standard (tier 1), Basic (tier 2), and one spare (tier 3). A quota is in Reserved until governance moves it with `setQuotaTier(quotaId, tier)`. Reserved's threshold is fixed at 10,000 basis points, the full capacity. Governance sets the threshold of each lower tier with `setTier(tier, maxLoadBps)`, in basis points of the capacity's maximum. A threshold is never above the tier above's, nor below the tier below's. Thresholds apply only while the capacity is on.
 
 Thresholds nest. Each tier has a meter that counts the load of that tier and every tier below it, and its threshold caps that meter. An operation adds its HCU to the meter of its own tier and of every tier above it, and is refused when any of those meters would pass its threshold. Load from a higher tier never counts against a lower tier's threshold. For example, with Standard at 9,000 and Basic at 5,000:
@@ -82,7 +84,7 @@ If you hit `HCUTierStopped(account, quotaId)`, your quota's tier admits no load:
 
 The checks run in this order: `HCUQuotaPaused`, `HCUQuotaStopped`, `HCUTierStopped`, then `HCUQuotaExceeded` or `HCUChainLoadTooHigh`, then the per-transaction limits and the depth across transactions.
 
-You can read the capacity and the chain's load, which is Reserved's meter, with `getCapacity()`, a tier's threshold and meter with `getTier(tier)`, and a quota's tier with `getQuotaTier(quotaId)`.
+You can read the capacity, the scale in force and the chain's load, which is Reserved's meter, with `getCapacity()`, the capacity operator with `HCUConfigurator.getCapacityOperator()`, a tier's threshold and meter with `getTier(tier)`, and a quota's tier with `getQuotaTier(quotaId)`.
 
 ### Depth across transactions
 

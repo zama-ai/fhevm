@@ -28,6 +28,7 @@ contract HCULimitInvariantHandler is Test {
     uint48 internal constant NO_CAP = type(uint48).max;
     uint256 internal constant MAX_BPS = 10_000;
     uint256 internal constant CAST_HCU = 32;
+    uint48 internal constant MAX_HCU_PER_TX = 1_000_000;
 
     uint256 internal resultNonce = 1;
     bool public uncappedViolation;
@@ -45,6 +46,8 @@ contract HCULimitInvariantHandler is Test {
         fhevmExecutor = _hcuLimit.getFHEVMExecutorAddress();
 
         vm.startPrank(owner);
+        // Reserved must fit a full transaction, so capacities can be small only with a small maxHCUPerTx.
+        hcuConfigurator.setMaxHCUPerTx(MAX_HCU_PER_TX);
         hcuConfigurator.setQuota(UNCAPPED_QUOTA, type(uint48).max, type(uint48).max);
         hcuConfigurator.assignQuota(UNCAPPED_QUOTA, UNCAPPED_CALLER);
         hcuConfigurator.setTier(1, 5_000);
@@ -91,12 +94,17 @@ contract HCULimitInvariantHandler is Test {
         hcuConfigurator.setQuota(DEFAULT_QUOTA, maxHCU, decayPerBlock);
     }
 
-    /// @dev A fuzzed maximum of 0 leaves the capacity unmetered; otherwise it drains a quarter of its maximum per block,
-    ///      so a burst can pass a threshold. Tier 1 holds the uncapped quota.
+    /// @dev A fuzzed maximum of 0 leaves the capacity unmetered; otherwise it is at least maxHCUPerTx, which Reserved
+    ///      must fit, and drains a quarter of its maximum per block, so a burst can pass a threshold. Tier 1 holds the
+    ///      uncapped quota.
     function setCapacityAndTier(uint48 maxHCU, uint16 tierBps) external {
         vm.startPrank(owner);
-        if (maxHCU == 0) hcuConfigurator.setCapacity(NO_CAP, NO_CAP);
-        else hcuConfigurator.setCapacity(maxHCU, maxHCU / 4 + 1);
+        if (maxHCU == 0) {
+            hcuConfigurator.setCapacity(NO_CAP, NO_CAP);
+        } else {
+            maxHCU = uint48(bound(uint256(maxHCU), MAX_HCU_PER_TX, uint256(NO_CAP) - 1));
+            hcuConfigurator.setCapacity(maxHCU, maxHCU / 4 + 1);
+        }
         hcuConfigurator.setTier(1, uint16(bound(uint256(tierBps), 0, MAX_BPS)));
         vm.stopPrank();
     }
@@ -141,13 +149,13 @@ contract HCULimitInvariantHandler is Test {
         bool paused = hcuLimit.isQuotaPaused(quotaId);
         bool inDefault = quotaId == DEFAULT_QUOTA;
         (, , uint48 beforeUsedHCU) = hcuLimit.getQuota(DEFAULT_QUOTA);
-        (uint48 capacityMax, , uint48 loadBefore) = hcuLimit.getCapacity();
+        (uint48 capacityMax, , , uint48 loadBefore) = hcuLimit.getCapacity();
         // With the capacity metered, the chain's load can refuse an uncapped quota too.
         bool neverRefused = quotaId == UNCAPPED_QUOTA && !paused && capacityMax == NO_CAP;
         uint256 successes = _castBurst(caller, ops, neverRefused, hcuLimit.getQuotaTier(quotaId), capacityMax);
 
         // Every admitted operation charges the capacity, whatever its quota, and a refused one charges nothing.
-        (, , uint48 loadAfter) = hcuLimit.getCapacity();
+        (, , , uint48 loadAfter) = hcuLimit.getCapacity();
         // While the capacity is unmetered nothing is charged, and getCapacity keeps showing the last stored load.
         uint256 expectedLoad = capacityMax == NO_CAP ? loadBefore : loadBefore + successes * CAST_HCU;
         if (loadAfter != expectedLoad) {

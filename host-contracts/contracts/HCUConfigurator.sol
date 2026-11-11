@@ -7,7 +7,7 @@ import {aclAdd, hcuLimitAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "./ACL.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {HCULimit} from "./HCULimit.sol";
-import {BLOCK_WHITELIST_QUOTA, DEFAULT_QUOTA, MAX_TIER, RESERVED_TIER} from "./shared/Constants.sol";
+import {BLOCK_WHITELIST_QUOTA, DEFAULT_QUOTA, MAX_BPS, MAX_TIER, NO_CAP, RESERVED_TIER, hcuScaled} from "./shared/Constants.sol";
 
 /**
  * @title HCUConfigurator
@@ -39,8 +39,19 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     ///         - an admin is set for the default quota.
     error InvalidQuota(uint16 quotaId);
 
-    /// @notice Returned when only one of the capacity's maximum and decay is 0.
+    /// @notice Returned when only one of the capacity's maximum and decay is 0, or when the capacity's maximum at the
+    ///         operator's minimum scale would be below maxHCUPerTx, unless the capacity is unmetered or stopped.
     error InvalidCapacity();
+
+    /// @notice Returned when a capacity operator's minimum scale is 0 or above 10,000.
+    error InvalidMinScale(uint16 minScaleBps);
+
+    /// @notice Returned when `adjustCapacity` is not called by the capacity operator.
+    error NotCapacityOperator(address sender);
+
+    /// @notice Returned when the capacity operator's step is refused: the capacity is unmetered, the scale is below the
+    ///         minimum or above 10,000, the step is too large, or it comes too soon, `retryAfterBlocks` before the next.
+    error CapacityStepRefused(uint16 scaleBps, uint256 retryAfterBlocks);
 
     /// @notice Returned when a threshold is set on Reserved or above MAX_TIER, or would increase with the tier number,
     ///         or when a quota is moved to a tier whose threshold is 0.
@@ -84,6 +95,12 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @param maxHCUPerTx New transaction limit.
     event MaxHCUPerTxSet(uint48 maxHCUPerTx);
 
+    /// @notice Emitted when the capacity scale changes: a step by the capacity operator, or the owner's reset to 10,000.
+    event CapacityScaleSet(uint16 scaleBps, address indexed setBy);
+
+    /// @notice Emitted when the owner names, changes or removes the capacity operator.
+    event CapacityOperatorSet(address indexed operator, uint16 minScaleBps, uint16 maxStepBps, uint32 stepBlocks);
+
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "HCUConfigurator";
 
@@ -103,10 +120,22 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice The contract whose settings this contract changes.
     HCULimit private constant HCU_LIMIT = HCULimit(hcuLimitAdd);
 
+    /// @dev The address that scales the capacity between the owner's minimum and 10,000 basis points, one bounded step
+    ///      at a time, and when it last stepped; 0 lets it step at once.
+    struct CapacityOperator {
+        address account;
+        uint16 minScaleBps;
+        uint16 maxStepBps;
+        uint32 stepBlocks;
+        uint48 lastStepBlock;
+    }
+
     /// @custom:storage-location erc7201:fhevm.storage.HCUConfigurator
     struct HCUConfiguratorStorage {
         /// @notice Address that moves contracts between the default quota and each quota; address(0) when none.
         mapping(uint16 quotaId => address admin) quotaAdmins;
+        /// @notice The capacity operator; account is address(0) when none.
+        CapacityOperator capacityOperator;
     }
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCUConfigurator")) - 1)) & ~bytes32(uint256(0xff))
@@ -156,14 +185,20 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     /**
      * @notice Sets the HCU load the coprocessors absorb on this chain and how much they drain per block. Every
-     *         operation charges this load, whatever its quota. A maximum of type(uint48).max leaves it unmetered;
-     *         (0, 0) stops every operation.
+     *         operation charges this load, whatever its quota. A maximum of type(uint48).max leaves it unmetered and
+     *         resets the capacity scale to 10,000; (0, 0) stops every operation.
+     * @dev The operator cannot step while the capacity is unmetered, so metering resumes at the owner's capacity.
      */
     function setCapacity(uint48 maxHCU, uint48 decayPerBlock) external onlyACLOwner {
         // Same rule as a quota: both 0 stops every operation.
         if ((maxHCU == 0) != (decayPerBlock == 0)) revert InvalidCapacity();
+        _checkReservedFitsATransaction(maxHCU, _minScaleBps(), HCU_LIMIT.getMaxHCUPerTx());
         HCU_LIMIT.setCapacity(maxHCU, decayPerBlock);
         emit CapacitySet(maxHCU, decayPerBlock, msg.sender);
+        if (maxHCU == NO_CAP) {
+            HCU_LIMIT.setCapacityScale(MAX_BPS);
+            emit CapacityScaleSet(MAX_BPS, msg.sender);
+        }
     }
 
     /**
@@ -265,6 +300,8 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
      * @param maxHCUPerTx New transaction limit.
      */
     function setMaxHCUPerTx(uint48 maxHCUPerTx) external onlyACLOwner {
+        (uint48 capacityMax, , , ) = HCU_LIMIT.getCapacity();
+        _checkReservedFitsATransaction(capacityMax, _minScaleBps(), maxHCUPerTx);
         HCU_LIMIT.setTxLimits(maxHCUPerTx, HCU_LIMIT.getMaxHCUDepthPerTx());
         emit MaxHCUPerTxSet(maxHCUPerTx);
     }
@@ -284,6 +321,82 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
         }
         HCU_LIMIT.setCrossTxDepthLimit(maxDepth, decayPerBlock);
         emit CrossTxDepthLimitSet(maxDepth, decayPerBlock);
+    }
+
+    /**
+     * @notice Names the capacity operator, or removes it with address(0), which ignores the other arguments. Either way
+     *         the scale returns to 10,000 and the operator may step at once.
+     * @param minScaleBps Lowest scale the operator can set, above 0 and at most 10,000. The capacity's maximum at this
+     *        scale must stay at least maxHCUPerTx, so that Reserved can always run a full transaction.
+     * @param maxStepBps Largest change of the scale per call.
+     * @param stepBlocks Blocks between two calls.
+     */
+    function setCapacityOperator(
+        address operator,
+        uint16 minScaleBps,
+        uint16 maxStepBps,
+        uint32 stepBlocks
+    ) external onlyACLOwner {
+        if (operator == address(0)) {
+            delete _getHCUConfiguratorStorage().capacityOperator;
+            (minScaleBps, maxStepBps, stepBlocks) = (0, 0, 0);
+        } else {
+            if (minScaleBps == 0 || minScaleBps > MAX_BPS) revert InvalidMinScale(minScaleBps);
+            (uint48 capacityMax, , , ) = HCU_LIMIT.getCapacity();
+            _checkReservedFitsATransaction(capacityMax, minScaleBps, HCU_LIMIT.getMaxHCUPerTx());
+            _getHCUConfiguratorStorage().capacityOperator = CapacityOperator(
+                operator,
+                minScaleBps,
+                maxStepBps,
+                stepBlocks,
+                0
+            );
+        }
+        HCU_LIMIT.setCapacityScale(MAX_BPS);
+        emit CapacityScaleSet(MAX_BPS, msg.sender);
+        emit CapacityOperatorSet(operator, minScaleBps, maxStepBps, stepBlocks);
+    }
+
+    /**
+     * @notice Sets the capacity scale, which multiplies the owner's capacity, both its maximum and its decay. Only while
+     *         the capacity is metered; from the owner's minimum to 10,000 basis points, at most maxStepBps from the
+     *         current scale, and stepBlocks after the last step.
+     */
+    function adjustCapacity(uint16 scaleBps) external {
+        CapacityOperator storage capacityOperator = _getHCUConfiguratorStorage().capacityOperator;
+        if (msg.sender != capacityOperator.account) revert NotCapacityOperator(msg.sender);
+        (uint48 capacityMax, , uint16 currentScaleBps, ) = HCU_LIMIT.getCapacity();
+        uint256 step = scaleBps > currentScaleBps ? scaleBps - currentScaleBps : currentScaleBps - scaleBps;
+        if (
+            capacityMax == NO_CAP ||
+            scaleBps < capacityOperator.minScaleBps ||
+            scaleBps > MAX_BPS ||
+            step > capacityOperator.maxStepBps
+        ) revert CapacityStepRefused(scaleBps, 0);
+        uint256 lastStepBlock = capacityOperator.lastStepBlock;
+        if (lastStepBlock != 0 && block.number < lastStepBlock + capacityOperator.stepBlocks) {
+            revert CapacityStepRefused(scaleBps, lastStepBlock + capacityOperator.stepBlocks - block.number);
+        }
+        capacityOperator.lastStepBlock = uint48(block.number);
+        HCU_LIMIT.setCapacityScale(scaleBps);
+        emit CapacityScaleSet(scaleBps, msg.sender);
+    }
+
+    /**
+     * @notice Returns the capacity operator and its bounds; address(0) when there is none.
+     */
+    function getCapacityOperator()
+        external
+        view
+        returns (address operator, uint16 minScaleBps, uint16 maxStepBps, uint32 stepBlocks)
+    {
+        CapacityOperator storage capacityOperator = _getHCUConfiguratorStorage().capacityOperator;
+        return (
+            capacityOperator.account,
+            capacityOperator.minScaleBps,
+            capacityOperator.maxStepBps,
+            capacityOperator.stepBlocks
+        );
     }
 
     /**
@@ -314,6 +427,19 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
 
     function _maxHCU(uint16 quotaId) private view returns (uint48 maxHCU) {
         (maxHCU, , ) = HCU_LIMIT.getQuota(quotaId);
+    }
+
+    /// @dev The lowest scale the capacity can reach: the operator's minimum, or 10,000 without an operator.
+    function _minScaleBps() private view returns (uint16) {
+        CapacityOperator storage capacityOperator = _getHCUConfiguratorStorage().capacityOperator;
+        return capacityOperator.account == address(0) ? MAX_BPS : capacityOperator.minScaleBps;
+    }
+
+    /// @dev Reserved can always run a full transaction: the capacity's maximum at the lowest scale is at least
+    ///      maxHCUPerTx. An unmetered or stopped capacity is exempt, so the owner can still stop the chain.
+    function _checkReservedFitsATransaction(uint48 capacityMax, uint16 minScaleBps, uint48 maxHCUPerTx) private pure {
+        if (capacityMax == NO_CAP || capacityMax == 0) return;
+        if (hcuScaled(capacityMax, minScaleBps) < maxHCUPerTx) revert InvalidCapacity();
     }
 
     function _maxLoadBps(uint8 tier) private view returns (uint16 maxLoadBps) {

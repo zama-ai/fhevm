@@ -7,7 +7,7 @@ import {aclAdd, hcuConfiguratorAdd} from "../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "./ACL.sol";
 import {ACLOwnable} from "./shared/ACLOwnable.sol";
 import {HCULimitOperators} from "./HCULimitOperators.sol";
-import {ALLOWLIST_QUOTA, BLOCK_WHITELIST_QUOTA, DEFAULT_QUOTA, MAX_BPS, MAX_TIER, RESERVED_TIER} from "./shared/Constants.sol";
+import {ALLOWLIST_QUOTA, BLOCK_WHITELIST_QUOTA, DEFAULT_QUOTA, MAX_BPS, MAX_TIER, NO_CAP, RESERVED_TIER, hcuScaled} from "./shared/Constants.sol";
 
 /**
  * @title HCULimit
@@ -88,9 +88,6 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
 
-    /// @notice A quota or capacity with this maximum is not metered.
-    uint48 private constant NO_CAP = type(uint48).max;
-
     /// @dev Per-handle transient word: bit 255 marks the depths as known, bits 128-254 hold the
     ///      depth carried across transactions and bits 0-127 the depth within this transaction.
     uint256 private constant DEPTH_KNOWN = 1 << 255;
@@ -107,11 +104,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         uint8 tier;
     }
 
-    /// @dev The HCU load the coprocessors absorb on this chain and how much of it they drain per block. Every tier's
-    ///      threshold is a share of maxHCU, and every tier's meter drains at decayPerBlock.
+    /// @dev The HCU load the coprocessors absorb on this chain and how much of it they drain per block, as the owner set
+    ///      them, and the scale the capacity operator applies to both. Every tier's threshold is a share of the scaled
+    ///      maximum, and every tier's meter drains at the scaled decay.
     struct Capacity {
         uint48 maxHCU;
         uint48 decayPerBlock;
+        uint16 scaleBps;
     }
 
     /// @dev Threshold and meter of one tier, in one slot. The meter holds the load of this tier and every tier below it
@@ -199,8 +198,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         uint48 maxHCUPerTx
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         _setQuota(DEFAULT_QUOTA, defaultQuotaHCUPerBlock, defaultQuotaHCUPerBlock);
-        _setCapacity(NO_CAP, NO_CAP);
-        _setTier(RESERVED_TIER, MAX_BPS);
+        _initCapacity();
         _setTxLimits(maxHCUPerTx, maxHCUDepthPerTx);
     }
 
@@ -225,7 +223,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         } else {
             _setQuota(DEFAULT_QUOTA, globalCap, globalCap);
         }
+        _initCapacity();
+    }
+
+    /// @dev The capacity starts unmetered at full scale, and Reserved admits operations until the capacity is full.
+    function _initCapacity() private {
         _setCapacity(NO_CAP, NO_CAP);
+        _setCapacityScale(MAX_BPS);
         _setTier(RESERVED_TIER, MAX_BPS);
     }
 
@@ -256,6 +260,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
 
     function setCapacity(uint48 maxHCU, uint48 decayPerBlock) external onlyHCUConfigurator {
         _setCapacity(maxHCU, decayPerBlock);
+    }
+
+    function setCapacityScale(uint16 scaleBps) external onlyHCUConfigurator {
+        _setCapacityScale(scaleBps);
     }
 
     function setTxLimits(uint48 maxHCUPerTx, uint48 maxHCUDepthPerTx) external onlyHCUConfigurator {
@@ -315,7 +323,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     function _meter(
         uint48 usedHCU,
         uint48 lastBlock,
-        uint48 decayPerBlock,
+        uint256 decayPerBlock,
         uint256 limit,
         uint256 opHCU
     ) private view returns (uint256 used, uint256 retryAfterBlocks) {
@@ -514,23 +522,29 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         HCULimitStorage storage $ = _getHCULimitStorage();
         Capacity memory capacity = $.capacity;
         if (capacity.maxHCU == NO_CAP) return (loads, 0);
+        uint256 maxLoad = hcuScaled(capacity.maxHCU, capacity.scaleBps);
+        uint256 decay = hcuScaled(capacity.decayPerBlock, capacity.scaleBps);
         // Thresholds never increase with the tier number, so the quota's own tier is the first to reach 0.
-        if (_threshold(capacity.maxHCU, $.tiers[tier].maxLoadBps) == 0) revert HCUTierStopped(caller, quotaId);
+        if (_threshold(maxLoad, $.tiers[tier].maxLoadBps) == 0) revert HCUTierStopped(caller, quotaId);
         for (uint8 k = 0; k <= tier; ++k) {
-            Tier storage meter = $.tiers[k];
             uint256 wait;
-            (loads[k], wait) = _meter(
-                meter.usedHCU,
-                meter.lastBlock,
-                capacity.decayPerBlock,
-                _threshold(capacity.maxHCU, meter.maxLoadBps),
-                opHCU
-            );
+            (loads[k], wait) = _tierMeter($.tiers[k], maxLoad, decay, opHCU);
             if (wait > retryAfterBlocks) retryAfterBlocks = wait;
         }
     }
 
-    /// @dev Returns a tier's threshold in HCU: `maxLoadBps` of the capacity's maximum.
+    /// @dev Returns one tier's meter after decay plus `opHCU`, and the blocks of decay before it fits its threshold.
+    ///      Inlined in `_tierLoads`, it runs out of stack slots.
+    function _tierMeter(
+        Tier storage meter,
+        uint256 maxLoad,
+        uint256 decay,
+        uint256 opHCU
+    ) private view returns (uint256 load, uint256 retryAfterBlocks) {
+        return _meter(meter.usedHCU, meter.lastBlock, decay, _threshold(maxLoad, meter.maxLoadBps), opHCU);
+    }
+
+    /// @dev Returns a tier's threshold in HCU: `maxLoadBps` of the capacity's scaled maximum.
     function _threshold(uint256 maxHCU, uint16 maxLoadBps) private pure returns (uint256) {
         return (maxHCU * maxLoadBps) / MAX_BPS;
     }
@@ -581,6 +595,10 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
         Capacity storage capacity = _getHCULimitStorage().capacity;
         capacity.maxHCU = maxHCU;
         capacity.decayPerBlock = decayPerBlock;
+    }
+
+    function _setCapacityScale(uint16 scaleBps) private {
+        _getHCULimitStorage().capacity.scaleBps = scaleBps;
     }
 
     function _setTier(uint8 tier, uint16 maxLoadBps) private {
@@ -654,14 +672,18 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     }
 
     /**
-     * @notice Returns the chain's capacity, its decay per block and the chain's load after decay, which is Reserved's
-     *         meter.
+     * @notice Returns the chain's capacity and its decay per block as the owner set them, the scale in force, and the
+     *         chain's load after decay, which is Reserved's meter.
      */
-    function getCapacity() public view virtual returns (uint48 maxHCU, uint48 decayPerBlock, uint48 usedHCU) {
-        HCULimitStorage storage $ = _getHCULimitStorage();
-        Capacity memory capacity = $.capacity;
+    function getCapacity()
+        public
+        view
+        virtual
+        returns (uint48 maxHCU, uint48 decayPerBlock, uint16 scaleBps, uint48 usedHCU)
+    {
+        Capacity memory capacity = _getHCULimitStorage().capacity;
         (, usedHCU) = getTier(RESERVED_TIER);
-        return (capacity.maxHCU, capacity.decayPerBlock, usedHCU);
+        return (capacity.maxHCU, capacity.decayPerBlock, capacity.scaleBps, usedHCU);
     }
 
     /**
@@ -671,7 +693,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable, HCULimitOperators {
     function getTier(uint8 tier) public view virtual returns (uint16 maxLoadBps, uint48 usedHCU) {
         HCULimitStorage storage $ = _getHCULimitStorage();
         Tier storage meter = $.tiers[tier];
-        return (meter.maxLoadBps, uint48(_decayed(meter.usedHCU, meter.lastBlock, $.capacity.decayPerBlock)));
+        Capacity memory capacity = $.capacity;
+        uint256 decay = hcuScaled(capacity.decayPerBlock, capacity.scaleBps);
+        return (meter.maxLoadBps, uint48(_decayed(meter.usedHCU, meter.lastBlock, decay)));
     }
 
     /**

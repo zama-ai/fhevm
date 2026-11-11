@@ -84,6 +84,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
     address internal constant ALLOWED_BLOCK_WHITELISTED = address(0xC2);
     address internal constant BLOCK_WHITELISTED_ONLY = address(0xC3);
     address internal constant UNKNOWN = address(0xC4);
+    address internal constant CAPACITY_OPERATOR = address(0xE1);
 
     bytes32 mockLHS = bytes32(uint256(int256(-1)));
     bytes32 mockRHS = bytes32(uint256(int256(-2)));
@@ -159,13 +160,14 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
     }
 
     function _expectOnlyHCUConfiguratorChangesTheSettings(address caller) internal {
-        bytes[8] memory calls = [
+        bytes[9] memory calls = [
             abi.encodeCall(HCULimit.setQuota, (3, 1, 1)),
             abi.encodeCall(HCULimit.assignQuota, (3, address(0xBEEF))),
             abi.encodeCall(HCULimit.setQuotaPaused, (3, true)),
             abi.encodeCall(HCULimit.setQuotaTier, (3, 1)),
             abi.encodeCall(HCULimit.setTier, (1, 5_000)),
             abi.encodeCall(HCULimit.setCapacity, (1, 1)),
+            abi.encodeCall(HCULimit.setCapacityScale, (5_000)),
             abi.encodeCall(HCULimit.setTxLimits, (1, 1)),
             abi.encodeCall(HCULimit.setCrossTxDepthLimit, (1, 1))
         ];
@@ -1669,8 +1671,10 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         assertEq(decayPerBlock, 100_000);
         (maxHCU, , ) = hcuLimit.getQuota(ALLOWLIST_QUOTA);
         assertEq(maxHCU, 0);
-        (maxHCU, , ) = hcuLimit.getCapacity();
+        uint16 scaleBps;
+        (maxHCU, , scaleBps, ) = hcuLimit.getCapacity();
         assertEq(maxHCU, type(uint48).max);
+        assertEq(scaleBps, 10_000);
         (uint16 reservedBps, ) = hcuLimit.getTier(0);
         assertEq(reservedBps, 10_000);
     }
@@ -1686,8 +1690,10 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         assertEq(decayPerBlock, 100_000);
         (maxHCU, , ) = hcuLimit.getQuota(BLOCK_WHITELIST_QUOTA);
         assertEq(maxHCU, type(uint48).max);
-        (maxHCU, , ) = hcuLimit.getCapacity();
+        uint16 scaleBps;
+        (maxHCU, , scaleBps, ) = hcuLimit.getCapacity();
         assertEq(maxHCU, type(uint48).max);
+        assertEq(scaleBps, 10_000);
         (uint16 reservedBps, ) = hcuLimit.getTier(0);
         assertEq(reservedBps, 10_000);
     }
@@ -1761,7 +1767,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         _setCapacity(1_000_000, 100_000);
 
         _add(ALLOWED_BLOCK_WHITELISTED, 0x1001);
-        (, , uint48 load) = hcuLimit.getCapacity();
+        (, , , uint48 load) = hcuLimit.getCapacity();
         assertEq(load, 84_000);
     }
 
@@ -1804,8 +1810,9 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
     }
 
     function test_initializeLeavesCapacityUnmeteredAndTheDefaultTierFull() public view {
-        (uint48 maxHCU, , ) = hcuLimit.getCapacity();
+        (uint48 maxHCU, , uint16 scaleBps, ) = hcuLimit.getCapacity();
         assertEq(maxHCU, type(uint48).max);
+        assertEq(scaleBps, 10_000);
         (uint16 reservedBps, ) = hcuLimit.getTier(0);
         assertEq(reservedBps, 10_000);
         assertEq(hcuLimit.getQuotaTier(PARTNER_QUOTA), 0);
@@ -1820,7 +1827,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         _expectChainLoadTooHigh(LOW, LOW_QUOTA, 1, 0x1003);
         // Reserved still has room up to the full capacity.
         _add(HIGH, 0x1004);
-        (, , uint48 load) = hcuLimit.getCapacity();
+        (, , , uint48 load) = hcuLimit.getCapacity();
         assertEq(load, 3 * 84_000);
 
         // Reserved's addition counts against Reserved's threshold only, so tier 1 waits one block, not two.
@@ -1840,7 +1847,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         _add(LOW, 0x1004);
         (, uint48 lowTierLoad) = hcuLimit.getTier(1);
         assertEq(lowTierLoad, 84_000);
-        (, , uint48 load) = hcuLimit.getCapacity();
+        (, , , uint48 load) = hcuLimit.getCapacity();
         assertEq(load, 4 * 84_000);
     }
 
@@ -1889,7 +1896,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         // setUp leaves the default quota unmetered.
         _setCapacity(100_000, 100_000);
         _add(address(0x1234), 0x1001);
-        (, , uint48 load) = hcuLimit.getCapacity();
+        (, , , uint48 load) = hcuLimit.getCapacity();
         assertEq(load, 84_000);
         _expectChainLoadTooHigh(address(0x1234), DEFAULT_QUOTA, 1, 0x1002);
     }
@@ -1908,7 +1915,7 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         vm.roll(block.number + 1);
         _add(HIGH, 0x1004);
         _expectQuotaExceeded(HIGH, HIGH_QUOTA, 1, 0x1005);
-        (, , uint48 load) = hcuLimit.getCapacity();
+        (, , , uint48 load) = hcuLimit.getCapacity();
         assertEq(load, 2 * 84_000 - 100_000 + 84_000);
     }
 
@@ -2012,6 +2019,8 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         hcuConfigurator.setTier(1, 0);
         vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
         hcuConfigurator.setQuotaTier(PARTNER_QUOTA, 0);
+        vm.expectRevert(abi.encodeWithSelector(ACLOwnable.NotHostOwner.selector, pauser));
+        hcuConfigurator.setCapacityOperator(pauser, 5_000, 2_000, 10);
         vm.stopPrank();
     }
 
@@ -2025,6 +2034,139 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         _setQuotaTier(LOW_QUOTA, 1);
         _assign(LOW_QUOTA, LOW);
         _assign(HIGH_QUOTA, HIGH);
+    }
+
+    function test_theCapacityScaleShrinksEveryThresholdAndTheDecay() public {
+        _setUpCapacityOperator(5_000);
+        _adjustCapacity(5_000);
+
+        for (uint256 i = 0; i < 5; ++i) _add(address(0x1234), 0x1001 + i);
+        // 504,000 after the operation against 500,000 at half scale; the meter drains 50,000 per block.
+        _expectChainLoadTooHigh(address(0x1234), DEFAULT_QUOTA, 1, 0x1006);
+        vm.roll(block.number + 1);
+        (, , uint16 scaleBps, uint48 load) = hcuLimit.getCapacity();
+        assertEq(scaleBps, 5_000);
+        assertEq(load, 5 * 84_000 - 50_000);
+    }
+
+    function test_onlyTheCapacityOperatorAdjustsTheCapacity() public {
+        _setUpCapacityOperator(5_000);
+        vm.prank(owner);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.NotCapacityOperator.selector, owner));
+        hcuConfigurator.adjustCapacity(8_000);
+    }
+
+    function test_adjustCapacityStaysWithinItsBounds() public {
+        // Half of the 1,000,000 capacity must still fit a full transaction.
+        _setMaxHCUPerTx(500_000);
+        _setCapacityOperator(CAPACITY_OPERATOR, 5_000, 2_000, 10);
+        vm.startPrank(CAPACITY_OPERATOR);
+        // The capacity is unmetered.
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.CapacityStepRefused.selector, uint16(9_000), 0));
+        hcuConfigurator.adjustCapacity(9_000);
+        vm.stopPrank();
+
+        _setCapacity(1_000_000, 100_000);
+        vm.startPrank(CAPACITY_OPERATOR);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.CapacityStepRefused.selector, uint16(10_001), 0));
+        hcuConfigurator.adjustCapacity(10_001);
+        // A step of 2,001 is one more than the largest step.
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.CapacityStepRefused.selector, uint16(7_999), 0));
+        hcuConfigurator.adjustCapacity(7_999);
+        vm.stopPrank();
+        _adjustCapacity(8_000);
+        vm.roll(block.number + 10);
+        _adjustCapacity(6_000);
+        vm.roll(block.number + 10);
+        vm.prank(CAPACITY_OPERATOR);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.CapacityStepRefused.selector, uint16(4_999), 0));
+        hcuConfigurator.adjustCapacity(4_999);
+    }
+
+    function test_adjustCapacityWaitsStepBlocksBetweenSteps() public {
+        _setUpCapacityOperator(2_000);
+        // A new operator steps at once.
+        _adjustCapacity(8_000);
+        vm.roll(block.number + 3);
+        vm.prank(CAPACITY_OPERATOR);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.CapacityStepRefused.selector, uint16(9_000), 7));
+        hcuConfigurator.adjustCapacity(9_000);
+        vm.roll(block.number + 7);
+        _adjustCapacity(9_000);
+    }
+
+    function test_namingOrRemovingTheOperatorResetsTheScale() public {
+        _setUpCapacityOperator(2_000);
+        _adjustCapacity(8_000);
+
+        _setCapacityOperator(CAPACITY_OPERATOR, 5_000, 2_000, 10);
+        (, , uint16 scaleBps, ) = hcuLimit.getCapacity();
+        assertEq(scaleBps, 10_000);
+        // Renaming lets the operator step at once again.
+        _adjustCapacity(8_000);
+
+        // Removing the operator ignores the other arguments.
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.CapacityOperatorSet(address(0), 0, 0, 0);
+        vm.prank(owner);
+        hcuConfigurator.setCapacityOperator(address(0), 1, 2, 3);
+        (address operator, uint16 minScaleBps, uint16 maxStepBps, uint32 stepBlocks) = hcuConfigurator
+            .getCapacityOperator();
+        assertEq(operator, address(0));
+        assertEq(minScaleBps + maxStepBps + stepBlocks, 0);
+        (, , scaleBps, ) = hcuLimit.getCapacity();
+        assertEq(scaleBps, 10_000);
+        vm.prank(CAPACITY_OPERATOR);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.NotCapacityOperator.selector, CAPACITY_OPERATOR));
+        hcuConfigurator.adjustCapacity(8_000);
+    }
+
+    function test_unmeteringTheCapacityResetsTheScale() public {
+        _setUpCapacityOperator(2_000);
+        _adjustCapacity(8_000);
+        // Retuning a metered capacity keeps the operator's scale.
+        _setCapacity(2_000_000, 100_000);
+        (, , uint16 scaleBps, ) = hcuLimit.getCapacity();
+        assertEq(scaleBps, 8_000);
+
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.CapacityScaleSet(10_000, owner);
+        vm.prank(owner);
+        hcuConfigurator.setCapacity(type(uint48).max, type(uint48).max);
+        _setCapacity(1_000_000, 100_000);
+        (, , scaleBps, ) = hcuLimit.getCapacity();
+        assertEq(scaleBps, 10_000);
+    }
+
+    /// Reserved can always run a full transaction: setUp's maxHCUPerTx is 20,000,000.
+    function test_reservedAlwaysFitsAFullTransaction() public {
+        vm.startPrank(owner);
+        vm.expectRevert(HCUConfigurator.InvalidCapacity.selector);
+        hcuConfigurator.setCapacity(19_999_999, 1);
+        hcuConfigurator.setCapacity(20_000_000, 1);
+        vm.expectRevert(HCUConfigurator.InvalidCapacity.selector);
+        hcuConfigurator.setMaxHCUPerTx(20_000_001);
+        // At half scale, 20,000,000 of capacity holds only 10,000,000.
+        vm.expectRevert(HCUConfigurator.InvalidCapacity.selector);
+        hcuConfigurator.setCapacityOperator(CAPACITY_OPERATOR, 5_000, 2_000, 10);
+        // The bound rounds up as the meters do: half of 39,999,999 is 20,000,000, half of 39,999,998 is 19,999,999.
+        hcuConfigurator.setCapacity(39_999_999, 1);
+        hcuConfigurator.setCapacityOperator(CAPACITY_OPERATOR, 5_000, 2_000, 10);
+        vm.expectRevert(HCUConfigurator.InvalidCapacity.selector);
+        hcuConfigurator.setCapacity(39_999_998, 1);
+        // An unmetered or stopped capacity is exempt, so the owner can still stop the chain.
+        hcuConfigurator.setCapacity(0, 0);
+        hcuConfigurator.setCapacity(type(uint48).max, type(uint48).max);
+        vm.stopPrank();
+    }
+
+    function test_setCapacityOperatorRefusesAMinimumOutsideTheScale() public {
+        vm.startPrank(owner);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidMinScale.selector, 0));
+        hcuConfigurator.setCapacityOperator(CAPACITY_OPERATOR, 0, 2_000, 10);
+        vm.expectRevert(abi.encodeWithSelector(HCUConfigurator.InvalidMinScale.selector, 10_001));
+        hcuConfigurator.setCapacityOperator(CAPACITY_OPERATOR, 10_001, 2_000, 10);
+        vm.stopPrank();
     }
 
     /// @dev RFC 040's example tiers on a capacity of ten additions (840,000 HCU) that barely drains: Standard at 9,000
@@ -2043,11 +2185,52 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         _assign(BASIC_QUOTA, BASIC);
     }
 
+    /// @dev Reserved must fit a full transaction, so a metered capacity below maxHCUPerTx first lowers maxHCUPerTx to it.
     function _setCapacity(uint48 maxHCU, uint48 decayPerBlock) internal {
+        if (maxHCU != 0 && maxHCU != type(uint48).max && maxHCU < hcuLimit.getMaxHCUPerTx()) {
+            _setMaxHCUPerTx(maxHCU);
+        }
         vm.expectEmit(address(hcuConfigurator));
         emit HCUConfigurator.CapacitySet(maxHCU, decayPerBlock, owner);
         vm.prank(owner);
         hcuConfigurator.setCapacity(maxHCU, decayPerBlock);
+    }
+
+    function _setMaxHCUPerTx(uint48 maxHCUPerTx) internal {
+        vm.prank(owner);
+        hcuConfigurator.setMaxHCUPerTx(maxHCUPerTx);
+    }
+
+    function _setCapacityOperator(address operator, uint16 minScaleBps, uint16 maxStepBps, uint32 stepBlocks) internal {
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.CapacityScaleSet(10_000, owner);
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.CapacityOperatorSet(operator, minScaleBps, maxStepBps, stepBlocks);
+        vm.prank(owner);
+        hcuConfigurator.setCapacityOperator(operator, minScaleBps, maxStepBps, stepBlocks);
+        (address account, uint16 minScaleInForce, uint16 maxStepInForce, uint32 stepBlocksInForce) = hcuConfigurator
+            .getCapacityOperator();
+        assertEq(account, operator);
+        assertEq(minScaleInForce, minScaleBps);
+        assertEq(maxStepInForce, maxStepBps);
+        assertEq(stepBlocksInForce, stepBlocks);
+    }
+
+    /// @dev A capacity of 1,000,000 draining 100,000 per block, and an operator that can halve it, ten blocks between
+    ///      steps. Half the capacity must still fit a full transaction, so maxHCUPerTx is 500,000.
+    function _setUpCapacityOperator(uint16 maxStepBps) internal {
+        _setMaxHCUPerTx(500_000);
+        _setCapacity(1_000_000, 100_000);
+        _setCapacityOperator(CAPACITY_OPERATOR, 5_000, maxStepBps, 10);
+    }
+
+    function _adjustCapacity(uint16 scaleBps) internal {
+        vm.expectEmit(address(hcuConfigurator));
+        emit HCUConfigurator.CapacityScaleSet(scaleBps, CAPACITY_OPERATOR);
+        vm.prank(CAPACITY_OPERATOR);
+        hcuConfigurator.adjustCapacity(scaleBps);
+        (, , uint16 scaleInForce, ) = hcuLimit.getCapacity();
+        assertEq(scaleInForce, scaleBps);
     }
 
     function _setTier(uint8 tier, uint16 maxLoadBps) internal {
