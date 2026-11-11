@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-/// @dev Fixture for test/upgrades/storageExceptions.ts: the ACL namespace with the Permission struct of ACL v0.6.
+/// @dev Fixture for test/upgrades/storageExceptions.ts: the ACL namespace with the Permission struct of ACL v0.7.
 contract StructACL {
     struct Permission {
         bool allowed;
