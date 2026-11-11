@@ -227,7 +227,6 @@ spec:
       {{- if eq (include "coprocessor.databaseSslRootCertMountEnabled" $) "true" }}
       {{- include "coprocessor.databaseSslRootCertVolume" $ | nindent 6 }}
       {{- end }}
-{{- if $component.serviceMonitor.enabled }}
 ---
 apiVersion: v1
 kind: Service
@@ -247,6 +246,7 @@ spec:
     prf-instance: {{ int $lane.prfId | quote }}
     {{- include "coprocessor.extraSelectorLabels" $ | nindent 4 }}
   type: ClusterIP
+{{- if $component.serviceMonitor.enabled }}
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
