@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH in_progress AS (\n               SELECT triggered_by, COUNT(*) AS rows\n                 FROM pads\n                WHERE prf_instance = $1 AND signature IS NULL AND NOT is_error\n                  AND claimed_at > NOW() - make_interval(secs => $3)\n                GROUP BY triggered_by\n           )\n           SELECT p.label, p.pad_length\n             FROM pads p\n             LEFT JOIN in_progress i ON i.triggered_by = p.triggered_by\n            WHERE p.prf_instance = $1 AND p.signature IS NULL AND NOT p.is_error\n              AND p.created_at > NOW() - make_interval(secs => $2)\n              AND (p.claimed_at IS NULL OR p.claimed_at <= NOW() - make_interval(secs => $3))\n            ORDER BY COALESCE(i.rows, 0), p.created_at\n            LIMIT 1\n              FOR UPDATE OF p SKIP LOCKED",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "label",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "pad_length",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Float8",
+        "Float8"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4350e4fca841e9c3e817e1138ef7e1c490bb460f29c729f8cb7627d54bbd2a60"
+}
