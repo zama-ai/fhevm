@@ -128,6 +128,9 @@ env:
   # Same host-sc-addresses key the coprocessor's host-listener uses.
   - name: PROTOCOL_CONFIG_CONTRACT_ADDRESS
     valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: protocol_config.address}}
+  # The SDK checks the FHE key and CRS against KMSGeneration.
+  - name: KMS_GENERATION_CONTRACT_ADDRESS
+    valueFrom: {configMapKeyRef: {name: host-sc-addresses, key: kms_generation.address}}
   # Hardhat account #9 (of the "test test ... junk" mnemonic) - the host/ACL owner,
   # needed for HCU-limit owner-restricted tests when run manually via kubectl exec.
   # Must match the host-contracts/trigger-keygen deployer. (The previous value

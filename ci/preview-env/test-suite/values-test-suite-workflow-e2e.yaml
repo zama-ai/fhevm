@@ -443,6 +443,12 @@ additionalResources:
                     configMapKeyRef:
                       name: host-sc-addresses
                       key: protocol_config.address
+                # The SDK checks the FHE key and CRS against KMSGeneration.
+                - name: KMS_GENERATION_CONTRACT_ADDRESS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: host-sc-addresses
+                      key: kms_generation.address
                 # Single DEPLOYER_PRIVATE_KEY for all tests: Hardhat account #9
                 # (0x2a87.../addr 0xa0Ee7A...), which is the host/ACL owner. host-contracts +
                 # trigger-keygen deploy/keygen/crsgen as #9 and #9 STAYS the owner (no
