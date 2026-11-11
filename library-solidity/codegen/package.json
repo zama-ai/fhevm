@@ -24,7 +24,7 @@
     "lint": "eslint --config ./eslint.config.mjs",
     "prettier:check": "prettier --config ./.prettierrc.json --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier:write": "prettier --config ./.prettierrc.json --write \"**/*.{js,json,md,sol,ts,yml}\"",
-    "rebuild": "npm run clean && npm run build",
+    "rebuild": "npm run clean && npm run prettier:check && npm run lint && npm run build",
     "clean": "rm -rf ./dist",
     "build": "tsc --project ./tsconfig.json",
     "tsc": "tsc --project ./tsconfig.json --noEmit",

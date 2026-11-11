@@ -16,9 +16,7 @@ type Test = {
  * Represents a collection of supported functions, where each function is identified
  * by a unique key and associated with its corresponding `SupportedFunction` definition.
  */
-type SupportedFunctions = {
-  [key: string]: SupportedFunction;
-};
+type SupportedFunctions = Record<string, SupportedFunction>;
 
 /**
  * Represents the parameters that can be used to configure supported functions.
@@ -64,14 +62,14 @@ type SupportedFunction = SupportedFunctionParams &
  *   - `inputs`: An array with the adjusted `lhsNumber` and `rhsNumber`.
  *   - `output`: The result of the function `fn` after adjustments.
  */
-const safeEval = (
+function safeEval(
   fn: (lhsNumber: bigint, rhsNumber: bigint, lhs: number, rhs: number) => number | boolean | bigint,
   lhsNumber: bigint,
   rhsNumber: bigint,
   lhs: number,
   rhs: number,
   safeMin: boolean = false,
-) => {
+): { inputs: bigint[]; output: number | boolean | bigint } {
   const bitResults = safeMin ? Math.min(lhs, rhs) : Math.max(lhs, rhs);
   let result = fn(lhsNumber, rhsNumber, lhs, rhs);
 
@@ -83,12 +81,12 @@ const safeEval = (
     }
   }
   return { inputs: [lhsNumber, rhsNumber], output: result };
-};
+}
 
 export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   add: {
     safeMin: true,
-    evalTest: (lhsNumber, rhsNumber) => BigInt(lhsNumber) + BigInt(rhsNumber),
+    evalTest: (lhsNumber, rhsNumber) => lhsNumber + rhsNumber,
   },
   sub: {
     lhsHigher: true,
@@ -96,7 +94,7 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   },
   mul: {
     safeMin: true,
-    evalTest: (lhsNumber, rhsNumber) => BigInt(lhsNumber) * BigInt(rhsNumber),
+    evalTest: (lhsNumber, rhsNumber) => lhsNumber * rhsNumber,
   },
   div: {
     evalTest: (lhsNumber, rhsNumber) => lhsNumber / rhsNumber,
@@ -221,10 +219,10 @@ export const SUPPORTED_FUNCTIONS: SupportedFunctions = {
   },
 };
 
-export type OverloadTests = { [methodName: string]: OverloadTest[] };
+export type OverloadTests = Record<string, OverloadTest[]>;
 
 export type OverloadTest = {
-  inputs: (number | bigint)[];
+  inputs: Array<number | bigint>;
   output: boolean | number | bigint;
 };
 
@@ -241,10 +239,10 @@ export const generateOverloads = (fheTypes: FheTypeInfo[], existingOverloads: Ov
 
     fheTypes.forEach((lhsFheType: FheTypeInfo) => {
       if (lhsFheType.type.startsWith('Uint') && lhsFheType.supportedOperators.includes(functionName)) {
-        if (test.unary) {
+        if (test.unary === true) {
           const lhsBigInt: bigint = generateRandomBigInt(lhsFheType.bitLength);
           const encryptedTestName = [functionName, `e${lhsFheType.type.toLowerCase()}`].join('_');
-          if (existingOverloads[encryptedTestName]) {
+          if (Object.hasOwn(existingOverloads, encryptedTestName)) {
             generatedTests[encryptedTestName] = existingOverloads[encryptedTestName];
           } else {
             const encryptedTests: Test[] = [];
@@ -269,17 +267,17 @@ export const generateOverloads = (fheTypes: FheTypeInfo[], existingOverloads: Ov
               const smallest = findMinimumValueInBigIntArray(lhsBigInt, rhsBigInt);
               const only8bits = test.limit === 'bits' && rhsFheType.bitLength === 8;
 
-              if ((test.limit !== 'bits' || only8bits) && !test.scalarOnly) {
+              if ((test.limit !== 'bits' || only8bits) && test.scalarOnly !== true) {
                 const encryptedTestName = [
                   functionName,
                   `e${lhsFheType.type.toLowerCase()}`,
                   `e${rhsFheType.type.toLowerCase()}`,
                 ].join('_');
-                if (existingOverloads[encryptedTestName]) {
+                if (Object.hasOwn(existingOverloads, encryptedTestName)) {
                   generatedTests[encryptedTestName] = existingOverloads[encryptedTestName];
                 } else {
                   const encryptedTests: Test[] = [];
-                  if (!test.lhsHigher) {
+                  if (test.lhsHigher !== true) {
                     encryptedTests.push(
                       safeEval(
                         test.evalTest,
@@ -325,7 +323,7 @@ export const generateOverloads = (fheTypes: FheTypeInfo[], existingOverloads: Ov
                 }
               }
 
-              const scalarCondition = !test.noScalar && lhsFheType.bitLength === rhsFheType.bitLength;
+              const scalarCondition = test.noScalar !== true && lhsFheType.bitLength === rhsFheType.bitLength;
 
               if (only8bits || (test.limit !== 'bits' && scalarCondition)) {
                 if (test.limit !== 'bits') {
@@ -336,11 +334,11 @@ export const generateOverloads = (fheTypes: FheTypeInfo[], existingOverloads: Ov
                   `e${lhsFheType.type.toLowerCase()}`,
                   `uint${rhsFheType.bitLength}`,
                 ].join('_');
-                if (existingOverloads[encryptedTestName]) {
+                if (Object.hasOwn(existingOverloads, encryptedTestName)) {
                   generatedTests[encryptedTestName] = existingOverloads[encryptedTestName];
                 } else {
                   const encryptedTests: Test[] = [];
-                  if (!test.lhsHigher) {
+                  if (test.lhsHigher !== true) {
                     encryptedTests.push(
                       safeEval(
                         test.evalTest,
@@ -385,18 +383,18 @@ export const generateOverloads = (fheTypes: FheTypeInfo[], existingOverloads: Ov
                   generatedTests[encryptedTestName] = encryptedTests;
                 }
               }
-              if (test.limit !== 'bits' && scalarCondition && !test.scalarOnly) {
+              if (test.limit !== 'bits' && scalarCondition && test.scalarOnly !== true) {
                 lhsBigInt = generateRandomBigInt(bitResults);
                 const encryptedTestName = [
                   functionName,
                   `uint${lhsFheType.bitLength}`,
                   `e${rhsFheType.type.toLowerCase()}`,
                 ].join('_');
-                if (existingOverloads[encryptedTestName]) {
+                if (Object.hasOwn(existingOverloads, encryptedTestName)) {
                   generatedTests[encryptedTestName] = existingOverloads[encryptedTestName];
                 } else {
                   const encryptedTests: Test[] = [];
-                  if (!test.lhsHigher) {
+                  if (test.lhsHigher !== true) {
                     encryptedTests.push(
                       safeEval(
                         test.evalTest,

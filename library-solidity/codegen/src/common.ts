@@ -143,17 +143,17 @@ export enum ArgumentType {
   /**
    * Represents an encrypted boolean argument type.
    */
-  Ebool,
+  Ebool = 0,
 
   /**
    * Represents an encrypted unsigned integer argument type.
    */
-  Euint,
+  Euint = 1,
 
   /**
    * Represents a generic unsigned integer argument type.
    */
-  Uint,
+  Uint = 2,
 }
 
 export type FunctionType = {
@@ -389,14 +389,14 @@ export type Operator = {
  * @property {number} Unary - Represents a unary operator argument.
  */
 export enum OperatorArguments {
-  Binary,
-  Unary,
+  Binary = 0,
+  Unary = 1,
 }
 
 /**
  * Enum representing the possible return types.
  */
 export enum ReturnType {
-  Euint,
-  Ebool,
+  Euint = 0,
+  Ebool = 1,
 }

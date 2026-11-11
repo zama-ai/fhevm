@@ -2,6 +2,32 @@ import { type FheTypeInfo, type Operator, OperatorArguments, ReturnType } from '
 import { ALL_FHE_TYPE_INFOS } from './fheTypeInfos';
 import { ALL_OPERATORS } from './operators';
 
+// Runtime type checks. Values are checked as `unknown`: their static types are not trusted at runtime.
+
+/** `true` for a plain object (not `null`, not an array). */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** `true` for a string that is not empty or whitespace only. */
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+/** `true` for an optional boolean field: absent (`undefined`) or a boolean. */
+function isOptionalBoolean(value: unknown): value is boolean | undefined {
+  return value === undefined || typeof value === 'boolean';
+}
+
+/**
+ * `true` if `value` is one of the values of the numeric enum `enumObject`.
+ * A numeric enum object also maps its values back to their names (e.g. `{ 0: 'Binary', Binary: 0 }`), so only the
+ * numbers are enum values: a name such as `'Binary'` is rejected.
+ */
+function isNumericEnumValue(enumObject: Record<string, string | number>, value: unknown): boolean {
+  return typeof value === 'number' && Object.values(enumObject).includes(value);
+}
+
 /**
  * Validates the FHE (Fully Homomorphic Encryption) types.
  *
@@ -13,9 +39,13 @@ import { ALL_OPERATORS } from './operators';
  * Will throw an error if any FHE type has invalid properties or if duplicate FHE types are found.
  */
 function validateFHETypeInfos(fheTypes: FheTypeInfo[]): void {
-  if (!fheTypes || !Array.isArray(fheTypes) || fheTypes.length === 0) {
+  // Runtime check: the static type is not trusted here, so the check runs on an `unknown` view of the value.
+  // `Array.isArray` also rejects `undefined` and `null`.
+  const fheTypesValue: unknown = fheTypes;
+  if (!Array.isArray(fheTypesValue) || fheTypesValue.length === 0) {
     throw new Error('fheTypes is not defined or invalid');
   }
+
   fheTypes.forEach((fheType) => {
     if (typeof fheType.type !== 'string' || typeof fheType.clearMatchingType !== 'string') {
       throw new Error(`Invalid FHE type: ${JSON.stringify(fheType)}`);
@@ -64,14 +94,14 @@ function validateFHETypeInfos(fheTypes: FheTypeInfo[]): void {
     }
   });
 
-  const nameMap: Record<string, boolean> = {};
+  const seenTypes = new Set<string>();
 
   fheTypes.forEach((fheType) => {
-    if (nameMap[fheType.type] != null) {
+    if (seenTypes.has(fheType.type)) {
       throw new Error(`Duplicate FheType found: ${fheType.type}`);
     }
 
-    nameMap[fheType.type] = true;
+    seenTypes.add(fheType.type);
   });
 }
 
@@ -83,66 +113,84 @@ function validateFHETypeInfos(fheTypes: FheTypeInfo[]): void {
  * @throws Will throw an error if any operator has invalid properties or if duplicate operator names are found.
  */
 function validateOperators(operators: Operator[]): void {
-  if (!operators || !Array.isArray(operators) || operators.length === 0) {
+  const operatorsValue: unknown = operators;
+  if (!Array.isArray(operatorsValue) || operatorsValue.length === 0) {
     throw new Error('Operators is not defined or invalid');
   }
 
-  const nameMap: Record<string, boolean> = {};
+  const names = new Set<string>();
+  // Checked once all the names are known: each must name another operator.
+  const leftScalarInvertOps: Array<{ name: string; invertOp: string }> = [];
 
-  operators.forEach((op) => {
-    if (typeof op.name !== 'string' || op.name.trim() === '') {
+  operatorsValue.forEach((op: unknown) => {
+    if (!isRecord(op)) {
+      throw new Error(`Invalid operator: ${JSON.stringify(op)}`);
+    }
+
+    const name = op.name;
+    if (!isNonEmptyString(name)) {
       throw new Error(`Invalid operator name: ${JSON.stringify(op)}`);
     }
 
-    if (nameMap[op.name] != null) {
-      throw new Error(`Duplicate operator name found: ${op.name}`);
+    if (names.has(name)) {
+      throw new Error(`Duplicate operator name found: ${name}`);
     }
 
     if (typeof op.hasScalar !== 'boolean') {
-      throw new Error(`Invalid hasScalar value for operator: ${op.name}`);
+      throw new Error(`Invalid hasScalar value for operator: ${name}`);
     }
 
     if (typeof op.hasEncrypted !== 'boolean') {
-      throw new Error(`Invalid hasEncrypted value for operator: ${op.name}`);
+      throw new Error(`Invalid hasEncrypted value for operator: ${name}`);
     }
 
-    if (op.arguments === null || !Object.values(OperatorArguments).includes(op.arguments)) {
-      throw new Error(`Invalid arguments for operator: ${op.name}`);
+    if (!isNumericEnumValue(OperatorArguments, op.arguments)) {
+      throw new Error(`Invalid arguments for operator: ${name}`);
     }
 
-    if (op.returnType === null || !Object.values(ReturnType).includes(op.returnType)) {
-      throw new Error(`Invalid returnType for operator: ${op.name}`);
+    if (!isNumericEnumValue(ReturnType, op.returnType)) {
+      throw new Error(`Invalid returnType for operator: ${name}`);
     }
 
-    if (op.leftScalarInvertOp && typeof op.leftScalarInvertOp !== 'string') {
-      throw new Error(`Invalid leftScalarInvertOp for operator: ${op.name}`);
+    const invertOp = op.leftScalarInvertOp;
+    if (invertOp !== undefined) {
+      if (!isNonEmptyString(invertOp)) {
+        throw new Error(`Invalid leftScalarInvertOp for operator: ${name}`);
+      }
+      leftScalarInvertOps.push({ name, invertOp });
     }
 
-    if (op.leftScalarEncrypt != null && typeof op.leftScalarEncrypt !== 'boolean') {
-      throw new Error(`Invalid leftScalarEncrypt value for operator: ${op.name}`);
+    if (!isOptionalBoolean(op.leftScalarEncrypt)) {
+      throw new Error(`Invalid leftScalarEncrypt value for operator: ${name}`);
     }
 
-    if (op.leftScalarDisable != null && typeof op.leftScalarDisable !== 'boolean') {
-      throw new Error(`Invalid leftScalarDisable value for operator: ${op.name}`);
+    if (!isOptionalBoolean(op.leftScalarDisable)) {
+      throw new Error(`Invalid leftScalarDisable value for operator: ${name}`);
     }
 
-    if (typeof op.fheLibName !== 'string' || op.fheLibName.trim() === '') {
-      throw new Error(`Invalid fheLibName for operator: ${op.name}`);
+    if (!isNonEmptyString(op.fheLibName)) {
+      throw new Error(`Invalid fheLibName for operator: ${name}`);
     }
 
-    if (op.shiftOperator != null && typeof op.shiftOperator !== 'boolean') {
-      throw new Error(`Invalid shiftOperator value for operator: ${op.name}`);
+    if (!isOptionalBoolean(op.shiftOperator)) {
+      throw new Error(`Invalid shiftOperator value for operator: ${name}`);
     }
 
-    if (op.rotateOperator != null && typeof op.rotateOperator !== 'boolean') {
-      throw new Error(`Invalid rotateOperator value for operator: ${op.name}`);
+    if (!isOptionalBoolean(op.rotateOperator)) {
+      throw new Error(`Invalid rotateOperator value for operator: ${name}`);
     }
 
-    nameMap[op.name] = true;
+    names.add(name);
+  });
+
+  leftScalarInvertOps.forEach(({ name, invertOp }) => {
+    if (!names.has(invertOp)) {
+      throw new Error(`Invalid leftScalarInvertOp for operator: ${name}. Unknown operator: ${invertOp}`);
+    }
   });
 }
 
-export function validate() {
+export function validate(): void {
   // Validate the FHE types
   validateFHETypeInfos(ALL_FHE_TYPE_INFOS);
   // Validate the operators

@@ -1,4 +1,3 @@
-import { assert } from 'console';
 import { readFileSync } from 'fs';
 
 import type { AdjustedFheType, FheTypeInfo, Operator } from './common';
@@ -6,10 +5,10 @@ import { OperatorArguments, ReturnType } from './common';
 import { resolveTemplatePath } from './paths';
 import { getUint, removeTemplateComments } from './utils';
 
-export function generateFhevmECDSALib() {
+export function generateFhevmECDSALib(): string {
   const file = resolveTemplatePath('FhevmECDSA.sol-template');
   const template = readFileSync(file, 'utf8');
-  let code = removeTemplateComments(template);
+  const code = removeTemplateComments(template);
   return code;
 }
 
@@ -145,13 +144,14 @@ function generateAdjustedFheTypeArray(fheTypes: FheTypeInfo[]): AdjustedFheType[
     }
 
     if (fheType.aliases !== undefined && fheType.aliases.length > 0) {
-      for (let i = 0; i < fheType.aliases.length; i++) {
-        if (fheType.aliases[i].supportedOperators.length > 0) {
+      for (let j = 0; j < fheType.aliases.length; j++) {
+        const alias = fheType.aliases[j];
+        if (alias.supportedOperators.length > 0) {
           adjustedFheTypes.push({
-            type: fheType.aliases[i].type,
+            type: alias.type,
             bitLength: fheType.bitLength,
-            supportedOperators: fheType.aliases[i].supportedOperators,
-            clearMatchingType: fheType.aliases[i].clearMatchingType,
+            supportedOperators: alias.supportedOperators,
+            clearMatchingType: alias.clearMatchingType,
             value: fheType.value,
             isAlias: true,
             aliasType: fheType.type,
@@ -165,6 +165,25 @@ function generateAdjustedFheTypeArray(fheTypes: FheTypeInfo[]): AdjustedFheType[
   return adjustedFheTypes;
 }
 
+/**
+ * Solidity type returned by an operator: `euintType` for `ReturnType.Euint`, `ebool` for `ReturnType.Ebool`.
+ *
+ * A new `ReturnType` member is a compile error here (`never` check), and an unknown value reaching this function
+ * at runtime throws, so the generated Solidity never gets an invalid return type.
+ */
+function solidityReturnType(returnType: ReturnType, euintType: string): string {
+  switch (returnType) {
+    case ReturnType.Euint:
+      return euintType;
+    case ReturnType.Ebool:
+      return 'ebool';
+    default: {
+      const unknownReturnType: never = returnType;
+      throw new Error(`Unknown return type: ${String(unknownReturnType)}`);
+    }
+  }
+}
+
 function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
   lhsFheType: AdjustedFheType,
   rhsFheType: AdjustedFheType,
@@ -172,7 +191,7 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
 ): string {
   const res: string[] = [];
 
-  if (operator.shiftOperator || operator.rotateOperator) {
+  if (operator.shiftOperator === true || operator.rotateOperator === true) {
     return '';
   }
 
@@ -195,14 +214,9 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
     const castLeftToRight = lhsFheType.bitLength < rhsFheType.bitLength;
     const castRightToLeft = lhsFheType.bitLength > rhsFheType.bitLength;
 
-    const returnType =
-      operator.returnType == ReturnType.Euint
-        ? `euint${outputBits}`
-        : operator.returnType == ReturnType.Ebool
-          ? `ebool`
-          : assert(false, 'Unknown return type');
+    const returnType = solidityReturnType(operator.returnType, `euint${outputBits}`);
 
-    const scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', false' : '';
+    const scalarFlag = operator.hasScalar ? ', false' : '';
     const leftExpr = castLeftToRight ? `asEuint${outputBits}(a)` : 'a';
     const rightExpr = castRightToLeft ? `asEuint${outputBits}(b)` : 'b';
     const implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
@@ -259,7 +273,7 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
 function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: Operator): string {
   const res: string[] = [];
 
-  if (operator.shiftOperator || operator.rotateOperator) {
+  if (operator.shiftOperator === true || operator.rotateOperator === true) {
     return '';
   }
 
@@ -275,14 +289,9 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
     return '';
   }
 
-  const returnType =
-    operator.returnType == ReturnType.Euint
-      ? `e${fheType.type.toLowerCase()} `
-      : operator.returnType == ReturnType.Ebool
-        ? `ebool`
-        : assert(false, 'Unknown return type');
+  const returnType = solidityReturnType(operator.returnType, `e${fheType.type.toLowerCase()} `);
 
-  let scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', true' : '';
+  let scalarFlag = operator.hasEncrypted ? ', true' : '';
   const leftOpName = operator.leftScalarInvertOp ?? operator.name;
 
   let implExpressionA;
@@ -295,7 +304,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
     throw new Error('Int types are not supported!');
   } else {
     implExpressionA = `Impl.${operator.name}(e${fheType.type.toLowerCase()}.unwrap(a), bytes32(uint256(${
-      fheType.isAlias && fheType.clearMatchingTypeAlias !== undefined
+      fheType.isAlias === true && fheType.clearMatchingTypeAlias !== undefined
         ? `${fheType.clearMatchingTypeAlias.toLowerCase()}(b)`
         : 'b'
     }))${scalarFlag})`;
@@ -309,7 +318,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
     throw new Error('Int types are not supported yet!');
   } else {
     implExpressionB = `Impl.${leftOpName}(e${fheType.type.toLowerCase()}.unwrap(b), bytes32(uint256(${
-      fheType.isAlias && fheType.clearMatchingTypeAlias !== undefined
+      fheType.isAlias === true && fheType.clearMatchingTypeAlias !== undefined
         ? `${fheType.clearMatchingTypeAlias.toLowerCase()}(a)`
         : 'a'
     }))${scalarFlag})`;
@@ -317,7 +326,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
 
   let maybeEncryptLeft = '';
 
-  if (operator.leftScalarEncrypt) {
+  if (operator.leftScalarEncrypt === true) {
     // workaround until tfhe-rs left scalar support:
     // do the trivial encryption and preserve order of operations
     // This also fixes the expected type, which the executor requires the right operand to match.
@@ -329,7 +338,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
   const clearMatchingType =
     fheType.type === 'Address'
       ? fheType.clearMatchingType
-      : fheType.isAlias && fheType.clearMatchingTypeAlias !== undefined
+      : fheType.isAlias === true && fheType.clearMatchingTypeAlias !== undefined
         ? fheType.clearMatchingTypeAlias
         : fheType.clearMatchingType;
 
@@ -350,7 +359,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
 `);
 
   // lhs scalar
-  if (!operator.leftScalarDisable) {
+  if (operator.leftScalarDisable !== true) {
     res.push(`
 
     /**
@@ -362,7 +371,7 @@ function generateSolidityTFHEScalarOperator(fheType: AdjustedFheType, operator: 
       operator.name
     }(${clearMatchingType.toLowerCase()} a, e${fheType.type.toLowerCase()} b) internal returns (${returnType}) {
         ${maybeEncryptLeft}
-        ${operator.leftScalarEncrypt ? initializeFheValue('b', fheType.type) : assignValidatedFheValue('b', fheType.type)}
+        ${operator.leftScalarEncrypt === true ? initializeFheValue('b', fheType.type) : assignValidatedFheValue('b', fheType.type)}
         return ${returnType}.wrap(${implExpressionB});
     }
         `);
@@ -389,7 +398,7 @@ function handleSolidityTFHEIsInitialized(fheType: AdjustedFheType): string {
               return asE${fheType.type.toLowerCase()}(${zero});
           }
           Impl.checkHandleType(e${fheType.type.toLowerCase()}.unwrap(value), FheType.${
-            fheType.isAlias ? fheType.aliasType : fheType.type
+            fheType.isAlias === true ? fheType.aliasType : fheType.type
           });
           return value;
       }
@@ -399,7 +408,7 @@ function handleSolidityTFHEIsInitialized(fheType: AdjustedFheType): string {
 function handleSolidityTFHEShiftOperator(fheType: AdjustedFheType, operator: Operator): string {
   const res: string[] = [];
 
-  if (!operator.shiftOperator && !operator.rotateOperator) {
+  if (operator.shiftOperator !== true && operator.rotateOperator !== true) {
     return res.join();
   }
 
@@ -451,7 +460,7 @@ function handleSolidityTFHEShiftOperator(fheType: AdjustedFheType, operator: Ope
   return res.join('');
 }
 
-function assignValidatedFheValue(varname: string, type: string) {
+function assignValidatedFheValue(varname: string, type: string): string {
   if (type !== 'Bool' && !type.startsWith('Uint') && type !== 'Address') {
     throw new Error(`Unsupported type ${type}`);
   }
@@ -459,7 +468,7 @@ function assignValidatedFheValue(varname: string, type: string) {
 }
 
 // Use only when the executor can enforce the expected type from another operand or the operation itself.
-function initializeFheValue(varname: string, type: string) {
+function initializeFheValue(varname: string, type: string): string {
   if (type !== 'Bool' && !type.startsWith('Uint') && type !== 'Address') {
     throw new Error(`Unsupported type ${type}`);
   }
@@ -586,7 +595,7 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
     function fromExternal(externalE${fheType.type.toLowerCase()} inputHandle, bytes memory inputProof) internal returns (e${fheType.type.toLowerCase()}) {
         if (inputProof.length!=0) {
           return e${fheType.type.toLowerCase()}.wrap(Impl.verify(externalE${fheType.type.toLowerCase()}.unwrap(inputHandle), inputProof, FheType.${
-            fheType.isAlias ? fheType.aliasType : fheType.type
+            fheType.isAlias === true ? fheType.aliasType : fheType.type
           }));
         } else {
           bytes32 inputBytes32 = externalE${fheType.type.toLowerCase()}.unwrap(inputHandle);
@@ -600,7 +609,7 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
             });
           }
           if (!Impl.isAllowed(inputBytes32, msg.sender)) revert SenderNotAllowedToUseHandle(inputBytes32, msg.sender);
-          Impl.checkHandleType(inputBytes32, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type});
+          Impl.checkHandleType(inputBytes32, FheType.${fheType.isAlias === true ? fheType.aliasType : fheType.type});
           return e${fheType.type.toLowerCase()}.wrap(inputBytes32);
         }
     }
@@ -631,7 +640,7 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
     `;
   } else {
     const value =
-      fheType.isAlias && fheType.clearMatchingTypeAlias !== undefined
+      fheType.isAlias === true && fheType.clearMatchingTypeAlias !== undefined
         ? `${fheType.clearMatchingTypeAlias.toLowerCase()}(value)`
         : 'value';
 
@@ -643,7 +652,7 @@ function handleSolidityTFHEConvertPlaintextAndEinputToRespectiveType(fheType: Ad
       fheType.clearMatchingType
     } value) internal returns (e${fheType.type.toLowerCase()}) {
         return e${fheType.type.toLowerCase()}.wrap(Impl.trivialEncrypt(uint256(${value}), FheType.${
-          fheType.isAlias ? fheType.aliasType : fheType.type
+          fheType.isAlias === true ? fheType.aliasType : fheType.type
         }));
     }
 
@@ -740,7 +749,7 @@ function generateToBytes32(fheTypes: AdjustedFheType[]): string {
     function toBytes32(e${fheType.type.toLowerCase()} value) internal view returns (bytes32 ct) {
       ct = e${fheType.type.toLowerCase()}.unwrap(value);
       if (ct != bytes32(0)) {
-        Impl.checkHandleType(ct, FheType.${fheType.isAlias ? fheType.aliasType : fheType.type});
+        Impl.checkHandleType(ct, FheType.${fheType.isAlias === true ? fheType.aliasType : fheType.type});
       }
     }
     `),
@@ -758,7 +767,7 @@ function handleSolidityTFHERand(fheType: AdjustedFheType): string {
     */
     function randE${fheType.type.toLowerCase()}() internal returns (e${fheType.type.toLowerCase()}) {
       return e${fheType.type.toLowerCase()}.wrap(Impl.rand(FheType.${
-        fheType.isAlias ? fheType.aliasType : fheType.type
+        fheType.isAlias === true ? fheType.aliasType : fheType.type
       }));
     }
 
@@ -775,7 +784,7 @@ function handleSolidityTFHERand(fheType: AdjustedFheType): string {
       fheType.bitLength
     } upperBound) internal returns (e${fheType.type.toLowerCase()}) {
       return e${fheType.type.toLowerCase()}.wrap(Impl.randBounded(upperBound, FheType.${
-        fheType.isAlias ? fheType.aliasType : fheType.type
+        fheType.isAlias === true ? fheType.aliasType : fheType.type
       }));
     }
 
