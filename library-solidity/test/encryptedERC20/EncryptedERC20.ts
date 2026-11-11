@@ -1,10 +1,11 @@
 import { assert, expect } from 'chai';
-import hre from 'hardhat';
 
-import { createInstances } from '../instance';
-import { getSigners, initSigners } from '../signers';
-import { userDecryptSingleEuint } from '../utils';
-import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture';
+import { chainId as networkChainId } from '../hardhat.js';
+
+import { createInstances } from '../instance.js';
+import { getSigners, initSigners } from '../signers.js';
+import { userDecryptSingleEuint } from '../utils.js';
+import { deployEncryptedERC20Fixture } from './EncryptedERC20.fixture.js';
 
 describe('EncryptedERC20', function () {
   before(async function () {
@@ -30,7 +31,7 @@ describe('EncryptedERC20', function () {
     // Byte 21 was set to 0xff.
     expect(balanceHandleAlice.slice(44, 46)).to.eq('ff');
     // Bytes 22-29 must be the chainId
-    const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
+    const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : networkChainId;
     assert(chainId !== undefined, 'Host chainId not set');
     expect(balanceHandleAlice.slice(46, 62)).to.eq(chainId.toString(16).padStart(16, '0'));
     // Byte30: type is euint64 (so position 5 in the FheType enum)
