@@ -6,6 +6,7 @@ import type { ResolvedProfile, SettingValue } from '../../config/profiles/types.
 import { type Redactor, createRedactor } from '../../infrastructure/secrets/redactor.js';
 import { type EngineWorldParameters, MISSING_SECTION_ERROR, type ScenarioInfo } from '../../model/execution.js';
 import { Chain } from '../modules/chain/chain.js';
+import { Contracts } from '../modules/contracts/contracts.js';
 import { Fhe } from '../modules/fhe/fhe.js';
 import { Evidence } from './evidence.js';
 
@@ -49,6 +50,12 @@ export interface EngineContext {
    * when the profile lacks one of the `chain`, `relayer` or `contracts` sections.
    */
   readonly fhe: Fhe;
+  /**
+   * The compiled contracts of the run (`run --contracts-dir`, built by `test-engine compile` with the
+   * profile's protocol addresses). `artifact(name)` throws a configuration error when the run has
+   * no contracts directory.
+   */
+  readonly contracts: Contracts;
   /** Writes a line to the scenario console output, with secrets redacted. */
   log: (...parts: unknown[]) => void;
 }
@@ -91,7 +98,7 @@ export class EngineWorld<P extends EngineWorldParameters = EngineWorldParameters
 
   constructor(options: IWorldOptions<P>) {
     super(options);
-    const { scenario, profile } = options.parameters;
+    const { scenario, profile, contractsDir } = options.parameters;
     const redactor: Redactor = createRedactor(secretsOf(profile));
     const evidence = new Evidence((data, attachOptions) => this.attach(data, attachOptions), redactor);
     const world = this;
@@ -99,6 +106,7 @@ export class EngineWorld<P extends EngineWorldParameters = EngineWorldParameters
       scenario: Object.freeze({ ...scenario }),
       profile: new ProfileView(profile),
       evidence,
+      contracts: new Contracts(contractsDir),
       get chain(): Chain {
         let chain = chains.get(world);
         if (!chain) {

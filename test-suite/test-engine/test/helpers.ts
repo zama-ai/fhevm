@@ -23,6 +23,9 @@ export const CHAIN_PROFILES = path.join(FIXTURES_DIR, 'chain-profiles');
 export const FHE_PROFILES = path.join(FIXTURES_DIR, 'fhe-profiles');
 export const FHE_SCENARIOS = path.join(FIXTURES_DIR, 'fhe-scenarios');
 export const COUNTER_ARTIFACT = path.join(FIXTURES_DIR, 'contracts', 'Counter.json');
+/** A Hardhat-like artifacts directory (`--contracts-dir`) holding Counter, and the scenario that loads it. */
+export const COMPILED_CONTRACTS = path.join(FIXTURES_DIR, 'compiled-contracts');
+export const CONTRACTS_SCENARIOS = path.join(FIXTURES_DIR, 'contracts-scenarios');
 /** Public test mnemonic of Anvil and Hardhat, used by the `fx-anvil` fixture profile. */
 export const ANVIL_MNEMONIC = 'test test test test test test test test test test test junk';
 export const CLI = path.join(DIST_DIR, 'src', 'cli', 'main.js');

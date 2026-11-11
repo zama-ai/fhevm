@@ -59,6 +59,8 @@ export interface OrchestratorOptions {
   redactor: Redactor;
   signal?: AbortSignal;
   onScenarioStart?: (scenario: DiscoveredScenario) => void;
+  /** Compiled contract artifacts handed to the scenarios (`run --contracts-dir`). */
+  contractsDir?: string;
   /** Worker entry point (tests replace it to simulate broken workers). */
   workerEntry?: string;
 }
@@ -91,6 +93,7 @@ function runWorker(scenario: DiscoveredScenario, options: OrchestratorOptions): 
         ...(metadata.origin !== undefined ? { origin: metadata.origin } : {}),
       },
       profile: options.profile,
+      ...(options.contractsDir !== undefined ? { contractsDir: options.contractsDir } : {}),
     },
   };
 
@@ -178,8 +181,8 @@ function runWorker(scenario: DiscoveredScenario, options: OrchestratorOptions): 
       } else if (exitCode === WORKER_EXIT.scenarioFailed) {
         result = { ...base, outcome: 'failed' };
       } else if (exitCode === WORKER_EXIT.configurationError) {
-        const reason = options.redactor.redact(workerError ?? 'a step used a module the profile has no section for');
-        result = { ...base, outcome: 'error', reason: `configuration error (P-002): ${reason}` };
+        const reason = options.redactor.redact(workerError ?? 'a step failed with a configuration error');
+        result = { ...base, outcome: 'error', reason: `configuration error: ${reason}` };
       } else {
         const how = signal ? `killed by ${signal}` : `exited with code ${String(exitCode)}`;
         const detail = stdinError ? ` before reading its job (${stdinError.message})` : '';

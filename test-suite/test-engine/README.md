@@ -10,7 +10,7 @@ A manifest-driven, Cucumber-based engine for fhEVM end-to-end scenarios.
 
 The engine runs on Node.js (>= 22) and TypeScript compiled with `tsc`. No TypeScript loader is involved at runtime; Cucumber always loads plain JavaScript from `dist/`.
 
-> **Status:** Phase 1b, in progress. The engine infrastructure (profiles, planner rules, the scenario World, evidence, secret handling) is in place, and so are the first fhEVM building blocks: the typed `chain` profile section, the [Chain module](#using-the-chain) (wallets, transactions and deployments recorded as evidence), the typed `relayer` and `contracts` sections and the [FHE module](#using-fhe) (encryption, user, delegated and public decryption, with relayer job IDs as evidence). No fhEVM scenario has been ported yet: the only shipped scenario is `smoke.arithmetic`, which has no dependency on the stack; the engine's own FHE scenarios run with `npm run test:integration:fhe`. Contract configuration comes next.
+> **Status:** Phase 1b, in progress. The engine infrastructure (profiles, planner rules, the scenario World, evidence, secret handling) is in place, and so are the first fhEVM building blocks: the typed `chain` profile section, the [Chain module](#using-the-chain) (wallets, transactions and deployments recorded as evidence), the typed `relayer` and `contracts` sections and the [FHE module](#using-fhe) (encryption, user, delegated and public decryption, with relayer job IDs as evidence), and [compiled contracts](#using-compiled-contracts) whose coprocessor configuration comes from the profile (`test-engine compile`). The first official fhEVM scenario, `fhe.input-decrypt`, passes on the local stack ([Running on the local stack](#running-on-the-local-stack)); `smoke.arithmetic` has no dependency on the stack. DevNet has not been validated yet.
 
 ## Quick start
 
@@ -51,13 +51,15 @@ test-engine/
 ├── schema/                   # JSON Schemas of scenario.yaml and profile files
 ├── profiles/                 # target environments: local, devnet, testnet, mainnet
 ├── scenarios/                # scenarios run by `npm run engine -- run` (default --scenarios-dir)
-│   └── smoke/                #   engine regression scenario, no dependency on the stack
+│   ├── smoke/                #   engine regression scenario, no dependency on the stack
+│   └── fhe/input-decrypt/    #   end-to-end FHE scenario (local, devnet): encrypt, compute, decrypt
 └── test/                     # tests of the engine itself (node:test), never run by the engine
     ├── unit/                 #   modules called in process, one folder per src/ layer; no external service
     ├── integration/
     │   ├── cli/              #   the compiled CLI run as a process against the fixtures; no Docker
     │   ├── chain/            #   Chain module and chain scenarios against a throwaway Anvil (Docker)
-    │   └── fhe/              #   FHE scenarios against the local fhEVM stack, run in its e2e container
+    │   ├── fhe/              #   FHE scenarios against the local fhEVM stack, run in its e2e container
+    │   └── e2e/              #   the official scenarios through compile + run, on the local stack
     ├── fixtures/             #   scenarios, profiles and contracts used as engine inputs
     └── helpers.ts
 ```
@@ -70,6 +72,7 @@ test-engine/
 | `npm run test:integration:chain` | `test/integration/chain/`                | a build and Docker                           |
 | `npm run test:integration`       | the CLI and chain integration suites     | a build and Docker                           |
 | `npm run test:integration:fhe`   | `test/integration/fhe/`                  | a build and the local stack (`fhevm-cli up`) |
+| `npm run test:e2e:local`         | `test/integration/e2e/`                  | a build and the local stack (`fhevm-cli up`) |
 
 ## Adding a scenario
 
@@ -171,7 +174,7 @@ When('alice deploys a counter and bob increments it', async function (this: Engi
 | `waitForBlock(n, timeoutMs)`, `sleep(ms)` | Utilities ported from the e2e suite.                                                                                                                                                               |
 
 - **Lazy.** The chain is created on first access: a scenario that never touches it opens no connection. The engine closes the provider after each Gherkin scenario.
-- **Declare `targets`.** On a profile without a `chain` section (such as `none`), accessing `this.engine.chain` fails the step with `profile 'none' has no chain section; declare spec.targets for this scenario …`, and the scenario ends as `error` with the reason `configuration error (P-002): …`. A scenario that uses the chain should list the profiles it can run on.
+- **Declare `targets`.** On a profile without a `chain` section (such as `none`), accessing `this.engine.chain` fails the step with `profile 'none' has no chain section; declare spec.targets for this scenario …`, and the scenario ends as `error` with the reason `configuration error: …` (P-002). A scenario that uses the chain should list the profiles it can run on.
 - **Keep the engine wallets.** `wallet.connect()` throws: ethers would return a plain wallet without the gas buffer and the chain ID check. A transaction broadcast whose receipt cannot be obtained is recorded with status `unknown` and its hash.
 - **Funding.** Wallets are expected to be funded: Anvil and the local stack pre-fund the mnemonic accounts; live networks rely on pre-funded wallets.
 
@@ -180,15 +183,13 @@ When('alice deploys a counter and bob increments it', async function (this: Engi
 `this.engine.fhe` encrypts and decrypts through the fhEVM SDK (`@fhevm/sdk`), configured by the profile's [`relayer` and `contracts` sections](#the-relayer-and-contracts-sections), on top of `this.engine.chain` (same provider, same wallet roles):
 
 ```ts
-import { type EngineWorld, FheError, loadArtifact } from '#engine';
+import { type EngineWorld, FheError } from '#engine';
 import { When } from '@cucumber/cucumber';
 import assert from 'node:assert/strict';
-import path from 'node:path';
 
 When('alice adds 42 to an encrypted 7', async function (this: EngineWorld) {
-  const { chain, fhe } = this.engine;
-  const artifact = loadArtifact(path.join(this.engine.scenario.directory, 'artifacts', 'TestInput.json'));
-  const contract = await chain.deploy(artifact, [], { from: 'alice' });
+  const { chain, contracts, fhe } = this.engine;
+  const contract = await chain.deploy(contracts.artifact('TestInput'), [], { from: 'alice' });
   const input = await fhe.encrypt({ contract, user: 'alice', values: [{ type: 'uint64', value: 7n }] });
   await chain.send(contract.getFunction('add42ToInput64')(input.handles[0], input.inputProof));
 
@@ -213,7 +214,32 @@ When('alice adds 42 to an encrypted 7', async function (this: EngineWorld) {
 - **Failures.** A failed operation is recorded as evidence, then thrown as `FheError` with `operation`, `relayerLabel` (e.g. `not_allowed_on_host_acl`) and `jobId`. Some checks are made by the SDK before any relayer call: a user without ACL rights fails with the SDK's message (`… is not authorized to decrypt handle …`), no relayer label and no job ID. Assert on the label for relayer checks and on the message for SDK checks.
 - **API key.** When the profile has a non-empty `relayer.apiKey`, it is sent on every relayer call, including the FHE key download.
 - **Lazy, one per scenario.** The SDK client is created on the first operation (it downloads the FHE public key); nothing is shared between Gherkin scenarios. On a profile without the `chain`, `relayer` or `contracts` section, accessing `this.engine.fhe` fails the step and names the missing sections; the scenario ends as a P-002 configuration error. Declare `targets`.
-- **Run in the stack's network.** The relayer hands out addresses (the object store holding the FHE key) that only resolve inside the stack's Docker network, so FHE steps against the local stack run in a container on it (the e2e container). `npm run test:integration:fhe` does this for the engine's own FHE scenarios.
+- **Run in the stack's network.** The relayer hands out addresses (the object store holding the FHE key) that only resolve inside the stack's Docker network, so FHE steps against the local stack run in a container on it (the e2e container). `npm run test:integration:fhe` does this for the engine's own FHE scenarios, and `npm run test:e2e:local` for the official ones.
+
+### Using compiled contracts
+
+fhEVM contracts carry the addresses of the protocol contracts they use (ACL, FHEVMExecutor, KMSVerifier), compiled in through `E2ECoprocessorConfig`, which every e2e test contract inherits. Their artifacts therefore belong to one environment. `test-engine compile` builds them for a profile, and `run --contracts-dir` hands them to the scenarios:
+
+```sh
+test-engine compile --profile local --project ../e2e       # prints: Run with: --contracts-dir <project>/artifacts
+test-engine run --profile local --contracts-dir ../e2e/artifacts
+```
+
+- **`compile`** works in the e2e Hardhat project (`--project`, default `<package>/../e2e`). It runs the project's own generator, `scripts/generate-coprocessor-config.ts` (the one `run-tests.sh --chain` uses), with the profile's `contracts.acl`, `contracts.executor` and `contracts.kmsVerifier` and `E2E_COPROCESSOR_CONFIG_FROM_ENV=true`, so `contracts/E2ECoprocessorConfigLocal.sol` is rewritten; then `npx hardhat compile`. It then checks that the compiled `E2ECoprocessorConfig` embeds the three addresses and writes a build stamp, `artifacts/test-engine-build.json` (profile, addresses, time). Any failure exits 2. The commands' output is redacted.
+- **`this.engine.contracts.artifact(name)`** loads `<contracts-dir>/**/<name>.sol/<name>.json` (Hardhat layout), ready for `chain.deploy`. An unknown or ambiguous name fails the step and lists the candidates. Without `--contracts-dir`, the step fails and the scenario ends as `error` with the reason `configuration error: contract '<name>' needs compiled contracts …`.
+- **Stale artifacts are refused.** With `--contracts-dir`, the [preflight](#preflight) compares the build stamp with the profile (`contracts.build`): artifacts compiled for other addresses stop the run before any scenario. It also checks that every contract of the profile has code on the chain (`contracts.code`).
+- `loadArtifact(path)` stays available for contracts a scenario ships itself (no fhEVM dependency, as with the chain fixtures).
+
+### Running on the local stack
+
+The relayer hands out addresses that only resolve in the stack's Docker network, so against the local stack the engine runs in the e2e container (`fhevm-test-suite-e2e-debug`), whose image holds the e2e project at `/app/test-suite/e2e`:
+
+```sh
+cd test-suite/fhevm && ./fhevm-cli up --target latest-supported   # once
+cd ../test-engine && npm run build && npm run test:e2e:local
+```
+
+`test:e2e:local` copies the package into the container and runs, there, `compile --profile local --project /app/test-suite/e2e` and then `run --profile local --tags @e2e --contracts-dir /app/test-suite/e2e/artifacts`, and checks the report and evidence. The same two commands can be run by hand with `docker exec`.
 
 ## Manifest reference
 
@@ -268,6 +294,7 @@ spec:
       inputVerification: { env: INPUT_VERIFICATION_ADDRESS }
   contracts: # optional typed section: protocol contracts on the host chain
     acl: { env: ACL_CONTRACT_ADDRESS }
+    executor: { env: FHEVM_EXECUTOR_CONTRACT_ADDRESS }
     inputVerifier: { env: INPUT_VERIFIER_CONTRACT_ADDRESS }
     kmsVerifier: { env: KMS_VERIFIER_CONTRACT_ADDRESS }
     protocolConfig: { env: PROTOCOL_CONFIG_CONTRACT_ADDRESS }
@@ -317,15 +344,15 @@ A **typed section** has fields fixed by the schema and is owned by one engine mo
 
 ### The `relayer` and `contracts` sections
 
-Both are read by the [FHE module](#using-fhe). `relayer` holds what is reached through the relayer and the gateway chain; `contracts` holds the protocol contracts deployed on the host chain (the contract configuration will add to it). Every field is a value source.
+Both are read by the [FHE module](#using-fhe). `relayer` holds what is reached through the relayer and the gateway chain; `contracts` holds the protocol contracts deployed on the host chain, which `test-engine compile` also compiles into the e2e contracts ([Using compiled contracts](#using-compiled-contracts)). Every field is a value source.
 
-| Field                                                             | Required | Description                                                                                                                                                   |
-| ----------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `relayer.url`                                                     | yes      | An http(s) URL, with or without the API version suffix (`/v1`, `/v2`); no `user:pass@`; https when `apiKey` is set (except `localhost`), as the SDK requires. |
-| `relayer.apiKey`                                                  | no       | Sent on every relayer call. `secret: true` is mandatory; an empty value (`default: ""`) means no authentication.                                              |
-| `relayer.gateway.chainId`                                         | yes      | A positive integer. Never a secret.                                                                                                                           |
-| `relayer.gateway.decryption`, `inputVerification`                 | yes      | Addresses of the Decryption and InputVerification contracts on the gateway chain.                                                                             |
-| `contracts.acl`, `inputVerifier`, `kmsVerifier`, `protocolConfig` | yes      | Addresses of the host-chain protocol contracts.                                                                                                               |
+| Field                                                                         | Required | Description                                                                                                                                                   |
+| ----------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `relayer.url`                                                                 | yes      | An http(s) URL, with or without the API version suffix (`/v1`, `/v2`); no `user:pass@`; https when `apiKey` is set (except `localhost`), as the SDK requires. |
+| `relayer.apiKey`                                                              | no       | Sent on every relayer call. `secret: true` is mandatory; an empty value (`default: ""`) means no authentication.                                              |
+| `relayer.gateway.chainId`                                                     | yes      | A positive integer. Never a secret.                                                                                                                           |
+| `relayer.gateway.decryption`, `inputVerification`                             | yes      | Addresses of the Decryption and InputVerification contracts on the gateway chain.                                                                             |
+| `contracts.acl`, `executor`, `inputVerifier`, `kmsVerifier`, `protocolConfig` | yes      | Addresses of the host-chain protocol contracts (`executor`: the FHEVMExecutor). `acl`, `executor` and `kmsVerifier` are compiled in by `test-engine compile`. |
 
 An address must be 20-byte hex; a mixed-case address must have a valid checksum (a wrong one usually means a typo). Error messages never quote a secret value. A secret `relayer.url` is also redacted without its API version suffix, the form the SDK logs. As for `chain`, types are checked once resolved and every problem stops the run with exit 2.
 
@@ -363,18 +390,20 @@ A scenario that uses the stack must declare `targets`: under the default `none` 
 
 ## Preflight
 
-Before `run` starts any scenario, the engine checks that the environment of the profile answers:
+Before `run` starts any scenario, the engine checks that the environment of the profile answers, and that the compiled contracts match it:
 
 | Check             | When                                | What                                                                                               |
 | ----------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `chain.rpc`       | the profile has a `chain` section   | the RPC answers `eth_chainId` with the profile's chain ID                                          |
+| `contracts.code`  | `chain` and `contracts` sections    | every address of the `contracts` section has code on the chain (skipped when `chain.rpc` failed)   |
 | `relayer.keyurl`  | the profile has a `relayer` section | `GET <relayer>/v2/keyurl` answers (with the API key when set) and holds an FHE public key URL      |
 | `relayer.fhe-key` | `relayer.keyurl` passed             | the FHE public key URL answers a `HEAD`: it fails when the engine runs outside the stack's network |
+| `contracts.build` | `--contracts-dir` is given          | its build stamp holds the profile's compiled addresses (skipped on a profile without `contracts`)  |
 
 - A failed check prints the table with the reason of each failure, and the run **exits 2 before any scenario** (no report, as for other configuration errors).
 - Passed checks are printed and recorded in `report.json` (`run.preflight`) and as `engine.preflight` evidence.
 - Each check has a 10 s timeout. The checks use ethers and `fetch`, never the SDK (whose thread pool would keep the main process alive), and never download the FHE key. Secrets are redacted from the table and the report.
-- It runs in `run` only, when at least one scenario is planned and the profile has a `chain` or `relayer` section. `dry-run`, `list` and `profiles` never connect. `--no-preflight` skips it; the report then says so.
+- It runs in `run` only, when at least one scenario is planned and the profile has a `chain` or `relayer` section, or `--contracts-dir` is given. `dry-run`, `list` and `profiles` never connect. `--no-preflight` skips it; the report then says so.
 
 ## CLI reference
 
@@ -385,6 +414,8 @@ Commands:
   list       List discovered scenarios (validates every manifest)
   run        Run the selected scenarios, one isolated process per scenario
   dry-run    Validate the selected scenarios without executing any step
+  compile    Compile the e2e contracts for --profile: generate their coprocessor config from the
+             profile's contracts section (the e2e project's generator), compile, verify, stamp
   profiles   List and validate the profiles; with --profile, also resolve that profile
   help       Show the usage
 
@@ -396,7 +427,9 @@ Options:
       --scenarios-dir <dir>  Directory scanned for scenario.yaml files (default: <package>/scenarios)
       --profiles-dir <dir>   Directory holding <profile>.yaml files (default: <package>/profiles)
   -o, --output-dir <dir>     Run output directory (default: <package>/reports/<run-id>)
-      --no-preflight         run: skip the checks of the RPC, relayer and FHE key made before any scenario
+      --no-preflight         run: skip the checks made before any scenario (RPC, contracts, relayer, FHE key)
+      --contracts-dir <dir>  run, dry-run: compiled contracts for this.engine.contracts (printed by compile)
+      --project <dir>        compile: the e2e Hardhat project (default: <package>/../e2e)
       --json                 list: print JSON instead of a table
   -v, --version              Print the engine version
 ```
@@ -405,13 +438,13 @@ Options:
 
 **Exit codes** (precedence when several apply: 130 > 1 > 3 > 0):
 
-| Code | Meaning                                                                                                                                                                                                                                                  |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | At least one scenario executed, and all executed scenarios passed (dry-run: are valid).                                                                                                                                                                  |
-| 1    | At least one scenario failed, timed out or errored (dry-run: is invalid).                                                                                                                                                                                |
-| 2    | Usage or configuration error: bad option, invalid manifest or profile, missing env var or env file, unknown id or profile, empty selection, missing or wrong `--confirm`, failed [preflight](#preflight). Nothing was executed and no report is written. |
-| 3    | Nothing executed: every selected scenario was skipped by the planner. The report is written.                                                                                                                                                             |
-| 130  | Interrupted (Ctrl+C / SIGTERM). The report of what already ran is written.                                                                                                                                                                               |
+| Code | Meaning                                                                                                                                                                                                                                                                    |
+| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | At least one scenario executed, and all executed scenarios passed (dry-run: are valid).                                                                                                                                                                                    |
+| 1    | At least one scenario failed, timed out or errored (dry-run: is invalid).                                                                                                                                                                                                  |
+| 2    | Usage or configuration error: bad option, invalid manifest or profile, missing env var or env file, unknown id or profile, empty selection, missing or wrong `--confirm`, failed [preflight](#preflight), failed `compile`. Nothing was executed and no report is written. |
+| 3    | Nothing executed: every selected scenario was skipped by the planner. The report is written.                                                                                                                                                                               |
+| 130  | Interrupted (Ctrl+C / SIGTERM). The report of what already ran is written.                                                                                                                                                                                                 |
 
 An unexpected internal error after scenarios started (for example, the report cannot be written) exits 1, never 2.
 
@@ -489,13 +522,13 @@ reports/20261006-143006-run-ae7e/
 
 `report.json` (`schemaVersion: 1`, type `RunReport` in [`src/orchestration/reporting/report.ts`](src/orchestration/reporting/report.ts)) contains the engine and Node versions; the run (id, mode, times, filters, profile snapshot, git commit, interrupted flag); a summary (counts per outcome, `executed`, `success`); and per scenario its metadata, targets, requirements, plan decision, outcome, reason, timings, evidence count, artifact paths and the parsed Cucumber execution (Gherkin scenarios, steps, hooks that failed or recorded evidence, issues).
 
-| Outcome     | Meaning                                                                                                                                                                                                                 |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `passed`    | Cucumber reported success and the engine found no problem (dry-run: valid).                                                                                                                                             |
-| `failed`    | A step or hook failed, or a step is undefined, ambiguous or skipped at runtime, or the feature does not parse (dry-run: invalid).                                                                                       |
-| `skipped`   | Not executed. `reason` says why (planner rule, or run interrupted).                                                                                                                                                     |
-| `timed-out` | The scenario exceeded its budget and was stopped. The partial message stream is kept.                                                                                                                                   |
-| `error`     | The worker could not run Cucumber (e.g. support code throwing at import), or a step used a module its profile has no section for (P-002, `reason` starts with `configuration error (P-002)`). `reason` holds the error. |
+| Outcome     | Meaning                                                                                                                                                                                                                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `passed`    | Cucumber reported success and the engine found no problem (dry-run: valid).                                                                                                                                                                                                                       |
+| `failed`    | A step or hook failed, or a step is undefined, ambiguous or skipped at runtime, or the feature does not parse (dry-run: invalid).                                                                                                                                                                 |
+| `skipped`   | Not executed. `reason` says why (planner rule, or run interrupted).                                                                                                                                                                                                                               |
+| `timed-out` | The scenario exceeded its budget and was stopped. The partial message stream is kept.                                                                                                                                                                                                             |
+| `error`     | The worker could not run Cucumber (e.g. support code throwing at import), or a step failed with a configuration error: a module its profile has no section for (P-002), or a compiled contract without `--contracts-dir` (`reason` starts with `configuration error:`). `reason` holds the error. |
 
 ## Timeouts
 
@@ -539,24 +572,26 @@ flowchart LR
 
 `orchestration` and `runtime` never import each other. `test/unit/architecture.test.ts` fails on any import outside this table, and on a new first-level folder that is not in it.
 
-| Component      | Code                           | Contract (input → output)                                                                                                                                                |
-| -------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Manifest       | `src/config/manifest/`         | YAML → `ScenarioManifest` or `ManifestError(problems[])`. Pure.                                                                                                          |
-| Profiles       | `src/config/profiles/`         | profiles dir + name + environment → `ResolvedProfile` (plain data) or `ProfileError(problems[])`; wallet account derivation.                                             |
-| Discovery      | `src/orchestration/discovery/` | scenarios dir + known profiles → valid `DiscoveredScenario`s + one error per invalid manifest.                                                                           |
-| Planner        | `src/orchestration/planning/`  | scenarios + filters + profile → `ExecutionPlan` (run/skip + reason); confirmation rules. Pure.                                                                           |
-| Preflight      | `src/boot/`                    | resolved profile → `PreflightResult` (`chain.rpc`, `relayer.keyurl`, `relayer.fhe-key`: passed/failed/skipped with detail).                                              |
-| Orchestrator   | `src/orchestration/execution/` | `ExecutionPlan` → `ScenarioRunResult[]`, one per plan item; redacted console tee.                                                                                        |
-| Report         | `src/orchestration/reporting/` | plan + results + message streams → `RunReport` → `report.html`, `evidence.json`.                                                                                         |
-| Shared model   | `src/model/`                   | `WorkerJob`, `ScenarioRunResult`, `EvidencePayload`; `findExecutionProblems`, used by the worker and the report.                                                         |
-| Worker         | `src/runtime/worker/`          | `WorkerJob` (stdin) → redacted Cucumber artifacts + exit code (`0` passed, `1` failed/invalid, `2` engine error, `3` configuration error (P-002), `143` terminated).     |
-| Engine support | `src/runtime/cucumber/`        | loaded first in every worker: default step timeout, default World, EngineWorld check, FHE module and chain provider released after each scenario.                        |
-| World          | `src/runtime/world/`           | `EngineWorld`, `ProfileView`, `Evidence`.                                                                                                                                |
-| Chain          | `src/runtime/modules/chain/`   | resolved `chain` section → provider, role wallets with gas buffer, `send`/`deploy` recording `chain.tx`/`chain.deploy`.                                                  |
-| FHE            | `src/runtime/modules/fhe/`     | resolved `relayer` and `contracts` sections + Chain → encrypt and decryptions recording `fhe.*`; the relayer checks of the preflight.                                    |
-| Secrets        | `src/infrastructure/secrets/`  | secret values → redactor for text, objects and streams.                                                                                                                  |
-| Engine API     | `src/api/` (`#engine`)         | re-exports `EngineWorld`, `ProfileView`, `Evidence`, `Chain`, `Fhe`, `FheError`, `MissingProfileSectionError`, `loadArtifact` and their types for scenario support code. |
-| CLI            | `src/cli/`                     | argv → exit code.                                                                                                                                                        |
+| Component      | Code                             | Contract (input → output)                                                                                                                                                                                         |
+| -------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Manifest       | `src/config/manifest/`           | YAML → `ScenarioManifest` or `ManifestError(problems[])`. Pure.                                                                                                                                                   |
+| Profiles       | `src/config/profiles/`           | profiles dir + name + environment → `ResolvedProfile` (plain data) or `ProfileError(problems[])`; wallet account derivation.                                                                                      |
+| Discovery      | `src/orchestration/discovery/`   | scenarios dir + known profiles → valid `DiscoveredScenario`s + one error per invalid manifest.                                                                                                                    |
+| Planner        | `src/orchestration/planning/`    | scenarios + filters + profile → `ExecutionPlan` (run/skip + reason); confirmation rules. Pure.                                                                                                                    |
+| Preflight      | `src/boot/`                      | resolved profile (+ `--contracts-dir`) → `PreflightResult` (`chain.rpc`, `contracts.code`, `relayer.keyurl`, `relayer.fhe-key`, `contracts.build`: passed/failed/skipped with detail).                            |
+| Compile        | `src/boot/compile.ts`            | resolved profile + e2e project → generated coprocessor config, compiled artifacts, verified bytecode, build stamp; or `CompileError`.                                                                             |
+| Orchestrator   | `src/orchestration/execution/`   | `ExecutionPlan` → `ScenarioRunResult[]`, one per plan item; redacted console tee.                                                                                                                                 |
+| Report         | `src/orchestration/reporting/`   | plan + results + message streams → `RunReport` → `report.html`, `evidence.json`.                                                                                                                                  |
+| Shared model   | `src/model/`                     | `WorkerJob`, `ScenarioRunResult`, `EvidencePayload`; `findExecutionProblems`, used by the worker and the report.                                                                                                  |
+| Worker         | `src/runtime/worker/`            | `WorkerJob` (stdin) → redacted Cucumber artifacts + exit code (`0` passed, `1` failed/invalid, `2` engine error, `3` configuration error, `143` terminated).                                                      |
+| Engine support | `src/runtime/cucumber/`          | loaded first in every worker: default step timeout, default World, EngineWorld check, FHE module and chain provider released after each scenario.                                                                 |
+| World          | `src/runtime/world/`             | `EngineWorld`, `ProfileView`, `Evidence`.                                                                                                                                                                         |
+| Chain          | `src/runtime/modules/chain/`     | resolved `chain` section → provider, role wallets with gas buffer, `send`/`deploy` recording `chain.tx`/`chain.deploy`.                                                                                           |
+| FHE            | `src/runtime/modules/fhe/`       | resolved `relayer` and `contracts` sections + Chain → encrypt and decryptions recording `fhe.*`; the relayer checks of the preflight.                                                                             |
+| Contracts      | `src/runtime/modules/contracts/` | `--contracts-dir` → `artifact(name)`; the build stamp and the `contracts.build` check.                                                                                                                            |
+| Secrets        | `src/infrastructure/secrets/`    | secret values → redactor for text, objects and streams.                                                                                                                                                           |
+| Engine API     | `src/api/` (`#engine`)           | re-exports `EngineWorld`, `ProfileView`, `Evidence`, `Chain`, `Fhe`, `FheError`, `Contracts`, `MissingProfileSectionError`, `MissingContractsDirError`, `loadArtifact` and their types for scenario support code. |
+| CLI            | `src/cli/`                       | argv → exit code.                                                                                                                                                                                                 |
 
 ## Development
 

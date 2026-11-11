@@ -18,6 +18,7 @@ export const contracts: ResolvedContractsSection = {
   inputVerifier: literal(address(4)),
   kmsVerifier: literal(address(5)),
   protocolConfig: literal(address(6)),
+  executor: literal(address(7)),
 };
 export const config = (apiKey?: string): FheClientConfig => ({ relayer: relayer(apiKey), contracts, chainId: 12345 });
 

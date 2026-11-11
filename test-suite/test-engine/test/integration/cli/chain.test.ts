@@ -24,7 +24,7 @@ describe('Chain through the engine (no Anvil)', () => {
     assert.equal(result.code, 1, result.stdout + result.stderr);
     const scenario = scenarioOf(readReport(result.outputDir), 'fixture.chain-on-none');
     assert.equal(scenario.outcome, 'error', 'P-002 is a configuration error');
-    assert.match(scenario.reason ?? '', /^configuration error \(P-002\): profile 'none' has no chain section/);
+    assert.match(scenario.reason ?? '', /^configuration error: profile 'none' has no chain section/);
     const output = [result.stdout, ...filesBelow(result.outputDir).map((file) => readFileSync(file, 'utf8'))].join(
       '\n',
     );
@@ -71,10 +71,7 @@ describe('Relayer and contracts sections through the CLI', () => {
     assert.equal(result.code, 1, result.stdout + result.stderr);
     const scenario = scenarioOf(readReport(result.outputDir), 'fixture.fhe-on-none');
     assert.equal(scenario.outcome, 'error', 'P-002 is a configuration error');
-    assert.match(
-      scenario.reason ?? '',
-      /^configuration error \(P-002\): profile 'none' has no chain, relayer, contracts/,
-    );
+    assert.match(scenario.reason ?? '', /^configuration error: profile 'none' has no chain, relayer, contracts/);
     assert.match(result.stdout, /profile 'none' has no chain, relayer, contracts sections; declare spec\.targets/);
   });
 

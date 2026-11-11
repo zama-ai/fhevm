@@ -16,3 +16,4 @@ spec:
     kmsVerifier: { env: SOME_KMS_VERIFIER, secret: true, default: not-an-empty-default }
     protocolConfig: { value: "0x0000000000000000000000000000000000000006" }
     executor: { value: "0x0000000000000000000000000000000000000007" }
+    hcuLimit: { value: "0x0000000000000000000000000000000000000008" }

@@ -11,6 +11,7 @@ export type { ChainGas, SettingValue } from '../config/profiles/types.js';
 export { Chain, type DeployOptions, type EvidenceAccount, type SendOptions } from '../runtime/modules/chain/chain.js';
 export { type ContractArtifact, loadArtifact, parseArtifact } from '../runtime/modules/chain/artifacts.js';
 export { EngineWallet } from '../runtime/modules/chain/wallets.js';
+export { Contracts, MissingContractsDirError } from '../runtime/modules/contracts/contracts.js';
 export {
   type ClearValue,
   type ContractLike,

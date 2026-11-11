@@ -62,7 +62,7 @@ const CHAIN_SOURCES = ['rpcUrl', 'chainId', 'mnemonic'] as const;
 /** The gateway value sources of the `relayer` section, in display order. */
 const GATEWAY_SOURCES = ['chainId', 'decryption', 'inputVerification'] as const;
 /** The value sources of the `contracts` section, in display order. */
-const CONTRACT_SOURCES = ['acl', 'inputVerifier', 'kmsVerifier', 'protocolConfig'] as const;
+const CONTRACT_SOURCES = ['acl', 'executor', 'inputVerifier', 'kmsVerifier', 'protocolConfig'] as const;
 
 function checkValueSource(where: string, source: ValueSource): string[] {
   const problems: string[] = [];
@@ -371,11 +371,12 @@ function resolveContracts(
   problems: string[],
 ): ResolvedContractsSection | undefined {
   const before = problems.length;
-  const [acl, inputVerifier, kmsVerifier, protocolConfig] = CONTRACT_SOURCES.map((field) =>
+  const [acl, executor, inputVerifier, kmsVerifier, protocolConfig] = CONTRACT_SOURCES.map((field) =>
     resolveAddress(`spec.contracts.${field}`, contracts[field], resolve, problems),
   );
-  if (problems.length > before || !acl || !inputVerifier || !kmsVerifier || !protocolConfig) return undefined;
-  return { acl, inputVerifier, kmsVerifier, protocolConfig };
+  if (problems.length > before || !acl || !executor || !inputVerifier || !kmsVerifier || !protocolConfig)
+    return undefined;
+  return { acl, executor, inputVerifier, kmsVerifier, protocolConfig };
 }
 
 /**
@@ -544,10 +545,16 @@ export function redactedRelayer(profile: ResolvedProfile): ResolvedRelayerSectio
 export function redactedContracts(profile: ResolvedProfile): ResolvedContractsSection | undefined {
   const contracts = profile.contracts;
   if (!contracts) return undefined;
-  const [acl, inputVerifier, kmsVerifier, protocolConfig] = CONTRACT_SOURCES.map((field) =>
+  const [acl, executor, inputVerifier, kmsVerifier, protocolConfig] = CONTRACT_SOURCES.map((field) =>
     redact(`contracts.${field}`, contracts[field]),
   );
-  return { acl: acl!, inputVerifier: inputVerifier!, kmsVerifier: kmsVerifier!, protocolConfig: protocolConfig! };
+  return {
+    acl: acl!,
+    executor: executor!,
+    inputVerifier: inputVerifier!,
+    kmsVerifier: kmsVerifier!,
+    protocolConfig: protocolConfig!,
+  };
 }
 
 /** A copy of the settings safe to print or store: secret values replaced by a placeholder. */

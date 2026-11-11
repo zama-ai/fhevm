@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { CompileError, compileContracts } from '../boot/compile.js';
 import { redactedPreflight, runPreflight } from '../boot/preflight.js';
 import { listProfileNames, listProfiles, loadProfile, secretsOf } from '../config/profiles/profile.js';
 import { BUILTIN_PROFILE, ProfileError, type ResolvedProfile } from '../config/profiles/types.js';
 import {
+  DEFAULT_E2E_PROJECT,
   DEFAULT_PROFILES_DIR,
   DEFAULT_REPORTS_DIR,
   DEFAULT_SCENARIOS_DIR,
@@ -61,6 +63,8 @@ Commands:
   list       List discovered scenarios (validates every manifest)
   run        Run the selected scenarios, one isolated process per scenario
   dry-run    Validate the selected scenarios without executing any step
+  compile    Compile the e2e contracts for --profile: generate their coprocessor config from the
+             profile's contracts section (the e2e project's generator), compile, verify, stamp
   profiles   List and validate the profiles; with --profile, also resolve that profile
   help       Show this message
 
@@ -72,7 +76,9 @@ Options:
       --scenarios-dir <dir>  Directory scanned for scenario.yaml files (default: <package>/scenarios)
       --profiles-dir <dir>   Directory holding <profile>.yaml files (default: <package>/profiles)
   -o, --output-dir <dir>     Run output directory (default: <package>/reports/<run-id>)
-      --no-preflight         run: skip the checks of the RPC, relayer and FHE key made before any scenario
+      --no-preflight         run: skip the checks made before any scenario (RPC, contracts, relayer, FHE key)
+      --contracts-dir <dir>  run, dry-run: compiled contracts for this.engine.contracts (printed by compile)
+      --project <dir>        compile: the e2e Hardhat project (default: <package>/../e2e)
       --json                 list: print JSON instead of a table
   -v, --version              Print the engine version
 
@@ -162,11 +168,27 @@ async function preflightFor(
   profile: ResolvedProfile,
   redactor: Redactor,
   skip: boolean,
+  contractsDir: string | undefined,
 ): Promise<PreflightResult | undefined> {
   if (mode !== 'run') return undefined;
   if (skip) return { status: 'skipped', reason: '--no-preflight', checks: [] };
   if (!hasRunnableItems(plan)) return { status: 'skipped', reason: 'no scenario to run', checks: [] };
-  return redactedPreflight(await runPreflight(profile), redactor);
+  return redactedPreflight(await runPreflight(profile, contractsDir !== undefined ? { contractsDir } : {}), redactor);
+}
+
+async function commandCompile(options: CommonOptions, project: string): Promise<number> {
+  const profile = loadProfile(options.profile, { profilesDir: options.profilesDir });
+  const redactor = createRedactor(secretsOf(profile));
+  console.log(`Compiling the e2e contracts of ${project} for profile '${profile.name}'\n`);
+  const result = await compileContracts(profile, { project, redactor });
+  console.log(
+    redactor.redact(
+      `\nCompiled for profile '${profile.name}': ACL ${result.addresses.acl}, executor ${result.addresses.executor}, KMSVerifier ${result.addresses.kmsVerifier}`,
+    ),
+  );
+  console.log(`Build stamp: ${result.stampFile}`);
+  console.log(`Run with: --contracts-dir ${result.artifactsDir}`);
+  return EXIT.success;
 }
 
 async function commandRun(
@@ -174,6 +196,7 @@ async function commandRun(
   options: CommonOptions,
   outputDirOption: string | undefined,
   skipPreflight: boolean,
+  contractsDir: string | undefined,
 ): Promise<number> {
   const discovery = await discover(options);
   if (discovery.errors.length > 0) {
@@ -189,7 +212,7 @@ async function commandRun(
   const startedAt = new Date();
   printPlan(plan, mode);
   // Before any scenario: an environment that does not answer is a configuration error (exit 2).
-  const preflight = await preflightFor(mode, plan, profile, redactor, skipPreflight);
+  const preflight = await preflightFor(mode, plan, profile, redactor, skipPreflight, contractsDir);
   if (preflight) printPreflight(preflight);
   if (preflight?.status === 'failed') {
     console.error(`\ntest-engine: preflight failed; no scenario was run (--no-preflight skips the checks).`);
@@ -214,6 +237,7 @@ async function commandRun(
     cwd: PACKAGE_ROOT,
     profile,
     redactor,
+    ...(contractsDir !== undefined ? { contractsDir } : {}),
     signal: abort.signal,
     onScenarioStart: (scenario) => printScenarioHeader(scenario, plan, mode),
   });
@@ -260,6 +284,8 @@ async function main(argv: string[]): Promise<number> {
       'output-dir': { type: 'string', short: 'o' },
       json: { type: 'boolean', default: false },
       'no-preflight': { type: 'boolean', default: false },
+      'contracts-dir': { type: 'string' },
+      project: { type: 'string' },
       version: { type: 'boolean', short: 'v', default: false },
       help: { type: 'boolean', short: 'h', default: false },
     },
@@ -289,6 +315,17 @@ async function main(argv: string[]): Promise<number> {
     throw new UsageError(`--no-preflight is only accepted by 'run' (the other commands never connect)`);
   }
 
+  if (values['contracts-dir'] !== undefined && command !== 'run' && command !== 'dry-run') {
+    throw new UsageError(`--contracts-dir is only accepted by 'run' and 'dry-run'`);
+  }
+  if (values.project !== undefined && command !== 'compile') {
+    throw new UsageError(`--project is only accepted by 'compile'`);
+  }
+  const contractsDir = values['contracts-dir'] !== undefined ? path.resolve(values['contracts-dir']) : undefined;
+  if (contractsDir !== undefined && !existsSync(contractsDir)) {
+    throw new UsageError(`--contracts-dir ${contractsDir} does not exist`);
+  }
+
   switch (command) {
     case 'list':
       return commandList(options, values.json, values.profile !== undefined);
@@ -296,7 +333,11 @@ async function main(argv: string[]): Promise<number> {
       return commandProfiles(options, values.profile !== undefined);
     case 'run':
     case 'dry-run':
-      return commandRun(command, options, values['output-dir'], values['no-preflight']);
+      return commandRun(command, options, values['output-dir'], values['no-preflight'], contractsDir);
+    case 'compile':
+      if (values.profile === undefined) throw new UsageError(`'compile' needs --profile`);
+      if (ids.length > 0 || values.tags !== undefined) throw new UsageError(`'compile' takes no scenario selection`);
+      return commandCompile(options, path.resolve(values.project ?? DEFAULT_E2E_PROJECT));
     default:
       throw new UsageError(`Unknown command '${command}'.`);
   }
@@ -317,7 +358,9 @@ main(process.argv.slice(2))
     }
     // Exit code 2: a usage or configuration problem, detected before any scenario ran.
     const isUsage = error instanceof UsageError || (error as { code?: string }).code?.startsWith('ERR_PARSE_ARGS');
-    if (error instanceof ProfileError) {
+    if (error instanceof CompileError) {
+      console.error(`test-engine: compile failed: ${error.message}`);
+    } else if (error instanceof ProfileError) {
       printProfileErrors([error]);
     } else {
       console.error(`test-engine: ${error instanceof Error ? error.message : String(error)}`);
