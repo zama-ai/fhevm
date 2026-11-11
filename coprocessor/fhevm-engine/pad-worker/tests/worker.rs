@@ -4,7 +4,9 @@ use ciphertext_attestation::{
 };
 use pad_worker::{
     evaluator::{MockEvaluator, PadEvaluator, PadOutputs},
-    rows, Config, PadWorker,
+    rows,
+    upload::{s3_key, Uploader},
+    Config, PadWorker,
 };
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{
@@ -15,7 +17,10 @@ use std::{
     },
     time::Duration,
 };
-use test_harness::instance::{setup_test_db, DBInstance, ImportMode};
+use test_harness::{
+    instance::{setup_test_db, DBInstance, ImportMode},
+    localstack::{create_localstack_s3_client, start_localstack, LocalstackContainer},
+};
 use tokio::{task::JoinHandle, time::sleep};
 use tokio_util::sync::CancellationToken;
 
@@ -58,25 +63,50 @@ async fn add_row(pool: &PgPool, prf: u16, label: u8, connector: u8, age_secs: f6
     .unwrap();
 }
 
-fn start(
-    pool: &PgPool,
-    config: Config,
-    evaluator: Arc<dyn PadEvaluator>,
-) -> (
+type Started = (
     PrivateKeySigner,
     CancellationToken,
     JoinHandle<anyhow::Result<()>>,
-) {
+);
+
+fn start(pool: &PgPool, config: Config, evaluator: Arc<dyn PadEvaluator>) -> Started {
+    start_with(pool, config, evaluator, None)
+}
+
+fn start_with(
+    pool: &PgPool,
+    config: Config,
+    evaluator: Arc<dyn PadEvaluator>,
+    uploader: Option<Uploader>,
+) -> Started {
     let signer = PrivateKeySigner::random();
     let cancel = CancellationToken::new();
-    let worker = PadWorker::new(
+    let mut worker = PadWorker::new(
         config,
         pool.clone(),
         evaluator,
         Arc::new(signer.clone()),
         cancel.clone(),
     );
+    if let Some(uploader) = uploader {
+        worker = worker.with_uploader(uploader);
+    }
     (signer, cancel, tokio::spawn(worker.run()))
+}
+
+const BUCKET: &str = "pads";
+
+/// LocalStack with no bucket, and an uploader that finds failed uploads every 100 ms.
+async fn s3() -> (LocalstackContainer, aws_sdk_s3::Client, Uploader) {
+    let localstack = start_localstack().await.expect("localstack");
+    let client = create_localstack_s3_client(localstack.host_port).await;
+    let uploader = Uploader::new(
+        client.clone(),
+        BUCKET.to_string(),
+        NonZeroUsize::new(4).unwrap(),
+        Duration::from_millis(100),
+    );
+    (localstack, client, uploader)
 }
 
 /// Waits until `query` returns true.
@@ -326,4 +356,111 @@ async fn the_connector_with_fewer_rows_in_progress_goes_first() {
     .collect();
     assert_eq!(labels, vec![1, 3, 2]);
     assert!(claim().await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn uploads_the_output_with_its_attestation() {
+    let (_instance, pool) = db().await;
+    let (_localstack, client, uploader) = s3().await;
+    client.create_bucket().bucket(BUCKET).send().await.unwrap();
+    add_row(&pool, LANE, 0xab, 1, 0.0).await;
+    let (signer, cancel, run) =
+        start_with(&pool, config(), Arc::new(MockEvaluator), Some(uploader));
+
+    until(&pool, "SELECT s3_verified_at IS NOT NULL FROM pads").await;
+
+    let label = B256::repeat_byte(0xab);
+    let key = format!("pads/{LANE}/{}/64/ct128", hex::encode(label));
+    assert_eq!(
+        s3_key(&rows::Claim {
+            prf_instance: LANE,
+            label,
+            pad_length: 64
+        }),
+        key
+    );
+    let object = client
+        .get_object()
+        .bucket(BUCKET)
+        .key(&key)
+        .send()
+        .await
+        .unwrap();
+    let attestation: PrfOutputAttestation = serde_json::from_str(
+        &object.metadata().unwrap()[ciphertext_attestation::S3_METADATA_ATTESTATION_KEY],
+    )
+    .unwrap();
+    attestation
+        .verify(&PrfOutputRef::new(LANE, label, 64), signer.address())
+        .unwrap();
+    let body = object.body.collect().await.unwrap().into_bytes();
+    assert_eq!(
+        body.as_ref(),
+        MockEvaluator.evaluate(LANE, label, 64).unwrap().ct128
+    );
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn a_failed_upload_is_tried_again() {
+    let (_instance, pool) = db().await;
+    let (_localstack, client, uploader) = s3().await;
+    add_row(&pool, LANE, 1, 1, 0.0).await;
+    let config = Config {
+        claim_timeout: Duration::from_secs(1),
+        ..config()
+    };
+    let (_signer, cancel, run) = start_with(&pool, config, Arc::new(MockEvaluator), Some(uploader));
+
+    // No bucket: the row is complete, but the upload fails.
+    until(&pool, "SELECT signature IS NOT NULL FROM pads").await;
+    sleep(Duration::from_millis(300)).await;
+    let uploaded: bool = sqlx::query_scalar("SELECT s3_verified_at IS NOT NULL FROM pads")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!uploaded);
+
+    client.create_bucket().bucket(BUCKET).send().await.unwrap();
+    until(&pool, "SELECT s3_verified_at IS NOT NULL FROM pads").await;
+
+    cancel.cancel();
+    run.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn writes_the_output_of_a_pending_row_only() {
+    let (_instance, pool) = db().await;
+    add_row(&pool, LANE, 1, 1, 0.0).await;
+    let claim = rows::claim(
+        &pool,
+        LANE,
+        Duration::from_secs(600),
+        Duration::from_secs(60),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    let attestation = PrfOutputAttestation {
+        version: Version::V1,
+        ciphertext_digest: B256::ZERO,
+        sns_ciphertext_digest: B256::ZERO,
+        signer: alloy::primitives::Address::ZERO,
+        signature: vec![1; 65],
+    };
+
+    // The second write is from a pod whose claim went stale: the row keeps the first output.
+    assert!(rows::write_output(&pool, &claim, &[1], &attestation)
+        .await
+        .unwrap());
+    assert!(!rows::write_output(&pool, &claim, &[2], &attestation)
+        .await
+        .unwrap());
+    let ct128: Vec<u8> = sqlx::query_scalar("SELECT ciphertext128 FROM pads")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(ct128, vec![1]);
 }
