@@ -33,7 +33,7 @@
 
     // Interop Constraints
     // ===================
-    "esModuleInterop": false,
+    // esModuleInterop is left at its default (true): disabling it is deprecated in TypeScript 6.
     "allowSyntheticDefaultImports": true, // required for JSON import
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
@@ -53,6 +53,10 @@
 
     // Completeness
     // ============
-    "skipLibCheck": true
+    "skipLibCheck": true,
+
+    // Global types (TypeScript 6 no longer includes every installed @types package by default)
+    // ============
+    "types": ["node"]
   }
 }

@@ -8,10 +8,10 @@ const HOST_ADDRESSES_ENV_FILE_NAME = '.env.host';
 
 // Get the required environment variable, throw an error if it's not set or empty
 export function getRequiredEnvVar(name: string): string {
-  if (!(name in process.env)) {
+  const value = process.env[name];
+  if (value === undefined) {
     throw new Error(`"${name}" env variable is not set`);
   }
-  const value = process.env[name]!;
   if (value.trim() === '') {
     throw new Error(`"${name}" env variable is set but empty`);
   }
@@ -30,7 +30,7 @@ export function getRequiredCountEnvVar(name: string): number {
 }
 
 // Load the addresses as environment variables from the env file
-export function loadAddressEnvVarsFromFile(fileName: string) {
+export function loadAddressEnvVarsFromFile(fileName: string): void {
   const envFilePath = path.join(ADDRESSES_DIR, fileName);
 
   if (!fs.existsSync(envFilePath)) {
@@ -40,7 +40,7 @@ export function loadAddressEnvVarsFromFile(fileName: string) {
   dotenv.config({ path: envFilePath, override: true });
 }
 
-export function loadHostAddresses() {
+export function loadHostAddresses(): void {
   loadAddressEnvVarsFromFile(HOST_ADDRESSES_ENV_FILE_NAME);
 }
 
