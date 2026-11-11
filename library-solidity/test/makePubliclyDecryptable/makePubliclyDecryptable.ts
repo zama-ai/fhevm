@@ -1,7 +1,8 @@
-import type { MakePubliclyDecryptable } from '../../typechain-types';
 import { expect } from 'chai';
-import { getSigners, initSigners } from '../signers';
-import { MakePubliclyDecryptable__factory } from '../../typechain-types';
+
+import type { MakePubliclyDecryptable } from '../../typechain-types/index.js';
+import { MakePubliclyDecryptable__factory } from '../../typechain-types/index.js';
+import { getSigners, initSigners } from '../signers.js';
 
 describe('MakePubliclyDecryptable', function () {
   let contract: MakePubliclyDecryptable;
