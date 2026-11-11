@@ -54,12 +54,14 @@ impl PadEvaluator for MockEvaluator {
 pub struct TimedMockEvaluator {
     pub pbs_latency: Duration,
     pub parallel: NonZeroUsize,
+    /// A fixed delay on top, for e2e tests that need a row to stay pending.
+    pub extra: Duration,
 }
 
 impl TimedMockEvaluator {
     pub fn latency(&self, pad_length: u16) -> Duration {
         let rounds = usize::from(pad_length.div_ceil(4)).div_ceil(self.parallel.get());
-        self.pbs_latency * u32::try_from(rounds).unwrap_or(u32::MAX)
+        self.pbs_latency * u32::try_from(rounds).unwrap_or(u32::MAX) + self.extra
     }
 }
 
@@ -91,6 +93,7 @@ mod tests {
         let mock = TimedMockEvaluator {
             pbs_latency: Duration::from_millis(13),
             parallel: NonZeroUsize::new(96).unwrap(),
+            extra: Duration::ZERO,
         };
         assert_eq!(mock.latency(64), Duration::from_millis(13));
         assert_eq!(mock.latency(2048), Duration::from_millis(6 * 13));
@@ -99,5 +102,10 @@ mod tests {
             ..mock
         };
         assert_eq!(two_cpus.latency(64), Duration::from_millis(8 * 13));
+        let slow = TimedMockEvaluator {
+            extra: Duration::from_secs(2),
+            ..mock
+        };
+        assert_eq!(slow.latency(64), Duration::from_millis(2013));
     }
 }

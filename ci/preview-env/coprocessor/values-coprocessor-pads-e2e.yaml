@@ -21,11 +21,19 @@ padWorkerShared:
   # its rights.
   databaseUser: {value: pad_worker}
   databasePassword: {value: pad_worker}
+  # e2e limits, short so the "PRF endpoint" suite reaches them; the same ages as prf-service.
   config:
     s3BucketName:
       valueFrom: {configMapKeyRef: {name: coprocessor, key: S3_BUCKET_NAME}}
+    pendingMaxAgeSeconds: 60
+    outputMaxAgeSeconds: 300
+    ct64MaxAgeSeconds: 30
+  # Keeps a row pending for 2 s, so the suite can test the budgets.
+  env:
+    - {name: PAD_MOCK_EXTRA_LATENCY, value: 2s}
   extraArgs:
     - --start-check-interval=5s
+    - --gc-interval=5s
   nodeSelector:
     karpenter.sh/nodepool: zws-pool
   tolerations:

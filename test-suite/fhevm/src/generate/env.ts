@@ -442,6 +442,8 @@ const PRF_SERVICE_PORT = 8090;
 
 /** The default metrics port of prf-service. */
 const PRF_SERVICE_METRICS_PORT = 9100;
+/** The default metrics port of the pad-worker. */
+const PAD_WORKER_METRICS_PORT = 9100;
 
 /** The coprocessor-proxy's default listen port. */
 const COPROCESSOR_PROXY_PORT = 8443;
@@ -589,6 +591,9 @@ const applyCoprocessorProxyTestSuiteEnv = (envs: Record<string, Record<string, s
     .join(",");
   envs["test-suite"].PRF_SERVICE_METRICS_URLS = indices
     .map((index) => `http://${toServiceName("prf-service", index)}:${PRF_SERVICE_METRICS_PORT}/metrics`)
+    .join(",");
+  envs["test-suite"].PAD_WORKER_METRICS_URLS = indices
+    .map((index) => `http://${toServiceName("pad-worker", index)}:${PAD_WORKER_METRICS_PORT}/metrics`)
     .join(",");
   envs["test-suite"].COPROCESSOR_PROXY_METRICS_URLS = indices
     .map((index) => `http://${toServiceName("proxy", index)}:${COPROCESSOR_PROXY_METRICS_PORT}/metrics`)

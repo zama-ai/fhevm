@@ -280,6 +280,7 @@ impl PadWorker {
                 .await
                 .or_else(non_fatal);
         }
+        metrics::count_evaluation(claim.prf_instance);
         let (output, ct64) = match self.compute(claim).await {
             Ok(computed) => computed,
             Err(OutputError::Evaluation(message)) => {
