@@ -236,6 +236,10 @@ drop_invalid_index() {
 # new rows, so restoring DEFAULT NULL keeps existing rows at 0. Resetting the
 # version of not-yet-uploaded rows to NULL then gives the state the migration
 # would leave: it has nothing to update and its file stays unchanged.
+# ADD COLUMN takes an ACCESS EXCLUSIVE lock on the hot ciphertext_digest table.
+# Bound the wait so a contended lock fails and the Job retries (backoffLimit)
+# instead of queuing the running workers' queries behind it indefinitely. 10s
+# outlasts an SNS upload transaction, which stays open during the S3 upload.
 instant_prefill_s3_format_version() {
   local column_state
   column_state=$(ciphertext_digest_column_state s3_format_version)
@@ -246,6 +250,7 @@ instant_prefill_s3_format_version() {
 
   echo "Prefilling s3_format_version without a table rewrite..."
   run_sql "
+    SET LOCAL lock_timeout = '10s';
     ALTER TABLE ciphertext_digest ADD COLUMN s3_format_version SMALLINT DEFAULT 0;
     ALTER TABLE ciphertext_digest ALTER COLUMN s3_format_version SET DEFAULT NULL;
     UPDATE ciphertext_digest
