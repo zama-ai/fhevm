@@ -25,7 +25,7 @@ describe('Preflight through the CLI', () => {
     assert.equal(preflight?.status, 'passed');
     assert.deepEqual(
       preflight?.checks.map((check) => check.name),
-      ['chain.rpc', 'relayer.keyurl', 'relayer.fhe-key'],
+      ['chain.rpc', 'contracts.code', 'relayer.keyurl', 'relayer.fhe-key'],
     );
     const entry = readEvidence(result.outputDir).entries.find((candidate) => candidate.kind === 'engine.preflight');
     assert.equal(entry?.scope, 'run');
@@ -38,6 +38,7 @@ describe('Preflight through the CLI', () => {
     assert.equal(result.code, 2, result.stdout + result.stderr);
     assert.match(result.stdout, /Preflight \(failed\):/);
     assert.match(result.stdout, /chain\.rpc +failed/);
+    assert.match(result.stdout, /contracts\.code +skipped .*chain\.rpc failed/);
     assert.match(result.stdout, /relayer\.keyurl +failed .*relayer unreachable/);
     assert.match(result.stdout, /relayer\.fhe-key +skipped/);
     assert.match(result.stderr, /preflight failed; no scenario was run \(--no-preflight skips the checks\)/);

@@ -64,7 +64,8 @@ describe('FHE scenarios through the engine on the local stack', () => {
       const clients = of(id, 'fhe.client');
       assert.equal(clients.length, 1, id);
       assert.equal(clients[0]!.data.status, 'success');
-      assert.equal(clients[0]!.data.relayerUrl, 'http://fhevm-relayer:3000/v2');
+      // The relayer directly, or the relayer proxy that test-suite.env points at since main moved it.
+      assert.match(String(clients[0]!.data.relayerUrl), /^http:\/\/fhevm-relayer(-proxy)?:\d+\/v2$/);
       assert.equal(clients[0]!.data.threads, 'pool');
     }
   });

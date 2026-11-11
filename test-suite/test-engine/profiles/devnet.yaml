@@ -19,6 +19,7 @@ spec:
       inputVerification: { env: INPUT_VERIFICATION_ADDRESS }
   contracts:
     acl: { env: ACL_CONTRACT_ADDRESS }
+    executor: { env: FHEVM_EXECUTOR_CONTRACT_ADDRESS }
     inputVerifier: { env: INPUT_VERIFIER_CONTRACT_ADDRESS }
     kmsVerifier: { env: KMS_VERIFIER_CONTRACT_ADDRESS }
     protocolConfig: { env: PROTOCOL_CONFIG_CONTRACT_ADDRESS }

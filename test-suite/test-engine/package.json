@@ -26,6 +26,7 @@
     "test:integration:cli": "node --test --test-reporter=spec \"dist/test/integration/cli/**/*.test.js\"",
     "test:integration:chain": "sh test/integration/chain/run.sh",
     "test:integration:fhe": "sh test/integration/fhe/run.sh",
+    "test:e2e:local": "sh test/integration/e2e/run.sh",
     "prettier": "prettier --write \"**/*.{json,md,ts,yml,yaml}\"",
     "prettier:check": "prettier --check \"**/*.{json,md,ts,yml,yaml}\""
   },

@@ -51,6 +51,7 @@ const LIVE_ENV = {
   INPUT_VERIFIER_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000004',
   KMS_VERIFIER_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000005',
   PROTOCOL_CONFIG_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000006',
+  FHEVM_EXECUTOR_CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000007',
 };
 
 describe('profile files', () => {
@@ -92,7 +93,7 @@ describe('profile files', () => {
     assert.match(relayer, /spec\.relayer\.apiKey: must declare 'secret: true'/);
     assert.match(relayer, /spec\.relayer\.gateway\.chainId: cannot be a secret/);
     assert.match(relayer, /spec\.contracts\.kmsVerifier: a secret cannot have a 'default' other than the empty string/);
-    assert.match(relayer, /spec\.contracts: unknown field 'executor'/);
+    assert.match(relayer, /spec\.contracts: unknown field 'hcuLimit'/);
     assert.equal(byFile.has('relayer-types'), false);
   });
 

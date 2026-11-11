@@ -150,12 +150,16 @@
       }
     },
     "contractsSection": {
-      "description": "Protocol contracts deployed on the host chain, read by the FHE module. Every field is a value source holding an address, checked after resolution.",
+      "description": "Protocol contracts deployed on the host chain, read by the FHE module and by test-engine compile (acl, executor, kmsVerifier feed the e2e coprocessor config). Every field is a value source holding an address, checked after resolution.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["acl", "inputVerifier", "kmsVerifier", "protocolConfig"],
+      "required": ["acl", "executor", "inputVerifier", "kmsVerifier", "protocolConfig"],
       "properties": {
         "acl": { "$ref": "#/definitions/valueSource" },
+        "executor": {
+          "description": "The FHEVMExecutor (CoprocessorAddress of the Solidity coprocessor config).",
+          "$ref": "#/definitions/valueSource"
+        },
         "inputVerifier": { "$ref": "#/definitions/valueSource" },
         "kmsVerifier": { "$ref": "#/definitions/valueSource" },
         "protocolConfig": { "$ref": "#/definitions/valueSource" }

@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { redactedPreflight, runPreflight } from '../../../src/boot/preflight.js';
 import { loadProfile, secretsOf } from '../../../src/config/profiles/profile.js';
 import type { ResolvedProfile } from '../../../src/config/profiles/types.js';
 import { createRedactor } from '../../../src/infrastructure/secrets/redactor.js';
+import { BUILD_STAMP_FILE, writeBuildStamp } from '../../../src/runtime/modules/contracts/build-stamp.js';
 import { FHE_PROFILES } from '../../helpers.js';
 import { type FakeEnvironment, type FakeEnvironmentOptions, startFakeEnvironment } from './fake-environment.js';
 
@@ -39,12 +43,14 @@ describe('preflight', () => {
       result.checks.map((check) => [check.name, check.status]),
       [
         ['chain.rpc', 'passed'],
+        ['contracts.code', 'passed'],
         ['relayer.keyurl', 'passed'],
         ['relayer.fhe-key', 'passed'],
       ],
     );
     const checks = byName(result);
     assert.equal(checks['chain.rpc']!.detail, 'chain ID 12345');
+    assert.equal(checks['contracts.code']!.detail, '5 protocol contracts deployed');
     assert.equal(checks['relayer.keyurl']!.target, `${env.url}/v2/keyurl`);
     assert.equal(checks['relayer.fhe-key']!.target, `${env.url}/key`);
     assert.ok(env.requests.some((request) => request.method === 'HEAD' && request.path === '/key'));
@@ -136,5 +142,59 @@ describe('preflight', () => {
     assert.ok(!printed.includes('rpc-secret-path'));
     assert.ok(!printed.includes(API_KEY));
     assert.equal(byName(result)['chain.rpc']!.target, '[REDACTED:chain.rpcUrl]');
+  });
+
+  it('fails contracts.code when a protocol contract of the profile has no code on the chain', async () => {
+    const env = await environment({
+      emptyAddresses: ['0x0000000000000000000000000000000000000004', '0x0000000000000000000000000000000000000007'],
+    });
+    const result = await runPreflight(profileFor(env.url, env.url));
+    assert.equal(result.status, 'failed');
+    const check = byName(result)['contracts.code']!;
+    assert.equal(check.status, 'failed');
+    assert.match(
+      check.detail!,
+      /^no contract at contracts\.executor \(0x0+7\), contracts\.inputVerifier \(0x0+4\): the profile does not match this chain$/,
+    );
+  });
+
+  it('checks the build stamp of --contracts-dir against the profile (contracts.build)', async () => {
+    const env = await environment();
+    const profile = profileFor(env.url, env.url);
+    const dir = mkdtempSync(path.join(tmpdir(), 'te-contracts-'));
+    const build = async () => byName(await runPreflight(profile, { contractsDir: dir }))['contracts.build']!;
+
+    const missing = await build();
+    assert.equal(missing.status, 'failed');
+    assert.equal(missing.target, dir);
+    assert.match(
+      missing.detail!,
+      new RegExp(`no ${BUILD_STAMP_FILE} in .*: compile the contracts with 'test-engine compile'`),
+    );
+
+    const addresses = {
+      acl: profile.contracts!.acl.value,
+      executor: profile.contracts!.executor.value,
+      kmsVerifier: profile.contracts!.kmsVerifier.value.toUpperCase().replace('0X', '0x'),
+    };
+    writeBuildStamp(dir, { profile: 'fx-fhe', addresses, compiledAt: '2026-11-11T10:00:00.000Z' });
+    const matching = await build();
+    assert.equal(matching.status, 'passed', 'addresses compare case-insensitively');
+    assert.equal(matching.detail, "compiled for profile 'fx-fhe' at 2026-11-11T10:00:00.000Z");
+
+    writeBuildStamp(dir, {
+      profile: 'devnet',
+      addresses: { ...addresses, acl: '0x00000000000000000000000000000000000000aa' },
+      compiledAt: '2026-11-11T10:00:00.000Z',
+    });
+    const stale = await build();
+    assert.equal(stale.status, 'failed');
+    assert.equal(
+      stale.detail,
+      "compiled for profile 'devnet' with another contracts.acl; recompile with 'test-engine compile --profile fx-fhe'",
+    );
+
+    writeFileSync(path.join(dir, BUILD_STAMP_FILE), '{"profile": 1}');
+    assert.match((await build()).detail!, /not a test-engine build stamp/);
   });
 });

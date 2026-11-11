@@ -50,6 +50,8 @@ export interface RelayerSectionDefinition {
 /** `spec.contracts` as written in the profile file: protocol contracts deployed on the host chain. */
 export interface ContractsSectionDefinition {
   acl: ValueSource;
+  /** The FHEVMExecutor (`CoprocessorAddress` in the Solidity coprocessor config). */
+  executor: ValueSource;
   inputVerifier: ValueSource;
   kmsVerifier: ValueSource;
   protocolConfig: ValueSource;
@@ -66,7 +68,7 @@ export interface ProfileDefinition {
     chain?: ChainSectionDefinition;
     /** Typed section of the FHE module. */
     relayer?: RelayerSectionDefinition;
-    /** Host-chain protocol contracts, read by the FHE module (and later by contract configuration). */
+    /** Host-chain protocol contracts, read by the FHE module and by `test-engine compile`. */
     contracts?: ContractsSectionDefinition;
     settings: Record<string, ValueSource>;
   };
@@ -107,6 +109,7 @@ export interface ResolvedRelayerSection {
 /** `spec.contracts` once resolved and type-checked. */
 export interface ResolvedContractsSection {
   acl: ResolvedValue<string>;
+  executor: ResolvedValue<string>;
   inputVerifier: ResolvedValue<string>;
   kmsVerifier: ResolvedValue<string>;
   protocolConfig: ResolvedValue<string>;
