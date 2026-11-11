@@ -14,12 +14,20 @@ BEGIN
     END IF;
 
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pad_worker') THEN
-        REVOKE ALL ON pads, prf_lanes, keys FROM pad_worker;
+        -- Additive: an older copy of this file must not remove a right of a newer lane. Revoke only
+        -- what the role must never have.
+        REVOKE INSERT, TRUNCATE, REFERENCES, TRIGGER ON pads FROM pad_worker;
+        REVOKE UPDATE (prf_instance, label, pad_length, triggered_by, created_at)
+            ON pads FROM pad_worker;
+        REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER ON prf_lanes FROM pad_worker;
+        REVOKE UPDATE (prf_instance, reference_digest, reference_mismatch_at)
+            ON prf_lanes FROM pad_worker;
+        REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON keys FROM pad_worker;
         -- No INSERT, and no UPDATE of the key or the payer.
         GRANT SELECT, DELETE ON pads TO pad_worker;
         GRANT UPDATE (
             claimed_at, attempts, error_message, is_error, s3_verified_at,
-            ciphertext128, ciphertext_digest, ciphertext128_digest, signer, signature,
+            ciphertext64, ciphertext128, ciphertext_digest, ciphertext128_digest, signer, signature,
             attestation_version
         ) ON pads TO pad_worker;
         GRANT SELECT ON prf_lanes TO pad_worker;
