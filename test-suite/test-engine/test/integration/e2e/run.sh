@@ -1,9 +1,9 @@
 #!/bin/sh
 # Runs the official end-to-end scenarios (scenarios/, tag @e2e) against the local fhEVM stack
-# started with `fhevm-cli up`, the way a user would: `test-engine compile` in the e2e project of the
-# e2e container, then `test-engine run --profile local --contracts-dir <its artifacts>`. The engine
-# runs inside the container (the relayer hands out addresses that only resolve on the stack's
-# network). Needs `npm run build`. Set E2E_CONTAINER for another container.
+# started with `fhevm-cli up`, the way a user would: `test-engine run --profile local`. The engine
+# runs inside the e2e container, only for its network (the relayer hands out addresses that only
+# resolve there); it uses nothing of the e2e project. Needs `npm run build`. Set E2E_CONTAINER for
+# another container.
 set -u
 cd "$(dirname "$0")/../../.."
 

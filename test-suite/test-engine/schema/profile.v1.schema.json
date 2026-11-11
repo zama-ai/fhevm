@@ -150,7 +150,7 @@
       }
     },
     "contractsSection": {
-      "description": "Protocol contracts deployed on the host chain, read by the FHE module and by test-engine compile (acl, executor, kmsVerifier feed the e2e coprocessor config). Every field is a value source holding an address, checked after resolution.",
+      "description": "Protocol contracts deployed on the host chain, read by the FHE module and by this.engine.contracts (acl, executor and kmsVerifier form the coprocessor config the engine contracts are deployed with). Every field is a value source holding an address, checked after resolution.",
       "type": "object",
       "additionalProperties": false,
       "required": ["acl", "executor", "inputVerifier", "kmsVerifier", "protocolConfig"],

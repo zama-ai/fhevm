@@ -1,11 +1,10 @@
 /**
  * Shared code of the FHE fixture scenarios, which run against the local stack (see
- * test/integration/fhe/run.sh). The contract artifacts are those of the e2e image: their protocol
- * addresses are compiled in, and the image's match the local stack's.
+ * test/integration/fhe/run.sh). The contracts are the engine's own, deployed with the profile's
+ * coprocessor config.
  */
-import { type EncryptedInput, EngineWorld, loadArtifact } from '#engine';
+import { type EncryptedInput, EngineWorld } from '#engine';
 import type { Contract } from 'ethers';
-import path from 'node:path';
 
 /** Scenario state shared by the FHE fixtures. A fresh instance is created for every Gherkin scenario. */
 export class FheFixtureWorld extends EngineWorld {
@@ -24,10 +23,13 @@ export class FheFixtureWorld extends EngineWorld {
     return this.input;
   }
 
-  /** Deploys a contract of the e2e image (no constructor arguments) from `role`. */
+  /** Deploys one of the engine's contracts from `role`. */
   async deploy(contractName: string, role: string): Promise<void> {
-    const artifact = loadArtifact(path.join(this.engine.scenario.directory, '..', 'artifacts', `${contractName}.json`));
-    this.contract = await this.engine.chain.deploy(artifact, [], { from: role, label: `Deploy ${contractName}` });
+    const { chain, contracts } = this.engine;
+    this.contract = await chain.deploy(contracts.artifact(contractName), [contracts.coprocessorConfig()], {
+      from: role,
+      label: `Deploy ${contractName}`,
+    });
   }
 
   /** Reads a handle from a contract getter. */

@@ -1,15 +1,13 @@
 /**
  * Preflight: checks, before `run` starts any scenario, that the environment of the profile answers
- * (chain RPC with the right chain ID, protocol contracts deployed, relayer, FHE key) and that the
- * compiled contracts of `--contracts-dir` match the profile. Module-specific checks are exposed by the
- * modules and called from here. Runs in the main process: no SDK (its thread pool would keep the
+ * (chain RPC with the right chain ID, protocol contracts deployed, relayer, FHE key). Module-specific
+ * checks are exposed by the modules and called from here. Runs in the main process: no SDK (its thread pool would keep the
  * process alive), only ethers and `fetch`.
  */
 import type { ResolvedProfile } from '../config/profiles/types.js';
 import type { Redactor } from '../infrastructure/secrets/redactor.js';
 import type { PreflightCheck, PreflightResult } from '../model/preflight.js';
 import { Chain } from '../runtime/modules/chain/chain.js';
-import { checkBuild } from '../runtime/modules/contracts/build-check.js';
 import { checkRelayer } from '../runtime/modules/fhe/relayer-check.js';
 
 export type { PreflightCheck, PreflightResult } from '../model/preflight.js';
@@ -19,8 +17,6 @@ export interface PreflightOptions {
   timeoutMs?: number;
   /** Replaces the global `fetch` (unit tests). */
   fetch?: typeof fetch;
-  /** The run's `--contracts-dir`: adds the `contracts.build` check. */
-  contractsDir?: string;
 }
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -117,7 +113,6 @@ export async function runPreflight(profile: ResolvedProfile, options: PreflightO
   if (profile.relayer) {
     pending.push(checkRelayer(profile.relayer, { timeoutMs, ...(options.fetch ? { fetch: options.fetch } : {}) }));
   }
-  if (options.contractsDir !== undefined) pending.push(Promise.resolve([checkBuild(profile, options.contractsDir)]));
   if (pending.length === 0) {
     return { status: 'skipped', reason: `profile '${profile.name}' has no chain or relayer section`, checks: [] };
   }

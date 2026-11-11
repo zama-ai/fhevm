@@ -11,8 +11,10 @@ export const DIST_DIR = path.join(PACKAGE_ROOT, 'dist');
 export const DEFAULT_SCENARIOS_DIR = path.join(PACKAGE_ROOT, 'scenarios');
 export const DEFAULT_REPORTS_DIR = path.join(PACKAGE_ROOT, 'reports');
 export const DEFAULT_PROFILES_DIR = path.join(PACKAGE_ROOT, 'profiles');
-/** The e2e Hardhat project `compile` works in: the sibling folder in the repository (`test-suite/e2e`). */
-export const DEFAULT_E2E_PROJECT = path.join(PACKAGE_ROOT, '..', 'e2e');
+/** The engine's own Solidity test contracts. */
+export const CONTRACTS_SOURCES_DIR = path.join(PACKAGE_ROOT, 'contracts');
+/** Their artifacts, written by `npm run build`: what `this.engine.contracts` reads. */
+export const CONTRACTS_ARTIFACTS_DIR = path.join(DIST_DIR, 'contracts');
 export const MANIFEST_SCHEMA_PATH = path.join(PACKAGE_ROOT, 'schema', 'scenario.v1.schema.json');
 export const PROFILE_SCHEMA_PATH = path.join(PACKAGE_ROOT, 'schema', 'profile.v1.schema.json');
 

@@ -1,0 +1,15 @@
+apiVersion: fhevm.zama.ai/scenario/v1
+kind: Scenario
+metadata:
+  id: fixture.engine-contracts
+  name: Fixture engine contracts
+  owner: qa
+  description: >-
+    Engine test fixture - loads one of the engine's contracts and encodes its deployment with the profile's coprocessor
+    config, through this.engine.contracts (no chain needed).
+  tags: [fixture, contracts]
+spec:
+  runtime: cucumber
+  entrypoint: ./fixture.feature
+  supportCode: [./steps.ts]
+  timeoutSeconds: 30

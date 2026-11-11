@@ -1,8 +1,8 @@
 /**
  * Reference scenario for scenario authors: it uses only the engine API (`#engine`). The contract
- * comes from `this.engine.contracts` (compiled for the profile by `test-engine compile`), every
- * transaction and FHE operation is recorded as evidence by the engine, and the relayer job IDs
- * end up in the report.
+ * is one of the engine's own (`this.engine.contracts`), deployed with the profile's coprocessor
+ * config as constructor argument; every transaction and FHE operation is recorded as evidence by
+ * the engine, and the relayer job IDs end up in the report.
  */
 import { type EncryptedInput, EngineWorld } from '#engine';
 import { Given, Then, When, setWorldConstructor } from '@cucumber/cucumber';
@@ -27,7 +27,8 @@ class InputDecryptWorld extends EngineWorld {
 setWorldConstructor(InputDecryptWorld);
 
 Given('alice has deployed the TestInput contract', async function (this: InputDecryptWorld) {
-  this.contract = await this.engine.chain.deploy(this.engine.contracts.artifact('TestInput'), [], {
+  const { chain, contracts } = this.engine;
+  this.contract = await chain.deploy(contracts.artifact('TestInput'), [contracts.coprocessorConfig()], {
     from: 'alice',
     label: 'Deploy TestInput',
   });

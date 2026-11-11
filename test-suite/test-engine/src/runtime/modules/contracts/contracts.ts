@@ -1,24 +1,20 @@
 /**
- * Compiled contracts of the run (`run --contracts-dir`, built by `test-engine compile`): a scenario
- * loads its artifacts by contract name instead of shipping them.
+ * The engine's own test contracts (`contracts/`, compiled by `npm run build`): a scenario loads an
+ * artifact by contract name and deploys it with the profile's coprocessor config as constructor
+ * argument. The artifacts hold no protocol address, so the same build serves every profile.
  */
 import { readdirSync } from 'node:fs';
 import path from 'node:path';
 
-import { MISSING_CONTRACTS_DIR_ERROR } from '../../../model/execution.js';
+import type { ResolvedContractsSection } from '../../../config/profiles/types.js';
+import { MissingProfileSectionError } from '../../world/errors.js';
 import { type ContractArtifact, loadArtifact } from '../chain/artifacts.js';
 
-/**
- * A step loaded a compiled contract, but the run was given no `--contracts-dir`. The engine
- * reports it as a configuration error.
- */
-export class MissingContractsDirError extends Error {
-  constructor(contractName: string) {
-    super(
-      `contract '${contractName}' needs compiled contracts, but the run has no --contracts-dir; compile them with 'test-engine compile --profile <name>' and pass the directory it prints`,
-    );
-    this.name = MISSING_CONTRACTS_DIR_ERROR;
-  }
+/** The `CoprocessorConfig` struct of `@fhevm/solidity`, the constructor argument of every engine contract. */
+export interface CoprocessorConfig {
+  ACLAddress: string;
+  CoprocessorAddress: string;
+  KMSVerifierAddress: string;
 }
 
 const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -42,29 +38,44 @@ function artifactFiles(dir: string, name: string): string[] {
 
 export class Contracts {
   constructor(
-    /** Absolute path of the artifacts directory; undefined when the run has no `--contracts-dir`. */
-    readonly directory: string | undefined,
+    /** Absolute path of the artifacts directory (`dist/contracts`). */
+    readonly directory: string,
+    private readonly profileName: string,
+    private readonly section: ResolvedContractsSection | undefined,
   ) {}
 
   /**
-   * The compiled artifact of `contractName`. Throws when the run has no `--contracts-dir`
-   * (configuration error), when no artifact has that name, or when several do (the error lists
-   * them).
+   * The compiled artifact of `contractName`. Throws when no artifact has that name, or when several
+   * do (the error lists them).
    */
   artifact(contractName: string): ContractArtifact {
     if (!IDENTIFIER.test(contractName)) throw new Error(`'${contractName}' is not a contract name`);
-    if (this.directory === undefined) throw new MissingContractsDirError(contractName);
     let files: string[];
     try {
       files = artifactFiles(this.directory, contractName);
     } catch (error) {
-      throw new Error(`cannot read the contracts directory ${this.directory}: ${(error as Error).message}`);
+      throw new Error(
+        `cannot read the contracts directory ${this.directory} (run 'npm run build'): ${(error as Error).message}`,
+      );
     }
     if (files.length === 0) throw new Error(`no compiled contract '${contractName}' in ${this.directory}`);
     if (files.length > 1) {
-      const candidates = files.map((file) => path.relative(this.directory!, file)).join(', ');
+      const candidates = files.map((file) => path.relative(this.directory, file)).join(', ');
       throw new Error(`several compiled contracts are named '${contractName}': ${candidates}`);
     }
     return loadArtifact(files[0]!);
+  }
+
+  /**
+   * The constructor argument of the engine contracts: the profile's ACL, FHEVM executor and KMS
+   * verifier. Throws a configuration error when the profile has no `contracts` section.
+   */
+  coprocessorConfig(): CoprocessorConfig {
+    if (!this.section) throw new MissingProfileSectionError(this.profileName, ['contracts']);
+    return {
+      ACLAddress: this.section.acl.value,
+      CoprocessorAddress: this.section.executor.value,
+      KMSVerifierAddress: this.section.kmsVerifier.value,
+    };
   }
 }

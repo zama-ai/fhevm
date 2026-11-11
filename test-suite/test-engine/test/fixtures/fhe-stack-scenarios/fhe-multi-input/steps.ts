@@ -32,8 +32,8 @@ class MultiInputWorld extends FheFixtureWorld {
 }
 setWorldConstructor(MultiInputWorld);
 
-Given('alice has deployed the FHEVMTestSuite4 contract', async function (this: MultiInputWorld) {
-  await this.deploy('FHEVMTestSuite4', 'alice');
+Given('alice has deployed the TestMultiInput contract', async function (this: MultiInputWorld) {
+  await this.deploy('TestMultiInput', 'alice');
 });
 
 When(

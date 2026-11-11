@@ -18,6 +18,3 @@ docker run --rm -v /tmp/counter:/work -w /work --entrypoint forge <foundry image
 
 then copy `abi`, `bytecode.object` and `deployedBytecode.object` from
 `/tmp/counter/out/Counter.sol/Counter.json` into `Counter.json`.
-
-`../compiled-contracts/contracts/Counter.sol/Counter.json` is a copy laid out as Hardhat writes
-it, for the `--contracts-dir` tests (`this.engine.contracts`); keep both in sync.

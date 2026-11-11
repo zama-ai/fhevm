@@ -23,8 +23,8 @@ import { createRedactor } from '../../infrastructure/secrets/redactor.js';
 import { findExecutionProblems } from '../../model/execution-problems.js';
 import {
   ARTIFACTS,
-  CONFIGURATION_ERRORS,
   ENGINE_ERROR_PREFIX,
+  MISSING_SECTION_ERROR,
   WORKER_EXIT,
   type WorkerJob,
 } from '../../model/execution.js';
@@ -96,13 +96,12 @@ async function runJob(job: WorkerJob): Promise<number> {
     console.error(`[test-engine] scenario is invalid: ${problems.map((problem) => problem.message).join('; ')}`);
     return WORKER_EXIT.scenarioFailed;
   }
-  // A step used a module the profile has no section for (P-002), or compiled contracts without
-  // --contracts-dir. Reported as a configuration error.
-  const configurationError = envelopes.find((envelope) =>
-    CONFIGURATION_ERRORS.includes(envelope.testStepFinished?.testStepResult.exception?.type ?? ''),
+  // P-002: a step used a module the profile has no section for. Reported as a configuration error.
+  const missingSection = envelopes.find(
+    (envelope) => envelope.testStepFinished?.testStepResult.exception?.type === MISSING_SECTION_ERROR,
   )?.testStepFinished?.testStepResult.exception;
-  if (configurationError) {
-    console.error(`${ENGINE_ERROR_PREFIX}${configurationError.message ?? configurationError.type}`);
+  if (missingSection) {
+    console.error(`${ENGINE_ERROR_PREFIX}${missingSection.message ?? MISSING_SECTION_ERROR}`);
     return WORKER_EXIT.configurationError;
   }
   return success ? WORKER_EXIT.success : WORKER_EXIT.scenarioFailed;

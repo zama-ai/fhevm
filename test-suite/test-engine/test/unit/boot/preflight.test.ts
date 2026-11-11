@@ -1,14 +1,10 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { redactedPreflight, runPreflight } from '../../../src/boot/preflight.js';
 import { loadProfile, secretsOf } from '../../../src/config/profiles/profile.js';
 import type { ResolvedProfile } from '../../../src/config/profiles/types.js';
 import { createRedactor } from '../../../src/infrastructure/secrets/redactor.js';
-import { BUILD_STAMP_FILE, writeBuildStamp } from '../../../src/runtime/modules/contracts/build-stamp.js';
 import { FHE_PROFILES } from '../../helpers.js';
 import { type FakeEnvironment, type FakeEnvironmentOptions, startFakeEnvironment } from './fake-environment.js';
 
@@ -156,45 +152,5 @@ describe('preflight', () => {
       check.detail!,
       /^no contract at contracts\.executor \(0x0+7\), contracts\.inputVerifier \(0x0+4\): the profile does not match this chain$/,
     );
-  });
-
-  it('checks the build stamp of --contracts-dir against the profile (contracts.build)', async () => {
-    const env = await environment();
-    const profile = profileFor(env.url, env.url);
-    const dir = mkdtempSync(path.join(tmpdir(), 'te-contracts-'));
-    const build = async () => byName(await runPreflight(profile, { contractsDir: dir }))['contracts.build']!;
-
-    const missing = await build();
-    assert.equal(missing.status, 'failed');
-    assert.equal(missing.target, dir);
-    assert.match(
-      missing.detail!,
-      new RegExp(`no ${BUILD_STAMP_FILE} in .*: compile the contracts with 'test-engine compile'`),
-    );
-
-    const addresses = {
-      acl: profile.contracts!.acl.value,
-      executor: profile.contracts!.executor.value,
-      kmsVerifier: profile.contracts!.kmsVerifier.value.toUpperCase().replace('0X', '0x'),
-    };
-    writeBuildStamp(dir, { profile: 'fx-fhe', addresses, compiledAt: '2026-11-11T10:00:00.000Z' });
-    const matching = await build();
-    assert.equal(matching.status, 'passed', 'addresses compare case-insensitively');
-    assert.equal(matching.detail, "compiled for profile 'fx-fhe' at 2026-11-11T10:00:00.000Z");
-
-    writeBuildStamp(dir, {
-      profile: 'devnet',
-      addresses: { ...addresses, acl: '0x00000000000000000000000000000000000000aa' },
-      compiledAt: '2026-11-11T10:00:00.000Z',
-    });
-    const stale = await build();
-    assert.equal(stale.status, 'failed');
-    assert.equal(
-      stale.detail,
-      "compiled for profile 'devnet' with another contracts.acl; recompile with 'test-engine compile --profile fx-fhe'",
-    );
-
-    writeFileSync(path.join(dir, BUILD_STAMP_FILE), '{"profile": 1}');
-    assert.match((await build()).detail!, /not a test-engine build stamp/);
   });
 });
