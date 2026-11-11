@@ -328,6 +328,13 @@ services:
       - --signer-type=private-key
       - --private-key=${TX_SENDER_PRIVATE_KEY}
       - --start-check-interval=2s
+      # e2e limits, short so the "PRF endpoint" suite reaches them; the same ages as prf-service.
+      - --pending-max-age=60s
+      - --output-max-age=300s
+      - --ct64-max-age=30s
+      - --gc-interval=5s
+      # Keeps a row pending for 2 s, so the suite can test the budgets.
+      - --mock-extra-latency=2s
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully
@@ -368,6 +375,10 @@ services:
     command:
       - prf-service
       - --http-endpoint=0.0.0.0:8090
+      # e2e limits: 2,048 pending bits and 8 requests in progress for each connector.
+      - --max-concurrent-per-connector=2048
+      - --max-in-flight-per-connector=8
+      - --pad-pending-max-age=60s
     depends_on:
       coprocessor-db-migration:
         condition: service_completed_successfully

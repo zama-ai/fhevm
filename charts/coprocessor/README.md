@@ -202,5 +202,5 @@ A lane keeps its image (`padLanes[].image`) for the life of its instance. An ima
 bytes of the outputs needs a new `prfId`: the lane exits at start if its reference digest is not the
 agreed one.
 
-The lane has no Service except the metrics one (`padWorkerShared.serviceMonitor.enabled`): nothing
-calls a lane.
+The lane has no Service except the metrics one, and `padWorkerShared.serviceMonitor.enabled` adds a
+ServiceMonitor: nothing calls a lane.
