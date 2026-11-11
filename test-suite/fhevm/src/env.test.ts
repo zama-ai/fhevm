@@ -179,7 +179,14 @@ describe("env", () => {
     });
     expect(pair.instanceEnvs["coprocessor-prf-service.1"]).toEqual({
       DATABASE_URL: "postgresql://prf_service:prf_service@db:5432/coprocessor_1",
+    });    // The pad-worker's env file is its coprocessor's, with its database login as the pad_worker role.
+    expect(pair.instanceEnvs["coprocessor-pad-worker.1"]).toEqual({
+      ...pair.instanceEnvs["coprocessor.1"],
+      DATABASE_URL: "postgresql://pad_worker:pad_worker@db:5432/coprocessor_1",
     });
+    expect(pair.instanceEnvs["coprocessor-pad-worker"].TX_SENDER_PRIVATE_KEY).toBe(
+      pair.componentEnvs.coprocessor.TX_SENDER_PRIVATE_KEY,
+    );
   });
 
   test("points the e2e suite at every coprocessor's proxy, signing as KMS party 1's connector", async () => {

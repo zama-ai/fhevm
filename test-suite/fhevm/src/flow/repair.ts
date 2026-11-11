@@ -43,6 +43,7 @@ const UPGRADE_VERSION_KEYS: Record<UpgradeGroup, string[]> = {
     "COPROCESSOR_UPGRADE_CONTROLLER_VERSION",
     "COPROCESSOR_PROXY_VERSION",
     "COPROCESSOR_PRF_SERVICE_VERSION",
+    "COPROCESSOR_PAD_WORKER_VERSION",
   ],
   "kms-connector": [
     "CONNECTOR_DB_MIGRATION_VERSION",
@@ -114,6 +115,7 @@ const coprocessorServices = (state: CoprocessorServicesState) =>
       (service !== "coprocessor-consensus-detector" || supportsConsensusDetectorForState(state)) &&
       (service !== "coprocessor-upgrade-controller" || supportsUpgradeControllerForState(state)) &&
       (service !== "coprocessor-proxy" || runsCoprocessorProxyForState(state)) &&
+      (service !== "coprocessor-pad-worker" || runsCoprocessorProxyForState(state)) &&
       (service !== "coprocessor-prf-service" || supportsPrfServiceForState(state)),
   );
 

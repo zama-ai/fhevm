@@ -1,5 +1,6 @@
-# coprocessor-proxy and prf-service of party i. scripts/deploy/deploy-coprocessor.sh applies it,
-# except on blue-green stacks, and sets the per-party values. apply-chain-env.sh sets the chain ID.
+# coprocessor-proxy, prf-service and consensus-detector of party i.
+# scripts/deploy/deploy-coprocessor.sh applies it, except on blue-green stacks, and sets the
+# per-party values. apply-chain-env.sh sets the chain ID.
 commonConfig:
   canonicalProtocolConfigChainId: "12345"
 
@@ -32,3 +33,8 @@ prfService:
   # deploy-coprocessor.sh creates this role before the migration, which grants its rights.
   databaseUser: {value: prf_service}
   databasePassword: {value: prf_service}
+
+# Compares the reference digests of the lanes of all operators, so that the lanes start.
+consensusDetector:
+  enabled: true
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/consensus-detector, tag: latest}

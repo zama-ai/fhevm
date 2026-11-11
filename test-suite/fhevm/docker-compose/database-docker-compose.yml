@@ -18,7 +18,7 @@ services:
       retries: 3
     volumes:
       - db:/var/lib/postgresql/data
-      # Runs once, on an empty data directory: the prf_service role.
+      # Runs once, on an empty data directory: the prf_service and pad_worker roles.
       - ../static/config/database/initdb:/docker-entrypoint-initdb.d:ro
 
 volumes:

@@ -220,6 +220,7 @@ export const GROUP_BUILD_SERVICES: Record<OverrideGroup, string[]> = {
     "coprocessor-upgrade-controller",
     "coprocessor-proxy",
     "coprocessor-prf-service",
+    "coprocessor-pad-worker",
   ],
   "kms-connector": [
     "kms-connector-db-migration",
@@ -279,17 +280,21 @@ export const GROUP_SERVICE_SUFFIXES: Record<OverrideGroup, string[]> = Object.fr
 export const KMS_CONNECTOR_HTTP_SERVICES = ["kms-connector-endpoint", "kms-connector-proxy"];
 
 /**
- * The services that `runsCoprocessorProxy` gates, in start order: the PRF output seeder and the proxy.
- * The seeder runs the test-suite image, so it is not a coprocessor build service.
+ * The services that `runsCoprocessorProxy` gates, in start order: the pad-worker lane that computes
+ * the PRF outputs, and the proxy.
  */
-export const COPROCESSOR_PROXY_SUFFIXES = ["prf-output-seed", "proxy"];
+export const COPROCESSOR_PROXY_SUFFIXES = ["pad-worker", "proxy"];
 
 /**
- * The coprocessor services with their own env file, holding only their own settings. The
- * coprocessor's env carries database and signing secrets: the internet-facing proxy must not get
- * them, and prf-service logs in as the prf_service role instead.
+ * The coprocessor services with their own env file. The coprocessor's env carries database and
+ * signing secrets: the internet-facing proxy must not get them, and prf-service logs in as the
+ * prf_service role instead. The pad-worker gets the coprocessor's env, with the pad_worker role.
  */
-export const OWN_ENV_COPROCESSOR_SERVICES = ["coprocessor-proxy", "coprocessor-prf-service"];
+export const OWN_ENV_COPROCESSOR_SERVICES = [
+  "coprocessor-proxy",
+  "coprocessor-prf-service",
+  "coprocessor-pad-worker",
+];
 
 /** The env file of coprocessor `index`'s `service`, one of `OWN_ENV_COPROCESSOR_SERVICES`. */
 export const coprocessorServiceEnvName = (service: string, index: number) =>

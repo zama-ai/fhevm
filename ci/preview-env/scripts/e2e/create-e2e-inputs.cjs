@@ -78,6 +78,13 @@ const mappings = [
     'COPROCESSOR_PRF_SERVICE_VERSION',
   ],
   [
+    'coprocessor-docker-build',
+    'pad_worker_build_result',
+    'coprocessor-pad-worker-version',
+    'fhevm/coprocessor/pad-worker',
+    'COPROCESSOR_PAD_WORKER_VERSION',
+  ],
+  [
     'listener-docker-build',
     'build_result',
     'listener-core-version',
@@ -192,6 +199,11 @@ function selectImages({ buildResults, headTag, gpuWorkerTag }) {
       ]),
     ),
   );
+  outputs['coprocessor-prf-versions'] = JSON.stringify({
+    proxy: outputs['coprocessor-proxy-version'],
+    'prf-service': outputs['coprocessor-prf-service-version'],
+    'pad-worker': outputs['coprocessor-pad-worker-version'],
+  });
   outputs['relayer-versions'] = JSON.stringify(
     Object.fromEntries(
       ['relayer', 'relayer-migrate', 'relayer-http'].map((name) => [name, outputs[`${name}-version`]]),

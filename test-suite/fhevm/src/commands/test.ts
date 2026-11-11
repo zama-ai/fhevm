@@ -2255,7 +2255,7 @@ const runTest = async (testName: string | undefined, options: TestOptions) => {
     }
     return state.scenario.kind === "blue-green"
       ? "blue-green stacks run without coprocessor-proxy"
-      : "COPROCESSOR_PROXY_VERSION or COPROCESSOR_PRF_SERVICE_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
+      : "COPROCESSOR_PROXY_VERSION, COPROCESSOR_PRF_SERVICE_VERSION or COPROCESSOR_PAD_WORKER_VERSION is not part of the resolved bundle (no coprocessor-proxy containers)";
   };
 
   const dbStateRevertSkipReason = () =>
