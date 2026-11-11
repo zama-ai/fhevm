@@ -131,6 +131,10 @@ task('task:deployEmptyUUPSProxies')
 
     const confidentialBridgeAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
     await run('task:setBridgeAddress', { address: confidentialBridgeAddress });
+
+    // Deployed last, so the addresses of the proxies above do not change.
+    const hcuConfiguratorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setHCUConfiguratorAddress', { address: hcuConfiguratorAddress });
   });
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -512,6 +516,32 @@ address constant hcuLimitAdd = ${taskArguments.address};\n`;
         flag: 'a',
       });
       console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol file appended with hcuLimitAdd successfully!');
+    } catch (error) {
+      console.error('Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol', error);
+    }
+  });
+
+task('task:setHCUConfiguratorAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments) {
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
+    const content = `HCU_CONFIGURATOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      console.log(`HCUConfigurator address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      console.error('Failed to write HCUConfigurator address:', err);
+    }
+
+    const solidityTemplate = `
+address constant hcuConfiguratorAdd = ${taskArguments.address};\n`;
+
+    try {
+      fs.writeFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
+        encoding: 'utf8',
+        flag: 'a',
+      });
+      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol file appended with hcuConfiguratorAdd successfully!');
     } catch (error) {
       console.error('Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol', error);
     }

@@ -268,6 +268,10 @@ task('task:deployEmptyUUPSProxies')
       );
       await run('task:setBridgeAddress', { address: ethers.ZeroAddress });
     }
+
+    // Deployed last, so the addresses of the proxies above do not change.
+    const hcuConfiguratorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setHCUConfiguratorAddress', { address: hcuConfiguratorAddress });
   });
 
 task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, { ethers, upgrades, run }) {
@@ -1011,6 +1015,33 @@ address constant hcuLimitAdd = ${taskArguments.address};\n`;
     try {
       writeHostAddressesSol(solidityTemplate, 'a');
       console.log(`${HOST_ADDRESSES_FILE} appended with hcuLimitAdd successfully!`);
+    } catch (error) {
+      throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup HCUConfigurator Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setHCUConfiguratorAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments) {
+    ensureAddressesDirectoryExists();
+    const content = `HCU_CONFIGURATOR_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`HCUConfigurator address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write HCUConfigurator address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant hcuConfiguratorAdd = ${taskArguments.address};\n`;
+
+    try {
+      writeHostAddressesSol(solidityTemplate, 'a');
+      console.log(`${HOST_ADDRESSES_FILE} appended with hcuConfiguratorAdd successfully!`);
     } catch (error) {
       throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
     }
