@@ -68,8 +68,43 @@ pub async fn lock_history_tx(
     Ok(())
 }
 
-/// Background publication skips a busy chain instead of retaining a connection
-/// while ingestion (or another publisher) owns its history.
+/// Background publication queues behind ingestion (or another publisher) for
+/// at most `timeout`, then skips the busy chain instead of retaining a
+/// connection. Waiting keeps its place in the lock queue; a non-blocking try
+/// loses to ingestion that queued during the publisher's previous transaction.
+/// On `false` the timed-out lock statement has aborted the transaction.
+pub async fn lock_history_within_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    source: ListenerSource,
+    gcs_mode: bool,
+    chain_id: i64,
+    timeout: std::time::Duration,
+) -> Result<bool, sqlx::Error> {
+    // lock_timeout 0 disables the bound; clamp to 1 ms.
+    let timeout = format!("{}ms", timeout.as_millis().max(1));
+    sqlx::query("SELECT set_config('lock_timeout', $1, TRUE)")
+        .bind(timeout)
+        .execute(&mut **tx)
+        .await?;
+    match lock_history_tx(tx, source, gcs_mode, chain_id).await {
+        Ok(()) => {}
+        Err(error)
+            if error
+                .as_database_error()
+                .and_then(|error| error.code())
+                .is_some_and(|code| code == "55P03") =>
+        {
+            return Ok(false);
+        }
+        Err(error) => return Err(error),
+    }
+    sqlx::query("SELECT set_config('lock_timeout', '0', TRUE)")
+        .execute(&mut **tx)
+        .await?;
+    Ok(true)
+}
+
+/// Non-blocking history acquisition.
 pub async fn try_lock_history_tx(
     tx: &mut Transaction<'_, Postgres>,
     source: ListenerSource,
