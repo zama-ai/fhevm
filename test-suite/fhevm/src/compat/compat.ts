@@ -457,6 +457,15 @@ export const supportsPrfService = (state: Pick<CompatState, "versions" | "overri
       (!override.services?.length || override.services.includes("coprocessor-prf-service")),
   );
 
+/** Detects when the resolved coprocessor bundle includes the pad-worker, published or built locally. */
+export const supportsPadWorker = (state: Pick<CompatState, "versions" | "overrides">) =>
+  Boolean(state.versions.env.COPROCESSOR_PAD_WORKER_VERSION) ||
+  state.overrides.some(
+    (override) =>
+      override.group === "coprocessor" &&
+      (!override.services?.length || override.services.includes("coprocessor-pad-worker")),
+  );
+
 /** Detects when the resolved kms-connector bundle includes the HTTP decryption path. */
 export const supportsConnectorHttp = (state: Pick<CompatState, "versions" | "overrides">) => {
   const available = (service: string, versionKey: string) =>
@@ -480,8 +489,9 @@ export const supportsCoprocessorProxy = (state: Pick<CompatState, "versions" | "
   );
 
 /**
- * Whether a stack runs coprocessor-proxy: the bundle has the proxy and prf-service, and the stack is
- * not blue-green (one proxy per fleet comes later). Takes a state (`scenario`) or a stack spec (`blueGreen`).
+ * Whether a stack runs coprocessor-proxy: the bundle has the proxy, prf-service, the pad-worker that
+ * computes the outputs and the consensus-detector that starts it, and the stack is not blue-green (one
+ * proxy per fleet comes later). Takes a state (`scenario`) or a stack spec (`blueGreen`).
  */
 export const runsCoprocessorProxy = (
   state: Pick<CompatState, "versions" | "overrides"> & { scenario?: { kind: string }; blueGreen?: unknown },
@@ -489,7 +499,9 @@ export const runsCoprocessorProxy = (
   state.scenario?.kind !== "blue-green" &&
   !state.blueGreen &&
   supportsCoprocessorProxy(state) &&
-  supportsPrfService(state);
+  supportsPrfService(state) &&
+  supportsPadWorker(state) &&
+  supportsConsensusDetector(state);
 
 /** Detects when gateway deployment still emits a gateway-side KMSGeneration address. */
 export const requiresLegacyGatewayKmsGenerationAddress = (state: Pick<CompatState, "versions">) =>

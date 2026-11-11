@@ -1,0 +1,32 @@
+# Pad release of party i, `coprocessor-<i>-pads`: the pad-worker lanes and no other component.
+# scripts/deploy/deploy-coprocessor.sh applies it with the per-party values, except on blue-green
+# stacks.
+commonConfig:
+  databaseAuthMode: password
+  databaseUrl: postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/fhevm_e2e
+
+dbMigration:
+  enabled: false
+tfheWorker:
+  enabled: false
+
+# The instance of the "Coprocessor proxy" suite. Mock evaluator: the key ID is a placeholder.
+padLanes:
+  - prfId: 0
+    keyId: "0x01"
+
+padWorkerShared:
+  image: {name: hub.zama.org/ghcr/zama-ai/fhevm/coprocessor/pad-worker, tag: latest}
+  # deploy-coprocessor.sh creates this role. The migration of the coprocessor-<i> release grants
+  # its rights.
+  databaseUser: {value: pad_worker}
+  databasePassword: {value: pad_worker}
+  config:
+    s3BucketName:
+      valueFrom: {configMapKeyRef: {name: coprocessor, key: S3_BUCKET_NAME}}
+  extraArgs:
+    - --start-check-interval=5s
+  nodeSelector:
+    karpenter.sh/nodepool: zws-pool
+  tolerations:
+    - {key: karpenter.sh/nodepool, operator: Equal, value: zws-pool, effect: NoSchedule}

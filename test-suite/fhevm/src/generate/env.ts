@@ -487,6 +487,28 @@ const buildPrfServiceEnvs = (envs: Record<string, Record<string, string>>, plan:
   return prfServiceEnvs;
 };
 
+/** Each pad-worker's env file: its coprocessor's env, with DATABASE_URL as the pad_worker role. */
+const buildPadWorkerEnvs = (
+  envs: Record<string, Record<string, string>>,
+  instanceEnvs: Record<string, Record<string, string>>,
+  plan: StackSpec,
+) => {
+  const padWorkerEnvs: Record<string, Record<string, string>> = {};
+  if (!plan.coprocessor || !runsCoprocessorProxy(plan)) {
+    return padWorkerEnvs;
+  }
+  // A fixed name: grant_pad_roles.sql grants only to `pad_worker`.
+  const credentials = `pad_worker:${envs.database.PAD_WORKER_DATABASE_PASSWORD}`;
+  for (let index = 0; index < plan.topology.count; index += 1) {
+    const coprocessor = index === 0 ? envs.coprocessor : instanceEnvs[`coprocessor.${index}`];
+    padWorkerEnvs[coprocessorServiceEnvName("coprocessor-pad-worker", index)] = {
+      ...coprocessor,
+      DATABASE_URL: `postgresql://${credentials}@${POSTGRES_HOST}/${coprocessorDatabaseName(index)}`,
+    };
+  }
+  return padWorkerEnvs;
+};
+
 /** Builds per-instance coprocessor env maps and injects derived signer addresses. */
 const buildInstanceEnvs = async (
   envs: Record<string, Record<string, string>>,
@@ -756,7 +778,12 @@ export const renderEnvMaps = async (
   }
 
   // After the loops that copy coprocessor settings into every `coprocessor*` instance env.
-  Object.assign(instanceEnvs, buildCoprocessorProxyEnvs(envs, plan), buildPrfServiceEnvs(envs, plan));
+  Object.assign(
+    instanceEnvs,
+    buildCoprocessorProxyEnvs(envs, plan),
+    buildPrfServiceEnvs(envs, plan),
+    buildPadWorkerEnvs(envs, instanceEnvs, plan),
+  );
   validateEnvMaps(envs, instanceEnvs);
   const compat = compatPolicyForState(plan);
 
