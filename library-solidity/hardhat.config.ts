@@ -1,8 +1,14 @@
 import hardhatEthers from '@nomicfoundation/hardhat-ethers';
+import hardhatTypechain from '@nomicfoundation/hardhat-typechain';
 import { defineConfig, task } from 'hardhat/config';
 
 export default defineConfig({
-  plugins: [hardhatEthers],
+  plugins: [hardhatEthers, hardhatTypechain],
+  typechain: {
+    // HH3's default is `types/`. Keep HH2's folder: the tests, the codegen-generated tests
+    // (codegen.config.json), `clean`, .gitignore and ESLint all use `typechain-types/`.
+    outDir: 'typechain-types',
+  },
   tasks: [
     task('task:networkInfo', 'Prints the chain id, the signers and the first signer balance of a network')
       .setAction(() => import('./tasks/networkInfo.js'))
