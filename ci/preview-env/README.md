@@ -373,6 +373,12 @@ each party is registered with its `COPROCESSOR_TX_SENDER_ADDRESS_<idx>` /
 `COPROCESSOR_SIGNER_ADDRESS_<idx>` / `COPROCESSOR_S3_BUCKET_URL_<idx>` (the static
 `_0` values are no longer in `gateway-chain/values-gateway-contracts-e2e.yaml` — the
 deploy step owns them now).
+Ethereum's `CoprocessorConfig` gets the same `NUM_COPROCESSORS` and `COPROCESSOR_THRESHOLD`, with
+each party's `COPROCESSOR_TX_SENDER_ADDRESS_<idx>`, `COPROCESSOR_SIGNER_ADDRESS_<idx>` and its
+bucket URL as `COPROCESSOR_STORAGE_URL_<idx>`, to define its initial coprocessor context. Each
+`CoprocessorConfigReplica` copies that context from Ethereum at deploy time. Later contexts are
+defined on Ethereum and mirrored to replicas with `task:mirrorCoprocessorContext` and
+`task:mirrorCoprocessorContextDestruction`.
 
 ### Event pipeline: dedicated `listener` producer -> per-party Redis -> consumer
 

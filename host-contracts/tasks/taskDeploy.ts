@@ -6,8 +6,13 @@ import { task, types } from 'hardhat/config';
 import type { HardhatEthersHelpers, HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 import path from 'path';
 
+import { buildCanonicalCoprocessorUpgradeProposal, readCanonicalCoprocessorSnapshot } from './coprocessorConfigMirror';
 import { buildCanonicalUpgradeProposal, readCanonicalSnapshot } from './protocolConfigMirror';
 import { assertContractMatchesVersionPrefix } from './utils/contractVersion';
+import {
+  buildCanonicalCoprocessorSnapshotEnv,
+  readCanonicalCoprocessorSnapshotFromEnv,
+} from './utils/coprocessorConfigCanonicalEnv';
 import { formatError } from './utils/formatError';
 import { CRS_COUNTER_BASE, KEY_COUNTER_BASE } from './utils/kmsGenerationConstants';
 import { getRequiredCountEnvVar, getRequiredEnvVar } from './utils/loadVariables';
@@ -80,7 +85,7 @@ task('task:deployAllHostContracts')
   )
   .addOptionalParam(
     'protocolConfigSource',
-    "How to deploy the ProtocolConfig proxy: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'canonical' deploys ProtocolConfigReplica seeded from the canonical chain's ProtocolConfig via task:deployProtocolConfigFromCanonical (non-canonical hosts only), configured through the CANONICAL_* snapshot env variables.",
+    "How to deploy the ProtocolConfig proxy: 'fresh' (default) calls initializeFromEmptyProxy with env-driven KMS nodes/thresholds; 'canonical' deploys ProtocolConfigReplica and CoprocessorConfigReplica seeded from the canonical chain via task:deployProtocolConfigFromCanonical and task:deployCoprocessorConfigFromCanonical (non-canonical hosts only), configured through the CANONICAL_* and CANONICAL_COPROCESSOR_* snapshot env variables.",
     'fresh',
     types.string,
   )
@@ -107,8 +112,9 @@ task('task:deployAllHostContracts')
           '--protocol-config-source canonical seeds a non-canonical replica; it cannot be combined with --with-kms-generation true.',
         );
       }
-      // Fail before the clean/compile sequence rather than at the mirror step, which runs last.
+      // Fail before the clean/compile sequence rather than at the mirror steps, which run last.
       readCanonicalSnapshotFromEnv();
+      readCanonicalCoprocessorSnapshotFromEnv();
     }
 
     if (process.env.SOLIDITY_COVERAGE !== 'true') {
@@ -128,8 +134,10 @@ task('task:deployAllHostContracts')
     await hre.run('task:deployFHEVMExecutor');
     if (protocolConfigSource === 'canonical') {
       await hre.run('task:deployProtocolConfigFromCanonical');
+      await hre.run('task:deployCoprocessorConfigFromCanonical');
     } else {
       await hre.run('task:deployProtocolConfig');
+      await hre.run('task:deployCoprocessorConfig');
     }
     if (withKmsGeneration) {
       await hre.run('task:deployKMSGeneration');
@@ -268,6 +276,11 @@ task('task:deployEmptyUUPSProxies')
       );
       await run('task:setBridgeAddress', { address: ethers.ZeroAddress });
     }
+
+    // Set CoprocessorConfig Address. Deployed last, so the addresses of the proxies above do not
+    // change.
+    const coprocessorConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+    await run('task:setCoprocessorConfigAddress', { address: coprocessorConfigAddress });
   });
 
 task('task:deployEmptyProxyForConfidentialBridge').setAction(async function (_, { ethers, upgrades, run }) {
@@ -589,6 +602,61 @@ export function buildProtocolConfigContextArgs(): [ReturnType, ReturnType, strin
   return [buildKmsNodeParams(), buildKmsThresholds(), getRequiredEnvVar('KMS_SOFTWARE_VERSION'), buildPcrValues()];
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// CoprocessorConfig helpers
+////////////////////////////////////////////////////////////////////////////////
+
+export type CoprocessorArgs = {
+  txSenderAddress: string;
+  signerAddress: string;
+  storageUrl: string;
+  prfEndpointUrl: string;
+};
+
+// A coprocessor set from the COPROCESSOR_* env vars. The tx sender is the coprocessor's Ethereum
+// wallet, not its Gateway one. An unset or empty PRF endpoint URL means the coprocessor does not serve it.
+export function buildCoprocessors(): CoprocessorArgs[] {
+  const numCoprocessors = getRequiredCountEnvVar('NUM_COPROCESSORS');
+  const coprocessors: CoprocessorArgs[] = [];
+  for (let idx = 0; idx < numCoprocessors; idx++) {
+    coprocessors.push({
+      txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
+      signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
+      storageUrl: getRequiredEnvVar(`COPROCESSOR_STORAGE_URL_${idx}`),
+      prfEndpointUrl: process.env[`COPROCESSOR_PRF_ENDPOINT_URL_${idx}`]?.trim() ?? '',
+    });
+  }
+  return coprocessors;
+}
+
+export function buildCoprocessorContextArgs(): [CoprocessorArgs[], number] {
+  return [buildCoprocessors(), getRequiredCountEnvVar('COPROCESSOR_THRESHOLD')];
+}
+
+// A canonical host runs CoprocessorConfig, a non-canonical host CoprocessorConfigReplica. Either one
+// has a current coprocessor context once initialized.
+task('task:assertCoprocessorConfigReady').setAction(async function (_, hre) {
+  const coprocessorConfigAddress = readHostEnv().COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
+  try {
+    await assertContractMatchesVersionPrefix(hre, coprocessorConfigAddress, 'CoprocessorConfig');
+  } catch (err) {
+    await assertContractMatchesVersionPrefix(hre, coprocessorConfigAddress, 'CoprocessorConfigReplica').catch(() => {
+      throw new Error(`${formatError(err)} A non-canonical host may also use "CoprocessorConfigReplica v…".`);
+    });
+  }
+  const coprocessorConfig = new hre.ethers.Contract(
+    coprocessorConfigAddress,
+    ['function getCurrentCoprocessorContextId() view returns (uint256)'],
+    hre.ethers.provider,
+  );
+  const currentCoprocessorContextId: bigint = await coprocessorConfig.getCurrentCoprocessorContextId();
+  if (currentCoprocessorContextId === 0n) {
+    throw new Error(
+      `CoprocessorConfig at ${coprocessorConfigAddress} has no current coprocessor context (currentCoprocessorContextId=0).`,
+    );
+  }
+});
+
 task('task:assertProtocolConfigReady').setAction(async function (_, hre) {
   const parsedEnv = readHostEnv();
   const protocolConfigAddress = parsedEnv.PROTOCOL_CONFIG_CONTRACT_ADDRESS;
@@ -857,6 +925,143 @@ task(
   });
 
 ////////////////////////////////////////////////////////////////////////////////
+// CoprocessorConfig
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:deployCoprocessorConfig').setAction(async function (_, hre) {
+  const { ethers, upgrades } = hre;
+  const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const initArgs = buildCoprocessorContextArgs();
+  const newImplem = await ethers.getContractFactory('CoprocessorConfig', deployer);
+  const proxyAddress = readHostEnv().COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
+  const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
+
+  await upgrades.upgradeProxy(proxy, newImplem, {
+    call: {
+      fn: 'initializeFromEmptyProxy',
+      args: initArgs,
+    },
+  });
+  // On interval-mining networks, upgradeProxy can return before the tx is mined.
+  await waitForTaskReady(hre, 'task:assertCoprocessorConfigReady');
+  console.log('CoprocessorConfig code set successfully at address:', proxyAddress);
+});
+
+// DAO path for initializing a CoprocessorConfigReplica from the canonical chain (Ethereum). Reads the
+// reviewed snapshot from the CANONICAL_COPROCESSOR_* env variables, so the DAO executes exactly the
+// state its signers reproduced and diffed. Devnet equivalent: task:deployCoprocessorConfigFromCanonical.
+task(
+  'task:prepareDeployCoprocessorConfigFromCanonical',
+  'Deploys a CoprocessorConfigReplica implementation and prints DAO upgrade calldata from a reviewed canonical snapshot artifact',
+)
+  .addOptionalParam(
+    'verifyContract',
+    'Verify new implementation on Etherscan (for eg if deploying on Sepolia or Mainnet)',
+    true,
+    types.boolean,
+  )
+  .setAction(async function ({ verifyContract }, hre) {
+    const snapshot = readCanonicalCoprocessorSnapshotFromEnv();
+    const proxyAddress = readHostEnv().COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
+    // The bootstrap task may have updated addresses/FHEVMHostAddresses.sol, so rebuild.
+    await hre.run('compile:specific', { contract: 'contracts' });
+    const preparedUpgrade = await buildCanonicalCoprocessorUpgradeProposal(hre, { snapshot, proxyAddress });
+
+    printUpgradeProposal(preparedUpgrade);
+    if (verifyContract) {
+      await verifyProposalImplementation(hre, preparedUpgrade);
+    }
+    return preparedUpgrade;
+  });
+
+// Initializes the local CoprocessorConfigReplica from the canonical chain's current coprocessor
+// context, as read by readCanonicalCoprocessorSnapshotFromEnv.
+task(
+  'task:deployCoprocessorConfigFromCanonical',
+  "Upgrades the existing proxy to CoprocessorConfigReplica from the canonical chain's reviewed snapshot artifact.",
+).setAction(async function (_, hre) {
+  // Read the snapshot before the compile below, so a misconfigured environment fails immediately.
+  console.log('Applying the reviewed canonical snapshot from the CANONICAL_COPROCESSOR_* env variables.');
+  const snapshot = readCanonicalCoprocessorSnapshotFromEnv();
+
+  // CoprocessorConfigReplica embeds aclAdd from addresses/FHEVMHostAddresses.sol at compile time.
+  await hre.run('compile:specific', { contract: 'contracts' });
+  const proxyAddress = readHostEnv().COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
+
+  // Same prepare step as the DAO path, then execute the produced payload directly: devnet runs
+  // byte-identical calldata to what the DAO would sign.
+  const prepared = await buildCanonicalCoprocessorUpgradeProposal(hre, { snapshot, proxyAddress });
+  await executeUpgradeProposal(hre, prepared);
+
+  // On interval-mining networks, the upgrade can return before the tx is mined.
+  await waitForTaskReady(hre, 'task:assertCoprocessorConfigReady');
+  console.log(
+    `CoprocessorConfigReplica code set successfully at ${proxyAddress}, mirroring canonical chain ${snapshot.canonicalChainId} coprocessor context ${snapshot.currentCoprocessorContextId} (block ${snapshot.blockNumber}) with ${snapshot.coprocessors.length} coprocessors.`,
+  );
+});
+
+// Reads the canonical CoprocessorConfig's current coprocessor context at a pinned block and writes a
+// JSON snapshot, without deploying anything. DAO signers re-run this at the same block and diff the
+// snapshot against canonical.
+task(
+  'task:exportCanonicalCoprocessorConfig',
+  'Exports the canonical CoprocessorConfig coprocessor context to a JSON snapshot for DAO review.',
+)
+  .addParam(
+    'canonicalRpcUrl',
+    'RPC URL of the canonical host chain to read CoprocessorConfig from.',
+    undefined,
+    types.string,
+  )
+  .addParam(
+    'canonicalCoprocessorConfigAddress',
+    'Address of the CoprocessorConfig contract on the canonical host chain.',
+    undefined,
+    types.string,
+  )
+  .addOptionalParam(
+    'blockNumber',
+    "Canonical block height to pin the snapshot to; must already be finalized. Defaults to the latest finalized block; pass the artifact's blockNumber to reproduce a prior export for DAO review.",
+    undefined,
+    types.int,
+  )
+  .addOptionalParam(
+    'out',
+    'Path to write the snapshot JSON.',
+    'canonical-coprocessor-config-snapshot.json',
+    types.string,
+  )
+  .setAction(async function (
+    {
+      canonicalRpcUrl,
+      canonicalCoprocessorConfigAddress,
+      blockNumber,
+      out,
+    }: { canonicalRpcUrl: string; canonicalCoprocessorConfigAddress: string; blockNumber?: number; out: string },
+    hre,
+  ) {
+    // readCanonicalCoprocessorSnapshot needs the CoprocessorConfig artifact for its ABI; compile so
+    // the export also works from a clean checkout.
+    await hre.run('compile:specific', { contract: 'contracts' });
+    const canonicalProvider = new hre.ethers.JsonRpcProvider(canonicalRpcUrl, undefined, { cacheTimeout: -1 });
+    const snapshot = await readCanonicalCoprocessorSnapshot(hre, {
+      canonicalProvider,
+      canonicalCoprocessorConfigAddress,
+      blockNumber,
+    });
+
+    // `export` holds the snapshot as a flat KEY=value map, which is what the deploy tasks read.
+    const output = { export: buildCanonicalCoprocessorSnapshotEnv(snapshot) };
+    fs.writeFileSync(out, JSON.stringify(output, null, 2));
+    console.log(
+      `Canonical CoprocessorConfig snapshot written to ${out}: chain ${snapshot.canonicalChainId}, block ${snapshot.blockNumber}, coprocessor context ${snapshot.currentCoprocessorContextId}, ${snapshot.coprocessors.length} coprocessors.`,
+    );
+    return output;
+  });
+
+////////////////////////////////////////////////////////////////////////////////
 // KMSGeneration (host-side)
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1065,6 +1270,33 @@ address constant protocolConfigAdd = ${taskArguments.address};\n`;
     try {
       writeHostAddressesSol(solidityTemplate, 'a');
       console.log(`${HOST_ADDRESSES_FILE} appended with protocolConfigAdd successfully!`);
+    } catch (error) {
+      throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
+    }
+  });
+
+////////////////////////////////////////////////////////////////////////////////
+// Setup CoprocessorConfig Address
+////////////////////////////////////////////////////////////////////////////////
+
+task('task:setCoprocessorConfigAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments) {
+    ensureAddressesDirectoryExists();
+    const content = `COPROCESSOR_CONFIG_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      writeHostEnvLine(content, 'a');
+      console.log(`CoprocessorConfig address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      throw new Error(`Failed to write CoprocessorConfig address: ${String(err)}`);
+    }
+
+    const solidityTemplate = `
+address constant coprocessorConfigAdd = ${taskArguments.address};\n`;
+
+    try {
+      writeHostAddressesSol(solidityTemplate, 'a');
+      console.log(`${HOST_ADDRESSES_FILE} appended with coprocessorConfigAdd successfully!`);
     } catch (error) {
       throw new Error(`Failed to write ${HOST_ADDRESSES_FILE}: ${String(error)}`);
     }

@@ -42,17 +42,15 @@ export async function assertCanonicalSnapshotBlockHash(
   }
 }
 
-// Reads the canonical ProtocolConfig's current KMS context, pinned to one finalized block, for
-// exports and mirror tasks. Pass blockNumber to pin to a finalized historical block (the export
-// artifact's blockNumber) so a DAO signer can reproduce a snapshot byte-for-byte even after a later
-// context rotation. Omit it to read the latest finalized block.
-export async function readCanonicalSnapshot(
-  hre: HardhatRuntimeEnvironment,
-  options: { canonicalProvider: Provider; canonicalProtocolConfigAddress: string; blockNumber?: number },
-): Promise<CanonicalSnapshot> {
-  const { ethers } = hre;
-  const { canonicalProvider, canonicalProtocolConfigAddress } = options;
-  if (options.blockNumber !== undefined && (!Number.isSafeInteger(options.blockNumber) || options.blockNumber < 0)) {
+// Resolves the canonical block a snapshot is pinned to. Pass `requestedBlockNumber` to pin to a
+// finalized historical block (an export artifact's blockNumber) so a DAO signer can reproduce a
+// snapshot byte-for-byte even after a later change on canonical. Omit it to use the latest
+// finalized block.
+export async function resolveCanonicalBlock(
+  canonicalProvider: Provider,
+  requestedBlockNumber?: number,
+): Promise<{ canonicalChainId: bigint; blockNumber: number; blockHash: string }> {
+  if (requestedBlockNumber !== undefined && (!Number.isSafeInteger(requestedBlockNumber) || requestedBlockNumber < 0)) {
     throw new Error('Canonical block number must be a nonnegative safe integer.');
   }
 
@@ -72,20 +70,35 @@ export async function readCanonicalSnapshot(
   if (finalizedBlock === null || finalizedBlock.hash === null) {
     throw new Error('Canonical RPC returned no finalized block.');
   }
-  if (options.blockNumber !== undefined && options.blockNumber > finalizedBlock.number) {
+  if (requestedBlockNumber !== undefined && requestedBlockNumber > finalizedBlock.number) {
     throw new Error(
-      `Canonical block ${options.blockNumber} is above the latest finalized block ${finalizedBlock.number}; wait for finalization.`,
+      `Canonical block ${requestedBlockNumber} is above the latest finalized block ${finalizedBlock.number}; wait for finalization.`,
     );
   }
   const block =
-    options.blockNumber === undefined || options.blockNumber === finalizedBlock.number
+    requestedBlockNumber === undefined || requestedBlockNumber === finalizedBlock.number
       ? finalizedBlock
-      : await canonicalProvider.getBlock(options.blockNumber);
+      : await canonicalProvider.getBlock(requestedBlockNumber);
   if (block === null || block.hash === null) {
-    throw new Error(`Canonical RPC returned no block or hash for "${options.blockNumber}".`);
+    throw new Error(`Canonical RPC returned no block or hash for "${requestedBlockNumber}".`);
   }
-  const blockNumber = block.number;
-  const blockHash = block.hash;
+  return { canonicalChainId, blockNumber: block.number, blockHash: block.hash };
+}
+
+// Reads the canonical ProtocolConfig's current KMS context, pinned to one finalized block, for
+// exports and mirror tasks. Pass blockNumber to pin to a finalized historical block (the export
+// artifact's blockNumber) so a DAO signer can reproduce a snapshot byte-for-byte even after a later
+// context rotation. Omit it to read the latest finalized block.
+export async function readCanonicalSnapshot(
+  hre: HardhatRuntimeEnvironment,
+  options: { canonicalProvider: Provider; canonicalProtocolConfigAddress: string; blockNumber?: number },
+): Promise<CanonicalSnapshot> {
+  const { ethers } = hre;
+  const { canonicalProvider, canonicalProtocolConfigAddress } = options;
+  const { canonicalChainId, blockNumber, blockHash } = await resolveCanonicalBlock(
+    canonicalProvider,
+    options.blockNumber,
+  );
   const at = { blockTag: blockNumber };
 
   // Reuse the shared version-prefix check, pointed at the canonical provider rather than the local

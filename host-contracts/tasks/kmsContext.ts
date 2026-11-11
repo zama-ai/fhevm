@@ -4,6 +4,7 @@ import type { HardhatRuntimeEnvironment } from 'hardhat/types';
 
 import type { ProtocolConfig } from '../types';
 import { buildProtocolConfigContextArgs } from './taskDeploy';
+import { getContractInterface } from './utils/contractInterface';
 import { getRequiredEnvVar, loadHostAddresses } from './utils/loadVariables';
 import { toJsonString } from './utils/upgradeProposal';
 
@@ -15,14 +16,6 @@ import { toJsonString } from './utils/upgradeProposal';
 // env vars (reusing `buildProtocolConfigContextArgs`); the destroy tasks take the target id directly.
 
 const PROTOCOL_CONFIG_ADDRESS_ENV_VAR = 'PROTOCOL_CONFIG_CONTRACT_ADDRESS';
-
-// Builds a calldata-only ABI for `contractName` without a deployer key, so the `build*` tasks never
-// need a signer.
-async function getContractInterface(hre: HardhatRuntimeEnvironment, contractName: string): Promise<Interface> {
-  await hre.run('compile:specific', { contract: 'contracts' });
-  const artifact = await hre.artifacts.readArtifact(contractName);
-  return new hre.ethers.Interface(artifact.abi);
-}
 
 export async function getProtocolConfigInterface(hre: HardhatRuntimeEnvironment): Promise<Interface> {
   return getContractInterface(hre, 'ProtocolConfig');
