@@ -3,12 +3,16 @@ import { format } from 'node:util';
 
 import { secretsOf } from '../../config/profiles/profile.js';
 import type { ResolvedProfile, SettingValue } from '../../config/profiles/types.js';
+import { CONTRACTS_ARTIFACTS_DIR } from '../../infrastructure/paths.js';
 import { type Redactor, createRedactor } from '../../infrastructure/secrets/redactor.js';
-import { type EngineWorldParameters, MISSING_SECTION_ERROR, type ScenarioInfo } from '../../model/execution.js';
+import type { EngineWorldParameters, ScenarioInfo } from '../../model/execution.js';
 import { Chain } from '../modules/chain/chain.js';
 import { Contracts } from '../modules/contracts/contracts.js';
 import { Fhe } from '../modules/fhe/fhe.js';
+import { MissingProfileSectionError } from './errors.js';
 import { Evidence } from './evidence.js';
+
+export { MissingProfileSectionError } from './errors.js';
 
 /** Read-only view of the resolved profile of the run. */
 export class ProfileView {
@@ -51,9 +55,9 @@ export interface EngineContext {
    */
   readonly fhe: Fhe;
   /**
-   * The compiled contracts of the run (`run --contracts-dir`, built by `test-engine compile` with the
-   * profile's protocol addresses). `artifact(name)` throws a configuration error when the run has
-   * no contracts directory.
+   * The engine's own test contracts (`contracts/`, compiled by `npm run build`): `artifact(name)`
+   * and `coprocessorConfig()`, the constructor argument built from the profile's `contracts`
+   * section (a configuration error when the profile has none).
    */
   readonly contracts: Contracts;
   /** Writes a line to the scenario console output, with secrets redacted. */
@@ -73,23 +77,6 @@ export function disposeWorld(world: EngineWorld): void {
 }
 
 /**
- * A step used a module on a profile without the sections it needs (P-002), typically a scenario
- * that forgot `spec.targets` and runs on `none`. The engine reports it as a configuration error.
- */
-export class MissingProfileSectionError extends Error {
-  constructor(
-    readonly profileName: string,
-    readonly sections: string[],
-  ) {
-    const plural = sections.length > 1;
-    super(
-      `profile '${profileName}' has no ${sections.join(', ')} section${plural ? 's' : ''}; declare spec.targets for this scenario so that it only runs on profiles that have ${plural ? 'them' : 'one'}`,
-    );
-    this.name = MISSING_SECTION_ERROR;
-  }
-}
-
-/**
  * Base World of every scenario. Cucumber creates one instance per Gherkin scenario; scenarios
  * may extend it (an engine hook fails any scenario whose World does not).
  */
@@ -98,7 +85,7 @@ export class EngineWorld<P extends EngineWorldParameters = EngineWorldParameters
 
   constructor(options: IWorldOptions<P>) {
     super(options);
-    const { scenario, profile, contractsDir } = options.parameters;
+    const { scenario, profile } = options.parameters;
     const redactor: Redactor = createRedactor(secretsOf(profile));
     const evidence = new Evidence((data, attachOptions) => this.attach(data, attachOptions), redactor);
     const world = this;
@@ -106,7 +93,7 @@ export class EngineWorld<P extends EngineWorldParameters = EngineWorldParameters
       scenario: Object.freeze({ ...scenario }),
       profile: new ProfileView(profile),
       evidence,
-      contracts: new Contracts(contractsDir),
+      contracts: new Contracts(CONTRACTS_ARTIFACTS_DIR, profile.name, profile.contracts),
       get chain(): Chain {
         let chain = chains.get(world);
         if (!chain) {

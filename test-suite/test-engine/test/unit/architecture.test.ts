@@ -22,6 +22,7 @@ const ALLOWED: Record<string, string[]> = {
   api: ['runtime', 'model', 'config'],
   boot: ['runtime', 'model', 'config', 'infrastructure'],
   cli: ['boot', 'orchestration', 'model', 'config', 'infrastructure'],
+  compiler: ['infrastructure'],
 };
 
 const IMPORT = /(?:from|import)\s+'(\.{1,2}\/[^']+)'/g;

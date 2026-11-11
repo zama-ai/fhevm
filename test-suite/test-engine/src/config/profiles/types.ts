@@ -68,7 +68,7 @@ export interface ProfileDefinition {
     chain?: ChainSectionDefinition;
     /** Typed section of the FHE module. */
     relayer?: RelayerSectionDefinition;
-    /** Host-chain protocol contracts, read by the FHE module and by `test-engine compile`. */
+    /** Host-chain protocol contracts, read by the FHE module and by `this.engine.contracts`. */
     contracts?: ContractsSectionDefinition;
     settings: Record<string, ValueSource>;
   };

@@ -24,8 +24,6 @@ export interface ScenarioInfo {
 export interface EngineWorldParameters {
   scenario: ScenarioInfo;
   profile: ResolvedProfile;
-  /** Absolute path of the compiled contract artifacts (`run --contracts-dir`), read by `this.engine.contracts`. */
-  contractsDir?: string;
 }
 
 /**
@@ -59,15 +57,6 @@ export const ARTIFACTS = {
  */
 export const MISSING_SECTION_ERROR = 'MissingProfileSectionError';
 
-/** Name of the error `this.engine.contracts` throws when the run was given no `--contracts-dir`. */
-export const MISSING_CONTRACTS_DIR_ERROR = 'MissingContractsDirError';
-
-/**
- * Errors that mean the run was misconfigured rather than the scenario failing: the worker
- * recognises them in the Cucumber messages and exits with `WORKER_EXIT.configurationError`.
- */
-export const CONFIGURATION_ERRORS: readonly string[] = [MISSING_SECTION_ERROR, MISSING_CONTRACTS_DIR_ERROR];
-
 /** Prefix of the single stderr line in which the worker reports why it could not run Cucumber. */
 export const ENGINE_ERROR_PREFIX = '[test-engine] worker error: ';
 
@@ -76,10 +65,7 @@ export const WORKER_EXIT = {
   success: 0,
   scenarioFailed: 1,
   engineError: 2,
-  /**
-   * A step failed with one of `CONFIGURATION_ERRORS`: a module the profile has no section for
-   * (P-002), or compiled contracts without `--contracts-dir`.
-   */
+  /** A step used a module the profile has no section for (P-002): a configuration error. */
   configurationError: 3,
   /** Exited after SIGTERM/SIGINT (timeout or interruption), once pending output was flushed. */
   terminated: 143,
@@ -91,8 +77,7 @@ export const WORKER_EXIT = {
  * - `skipped` — not executed, see `reason`.
  * - `timed-out` — killed after exceeding `spec.timeoutSeconds`.
  * - `error` — the worker could not run Cucumber (crash, support code failing to load, signal), or
- *   a step failed with a configuration error (a module the profile has no section for, P-002, or
- *   compiled contracts without `--contracts-dir`).
+ *   a step used a module the profile has no section for (P-002, a configuration error).
  */
 export type ScenarioOutcome = 'passed' | 'failed' | 'skipped' | 'timed-out' | 'error';
 

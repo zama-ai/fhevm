@@ -8,7 +8,7 @@ metadata:
   description: >-
     End-to-end check of the FHE path on a live stack: a user encrypts a uint64 with an input proof, a contract adds 42
     to it on chain, the user decrypts the result with a permit, and the result is publicly decryptable with a proof the
-    chain accepts. The contract comes from the compiled e2e contracts (test-engine compile, then run --contracts-dir).
+    chain accepts. The contract is the engine's own TestInput, deployed with the profile's coprocessor config.
   tags: [fhe, e2e]
 
 spec:

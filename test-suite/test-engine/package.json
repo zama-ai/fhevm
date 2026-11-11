@@ -17,7 +17,7 @@
     }
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.json && node dist/src/compiler/build-contracts.js",
     "tsc": "tsc --noEmit -p tsconfig.json",
     "engine": "node dist/src/cli/main.js",
     "test": "node --test --test-reporter=spec \"dist/test/unit/**/*.test.js\" \"dist/test/integration/cli/**/*.test.js\"",
@@ -41,9 +41,11 @@
     "yaml": "^2.9.1"
   },
   "devDependencies": {
+    "@fhevm/solidity": "0.13.4",
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "@types/node": "^22.15.21",
     "prettier": "^3.8.3",
+    "solc": "0.8.24",
     "typescript": "^6.0.0"
   }
 }
