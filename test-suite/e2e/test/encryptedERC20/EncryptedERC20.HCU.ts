@@ -382,7 +382,6 @@ describe('EncryptedERC20:HCU', function () {
           hcuLimit.getMaxHCUPerTx(),
           hcuLimit.getMaxHCUDepthPerTx(),
         ]);
-        // Narrowest-first when lowering: maxHCUPerTx >= maxHCUDepthPerTx
         const ownerConfigurator = this.hcuConfigurator.connect(deployer);
         await (await ownerConfigurator.setMaxHCUDepthPerTx(TIGHT_DEPTH_PER_TX)).wait();
         await (await ownerConfigurator.setMaxHCUPerTx(TIGHT_MAX_PER_TX)).wait();

@@ -25,6 +25,8 @@ export const ABI_COMPAT_EXCEPTIONS: Partial<Record<PackageName, Partial<Record<s
       // only stores the limits. Nothing in this repository subscribes to them on HCULimit's address.
       "event MaxHCUDepthPerTxSet(uint48)",
       "event MaxHCUPerTxSet(uint48)",
+      // The two per-transaction limits no longer bound each other, so nothing raises this error.
+      "error MaxHCUPerTxBelowDepth()",
     ],
     KMSVerifier: [
       "event NewContextSet(address[],uint256)",

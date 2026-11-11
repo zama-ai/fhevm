@@ -45,9 +45,6 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned when a tier's threshold is above 10000, or a quota is moved to a tier whose threshold is 0.
     error InvalidTier(uint8 tier);
 
-    /// @notice Returned if maxHCUPerTx < maxHCUDepthPerTx.
-    error MaxHCUPerTxBelowDepth();
-
     /// @notice Returned when only one of the cross-transaction depth limit and its decay is zero.
     error InvalidCrossTxDepthLimit();
 
@@ -248,26 +245,22 @@ contract HCUConfigurator is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /**
      * @notice Sets the per-transaction HCU depth limit.
      * @param maxHCUDepthPerTx New depth limit.
-     * @dev Enforces maxHCUPerTx >= maxHCUDepthPerTx, and a nonzero maxCrossTxDepth >= maxHCUDepthPerTx.
+     * @dev Enforces a nonzero maxCrossTxDepth >= maxHCUDepthPerTx. It is not compared with maxHCUPerTx, which counts
+     *      work while depth counts latency.
      */
     function setMaxHCUDepthPerTx(uint48 maxHCUDepthPerTx) external onlyACLOwner {
-        uint48 maxHCUPerTx = HCU_LIMIT.getMaxHCUPerTx();
-        if (maxHCUPerTx < maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
         (uint48 maxCrossTxDepth, ) = HCU_LIMIT.getCrossTxDepthLimit();
         if (maxCrossTxDepth != 0 && maxCrossTxDepth < maxHCUDepthPerTx) revert CrossTxDepthBelowMaxDepthPerTx();
-        HCU_LIMIT.setTxLimits(maxHCUPerTx, maxHCUDepthPerTx);
+        HCU_LIMIT.setTxLimits(HCU_LIMIT.getMaxHCUPerTx(), maxHCUDepthPerTx);
         emit MaxHCUDepthPerTxSet(maxHCUDepthPerTx);
     }
 
     /**
      * @notice Sets the per-transaction HCU limit.
      * @param maxHCUPerTx New transaction limit.
-     * @dev Enforces maxHCUPerTx >= maxHCUDepthPerTx.
      */
     function setMaxHCUPerTx(uint48 maxHCUPerTx) external onlyACLOwner {
-        uint48 maxHCUDepthPerTx = HCU_LIMIT.getMaxHCUDepthPerTx();
-        if (maxHCUPerTx < maxHCUDepthPerTx) revert MaxHCUPerTxBelowDepth();
-        HCU_LIMIT.setTxLimits(maxHCUPerTx, maxHCUDepthPerTx);
+        HCU_LIMIT.setTxLimits(maxHCUPerTx, HCU_LIMIT.getMaxHCUDepthPerTx());
         emit MaxHCUPerTxSet(maxHCUPerTx);
     }
 

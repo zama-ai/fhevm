@@ -1326,10 +1326,14 @@ contract HCULimitTest is HostContractsDeployerTestUtils, SupportedTypesConstants
         _expectQuotaExceeded(address(0x1234), DEFAULT_QUOTA, type(uint256).max, 0x1001);
     }
 
-    function test_setMaxHCUDepthPerTxRevertsIfAboveMaxPerTx() public {
-        vm.prank(owner);
-        vm.expectRevert(HCUConfigurator.MaxHCUPerTxBelowDepth.selector);
+    /// The per-transaction limits count different units, work and latency, so neither bounds the other.
+    function test_maxHCUDepthPerTxAndMaxHCUPerTxAreIndependent() public {
+        vm.startPrank(owner);
         hcuConfigurator.setMaxHCUDepthPerTx(20_000_001);
+        hcuConfigurator.setMaxHCUPerTx(1_000_000);
+        vm.stopPrank();
+        assertEq(hcuLimit.getMaxHCUDepthPerTx(), 20_000_001);
+        assertEq(hcuLimit.getMaxHCUPerTx(), 1_000_000);
     }
 
     function test_unmeteredDefaultQuotaRecordsNoUsage() public {
