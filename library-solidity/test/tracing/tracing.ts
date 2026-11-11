@@ -1,14 +1,14 @@
-import { ethers, network } from 'hardhat';
-import { awaitCoprocessor } from '../coprocessorUtils';
-import { getSigners, initSigners } from '../signers';
-import type { Signers } from '../signers';
-import type { TracingSubCalls } from '../../typechain-types';
+import type { TracingSubCalls } from '../../typechain-types/index.js';
+import { awaitCoprocessor } from '../coprocessorUtils.js';
+import { ethers, isInProcessNetwork } from '../hardhat.js';
+import { getSigners, initSigners } from '../signers.js';
+import type { Signers } from '../signers.js';
 
 describe('Tracing', function () {
   let contract: TracingSubCalls;
 
   before(async function () {
-    if (network.name !== 'hardhat') {
+    if (!isInProcessNetwork) {
       this.skip(); // marks every test in this describe as pending
     }
     await initSigners(1);
@@ -18,7 +18,7 @@ describe('Tracing', function () {
   });
 
   it('test tracing for mocked', async function () {
-    if (network.name === 'hardhat') {
+    if (isInProcessNetwork) {
       const tx = await contract.subCalls();
       await tx.wait();
       await awaitCoprocessor();
