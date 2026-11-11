@@ -300,6 +300,32 @@ describe('Canonical prepare tasks', function () {
       patchHostEnv('COPROCESSOR_CONFIG_CONTRACT_ADDRESS', await deployEmptyUUPSProxy(deployer));
       await expect(run('task:assertCoprocessorConfigReady')).to.be.rejectedWith(/does not expose getVersion/);
     });
+
+    it('prepares DAO calldata for the COPROCESSOR_* env set without mutating the proxy', async function () {
+      const proxyAddress = await deployEmptyUUPSProxy(deployer);
+      patchHostEnv('COPROCESSOR_CONFIG_CONTRACT_ADDRESS', proxyAddress);
+
+      const implementationSlotBefore = await readImplementationSlot(proxyAddress);
+      const prepared = await run('task:prepareDeployCoprocessorConfig', { verifyContract: false });
+      expect(await readImplementationSlot(proxyAddress)).to.equal(implementationSlotBefore);
+
+      expect(prepared.proxyAddress).to.equal(proxyAddress);
+      const iface = new ethers.Interface([`function ${prepared.innerFunctionSignature}`]);
+      const [coprocessors, majorityThreshold] = iface.decodeFunctionData(
+        'initializeFromEmptyProxy',
+        prepared.innerCalldata,
+      );
+      expect(coprocessors.length).to.equal(Number(getRequiredEnvVar('NUM_COPROCESSORS')));
+      // The interface comes from the bare signature, so struct fields are positional: [0] is the tx sender.
+      expect(coprocessors[0][0]).to.equal(getRequiredEnvVar('COPROCESSOR_TX_SENDER_ADDRESS_0'));
+      expect(majorityThreshold).to.equal(BigInt(getRequiredEnvVar('COPROCESSOR_THRESHOLD')));
+      expect(prepared.outerCalldata).to.equal(
+        UPGRADE_TO_AND_CALL_INTERFACE.encodeFunctionData('upgradeToAndCall', [
+          prepared.newImplementationAddress,
+          prepared.innerCalldata,
+        ]),
+      );
+    });
   });
 
   describe('KMSVerifier deployment', function () {

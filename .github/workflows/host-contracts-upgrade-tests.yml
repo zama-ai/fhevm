@@ -141,7 +141,14 @@ jobs:
 
       - name: Bootstrap host contracts missing from UPGRADE_FROM_TAG
         working-directory: current-fhevm/host-contracts
-        run: npx hardhat task:deployEmptyProxyForConfidentialBridge
+        run: |
+          npx hardhat task:deployEmptyProxyForConfidentialBridge
+          # A release without CoprocessorConfig gets it the way a live chain does: add its empty proxy,
+          # then define the first coprocessor context.
+          if [ ! -f previous-contracts/CoprocessorConfig.sol ]; then
+            npx hardhat task:deployEmptyProxyForCoprocessorConfig
+            npx hardhat task:deployCoprocessorConfig
+          fi
 
       - name: Run prepare-only upgrades
         working-directory: current-fhevm/host-contracts

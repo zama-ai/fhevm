@@ -31,7 +31,7 @@ import {
   snapshotProtocolConfigCanonicalEnv,
 } from '../../tasks/utils/protocolConfigCanonicalEnv';
 import { executeUpgradeProposal } from '../../tasks/utils/upgradeProposal';
-import type { KMSGeneration, ProtocolConfig, ProtocolConfigReplica } from '../../types';
+import type { CoprocessorConfigReplica, KMSGeneration, ProtocolConfig, ProtocolConfigReplica } from '../../types';
 import {
   COPROCESSOR_MAJORITY_THRESHOLD,
   HOST_ADDRESSES_SOL_FILE,
@@ -59,16 +59,19 @@ describe('task:deployAllHostContracts', function () {
   let originalEnvHost: string;
   let originalAddressesSol: string;
   let originalCanonicalConfigEnv: ReturnType<typeof snapshotProtocolConfigCanonicalEnv>;
+  let originalCanonicalCoprocessorConfigEnv: ReturnType<typeof snapshotCoprocessorConfigCanonicalEnv>;
 
   beforeEach(function () {
     previousEnv = {};
     originalCanonicalConfigEnv = snapshotProtocolConfigCanonicalEnv();
     // Start every test from an unconfigured environment (see test/tasks/canonicalDeploy.ts).
     restoreProtocolConfigCanonicalEnv({});
+    originalCanonicalCoprocessorConfigEnv = snapshotCoprocessorConfigCanonicalEnv();
+    restoreCoprocessorConfigCanonicalEnv({});
     previousSolidityCoverage = process.env.SOLIDITY_COVERAGE;
     // Snapshot .env.host: the fresh-deploy test rewrites PROTOCOL_CONFIG_CONTRACT_ADDRESS.
     originalEnvHost = fs.readFileSync(HOST_ENV_FILE, 'utf-8');
-    // Snapshot FHEVMHostAddresses.sol: the withKmsGeneration=false path regenerates this shared
+    // Snapshot FHEVMHostAddresses.sol: the replica path regenerates this shared
     // file without kmsGenerationAdd, which would break the subsequent `forge test` compile of
     // contracts that unconditionally import that constant.
     originalAddressesSol = fs.readFileSync(HOST_ADDRESSES_SOL_FILE, 'utf-8');
@@ -81,6 +84,7 @@ describe('task:deployAllHostContracts', function () {
 
   afterEach(function () {
     restoreProtocolConfigCanonicalEnv(originalCanonicalConfigEnv);
+    restoreCoprocessorConfigCanonicalEnv(originalCanonicalCoprocessorConfigEnv);
     for (const key of Object.keys(kmsAttestationEnv) as (keyof typeof kmsAttestationEnv)[]) {
       const previousValue = previousEnv[key];
       if (previousValue === undefined) {
@@ -98,45 +102,131 @@ describe('task:deployAllHostContracts', function () {
     fs.writeFileSync(HOST_ADDRESSES_SOL_FILE, originalAddressesSol);
   });
 
-  it('requires the KMSGeneration deployment role to be explicit', async function () {
-    await expect(run('task:deployAllHostContracts')).to.be.rejectedWith(/withKmsGeneration/);
+  it('requires the host role to be explicit', async function () {
+    await expect(run('task:deployAllHostContracts')).to.be.rejectedWith(/hostRole/);
   });
 
-  it('rejects an invalid --protocol-config-source value before mutating state', async function () {
-    await expect(
-      run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'bogus' }),
-    ).to.be.rejectedWith(/Invalid --protocol-config-source "bogus"\. Allowed values: fresh, canonical\./);
-  });
-
-  it('rejects --protocol-config-source canonical on a canonical host', async function () {
-    await expect(
-      run('task:deployAllHostContracts', { withKmsGeneration: true, protocolConfigSource: 'canonical' }),
-    ).to.be.rejectedWith(/cannot be combined with --with-kms-generation true/);
-  });
-
-  it('rejects --protocol-config-source canonical without the snapshot env variables', async function () {
-    await expect(
-      run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'canonical' }),
-    ).to.be.rejectedWith(/"CANONICAL_CHAIN_ID" env variable is not set/);
-  });
-
-  it('deploys a fresh non-canonical host without a KMSGeneration proxy', async function () {
-    process.env.SOLIDITY_COVERAGE = 'true';
-    await run('task:deployAllHostContracts', { withKmsGeneration: false, protocolConfigSource: 'fresh' });
-
-    const protocolConfig = await ethers.getContractAt(
-      'ProtocolConfig',
-      readHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
+  it('rejects an invalid --host-role value before mutating state', async function () {
+    await expect(run('task:deployAllHostContracts', { hostRole: 'bogus' })).to.be.rejectedWith(
+      /Invalid --host-role "bogus"\. Allowed values: canonical, replica\./,
     );
+  });
 
-    expect(await protocolConfig.getVersion()).to.equal('ProtocolConfig v0.3.0');
+  it('rejects --host-role replica without the ProtocolConfig snapshot env variables', async function () {
+    await expect(run('task:deployAllHostContracts', { hostRole: 'replica' })).to.be.rejectedWith(
+      /"CANONICAL_CHAIN_ID" env variable is not set/,
+    );
+  });
+
+  // Deploys the canonical ProtocolConfig and CoprocessorConfig, then exports both snapshots into the
+  // CANONICAL_* and CANONICAL_COPROCESSOR_* env variables, as a deployment platform does.
+  async function exportCanonicalSnapshots(options: { withCoprocessorSnapshot: boolean }): Promise<void> {
+    const deployer = new ethers.Wallet(getRequiredEnvVar('DEPLOYER_PRIVATE_KEY')).connect(ethers.provider);
+    const canonicalProtocolConfigAddress = await deployFreshProtocolConfigProxy(
+      deployer,
+      buildProtocolConfigNodes(),
+      buildProtocolConfigThresholds(),
+    );
+    const canonicalCoprocessorConfigAddress = await deployFreshCoprocessorConfigProxy(
+      deployer,
+      buildCoprocessors(),
+      COPROCESSOR_MAJORITY_THRESHOLD,
+    );
+    const blockNumber = await ethers.provider.getBlockNumber();
+    applyProtocolConfigCanonicalEnv(
+      buildCanonicalSnapshotEnv(
+        await readCanonicalSnapshot(hre, {
+          canonicalProvider: ethers.provider,
+          canonicalProtocolConfigAddress,
+          blockNumber,
+        }),
+      ),
+    );
+    if (options.withCoprocessorSnapshot) {
+      applyCoprocessorConfigCanonicalEnv(
+        buildCanonicalCoprocessorConfigSnapshotEnv(
+          await readCanonicalCoprocessorConfigSnapshot(hre, {
+            canonicalProvider: ethers.provider,
+            canonicalCoprocessorConfigAddress,
+            blockNumber,
+          }),
+        ),
+      );
+    }
+  }
+
+  it('rejects --host-role replica without the CoprocessorConfig snapshot env variables', async function () {
+    await exportCanonicalSnapshots({ withCoprocessorSnapshot: false });
+    await expect(run('task:deployAllHostContracts', { hostRole: 'replica' })).to.be.rejectedWith(
+      /"CANONICAL_COPROCESSOR_CONFIG_CHAIN_ID" env variable is not set/,
+    );
+  });
+
+  it('deploys a replica host seeded from the canonical snapshots, without KMSGeneration', async function () {
+    await exportCanonicalSnapshots({ withCoprocessorSnapshot: true });
+    process.env.SOLIDITY_COVERAGE = 'true';
+
+    await run('task:deployAllHostContracts', { hostRole: 'replica' });
+
+    const protocolConfig = (await ethers.getContractAt(
+      'ProtocolConfigReplica',
+      readHostAddress('PROTOCOL_CONFIG_CONTRACT_ADDRESS'),
+    )) as unknown as ProtocolConfigReplica;
+    expect(await protocolConfig.getVersion()).to.match(/^ProtocolConfigReplica v/);
     expect(await protocolConfig.getCurrentKmsContextId()).to.equal(KMS_CONTEXT_COUNTER_BASE + 1n);
+
+    const coprocessorConfig = (await ethers.getContractAt(
+      'CoprocessorConfigReplica',
+      readHostAddress('COPROCESSOR_CONFIG_CONTRACT_ADDRESS'),
+    )) as unknown as CoprocessorConfigReplica;
+    expect(await coprocessorConfig.getVersion()).to.match(/^CoprocessorConfigReplica v/);
+    expect(await coprocessorConfig.getCurrentCoprocessorContextId()).to.equal(COPROCESSOR_CONTEXT_COUNTER_BASE + 1n);
+
+    expect(fs.readFileSync(HOST_ENV_FILE, 'utf-8')).to.not.match(/^KMS_GENERATION_CONTRACT_ADDRESS=/m);
   });
 });
 
 describe('task:deployEmptyUUPSProxies', function () {
-  it('requires the KMSGeneration deployment role to be explicit', async function () {
-    await expect(run('task:deployEmptyUUPSProxies')).to.be.rejectedWith(/withKmsGeneration/);
+  it('requires the host role to be explicit', async function () {
+    await expect(run('task:deployEmptyUUPSProxies')).to.be.rejectedWith(/hostRole/);
+  });
+});
+
+describe('task:deployEmptyProxyForCoprocessorConfig', function () {
+  let originalEnvHost: string;
+  let originalAddressesSol: string;
+  const originalProcessAddress = process.env.COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
+
+  beforeEach(function () {
+    originalEnvHost = fs.readFileSync(HOST_ENV_FILE, 'utf-8');
+    originalAddressesSol = fs.readFileSync(HOST_ADDRESSES_SOL_FILE, 'utf-8');
+  });
+
+  afterEach(function () {
+    fs.writeFileSync(HOST_ENV_FILE, originalEnvHost);
+    fs.writeFileSync(HOST_ADDRESSES_SOL_FILE, originalAddressesSol);
+    if (originalProcessAddress === undefined) {
+      delete process.env.COPROCESSOR_CONFIG_CONTRACT_ADDRESS;
+    } else {
+      process.env.COPROCESSOR_CONFIG_CONTRACT_ADDRESS = originalProcessAddress;
+    }
+  });
+
+  it('adds and records the empty proxy on a stack that has none', async function () {
+    fs.writeFileSync(HOST_ENV_FILE, originalEnvHost.replace(/^COPROCESSOR_CONFIG_CONTRACT_ADDRESS=.*\n?/m, ''));
+
+    await run('task:deployEmptyProxyForCoprocessorConfig');
+
+    const proxyAddress = readHostAddress('COPROCESSOR_CONFIG_CONTRACT_ADDRESS');
+    expect(await ethers.provider.getCode(proxyAddress)).to.not.equal('0x');
+    expect(fs.readFileSync(HOST_ADDRESSES_SOL_FILE, 'utf-8')).to.contain(
+      `address constant coprocessorConfigAdd = ${proxyAddress};`,
+    );
+  });
+
+  it('is a no-op when the stack already has one', async function () {
+    await run('task:deployEmptyProxyForCoprocessorConfig');
+    expect(fs.readFileSync(HOST_ENV_FILE, 'utf-8')).to.equal(originalEnvHost);
   });
 });
 

@@ -86,17 +86,17 @@ Notes:
 
 ## Host Deployment Role
 
-`task:deployAllHostContracts` requires an explicit `--with-kms-generation` value:
+`task:deployAllHostContracts` and `task:deployEmptyUUPSProxies` require the host's role:
 
 ```bash
-npx hardhat task:deployAllHostContracts --with-kms-generation true   # canonical host
-npx hardhat task:deployAllHostContracts --with-kms-generation false --protocol-config-source canonical  # non-canonical host
+npx hardhat task:deployAllHostContracts --host-role canonical  # Ethereum
+npx hardhat task:deployAllHostContracts --host-role replica    # every other host chain
 ```
 
-`KMSGeneration` is deployed only on the canonical host chain. Non-canonical host chains
-deploy the common host contracts only. They pass `--protocol-config-source canonical`, so they
-deploy `ProtocolConfigReplica` seeded from the `CANONICAL_*` env variables (see below). The default
-`fresh` deploys `ProtocolConfig`.
+The canonical host deploys `KMSGeneration`, `ProtocolConfig` and `CoprocessorConfig`, initialized from
+the env variables. A replica deploys no `KMSGeneration`, and `ProtocolConfigReplica` and
+`CoprocessorConfigReplica` seeded from the `CANONICAL_*` and `CANONICAL_COPROCESSOR_*` env variables
+(see below).
 
 ### Canonical vs. non-canonical hosts
 
@@ -207,7 +207,7 @@ thresholds the payload encodes. They also print the chain id, block number, bloc
 `ProtocolConfig` address. An operator compares every provenance value against the artifact.
 
 When deploying a full non-canonical host stack, `task:deployAllHostContracts
---protocol-config-source canonical` runs the mirror in sequence with the other host contracts, with
+--host-role replica` runs the mirror in sequence with the other host contracts, with
 the same environment variables (this is what the fhevm-cli multi-chain stack uses, so e2e seeds
 non-canonical chains exactly like production).
 
@@ -228,7 +228,9 @@ A coprocessor context is an immutable snapshot of the coprocessor set and its ma
 Context IDs carry the type byte `0x09`, so the first context is `0x0900...0001`.
 
 - **Canonical**: `initializeFromEmptyProxy` defines the first context from the `COPROCESSOR_*` env
-  variables (`task:deployCoprocessorConfig`). `defineNewCoprocessorContext` and
+  variables (`task:deployCoprocessorConfig` on devnet, `task:prepareDeployCoprocessorConfig` for the DAO
+  payload). A stack deployed before `CoprocessorConfig` first gets its empty proxy with
+  `task:deployEmptyProxyForCoprocessorConfig`. `defineNewCoprocessorContext` and
   `destroyCoprocessorContext` change it later (`tasks/coprocessorContext.ts`, a `task:build…Calldata`
   task for the DAO path and a broadcasting task for devnet).
 - **Replica**: `initializeFromCanonical` lands the replica on canonical's current context. Export it
@@ -246,7 +248,7 @@ Context IDs carry the type byte `0x09`, so the first context is `0x0900...0001`.
 | `CANONICAL_COPROCESSORS`                    | JSON array     | The coprocessor set, one JSON object per coprocessor.     |
 | `CANONICAL_COPROCESSOR_MAJORITY_THRESHOLD`  | decimal string | Majority threshold of the coprocessor context.            |
 
-`task:deployAllHostContracts --protocol-config-source canonical` also seeds the replica, so it needs
+`task:deployAllHostContracts --host-role replica` also seeds the replica, so it needs
 these variables too. Later canonical contexts are mirrored with `task:mirrorCoprocessorContext` and
 `task:mirrorCoprocessorContextDestruction` (`tasks/mirrorCoprocessorContext.ts`). A replica accepts
 gaps, so only canonical's current context is mirrored.
