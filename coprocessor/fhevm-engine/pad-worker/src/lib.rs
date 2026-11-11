@@ -1,4 +1,4 @@
-//! The pad-worker: one lane computes the PRF outputs of one PRF instance (RFC-038).
+//! The pad-worker: one lane computes the PRF outputs of one PRF instance.
 
 pub mod evaluator;
 pub mod metrics;
@@ -6,7 +6,7 @@ pub mod rows;
 pub mod upload;
 
 use alloy::primitives::keccak256;
-use anyhow::Context;
+use anyhow::{anyhow, bail, Context};
 use ciphertext_attestation::{
     prf::Version as AttestationVersion, PrfOutputAttestation, PrfOutputAttestationPayload,
 };
@@ -15,6 +15,7 @@ use evaluator::PadEvaluator;
 use fhevm_engine_common::{
     healthz_server::{HealthCheckService, HealthStatus, Version},
     pg_pool::is_fatal_connection_error,
+    prf_reference::{reference_digest, reference_outputs},
     types::CoproSigner,
 };
 use rows::{Claim, Output};
@@ -26,8 +27,8 @@ use tokio::{
     time::{sleep, timeout},
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{info, warn};
-use upload::Uploader;
+use tracing::{error, info, warn};
+use upload::{reference_key, s3_key, Uploader};
 
 /// The same limit as the database check of `HealthStatus`.
 const DB_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
@@ -54,6 +55,16 @@ pub struct Config {
     pub output_max_age: Option<Duration>,
     /// Interval of the GC and the row age metrics (`PAD_GC_INTERVAL`).
     pub gc_interval: Duration,
+    /// Interval of the reference digest read until the lane is ready (`PAD_START_CHECK_INTERVAL`).
+    pub start_check_interval: Duration,
+}
+
+/// Why a claim has no output.
+enum OutputError {
+    /// The evaluation is deterministic, so a new try fails the same way.
+    Evaluation(String),
+    /// A new try can pass.
+    Signing(String),
 }
 
 pub struct PadWorker {
@@ -93,13 +104,16 @@ impl PadWorker {
         Health(self.pool.clone())
     }
 
-    /// Registers the lane, then claims and computes rows until `cancel_token`. Fails on a lost
-    /// database connection.
+    /// Registers the lane, waits for the start check, then claims rows until `cancel_token`. Fails
+    /// on a lost database connection or on bytes that are not the agreed ones.
     pub async fn run(self) -> anyhow::Result<()> {
         register_lane(&self.pool, self.config.prf_instance).await?;
+        info!(prf_instance = self.config.prf_instance, "Lane registered");
+        if !self.start_check().await? {
+            return Ok(());
+        }
         let mut listener = PgListener::connect_with(&self.pool).await?;
         listener.listen(PAD_WORK_AVAILABLE).await?;
-        info!(prf_instance = self.config.prf_instance, "Lane registered");
 
         let worker = Arc::new(self);
         let slots = Arc::new(Semaphore::new(worker.config.max_concurrent.get()));
@@ -146,6 +160,112 @@ impl PadWorker {
         Ok(())
     }
 
+    /// Waits until the operators agree on a reference digest. Returns true when the lane is ready,
+    /// false on `cancel_token`. Fails if the agreed digest is another.
+    async fn start_check(&self) -> anyhow::Result<bool> {
+        let prf_instance = self.config.prf_instance;
+        let mut outputs = Vec::new();
+        for (label, pad_length) in reference_outputs() {
+            let claim = Claim {
+                prf_instance,
+                label,
+                pad_length,
+            };
+            match self.compute(claim).await {
+                Ok(output) => outputs.push(output),
+                Err(OutputError::Evaluation(e) | OutputError::Signing(e)) => {
+                    return Err(anyhow!("reference output {claim:?}: {e}"));
+                }
+            }
+        }
+        let digest = reference_digest(outputs.iter().map(|o| {
+            (
+                o.attestation.ciphertext_digest,
+                o.attestation.sns_ciphertext_digest,
+            )
+        }));
+        let mut uploaded = false;
+        loop {
+            let agreement = rows::lane_agreement(&self.pool, prf_instance).await?;
+            match agreement.reference_digest {
+                Some(agreed) if agreed == digest => {
+                    rows::set_ready(&self.pool, prf_instance).await?;
+                    info!(%digest, "Reference digest agreed, lane ready");
+                    return Ok(true);
+                }
+                Some(agreed) => bail!(
+                    "reference digest {digest} is not the agreed {agreed}: this image changes the \
+                     bytes of instance {prf_instance}, so it needs a new prfId"
+                ),
+                // A new instance: the consensus-detector compares the reference objects.
+                None => {
+                    if !uploaded {
+                        uploaded = self.upload_references(&outputs).await;
+                    }
+                    if agreement.mismatch {
+                        error!(%digest, "Operators have other reference digests, lane not ready");
+                    } else {
+                        info!(%digest, "Waiting for the agreed reference digest");
+                    }
+                }
+            }
+            tokio::select! {
+                () = self.cancel_token.cancelled() => return Ok(false),
+                () = sleep(self.config.start_check_interval) => {}
+            }
+        }
+    }
+
+    /// Returns true if all the reference objects are in S3, or if there is no uploader.
+    async fn upload_references(&self, outputs: &[Output]) -> bool {
+        let Some(uploader) = &self.uploader else {
+            return true;
+        };
+        for output in outputs {
+            if let Err(e) = uploader.upload(&reference_key(&output.claim), output).await {
+                warn!(claim = ?output.claim, error = %e, "Reference upload failed");
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Evaluates and signs the output of `claim`.
+    async fn compute(&self, claim: Claim) -> Result<Output, OutputError> {
+        let evaluator = self.evaluator.clone();
+        let outputs = tokio::task::spawn_blocking(move || {
+            evaluator.evaluate(claim.prf_instance, claim.label, claim.pad_length)
+        })
+        .await
+        .map_err(|_| OutputError::Evaluation("evaluation panicked".to_string()))?
+        .map_err(|e| OutputError::Evaluation(format!("evaluation: {e}")))?;
+        let payload = PrfOutputAttestationPayload::new(
+            AttestationVersion::V1,
+            claim.prf_instance,
+            claim.label,
+            claim.pad_length,
+            keccak256(&outputs.ct64),
+            keccak256(&outputs.ct128),
+        );
+        // `sign` takes a sized `Signer`, and `CoproSigner` is a trait object.
+        let signature = self
+            .signer
+            .sign_hash(&payload.canonical_digest())
+            .await
+            .map_err(|e| OutputError::Signing(format!("signing: {e}")))?;
+        Ok(Output {
+            claim,
+            ct128: outputs.ct128,
+            attestation: PrfOutputAttestation {
+                version: payload.version,
+                ciphertext_digest: payload.ciphertext_digest,
+                sns_ciphertext_digest: payload.sns_ciphertext_digest,
+                signer: self.signer.address(),
+                signature: signature.as_bytes().to_vec(),
+            },
+        })
+    }
+
     /// Computes, signs and writes one claimed row. Fails only on a lost database connection.
     async fn process(
         self: Arc<Self>,
@@ -157,48 +277,17 @@ impl PadWorker {
                 .await
                 .or_else(non_fatal);
         }
-        let evaluator = self.evaluator.clone();
-        let evaluated = tokio::task::spawn_blocking(move || {
-            evaluator.evaluate(claim.prf_instance, claim.label, claim.pad_length)
-        })
-        .await;
-        let outputs = match evaluated {
-            Ok(Ok(outputs)) => outputs,
-            // The evaluation is deterministic, so a new try fails the same way.
-            Ok(Err(e)) => {
-                warn!(?claim, error = %e, "PRF evaluation failed");
-                return rows::fail(&self.pool, &claim, &format!("evaluation: {e}"))
+        let output = match self.compute(claim).await {
+            Ok(output) => output,
+            Err(OutputError::Evaluation(message)) => {
+                warn!(?claim, message, "PRF evaluation failed");
+                return rows::fail(&self.pool, &claim, &message)
                     .await
                     .or_else(non_fatal);
             }
-            Err(e) => {
-                warn!(?claim, error = %e, "PRF evaluation panicked");
-                return rows::fail(&self.pool, &claim, "evaluation panicked")
-                    .await
-                    .or_else(non_fatal);
-            }
+            Err(OutputError::Signing(message)) => return self.retry(&claim, &message).await,
         };
-        let payload = PrfOutputAttestationPayload::new(
-            AttestationVersion::V1,
-            claim.prf_instance,
-            claim.label,
-            claim.pad_length,
-            keccak256(&outputs.ct64),
-            keccak256(&outputs.ct128),
-        );
-        // `sign` takes a sized `Signer`, and `CoproSigner` is a trait object.
-        let signature = match self.signer.sign_hash(&payload.canonical_digest()).await {
-            Ok(signature) => signature,
-            Err(e) => return self.retry(&claim, &format!("signing: {e}")).await,
-        };
-        let attestation = PrfOutputAttestation {
-            version: payload.version,
-            ciphertext_digest: payload.ciphertext_digest,
-            sns_ciphertext_digest: payload.sns_ciphertext_digest,
-            signer: self.signer.address(),
-            signature: signature.as_bytes().to_vec(),
-        };
-        match rows::write_output(&self.pool, &claim, &outputs.ct128, &attestation).await {
+        match rows::write_output(&self.pool, &claim, &output.ct128, &output.attestation).await {
             Ok(true) => {}
             // Another pod completed the row, or the GC deleted it: do not upload this output.
             Ok(false) => return Ok(()),
@@ -206,12 +295,7 @@ impl PadWorker {
             Err(e) => return self.retry(&claim, &format!("write: {e}")).await,
         }
         drop(slot);
-        self.upload(Output {
-            claim,
-            ct128: outputs.ct128,
-            attestation,
-        })
-        .await
+        self.upload(output).await
     }
 
     /// Uploads the output and sets `s3_verified_at`. If the upload fails, `resubmit` tries again.
@@ -219,7 +303,7 @@ impl PadWorker {
         let Some(uploader) = &self.uploader else {
             return Ok(());
         };
-        if let Err(e) = uploader.upload(&output).await {
+        if let Err(e) = uploader.upload(&s3_key(&output.claim), &output).await {
             warn!(claim = ?output.claim, error = %e, "S3 upload failed");
             return Ok(());
         }

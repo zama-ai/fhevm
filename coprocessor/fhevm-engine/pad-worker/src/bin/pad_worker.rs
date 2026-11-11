@@ -61,7 +61,11 @@ struct Args {
     #[arg(long, env = "PAD_GC_INTERVAL", default_value = "1m", value_parser = humantime::parse_duration)]
     gc_interval: Duration,
 
-    /// RFC-023 bucket of the operator, for the S3 copy of the outputs.
+    /// Interval of the reference digest read until the lane is ready.
+    #[arg(long, env = "PAD_START_CHECK_INTERVAL", default_value = "30s", value_parser = humantime::parse_duration)]
+    start_check_interval: Duration,
+
+    /// Ciphertext bucket of the operator, for the S3 copy of the outputs.
     #[arg(long, env = "PAD_S3_BUCKET")]
     s3_bucket: String,
 
@@ -183,6 +187,7 @@ async fn main() -> anyhow::Result<()> {
         pending_max_age = ?args.pending_max_age,
         output_max_age = ?args.output_max_age,
         gc_interval = ?args.gc_interval,
+        start_check_interval = ?args.start_check_interval,
         s3_bucket = args.s3_bucket,
         s3_max_concurrent_uploads = args.s3_max_concurrent_uploads,
         s3_resubmit_interval = ?args.s3_resubmit_interval,
@@ -216,6 +221,7 @@ async fn main() -> anyhow::Result<()> {
             pending_max_age: args.pending_max_age,
             output_max_age: args.output_max_age,
             gc_interval: args.gc_interval,
+            start_check_interval: args.start_check_interval,
         },
         pool,
         Arc::new(MockEvaluator),
