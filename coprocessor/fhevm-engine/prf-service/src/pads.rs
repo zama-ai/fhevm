@@ -9,6 +9,7 @@ use std::{
     collections::HashMap,
     num::NonZeroUsize,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
@@ -40,6 +41,8 @@ pub enum Admission {
     Existing(PadState),
     /// The connector has no budget for this row.
     OverBudget,
+    /// The row is pending and expired: no lane computes it.
+    Expired,
 }
 
 /// Admits requests in one pod.
@@ -47,16 +50,24 @@ pub struct Admissions {
     pool: PgPool,
     max_pending_bits: i64,
     max_adds_per_connector: NonZeroUsize,
+    /// Pending rows older than this do not count in the budget.
+    pending_max_age: Duration,
     /// One semaphore for each connector with an add in progress in this pod.
     adds: Adds,
 }
 
 impl Admissions {
-    pub fn new(pool: PgPool, max_pending_bits: i64, max_adds_per_connector: NonZeroUsize) -> Self {
+    pub fn new(
+        pool: PgPool,
+        max_pending_bits: i64,
+        max_adds_per_connector: NonZeroUsize,
+        pending_max_age: Duration,
+    ) -> Self {
         Self {
             pool,
             max_pending_bits,
             max_adds_per_connector,
+            pending_max_age,
             adds: Adds::default(),
         }
     }
@@ -69,15 +80,25 @@ impl Admissions {
         connector: Address,
     ) -> anyhow::Result<Admission> {
         if let Some(state) = read(&self.pool, path).await? {
+            if state == PadState::Pending
+                && is_expired(&self.pool, path, self.pending_max_age).await?
+            {
+                return Ok(Admission::Expired);
+            }
             return Ok(Admission::Existing(state));
         }
         // Wait in memory: a request that waits for the lock in Postgres holds a connection.
         let slot = self.add_slot(connector).await;
-        let (pool, max_pending_bits, path) = (self.pool.clone(), self.max_pending_bits, *path);
+        let (pool, max_pending_bits, pending_max_age, path) = (
+            self.pool.clone(),
+            self.max_pending_bits,
+            self.pending_max_age,
+            *path,
+        );
         // In a task, so a cancelled request keeps its slot until its connection is free.
         tokio::spawn(async move {
             let _slot = slot;
-            add(&pool, max_pending_bits, &path, connector).await
+            add(&pool, max_pending_bits, pending_max_age, &path, connector).await
         })
         .await?
     }
@@ -126,6 +147,7 @@ impl Drop for AddSlot {
 async fn add(
     pool: &PgPool,
     max_pending_bits: i64,
+    pending_max_age: Duration,
     path: &PrfOutputRef,
     connector: Address,
 ) -> anyhow::Result<Admission> {
@@ -138,8 +160,10 @@ async fn add(
     let pending = sqlx::query_scalar!(
         r#"SELECT COALESCE(SUM(pad_length), 0)::BIGINT AS "pending!"
                  FROM pads
-                WHERE triggered_by = $1 AND signature IS NULL AND NOT is_error"#,
+                WHERE triggered_by = $1 AND signature IS NULL AND NOT is_error
+                  AND created_at > NOW() - make_interval(secs => $2)"#,
         connector.as_slice(),
+        pending_max_age.as_secs_f64(),
     )
     .fetch_one(tx.as_mut())
     .await?;
@@ -170,6 +194,26 @@ async fn add(
         0 => Admission::Existing(PadState::Pending),
         _ => Admission::Created,
     })
+}
+
+/// Whether the row of `path` is older than `pending_max_age`. False if there is no row.
+async fn is_expired(
+    pool: &PgPool,
+    path: &PrfOutputRef,
+    pending_max_age: Duration,
+) -> anyhow::Result<bool> {
+    let expired = sqlx::query_scalar!(
+        r#"SELECT created_at <= NOW() - make_interval(secs => $4) AS "expired!"
+             FROM pads
+            WHERE prf_instance = $1 AND label = $2 AND pad_length = $3"#,
+        i32::from(path.prf_id),
+        path.label.as_slice(),
+        i32::from(path.pad_length),
+        pending_max_age.as_secs_f64(),
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(expired.unwrap_or(false))
 }
 
 /// Reads the row of `path`, if it exists, without its body.
@@ -278,7 +322,12 @@ mod tests {
         let pool = PgPoolOptions::new()
             .connect_lazy("postgres://localhost/unused")
             .unwrap();
-        Admissions::new(pool, 64, NonZeroUsize::new(2).unwrap())
+        Admissions::new(
+            pool,
+            64,
+            NonZeroUsize::new(2).unwrap(),
+            Duration::from_secs(600),
+        )
     }
 
     #[tokio::test]

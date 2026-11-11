@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 const LIMIT: i64 = 100;
 const MAX_ADDS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
+const PENDING_MAX_AGE: Duration = Duration::from_secs(600);
 const OTHER_CONNECTOR: Address = Address::repeat_byte(0x22);
 
 /// A database and an admin pool.
@@ -39,7 +40,12 @@ async fn admin_db() -> (DBInstance, PgPool) {
 async fn test_db() -> (DBInstance, PgPool, PgPool, Arc<Admissions>) {
     let (instance, pool) = admin_db().await;
     let service = common::prf_service_pool(&pool, instance.db_url(), 16).await;
-    let admissions = Arc::new(Admissions::new(service.clone(), LIMIT, MAX_ADDS));
+    let admissions = Arc::new(Admissions::new(
+        service.clone(),
+        LIMIT,
+        MAX_ADDS,
+        PENDING_MAX_AGE,
+    ));
     (instance, pool, service, admissions)
 }
 
@@ -135,7 +141,7 @@ async fn concurrent_requests_of_a_connector_stay_in_its_budget() {
 #[tokio::test]
 async fn requests_on_two_pods_stay_in_the_budget() {
     let (_instance, _pool, service, pod_a) = test_db().await;
-    let pod_b = Arc::new(Admissions::new(service, LIMIT, MAX_ADDS));
+    let pod_b = Arc::new(Admissions::new(service, LIMIT, MAX_ADDS, PENDING_MAX_AGE));
     let requests: Vec<_> = (0..10)
         .map(|label| {
             let pod = if label % 2 == 0 {
@@ -255,6 +261,39 @@ async fn budget_counts_the_pending_pad_bits_of_each_connector() {
         Admission::Existing(PadState::Failed)
     );
     assert_eq!(admit(path(3, 64), CONNECTOR).await, Admission::Created);
+}
+
+#[tokio::test]
+async fn expired_pending_rows_do_not_count_in_the_budget() {
+    let (_instance, pool, _service, admissions) = test_db().await;
+    assert_eq!(
+        admissions.admit(&path(1, 64), CONNECTOR).await.unwrap(),
+        Admission::Created
+    );
+    assert_eq!(
+        admissions.admit(&path(2, 64), CONNECTOR).await.unwrap(),
+        Admission::OverBudget
+    );
+
+    // No lane computed the first row in time.
+    sqlx::query("UPDATE pads SET created_at = NOW() - make_interval(secs => $1)")
+        .bind(PENDING_MAX_AGE.as_secs_f64() + 1.0)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        admissions.admit(&path(2, 64), CONNECTOR).await.unwrap(),
+        Admission::Created
+    );
+    // A request for the expired row does not wait on it.
+    assert_eq!(
+        admissions
+            .admit(&path(1, 64), OTHER_CONNECTOR)
+            .await
+            .unwrap(),
+        Admission::Expired
+    );
 }
 
 #[tokio::test]
@@ -445,7 +484,10 @@ async fn a_new_row_wakes_the_lane_of_its_instance() {
     assert_eq!(notification.payload(), "1");
 
     // A request that joins the row adds no row, so it wakes nobody.
-    admissions.admit(&path(1, 64), OTHER_CONNECTOR).await.unwrap();
+    admissions
+        .admit(&path(1, 64), OTHER_CONNECTOR)
+        .await
+        .unwrap();
     assert!(timeout(Duration::from_millis(500), listener.recv())
         .await
         .is_err());
