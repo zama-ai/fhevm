@@ -142,6 +142,40 @@ pub async fn retry(
     Ok(())
 }
 
+/// The agreement of the operators on the reference digest of an instance.
+pub struct LaneAgreement {
+    pub reference_digest: Option<B256>,
+    pub mismatch: bool,
+}
+
+pub async fn lane_agreement(pool: &PgPool, prf_instance: u16) -> sqlx::Result<LaneAgreement> {
+    let row = sqlx::query!(
+        r#"SELECT reference_digest, reference_mismatch_at IS NOT NULL AS "mismatch!"
+             FROM prf_lanes WHERE prf_instance = $1"#,
+        i32::from(prf_instance),
+    )
+    .fetch_one(pool)
+    .await?;
+    Ok(LaneAgreement {
+        reference_digest: row
+            .reference_digest
+            .map(|d| B256::try_from(d.as_slice()).expect("reference_digest is 32 bytes")),
+        mismatch: row.mismatch,
+    })
+}
+
+/// Marks the lane as ready and alive.
+pub async fn set_ready(pool: &PgPool, prf_instance: u16) -> sqlx::Result<()> {
+    sqlx::query!(
+        "UPDATE prf_lanes SET ready_at = COALESCE(ready_at, NOW()), heartbeat_at = NOW()
+          WHERE prf_instance = $1",
+        i32::from(prf_instance),
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Marks the lane as alive.
 pub async fn heartbeat(pool: &PgPool, prf_instance: u16) -> sqlx::Result<()> {
     sqlx::query!(
