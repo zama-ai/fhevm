@@ -11,6 +11,13 @@
     "target": "es2022",
     "types": ["node"]
   },
-  "files": ["./hardhat.config.ts", "./hello.ts", "./tasks/networkInfo.ts"],
+  "files": [
+    "./hardhat.config.ts",
+    "./hello.ts",
+    "./tasks/compileAll.ts",
+    "./tasks/hostContracts.ts",
+    "./tasks/networkInfo.ts",
+    "./tasks/zamaConfigAddresses.ts"
+  ],
   "include": ["./typechain-types/**/*.ts"]
 }

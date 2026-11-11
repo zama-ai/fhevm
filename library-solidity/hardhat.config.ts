@@ -1,6 +1,8 @@
 import hardhatEthers from '@nomicfoundation/hardhat-ethers';
 import hardhatTypechain from '@nomicfoundation/hardhat-typechain';
-import { defineConfig, task } from 'hardhat/config';
+import { defineConfig, overrideTask, task } from 'hardhat/config';
+
+import { isFhevmTempPrepared } from './tasks/hostContracts.js';
 
 export default defineConfig({
   plugins: [hardhatEthers, hardhatTypechain],
@@ -13,10 +15,36 @@ export default defineConfig({
     task('task:networkInfo', 'Prints the chain id, the signers and the first signer balance of a network')
       .setAction(() => import('./tasks/networkInfo.js'))
       .build(),
+    task('task:compileAll', 'Prepares fhevmTemp/ (host contracts and addresses), then compiles every source folder')
+      .setAction(() => import('./tasks/compileAll.js'))
+      .build(),
+    // A full HH3 build deletes the artifacts of every file outside `paths.sources`, so every folder the tests use is
+    // a source folder. fhevmTemp/ must be prepared first (task:compileAll): fail loudly instead of with an unclear
+    // "file doesn't exist" error. `run` and `test` also go through `build`.
+    overrideTask('build')
+      .setInlineAction(async (taskArguments, _hre, runSuper) => {
+        if (!isFhevmTempPrepared()) {
+          throw new Error(
+            'fhevmTemp/ is not prepared: `hardhat build` cannot compile fhevmTemp/contracts and examples/.\n' +
+              'Run `npm run build` (or `npx hardhat task:compileAll`) instead.',
+          );
+        }
+        // Pass the build result through unchanged: callers such as `test` may use it.
+        const buildResult: unknown = await runSuper(taskArguments);
+        return buildResult;
+      })
+      .build(),
   ],
   paths: {
-    // Everything published in @fhevm/solidity (package.json.publish.template: lib/**/*.sol, config/**/*.sol).
-    sources: ['./lib', './config'],
+    sources: [
+      // Everything published in @fhevm/solidity (package.json.publish.template: lib/**/*.sol, config/**/*.sol).
+      './lib',
+      './config',
+      // Host contracts copied from @fhevm/host-contracts by task:compileAll (git-ignored).
+      './fhevmTemp/contracts',
+      // Example contracts, including the codegen-generated test suites (examples/tests).
+      './examples',
+    ],
     tests: {
       // The Foundry tests in test/*.t.sol run with `forge test`, not Hardhat. This folder does not exist, so
       // Hardhat finds no Solidity tests to build.
