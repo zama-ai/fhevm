@@ -9,7 +9,7 @@
   "main": "lib/FHE.sol",
   "scripts": {
     "_check:peer-deps": "node ci/check-peer-deps.mjs",
-    "build": "hardhat build && npm run lint",
+    "build": "hardhat task:compileAll && npm run lint",
     "clean": "rimraf ./artifacts ./cache ./coverage ./typechain-types ./fhevmTemp ./coverage.json",
     "codegen": "./codegen/codegen.mjs lib --config ./codegen.config.json --verbose",
     "codegen:overloads": "./codegen/codegen.mjs overloads --config ./codegen.config.json --verbose --force",
