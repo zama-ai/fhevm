@@ -17,7 +17,7 @@
     "forge:soldeer": "forge soldeer install",
     "lint": "npm run tsc && npm run lint:ts && npm run prettier:check",
     "lint:ts": "eslint --config ./eslint.config.mjs",
-    "postinstall": "npm run forge:soldeer",
+    "postinstall": "if command -v forge >/dev/null 2>&1; then npm run forge:soldeer; else echo 'forge not found: skipping forge soldeer install (install Foundry, then run: npm run forge:soldeer)'; fi",
     "prelint:ts": "npm run --silent _assert:compiled",
     "pretsc": "npm run --silent _assert:compiled",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
