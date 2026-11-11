@@ -1,5 +1,6 @@
 import type { Command, OptionValues } from 'commander';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { createRequire } from 'module';
 import * as path from 'path';
 import * as prettier from 'prettier';
 
@@ -95,8 +96,7 @@ export type TestsConfig = {
 };
 
 export function getProgram(): Command {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (globalThis as any).program! as Command;
+  return (globalThis as unknown as { program: Command }).program;
 }
 
 export function getOptions(): OptionValues {
@@ -104,8 +104,9 @@ export function getOptions(): OptionValues {
 }
 
 export function getUserConfig(): UserConfig | undefined {
-  const p = getProgram().opts().config;
-  if (p) {
+  // commander types option values as `any`: `--config <path>` gives a string when set.
+  const p: unknown = getProgram().opts().config;
+  if (typeof p === 'string' && p !== '') {
     const jsonFile = toAbsoluteFileWithExtension(p, '.json', process.cwd());
     if (!existsSync(jsonFile)) {
       errorLog(`Codegen config file at ${jsonFile} does not exist.`);
@@ -113,16 +114,39 @@ export function getUserConfig(): UserConfig | undefined {
     }
     const json = readFileSync(jsonFile, 'utf8');
     debugLog(`Load config file: ${jsonFile}`);
+
+    // An invalid config stops the run: continuing with default settings could generate files in the wrong place.
+    let o: unknown;
     try {
-      const o = JSON.parse(json);
-      // If baseDir is not specified, use config file containing directory as baseDir
-      if (!o.baseDir) {
-        o.baseDir = path.dirname(jsonFile);
-      }
-      return o;
+      o = JSON.parse(json);
     } catch (e) {
-      console.error(`Invalid json file ${p}.\${e}`);
+      errorLog(`Invalid codegen config ${jsonFile}: not valid JSON. ${String(e)}`);
+      process.exit(1);
     }
+    if (typeof o !== 'object' || o === null || Array.isArray(o)) {
+      errorLog(`Invalid codegen config ${jsonFile}: expected a JSON object.`);
+      process.exit(1);
+    }
+    const userConfig = o as UserConfig;
+
+    // Runtime check: the config is hand-written JSON, so `baseDir` may not match its static type.
+    const baseDir: unknown = userConfig.baseDir;
+    if (baseDir === undefined) {
+      // If baseDir is not specified, use config file containing directory as baseDir
+      userConfig.baseDir = path.dirname(jsonFile);
+    } else if (typeof baseDir !== 'string' || baseDir.trim() === '') {
+      errorLog(
+        `Invalid codegen config ${jsonFile}: "baseDir" must be a non-empty string, got ${JSON.stringify(baseDir)}. ` +
+          `Remove it to use the config file's directory.`,
+      );
+      process.exit(1);
+    } else {
+      // Like the paths in a tsconfig.json, a relative baseDir is resolved against the directory of the config file
+      // that declares it, not against the current working directory: the result does not depend on where codegen
+      // is run from. An absolute baseDir is kept (normalized).
+      userConfig.baseDir = path.resolve(path.dirname(jsonFile), baseDir);
+    }
+    return userConfig;
   }
   return undefined;
 }
@@ -135,7 +159,23 @@ export function isDryRun(): boolean {
   return getProgram().opts().dryRun === true;
 }
 
-export function getUserOverloadsFile(options: any): string | undefined {
+// Options of the `lib` and `overloads` commands, as declared in codegen.mjs. commander does not type them (its
+// option values are `any`), so keep these types in sync with codegen.mjs by hand.
+
+/** `lib` command: `--overloads <path>`, `--no-test`, `--no-lib` (a `--no-x` flag makes `x` default to `true`). */
+export type LibCommandOptions = {
+  overloads?: string;
+  test: boolean;
+  lib: boolean;
+};
+
+/** `overloads` command: `--force`, `--update`. */
+export type OverloadsCommandOptions = {
+  force?: boolean;
+  update?: boolean;
+};
+
+export function getUserOverloadsFile(options: LibCommandOptions): string | undefined {
   return options.overloads;
 }
 
@@ -180,8 +220,8 @@ function resolveTestsUserConfig(testsUserConfig: TestsUserConfig | undefined): T
     publicDecrypt: testsUserConfig?.publicDecrypt === true,
     shuffle: testsUserConfig?.shuffle === true,
     shuffleWithPseuseRand: testsUserConfig?.shuffleWithPseuseRand === true,
-    ...(testsUserConfig?.solidity ? { solidity: resolveSolidityTestGroup(testsUserConfig?.solidity) } : {}),
-    ...(testsUserConfig?.typescript ? { typescript: resolveTypescriptTestGroup(testsUserConfig?.typescript) } : {}),
+    ...(testsUserConfig?.solidity ? { solidity: resolveSolidityTestGroup(testsUserConfig.solidity) } : {}),
+    ...(testsUserConfig?.typescript ? { typescript: resolveTypescriptTestGroup(testsUserConfig.typescript) } : {}),
   };
 }
 
@@ -226,9 +266,21 @@ function resolveLibConfig(userLibConfig: LibUserConfig | undefined): LibConfig {
 }
 
 function resolveSolidityTestGroup(userTestGroup: UserSolidityTestGroup): SolidityTestGroup {
+  // Runtime check: the config is hand-written JSON, so the value may not match its static type. When present,
+  // `parentContractName` must be a non-empty string (the Solidity contract the generated test contracts inherit from).
+  const parentContractName: unknown = userTestGroup.parentContractName;
+  if (
+    parentContractName !== undefined &&
+    (typeof parentContractName !== 'string' || parentContractName.trim() === '')
+  ) {
+    throw new Error(
+      `Invalid codegen config: "tests.solidity.parentContractName" must be a non-empty string, got ` +
+        `${JSON.stringify(parentContractName)}. Remove it to generate test contracts without a parent contract.`,
+    );
+  }
   return {
     outDir: userTestGroup.outDir,
-    ...(userTestGroup.parentContractName ? { parentContractName: userTestGroup.parentContractName } : {}),
+    ...(typeof parentContractName === 'string' ? { parentContractName } : {}),
     ...(userTestGroup.imports ? { imports: userTestGroup.imports } : {}),
   };
 }
@@ -247,9 +299,9 @@ function toAbsoluteTestsConfig(resolvedTestsConfig: TestsConfig, baseDir: string
     numberOfTestSplits: resolvedTestsConfig.numberOfTestSplits,
     shuffle: resolvedTestsConfig.shuffle,
     shuffleWithPseuseRand: resolvedTestsConfig.shuffleWithPseuseRand,
-    ...(resolvedTestsConfig?.solidity ? { solidity: toAbsoluteTestGroup(resolvedTestsConfig?.solidity, baseDir) } : {}),
-    ...(resolvedTestsConfig?.typescript
-      ? { typescript: toAbsoluteTestGroup(resolvedTestsConfig?.typescript, baseDir) }
+    ...(resolvedTestsConfig.solidity ? { solidity: toAbsoluteTestGroup(resolvedTestsConfig.solidity, baseDir) } : {}),
+    ...(resolvedTestsConfig.typescript
+      ? { typescript: toAbsoluteTestGroup(resolvedTestsConfig.typescript, baseDir) }
       : {}),
   };
 }
@@ -425,21 +477,93 @@ async function _resolveValue(value: unknown): Promise<string> {
   return value;
 }
 
+/**
+ * Directory of the package that owns `file`: the nearest ancestor directory that has a `package.json`.
+ * Generated files are formatted the way this package formats its own code (see `formatFileUsingPrettier`).
+ */
+function findOwningPackageDir(file: string): string {
+  let dir = path.dirname(path.resolve(file));
+  for (let depth = 0; depth < MAX_PRETTIER_CONFIG_SEARCH_DEPTH; ++depth) {
+    if (existsSync(path.join(dir, 'package.json'))) {
+      return dir;
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+  throw new Error(`No package.json found above ${file}: cannot tell which package's prettier setup to use.`);
+}
+
+/** `true` for a package name (e.g. `prettier-plugin-solidity`, `@scope/name`), `false` for a file path. */
+function isPackageName(specifier: string): boolean {
+  return !specifier.startsWith('.') && !path.isAbsolute(specifier);
+}
+
+/**
+ * The part of the prettier 3 API used by `formatFileUsingPrettier`, declared here rather than taken from the
+ * `prettier` typings: the prettier used is loaded at runtime from the package that owns the generated file, and the
+ * typings TypeScript finds for `prettier` depend on the install layout (e.g. `@types/prettier` 2.x, brought in by
+ * typechain, can shadow prettier 3's own types).
+ */
+type PrettierApi = {
+  resolveConfig(filePath: string): Promise<Record<string, unknown> | null>;
+  getFileInfo(
+    filePath: string,
+    options: { ignorePath: string[]; resolveConfig: boolean; plugins?: unknown[] },
+  ): Promise<{ ignored: boolean; inferredParser: string | null }>;
+  format(source: string, options: Record<string, unknown>): string | Promise<string>;
+};
+
+/**
+ * Formats a generated file exactly as running `prettier` inside the package that owns it would: with that package's
+ * prettier, its plugins and its ignore files, whatever the directory codegen is run from.
+ *
+ * On its own, prettier resolves plugin names and ignore files from the current working directory, so the result
+ * depended on where codegen was run (another plugin version from the repo root, a crash elsewhere).
+ */
 async function formatFileUsingPrettier(
   filePath: string,
   content: string,
 ): Promise<{ result: 'ignored' | 'unchanged' | 'formatted'; fromattedCode: string }> {
-  const info = await prettier.getFileInfo(filePath);
+  const packageDir = findOwningPackageDir(filePath);
+  const packageRequire = createRequire(path.join(packageDir, 'package.json'));
+
+  // The package's own prettier. A package without one has no formatting of its own: use codegen's.
+  let packagePrettier = prettier as unknown as PrettierApi;
+  try {
+    packagePrettier = packageRequire('prettier') as PrettierApi;
+  } catch {
+    debugLog(`No prettier installed for ${packageDir}: formatting ${filePath} with codegen's prettier.`);
+  }
+
+  const prettierConfig = (await packagePrettier.resolveConfig(filePath)) ?? {};
+
+  // Plugin package names are resolved from the owning package, not from the current working directory.
+  const configPlugins: unknown = prettierConfig.plugins;
+  if (configPlugins !== undefined && !Array.isArray(configPlugins)) {
+    throw new Error(`Invalid prettier config for ${filePath}: "plugins" must be an array.`);
+  }
+  const plugins = configPlugins?.map((plugin: unknown) =>
+    typeof plugin === 'string' && isPackageName(plugin) ? packageRequire.resolve(plugin) : plugin,
+  );
+
+  // `getFileInfo` also loads the config's plugins (to infer the parser): give it the resolved ones instead.
+  const info = await packagePrettier.getFileInfo(filePath, {
+    ignorePath: [path.join(packageDir, '.gitignore'), path.join(packageDir, '.prettierignore')],
+    resolveConfig: false,
+    ...(plugins !== undefined ? { plugins } : {}),
+  });
   if (info.ignored || info.inferredParser == null) {
     return { result: 'ignored', fromattedCode: content };
   }
 
-  const prettierConfig = await prettier.resolveConfig(filePath);
-
   const output = await _resolveValue(
     // Warning! prettier.format can return a Promise!
-    prettier.format(content, {
+    packagePrettier.format(content, {
       ...prettierConfig,
+      ...(plugins !== undefined ? { plugins } : {}),
       filepath: filePath,
     }),
   );

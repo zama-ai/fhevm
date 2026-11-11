@@ -36,9 +36,9 @@ export function generateSolidityOverloadTestFiles(operators: Operator[], fheType
   });
 
   // Generate overloads unary operators for all supported types.
-  adjustedFheTypes.forEach((fheType: FheTypeInfo) =>
-    generateOverloadsForTFHEUnaryOperators(fheType, operators, signatures),
-  );
+  adjustedFheTypes.forEach((fheType: FheTypeInfo) => {
+    generateOverloadsForTFHEUnaryOperators(fheType, operators, signatures);
+  });
 
   // TODO Add tests for conversion from plaintext and externalEXXX to all supported types (e.g., externalEXXX --> ebool, uint32 --> euint32)
   return signatures;
@@ -49,8 +49,8 @@ function generateOverloadsForTFHEEncryptedOperatorForTwoEncryptedTypes(
   rhsFheType: FheTypeInfo,
   operator: Operator,
   signatures: OverloadSignature[],
-) {
-  if (operator.shiftOperator || operator.rotateOperator) {
+): void {
+  if (operator.shiftOperator === true || operator.rotateOperator === true) {
     return;
   }
 
@@ -91,8 +91,8 @@ function generateOverloadsForTFHEScalarOperator(
   fheType: FheTypeInfo,
   operator: Operator,
   signatures: OverloadSignature[],
-) {
-  if (operator.shiftOperator || operator.rotateOperator) {
+): void {
+  if (operator.shiftOperator === true || operator.rotateOperator === true) {
     return;
   }
 
@@ -123,7 +123,7 @@ function generateOverloadsForTFHEScalarOperator(
   }
 
   // lhs scalar
-  if (!operator.leftScalarDisable) {
+  if (operator.leftScalarDisable !== true) {
     if (fheType.type.startsWith('Uint')) {
       signatures.push({
         name: operator.name,
@@ -141,8 +141,8 @@ function generateOverloadsForTFHEShiftOperator(
   fheType: FheTypeInfo,
   operator: Operator,
   signatures: OverloadSignature[],
-) {
-  if (!operator.shiftOperator && !operator.rotateOperator) {
+): void {
+  if (operator.shiftOperator !== true && operator.rotateOperator !== true) {
     return;
   }
 
@@ -180,7 +180,7 @@ function generateOverloadsForTFHEUnaryOperators(
   fheType: FheTypeInfo,
   operators: Operator[],
   signatures: OverloadSignature[],
-) {
+): void {
   operators.forEach((op) => {
     if (op.arguments == OperatorArguments.Unary && fheType.supportedOperators.includes(op.name)) {
       if (fheType.type.startsWith('Uint')) {
@@ -439,7 +439,7 @@ export function generateTypeScriptTestCode(
 
   let res: string[] = [];
 
-  const overloadUsages: { [methodName: string]: boolean } = {};
+  const overloadUsages: Record<string, boolean> = {};
   shards.forEach((os) => {
     if (options.shuffle) {
       if (options.shuffleWithPseuseRand) {
@@ -454,7 +454,8 @@ export function generateTypeScriptTestCode(
       const testName = `test operator "${o.name}" overload ${signatureContractEncryptedSignature(o)}`;
       const methodName = signatureContractMethodName(o);
       overloadUsages[methodName] = true;
-      const tests = overloadTests[methodName] || [];
+      // `overloadTests` may have no entry for this method: the assert below then reports it.
+      const tests = Object.hasOwn(overloadTests, methodName) ? overloadTests[methodName] : [];
 
       // Ensure that there are tests defined for each overload method.
       assert(tests.length > 0, `Overload ${methodName} has no test, please add them.`);
@@ -471,8 +472,12 @@ export function generateTypeScriptTestCode(
         });
         if (typeof t.output === 'string') t.output = BigInt(t.output);
 
-        t.inputs.forEach((input, inputIndex) => ensureNumberAcceptableInBitRange(o.arguments[inputIndex].bits, input));
-        t.inputs.forEach((input, index) => ensureNumberAcceptableInBitRange(o.arguments[index].bits, input));
+        t.inputs.forEach((input, inputIndex) => {
+          ensureNumberAcceptableInBitRange(o.arguments[inputIndex].bits, input);
+        });
+        t.inputs.forEach((input, index) => {
+          ensureNumberAcceptableInBitRange(o.arguments[index].bits, input);
+        });
         if (typeof t.output === 'number' || typeof t.output === 'bigint') {
           ensureNumberAcceptableInBitRange(o.returnType.bits, t.output);
         }
@@ -510,6 +515,12 @@ export function generateTypeScriptTestCode(
         let expectedOutput = t.output.toString();
         if (typeof t.output === 'bigint' || typeof t.output === 'number') expectedOutput += 'n';
 
+        // The test contract stores the result in `resEuint<bits>` or `resEbool`; the matching test helper is
+        // `decrypt<bits>` or `decryptBool`.
+        const isEuintResult = o.returnType.type === ArgumentType.Euint;
+        const resultGetter = isEuintResult ? `resEuint${o.returnType.bits}` : 'resEbool';
+        const decryptFunction = isEuintResult ? `decrypt${o.returnType.bits}` : 'decryptBool';
+
         if (options.publicDecrypt) {
           res.push(`
                 it('${testName} test ${testIndex} (${testArgs})', async function () {
@@ -520,7 +531,7 @@ export function generateTypeScriptTestCode(
                     });
                     const tx = await this.contract${os.shardNumber}.${methodName}(${testArgsEncrypted}, encryptedAmount.inputProof);
                     await tx.wait();
-                    const handle = await this.contract${os.shardNumber}.res${o.returnType.type === 1 ? `Euint${o.returnType.bits}` : 'Ebool'}();
+                    const handle = await this.contract${os.shardNumber}.${resultGetter}();
                     const res = await this.instance.publicDecrypt([handle]);
                     const expectedRes = {
                       [handle]: ${expectedOutput},
@@ -536,7 +547,7 @@ export function generateTypeScriptTestCode(
                     const encryptedAmount = await input.encrypt();
                     const tx = await this.contract${os.shardNumber}.${methodName}(${testArgsEncrypted}, encryptedAmount.inputProof);
                     await tx.wait();
-                    const res = await decrypt${o.returnType.type === 1 ? o.returnType.bits : 'Bool'}(await this.contract${os.shardNumber}.res${o.returnType.type === 1 ? `Euint${o.returnType.bits}` : 'Ebool'}());
+                    const res = await ${decryptFunction}(await this.contract${os.shardNumber}.${resultGetter}());
                     expect(res).to.equal(${expectedOutput});
                 });
             `);
@@ -565,10 +576,10 @@ export function generateTypeScriptTestCode(
  * @param input - The number or bigint to be checked.
  * @throws Will throw an error if the input is not within the range [0, 2^bits].
  */
-function ensureNumberAcceptableInBitRange(bits: number, input: number | bigint) {
+function ensureNumberAcceptableInBitRange(bits: number, input: number | bigint): void {
   assert(
     input >= 0 && input <= 2 ** bits,
-    `${bits} bit number ${input} doesn't fall into expected [${0}; ${2 ** bits}] range`,
+    `${bits} bit number ${input} doesn't fall into expected [0; ${2 ** bits}] range`,
   );
 }
 
@@ -592,9 +603,14 @@ export function generateSolidityUnitTestContracts(
   const res: string[] = [];
 
   const c = importsCode.length > 0 ? importsCode.join(';\n') + ';' : '';
-  const isStatement = parentContract ? `is ${parentContract}` : '';
+  // With a parent contract, the test contract inherits from it (and its setup); otherwise it sets up the coprocessor
+  // itself in its constructor.
+  // Runtime check, same result as the original truthiness test: only a non-empty string is a parent contract
+  // (`undefined`, `''`, and any non-string such as `null` mean "no parent").
+  const hasParentContract = typeof parentContract === 'string' && parentContract !== '';
+  const isStatement = hasParentContract ? `is ${parentContract}` : '';
 
-  const constructor = parentContract
+  const constructor = hasParentContract
     ? ''
     : `
             constructor() {
@@ -640,7 +656,7 @@ export function generateSolidityUnitTestContracts(
  * argument processing, type casting, and the appropriate FHE library call. The result
  * of the library call is then allowed and assigned to the corresponding state variable.
  */
-function generateLibCallTest(os: OverloadShard, res: string[], usePublicDecrypt: boolean) {
+function generateLibCallTest(os: OverloadShard, res: string[], usePublicDecrypt: boolean): void {
   os.overloads.forEach((o) => {
     const methodName = signatureContractMethodName(o);
     const args = signatureContractArguments(o);
@@ -659,11 +675,11 @@ function generateLibCallTest(os: OverloadShard, res: string[], usePublicDecrypt:
 
     const tfheArgs = procArgs.join(', ');
 
-    if (o.binaryOperator) {
+    if (o.binaryOperator !== undefined && o.binaryOperator !== '') {
       assert(o.arguments.length == 2, 'We assume two arguments for binary operator');
       res.push(`${functionTypeToEncryptedType(o.returnType)} result = aProc ${o.binaryOperator} bProc;`);
       res.push('\n');
-    } else if (o.unaryOperator) {
+    } else if (o.unaryOperator !== undefined && o.unaryOperator !== '') {
       assert(o.arguments.length == 1, 'We assume one argument for unary operator');
       res.push(`${functionTypeToEncryptedType(o.returnType)} result = ${o.unaryOperator}aProc;`);
       res.push('\n');
@@ -730,7 +746,7 @@ function signatureContractArguments(s: OverloadSignature): string {
 function signatureContractEncryptedSignature(s: OverloadSignature): string {
   const res: string[] = [];
   s.arguments.forEach((a) => {
-    res.push(`${functionTypeToString(a)}`);
+    res.push(functionTypeToString(a));
   });
 
   const joined = res.join(', ');
